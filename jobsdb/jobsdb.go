@@ -588,33 +588,34 @@ type Handle struct {
 
 	config *config.Config
 	conf   struct {
-		payloadColumnType              payloadColumnType
-		maxTableSize                   config.ValueLoader[int64]
-		cacheExpiration                config.ValueLoader[time.Duration]
-		addNewDSLoopSleepDuration      config.ValueLoader[time.Duration]
-		addNewDSTimeout                config.ValueLoader[time.Duration]
-		refreshDSListLoopSleepDuration config.ValueLoader[time.Duration]
-		refreshDSTimeout               config.ValueLoader[time.Duration]
-		minDSRetentionPeriod           config.ValueLoader[time.Duration]
-		maxDSRetentionPeriod           config.ValueLoader[time.Duration]
-		jobMaxAge                      config.ValueLoader[time.Duration]
-		writeCapacity                  chan struct{}
-		readCapacity                   chan struct{}
-		enableWriterQueue              bool
-		enableReaderQueue              bool
-		clearAll                       bool
-		skipMaintenanceError           bool
-		dsLimit                        config.ValueLoader[int]
-		maxReaders                     int
-		maxWriters                     int
-		maxOpenConnections             int
-		analyzeThreshold               config.ValueLoader[int]
-		MaxDSSize                      config.ValueLoader[int]
-		numPartitions                  int // if zero or negative, no partitioning
-		partitionFunction              func(job *JobT) string
-		warnOnStatusMissingPartitionID config.ValueLoader[bool]
-		holdDSListLockDuringStore      config.ValueLoader[bool] // escape hatch: hold the dsList read lock for the entire store callback
-		dbTablesVersion                int                      // version of the database tables schema (0 means latest)
+		payloadColumnType               payloadColumnType
+		maxTableSize                    config.ValueLoader[int64]
+		cacheExpiration                 config.ValueLoader[time.Duration]
+		addNewDSLoopSleepDuration       config.ValueLoader[time.Duration]
+		addNewDSTimeout                 config.ValueLoader[time.Duration]
+		refreshDSListLoopSleepDuration  config.ValueLoader[time.Duration]
+		refreshDSTimeout                config.ValueLoader[time.Duration]
+		minDSRetentionPeriod            config.ValueLoader[time.Duration]
+		maxDSRetentionPeriod            config.ValueLoader[time.Duration]
+		jobMaxAge                       config.ValueLoader[time.Duration]
+		writeCapacity                   chan struct{}
+		readCapacity                    chan struct{}
+		enableWriterQueue               bool
+		enableReaderQueue               bool
+		clearAll                        bool
+		skipMaintenanceError            bool
+		dsLimit                         config.ValueLoader[int]
+		maxReaders                      int
+		maxWriters                      int
+		maxOpenConnections              int
+		analyzeThreshold                config.ValueLoader[int]
+		MaxDSSize                       config.ValueLoader[int]
+		numPartitions                   int // if zero or negative, no partitioning
+		partitionFunction               func(job *JobT) string
+		warnOnStatusMissingPartitionID  config.ValueLoader[bool]
+		holdDSListLockDuringStore       config.ValueLoader[bool] // escape hatch: hold the dsList read lock for the entire store callback
+		noResultsCacheStateOptimization config.ValueLoader[bool]
+		dbTablesVersion                 int // version of the database tables schema (0 means latest)
 
 		migration struct {
 			maxMigrateOnce, maxMigrateDSProbe config.ValueLoader[int]
@@ -1106,6 +1107,10 @@ func (jd *Handle) loadConfig() {
 	// Default false: snapshot lastDS and release the dsList read lock before running the store callback,
 	// so long-running stores don't block dsList writers. Flip to true to revert to holding the lock for the whole callback.
 	jd.conf.holdDSListLockDuringStore = jd.config.GetReloadableBoolVar(false, jd.configKeys("holdDSListLockDuringStore")...)
+
+	// when true, the per-state noResultsCache optimization is enabled: stateFilters are narrowed
+	// against the cache before querying, and (!ok && !limitsReached) is used as a commit predicate.
+	jd.conf.noResultsCacheStateOptimization = jd.config.GetReloadableBoolVar(false, jd.configKeys("noResultsCacheStateOptimization")...)
 
 	if jd.TriggerAddNewDS == nil {
 		jd.TriggerAddNewDS = func() <-chan time.Time {
@@ -2254,10 +2259,13 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		CustomValFilters: params.CustomValFilters,
 		WorkspaceID:      workspaceID,
 	}
+	stateFilterOptimization := jd.conf.noResultsCacheStateOptimization.Load()
 
-	stateFilters = lo.Filter(stateFilters, func(state string, _ int) bool { // exclude states for which we already know that there are no jobs
-		return !jd.noResultsCache.Get(ds.Index, partitionFilters, workspaceID, customValFilters, []string{state}, parameterFilters)
-	})
+	if stateFilterOptimization {
+		stateFilters = lo.Filter(stateFilters, func(state string, _ int) bool { // exclude states for which we already know that there are no jobs
+			return !jd.noResultsCache.Get(ds.Index, partitionFilters, workspaceID, customValFilters, []string{state}, parameterFilters)
+		})
+	}
 
 	defer jd.getTimerStat("jobsdb_get_jobs_ds_time", &tags).RecordDuration()()
 
@@ -2368,7 +2376,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		// later, during row scanning
 		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_event_counts - t.event_count <= $%d`, len(args)+1))
 		args = append(args, params.EventsLimit)
-	}
+	} 
 
 	if params.PayloadSizeLimit > 0 {
 		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_payload_size - t.payload_size <= $%d`, len(args)+1))
@@ -2466,7 +2474,9 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 			// we are committing the cache Tx only if
 			// (a) no jobs are returned by the query or
 			// (b) the state is not present in the resultset and limits have not been reached
-			if _, ok := resultsetStates[state]; len(jobList) == 0 || (!ok && !limitsReached) {
+			//     (skipped when the noResultsCache state-filter optimization is disabled)
+			_, ok := resultsetStates[state]
+			if len(jobList) == 0 || (stateFilterOptimization && !ok && !limitsReached) {
 				if allEntriesCommitted := cacheTx.Commit(); !allEntriesCommitted {
 					tags := &statTags{
 						StateFilters:     []string{state},
