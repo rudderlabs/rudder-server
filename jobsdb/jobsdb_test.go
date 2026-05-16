@@ -1639,6 +1639,115 @@ func TestPayloadSizeColumnQueries(t *testing.T) {
 	jobsDB.TearDown()
 }
 
+// TestGetJobsLimitsReached verifies the LimitsReached flag and the number of jobs
+// returned by GetToProcess for every combination of JobsLimit / EventsLimit /
+// PayloadSizeLimit, including exact-boundary cases and single-oversize cases.
+// It runs against both ASCII and UTF-8 multibyte payloads to validate that
+// PayloadSizeLimit is measured in bytes (octet_length) and not characters.
+func TestGetJobsLimitsReached(t *testing.T) {
+	pgContainer := startPostgres(t)
+
+	const (
+		payloadBytes  = 100
+		eventsPerJob  = 2
+		numJobs       = 10
+		totalEvents   = numJobs * eventsPerJob
+		totalPayload  = int64(numJobs * payloadBytes)
+		singlePayload = int64(payloadBytes)
+	)
+
+	// Each payload is exactly payloadBytes bytes long.
+	// "🙂" is U+1F642, 4 bytes in UTF-8 → 25 × 4 = 100 bytes.
+	payloadVariants := []struct {
+		name string
+		data []byte
+	}{
+		{"ascii", []byte(strings.Repeat("x", payloadBytes))},
+		{"utf8_multibyte", []byte(strings.Repeat("🙂", payloadBytes/4))},
+	}
+
+	for _, pv := range payloadVariants {
+		t.Run(pv.name, func(t *testing.T) {
+			require.Len(t, pv.data, payloadBytes, "payload variant must be exactly %d bytes", payloadBytes)
+
+			customVal := strings.ToUpper(rsRand.String(8))
+			workspaceID := "workspaceID"
+			tablePrefix := strings.ToLower(rsRand.String(5))
+
+			t.Setenv("RSERVER_JOBS_DB_PAYLOAD_COLUMN_TYPE", "text")
+			jobsDB := &Handle{dbHandle: pgContainer.DB}
+			require.NoError(t, jobsDB.Setup(ReadWrite, true, tablePrefix))
+			t.Cleanup(jobsDB.TearDown)
+
+			jobs := make([]*JobT, numJobs)
+			for i := range numJobs {
+				jobs[i] = &JobT{
+					Parameters:   []byte(`{}`),
+					EventPayload: pv.data,
+					UserID:       "u",
+					UUID:         uuid.New(),
+					CustomVal:    customVal,
+					EventCount:   eventsPerJob,
+					WorkspaceId:  workspaceID,
+				}
+			}
+			require.NoError(t, jobsDB.Store(context.Background(), jobs))
+
+			testCases := []struct {
+				name             string
+				jobsLimit        int
+				eventsLimit      int
+				payloadSizeLimit int64
+				expectedJobs     int
+				expectedLimits   bool
+			}{
+				// --- JobsLimit only ---
+				{"JobsLimit_under", 5, 0, 0, 5, true},
+				{"JobsLimit_exact_boundary", numJobs, 0, 0, numJobs, true},
+				{"JobsLimit_over", numJobs * 2, 0, 0, numJobs, false},
+
+				// --- EventsLimit ---
+				// running_events overflows after the 2nd job (running=6 > 4)
+				{"EventsLimit_under", 100, 4, 0, 2, true},
+				// running_events overflows after the 1st job (running=4 > 2)
+				{"EventsLimit_exact_one_job", 100, eventsPerJob, 0, 1, true},
+				// boundary: total events == limit, no in-loop overflow,
+				// post-loop check sets limitsReached because eventCount >= limit
+				{"EventsLimit_exact_total_boundary", 100, totalEvents, 0, numJobs, true},
+				{"EventsLimit_over", 100, totalEvents * 10, 0, numJobs, false},
+				// limit < any single job's events: must still return one oversize job
+				{"EventsLimit_smaller_than_single_job", 100, 1, 0, 1, true},
+
+				// --- PayloadSizeLimit ---
+				{"PayloadSizeLimit_under", 100, 0, singlePayload * 5, 5, true},
+				{"PayloadSizeLimit_exact_one_job", 100, 0, singlePayload, 1, true},
+				{"PayloadSizeLimit_exact_total_boundary", 100, 0, totalPayload, numJobs, true},
+				{"PayloadSizeLimit_over", 100, 0, totalPayload * 2, numJobs, false},
+				// limit < any single job's payload: must still return one oversize job
+				{"PayloadSizeLimit_smaller_than_single_job", 100, 0, singlePayload / 2, 1, true},
+
+				// --- Combined ---
+				{"Combined_events_binds_first", 100, 4, totalPayload, 2, true},
+				{"Combined_payload_binds_first", 100, 100, singlePayload * 3, 3, true},
+			}
+
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					res, err := jobsDB.GetToProcess(context.Background(), GetQueryParams{
+						CustomValFilters: []string{customVal},
+						JobsLimit:        tc.jobsLimit,
+						EventsLimit:      tc.eventsLimit,
+						PayloadSizeLimit: tc.payloadSizeLimit,
+					}, nil)
+					require.NoError(t, err)
+					require.Len(t, res.Jobs, tc.expectedJobs, "unexpected number of jobs")
+					require.Equal(t, tc.expectedLimits, res.LimitsReached, "unexpected LimitsReached")
+				})
+			}
+		})
+	}
+}
+
 func TestUpdateJobStatus(t *testing.T) {
 	_ = startPostgres(t)
 	c := config.New()

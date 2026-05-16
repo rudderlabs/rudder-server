@@ -2407,7 +2407,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	var payloadSize int64
 	resultsetStates := map[string]struct{}{}
 	for rows.Next() {
-		var payloadSize int64
+		var rowPayloadSize int64
 		var job JobT
 		var payload []byte
 		var jsState sql.NullString
@@ -2418,7 +2418,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		var jsErrorResponse []byte
 		var jsParameters []byte
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&payload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PartitionID, &payloadSize, &runningEventCount, &runningPayloadSize,
+			&payload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PartitionID, &rowPayloadSize, &runningEventCount, &runningPayloadSize,
 			&jsState, &jsAttemptNum,
 			&jsExecTime, &jsRetryTime,
 			&jsErrorCode, &jsErrorResponse, &jsParameters)
