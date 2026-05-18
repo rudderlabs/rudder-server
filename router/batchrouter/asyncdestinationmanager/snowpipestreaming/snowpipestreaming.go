@@ -242,6 +242,26 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 		abortedJobIDs []int64
 		abortReason   string
 	)
+
+	// Get channel IDs from cache to avoid duplicate requests.
+	channelCacheIDs := lo.FilterMap(uploadInfos, func(info *uploadInfo, _ int) (string, bool) {
+		response, ok := m.channelCache.Load(info.tableName)
+		if !ok {
+			return "", false
+		}
+		return response.(*model.ChannelResponse).ChannelID, true
+	})
+
+	// Pre-fetch channel statuses for all channels to avoid duplicate requests.
+	var channelStatuses map[string]*model.StatusResponse
+	if m.config.bulkStatusEnabled.Load() {
+		channelStatuses, _, err = m.getBulkStatus(ctx, channelCacheIDs)
+		if err != nil {
+			m.logger.Warnn("Failed to get bulk status", obskit.Error(err))
+			return m.abortJobs(asyncDest, fmt.Errorf("failed to get bulk status: %w", err).Error())
+		}
+	}
+
 	for _, info := range uploadInfos {
 		fields := []logger.Field{
 			logger.NewStringField("table", info.tableName),
@@ -250,7 +270,7 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 		fields = append(fields, jobIDRangeFields(info.jobIDs)...)
 		log := m.logger.Withn(fields...)
 
-		imInfo, discardImInfo, err := m.sendEventsToSnowpipe(ctx, asyncDest.Destination.ID, &destConf, info)
+		imInfo, discardImInfo, err := m.sendEventsToSnowpipe(ctx, asyncDest.Destination.ID, &destConf, info, channelStatuses)
 		if err != nil {
 			log.Warnn("Failed to send events to Snowpipe", obskit.Error(err))
 
@@ -401,6 +421,7 @@ func (m *Manager) sendEventsToSnowpipe(
 	destinationID string,
 	destConf *destConfig,
 	info *uploadInfo,
+	channelStatuses map[string]*model.StatusResponse,
 ) (*importInfo, *importInfo, error) {
 	offset := strconv.FormatInt(info.latestJobID, 10)
 
@@ -442,7 +463,7 @@ func (m *Manager) sendEventsToSnowpipe(
 	var duplicateIDsInBatch, duplicateCountDueToOffset int
 	if info.tableName != whutils.ToProviderCase(whutils.SnowpipeStreaming, whutils.UsersTable) {
 		duplicateIDsInBatch = checkForDuplicateIDsInBatch(info.events)
-		duplicateCountDueToOffset = m.checkForDuplicatesDueToOffset(ctx, channelResponse.ChannelID, info.events)
+		duplicateCountDueToOffset = m.checkForDuplicatesDueToOffset(ctx, channelResponse.ChannelID, info.events, channelStatuses)
 	}
 
 	insertReq := &model.InsertRequest{
@@ -498,8 +519,39 @@ func checkForDuplicateIDsInBatch(events []*event) (duplicateCount int) {
 }
 
 // checkForDuplicatesDueToOffset checks for duplicate ids due to offset.
-func (m *Manager) checkForDuplicatesDueToOffset(ctx context.Context, channelID string, events []*event) (duplicateCount int) {
-	statusRes, err := m.api.GetStatus(ctx, channelID)
+func (m *Manager) checkForDuplicatesDueToOffset(
+	ctx context.Context,
+	channelID string,
+	events []*event,
+	channelStatuses map[string]*model.StatusResponse,
+) (duplicateCount int) {
+	var statusRes *model.StatusResponse
+	var err error
+
+	if m.config.bulkStatusEnabled.Load() {
+		var ok bool
+		statusRes, ok = channelStatuses[channelID]
+		if !ok {
+			// If channel status is not found in the cache, we need to get it from the Snowpipe.
+			bulkStatusRes, notFound, err := m.getBulkStatus(ctx, []string{channelID})
+			if err != nil {
+				m.logger.Warnn("Failed to get bulk status for channel", logger.NewStringField("channelID", channelID), obskit.Error(err))
+				return duplicateCount
+			}
+			if len(notFound) > 0 {
+				m.logger.Warnn("Channel not found in bulk status response for channel", logger.NewStringField("channelID", channelID), logger.NewStringField("notFound", strings.Join(notFound, ", ")))
+				return duplicateCount
+			}
+			statusRes, ok = bulkStatusRes[channelID]
+			if !ok {
+				m.logger.Warnn("Channel status not found in bulk status response for channel", logger.NewStringField("channelID", channelID))
+				return duplicateCount
+			}
+		}
+	} else {
+		statusRes, err = m.api.GetStatus(ctx, channelID)
+	}
+
 	if err != nil {
 		m.logger.Warnn("Failed to get status", obskit.Error(err))
 		return duplicateCount
