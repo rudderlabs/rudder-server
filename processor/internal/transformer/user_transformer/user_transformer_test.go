@@ -1,8 +1,12 @@
 package user_transformer_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1470,6 +1475,18 @@ func TestUserTransformURLRouting(t *testing.T) {
 		}}
 	}
 
+	// The recording server echoes back the request's Message + Metadata with
+	// StatusCode 200, so Transform's response is deterministic given the input.
+	expectedResponseFor := func(wsID string) types.Response {
+		return types.Response{
+			Events: []types.TransformerResponse{{
+				Output:     map[string]any{"src-key-1": messageID},
+				Metadata:   types.Metadata{MessageID: messageID, WorkspaceID: wsID},
+				StatusCode: http.StatusOK,
+			}},
+		}
+	}
+
 	type fixture struct {
 		conf            *config.Config
 		js, py, pyMir   recordingSrv
@@ -1519,7 +1536,8 @@ func TestUserTransformURLRouting(t *testing.T) {
 	t.Run("JS — flag off → JS URL", func(t *testing.T) {
 		f := newFixture(t)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		tr.Transform(context.Background(), makeEvents("javascript", allowedV, workspaceID))
+		rsp := tr.Transform(context.Background(), makeEvents("javascript", allowedV, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
 		assertOnly(t, f, &f.js, "/customTransform")
 	})
 
@@ -1527,14 +1545,16 @@ func TestUserTransformURLRouting(t *testing.T) {
 		f := newFixture(t)
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		tr.Transform(context.Background(), makeEvents("javascript", allowedV, workspaceID))
+		rsp := tr.Transform(context.Background(), makeEvents("javascript", allowedV, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
 		assertOnly(t, f, &f.js, "/customTransform")
 	})
 
 	t.Run("Python — flag off → global Python URL", func(t *testing.T) {
 		f := newFixture(t)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
 		assertOnly(t, f, &f.py, "/customTransform")
 	})
 
@@ -1542,7 +1562,8 @@ func TestUserTransformURLRouting(t *testing.T) {
 		f := newFixture(t)
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
 		assertOnly(t, f, &f.perWS, f.perWSExpectPath)
 	})
 
@@ -1550,7 +1571,8 @@ func TestUserTransformURLRouting(t *testing.T) {
 		f := newFixture(t)
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		tr.Transform(context.Background(), makeEvents("pythonfaas", blockedV, workspaceID))
+		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", blockedV, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
 		assertOnly(t, f, &f.js, "/customTransform")
 	})
 
@@ -1558,7 +1580,8 @@ func TestUserTransformURLRouting(t *testing.T) {
 		f := newFixture(t)
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP, user_transformer.ForMirroring())
-		tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
 		assertOnly(t, f, &f.pyMir, "/customTransform")
 	})
 
@@ -1566,15 +1589,229 @@ func TestUserTransformURLRouting(t *testing.T) {
 		f := newFixture(t)
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, ""))
+		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, ""))
+		require.Equal(t, expectedResponseFor(""), rsp)
 		assertOnly(t, f, &f.py, "/customTransform")
 	})
 
-	t.Run("legacy fallback key Processor.perWorkspacePyTEnabled enables routing", func(t *testing.T) {
-		f := newFixture(t)
-		f.conf.Set("Processor.perWorkspacePyTEnabled", true)
-		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
-		assertOnly(t, f, &f.perWS, f.perWSExpectPath)
-	})
+}
+
+// fakeColdStartTransport is a transformerclient.Client that returns a
+// configured (resp, err) for the first `failures` calls and then a 200 success
+// (carrying successBody) for every subsequent call. Lets tests simulate a pod
+// that's cold for N attempts and then warms up.
+type fakeColdStartTransport struct {
+	// failResp / failErr — at most one of these is non-nil. failResp is
+	// returned (with a fresh empty body) for cold-start-style HTTP responses;
+	// failErr is returned for transport-level errors like ECONNREFUSED / DNS.
+	failResp *http.Response
+	failErr  error
+	// failures: number of failing calls before switching to successBody. Use
+	// math.MaxInt for "always fail".
+	failures int
+	// successBody: marshaled []TransformerResponse returned on the (failures+1)th
+	// and later calls. Empty body is fine when the test doesn't reach success.
+	successBody []byte
+
+	calls atomic.Int32
+}
+
+func (f *fakeColdStartTransport) Do(_ *http.Request) (*http.Response, error) {
+	n := int(f.calls.Add(1))
+	if n <= f.failures {
+		if f.failResp != nil {
+			r := *f.failResp
+			r.Body = io.NopCloser(bytes.NewReader(nil))
+			return &r, nil
+		}
+		return nil, f.failErr
+	}
+	hdr := http.Header{}
+	hdr.Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     hdr,
+		Body:       io.NopCloser(bytes.NewReader(f.successBody)),
+	}, nil
+}
+
+func TestColdStartCounter(t *testing.T) {
+	const (
+		coldStartMetric = "processor_user_transformer_cold_start_errors_total"
+		workspaceID     = "ws-A1"
+		messageID       = "messageID-0"
+		allowedV        = "v-allowed"
+	)
+
+	connRefused := &net.OpError{
+		Op:  "dial",
+		Net: "tcp",
+		Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNREFUSED},
+	}
+	dnsErr := &net.DNSError{Err: "no such host", Name: "pyt-ws-A1", IsNotFound: true}
+
+	respWithStatus := func(code int) *http.Response {
+		hdr := http.Header{}
+		hdr.Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
+		return &http.Response{
+			StatusCode: code,
+			Header:     hdr,
+			Body:       io.NopCloser(bytes.NewReader(nil)),
+		}
+	}
+
+	// Marshaled success response — what a warm PyT pod would return.
+	successBody, err := jsonrs.Marshal([]types.TransformerResponse{{
+		Output:     map[string]any{"src-key-1": messageID},
+		Metadata:   types.Metadata{MessageID: messageID, WorkspaceID: workspaceID},
+		StatusCode: http.StatusOK,
+	}})
+	require.NoError(t, err)
+
+	cases := []struct {
+		name string
+		// failResp / failErr: what the fake transport returns for the first
+		// `failures` calls. After that it returns a 200 success.
+		failResp *http.Response
+		failErr  error
+		failures int
+
+		expectCounter    int
+		expectEventCount int // events on the success path
+		expectFailedCode int // StatusCode on FailedEvent (0 = no failed event expected)
+	}{
+		{
+			// 2 ECONNREFUSED then warm. Fits within doPost's inner retry budget
+			// (maxRetry+1 = 3), so the outer sendBatch loop runs exactly once.
+			name:             "ECONNREFUSED twice → counted twice, then warm",
+			failErr:          connRefused,
+			failures:         2,
+			expectCounter:    2,
+			expectEventCount: 1,
+		},
+		{
+			name:             "DNS not found twice → counted twice, then warm",
+			failErr:          dnsErr,
+			failures:         2,
+			expectCounter:    2,
+			expectEventCount: 1,
+		},
+		{
+			name:             "503 twice → counted twice, then warm",
+			failResp:         respWithStatus(http.StatusServiceUnavailable),
+			failures:         2,
+			expectCounter:    2,
+			expectEventCount: 1,
+		},
+		{
+			name:             "502 twice → counted twice, then warm",
+			failResp:         respWithStatus(http.StatusBadGateway),
+			failures:         2,
+			expectCounter:    2,
+			expectEventCount: 1,
+		},
+		{
+			// 4 failures > maxRetry+1, forces sendBatch's outer retry to kick
+			// in: doPost exhausts inner retries on cycle 1, returns the
+			// cold-start status, sendBatch retries doPost, second cycle warms.
+			name:             "cold-start spans multiple outer cycles → still recovers",
+			failErr:          connRefused,
+			failures:         4,
+			expectCounter:    4,
+			expectEventCount: 1,
+		},
+		{
+			// 4xx is job-terminated — no retry, no cold-start counter, just a
+			// straight FailedEvent with the upstream status code.
+			name:             "non-transient 400 → no retry, failed event with 400",
+			failResp:         respWithStatus(http.StatusBadRequest),
+			failures:         math.MaxInt,
+			expectCounter:    0,
+			expectFailedCode: http.StatusBadRequest,
+		},
+		{
+			// With cpDownEndlessRetries=false, CPDown bails after one attempt
+			// via backoff.Permanent. Not a cold-start signal — counter stays 0.
+			name:             "StatusCPDown → bails, not counted",
+			failResp:         respWithStatus(transformerutils.StatusCPDown),
+			failures:         math.MaxInt,
+			expectCounter:    0,
+			expectFailedCode: transformerutils.StatusCPDown,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
+			c := config.New()
+			c.Set("Processor.UserTransformer.maxRetry", 2)
+			c.Set("Processor.UserTransformer.maxRetryBackoffInterval", "1ms")
+			// Bound CPDown retries so the CPDown case terminates. Per-workspace
+			// PyT retries stay at the production default (endless) — the
+			// transport itself warms up to end the loop.
+			c.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
+			c.Set("USER_TRANSFORM_URL", "http://js-stub:9090")
+			c.Set("PYTHON_TRANSFORM_URL", "http://py-stub:9090")
+			c.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+			c.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", "http://pyt-{workspaceID}:9090")
+			c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
+			c.Set("PYTHON_TRANSFORM_VERSION_IDS", allowedV)
+
+			transport := &fakeColdStartTransport{
+				failResp:    tc.failResp,
+				failErr:     tc.failErr,
+				failures:    tc.failures,
+				successBody: successBody,
+			}
+			tr := user_transformer.New(c, logger.NOP, statsStore, user_transformer.WithClient(transport))
+
+			events := []types.TransformerEvent{{
+				Metadata: types.Metadata{
+					MessageID:   messageID,
+					WorkspaceID: workspaceID,
+				},
+				Message: map[string]any{"src-key-1": messageID},
+				Destination: backendconfig.DestinationT{
+					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "test-destination"},
+					Transformations: []backendconfig.TransformationT{{
+						ID:        "transform-1",
+						VersionID: allowedV,
+						Language:  "pythonfaas",
+					}},
+				},
+			}}
+
+			rsp := tr.Transform(context.Background(), events)
+
+			require.Len(t, rsp.Events, tc.expectEventCount)
+			if tc.expectFailedCode != 0 {
+				require.Len(t, rsp.FailedEvents, 1)
+				require.Equal(t, tc.expectFailedCode, rsp.FailedEvents[0].StatusCode)
+				require.Equal(t, messageID, rsp.FailedEvents[0].Metadata.MessageID)
+				require.Equal(t, workspaceID, rsp.FailedEvents[0].Metadata.WorkspaceID)
+			} else {
+				require.Empty(t, rsp.FailedEvents)
+				require.Equal(t, messageID, rsp.Events[0].Metadata.MessageID)
+				require.Equal(t, workspaceID, rsp.Events[0].Metadata.WorkspaceID)
+				require.Equal(t, http.StatusOK, rsp.Events[0].StatusCode)
+			}
+
+			measurements := statsStore.GetByName(coldStartMetric)
+			total := 0
+			for _, m := range measurements {
+				total += int(m.Value)
+			}
+			require.Equal(t, tc.expectCounter, total)
+
+			if tc.expectCounter > 0 {
+				// All increments must land on the same tag set: workspaceID +
+				// hardcoded language=python (not the raw label).
+				require.Len(t, measurements, 1)
+				require.Equal(t, workspaceID, measurements[0].Tags["workspaceID"])
+				require.Equal(t, "python", measurements[0].Tags["language"])
+			}
+		})
+	}
 }

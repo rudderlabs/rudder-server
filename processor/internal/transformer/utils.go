@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -17,11 +18,14 @@ import (
 )
 
 const (
-	StatusCPDown              = 809
-	StatusMirrorFiltered      = 297
-	TransformerRequestFailure = 909
-	TransformerRequestTimeout = 919
+	StatusCPDown                 = 809
+	StatusColdStartWindowFailure = 819
+	StatusMirrorFiltered         = 297
+	TransformerRequestFailure    = 909
+	TransformerRequestTimeout    = 919
 )
+
+var ColdStartError = errors.New("cold start error")
 
 func IsJobTerminated(status int) bool {
 	if status == http.StatusTooManyRequests || status == http.StatusRequestTimeout {
