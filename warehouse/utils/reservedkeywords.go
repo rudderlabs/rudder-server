@@ -2332,4 +2332,5 @@ var ReservedKeywords = map[string]map[string]bool{
 		"ZONE":                             true,
 	},
 	"CLICKHOUSE": {},
+	"MAXCOMPUTE": {},
 }

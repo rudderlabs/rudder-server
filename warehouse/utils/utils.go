@@ -44,6 +44,7 @@ const (
 	BQ                = "BQ"
 	SNOWFLAKE         = "SNOWFLAKE"
 	SnowpipeStreaming = "SNOWPIPE_STREAMING"
+	MAXCOMPUTE        = "MAXCOMPUTE"
 	POSTGRES          = "POSTGRES"
 	CLICKHOUSE        = "CLICKHOUSE"
 	MSSQL             = "MSSQL"
@@ -127,7 +128,7 @@ var (
 	TimeWindowDestinations = []string{S3Datalake, GCSDatalake, AzureDatalake}
 	awsCredsExpiryInS      config.ValueLoader[int64]
 
-	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}
+	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, MAXCOMPUTE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}
 	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
 	S3PathStyleRegex          = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
 	S3VirtualHostedRegex      = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
@@ -148,6 +149,7 @@ var WHDestNameMap = map[string]string{
 	MSSQL:         "mssql",
 	POSTGRES:      "postgres",
 	SNOWFLAKE:     "snowflake",
+	MAXCOMPUTE:    "maxcompute",
 	CLICKHOUSE:    "clickhouse",
 	DELTALAKE:     "deltalake",
 	S3Datalake:    "s3_datalake",
