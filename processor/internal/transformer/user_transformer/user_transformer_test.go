@@ -1593,19 +1593,18 @@ func TestUserTransformURLRouting(t *testing.T) {
 		require.Equal(t, expectedResponseFor(""), rsp)
 		assertOnly(t, f, &f.py, "/customTransform")
 	})
-
 }
 
 // fakeColdStartTransport is a transformerclient.Client that returns a
-// configured (resp, err) for the first `failures` calls and then a 200 success
-// (carrying successBody) for every subsequent call. Lets tests simulate a pod
-// that's cold for N attempts and then warms up.
+// configured failure (failStatus or failErr) for the first `failures` calls and
+// then a 200 success (carrying successBody) for every subsequent call. Lets
+// tests simulate a pod that's cold for N attempts and then warms up.
 type fakeColdStartTransport struct {
-	// failResp / failErr — at most one of these is non-nil. failResp is
-	// returned (with a fresh empty body) for cold-start-style HTTP responses;
-	// failErr is returned for transport-level errors like ECONNREFUSED / DNS.
-	failResp *http.Response
-	failErr  error
+	// At most one of failStatus / failErr is set. failStatus > 0 returns an
+	// HTTP response with that status code and an empty body; failErr returns
+	// a transport-level error (ECONNREFUSED / DNS / ...).
+	failStatus int
+	failErr    error
 	// failures: number of failing calls before switching to successBody. Use
 	// math.MaxInt for "always fail".
 	failures int
@@ -1617,17 +1616,19 @@ type fakeColdStartTransport struct {
 }
 
 func (f *fakeColdStartTransport) Do(_ *http.Request) (*http.Response, error) {
+	hdr := http.Header{}
+	hdr.Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
 	n := int(f.calls.Add(1))
 	if n <= f.failures {
-		if f.failResp != nil {
-			r := *f.failResp
-			r.Body = io.NopCloser(bytes.NewReader(nil))
-			return &r, nil
+		if f.failStatus > 0 {
+			return &http.Response{
+				StatusCode: f.failStatus,
+				Header:     hdr,
+				Body:       io.NopCloser(bytes.NewReader(nil)),
+			}, nil
 		}
 		return nil, f.failErr
 	}
-	hdr := http.Header{}
-	hdr.Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     hdr,
@@ -1650,16 +1651,6 @@ func TestColdStartCounter(t *testing.T) {
 	}
 	dnsErr := &net.DNSError{Err: "no such host", Name: "pyt-ws-A1", IsNotFound: true}
 
-	respWithStatus := func(code int) *http.Response {
-		hdr := http.Header{}
-		hdr.Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
-		return &http.Response{
-			StatusCode: code,
-			Header:     hdr,
-			Body:       io.NopCloser(bytes.NewReader(nil)),
-		}
-	}
-
 	// Marshaled success response — what a warm PyT pod would return.
 	successBody, err := jsonrs.Marshal([]types.TransformerResponse{{
 		Output:     map[string]any{"src-key-1": messageID},
@@ -1670,11 +1661,11 @@ func TestColdStartCounter(t *testing.T) {
 
 	cases := []struct {
 		name string
-		// failResp / failErr: what the fake transport returns for the first
+		// failStatus / failErr: what the fake transport returns for the first
 		// `failures` calls. After that it returns a 200 success.
-		failResp *http.Response
-		failErr  error
-		failures int
+		failStatus int
+		failErr    error
+		failures   int
 
 		expectCounter    int
 		expectEventCount int // events on the success path
@@ -1698,14 +1689,14 @@ func TestColdStartCounter(t *testing.T) {
 		},
 		{
 			name:             "503 twice → counted twice, then warm",
-			failResp:         respWithStatus(http.StatusServiceUnavailable),
+			failStatus:       http.StatusServiceUnavailable,
 			failures:         2,
 			expectCounter:    2,
 			expectEventCount: 1,
 		},
 		{
 			name:             "502 twice → counted twice, then warm",
-			failResp:         respWithStatus(http.StatusBadGateway),
+			failStatus:       http.StatusBadGateway,
 			failures:         2,
 			expectCounter:    2,
 			expectEventCount: 1,
@@ -1724,7 +1715,7 @@ func TestColdStartCounter(t *testing.T) {
 			// 4xx is job-terminated — no retry, no cold-start counter, just a
 			// straight FailedEvent with the upstream status code.
 			name:             "non-transient 400 → no retry, failed event with 400",
-			failResp:         respWithStatus(http.StatusBadRequest),
+			failStatus:       http.StatusBadRequest,
 			failures:         math.MaxInt,
 			expectCounter:    0,
 			expectFailedCode: http.StatusBadRequest,
@@ -1733,7 +1724,7 @@ func TestColdStartCounter(t *testing.T) {
 			// With cpDownEndlessRetries=false, CPDown bails after one attempt
 			// via backoff.Permanent. Not a cold-start signal — counter stays 0.
 			name:             "StatusCPDown → bails, not counted",
-			failResp:         respWithStatus(transformerutils.StatusCPDown),
+			failStatus:       transformerutils.StatusCPDown,
 			failures:         math.MaxInt,
 			expectCounter:    0,
 			expectFailedCode: transformerutils.StatusCPDown,
@@ -1760,7 +1751,7 @@ func TestColdStartCounter(t *testing.T) {
 			c.Set("PYTHON_TRANSFORM_VERSION_IDS", allowedV)
 
 			transport := &fakeColdStartTransport{
-				failResp:    tc.failResp,
+				failStatus:  tc.failStatus,
 				failErr:     tc.failErr,
 				failures:    tc.failures,
 				successBody: successBody,

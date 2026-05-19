@@ -376,7 +376,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 					},
 				).Increment()
 				u.log.Warnn("cold start error when connecting to workspace transformer", labels.ToLoggerFields()...)
-				return transformerutils.ColdStartError
+				return transformerutils.ErrColdStart
 			}
 
 			if reqErr != nil {
@@ -434,7 +434,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 		// scoped URL is most likely a cold-start window (pod not yet scaled by
 		// HPA, EndpointSlice lag, kube-proxy 5xx). Surface a dedicated status
 		// code so sendBatch retries the whole call until the pod is up instead of treating it as a failed transformation.
-		if errors.Is(err, transformerutils.ColdStartError) && u.config.perWorkspacePyTEnabled && !u.config.forMirroring {
+		if errors.Is(err, transformerutils.ErrColdStart) {
 			return fmt.Appendf(nil, "workspace transformer not reachable: %s", err), transformerutils.StatusColdStartWindowFailure, nil
 		}
 		return nil, 0, err
@@ -462,10 +462,7 @@ func isColdStartError(err error, resp *http.Response) bool {
 			return true
 		}
 		var dnsErr *net.DNSError
-		if errors.As(err, &dnsErr) {
-			return true
-		}
-		return false
+		return errors.As(err, &dnsErr)
 	}
 	if resp != nil && (resp.StatusCode == http.StatusServiceUnavailable ||
 		resp.StatusCode == http.StatusBadGateway) {

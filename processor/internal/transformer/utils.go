@@ -25,7 +25,7 @@ const (
 	TransformerRequestTimeout    = 919
 )
 
-var ColdStartError = errors.New("cold start error")
+var ErrColdStart = errors.New("cold start error")
 
 func IsJobTerminated(status int) bool {
 	if status == http.StatusTooManyRequests || status == http.StatusRequestTimeout {
