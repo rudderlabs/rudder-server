@@ -3652,37 +3652,6 @@ func moreQueryResultWrapper(res *MoreJobsResult, err error) moreQueryResult {
 	}
 }
 
-func (jd *Handle) getMaxIDForDs(ds dataSetT) int64 {
-	var maxID sql.NullInt64
-	sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %s`, ds.JobTable)
-	row := jd.dbHandle.QueryRow(sqlStatement)
-	err := row.Scan(&maxID)
-	if err != nil {
-		panic(fmt.Errorf("query for max job_id: %q", err))
-	}
-
-	if maxID.Valid {
-		return maxID.Int64
-	}
-	return 0
-}
-
-func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
-	if !jd.dsListLock.RTryLockWithCtx(ctx) {
-		panic(fmt.Errorf("could not acquire a dslist lock: %w", ctx.Err()))
-	}
-	dsList := jd.getDSList()
-	jd.dsListLock.RUnlock()
-	maxID := jd.getMaxIDForDs(dsList[len(dsList)-1])
-	var job JobT
-	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s WHERE %[1]s.job_id = %[2]d`, dsList[len(dsList)-1].JobTable, maxID)
-	err := jd.getDB(ctx).QueryRow(sqlStatement).Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal, &job.EventPayload, &job.CreatedAt, &job.ExpireAt)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		jd.assertError(err)
-	}
-	return &job
-}
-
 func (jd *Handle) withDistributedLock(ctx context.Context, tx *Tx, operation string, f func() error) error {
 	advisoryLock := jd.getAdvisoryLockForOperation(operation)
 	_, err := tx.ExecContext(ctx, fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, advisoryLock))

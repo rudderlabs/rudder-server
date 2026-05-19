@@ -497,8 +497,9 @@ func (gw *Handle) dbWriterWorkerProcess() {
 				err := gw.jobsDB.StoreInTx(ctx, tx, lo.Flatten(jobBatches))
 				if err != nil {
 					if !errors.Is(err, jobsdb.ErrStaleDsList) {
-						gw.logger.Errorn("Store into gateway db failed with error", obskit.Error(err))
-						gw.logger.Errorn("JobList", logger.NewIntField("jobBatchesCount", int64(len(jobBatches))))
+						gw.logger.Errorn("Store into gateway db failed with error",
+							logger.NewIntField("jobBatchesCount", int64(len(jobBatches))),
+							obskit.Error(err))
 					}
 					return err
 				}
