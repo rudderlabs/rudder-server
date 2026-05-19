@@ -41,6 +41,11 @@ func TestPartitionExpr(t *testing.T) {
 			expectedPartitionExpr: "toStartOfMonth(received_at)",
 		},
 		{
+			name:                  "explicit quarter",
+			partitionType:         "quarter",
+			expectedPartitionExpr: "toStartOfQuarter(received_at)",
+		},
+		{
 			name:                  "invalid value",
 			partitionType:         "invalid",
 			expectedPartitionExpr: "",

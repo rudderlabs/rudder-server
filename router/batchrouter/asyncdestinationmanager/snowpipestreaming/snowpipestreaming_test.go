@@ -1198,6 +1198,171 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}).LastValue())
 	})
 
+	t.Run("Upload with duplicate ids due to offset with bulk status enabled", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		conf := config.New()
+		conf.Set("SnowpipeStreaming.bulkStatusEnabled", true)
+
+		sm := New(conf, logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.channelCache.Store("USERS", usersChannelResponse)
+		sm.channelCache.Store("PRODUCTS", productsChannelResponse)
+
+		sm.api = &mockAPI{
+			insertOutputMap: map[string]func() (*model.InsertResponse, error){
+				"test-users-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-products-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel,test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true, Offset: "1002"},
+						},
+					}, nil
+				},
+			},
+		}
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    "testdata/successful_sort_records.txt",
+		})
+		require.Equal(t, []int64{1002, 1003, 1001, 1004}, output.ImportingJobIDs)
+		require.Equal(t, 4, output.ImportingCount)
+		require.JSONEq(t, `{"importId":[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}],"importCount":4}`, string(output.ImportingParameters))
+		require.Nil(t, output.FailedJobIDs)
+		require.Zero(t, output.FailedCount)
+		require.Equal(t, "test-destination", output.DestinationID)
+		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "importing",
+		}).LastValue())
+		require.Zero(t, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+		require.EqualValues(t, 0, statsStore.Get("snowpipe_streaming_duplicate_events", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"reason":        "batch",
+		}).LastValue())
+		require.EqualValues(t, 1, statsStore.Get("snowpipe_streaming_duplicate_events", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"reason":        "offset",
+		}).LastValue())
+	})
+
+	t.Run("Upload with duplicate ids due to offset with bulk status enabled but failed to get bulk status for all channels", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		conf := config.New()
+		conf.Set("SnowpipeStreaming.bulkStatusEnabled", true)
+
+		sm := New(conf, logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.channelCache.Store("USERS", usersChannelResponse)
+		sm.channelCache.Store("PRODUCTS", productsChannelResponse)
+
+		sm.api = &mockAPI{
+			insertOutputMap: map[string]func() (*model.InsertResponse, error){
+				"test-users-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-products-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel,test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel", "test-products-channel"},
+						Statuses: map[string]*model.StatusResponse{},
+					}, nil
+				},
+				"test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-users-channel": {Valid: true, Success: true, Offset: "1002"},
+						},
+					}, nil
+				},
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true, Offset: "1002"},
+						},
+					}, nil
+				},
+			},
+		}
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    "testdata/successful_sort_records.txt",
+		})
+		require.Equal(t, []int64{1002, 1003, 1001, 1004}, output.ImportingJobIDs)
+		require.Equal(t, 4, output.ImportingCount)
+		require.JSONEq(t, `{"importId":[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}],"importCount":4}`, string(output.ImportingParameters))
+		require.Nil(t, output.FailedJobIDs)
+		require.Zero(t, output.FailedCount)
+		require.Equal(t, "test-destination", output.DestinationID)
+		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "importing",
+		}).LastValue())
+		require.Zero(t, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+		require.EqualValues(t, 0, statsStore.Get("snowpipe_streaming_duplicate_events", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"reason":        "batch",
+		}).LastValue())
+		require.EqualValues(t, 1, statsStore.Get("snowpipe_streaming_duplicate_events", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"reason":        "offset",
+		}).LastValue())
+	})
+
 	t.Run("Upload success but with a 404 error in the first call to insert", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
