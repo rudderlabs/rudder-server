@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.75.2](https://github.com/rudderlabs/rudder-server/compare/v1.75.1...v1.75.2) (2026-05-19)
+
+
+### Bug Fixes
+
+* clickhouse quarter partition type ([#6965](https://github.com/rudderlabs/rudder-server/issues/6965)) ([e4ebe9c](https://github.com/rudderlabs/rudder-server/commit/e4ebe9c49cc611bfeb076183d673675f1c101e21))
+* snowpipe streaming bulk status offset ([#6966](https://github.com/rudderlabs/rudder-server/issues/6966)) ([1f2a141](https://github.com/rudderlabs/rudder-server/commit/1f2a141256db05dd53fddf6214d520d7325454fe))
+
 ## [1.75.1](https://github.com/rudderlabs/rudder-server/compare/v1.75.0...v1.75.1) (2026-05-15)
 
 

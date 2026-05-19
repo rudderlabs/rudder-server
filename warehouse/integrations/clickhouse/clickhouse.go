@@ -888,6 +888,8 @@ func (ch *Clickhouse) partitionExpr() (string, error) {
 		return fmt.Sprintf(`toStartOfWeek(%s)`, partitionField), nil
 	case "month":
 		return fmt.Sprintf(`toStartOfMonth(%s)`, partitionField), nil
+	case "quarter":
+		return fmt.Sprintf(`toStartOfQuarter(%s)`, partitionField), nil
 	default:
 		ch.logger.Warnn("CH: Invalid partition type for clickhouse destination",
 			logger.NewStringField("partitionType", partitionType),
