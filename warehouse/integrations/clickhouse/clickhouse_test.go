@@ -137,6 +137,21 @@ func TestIntegration(t *testing.T) {
 					require.Equal(t, "toStartOfMonth(received_at)", rows[0][0])
 				},
 			},
+			{
+				name: "Partition Type: quarter",
+				configOverride: map[string]any{
+					"partitionType": "quarter",
+				},
+				verifyPartition: func(t *testing.T, db *sql.DB) {
+					t.Helper()
+					rows := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(
+						`SELECT partition_key FROM system.tables WHERE database = '%s' AND name = 'identifies';`, database,
+					))
+					require.Len(t, rows, 1)
+					require.Len(t, rows[0], 1)
+					require.Equal(t, "toStartOfQuarter(received_at)", rows[0][0])
+				},
+			},
 		}
 
 		for _, tc := range testCases {
