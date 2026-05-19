@@ -243,22 +243,22 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 		abortReason   string
 	)
 
-	// Get channel IDs from cache to avoid duplicate requests.
-	channelCacheIDs := lo.FilterMap(uploadInfos, func(info *uploadInfo, _ int) (string, bool) {
-		response, ok := m.channelCache.Load(info.tableName)
-		if !ok {
-			return "", false
-		}
-		return response.(*model.ChannelResponse).ChannelID, true
-	})
-
 	// Pre-fetch channel statuses for all channels to avoid duplicate requests.
 	var channelStatuses map[string]*model.StatusResponse
 	if m.config.bulkStatusEnabled.Load() {
+		// Get channel IDs from cache to avoid duplicate requests.
+		channelCacheIDs := lo.FilterMap(uploadInfos, func(info *uploadInfo, _ int) (string, bool) {
+			response, ok := m.channelCache.Load(info.tableName)
+			if !ok {
+				return "", false
+			}
+			return response.(*model.ChannelResponse).ChannelID, true
+		})
+
 		channelStatuses, _, err = m.getBulkStatus(ctx, channelCacheIDs)
 		if err != nil {
 			m.logger.Warnn("Failed to get bulk status", obskit.Error(err))
-			return m.abortJobs(asyncDest, fmt.Errorf("failed to get bulk status: %w", err).Error())
+			return m.failedJobs(asyncDest, fmt.Errorf("failed to get bulk status: %w", err).Error())
 		}
 	}
 
@@ -530,23 +530,11 @@ func (m *Manager) checkForDuplicatesDueToOffset(
 
 	if m.config.bulkStatusEnabled.Load() {
 		var ok bool
+
 		statusRes, ok = channelStatuses[channelID]
 		if !ok {
 			// If channel status is not found in the cache, we need to get it from the Snowpipe.
-			bulkStatusRes, notFound, err := m.getBulkStatus(ctx, []string{channelID})
-			if err != nil {
-				m.logger.Warnn("Failed to get bulk status for channel", logger.NewStringField("channelID", channelID), obskit.Error(err))
-				return duplicateCount
-			}
-			if len(notFound) > 0 {
-				m.logger.Warnn("Channel not found in bulk status response for channel", logger.NewStringField("channelID", channelID), logger.NewStringField("notFound", strings.Join(notFound, ", ")))
-				return duplicateCount
-			}
-			statusRes, ok = bulkStatusRes[channelID]
-			if !ok {
-				m.logger.Warnn("Channel status not found in bulk status response for channel", logger.NewStringField("channelID", channelID))
-				return duplicateCount
-			}
+			statusRes, err = m.getBulkStatusForChannel(ctx, channelID)
 		}
 	} else {
 		statusRes, err = m.api.GetStatus(ctx, channelID)
@@ -945,6 +933,21 @@ func isInProgress(statusRes *model.StatusResponse, info *importInfo, log logger.
 	log.Warnn("Unexpected polling state encountered")
 	return false, fmt.Errorf("unexpected polling state encountered, latestCommittedOffset=%d, latestInsertedOffset=%d, expectedOffset=%d",
 		latestCommittedOffset, latestInsertedOffset, expectedOffset)
+}
+
+func (m *Manager) getBulkStatusForChannel(ctx context.Context, channelID string) (*model.StatusResponse, error) {
+	statuses, notFound, err := m.getBulkStatus(ctx, []string{channelID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get bulk status for channel: %w", err)
+	}
+	if len(notFound) > 0 {
+		return nil, fmt.Errorf("channel not found in bulk status response for channel: %s", channelID)
+	}
+	statusRes, ok := statuses[channelID]
+	if !ok {
+		return nil, fmt.Errorf("channel status not found in bulk status response for channel: %s", channelID)
+	}
+	return statusRes, nil
 }
 
 func (m *Manager) getBulkStatus(ctx context.Context, channelIDs []string) (map[string]*model.StatusResponse, []string, error) {
