@@ -2,11 +2,13 @@ package jobsdb
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
@@ -711,7 +713,7 @@ func TestMigrationMaxDSSizeGuard(t *testing.T) {
 		dsList := jd.getDSListSnapshot()
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxMigrateDSProbe", len(dsList))
 
-		result, err := jd.getMigrationList(dsList, nil)
+		result, err := jd.getMigrationList(dsList, nil, jd.maintenanceDB())
 		require.NoError(t, err)
 		require.Len(t, result.migrateFrom, 3)
 		require.Equal(t, 9, result.pendingJobsCount)
@@ -732,7 +734,7 @@ func TestMigrationMaxDSSizeGuard(t *testing.T) {
 		dsList := jd.getDSListSnapshot()
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxMigrateDSProbe", len(dsList))
 
-		result, err := jd.getMigrationList(dsList, nil)
+		result, err := jd.getMigrationList(dsList, nil, jd.maintenanceDB())
 		require.NoError(t, err)
 		require.Empty(t, result.migrateFrom)
 	})
@@ -794,7 +796,7 @@ func TestMigrationSkipsDatasets(t *testing.T) {
 
 		// Measure first getMigrationList call (full scan, no skip)
 		checkStart := time.Now()
-		checkResult, err := jobDB.getMigrationList(dsList, nil)
+		checkResult, err := jobDB.getMigrationList(dsList, nil, jobDB.maintenanceDB())
 		checkDuration := time.Since(checkStart)
 		require.NoError(t, err)
 		require.NotEmpty(t, checkResult.migrateFrom, "should find eligible datasets")
@@ -802,7 +804,7 @@ func TestMigrationSkipsDatasets(t *testing.T) {
 
 		// Measure second getMigrationList call (with skipBefore from first call)
 		lockCheckStart := time.Now()
-		lockResult, err := jobDB.getMigrationList(dsList, checkResult.firstEligible)
+		lockResult, err := jobDB.getMigrationList(dsList, checkResult.firstEligible, jobDB.maintenanceDB())
 		lockCheckDuration := time.Since(lockCheckStart)
 		require.NoError(t, err)
 		require.NotEmpty(t, lockResult.migrateFrom)
@@ -830,7 +832,7 @@ func TestMigrationSkipsDatasets(t *testing.T) {
 
 		// 1st iteration: probes datasets 1..100, finds nothing, hits probe limit.
 		// Should store lastMigrateProbeIndex for resumption.
-		result1, err := jobDB.getMigrationList(dsList, jobDB.lastMigrateProbeIndex)
+		result1, err := jobDB.getMigrationList(dsList, jobDB.lastMigrateProbeIndex, jobDB.maintenanceDB())
 		require.NoError(t, err)
 		require.Empty(t, result1.migrateFrom, "should not find eligible datasets in first 100")
 		require.True(t, result1.probeLimitReached, "should hit probe limit")
@@ -841,7 +843,7 @@ func TestMigrationSkipsDatasets(t *testing.T) {
 
 		// 2nd iteration: resumes from where the first left off, finds the eligible dataset.
 		resumeStart := time.Now()
-		result2, err := jobDB.getMigrationList(dsList, jobDB.lastMigrateProbeIndex)
+		result2, err := jobDB.getMigrationList(dsList, jobDB.lastMigrateProbeIndex, jobDB.maintenanceDB())
 		resumeDuration := time.Since(resumeStart)
 		require.NoError(t, err)
 		require.NotEmpty(t, result2.migrateFrom, "should find eligible datasets in second iteration")
@@ -850,7 +852,7 @@ func TestMigrationSkipsDatasets(t *testing.T) {
 		// Compare with a full scan from scratch
 		c.Set("JobsDB."+tablePrefix+"."+"maxMigrateDSProbe", totalDS)
 		fullStart := time.Now()
-		resultFull, err := jobDB.getMigrationList(dsList, nil)
+		resultFull, err := jobDB.getMigrationList(dsList, nil, jobDB.maintenanceDB())
 		fullDuration := time.Since(fullStart)
 		require.NoError(t, err)
 		require.NotEmpty(t, resultFull.migrateFrom)
@@ -918,8 +920,9 @@ func TestMigrationNonBlockingCompletedDSDrop(t *testing.T) {
 		return exists
 	}
 
-	t.Run("flag off (default): completed DS dropped in legacy in-tx path", func(t *testing.T) {
-		jd, _ := newJobDB(t)
+	t.Run("flag off: completed DS dropped in legacy in-tx path", func(t *testing.T) {
+		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", false)
 		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
 		fillDS(t, jd, jobs, 0) // DS_1 → all 10 succeeded (completed)
 		createDS(t, jd, "2")   // DS_2 → empty last (exempt from migration)
@@ -940,6 +943,7 @@ func TestMigrationNonBlockingCompletedDSDrop(t *testing.T) {
 
 	t.Run("flag on: completed DS routed to async drop list", func(t *testing.T) {
 		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", false)
 		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompletedDSDrop", true)
 
 		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
@@ -981,7 +985,7 @@ func TestMigrationNonBlockingCompletedDSDrop(t *testing.T) {
 
 	t.Run("flag on: DS with pending jobs still migrated through the legacy TX", func(t *testing.T) {
 		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompletedDSDrop", true)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", false)
 		// maxDSRetention=1ms makes DSes with old terminal jobs eligible without the needsPair logic,
 		// so a DS with pending jobs can be migrated alone.
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
@@ -1007,6 +1011,7 @@ func TestMigrationNonBlockingCompletedDSDrop(t *testing.T) {
 
 	t.Run("flag on: mixed - completed goes async, pending uses legacy TX", func(t *testing.T) {
 		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", false)
 		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompletedDSDrop", true)
 		// maxDSRetention=1ms lets both DSes appear together in migrateFrom in a single call.
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
@@ -1041,6 +1046,8 @@ func TestMigrationNonBlockingCompletedDSDrop(t *testing.T) {
 
 	t.Run("flag toggled at runtime: takes effect on the next migration", func(t *testing.T) {
 		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", false)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompletedDSDrop", false)
 
 		allJobs := genJobs(defaultWorkspaceID, "test", 20, 1)
 		fillDS(t, jd, allJobs[:10], 0) // DS_1 completed
@@ -1075,5 +1082,461 @@ func TestMigrationNonBlockingCompletedDSDrop(t *testing.T) {
 		require.Equal(t, completed2.Index, jd.dropDSList[0].ds.Index)
 		jd.dropDSListLock.RUnlock()
 		require.True(t, tableExists(t, jd, completed2), "physical drop blocked by held reader")
+	})
+}
+
+func TestNonBlockingCompaction(t *testing.T) {
+	_ = startPostgres(t)
+
+	// newJobDB mirrors the pattern used by TestMigrationNonBlockingCompletedDSDrop:
+	// the migrate and addNewDS loop triggers are wired to never-firing channels so
+	// the tests drive state changes synchronously.
+	newJobDB := func(t *testing.T) (*Handle, *config.Config) {
+		t.Helper()
+		c := config.New()
+		c.Set("JobsDB.maxDSSize", 100000)
+		jd := &Handle{
+			TriggerAddNewDS:  func() <-chan time.Time { return make(chan time.Time) },
+			TriggerMigrateDS: func() <-chan time.Time { return make(chan time.Time) },
+			config:           c,
+		}
+		require.NoError(t, jd.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
+		t.Cleanup(jd.TearDown)
+		return jd, c
+	}
+
+	createDS := func(t *testing.T, jd *Handle, idx string) {
+		t.Helper()
+		require.NoError(t, jd.dsListLock.WithLockInCtx(context.Background(), func(l lock.LockToken) error {
+			dsList, _ := jd.dsList.snapshot()
+			if err := jd.WithTx(context.Background(), func(txn *tx.Tx) error {
+				return jd.addNewDSInTx(context.Background(), txn, l, dsList, newDataSet(jd.tablePrefix, idx))
+			}); err != nil {
+				return err
+			}
+			return jd.doRefreshDSRangeList(l)
+		}))
+	}
+
+	fillDS := func(t *testing.T, jd *Handle, jobs []*JobT, pending int) {
+		t.Helper()
+		require.NoError(t, jd.Store(context.Background(), jobs))
+		if terminal := len(jobs) - pending; terminal > 0 {
+			require.NoError(t, jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[:terminal], "executing")))
+			require.NoError(t, jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[:terminal], "succeeded")))
+		}
+	}
+
+	tableExists := func(t *testing.T, jd *Handle, ds dataSetT) bool {
+		t.Helper()
+		var exists bool
+		require.NoError(t, jd.dbHandle.QueryRow(`SELECT to_regclass($1) IS NOT NULL`, ds.JobTable).Scan(&exists))
+		return exists
+	}
+
+	hasReadonlyTrigger := func(t *testing.T, jd *Handle, ds dataSetT) bool {
+		t.Helper()
+		var present bool
+		// Trigger name is created via an unquoted identifier so PostgreSQL
+		// folds it to lower case in pg_trigger.tgname.
+		require.NoError(t, jd.dbHandle.QueryRow(
+			`SELECT EXISTS (
+				SELECT 1 FROM pg_trigger t
+				JOIN pg_class c ON c.oid = t.tgrelid
+				WHERE c.relname = $1 AND lower(t.tgname) = 'readonlytabletrg'
+			)`, ds.JobStatusTable).Scan(&present))
+		return present
+	}
+
+	tableMarkedPreDrop := func(t *testing.T, jd *Handle, table string) bool {
+		t.Helper()
+		var marker sql.NullString
+		require.NoError(t, jd.dbHandle.QueryRow(
+			`SELECT obj_description(c.oid, 'pg_class')
+			FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE c.relname = $1 AND n.nspname NOT IN ('pg_catalog','information_schema')`,
+			table).Scan(&marker))
+		return marker.Valid && strings.HasPrefix(marker.String, "rudder:pre_drop:")
+	}
+
+	t.Run("flag off: legacy in-tx drop path is used", func(t *testing.T) {
+		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", false)
+		// maxDSRetention=1ms makes a DS with old terminal jobs eligible immediately.
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
+
+		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
+		fillDS(t, jd, jobs, 5) // DS_1: 5 succeeded, 5 pending
+		createDS(t, jd, "2")   // empty last DS
+
+		snapshot := jd.getDSListSnapshot()
+		require.Len(t, snapshot, 2)
+		sourceDS := snapshot[0]
+
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+
+		require.False(t, tableExists(t, jd, sourceDS), "legacy flow drops source in-TX")
+		jd.dropDSListLock.RLock()
+		require.Empty(t, jd.dropDSList, "legacy flow must not enqueue async drops")
+		jd.dropDSListLock.RUnlock()
+	})
+
+	t.Run("flag on: source goes through async drop with pre-drop marker and readonly trigger", func(t *testing.T) {
+		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
+
+		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
+		fillDS(t, jd, jobs, 5) // DS_1: 5 succeeded + 5 pending → copied to dest
+		createDS(t, jd, "2")   // DS_2 empty last DS
+
+		snapshot := jd.getDSListSnapshot()
+		require.Len(t, snapshot, 2)
+		sourceDS := snapshot[0]
+
+		// Hold a reader against the current dsList version so dropDSLoop blocks on the
+		// drain wait — lets us observe the async enqueue, marker, and trigger before
+		// dropDSLoop physically drops.
+		_, _, release, err := jd.acquireDSListForRead(context.Background())
+		require.NoError(t, err)
+
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+
+		// Source must be hidden from the published list and replaced with a dest.
+		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
+		require.NotContains(t, listIndices, sourceDS.Index, "source DS hidden from new readers")
+		require.Contains(t, listIndices, "1_1", "destination DS published")
+
+		// Source still physically exists (drop is blocked by held reader).
+		require.True(t, tableExists(t, jd, sourceDS), "physical drop must block until held reader releases")
+		require.True(t, hasReadonlyTrigger(t, jd, sourceDS), "readonly trigger must be planted on the source status table")
+		require.True(t, tableMarkedPreDrop(t, jd, sourceDS.JobTable), "source job table must carry pre-drop marker")
+		require.True(t, tableMarkedPreDrop(t, jd, sourceDS.JobStatusTable), "source status table must carry pre-drop marker")
+
+		jd.dropDSListLock.RLock()
+		require.Len(t, jd.dropDSList, 1, "source DS must be enqueued for async drop")
+		require.Equal(t, sourceDS.Index, jd.dropDSList[0].ds.Index)
+		jd.dropDSListLock.RUnlock()
+
+		// Pending jobs must have been copied to the dest.
+		var destJobs int64
+		require.NoError(t, jd.dbHandle.QueryRow(
+			fmt.Sprintf(`SELECT COUNT(*) FROM %q`, jd.tablePrefix+"_jobs_1_1"),
+		).Scan(&destJobs))
+		require.EqualValues(t, 5, destJobs, "non-terminal jobs must be copied to dest")
+
+		release()
+		require.Eventually(t, func() bool {
+			jd.dropDSListLock.RLock()
+			pending := len(jd.dropDSList)
+			jd.dropDSListLock.RUnlock()
+			return !tableExists(t, jd, sourceDS) && pending == 0
+		}, 5*time.Second, 50*time.Millisecond, "source table must be physically dropped once the reader releases")
+	})
+
+	t.Run("flag on: zero-copy compaction drops empty dest but still async-drops source", func(t *testing.T) {
+		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
+
+		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
+		fillDS(t, jd, jobs, 5) // DS_1: 5 succeeded + 5 pending at optimistic check time
+		createDS(t, jd, "2")   // DS_2 empty last DS
+
+		snapshot := jd.getDSListSnapshot()
+		require.Len(t, snapshot, 2)
+		sourceDS := snapshot[0]
+		destinationDS := newDataSet(jd.tablePrefix, "1_1")
+
+		// Hold a reader so the source's async physical drop blocks long enough
+		// for this test to inspect the pre-drop marker and dropDSList entry.
+		_, _, releaseReader, err := jd.acquireDSListForRead(context.Background())
+		require.NoError(t, err)
+		readerReleased := false
+		defer func() {
+			if !readerReleased {
+				releaseReader()
+			}
+		}()
+
+		// Block compaction after getMigrationList's optimistic pending-count
+		// decision but before the TX copies jobs. doCompactDS takes this shared
+		// advisory lock only after computing migrationList.
+		blocker, err := jd.dbHandle.BeginTx(context.Background(), nil)
+		require.NoError(t, err)
+		defer func() { _ = blocker.Rollback() }()
+		_, err = blocker.ExecContext(
+			context.Background(),
+			`SELECT pg_advisory_xact_lock($1)`,
+			jd.getAdvisoryLockForOperation("schema_migrate"),
+		)
+		require.NoError(t, err)
+
+		done := make(chan error, 1)
+		go func() {
+			done <- jd.doMigrateDS(context.Background())
+		}()
+
+		require.Eventually(t, func() bool {
+			select {
+			case err := <-done:
+				require.NoError(t, err)
+				require.FailNow(t, "migration finished before waiting on schema_migrate advisory lock")
+			default:
+			}
+			var waiting bool
+			require.NoError(t, jd.dbHandle.QueryRow(
+				`SELECT EXISTS (
+						SELECT 1 FROM pg_locks
+						WHERE locktype = 'advisory'
+							AND granted = false
+					)`,
+			).Scan(&waiting))
+			return waiting
+		}, 5*time.Second, 50*time.Millisecond, "migration should block on schema_migrate advisory lock")
+
+		// The optimistic check saw these as pending; before copy time they all
+		// become terminal, so migrateJobsInTx copies zero rows.
+		require.NoError(t, jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[5:10], "succeeded")))
+
+		require.NoError(t, blocker.Commit())
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "migration did not finish after releasing schema_migrate advisory lock")
+		}
+
+		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
+		require.NotContains(t, listIndices, sourceDS.Index, "source DS hidden from new readers")
+		require.NotContains(t, listIndices, destinationDS.Index, "zero-copy destination must not be published")
+		require.False(t, tableExists(t, jd, destinationDS), "zero-copy destination must be dropped in the compaction TX")
+		require.True(t, tableExists(t, jd, sourceDS), "source physical drop must block until held reader releases")
+		require.True(t, tableMarkedPreDrop(t, jd, sourceDS.JobTable), "source job table must carry pre-drop marker")
+		require.True(t, tableMarkedPreDrop(t, jd, sourceDS.JobStatusTable), "source status table must carry pre-drop marker")
+
+		jd.dropDSListLock.RLock()
+		require.Len(t, jd.dropDSList, 1, "source DS must still be enqueued for async drop")
+		require.Equal(t, sourceDS.Index, jd.dropDSList[0].ds.Index)
+		jd.dropDSListLock.RUnlock()
+
+		releaseReader()
+		readerReleased = true
+		require.Eventually(t, func() bool {
+			jd.dropDSListLock.RLock()
+			pending := len(jd.dropDSList)
+			jd.dropDSListLock.RUnlock()
+			return !tableExists(t, jd, sourceDS) && pending == 0
+		}, 5*time.Second, 50*time.Millisecond, "source table must be physically dropped once the reader releases")
+	})
+
+	t.Run("flag on: dsRangeList reflects dest's exact min/max", func(t *testing.T) {
+		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
+
+		// Store 20 jobs but mark the first 10 as terminal. Only the last 10
+		// non-terminal jobs (ids 11..20) should land in dest, so the dest's
+		// minJobID must be 11 — verifying we use the actual copied min/max
+		// rather than the original source range.
+		jobs := genJobs(defaultWorkspaceID, "test", 20, 1)
+		fillDS(t, jd, jobs, 10) // 10 succeeded (ids 1..10), 10 pending (ids 11..20)
+		createDS(t, jd, "2")    // empty last DS
+
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+
+		_, ranges, release, err := jd.acquireDSListForRead(context.Background())
+		require.NoError(t, err)
+		defer release()
+
+		var destRange *dataSetRangeT
+		for i := range ranges {
+			if ranges[i].ds.Index == "1_1" {
+				destRange = &ranges[i]
+				break
+			}
+		}
+		require.NotNil(t, destRange, "expected a range entry for dest 1_1")
+		require.EqualValues(t, 11, destRange.minJobID, "dest min must reflect first non-terminal job_id")
+		require.EqualValues(t, 20, destRange.maxJobID, "dest max must reflect last copied job_id")
+	})
+
+	t.Run("flag on: published swap preserves non-migrated DSes in the current list", func(t *testing.T) {
+		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
+		// Disable needsPair so DS_2 (non-terminal only) is NOT eligible for migration.
+		// We need DS_2 non-empty so checkIfMigrateDS's created_at scan doesn't trip on NULL.
+		c.Set("JobsDB."+jd.tablePrefix+"."+"jobMinRowsLeftMigrateThreshold", 0.0)
+
+		jobs := genJobs(defaultWorkspaceID, "test", 30, 1)
+		fillDS(t, jd, jobs[:10], 5) // DS_1: 5 succeeded + 5 pending — eligible via retentionExpired
+		createDS(t, jd, "2")
+		fillDS(t, jd, jobs[10:20], 10) // DS_2: 10 non-terminal — ineligible with threshold=0
+		createDS(t, jd, "3")           // empty last DS (exempt via idxCheck)
+
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+
+		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
+		// Source DS_1 was compacted into DS_1_1. DS_2 and DS_3 were not in migrateFrom
+		// and must survive the rebased swap.
+		require.Contains(t, listIndices, "1_1", "dest must be published")
+		require.NotContains(t, listIndices, "1", "source DS_1 must be hidden from the published list")
+		require.Contains(t, listIndices, "2", "non-migrated DS_2 must be preserved")
+		require.Contains(t, listIndices, "3", "non-migrated DS_3 must be preserved")
+	})
+
+	t.Run("flag on: completed-only sources skip the compaction TX and go straight to async drop", func(t *testing.T) {
+		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
+		// No maxDSRetention needed: a DS with all-terminal jobs is naturally eligible.
+
+		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
+		fillDS(t, jd, jobs, 0) // DS_1 fully completed
+		createDS(t, jd, "2")   // empty last DS
+
+		snapshot := jd.getDSListSnapshot()
+		require.Len(t, snapshot, 2)
+		completedDS := snapshot[0]
+
+		// Hold a reader to observe the async enqueue before dropDSLoop drains it.
+		_, _, release, err := jd.acquireDSListForRead(context.Background())
+		require.NoError(t, err)
+
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+
+		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
+		require.NotContains(t, listIndices, completedDS.Index, "completed source hidden from list")
+		require.NotContains(t, listIndices, "1_1", "no destination DS should be created when all sources are completed")
+		jd.dropDSListLock.RLock()
+		require.Len(t, jd.dropDSList, 1)
+		require.Equal(t, completedDS.Index, jd.dropDSList[0].ds.Index)
+		jd.dropDSListLock.RUnlock()
+		require.True(t, tableExists(t, jd, completedDS), "drop blocked by held reader")
+
+		release()
+		require.Eventually(t, func() bool {
+			jd.dropDSListLock.RLock()
+			pending := len(jd.dropDSList)
+			jd.dropDSListLock.RUnlock()
+			return !tableExists(t, jd, completedDS) && pending == 0
+		}, 5*time.Second, 50*time.Millisecond)
+	})
+
+	t.Run("flag on: source status table rejects post-commit inserts with RS001", func(t *testing.T) {
+		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
+
+		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
+		fillDS(t, jd, jobs, 5)
+		createDS(t, jd, "2")
+		snapshot := jd.getDSListSnapshot()
+		sourceDS := snapshot[0]
+
+		// Hold a reader so the async drop blocks — the source status table must
+		// remain around (with its planted trigger) so we can probe it directly.
+		_, _, release, err := jd.acquireDSListForRead(context.Background())
+		require.NoError(t, err)
+		defer release()
+
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+
+		// Direct INSERT into the (compacted-away) source status table must trip the
+		// readonly trigger and raise RS001 — proof the trigger fences late writers.
+		_, err = jd.dbHandle.Exec(fmt.Sprintf(
+			`INSERT INTO %q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters)
+			VALUES (1, 'executing', 0, NOW(), NOW(), '', '{}', '{}')`,
+			sourceDS.JobStatusTable))
+		require.Error(t, err, "insert on a compacted source status table must be rejected")
+		var pqErr *pq.Error
+		require.ErrorAs(t, err, &pqErr)
+		require.Equal(t, pgErrorCodeTableReadonly, string(pqErr.Code))
+
+		// Also assert that the regular UpdateJobStatus path (now using the refreshed
+		// dsRangeList) routes status updates to the dest — verifying end-to-end
+		// correctness for the non-blocking flow.
+		require.NoError(t,
+			jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[5:10], "executing")),
+		)
+		var destStatusCount int64
+		require.NoError(t, jd.dbHandle.QueryRow(
+			fmt.Sprintf(`SELECT COUNT(*) FROM %q WHERE job_state = 'executing'`, jd.tablePrefix+"_job_status_1_1"),
+		).Scan(&destStatusCount))
+		require.EqualValues(t, 5, destStatusCount, "status updates must land in dest after compaction")
+	})
+
+	t.Run("flag on: pre-drop marker survives a crash and cleanupPreDropTables drops the source on next startup", func(t *testing.T) {
+		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
+
+		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
+		fillDS(t, jd, jobs, 5)
+		createDS(t, jd, "2")
+		snapshot := jd.getDSListSnapshot()
+		sourceDS := snapshot[0]
+
+		// Hold a reader so the async drop cannot run — emulates "process crashed
+		// before dropDSLoop got to it." The pre_drop marker is now on disk.
+		_, _, release, err := jd.acquireDSListForRead(context.Background())
+		require.NoError(t, err)
+
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.True(t, tableExists(t, jd, sourceDS), "drop blocked by held reader (simulates crash before drop)")
+		require.True(t, tableMarkedPreDrop(t, jd, sourceDS.JobTable))
+
+		// Call cleanupPreDropTables directly — this is what Start invokes at startup.
+		release()
+		require.NoError(t, jd.cleanupPreDropTables(context.Background()))
+		require.False(t, tableExists(t, jd, sourceDS), "cleanupPreDropTables must drop the marked source table")
+	})
+
+	t.Run("flag toggled at runtime: takes effect on the next migration", func(t *testing.T) {
+		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", false)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
+		// Disable needsPair so the first migration's dest DS_1_1 isn't pulled back
+		// into the second iteration's migrateFrom (only the freshly-filled DS_2 is).
+		c.Set("JobsDB."+jd.tablePrefix+"."+"jobMinRowsLeftMigrateThreshold", 0.0)
+
+		// Use a single genJobs slice so the local JobID values match the DB-assigned
+		// IDs across both batches (the sequence continues from DS_1's max).
+		allJobs := genJobs(defaultWorkspaceID, "test", 20, 1)
+
+		// First migration with flag OFF → legacy in-TX drop.
+		fillDS(t, jd, allJobs[:10], 5)
+		createDS(t, jd, "2")
+		source1 := jd.getDSListSnapshot()[0]
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.False(t, tableExists(t, jd, source1), "first migration uses legacy in-TX drop")
+		jd.dropDSListLock.RLock()
+		require.Empty(t, jd.dropDSList)
+		jd.dropDSListLock.RUnlock()
+
+		// Flip flag ON; fill the (now last) DS_2 with another batch and add DS_3.
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
+		fillDS(t, jd, allJobs[10:20], 5)
+		createDS(t, jd, "3")
+		snapshot := jd.getDSListSnapshot()
+		var source2 dataSetT
+		for _, ds := range snapshot {
+			if ds.Index == "2" {
+				source2 = ds
+				break
+			}
+		}
+		require.NotEmpty(t, source2.Index)
+
+		_, _, release, err := jd.acquireDSListForRead(context.Background())
+		require.NoError(t, err)
+		defer release()
+
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+		jd.dropDSListLock.RLock()
+		require.NotEmpty(t, jd.dropDSList, "second migration must use the async drop path")
+		jd.dropDSListLock.RUnlock()
+		require.True(t, tableExists(t, jd, source2), "drop blocked by held reader")
+		require.True(t, hasReadonlyTrigger(t, jd, source2), "source must carry readonly trigger after non-blocking compaction")
 	})
 }

@@ -524,8 +524,9 @@ func (l dataSetTList) String() string {
 
 // dropDSEntry tracks a dataset to drop along with the dslist version that needs to be drained from readers before actually being able to drop the dataset
 type dropDSEntry struct {
-	ds      dataSetT // dataset to drop
-	version uint64   // the dslist version that needs to be drained from readers before dropping the dataset
+	ds        dataSetT // dataset to drop
+	compacted bool     // true if the dataset is compacted, false if completed
+	version   uint64   // the dslist version that needs to be drained from readers before dropping the dataset
 }
 
 type dataSetRangeT struct {
@@ -563,6 +564,7 @@ jobs. The caller must call the SetUp function on a Handle object
 type Handle struct {
 	dbHandle             *sql.DB
 	priorityPool         *sql.DB // dedicated connection pool for high-priority operations (e.g., partition migration)
+	maintenancePool      *sql.DB // dedicated connection pool for jobsdb-internal maintenance ops (compaction setup, refresh, vacuum), isolated from the main pool to avoid deadlock when main-pool waiters hold the dsListLock writer
 	sharedConnectionPool bool
 	ownerType            OwnerType
 	tablePrefix          string
@@ -661,6 +663,16 @@ type Handle struct {
 			// through the async dropDSLoop instead of the in-TX postMigrateHandleDS
 			// path, so the drop is migration-lock-free and does not block concurrent readers.
 			nonBlockingCompletedDSDrop config.ValueLoader[bool]
+			// nonBlockingCompaction gates the new compaction TX shape (EXCLUSIVE
+			// lock + readonly trigger on the source status table, async source drop).
+			// When disabled, falls back to the legacy doMigrateDS flow.
+			nonBlockingCompaction config.ValueLoader[bool]
+			// getJobsRetryOnCompaction gates the snapshot revalidation in getJobs:
+			// when set, getJobs detects that a queried dataset is no longer in the
+			// published list (e.g. a non-blocking compaction completed mid-read) and
+			// retries from scratch. Requires nonBlockingCompaction to also be set;
+			// has no effect on its own.
+			getJobsRetryOnCompaction config.ValueLoader[bool]
 		}
 		backup struct {
 			masterBackupEnabled config.ValueLoader[bool]
@@ -895,6 +907,21 @@ func WithPriorityPoolDB(pool *sql.DB) OptsFunc {
 	}
 }
 
+// WithMaintenancePoolDB sets a dedicated connection pool for jobsdb-internal
+// maintenance operations (compaction setup queries, post-commit dsList refresh,
+// status-table cleanup/vacuum). Isolating these from the main pool prevents a
+// deadlock vector where main-pool waiters are queued on the dsListLock writer
+// that compaction holds while it tries to grab a connection for
+// doRefreshDSRangeList.
+//
+// If no maintenance pool is provided, maintenance operations fall back to the
+// main dbHandle.
+func WithMaintenancePoolDB(pool *sql.DB) OptsFunc {
+	return func(jd *Handle) {
+		jd.maintenancePool = pool
+	}
+}
+
 // withDatabaseTablesVersion sets the database tables version to use (internal use only for verifying database table migrations)
 func withDatabaseTablesVersion(dbVersion int) OptsFunc {
 	return func(jd *Handle) {
@@ -1029,7 +1056,7 @@ func (jd *Handle) init() {
 					// doesn't return the full list of datasets, only the rightmost two.
 					// But we need to run the schema migration against all datasets, no matter
 					// whether jobsdb is a writer or not.
-					datasets, err := getDSList(jd, jd.dbHandle, jd.tablePrefix)
+					datasets, err := getDSList(jd, tx, jd.tablePrefix)
 					jd.assertError(err)
 
 					datasetIndices := make([]string, 0)
@@ -1058,7 +1085,7 @@ func (jd *Handle) init() {
 				jd.runAlwaysChangesets(templateData)
 
 				// finally refresh the dataset list to make sure [datasetList] field is populated
-				err := jd.doRefreshDSRangeList(l)
+				err := jd.doRefreshDSRangeListWithDB(l, jd.dbHandle)
 				jd.assertError(err)
 			})
 			return nil
@@ -1131,6 +1158,8 @@ func (jd *Handle) loadConfig() {
 	jd.conf.migration.vacuumFullStatusTableThreshold = jd.config.GetReloadableInt64Var(500*bytesize.MB, 1, jd.configKeys("vacuumFullStatusTableThreshold")...)
 	jd.conf.migration.vacuumAnalyzeStatusTableThreshold = jd.config.GetReloadableInt64Var(30000, 1, jd.configKeys("vacuumAnalyzeStatusTableThreshold")...)
 	jd.conf.migration.nonBlockingCompletedDSDrop = jd.config.GetReloadableBoolVar(false, jd.configKeys("nonBlockingCompletedDSDrop")...)
+	jd.conf.migration.nonBlockingCompaction = jd.config.GetReloadableBoolVar(false, jd.configKeys("nonBlockingCompaction")...)
+	jd.conf.migration.getJobsRetryOnCompaction = jd.config.GetReloadableBoolVar(true, jd.configKeys("getJobsRetryOnCompaction")...)
 
 	// masterBackupEnabled = true => all the jobsdb are eligible for backup
 	jd.conf.backup.masterBackupEnabled = jd.config.GetReloadableBoolVar(true, jd.configKeys("backup.enabled")...)
@@ -1397,7 +1426,7 @@ func (jd *Handle) addCompletedDSToDropList(ctx context.Context, l lock.LockToken
 		if _, ok := existing[ds.Index]; ok {
 			continue
 		}
-		jd.dropDSList = append(jd.dropDSList, dropDSEntry{ds: ds, version: version})
+		jd.dropDSList = append(jd.dropDSList, dropDSEntry{ds: ds, compacted: false, version: version})
 		existing[ds.Index] = struct{}{}
 		addedDSList = append(addedDSList, ds)
 	}
@@ -1434,7 +1463,7 @@ func (jd *Handle) dropNotifyPing() {
 }
 
 func (jd *Handle) doRefreshDSRangeList(l lock.LockToken) error {
-	return jd.doRefreshDSRangeListWithDB(l, jd.dbHandle)
+	return jd.doRefreshDSRangeListWithDB(l, jd.maintenanceDB())
 }
 
 // doRefreshDSRangeList first refreshes the DS list and then calculate the DS range list
@@ -1628,7 +1657,7 @@ func newDataSet(tablePrefix, dsIdx string) dataSetT {
 }
 
 func (jd *Handle) addNewDS(ctx context.Context, l lock.LockToken, ds dataSetT) {
-	err := jd.WithTx(ctx, func(tx *Tx) error {
+	err := jd.withMaintenanceTx(ctx, func(tx *Tx) error {
 		dsList, err := jd.doRefreshDSList(l, tx.Tx)
 		jd.assertError(err)
 		return jd.addNewDSInTx(ctx, tx, l, dsList, ds)
@@ -1666,7 +1695,7 @@ func (jd *Handle) addNewDSInTx(ctx context.Context, tx *Tx, l lock.LockToken, ds
 }
 
 func (jd *Handle) computeNewIdxForAppend(l lock.LockToken) string {
-	dList, err := jd.doRefreshDSList(l, jd.dbHandle)
+	dList, err := jd.doRefreshDSList(l, jd.maintenanceDB())
 	jd.assertError(err)
 	return jd.doComputeNewIdxForAppend(dList)
 }
@@ -1875,13 +1904,13 @@ func (jd *Handle) dropDS(ds dataSetT) error {
 }
 
 func (jd *Handle) dropDSWithCtx(ctx context.Context, ds dataSetT) error {
-	return jd.WithTx(ctx, func(tx *Tx) error {
+	return jd.withMaintenanceTx(ctx, func(tx *Tx) error {
 		return jd.dropDSInTx(tx, ds)
 	})
 }
 
 func (jd *Handle) markPreDropDS(ctx context.Context, dsList ...dataSetT) error {
-	return jd.WithTx(ctx, func(tx *Tx) error {
+	return jd.withMaintenanceTx(ctx, func(tx *Tx) error {
 		for _, ds := range dsList {
 			if err := jd.markPreDropDSInTx(ctx, tx, ds); err != nil {
 				return err
@@ -1902,7 +1931,7 @@ func (jd *Handle) markPreDropDSInTx(ctx context.Context, tx *Tx, ds dataSetT) er
 }
 
 func (jd *Handle) cleanupPreDropTables(ctx context.Context) error {
-	rows, err := jd.getDB(ctx).QueryContext(ctx, `SELECT c.relname
+	rows, err := jd.maintenanceDB().QueryContext(ctx, `SELECT c.relname
 									FROM pg_catalog.pg_class c
 									JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 									JOIN pg_catalog.pg_description d ON d.objoid = c.oid AND d.objsubid = 0
@@ -1937,6 +1966,7 @@ func (jd *Handle) cleanupPreDropTables(ctx context.Context) error {
 	if err = rows.Err(); err != nil {
 		return fmt.Errorf("iterate pre-drop tables: %w", err)
 	}
+	_ = rows.Close()
 
 	indices := lo.Keys(datasets)
 	sortDnumList(indices)
@@ -1946,7 +1976,7 @@ func (jd *Handle) cleanupPreDropTables(ctx context.Context) error {
 			logger.NewStringField("jobTable", ds.JobTable),
 			logger.NewStringField("jobStatusTable", ds.JobStatusTable),
 		)
-		if err = jd.WithTx(ctx, func(tx *Tx) error {
+		if err = jd.withMaintenanceTx(ctx, func(tx *Tx) error {
 			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobStatusTable)); err != nil {
 				return fmt.Errorf("drop %s: %w", ds.JobStatusTable, err)
 			}
@@ -1964,16 +1994,10 @@ func (jd *Handle) cleanupPreDropTables(ctx context.Context) error {
 // dropDS drops a dataset
 func (jd *Handle) dropDSInTx(tx *Tx, ds dataSetT) error {
 	var err error
-	if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)); err != nil {
+	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobStatusTable)); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)); err != nil {
-		return err
-	}
-	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q CASCADE`, ds.JobStatusTable)); err != nil {
-		return err
-	}
-	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q CASCADE`, ds.JobTable)); err != nil {
+	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobTable)); err != nil {
 		return err
 	}
 	jd.postDropDs(ds)
@@ -2055,7 +2079,7 @@ func (jd *Handle) dropDSLoop(ctx context.Context) error {
 func (jd *Handle) dropDSForRecovery(ds dataSetT) {
 	var sqlStatement string
 	var err error
-	tx, err := jd.dbHandle.Begin()
+	tx, err := jd.maintenanceDB().Begin()
 	jd.assertError(err)
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)
 	jd.prepareAndExecStmtInTxAllowMissing(tx, sqlStatement)
@@ -2088,14 +2112,19 @@ func (jd *Handle) dropAllDS(l lock.LockToken) error {
 	if err != nil {
 		return fmt.Errorf("getDSList: %w", err)
 	}
-	for _, ds := range dList {
-		if err = jd.dropDS(ds); err != nil {
-			return fmt.Errorf("dropDS: %w", err)
+	if err := jd.WithTx(context.Background(), func(tx *Tx) error {
+		for _, ds := range dList {
+			if err = jd.dropDSInTx(tx, ds); err != nil {
+				return fmt.Errorf("dropDS: %w", err)
+			}
 		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("withTx: %w", err)
 	}
 
 	// Update the lists
-	if err = jd.doRefreshDSRangeList(l); err != nil {
+	if err = jd.doRefreshDSRangeListWithDB(l, jd.dbHandle); err != nil {
 		return fmt.Errorf("refreshDSRangeList: %w", err)
 	}
 	return nil
@@ -2213,7 +2242,18 @@ func (jd *Handle) inUpdateSafeCtx(ctx context.Context, f func(dsList []dataSetT,
 }
 
 func (jd *Handle) WithTx(ctx context.Context, f func(tx *Tx) error) error {
-	sqltx, err := jd.getDB(ctx).BeginTx(ctx, nil)
+	return jd.withTxOnDB(ctx, jd.getDB(ctx), f)
+}
+
+// withMaintenanceTx runs f inside a transaction opened on the maintenance pool
+// (or dbHandle if no maintenance pool is configured). Used by jobsdb-internal
+// maintenance flows to keep their BeginTx off the main pool.
+func (jd *Handle) withMaintenanceTx(ctx context.Context, f func(tx *Tx) error) error {
+	return jd.withTxOnDB(ctx, jd.maintenanceDB(), f)
+}
+
+func (jd *Handle) withTxOnDB(ctx context.Context, db *sql.DB, f func(tx *Tx) error) error {
+	sqltx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -3025,7 +3065,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 			}()
 			// Adding a new DS only creates a new DS & updates the cache. It doesn't move any data so we only take the list lock.
 			// start a transaction
-			err := jd.WithTx(ctx, func(tx *Tx) error {
+			err := jd.withMaintenanceTx(ctx, func(tx *Tx) error {
 				return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error { // cannot run while schema migration is running
 					return jd.withDistributedLock(ctx, tx, "add_ds", func() error { // only one add_ds can run at a time
 						var err error
@@ -3069,7 +3109,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 							}
 						} else {
 							// maybe another node added a new DS that we need to make visible to us
-							if err := jd.RefreshDSList(ctx); err != nil {
+							if err := jd.refreshDSListWithDB(ctx, tx); err != nil {
 								return fmt.Errorf("refreshDSList: %w", err)
 							}
 						}
@@ -3134,8 +3174,12 @@ func (jd *Handle) refreshDSListLoop(ctx context.Context) {
 	}
 }
 
-// RefreshDSList refreshes the list of datasets in memory if the database view of the list has changed.
 func (jd *Handle) RefreshDSList(ctx context.Context) error {
+	return jd.refreshDSListWithDB(ctx, jd.maintenanceDB())
+}
+
+// RefreshDSList refreshes the list of datasets in memory if the database view of the list has changed.
+func (jd *Handle) refreshDSListWithDB(ctx context.Context, db sqlDbOrTx) error {
 	jd.logger.Debugn("Start", logger.NewStringField("operation", "refreshDSListLoop"))
 
 	start := time.Now()
@@ -3146,7 +3190,7 @@ func (jd *Handle) RefreshDSList(ctx context.Context) error {
 	jd.dsListLock.RLock()
 	previousLastDS := jd.getLastDS()
 	jd.dsListLock.RUnlock()
-	nextDS, err := getDSList(jd, jd.getDB(ctx), jd.tablePrefix)
+	nextDS, err := getDSList(jd, db, jd.tablePrefix)
 	if err != nil {
 		return fmt.Errorf("getDSList: %w", err)
 	}
@@ -3157,7 +3201,7 @@ func (jd *Handle) RefreshDSList(ctx context.Context) error {
 	}
 	defer jd.stats.NewTaggedStat("refresh_ds_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).RecordDuration()()
 	err = jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
-		return jd.doRefreshDSRangeList(l)
+		return jd.doRefreshDSRangeListWithDB(l, db)
 	})
 	if err != nil {
 		return fmt.Errorf("refreshDSRangeList: %w", err)
@@ -3177,6 +3221,17 @@ func (jd *Handle) Identifier() string {
 func (jd *Handle) getDB(ctx context.Context) *sql.DB {
 	if usePriorityPool(ctx) && jd.priorityPool != nil {
 		return jd.priorityPool
+	}
+	return jd.dbHandle
+}
+
+// maintenanceDB returns the connection pool to use for jobsdb-internal
+// maintenance operations (compaction, dsList refresh,
+// status-table cleanup/vacuum). Falls back to dbHandle when no dedicated
+// maintenance pool was injected via WithMaintenancePoolDB.
+func (jd *Handle) maintenanceDB() *sql.DB {
+	if jd.maintenancePool != nil {
+		return jd.maintenancePool
 	}
 	return jd.dbHandle
 }
@@ -3296,11 +3351,7 @@ func (jd *Handle) recoverFromCrash(owner OwnerType, goRoutineType string) {
 									owner = '%s'
                                 	ORDER BY id`, jd.tablePrefix, owner)
 
-	stmt, err := jd.dbHandle.Prepare(sqlStatement)
-	jd.assertError(err)
-	defer func() { _ = stmt.Close() }()
-
-	rows, err := stmt.Query(pq.Array(opTypes))
+	rows, err := jd.maintenanceDB().Query(sqlStatement, pq.Array(opTypes))
 	jd.assertError(err)
 	defer func() { _ = rows.Close() }()
 
@@ -3320,6 +3371,7 @@ func (jd *Handle) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	}
 	jd.assertError(rows.Err())
 	jd.assert(count <= 1, fmt.Sprintf("count:%d > 1", count))
+	_ = rows.Close()
 
 	if count == 0 {
 		// Nothing to recover
@@ -3361,7 +3413,7 @@ func (jd *Handle) recoverFromCrash(owner OwnerType, goRoutineType string) {
 		sqlStatement = fmt.Sprintf(`UPDATE "%s_journal" SET done=True WHERE id=$1`, jd.tablePrefix)
 	}
 
-	_, err = jd.dbHandle.Exec(sqlStatement, opID)
+	_, err = jd.maintenanceDB().Exec(sqlStatement, opID)
 	jd.assertError(err)
 }
 
@@ -3756,7 +3808,25 @@ can return the same set of events. It is the responsibility of the caller to cal
 one thread, update the state (to "waiting") in the same thread and pass on the processors
 */
 func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
+	// Retry loop: if the published dsList drops one of the datasets we queried
+	// while we were iterating (e.g. a compaction completed mid-read), our result
+	// may have been computed against a snapshot that is no longer canonical. Re-run
+	// from scratch against the freshly published list.
+	for {
+		res, err := jd.doGetJobs(ctx, params, more)
+		if err != nil {
+			if errors.Is(err, ErrStaleDsList) {
+				jd.logger.Warnn("[JobsDB] getJobs: dsList compacted during query, retrying",
+					logger.NewStringField("tablePrefix", jd.tablePrefix))
+				continue
+			}
+			return nil, err
+		}
+		return res, nil
+	}
+}
 
+func (jd *Handle) doGetJobs(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
 	mtoken := &moreToken{}
 	if more != nil {
 		var ok bool
@@ -3806,6 +3876,11 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 	res := &MoreJobsResult{More: mtoken}
 	dsQueryCount := 0
 	cacheHitCount := 0
+
+	// Track every dataset we actually queried via getJobsDS so we can validate
+	// the post-iteration snapshot against the set of datasets our result was
+	// computed from.
+	queried := make(map[string]struct{}, len(dsList))
 	var dsLimit int
 	if jd.conf.dsLimit != nil {
 		dsLimit = jd.conf.dsLimit.Load()
@@ -3833,6 +3908,7 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 		if err != nil {
 			return nil, err
 		}
+		queried[ds.Index] = struct{}{}
 		if dsHit {
 			dsQueryCount++
 		} else {
@@ -3872,6 +3948,22 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 	}
 	jd.stats.NewTaggedStat("jobsdb_queried_jobs", stats.CountType, statTags).Count(len(res.Jobs))                                                         // number of jobs that we queried
 	jd.stats.NewTaggedStat("jobsdb_queried_bytes", stats.CountType, statTags).Count(lo.SumBy(res.Jobs, func(j *JobT) int { return len(j.EventPayload) })) // number of bytes that we queried
+	// Validate that none of the datasets we examined were compacted while we
+	// were querying. If any of them were, it means our result may be stale and we need to retry.
+	if jd.conf.migration.nonBlockingCompaction.Load() && jd.conf.migration.getJobsRetryOnCompaction.Load() {
+		jd.dropDSListLock.RLock()
+		_, found := lo.Find(jd.dropDSList, func(entry dropDSEntry) bool {
+			if !entry.compacted {
+				return false
+			}
+			_, ok := queried[entry.ds.Index]
+			return ok
+		})
+		jd.dropDSListLock.RUnlock()
+		if found {
+			return nil, ErrStaleDsList
+		}
+	}
 	return res, nil
 }
 
