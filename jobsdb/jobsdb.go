@@ -1177,8 +1177,8 @@ func (jd *Handle) loadConfig() {
 	jd.conf.migration.vacuumFullStatusTableThreshold = jd.config.GetReloadableInt64Var(500*bytesize.MB, 1, jd.configKeys("vacuumFullStatusTableThreshold")...)
 	jd.conf.migration.vacuumAnalyzeStatusTableThreshold = jd.config.GetReloadableInt64Var(30000, 1, jd.configKeys("vacuumAnalyzeStatusTableThreshold")...)
 	jd.conf.migration.nonBlockingCompletedDSDrop = jd.config.GetReloadableBoolVar(false, jd.configKeys("nonBlockingCompletedDSDrop")...)
-	jd.conf.migration.nonBlockingCompaction = jd.config.GetReloadableBoolVar(false, jd.configKeys("nonBlockingCompaction")...)
-	jd.conf.migration.compactionDeferStatusLock = jd.config.GetReloadableBoolVar(false, jd.configKeys("compactionDeferStatusLock")...)
+	jd.conf.migration.nonBlockingCompaction = jd.config.GetReloadableBoolVar(true, jd.configKeys("nonBlockingCompaction")...)
+	jd.conf.migration.compactionDeferStatusLock = jd.config.GetReloadableBoolVar(true, jd.configKeys("compactionDeferStatusLock")...)
 	jd.conf.migration.getJobsRetryOnCompaction = jd.config.GetReloadableBoolVar(true, jd.configKeys("getJobsRetryOnCompaction")...)
 
 	// masterBackupEnabled = true => all the jobsdb are eligible for backup
