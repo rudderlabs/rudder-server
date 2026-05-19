@@ -48,6 +48,8 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.client = transformerclient.NewClient("UserTransformer", transformerutils.TransformerClientConfig(conf, "UserTransformer"))
 	handle.config.userTransformationURL = handle.conf.GetStringVar(handle.conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"), "USER_TRANSFORM_URL")
 	handle.config.pythonTransformationURL = handle.conf.GetStringVar("", "PYTHON_TRANSFORM_URL")
+	handle.config.perWorkspacePyTEnabled = handle.conf.GetBoolVar(false, "Processor.UserTransformer.perWorkspacePyTEnabled")
+	handle.config.perWorkspacePyTURLTemplate = handle.conf.GetStringVar("http://pyt-{workspaceID}:9090", "Processor.UserTransformer.perWorkspacePyTURLTemplate")
 	handle.config.pythonTransformConfig = transformerutils.LoadPythonTransformConfig(conf)
 	handle.config.timeoutDuration = conf.GetDurationVar(600, time.Second, "HttpClient.procTransformer.timeout")
 	handle.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.UserTransformer.failOnUserTransformTimeout", "Processor.Transformer.failOnUserTransformTimeout")
@@ -84,6 +86,8 @@ type Client struct {
 		timeoutDuration            time.Duration
 		collectInstanceLevelStats  bool
 		batchSize                  config.ValueLoader[int]
+		perWorkspacePyTEnabled     bool
+		perWorkspacePyTURLTemplate string
 	}
 	conf   *config.Config
 	log    logger.Logger
@@ -97,7 +101,11 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	}
 	batchSize := u.config.batchSize.Load()
 	transformationLanguage, transformationVersionID, transformationID := transformerutils.GetTransformationInfo(clientEvents)
-	userURL := u.userTransformURL(transformationLanguage, transformationVersionID)
+	workspaceID := ""
+	if len(clientEvents) > 0 {
+		workspaceID = clientEvents[0].Metadata.WorkspaceID
+	}
+	userURL := u.userTransformURL(transformationLanguage, transformationVersionID, workspaceID)
 
 	labels := types.TransformerMetricLabels{
 		Endpoint:         transformerutils.GetEndpointFromURL(userURL),
@@ -409,10 +417,16 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	return respData, resp.StatusCode, nil
 }
 
-func (u *Client) userTransformURL(language, versionID string) string {
+func (u *Client) userTransformURL(language, versionID, workspaceID string) string {
 	isPython := strings.HasPrefix(language, "python")
-	if isPython && u.config.pythonTransformConfig.IsVersionAllowed(versionID) && u.config.pythonTransformationURL != "" {
-		return u.config.pythonTransformationURL + "/customTransform"
+	if isPython && u.config.pythonTransformConfig.IsVersionAllowed(versionID) {
+		if u.config.perWorkspacePyTEnabled && !u.config.forMirroring && workspaceID != "" {
+			base := strings.ReplaceAll(u.config.perWorkspacePyTURLTemplate, "{workspaceID}", workspaceID)
+			return base + "/customTransform"
+		}
+		if u.config.pythonTransformationURL != "" {
+			return u.config.pythonTransformationURL + "/customTransform"
+		}
 	}
 	return u.config.userTransformationURL + "/customTransform"
 }

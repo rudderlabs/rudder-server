@@ -1407,3 +1407,174 @@ func TestTransformerEvent_ToUserTransformerEvent(t *testing.T) {
 		})
 	}
 }
+
+// TestUserTransformURLRouting verifies the URL-resolution branches added by
+// the per-workspace PyT routing feature. Each case spins up real httptest
+// servers for the JS, legacy-Python, mirror-Python, and per-workspace endpoints
+// and asserts which one is hit by Transform.
+func TestUserTransformURLRouting(t *testing.T) {
+	const (
+		workspaceID = "ws-A1"
+		messageID   = "messageID-0"
+		allowedV    = "v-allowed"
+		blockedV    = "v-blocked"
+	)
+
+	type recordingSrv struct {
+		srv   *httptest.Server
+		hits  *atomic.Int32
+		paths *atomic.Value // last hit path
+	}
+
+	newRecordingSrv := func(t *testing.T) recordingSrv {
+		var hits atomic.Int32
+		var path atomic.Value
+		path.Store("")
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits.Add(1)
+			path.Store(r.URL.Path)
+
+			var reqBody []types.TransformerEvent
+			require.NoError(t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
+
+			responses := make([]types.TransformerResponse, len(reqBody))
+			for i := range reqBody {
+				responses[i] = types.TransformerResponse{
+					Output:     reqBody[i].Message,
+					Metadata:   reqBody[i].Metadata,
+					StatusCode: http.StatusOK,
+				}
+			}
+			w.Header().Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
+			require.NoError(t, jsonrs.NewEncoder(w).Encode(responses))
+		}))
+		t.Cleanup(srv.Close)
+		return recordingSrv{srv: srv, hits: &hits, paths: &path}
+	}
+
+	makeEvents := func(language, versionID, wsID string) []types.TransformerEvent {
+		return []types.TransformerEvent{{
+			Metadata: types.Metadata{
+				MessageID:   messageID,
+				WorkspaceID: wsID,
+			},
+			Message: map[string]any{"src-key-1": messageID},
+			Destination: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "test-destination"},
+				Transformations: []backendconfig.TransformationT{{
+					ID:        "test-transformation",
+					VersionID: versionID,
+					Language:  language,
+				}},
+			},
+		}}
+	}
+
+	type fixture struct {
+		conf            *config.Config
+		js, py, pyMir   recordingSrv
+		perWS           recordingSrv
+		perWSExpectPath string
+	}
+
+	newFixture := func(t *testing.T) *fixture {
+		f := &fixture{
+			js:    newRecordingSrv(t),
+			py:    newRecordingSrv(t),
+			pyMir: newRecordingSrv(t),
+			perWS: newRecordingSrv(t),
+		}
+		f.perWSExpectPath = "/pyt-" + workspaceID + "/customTransform"
+		f.conf = config.New()
+		f.conf.Set("Processor.UserTransformer.maxRetry", 1)
+		f.conf.Set("USER_TRANSFORM_URL", f.js.srv.URL)
+		f.conf.Set("PYTHON_TRANSFORM_URL", f.py.srv.URL)
+		f.conf.Set("USER_TRANSFORM_MIRROR_URL", f.js.srv.URL)
+		f.conf.Set("PYTHON_TRANSFORM_MIRROR_URL", f.pyMir.srv.URL)
+		// Pin the per-workspace template to the recording server so the request
+		// resolves; embed {workspaceID} in the path so we can assert it.
+		f.conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", f.perWS.srv.URL+"/pyt-{workspaceID}")
+		// Enable version allowlist with one allowed version.
+		f.conf.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
+		f.conf.Set("PYTHON_TRANSFORM_VERSION_IDS", allowedV)
+		return f
+	}
+
+	assertOnly := func(t *testing.T, f *fixture, hit *recordingSrv, expectPath string) {
+		t.Helper()
+		require.Equal(t, int32(1), hit.hits.Load(), "expected target server to be hit once")
+		if expectPath != "" {
+			require.Equal(t, expectPath, hit.paths.Load().(string))
+		}
+		for name, s := range map[string]*recordingSrv{
+			"js": &f.js, "py": &f.py, "pyMir": &f.pyMir, "perWS": &f.perWS,
+		} {
+			if s == hit {
+				continue
+			}
+			require.Equal(t, int32(0), s.hits.Load(), "server %s should not be hit", name)
+		}
+	}
+
+	t.Run("JS — flag off → JS URL", func(t *testing.T) {
+		f := newFixture(t)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		tr.Transform(context.Background(), makeEvents("javascript", allowedV, workspaceID))
+		assertOnly(t, f, &f.js, "/customTransform")
+	})
+
+	t.Run("JS — flag on → JS URL (unaffected)", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		tr.Transform(context.Background(), makeEvents("javascript", allowedV, workspaceID))
+		assertOnly(t, f, &f.js, "/customTransform")
+	})
+
+	t.Run("Python — flag off → global Python URL", func(t *testing.T) {
+		f := newFixture(t)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+		assertOnly(t, f, &f.py, "/customTransform")
+	})
+
+	t.Run("Python — flag on, version allowed → per-workspace URL", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+		assertOnly(t, f, &f.perWS, f.perWSExpectPath)
+	})
+
+	t.Run("Python — flag on, version disallowed → JS URL fallback", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		tr.Transform(context.Background(), makeEvents("pythonfaas", blockedV, workspaceID))
+		assertOnly(t, f, &f.js, "/customTransform")
+	})
+
+	t.Run("Python — flag on, mirroring → mirror Python URL", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP, user_transformer.ForMirroring())
+		tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+		assertOnly(t, f, &f.pyMir, "/customTransform")
+	})
+
+	t.Run("Python — flag on, empty workspaceID → global Python URL", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, ""))
+		assertOnly(t, f, &f.py, "/customTransform")
+	})
+
+	t.Run("legacy fallback key Processor.perWorkspacePyTEnabled enables routing", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set("Processor.perWorkspacePyTEnabled", true)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+		assertOnly(t, f, &f.perWS, f.perWSExpectPath)
+	})
+}
