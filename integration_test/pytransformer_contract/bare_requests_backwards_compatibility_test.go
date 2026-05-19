@@ -53,8 +53,8 @@ func TestBareRequestsPositionalParamsContract(t *testing.T) {
 
 	const versionID = "bare-requests-positional-params-v1"
 
-	// Echo server: returns the ``q`` field back in a JSON body.
-	// ``r.FormValue`` pulls from the URL query string (GET) AND the
+	// Echo server: returns the `q` field back in a JSON body.
+	// `r.FormValue` pulls from the URL query string (GET) AND the
 	// form-encoded body (POST/PUT/PATCH), so the same handler can echo
 	// all four verbs without branching.
 	echo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -67,14 +67,14 @@ func TestBareRequestsPositionalParamsContract(t *testing.T) {
 	// Dispatcher user code: picks the verb from the incoming event so
 	// the same versionID can exercise all four two-positional shapes
 	// without spinning up a separate openfaas-flask-base container per
-	// verb. The line actually under test — ``requests.<verb>(url,
-	// {"q": "hello"})`` — is identical to what a real customer would
+	// verb. The line actually under test — `requests.<verb>(url,
+	// {"q": "hello"})` — is identical to what a real customer would
 	// write; only the surrounding if/elif selects which verb runs.
 	//
 	// For GET the positional dict becomes the query string; for
 	// POST/PUT/PATCH the positional dict is form-encoded into the body.
-	// Both paths make the echo server's ``r.FormValue("q")`` return
-	// ``"hello"`` so the assertion shape is uniform across verbs.
+	// Both paths make the echo server's `r.FormValue("q")` return
+	// `"hello"` so the assertion shape is uniform across verbs.
 	code := fmt.Sprintf(`
 import requests
 
@@ -104,7 +104,7 @@ def transformEvent(event, metadata):
 
 	// --- Old architecture (rudder-transformer + openfaas-flask-base) ---
 	//
-	// The old stack runs the user code under vanilla ``requests`` with no
+	// The old stack runs the user code under vanilla `requests` with no
 	// pooling layer in front of it, so it defines the reference behaviour
 	// every new-arch configuration must match. Started once and shared
 	// across every new-arch / verb combination.
@@ -121,8 +121,8 @@ def transformEvent(event, metadata):
 
 	// --- New architecture (rudder-pytransformer) ---
 	//
-	// Bare ``requests.<method>`` calls are routed through a per-
-	// transformation pooled ``Session``. Pin pool + subprocess count
+	// Bare `requests.<method>` calls are routed through a per-
+	// transformation pooled `Session`. Pin pool + subprocess count
 	// to 1 so a single long-lived user session handles every call: no
 	// subprocess affinity or pool recycling can influence the outcome.
 	pyTransformerURL := startRudderPytransformer(
@@ -175,7 +175,7 @@ def transformEvent(event, metadata):
 			require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
 
 			// Round-trip sanity check: the echo server must have
-			// seen ``q=hello`` on both stacks, which means the
+			// seen `q=hello` on both stacks, which means the
 			// positional dict was forwarded correctly whether
 			// that happens via the GET params-promotion bridge
 			// or verbatim positional forwarding for the body
@@ -235,7 +235,7 @@ func TestBareRequestsPostThreePositionalArgsContract(t *testing.T) {
 	// Echo server: captures the raw body seen by the handler and surfaces
 	// it in the response. “requests.PreparedRequest.prepare_body“ picks
 	// “data“ over “json“ when both are provided, so the server sees the
-	// raw ``data`` bytes. That's fine for this test — what we need to
+	// raw `data` bytes. That's fine for this test — what we need to
 	// verify is that the HTTP call completes at all, not which payload
 	// wins the precedence game.
 	echo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -308,7 +308,7 @@ def transformEvent(event, metadata):
 
 	// Round-trip sanity check: the echo server must have seen the raw
 	// body on both stacks, which means the second positional bound to
-	// ``data`` and the call completed.
+	// `data` and the call completed.
 	require.Equal(t, "raw=payload", oldResp.Events[0].Output["received"],
 		"old arch must forward the positional body as the request payload")
 	require.Equal(t, "raw=payload", newResp.Events[0].Output["received"],

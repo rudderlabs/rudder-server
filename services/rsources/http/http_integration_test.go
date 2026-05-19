@@ -45,7 +45,7 @@ func prepare(
 	sts, err := memstats.New()
 	require.NoError(t, err, "should create stats")
 
-	service, err = rsources.NewJobService(config, sts)
+	service, err = rsources.NewJobService(context.Background(), config, sts)
 	require.NoError(t, err)
 	handler = handlerFunc(service, logger.NOP)
 	dbResource = postgresContainer

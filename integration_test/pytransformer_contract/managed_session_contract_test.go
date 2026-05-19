@@ -672,7 +672,6 @@ def transformEvent(event, metadata):
 		requireMetricGreater(t, metricsURL,
 			"user_session_count",
 			map[string]string{"transformation_id": "shared"},
-			0,
 			"user_session_count must be > 0 under the \"shared\" label once "+
 				"either transformation drives traffic through the pool")
 		requireMetricEquals(t, metricsURL,
@@ -783,7 +782,6 @@ def transformEvent(event, metadata):
 				requireMetricGreater(t, metricsURL,
 					"user_session_count",
 					map[string]string{"transformation_id": "shared"},
-					0,
 					"user_session_count{\"shared\"} must be > 0 after user HTTP runs; "+
 						"a 0 here means the entry point bypassed the pool")
 				requireMetricEquals(t, metricsURL,
@@ -1018,7 +1016,7 @@ func scrapePytransformerMetric(
 
 	// Pattern: NAME{k="v",k2="v2"} VALUE  (whitespace-separated, optional
 	// trailing comment which we ignore). Restricting the leading name
-	// match to ``^<name>[{ ]`` avoids accidental matches on metrics that
+	// match to `^<name>[{ ]` avoids accidental matches on metrics that
 	// share a prefix (e.g. managed_session_created vs
 	// managed_session_created_total).
 	pattern := regexp.MustCompile(
@@ -1098,14 +1096,13 @@ func requireMetricGreater(
 	t *testing.T,
 	metricsURL, name string,
 	labels map[string]string,
-	threshold float64,
 	why string,
 ) {
 	t.Helper()
 	got := scrapePytransformerMetric(t, metricsURL, name, labels)
-	require.Greater(t, got, threshold,
-		"%s{%s} must be > %v; got %v — %s",
-		name, formatLabelsForMessage(labels), threshold, got, why)
+	require.Greater(t, got, float64(0),
+		"%s{%s} must be > 0; got %v — %s",
+		name, formatLabelsForMessage(labels), got, why)
 }
 
 // formatLabelsForMessage renders a label map as "k=v,k2=v2" for

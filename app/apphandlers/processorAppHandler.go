@@ -138,7 +138,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 
 	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
 
-	rsourcesService, err := NewRsourcesService(deploymentType, true, statsFactory)
+	rsourcesService, err := NewRsourcesService(ctx, deploymentType, true, statsFactory)
 	if err != nil {
 		return err
 	}

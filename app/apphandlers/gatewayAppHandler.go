@@ -132,7 +132,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, _ func(), options *app
 	if err != nil {
 		return fmt.Errorf("failed to create rate limiter: %w", err)
 	}
-	rsourcesService, err := NewRsourcesService(deploymentType, false, statsFactory)
+	rsourcesService, err := NewRsourcesService(ctx, deploymentType, false, statsFactory)
 	if err != nil {
 		return err
 	}
