@@ -7,9 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"regexp"
-	"strings"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 
@@ -17,17 +14,13 @@ import (
 )
 
 type GZIPLocalFileHandler struct {
-	records        []byte
-	casing         Case
-	nativeDeletion bool
-	idFieldPath    []string
+	records     []byte
+	idFieldPath []string
 }
 
-func NewGZIPLocalFileHandler(casing Case, nativeDeletion bool, idFieldPath []string) *GZIPLocalFileHandler {
+func NewGZIPLocalFileHandler(idFieldPath []string) *GZIPLocalFileHandler {
 	return &GZIPLocalFileHandler{
-		casing:         casing,
-		nativeDeletion: nativeDeletion,
-		idFieldPath:    idFieldPath,
+		idFieldPath: idFieldPath,
 	}
 }
 
@@ -76,52 +69,7 @@ func (h *GZIPLocalFileHandler) Write(_ context.Context, path string) error {
 	return nil
 }
 
-func (h *GZIPLocalFileHandler) RemoveIdentity(ctx context.Context, attributes []model.User) error {
-	if h.nativeDeletion {
-		return h.removeIdentityNative(attributes)
-	}
-	return h.removeIdentitySed(ctx, attributes)
-}
-
-func (h *GZIPLocalFileHandler) removeIdentitySed(ctx context.Context, attributes []model.User) error {
-	var filteredContent []byte
-
-	patterns := make([]string, len(attributes))
-	for idx, attribute := range attributes {
-		pattern, err := h.getDeletePattern(attribute)
-		if err != nil {
-			return fmt.Errorf("creating delete pattern for userID: %s, %s", attribute.ID, err.Error())
-		}
-		patterns[idx] = pattern
-	}
-
-	cmd := exec.CommandContext(ctx, "bash", "-c", fmt.Sprintf("sed -r -e %s", strings.Join(patterns, " -e ")))
-	cmd.Stdin = bytes.NewBuffer(h.records)
-	filteredContent, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("filtering the content: %w", err)
-	}
-
-	h.records = filteredContent
-	return nil
-}
-
-func (h *GZIPLocalFileHandler) getDeletePattern(attribute model.User) (string, error) {
-	normalized := regexp.QuoteMeta(attribute.ID)
-	switch h.casing {
-
-	case SnakeCase:
-		return fmt.Sprintf("'/\"user_id\": *\"%s\"/d'", normalized), nil
-	case CamelCase:
-		return fmt.Sprintf("'/\"userId\": *\"%s\"/d'", normalized), nil
-	case UpperCase:
-		return fmt.Sprintf("'/\"USER_ID\": *\"%s\"/d'", normalized), nil
-	default:
-		return "", fmt.Errorf("casing value: %v supplied not in list of supported cases", h.casing)
-	}
-}
-
-func (h *GZIPLocalFileHandler) removeIdentityNative(attributes []model.User) error {
+func (h *GZIPLocalFileHandler) RemoveIdentity(_ context.Context, attributes []model.User) error {
 	if len(h.idFieldPath) == 0 {
 		return fmt.Errorf("id field path cannot be empty for native deletion")
 	}
