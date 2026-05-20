@@ -211,6 +211,34 @@ func TestErrorIndexReporter(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "ignore failed messages when source job run id is present",
+				reports: []*types.PUReportedMetric{
+					{
+						ConnectionDetails: types.ConnectionDetails{
+							SourceID:         sourceID,
+							DestinationID:    destinationID,
+							TransformationID: transformationID,
+							TrackingPlanID:   trackingPlanID,
+							SourceJobRunID:   "source-job-run-id",
+						},
+						PUDetails: types.PUDetails{
+							PU: reportedBy,
+						},
+						StatusDetail: &types.StatusDetail{
+							EventName: eventName,
+							EventType: eventType,
+							FailedMessages: []*types.FailedMessage{
+								{
+									MessageID:  messageID + "5",
+									ReceivedAt: receivedAt.Add(5 * time.Hour),
+								},
+							},
+						},
+					},
+				},
+				expectedPayload: []payload{},
+			},
 		}
 
 		for _, tc := range testCases {
