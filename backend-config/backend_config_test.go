@@ -454,6 +454,7 @@ func TestWaitForConfig(t *testing.T) {
 func TestCache(t *testing.T) {
 	initBackendConfig()
 	t.Setenv("RSERVER_BACKEND_CONFIG_POLL_INTERVAL", "10ms")
+	t.Setenv("RSERVER_BACKEND_CONFIG_DB_CACHE_WRITE_DEBOUNCE", "10ms")
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		defer atomic.AddInt32(&calls, 1)
