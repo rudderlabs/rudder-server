@@ -23,6 +23,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	"github.com/rudderlabs/rudder-server/utils/googleauth"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
@@ -46,8 +47,9 @@ func (config *Config) shouldGenerateToken() bool {
 }
 
 func (config *Config) generateToken(ctx context.Context, client GoogleCloudFunctionClient) error {
-	// TODO: switching to WithAuthCredentialsJSON requires auth type handling
-	token, err := client.GetToken(ctx, config.FunctionUrl, option.WithCredentialsJSON([]byte(config.Credentials))) // nolint: staticcheck
+	credBytes := []byte(config.Credentials)
+	credType := googleauth.CredentialsTypeFromJSON(credBytes)
+	token, err := client.GetToken(ctx, config.FunctionUrl, option.WithAuthCredentialsJSON(credType, credBytes))
 	if err != nil {
 		return err
 	}

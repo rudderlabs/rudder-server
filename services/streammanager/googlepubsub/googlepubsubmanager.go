@@ -27,6 +27,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
+	"github.com/rudderlabs/rudder-server/utils/googleauth"
 )
 
 type PubSubConfig struct {
@@ -92,8 +93,8 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		if err = googleutil.CompatibleGoogleCredentialsJSON(credsBytes); err != nil {
 			return nil, err
 		}
-		// TODO: switching to WithAuthCredentialsJSON requires auth type handling
-		options = append(options, option.WithCredentialsJSON(credsBytes)) // nolint: staticcheck
+		credType := googleauth.CredentialsTypeFromJSON(credsBytes)
+		options = append(options, option.WithAuthCredentialsJSON(credType, credsBytes))
 	}
 	if client, err = pubsub.NewClient(ctx, pubsubConfig.ProjectId, options...); err != nil {
 		return nil, err

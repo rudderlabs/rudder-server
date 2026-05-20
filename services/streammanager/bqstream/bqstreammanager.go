@@ -21,6 +21,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	"github.com/rudderlabs/rudder-server/utils/googleauth"
 )
 
 type Config struct {
@@ -95,8 +96,8 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*BQStr
 		if err = googleutil.CompatibleGoogleCredentialsJSON(confCreds); err != nil {
 			return nil, createErr(err, "incompatible credentials")
 		}
-		// TODO: switching to WithAuthCredentialsJSON requires auth type handling
-		opts = append(opts, option.WithCredentialsJSON(confCreds)) // nolint: staticcheck
+		credType := googleauth.CredentialsTypeFromJSON(confCreds)
+		opts = append(opts, option.WithAuthCredentialsJSON(credType, confCreds))
 	}
 	bqClient, err := bigquery.NewClient(context.Background(), config.ProjectId, opts...)
 	if err != nil {

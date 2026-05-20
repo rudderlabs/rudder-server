@@ -639,7 +639,7 @@ func TestIntegration(t *testing.T) {
 				db, err := bigquery.NewClient(
 					ctx,
 					credentials.ProjectID,
-					option.WithCredentialsJSON([]byte(credentials.Credentials)), // nolint: staticcheck
+					option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(credentials.Credentials)),
 				)
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = db.Close() })
@@ -770,7 +770,7 @@ func TestIntegration(t *testing.T) {
 
 				db, err := bigquery.NewClient(ctx,
 					credentials.ProjectID,
-					option.WithCredentialsJSON([]byte(credentials.Credentials)), // nolint: staticcheck
+					option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(credentials.Credentials)),
 				)
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = db.Close() })
@@ -812,7 +812,7 @@ func TestIntegration(t *testing.T) {
 
 		db, err := bigquery.NewClient(ctx,
 			credentials.ProjectID,
-			option.WithCredentialsJSON([]byte(credentials.Credentials)), // nolint: staticcheck
+			option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(credentials.Credentials)),
 		)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = db.Close() })
@@ -1210,7 +1210,7 @@ func TestIntegration(t *testing.T) {
 
 		db, err := bigquery.NewClient(ctx,
 			credentials.ProjectID,
-			option.WithCredentialsJSON([]byte(credentials.Credentials)), // nolint: staticcheck
+			option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(credentials.Credentials)),
 		)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = db.Close() })
@@ -1291,7 +1291,7 @@ func TestIntegration(t *testing.T) {
 
 		db, err := bigquery.NewClient(ctx,
 			credentials.ProjectID,
-			option.WithCredentialsJSON([]byte(credentials.Credentials)), // nolint: staticcheck
+			option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(credentials.Credentials)),
 		)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = db.Close() })
@@ -1364,7 +1364,7 @@ func TestIntegration(t *testing.T) {
 
 		db, err := bigquery.NewClient(ctx,
 			credentials.ProjectID,
-			option.WithCredentialsJSON([]byte(credentials.Credentials)), // nolint: staticcheck
+			option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(credentials.Credentials)),
 		)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = db.Close() })
@@ -1438,7 +1438,7 @@ func TestIntegration(t *testing.T) {
 
 		db, err := bigquery.NewClient(ctx,
 			credentials.ProjectID,
-			option.WithCredentialsJSON([]byte(credentials.Credentials)), // nolint: staticcheck
+			option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(credentials.Credentials)),
 		)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = db.Close() })

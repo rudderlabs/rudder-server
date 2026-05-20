@@ -34,7 +34,7 @@ func TestQueryWrapper(t *testing.T) {
 	db, err := bigquery.NewClient(
 		ctx,
 		bqTestCredentials.ProjectID,
-		option.WithCredentialsJSON([]byte(bqTestCredentials.Credentials)), // nolint: staticcheck
+		option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(bqTestCredentials.Credentials)),
 	)
 	require.NoError(t, err)
 

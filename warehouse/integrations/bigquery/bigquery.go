@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-server/utils/googleauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -592,10 +593,12 @@ func (bq *BigQuery) jobStatistics(
 	ctx context.Context,
 	job *bigquery.Job,
 ) (*bqservice.JobStatistics, error) {
+	credentialsJSON := []byte(bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting))
+	credType := googleauth.CredentialsTypeFromJSON(credentialsJSON)
+
 	serv, err := bqservice.NewService(
 		ctx,
-		// TODO: switching to WithAuthCredentialsJSON requires auth type handling
-		option.WithCredentialsJSON([]byte(bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting))), // nolint: staticcheck
+		option.WithAuthCredentialsJSON(credType, credentialsJSON),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating service: %w", err)
@@ -775,8 +778,9 @@ func (bq *BigQuery) connect(ctx context.Context) (*middleware.Client, error) {
 		credBytes := []byte(credentials)
 		if err := googleutil.CompatibleGoogleCredentialsJSON(credBytes); err != nil {
 			return nil, err
-		} // TODO: switching to WithAuthCredentialsJSON requires auth type handling
-		opts = append(opts, option.WithCredentialsJSON(credBytes)) // nolint: staticcheck
+		}
+		credType := googleauth.CredentialsTypeFromJSON(credBytes)
+		opts = append(opts, option.WithAuthCredentialsJSON(credType, credBytes))
 	}
 
 	bqClient, err := bigquery.NewClient(ctx, projectID, opts...)
