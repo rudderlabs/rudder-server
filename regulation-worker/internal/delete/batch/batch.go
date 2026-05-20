@@ -462,11 +462,10 @@ func (bm *BatchManager) Delete(
 }
 
 func LocalFileHandlerFactory(dest, upstreamFilePath string) filehandler.LocalFileHandler {
-	nativeDeletion := config.Default.GetBoolVar(true, "gzip.nativeDeletion")
 	switch dest {
 	case "S3":
 		if strings.HasSuffix(upstreamFilePath, ".json.gz") {
-			return filehandler.NewGZIPLocalFileHandler(filehandler.CamelCase, nativeDeletion, []string{"userId"})
+			return filehandler.NewGZIPLocalFileHandler([]string{"userId"})
 		}
 
 	case "S3_DATALAKE":
@@ -475,7 +474,7 @@ func LocalFileHandlerFactory(dest, upstreamFilePath string) filehandler.LocalFil
 		}
 
 		if strings.HasSuffix(upstreamFilePath, ".json.gz") {
-			return filehandler.NewGZIPLocalFileHandler(filehandler.SnakeCase, nativeDeletion, []string{"data", "user_id"})
+			return filehandler.NewGZIPLocalFileHandler([]string{"data", "user_id"})
 		}
 	}
 

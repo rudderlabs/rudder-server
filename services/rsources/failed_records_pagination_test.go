@@ -45,7 +45,7 @@ func TestFailedRecords(t *testing.T) {
 	sts, err := memstats.New()
 	require.NoError(t, err, "should create stats")
 
-	service, err := NewJobService(JobServiceConfig{
+	service, err := NewJobService(context.Background(), JobServiceConfig{
 		LocalHostname:       postgresContainer.Host,
 		MaxPoolSize:         1,
 		LocalConn:           postgresContainer.DBDsn,
@@ -90,7 +90,7 @@ func RunFailedRecordsPerformanceTest(t testing.TB, recordCount, pageSize int) ti
 	sts, err := memstats.New()
 	require.NoError(t, err, "should create stats")
 
-	service, err := NewJobService(JobServiceConfig{
+	service, err := NewJobService(context.Background(), JobServiceConfig{
 		LocalHostname:       postgresContainer.Host,
 		MaxPoolSize:         1,
 		LocalConn:           postgresContainer.DBDsn,
