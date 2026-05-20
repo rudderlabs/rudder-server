@@ -362,11 +362,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			u.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
 
 			// This metric is to track cold start errors for PyT, which are expected to be higher than usual due to the nature of PyT scaling.
-			if u.config.perWorkspacePyTEnabled &&
-				!u.config.forMirroring &&
-				strings.HasPrefix(labels.Language, "python") &&
-				labels.WorkspaceID != "" &&
-				isColdStartError(reqErr, resp) {
+			if u.shouldThrowPythonColdStartErr(labels, reqErr, resp) {
 				u.stat.NewTaggedStat(
 					"processor_user_transformer_cold_start_errors_total",
 					stats.CountType,
@@ -425,17 +421,17 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	if err != nil {
 		u.log.Errorn("User transformation post error",
 			append(labels.ToLoggerFields(), obskit.Error(err))...)
-		if u.config.failOnUserTransformTimeout.Load() && os.IsTimeout(err) {
-			return fmt.Appendf(nil, "transformer request timed out: %s", err), transformerutils.TransformerRequestTimeout, nil
-		} else if u.config.failOnError.Load() {
-			return fmt.Appendf(nil, "transformer request failed: %s", err), transformerutils.TransformerRequestFailure, nil
-		}
 		// Per-workspace PyT: a persistent transport failure on the workspace-
 		// scoped URL is most likely a cold-start window (pod not yet scaled by
 		// HPA, EndpointSlice lag, kube-proxy 5xx). Surface a dedicated status
 		// code so sendBatch retries the whole call until the pod is up instead of treating it as a failed transformation.
 		if errors.Is(err, transformerutils.ErrColdStart) {
 			return fmt.Appendf(nil, "workspace transformer not reachable: %s", err), transformerutils.StatusColdStartWindowFailure, nil
+		}
+		if u.config.failOnUserTransformTimeout.Load() && os.IsTimeout(err) {
+			return fmt.Appendf(nil, "transformer request timed out: %s", err), transformerutils.TransformerRequestTimeout, nil
+		} else if u.config.failOnError.Load() {
+			return fmt.Appendf(nil, "transformer request failed: %s", err), transformerutils.TransformerRequestFailure, nil
 		}
 		return nil, 0, err
 	}
@@ -451,6 +447,14 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	}
 
 	return respData, resp.StatusCode, nil
+}
+
+func (u *Client) shouldThrowPythonColdStartErr(labels types.TransformerMetricLabels, err error, resp *http.Response) bool {
+	return u.config.perWorkspacePyTEnabled &&
+		!u.config.forMirroring &&
+		strings.HasPrefix(labels.Language, "python") &&
+		labels.WorkspaceID != "" &&
+		isColdStartError(err, resp)
 }
 
 // isColdStartError returns true for transient errors that mean the target
