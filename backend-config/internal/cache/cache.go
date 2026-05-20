@@ -6,8 +6,14 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
+	"sync"
+	"time"
+
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -69,15 +75,37 @@ func Start(ctx context.Context, secret [32]byte, key string, channelProvider fun
 		return nil, err
 	}
 
+	// writeDebounce coalesces a burst of config updates into a single write
+	writeDebounce := config.GetDurationVar(10, time.Second, "BackendConfig.dbCacheWriteDebounce")
 	go func() {
-		// subscribe to config and write to db
-		for config := range channelProvider() {
-			// persist to database
-			err = dbStore.set(ctx, config.Data)
-			if err != nil {
+		var (
+			latestConfig any
+			gotConfig    bool
+			configMu     sync.Mutex
+		)
+		// persist writes the most recently received config to the database
+		persist := func() {
+			configMu.Lock()
+			data, ok := latestConfig, gotConfig
+			configMu.Unlock()
+			if !ok {
+				return
+			}
+			if err := dbStore.set(ctx, data); err != nil {
 				pkgLogger.Errorn("failed writing config to database", obskit.Error(err))
 			}
 		}
+		debouncedPersist, cancelDebounce := lo.NewDebounce(writeDebounce, persist)
+		// subscribe to config and debounce writes to db
+		for update := range channelProvider() {
+			configMu.Lock()
+			latestConfig, gotConfig = update.Data, true
+			configMu.Unlock()
+			debouncedPersist()
+		}
+		// channel closed: flush the latest config before shutting down
+		cancelDebounce()
+		persist()
 		dbStore.Close()
 	}()
 	return &dbStore, nil
@@ -89,6 +117,28 @@ func (db *cacheStore) set(ctx context.Context, config any) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
+	configSum := sha256.Sum256(configBytes)
+	configHash := hex.EncodeToString(configSum[:])
+
+	// Skip the write if the stored config is already identical. This avoids
+	// encrypting and transferring the (potentially large) config blob to the
+	// database when nothing has changed.
+	var storedHash sql.NullString
+	err = db.QueryRowContext(
+		ctx,
+		`SELECT config_hash FROM config_cache WHERE key = $1`,
+		db.key,
+	).Scan(&storedHash)
+	switch err {
+	case nil:
+		if storedHash.Valid && storedHash.String == configHash {
+			return nil
+		}
+	case sql.ErrNoRows:
+	default:
+		return err
+	}
+
 	// encrypt
 	encrypted, err := db.encryptAES(configBytes)
 	if err != nil {
@@ -97,13 +147,16 @@ func (db *cacheStore) set(ctx context.Context, config any) error {
 	// write to config table
 	_, err = db.ExecContext(
 		ctx,
-		`INSERT INTO config_cache (key, config) VALUES ($1, $2)
+		`INSERT INTO config_cache (key, config, config_hash) VALUES ($1, $2, $3)
 		on conflict (key)
 		do update set
 		config = $2,
-		updated_at = NOW()`,
+		config_hash = $3,
+		updated_at = NOW()
+		where config_cache.config_hash is distinct from excluded.config_hash`,
 		db.key,
 		encrypted,
+		configHash,
 	)
 	return err
 }
