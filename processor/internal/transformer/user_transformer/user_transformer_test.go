@@ -13,6 +13,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -1501,7 +1502,7 @@ func TestUserTransformURLRouting(t *testing.T) {
 			pyMir: newRecordingSrv(t),
 			perWS: newRecordingSrv(t),
 		}
-		f.perWSExpectPath = "/pyt-" + workspaceID + "/customTransform"
+		f.perWSExpectPath = "/pyt-" + strings.ToLower(workspaceID) + "/customTransform"
 		f.conf = config.New()
 		f.conf.Set("Processor.UserTransformer.maxRetry", 1)
 		f.conf.Set("USER_TRANSFORM_URL", f.js.srv.URL)

@@ -479,7 +479,7 @@ func (u *Client) userTransformURL(language, versionID, workspaceID string) strin
 	isPython := strings.HasPrefix(language, "python")
 	if isPython && u.config.pythonTransformConfig.IsVersionAllowed(versionID) {
 		if u.config.perWorkspacePyTEnabled && !u.config.forMirroring && workspaceID != "" {
-			base := strings.ReplaceAll(u.config.perWorkspacePyTURLTemplate, "{workspaceID}", workspaceID)
+			base := strings.ReplaceAll(u.config.perWorkspacePyTURLTemplate, "{workspaceID}", strings.ToLower(workspaceID))
 			return base + "/customTransform"
 		}
 		if u.config.pythonTransformationURL != "" {
