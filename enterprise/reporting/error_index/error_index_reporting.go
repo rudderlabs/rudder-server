@@ -118,6 +118,9 @@ func (eir *ErrorIndexReporter) Report(ctx context.Context, metrics []*types.PURe
 		if metric.StatusDetail == nil {
 			continue
 		}
+		if metric.SourceJobRunID != "" {
+			continue
+		}
 
 		for _, failedMessage := range metric.StatusDetail.FailedMessages {
 			workspaceID := eir.configSubscriber.WorkspaceIDFromSource(metric.SourceID)
