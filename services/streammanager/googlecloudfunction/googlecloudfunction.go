@@ -17,6 +17,7 @@ import (
 	"google.golang.org/api/option"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/googleutil"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
@@ -46,8 +47,11 @@ func (config *Config) shouldGenerateToken() bool {
 }
 
 func (config *Config) generateToken(ctx context.Context, client GoogleCloudFunctionClient) error {
-	// TODO: switching to WithAuthCredentialsJSON requires auth type handling
-	token, err := client.GetToken(ctx, config.FunctionUrl, option.WithCredentialsJSON([]byte(config.Credentials))) // nolint: staticcheck
+	confCreds := []byte(config.Credentials)
+	if err := googleutil.CompatibleServiceAccountJSON(confCreds); err != nil {
+		return fmt.Errorf("incompatible credentials: %w", err)
+	}
+	token, err := client.GetToken(ctx, config.FunctionUrl, option.WithAuthCredentialsJSON(option.ServiceAccount, confCreds))
 	if err != nil {
 		return err
 	}
