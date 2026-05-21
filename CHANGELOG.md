@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.75.3](https://github.com/rudderlabs/rudder-server/compare/v1.75.2...v1.75.3) (2026-05-20)
+
+
+### Bug Fixes
+
+* continuous backend config cache cause postgres disk bloat ([#6983](https://github.com/rudderlabs/rudder-server/issues/6983)) ([398f902](https://github.com/rudderlabs/rudder-server/commit/398f9028eb48c1a59fd515a686b38b573f1da6e7))
+
 ## [1.75.2](https://github.com/rudderlabs/rudder-server/compare/v1.75.1...v1.75.2) (2026-05-19)
 
 
