@@ -1685,6 +1685,14 @@ func TestColdStartCounter(t *testing.T) {
 		failErr    error
 		failures   int
 
+		// Optional per-case overrides on top of the default fixture
+		// (perWorkspacePyTEnabled=true, endless retries=true, language=python,
+		// non-mirroring). Each toggles one of the cold-start gating predicates.
+		disableFlag    bool   // sets perWorkspacePyTEnabled=false
+		mirroring      bool   // applies the ForMirroring() opt
+		language       string // overrides "pythonfaas"
+		disableEndless bool   // sets perWorkspacePyTEndlessRetries=false
+
 		expectCounter    int
 		expectEventCount int // events on the success path
 		expectFailedCode int // StatusCode on FailedEvent (0 = no failed event expected)
@@ -1756,6 +1764,49 @@ func TestColdStartCounter(t *testing.T) {
 			expectCounter:    0,
 			expectFailedCode: transformerutils.StatusCPDown,
 		},
+		// --- Guard negatives: cold-start counter must stay 0 when any of the
+		// gating predicates is false, even if the transport returns
+		// cold-start-looking errors. The transport warms after 2 failures so
+		// doPost recovers via its inner retry budget (3 inner attempts at
+		// maxRetry=2) — no panic, just a clean success. Empty-workspaceID is
+		// covered by TestUserTransformURLRouting's panic-on-invariant case.
+		{
+			name:             "guard: flag off → cold-start error not counted",
+			disableFlag:      true,
+			failErr:          connRefused,
+			failures:         2,
+			expectCounter:    0,
+			expectEventCount: 1,
+		},
+		{
+			name:             "guard: mirroring on → cold-start error not counted",
+			mirroring:        true,
+			failErr:          connRefused,
+			failures:         2,
+			expectCounter:    0,
+			expectEventCount: 1,
+		},
+		{
+			name:             "guard: JS language → cold-start error not counted",
+			language:         "javascript",
+			failErr:          connRefused,
+			failures:         2,
+			expectCounter:    0,
+			expectEventCount: 1,
+		},
+		{
+			// perWorkspacePyTEndlessRetries=false → after doPost exhausts its
+			// inner retries and returns StatusColdStartWindowFailure, the
+			// outer sendBatch loop bails via backoff.Permanent on the very
+			// next cycle (no further doPost call). Inner attempts still emit
+			// the counter, so counter = maxRetry+1 = 3.
+			name:             "endless retries disabled → bails with cold-start failed event",
+			disableEndless:   true,
+			failErr:          connRefused,
+			failures:         math.MaxInt,
+			expectCounter:    3,
+			expectFailedCode: transformerutils.StatusColdStartWindowFailure,
+		},
 	}
 
 	for _, tc := range cases {
@@ -1772,7 +1823,8 @@ func TestColdStartCounter(t *testing.T) {
 			c.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
 			c.Set("USER_TRANSFORM_URL", "http://js-stub:9090")
 			c.Set("PYTHON_TRANSFORM_URL", "http://py-stub:9090")
-			c.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+			c.Set("Processor.UserTransformer.perWorkspacePyTEnabled", !tc.disableFlag)
+			c.Set("Processor.UserTransformer.perWorkspacePyTEndlessRetries", !tc.disableEndless)
 			c.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", "http://pyt-{workspaceID}:9090")
 			c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
 			c.Set("PYTHON_TRANSFORM_VERSION_IDS", allowedV)
@@ -1783,8 +1835,16 @@ func TestColdStartCounter(t *testing.T) {
 				failures:    tc.failures,
 				successBody: successBody,
 			}
-			tr := user_transformer.New(c, logger.NOP, statsStore, user_transformer.WithClient(transport))
+			opts := []user_transformer.Opt{user_transformer.WithClient(transport)}
+			if tc.mirroring {
+				opts = append(opts, user_transformer.ForMirroring())
+			}
+			tr := user_transformer.New(c, logger.NOP, statsStore, opts...)
 
+			language := tc.language
+			if language == "" {
+				language = "pythonfaas"
+			}
 			events := []types.TransformerEvent{{
 				Metadata: types.Metadata{
 					MessageID:   messageID,
@@ -1796,7 +1856,7 @@ func TestColdStartCounter(t *testing.T) {
 					Transformations: []backendconfig.TransformationT{{
 						ID:        "transform-1",
 						VersionID: allowedV,
-						Language:  "pythonfaas",
+						Language:  language,
 					}},
 				},
 			}}
