@@ -2376,7 +2376,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		// later, during row scanning
 		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_event_counts - t.event_count <= $%d`, len(args)+1))
 		args = append(args, params.EventsLimit)
-	} 
+	}
 
 	if params.PayloadSizeLimit > 0 {
 		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_payload_size - t.payload_size <= $%d`, len(args)+1))
@@ -2398,17 +2398,22 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	}
 	defer func() { _ = rows.Close() }()
 
-	var runningEventCount int
-	var runningPayloadSize int64
-
 	var jobList []*JobT
 	var limitsReached bool
 	var eventCount int
 	var payloadSize int64
+
+	// we don't need the payload_size but still need to scan it because it is part of the resultset
+	// The query uses it for limits checking. The variable is declared before the for loop to avoid extra allocations,
+	// but if we were to actually use it in the future for returning in the result, we would need to move its declaration
+	// inside the loop
+	var discardRowPayloadSize int64
+
 	resultsetStates := map[string]struct{}{}
 	for rows.Next() {
-		var rowPayloadSize int64
 		var job JobT
+		var runningEventCount int
+		var runningPayloadSize int64
 		var payload []byte
 		var jsState sql.NullString
 		var jsAttemptNum sql.NullInt64
@@ -2418,7 +2423,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		var jsErrorResponse []byte
 		var jsParameters []byte
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&payload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PartitionID, &rowPayloadSize, &runningEventCount, &runningPayloadSize,
+			&payload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PartitionID, &discardRowPayloadSize, &runningEventCount, &runningPayloadSize,
 			&jsState, &jsAttemptNum,
 			&jsExecTime, &jsRetryTime,
 			&jsErrorCode, &jsErrorResponse, &jsParameters)
