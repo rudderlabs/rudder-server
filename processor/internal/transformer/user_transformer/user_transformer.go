@@ -3,13 +3,16 @@ package user_transformer
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
@@ -48,6 +51,9 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.client = transformerclient.NewClient("UserTransformer", transformerutils.TransformerClientConfig(conf, "UserTransformer"))
 	handle.config.userTransformationURL = handle.conf.GetStringVar(handle.conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"), "USER_TRANSFORM_URL")
 	handle.config.pythonTransformationURL = handle.conf.GetStringVar("", "PYTHON_TRANSFORM_URL")
+	handle.config.perWorkspacePyTEnabled = handle.conf.GetReloadableBoolVar(false, "Processor.UserTransformer.perWorkspacePyTEnabled")
+	handle.config.perWorkspacePyTURLTemplate = handle.conf.GetStringVar("http://pyt-{workspaceID}:8080", "Processor.UserTransformer.perWorkspacePyTURLTemplate")
+	handle.config.perWorkspacePyTEndlessRetries = handle.conf.GetReloadableBoolVar(true, "Processor.UserTransformer.perWorkspacePyTEndlessRetries")
 	handle.config.pythonTransformConfig = transformerutils.LoadPythonTransformConfig(conf)
 	handle.config.timeoutDuration = conf.GetDurationVar(600, time.Second, "HttpClient.procTransformer.timeout")
 	handle.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.UserTransformer.failOnUserTransformTimeout", "Processor.Transformer.failOnUserTransformTimeout")
@@ -72,18 +78,21 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 
 type Client struct {
 	config struct {
-		userTransformationURL      string
-		pythonTransformationURL    string
-		pythonTransformConfig      transformerutils.PythonTransformConfig
-		forMirroring               bool
-		maxRetry                   config.ValueLoader[int]
-		cpDownEndlessRetries       config.ValueLoader[bool]
-		failOnUserTransformTimeout config.ValueLoader[bool]
-		failOnError                config.ValueLoader[bool]
-		maxRetryBackoffInterval    config.ValueLoader[time.Duration]
-		timeoutDuration            time.Duration
-		collectInstanceLevelStats  bool
-		batchSize                  config.ValueLoader[int]
+		userTransformationURL         string
+		pythonTransformationURL       string
+		pythonTransformConfig         transformerutils.PythonTransformConfig
+		forMirroring                  bool
+		maxRetry                      config.ValueLoader[int]
+		cpDownEndlessRetries          config.ValueLoader[bool]
+		failOnUserTransformTimeout    config.ValueLoader[bool]
+		failOnError                   config.ValueLoader[bool]
+		maxRetryBackoffInterval       config.ValueLoader[time.Duration]
+		timeoutDuration               time.Duration
+		collectInstanceLevelStats     bool
+		batchSize                     config.ValueLoader[int]
+		perWorkspacePyTEnabled        config.ValueLoader[bool]
+		perWorkspacePyTURLTemplate    string
+		perWorkspacePyTEndlessRetries config.ValueLoader[bool]
 	}
 	conf   *config.Config
 	log    logger.Logger
@@ -97,7 +106,11 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	}
 	batchSize := u.config.batchSize.Load()
 	transformationLanguage, transformationVersionID, transformationID := transformerutils.GetTransformationInfo(clientEvents)
-	userURL := u.userTransformURL(transformationLanguage, transformationVersionID)
+	workspaceID := ""
+	if len(clientEvents) > 0 {
+		workspaceID = clientEvents[0].Metadata.WorkspaceID
+	}
+	userURL := u.userTransformURL(transformationLanguage, transformationVersionID, workspaceID)
 
 	labels := types.TransformerMetricLabels{
 		Endpoint:         transformerutils.GetEndpointFromURL(userURL),
@@ -248,9 +261,6 @@ func (u *Client) sendBatch(
 			)
 		}),
 	}
-	if !u.config.cpDownEndlessRetries.Load() {
-		retryOptions = append(retryOptions, backoff.WithMaxTries(uint(u.config.maxRetry.Load()+1)))
-	}
 	_ = backoffvoid.Retry(
 		context.Background(),
 		func() error {
@@ -260,9 +270,18 @@ func (u *Client) sendBatch(
 			}
 			if statusCode == transformerutils.StatusCPDown {
 				u.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(1)
+				if !u.config.cpDownEndlessRetries.Load() {
+					return backoff.Permanent(fmt.Errorf("control plane not reachable"))
+				}
 				return fmt.Errorf("control plane not reachable")
 			}
 			u.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(0)
+			if statusCode == transformerutils.StatusColdStartWindowFailure {
+				if !u.config.perWorkspacePyTEndlessRetries.Load() {
+					return backoff.Permanent(fmt.Errorf("cold start error for transformer"))
+				}
+				return fmt.Errorf("cold start window error for transformer")
+			}
 			return nil
 		},
 		retryOptions...,
@@ -342,6 +361,20 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			u.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
 			u.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
 
+			// This metric is to track cold start errors for PyT, which are expected to be higher than usual due to the nature of PyT scaling.
+			if u.shouldThrowPythonColdStartErr(labels, reqErr, resp) {
+				u.stat.NewTaggedStat(
+					"processor_user_transformer_cold_start_errors_total",
+					stats.CountType,
+					stats.Tags{
+						"workspaceID": labels.WorkspaceID,
+						"language":    "python",
+					},
+				).Increment()
+				u.log.Warnn("cold start error when connecting to workspace transformer", labels.ToLoggerFields()...)
+				return transformerutils.ErrColdStart
+			}
+
 			if reqErr != nil {
 				return reqErr
 			}
@@ -388,6 +421,13 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	if err != nil {
 		u.log.Errorn("User transformation post error",
 			append(labels.ToLoggerFields(), obskit.Error(err))...)
+		// Per-workspace PyT: a persistent transport failure on the workspace-
+		// scoped URL is most likely a cold-start window (pod not yet scaled by
+		// HPA, EndpointSlice lag, kube-proxy 5xx). Surface a dedicated status
+		// code so sendBatch retries the whole call until the pod is up instead of treating it as a failed transformation.
+		if errors.Is(err, transformerutils.ErrColdStart) {
+			return fmt.Appendf(nil, "workspace transformer not reachable: %s", err), transformerutils.StatusColdStartWindowFailure, nil
+		}
 		if u.config.failOnUserTransformTimeout.Load() && os.IsTimeout(err) {
 			return fmt.Appendf(nil, "transformer request timed out: %s", err), transformerutils.TransformerRequestTimeout, nil
 		} else if u.config.failOnError.Load() {
@@ -409,9 +449,61 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	return respData, resp.StatusCode, nil
 }
 
-func (u *Client) userTransformURL(language, versionID string) string {
-	isPython := strings.HasPrefix(language, "python")
-	if isPython && u.config.pythonTransformConfig.IsVersionAllowed(versionID) && u.config.pythonTransformationURL != "" {
+// isPerWorkspacePyTPath returns true when the request is targeting the
+// per-workspace PyT URL. Single source of truth shared by URL resolution and
+// the cold-start error / counter path so the two can't drift.
+func (u *Client) isPerWorkspacePyTPath(language, workspaceID string) bool {
+	return u.config.perWorkspacePyTEnabled.Load() &&
+		!u.config.forMirroring &&
+		isPythonTransformation(language) &&
+		workspaceID != ""
+}
+
+func (u *Client) shouldThrowPythonColdStartErr(labels types.TransformerMetricLabels, err error, resp *http.Response) bool {
+	return u.isPerWorkspacePyTPath(labels.Language, labels.WorkspaceID) && isColdStartError(err, resp)
+}
+
+// isColdStartError returns true for transient errors that mean the target
+// PyT deployment isn't ready yet — zero endpoints, pod not yet ready, or
+// kube-proxy returning a no-endpoints status.
+func isColdStartError(err error, resp *http.Response) bool {
+	if err != nil {
+		// ECONNREFUSED: Service has no endpoints (Deployment at 0 replicas).
+		// EHOSTUNREACH ("no route to host"): stale iptables / EndpointSlice
+		// after a pod replacement or scale-down — same transient signal.
+		if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.EHOSTUNREACH) {
+			return true
+		}
+		var dnsErr *net.DNSError
+		return errors.As(err, &dnsErr)
+	}
+	if resp != nil && (resp.StatusCode == http.StatusServiceUnavailable ||
+		resp.StatusCode == http.StatusBadGateway) {
+		return true
+	}
+	return false
+}
+
+func isPythonTransformation(language string) bool {
+	return strings.HasPrefix(language, "python")
+}
+
+func (u *Client) userTransformURL(language, versionID, workspaceID string) string {
+	if !isPythonTransformation(language) {
+		return u.config.userTransformationURL + "/customTransform"
+	}
+	// Per-workspace PyT: a global version allowlist doesn't apply — each
+	// workspace runs its own pod with its own version.
+	if u.config.perWorkspacePyTEnabled.Load() && !u.config.forMirroring {
+		if workspaceID == "" {
+			// Panic so the bug surfaces immediately as this should not happen
+			panic("per-workspace PyT enabled but workspaceID is empty")
+		}
+		base := strings.ReplaceAll(u.config.perWorkspacePyTURLTemplate, "{workspaceID}", strings.ToLower(workspaceID))
+		return base + "/customTransform"
+	}
+	// Legacy shared-PyT path: the version allowlist is a rollout gate for the shared service.
+	if u.config.pythonTransformationURL != "" && u.config.pythonTransformConfig.IsVersionAllowed(versionID) {
 		return u.config.pythonTransformationURL + "/customTransform"
 	}
 	return u.config.userTransformationURL + "/customTransform"

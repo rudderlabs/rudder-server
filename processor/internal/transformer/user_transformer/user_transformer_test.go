@@ -1,15 +1,21 @@
 package user_transformer_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1404,6 +1410,486 @@ func TestTransformerEvent_ToUserTransformerEvent(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.expected, tc.event.ToUserTransformerEvent())
+		})
+	}
+}
+
+// TestUserTransformURLRouting verifies the URL-resolution branches added by
+// the per-workspace PyT routing feature. Each case spins up real httptest
+// servers for the JS, legacy-Python, mirror-Python, and per-workspace endpoints
+// and asserts which one is hit by Transform.
+func TestUserTransformURLRouting(t *testing.T) {
+	const (
+		workspaceID = "ws-A1"
+		messageID   = "messageID-0"
+		allowedV    = "v-allowed"
+		blockedV    = "v-blocked"
+	)
+
+	type recordingSrv struct {
+		srv   *httptest.Server
+		hits  *atomic.Int32
+		paths *atomic.Value // last hit path
+	}
+
+	newRecordingSrv := func(t *testing.T) recordingSrv {
+		var hits atomic.Int32
+		var path atomic.Value
+		path.Store("")
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits.Add(1)
+			path.Store(r.URL.Path)
+
+			var reqBody []types.TransformerEvent
+			require.NoError(t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
+
+			responses := make([]types.TransformerResponse, len(reqBody))
+			for i := range reqBody {
+				responses[i] = types.TransformerResponse{
+					Output:     reqBody[i].Message,
+					Metadata:   reqBody[i].Metadata,
+					StatusCode: http.StatusOK,
+				}
+			}
+			w.Header().Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
+			require.NoError(t, jsonrs.NewEncoder(w).Encode(responses))
+		}))
+		t.Cleanup(srv.Close)
+		return recordingSrv{srv: srv, hits: &hits, paths: &path}
+	}
+
+	makeEvents := func(language, versionID, wsID string) []types.TransformerEvent {
+		return []types.TransformerEvent{{
+			Metadata: types.Metadata{
+				MessageID:   messageID,
+				WorkspaceID: wsID,
+			},
+			Message: map[string]any{"src-key-1": messageID},
+			Destination: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "test-destination"},
+				Transformations: []backendconfig.TransformationT{{
+					ID:        "test-transformation",
+					VersionID: versionID,
+					Language:  language,
+				}},
+			},
+		}}
+	}
+
+	// The recording server echoes back the request's Message + Metadata with
+	// StatusCode 200, so Transform's response is deterministic given the input.
+	expectedResponseFor := func(wsID string) types.Response {
+		return types.Response{
+			Events: []types.TransformerResponse{{
+				Output:     map[string]any{"src-key-1": messageID},
+				Metadata:   types.Metadata{MessageID: messageID, WorkspaceID: wsID},
+				StatusCode: http.StatusOK,
+			}},
+		}
+	}
+
+	type fixture struct {
+		conf            *config.Config
+		js, py, pyMir   recordingSrv
+		perWS           recordingSrv
+		perWSExpectPath string
+	}
+
+	newFixture := func(t *testing.T) *fixture {
+		f := &fixture{
+			js:    newRecordingSrv(t),
+			py:    newRecordingSrv(t),
+			pyMir: newRecordingSrv(t),
+			perWS: newRecordingSrv(t),
+		}
+		f.perWSExpectPath = "/pyt-" + strings.ToLower(workspaceID) + "/customTransform"
+		f.conf = config.New()
+		f.conf.Set("Processor.UserTransformer.maxRetry", 1)
+		f.conf.Set("USER_TRANSFORM_URL", f.js.srv.URL)
+		f.conf.Set("PYTHON_TRANSFORM_URL", f.py.srv.URL)
+		f.conf.Set("USER_TRANSFORM_MIRROR_URL", f.js.srv.URL)
+		f.conf.Set("PYTHON_TRANSFORM_MIRROR_URL", f.pyMir.srv.URL)
+		// Pin the per-workspace template to the recording server so the request
+		// resolves; embed {workspaceID} in the path so we can assert it.
+		f.conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", f.perWS.srv.URL+"/pyt-{workspaceID}")
+		// Enable version allowlist with one allowed version.
+		f.conf.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
+		f.conf.Set("PYTHON_TRANSFORM_VERSION_IDS", allowedV)
+		return f
+	}
+
+	assertOnly := func(t *testing.T, f *fixture, hit *recordingSrv, expectPath string) {
+		t.Helper()
+		require.Equal(t, int32(1), hit.hits.Load(), "expected target server to be hit once")
+		if expectPath != "" {
+			require.Equal(t, expectPath, hit.paths.Load().(string))
+		}
+		for name, s := range map[string]*recordingSrv{
+			"js": &f.js, "py": &f.py, "pyMir": &f.pyMir, "perWS": &f.perWS,
+		} {
+			if s == hit {
+				continue
+			}
+			require.Equal(t, int32(0), s.hits.Load(), "server %s should not be hit", name)
+		}
+	}
+
+	t.Run("JS — flag off → JS URL", func(t *testing.T) {
+		f := newFixture(t)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		rsp := tr.Transform(context.Background(), makeEvents("javascript", allowedV, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
+		assertOnly(t, f, &f.js, "/customTransform")
+	})
+
+	t.Run("JS — flag on → JS URL (unaffected)", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		rsp := tr.Transform(context.Background(), makeEvents("javascript", allowedV, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
+		assertOnly(t, f, &f.js, "/customTransform")
+	})
+
+	t.Run("Python — flag off → global Python URL", func(t *testing.T) {
+		f := newFixture(t)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
+		assertOnly(t, f, &f.py, "/customTransform")
+	})
+
+	t.Run("Python — flag on, version allowed → per-workspace URL", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
+		assertOnly(t, f, &f.perWS, f.perWSExpectPath)
+	})
+
+	t.Run("Python — flag on, version disallowed → still routes to per-workspace URL (allowlist doesn't apply in per-ws mode)", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", blockedV, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
+		assertOnly(t, f, &f.perWS, f.perWSExpectPath)
+	})
+
+	t.Run("Python — flag off, version disallowed → JS URL fallback (legacy allowlist still applies)", func(t *testing.T) {
+		f := newFixture(t)
+		// per-ws flag off, legacy path active; disallowed version → JS fallback.
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", blockedV, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
+		assertOnly(t, f, &f.js, "/customTransform")
+	})
+
+	t.Run("Python — flag on, mirroring → mirror Python URL", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP, user_transformer.ForMirroring())
+		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
+		assertOnly(t, f, &f.pyMir, "/customTransform")
+	})
+
+	t.Run("Python — flag on, empty workspaceID → panics (invariant violation)", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		require.PanicsWithValue(t,
+			"per-workspace PyT enabled but workspaceID is empty",
+			func() {
+				tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, ""))
+			},
+		)
+	})
+}
+
+// fakeColdStartTransport is a transformerclient.Client that returns a
+// configured failure (failStatus or failErr) for the first `failures` calls and
+// then a 200 success (carrying successBody) for every subsequent call. Lets
+// tests simulate a pod that's cold for N attempts and then warms up.
+type fakeColdStartTransport struct {
+	// At most one of failStatus / failErr is set. failStatus > 0 returns an
+	// HTTP response with that status code and an empty body; failErr returns
+	// a transport-level error (ECONNREFUSED / DNS / ...).
+	failStatus int
+	failErr    error
+	// failures: number of failing calls before switching to successBody. Use
+	// math.MaxInt for "always fail".
+	failures int
+	// successBody: marshaled []TransformerResponse returned on the (failures+1)th
+	// and later calls. Empty body is fine when the test doesn't reach success.
+	successBody []byte
+
+	calls atomic.Int32
+}
+
+func (f *fakeColdStartTransport) Do(_ *http.Request) (*http.Response, error) {
+	hdr := http.Header{}
+	hdr.Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
+	n := int(f.calls.Add(1))
+	if n <= f.failures {
+		if f.failStatus > 0 {
+			return &http.Response{
+				StatusCode: f.failStatus,
+				Header:     hdr,
+				Body:       io.NopCloser(bytes.NewReader(nil)),
+			}, nil
+		}
+		return nil, f.failErr
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     hdr,
+		Body:       io.NopCloser(bytes.NewReader(f.successBody)),
+	}, nil
+}
+
+func TestColdStartCounter(t *testing.T) {
+	const (
+		coldStartMetric = "processor_user_transformer_cold_start_errors_total"
+		workspaceID     = "ws-A1"
+		messageID       = "messageID-0"
+		allowedV        = "v-allowed"
+	)
+
+	connRefused := &net.OpError{
+		Op:  "dial",
+		Net: "tcp",
+		Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNREFUSED},
+	}
+	noRouteToHost := &net.OpError{
+		Op:  "dial",
+		Net: "tcp",
+		Err: &os.SyscallError{Syscall: "connect", Err: syscall.EHOSTUNREACH},
+	}
+	dnsErr := &net.DNSError{Err: "no such host", Name: "pyt-ws-A1", IsNotFound: true}
+
+	// Marshaled success response — what a warm PyT pod would return.
+	successBody, err := jsonrs.Marshal([]types.TransformerResponse{{
+		Output:     map[string]any{"src-key-1": messageID},
+		Metadata:   types.Metadata{MessageID: messageID, WorkspaceID: workspaceID},
+		StatusCode: http.StatusOK,
+	}})
+	require.NoError(t, err)
+
+	cases := []struct {
+		name string
+		// failStatus / failErr: what the fake transport returns for the first
+		// `failures` calls. After that it returns a 200 success.
+		failStatus int
+		failErr    error
+		failures   int
+
+		// Optional per-case overrides on top of the default fixture
+		// (perWorkspacePyTEnabled=true, endless retries=true, language=python,
+		// non-mirroring). Each toggles one of the cold-start gating predicates.
+		disableFlag    bool   // sets perWorkspacePyTEnabled=false
+		mirroring      bool   // applies the ForMirroring() opt
+		language       string // overrides "pythonfaas"
+		disableEndless bool   // sets perWorkspacePyTEndlessRetries=false
+
+		expectCounter    int
+		expectEventCount int // events on the success path
+		expectFailedCode int // StatusCode on FailedEvent (0 = no failed event expected)
+	}{
+		{
+			// 2 ECONNREFUSED then warm. Fits within doPost's inner retry budget
+			// (maxRetry+1 = 3), so the outer sendBatch loop runs exactly once.
+			name:             "ECONNREFUSED twice → counted twice, then warm",
+			failErr:          connRefused,
+			failures:         2,
+			expectCounter:    2,
+			expectEventCount: 1,
+		},
+		{
+			name:             "DNS not found twice → counted twice, then warm",
+			failErr:          dnsErr,
+			failures:         2,
+			expectCounter:    2,
+			expectEventCount: 1,
+		},
+		{
+			// "no route to host" — stale iptables / EndpointSlice during pod
+			// replacement or scale-down. Same transient signal as ECONNREFUSED.
+			name:             "EHOSTUNREACH twice → counted twice, then warm",
+			failErr:          noRouteToHost,
+			failures:         2,
+			expectCounter:    2,
+			expectEventCount: 1,
+		},
+		{
+			name:             "503 twice → counted twice, then warm",
+			failStatus:       http.StatusServiceUnavailable,
+			failures:         2,
+			expectCounter:    2,
+			expectEventCount: 1,
+		},
+		{
+			name:             "502 twice → counted twice, then warm",
+			failStatus:       http.StatusBadGateway,
+			failures:         2,
+			expectCounter:    2,
+			expectEventCount: 1,
+		},
+		{
+			// 4 failures > maxRetry+1, forces sendBatch's outer retry to kick
+			// in: doPost exhausts inner retries on cycle 1, returns the
+			// cold-start status, sendBatch retries doPost, second cycle warms.
+			name:             "cold-start spans multiple outer cycles → still recovers",
+			failErr:          connRefused,
+			failures:         4,
+			expectCounter:    4,
+			expectEventCount: 1,
+		},
+		{
+			// 4xx is job-terminated — no retry, no cold-start counter, just a
+			// straight FailedEvent with the upstream status code.
+			name:             "non-transient 400 → no retry, failed event with 400",
+			failStatus:       http.StatusBadRequest,
+			failures:         math.MaxInt,
+			expectCounter:    0,
+			expectFailedCode: http.StatusBadRequest,
+		},
+		{
+			// With cpDownEndlessRetries=false, CPDown bails after one attempt
+			// via backoff.Permanent. Not a cold-start signal — counter stays 0.
+			name:             "StatusCPDown → bails, not counted",
+			failStatus:       transformerutils.StatusCPDown,
+			failures:         math.MaxInt,
+			expectCounter:    0,
+			expectFailedCode: transformerutils.StatusCPDown,
+		},
+		// --- Guard negatives: cold-start counter must stay 0 when any of the
+		// gating predicates is false, even if the transport returns
+		// cold-start-looking errors. The transport warms after 2 failures so
+		// doPost recovers via its inner retry budget (3 inner attempts at
+		// maxRetry=2) — no panic, just a clean success. Empty-workspaceID is
+		// covered by TestUserTransformURLRouting's panic-on-invariant case.
+		{
+			name:             "guard: flag off → cold-start error not counted",
+			disableFlag:      true,
+			failErr:          connRefused,
+			failures:         2,
+			expectCounter:    0,
+			expectEventCount: 1,
+		},
+		{
+			name:             "guard: mirroring on → cold-start error not counted",
+			mirroring:        true,
+			failErr:          connRefused,
+			failures:         2,
+			expectCounter:    0,
+			expectEventCount: 1,
+		},
+		{
+			name:             "guard: JS language → cold-start error not counted",
+			language:         "javascript",
+			failErr:          connRefused,
+			failures:         2,
+			expectCounter:    0,
+			expectEventCount: 1,
+		},
+		{
+			// perWorkspacePyTEndlessRetries=false → after doPost exhausts its
+			// inner retries and returns StatusColdStartWindowFailure, the
+			// outer sendBatch loop bails via backoff.Permanent on the very
+			// next cycle (no further doPost call). Inner attempts still emit
+			// the counter, so counter = maxRetry+1 = 3.
+			name:             "endless retries disabled → bails with cold-start failed event",
+			disableEndless:   true,
+			failErr:          connRefused,
+			failures:         math.MaxInt,
+			expectCounter:    3,
+			expectFailedCode: transformerutils.StatusColdStartWindowFailure,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
+			c := config.New()
+			c.Set("Processor.UserTransformer.maxRetry", 2)
+			c.Set("Processor.UserTransformer.maxRetryBackoffInterval", "1ms")
+			// Bound CPDown retries so the CPDown case terminates. Per-workspace
+			// PyT retries stay at the production default (endless) — the
+			// transport itself warms up to end the loop.
+			c.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
+			c.Set("USER_TRANSFORM_URL", "http://js-stub:9090")
+			c.Set("PYTHON_TRANSFORM_URL", "http://py-stub:9090")
+			c.Set("Processor.UserTransformer.perWorkspacePyTEnabled", !tc.disableFlag)
+			c.Set("Processor.UserTransformer.perWorkspacePyTEndlessRetries", !tc.disableEndless)
+			c.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", "http://pyt-{workspaceID}:9090")
+			c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
+			c.Set("PYTHON_TRANSFORM_VERSION_IDS", allowedV)
+
+			transport := &fakeColdStartTransport{
+				failStatus:  tc.failStatus,
+				failErr:     tc.failErr,
+				failures:    tc.failures,
+				successBody: successBody,
+			}
+			opts := []user_transformer.Opt{user_transformer.WithClient(transport)}
+			if tc.mirroring {
+				opts = append(opts, user_transformer.ForMirroring())
+			}
+			tr := user_transformer.New(c, logger.NOP, statsStore, opts...)
+
+			language := tc.language
+			if language == "" {
+				language = "pythonfaas"
+			}
+			events := []types.TransformerEvent{{
+				Metadata: types.Metadata{
+					MessageID:   messageID,
+					WorkspaceID: workspaceID,
+				},
+				Message: map[string]any{"src-key-1": messageID},
+				Destination: backendconfig.DestinationT{
+					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "test-destination"},
+					Transformations: []backendconfig.TransformationT{{
+						ID:        "transform-1",
+						VersionID: allowedV,
+						Language:  language,
+					}},
+				},
+			}}
+
+			rsp := tr.Transform(context.Background(), events)
+
+			require.Len(t, rsp.Events, tc.expectEventCount)
+			if tc.expectFailedCode != 0 {
+				require.Len(t, rsp.FailedEvents, 1)
+				require.Equal(t, tc.expectFailedCode, rsp.FailedEvents[0].StatusCode)
+				require.Equal(t, messageID, rsp.FailedEvents[0].Metadata.MessageID)
+				require.Equal(t, workspaceID, rsp.FailedEvents[0].Metadata.WorkspaceID)
+			} else {
+				require.Empty(t, rsp.FailedEvents)
+				require.Equal(t, messageID, rsp.Events[0].Metadata.MessageID)
+				require.Equal(t, workspaceID, rsp.Events[0].Metadata.WorkspaceID)
+				require.Equal(t, http.StatusOK, rsp.Events[0].StatusCode)
+			}
+
+			measurements := statsStore.GetByName(coldStartMetric)
+			total := 0
+			for _, m := range measurements {
+				total += int(m.Value)
+			}
+			require.Equal(t, tc.expectCounter, total)
+
+			if tc.expectCounter > 0 {
+				// All increments must land on the same tag set: workspaceID +
+				// hardcoded language=python (not the raw label).
+				require.Len(t, measurements, 1)
+				require.Equal(t, workspaceID, measurements[0].Tags["workspaceID"])
+				require.Equal(t, "python", measurements[0].Tags["language"])
+			}
 		})
 	}
 }
