@@ -455,7 +455,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 func (u *Client) isPerWorkspacePyTPath(language, workspaceID string) bool {
 	return u.config.perWorkspacePyTEnabled.Load() &&
 		!u.config.forMirroring &&
-		strings.HasPrefix(language, "python") &&
+		isPythonTransformation(language) &&
 		workspaceID != ""
 }
 
@@ -484,8 +484,12 @@ func isColdStartError(err error, resp *http.Response) bool {
 	return false
 }
 
+func isPythonTransformation(language string) bool {
+	return strings.HasPrefix(language, "python")
+}
+
 func (u *Client) userTransformURL(language, versionID, workspaceID string) string {
-	if !strings.HasPrefix(language, "python") {
+	if !isPythonTransformation(language) {
 		return u.config.userTransformationURL + "/customTransform"
 	}
 	// Per-workspace PyT: a global version allowlist doesn't apply — each
