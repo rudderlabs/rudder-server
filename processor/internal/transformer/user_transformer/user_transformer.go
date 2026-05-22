@@ -52,7 +52,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.userTransformationURL = handle.conf.GetStringVar(handle.conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"), "USER_TRANSFORM_URL")
 	handle.config.pythonTransformationURL = handle.conf.GetStringVar("", "PYTHON_TRANSFORM_URL")
 	handle.config.perWorkspacePyTEnabled = handle.conf.GetBoolVar(false, "Processor.UserTransformer.perWorkspacePyTEnabled")
-	handle.config.perWorkspacePyTURLTemplate = handle.conf.GetStringVar("http://pyt-{workspaceID}:9090", "Processor.UserTransformer.perWorkspacePyTURLTemplate")
+	handle.config.perWorkspacePyTURLTemplate = handle.conf.GetStringVar("http://pyt-{workspaceID}:8080", "Processor.UserTransformer.perWorkspacePyTURLTemplate")
 	handle.config.perWorkspacePyTEndlessRetries = handle.conf.GetReloadableBoolVar(true, "Processor.UserTransformer.perWorkspacePyTEndlessRetries")
 	handle.config.pythonTransformConfig = transformerutils.LoadPythonTransformConfig(conf)
 	handle.config.timeoutDuration = conf.GetDurationVar(600, time.Second, "HttpClient.procTransformer.timeout")
@@ -481,7 +481,11 @@ func isColdStartError(err error, resp *http.Response) bool {
 func (u *Client) userTransformURL(language, versionID, workspaceID string) string {
 	isPython := strings.HasPrefix(language, "python")
 	if isPython && u.config.pythonTransformConfig.IsVersionAllowed(versionID) {
-		if u.config.perWorkspacePyTEnabled && !u.config.forMirroring && workspaceID != "" {
+		if u.config.perWorkspacePyTEnabled && !u.config.forMirroring {
+			if workspaceID == "" {
+				// This should not happen, Panic so the bug surfaces immediately
+				panic("per-workspace PyT enabled but workspaceID is empty")
+			}
 			base := strings.ReplaceAll(u.config.perWorkspacePyTURLTemplate, "{workspaceID}", strings.ToLower(workspaceID))
 			return base + "/customTransform"
 		}

@@ -1586,13 +1586,16 @@ func TestUserTransformURLRouting(t *testing.T) {
 		assertOnly(t, f, &f.pyMir, "/customTransform")
 	})
 
-	t.Run("Python — flag on, empty workspaceID → global Python URL", func(t *testing.T) {
+	t.Run("Python — flag on, empty workspaceID → panics (invariant violation)", func(t *testing.T) {
 		f := newFixture(t)
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, ""))
-		require.Equal(t, expectedResponseFor(""), rsp)
-		assertOnly(t, f, &f.py, "/customTransform")
+		require.PanicsWithValue(t,
+			"per-workspace PyT enabled but workspaceID is empty",
+			func() {
+				tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, ""))
+			},
+		)
 	})
 }
 
