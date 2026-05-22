@@ -51,7 +51,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.client = transformerclient.NewClient("UserTransformer", transformerutils.TransformerClientConfig(conf, "UserTransformer"))
 	handle.config.userTransformationURL = handle.conf.GetStringVar(handle.conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"), "USER_TRANSFORM_URL")
 	handle.config.pythonTransformationURL = handle.conf.GetStringVar("", "PYTHON_TRANSFORM_URL")
-	handle.config.perWorkspacePyTEnabled = handle.conf.GetBoolVar(false, "Processor.UserTransformer.perWorkspacePyTEnabled")
+	handle.config.perWorkspacePyTEnabled = handle.conf.GetReloadableBoolVar(false, "Processor.UserTransformer.perWorkspacePyTEnabled")
 	handle.config.perWorkspacePyTURLTemplate = handle.conf.GetStringVar("http://pyt-{workspaceID}:8080", "Processor.UserTransformer.perWorkspacePyTURLTemplate")
 	handle.config.perWorkspacePyTEndlessRetries = handle.conf.GetReloadableBoolVar(true, "Processor.UserTransformer.perWorkspacePyTEndlessRetries")
 	handle.config.pythonTransformConfig = transformerutils.LoadPythonTransformConfig(conf)
@@ -90,7 +90,7 @@ type Client struct {
 		timeoutDuration               time.Duration
 		collectInstanceLevelStats     bool
 		batchSize                     config.ValueLoader[int]
-		perWorkspacePyTEnabled        bool
+		perWorkspacePyTEnabled        config.ValueLoader[bool]
 		perWorkspacePyTURLTemplate    string
 		perWorkspacePyTEndlessRetries config.ValueLoader[bool]
 	}
@@ -453,7 +453,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 // per-workspace PyT URL. Single source of truth shared by URL resolution and
 // the cold-start error / counter path so the two can't drift.
 func (u *Client) isPerWorkspacePyTPath(language, workspaceID string) bool {
-	return u.config.perWorkspacePyTEnabled &&
+	return u.config.perWorkspacePyTEnabled.Load() &&
 		!u.config.forMirroring &&
 		strings.HasPrefix(language, "python") &&
 		workspaceID != ""
@@ -490,7 +490,7 @@ func (u *Client) userTransformURL(language, versionID, workspaceID string) strin
 	}
 	// Per-workspace PyT: a global version allowlist doesn't apply — each
 	// workspace runs its own pod with its own version.
-	if u.config.perWorkspacePyTEnabled && !u.config.forMirroring {
+	if u.config.perWorkspacePyTEnabled.Load() && !u.config.forMirroring {
 		if workspaceID == "" {
 			// Panic so the bug surfaces immediately as this should not happen
 			panic("per-workspace PyT enabled but workspaceID is empty")
