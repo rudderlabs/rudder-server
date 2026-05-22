@@ -1568,9 +1568,18 @@ func TestUserTransformURLRouting(t *testing.T) {
 		assertOnly(t, f, &f.perWS, f.perWSExpectPath)
 	})
 
-	t.Run("Python — flag on, version disallowed → JS URL fallback", func(t *testing.T) {
+	t.Run("Python — flag on, version disallowed → still routes to per-workspace URL (allowlist doesn't apply in per-ws mode)", func(t *testing.T) {
 		f := newFixture(t)
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", blockedV, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
+		assertOnly(t, f, &f.perWS, f.perWSExpectPath)
+	})
+
+	t.Run("Python — flag off, version disallowed → JS URL fallback (legacy allowlist still applies)", func(t *testing.T) {
+		f := newFixture(t)
+		// per-ws flag off, legacy path active; disallowed version → JS fallback.
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
 		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", blockedV, workspaceID))
 		require.Equal(t, expectedResponseFor(workspaceID), rsp)

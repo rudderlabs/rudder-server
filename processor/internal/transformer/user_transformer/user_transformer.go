@@ -449,12 +449,18 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	return respData, resp.StatusCode, nil
 }
 
-func (u *Client) shouldThrowPythonColdStartErr(labels types.TransformerMetricLabels, err error, resp *http.Response) bool {
+// isPerWorkspacePyTPath returns true when the request is targeting the
+// per-workspace PyT URL. Single source of truth shared by URL resolution and
+// the cold-start error / counter path so the two can't drift.
+func (u *Client) isPerWorkspacePyTPath(language, workspaceID string) bool {
 	return u.config.perWorkspacePyTEnabled &&
 		!u.config.forMirroring &&
-		strings.HasPrefix(labels.Language, "python") &&
-		labels.WorkspaceID != "" &&
-		isColdStartError(err, resp)
+		strings.HasPrefix(language, "python") &&
+		workspaceID != ""
+}
+
+func (u *Client) shouldThrowPythonColdStartErr(labels types.TransformerMetricLabels, err error, resp *http.Response) bool {
+	return u.isPerWorkspacePyTPath(labels.Language, labels.WorkspaceID) && isColdStartError(err, resp)
 }
 
 // isColdStartError returns true for transient errors that mean the target
@@ -479,19 +485,22 @@ func isColdStartError(err error, resp *http.Response) bool {
 }
 
 func (u *Client) userTransformURL(language, versionID, workspaceID string) string {
-	isPython := strings.HasPrefix(language, "python")
-	if isPython && u.config.pythonTransformConfig.IsVersionAllowed(versionID) {
-		if u.config.perWorkspacePyTEnabled && !u.config.forMirroring {
-			if workspaceID == "" {
-				// This should not happen, Panic so the bug surfaces immediately
-				panic("per-workspace PyT enabled but workspaceID is empty")
-			}
-			base := strings.ReplaceAll(u.config.perWorkspacePyTURLTemplate, "{workspaceID}", strings.ToLower(workspaceID))
-			return base + "/customTransform"
+	if !strings.HasPrefix(language, "python") {
+		return u.config.userTransformationURL + "/customTransform"
+	}
+	// Per-workspace PyT: a global version allowlist doesn't apply — each
+	// workspace runs its own pod with its own version.
+	if u.config.perWorkspacePyTEnabled && !u.config.forMirroring {
+		if workspaceID == "" {
+			// Panic so the bug surfaces immediately as this should not happen
+			panic("per-workspace PyT enabled but workspaceID is empty")
 		}
-		if u.config.pythonTransformationURL != "" {
-			return u.config.pythonTransformationURL + "/customTransform"
-		}
+		base := strings.ReplaceAll(u.config.perWorkspacePyTURLTemplate, "{workspaceID}", strings.ToLower(workspaceID))
+		return base + "/customTransform"
+	}
+	// Legacy shared-PyT path: the version allowlist is a rollout gate for the shared service.
+	if u.config.pythonTransformationURL != "" && u.config.pythonTransformConfig.IsVersionAllowed(versionID) {
+		return u.config.pythonTransformationURL + "/customTransform"
 	}
 	return u.config.userTransformationURL + "/customTransform"
 }
