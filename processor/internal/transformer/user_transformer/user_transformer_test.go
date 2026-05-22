@@ -1650,6 +1650,11 @@ func TestColdStartCounter(t *testing.T) {
 		Net: "tcp",
 		Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNREFUSED},
 	}
+	noRouteToHost := &net.OpError{
+		Op:  "dial",
+		Net: "tcp",
+		Err: &os.SyscallError{Syscall: "connect", Err: syscall.EHOSTUNREACH},
+	}
 	dnsErr := &net.DNSError{Err: "no such host", Name: "pyt-ws-A1", IsNotFound: true}
 
 	// Marshaled success response — what a warm PyT pod would return.
@@ -1684,6 +1689,15 @@ func TestColdStartCounter(t *testing.T) {
 		{
 			name:             "DNS not found twice → counted twice, then warm",
 			failErr:          dnsErr,
+			failures:         2,
+			expectCounter:    2,
+			expectEventCount: 1,
+		},
+		{
+			// "no route to host" — stale iptables / EndpointSlice during pod
+			// replacement or scale-down. Same transient signal as ECONNREFUSED.
+			name:             "EHOSTUNREACH twice → counted twice, then warm",
+			failErr:          noRouteToHost,
 			failures:         2,
 			expectCounter:    2,
 			expectEventCount: 1,

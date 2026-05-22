@@ -462,7 +462,10 @@ func (u *Client) shouldThrowPythonColdStartErr(labels types.TransformerMetricLab
 // kube-proxy returning a no-endpoints status.
 func isColdStartError(err error, resp *http.Response) bool {
 	if err != nil {
-		if errors.Is(err, syscall.ECONNREFUSED) {
+		// ECONNREFUSED: Service has no endpoints (Deployment at 0 replicas).
+		// EHOSTUNREACH ("no route to host"): stale iptables / EndpointSlice
+		// after a pod replacement or scale-down — same transient signal.
+		if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.EHOSTUNREACH) {
 			return true
 		}
 		var dnsErr *net.DNSError
