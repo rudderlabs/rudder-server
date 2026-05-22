@@ -1072,10 +1072,12 @@ func (gw *Handle) storeJobs(ctx context.Context, jobs []*jobsdb.JobT) error {
 	defer startStoreJobsWatchdog(gw.conf.WriteTimeout, time.Minute, len(jobs), func(v any) { panic(v) })()
 	return gw.jobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
 		if err := gw.jobsDB.StoreInTx(ctx, tx, jobs); err != nil {
-			gw.logger.Errorn(
-				"Store into gateway db failed with error",
-				obskit.Error(err),
-			)
+			if !errors.Is(err, jobsdb.ErrStaleDsList) {
+				gw.logger.Errorn(
+					"Store into gateway db failed with error",
+					obskit.Error(err),
+				)
+			}
 			return err
 		}
 
