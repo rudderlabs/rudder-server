@@ -189,6 +189,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 
 				totalJobsMigrated := 0
 				var noJobsMigrated int
+				copyStart := time.Now()
 				for i := range migrateFrom {
 					source := migrateFrom[i]
 					if source.numJobsPending > 0 {
@@ -217,6 +218,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 						)
 					}
 				}
+				jd.getTimerStat("jobsdb_migration_copy_time", &statTags{CustomValFilters: []string{jd.tablePrefix}}).Since(copyStart)
 				if err = jd.createDSIndicesInTx(ctx, tx, destination); err != nil {
 					return fmt.Errorf("create %v indices: %w", destination, err)
 				}
@@ -799,6 +801,7 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 				return fmt.Errorf("create dataset tables: %w", err)
 			}
 
+			var copyStart time.Time
 			for i, source := range migrationList.migrateFrom {
 				if source.numJobsPending == 0 {
 					jd.logger.Infon(
@@ -832,12 +835,18 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 					logger.NewStringField("from", source.ds.Index),
 					logger.NewStringField("to", destination.Index),
 				)
+				if copyStart.IsZero() {
+					copyStart = time.Now()
+				}
 				count, err := jd.migrateJobsInTx(ctx, tx, source.ds, destination)
 				if err != nil {
 					return fmt.Errorf("copying jobs from %s: %w", source.ds.Index, err)
 				}
 				totalCopied += count
 				migrationList.migrateFrom[i].numJobsPending = count
+			}
+			if !copyStart.IsZero() {
+				jd.getTimerStat("jobsdb_migration_copy_time", &statTags{CustomValFilters: []string{jd.tablePrefix}}).Since(copyStart)
 			}
 
 			if err := jd.createDSIndicesInTx(ctx, tx, destination); err != nil {

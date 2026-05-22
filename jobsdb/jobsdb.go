@@ -973,8 +973,6 @@ func (jd *Handle) Setup(
 }
 
 func (jd *Handle) init() {
-	jd.dsListLock = lock.NewLocker()
-	jd.dsMigrationLock = lock.NewLocker()
 	jd.dsList = newVersionedDSList(nil, nil)
 	jd.dropNotify = make(chan struct{}, 1)
 	if jd.logger == nil {
@@ -994,6 +992,8 @@ func (jd *Handle) init() {
 	if jd.stats == nil {
 		jd.stats = stats.Default
 	}
+	jd.dsListLock = lock.NewLocker("dsListLock", jd.tablePrefix, jd.stats)
+	jd.dsMigrationLock = lock.NewLocker("dsMigrationLock", jd.tablePrefix, jd.stats)
 
 	jd.loadConfig()
 

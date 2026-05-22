@@ -9,11 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 )
 
 func TestRLock(t *testing.T) {
-	locker := lock.NewLocker()
+	locker := lock.NewLocker("test", "ds", stats.NOP)
 	locker.RLock()
 
 	t.Run("Multiple read locks can be acquired", func(t *testing.T) {
@@ -40,7 +42,7 @@ func TestRLock(t *testing.T) {
 
 func TestAsyncLock(t *testing.T) {
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
-	locker := lock.NewLocker()
+	locker := lock.NewLocker("test", "ds", stats.NOP)
 
 	l, c, err := locker.AsyncLockWithCtx(context.Background())
 	require.NoError(t, err)
@@ -73,7 +75,7 @@ func TestAsyncLock(t *testing.T) {
 
 func TestAsyncLockTimeout(t *testing.T) {
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
-	locker := lock.NewLocker()
+	locker := lock.NewLocker("test", "ds", stats.NOP)
 	locker.RLock()
 	defer locker.RUnlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
