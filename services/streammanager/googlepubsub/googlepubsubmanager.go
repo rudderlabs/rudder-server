@@ -89,11 +89,10 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		options = append(options, opts...)
 	} else if !googleutil.ShouldSkipCredentialsInit(pubsubConfig.Credentials) { // Test configuration requires a custom endpoint
 		credsBytes := []byte(pubsubConfig.Credentials)
-		if err = googleutil.CompatibleGoogleCredentialsJSON(credsBytes); err != nil {
-			return nil, err
+		if err := googleutil.CompatibleServiceAccountJSON(credsBytes); err != nil {
+			return nil, fmt.Errorf("incompatible credentials: %w", err)
 		}
-		// TODO: switching to WithAuthCredentialsJSON requires auth type handling
-		options = append(options, option.WithCredentialsJSON(credsBytes)) // nolint: staticcheck
+		options = append(options, option.WithAuthCredentialsJSON(option.ServiceAccount, credsBytes))
 	}
 	if client, err = pubsub.NewClient(ctx, pubsubConfig.ProjectId, options...); err != nil {
 		return nil, err

@@ -592,10 +592,13 @@ func (bq *BigQuery) jobStatistics(
 	ctx context.Context,
 	job *bigquery.Job,
 ) (*bqservice.JobStatistics, error) {
+	credBytes := []byte(bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting))
+	if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
+		return nil, fmt.Errorf("incompatible credentials: %w", err)
+	}
 	serv, err := bqservice.NewService(
 		ctx,
-		// TODO: switching to WithAuthCredentialsJSON requires auth type handling
-		option.WithCredentialsJSON([]byte(bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting))), // nolint: staticcheck
+		option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating service: %w", err)
@@ -773,10 +776,10 @@ func (bq *BigQuery) connect(ctx context.Context) (*middleware.Client, error) {
 	var opts []option.ClientOption
 	if !googleutil.ShouldSkipCredentialsInit(credentials) {
 		credBytes := []byte(credentials)
-		if err := googleutil.CompatibleGoogleCredentialsJSON(credBytes); err != nil {
-			return nil, err
-		} // TODO: switching to WithAuthCredentialsJSON requires auth type handling
-		opts = append(opts, option.WithCredentialsJSON(credBytes)) // nolint: staticcheck
+		if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
+			return nil, fmt.Errorf("incompatible credentials: %w", err)
+		}
+		opts = append(opts, option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes))
 	}
 
 	bqClient, err := bigquery.NewClient(ctx, projectID, opts...)
