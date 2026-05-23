@@ -61,6 +61,7 @@ func TestConfigGenerateToken(t *testing.T) {
 		Token:                 &oauth2.Token{},
 		TokenCreatedAt:        time.Now(),
 		TokenTimeout:          1 * time.Minute,
+		Credentials:           `{"type": "service_account", "project_id": "project_id", "private_key_id": "private_key_id", "private_key": "private_key", "client_email": "client_email", "client_id": "client_id", "auth_uri": "auth_uri", "token_uri": "token_uri", "auth_provider_x509_cert_url": "auth_provider_x509_cert_url", "client_x509_cert_url": "client_x509_cert_url", "universe_domain": "universe_domain"}`,
 	}
 	ctrl := gomock.NewController(t)
 	mockClient := mock_googlecloudfunction.NewMockGoogleCloudFunctionClient(ctrl)
@@ -207,6 +208,7 @@ func TestNewProduceForWithAuthenticationAndTokenTimeout(t *testing.T) {
 		RequireAuthentication: true,
 		FunctionUrl:           testSrv.URL,
 		TokenTimeout:          1 * time.Millisecond,
+		Credentials:           `{"type": "service_account", "project_id": "project_id", "private_key_id": "private_key_id", "private_key": "private_key", "client_email": "client_email", "client_id": "client_id", "auth_uri": "auth_uri", "token_uri": "token_uri", "auth_provider_x509_cert_url": "auth_provider_x509_cert_url", "client_x509_cert_url": "client_x509_cert_url", "universe_domain": "universe_domain"}`,
 	}
 	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf, httpClient: http.DefaultClient}
 	// Token will expire in 1 ms so it will call GetToken twice
@@ -245,6 +247,7 @@ func TestNewProduceWhenRequestTimedout(t *testing.T) {
 	conf := &Config{
 		RequireAuthentication: true,
 		FunctionUrl:           testSrv.URL,
+		Credentials:           `{"type": "service_account", "project_id": "project_id", "private_key_id": "private_key_id", "private_key": "private_key", "client_email": "client_email", "client_id": "client_id", "auth_uri": "auth_uri", "token_uri": "token_uri", "auth_provider_x509_cert_url": "auth_provider_x509_cert_url", "client_x509_cert_url": "client_x509_cert_url", "universe_domain": "universe_domain"}`,
 	}
 	producer := &GoogleCloudFunctionProducer{
 		client:     mockClient,
