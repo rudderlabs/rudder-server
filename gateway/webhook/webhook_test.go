@@ -145,16 +145,43 @@ func TestWebhookRequestHandlerWithEmptyBody(t *testing.T) {
 
 	webhookHandler.Register(sourceDefName)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/webhook", http.NoBody)
-	resp := httptest.NewRecorder()
-	reqCtx := context.WithValue(req.Context(), gwtypes.CtxParamCallType, "webhook")
-	reqCtx = context.WithValue(reqCtx, gwtypes.CtxParamAuthRequestContext, &gwtypes.AuthRequestContext{
-		SourceDefName: sourceDefName,
-	})
+	testCases := []struct {
+		name          string
+		body          io.Reader
+		contentLength int64
+	}{
+		{
+			name:          "no body",
+			body:          http.NoBody,
+			contentLength: 0,
+		},
+		{
+			name:          "empty body with unknown content length",
+			body:          strings.NewReader(""),
+			contentLength: -1,
+		},
+		{
+			name:          "whitespace-only body with unknown content length",
+			body:          strings.NewReader("   \n"),
+			contentLength: -1,
+		},
+	}
 
-	webhookHandler.RequestHandler(resp, req.WithContext(reqCtx))
-	require.Equal(t, http.StatusBadRequest, resp.Result().StatusCode)
-	require.Equal(t, response.GetStatus(response.NoRequestBody), strings.TrimSpace(resp.Body.String()))
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/v1/webhook", tc.body)
+			req.ContentLength = tc.contentLength
+			resp := httptest.NewRecorder()
+			reqCtx := context.WithValue(req.Context(), gwtypes.CtxParamCallType, "webhook")
+			reqCtx = context.WithValue(reqCtx, gwtypes.CtxParamAuthRequestContext, &gwtypes.AuthRequestContext{
+				SourceDefName: sourceDefName,
+			})
+
+			webhookHandler.RequestHandler(resp, req.WithContext(reqCtx))
+			require.Equal(t, http.StatusBadRequest, resp.Result().StatusCode)
+			require.Equal(t, response.GetStatus(response.NoRequestBody), strings.TrimSpace(resp.Body.String()))
+		})
+	}
 }
 
 func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
