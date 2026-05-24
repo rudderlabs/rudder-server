@@ -211,7 +211,17 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		r.Body = io.NopCloser(bytes.NewReader(jsonByte))
 		r.Header.Set("Content-Type", "application/json")
 	}
+	if len(jsonByte) == 0 && r.ContentLength == 0 {
+		webhook.failRequest(
+			w,
+			r,
+			response.GetStatus(response.NoRequestBody),
+			response.GetErrorStatusCode(response.NoRequestBody),
+		)
 
+		webhook.ackCount.Add(1)
+		return
+	}
 	done := make(chan transformerResponse)
 	req := webhookT{
 		request:     r,
