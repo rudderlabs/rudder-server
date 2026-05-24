@@ -455,7 +455,7 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 			_, _ = job.setUploadError(err, model.Aborted)
 			return
 		}
-		defer whManager.Cleanup(ctx)
+		defer whManager.Cleanup(context.Background())
 		_ = job.setUploadStatus(UploadStatusOpts{Status: inProgressState(model.ExportedData)})
 		loadErrors, err := job.loadIdentityTables(true)
 		if err != nil {
