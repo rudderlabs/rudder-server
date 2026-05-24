@@ -212,6 +212,15 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("Content-Type", "application/json")
 	}
 
+	if r.Method != http.MethodGet && len(jsonByte) == 0 && r.ContentLength == 0 {
+		stat := webhook.statReporterCreator(arctx, reqType)
+		stat.RequestFailed(response.NoRequestBody)
+		stat.Report(webhook.stats)
+		webhook.failRequest(w, r, response.GetStatus(response.NoRequestBody), response.GetErrorStatusCode(response.NoRequestBody))
+		webhook.ackCount.Add(1)
+		return
+	}
+
 	done := make(chan transformerResponse)
 	req := webhookT{
 		request:     r,
@@ -317,7 +326,6 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 	}
 }
 
-// TODO : return back immediately for blank request body. its waiting till timeout
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
 		// If unable to fetch features from transformer, send GatewayTimeout to all requests

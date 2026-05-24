@@ -126,6 +126,37 @@ func newSourceStatReporter(_ *gwtypes.AuthRequestContext, _ string) gwtypes.Stat
 	return &gwStats.SourceStat{}
 }
 
+func TestWebhookRequestHandlerWithEmptyBody(t *testing.T) {
+	initWebhook()
+
+	ctrl := gomock.NewController(t)
+	mockGW := mockWebhook.NewMockGateway(ctrl)
+
+	mockTransformerFeaturesService := mock_features.NewMockFeaturesService(ctrl)
+
+	webhookHandler := Setup(mockGW, mockTransformerFeaturesService, stats.NOP, config.Default, newSourceStatReporter, func(bt *batchWebhookTransformerT) {
+		bt.sourceTransformAdapter = func(ctx context.Context) (sourceTransformAdapter, error) {
+			return &mockSourceTransformAdapter{}, nil
+		}
+	})
+	t.Cleanup(func() {
+		_ = webhookHandler.Shutdown()
+	})
+
+	webhookHandler.Register(sourceDefName)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/webhook", http.NoBody)
+	resp := httptest.NewRecorder()
+	reqCtx := context.WithValue(req.Context(), gwtypes.CtxParamCallType, "webhook")
+	reqCtx = context.WithValue(reqCtx, gwtypes.CtxParamAuthRequestContext, &gwtypes.AuthRequestContext{
+		SourceDefName: sourceDefName,
+	})
+
+	webhookHandler.RequestHandler(resp, req.WithContext(reqCtx))
+	require.Equal(t, http.StatusBadRequest, resp.Result().StatusCode)
+	require.Equal(t, response.GetStatus(response.NoRequestBody), strings.TrimSpace(resp.Body.String()))
+}
+
 func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
