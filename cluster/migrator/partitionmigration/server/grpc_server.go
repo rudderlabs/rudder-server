@@ -2,6 +2,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -42,7 +43,7 @@ func (s *GRPCServer) Start() error {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
 	s.wg.Go(func() {
-		if err := s.server.Serve(lis); err != nil {
+		if err := s.server.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			// This shouldn't really happen, only in very exceptional cases.
 			// No error is returned during GracefulStop or Stop.
 			panic(fmt.Errorf("failed to serve grpc server: %w", err))
