@@ -647,7 +647,10 @@ type Handle struct {
 		warnOnStatusMissingPartitionID  config.ValueLoader[bool]
 		holdDSListLockDuringStore       config.ValueLoader[bool] // escape hatch: hold the dsList read lock for the entire store callback
 		noResultsCacheStateOptimization config.ValueLoader[bool]
-		dbTablesVersion                 int // version of the database tables schema (0 means latest)
+		// getJobsUseLateralJoin replaces the v_last_* view join in getJobsDS with a
+		// correlated LATERAL subquery against the raw job_status table.
+		getJobsUseLateralJoin config.ValueLoader[bool]
+		dbTablesVersion       int // version of the database tables schema (0 means latest)
 
 		migration struct {
 			maxMigrateOnce, maxMigrateDSProbe config.ValueLoader[int]
@@ -1150,6 +1153,7 @@ func (jd *Handle) loadConfig() {
 	// when true, the per-state noResultsCache optimization is enabled: stateFilters are narrowed
 	// against the cache before querying, and (!ok && !limitsReached) is used as a commit predicate.
 	jd.conf.noResultsCacheStateOptimization = jd.config.GetReloadableBoolVar(false, jd.configKeys("noResultsCacheStateOptimization")...)
+	jd.conf.getJobsUseLateralJoin = jd.config.GetReloadableBoolVar(true, jd.configKeys("getJobsUseLateralJoin")...)
 
 	if jd.TriggerAddNewDS == nil {
 		jd.TriggerAddNewDS = func() <-chan time.Time {
@@ -2617,12 +2621,22 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 
 	joinType := "LEFT"
 	joinTable := "v_last_" + ds.JobStatusTable
+	onlyUnprocessed := slices.Equal(stateFilters, []string{Unprocessed.State})
 
 	if !containsUnprocessed { // If we are not querying for unprocessed jobs, we can use an inner join
 		joinType = "INNER"
-	} else if slices.Equal(stateFilters, []string{Unprocessed.State}) {
+	} else if onlyUnprocessed {
 		// If we are querying only for unprocessed jobs, we should join with the status table instead of the view (performance reasons)
 		joinTable = ds.JobStatusTable
+	}
+
+	// For the pure-unprocessed case the join is a NOT-EXISTS pattern (LEFT JOIN + IS NULL):
+	// we only need to know whether any status row exists, not which one is latest,
+	// so the lateral's ORDER BY / LIMIT 1 would be wasteful — skip it.
+	if jd.conf.getJobsUseLateralJoin.Load() && !onlyUnprocessed {
+		joinTable = fmt.Sprintf(`LATERAL (SELECT * FROM %q WHERE job_id = jobs.job_id ORDER BY id DESC LIMIT 1) job_latest_state ON true`, joinTable)
+	} else {
+		joinTable = fmt.Sprintf(`%q job_latest_state ON jobs.job_id=job_latest_state.job_id`, joinTable)
 	}
 
 	var rows *sql.Rows
@@ -2637,7 +2651,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 									job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
 								FROM
 									%[1]q AS jobs
-									%[2]s JOIN %[3]q job_latest_state ON jobs.job_id=job_latest_state.job_id
+									%[2]s JOIN %[3]s
 								    %[4]s
 									ORDER BY jobs.job_id %[5]s`,
 		ds.JobTable, joinType, joinTable, filterQuery, limitQuery)
