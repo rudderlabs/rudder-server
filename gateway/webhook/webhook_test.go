@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"testing/iotest"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -120,6 +121,50 @@ func TestWebhookMaxRequestSize(t *testing.T) {
 
 	webhookHandler.RequestHandler(resp, req.WithContext(reqCtx))
 	require.Equal(t, http.StatusRequestEntityTooLarge, resp.Result().StatusCode)
+}
+
+func TestWebhookBlankBodyRequestIsRejectedImmediately(t *testing.T) {
+   initWebhook()
+
+   ctrl := gomock.NewController(t)
+   mockGW := mockWebhook.NewMockGateway(ctrl)
+   mockTransformerFeaturesService := mock_features.NewMockFeaturesService(ctrl)
+
+   // Set a large batch timeout so the test would hang if the blank-body guard is missing.
+   config.Set("Gateway.webhook.batchTimeoutInMS", 5000)
+
+   webhookHandler := Setup(mockGW, mockTransformerFeaturesService, stats.NOP, config.Default, newSourceStatReporter, func(bt *batchWebhookTransformerT) {
+       bt.sourceTransformAdapter = func(ctx context.Context) (sourceTransformAdapter, error) {
+           return &mockSourceTransformAdapter{}, nil
+       }
+  })
+   t.Cleanup(func() { _ = webhookHandler.Shutdown() })
+
+   webhookHandler.Register(sourceDefName)
+
+   req := httptest.NewRequest(http.MethodPost, "/v1/webhook", http.NoBody)
+   req.ContentLength = 0
+   resp := httptest.NewRecorder()
+
+   reqCtx := context.WithValue(req.Context(), gwtypes.CtxParamCallType, "webhook")
+   reqCtx = context.WithValue(reqCtx, gwtypes.CtxParamAuthRequestContext, &gwtypes.AuthRequestContext{
+       SourceDefName: sourceDefName,
+   })
+
+   // Should return 400 immediately without waiting for batch timeout.
+   done := make(chan struct{})
+   go func() {
+       webhookHandler.RequestHandler(resp, req.WithContext(reqCtx))
+       close(done)
+   }()
+
+   select {
+   case <-done:
+       require.Equal(t, http.StatusBadRequest, resp.Result().StatusCode)
+       require.Contains(t, strings.TrimSpace(resp.Body.String()), response.NoRequestBody)
+   case <-time.After(2 * time.Second):
+       t.Fatal("RequestHandler did not return immediately for blank body — likely waiting for batch timeout")
+   }
 }
 
 func newSourceStatReporter(_ *gwtypes.AuthRequestContext, _ string) gwtypes.StatReporter {
