@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.76.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.75.0...v1.76.0-rc.1) (2026-05-25)
+
+
+### Features
+
+* per-workspace PyT routing + cold-start handling ([#6978](https://github.com/rudderlabs/rudder-server/issues/6978)) ([d81e175](https://github.com/rudderlabs/rudder-server/commit/d81e175de3aaab93e19ce23f4b8181a0ecaedcaa))
+* periodic cleanup of rsources shared db tables ([#6945](https://github.com/rudderlabs/rudder-server/issues/6945)) ([ed0dfe7](https://github.com/rudderlabs/rudder-server/commit/ed0dfe73fadd7906ee99f5f01f6df05d503763d8))
+
+
+### Bug Fixes
+
+* **batchrouter:** preserve prior LastJobStatus error on drain ([#6958](https://github.com/rudderlabs/rudder-server/issues/6958)) ([af31e62](https://github.com/rudderlabs/rudder-server/commit/af31e6272b1b9fb46bc4b99397412fd1a92b4bf0))
+* **batchrouter:** preserve prior LastJobStatus error on drain ([#6958](https://github.com/rudderlabs/rudder-server/issues/6958)) ([193f797](https://github.com/rudderlabs/rudder-server/commit/193f797aed876d8e2ab33bcc62b91e333f617fc2))
+* clickhouse quarter partition type ([#6965](https://github.com/rudderlabs/rudder-server/issues/6965)) ([af31e62](https://github.com/rudderlabs/rudder-server/commit/af31e6272b1b9fb46bc4b99397412fd1a92b4bf0))
+* continuous backend config cache cause postgres disk bloat ([#6983](https://github.com/rudderlabs/rudder-server/issues/6983)) ([f45aa06](https://github.com/rudderlabs/rudder-server/commit/f45aa06febad1ba7098a5b37d6eadc9a6c4db3b9))
+* ignore failed messages when source job run id exists ([#6981](https://github.com/rudderlabs/rudder-server/issues/6981)) ([045fdc0](https://github.com/rudderlabs/rudder-server/commit/045fdc038b08be5dd72358fec2a21c8f1da6c5b2))
+* server getting stuck during startup while initializing rsources ([#6943](https://github.com/rudderlabs/rudder-server/issues/6943)) ([62791fa](https://github.com/rudderlabs/rudder-server/commit/62791fae73dce0f20ccf0037e811221f03d37e7e))
+* snowpipe streaming bulk status offset ([#6966](https://github.com/rudderlabs/rudder-server/issues/6966)) ([af31e62](https://github.com/rudderlabs/rudder-server/commit/af31e6272b1b9fb46bc4b99397412fd1a92b4bf0))
+
+
+### Miscellaneous
+
+* **ci:** workflow cleanup (SEC-284) ([#6949](https://github.com/rudderlabs/rudder-server/issues/6949)) ([516ba5b](https://github.com/rudderlabs/rudder-server/commit/516ba5b05ae575570c76bda91adc19b7930d5387))
+* **deps:** bump actions/upload-artifact from 7.0.0 to 7.0.1 ([#6892](https://github.com/rudderlabs/rudder-server/issues/6892)) ([866f04d](https://github.com/rudderlabs/rudder-server/commit/866f04d478ca2a36e62f6646dbdb7454aa34a85e))
+* **deps:** bump aws-actions/amazon-ecr-login from 2.0.1 to 2.1.4 ([#6956](https://github.com/rudderlabs/rudder-server/issues/6956)) ([89f1168](https://github.com/rudderlabs/rudder-server/commit/89f1168a134e252e00e41ac372375c0e8115cd14))
+* **deps:** bump docker/login-action from 4.0.0 to 4.1.0 ([#6881](https://github.com/rudderlabs/rudder-server/issues/6881)) ([5bca875](https://github.com/rudderlabs/rudder-server/commit/5bca8758283062b6362478f6ab02a17a0e4ebc8c))
+* **deps:** bump rudderlabs/build-scan-push-action from 1.8.2 to 2.2.0 ([#6955](https://github.com/rudderlabs/rudder-server/issues/6955)) ([78cc895](https://github.com/rudderlabs/rudder-server/commit/78cc8956a750f4f20869451075c67ce48ec0daf5))
+* **deps:** bump step-security/harden-runner from 2.16.0 to 2.19.1 ([#6957](https://github.com/rudderlabs/rudder-server/issues/6957)) ([cc5b578](https://github.com/rudderlabs/rudder-server/commit/cc5b578681e42f6f8c5be4a5b8dc65609aaa4e13))
+* **jobsdb:** disable no results cache state filter optimization ([#6964](https://github.com/rudderlabs/rudder-server/issues/6964)) ([c20dad2](https://github.com/rudderlabs/rudder-server/commit/c20dad2998a6f084fbcb1461eadbb8b849e7e361))
+* **jobsdb:** release dsList read lock early during store ([#6963](https://github.com/rudderlabs/rudder-server/issues/6963)) ([a172404](https://github.com/rudderlabs/rudder-server/commit/a17240415685b2ffc11bf0d425c325797c1f90e5))
+* pyt contracts for ipc and multi threading ([#6942](https://github.com/rudderlabs/rudder-server/issues/6942)) ([d570865](https://github.com/rudderlabs/rudder-server/commit/d570865d77754b0c2b2c55c3798496e3ff4ee82f))
+* remove unused sed deletion method from GZIPLocalFileHandler ([#6974](https://github.com/rudderlabs/rudder-server/issues/6974)) ([d788760](https://github.com/rudderlabs/rudder-server/commit/d78876071b51f249f8ebe0964e60bef4151ce4db))
+* replace deprecated WithCredentialsJSON with WithAuthCredentialsJSON ([#6986](https://github.com/rudderlabs/rudder-server/issues/6986)) ([8395174](https://github.com/rudderlabs/rudder-server/commit/83951740e8bd8114b15d138d72899313525c611f))
+* sync release v1.75.0 to main branch ([#6954](https://github.com/rudderlabs/rudder-server/issues/6954)) ([f16fe93](https://github.com/rudderlabs/rudder-server/commit/f16fe932ef44505ddd260b4202c09ae2b1582632))
+
 ## [1.75.3](https://github.com/rudderlabs/rudder-server/compare/v1.75.2...v1.75.3) (2026-05-20)
 
 
