@@ -2251,6 +2251,65 @@ func TestGetJobsLimitsReached(t *testing.T) {
 	}
 }
 
+func TestGetJobsLateralJoinToggle(t *testing.T) {
+	pgContainer := startPostgres(t)
+	customVal := strings.ToUpper(rsRand.String(8))
+	prefix := strings.ToLower(rsRand.String(5))
+
+	c := config.New()
+	db := NewForReadWrite(prefix, WithDBHandle(pgContainer.DB), WithConfig(c))
+	require.NoError(t, db.Start())
+	defer db.TearDown()
+
+	jobs := make([]*JobT, 5)
+	for i := range jobs {
+		jobs[i] = &JobT{
+			Parameters:   []byte(`{}`),
+			EventPayload: []byte(`{"k":"v"}`),
+			UserID:       "u",
+			UUID:         uuid.New(),
+			CustomVal:    customVal,
+			EventCount:   1,
+			WorkspaceId:  "ws",
+		}
+	}
+	require.NoError(t, db.Store(context.Background(), jobs))
+
+	all, err := db.GetUnprocessed(context.Background(), GetQueryParams{
+		CustomValFilters: []string{customVal},
+		JobsLimit:        100,
+	})
+	require.NoError(t, err)
+	require.Len(t, all.Jobs, 5)
+
+	// Mark jobs[2,3] failed, job[4] waiting; leave jobs[0,1] unprocessed.
+	statuses := []*JobStatusT{
+		{JobID: all.Jobs[2].JobID, JobState: Failed.State, AttemptNum: 1, ExecTime: time.Now(), RetryTime: time.Now(), ErrorCode: "500", ErrorResponse: []byte(`{}`), Parameters: []byte(`{}`), WorkspaceId: "ws", CustomVal: customVal},
+		{JobID: all.Jobs[3].JobID, JobState: Failed.State, AttemptNum: 1, ExecTime: time.Now(), RetryTime: time.Now(), ErrorCode: "500", ErrorResponse: []byte(`{}`), Parameters: []byte(`{}`), WorkspaceId: "ws", CustomVal: customVal},
+		{JobID: all.Jobs[4].JobID, JobState: Waiting.State, AttemptNum: 1, ExecTime: time.Now(), RetryTime: time.Now(), ErrorCode: "", ErrorResponse: []byte(`{}`), Parameters: []byte(`{}`), WorkspaceId: "ws", CustomVal: customVal},
+	}
+	require.NoError(t, db.UpdateJobStatus(context.Background(), statuses))
+
+	params := GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100}
+
+	// lateral path
+	c.Set("JobsDB.getJobsUseLateralJoin", true)
+	lateralResult, err := db.GetToProcess(context.Background(), params, nil)
+	require.NoError(t, err)
+	require.Len(t, lateralResult.Jobs, 5, "lateral join should return all 5 jobs")
+
+	// flip to v_last path
+	c.Set("JobsDB.getJobsUseLateralJoin", false)
+
+	vLastResult, err := db.GetToProcess(context.Background(), params, nil)
+	require.NoError(t, err)
+	require.Len(t, vLastResult.Jobs, 5, "v_last join should return all 5 jobs")
+
+	lateralIDs := lo.Map(lateralResult.Jobs, func(j *JobT, _ int) int64 { return j.JobID })
+	vLastIDs := lo.Map(vLastResult.Jobs, func(j *JobT, _ int) int64 { return j.JobID })
+	require.Equal(t, lateralIDs, vLastIDs, "v_last and lateral join should return the same job IDs in the same order")
+}
+
 func TestUpdateJobStatus(t *testing.T) {
 	_ = startPostgres(t)
 	c := config.New()
