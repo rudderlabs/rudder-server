@@ -66,18 +66,28 @@ func NewPartitionWorker(log logger.Logger, partition string, brt *Handle, cb cir
 	return pw
 }
 
-func (pw *PartitionWorker) AddJob(job *jobsdb.JobT, sourceID, destID string) {
-	ctx, cancel := context.WithCancel(context.Background())
+func (pw *PartitionWorker) AddJob(ctx context.Context, job *jobsdb.JobT, sourceID, destID string) {
+	monitorCtx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go pw.monitorDelayedJobAddition(ctx, &wg, stats.Tags{"destType": pw.brt.destType, "source_id": sourceID, "destination_id": destID})
-	pw.channel <- &JobEntry{
+	go pw.monitorDelayedJobAddition(monitorCtx, &wg, stats.Tags{"destType": pw.brt.destType, "source_id": sourceID, "destination_id": destID})
+    defer func() {
+        cancel()
+        wg.Wait()
+    }()
+    select {
+    case pw.channel <- &JobEntry{
+
 		job:      job,
 		sourceID: sourceID,
 		destID:   destID,
+	 }:
++    case <-ctx.Done():
++        pw.logger.Warnn("AddJob cancelled while waiting for channel slot",
++            obskit.DestinationType(pw.brt.destType),
++        )
 	}
-	cancel()
-	wg.Wait()
+	
 }
 
 // monitorDelayedJobAddition runs in a goroutine to periodically report delayed job additions.

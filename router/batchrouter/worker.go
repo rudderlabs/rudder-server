@@ -231,7 +231,7 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 
 		// Now that all statuses are updated, we can safely send jobs to channels
 		for _, entry := range jobsToBuffer {
-			w.pw.AddJob(entry.job, entry.sourceID, entry.destID)
+			w.pw.AddJob(context.Background(), entry.job, entry.sourceID, entry.destID)
 		}
 	}
 }
