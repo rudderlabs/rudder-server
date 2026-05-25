@@ -46,7 +46,6 @@ type (
 			instanceID                string
 			maxBufferCapacity         config.ValueLoader[int64]
 			stuckPipelineThreshold    config.ValueLoader[time.Duration]
-			bulkStatusEnabled         config.ValueLoader[bool]
 			bulkStatusBatchSize       config.ValueLoader[int]
 			maxInsertRequestSizeBytes config.ValueLoader[int64]
 		}
@@ -139,7 +138,6 @@ type (
 		CreateChannel(ctx context.Context, channelReq *model.CreateChannelRequest) (*model.ChannelResponse, error)
 		DeleteChannel(ctx context.Context, channelID string, sync bool) error
 		Insert(ctx context.Context, channelID string, insertRequest *model.InsertRequest) (*model.InsertResponse, error)
-		GetStatus(ctx context.Context, channelID string) (*model.StatusResponse, error)
 		GetBulkStatus(ctx context.Context, channelIDs []string) (*model.BulkStatusResponse, error)
 	}
 

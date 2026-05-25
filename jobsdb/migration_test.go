@@ -7,11 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/utils/tx"
 )
 
@@ -134,7 +136,7 @@ func TestMigration(t *testing.T) {
 		// the third DS should have all jobs with only the last status per job
 
 		// check that the first DS has only non-terminal jobs
-		dsList := jobDB.getDSList()
+		dsList := jobDB.getDSListSnapshot()
 		require.Equal(t, `1_1`, dsList[0].Index)
 		var count int64
 		err = jobDB.dbHandle.QueryRow(
@@ -223,7 +225,7 @@ func TestMigration(t *testing.T) {
 			require.NoError(t, jobDB.Store(context.Background(), genJobs(defaultWorkspaceID, "test", 10, 1)))
 			triggerAddNewDS <- time.Now() // trigger addNewDSLoop to run
 			triggerAddNewDS <- time.Now() // waits for last loop to finish
-			require.Equal(t, i+2, len(jobDB.getDSList()))
+			require.Equal(t, i+2, len(jobDB.getDSListSnapshot()))
 		}
 
 		// 1st ds 5 statuses each
@@ -258,14 +260,15 @@ func TestMigration(t *testing.T) {
 			}
 			tableSizes := make(map[string]int64)
 			rows, err := jobDB.dbHandle.QueryContext(context.Background(),
-				`SELECT relname, pg_table_size(oid) AS size
-				FROM pg_class
-				where relname = ANY(
-					SELECT tablename
-						FROM pg_catalog.pg_tables
-						WHERE schemaname NOT IN ('pg_catalog','information_schema')
-						AND tablename like $1
-				) order by relname;`,
+				`SELECT c.relname, pg_catalog.pg_table_size(c.oid) AS size
+				FROM pg_catalog.pg_class c
+				JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+				LEFT JOIN pg_catalog.pg_description d ON d.objoid = c.oid AND d.objsubid = 0
+				WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+					AND c.relkind = 'r'
+					AND c.relname LIKE $1
+					AND (d.description IS NULL OR d.description NOT LIKE 'rudder:pre_drop:%')
+				ORDER BY c.relname;`,
 				tablePrefix+"_job_status%",
 			)
 			require.NoError(t, err)
@@ -282,7 +285,7 @@ func TestMigration(t *testing.T) {
 			return tableSizes
 		}
 		// capture table sizes
-		originalTableSizes := getTableSizes(jobDB.getDSList())
+		originalTableSizes := getTableSizes(jobDB.getDSListSnapshot())
 
 		c.Set("JobsDB.jobStatusMigrateThreshold", 1)
 		c.Set("JobsDB.vacuumAnalyzeStatusTableThreshold", 4)
@@ -291,9 +294,9 @@ func TestMigration(t *testing.T) {
 		))
 
 		// run cleanup status tables
-		require.NoError(t, jobDB.cleanupStatusTables(context.Background(), jobDB.getDSList()))
+		require.NoError(t, jobDB.cleanupStatusTables(context.Background(), jobDB.getDSListSnapshot()))
 
-		newTableSizes := getTableSizes(jobDB.getDSList())
+		newTableSizes := getTableSizes(jobDB.getDSListSnapshot())
 
 		// 1st DS should have 10 jobs with 1 status each
 		require.NoError(t, jobDB.dbHandle.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s_job_status_1`, tablePrefix)).Scan(&count))
@@ -313,7 +316,7 @@ func TestMigration(t *testing.T) {
 			require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs, "failed")))
 		}
 
-		updatedTableSizes := getTableSizes(jobDB.getDSList())
+		updatedTableSizes := getTableSizes(jobDB.getDSListSnapshot())
 		require.Equal(t, newTableSizes[fmt.Sprintf("%s_job_status_1", tablePrefix)], updatedTableSizes[fmt.Sprintf("%s_job_status_1", tablePrefix)])
 	})
 
@@ -444,7 +447,7 @@ func TestMigration(t *testing.T) {
 		// the third DS should have all jobs with only the last status per job
 
 		// check that the first DS has only non-terminal jobs
-		dsList := jobDB.getDSList()
+		dsList := jobDB.getDSListSnapshot()
 		require.Len(t, dsList, 2) // 2_1, 3
 		require.Equal(t, `2_1`, dsList[0].Index)
 		var count int64
@@ -705,7 +708,7 @@ func TestMigrationMaxDSSizeGuard(t *testing.T) {
 		}
 		require.NoError(t, jd.Store(context.Background(), allJobs[40:]))
 
-		dsList := jd.getDSList()
+		dsList := jd.getDSListSnapshot()
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxMigrateDSProbe", len(dsList))
 
 		result, err := jd.getMigrationList(dsList, nil)
@@ -726,7 +729,7 @@ func TestMigrationMaxDSSizeGuard(t *testing.T) {
 		addDS(t, jd, trigger, allJobs[10:20], 6)
 		require.NoError(t, jd.Store(context.Background(), allJobs[20:]))
 
-		dsList := jd.getDSList()
+		dsList := jd.getDSListSnapshot()
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxMigrateDSProbe", len(dsList))
 
 		result, err := jd.getMigrationList(dsList, nil)
@@ -767,7 +770,7 @@ func TestMigrationSkipsDatasets(t *testing.T) {
 	// Store jobs in the last DS too
 	require.NoError(t, jobDB.Store(context.Background(), genJobs(defaultWorkspaceID, "test", 10, 1)))
 
-	dsList := jobDB.getDSList()
+	dsList := jobDB.getDSListSnapshot()
 	require.Len(t, dsList, totalDS)
 
 	// Make all jobs in the dataset at eligibleDSPos terminal (succeeded)
@@ -859,5 +862,218 @@ func TestMigrationSkipsDatasets(t *testing.T) {
 		require.Greater(t, fullDuration, resumeDuration,
 			"resumed scan should be faster than full scan from scratch",
 		)
+	})
+}
+
+func TestMigrationNonBlockingCompletedDSDrop(t *testing.T) {
+	_ = startPostgres(t)
+
+	// newJobDB creates a ReadWrite Handle with the migrate and addNewDS loop triggers
+	// wired to never-firing channels — the tests below drive state changes synchronously
+	// via createDSInTx so there is no background addNewDSLoop racing with Store/UpdateJobStatus.
+	newJobDB := func(t *testing.T) (*Handle, *config.Config) {
+		t.Helper()
+		c := config.New()
+		c.Set("JobsDB.maxDSSize", 100000)
+		jd := &Handle{
+			TriggerAddNewDS:  func() <-chan time.Time { return make(chan time.Time) },
+			TriggerMigrateDS: func() <-chan time.Time { return make(chan time.Time) },
+			config:           c,
+		}
+		require.NoError(t, jd.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
+		t.Cleanup(jd.TearDown)
+		return jd, c
+	}
+
+	// createDS synchronously appends a new DS at the given index using addNewDSInTx
+	// (which also advances the new DS's job_id sequence to continue from the previous
+	// DS's max, preserving the monotonic range invariant), then refreshes the in-memory list.
+	createDS := func(t *testing.T, jd *Handle, idx string) {
+		t.Helper()
+		require.NoError(t, jd.dsListLock.WithLockInCtx(context.Background(), func(l lock.LockToken) error {
+			dsList, _ := jd.dsList.snapshot()
+			if err := jd.WithTx(context.Background(), func(txn *tx.Tx) error {
+				return jd.addNewDSInTx(context.Background(), txn, l, dsList, newDataSet(jd.tablePrefix, idx))
+			}); err != nil {
+				return err
+			}
+			return jd.doRefreshDSRangeList(l)
+		}))
+	}
+
+	// fillDS stores jobs in the current last DS, marks (len(jobs)-pending) of them as succeeded.
+	fillDS := func(t *testing.T, jd *Handle, jobs []*JobT, pending int) {
+		t.Helper()
+		require.NoError(t, jd.Store(context.Background(), jobs))
+		if terminal := len(jobs) - pending; terminal > 0 {
+			require.NoError(t, jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[:terminal], "executing")))
+			require.NoError(t, jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[:terminal], "succeeded")))
+		}
+	}
+
+	tableExists := func(t *testing.T, jd *Handle, ds dataSetT) bool {
+		t.Helper()
+		var exists bool
+		require.NoError(t, jd.dbHandle.QueryRow(`SELECT to_regclass($1) IS NOT NULL`, ds.JobTable).Scan(&exists))
+		return exists
+	}
+
+	t.Run("flag off (default): completed DS dropped in legacy in-tx path", func(t *testing.T) {
+		jd, _ := newJobDB(t)
+		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
+		fillDS(t, jd, jobs, 0) // DS_1 → all 10 succeeded (completed)
+		createDS(t, jd, "2")   // DS_2 → empty last (exempt from migration)
+
+		snapshot := jd.getDSListSnapshot()
+		require.Len(t, snapshot, 2)
+		completedDS := snapshot[0]
+
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+
+		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
+		require.NotContains(t, listIndices, completedDS.Index, "completed DS should be removed from the published list")
+		require.False(t, tableExists(t, jd, completedDS), "table must be dropped synchronously by the legacy in-tx path")
+		jd.dropDSListLock.RLock()
+		require.Empty(t, jd.dropDSList, "legacy path must not enqueue any async drop entries")
+		jd.dropDSListLock.RUnlock()
+	})
+
+	t.Run("flag on: completed DS routed to async drop list", func(t *testing.T) {
+		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompletedDSDrop", true)
+
+		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
+		fillDS(t, jd, jobs, 0) // DS_1 completed
+		createDS(t, jd, "2")   // DS_2 empty last
+
+		snapshot := jd.getDSListSnapshot()
+		require.Len(t, snapshot, 2)
+		completedDS := snapshot[0]
+
+		// Hold a reader on the current dsList version so dropDSLoop blocks on
+		// waitUntilDrained — lets us observe the enqueued entry before it is physically dropped.
+		_, _, release, err := jd.acquireDSListForRead(context.Background())
+		require.NoError(t, err)
+
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+
+		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
+		require.NotContains(t, listIndices, completedDS.Index, "completed DS hidden from new readers")
+		jd.dropDSListLock.RLock()
+		require.Len(t, jd.dropDSList, 1, "completed DS must be enqueued for async drop")
+		require.Equal(t, completedDS.Index, jd.dropDSList[0].ds.Index)
+		jd.dropDSListLock.RUnlock()
+		require.Never(t,
+			func() bool { return !tableExists(t, jd, completedDS) },
+			200*time.Millisecond, 20*time.Millisecond,
+			"physical drop must block until the held reader releases",
+		)
+
+		release()
+
+		require.Eventually(t, func() bool {
+			jd.dropDSListLock.RLock()
+			pending := len(jd.dropDSList)
+			jd.dropDSListLock.RUnlock()
+			return !tableExists(t, jd, completedDS) && pending == 0
+		}, 5*time.Second, 50*time.Millisecond, "table must be physically dropped once the reader releases")
+	})
+
+	t.Run("flag on: DS with pending jobs still migrated through the legacy TX", func(t *testing.T) {
+		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompletedDSDrop", true)
+		// maxDSRetention=1ms makes DSes with old terminal jobs eligible without the needsPair logic,
+		// so a DS with pending jobs can be migrated alone.
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
+
+		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
+		fillDS(t, jd, jobs, 5) // DS_1: 5 succeeded + 5 pending
+		createDS(t, jd, "2")   // DS_2 empty last
+
+		snapshot := jd.getDSListSnapshot()
+		require.Len(t, snapshot, 2)
+		pendingDS := snapshot[0]
+
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+
+		require.False(t, tableExists(t, jd, pendingDS), "source DS must be dropped via legacy migration TX")
+		jd.dropDSListLock.RLock()
+		require.Empty(t, jd.dropDSList, "non-completed migrate paths must not touch dropDSList")
+		jd.dropDSListLock.RUnlock()
+		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
+		require.NotContains(t, listIndices, pendingDS.Index, "source DS must be removed from published list")
+		require.Contains(t, listIndices, "1_1", "expecting a freshly migrated destination DS at index 1_1")
+	})
+
+	t.Run("flag on: mixed - completed goes async, pending uses legacy TX", func(t *testing.T) {
+		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompletedDSDrop", true)
+		// maxDSRetention=1ms lets both DSes appear together in migrateFrom in a single call.
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
+
+		allJobs := genJobs(defaultWorkspaceID, "test", 20, 1)
+		fillDS(t, jd, allJobs[:10], 0) // DS_1 completed
+		createDS(t, jd, "2")
+		fillDS(t, jd, allJobs[10:20], 5) // DS_2: 5 pending
+		createDS(t, jd, "3")             // DS_3 empty last
+
+		snapshot := jd.getDSListSnapshot()
+		require.Len(t, snapshot, 3)
+		completedDS := snapshot[0]
+		pendingDS := snapshot[1]
+
+		// Hold a reader so the async drop for the completed DS blocks; this lets us
+		// observe the dropDSList entry before dropDSLoop drains it.
+		_, _, release, err := jd.acquireDSListForRead(context.Background())
+		require.NoError(t, err)
+		defer release()
+
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+
+		jd.dropDSListLock.RLock()
+		require.Len(t, jd.dropDSList, 1, "only the completed DS should be enqueued for async drop")
+		require.Equal(t, completedDS.Index, jd.dropDSList[0].ds.Index)
+		jd.dropDSListLock.RUnlock()
+
+		require.True(t, tableExists(t, jd, completedDS), "completed DS physical drop is blocked by the held reader")
+		require.False(t, tableExists(t, jd, pendingDS), "pending DS source must be dropped via legacy migration TX")
+	})
+
+	t.Run("flag toggled at runtime: takes effect on the next migration", func(t *testing.T) {
+		jd, c := newJobDB(t)
+
+		allJobs := genJobs(defaultWorkspaceID, "test", 20, 1)
+		fillDS(t, jd, allJobs[:10], 0) // DS_1 completed
+		createDS(t, jd, "2")           // DS_2 empty last
+		completed1 := jd.getDSListSnapshot()[0]
+
+		// Flag off (default): legacy in-tx drop.
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.False(t, tableExists(t, jd, completed1), "first migration must use the legacy in-tx drop")
+		jd.dropDSListLock.RLock()
+		require.Empty(t, jd.dropDSList)
+		jd.dropDSListLock.RUnlock()
+
+		// Flip the flag and prepare another completed DS to migrate.
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompletedDSDrop", true)
+		fillDS(t, jd, allJobs[10:20], 0) // DS_2 now has 10 succeeded jobs (completed)
+		createDS(t, jd, "3")             // DS_3 empty last
+		snapshot := jd.getDSListSnapshot()
+		require.Len(t, snapshot, 2)
+		completed2 := snapshot[0]
+		require.Equal(t, "2", completed2.Index)
+
+		// Hold a reader so we can observe the async enqueue before dropDSLoop drains it.
+		_, _, release, err := jd.acquireDSListForRead(context.Background())
+		require.NoError(t, err)
+		defer release()
+
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+
+		jd.dropDSListLock.RLock()
+		require.Len(t, jd.dropDSList, 1, "second migration must use the async drop path after the flag is on")
+		require.Equal(t, completed2.Index, jd.dropDSList[0].ds.Index)
+		jd.dropDSListLock.RUnlock()
+		require.True(t, tableExists(t, jd, completed2), "physical drop blocked by held reader")
 	})
 }

@@ -35,7 +35,6 @@ type mockAPI struct {
 	createChannelOutputMap map[string]func() (*model.ChannelResponse, error)
 	deleteChannelOutputMap map[string]func() error
 	insertOutputMap        map[string]func() (*model.InsertResponse, error)
-	getStatusOutputMap     map[string]func() (*model.StatusResponse, error)
 	getBulkStatusOutputMap map[string]func() (*model.BulkStatusResponse, error)
 }
 
@@ -52,14 +51,14 @@ func (m *mockAPI) Insert(_ context.Context, channelID string, _ *model.InsertReq
 	return m.insertOutputMap[channelID]()
 }
 
-func (m *mockAPI) GetStatus(_ context.Context, channelID string) (*model.StatusResponse, error) {
-	return m.getStatusOutputMap[channelID]()
+func (m *mockAPI) GetBulkStatus(_ context.Context, channelIDs []string) (*model.BulkStatusResponse, error) {
+	statusKey := bulkStatusKey(channelIDs...)
+	return m.getBulkStatusOutputMap[statusKey]()
 }
 
-func (m *mockAPI) GetBulkStatus(_ context.Context, channelIDs []string) (*model.BulkStatusResponse, error) {
+func bulkStatusKey(channelIDs ...string) string {
 	slices.Sort(channelIDs)
-	channelIDsStr := strings.Join(channelIDs, ",")
-	return m.getBulkStatusOutputMap[channelIDsStr]()
+	return strings.Join(channelIDs, ",")
 }
 
 var (
@@ -172,9 +171,19 @@ func TestSnowpipeStreaming(t *testing.T) {
 				"test-rudder-discards-channel": func() error { return nil },
 				"test-users-channel":           func() error { return nil },
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-rudder-discards-channel": func() (*model.StatusResponse, error) { return nil, assert.AnError },
-				"test-users-channel":           func() (*model.StatusResponse, error) { return nil, assert.AnError },
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel"},
+					}, nil
+				},
+				"test-rudder-discards-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-rudder-discards-channel"},
+					}, nil
+				},
 			},
 		}
 		sm.api = mockApi
@@ -266,6 +275,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			},
 		}, mockApi.channelReq)
 	})
+
 	t.Run("Upload not able to create event channel", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -293,9 +303,12 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return nil
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel"},
+					}, nil
 				},
 			},
 		}
@@ -352,12 +365,24 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return nil
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel", "test-products-channel"},
+					}, nil
 				},
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+				"test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel"},
+					}, nil
+				},
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel"},
+					}, nil
 				},
 			},
 		}
@@ -387,6 +412,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "failed",
 		}).LastValue())
 	})
+
 	t.Run("Upload insert status failed with deletion error", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -413,12 +439,24 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return assert.AnError
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel", "test-users-channel"},
+					}, nil
 				},
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+				"test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel"},
+					}, nil
+				},
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel"},
+					}, nil
 				},
 			},
 		}
@@ -448,6 +486,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "failed",
 		}).LastValue())
 	})
+
 	t.Run("Upload insert error for all events", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -474,12 +513,24 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return nil
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel", "test-users-channel"},
+					}, nil
 				},
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+				"test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel"},
+					}, nil
+				},
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel"},
+					}, nil
 				},
 			},
 		}
@@ -559,12 +610,24 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return nil
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel", "test-users-channel"},
+					}, nil
 				},
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+				"test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel"},
+					}, nil
+				},
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel"},
+					}, nil
 				},
 			},
 		}
@@ -594,6 +657,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "failed",
 		}).LastValue())
 	})
+
 	t.Run("Upload discards inserts status failed with deletion error", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -643,12 +707,24 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return assert.AnError
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel", "test-products-channel"},
+					}, nil
 				},
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+				"test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel"},
+					}, nil
+				},
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel"},
+					}, nil
 				},
 			},
 		}
@@ -678,6 +754,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "failed",
 		}).LastValue())
 	})
+
 	t.Run("Upload discards inserts error", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -727,12 +804,24 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return nil
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel", "test-products-channel"},
+					}, nil
 				},
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+				"test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel"},
+					}, nil
+				},
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel"},
+					}, nil
 				},
 			},
 		}
@@ -784,8 +873,11 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.InsertResponse{Success: true}, nil
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{Success: true}, nil
+				},
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
 					return nil, assert.AnError
 				},
 			},
@@ -815,6 +907,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "failed",
 		}).LastValue())
 	})
+
 	t.Run("Upload latest discards offset", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -853,8 +946,11 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.InsertResponse{Success: true}, nil
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{Success: true}, nil
+				},
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
 					return nil, assert.AnError
 				},
 			},
@@ -884,6 +980,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "failed",
 		}).LastValue())
 	})
+
 	t.Run("Upload failed some events", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -910,11 +1007,11 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return nil
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{Success: true}, nil
 				},
-				"test-products-channel": func() (*model.StatusResponse, error) {
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
 					return nil, assert.AnError
 				},
 			},
@@ -945,6 +1042,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "failed",
 		}).LastValue())
 	})
+
 	t.Run("Upload with some events succeeding and some aborting", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -971,12 +1069,9 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.InsertResponse{Success: true}, nil
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
-				},
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{Success: true}, nil
 				},
 			},
 		}
@@ -1018,6 +1113,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			}).LastValue(),
 		})
 	})
+
 	t.Run("Upload success", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -1039,8 +1135,11 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.InsertResponse{Success: true}, nil
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{Success: true}, nil
+				},
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
 					return nil, assert.AnError
 				},
 			},
@@ -1092,9 +1191,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.InsertResponse{Success: true}, nil
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true}, nil
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true},
+						},
+					}, nil
 				},
 			},
 		}
@@ -1152,9 +1256,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.InsertResponse{Success: true}, nil
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "1002"}, nil
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true, Offset: "1002"},
+						},
+					}, nil
 				},
 			},
 		}
@@ -1223,7 +1332,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
-				"test-products-channel,test-users-channel": func() (*model.BulkStatusResponse, error) {
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
 					return &model.BulkStatusResponse{
 						Success: true,
 						Statuses: map[string]*model.StatusResponse{
@@ -1298,7 +1407,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
-				"test-products-channel,test-users-channel": func() (*model.BulkStatusResponse, error) {
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
 					return &model.BulkStatusResponse{
 						Success:  true,
 						NotFound: []string{"test-users-channel", "test-products-channel"},
@@ -1419,18 +1528,30 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.InsertResponse{Success: true}, nil
 				},
 			},
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true}, nil
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-users-channel": {Valid: true, Success: true},
+						},
+					}, nil
 				},
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true}, nil
+				"invalid-test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"invalid-test-products-channel": {Valid: true, Success: true},
+						},
+					}, nil
 				},
-				"test-rudder-discards-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true}, nil
-				},
-				"invalid-test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true}, nil
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true},
+						},
+					}, nil
 				},
 			},
 		}
@@ -1467,12 +1588,15 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"}, nil
-				},
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1004"}, nil
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"},
+							"test-users-channel":    {Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1004"},
+						},
+					}, nil
 				},
 			},
 		}
@@ -1489,18 +1613,31 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: false, Success: false, Offset: "0"},
+							"test-users-channel":    {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
 				},
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				"test-recreated-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-recreated-products-channel": {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
 				},
-				"test-recreated-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
-				},
-				"test-recreated-users-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				"test-recreated-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-recreated-users-channel": {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
@@ -1544,12 +1681,15 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
-				},
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: false, Success: false, Offset: "0"},
+							"test-users-channel":    {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
@@ -1593,17 +1733,20 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: false, Success: false, Offset: "0"},
+							"test-users-channel":    {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
 				},
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
-				},
-				"test-recreated-products-channel": func() (*model.StatusResponse, error) {
+				"test-recreated-products-channel": func() (*model.BulkStatusResponse, error) {
 					return nil, fmt.Errorf("failed to get status")
 				},
-				"test-recreated-users-channel": func() (*model.StatusResponse, error) {
+				"test-recreated-users-channel": func() (*model.BulkStatusResponse, error) {
 					return nil, fmt.Errorf("failed to get status")
 				},
 			},
@@ -1631,7 +1774,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, http.StatusOK, output.StatusCode)
 		require.True(t, output.Complete)
 		require.True(t, output.HasFailed)
-		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"getting status after channel recreation: failed to get status","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"getting status after channel recreation: failed to get status","count":2}]`, output.FailedJobParameters)
+		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"getting status after channel recreation: failed to get bulk status: failed to get status","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"getting status after channel recreation: failed to get bulk status: failed to get status","count":2}]`, output.FailedJobParameters)
 		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
@@ -1648,18 +1791,31 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: false, Success: false, Offset: "0"},
+							"test-users-channel":    {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
 				},
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				"test-recreated-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-recreated-products-channel": {Valid: true, Success: true, Offset: "1003"},
+						},
+					}, nil
 				},
-				"test-recreated-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "1003"}, nil
-				},
-				"test-recreated-users-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "1004"}, nil
+				"test-recreated-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-recreated-users-channel": {Valid: true, Success: true, Offset: "1004"},
+						},
+					}, nil
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
@@ -1711,18 +1867,31 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: false, Success: false, Offset: "0"},
+							"test-users-channel":    {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
 				},
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				"test-recreated-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-recreated-products-channel": {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
 				},
-				"test-recreated-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
-				},
-				"test-recreated-users-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				"test-recreated-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-recreated-users-channel": {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
@@ -1770,7 +1939,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		sm := New(conf, logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
 			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
-				"test-products-channel,test-users-channel": func() (*model.BulkStatusResponse, error) {
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
 					return &model.BulkStatusResponse{
 						Success: true,
 						Statuses: map[string]*model.StatusResponse{
@@ -1841,7 +2010,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		sm := New(conf, logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
 			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
-				"test-products-channel,test-users-channel": func() (*model.BulkStatusResponse, error) {
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
 					return &model.BulkStatusResponse{
 						Success: true,
 						Statuses: map[string]*model.StatusResponse{
@@ -1896,7 +2065,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		sm := New(conf, logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
 			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
-				"test-products-channel,test-users-channel": func() (*model.BulkStatusResponse, error) {
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
 					return &model.BulkStatusResponse{
 						Success: true,
 						Statuses: map[string]*model.StatusResponse{
@@ -1957,7 +2126,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		sm := New(conf, logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
 			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
-				"test-products-channel,test-users-channel": func() (*model.BulkStatusResponse, error) {
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
 					return &model.BulkStatusResponse{
 						Success: true,
 						Statuses: map[string]*model.StatusResponse{
@@ -2036,7 +2205,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		sm := New(conf, logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
 			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
-				"test-products-channel,test-users-channel": func() (*model.BulkStatusResponse, error) {
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
 					return &model.BulkStatusResponse{
 						Success: true,
 						Statuses: map[string]*model.StatusResponse{
@@ -2103,12 +2272,9 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
-				},
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return nil, assert.AnError
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{Success: true}, nil
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
@@ -2127,7 +2293,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, http.StatusOK, output.StatusCode)
 		require.True(t, output.Complete)
 		require.True(t, output.HasFailed)
-		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"getting status: assert.AnError general error for testing","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"getting status: assert.AnError general error for testing","count":2}]`, output.FailedJobParameters)
+		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"channel not found in bulk status: test-products-channel","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"channel not found in bulk status: test-users-channel","count":2}]`, output.FailedJobParameters)
 		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
@@ -2144,12 +2310,15 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "1003"}, nil
-				},
-				"test-users-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "1004"}, nil
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-products-channel", "test-users-channel"): func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true, Offset: "1003"},
+							"test-users-channel":    {Valid: true, Success: true, Offset: "1004"},
+						},
+					}, nil
 				},
 			},
 		}
@@ -2187,14 +2356,22 @@ func TestSnowpipeStreaming(t *testing.T) {
 		getStatusCallCount := 0
 		createChannelCallCount := 0
 		sm.api = &mockAPI{
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
 					getStatusCallCount++
-					return nil, internalapi.ErrChannelNotFound
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel"},
+					}, nil
 				},
-				"recreated-products-channel": func() (*model.StatusResponse, error) {
+				"recreated-products-channel": func() (*model.BulkStatusResponse, error) {
 					getStatusCallCount++
-					return &model.StatusResponse{Success: true, Valid: true, Offset: "1003"}, nil
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"recreated-products-channel": {Success: true, Valid: true, Offset: "1003"},
+						},
+					}, nil
 				},
 			},
 			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
@@ -2220,9 +2397,12 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return nil, internalapi.ErrChannelNotFound
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel"},
+					}, nil
 				},
 			},
 			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
@@ -2252,26 +2432,27 @@ func TestSnowpipeStreaming(t *testing.T) {
 		statusCalls := 0
 		sm := New(config.New(), logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-channel-1": func() (*model.StatusResponse, error) {
-					statusCalls += 1
-					return &model.StatusResponse{Valid: false, Success: true}, nil
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				bulkStatusKey("test-channel-1", "test-channel-2", "test-channel-3", "test-channel-4"): func() (*model.BulkStatusResponse, error) {
+					statusCalls++
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-channel-1": {Valid: false, Success: true},
+							"test-channel-2": {Valid: true, Success: false},
+							"test-channel-3": {Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "3"},
+							"test-channel-4": {Valid: true, Success: true, Offset: "4", LatestInsertedOffset: "4"},
+						},
+					}, nil
 				},
-				"test-channel-2": func() (*model.StatusResponse, error) {
-					statusCalls += 1
-					return &model.StatusResponse{Valid: true, Success: false}, nil
-				},
-				"test-channel-3": func() (*model.StatusResponse, error) {
-					statusCalls += 1
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "3"}, nil
-				},
-				"test-channel-4": func() (*model.StatusResponse, error) {
-					statusCalls += 1
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "4", LatestInsertedOffset: "4"}, nil
-				},
-				"test-recreated-channel-1": func() (*model.StatusResponse, error) {
-					statusCalls += 1
-					return &model.StatusResponse{Valid: false, Success: true, Offset: "1"}, nil
+				"test-recreated-channel-1": func() (*model.BulkStatusResponse, error) {
+					statusCalls++
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-recreated-channel-1": {Valid: false, Success: true, Offset: "1"},
+						},
+					}, nil
 				},
 			},
 			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
@@ -2290,12 +2471,17 @@ func TestSnowpipeStreaming(t *testing.T) {
 		})
 		require.True(t, output.InProgress)
 
-		t.Log("Polling again should not call getStatus for channels 1, 2 and 4 since they already reached the terminal state")
+		t.Log("Polling again should not call getBulkStatus for channels 1, 2 and 4 since they already reached the terminal state")
 		sm.api = &mockAPI{
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-channel-3": func() (*model.StatusResponse, error) {
-					statusCalls += 1
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "3"}, nil
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-channel-3": func() (*model.BulkStatusResponse, error) {
+					statusCalls++
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-channel-3": {Valid: true, Success: true, Offset: "3"},
+						},
+					}, nil
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
@@ -2314,7 +2500,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, http.StatusOK, output.StatusCode)
 		require.True(t, output.Complete)
 		require.True(t, output.HasFailed)
-		require.Equal(t, `[{"channelId":"test-channel-1","offset":"1","table":"1","failed":true,"reason":"invalid status response after recreation with valid: false, success: true","count":1},{"channelId":"test-channel-2","offset":"2","table":"2","failed":true,"reason":"invalid status response with valid: true, success: false","count":2},{"channelId":"test-channel-3","offset":"3","table":"3","failed":false,"reason":"","count":3},{"channelId":"test-channel-4","offset":"4","table":"4","failed":false,"reason":"","count":4}]`, output.FailedJobParameters)
+		require.Equal(t, `[{"channelId":"test-channel-1","offset":"1","table":"1","failed":true,"reason":"invalid status response after recreation with valid: false, success: true","count":1},{"channelId":"test-channel-2","offset":"2","table":"2","failed":true,"reason":"failed to get status with success: false","count":2},{"channelId":"test-channel-3","offset":"3","table":"3","failed":false,"reason":"","count":3},{"channelId":"test-channel-4","offset":"4","table":"4","failed":false,"reason":"","count":4}]`, output.FailedJobParameters)
 		require.EqualValues(t, 3, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
@@ -2335,7 +2521,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"destType":      "SNOWPIPE_STREAMING",
 			"destinationId": "test-destination",
 		}).LastValue())
-		require.Equal(t, 6, statusCalls) // 4 channels + 1 for polling in progress + 1 for recreation
+		require.Equal(t, 3, statusCalls) // 1 bulk poll + 1 recreation bulk poll + 1 second poll
 	})
 
 	// Unexpected polling state encountered mark events as failed
@@ -2346,9 +2532,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "1005", LatestInsertedOffset: "1003"}, nil
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true, Offset: "1005", LatestInsertedOffset: "1003"},
+						},
+					}, nil
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
@@ -2374,9 +2565,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
 		sm.api = &mockAPI{
-			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-				"test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"}, nil
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"},
+						},
+					}, nil
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
@@ -2575,7 +2771,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			name                       string
 			infos                      []*importInfo
 			prePopulatedCache          map[string]*importInfo
-			mockGetStatusResponses     map[string]func() (*model.StatusResponse, error)
+			mockGetBulkStatusResponses map[string]func() (*model.BulkStatusResponse, error)
 			mockDeleteChannelResponses map[string]func() error
 			mockCreateChannelResponses map[string]func() (*model.ChannelResponse, error)
 			expectedInProgress         bool
@@ -2622,9 +2818,9 @@ func TestSnowpipeStreaming(t *testing.T) {
 						Count:     5,
 					},
 				},
-				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
-					"test-channel-1": func() (*model.StatusResponse, error) {
-						return nil, fmt.Errorf("API error")
+				mockGetBulkStatusResponses: map[string]func() (*model.BulkStatusResponse, error){
+					"test-channel-1": func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{Success: true}, nil
 					},
 				},
 				expectedInProgress:     false,
@@ -2641,13 +2837,18 @@ func TestSnowpipeStreaming(t *testing.T) {
 						Count:     5,
 					},
 				},
-				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
-					"test-channel-1": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:                true,
-							Success:              true,
-							Offset:               "50",  // Less than expected "100"
-							LatestInsertedOffset: "100", // Greater than committed - flushing in progress
+				mockGetBulkStatusResponses: map[string]func() (*model.BulkStatusResponse, error){
+					"test-channel-1": func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-channel-1": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "50",
+									LatestInsertedOffset: "100",
+								},
+							},
 						}, nil
 					},
 				},
@@ -2665,13 +2866,18 @@ func TestSnowpipeStreaming(t *testing.T) {
 						Count:     5,
 					},
 				},
-				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
-					"test-channel-1": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:                true,
-							Success:              true,
-							Offset:               "100", // Equal to expected
-							LatestInsertedOffset: "100",
+				mockGetBulkStatusResponses: map[string]func() (*model.BulkStatusResponse, error){
+					"test-channel-1": func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-channel-1": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "100",
+									LatestInsertedOffset: "100",
+								},
+							},
 						}, nil
 					},
 				},
@@ -2689,13 +2895,18 @@ func TestSnowpipeStreaming(t *testing.T) {
 						Count:     5,
 					},
 				},
-				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
-					"test-channel-1": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:                true,
-							Success:              true,
-							Offset:               "50", // Less than expected
-							LatestInsertedOffset: "50", // Equal to committed - events lost
+				mockGetBulkStatusResponses: map[string]func() (*model.BulkStatusResponse, error){
+					"test-channel-1": func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-channel-1": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "50",
+									LatestInsertedOffset: "50",
+								},
+							},
 						}, nil
 					},
 				},
@@ -2746,24 +2957,24 @@ func TestSnowpipeStreaming(t *testing.T) {
 						Failed:    false,
 					},
 				},
-				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
-					"test-channel-1": func() (*model.StatusResponse, error) {
-						return nil, fmt.Errorf("network error")
-					},
-					"test-channel-3": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:                true,
-							Success:              true,
-							Offset:               "250",
-							LatestInsertedOffset: "300", // In progress
-						}, nil
-					},
-					"test-channel-4": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:                true,
-							Success:              true,
-							Offset:               "400", // Completed
-							LatestInsertedOffset: "400",
+				mockGetBulkStatusResponses: map[string]func() (*model.BulkStatusResponse, error){
+					bulkStatusKey("test-channel-1", "test-channel-3", "test-channel-4"): func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-channel-3": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "250",
+									LatestInsertedOffset: "300",
+								},
+								"test-channel-4": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "400",
+									LatestInsertedOffset: "400",
+								},
+							},
 						}, nil
 					},
 				},
@@ -2788,21 +2999,24 @@ func TestSnowpipeStreaming(t *testing.T) {
 						Count:     3,
 					},
 				},
-				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
-					"test-channel-1": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:                true,
-							Success:              true,
-							Offset:               "50",
-							LatestInsertedOffset: "100", // In progress
-						}, nil
-					},
-					"test-channel-2": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:                true,
-							Success:              true,
-							Offset:               "150",
-							LatestInsertedOffset: "200", // In progress
+				mockGetBulkStatusResponses: map[string]func() (*model.BulkStatusResponse, error){
+					bulkStatusKey("test-channel-1", "test-channel-2"): func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-channel-1": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "50",
+									LatestInsertedOffset: "100",
+								},
+								"test-channel-2": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "150",
+									LatestInsertedOffset: "200",
+								},
+							},
 						}, nil
 					},
 				},
@@ -2826,17 +3040,19 @@ func TestSnowpipeStreaming(t *testing.T) {
 						Count:     3,
 					},
 				},
-				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
-					"test-channel-1": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:                true,
-							Success:              true,
-							Offset:               "100", // Completed
-							LatestInsertedOffset: "100",
+				mockGetBulkStatusResponses: map[string]func() (*model.BulkStatusResponse, error){
+					bulkStatusKey("test-channel-1", "test-channel-2"): func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-channel-1": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "100",
+									LatestInsertedOffset: "100",
+								},
+							},
 						}, nil
-					},
-					"test-channel-2": func() (*model.StatusResponse, error) {
-						return nil, fmt.Errorf("failed to get status")
 					},
 				},
 				expectedInProgress:     false,
@@ -2860,13 +3076,18 @@ func TestSnowpipeStreaming(t *testing.T) {
 						},
 					},
 				},
-				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
-					"test-channel-1": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:                true,
-							Success:              true,
-							Offset:               "100",
-							LatestInsertedOffset: "100",
+				mockGetBulkStatusResponses: map[string]func() (*model.BulkStatusResponse, error){
+					"test-channel-1": func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-channel-1": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "100",
+									LatestInsertedOffset: "100",
+								},
+							},
 						}, nil
 					},
 				},
@@ -2884,19 +3105,21 @@ func TestSnowpipeStreaming(t *testing.T) {
 						Count:     5,
 					},
 				},
-				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
-					"test-channel-1": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:   false,
+				mockGetBulkStatusResponses: map[string]func() (*model.BulkStatusResponse, error){
+					"test-channel-1": func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{
 							Success: true,
-							Offset:  "100",
+							Statuses: map[string]*model.StatusResponse{
+								"test-channel-1": {Valid: false, Success: true, Offset: "100"},
+							},
 						}, nil
 					},
-					"test-recreated-channel-1": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:   false,
+					"test-recreated-channel-1": func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{
 							Success: true,
-							Offset:  "100",
+							Statuses: map[string]*model.StatusResponse{
+								"test-recreated-channel-1": {Valid: false, Success: true, Offset: "100"},
+							},
 						}, nil
 					},
 				},
@@ -2924,12 +3147,13 @@ func TestSnowpipeStreaming(t *testing.T) {
 						Count:     5,
 					},
 				},
-				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
-					"test-channel-1": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:   true,
-							Success: false,
-							Offset:  "100",
+				mockGetBulkStatusResponses: map[string]func() (*model.BulkStatusResponse, error){
+					"test-channel-1": func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-channel-1": {Valid: true, Success: false, Offset: "100"},
+							},
 						}, nil
 					},
 				},
@@ -2947,13 +3171,18 @@ func TestSnowpipeStreaming(t *testing.T) {
 						Count:     5,
 					},
 				},
-				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
-					"test-channel-1": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:                true,
-							Success:              true,
-							Offset:               "", // Empty offset
-							LatestInsertedOffset: "100",
+				mockGetBulkStatusResponses: map[string]func() (*model.BulkStatusResponse, error){
+					"test-channel-1": func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-channel-1": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "",
+									LatestInsertedOffset: "100",
+								},
+							},
 						}, nil
 					},
 				},
@@ -2971,13 +3200,18 @@ func TestSnowpipeStreaming(t *testing.T) {
 						Count:     5,
 					},
 				},
-				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
-					"test-channel-1": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:                true,
-							Success:              true,
-							Offset:               "", // Empty offset
-							LatestInsertedOffset: "", // Empty LatestInsertedOffset
+				mockGetBulkStatusResponses: map[string]func() (*model.BulkStatusResponse, error){
+					"test-channel-1": func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-channel-1": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "",
+									LatestInsertedOffset: "",
+								},
+							},
 						}, nil
 					},
 				},
@@ -3001,13 +3235,18 @@ func TestSnowpipeStreaming(t *testing.T) {
 						Count:     5,
 					},
 				},
-				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
-					"test-channel-1": func() (*model.StatusResponse, error) {
-						return &model.StatusResponse{
-							Valid:                true,
-							Success:              true,
-							Offset:               "",   // Empty offset
-							LatestInsertedOffset: "75", // Less than expected
+				mockGetBulkStatusResponses: map[string]func() (*model.BulkStatusResponse, error){
+					"test-channel-1": func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-channel-1": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "",
+									LatestInsertedOffset: "75",
+								},
+							},
 						}, nil
 					},
 				},
@@ -3036,7 +3275,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 				// Set up mock API if needed
 				sm.api = &mockAPI{
-					getStatusOutputMap:     tt.mockGetStatusResponses,
+					getBulkStatusOutputMap: tt.mockGetBulkStatusResponses,
 					deleteChannelOutputMap: tt.mockDeleteChannelResponses,
 					createChannelOutputMap: tt.mockCreateChannelResponses,
 				}
@@ -3087,7 +3326,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			bulkCallCount := 0
 			sm.api = &mockAPI{
 				getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
-					"test-channel-1,test-channel-2": func() (*model.BulkStatusResponse, error) {
+					bulkStatusKey("test-channel-1", "test-channel-2"): func() (*model.BulkStatusResponse, error) {
 						bulkCallCount++
 						return &model.BulkStatusResponse{
 							Success: true,
@@ -3164,7 +3403,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			bulkCallCount := 0
 			sm.api = &mockAPI{
 				getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
-					"test-channel-1,test-channel-2": func() (*model.BulkStatusResponse, error) {
+					bulkStatusKey("test-channel-1", "test-channel-2"): func() (*model.BulkStatusResponse, error) {
 						bulkCallCount++
 						return &model.BulkStatusResponse{
 							Success: true,

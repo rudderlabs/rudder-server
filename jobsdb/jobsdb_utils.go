@@ -15,7 +15,10 @@ import (
 
 type sqlDbOrTx interface {
 	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
 }
+
+const preDropTableComment = "rudder:pre_drop:v1"
 
 /*
 Function to return an ordered list of datasets and datasetRanges
@@ -81,26 +84,67 @@ func sortDnumList(dnumList []string) {
 	})
 }
 
-// getAllTableNames gets all table names from Postgres
+// getAllTableNames gets all table names from Postgres, excluding tables marked as pre-drop.
 func getAllTableNames(dbHandle sqlDbOrTx) ([]string, error) {
-	var tableNames []string
-	rows, err := dbHandle.Query(`SELECT tablename
-									FROM pg_catalog.pg_tables
-									WHERE schemaname != 'pg_catalog' AND
-									schemaname != 'information_schema'`)
+	type tableInfo struct {
+		name        string
+		description sql.NullString
+	}
+	var tables []tableInfo
+	rows, err := dbHandle.Query(`SELECT c.relname, d.description
+									FROM pg_catalog.pg_class c
+									JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+									LEFT JOIN pg_catalog.pg_description d ON d.objoid = c.oid AND d.objsubid = 0
+									WHERE n.nspname != 'pg_catalog'
+										AND n.nspname != 'information_schema'
+										AND c.relkind = 'r'`)
 	if err != nil {
-		return tableNames, err
+		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var tbName string
-		err = rows.Scan(&tbName)
-		if err != nil {
-			return tableNames, err
+		var table tableInfo
+		if err = rows.Scan(&table.name, &table.description); err != nil {
+			return nil, err
 		}
-		tableNames = append(tableNames, tbName)
+		tables = append(tables, table)
 	}
-	return tableNames, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	preDropTables := make(map[string]struct{})
+	for _, table := range tables {
+		if !table.description.Valid || !strings.HasPrefix(table.description.String, "rudder:pre_drop:") {
+			continue
+		}
+		jobTable, statusTable, ok := preDropDatasetTables(table.name)
+		if !ok {
+			preDropTables[table.name] = struct{}{}
+			continue
+		}
+		preDropTables[jobTable] = struct{}{}
+		preDropTables[statusTable] = struct{}{}
+	}
+
+	tableNames := make([]string, 0, len(tables))
+	for _, table := range tables {
+		if _, ok := preDropTables[table.name]; ok {
+			continue
+		}
+		tableNames = append(tableNames, table.name)
+	}
+	return tableNames, nil
+}
+
+func preDropDatasetTables(tableName string) (jobTable, statusTable string, ok bool) {
+	if prefix, index, found := strings.Cut(tableName, "_job_status_"); found && prefix != "" && index != "" {
+		return prefix + "_jobs_" + index, tableName, true
+	}
+	if prefix, index, found := strings.Cut(tableName, "_jobs_"); found && prefix != "" && index != "" {
+		return tableName, prefix + "_job_status_" + index, true
+	}
+	return "", "", false
 }
 
 // checkValidJobState Function to check validity of states
