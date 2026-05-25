@@ -66,20 +66,52 @@ func (jd *Handle) migrateDSLoop(ctx context.Context) {
 }
 
 func (jd *Handle) doMigrateDS(ctx context.Context) error {
-	if !jd.dsListLock.RTryLockWithCtx(ctx) {
-		return fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+	dsList, _, release, err := jd.acquireDSListForRead(ctx)
+	if err != nil {
+		return fmt.Errorf("could not acquire a dslist read lock: %w", err)
 	}
-	dsList := jd.getDSList()
-	jd.dsListLock.RUnlock()
 
 	if err := jd.cleanupStatusTables(ctx, dsList); err != nil {
+		release()
 		return err
 	}
+	release()
 
 	optimisticCheck, err := jd.getMigrationList(dsList, jd.lastMigrateProbeIndex)
 	jd.lastMigrateProbeIndex = nil
 	if err != nil {
 		return fmt.Errorf("could not get migration list: %w", err)
+	}
+
+	// Fast path: route datasets that have no pending jobs through the async
+	// dropDSLoop instead of the in-TX postMigrateHandleDS path. This skips the
+	// dsMigrationLock for empty-source drops so concurrent readers are not blocked.
+	if jd.conf.migration.nonBlockingCompletedDSDrop.Load() {
+		completed := lo.FilterMap(
+			optimisticCheck.migrateFrom,
+			func(d dsWithPendingJobCount, _ int) (dataSetT, bool) {
+				return d.ds, d.numJobsPending == 0
+			},
+		)
+		if len(completed) > 0 {
+			if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
+				// addToDropDSList republishes dsList without the completed datasets;
+				// reuse that snapshot so the second getMigrationList pass inside the
+				// TX does not re-encounter datasets we just queued for async drop.
+				newList, err := jd.addCompletedDSToDropList(ctx, l, completed...)
+				if err != nil {
+					return err
+				}
+				dsList = newList
+				return nil
+			}); err != nil {
+				return fmt.Errorf("enqueue completed datasets for async drop: %w", err)
+			}
+			optimisticCheck.migrateFrom = lo.Filter(
+				optimisticCheck.migrateFrom,
+				func(d dsWithPendingJobCount, _ int) bool { return d.numJobsPending > 0 },
+			)
+		}
 	}
 
 	if len(optimisticCheck.migrateFrom) == 0 {
@@ -269,14 +301,15 @@ func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT
 	var rows *sql.Rows
 	rows, err := jd.getDB(ctx).QueryContext(
 		ctx,
-		`SELECT pg_table_size(oid) AS size, relname
-		FROM pg_class
-		where relname = ANY(
-			SELECT tablename
-				FROM pg_catalog.pg_tables
-				WHERE schemaname NOT IN ('pg_catalog','information_schema')
-				AND tablename like $1
-		) order by relname;`,
+		`SELECT pg_catalog.pg_table_size(c.oid) AS size, c.relname
+		FROM pg_catalog.pg_class c
+		JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+		LEFT JOIN pg_catalog.pg_description d ON d.objoid = c.oid AND d.objsubid = 0
+		WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+			AND c.relkind = 'r'
+			AND c.relname LIKE $1
+			AND (d.description IS NULL OR d.description NOT LIKE 'rudder:pre_drop:%')
+		ORDER BY c.relname;`,
 		jd.tablePrefix+"_job_status%",
 	)
 	if err != nil {
@@ -287,14 +320,16 @@ func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT
 	tableSizes := map[string]int64{}
 	for rows.Next() {
 		var (
-			tableSize int64
+			tableSize sql.NullInt64
 			tableName string
 		)
 		err = rows.Scan(&tableSize, &tableName)
 		if err != nil {
 			return nil, err
 		}
-		tableSizes[tableName] = tableSize
+		if tableSize.Valid {
+			tableSizes[tableName] = tableSize.Int64
+		}
 	}
 	err = rows.Err()
 	if err != nil {
@@ -316,14 +351,14 @@ func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) (
 	var rows *sql.Rows
 	rows, err := jd.getDB(ctx).QueryContext(
 		ctx,
-		`SELECT reltuples AS estimate, relname
-		FROM pg_class
-		where relname = ANY(
-			SELECT tablename
-				FROM pg_catalog.pg_tables
-				WHERE schemaname NOT IN ('pg_catalog','information_schema')
-				AND tablename like $1
-		)`,
+		`SELECT c.reltuples AS estimate, c.relname
+		FROM pg_catalog.pg_class c
+		JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+		LEFT JOIN pg_catalog.pg_description d ON d.objoid = c.oid AND d.objsubid = 0
+		WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+			AND c.relkind = 'r'
+			AND c.relname LIKE $1
+			AND (d.description IS NULL OR d.description NOT LIKE 'rudder:pre_drop:%')`,
 		jd.tablePrefix+"_job%",
 	)
 	if err != nil {
@@ -646,7 +681,7 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 
 func (jd *Handle) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBeforeDS dataSetT) (string, error) { // Within the node
 	jd.logger.Debugn("computeNewIdxForIntraNodeMigration", logger.NewStringField("insertBeforeDS", insertBeforeDS.String()))
-	dList, err := jd.doRefreshDSList(l)
+	dList, err := jd.doRefreshDSList(l, jd.dbHandle)
 	if err != nil {
 		return "", fmt.Errorf("refreshDSList: %w", err)
 	}

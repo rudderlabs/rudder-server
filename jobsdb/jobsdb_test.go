@@ -146,8 +146,8 @@ func TestJobsdbLifecycle(t *testing.T) {
 		jd := startTestJobsDB(t)
 		defer jd.TearDown()
 		t.Run("doesn't make db calls if !refreshFromDB", func(t *testing.T) {
-			jd.datasetList = dsListInMemory
-			require.Equal(t, dsListInMemory, jd.getDSList())
+			jd.dsList.set(dsListInMemory, nil)
+			require.Equal(t, dsListInMemory, jd.getDSListSnapshot())
 		})
 	})
 
@@ -370,17 +370,463 @@ func TestRefreshDSList(t *testing.T) {
 	prefix := strings.ToLower(rsRand.String(5))
 	err = jobsDB.Setup(ReadWrite, false, prefix)
 	require.NoError(t, err)
+	jobsDB.Stop()
 	defer jobsDB.TearDown()
 
-	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
+	require.Equal(t, 1, len(jobsDB.getDSListSnapshot()), "jobsDB should start with a ds list size of 1")
 	require.NoError(t, jobsDB.WithTx(context.Background(), func(tx *Tx) error {
 		return jobsDB.createDSInTx(context.Background(), tx, newDataSet(prefix, "2"))
 	}))
-	require.Equal(t, 1, len(jobsDB.getDSList()), "addDS should not refresh the ds list")
+	require.Equal(t, 1, len(jobsDB.getDSListSnapshot()), "addDS should not refresh the ds list")
 	jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
-		dsList, err := jobsDB.doRefreshDSList(l)
+		dsList, err := jobsDB.doRefreshDSList(l, jobsDB.dbHandle)
 		require.NoError(t, err)
 		require.Equal(t, 2, len(dsList), "after refreshing the ds list jobsDB should have a ds list size of 2")
+		require.NoError(t, jobsDB.doRefreshDSRangeList(l))
+	})
+	require.Equal(t, 2, len(jobsDB.getDSListSnapshot()))
+
+	versionBeforeDrop := jobsDB.dsList.currentVersion()
+	dsToDrop := jobsDB.getDSListSnapshot()[0]
+	jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
+		_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, dsToDrop)
+		require.NoError(t, err)
+		jobsDB.dropDSListLock.RLock()
+		require.Len(t, jobsDB.dropDSList, 1)
+		require.Equal(t, dsToDrop, jobsDB.dropDSList[0].ds)
+		require.Equal(t, versionBeforeDrop, jobsDB.dropDSList[0].version)
+		jobsDB.dropDSListLock.RUnlock()
+	})
+	require.Equal(t, versionBeforeDrop+1, jobsDB.dsList.currentVersion())
+	require.Equal(t, 1, len(jobsDB.getDSListSnapshot()), "adding to drop list should publish a ds list generation without the dataset")
+
+	require.NoError(t, jobsDB.RefreshDSList(context.Background()))
+	require.Equal(t, 1, len(jobsDB.getDSListSnapshot()), "refresh should hide datasets pending drop")
+	jobsDB.dropDSListLock.RLock()
+	require.Len(t, jobsDB.dropDSList, 1)
+	require.Equal(t, versionBeforeDrop, jobsDB.dropDSList[0].version)
+	jobsDB.dropDSListLock.RUnlock()
+
+	require.NoError(t, jobsDB.dropDS(dsToDrop))
+	require.NoError(t, jobsDB.RefreshDSList(context.Background()))
+	require.Equal(t, 1, len(jobsDB.getDSListSnapshot()))
+	jobsDB.dropDSListLock.RLock()
+	require.Len(t, jobsDB.dropDSList, 1, "refresh should not mutate the pending drop list")
+	require.Equal(t, versionBeforeDrop, jobsDB.dropDSList[0].version)
+	jobsDB.dropDSListLock.RUnlock()
+}
+
+func TestPreDropMarker(t *testing.T) {
+	_ = startPostgres(t)
+	statStore, err := memstats.New()
+	require.NoError(t, err)
+
+	prefix := strings.ToLower(rsRand.String(5))
+	jobsDB := &Handle{
+		config: config.New(),
+		stats:  statStore,
+	}
+	require.NoError(t, jobsDB.Setup(ReadWrite, true, prefix))
+	defer jobsDB.TearDown()
+
+	ds1 := jobsDB.getDSListSnapshot()[0]
+	require.NoError(t, jobsDB.dsListLock.WithLockInCtx(context.Background(), func(l lock.LockToken) error {
+		jobsDB.addNewDS(context.Background(), l, newDataSet(prefix, "2"))
+		return nil
+	}))
+	ds2 := jobsDB.getDSListSnapshot()[1]
+	jobsDB.Stop()
+
+	require.NoError(t, jobsDB.dsListLock.WithLockInCtx(context.Background(), func(l lock.LockToken) error {
+		_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1)
+		return err
+	}))
+
+	// marker-aware ds list discovery
+	dsList, err := getDSList(jobsDB, jobsDB.dbHandle, prefix)
+	require.NoError(t, err)
+	require.Equal(t, []dataSetT{ds2}, dsList)
+
+	// cleanup of pre-drop datasets during startup
+	restarted := &Handle{
+		config: config.New(),
+		stats:  statStore,
+	}
+	require.NoError(t, restarted.Setup(ReadWrite, false, prefix))
+	defer restarted.TearDown()
+
+	var exists bool
+	require.NoError(t, restarted.dbHandle.QueryRow(`SELECT to_regclass($1) IS NOT NULL`, ds1.JobTable).Scan(&exists))
+	require.False(t, exists)
+	require.NoError(t, restarted.dbHandle.QueryRow(`SELECT to_regclass($1) IS NOT NULL`, ds2.JobTable).Scan(&exists))
+	require.True(t, exists)
+}
+
+func TestGetAllTableNamesPreDropFiltering(t *testing.T) {
+	_ = startPostgres(t)
+
+	setup := func(t *testing.T) (*Handle, dataSetT, dataSetT) {
+		t.Helper()
+		statStore, err := memstats.New()
+		require.NoError(t, err)
+		prefix := strings.ToLower(rsRand.String(5))
+		jobsDB := &Handle{
+			config: config.New(),
+			stats:  statStore,
+		}
+		require.NoError(t, jobsDB.Setup(ReadWrite, true, prefix))
+		t.Cleanup(jobsDB.TearDown)
+
+		require.NoError(t, jobsDB.dsListLock.WithLockInCtx(context.Background(), func(l lock.LockToken) error {
+			jobsDB.addNewDS(context.Background(), l, newDataSet(prefix, "2"))
+			return nil
+		}))
+		jobsDB.Stop()
+		dsList := jobsDB.getDSListSnapshot()
+		require.Len(t, dsList, 2)
+		return jobsDB, dsList[0], dsList[1]
+	}
+	tableNamesForPrefix := func(t *testing.T, jobsDB *Handle, prefix string) map[string]struct{} {
+		t.Helper()
+		tableNames, err := getAllTableNames(jobsDB.dbHandle)
+		require.NoError(t, err)
+		return lo.SliceToMap(
+			lo.Filter(tableNames, func(tableName string, _ int) bool {
+				return strings.HasPrefix(tableName, prefix+"_")
+			}),
+			func(tableName string) (string, struct{}) { return tableName, struct{}{} },
+		)
+	}
+
+	t.Run("unmarked dataset tables are returned", func(t *testing.T) {
+		jobsDB, ds1, ds2 := setup(t)
+		tableNames := tableNamesForPrefix(t, jobsDB, jobsDB.tablePrefix)
+
+		require.Contains(t, tableNames, ds1.JobTable)
+		require.Contains(t, tableNames, ds1.JobStatusTable)
+		require.Contains(t, tableNames, ds2.JobTable)
+		require.Contains(t, tableNames, ds2.JobStatusTable)
+	})
+
+	t.Run("status-table marker hides both dataset tables", func(t *testing.T) {
+		jobsDB, ds1, ds2 := setup(t)
+		require.NoError(t, jobsDB.WithTx(context.Background(), func(tx *Tx) error {
+			_, err := tx.ExecContext(context.Background(), fmt.Sprintf(`COMMENT ON TABLE %q IS '%s'`, ds1.JobStatusTable, preDropTableComment))
+			return err
+		}))
+
+		tableNames := tableNamesForPrefix(t, jobsDB, jobsDB.tablePrefix)
+		require.NotContains(t, tableNames, ds1.JobTable)
+		require.NotContains(t, tableNames, ds1.JobStatusTable)
+		require.Contains(t, tableNames, ds2.JobTable)
+		require.Contains(t, tableNames, ds2.JobStatusTable)
+	})
+
+	t.Run("job-table marker hides both dataset tables", func(t *testing.T) {
+		jobsDB, ds1, ds2 := setup(t)
+		require.NoError(t, jobsDB.WithTx(context.Background(), func(tx *Tx) error {
+			_, err := tx.ExecContext(context.Background(), fmt.Sprintf(`COMMENT ON TABLE %q IS '%s'`, ds1.JobTable, preDropTableComment))
+			return err
+		}))
+
+		tableNames := tableNamesForPrefix(t, jobsDB, jobsDB.tablePrefix)
+		require.NotContains(t, tableNames, ds1.JobTable)
+		require.NotContains(t, tableNames, ds1.JobStatusTable)
+		require.Contains(t, tableNames, ds2.JobTable)
+		require.Contains(t, tableNames, ds2.JobStatusTable)
+	})
+
+	t.Run("unrelated marker hides only the marked unrelated table", func(t *testing.T) {
+		jobsDB, ds1, ds2 := setup(t)
+		unrelatedTable := jobsDB.tablePrefix + "_metadata"
+		require.NoError(t, jobsDB.WithTx(context.Background(), func(tx *Tx) error {
+			if _, err := tx.ExecContext(context.Background(), fmt.Sprintf(`CREATE TABLE %q (id BIGINT)`, unrelatedTable)); err != nil {
+				return err
+			}
+			_, err := tx.ExecContext(context.Background(), fmt.Sprintf(`COMMENT ON TABLE %q IS '%s'`, unrelatedTable, preDropTableComment))
+			return err
+		}))
+
+		tableNames := tableNamesForPrefix(t, jobsDB, jobsDB.tablePrefix)
+		require.NotContains(t, tableNames, unrelatedTable)
+		require.Contains(t, tableNames, ds1.JobTable)
+		require.Contains(t, tableNames, ds1.JobStatusTable)
+		require.Contains(t, tableNames, ds2.JobTable)
+		require.Contains(t, tableNames, ds2.JobStatusTable)
+	})
+}
+
+func TestUpdateJobStatusInExternalTxRetriesAfterReadonlyStatusTable(t *testing.T) {
+	_ = startPostgres(t)
+	statStore, err := memstats.New()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	prefix := strings.ToLower(rsRand.String(5))
+	jobsDB := &Handle{
+		config: config.New(),
+		stats:  statStore,
+	}
+	require.NoError(t, jobsDB.Setup(ReadWrite, true, prefix))
+	defer jobsDB.TearDown()
+
+	jobs := genJobs(defaultWorkspaceID, "external-tx", 1, 1)
+	require.NoError(t, jobsDB.Store(ctx, jobs))
+
+	require.NoError(t, jobsDB.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
+		jobsDB.addNewDS(ctx, l, newDataSet(prefix, "2"))
+		return nil
+	}))
+	ds1 := jobsDB.getDSListSnapshot()[0]
+	replacement := newDataSet(prefix, "1_1")
+	jobsDB.Stop()
+
+	prepareReplacement := func() error {
+		return jobsDB.WithTx(ctx, func(tx *Tx) error {
+			if err := jobsDB.createDSInTx(ctx, tx, replacement); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, fmt.Sprintf(
+				`INSERT INTO %q (
+					job_id, workspace_id, uuid, user_id, partition_id, custom_val,
+					parameters, event_payload, event_count, created_at, expire_at
+				)
+				SELECT
+					job_id, workspace_id, uuid, user_id, partition_id, custom_val,
+					parameters, event_payload, event_count, created_at, expire_at
+				FROM %q`,
+				replacement.JobTable,
+				ds1.JobTable,
+			)); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, fmt.Sprintf(
+				`CREATE TRIGGER readonlyTableTrg
+				BEFORE INSERT
+				ON %q
+				FOR EACH STATEMENT
+				EXECUTE PROCEDURE %s;`,
+				ds1.JobStatusTable,
+				pgReadonlyTableExceptionFuncName,
+			)); err != nil {
+				return err
+			}
+			return jobsDB.markPreDropDSInTx(ctx, tx, ds1)
+		})
+	}
+
+	statuses := genJobStatuses(jobs, Failed.State)
+	require.NoError(t, jobsDB.WithTx(ctx, func(tx *Tx) error {
+		return jobsDB.WithUpdateSafeTxFromTx(ctx, tx, func(updateTx UpdateSafeTx) error {
+			require.Equal(t, ds1.Index, updateTx.getDSRangeList()[0].ds.Index)
+			if err := prepareReplacement(); err != nil {
+				return err
+			}
+			return jobsDB.UpdateJobStatusInTx(ctx, updateTx, statuses)
+		})
+	}))
+
+	var oldStatusCount, replacementStatusCount int
+	require.NoError(t, jobsDB.dbHandle.QueryRow(
+		fmt.Sprintf(`SELECT COUNT(*) FROM %q WHERE job_id = $1 AND job_state = $2`, ds1.JobStatusTable),
+		jobs[0].JobID,
+		Failed.State,
+	).Scan(&oldStatusCount))
+	require.NoError(t, jobsDB.dbHandle.QueryRow(
+		fmt.Sprintf(`SELECT COUNT(*) FROM %q WHERE job_id = $1 AND job_state = $2`, replacement.JobStatusTable),
+		jobs[0].JobID,
+		Failed.State,
+	).Scan(&replacementStatusCount))
+	require.Equal(t, 0, oldStatusCount)
+	require.Equal(t, 1, replacementStatusCount)
+}
+
+func TestDropDSLoop(t *testing.T) {
+	_ = startPostgres(t)
+
+	newHandle := func(t *testing.T) (*Handle, string) {
+		t.Helper()
+		statStore, err := memstats.New()
+		require.NoError(t, err)
+		jobsDB := &Handle{
+			TriggerAddNewDS:  func() <-chan time.Time { return make(chan time.Time) },
+			TriggerMigrateDS: func() <-chan time.Time { return make(chan time.Time) },
+			stats:            statStore,
+		}
+		prefix := strings.ToLower(rsRand.String(5))
+		require.NoError(t, jobsDB.Setup(ReadWrite, false, prefix))
+		t.Cleanup(jobsDB.TearDown)
+		return jobsDB, prefix
+	}
+	addDatasets := func(t *testing.T, jd *Handle, prefix string, indices ...string) {
+		t.Helper()
+		require.NoError(t, jd.WithTx(context.Background(), func(tx *Tx) error {
+			for _, idx := range indices {
+				if err := jd.createDSInTx(context.Background(), tx, newDataSet(prefix, idx)); err != nil {
+					return err
+				}
+			}
+			return nil
+		}))
+		jd.dsListLock.WithLock(func(l lock.LockToken) {
+			require.NoError(t, jd.doRefreshDSRangeList(l))
+		})
+	}
+	tableExists := func(t *testing.T, jd *Handle, ds dataSetT) bool {
+		t.Helper()
+		var exists bool
+		require.NoError(t, jd.dbHandle.QueryRow(`SELECT to_regclass($1) IS NOT NULL`, ds.JobTable).Scan(&exists))
+		return exists
+	}
+
+	t.Run("waits for readers before dropping", func(t *testing.T) {
+		jobsDB, prefix := newHandle(t)
+		addDatasets(t, jobsDB, prefix, "2")
+		require.Len(t, jobsDB.getDSListSnapshot(), 2)
+
+		dsToDrop := jobsDB.getDSListSnapshot()[0]
+
+		dsList, _, release, err := jobsDB.acquireDSListForRead(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, dsToDrop.Index, dsList[0].Index)
+
+		jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
+			_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, dsToDrop)
+			require.NoError(t, err)
+		})
+		require.Len(t, jobsDB.getDSListSnapshot(), 1)
+		require.Never(t, func() bool { return !tableExists(t, jobsDB, dsToDrop) }, 200*time.Millisecond, 20*time.Millisecond)
+
+		release()
+		require.Eventually(t, func() bool {
+			jobsDB.dropDSListLock.RLock()
+			pendingDrops := len(jobsDB.dropDSList)
+			jobsDB.dropDSListLock.RUnlock()
+			return !tableExists(t, jobsDB, dsToDrop) && pendingDrops == 0
+		}, 5*time.Second, 50*time.Millisecond)
+	})
+
+	t.Run("drains multiple queued drops", func(t *testing.T) {
+		jobsDB, prefix := newHandle(t)
+		addDatasets(t, jobsDB, prefix, "2", "3")
+		require.Len(t, jobsDB.getDSListSnapshot(), 3)
+
+		snapshot := jobsDB.getDSListSnapshot()
+		ds1, ds2 := snapshot[0], snapshot[1]
+
+		jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
+			_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1, ds2)
+			require.NoError(t, err)
+		})
+
+		require.Eventually(t, func() bool {
+			return !tableExists(t, jobsDB, ds1) && !tableExists(t, jobsDB, ds2)
+		}, 5*time.Second, 50*time.Millisecond, "both queued datasets should be dropped")
+
+		jobsDB.dropDSListLock.Lock()
+		require.Empty(t, jobsDB.dropDSList, "dropDSList should be empty after both datasets are dropped")
+		jobsDB.dropDSListLock.Unlock()
+	})
+
+	t.Run("addToDropDSList is idempotent", func(t *testing.T) {
+		jobsDB, prefix := newHandle(t)
+		// Stop background loops so the dropDSLoop doesn't consume queued entries mid-test.
+		jobsDB.Stop()
+		addDatasets(t, jobsDB, prefix, "2", "3")
+		require.Len(t, jobsDB.getDSListSnapshot(), 3)
+
+		snapshot := jobsDB.getDSListSnapshot()
+		ds1, ds2 := snapshot[0], snapshot[1]
+		versionBefore := jobsDB.dsList.currentVersion()
+
+		jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
+			_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1)
+			require.NoError(t, err)
+		})
+		jobsDB.dropDSListLock.RLock()
+		require.Len(t, jobsDB.dropDSList, 1)
+		jobsDB.dropDSListLock.RUnlock()
+		require.Equal(t, versionBefore+1, jobsDB.dsList.currentVersion(), "first add should bump the dsList version once")
+
+		jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
+			_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1)
+			require.NoError(t, err)
+		})
+		jobsDB.dropDSListLock.RLock()
+		require.Len(t, jobsDB.dropDSList, 1, "duplicate ds should not be re-added")
+		jobsDB.dropDSListLock.RUnlock()
+		require.Equal(t, versionBefore+1, jobsDB.dsList.currentVersion(), "duplicate add must NOT bump the dsList version")
+
+		jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
+			_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1, ds2)
+			require.NoError(t, err)
+		})
+		jobsDB.dropDSListLock.RLock()
+		require.Len(t, jobsDB.dropDSList, 2, "only the new ds2 should have been added")
+		jobsDB.dropDSListLock.RUnlock()
+		require.Equal(t, versionBefore+2, jobsDB.dsList.currentVersion(), "mixed add should bump version exactly once")
+	})
+
+	t.Run("exits when context cancelled mid-drop", func(t *testing.T) {
+		jobsDB, prefix := newHandle(t)
+		addDatasets(t, jobsDB, prefix, "2")
+		require.Len(t, jobsDB.getDSListSnapshot(), 2)
+
+		dsToDrop := jobsDB.getDSListSnapshot()[0]
+
+		// Hold a reader on the current snapshot so the drop loop blocks on <-drained.
+		_, _, release, err := jobsDB.acquireDSListForRead(context.Background())
+		require.NoError(t, err)
+		defer release()
+
+		jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
+			_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, dsToDrop)
+			require.NoError(t, err)
+		})
+		require.Never(t, func() bool { return !tableExists(t, jobsDB, dsToDrop) }, 200*time.Millisecond, 20*time.Millisecond)
+
+		stopDone := make(chan struct{})
+		go func() {
+			jobsDB.Stop()
+			close(stopDone)
+		}()
+		select {
+		case <-stopDone:
+		case <-time.After(5 * time.Second):
+			t.Fatal("dropDSLoop did not exit within 5s after context cancellation")
+		}
+
+		require.True(t, tableExists(t, jobsDB, dsToDrop), "ds table must not be dropped when the context is cancelled mid-drop")
+		jobsDB.dropDSListLock.RLock()
+		require.Len(t, jobsDB.dropDSList, 1, "the pending drop entry must remain since the drop did not happen")
+		jobsDB.dropDSListLock.RUnlock()
+	})
+
+	t.Run("cleans dsRangeFuncMap after drop", func(t *testing.T) {
+		jobsDB, prefix := newHandle(t)
+		addDatasets(t, jobsDB, prefix, "2")
+		require.Len(t, jobsDB.getDSListSnapshot(), 2)
+
+		dsToDrop := jobsDB.getDSListSnapshot()[0]
+
+		jobsDB.dsListLock.RLock()
+		_, present := jobsDB.dsRangeFuncMap[dsToDrop.Index]
+		jobsDB.dsListLock.RUnlock()
+		require.True(t, present, "dsRangeFuncMap must contain an entry for non-last datasets after refresh")
+
+		jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
+			_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, dsToDrop)
+			require.NoError(t, err)
+		})
+
+		require.Eventually(t, func() bool {
+			jobsDB.dsListLock.RLock()
+			defer jobsDB.dsListLock.RUnlock()
+			jobsDB.dropDSListLock.RLock()
+			defer jobsDB.dropDSListLock.RUnlock()
+			_, ok := jobsDB.dsRangeFuncMap[dsToDrop.Index]
+			return !ok && len(jobsDB.dropDSList) == 0
+		}, 5*time.Second, 50*time.Millisecond, "dsRangeFuncMap entry for the dropped dataset must be removed after drop")
 	})
 }
 
@@ -489,7 +935,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	prefix := strings.ToLower(rsRand.String(5))
 	err = jobsDB1.Setup(ReadWrite, false, prefix)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
+	require.Equal(t, 1, len(jobsDB1.getDSListSnapshot()), "expected cache to be auto-updated with DS list length 1")
 	defer jobsDB1.TearDown()
 
 	// jobsDB-2 setup
@@ -504,7 +950,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	err = jobsDB2.Setup(ReadWrite, false, prefix)
 	require.NoError(t, err)
 	defer jobsDB2.TearDown()
-	require.Equal(t, 1, len(jobsDB2.getDSList()), "expected cache to be auto-updated with DS list length 1")
+	require.Equal(t, 1, len(jobsDB2.getDSListSnapshot()), "expected cache to be auto-updated with DS list length 1")
 
 	generateJobs := func(numOfJob int) []*JobT {
 		customVal := "MOCKDS"
@@ -531,9 +977,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
-			jobsDB1.dsListLock.RLock()
-			defer jobsDB1.dsListLock.RUnlock()
-			return len(jobsDB1.getDSList()) == 2
+			return len(jobsDB1.getDSListSnapshot()) == 2
 		},
 		time.Second, time.Millisecond,
 		"expected cache to be auto-updated with DS list length 2")
@@ -548,9 +992,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
-			jobsDB2.dsListLock.RLock()
-			defer jobsDB2.dsListLock.RUnlock()
-			return len(jobsDB2.getDSList()) == 3
+			return len(jobsDB2.getDSListSnapshot()) == 3
 		},
 		10*time.Second, time.Millisecond,
 		"expected jobsDB2 to be refresh the cache before adding new DS, to get to know about the DS-2 already present & hence add DS-3")
@@ -569,12 +1011,8 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
-			jobsDB1.dsListLock.RLock()
-			dsLen1 = len(jobsDB1.getDSList())
-			jobsDB1.dsListLock.RUnlock()
-			jobsDB2.dsListLock.RLock()
-			dsLen2 = len(jobsDB2.getDSList())
-			jobsDB2.dsListLock.RUnlock()
+			dsLen1 = len(jobsDB1.getDSListSnapshot())
+			dsLen2 = len(jobsDB2.getDSListSnapshot())
 			return dsLen1 == 4 && dsLen2 == 4
 		},
 		time.Second, time.Millisecond,
@@ -600,7 +1038,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		err = jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)))
 		require.NoError(t, err)
 		defer jobsDB.TearDown()
-		require.Equal(t, 1, len(jobsDB.getDSList()), "expected cache to be auto-updated with DS list length 1")
+		require.Equal(t, 1, len(jobsDB.getDSListSnapshot()), "expected cache to be auto-updated with DS list length 1")
 
 		generateJobs := func(numOfJob int) []*JobT {
 			customVal := "MOCKDS"
@@ -628,13 +1066,11 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		require.Eventually(
 			t,
 			func() bool {
-				jobsDB.dsListLock.RLock()
-				defer jobsDB.dsListLock.RUnlock()
-				return len(jobsDB.getDSList()) == 2
+				return len(jobsDB.getDSListSnapshot()) == 2
 			},
 			time.Second*5, time.Millisecond,
 			"expected number of tables to be 2")
-		ds := jobsDB.getDSList()
+		ds := jobsDB.getDSListSnapshot()
 		sqlStatement := fmt.Sprintf(`INSERT INTO %q (uuid, user_id, custom_val, parameters, event_payload, workspace_id)
 										   VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds[0].JobTable)
 		stmt, err := jobsDB.dbHandle.Prepare(sqlStatement)
@@ -673,7 +1109,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		err = jobsDB1.Setup(ReadWrite, true, prefix)
 		require.NoError(t, err)
 		defer jobsDB1.TearDown()
-		require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
+		require.Equal(t, 1, len(jobsDB1.getDSListSnapshot()), "expected cache to be auto-updated with DS list length 1")
 
 		// jobsDB-2 setup
 		triggerAddNewDS2 := make(chan time.Time)
@@ -690,7 +1126,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		err = jobsDB2.Setup(ReadWrite, !clearAllDS, prefix)
 		require.NoError(t, err)
 		defer jobsDB2.TearDown()
-		require.Equal(t, 1, len(jobsDB2.getDSList()), "expected cache to be auto-updated with DS list length 1")
+		require.Equal(t, 1, len(jobsDB2.getDSListSnapshot()), "expected cache to be auto-updated with DS list length 1")
 
 		// jobsDB-3 setup
 		triggerAddNewDS3 := make(chan time.Time)
@@ -707,7 +1143,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		err = jobsDB3.Setup(ReadWrite, !clearAllDS, prefix)
 		require.NoError(t, err)
 		defer jobsDB3.TearDown()
-		require.Equal(t, 1, len(jobsDB3.getDSList()), "expected cache to be auto-updated with DS list length 1")
+		require.Equal(t, 1, len(jobsDB3.getDSListSnapshot()), "expected cache to be auto-updated with DS list length 1")
 
 		generateJobs := func(numOfJob int) []*JobT {
 			customVal := "MOCKDS"
@@ -734,35 +1170,106 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		require.Eventually(
 			t,
 			func() bool {
-				jobsDB1.dsListLock.RLock()
-				defer jobsDB1.dsListLock.RUnlock()
-				return len(jobsDB1.getDSList()) == 2
+				return len(jobsDB1.getDSListSnapshot()) == 2
 			},
 			10*time.Second, time.Millisecond,
 			"expected cache to be auto-updated with DS list length 2")
 
-		require.Equal(t, 1, len(jobsDB2.getDSList()), "expected jobsDB2 to still have a list length of 1")
+		require.Equal(t, 1, len(jobsDB2.getDSListSnapshot()), "expected jobsDB2 to still have a list length of 1")
 		err = jobsDB2.Store(context.Background(), generateJobs(2))
 		require.NoError(t, err)
-		require.Equal(t, 2, len(jobsDB2.getDSList()), "expected jobsDB2 to have refreshed its ds list")
+		require.Equal(t, 2, len(jobsDB2.getDSListSnapshot()), "expected jobsDB2 to have refreshed its ds list")
 
-		require.Equal(t, 1, len(jobsDB3.getDSList()), "expected jobsDB3 to still have a list length of 1")
+		require.Equal(t, 1, len(jobsDB3.getDSListSnapshot()), "expected jobsDB3 to still have a list length of 1")
 		errorsMap := jobsDB3.StoreEachBatchRetry(context.Background(), [][]*JobT{generateJobs(2)})
 		require.Equal(t, 0, len(errorsMap))
 
-		require.Equal(t, 2, len(jobsDB3.getDSList()), "expected jobsDB3 to have refreshed its ds list")
+		require.Equal(t, 2, len(jobsDB3.getDSListSnapshot()), "expected jobsDB3 to have refreshed its ds list")
 
 		// since DS-2 is added, if storing jobs from jobsDB-2, should automatically add DS-2. So, both DS-1 and DS-2 should have 2 jobs
-		row := jobsDB2.dbHandle.QueryRow(fmt.Sprintf("select count(*) from %q", jobsDB2.getDSList()[0].JobTable))
+		row := jobsDB2.dbHandle.QueryRow(fmt.Sprintf("select count(*) from %q", jobsDB2.getDSListSnapshot()[0].JobTable))
 		var count int
 		err = row.Scan(&count)
 		require.NoError(t, err, "expected no error while scanning rows")
 		require.Equal(t, 2, count, "expected 2 jobs in DS-1")
 
-		row = jobsDB1.dbHandle.QueryRow(fmt.Sprintf("select count(*) from %q", jobsDB1.getDSList()[1].JobTable))
+		row = jobsDB1.dbHandle.QueryRow(fmt.Sprintf("select count(*) from %q", jobsDB1.getDSListSnapshot()[1].JobTable))
 		err = row.Scan(&count)
 		require.NoError(t, err, "expected no error while scanning rows")
 		require.Equal(t, 4, count, "expected 4 jobs in DS-2")
+	})
+
+	t.Run("WithStoreSafeTxFromTx retries on errStaleDsList using the caller's tx", func(t *testing.T) {
+		c := config.New()
+		c.Set("JobsDB.maxDSSize", 1)
+
+		triggerAddNewDS1 := make(chan time.Time)
+		triggerAddNewDS2 := make(chan time.Time)
+		triggerRefreshDS := make(chan time.Time)
+
+		statStore, err := memstats.New()
+		require.NoError(t, err)
+
+		prefix := strings.ToLower(rsRand.String(5))
+
+		jobsDB1 := &Handle{
+			TriggerAddNewDS: func() <-chan time.Time { return triggerAddNewDS1 },
+			config:          c,
+			stats:           statStore,
+		}
+		require.NoError(t, jobsDB1.Setup(ReadWrite, true, prefix))
+		defer jobsDB1.TearDown()
+
+		jobsDB2 := &Handle{
+			TriggerAddNewDS:  func() <-chan time.Time { return triggerAddNewDS2 },
+			TriggerRefreshDS: func() <-chan time.Time { return triggerRefreshDS },
+			config:           c,
+			stats:            statStore,
+		}
+		require.NoError(t, jobsDB2.Setup(ReadWrite, false, prefix))
+		defer jobsDB2.TearDown()
+
+		generateJobs := func(numOfJob int) []*JobT {
+			js := make([]*JobT, numOfJob)
+			for i := range numOfJob {
+				js[i] = &JobT{
+					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+					EventPayload: []byte(`{"testKey":"testValue"}`),
+					UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+					UUID:         uuid.New(),
+					CustomVal:    "MOCKDS",
+					EventCount:   1,
+				}
+			}
+			return js
+		}
+
+		// jobsDB1 adds a new DS so jobsDB2's cached DS list becomes stale.
+		require.NoError(t, jobsDB1.Store(context.Background(), generateJobs(2)))
+		triggerAddNewDS1 <- time.Now()
+		require.Eventually(t, func() bool {
+			return len(jobsDB1.getDSListSnapshot()) == 2
+		}, 10*time.Second, time.Millisecond, "expected jobsDB1 to have 2 datasets")
+
+		require.Equal(t, 1, len(jobsDB2.getDSListSnapshot()), "jobsDB2 should still have a stale list of 1")
+
+		// Open an external tx and call WithStoreSafeTxFromTx through it.
+		// The first attempt must hit errStaleDsList; the retry must succeed
+		// on the same (recovered) tx, and the tx must remain commitable.
+		jobs := generateJobs(2)
+		require.NoError(t, jobsDB2.WithTx(context.Background(), func(tx *Tx) error {
+			return jobsDB2.WithStoreSafeTxFromTx(context.Background(), tx, func(stx StoreSafeTx) error {
+				return jobsDB2.StoreInTx(context.Background(), stx, jobs)
+			})
+		}))
+
+		require.Equal(t, 2, len(jobsDB2.getDSListSnapshot()), "jobsDB2 should have refreshed its ds list after the retry")
+
+		// The jobs should land in DS-2 (the new dataset created by jobsDB1).
+		row := jobsDB2.dbHandle.QueryRow(fmt.Sprintf("select count(*) from %q", jobsDB2.getDSListSnapshot()[1].JobTable))
+		var count int
+		require.NoError(t, row.Scan(&count))
+		require.Equal(t, 2, count, "expected 2 jobs in DS-2 after retried store via external tx")
 	})
 }
 
@@ -815,7 +1322,7 @@ func TestCacheScenarios(t *testing.T) {
 		prefix := strings.ToLower(rsRand.String(5))
 		err = dbWithOneLimit.Setup(ReadWrite, false, prefix)
 		require.NoError(t, err)
-		require.Equal(t, 1, len(dbWithOneLimit.getDSList()), "expected cache to be auto-updated with DS list length 1")
+		require.Equal(t, 1, len(dbWithOneLimit.getDSListSnapshot()), "expected cache to be auto-updated with DS list length 1")
 		defer dbWithOneLimit.TearDown()
 
 		err = dbWithOneLimit.Store(context.Background(), generateJobs(2, ""))
@@ -829,9 +1336,7 @@ func TestCacheScenarios(t *testing.T) {
 		require.Eventually(
 			t,
 			func() bool {
-				dbWithOneLimit.dsListLock.RLock()
-				defer dbWithOneLimit.dsListLock.RUnlock()
-				return len(dbWithOneLimit.getDSList()) == 2
+				return len(dbWithOneLimit.getDSListSnapshot()) == 2
 			},
 			time.Second, time.Millisecond,
 			"expected cache to be auto-updated with DS list length 2")
@@ -1260,7 +1765,10 @@ func TestMaxAgeCleanup(t *testing.T) {
 	))
 
 	// run cleanup once with an empty db
-	require.NoError(t, jobsDB.doCleanup(context.Background()))
+	l, c, err := jobsDB.dsListLock.AsyncLockWithCtx(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, jobsDB.doCleanup(context.Background(), l))
+	c <- l
 
 	// store some jobs
 	require.NoError(
@@ -1362,7 +1870,7 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
-	require.Equal(t, 1, len(jobsDB.getDSList()))
+	require.Equal(t, 1, len(jobsDB.getDSListSnapshot()))
 	customVal := "MOCKDS"
 	generateJobs := func(workspaceID string, numOfJob int) []*JobT {
 		js := make([]*JobT, numOfJob)
@@ -1404,10 +1912,8 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
-			jobsDB.dsListLock.RLock()
-			defer jobsDB.dsListLock.RUnlock()
-			t.Logf("tables %d", len(jobsDB.getDSList()))
-			return len(jobsDB.getDSList()) == 2
+			t.Logf("tables %d", len(jobsDB.getDSListSnapshot()))
+			return len(jobsDB.getDSListSnapshot()) == 2
 		},
 		time.Second*5, time.Millisecond,
 		"expected number of tables to be 2")
@@ -1434,9 +1940,7 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
-			jobsDB.dsListLock.RLock()
-			defer jobsDB.dsListLock.RUnlock()
-			return len(jobsDB.getDSList()) == 3
+			return len(jobsDB.getDSListSnapshot()) == 3
 		},
 		time.Second*5, time.Millisecond,
 		"expected number of tables to be 3")
@@ -1486,7 +1990,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
-	require.Equal(t, 1, len(jobsDB.getDSList()))
+	require.Equal(t, 1, len(jobsDB.getDSListSnapshot()))
 
 	generateJobs := func(paramValue string, numOfJob int) []*JobT {
 		customVal := "MOCKDS"
@@ -1521,9 +2025,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
-			jobsDB.dsListLock.RLock()
-			defer jobsDB.dsListLock.RUnlock()
-			return len(jobsDB.getDSList()) == 2
+			return len(jobsDB.getDSListSnapshot()) == 2
 		},
 		time.Second*5, time.Millisecond,
 		"expected number of tables to be 2")
@@ -1542,9 +2044,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
-			jobsDB.dsListLock.RLock()
-			defer jobsDB.dsListLock.RUnlock()
-			return len(jobsDB.getDSList()) == 3
+			return len(jobsDB.getDSListSnapshot()) == 3
 		},
 		time.Second*5, time.Millisecond,
 		"expected number of tables to be 3")
@@ -1612,8 +2112,11 @@ func TestPayloadSizeColumnQueries(t *testing.T) {
 		tablePrefix,
 	))
 
+	l, c, err := jobsDB.dsListLock.AsyncLockWithCtx(context.Background())
+	require.NoError(t, err)
 	// run cleanup once with an empty db
-	require.NoError(t, jobsDB.doCleanup(context.Background()))
+	require.NoError(t, jobsDB.doCleanup(context.Background(), l))
+	c <- l
 
 	// store some jobs
 	require.NoError(
@@ -1770,7 +2273,7 @@ func TestUpdateJobStatus(t *testing.T) {
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
-	require.Equal(t, 1, len(jobsDB.getDSList()))
+	require.Equal(t, 1, len(jobsDB.getDSListSnapshot()))
 
 	generateJobs := func(sourceID, destinationID string, numOfJob int) []*JobT {
 		customVal := "MOCKDS"
@@ -1800,9 +2303,7 @@ func TestUpdateJobStatus(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
-			jobsDB.dsListLock.RLock()
-			defer jobsDB.dsListLock.RUnlock()
-			return len(jobsDB.getDSList()) == 2
+			return len(jobsDB.getDSListSnapshot()) == 2
 		},
 		time.Second*5, time.Millisecond,
 		"expected number of tables to be 2")
@@ -1816,9 +2317,7 @@ func TestUpdateJobStatus(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
-			jobsDB.dsListLock.RLock()
-			defer jobsDB.dsListLock.RUnlock()
-			return len(jobsDB.getDSList()) == 3
+			return len(jobsDB.getDSListSnapshot()) == 3
 		},
 		time.Second*5, time.Millisecond,
 		"expected number of tables to be 3")
@@ -1832,9 +2331,7 @@ func TestUpdateJobStatus(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
-			jobsDB.dsListLock.RLock()
-			defer jobsDB.dsListLock.RUnlock()
-			return len(jobsDB.getDSList()) == 4
+			return len(jobsDB.getDSListSnapshot()) == 4
 		},
 		time.Second*5, time.Millisecond,
 		"expected number of tables to be 4")
