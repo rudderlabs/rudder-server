@@ -61,6 +61,8 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 	webhook := &HandleT{gwHandle: gwHandle, stats: stat, logger: logger.NewLogger().Child("gateway").Child("webhook")}
 	// Number of incoming webhooks that are batched before calling source transformer
 	webhook.config.maxWebhookBatchSize = conf.GetReloadableIntVar(32, 1, "Gateway.webhook.maxBatchSize")
+	// Buffer size for the batchRequestQ channel; isolates batchRequests goroutines from slow transformer workers
+	webhook.config.batchRequestQSize = conf.GetReloadableIntVar(maxTransformerProcess, 1, "Gateway.webhook.batchRequestQSize")
 	// Timeout after which batch is formed anyway with whatever webhooks are available
 	webhook.config.webhookBatchTimeout = conf.GetReloadableDurationVar(20, time.Millisecond, []string{"Gateway.webhook.batchTimeout", "Gateway.webhook.batchTimeoutInMS"}...)
 	// Multiple source transformers are used to generate rudder events from webhooks
@@ -86,6 +88,8 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 
 	webhook.requestQ = make(map[string]chan *webhookT)
 	webhook.batchRequestQ = make(chan *batchWebhookT)
+	webhook.batchRequestQ = make(chan *batchWebhookT, webhook.config.batchRequestQSize.Load())
+
 
 	transformerClientConfig := &transformerclient.ClientConfig{
 		ClientTimeout: conf.GetDurationVar(30, time.Second, "HttpClient.sourceTransformer.timeout", "HttpClient.webhook.timeout"),

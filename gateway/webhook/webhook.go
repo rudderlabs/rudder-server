@@ -76,7 +76,8 @@ type HandleT struct {
 		maxWebhookBatchSize        config.ValueLoader[int]
 		sourceListForParsingParams []string
 		forwardGetRequestForSrcMap map[string]struct{}
-		webhookV2HandlerEnabled    bool
+		webhookV2HandlerEnabled    
+		batchRequestQSize          config.ValueLoader[int]
 	}
 	statReporterCreator StatReporterCreator
 	httpClient          retryablehttp.HttpClient
