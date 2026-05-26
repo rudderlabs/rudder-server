@@ -152,7 +152,7 @@ func (jd *Handle) doCleanup(ctx context.Context, l lock.LockToken) error {
 	{
 		deleteStmt := "DELETE FROM %s_journal WHERE start_time < NOW() - INTERVAL '%d DAY'"
 		var journalEntryCount int64
-		res, err := jd.getDB(ctx).ExecContext(
+		res, err := jd.maintenanceDB().ExecContext(
 			ctx,
 			fmt.Sprintf(
 				deleteStmt,
@@ -180,7 +180,7 @@ func (jd *Handle) abortOldJobs(ctx context.Context, dsList []dataSetT) error {
 	maxAgeStatusResponse := `{"reason": "job max age exceeded"}`
 	maxAge := jd.conf.jobMaxAge.Load()
 	for _, ds := range dsList {
-		res, err := jd.getDB(ctx).ExecContext(
+		res, err := jd.maintenanceDB().ExecContext(
 			ctx,
 			fmt.Sprintf(
 				`INSERT INTO %[1]q (job_id, job_state, error_response)

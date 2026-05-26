@@ -41,6 +41,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 	shutdownFn func(), // called to initiate shutdown of the app
 	dbPool *sql.DB, // database handle
 	priorityPool *sql.DB, // priority database handle
+	maintenancePool *sql.DB, // maintenance database handle (may be nil; jobsdb falls back to dbPool)
 	config *config.Config, stats stats.Stats,
 	gwRODB, gwWODB, // gateway reader and writer jobsDB handles. if gwWODB is nil, gwRODB is used for reading and a new writer gw DB is created internally
 	rtRWDB, brtRWDB jobsdb.JobsDB,
@@ -95,6 +96,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 			jobsdb.WithStats(stats),
 			jobsdb.WithDBHandle(dbPool),
 			jobsdb.WithPriorityPoolDB(priorityPool),
+			jobsdb.WithMaintenancePoolDB(maintenancePool),
 		)
 		if err := gwBuffRWHandle.Start(); err != nil {
 			return ppmSetup, fmt.Errorf("starting gw buffer jobsdb handle: %w", err)
@@ -112,6 +114,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 			jobsdb.WithStats(stats),
 			jobsdb.WithDBHandle(dbPool),
 			jobsdb.WithPriorityPoolDB(priorityPool),
+			jobsdb.WithMaintenancePoolDB(maintenancePool),
 			jobsdb.WithNumPartitions(partitionCount),
 		)
 		gwBuffROHandle := jobsdb.NewForRead(
@@ -121,6 +124,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 			jobsdb.WithStats(stats),
 			jobsdb.WithDBHandle(dbPool),
 			jobsdb.WithPriorityPoolDB(priorityPool),
+			jobsdb.WithMaintenancePoolDB(maintenancePool),
 		)
 		gwSetupOpt = partitionbuffer.WithReaderOnlyAndFlushJobsDBs(gwRODB, gwBuffROHandle, gwWODB)
 	}
@@ -150,6 +154,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		jobsdb.WithStats(stats),
 		jobsdb.WithDBHandle(dbPool),
 		jobsdb.WithPriorityPoolDB(priorityPool),
+		jobsdb.WithMaintenancePoolDB(maintenancePool),
 	)
 	rtPartitionBuffer, err := partitionbuffer.NewJobsDBPartitionBuffer(ctx,
 		partitionbuffer.WithReadWriteJobsDBs(rtRWDB, rtBuffRWHandle),
@@ -176,6 +181,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		jobsdb.WithStats(stats),
 		jobsdb.WithDBHandle(dbPool),
 		jobsdb.WithPriorityPoolDB(priorityPool),
+		jobsdb.WithMaintenancePoolDB(maintenancePool),
 	)
 	brtPartitionBuffer, err := partitionbuffer.NewJobsDBPartitionBuffer(ctx,
 		partitionbuffer.WithReadWriteJobsDBs(brtRWDB, brtBuffRWHandle),
@@ -272,6 +278,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 
 func setupGatewayPartitionMigrator(ctx context.Context,
 	dbPool *sql.DB, // database handle pool
+	maintenancePool *sql.DB, // maintenance database handle (may be nil; jobsdb falls back to dbPool)
 	config *config.Config, stats stats.Stats,
 	gwWODB jobsdb.JobsDB,
 	etcdClientProvider func() (etcdclient.Client, error),
@@ -291,6 +298,7 @@ func setupGatewayPartitionMigrator(ctx context.Context,
 		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.gw_buf.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(stats),
 		jobsdb.WithDBHandle(dbPool),
+		jobsdb.WithMaintenancePoolDB(maintenancePool),
 	)
 	if err := gwBuffWOHandle.Start(); err != nil {
 		return nil, nil, fmt.Errorf("starting gw buffer jobsdb handle: %w", err)
