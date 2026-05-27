@@ -143,8 +143,9 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	})
 
 	var (
-		jobsdbPool   *sql.DB
-		priorityPool *sql.DB
+		jobsdbPool      *sql.DB
+		priorityPool    *sql.DB
+		maintenancePool *sql.DB
 	)
 	if config.GetBoolVar(true, "DB.embedded.Pool.enabled", "DB.Pool.enabled") {
 		jobsdbPool, err = misc.NewDatabaseConnectionPool(ctx, "embedded", misc.DatabaseConnectionPoolConfig{
@@ -172,6 +173,19 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		}
 		defer priorityPool.Close()
 	}
+	if config.GetBoolVar(true, "DB.embedded.MaintenancePool.enabled", "DB.MaintenancePool.enabled") {
+		maintenancePool, err = misc.NewDatabaseConnectionPool(ctx, "emp", misc.DatabaseConnectionPoolConfig{
+			MaxOpenConns:    config.GetReloadableIntVar(20, 1, "DB.embedded.MaintenancePool.maxOpenConnections", "DB.MaintenancePool.maxOpenConnections"),
+			MaxIdleConns:    config.GetReloadableIntVar(2, 1, "DB.embedded.MaintenancePool.maxIdleConnections", "DB.MaintenancePool.maxIdleConnections"),
+			ConnMaxIdleTime: config.GetReloadableDurationVar(15, time.Minute, "DB.embedded.MaintenancePool.maxIdleTime", "DB.MaintenancePool.maxIdleTime"),
+			ConnMaxLifetime: config.GetReloadableDurationVar(0, time.Second, "DB.embedded.MaintenancePool.maxConnLifetime", "DB.MaintenancePool.maxConnLifetime"),
+			UpdateInterval:  config.GetDurationVar(60, time.Second, "DB.embedded.MaintenancePool.updateInterval", "DB.MaintenancePool.updateInterval"),
+		}, config, statsFactory)
+		if err != nil {
+			return err
+		}
+		defer maintenancePool.Close()
+	}
 	partitionCount := config.GetIntVar(0, 1, "JobsDB.partitionCount")
 
 	pendingEventsRegistry := rmetrics.NewPendingEventsRegistry()
@@ -186,6 +200,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		jobsdb.WithDBHandle(jobsdbPool),
 		jobsdb.WithNumPartitions(partitionCount),
 		jobsdb.WithPriorityPoolDB(priorityPool),
+		jobsdb.WithMaintenancePoolDB(maintenancePool),
 	)
 	defer gwWOHandle.Close()
 	if err = gwWOHandle.Start(); err != nil {
@@ -201,6 +216,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(jobsdbPool),
 		jobsdb.WithPriorityPoolDB(priorityPool),
+		jobsdb.WithMaintenancePoolDB(maintenancePool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer gwROHandle.Close()
@@ -214,6 +230,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(jobsdbPool),
 		jobsdb.WithPriorityPoolDB(priorityPool),
+		jobsdb.WithMaintenancePoolDB(maintenancePool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer rtRWHandle.Close()
@@ -227,6 +244,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(jobsdbPool),
 		jobsdb.WithPriorityPoolDB(priorityPool),
+		jobsdb.WithMaintenancePoolDB(maintenancePool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer brtRWHandle.Close()
@@ -239,6 +257,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(false, "Processor.jobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(jobsdbPool),
+		jobsdb.WithMaintenancePoolDB(maintenancePool),
 	)
 	defer eschRWDB.Close()
 
@@ -250,6 +269,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithJobMaxAge(config.GetReloadableDurationVar(24, time.Hour, "archival.jobRetention")),
 		jobsdb.WithDBHandle(jobsdbPool),
+		jobsdb.WithMaintenancePoolDB(maintenancePool),
 	)
 	defer arcRWDB.Close()
 
@@ -271,7 +291,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	}
 
 	// setup partition migrator
-	ppmSetup, err := setupProcessorPartitionMigrator(ctx, shutdownFn, jobsdbPool, priorityPool,
+	ppmSetup, err := setupProcessorPartitionMigrator(ctx, shutdownFn, jobsdbPool, priorityPool, maintenancePool,
 		config, statsFactory,
 		gwRODB, gwWODB,
 		rtRWDB, brtRWDB,
