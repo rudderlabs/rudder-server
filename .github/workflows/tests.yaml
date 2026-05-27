@@ -31,7 +31,7 @@ jobs:
         with:
           egress-policy: audit
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 # v5.0.0
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
         with:
           role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
           aws-region: ${{ vars.AWS_ECR_REGION }}
@@ -110,7 +110,7 @@ jobs:
         with:
           egress-policy: audit
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 # v5.0.0
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
         with:
           role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
           aws-region: ${{ vars.AWS_ECR_REGION }}
@@ -186,7 +186,7 @@ jobs:
         with:
           egress-policy: audit
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 # v5.0.0
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
         with:
           role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
           aws-region: ${{ vars.AWS_ECR_REGION }}
@@ -272,7 +272,7 @@ jobs:
         with:
           egress-policy: audit
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 # v5.0.0
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
         with:
           role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
           aws-region: ${{ vars.AWS_ECR_REGION }}
