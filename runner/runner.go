@@ -20,6 +20,7 @@ import (
 	_ "github.com/rudderlabs/rudder-go-kit/maxprocs"
 	"github.com/rudderlabs/rudder-go-kit/profiler"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
@@ -198,6 +199,10 @@ func (r *Runner) Run(ctx context.Context, shutdownFn func(), args []string) int 
 		}
 	}
 	g, ctx := errgroup.WithContext(ctx)
+
+	c := collectors.NewSchedulerLagCollector(config.GetDurationVar(100, time.Millisecond, "RuntimeStats.schedulerLag.interval"))
+	_ = stats.Default.RegisterCollector(c)
+	g.Go(func() error { c.Run(ctx); return nil })
 
 	// Start admin server
 	if config.GetBoolVar(true, "AdminServer.enabled") {
