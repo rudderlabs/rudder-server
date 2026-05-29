@@ -39,12 +39,13 @@ type mockLifecycle struct {
 	status    string
 	callOrder uint64
 	callCount *uint64
+	startErr  error
 }
 
 func (m *mockLifecycle) Start() error {
 	m.callOrder = atomic.AddUint64(m.callCount, 1)
 	m.status = "start"
-	return nil
+	return m.startErr
 }
 
 func (m *mockLifecycle) Stop() {
@@ -227,4 +228,116 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, routerDB.callOrder > router.callOrder)
 		require.True(t, batchRouterDB.callOrder > router.callOrder)
 	})
+}
+
+func TestDynamicClusterStopsServerBeforeReturningProviderError(t *testing.T) {
+	Init()
+
+	provider := &mockModeProvider{
+		modeCh: make(chan servermode.ChangeEvent),
+	}
+
+	callCount := uint64(0)
+	gatewayDB := &mockLifecycle{callCount: &callCount}
+	routerDB := &mockLifecycle{callCount: &callCount}
+	batchRouterDB := &mockLifecycle{callCount: &callCount}
+	schemaForwarder := mockjobsforwarder.NewMockForwarder(gomock.NewController(t))
+	eschDB := &mockLifecycle{callCount: &callCount}
+	archDB := &mockLifecycle{callCount: &callCount}
+	partitionMigrator := &mockLifecycle{callCount: &callCount}
+	archiver := &mockLifecycle{callCount: &callCount}
+	processor := &mockLifecycle{callCount: &callCount}
+	router := &mockLifecycle{callCount: &callCount}
+
+	dc := cluster.Dynamic{
+		Provider:          provider,
+		GatewayDB:         gatewayDB,
+		RouterDB:          routerDB,
+		BatchRouterDB:     batchRouterDB,
+		EventSchemaDB:     eschDB,
+		ArchivalDB:        archDB,
+		PartitionMigrator: partitionMigrator,
+		Processor:         processor,
+		Router:            router,
+		SchemaForwarder:   schemaForwarder,
+		Archiver:          archiver,
+	}
+
+	schemaForwarder.EXPECT().Start().Return(nil)
+	schemaForwarder.EXPECT().Stop()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- dc.Run(context.Background())
+	}()
+
+	provider.sendMode(servermode.NewChangeEvent(servermode.NormalMode, func(_ context.Context) error {
+		return nil
+	}))
+	require.Eventually(t, func() bool {
+		return dc.Mode() == servermode.NormalMode
+	}, time.Second, time.Millisecond)
+
+	provider.sendMode(servermode.ChangeEventError(fmt.Errorf("mode provider failed")))
+
+	require.Error(t, <-done)
+	require.Equal(t, "stop", gatewayDB.status)
+	require.Equal(t, "stop", routerDB.status)
+	require.Equal(t, "stop", batchRouterDB.status)
+	require.Equal(t, "stop", partitionMigrator.status)
+	require.Equal(t, "stop", processor.status)
+	require.Equal(t, "stop", router.status)
+	require.True(t, gatewayDB.callOrder > processor.callOrder)
+	require.True(t, routerDB.callOrder > router.callOrder)
+}
+
+func TestDynamicClusterRollsBackPartialStart(t *testing.T) {
+	Init()
+
+	provider := &mockModeProvider{
+		modeCh: make(chan servermode.ChangeEvent),
+	}
+
+	callCount := uint64(0)
+	gatewayDB := &mockLifecycle{callCount: &callCount}
+	routerDB := &mockLifecycle{callCount: &callCount}
+	batchRouterDB := &mockLifecycle{callCount: &callCount}
+	schemaForwarder := mockjobsforwarder.NewMockForwarder(gomock.NewController(t))
+	eschDB := &mockLifecycle{callCount: &callCount}
+	archDB := &mockLifecycle{callCount: &callCount}
+	partitionMigrator := &mockLifecycle{callCount: &callCount, startErr: fmt.Errorf("partition migrator failed")}
+	archiver := &mockLifecycle{callCount: &callCount}
+	processor := &mockLifecycle{callCount: &callCount}
+	router := &mockLifecycle{callCount: &callCount}
+
+	dc := cluster.Dynamic{
+		Provider:          provider,
+		GatewayDB:         gatewayDB,
+		RouterDB:          routerDB,
+		BatchRouterDB:     batchRouterDB,
+		EventSchemaDB:     eschDB,
+		ArchivalDB:        archDB,
+		PartitionMigrator: partitionMigrator,
+		Processor:         processor,
+		Router:            router,
+		SchemaForwarder:   schemaForwarder,
+		Archiver:          archiver,
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- dc.Run(context.Background())
+	}()
+
+	require.Error(t, <-done)
+	require.Equal(t, "stop", gatewayDB.status)
+	require.Equal(t, "stop", routerDB.status)
+	require.Equal(t, "stop", batchRouterDB.status)
+	require.Equal(t, "stop", eschDB.status)
+	require.Equal(t, "stop", archDB.status)
+	require.Equal(t, "start", partitionMigrator.status)
+	require.Empty(t, processor.status)
+	require.Empty(t, router.status)
+	require.True(t, batchRouterDB.callOrder > partitionMigrator.callOrder)
+	require.True(t, gatewayDB.callOrder > batchRouterDB.callOrder)
 }
