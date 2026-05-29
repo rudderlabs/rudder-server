@@ -1539,4 +1539,68 @@ func TestNonBlockingCompaction(t *testing.T) {
 		require.True(t, tableExists(t, jd, source2), "drop blocked by held reader")
 		require.True(t, hasReadonlyTrigger(t, jd, source2), "source must carry readonly trigger after non-blocking compaction")
 	})
+
+	t.Run("flag on + deferStatusLock: copies pending jobs and their latest statuses, fences source", func(t *testing.T) {
+		jd, c := newJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"compactionDeferStatusLock", true)
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
+
+		// jobs 1..4 terminal (succeeded), 5..7 non-terminal (failed), 8..10 never
+		// picked up (no status at all).
+		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
+		require.NoError(t, jd.Store(context.Background(), jobs))
+		require.NoError(t, jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[:4], "succeeded")))
+		require.NoError(t, jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[4:7], "failed")))
+		createDS(t, jd, "2") // empty last DS
+
+		snapshot := jd.getDSListSnapshot()
+		require.Len(t, snapshot, 2)
+		sourceDS := snapshot[0]
+
+		// Hold a reader so the source's async physical drop blocks long enough to
+		// inspect the trigger and pre-drop markers.
+		_, _, release, err := jd.acquireDSListForRead(context.Background())
+		require.NoError(t, err)
+
+		require.NoError(t, jd.doMigrateDS(context.Background()))
+
+		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
+		require.NotContains(t, listIndices, sourceDS.Index, "source DS hidden from new readers")
+		require.Contains(t, listIndices, "1_1", "destination DS published")
+
+		// The status table must still be fenced even though it was locked in a
+		// separate phase from the jobs copy.
+		require.True(t, hasReadonlyTrigger(t, jd, sourceDS), "deferred mode must still plant the readonly trigger on the source status table")
+		require.True(t, tableMarkedPreDrop(t, jd, sourceDS.JobTable), "source job table must carry pre-drop marker")
+		require.True(t, tableMarkedPreDrop(t, jd, sourceDS.JobStatusTable), "source status table must carry pre-drop marker")
+
+		destJobsTable := jd.tablePrefix + "_jobs_1_1"
+		destStatusTable := jd.tablePrefix + "_job_status_1_1"
+
+		// Phase 1: the 6 pending jobs (ids 5..10) are copied; the 4 terminal jobs are not.
+		var copiedJobIDs string
+		require.NoError(t, jd.dbHandle.QueryRow(
+			fmt.Sprintf(`SELECT COALESCE(string_agg(job_id::text, ',' ORDER BY job_id), '') FROM %q`, destJobsTable),
+		).Scan(&copiedJobIDs))
+		require.Equal(t, "5,6,7,8,9,10", copiedJobIDs, "only pending jobs must be copied")
+
+		// Phase 2: only jobs that had a status (5,6,7) get a status row, and it is
+		// their latest status ("failed"). Jobs 8..10 were never picked up so they
+		// correctly carry no status and remain unprocessed in the destination.
+		var statusJobIDs, distinctStates string
+		require.NoError(t, jd.dbHandle.QueryRow(
+			fmt.Sprintf(`SELECT COALESCE(string_agg(job_id::text, ',' ORDER BY job_id), ''), COALESCE(string_agg(DISTINCT job_state, ','), '') FROM %q`, destStatusTable),
+		).Scan(&statusJobIDs, &distinctStates))
+		require.Equal(t, "5,6,7", statusJobIDs, "latest status copied only for moved jobs that had one")
+		require.Equal(t, "failed", distinctStates, "the latest (non-terminal) status must be preserved")
+
+		release()
+		require.Eventually(t, func() bool {
+			jd.dropDSListLock.RLock()
+			pending := len(jd.dropDSList)
+			jd.dropDSListLock.RUnlock()
+			return !tableExists(t, jd, sourceDS) && pending == 0
+		}, 5*time.Second, 50*time.Millisecond, "source table must be physically dropped once the reader releases")
+	})
 }
