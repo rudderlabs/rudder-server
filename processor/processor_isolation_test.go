@@ -255,6 +255,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 
 	config.Set("JobsDB.enableWriterQueue", false)
 	config.Set("JobsDB.nonBlockingCompletedDSDrop", "true")
+	config.Set("JobsDB.compactionDeferStatusLock", "true")
 
 	// find free port for gateway http server to listen on
 	httpPortInt, err := kithelper.GetFreePort()

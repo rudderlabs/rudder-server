@@ -619,12 +619,10 @@ func getColumnConversion(srcType, destType string) (string, error) {
 	return result, nil
 }
 
-func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) (int, error) {
-	defer jd.getTimerStat(
-		"migration_jobs",
-		&statTags{CustomValFilters: []string{jd.tablePrefix}},
-	).RecordDuration()()
-
+// resolvePayloadConversion inspects the event_payload column types of the source
+// and destination jobs tables and returns the SQL expression used to convert a
+// source payload to the destination column type (see getColumnConversion).
+func (jd *Handle) resolvePayloadConversion(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) (string, error) {
 	columnTypeMap := map[string]string{srcDS.JobTable: string(JSONB), destDS.JobTable: string(JSONB)}
 	// find column types first - to differentiate between `text`, `bytea` and `jsonb`
 	rows, err := tx.QueryContext(
@@ -635,23 +633,82 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 		srcDS.JobTable, destDS.JobTable,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("get column types: %w", err)
+		return "", fmt.Errorf("get column types: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	var jobsTable, columnType string
 	for rows.Next() {
 		if err = rows.Scan(&jobsTable, &columnType); err != nil {
-			return 0, fmt.Errorf("scan column types: %w", err)
+			return "", fmt.Errorf("scan column types: %w", err)
 		}
 		if columnType != string(BYTEA) && columnType != string(JSONB) && columnType != string(TEXT) {
-			return 0, fmt.Errorf("unsupported column type %s", columnType)
+			return "", fmt.Errorf("unsupported column type %s", columnType)
 		}
 		columnTypeMap[jobsTable] = columnType
 	}
 	if err = rows.Err(); err != nil {
-		return 0, fmt.Errorf("rows.Err() on column types: %w", err)
+		return "", fmt.Errorf("rows.Err() on column types: %w", err)
 	}
-	payloadLiteral, err := getColumnConversion(columnTypeMap[srcDS.JobTable], columnTypeMap[destDS.JobTable])
+	return getColumnConversion(columnTypeMap[srcDS.JobTable], columnTypeMap[destDS.JobTable])
+}
+
+// copyJobsInTx copies the still-pending jobs (and jobs that were never picked up) from the source jobs
+// table to the destination. It returns the number of jobs copied.
+func (jd *Handle) copyJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) (int, error) {
+	defer jd.getTimerStat(
+		"migration_jobs",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	).RecordDuration()()
+
+	payloadLiteral, err := jd.resolvePayloadConversion(ctx, tx, srcDS, destDS)
+	if err != nil {
+		return 0, err
+	}
+
+	copyQuery := fmt.Sprintf(
+		`insert into %[2]q (job_id,   workspace_id,   uuid,   user_id,   partition_id, custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at)
+		           (select j.job_id, j.workspace_id, j.uuid, j.user_id, j.partition_id, j.custom_val, j.parameters, %[4]s, j.event_count, j.created_at, j.expire_at from %[3]q j left join "v_last_%[1]s" js on js.job_id = j.job_id
+			where js.job_id is null or js.job_state = ANY('{%[5]s}') order by j.job_id)`,
+		srcDS.JobStatusTable,
+		destDS.JobTable,
+		srcDS.JobTable,
+		payloadLiteral,
+		strings.Join(validNonTerminalStates, ","),
+	)
+	res, err := tx.ExecContext(ctx, copyQuery)
+	if err != nil {
+		return 0, err
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
+// copyJobStatusesInTx copies the LATEST status of every job in the destDS (terminal or not) from the srcDS status table to the destDS status table.
+func (jd *Handle) copyJobStatusesInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) error {
+	copyQuery := fmt.Sprintf(
+		`insert into %[2]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters)
+		           (select js.job_id, js.job_state, js.attempt, js.exec_time, js.retry_time, js.error_code, js.error_response, js.parameters from "v_last_%[1]s" js
+			where exists (select 1 from %[3]q dj where dj.job_id = js.job_id))`,
+		srcDS.JobStatusTable,
+		destDS.JobStatusTable,
+		destDS.JobTable,
+	)
+	if _, err := tx.ExecContext(ctx, copyQuery); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) (int, error) {
+	defer jd.getTimerStat(
+		"migration_jobs",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	).RecordDuration()()
+
+	payloadLiteral, err := jd.resolvePayloadConversion(ctx, tx, srcDS, destDS)
 	if err != nil {
 		return 0, err
 	}
@@ -718,6 +775,25 @@ func (jd *Handle) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBef
 	return newDSIdx, nil
 }
 
+// lockAndFenceStatusTable takes an EXCLUSIVE lock on the status table and
+// plants the readonly trigger which raises RS001 whenever any subsequent insert is attempted on the status table.
+func (jd *Handle) lockAndFenceStatusTable(ctx context.Context, tx *Tx, statusTable string) error {
+	// EXCLUSIVE (not ACCESS EXCLUSIVE): blocks INSERT/UPDATE/DELETE on the
+	// status table but allows reads (e.g. v_last_*).
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE`, statusTable)); err != nil {
+		return fmt.Errorf("exclusive lock status table %s: %w", statusTable, err)
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(
+		`CREATE TRIGGER readonlyTableTrg
+		BEFORE INSERT
+		ON %q
+		FOR EACH STATEMENT
+		EXECUTE PROCEDURE %s;`, statusTable, pgReadonlyTableExceptionFuncName)); err != nil {
+		return fmt.Errorf("create readonly trigger on %s: %w", statusTable, err)
+	}
+	return nil
+}
+
 // doCompactDS is the non-blocking compaction flow which replaces the legacy doMigrateDS body when the nonBlockingCompaction flag is enabled.
 //
 // Lock semantics (vs. legacy):
@@ -728,6 +804,9 @@ func (jd *Handle) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBef
 //   - Source status tables are fenced with LOCK TABLE … IN EXCLUSIVE MODE and a
 //     post-commit readonly trigger; the trigger raises RS001 on subsequent inserts,
 //     which the UpdateJobStatus path treats as ErrStaleDsList and retries.
+//   - When compactionDeferStatusLock is set, the source status lock is deferred:
+//     pending jobs are copied first with no lock held, then each source status table
+//     is locked one after another only to copy the latest statuses of the moved jobs.
 func (jd *Handle) doCompactDS(ctx context.Context) error {
 	dsList, _, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
@@ -810,55 +889,104 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 			}
 
 			var copyStart time.Time
-			for i, source := range migrationList.migrateFrom {
-				if source.numJobsPending == 0 {
+			if jd.conf.migration.compactionDeferStatusLock.Load() {
+				// Deferred-status-lock mode. Phase 1: copy the pending jobs from every
+				// source WITHOUT locking any status table — this is the slow,
+				// payload-heavy work, and it must not sit inside the lock window.
+				for i, source := range migrationList.migrateFrom {
+					if source.numJobsPending == 0 {
+						jd.logger.Infon(
+							"[[ doCompactDS ]]: No jobs to migrate",
+							logger.NewStringField("from", source.ds.Index),
+							logger.NewStringField("to", destination.Index),
+						)
+						continue
+					}
+					if copyStart.IsZero() {
+						copyStart = time.Now()
+					}
+					count, err := jd.copyJobsInTx(ctx, tx, source.ds, destination)
+					if err != nil {
+						return fmt.Errorf("copying jobs from %s: %w", source.ds.Index, err)
+					}
+					totalCopied += count
+					// numJobsPending now reflects what phase 1 actually copied, so
+					// phase 2 below only locks sources that contributed jobs.
+					migrationList.migrateFrom[i].numJobsPending = count
+				}
+				// Build the jobs-table indices before taking any status lock.
+				if totalCopied > 0 {
+					if err := jd.createDSJobIndicesInTx(ctx, tx, destination); err != nil {
+						return fmt.Errorf("creating %v jobs indices: %w", destination, err)
+					}
+				}
+				// Phase 2: lock each source status table one after another and copy the
+				// latest status of the moved jobs. This is the only work under the lock,
+				// and the status rows carry no payload, so the lock window is minimal.
+				for _, source := range migrationList.migrateFrom {
+					if source.numJobsPending == 0 {
+						continue
+					}
+					if lockStart.IsZero() {
+						lockStart = time.Now()
+					}
+					if err := jd.lockAndFenceStatusTable(ctx, tx, source.ds.JobStatusTable); err != nil {
+						return err
+					}
 					jd.logger.Infon(
-						"[[ doCompactDS ]]: No jobs to migrate",
+						"[[ doCompactDS ]]: Move statuses",
 						logger.NewStringField("from", source.ds.Index),
 						logger.NewStringField("to", destination.Index),
 					)
-					continue
+					if err := jd.copyJobStatusesInTx(ctx, tx, source.ds, destination); err != nil {
+						return fmt.Errorf("copying statuses from %s: %w", source.ds.Index, err)
+					}
 				}
-				if lockStart.IsZero() {
-					lockStart = time.Now()
+				if totalCopied > 0 {
+					if err := jd.createDSStatusIndicesInTx(ctx, tx, destination); err != nil {
+						return fmt.Errorf("creating %v status indices: %w", destination, err)
+					}
+					if _, err := tx.Exec(fmt.Sprintf(`ANALYZE %q, %q`, destination.JobTable, destination.JobStatusTable)); err != nil {
+						return fmt.Errorf("analyzing %v: %w", destination, err)
+					}
 				}
-				// EXCLUSIVE (not ACCESS EXCLUSIVE): blocks INSERT/UPDATE/DELETE on the
-				// status table but allows reads (e.g. v_last_*).
-				if _, err := tx.ExecContext(ctx, fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE`, source.ds.JobStatusTable)); err != nil {
-					return fmt.Errorf("exclusive lock status table %s: %w", source.ds.JobStatusTable, err)
+			} else {
+				for i, source := range migrationList.migrateFrom {
+					if source.numJobsPending == 0 {
+						jd.logger.Infon(
+							"[[ doCompactDS ]]: No jobs to migrate",
+							logger.NewStringField("from", source.ds.Index),
+							logger.NewStringField("to", destination.Index),
+						)
+						continue
+					}
+					if lockStart.IsZero() {
+						lockStart = time.Now()
+					}
+					if err := jd.lockAndFenceStatusTable(ctx, tx, source.ds.JobStatusTable); err != nil {
+						return err
+					}
+					jd.logger.Infon(
+						"[[ doCompactDS ]]: Move",
+						logger.NewStringField("from", source.ds.Index),
+						logger.NewStringField("to", destination.Index),
+					)
+					if copyStart.IsZero() {
+						copyStart = time.Now()
+					}
+					count, err := jd.migrateJobsInTx(ctx, tx, source.ds, destination)
+					if err != nil {
+						return fmt.Errorf("copying jobs from %s: %w", source.ds.Index, err)
+					}
+					totalCopied += count
+					migrationList.migrateFrom[i].numJobsPending = count
 				}
-				// Plant a readonly trigger on the source status table so that any
-				// UpdateJobStatus that lands here AFTER our commit raises RS001 and
-				// gets routed to the new destination via the refreshed dsRangeList.
-				if _, err := tx.ExecContext(ctx, fmt.Sprintf(
-					`CREATE TRIGGER readonlyTableTrg
-					BEFORE INSERT
-					ON %q
-					FOR EACH STATEMENT
-					EXECUTE PROCEDURE %s;`, source.ds.JobStatusTable, pgReadonlyTableExceptionFuncName)); err != nil {
-					return fmt.Errorf("create readonly trigger on %s: %w", source.ds.JobStatusTable, err)
+				if err := jd.createDSIndicesInTx(ctx, tx, destination); err != nil {
+					return fmt.Errorf("creating %v indices: %w", destination, err)
 				}
-				jd.logger.Infon(
-					"[[ doCompactDS ]]: Move",
-					logger.NewStringField("from", source.ds.Index),
-					logger.NewStringField("to", destination.Index),
-				)
-				if copyStart.IsZero() {
-					copyStart = time.Now()
-				}
-				count, err := jd.migrateJobsInTx(ctx, tx, source.ds, destination)
-				if err != nil {
-					return fmt.Errorf("copying jobs from %s: %w", source.ds.Index, err)
-				}
-				totalCopied += count
-				migrationList.migrateFrom[i].numJobsPending = count
 			}
 			if !copyStart.IsZero() {
 				jd.getTimerStat("jobsdb_migration_copy_time", &statTags{CustomValFilters: []string{jd.tablePrefix}}).Since(copyStart)
-			}
-
-			if err := jd.createDSIndicesInTx(ctx, tx, destination); err != nil {
-				return fmt.Errorf("creating %v indices: %w", destination, err)
 			}
 
 			// Mark the source datasets with the pre-drop comment in the same TX as
