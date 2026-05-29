@@ -84,6 +84,7 @@ Destinations that require complex polling and status checking:
 - Klaviyo Bulk Upload
 - Lytics Bulk Upload
 - Snowpipe Streaming
+- BigQuery Streaming
 
 ### 2. SFTP Destinations
 
