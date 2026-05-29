@@ -266,6 +266,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 
 	config.Set("JobsDB.enableWriterQueue", false)
 	config.Set("JobsDB.nonBlockingCompletedDSDrop", "true")
+	config.Set("JobsDB.compactionDeferStatusLock", "true")
 	config.Set("RUDDER_TMPDIR", os.TempDir())
 
 	t.Logf("Seeding batch_rt jobsdb with jobs")
