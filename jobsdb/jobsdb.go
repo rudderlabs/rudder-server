@@ -389,14 +389,15 @@ func (jd *Handle) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, stat
 
 		jd.logger.Warnn("[JobsDB] :: Stale dataset list detected while updating job statuses, retrying after refreshing DS cache", obskit.Error(ErrStaleDsList))
 		if refreshErr := func() error {
-			return jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
-				if err := jd.doRefreshDSRangeListWithDB(l, tx.SqlTx()); err != nil {
-					return fmt.Errorf("refresh ds range list: %w", err)
-				}
-				dsList, dsRangeList := jd.dsList.snapshot()
-				tx.setDSList(dsList, dsRangeList)
-				return nil
-			})
+			// we don't need to actually refresh the ds list from the database, since compaction already does this,
+			// but we do need to acquire a read lock on dsListLock to ensure that the ds list is actually refreshed.
+			if lock := jd.dsListLock.RTryLockWithCtx(ctx); !lock {
+				return fmt.Errorf("acquiring read lock for refreshing ds list in update job status: %w", ctx.Err())
+			}
+			dsList, dsRangeList := jd.dsList.snapshot()
+			tx.setDSList(dsList, dsRangeList)
+			jd.dsListLock.RUnlock()
+			return nil
 		}(); refreshErr != nil {
 			return refreshErr
 		}
@@ -922,6 +923,14 @@ func WithPriorityPoolDB(pool *sql.DB) OptsFunc {
 func WithMaintenancePoolDB(pool *sql.DB) OptsFunc {
 	return func(jd *Handle) {
 		jd.maintenancePool = pool
+	}
+}
+
+// WithTriggerAddNewDS overrides the addNewDS loop trigger, allowing callers
+// (tests and benchmarks) to deterministically control when new datasets are created.
+func WithTriggerAddNewDS(trigger func() <-chan time.Time) OptsFunc {
+	return func(jd *Handle) {
+		jd.TriggerAddNewDS = trigger
 	}
 }
 
@@ -3104,7 +3113,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 							if err != nil {
 								return fmt.Errorf("acquiring dsListLock: %w", err)
 							}
-							jd.logger.Infon("Acquired lock",
+							jd.logger.Infon("[[ addNewDSLoop ]]: Acquired lock",
 								logger.NewStringField("ds", latestDS.String()),
 								logger.NewStringField("jobsdb", jd.tablePrefix))
 							if _, err = tx.ExecContext(ctx, fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
@@ -3459,10 +3468,12 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 	// do update
 	updatedStatesByDS, err := jd.doUpdateJobStatusInTx(ctx, tx, dsList, dsRangeList, statusList)
 	if err != nil {
-		jd.logger.Infon("Error occurred while updating job statuses",
-			logger.NewStringField("tablePrefix", jd.tablePrefix),
-			obskit.Error(err),
-		)
+		if !errors.Is(err, ErrStaleDsList) {
+			jd.logger.Infon("Error occurred while updating job statuses",
+				logger.NewStringField("tablePrefix", jd.tablePrefix),
+				obskit.Error(err),
+			)
+		}
 		return err
 	}
 
