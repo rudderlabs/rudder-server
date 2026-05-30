@@ -23,6 +23,8 @@ func New(conf *config.Config, stat stats.Stats, log logger.Logger, db *sql.DB) (
 		return scenario.NewSimple(conf, stat, log, db), nil
 	case "two_stage":
 		return scenario.NewTwoStage(conf, stat, log, db), nil
+	case "compaction":
+		return scenario.NewCompaction(conf, stat, log, db), nil
 	default:
 		return nil, fmt.Errorf("unknown jobsdb bench scenario name: %s", conf.GetStringVar("processor", "JobsDB.bench.scenario"))
 	}

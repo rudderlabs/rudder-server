@@ -622,6 +622,15 @@ func TestUpdateJobStatusInExternalTxRetriesAfterReadonlyStatusTable(t *testing.T
 			if err := prepareReplacement(); err != nil {
 				return err
 			}
+			// Refresh the in-memory ds list, mirroring what compaction does after
+			// it commits a layout change. The stale-ds retry in UpdateJobStatusInTx
+			// reads this in-memory snapshot (it no longer re-reads from the DB), so
+			// the replacement dataset must be visible there for the retry to target it.
+			if err := jobsDB.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
+				return jobsDB.doRefreshDSRangeList(l)
+			}); err != nil {
+				return err
+			}
 			return jobsDB.UpdateJobStatusInTx(ctx, updateTx, statuses)
 		})
 	}))
