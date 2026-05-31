@@ -151,9 +151,21 @@ jobs:
           if git ls-remote --exit-code --heads "$remote" gh-pages >/dev/null 2>&1; then
             git clone --depth=1 --branch gh-pages "$remote" "$workdir"
           else
-            git clone --depth=1 "$remote" "$workdir"
-            git -C "$workdir" checkout --orphan gh-pages
-            git -C "$workdir" rm -rf . >/dev/null 2>&1 || true
+            # Initialize a clean orphan gh-pages branch with NO files from master.
+            # (git clone + --orphan keeps the master worktree around; that pollutes
+            # Pages with symlinks and breaks the pages-build-deployment artifact upload.)
+            mkdir -p "$workdir"
+            git -C "$workdir" init -q -b gh-pages
+            git -C "$workdir" remote add origin "$remote"
+          fi
+
+          # Defensive: drop any tracked files that aren't under our umbrella or the
+          # .nojekyll marker. Protects against an earlier bad commit that may have
+          # introduced repo files (symlinks, Go vendor, etc.) onto gh-pages.
+          mapfile -t stray < <(git -C "$workdir" ls-files \
+            | grep -Ev "^(${UMBRELLA_DIR}/|\.nojekyll$)" || true)
+          if [ "${#stray[@]}" -gt 0 ]; then
+            printf '%s\n' "${stray[@]}" | xargs -d '\n' git -C "$workdir" rm -q --
           fi
 
           target="${workdir}/${UMBRELLA_DIR}/pr-${PR_NUMBER}"
@@ -161,6 +173,13 @@ jobs:
           mkdir -p "$target"
           cp -R "${RUNNER_TEMP}/preview-site"/. "$target"/
           touch "${workdir}/.nojekyll"
+
+          # Reject symlinks before pushing — Pages refuses to upload them.
+          if find "$workdir/${UMBRELLA_DIR}/pr-${PR_NUMBER}" -type l | grep -q .; then
+            echo "Preview site contains symlinks; refusing to deploy."
+            find "$workdir/${UMBRELLA_DIR}/pr-${PR_NUMBER}" -type l
+            exit 1
+          fi
 
           git -C "$workdir" add -A
           if git -C "$workdir" diff --cached --quiet; then
