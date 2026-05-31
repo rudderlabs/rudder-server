@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/errgroup"
@@ -68,6 +69,7 @@ func (p *compaction) Run(ctx context.Context) error {
 		eventPayloadSize = p.conf.GetInt64Var(2*bytesize.KB, 1, "JobsDB.Bench.payloadSize") // size of the event payload
 		destinations     = p.conf.GetIntVar(50, 1, "JobsDB.Bench.destinations")             // number of destinations the jobs are spread between
 		batchSize        = p.conf.GetIntVar(1000, 1, "JobsDB.Bench.batchSize")              // number of jobs a consumer fetches in one go
+		statusBatchSize  = p.conf.GetIntVar(1000, 1, "JobsDB.Bench.statusBatchSize")        // number of terminal statuses the updater flushes in one UpdateJobStatus call
 		failProbability  = p.conf.GetFloat64Var(0.5, "JobsDB.Bench.failProbability")        // probability a job is marked as failed on a given attempt
 		maxFailures      = p.conf.GetIntVar(3, 1, "JobsDB.Bench.maxFailures")               // cap on the number of times a single job may fail before it must succeed
 		seedConcurrency  = p.conf.GetIntVar(4, 1, "JobsDB.Bench.seedConcurrency")           // number of concurrent writers used while seeding a dataset
@@ -177,7 +179,7 @@ func (p *compaction) Run(ctx context.Context) error {
 		)
 
 		// Consume (measured).
-		duration, err := p.consume(ctx, db, customVal, totalJobs, destinations, batchSize, payloadLimit)
+		duration, err := p.consume(ctx, db, customVal, totalJobs, destinations, batchSize, statusBatchSize, payloadLimit)
 		db.Stop()
 		db.Close()
 		if err != nil {
@@ -266,46 +268,37 @@ func (p *compaction) seed(
 	return nil
 }
 
-// consume spawns one goroutine per destination, each repeatedly fetching a batch
-// of pending jobs, marking them executing and then marking each job succeeded or
-// failed according to its precomputed failure count. It returns once every
-// destination has been fully drained.
+// consume spawns one goroutine per destination plus one status-updater goroutine.
+// Each destination goroutine repeatedly fetches a batch of pending jobs, marks
+// them executing, then pushes the computed terminal statuses onto a
+// channel. The updater goroutine drains that channel in batches of
+// [statusBatchSize] and calls UpdateJobStatus. It returns once every destination
+// has been fully drained.
 func (p *compaction) consume(
 	ctx context.Context,
 	db *jobsdb.Handle,
 	customVal string,
-	totalJobs, destinations, batchSize int,
+	totalJobs, destinations, batchSize, statusBatchSize int,
 	payloadLimit int64,
 ) (time.Duration, error) {
 	// attempts[jobID] counts how many times a job has been processed so far.
 	// Each jobID is owned by exactly one destination => one goroutine, so plain
-	// (non-atomic) access would be safe; we keep it simple with a slice.
+	// (non-atomic) access is safe.
 	attempts := make([]int32, totalJobs+1)
 
 	var (
 		succeeded atomic.Int64 // total jobs marked succeeded (terminal)
 		failed    atomic.Int64 // total job failures (retries)
-		remaining atomic.Int64 // jobs not yet succeeded; the run is over when this hits 0
+		done      = make(chan struct{})
 	)
-	remaining.Store(int64(totalJobs))
 
-	// done is closed once every job has reached a terminal succeeded state.
-	// We rely on a global completion signal rather than treating an empty
-	// GetToProcess result as "drained": with a dsLimit in effect, a destination's
-	// pending jobs may live in datasets outside the current query window and only
-	// become visible after earlier datasets are compacted/dropped, so an empty
-	// result is transient and we must keep polling.
-	done := make(chan struct{})
-
-	// emptyPollInterval throttles polling for a destination that currently has no
-	// visible pending jobs (drained, or hidden behind the dsLimit window).
-	emptyPollInterval := 200 * time.Millisecond
+	// emptyPollInterval throttles retries when jobs exist but are temporarily
+	// hidden behind the dsLimit window (res.DSLimitsReached == true).
+	emptyPollInterval := 100 * time.Millisecond
 
 	start := time.Now()
 
-	// progress reporting, stopped explicitly after the consumers finish so it
-	// does not deadlock the errgroup (errgroup's context is only cancelled once
-	// Wait returns).
+	// progress reporting, stopped explicitly after all goroutines finish.
 	reporterStop := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
@@ -320,21 +313,36 @@ func (p *compaction) consume(
 				fmt.Printf("[%s] drained %d/%d (%.1f%%), retries so far: %d\n",
 					time.Now().Format("15:04:05"), succeeded.Load(), totalJobs,
 					float64(succeeded.Load())/float64(totalJobs)*100, failed.Load())
+				if succeeded.Load() == int64(totalJobs) {
+					close(done)
+					return
+				}
 			}
 		}
 	}()
 
 	g, gCtx := errgroup.WithContext(ctx)
+
+	// One consumer + one updater goroutine pair per destination. Each consumer
+	// owns its statusCh and closes it on exit, which signals the paired updater
+	// to flush and return.
 	for dest := range destinations {
 		destID := fmt.Sprintf("dest-%d", dest)
+
+		// statusCh is buffered to at least the number of jobs the consumer
+		// fetches in one call so that marking-executing never stalls on the send.
+		statusCh := make(chan *jobsdb.JobStatusT, batchSize)
+
+		// Consumer goroutine: fetches jobs, marks them executing, pushes terminal
+		// statuses onto statusCh, and closes the channel when done.
+		// Exits immediately when len(jobs)==0 && !res.DSLimitsReached, meaning
+		// this destination is genuinely empty (not just hidden behind the dsLimit
+		// window). Only polls when DSLimitsReached is true.
 		g.Go(func() error {
+			defer close(statusCh)
 			for {
-				select {
-				case <-done:
+				if gCtx.Err() != nil {
 					return nil
-				case <-gCtx.Done():
-					return nil
-				default:
 				}
 				res, err := db.GetToProcess(gCtx, jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal},
@@ -349,24 +357,24 @@ func (p *compaction) consume(
 					}
 					return fmt.Errorf("could not get jobs for %s: %w", destID, err)
 				}
-				jobs := res.Jobs
-				if len(jobs) == 0 {
-					// nothing visible right now: either this destination is fully
-					// drained, or its remaining jobs are behind the dsLimit window.
-					// Wait a bit and retry until the run is globally complete.
+				if len(res.Jobs) == 0 {
+					if res.DSLimitsReached {
+						continue // poll again immediately
+					}
+					// jobs may still exist but hidden (marked as failed by the updater soon)
 					select {
-					case <-done:
-						return nil
 					case <-gCtx.Done():
+						return nil
+					case <-done:
 						return nil
 					case <-time.After(emptyPollInterval):
 					}
 					continue
 				}
 
-				// 1. mark the whole batch as executing
-				executing := make([]*jobsdb.JobStatusT, len(jobs))
-				for i, job := range jobs {
+				// mark the whole batch as executing
+				executing := make([]*jobsdb.JobStatusT, len(res.Jobs))
+				for i, job := range res.Jobs {
 					executing[i] = newStatus(job, jobsdb.Executing.State, "executing")
 				}
 				if err := db.UpdateJobStatus(gCtx, executing); err != nil {
@@ -376,44 +384,63 @@ func (p *compaction) consume(
 					return fmt.Errorf("could not mark jobs executing for %s: %w", destID, err)
 				}
 
-				// 2. mark each job succeeded or failed per the precomputed pattern
-				terminal := make([]*jobsdb.JobStatusT, len(jobs))
-				var batchSucceeded, batchFailed int64
-				for i, job := range jobs {
+				// compute terminal status per job and push to channel
+				for _, job := range res.Jobs {
 					attempt := attempts[job.JobID] + 1
 					attempts[job.JobID] = attempt
 					fc := int32(gjson.GetBytes(job.Parameters, "fc").Int())
+					st := newStatus(job, jobsdb.Succeeded.State, "200")
 					if attempt <= fc {
-						terminal[i] = newStatus(job, jobsdb.Failed.State, "500")
-						terminal[i].AttemptNum = int(attempt)
-						batchFailed++
-					} else {
-						terminal[i] = newStatus(job, jobsdb.Succeeded.State, "200")
-						terminal[i].AttemptNum = int(attempt)
-						batchSucceeded++
+						st = newStatus(job, jobsdb.Failed.State, "500")
+					}
+					st.AttemptNum = int(attempt)
+					select {
+					case <-gCtx.Done():
+						return nil
+					case statusCh <- st:
 					}
 				}
-				if err := db.UpdateJobStatus(gCtx, terminal); err != nil {
-					if gCtx.Err() != nil {
-						return nil // nolint: nilerr
+			}
+		})
+
+		// Updater goroutine: collects terminal statuses from statusCh in batches
+		// of up to statusBatchSize (or whatever arrived within 1s) and calls
+		// UpdateJobStatus once per batch.
+		g.Go(func() error {
+			for {
+				batch, length, _, ok := lo.BufferWithTimeout(statusCh, statusBatchSize, time.Second)
+				if length > 0 {
+					if err := db.UpdateJobStatus(gCtx, batch); err != nil {
+						if gCtx.Err() != nil {
+							return nil // nolint: nilerr
+						}
+						return fmt.Errorf("could not update job statuses for %s: %w", destID, err)
 					}
-					return fmt.Errorf("could not mark jobs terminal for %s: %w", destID, err)
+					var batchSucceeded, batchFailed int64
+					for _, st := range batch {
+						if st.JobState == jobsdb.Succeeded.State {
+							batchSucceeded++
+						} else {
+							batchFailed++
+						}
+					}
+					succeeded.Add(batchSucceeded)
+					failed.Add(batchFailed)
 				}
-				succeeded.Add(batchSucceeded)
-				failed.Add(batchFailed)
-				// Each job succeeds exactly once, so remaining decreases
-				// monotonically to 0; the goroutine that hits 0 closes done.
-				if batchSucceeded > 0 && remaining.Add(-batchSucceeded) == 0 {
-					close(done)
+				if !ok {
 					return nil
 				}
 			}
 		})
 	}
+
 	err := g.Wait()
 	close(reporterStop)
 	if err != nil {
 		return 0, err
+	}
+	if s := succeeded.Load(); s != int64(totalJobs) {
+		return 0, fmt.Errorf("validation failed: expected %d succeeded jobs, got %d (retries: %d)", totalJobs, s, failed.Load())
 	}
 	return time.Since(start), nil
 }
