@@ -71,6 +71,17 @@ func (idx *Index) Increment(segment int) (*Index, error) {
 	return res, nil
 }
 
+// Compare returns -1, 0, or 1 if this dataset index is less than, equal to, or greater than other.
+func (idx *Index) Compare(other *Index) int {
+	if idx.Less(other) {
+		return -1
+	}
+	if other.Less(idx) {
+		return 1
+	}
+	return 0
+}
+
 // Less returns true if this dataset index is Less than the other dataset index
 func (idx *Index) Less(other *Index) bool {
 	for i, segment := range idx.segments {
