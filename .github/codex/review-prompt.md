@@ -7,6 +7,9 @@ You have the ENTIRE repository checked out in your current working directory. Us
 ## Inputs
 
 - `pr.diff` — the exact changeset for this PR. Read this first.
+    - If `pr.diff` exceeds ~200KB, do NOT try to walk it line-by-line. Group changes by
+      directory or concern and explain each group at a higher level, dropping into specifics
+      only where it materially helps the reviewer.
 - `meta.txt` — PR title, author, description, and commit messages.
 - The full repo — read any file you need: the definitions of the functions/types the
   diff touches, the callers of changed code, related interfaces, configuration, tests,
@@ -30,13 +33,29 @@ Write exactly ONE new file at `review-site/index.html` (relative to the reposito
 
 ## Design
 
-- Clean, minimal, professional. Generous whitespace, restrained palette, strong typographic
-  hierarchy, system font stack.
+- Clean, minimal, professional. Generous whitespace, strong typographic hierarchy,
+  system font stack.
+- Palette: neutral grays plus a single accent color. Drive colors from CSS custom
+  properties and ship both light and dark variants via `@media (prefers-color-scheme: dark)`.
 - Animations only where they aid comprehension: subtle scroll-reveal on sections, smooth
   anchor scrolling, a sticky table-of-contents / progress indicator. Respect
   `prefers-reduced-motion`.
 - Readable on mobile and desktop. No horizontal scroll. Code blocks scroll internally and
   have HTML properly escaped.
+
+## Interactivity (include all of these)
+
+- Collapsible file-walkthrough sections (use native `<details>`/`<summary>`).
+- A "Copy" button on each code snippet that copies the snippet's plain text via the
+  Clipboard API.
+- A filter control on the Risks section that hides/shows items by severity
+  (high / medium / low). Annotate each risk with a `data-severity` attribute so the
+  filter can target it.
+- Sticky table-of-contents with a slim progress indicator that reflects scroll position
+  through the document.
+
+Keep all interactivity in the single inline `<script>` block. No external libraries or
+network requests.
 
 ## Content (adapt to the actual PR; omit what does not apply)
 
@@ -58,4 +77,9 @@ Write exactly ONE new file at `review-site/index.html` (relative to the reposito
   files, or claims you cannot support. When a conclusion came from inspecting a file, you
   may reference it by path.
 - If something is genuinely unclear, say so plainly rather than guessing.
-- Be concise and skimmable. Short paragraphs and tight lists over walls of text.
+- Be concise and skimmable. Short paragraphs and tight lists over walls of text. Target
+  ~1,500–3,000 words of prose total; lean on structure (sections, lists, collapsibles),
+  not volume.
+- HTML-escape any code or text that may contain `<`, `>`, `&`, or quotes before embedding
+  it in the document. Never reproduce strings that look like secrets (API keys, tokens,
+  private keys, passwords) even if they appear in the diff — replace with `[redacted]`.
