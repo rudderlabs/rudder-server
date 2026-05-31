@@ -6,34 +6,36 @@
   <title>PR #7026 Review Guide</title>
   <style>
     :root {
-      --bg: #f6f7f9;
+      --bg: #f7f8fa;
       --surface: #ffffff;
       --surface-2: #f1f3f6;
-      --text: #1f2937;
-      --muted: #586174;
-      --border: #d7dce3;
-      --accent: #1f6feb;
-      --accent-soft: #eaf2ff;
-      --high: #b42318;
-      --med: #b54708;
-      --low: #02663b;
-      --shadow: 0 10px 30px rgba(9, 17, 34, 0.08);
+      --text: #111827;
+      --muted: #4b5563;
+      --border: #d1d5db;
+      --accent: #0f766e;
+      --accent-soft: #ccfbf1;
+      --high: #b91c1c;
+      --medium: #a16207;
+      --low: #166534;
+      --shadow: 0 1px 2px rgba(0,0,0,.06), 0 6px 18px rgba(0,0,0,.06);
+      --radius: 12px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }
 
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #0f1217;
-        --surface: #171b22;
-        --surface-2: #1f2530;
-        --text: #e6ebf2;
-        --muted: #9aa5b5;
-        --border: #313949;
-        --accent: #62a4ff;
-        --accent-soft: #10284d;
-        --high: #ff9b8e;
-        --med: #ffce8a;
-        --low: #8de5b5;
-        --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        --bg: #0b1220;
+        --surface: #0f172a;
+        --surface-2: #111b31;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --border: #334155;
+        --accent: #2dd4bf;
+        --accent-soft: #07373a;
+        --high: #f87171;
+        --medium: #fbbf24;
+        --low: #86efac;
+        --shadow: none;
       }
     }
 
@@ -41,19 +43,18 @@
     html { scroll-behavior: smooth; }
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      line-height: 1.55;
+      background: var(--bg);
       color: var(--text);
-      background: radial-gradient(circle at 20% -10%, var(--accent-soft), transparent 45%), var(--bg);
+      font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
 
     .layout {
       max-width: 1200px;
       margin: 0 auto;
-      padding: 24px 16px 60px;
+      padding: 24px 16px 56px;
       display: grid;
-      grid-template-columns: 280px minmax(0, 1fr);
       gap: 24px;
+      grid-template-columns: 270px minmax(0, 1fr);
     }
 
     .toc {
@@ -62,782 +63,797 @@
       align-self: start;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: var(--radius);
       box-shadow: var(--shadow);
-      padding: 14px;
+      padding: 12px;
       max-height: calc(100vh - 32px);
       overflow: auto;
     }
 
-    .progress-wrap {
-      width: 100%;
-      height: 6px;
-      background: var(--surface-2);
-      border-radius: 999px;
-      overflow: hidden;
-      margin-bottom: 12px;
-    }
-
-    .progress-bar {
-      width: 0%;
-      height: 100%;
-      background: var(--accent);
-      transition: width 0.12s linear;
-    }
-
     .toc h2 {
-      margin: 0 0 8px;
-      font-size: 0.95rem;
-      letter-spacing: 0.02em;
+      margin: 4px 0 10px;
+      font-size: 13px;
+      letter-spacing: .08em;
       text-transform: uppercase;
       color: var(--muted);
     }
 
-    .toc ul {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      display: grid;
-      gap: 6px;
+    .progress-wrap {
+      height: 4px;
+      width: 100%;
+      background: var(--surface-2);
+      border-radius: 999px;
+      overflow: hidden;
+      margin: 0 0 10px;
     }
 
+    .progress {
+      width: 0%;
+      height: 100%;
+      background: var(--accent);
+      transition: width .15s linear;
+    }
+
+    .toc ul { list-style: none; padding: 0; margin: 0; }
+    .toc li { margin: 6px 0; }
     .toc a {
-      display: block;
+      color: var(--muted);
       text-decoration: none;
-      color: var(--text);
-      background: transparent;
+      display: block;
+      padding: 4px 6px;
       border-radius: 8px;
-      padding: 6px 8px;
-      border: 1px solid transparent;
-      font-size: 0.92rem;
     }
-
     .toc a:hover,
     .toc a:focus-visible {
-      border-color: var(--border);
       background: var(--surface-2);
+      color: var(--text);
       outline: none;
     }
 
     main {
       min-width: 0;
       display: grid;
-      gap: 18px;
+      gap: 16px;
     }
 
-    section, header.card {
+    section, header.hero {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: var(--radius);
       box-shadow: var(--shadow);
-      padding: 18px;
+      padding: 22px;
     }
 
-    h1 { margin: 0 0 8px; font-size: clamp(1.35rem, 2vw, 2rem); line-height: 1.2; }
-    h2 { margin: 0 0 10px; font-size: 1.2rem; }
-    h3 { margin: 14px 0 8px; font-size: 1rem; }
-    p { margin: 8px 0; }
-    .meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 0.92rem;
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.35rem, 2.5vw, 2rem);
+      line-height: 1.25;
     }
+
+    .meta-grid {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      margin-top: 10px;
+    }
+
+    .meta-item {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+    }
+
+    .meta-item .k {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: .05em;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: 1.2rem;
+    }
+
+    h3 {
+      margin: 14px 0 8px;
+      font-size: 1rem;
+    }
+
+    p { margin: 8px 0; }
+    ul { margin: 8px 0; padding-left: 18px; }
+    li { margin: 4px 0; }
+
     .chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
+      display: inline-block;
       border: 1px solid var(--border);
       border-radius: 999px;
-      padding: 4px 10px;
+      padding: 2px 9px;
+      font-size: 12px;
+      color: var(--muted);
       background: var(--surface-2);
-      white-space: nowrap;
+      margin-right: 6px;
+      margin-bottom: 6px;
     }
 
-    ul, ol { margin: 8px 0 0 20px; }
+    .callout {
+      background: var(--accent-soft);
+      border: 1px solid color-mix(in oklab, var(--accent), var(--border) 50%);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
 
-    code, kbd {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      font-size: 0.9em;
+    .diagram {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px;
+      background: var(--surface-2);
+      overflow: auto;
+    }
+
+    .diagram svg {
+      width: 100%;
+      min-width: 620px;
+      height: auto;
+      display: block;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    .caption {
+      color: var(--muted);
+      margin-top: 6px;
+      font-size: 13px;
+    }
+
+    code {
+      font-family: var(--mono);
+      font-size: .92em;
       background: var(--surface-2);
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 0.1em 0.35em;
+      padding: 0 4px;
     }
 
     .snippet {
+      position: relative;
+      margin: 10px 0 14px;
       border: 1px solid var(--border);
       border-radius: 10px;
+      background: #0b1020;
+      color: #e5e7eb;
       overflow: hidden;
-      margin-top: 10px;
-      background: #0d1117;
-      color: #d0d7de;
     }
 
-    .snippet-head {
+    .snippet .bar {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 10px;
       padding: 8px 10px;
-      background: #161b22;
-      border-bottom: 1px solid #30363d;
-      font-size: 0.85rem;
-      color: #8b949e;
+      background: #11172a;
+      border-bottom: 1px solid #1f2a44;
+      font-size: 12px;
+      color: #93a4c6;
     }
 
-    .copy-btn {
-      border: 1px solid #4b5563;
-      background: transparent;
-      color: #d0d7de;
-      border-radius: 8px;
-      padding: 3px 8px;
-      font-size: 0.78rem;
+    .snippet button {
+      border: 1px solid #334155;
+      background: #0f172a;
+      color: #cbd5e1;
+      border-radius: 6px;
+      padding: 2px 8px;
+      font-size: 12px;
       cursor: pointer;
     }
 
-    .copy-btn:hover,
-    .copy-btn:focus-visible { border-color: #9ca3af; outline: none; }
+    .snippet button:hover,
+    .snippet button:focus-visible {
+      border-color: #94a3b8;
+      outline: none;
+    }
 
     pre {
       margin: 0;
-      overflow: auto;
       padding: 12px;
-      font-size: 0.82rem;
-      line-height: 1.45;
+      overflow: auto;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.5;
+      white-space: pre;
     }
 
-    .file-tools {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-
-    input[type="search"], select {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 10px;
-      background: var(--surface);
-      color: var(--text);
-      min-width: 220px;
-    }
-
-    details.file-item {
+    details {
       border: 1px solid var(--border);
       border-radius: 10px;
-      background: var(--surface-2);
-      margin-bottom: 10px;
-      overflow: hidden;
-    }
-
-    details.file-item summary {
-      cursor: pointer;
       padding: 10px 12px;
-      font-weight: 600;
-      list-style: none;
+      background: var(--surface-2);
+      margin: 10px 0;
     }
 
-    details.file-item summary::-webkit-details-marker { display: none; }
-    details.file-item .inner { padding: 0 12px 12px; }
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .file-search {
+      width: 100%;
+      margin: 8px 0 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--text);
+    }
 
     .risk-controls {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      align-items: center;
-      margin-bottom: 10px;
+      margin: 8px 0 12px;
+    }
+
+    .risk-controls button {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface-2);
+      color: var(--text);
+      padding: 5px 10px;
+      cursor: pointer;
+    }
+
+    .risk-controls button.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--text);
     }
 
     .risk-item {
-      border-left: 4px solid var(--border);
-      padding: 10px 12px;
-      background: var(--surface-2);
-      border-radius: 8px;
-      margin-bottom: 8px;
-    }
-
-    .risk-item[data-severity="high"] { border-left-color: var(--high); }
-    .risk-item[data-severity="medium"] { border-left-color: var(--med); }
-    .risk-item[data-severity="low"] { border-left-color: var(--low); }
-
-    .sev {
-      display: inline-block;
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: 2px 8px;
-      margin-bottom: 6px;
-      color: var(--muted);
-      background: var(--surface);
-    }
-
-    .diag {
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 10px;
       background: var(--surface-2);
-      overflow-x: auto;
+      margin: 8px 0;
     }
 
-    .diag svg {
-      width: 100%;
-      min-width: 560px;
-      height: auto;
-      display: block;
+    .sev {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      font-weight: 700;
     }
 
-    .caption {
-      font-size: 0.9rem;
-      color: var(--muted);
-      margin-top: 6px;
-    }
-
-    .before-after-tabs {
-      display: inline-flex;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      overflow: hidden;
-      margin-bottom: 10px;
-    }
-
-    .before-after-tabs button {
-      border: 0;
-      background: var(--surface);
-      color: var(--text);
-      padding: 6px 12px;
-      cursor: pointer;
-    }
-
-    .before-after-tabs button[aria-pressed="true"] {
-      background: var(--accent-soft);
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    .panel[hidden] { display: none; }
-
-    .callouts {
-      margin: 8px 0 0 20px;
-      font-size: 0.92rem;
-    }
+    .sev.high { color: var(--high); }
+    .sev.medium { color: var(--medium); }
+    .sev.low { color: var(--low); }
 
     .reveal {
       opacity: 0;
-      transform: translateY(8px);
-      transition: opacity 340ms ease, transform 340ms ease;
+      transform: translateY(10px);
+      transition: opacity .35s ease, transform .35s ease;
     }
-    .reveal.visible {
+
+    .reveal.is-visible {
       opacity: 1;
       transform: translateY(0);
     }
 
+    .small { font-size: 13px; color: var(--muted); }
+
     @media (max-width: 980px) {
-      .layout {
-        grid-template-columns: 1fr;
-      }
+      .layout { grid-template-columns: 1fr; }
       .toc {
-        position: static;
+        position: sticky;
+        top: 0;
+        z-index: 5;
         max-height: none;
       }
-      .diag svg { min-width: 0; }
+      .toc ul {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 2px 8px;
+      }
     }
 
     @media (prefers-reduced-motion: reduce) {
       html { scroll-behavior: auto; }
-      .reveal, .reveal.visible { opacity: 1; transform: none; transition: none; }
-      .progress-bar { transition: none; }
+      .reveal, .progress { transition: none; }
     }
   </style>
 </head>
 <body>
   <div class="layout">
-    <aside class="toc" aria-label="Table of contents">
-      <div class="progress-wrap" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
-      <h2>Review Guide</h2>
+    <nav class="toc" aria-label="Table of contents">
+      <h2>Review Map</h2>
+      <div class="progress-wrap" aria-hidden="true"><div class="progress" id="progress"></div></div>
       <ul>
         <li><a href="#header">Header</a></li>
         <li><a href="#tldr">TL;DR</a></li>
-        <li><a href="#why">Why This Exists</a></li>
-        <li><a href="#changes">What Changed</a></li>
+        <li><a href="#why">Why</a></li>
+        <li><a href="#changed">What Changed</a></li>
         <li><a href="#walkthrough">File Walkthrough</a></li>
         <li><a href="#context">Cross-File Context</a></li>
         <li><a href="#review">How To Review</a></li>
-        <li><a href="#risks">Risks &amp; Edge Cases</a></li>
-        <li><a href="#testing">Testing / Verification</a></li>
+        <li><a href="#risks">Risks</a></li>
+        <li><a href="#testing">Testing</a></li>
       </ul>
-    </aside>
+    </nav>
 
     <main>
-      <header class="card reveal" id="header">
-        <h1>PR #7026: avoid DB DS-list refresh on stale-dataset status updates</h1>
-        <p>This page is an onboarding guide for reviewing this PR with zero prior context.</p>
-        <div class="meta">
-          <span class="chip"><strong>Author:</strong> mihir20</span>
-          <span class="chip"><strong>Base &larr; Head:</strong> mihir/ai-preview &larr; mihir/pr-preview-test</span>
-          <span class="chip"><strong>Main area:</strong> <code>jobsdb</code></span>
-          <span class="chip"><strong>Other area:</strong> <code>.github/workflows/ai-preview.yaml</code></span>
+      <header class="hero reveal" id="header">
+        <h1>PR #7026: avoid DB DS-list refresh on stale DS during status update</h1>
+        <p>Single-page onboarding guide for reviewing this PR from zero context.</p>
+        <div class="meta-grid">
+          <div class="meta-item"><div class="k">Repository</div><div>rudderlabs/rudder-server</div></div>
+          <div class="meta-item"><div class="k">Author</div><div>mihir20</div></div>
+          <div class="meta-item"><div class="k">Base &larr; Head</div><div>mihir/ai-preview &larr; mihir/pr-preview-test</div></div>
+          <div class="meta-item"><div class="k">Touched Files</div><div>7 files (jobsdb + bench + CI workflow)</div></div>
         </div>
+        <p class="small">Primary functional commit date: May 30, 2026. Two workflow commits follow on May 31, 2026.</p>
       </header>
 
-      <section id="tldr" class="reveal">
+      <section class="reveal" id="tldr">
         <h2>TL;DR</h2>
-        <p>The core fix changes how <code>jobsdb.UpdateJobStatusInTx</code> recovers from <code>ErrStaleDsList</code>. Instead of re-reading dataset metadata from PostgreSQL inside the retry loop, it now reuses the already-maintained in-memory dataset snapshot under a read lock. This removes a DB-connection dependency from a hot retry path that can deadlock under high updater concurrency.</p>
-        <p>The PR also adds a heavy compaction benchmark scenario to measure drain-time under three compaction modes, and updates the CI preview workflow to run Codex with a newer model plus sandbox bypass on GitHub-hosted runners.</p>
+        <p>This PR changes the stale-dataset retry path in <code>jobsdb.UpdateJobStatusInTx</code>: instead of re-reading dataset ranges from PostgreSQL, it now reuses the in-memory DS snapshot under a read lock. The goal is to avoid requiring a free DB connection during retry, which can deadlock/stall under high concurrency.</p>
+        <p>It also adds a heavy <code>jobsdb/bench</code> compaction benchmark scenario to reproduce/compare compaction strategies, plus small observability log adjustments. Separately, the PR updates the preview workflow model name and changes Codex invocation to bypass inner sandboxing on GitHub-hosted runners.</p>
       </section>
 
-      <section id="why" class="reveal">
+      <section class="reveal" id="why">
         <h2>Why This Change Exists</h2>
-        <p>In jobsdb, datasets ("DS") can change shape during background compaction/migration. An in-flight status update may then target a dataset that has become stale, which surfaces as <code>ErrStaleDsList</code>. Retrying is expected behavior.</p>
-        <p>The old retry path in <code>UpdateJobStatusInTx</code> refreshed DS metadata from the database through the same transaction/pool context. Under saturation, status-updater goroutines can occupy all main pool connections; then no connection remains for refresh, so progress stalls. This is exactly the failure mode described in the PR description.</p>
-        <p>The repo already keeps an authoritative in-memory DS snapshot updated by maintenance loops (for example after compaction publish). This PR aligns retry behavior with that invariant: read current DS list from memory, not from DB, before retrying status updates.</p>
+        <p><strong>Problem:</strong> status updates can race with compaction/migration that swaps dataset layout. If status writes land on a table made read-only by compaction trigger, code returns <code>ErrStaleDsList</code> and retries with refreshed dataset mapping.</p>
+        <p><strong>Previous retry behavior:</strong> refresh mapping by querying DB (<code>doRefreshDSRangeListWithDB(..., tx.SqlTx())</code>). Under load, if updater goroutines consume the pool, there may be no free connection for that refresh call, so retry path blocks.</p>
+        <p><strong>New approach:</strong> trust the in-memory <code>dsList</code> cache that compaction already updates after commit; acquire <code>dsListLock</code> read lock and copy snapshot into the update transaction context.</p>
+        <div class="callout">
+          Domain note: “DS” means dataset shard pair (<code>jobs_*</code> and <code>job_status_*</code> tables). Status updates route by an in-memory range list; stale routing is expected during compaction and recovered by retry.
+        </div>
       </section>
 
-      <section id="changes" class="reveal">
-        <h2>What Changed (Grouped by Concern)</h2>
-        <h3>1) Status-update stale retry path (<code>jobsdb/jobsdb.go</code>)</h3>
+      <section class="reveal" id="changed">
+        <h2>What Changed (Grouped By Concern)</h2>
+        <h3>1) Core behavior change in status-update stale retry</h3>
         <ul>
-          <li><code>UpdateJobStatusInTx</code> now handles <code>ErrStaleDsList</code> by taking <code>dsListLock</code> read lock, snapshotting <code>jd.dsList</code>, and updating the external <code>UpdateSafeTx</code> snapshot via <code>tx.setDSList(...)</code>.</li>
-          <li>The old path that called <code>doRefreshDSRangeListWithDB(..., tx.SqlTx())</code> was removed from this retry branch.</li>
-          <li><code>internalUpdateJobStatusInTx</code> now suppresses generic error logging for <code>ErrStaleDsList</code> (expected transient) and logs only non-stale failures.</li>
-          <li>New option <code>WithTriggerAddNewDS</code> was added to configure deterministic <code>addNewDS</code> triggers (used by new benchmark scenario).</li>
+          <li><code>jobsdb/jobsdb.go</code>: <code>UpdateJobStatusInTx</code> retry path no longer runs DB refresh; now does <code>RTryLockWithCtx</code> + <code>dsList.snapshot()</code> + <code>tx.setDSList(...)</code>.</li>
+          <li><code>jobsdb/jobsdb.go</code>: suppresses redundant info logging when the internal update error is exactly <code>ErrStaleDsList</code> (already handled by retry warning log).</li>
+          <li><code>jobsdb/jobsdb_test.go</code>: existing stale-retry external-tx test now explicitly refreshes in-memory DS list after replacement setup to match new behavior.</li>
         </ul>
 
-        <h3>2) New compaction benchmark scenario (<code>jobsdb/bench/*</code>)</h3>
+        <h3>2) Benchmarking surface for compaction strategies</h3>
         <ul>
-          <li>Added scenario selector support in <code>jobsdb/bench/bench.go</code> for <code>"compaction"</code>.</li>
-          <li>Added heavy benchmark runner in <code>jobsdb/bench/scenario/compaction.go</code>:</li>
-          <li>Seeds <code>datasets * jobsPerDataset</code> jobs with deterministic failure pattern.</li>
-          <li>Drains with one consumer goroutine per destination and repeated <code>GetToProcess</code> + <code>UpdateJobStatus</code>.</li>
-          <li>Compares three flag sets: baseline, <code>nonBlockingCompletedDSDrop</code>, and <code>nonBlockingCompaction</code>.</li>
-          <li>Supports optional dedicated maintenance connection pool via config.</li>
-          <li><code>bench_test.go</code> adds <code>TestBench/compaction</code>, skipped unless <code>RUN_COMPACTION_BENCH=1</code>.</li>
+          <li><code>jobsdb/bench/bench.go</code>: adds scenario key <code>compaction</code>.</li>
+          <li><code>jobsdb/bench/scenario/compaction.go</code>: new end-to-end drain benchmark with deterministic failure pattern and three flag sets.</li>
+          <li><code>jobsdb/bench/bench_test.go</code>: gated <code>TestBench/compaction</code> run behind <code>RUN_COMPACTION_BENCH</code>.</li>
+          <li><code>jobsdb/jobsdb.go</code>: new option <code>WithTriggerAddNewDS</code> to deterministically drive dataset rollover in tests/bench.</li>
         </ul>
 
-        <h3>3) Migration/add-DS observability tweaks</h3>
+        <h3>3) Migration logging tweaks</h3>
         <ul>
-          <li>Logging string in <code>addNewDSLoop</code> was prefixed for clarity.</li>
-          <li><code>migration.go</code> adds explicit lock duration logs in both migrate and compact paths.</li>
+          <li><code>jobsdb/migration.go</code>: adds lock-duration info logs in both <code>doMigrateDS</code> and <code>doCompactDS</code> defer paths.</li>
+          <li><code>jobsdb/jobsdb.go</code>: one add-DS log line renamed to include clearer prefix <code>[[ addNewDSLoop ]]</code>.</li>
         </ul>
 
-        <h3>4) Workflow adjustments (<code>.github/workflows/ai-preview.yaml</code>)</h3>
+        <h3>4) CI workflow-only changes</h3>
         <ul>
-          <li>Codex model name changed from <code>gpt-5-codex</code> to <code>gpt-5.3-codex</code>.</li>
-          <li>Codex invocation changed from <code>--sandbox workspace-write</code> to <code>--dangerously-bypass-approvals-and-sandbox</code> with rationale comments about GitHub runner constraints.</li>
+          <li><code>.github/workflows/ai-preview.yaml</code>: <code>CODEX_MODEL</code> changed to <code>gpt-5.3-codex</code>.</li>
+          <li>Same workflow switches <code>codex exec</code> from <code>--sandbox workspace-write</code> to <code>--dangerously-bypass-approvals-and-sandbox</code> with rationale comments for GitHub runner constraints.</li>
         </ul>
-      </section>
 
-      <section class="reveal">
-        <h2>Architecture / Flow Diagrams</h2>
+        <div class="diagram" role="img" aria-label="Impact chart by subsystem">
+          <svg viewBox="0 0 760 210">
+            <rect x="0" y="0" width="760" height="210" fill="none"/>
+            <text x="14" y="24" font-size="14" fill="var(--text)" font-weight="700">Impact / blast radius by area</text>
+            <text x="14" y="44" font-size="12" fill="var(--muted)">Bar length approximates relative code delta + behavioral importance.</text>
 
-        <div class="diag">
-          <svg viewBox="0 0 980 280" role="img" aria-label="Component diagram of stale dataset retry flow">
-            <defs>
-              <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--accent)"/></marker>
-            </defs>
-            <rect x="18" y="26" width="215" height="74" rx="10" fill="var(--surface)" stroke="var(--border)" />
-            <text x="36" y="54" fill="var(--text)" font-size="14" font-weight="600">External caller</text>
-            <text x="36" y="74" fill="var(--muted)" font-size="12">holds UpdateSafeTx</text>
+            <text x="14" y="84" font-size="12" fill="var(--text)">jobsdb core retry path</text>
+            <rect x="190" y="72" width="280" height="16" rx="8" fill="var(--accent)"/>
 
-            <rect x="285" y="26" width="255" height="74" rx="10" fill="var(--surface)" stroke="var(--border)" />
-            <text x="304" y="54" fill="var(--text)" font-size="14" font-weight="600">UpdateJobStatusInTx</text>
-            <text x="304" y="74" fill="var(--muted)" font-size="12">retry loop + savepoint</text>
+            <text x="14" y="114" font-size="12" fill="var(--text)">bench scenario (new)</text>
+            <rect x="190" y="102" width="410" height="16" rx="8" fill="var(--accent)"/>
 
-            <rect x="588" y="26" width="180" height="74" rx="10" fill="var(--surface)" stroke="var(--border)" />
-            <text x="606" y="54" fill="var(--text)" font-size="14" font-weight="600">dsListLock</text>
-            <text x="606" y="74" fill="var(--muted)" font-size="12">R lock for snapshot</text>
+            <text x="14" y="144" font-size="12" fill="var(--text)">tests / harness</text>
+            <rect x="190" y="132" width="210" height="16" rx="8" fill="var(--accent)"/>
 
-            <rect x="794" y="26" width="168" height="74" rx="10" fill="var(--surface)" stroke="var(--border)" />
-            <text x="810" y="54" fill="var(--text)" font-size="14" font-weight="600">In-memory dsList</text>
-            <text x="810" y="74" fill="var(--muted)" font-size="12">updated by maintenance</text>
-
-            <path d="M235 62 L281 62" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow)" />
-            <path d="M542 62 L584 62" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow)" />
-            <path d="M770 62 L790 62" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow)" />
-
-            <rect x="140" y="160" width="700" height="88" rx="10" fill="var(--accent-soft)" stroke="var(--accent)" />
-            <text x="160" y="188" fill="var(--text)" font-size="14" font-weight="600">What this PR changes</text>
-            <text x="160" y="209" fill="var(--text)" font-size="13">On ErrStaleDsList, retry path no longer re-queries DB for DS refresh.</text>
-            <text x="160" y="228" fill="var(--text)" font-size="13">It rebinds UpdateSafeTx to the latest in-memory DS snapshot under read lock.</text>
+            <text x="14" y="174" font-size="12" fill="var(--text)">CI workflow</text>
+            <rect x="190" y="162" width="130" height="16" rx="8" fill="var(--accent)"/>
           </svg>
-          <p class="caption">The important connection is between stale-retry and the in-memory DS cache; DB refresh is removed from this retry path.</p>
         </div>
-
-        <h3>Sequence: stale update retry</h3>
-        <div class="diag">
-          <svg viewBox="0 0 980 310" role="img" aria-label="Sequence diagram for stale retry">
-            <defs>
-              <marker id="arrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--accent)"/></marker>
-            </defs>
-            <text x="88" y="26" fill="var(--muted)" font-size="12">Caller</text>
-            <text x="285" y="26" fill="var(--muted)" font-size="12">UpdateJobStatusInTx</text>
-            <text x="510" y="26" fill="var(--muted)" font-size="12">updateJobStatusDSInTx</text>
-            <text x="754" y="26" fill="var(--muted)" font-size="12">dsList snapshot</text>
-            <line x1="104" y1="34" x2="104" y2="280" stroke="var(--border)"/>
-            <line x1="324" y1="34" x2="324" y2="280" stroke="var(--border)"/>
-            <line x1="554" y1="34" x2="554" y2="280" stroke="var(--border)"/>
-            <line x1="800" y1="34" x2="800" y2="280" stroke="var(--border)"/>
-
-            <path d="M110 66 L318 66" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow2)"/>
-            <text x="150" y="58" fill="var(--text)" font-size="12">UpdateJobStatusInTx(statuses)</text>
-
-            <path d="M330 104 L548 104" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow2)"/>
-            <text x="375" y="96" fill="var(--text)" font-size="12">attempt write</text>
-
-            <path d="M548 132 L330 132" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow2)"/>
-            <text x="388" y="124" fill="var(--text)" font-size="12">ErrStaleDsList (readonly trigger)</text>
-
-            <path d="M330 168 L792 168" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow2)"/>
-            <text x="432" y="160" fill="var(--text)" font-size="12">RLock + snapshot dsList/dsRangeList</text>
-
-            <path d="M792 196 L330 196" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow2)"/>
-            <text x="446" y="188" fill="var(--text)" font-size="12">tx.setDSList(...)</text>
-
-            <path d="M330 230 L548 230" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow2)"/>
-            <text x="402" y="222" fill="var(--text)" font-size="12">retry with refreshed snapshot</text>
-
-            <path d="M548 258 L330 258" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow2)"/>
-            <path d="M330 258 L110 258" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow2)"/>
-            <text x="408" y="250" fill="var(--text)" font-size="12">success</text>
-          </svg>
-          <p class="caption">Focus on the retry branch: stale error triggers a memory snapshot refresh instead of DB I/O.</p>
-        </div>
-
-        <h3>Before / After (retry refresh source)</h3>
-        <div class="before-after-tabs" role="tablist" aria-label="Before or after view">
-          <button id="showBefore" type="button" aria-pressed="true">Before</button>
-          <button id="showAfter" type="button" aria-pressed="false">After</button>
-        </div>
-        <div id="beforePanel" class="panel">
-          <p><strong>Before:</strong> on stale DS, retry did <code>doRefreshDSRangeListWithDB(..., tx.SqlTx())</code> while holding write lock logic, requiring DB connection availability inside retry path.</p>
-        </div>
-        <div id="afterPanel" class="panel" hidden>
-          <p><strong>After:</strong> on stale DS, retry acquires <code>dsListLock</code> read lock, snapshots in-memory DS metadata, and updates <code>UpdateSafeTx</code> snapshot. No DB call in that branch.</p>
-        </div>
+        <p class="caption">Most behavior risk is in <code>jobsdb.UpdateJobStatusInTx</code>; most LOC are benchmark additions.</p>
       </section>
 
-      <section id="walkthrough" class="reveal">
+      <section class="reveal" id="walkthrough">
         <h2>File-by-File Walkthrough</h2>
-        <div class="file-tools">
-          <label for="fileSearch"><strong>Jump to file:</strong></label>
-          <input id="fileSearch" type="search" placeholder="Type path fragment, e.g. jobsdb.go" aria-label="Jump to file filter" />
-        </div>
+        <input id="fileSearch" class="file-search" type="search" placeholder="Jump to file: type part of a path (e.g. jobsdb.go, ai-preview)" aria-label="Jump to file filter" />
 
-        <details class="file-item" data-file="jobsdb/jobsdb.go stale retry updatejobstatusintx withtriggeraddnewds">
-          <summary><code>jobsdb/jobsdb.go</code> - core behavior change</summary>
-          <div class="inner">
-            <p>This is the critical fix. The stale retry no longer refreshes from DB in this call path.</p>
-            <div class="snippet">
-              <div class="snippet-head"><span>Key hunk: stale retry refresh source</span><button class="copy-btn" data-copy-target="snip-jobsdb-1">Copy</button></div>
-              <pre><code id="snip-jobsdb-1">if !errors.Is(err, ErrStaleDsList) {
-    return err
+        <details class="file-item" data-file="jobsdb/jobsdb.go">
+          <summary><code>jobsdb/jobsdb.go</code> (core retry logic + option + log filtering)</summary>
+          <p>Main functional change: stale-ds retry now reads already-published in-memory DS snapshot instead of running a DB refresh in the retry loop.</p>
+          <div class="snippet">
+            <div class="bar"><span>Retry refresh before vs after</span><button class="copy-btn" data-target="snip-retry">Copy</button></div>
+            <pre><code id="snip-retry">// BEFORE (removed)
+return jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
+  if err := jd.doRefreshDSRangeListWithDB(l, tx.SqlTx()); err != nil {
+    return fmt.Errorf("refresh ds range list: %w", err)
+  }
+  dsList, dsRangeList := jd.dsList.snapshot()
+  tx.setDSList(dsList, dsRangeList)
+  return nil
+})
+
+// AFTER (new)
+if lock := jd.dsListLock.RTryLockWithCtx(ctx); !lock {
+  return fmt.Errorf("acquiring read lock for refreshing ds list in update job status: %w", ctx.Err())
 }
-...
-if refreshErr := func() error {
-    if lock := jd.dsListLock.RTryLockWithCtx(ctx); !lock {
-        return fmt.Errorf("acquiring read lock for refreshing ds list in update job status: %w", ctx.Err())
-    }
-    dsList, dsRangeList := jd.dsList.snapshot()
-    tx.setDSList(dsList, dsRangeList)
-    jd.dsListLock.RUnlock()
-    return nil
-}(); refreshErr != nil {
-    return refreshErr
-}</code></pre>
-            </div>
-            <p>Also adds a reusable option:</p>
-            <div class="snippet">
-              <div class="snippet-head"><span>New option for deterministic add-DS trigger</span><button class="copy-btn" data-copy-target="snip-jobsdb-2">Copy</button></div>
-              <pre><code id="snip-jobsdb-2">func WithTriggerAddNewDS(trigger func() &lt;-chan time.Time) OptsFunc {
-    return func(jd *Handle) {
-        jd.TriggerAddNewDS = trigger
-    }
-}</code></pre>
-            </div>
-            <p>One logging behavior tweak reduces noise by not logging <code>ErrStaleDsList</code> as a generic error in <code>internalUpdateJobStatusInTx</code>.</p>
+dsList, dsRangeList := jd.dsList.snapshot()
+tx.setDSList(dsList, dsRangeList)
+jd.dsListLock.RUnlock()</code></pre>
           </div>
+          <p>Also added <code>WithTriggerAddNewDS(trigger func() &lt;-chan time.Time)</code> to override dataset rollover trigger for deterministic test/bench control.</p>
         </details>
 
-        <details class="file-item" data-file="jobsdb/jobsdb_test.go external tx stale ds refresh">
-          <summary><code>jobsdb/jobsdb_test.go</code> - test updated for new invariant</summary>
-          <div class="inner">
-            <p><code>TestUpdateJobStatusInExternalTxRetriesAfterReadonlyStatusTable</code> now refreshes in-memory DS metadata before calling <code>UpdateJobStatusInTx</code>. This aligns test setup with production behavior where compaction publishes DS cache updates.</p>
-            <div class="snippet">
-              <div class="snippet-head"><span>Added in-memory refresh in test</span><button class="copy-btn" data-copy-target="snip-test-1">Copy</button></div>
-              <pre><code id="snip-test-1">if err := jobsDB.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
-    return jobsDB.doRefreshDSRangeList(l)
+        <details class="file-item" data-file="jobsdb/jobsdb_test.go">
+          <summary><code>jobsdb/jobsdb_test.go</code> (stale-retry test adaptation)</summary>
+          <p><code>TestUpdateJobStatusInExternalTxRetriesAfterReadonlyStatusTable</code> now does an explicit in-memory DS refresh under write lock before calling <code>UpdateJobStatusInTx</code>.</p>
+          <div class="snippet">
+            <div class="bar"><span>New test setup step</span><button class="copy-btn" data-target="snip-test">Copy</button></div>
+            <pre><code id="snip-test">if err := jobsDB.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
+  return jobsDB.doRefreshDSRangeList(l)
 }); err != nil {
-    return err
+  return err
 }
 return jobsDB.UpdateJobStatusInTx(ctx, updateTx, statuses)</code></pre>
-            </div>
           </div>
+          <p>Why this matters: the retry path now trusts in-memory state, so the test must publish replacement dataset into that cache, not only into DB tables.</p>
         </details>
 
-        <details class="file-item" data-file="jobsdb/bench/scenario/compaction.go benchmark scenario">
-          <summary><code>jobsdb/bench/scenario/compaction.go</code> - new benchmark scenario</summary>
-          <div class="inner">
-            <p>Introduces a large deterministic benchmark for compaction strategies. It seeds jobs, drains by destination, and times end-to-end drain completion.</p>
-            <div class="snippet">
-              <div class="snippet-head"><span>Scenario set under test</span><button class="copy-btn" data-copy-target="snip-bench-1">Copy</button></div>
-              <pre><code id="snip-bench-1">scenarios := []flagSet{
-    {name: "baseline (blocking compaction)", nonBlockingCompletedDSDrop: false, nonBlockingCompaction: false},
-    {name: "nonBlockingCompletedDSDrop", nonBlockingCompletedDSDrop: true, nonBlockingCompaction: false},
-    {name: "nonBlockingCompaction", nonBlockingCompaction: true},
+        <details class="file-item" data-file="jobsdb/bench/scenario/compaction.go">
+          <summary><code>jobsdb/bench/scenario/compaction.go</code> (new heavy benchmark scenario)</summary>
+          <p>Creates three compaction strategy runs over the same synthetic workload by precomputing per-job fail counts once and reusing them across scenarios.</p>
+          <div class="snippet">
+            <div class="bar"><span>Scenario matrix</span><button class="copy-btn" data-target="snip-scenarios">Copy</button></div>
+            <pre><code id="snip-scenarios">scenarios := []flagSet{
+  {name: "baseline (blocking compaction)", nonBlockingCompletedDSDrop: false, nonBlockingCompaction: false},
+  {name: "nonBlockingCompletedDSDrop", nonBlockingCompletedDSDrop: true, nonBlockingCompaction: false},
+  {name: "nonBlockingCompaction", nonBlockingCompaction: true},
 }</code></pre>
-            </div>
-            <div class="snippet">
-              <div class="snippet-head"><span>Deterministic dataset rollover for seeding</span><button class="copy-btn" data-copy-target="snip-bench-2">Copy</button></div>
-              <pre><code id="snip-bench-2">triggerAddNewDS := make(chan time.Time)
-opts := []jobsdb.OptsFunc{
-    jobsdb.WithClearDB(true),
-    jobsdb.WithTriggerAddNewDS(func() &lt;-chan time.Time { return triggerAddNewDS }),
+          </div>
+          <p>It uses <code>WithTriggerAddNewDS</code> and explicit trigger sends to create exactly N full datasets during seeding, then drains with one consumer per destination until global completion.</p>
+          <div class="snippet">
+            <div class="bar"><span>Deterministic dataset rollover</span><button class="copy-btn" data-target="snip-rollover">Copy</button></div>
+            <pre><code id="snip-rollover">triggerAddNewDS := make(chan time.Time)
+opts := []jobsdb.OptsFunc{...
+  jobsdb.WithTriggerAddNewDS(func() &lt;-chan time.Time { return triggerAddNewDS }),
 }
 ...
-case triggerAddNewDS &lt;- time.Now():</code></pre>
-            </div>
+if d &lt; datasets-1 {
+  triggerAddNewDS &lt;- time.Now()
+  triggerAddNewDS &lt;- time.Now() // wait for first loop iteration to finish
+}</code></pre>
           </div>
         </details>
 
-        <details class="file-item" data-file="jobsdb/bench/bench.go jobsdb/bench/bench_test.go selector testbench compaction">
-          <summary><code>jobsdb/bench/bench.go</code> and <code>jobsdb/bench/bench_test.go</code> - scenario plumbing + gated heavy test</summary>
-          <div class="inner">
-            <p><code>bench.New(...)</code> now accepts <code>"compaction"</code>. <code>TestBench/compaction</code> is intentionally opt-in through <code>RUN_COMPACTION_BENCH</code> due to heavy runtime and data volume.</p>
-          </div>
+        <details class="file-item" data-file="jobsdb/bench/bench.go jobsdb/bench/bench_test.go">
+          <summary><code>jobsdb/bench/bench.go</code> + <code>jobsdb/bench/bench_test.go</code> (wiring + gated bench run)</summary>
+          <p>Factory supports <code>JobsDB.Bench.scenario=compaction</code>. The new test run configures a high-load setup (2M jobs = 20 datasets * 100k, 100 destinations, 80 DB conns) but skips unless <code>RUN_COMPACTION_BENCH=1</code>.</p>
         </details>
 
-        <details class="file-item" data-file="jobsdb/migration.go lock duration logs">
-          <summary><code>jobsdb/migration.go</code> - lock duration observability</summary>
-          <div class="inner">
-            <p>Adds explicit lock-duration log lines in <code>doMigrateDS</code> / <code>doCompactDS</code> defer paths. No state machine change here; this is instrumentation.</p>
-          </div>
+        <details class="file-item" data-file="jobsdb/migration.go">
+          <summary><code>jobsdb/migration.go</code> (log-only additions)</summary>
+          <p>Adds lock-duration info logs around migration/compaction lock windows. Functional compaction path behavior is unchanged in this diff.</p>
         </details>
 
-        <details class="file-item" data-file=".github/workflows/ai-preview.yaml codex model sandbox">
-          <summary><code>.github/workflows/ai-preview.yaml</code> - preview workflow changes</summary>
-          <div class="inner">
-            <p>Two follow-up commits in this PR update preview generation behavior.</p>
-            <div class="snippet">
-              <div class="snippet-head"><span>Workflow command and model change</span><button class="copy-btn" data-copy-target="snip-ci-1">Copy</button></div>
-              <pre><code id="snip-ci-1">CODEX_MODEL: gpt-5.3-codex
+        <details class="file-item" data-file=".github/workflows/ai-preview.yaml">
+          <summary><code>.github/workflows/ai-preview.yaml</code> (preview workflow invocation changes)</summary>
+          <p>Updates model name and switches Codex CLI execution mode to bypass inner sandboxing due to runner namespace restrictions described in comments.</p>
+          <div class="snippet">
+            <div class="bar"><span>Workflow hunk</span><button class="copy-btn" data-target="snip-ci">Copy</button></div>
+            <pre><code id="snip-ci">CODEX_MODEL: gpt-5.3-codex
 ...
 codex exec --dangerously-bypass-approvals-and-sandbox \
   --cd "$GITHUB_WORKSPACE" \
   "$(cat .github/codex/review-prompt.md)"</code></pre>
-            </div>
           </div>
         </details>
+      </section>
 
-        <h3>Annotated diff block (core hunk)</h3>
+      <section class="reveal" id="context">
+        <h2>Cross-File Context (Important For Correct Review)</h2>
+        <h3>How stale routing is generated</h3>
+        <ul>
+          <li>Compaction (<code>jobsdb/migration.go#doCompactDS</code>) adds a readonly trigger on source status tables before commit.</li>
+          <li>Status insert to old table then returns PG error code <code>RS001</code> (mapped via <code>pgErrorCodeTableReadonly</code>), converted in <code>doUpdateJobStatusInTx</code> to <code>ErrStaleDsList</code>.</li>
+          <li><code>UpdateJobStatusInTx</code> catches <code>ErrStaleDsList</code>, rolls back to savepoint, refreshes DS mapping, retries.</li>
+        </ul>
+
+        <div class="diagram" role="img" aria-label="Sequence diagram for stale ds retry with old and new refresh path">
+          <svg viewBox="0 0 980 290">
+            <defs>
+              <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent)"/>
+              </marker>
+            </defs>
+            <text x="16" y="22" font-size="14" fill="var(--text)" font-weight="700">Stale DS retry flow</text>
+            <text x="16" y="40" font-size="12" fill="var(--muted)">Upper lane shows unchanged trigger/error path. Bottom branch is what changed.</text>
+
+            <line x1="120" y1="60" x2="120" y2="270" stroke="var(--border)"/>
+            <line x1="410" y1="60" x2="410" y2="270" stroke="var(--border)"/>
+            <line x1="690" y1="60" x2="690" y2="270" stroke="var(--border)"/>
+            <line x1="910" y1="60" x2="910" y2="270" stroke="var(--border)"/>
+
+            <text x="78" y="56" font-size="12" fill="var(--text)">Updater</text>
+            <text x="336" y="56" font-size="12" fill="var(--text)">Old status table</text>
+            <text x="646" y="56" font-size="12" fill="var(--text)">Compaction</text>
+            <text x="866" y="56" font-size="12" fill="var(--text)">DS cache</text>
+
+            <line x1="130" y1="92" x2="398" y2="92" stroke="var(--accent)" marker-end="url(#arr)"/>
+            <text x="182" y="85" font-size="11" fill="var(--muted)">INSERT job_status</text>
+
+            <line x1="420" y1="122" x2="132" y2="122" stroke="var(--accent)" marker-end="url(#arr)"/>
+            <text x="190" y="116" font-size="11" fill="var(--muted)">RS001 readonly trigger</text>
+
+            <line x1="130" y1="150" x2="678" y2="150" stroke="var(--accent)" marker-end="url(#arr)"/>
+            <text x="250" y="144" font-size="11" fill="var(--muted)">ErrStaleDsList retry path</text>
+
+            <rect x="40" y="176" width="420" height="42" rx="8" fill="none" stroke="var(--high)" stroke-dasharray="5 4"/>
+            <text x="52" y="194" font-size="11" fill="var(--high)">Before: retry needed DB refresh call (connection required)</text>
+            <text x="52" y="210" font-size="11" fill="var(--high)">doRefreshDSRangeListWithDB(...)</text>
+
+            <rect x="500" y="176" width="430" height="62" rx="8" fill="none" stroke="var(--low)" stroke-dasharray="5 4"/>
+            <text x="512" y="194" font-size="11" fill="var(--low)">After: retry takes dsList read lock, copies in-memory snapshot</text>
+            <line x1="700" y1="208" x2="898" y2="208" stroke="var(--accent)" marker-end="url(#arr)"/>
+            <text x="518" y="224" font-size="11" fill="var(--muted)">No DB call in retry branch</text>
+          </svg>
+        </div>
+        <p class="caption">Reviewer focus: does this assumption hold everywhere — compaction must have already published fresh DS cache before stale retry occurs.</p>
+
+        <h3>Call/dependency connections introduced by this PR</h3>
+        <div class="diagram" role="img" aria-label="Call graph">
+          <svg viewBox="0 0 860 290">
+            <defs>
+              <marker id="arr2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent)"/>
+              </marker>
+            </defs>
+            <rect x="26" y="38" width="250" height="56" rx="10" fill="var(--surface)" stroke="var(--border)"/>
+            <text x="42" y="62" font-size="12" fill="var(--text)">jobsdb.UpdateJobStatusInTx</text>
+            <text x="42" y="79" font-size="11" fill="var(--muted)">stale retry now uses dsList.snapshot()</text>
+
+            <rect x="316" y="38" width="240" height="56" rx="10" fill="var(--surface)" stroke="var(--border)"/>
+            <text x="332" y="62" font-size="12" fill="var(--text)">lock.Locker.RTryLockWithCtx</text>
+            <text x="332" y="79" font-size="11" fill="var(--muted)">read lock gate before snapshot</text>
+
+            <rect x="596" y="38" width="238" height="56" rx="10" fill="var(--surface)" stroke="var(--border)"/>
+            <text x="612" y="62" font-size="12" fill="var(--text)">updateTx.setDSList(...)</text>
+            <text x="612" y="79" font-size="11" fill="var(--muted)">retry uses refreshed mapping</text>
+
+            <line x1="276" y1="66" x2="306" y2="66" stroke="var(--accent)" marker-end="url(#arr2)"/>
+            <line x1="556" y1="66" x2="586" y2="66" stroke="var(--accent)" marker-end="url(#arr2)"/>
+
+            <rect x="26" y="146" width="250" height="56" rx="10" fill="var(--surface)" stroke="var(--border)"/>
+            <text x="42" y="170" font-size="12" fill="var(--text)">bench/scenario/compaction.Run</text>
+            <text x="42" y="187" font-size="11" fill="var(--muted)">new scenario lifecycle</text>
+
+            <rect x="316" y="146" width="240" height="56" rx="10" fill="var(--surface)" stroke="var(--border)"/>
+            <text x="332" y="170" font-size="12" fill="var(--text)">jobsdb.WithTriggerAddNewDS</text>
+            <text x="332" y="187" font-size="11" fill="var(--muted)">new opt for deterministic rollover</text>
+
+            <rect x="596" y="146" width="238" height="56" rx="10" fill="var(--surface)" stroke="var(--border)"/>
+            <text x="612" y="170" font-size="12" fill="var(--text)">Handle.addNewDSLoop</text>
+            <text x="612" y="187" font-size="11" fill="var(--muted)">reads custom trigger channel</text>
+
+            <line x1="276" y1="174" x2="306" y2="174" stroke="var(--accent)" marker-end="url(#arr2)"/>
+            <line x1="556" y1="174" x2="586" y2="174" stroke="var(--accent)" marker-end="url(#arr2)"/>
+
+            <text x="26" y="250" font-size="12" fill="var(--muted)">Test link: jobsdb_test updates stale-retry test to call doRefreshDSRangeList before retry.</text>
+          </svg>
+        </div>
+
+        <h3>Annotated diff (most review-critical hunk)</h3>
         <div class="snippet">
-          <div class="snippet-head"><span><code>jobsdb/jobsdb.go</code> stale retry delta</span><button class="copy-btn" data-copy-target="snip-diff-1">Copy</button></div>
-          <pre><code id="snip-diff-1">- return jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
--     if err := jd.doRefreshDSRangeListWithDB(l, tx.SqlTx()); err != nil {  // [1]
--         return fmt.Errorf("refresh ds range list: %w", err)
--     }
--     dsList, dsRangeList := jd.dsList.snapshot()
--     tx.setDSList(dsList, dsRangeList)
--     return nil
+          <div class="bar"><span>jobsdb/jobsdb.go stale retry hunk</span><button class="copy-btn" data-target="snip-annotated">Copy</button></div>
+          <pre><code id="snip-annotated">@@ UpdateJobStatusInTx stale retry @@
+- return jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
+-   if err := jd.doRefreshDSRangeListWithDB(l, tx.SqlTx()); err != nil {
+-     return fmt.Errorf("refresh ds range list: %w", err)
+-   }
+-   dsList, dsRangeList := jd.dsList.snapshot()
+-   tx.setDSList(dsList, dsRangeList)
+-   return nil
 - })
-+ if lock := jd.dsListLock.RTryLockWithCtx(ctx); !lock {                    // [2]
-+     return fmt.Errorf("acquiring read lock ...: %w", ctx.Err())
++ // [1] No DB refresh call on retry path
++ if lock := jd.dsListLock.RTryLockWithCtx(ctx); !lock {
++   return fmt.Errorf("acquiring read lock for refreshing ds list in update job status: %w", ctx.Err()) // [2]
 + }
-+ dsList, dsRangeList := jd.dsList.snapshot()                                // [3]
++ dsList, dsRangeList := jd.dsList.snapshot() // [3]
 + tx.setDSList(dsList, dsRangeList)
 + jd.dsListLock.RUnlock()</code></pre>
         </div>
-        <ol class="callouts">
-          <li><strong>[1]</strong> Old path needed DB access in retry branch, which can starve when updater concurrency saturates the main pool.</li>
-          <li><strong>[2]</strong> New path requires only lock acquisition; no SQL round-trip for this refresh step.</li>
-          <li><strong>[3]</strong> Retry now depends on correctness/timeliness of the in-memory DS snapshot maintained by maintenance flows.</li>
-        </ol>
-      </section>
-
-      <section id="context" class="reveal">
-        <h2>Cross-File Context (What Else Matters)</h2>
-        <ul>
-          <li><strong>Where stale comes from:</strong> <code>updateJobStatusDSInTx</code> converts readonly-table PG error (<code>RS001</code>) into <code>ErrStaleDsList</code>, which is the retry trigger.</li>
-          <li><strong>Who maintains DS cache:</strong> flows like compaction/migration call <code>doRefreshDSRangeList</code> after publish, and <code>addNewDSLoop</code> refreshes DS list after create/append events.</li>
-          <li><strong>Read-path parallel:</strong> <code>inStoreSafeCtx</code> already had stale retry logic that may refresh DS metadata under lock. This PR makes update-path retry more lightweight than before by avoiding DB in that retry branch.</li>
-          <li><strong>Benchmark realism choices:</strong> compaction scenario pins <code>dsLimit</code>, uses destination filters, and treats empty reads as transient because jobs can be hidden behind DS window until compaction advances.</li>
-          <li><strong>New option blast radius:</strong> <code>WithTriggerAddNewDS</code> is a narrow API addition currently used by compaction benchmark; existing tests often set <code>TriggerAddNewDS</code> directly on handle structs.</li>
-        </ul>
-
-        <h3>Impact / blast-radius chart</h3>
-        <div class="diag">
-          <svg viewBox="0 0 900 220" role="img" aria-label="Blast radius chart for changed areas">
-            <rect x="36" y="40" width="170" height="26" rx="6" fill="var(--surface)" stroke="var(--border)"/>
-            <text x="46" y="58" fill="var(--text)" font-size="12">jobsdb core path</text>
-            <rect x="220" y="40" width="530" height="26" rx="6" fill="var(--accent)" opacity="0.88"/>
-
-            <rect x="36" y="82" width="170" height="26" rx="6" fill="var(--surface)" stroke="var(--border)"/>
-            <text x="46" y="100" fill="var(--text)" font-size="12">bench scenario</text>
-            <rect x="220" y="82" width="460" height="26" rx="6" fill="var(--accent)" opacity="0.7"/>
-
-            <rect x="36" y="124" width="170" height="26" rx="6" fill="var(--surface)" stroke="var(--border)"/>
-            <text x="46" y="142" fill="var(--text)" font-size="12">tests</text>
-            <rect x="220" y="124" width="170" height="26" rx="6" fill="var(--accent)" opacity="0.5"/>
-
-            <rect x="36" y="166" width="170" height="26" rx="6" fill="var(--surface)" stroke="var(--border)"/>
-            <text x="46" y="184" fill="var(--text)" font-size="12">CI workflow</text>
-            <rect x="220" y="166" width="140" height="26" rx="6" fill="var(--accent)" opacity="0.4"/>
-          </svg>
-          <p class="caption">Most behavioral risk is in jobsdb status-update retry logic; benchmark and workflow changes are secondary.</p>
-        </div>
-      </section>
-
-      <section id="review" class="reveal">
-        <h2>How To Review This PR</h2>
         <ol>
-          <li>Read <code>jobsdb/jobsdb.go</code> first: <code>UpdateJobStatusInTx</code> retry loop and <code>internalUpdateJobStatusInTx</code> logging guard.</li>
-          <li>Validate stale error generation source in <code>updateJobStatusDSInTx</code> and ensure retry still properly rebinds DS/range snapshot before reattempt.</li>
-          <li>Read <code>jobsdb/jobsdb_test.go</code> test update to confirm this invariant: retry assumes DS cache has already been refreshed by maintenance path.</li>
-          <li>Read new benchmark scenario (<code>jobsdb/bench/scenario/compaction.go</code>) with focus on determinism, concurrency safety, and whether it models intended production contention.</li>
-          <li>Skim workflow diff last, as separate operational concern from jobsdb behavior.</li>
+          <li><strong>[1]</strong> eliminates pool dependency during retry.</li>
+          <li><strong>[2]</strong> error text mentions context; if lock fails for non-context reasons, <code>ctx.Err()</code> may be nil, so error readability can degrade.</li>
+          <li><strong>[3]</strong> correctness now depends on compaction loop publishing cache before or during retry window.</li>
+        </ol>
+      </section>
+
+      <section class="reveal" id="review">
+        <h2>How To Review This PR</h2>
+        <h3>Suggested reading order</h3>
+        <ol>
+          <li><code>jobsdb/jobsdb.go</code> around <code>UpdateJobStatusInTx</code> and <code>internalUpdateJobStatusInTx</code>.</li>
+          <li><code>jobsdb/jobsdb_test.go</code> test <code>TestUpdateJobStatusInExternalTxRetriesAfterReadonlyStatusTable</code>.</li>
+          <li><code>jobsdb/migration.go</code> comments around readonly triggers in <code>doCompactDS</code> for retry assumptions.</li>
+          <li><code>jobsdb/bench/scenario/compaction.go</code> for benchmark methodology and determinism.</li>
+          <li><code>.github/workflows/ai-preview.yaml</code> for CI security/operational implications.</li>
         </ol>
 
-        <h3>What to scrutinize closely</h3>
+        <h3>What to scrutinize</h3>
         <ul>
-          <li>Failure semantics when <code>RTryLockWithCtx</code> fails: error now depends on context cancellation/deadline rather than DB failure.</li>
-          <li>Assumption that in-memory DS list is always refreshed before stale retry needs it; test now mirrors this explicitly.</li>
-          <li>Potential log-volume changes from new migration/add-DS informational logs in high-throughput environments.</li>
-          <li>Whether benchmark defaults/labels match comments (there is wording drift in comments around data volume).</li>
+          <li><strong>Locking correctness:</strong> read-lock snapshot + explicit unlock path has no deferred unlock; verify no early returns between lock acquisition and unlock in future edits.</li>
+          <li><strong>Retry liveness:</strong> if compaction hasn’t published new dsList yet, repeated stale retries should still eventually converge.</li>
+          <li><strong>Benchmark validity:</strong> scenario compares three strategies with shared fail pattern, but ensure goroutine capture behavior in seeding loop is safe (see risk below).</li>
+          <li><strong>Workflow posture:</strong> bypassing Codex sandbox is justified in comments; reviewer should confirm organization policy permits this in CI.</li>
         </ul>
-      </section>
 
-      <section id="risks" class="reveal">
-        <h2>Risks, Edge Cases &amp; Things To Double-Check</h2>
-        <div class="risk-controls">
-          <label for="severityFilter"><strong>Filter severity:</strong></label>
-          <select id="severityFilter" aria-label="Filter risks by severity">
-            <option value="all">All</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-          </select>
-        </div>
+        <div class="diagram" role="img" aria-label="Before after architecture">
+          <svg viewBox="0 0 920 250">
+            <text x="20" y="24" font-size="14" fill="var(--text)" font-weight="700">Before / After retry architecture</text>
 
-        <div class="risk-list">
-          <article class="risk-item" data-severity="high">
-            <div class="sev">high</div>
-            <p><strong>Invariant dependency:</strong> stale retry now trusts in-memory DS metadata freshness. If a future code path triggers stale status updates without publishing DS refresh first, retries may continue targeting wrong ranges.</p>
-          </article>
-          <article class="risk-item" data-severity="medium">
-            <div class="sev">medium</div>
-            <p><strong>Context-sensitive lock acquisition:</strong> retry now fails via context-expired lock acquire, so timeout values on callers become more important for recovery behavior under lock pressure.</p>
-          </article>
-          <article class="risk-item" data-severity="medium">
-            <div class="sev">medium</div>
-            <p><strong>Benchmark is heavy and opt-in:</strong> no default CI guard covers this scenario. Regressions in the compaction benchmark path may go unnoticed unless teams run <code>RUN_COMPACTION_BENCH=1</code>.</p>
-          </article>
-          <article class="risk-item" data-severity="low">
-            <div class="sev">low</div>
-            <p><strong>Operational security posture change:</strong> preview workflow now explicitly bypasses Codex sandbox on runner. Rationale is documented, but this is still a policy-sensitive choice for repo maintainers.</p>
-          </article>
-          <article class="risk-item" data-severity="low">
-            <div class="sev">low</div>
-            <p><strong>Logging noise drift:</strong> additional lock-duration logs in migration paths may increase log volume during compaction-heavy workloads.</p>
-          </article>
+            <rect x="20" y="46" width="420" height="180" rx="12" fill="none" stroke="var(--border)"/>
+            <text x="36" y="68" font-size="12" fill="var(--text)" font-weight="700">Before</text>
+            <rect x="42" y="84" width="160" height="42" rx="8" fill="var(--surface)" stroke="var(--border)"/>
+            <text x="53" y="110" font-size="11" fill="var(--text)">Update retry</text>
+            <rect x="250" y="84" width="160" height="42" rx="8" fill="var(--surface)" stroke="var(--border)"/>
+            <text x="266" y="110" font-size="11" fill="var(--text)">DB refresh query</text>
+            <line x1="202" y1="104" x2="242" y2="104" stroke="var(--accent)" marker-end="url(#arr2)"/>
+            <text x="42" y="150" font-size="11" fill="var(--high)">Needs connection from main tx/pool</text>
+            <text x="42" y="168" font-size="11" fill="var(--high)">Can stall when pool fully occupied</text>
+
+            <rect x="480" y="46" width="420" height="180" rx="12" fill="none" stroke="var(--border)"/>
+            <text x="496" y="68" font-size="12" fill="var(--text)" font-weight="700">After</text>
+            <rect x="502" y="84" width="160" height="42" rx="8" fill="var(--surface)" stroke="var(--border)"/>
+            <text x="513" y="110" font-size="11" fill="var(--text)">Update retry</text>
+            <rect x="710" y="84" width="160" height="42" rx="8" fill="var(--surface)" stroke="var(--border)"/>
+            <text x="728" y="110" font-size="11" fill="var(--text)">dsList snapshot</text>
+            <line x1="662" y1="104" x2="702" y2="104" stroke="var(--accent)" marker-end="url(#arr2)"/>
+            <text x="502" y="150" font-size="11" fill="var(--low)">No DB call in retry refresh step</text>
+            <text x="502" y="168" font-size="11" fill="var(--muted)">Depends on compaction-published cache freshness</text>
+          </svg>
         </div>
       </section>
 
-      <section id="testing" class="reveal">
-        <h2>Testing / How It Was Verified</h2>
+      <section class="reveal" id="risks">
+        <h2>Risks, Edge Cases, Double-Checks</h2>
+        <div class="risk-controls" role="group" aria-label="Risk severity filter">
+          <button class="risk-filter active" data-filter="all">All</button>
+          <button class="risk-filter" data-filter="high">High</button>
+          <button class="risk-filter" data-filter="medium">Medium</button>
+          <button class="risk-filter" data-filter="low">Low</button>
+        </div>
+
+        <article class="risk-item" data-severity="high">
+          <div class="sev high">High</div>
+          <h3>Potential goroutine loop-capture bug in new compaction seeding</h3>
+          <p>In <code>jobsdb/bench/scenario/compaction.go</code>, goroutines launched inside <code>for start := 0; ...</code> capture <code>start</code> directly. In Go, loop-variable capture in goroutines can cause workers to observe unintended values if not copied locally. This is benchmark-only code, but it can skew results or produce uneven seeding.</p>
+          <p>Double-check by verifying local copies are used per goroutine (e.g. <code>batchStart := start</code>).</p>
+        </article>
+
+        <article class="risk-item" data-severity="medium">
+          <div class="sev medium">Medium</div>
+          <h3>Retry refresh error message may lose root cause context</h3>
+          <p><code>RTryLockWithCtx</code> returns false when context done. Current error wraps <code>ctx.Err()</code>; if caller passes active context but lock acquisition fails unexpectedly, message may include <code>&lt;nil&gt;</code>, reducing diagnosability.</p>
+        </article>
+
+        <article class="risk-item" data-severity="medium">
+          <div class="sev medium">Medium</div>
+          <h3>Assumption coupling to compaction publication timing</h3>
+          <p>The new retry path assumes DS cache is current because compaction refreshes it. Verify no alternative layout-changing paths leave DB newer than in-memory snapshot for extended periods.</p>
+        </article>
+
+        <article class="risk-item" data-severity="low">
+          <div class="sev low">Low</div>
+          <h3>Log volume increase under busy migration loops</h3>
+          <p>New lock-duration info logs in migration paths can increase log cardinality/noise if loop frequency is high.</p>
+        </article>
+
+        <article class="risk-item" data-severity="medium">
+          <div class="sev medium">Medium</div>
+          <h3>CI hardening posture change in preview workflow</h3>
+          <p><code>--dangerously-bypass-approvals-and-sandbox</code> is a broader trust model than <code>--sandbox workspace-write</code>. Evaluate this against your organization’s CI threat model even though job runs on ephemeral GitHub-hosted runner.</p>
+        </article>
+      </section>
+
+      <section class="reveal" id="testing">
+        <h2>Testing / Verification</h2>
+        <h3>What this PR adds or updates</h3>
         <ul>
-          <li><strong>Unit/integration coverage touched:</strong> existing test <code>TestUpdateJobStatusInExternalTxRetriesAfterReadonlyStatusTable</code> updated to reflect new in-memory-refresh prerequisite.</li>
-          <li><strong>New benchmark path:</strong> <code>TestBench/compaction</code> added and intentionally skipped unless <code>RUN_COMPACTION_BENCH=1</code>.</li>
-          <li><strong>From PR description:</strong> author provided benchmark numbers for baseline vs two non-blocking strategies.</li>
-          <li><strong>No new deterministic small test</strong> specifically proving the old deadlock vector is removed under pool saturation; confidence currently leans on reasoning + heavy bench behavior.</li>
-          <li><strong>Workflow changes:</strong> no test files added around CI behavior; review is config-only.</li>
+          <li>Adapts existing stale-retry correctness test in <code>jobsdb/jobsdb_test.go</code> to match new in-memory refresh semantics.</li>
+          <li>Adds a new benchmark scenario test entry <code>TestBench/compaction</code>, intentionally skipped unless <code>RUN_COMPACTION_BENCH=1</code>.</li>
         </ul>
+
+        <h3>What is not added</h3>
+        <ul>
+          <li>No new focused unit/integration test that directly asserts “stale retry does not perform DB refresh / does not require free pool connection”. Evidence is behavioral + benchmark narrative, not an explicit regression test for pool starvation.</li>
+          <li>No tests for workflow sandbox mode change (expected for CI YAML edits).</li>
+        </ul>
+
+        <h3>Reviewer quick checklist</h3>
+        <ul>
+          <li>Confirm stale retry path is safe with concurrent compaction and with cancellation contexts.</li>
+          <li>Confirm new benchmark is deterministic enough to compare strategy deltas across runs.</li>
+          <li>Confirm CI workflow security exception is intentional and acceptable.</li>
+        </ul>
+
+        <p class="small">Guide built strictly from <code>pr.diff</code>, <code>meta.txt</code>, and inspected repository files: <code>jobsdb/jobsdb.go</code>, <code>jobsdb/jobsdb_test.go</code>, <code>jobsdb/migration.go</code>, <code>jobsdb/bench/bench.go</code>, <code>jobsdb/bench/bench_test.go</code>, <code>jobsdb/bench/scenario/compaction.go</code>, and <code>.github/workflows/ai-preview.yaml</code>.</p>
       </section>
     </main>
   </div>
 
   <script>
     (function () {
-      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-      const progressBar = document.getElementById('progressBar');
-      function updateProgress() {
-        const doc = document.documentElement;
-        const scrollTop = doc.scrollTop || document.body.scrollTop;
-        const height = doc.scrollHeight - doc.clientHeight;
-        const pct = height > 0 ? (scrollTop / height) * 100 : 0;
-        progressBar.style.width = pct.toFixed(1) + '%';
-      }
+      const progress = document.getElementById('progress');
+      const updateProgress = function () {
+        const scrollTop = window.scrollY || document.documentElement.scrollTop;
+        const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+        const pct = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+        progress.style.width = Math.max(0, Math.min(100, pct)) + '%';
+      };
       window.addEventListener('scroll', updateProgress, { passive: true });
+      window.addEventListener('resize', updateProgress);
       updateProgress();
 
-      document.querySelectorAll('.copy-btn').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          const id = btn.getAttribute('data-copy-target');
-          const node = id ? document.getElementById(id) : null;
-          if (!node) return;
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!prefersReducedMotion && 'IntersectionObserver' in window) {
+        const io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('is-visible');
+            }
+          });
+        }, { threshold: 0.12 });
+        document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
+      } else {
+        document.querySelectorAll('.reveal').forEach(function (el) { el.classList.add('is-visible'); });
+      }
+
+      document.querySelectorAll('.copy-btn').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+          const id = btn.getAttribute('data-target');
+          const code = document.getElementById(id);
+          if (!code) return;
+          const text = code.textContent || '';
           try {
-            await navigator.clipboard.writeText(node.textContent || '');
+            await navigator.clipboard.writeText(text);
             const prev = btn.textContent;
             btn.textContent = 'Copied';
-            setTimeout(() => { btn.textContent = prev; }, 1200);
-          } catch (_) {
+            setTimeout(function () { btn.textContent = prev; }, 1200);
+          } catch (e) {
             const prev = btn.textContent;
-            btn.textContent = 'Copy failed';
-            setTimeout(() => { btn.textContent = prev; }, 1200);
+            btn.textContent = 'Failed';
+            setTimeout(function () { btn.textContent = prev; }, 1200);
           }
         });
       });
 
-      const severityFilter = document.getElementById('severityFilter');
-      if (severityFilter) {
-        severityFilter.addEventListener('change', () => {
-          const val = severityFilter.value;
-          document.querySelectorAll('.risk-item').forEach((item) => {
-            const sev = item.getAttribute('data-severity');
-            item.style.display = (val === 'all' || val === sev) ? '' : 'none';
-          });
-        });
-      }
-
       const fileSearch = document.getElementById('fileSearch');
-      if (fileSearch) {
-        fileSearch.addEventListener('input', () => {
-          const q = fileSearch.value.trim().toLowerCase();
-          document.querySelectorAll('details.file-item').forEach((item) => {
-            const key = (item.getAttribute('data-file') || '').toLowerCase();
-            item.style.display = key.includes(q) ? '' : 'none';
+      const fileItems = Array.from(document.querySelectorAll('.file-item'));
+      fileSearch.addEventListener('input', function () {
+        const q = (fileSearch.value || '').trim().toLowerCase();
+        fileItems.forEach(function (item) {
+          const key = (item.getAttribute('data-file') || '').toLowerCase();
+          item.style.display = key.includes(q) ? '' : 'none';
+        });
+      });
+
+      const riskButtons = Array.from(document.querySelectorAll('.risk-filter'));
+      const riskItems = Array.from(document.querySelectorAll('.risk-item'));
+      riskButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          riskButtons.forEach(function (b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+          const filter = btn.getAttribute('data-filter');
+          riskItems.forEach(function (item) {
+            const sev = item.getAttribute('data-severity');
+            item.style.display = (filter === 'all' || filter === sev) ? '' : 'none';
           });
         });
-      }
-
-      const beforeBtn = document.getElementById('showBefore');
-      const afterBtn = document.getElementById('showAfter');
-      const beforePanel = document.getElementById('beforePanel');
-      const afterPanel = document.getElementById('afterPanel');
-      function setBeforeAfter(show) {
-        const isBefore = show === 'before';
-        beforeBtn.setAttribute('aria-pressed', String(isBefore));
-        afterBtn.setAttribute('aria-pressed', String(!isBefore));
-        beforePanel.hidden = !isBefore;
-        afterPanel.hidden = isBefore;
-      }
-      beforeBtn.addEventListener('click', () => setBeforeAfter('before'));
-      afterBtn.addEventListener('click', () => setBeforeAfter('after'));
-
-      if (!reduceMotion && 'IntersectionObserver' in window) {
-        const obs = new IntersectionObserver((entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) entry.target.classList.add('visible');
-          });
-        }, { threshold: 0.08 });
-        document.querySelectorAll('.reveal').forEach((el) => obs.observe(el));
-      } else {
-        document.querySelectorAll('.reveal').forEach((el) => el.classList.add('visible'));
-      }
+      });
     })();
   </script>
 </body>
