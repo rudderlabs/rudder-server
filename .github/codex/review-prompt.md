@@ -53,6 +53,44 @@ Write exactly ONE new file at `review-site/index.html` (relative to the reposito
   filter can target it.
 - Sticky table-of-contents with a slim progress indicator that reflects scroll position
   through the document.
+- A "Jump to file" search box near the file walkthrough that filters visible files as the
+  reader types.
+
+## Diagrams & visual aids (include where they actually clarify the PR)
+
+Use these only when they earn their place — never decorative. Pick the subset that fits
+this change; skip diagrams that would be trivial or misleading.
+
+- **Architecture / component diagram** — when the PR touches more than one component or
+  introduces a new one. Show how the changed pieces connect to neighbors.
+- **Sequence / flow diagram** — when the PR changes an ordered interaction (request flow,
+  pipeline stage transitions, retry logic, lifecycle). Label each arrow with what's sent.
+- **Before / after diagram** — when behavior or structure changes meaningfully. Render
+  the two side-by-side so the delta is visible at a glance.
+- **State machine** — when the PR adds/changes states or transitions (e.g., migration
+  status, job status, connection lifecycle). Highlight the transitions this PR introduces.
+- **Data-shape illustration** — when a struct, schema, etcd key layout, or config
+  changes. Show old vs. new fields, with new ones highlighted.
+- **Call graph / dependency arrows** — when a change ripples through callers; show which
+  functions/files call the modified symbol.
+- **Annotated diff blocks** — for the most important hunks, render the diff with inline
+  callouts (small numbered markers + explanations below) pointing to the lines that
+  matter.
+- **Impact / blast-radius chart** — a small visual (bar or grid) summarizing which areas
+  of the system are touched and how heavily.
+
+Implementation requirements for diagrams:
+
+- Render diagrams as inline SVG authored by hand. Do NOT use Mermaid, D3, Chart.js, or
+  any other library — everything must remain self-contained with no external assets.
+- Use the same CSS custom properties as the rest of the page so diagrams adapt to
+  light/dark mode automatically.
+- Give each diagram a short caption explaining what it shows and what to look at.
+- Keep them legible on mobile (max-width 100%, internal scrolling if needed, readable
+  font sizes inside SVG).
+- Where helpful, make diagrams lightly interactive: hover/focus highlights on nodes,
+  clickable nodes that scroll to the corresponding section of the page, or a toggle
+  that flips a before/after view.
 
 Keep all interactivity in the single inline `<script>` block. No external libraries or
 network requests.
