@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PR #7028 Review Dashboard</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --accent: #0f766e;
+      --accent-soft: #ccfbf1;
+      --high: #b91c1c;
+      --med: #b45309;
+      --low: #166534;
+      --shadow: 0 6px 20px rgba(17, 24, 39, 0.06);
+      scroll-behavior: smooth;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #f7f8fa 0%, #f9fafb 220px);
+      color: var(--text);
+      font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      gap: 20px;
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .toc {
+      position: sticky;
+      top: 12px;
+      align-self: start;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 12px;
+    }
+    .toc h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .toc a { display: block; padding: 6px 8px; border-radius: 8px; color: var(--text); text-decoration: none; font-size: 13px; }
+    .toc a:hover { background: #f3f4f6; }
+    .progress {
+      height: 4px;
+      background: #eef2f7;
+      border-radius: 99px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .progress > span { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .2s ease; }
+    main > section, header {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .reveal { opacity: 0; transform: translateY(8px); transition: opacity .45s ease, transform .45s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+    .header-top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .title { font-size: 20px; font-weight: 700; margin: 0; }
+    .sub { color: var(--muted); font-size: 13px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; background: #f9fafb; font-size: 12px; }
+    .chip.accent { border-color: #8ee4dc; background: var(--accent-soft); color: #0b5b54; }
+    .author { display: flex; align-items: center; gap: 8px; }
+    .avatar { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: #e5e7eb; font-weight: 700; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(90px, 1fr)); gap: 10px; margin-top: 12px; }
+    .stat { border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+    .stat b { font-size: 16px; display: block; }
+    h2 { margin: 0 0 10px; font-size: 16px; }
+    p { margin: 0; }
+    ul { margin: 8px 0 0 18px; padding: 0; }
+    li { margin: 3px 0; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .viz { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: #fbfcfd; overflow: auto; }
+    svg { max-width: 100%; height: auto; font-family: inherit; }
+    .caption { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .callouts { margin-top: 10px; display: grid; gap: 6px; }
+    .callout { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: start; }
+    .dot { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-size: 12px; }
+    details { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: #fff; margin-bottom: 8px; }
+    summary { cursor: pointer; font-weight: 600; }
+    .file-meta { color: var(--muted); font-size: 12px; margin: 4px 0 8px; }
+    .snippet { position: relative; }
+    pre {
+      margin: 0;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 10px;
+      overflow: auto;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .copy-btn {
+      position: absolute;
+      right: 8px;
+      top: 8px;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 2px 8px;
+      background: #111827;
+      color: #e5e7eb;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .legend { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .risk-controls { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .risk-grid { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 10px; }
+    .risk { border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+    .sev { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+    .sev.high { background: #fee2e2; color: var(--high); }
+    .sev.medium { background: #fef3c7; color: var(--med); }
+    .sev.low { background: #dcfce7; color: var(--low); }
+    .search { margin-bottom: 10px; }
+    .search input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+    .status-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      .toc { position: static; }
+      .split, .risk-grid, .stats { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      :root { scroll-behavior: auto; }
+      .reveal, .progress > span { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="toc">
+      <h3>Review Map</h3>
+      <a href="#tldr">TL;DR</a>
+      <a href="#why">Why</a>
+      <a href="#changed">What Changed</a>
+      <a href="#flow">Flow</a>
+      <a href="#files">Files</a>
+      <a href="#risks">Risks</a>
+      <a href="#checklist">Checklist</a>
+      <a href="#testing">Testing</a>
+      <div class="progress"><span id="scrollProgress"></span></div>
+    </aside>
+
+    <main>
+      <header class="reveal">
+        <div class="header-top">
+          <div>
+            <h1 class="title">chore(jobsdb): avoid refreshing ds list from database in stale-ds retries</h1>
+            <div class="sub">PR #7028</div>
+          </div>
+          <div class="author">
+            <div class="avatar" aria-hidden="true">M</div>
+            <div>
+              <div><b>mihir20</b></div>
+              <div class="sub">mihir/ai-preview &larr; mihir/pr-preview-test-3</div>
+            </div>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="stat"><b>6</b><span class="sub">files changed</span></div>
+          <div class="stat"><b style="color:#15803d">+556</b><span class="sub">additions</span></div>
+          <div class="stat"><b style="color:#b91c1c">-14</b><span class="sub">deletions</span></div>
+          <div class="stat"><b>Go</b><span class="sub">primary language</span></div>
+        </div>
+        <div class="chips" style="margin-top:10px">
+          <span class="chip accent">jobsdb core</span>
+          <span class="chip accent">bench scenario</span>
+          <span class="chip">retry path</span>
+          <span class="chip">compaction</span>
+        </div>
+      </header>
+
+      <section id="tldr" class="reveal">
+        <h2>TL;DR</h2>
+        <p><b>Stale-dataset retries stop querying DB and now reuse in-memory DS snapshots, while a new heavy compaction benchmark stresses the exact contention path.</b></p>
+        <ul>
+          <li>🧠 Retry path changed in <code>UpdateJobStatusInTx</code>: read-lock + snapshot, no refresh query.</li>
+          <li>🧪 Added <code>compaction</code> benchmark scenario (2M jobs shape in test config).</li>
+          <li>🔧 New hook <code>WithTriggerAddNewDS</code> enables deterministic dataset rollover in tests/bench.</li>
+        </ul>
+      </section>
+
+      <section id="why" class="reveal">
+        <h2>Why</h2>
+        <p>Under high updater concurrency, stale-DS retries could deadlock on main DB pool exhaustion because retry needed a DB-backed DS refresh while all connections were busy.</p>
+        <div class="viz" style="margin-top:10px">
+          <svg viewBox="0 0 760 220" role="img" aria-label="Before and after stale dataset retry behavior">
+            <rect x="15" y="20" width="340" height="180" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+            <text x="30" y="45" font-size="13" font-weight="700">Before</text>
+            <rect x="35" y="62" width="140" height="36" rx="8" fill="#e2e8f0"/>
+            <text x="46" y="84" font-size="12">UpdateJobStatus hits stale DS</text>
+            <rect x="195" y="62" width="140" height="36" rx="8" fill="#fee2e2"/>
+            <text x="207" y="84" font-size="12">refreshDSListWithDB()</text>
+            <path d="M175 80 L195 80" stroke="#64748b" marker-end="url(#m1)"/>
+            <rect x="195" y="118" width="140" height="36" rx="8" fill="#fee2e2"/>
+            <text x="210" y="140" font-size="12">needs main pool conn</text>
+            <path d="M265 98 L265 118" stroke="#b91c1c" marker-end="url(#m1)"/>
+            <text x="51" y="170" font-size="12" fill="#b91c1c">Risk: pool saturated, retry stalls</text>
+
+            <rect x="405" y="20" width="340" height="180" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+            <text x="420" y="45" font-size="13" font-weight="700">After</text>
+            <rect x="425" y="62" width="140" height="36" rx="8" fill="#e2e8f0"/>
+            <text x="438" y="84" font-size="12">UpdateJobStatus hits stale DS</text>
+            <rect x="585" y="62" width="140" height="36" rx="8" fill="#ccfbf1" stroke="#0f766e"/>
+            <text x="606" y="84" font-size="12" fill="#0f766e">RLock + snapshot</text>
+            <path d="M565 80 L585 80" stroke="#0f766e" marker-end="url(#m2)"/>
+            <rect x="585" y="118" width="140" height="36" rx="8" fill="#ecfeff"/>
+            <text x="600" y="140" font-size="12">tx.setDSList(...)</text>
+            <path d="M655 98 L655 118" stroke="#0f766e" marker-end="url(#m2)"/>
+            <text x="436" y="170" font-size="12" fill="#0f766e">No DB call on retry path</text>
+            <defs>
+              <marker id="m1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <polygon points="0,0 8,4 0,8" fill="#64748b"/>
+              </marker>
+              <marker id="m2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <polygon points="0,0 8,4 0,8" fill="#0f766e"/>
+              </marker>
+            </defs>
+          </svg>
+          <div class="caption">Stale retry removes DB dependency from the hot update loop.</div>
+        </div>
+      </section>
+
+      <section id="changed" class="reveal">
+        <h2>What Changed At A Glance</h2>
+        <div class="split">
+          <div class="viz">
+            <svg viewBox="0 0 620 260" role="img" aria-label="Churn map by changed area">
+              <rect x="10" y="10" width="600" height="240" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+              <rect x="25" y="30" width="360" height="200" rx="8" fill="#ccfbf1" stroke="#0f766e"/>
+              <text x="40" y="56" font-size="13" font-weight="700" fill="#0f766e">jobsdb/bench/scenario/compaction.go (+437)</text>
+              <text x="40" y="78" font-size="12">New benchmark runner, seed/consume loops, scenario matrix</text>
+
+              <rect x="395" y="30" width="200" height="70" rx="8" fill="#e2e8f0"/>
+              <text x="405" y="56" font-size="12">jobsdb/jobsdb.go (+24/-13)</text>
+              <text x="405" y="74" font-size="11">stale retry, new opts hook</text>
+
+              <rect x="395" y="108" width="200" height="60" rx="8" fill="#e2e8f0"/>
+              <text x="405" y="132" font-size="12">jobsdb/bench/bench_test.go (+81)</text>
+              <text x="405" y="150" font-size="11">gated heavy compaction benchmark</text>
+
+              <rect x="395" y="176" width="200" height="54" rx="8" fill="#e2e8f0"/>
+              <text x="405" y="198" font-size="12">other files (+14/-1 total)</text>
+              <text x="405" y="216" font-size="11">bench.go, migration.go, jobsdb_test.go</text>
+            </svg>
+            <div class="caption">Most churn is the new compaction benchmark scenario.</div>
+          </div>
+          <div>
+            <div class="callouts">
+              <div class="callout"><span class="dot">1</span><span><code>UpdateJobStatusInTx</code> now uses <code>RTryLockWithCtx</code> and in-memory <code>dsList.snapshot()</code> on stale retries.</span></div>
+              <div class="callout"><span class="dot">2</span><span><code>internalUpdateJobStatusInTx</code> suppresses generic error log for <code>ErrStaleDsList</code> to reduce noise.</span></div>
+              <div class="callout"><span class="dot">3</span><span><code>WithTriggerAddNewDS</code> option added; benchmark injects deterministic dataset rollover trigger.</span></div>
+              <div class="callout"><span class="dot">4</span><span>New bench scenario compares three compaction flag sets under identical precomputed failure pattern.</span></div>
+              <div class="callout"><span class="dot">5</span><span>Test updated to refresh in-memory DS list before retry, matching the new stale-retry contract.</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="flow" class="reveal">
+        <h2>Flow / Sequence</h2>
+        <div class="viz">
+          <svg viewBox="0 0 950 300" role="img" aria-label="Sequence diagram for stale dataset retry">
+            <text x="40" y="24" font-size="12" font-weight="700">Caller</text>
+            <text x="220" y="24" font-size="12" font-weight="700">UpdateJobStatusInTx</text>
+            <text x="460" y="24" font-size="12" font-weight="700">doUpdateJobStatusInTx</text>
+            <text x="700" y="24" font-size="12" font-weight="700">dsList cache + lock</text>
+            <line x1="70" y1="30" x2="70" y2="280" stroke="#cbd5e1"/>
+            <line x1="270" y1="30" x2="270" y2="280" stroke="#cbd5e1"/>
+            <line x1="520" y1="30" x2="520" y2="280" stroke="#cbd5e1"/>
+            <line x1="780" y1="30" x2="780" y2="280" stroke="#cbd5e1"/>
+
+            <path d="M70 55 L270 55" stroke="#64748b" marker-end="url(#a1)"/>
+            <text x="95" y="48" font-size="11">update statuses</text>
+
+            <path d="M270 90 L520 90" stroke="#64748b" marker-end="url(#a1)"/>
+            <text x="292" y="83" font-size="11">attempt update</text>
+
+            <path d="M520 125 L270 125" stroke="#b91c1c" marker-end="url(#a2)"/>
+            <text x="320" y="118" font-size="11" fill="#b91c1c">ErrStaleDsList</text>
+
+            <path d="M270 160 L780 160" stroke="#0f766e" marker-end="url(#a3)" stroke-width="2"/>
+            <text x="360" y="152" font-size="11" fill="#0f766e">NEW: RTryLockWithCtx + snapshot()</text>
+
+            <path d="M780 195 L270 195" stroke="#0f766e" marker-end="url(#a3)" stroke-width="2"/>
+            <text x="420" y="188" font-size="11" fill="#0f766e">setDSList on tx, unlock</text>
+
+            <path d="M270 230 L520 230" stroke="#0f766e" marker-end="url(#a3)" stroke-width="2"/>
+            <text x="328" y="222" font-size="11" fill="#0f766e">retry update (no DB refresh)</text>
+
+            <path d="M270 260 L70 260" stroke="#64748b" marker-end="url(#a1)"/>
+            <text x="150" y="252" font-size="11">return</text>
+
+            <defs>
+              <marker id="a1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0 8,4 0,8" fill="#64748b"/></marker>
+              <marker id="a2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0 8,4 0,8" fill="#b91c1c"/></marker>
+              <marker id="a3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0 8,4 0,8" fill="#0f766e"/></marker>
+            </defs>
+          </svg>
+          <div class="caption">Accent arrows are the newly introduced retry transitions.</div>
+        </div>
+      </section>
+
+      <section id="files" class="reveal">
+        <h2>File Walkthrough</h2>
+        <div class="search"><input id="fileSearch" type="search" placeholder="Jump to file (filter as you type)" aria-label="Filter files" /></div>
+
+        <details data-file="jobsdb/bench/bench.go" open>
+          <summary>jobsdb/bench/bench.go</summary>
+          <div class="file-meta">Adds <code>compaction</code> case to bench scenario switch.</div>
+          <div class="snippet">
+            <button class="copy-btn" data-copy-target="snip-bench-go">Copy</button>
+            <pre id="snip-bench-go"><code>switch scenarioName {
+case "simple":
+  return scenario.NewSimple(...), nil
+case "two_stage":
+  return scenario.NewTwoStage(...), nil
+case "compaction":
+  return scenario.NewCompaction(...), nil
+}</code></pre>
+          </div>
+        </details>
+
+        <details data-file="jobsdb/jobsdb.go" open>
+          <summary>jobsdb/jobsdb.go</summary>
+          <div class="file-meta">Stale retry now snapshots cache under read lock; adds trigger option.</div>
+          <div class="snippet">
+            <button class="copy-btn" data-copy-target="snip-jobsdb-retry">Copy</button>
+            <pre id="snip-jobsdb-retry"><code>if !errors.Is(err, ErrStaleDsList) { return err }
+rollback savepoint
+// ① NEW: no DB refresh call here
+if lock := jd.dsListLock.RTryLockWithCtx(ctx); !lock { return ctx.Err() }
+// ② read in-memory ds list snapshot
+ dsList, dsRangeList := jd.dsList.snapshot()
+ tx.setDSList(dsList, dsRangeList)
+ jd.dsListLock.RUnlock()
+// ③ retry update</code></pre>
+          </div>
+          <div class="legend">① removes connection dependency; ② uses compaction-published cache; ③ retries same tx savepoint flow.</div>
+        </details>
+
+        <details data-file="jobsdb/bench/scenario/compaction.go" open>
+          <summary>jobsdb/bench/scenario/compaction.go</summary>
+          <div class="file-meta">New scenario: fixed workload generation + three compaction strategy runs + drain timing.</div>
+          <div class="snippet">
+            <button class="copy-btn" data-copy-target="snip-compaction">Copy</button>
+            <pre id="snip-compaction"><code>scenarios := []flagSet{
+  {name: "baseline (blocking compaction)"},
+  {name: "nonBlockingCompletedDSDrop", nonBlockingCompletedDSDrop: true},
+  {name: "nonBlockingCompaction", nonBlockingCompaction: true},
+}
+for _, s := range scenarios {
+  conf.Set("JobsDB.bench.nonBlocking...", ...)
+  db := jobsdb.NewForReadWrite("bench", WithTriggerAddNewDS(...), WithMaintenancePoolDB(...))
+  seed(... precomputed failPattern ...)
+  duration := consume(...)
+  fmt.Printf("scenario %q drained ...", s.name)
+}</code></pre>
+          </div>
+        </details>
+
+        <details data-file="jobsdb/bench/bench_test.go">
+          <summary>jobsdb/bench/bench_test.go</summary>
+          <div class="file-meta">Adds heavy benchmark test case gated by <code>RUN_COMPACTION_BENCH</code>.</div>
+        </details>
+
+        <details data-file="jobsdb/jobsdb_test.go">
+          <summary>jobsdb/jobsdb_test.go</summary>
+          <div class="file-meta">Existing stale-retry test now explicitly refreshes in-memory DS list before invoking retry.</div>
+        </details>
+
+        <details data-file="jobsdb/migration.go">
+          <summary>jobsdb/migration.go</summary>
+          <div class="file-meta">Adds lock-duration info logs in migration/compaction lock release paths.</div>
+        </details>
+      </section>
+
+      <section class="reveal">
+        <h2>Blast Radius</h2>
+        <div class="viz">
+          <svg viewBox="0 0 780 220" role="img" aria-label="Blast radius grid">
+            <text x="20" y="24" font-size="12" font-weight="700">Area</text>
+            <text x="250" y="24" font-size="12" font-weight="700">Behavior</text>
+            <text x="420" y="24" font-size="12" font-weight="700">Perf</text>
+            <text x="560" y="24" font-size="12" font-weight="700">Testability</text>
+
+            <text x="20" y="62" font-size="12">Update status retry</text>
+            <rect x="240" y="45" width="130" height="26" rx="6" fill="#ccfbf1" stroke="#0f766e"/>
+            <rect x="410" y="45" width="110" height="26" rx="6" fill="#ccfbf1" stroke="#0f766e"/>
+            <rect x="550" y="45" width="130" height="26" rx="6" fill="#e2e8f0"/>
+
+            <text x="20" y="102" font-size="12">Compaction bench harness</text>
+            <rect x="240" y="85" width="130" height="26" rx="6" fill="#e2e8f0"/>
+            <rect x="410" y="85" width="110" height="26" rx="6" fill="#ccfbf1" stroke="#0f766e"/>
+            <rect x="550" y="85" width="130" height="26" rx="6" fill="#ccfbf1" stroke="#0f766e"/>
+
+            <text x="20" y="142" font-size="12">Migration logging</text>
+            <rect x="240" y="125" width="130" height="26" rx="6" fill="#e2e8f0"/>
+            <rect x="410" y="125" width="110" height="26" rx="6" fill="#e2e8f0"/>
+            <rect x="550" y="125" width="130" height="26" rx="6" fill="#e2e8f0"/>
+
+            <text x="20" y="182" font-size="12">Test adjustments</text>
+            <rect x="240" y="165" width="130" height="26" rx="6" fill="#e2e8f0"/>
+            <rect x="410" y="165" width="110" height="26" rx="6" fill="#e2e8f0"/>
+            <rect x="550" y="165" width="130" height="26" rx="6" fill="#ccfbf1" stroke="#0f766e"/>
+          </svg>
+          <div class="caption">Accent cells mark where this PR materially changes outcomes.</div>
+        </div>
+      </section>
+
+      <section id="risks" class="reveal">
+        <h2>Risks</h2>
+        <div class="risk-controls">
+          <button class="chip" data-filter="all">All</button>
+          <button class="chip" data-filter="high">High</button>
+          <button class="chip" data-filter="medium">Medium</button>
+          <button class="chip" data-filter="low">Low</button>
+        </div>
+        <div class="risk-grid" id="riskGrid">
+          <article class="risk" data-severity="medium">
+            <span class="sev medium">medium</span>
+            <div><b>Snapshot freshness depends on compaction publish timing.</b></div>
+            <div class="sub">Mitigation: retry takes read lock before snapshot; test now refreshes cache explicitly.</div>
+          </article>
+          <article class="risk" data-severity="low">
+            <span class="sev low">low</span>
+            <div><b>New benchmark is opt-in and may miss routine CI detection.</b></div>
+            <div class="sub">Mitigation: run documented env-gated bench in performance validation.</div>
+          </article>
+          <article class="risk" data-severity="low">
+            <span class="sev low">low</span>
+            <div><b>Extra migration lock-duration logs could increase log volume.</b></div>
+            <div class="sub">Mitigation: only emitted on lock lifecycle points.</div>
+          </article>
+        </div>
+      </section>
+
+      <section id="checklist" class="reveal">
+        <h2>Review Checklist</h2>
+        <ul>
+          <li>Confirm stale retry path in <code>UpdateJobStatusInTx</code> never calls DB refresh APIs.</li>
+          <li>Check read-lock acquisition failure returns context error cleanly under cancellation.</li>
+          <li>Validate <code>WithTriggerAddNewDS</code> cannot alter production behavior unless explicitly set.</li>
+          <li>Run compaction benchmark with and without dedicated maintenance pool to verify contention claim.</li>
+          <li>Ensure stale-retry external-tx test still verifies status lands only in replacement dataset.</li>
+        </ul>
+      </section>
+
+      <section id="testing" class="reveal">
+        <h2>Testing</h2>
+        <div class="status-row">
+          <span class="chip accent">tests modified</span>
+          <span class="chip">benchmark test added (env-gated)</span>
+          <span class="chip">unit test adjusted</span>
+        </div>
+        <ul>
+          <li><code>jobsdb/bench/bench_test.go</code>: adds <code>TestBench/compaction</code> (skipped unless <code>RUN_COMPACTION_BENCH=1</code>).</li>
+          <li><code>jobsdb/jobsdb_test.go</code>: updates stale-ds retry test to refresh in-memory DS list before retry.</li>
+          <li>No benchmark output artifacts are attached in this PR; timings are author-reported in description.</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      const progress = document.getElementById('scrollProgress');
+      const updateProgress = () => {
+        const doc = document.documentElement;
+        const total = doc.scrollHeight - doc.clientHeight;
+        const pct = total > 0 ? (doc.scrollTop / total) * 100 : 0;
+        progress.style.width = pct + '%';
+      };
+      document.addEventListener('scroll', updateProgress, { passive: true });
+      updateProgress();
+
+      const reveals = document.querySelectorAll('.reveal');
+      if (!prefersReduced && 'IntersectionObserver' in window) {
+        const io = new IntersectionObserver((entries) => {
+          entries.forEach((e) => {
+            if (e.isIntersecting) {
+              e.target.classList.add('visible');
+              io.unobserve(e.target);
+            }
+          });
+        }, { threshold: 0.08 });
+        reveals.forEach((el) => io.observe(el));
+      } else {
+        reveals.forEach((el) => el.classList.add('visible'));
+      }
+
+      document.querySelectorAll('.copy-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-copy-target');
+          const el = document.getElementById(id);
+          if (!el) return;
+          try {
+            await navigator.clipboard.writeText(el.innerText);
+            const prev = btn.textContent;
+            btn.textContent = 'Copied';
+            setTimeout(() => { btn.textContent = prev; }, 900);
+          } catch (_) {
+            btn.textContent = 'Failed';
+            setTimeout(() => { btn.textContent = 'Copy'; }, 900);
+          }
+        });
+      });
+
+      const search = document.getElementById('fileSearch');
+      const fileDetails = Array.from(document.querySelectorAll('details[data-file]'));
+      search.addEventListener('input', () => {
+        const q = search.value.trim().toLowerCase();
+        fileDetails.forEach((d) => {
+          const name = d.getAttribute('data-file').toLowerCase();
+          d.style.display = !q || name.includes(q) ? '' : 'none';
+        });
+      });
+
+      const riskGrid = document.getElementById('riskGrid');
+      document.querySelectorAll('[data-filter]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const filter = btn.getAttribute('data-filter');
+          Array.from(riskGrid.children).forEach((card) => {
+            const sev = card.getAttribute('data-severity');
+            card.style.display = (filter === 'all' || filter === sev) ? '' : 'none';
+          });
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
