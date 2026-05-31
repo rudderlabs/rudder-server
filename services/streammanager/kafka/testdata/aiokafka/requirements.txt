@@ -1,2 +1,0 @@
-cramjam==2.8.0
-aiokafka==0.10.0

@@ -1,1 +1,0 @@
-DROP TABLE IF EXISTS wh_schema_versions;

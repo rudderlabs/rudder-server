@@ -1,3 +1,0 @@
-{{range .Datasets}}
-    ALTER TABLE "{{$.Prefix}}_jobs_{{.}}" ADD COLUMN IF NOT EXISTS partition_id TEXT NOT NULL DEFAULT '';
-{{end}}

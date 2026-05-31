@@ -1,1 +1,0 @@
-DROP TABLE IF EXISTS schema_versions, event_models CASCADE;

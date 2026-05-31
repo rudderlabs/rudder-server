@@ -1,5 +1,0 @@
-**/.git
-.env
-.vscode
-.dockerignore
-cmd/benchmark/Dockerfile
