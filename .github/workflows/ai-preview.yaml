@@ -90,7 +90,7 @@ jobs:
         if: github.event.action != 'closed' && github.event.action != 'unlabeled'
         env:
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
-          CODEX_MODEL: gpt-5-codex   # <-- your Foundry deployment name
+          CODEX_MODEL: gpt-5.3-codex   # Azure Foundry deployment name (latest Codex)
         run: |
           set -euo pipefail
           BASE_URL="${AZURE_OPENAI_ENDPOINT%/}/openai/v1"
