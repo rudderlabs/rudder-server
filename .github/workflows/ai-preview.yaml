@@ -114,11 +114,13 @@ jobs:
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
         run: |
           set -euo pipefail
-          # exec = non-interactive; --sandbox workspace-write lets Codex read the
-          # whole repo and write review-site/index.html, nothing outside the cwd.
-          # If the runner ever blocks the sandbox, swap for:
-          #   --dangerously-bypass-approvals-and-sandbox
-          codex exec --sandbox workspace-write --cd "$GITHUB_WORKSPACE" \
+          # exec = non-interactive. GitHub-hosted runners block bubblewrap's network
+          # namespace setup (RTM_NEWADDR EPERM on loopback), so --sandbox workspace-write
+          # fails immediately. The runner is itself an ephemeral sandbox, so bypassing
+          # Codex's inner sandbox is acceptable here: Codex can still only see/write the
+          # checked-out workspace.
+          codex exec --dangerously-bypass-approvals-and-sandbox \
+            --cd "$GITHUB_WORKSPACE" \
             "$(cat .github/codex/review-prompt.md)"
           test -f review-site/index.html  # fail the job if Codex produced nothing
 
