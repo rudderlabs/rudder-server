@@ -1,0 +1,245 @@
+name: PR Review Site
+
+# Gated on a label (default: "preview"). It only does work while the PR carries it:
+#   - label added (or PR opened/pushed while labelled) -> Codex explores the repo
+#     and builds the explainer site, which is deployed as a PR preview
+#   - label removed, or PR closed/merged               -> tear the preview down
+on:
+  pull_request:
+    types: [ opened, reopened, synchronize, labeled, unlabeled, closed ]
+
+# A new push to the same PR cancels the previous (still-running) build.
+concurrency:
+  group: pr-review-site-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write        # push the generated site to the gh-pages branch
+  pull-requests: write   # post/update the sticky preview-link comment
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    # Run only while the PR carries the "preview" label (and never for fork PRs,
+    # since secrets aren't available to forks). On unlabel, still run so we can
+    # tear down. Change the label name in BOTH places to rename it (the env
+    # context isn't available in a job-level `if`, so it must be a literal here).
+    if: >
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        (github.event.action == 'unlabeled' && github.event.label.name == 'preview') ||
+        (github.event.action != 'unlabeled' && contains(github.event.pull_request.labels.*.name, 'preview'))
+      )
+    steps:
+      - name: Create app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PRIVATE_KEY }}
+          permission-contents: write       # push to gh-pages
+          permission-pull-requests: write  # upsert sticky preview comment
+
+      # ---- Build the site (only on deploy events: open / push / (re)label) ----
+      - name: Checkout PR head (full history)
+        if: github.event.action != 'closed' && github.event.action != 'unlabeled'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0   # Codex needs the whole repo + history for context
+
+      - name: Collect PR context
+        if: github.event.action != 'closed' && github.event.action != 'unlabeled'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          gh pr diff "$PR_NUMBER" --patch > pr.diff \
+            || git diff "origin/${BASE_REF}...HEAD" > pr.diff
+          # Build meta.txt with printf so attacker-controlled fields are treated
+          # as data, never interpreted by the shell.
+          {
+            printf 'Repository: %s\n' "$GITHUB_REPOSITORY"
+            printf 'PR number: #%s\n' "$PR_NUMBER"
+            printf 'Title: %s\n' "$PR_TITLE"
+            printf 'Author: %s\n' "$PR_AUTHOR"
+            printf 'Base <- Head: %s <- %s\n' "$BASE_REF" "$HEAD_REF"
+            printf '\nDescription:\n%s\n' "$PR_BODY"
+            printf '\nCommits:\n'
+            git log --format='- %s' "origin/${BASE_REF}..HEAD" || true
+          } > meta.txt
+          echo "diff size: $(wc -c < pr.diff) bytes"
+
+      - name: Setup Node
+        if: github.event.action != 'closed' && github.event.action != 'unlabeled'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+
+      - name: Install Codex CLI
+        if: github.event.action != 'closed' && github.event.action != 'unlabeled'
+        run: npm install -g @openai/codex
+
+      - name: Configure Codex for Azure Foundry
+        if: github.event.action != 'closed' && github.event.action != 'unlabeled'
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          CODEX_MODEL: gpt-5-codex   # <-- your Foundry deployment name
+        run: |
+          set -euo pipefail
+          BASE_URL="${AZURE_OPENAI_ENDPOINT%/}/openai/v1"
+          mkdir -p "$GITHUB_WORKSPACE/.codex"
+          cat > "$GITHUB_WORKSPACE/.codex/config.toml" <<EOF
+          model = "${CODEX_MODEL}"
+          model_provider = "azure"
+          model_reasoning_effort = "medium"
+
+          [model_providers.azure]
+          name = "Azure OpenAI"
+          base_url = "${BASE_URL}"
+          env_key = "AZURE_OPENAI_API_KEY"
+          wire_api = "responses"
+          EOF
+
+      - name: Generate review site with Codex (full repo context)
+        if: github.event.action != 'closed' && github.event.action != 'unlabeled'
+        env:
+          CODEX_HOME: ${{ github.workspace }}/.codex
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          # exec = non-interactive; --sandbox workspace-write lets Codex read the
+          # whole repo and write review-site/index.html, nothing outside the cwd.
+          # If the runner ever blocks the sandbox, swap for:
+          #   --dangerously-bypass-approvals-and-sandbox
+          codex exec --sandbox workspace-write --cd "$GITHUB_WORKSPACE" \
+            "$(cat .github/codex/review-prompt.md)"
+          test -f review-site/index.html  # fail the job if Codex produced nothing
+
+      # ---- Deploy on label/open/push; tear down on unlabel/close/merge ----
+      - name: Stage built site outside the worktree
+        if: github.event.action != 'closed' && github.event.action != 'unlabeled'
+        run: |
+          set -euo pipefail
+          rm -rf "${RUNNER_TEMP}/preview-site"
+          cp -R review-site "${RUNNER_TEMP}/preview-site"
+
+      - name: Deploy preview to gh-pages
+        if: github.event.action != 'closed' && github.event.action != 'unlabeled'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          UMBRELLA_DIR: pr-preview
+          SERVER_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          workdir="${RUNNER_TEMP}/gh-pages"
+          rm -rf "$workdir"
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          if git ls-remote --exit-code --heads "$remote" gh-pages >/dev/null 2>&1; then
+            git clone --depth=1 --branch gh-pages "$remote" "$workdir"
+          else
+            git clone --depth=1 "$remote" "$workdir"
+            git -C "$workdir" checkout --orphan gh-pages
+            git -C "$workdir" rm -rf . >/dev/null 2>&1 || true
+          fi
+
+          target="${workdir}/${UMBRELLA_DIR}/pr-${PR_NUMBER}"
+          rm -rf "$target"
+          mkdir -p "$target"
+          cp -R "${RUNNER_TEMP}/preview-site"/. "$target"/
+          touch "${workdir}/.nojekyll"
+
+          git -C "$workdir" add -A
+          if git -C "$workdir" diff --cached --quiet; then
+            echo "No changes to deploy."
+          else
+            git -C "$workdir" commit -m "Deploy preview for PR #${PR_NUMBER}"
+            git -C "$workdir" push origin gh-pages
+          fi
+
+      - name: Checkout for cleanup
+        if: github.event.action == 'closed' || github.event.action == 'unlabeled'
+        uses: actions/checkout@v4
+
+      - name: Remove preview from gh-pages
+        if: github.event.action == 'closed' || github.event.action == 'unlabeled'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          UMBRELLA_DIR: pr-preview
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          if ! git ls-remote --exit-code --heads "$remote" gh-pages >/dev/null 2>&1; then
+            echo "gh-pages branch does not exist; nothing to remove."
+            exit 0
+          fi
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          workdir="${RUNNER_TEMP}/gh-pages"
+          rm -rf "$workdir"
+          git clone --depth=1 --branch gh-pages "$remote" "$workdir"
+
+          target="${workdir}/${UMBRELLA_DIR}/pr-${PR_NUMBER}"
+          if [ ! -d "$target" ]; then
+            echo "No preview directory at $target; nothing to remove."
+            exit 0
+          fi
+
+          git -C "$workdir" rm -rf "${UMBRELLA_DIR}/pr-${PR_NUMBER}"
+          git -C "$workdir" commit -m "Remove preview for PR #${PR_NUMBER}"
+          git -C "$workdir" push origin gh-pages
+
+      - name: Upsert sticky preview comment
+        if: github.event.action != 'closed' && github.event.action != 'unlabeled'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          owner="${REPO%/*}"
+          repo="${REPO#*/}"
+          preview_url="https://${owner}.github.io/${repo}/pr-preview/pr-${PR_NUMBER}/"
+          marker="<!-- pr-preview-comment -->"
+          body="$(printf '%s\n## PR preview\n\n[View the preview](%s)\n\nUpdated for commit %s.\n' \
+            "$marker" "$preview_url" "$HEAD_SHA")"
+
+          existing_id="$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate \
+            --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
+
+          if [ -n "$existing_id" ]; then
+            gh api -X PATCH "repos/${REPO}/issues/comments/${existing_id}" -f body="$body" >/dev/null
+          else
+            gh api -X POST "repos/${REPO}/issues/${PR_NUMBER}/comments" -f body="$body" >/dev/null
+          fi
+
+      - name: Update sticky comment on teardown
+        if: github.event.action == 'closed' || github.event.action == 'unlabeled'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          marker="<!-- pr-preview-comment -->"
+          body="$(printf '%s\nPR preview was removed.\n' "$marker")"
+          existing_id="$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate \
+            --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
+          if [ -n "$existing_id" ]; then
+            gh api -X PATCH "repos/${REPO}/issues/comments/${existing_id}" -f body="$body" >/dev/null
+          fi
