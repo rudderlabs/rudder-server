@@ -1,15 +1,15 @@
 name: PR Review Site
 
-# Gated on a label (default: "preview"). It only does work while the PR carries it:
-#   - label added (or PR opened/pushed while labelled) -> Codex explores the repo
-#     and builds the explainer site, which is deployed as a PR preview
-#   - PR closed/merged                                 -> tear the preview down
+# Gated on a label (default: "ai-preview"). The preview is built ONLY when the
+# label is applied (or removed and reapplied). Pushing new commits to the PR
+# does NOT regenerate the preview — re-add the label to refresh it.
+#   - label "ai-preview" added         -> Codex explores the repo and builds/deploys the site
+#   - PR closed/merged                 -> tear the preview down
 # Removing the label does NOT tear the preview down — only closing the PR does.
 on:
   pull_request:
-    types: [ opened, reopened, synchronize, labeled, closed ]
+    types: [ labeled, closed ]
 
-# A new push to the same PR cancels the previous (still-running) build.
 concurrency:
   group: pr-review-site-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -21,16 +21,15 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    # Run only while the PR carries the "preview" label (and never for fork PRs,
-    # since secrets aren't available to forks). On close, run regardless of the
-    # label so we can tear down a previously-deployed preview. Change the label
-    # name in BOTH places to rename it (the env context isn't available in a
-    # job-level `if`, so it must be a literal here).
+    # Build/deploy only when the "ai-preview" label is the one just applied. Tear
+    # down on any PR close (regardless of label). Skip fork PRs since secrets
+    # aren't available to them. Change the label name in BOTH places to rename
+    # it (the env context isn't available in a job-level `if`).
     if: >
       github.event.pull_request.head.repo.full_name == github.repository &&
       (
-        github.event.action == 'closed' ||
-        contains(github.event.pull_request.labels.*.name, 'preview')
+        (github.event.action == 'labeled' && github.event.label.name == 'ai-preview') ||
+        github.event.action == 'closed'
       )
     steps:
       - name: Create app token
