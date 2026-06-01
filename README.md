@@ -50,7 +50,7 @@
 
 ---
 
-As the leading open source Customer Data Platform (CDP), [**RudderStack**](https://www.rudderstack.com/) provides data pipelines that make it easy to collect data from every application, website and SaaS platform, then activate it in your warehouse and business tools.
+[**RudderStack**](https://www.rudderstack.com/) is a leading open source Customer Data Platform (CDP) that helps you collect data from every application, website, and SaaS platform, then activate it in your warehouse and business tools.
 
 With RudderStack, you can build customer data pipelines that connect your whole customer data stack and then make them smarter by triggering enrichment and activation in customer tools based on analysis in your data warehouse. Its easy-to-use SDKs and event source integrations, Cloud Extract integrations, transformations, and expansive library of destination and warehouse integrations make building customer data pipelines for both event streaming and cloud-to-warehouse ELT simple.
 
@@ -118,4 +118,3 @@ We would love to see you contribute to RudderStack. Get more information on how 
 ## License
 
 RudderStack server is released under the [**Elastic License 2.0**](LICENSE).
-
