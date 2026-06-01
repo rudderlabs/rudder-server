@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PR #7025 Review Dashboard</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --card: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --line: #d1d5db;
+      --accent: #0f766e;
+      --accent-soft: #ccfbf1;
+      --high: #b91c1c;
+      --medium: #b45309;
+      --low: #166534;
+      --shadow: 0 10px 26px rgba(17, 24, 39, 0.08);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: linear-gradient(180deg, #f8fafc 0%, #f7f8fa 40%, #f3f4f6 100%);
+      color: var(--text);
+      line-height: 1.45;
+    }
+
+    .layout {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 18px 14px 48px;
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    .toc {
+      position: sticky;
+      top: 12px;
+      align-self: start;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 12px;
+    }
+
+    .toc h2 {
+      font-size: 12px;
+      margin: 0 0 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .toc a {
+      display: block;
+      font-size: 13px;
+      color: #334155;
+      text-decoration: none;
+      padding: 5px 0;
+    }
+
+    .progress {
+      height: 4px;
+      background: #e5e7eb;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+
+    .progress > i {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: var(--accent);
+      transition: width 120ms linear;
+    }
+
+    main { min-width: 0; }
+
+    section, header {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 320ms ease, transform 320ms ease;
+    }
+
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .title-row h1 {
+      font-size: 24px;
+      line-height: 1.2;
+      margin: 0;
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 9px;
+      color: #334155;
+      background: #fff;
+      white-space: nowrap;
+    }
+
+    .chip.accent { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+    .chip.lang-yaml { background: #ecfeff; border-color: #67e8f9; }
+    .chip.lang-md { background: #f1f5f9; border-color: #cbd5e1; }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .meta-box {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fcfcfd;
+    }
+
+    .label { font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.08em; }
+    .value { font-size: 14px; margin-top: 2px; }
+
+    .avatar {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      display: inline-grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 12px;
+      color: #334155;
+    }
+
+    .card-title {
+      margin: 0 0 10px;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .facts {
+      margin: 10px 0 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 8px;
+    }
+
+    .facts li {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 14px;
+    }
+
+    .svg-wrap {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 8px;
+      background: #fff;
+      overflow-x: auto;
+    }
+
+    svg {
+      width: 100%;
+      min-width: 600px;
+      height: auto;
+      font-family: inherit;
+    }
+
+    .caption {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .notes {
+      margin: 10px 0 0;
+      padding-left: 18px;
+    }
+
+    .notes li { margin: 4px 0; }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 10px 0;
+      align-items: center;
+    }
+
+    input[type="search"] {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      min-width: 240px;
+      font: inherit;
+      width: 100%;
+      max-width: 340px;
+    }
+
+    details {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 10px;
+      background: #fff;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      list-style: none;
+    }
+
+    summary::-webkit-details-marker { display: none; }
+
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      overflow-x: auto;
+      margin: 10px 0 8px;
+      position: relative;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .copy-btn {
+      position: absolute;
+      right: 8px;
+      top: 8px;
+      border: 1px solid #334155;
+      background: #111827;
+      color: #e2e8f0;
+      border-radius: 6px;
+      font-size: 11px;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+
+    .legend {
+      margin: 0;
+      padding-left: 18px;
+      color: #334155;
+      font-size: 13px;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      border-radius: 999px;
+      padding: 2px 8px;
+      border: 1px solid;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .sev-high { color: var(--high); border-color: #fecaca; background: #fee2e2; }
+    .sev-medium { color: var(--medium); border-color: #fcd34d; background: #fef3c7; }
+    .sev-low { color: var(--low); border-color: #bbf7d0; background: #dcfce7; }
+
+    .risks-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .risk-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fff;
+    }
+
+    .risk-line { margin: 8px 0 0; font-size: 14px; }
+
+    .checklist {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 7px;
+    }
+
+    .testing-status {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      .toc { position: static; }
+      .split { grid-template-columns: 1fr; }
+      svg { min-width: 520px; }
+    }
+
+    @media (max-width: 640px) {
+      section, header { padding: 12px; }
+      .title-row h1 { font-size: 20px; }
+      .chip { font-size: 11px; }
+      svg { min-width: 480px; }
+      input[type="search"] { min-width: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .reveal, .reveal.visible { opacity: 1; transform: none; transition: none; }
+      .progress > i { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav class="toc" aria-label="Page sections">
+      <h2>Review Map</h2>
+      <a href="#header">Header</a>
+      <a href="#tldr">TL;DR</a>
+      <a href="#why">Why</a>
+      <a href="#glance">At a glance</a>
+      <a href="#flow">Flow</a>
+      <a href="#walkthrough">Files</a>
+      <a href="#risks">Risks</a>
+      <a href="#checklist">Checklist</a>
+      <a href="#testing">Testing</a>
+      <div class="progress" aria-hidden="true"><i id="progressBar"></i></div>
+    </nav>
+
+    <main>
+      <header id="header" class="reveal">
+        <div class="title-row">
+          <h1>
+            feat: create a web page to explain the pr for prs labeled with <span class="mono">preview</span>
+            <span class="chip accent">#7025</span>
+          </h1>
+          <span class="chip">master &larr; mihir/ai-preview</span>
+        </div>
+
+        <div class="meta">
+          <div class="meta-box">
+            <div class="label">Author</div>
+            <div class="value"><span class="avatar" aria-hidden="true">M</span> mihir20</div>
+          </div>
+          <div class="meta-box">
+            <div class="label">Diff Stats</div>
+            <div class="value">
+              <span class="chip">2 files</span>
+              <span class="chip">+391</span>
+              <span class="chip">-0</span>
+            </div>
+          </div>
+          <div class="meta-box">
+            <div class="label">Primary Languages</div>
+            <div class="value">
+              <span class="chip lang-yaml">YAML</span>
+              <span class="chip lang-md">Markdown</span>
+            </div>
+          </div>
+          <div class="meta-box">
+            <div class="label">Commits</div>
+            <div class="value"><span class="chip">10 commits</span> <span class="chip">workflow + prompt</span></div>
+          </div>
+        </div>
+      </header>
+
+      <section id="tldr" class="reveal">
+        <h2 class="card-title">TL;DR</h2>
+        <div class="chip accent">Label-gated GitHub Action builds an AI visual PR review site and publishes it to gh-pages, then removes it on PR close.</div>
+        <ul class="facts">
+          <li>
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#ccfbf1" stroke="#0f766e"/><path d="M4 8.2 6.5 11 12 5.5" stroke="#0f766e" stroke-width="1.6" fill="none"/></svg>
+            Trigger narrowed to <span class="mono">pull_request: labeled, closed</span>; rebuild requires re-adding <span class="mono">ai-preview</span>.
+          </li>
+          <li>
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="2" fill="#ccfbf1" stroke="#0f766e"/><path d="M8 4v8M4 8h8" stroke="#0f766e"/></svg>
+            Uses GitHub App token, collects <span class="mono">pr.diff</span>/<span class="mono">meta.txt</span>, runs Codex, deploys <span class="mono">pr-preview/pr-&lt;N&gt;/</span>.
+          </li>
+          <li>
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2 14 5.5v5L8 14 2 10.5v-5L8 2z" fill="#fef3c7" stroke="#b45309"/><path d="M8 5.2v3.2" stroke="#b45309"/><circle cx="8" cy="10.8" r=".9" fill="#b45309"/></svg>
+            Adds safety checks: clean gh-pages init, stray-file cleanup, symlink rejection, sticky PR comment upsert/teardown.
+          </li>
+        </ul>
+      </section>
+
+      <section id="why" class="reveal">
+        <h2 class="card-title">Why</h2>
+        <p>Review onboarding is slow for large PRs. This adds an opt-in preview workflow that auto-generates a visual explainer page and posts one stable URL in the PR, while keeping teardown and deployment behavior explicit.</p>
+
+        <div class="svg-wrap">
+          <svg viewBox="0 0 900 210" role="img" aria-label="Pain to fix diagram">
+            <defs>
+              <marker id="arr1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#9ca3af"/></marker>
+              <marker id="arr2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#0f766e"/></marker>
+            </defs>
+            <rect x="30" y="36" width="250" height="130" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+            <text x="45" y="62" font-size="15" fill="#111827">Pain</text>
+            <text x="45" y="90" font-size="13" fill="#6b7280">Manual context building</text>
+            <text x="45" y="112" font-size="13" fill="#6b7280">No single preview URL</text>
+            <text x="45" y="134" font-size="13" fill="#6b7280">Teardown ambiguity</text>
+
+            <line x1="290" y1="102" x2="415" y2="102" stroke="#9ca3af" stroke-width="2.5" marker-end="url(#arr1)"/>
+            <text x="320" y="88" font-size="12" fill="#6b7280">label applied</text>
+
+            <rect x="430" y="36" width="440" height="130" rx="10" fill="#ecfeff" stroke="#0f766e"/>
+            <text x="448" y="62" font-size="15" fill="#0f766e">Fix</text>
+            <text x="448" y="90" font-size="13" fill="#134e4a">Workflow builds review-site/index.html with Codex</text>
+            <text x="448" y="112" font-size="13" fill="#134e4a">Deploys to gh-pages/pr-preview/pr-&lt;N&gt;/</text>
+            <text x="448" y="134" font-size="13" fill="#134e4a">Removes preview only on PR close</text>
+
+            <line x1="650" y1="166" x2="820" y2="166" stroke="#0f766e" stroke-width="2.5" marker-end="url(#arr2)"/>
+            <text x="680" y="186" font-size="12" fill="#0f766e">closed =&gt; teardown</text>
+          </svg>
+        </div>
+        <div class="caption">Pain points map directly to label-driven build and close-driven teardown.</div>
+      </section>
+
+      <section id="glance" class="reveal">
+        <h2 class="card-title">What Changed At A Glance</h2>
+        <div class="svg-wrap">
+          <svg viewBox="0 0 980 300" role="img" aria-label="Workflow architecture diagram">
+            <defs>
+              <marker id="arr3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#64748b"/></marker>
+              <marker id="arr4" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#0f766e"/></marker>
+            </defs>
+            <rect x="24" y="30" width="180" height="70" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+            <text x="38" y="58" font-size="13">PR event</text>
+            <text x="38" y="78" font-size="12" fill="#6b7280">labeled | closed</text>
+
+            <rect x="252" y="30" width="220" height="70" rx="10" fill="#ecfeff" stroke="#0f766e"/>
+            <text x="266" y="58" font-size="13" fill="#0f766e">.github/workflows/ai-preview.yaml</text>
+            <text x="266" y="78" font-size="12" fill="#134e4a">job if + token + deploy logic</text>
+
+            <rect x="522" y="30" width="220" height="70" rx="10" fill="#ecfeff" stroke="#0f766e"/>
+            <text x="536" y="58" font-size="13" fill="#0f766e">.github/codex/review-prompt.md</text>
+            <text x="536" y="78" font-size="12" fill="#134e4a">visual-first output constraints</text>
+
+            <rect x="792" y="30" width="164" height="70" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+            <text x="806" y="58" font-size="13">review-site/index.html</text>
+            <text x="806" y="78" font-size="12" fill="#6b7280">generated artifact</text>
+
+            <line x1="204" y1="66" x2="244" y2="66" stroke="#64748b" stroke-width="2" marker-end="url(#arr3)"/>
+            <line x1="474" y1="66" x2="514" y2="66" stroke="#0f766e" stroke-width="2.2" marker-end="url(#arr4)"/>
+            <line x1="744" y1="66" x2="784" y2="66" stroke="#0f766e" stroke-width="2.2" marker-end="url(#arr4)"/>
+
+            <rect x="252" y="154" width="260" height="110" rx="10" fill="#fff" stroke="#cbd5e1"/>
+            <text x="268" y="178" font-size="13">Deploy branch hygiene</text>
+            <text x="268" y="200" font-size="12" fill="#6b7280">clean gh-pages init</text>
+            <text x="268" y="219" font-size="12" fill="#6b7280">remove stray tracked files</text>
+            <text x="268" y="238" font-size="12" fill="#6b7280">reject symlinks before push</text>
+
+            <rect x="556" y="154" width="260" height="110" rx="10" fill="#fff" stroke="#cbd5e1"/>
+            <text x="572" y="178" font-size="13">PR feedback loop</text>
+            <text x="572" y="200" font-size="12" fill="#6b7280">upsert sticky preview comment</text>
+            <text x="572" y="219" font-size="12" fill="#6b7280">update to removed on close</text>
+
+            <line x1="512" y1="208" x2="548" y2="208" stroke="#64748b" stroke-width="2" marker-end="url(#arr3)"/>
+          </svg>
+        </div>
+        <div class="caption">Two new files define trigger, generation, deployment, and reviewer-facing UX.</div>
+
+        <ul class="notes">
+          <li>Job runs for non-fork PRs only, using a GitHub App token with scoped permissions.</li>
+          <li>Preview build happens only on <span class="mono">ai-preview</span> label application, not on pushes.</li>
+          <li>Codex runs from repo root and must produce <span class="mono">review-site/index.html</span>.</li>
+          <li>Deployment isolates content under <span class="mono">pr-preview/pr-&lt;N&gt;/</span> plus <span class="mono">.nojekyll</span>.</li>
+          <li>Close event removes preview directory and rewrites sticky comment state.</li>
+        </ul>
+      </section>
+
+      <section id="flow" class="reveal">
+        <h2 class="card-title">Flow / Sequence</h2>
+        <div class="svg-wrap">
+          <svg viewBox="0 0 990 340" role="img" aria-label="Sequence diagram for label and close events">
+            <defs>
+              <marker id="arr5" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#64748b"/></marker>
+              <marker id="arr6" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#0f766e"/></marker>
+            </defs>
+            <text x="80" y="28" font-size="13">PR</text>
+            <text x="300" y="28" font-size="13">Workflow Job</text>
+            <text x="520" y="28" font-size="13">Codex</text>
+            <text x="730" y="28" font-size="13">gh-pages</text>
+            <text x="890" y="28" font-size="13">PR Comment</text>
+
+            <line x1="90" y1="40" x2="90" y2="310" stroke="#cbd5e1"/>
+            <line x1="320" y1="40" x2="320" y2="310" stroke="#cbd5e1"/>
+            <line x1="540" y1="40" x2="540" y2="310" stroke="#cbd5e1"/>
+            <line x1="760" y1="40" x2="760" y2="310" stroke="#cbd5e1"/>
+            <line x1="920" y1="40" x2="920" y2="310" stroke="#cbd5e1"/>
+
+            <line x1="90" y1="72" x2="320" y2="72" stroke="#0f766e" stroke-width="2.2" marker-end="url(#arr6)"/>
+            <text x="130" y="64" font-size="12" fill="#0f766e">labeled: ai-preview</text>
+
+            <line x1="320" y1="104" x2="540" y2="104" stroke="#0f766e" stroke-width="2.2" marker-end="url(#arr6)"/>
+            <text x="350" y="96" font-size="12" fill="#0f766e">codex exec + prompt</text>
+
+            <line x1="540" y1="136" x2="320" y2="136" stroke="#64748b" stroke-width="2" marker-end="url(#arr5)"/>
+            <text x="380" y="128" font-size="12" fill="#6b7280">review-site/index.html</text>
+
+            <line x1="320" y1="168" x2="760" y2="168" stroke="#0f766e" stroke-width="2.2" marker-end="url(#arr6)"/>
+            <text x="430" y="160" font-size="12" fill="#0f766e">deploy pr-preview/pr-&lt;N&gt;/</text>
+
+            <line x1="320" y1="200" x2="920" y2="200" stroke="#64748b" stroke-width="2" marker-end="url(#arr5)"/>
+            <text x="500" y="192" font-size="12" fill="#6b7280">upsert sticky preview URL</text>
+
+            <line x1="90" y1="248" x2="320" y2="248" stroke="#0f766e" stroke-width="2.2" marker-end="url(#arr6)"/>
+            <text x="150" y="240" font-size="12" fill="#0f766e">closed</text>
+
+            <line x1="320" y1="278" x2="760" y2="278" stroke="#0f766e" stroke-width="2.2" marker-end="url(#arr6)"/>
+            <text x="440" y="270" font-size="12" fill="#0f766e">remove preview dir</text>
+
+            <line x1="320" y1="304" x2="920" y2="304" stroke="#0f766e" stroke-width="2.2" marker-end="url(#arr6)"/>
+            <text x="510" y="296" font-size="12" fill="#0f766e">comment =&gt; "preview removed"</text>
+          </svg>
+        </div>
+        <div class="caption">Accent arrows are transitions introduced or tightened by this PR.</div>
+      </section>
+
+      <section id="walkthrough" class="reveal">
+        <h2 class="card-title">File Walkthrough</h2>
+        <div class="toolbar">
+          <label for="fileSearch" class="chip">Jump to file</label>
+          <input id="fileSearch" type="search" placeholder="Filter files by path..." aria-label="Filter changed files" />
+        </div>
+
+        <details data-file=".github/workflows/ai-preview.yaml" open>
+          <summary>
+            <span>.github/workflows/ai-preview.yaml</span>
+            <span class="chip">+267</span>
+          </summary>
+          <p>New workflow that gates preview generation on label events, deploys to gh-pages safely, and tears down only on PR close.</p>
+          <pre><button class="copy-btn" data-copy-target="snip1">Copy</button><code id="snip1">on:
+  pull_request:
+    types: [ labeled, closed ]
+
+if: &gt;
+  github.event.pull_request.head.repo.full_name == github.repository &amp;&amp;
+  (
+    (github.event.action == 'labeled' &amp;&amp; github.event.label.name == 'ai-preview') ||
+    github.event.action == 'closed'
+  )
+
+codex exec --dangerously-bypass-approvals-and-sandbox \
+  --cd "$GITHUB_WORKSPACE" \
+  "$(cat .github/codex/review-prompt.md)"
+
+if find "$workdir/${UMBRELLA_DIR}/pr-${PR_NUMBER}" -type l | grep -q .; then
+  echo "Preview site contains symlinks; refusing to deploy."
+  exit 1
+fi</code></pre>
+          <ol class="legend">
+            <li>Event scope is narrowed to label-add and close events.</li>
+            <li>Job guard ensures non-fork PR and exact <span class="mono">ai-preview</span> label on build path.</li>
+            <li>Codex sandbox bypass is explicit for GitHub-hosted runner constraints.</li>
+            <li>Symlink check prevents Pages deployment failure or unsafe artifacts.</li>
+          </ol>
+        </details>
+
+        <details data-file=".github/codex/review-prompt.md" open>
+          <summary>
+            <span>.github/codex/review-prompt.md</span>
+            <span class="chip">+124</span>
+          </summary>
+          <p>Defines strict output contract for Codex: one HTML file, visual-first layout, required diagrams, and mandatory interactive controls.</p>
+          <pre><button class="copy-btn" data-copy-target="snip2">Copy</button><code id="snip2">## Task
+Write exactly ONE new file at `review-site/index.html`.
+
+## Guiding principle: show, don't tell
+Hard text budget: ~600 words of prose total.
+
+## Interactivity (include all of these)
+- Collapsible file-walkthrough sections
+- Copy button on each code snippet
+- Severity filter on Risks
+- Sticky TOC with scroll-progress indicator
+- Jump to file search input</code></pre>
+          <ol class="legend">
+            <li>Prompt shifts from narrative summary to scan-first dashboard.</li>
+            <li>Budget and structure constraints are encoded as hard requirements.</li>
+            <li>Interactivity checklist mirrors reviewer UX needs.</li>
+          </ol>
+        </details>
+      </section>
+
+      <section id="risks" class="reveal">
+        <h2 class="card-title">Risks</h2>
+        <div class="toolbar" role="group" aria-label="Filter risks">
+          <button class="chip risk-filter" data-filter="all" type="button">All</button>
+          <button class="chip risk-filter" data-filter="high" type="button">High</button>
+          <button class="chip risk-filter" data-filter="medium" type="button">Medium</button>
+          <button class="chip risk-filter" data-filter="low" type="button">Low</button>
+        </div>
+
+        <div class="risks-grid" id="risksGrid">
+          <article class="risk-card" data-severity="high">
+            <span class="badge sev-high">High</span>
+            <p class="risk-line">Sandbox bypass allows unrestricted Codex process inside runner job.</p>
+            <p class="risk-line"><strong>Mitigation:</strong> keep label restricted and app/secrets tightly scoped.</p>
+          </article>
+          <article class="risk-card" data-severity="medium">
+            <span class="badge sev-medium">Medium</span>
+            <p class="risk-line">Preview does not refresh on new commits unless label is re-added.</p>
+            <p class="risk-line"><strong>Mitigation:</strong> document refresh behavior in team PR workflow.</p>
+          </article>
+          <article class="risk-card" data-severity="medium">
+            <span class="badge sev-medium">Medium</span>
+            <p class="risk-line">Cleanup runs only on close; stale preview may remain for long-lived open PRs.</p>
+            <p class="risk-line"><strong>Mitigation:</strong> close superseded PRs or add manual cleanup command later.</p>
+          </article>
+          <article class="risk-card" data-severity="low">
+            <span class="badge sev-low">Low</span>
+            <p class="risk-line">Prompt is strict; model output may still vary in quality and completeness.</p>
+            <p class="risk-line"><strong>Mitigation:</strong> fail fast on missing file; review generated page before trust.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="checklist" class="reveal">
+        <h2 class="card-title">Review Checklist</h2>
+        <ol class="checklist">
+          <li>Apply and remove <span class="mono">ai-preview</span> label, then confirm build runs only on label add.</li>
+          <li>Close a labeled PR and verify preview directory deletion on <span class="mono">gh-pages</span>.</li>
+          <li>Check sticky comment is created once and patched, not duplicated.</li>
+          <li>Confirm fork PRs skip the job because secrets are unavailable.</li>
+          <li>Validate preview deploy fails when generated site contains a symlink.</li>
+          <li>Verify required repo vars/secrets exist: app ID, app private key, Azure endpoint/key.</li>
+        </ol>
+      </section>
+
+      <section id="testing" class="reveal">
+        <h2 class="card-title">Testing</h2>
+        <div class="testing-status">
+          <span class="chip sev-medium">no tests added</span>
+          <span class="chip">workflow-only change</span>
+          <span class="chip">manual validation required</span>
+        </div>
+        <ul class="notes">
+          <li>No unit/integration tests were added in this PR.</li>
+          <li>Validation path is event-driven workflow execution in GitHub Actions.</li>
+          <li>Critical checks are runtime guards: generated file existence and symlink rejection.</li>
+        </ul>
+
+        <div class="svg-wrap" style="margin-top:10px;">
+          <svg viewBox="0 0 900 210" role="img" aria-label="Blast radius grid">
+            <rect x="30" y="28" width="840" height="150" rx="10" fill="#fff" stroke="#cbd5e1"/>
+            <text x="48" y="52" font-size="13">Blast Radius Grid</text>
+
+            <text x="210" y="78" font-size="12" fill="#6b7280">Workflow Logic</text>
+            <text x="360" y="78" font-size="12" fill="#6b7280">Prompt Contract</text>
+            <text x="500" y="78" font-size="12" fill="#6b7280">Runtime Code</text>
+            <text x="630" y="78" font-size="12" fill="#6b7280">Tests</text>
+            <text x="740" y="78" font-size="12" fill="#6b7280">Docs</text>
+
+            <text x="48" y="108" font-size="12" fill="#6b7280">Touched</text>
+            <rect x="190" y="92" width="90" height="26" rx="6" fill="#0f766e" opacity="0.86"/>
+            <rect x="340" y="92" width="90" height="26" rx="6" fill="#0f766e" opacity="0.72"/>
+            <rect x="480" y="92" width="90" height="26" rx="6" fill="#e5e7eb"/>
+            <rect x="610" y="92" width="90" height="26" rx="6" fill="#e5e7eb"/>
+            <rect x="720" y="92" width="90" height="26" rx="6" fill="#e5e7eb"/>
+
+            <text x="48" y="146" font-size="12" fill="#6b7280">Operational Risk</text>
+            <rect x="190" y="130" width="90" height="26" rx="6" fill="#f59e0b" opacity="0.72"/>
+            <rect x="340" y="130" width="90" height="26" rx="6" fill="#f59e0b" opacity="0.45"/>
+            <rect x="480" y="130" width="90" height="26" rx="6" fill="#e5e7eb"/>
+            <rect x="610" y="130" width="90" height="26" rx="6" fill="#e5e7eb"/>
+            <rect x="720" y="130" width="90" height="26" rx="6" fill="#e5e7eb"/>
+          </svg>
+        </div>
+        <div class="caption">Impact is concentrated in CI workflow and prompt policy; no runtime package code changed.</div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      var progressBar = document.getElementById('progressBar');
+      var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      function updateProgress() {
+        var scrollTop = window.scrollY || window.pageYOffset;
+        var max = document.documentElement.scrollHeight - window.innerHeight;
+        var pct = max > 0 ? (scrollTop / max) * 100 : 0;
+        progressBar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+      }
+
+      window.addEventListener('scroll', updateProgress, { passive: true });
+      updateProgress();
+
+      var copyButtons = document.querySelectorAll('.copy-btn');
+      copyButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var id = btn.getAttribute('data-copy-target');
+          var code = document.getElementById(id);
+          if (!code) return;
+          navigator.clipboard.writeText(code.textContent || '').then(function () {
+            var original = btn.textContent;
+            btn.textContent = 'Copied';
+            setTimeout(function () { btn.textContent = original; }, 1100);
+          });
+        });
+      });
+
+      var filterButtons = document.querySelectorAll('.risk-filter');
+      var riskCards = document.querySelectorAll('#risksGrid [data-severity]');
+      filterButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          var filter = button.getAttribute('data-filter');
+          filterButtons.forEach(function (b) { b.classList.remove('accent'); });
+          button.classList.add('accent');
+          riskCards.forEach(function (card) {
+            var severity = card.getAttribute('data-severity');
+            card.style.display = (filter === 'all' || severity === filter) ? '' : 'none';
+          });
+        });
+      });
+      if (filterButtons[0]) filterButtons[0].classList.add('accent');
+
+      var search = document.getElementById('fileSearch');
+      var fileDetails = document.querySelectorAll('#walkthrough details[data-file]');
+      if (search) {
+        search.addEventListener('input', function () {
+          var term = search.value.trim().toLowerCase();
+          fileDetails.forEach(function (item) {
+            var file = (item.getAttribute('data-file') || '').toLowerCase();
+            item.style.display = file.indexOf(term) !== -1 ? '' : 'none';
+          });
+        });
+      }
+
+      var revealEls = document.querySelectorAll('.reveal');
+      if (!reduceMotion && 'IntersectionObserver' in window) {
+        var observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('visible');
+              observer.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.1 });
+        revealEls.forEach(function (el) { observer.observe(el); });
+      } else {
+        revealEls.forEach(function (el) { el.classList.add('visible'); });
+      }
+    })();
+  </script>
+</body>
+</html>
