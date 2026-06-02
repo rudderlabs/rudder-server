@@ -658,9 +658,9 @@ func TestDropDSLoop(t *testing.T) {
 		statStore, err := memstats.New()
 		require.NoError(t, err)
 		jobsDB := &Handle{
-			TriggerAddNewDS:  func() <-chan time.Time { return make(chan time.Time) },
-			TriggerMigrateDS: func() <-chan time.Time { return make(chan time.Time) },
-			stats:            statStore,
+			TriggerAddNewDS:   func() <-chan time.Time { return make(chan time.Time) },
+			TriggerCompaction: func() <-chan time.Time { return make(chan time.Time) },
+			stats:             statStore,
 		}
 		prefix := strings.ToLower(rsRand.String(5))
 		require.NoError(t, jobsDB.Setup(ReadWrite, false, prefix))
@@ -1984,13 +1984,13 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	statStore, err := memstats.New()
 	require.NoError(t, err)
 	triggerAddNewDS := make(chan time.Time)
-	triggerMigrateDS := make(chan time.Time)
+	triggerCompaction := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
-		TriggerMigrateDS: func() <-chan time.Time {
-			return triggerMigrateDS
+		TriggerCompaction: func() <-chan time.Time {
+			return triggerCompaction
 		},
 		config: c,
 		stats:  statStore,
@@ -2079,8 +2079,8 @@ func TestGetDistinctParameterValues(t *testing.T) {
 		}
 	})
 	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses))
-	triggerMigrateDS <- time.Now()
-	triggerMigrateDS <- time.Now()
+	triggerCompaction <- time.Now()
+	triggerCompaction <- time.Now()
 
 	parameterValues, err = jobsDB.GetDistinctParameterValues(context.Background(), SourceID, "")
 	require.NoError(t, err)
@@ -2326,13 +2326,13 @@ func TestUpdateJobStatus(t *testing.T) {
 	statStore, err := memstats.New()
 	require.NoError(t, err)
 	triggerAddNewDS := make(chan time.Time)
-	triggerMigrateDS := make(chan time.Time)
+	triggerCompaction := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
-		TriggerMigrateDS: func() <-chan time.Time {
-			return triggerMigrateDS
+		TriggerCompaction: func() <-chan time.Time {
+			return triggerCompaction
 		},
 		config: c,
 		stats:  statStore,

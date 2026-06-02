@@ -48,13 +48,13 @@ func TestJobsdbPileupCount(t *testing.T) {
 	require.NoError(t, err)
 
 	addDS := make(chan time.Time)
-	migrateDS := make(chan time.Time)
+	compaction := make(chan time.Time)
 	jdb := NewForReadWrite(TablePrefix, WithConfig(c), WithStats(statsStore))
 	jdb.TriggerAddNewDS = func() <-chan time.Time {
 		return addDS
 	}
-	jdb.TriggerMigrateDS = func() <-chan time.Time {
-		return migrateDS
+	jdb.TriggerCompaction = func() <-chan time.Time {
+		return compaction
 	}
 
 	require.NoError(t, jdb.Start())
@@ -190,7 +190,7 @@ func TestJobsdbPileupCount(t *testing.T) {
 			case <-ctx2.Done():
 				return nil
 			case <-time.After(10 * time.Millisecond): // we are assuming that 10ms is the least time that a query can take
-				migrateDS <- time.Now()
+				compaction <- time.Now()
 				migrations++
 			}
 		}

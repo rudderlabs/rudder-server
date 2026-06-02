@@ -20,11 +20,16 @@ type sqlDbOrTx interface {
 
 const preDropTableComment = "rudder:pre_drop:v1"
 
+type asserter interface {
+	assert(cond bool, errorString string)
+	assertError(err error)
+}
+
 /*
 Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
 */
-func getDSList(jd assertInterface, dbHandle sqlDbOrTx, tablePrefix string) ([]dataSetT, error) {
+func getDSList(jd asserter, dbHandle sqlDbOrTx, tablePrefix string) ([]dataSetT, error) {
 	var datasetList []dataSetT
 
 	// Read the table names from PG
@@ -148,7 +153,7 @@ func preDropDatasetTables(tableName string) (jobTable, statusTable string, ok bo
 }
 
 // checkValidJobState Function to check validity of states
-func checkValidJobState(jd assertInterface, stateFilters []string) {
+func checkValidJobState(jd asserter, stateFilters []string) {
 	jobStateMap := lo.SliceToMap(jobStates, func(js jobStateT) (string, struct{}) { return js.State, struct{}{} })
 	for _, st := range stateFilters {
 		if _, ok := jobStateMap[st]; !ok {

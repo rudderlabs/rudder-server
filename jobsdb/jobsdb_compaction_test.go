@@ -28,14 +28,14 @@ func TestMigration(t *testing.T) {
 		_ = startPostgres(t)
 
 		triggerAddNewDS := make(chan time.Time)
-		triggerMigrateDS := make(chan time.Time)
+		triggerCompaction := make(chan time.Time)
 
 		jobDB := Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
-			TriggerMigrateDS: func() <-chan time.Time {
-				return triggerMigrateDS
+			TriggerCompaction: func() <-chan time.Time {
+				return triggerCompaction
 			},
 			config: c,
 		}
@@ -129,8 +129,8 @@ func TestMigration(t *testing.T) {
 			),
 		)
 		require.NoError(t, err)
-		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
-		triggerMigrateDS <- time.Now() // waits for last loop to finish
+		triggerCompaction <- time.Now() // trigger compactionLoop to run
+		triggerCompaction <- time.Now() // waits for last loop to finish
 
 		// we should see that in the three DSs we have,
 		// the first one should only have non-terminal jobs left now(with only the last status) in jobs_1_1
@@ -198,7 +198,7 @@ func TestMigration(t *testing.T) {
 		_ = startPostgres(t)
 
 		triggerAddNewDS := make(chan time.Time)
-		triggerMigrateDS := make(chan time.Time)
+		triggerCompaction := make(chan time.Time)
 		config.Reset()
 		c := config.New()
 		c.Set("JobsDB.maxDSSize", 1)
@@ -207,8 +207,8 @@ func TestMigration(t *testing.T) {
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
-			TriggerMigrateDS: func() <-chan time.Time {
-				return triggerMigrateDS
+			TriggerCompaction: func() <-chan time.Time {
+				return triggerCompaction
 			},
 			config: c,
 		}
@@ -331,14 +331,14 @@ func TestMigration(t *testing.T) {
 		_ = startPostgres(t)
 
 		triggerAddNewDS := make(chan time.Time)
-		triggerMigrateDS := make(chan time.Time)
+		triggerCompaction := make(chan time.Time)
 
 		jobDB := Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
-			TriggerMigrateDS: func() <-chan time.Time {
-				return triggerMigrateDS
+			TriggerCompaction: func() <-chan time.Time {
+				return triggerCompaction
 			},
 			config: c,
 		}
@@ -438,8 +438,8 @@ func TestMigration(t *testing.T) {
 
 		c.Set("JobsDB.maxDSSize", 100000)
 		jobDB.conf.payloadColumnType = "text"
-		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
-		triggerMigrateDS <- time.Now() // waits for last loop to finish
+		triggerCompaction <- time.Now() // trigger compactionLoop to run
+		triggerCompaction <- time.Now() // waits for last loop to finish
 
 		// data moved from both jsonb and bytea columns to a text column
 
@@ -669,9 +669,9 @@ func TestMigrationMaxDSSizeGuard(t *testing.T) {
 		c.Set("JobsDB.jobMinRowsLeftMigrateThreshold", threshold)
 		triggerAddNewDS := make(chan time.Time)
 		jd := &Handle{
-			TriggerAddNewDS:  func() <-chan time.Time { return triggerAddNewDS },
-			TriggerMigrateDS: func() <-chan time.Time { return make(chan time.Time) },
-			config:           c,
+			TriggerAddNewDS:   func() <-chan time.Time { return triggerAddNewDS },
+			TriggerCompaction: func() <-chan time.Time { return make(chan time.Time) },
+			config:            c,
 		}
 		require.NoError(t, jd.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
 		t.Cleanup(jd.TearDown)
@@ -697,7 +697,7 @@ func TestMigrationMaxDSSizeGuard(t *testing.T) {
 		// DS1..DS4: 3 pending each (needsPair since 3 < 7)
 		// DS5: last DS (exempt)
 		//
-		// getMigrationList walk:
+		// getCompactionList walk:
 		//   DS1 → waiting
 		//   DS2 → pair: 3+3=6 ≤ 10, pendingJobsCount=6
 		//   DS3 → piggyback: 6+3=9 ≤ 10, pendingJobsCount=9
@@ -713,9 +713,9 @@ func TestMigrationMaxDSSizeGuard(t *testing.T) {
 		dsList := jd.getDSListSnapshot()
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxMigrateDSProbe", len(dsList))
 
-		result, err := jd.getMigrationList(dsList, nil, jd.maintenanceDB())
+		result, err := jd.getCompactionList(dsList, nil, jd.maintenanceDB())
 		require.NoError(t, err)
-		require.Len(t, result.migrateFrom, 3)
+		require.Len(t, result.compactFrom, 3)
 		require.Equal(t, 9, result.pendingJobsCount)
 		require.LessOrEqual(t, result.pendingJobsCount, 10)
 	})
@@ -734,9 +734,9 @@ func TestMigrationMaxDSSizeGuard(t *testing.T) {
 		dsList := jd.getDSListSnapshot()
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxMigrateDSProbe", len(dsList))
 
-		result, err := jd.getMigrationList(dsList, nil, jd.maintenanceDB())
+		result, err := jd.getCompactionList(dsList, nil, jd.maintenanceDB())
 		require.NoError(t, err)
-		require.Empty(t, result.migrateFrom)
+		require.Empty(t, result.compactFrom)
 	})
 }
 
@@ -748,12 +748,12 @@ func TestMigrationSkipsDatasets(t *testing.T) {
 	_ = startPostgres(t)
 
 	triggerAddNewDS := make(chan time.Time)
-	triggerMigrateDS := make(chan time.Time)
+	triggerCompaction := make(chan time.Time)
 
 	jobDB := Handle{
-		TriggerAddNewDS:  func() <-chan time.Time { return triggerAddNewDS },
-		TriggerMigrateDS: func() <-chan time.Time { return triggerMigrateDS },
-		config:           c,
+		TriggerAddNewDS:   func() <-chan time.Time { return triggerAddNewDS },
+		TriggerCompaction: func() <-chan time.Time { return triggerCompaction },
+		config:            c,
 	}
 	tablePrefix := strings.ToLower(rand.String(5))
 	require.NoError(t, jobDB.Setup(ReadWrite, true, tablePrefix))
@@ -794,25 +794,25 @@ func TestMigrationSkipsDatasets(t *testing.T) {
 		// Allow probing enough datasets to reach the eligible one in a single call
 		c.Set("JobsDB."+tablePrefix+"."+"maxMigrateDSProbe", totalDS)
 
-		// Measure first getMigrationList call (full scan, no skip)
+		// Measure first getCompactionList call (full scan, no skip)
 		checkStart := time.Now()
-		checkResult, err := jobDB.getMigrationList(dsList, nil, jobDB.maintenanceDB())
+		checkResult, err := jobDB.getCompactionList(dsList, nil, jobDB.maintenanceDB())
 		checkDuration := time.Since(checkStart)
 		require.NoError(t, err)
-		require.NotEmpty(t, checkResult.migrateFrom, "should find eligible datasets")
+		require.NotEmpty(t, checkResult.compactFrom, "should find eligible datasets")
 		require.NotNil(t, checkResult.firstEligible, "should have firstEligible set")
 
-		// Measure second getMigrationList call (with skipBefore from first call)
+		// Measure second getCompactionList call (with skipBefore from first call)
 		lockCheckStart := time.Now()
-		lockResult, err := jobDB.getMigrationList(dsList, checkResult.firstEligible, jobDB.maintenanceDB())
+		lockResult, err := jobDB.getCompactionList(dsList, checkResult.firstEligible, jobDB.maintenanceDB())
 		lockCheckDuration := time.Since(lockCheckStart)
 		require.NoError(t, err)
-		require.NotEmpty(t, lockResult.migrateFrom)
+		require.NotEmpty(t, lockResult.compactFrom)
 
 		// Both calls should find the same eligible datasets
-		require.Equal(t, len(checkResult.migrateFrom), len(lockResult.migrateFrom))
-		for i := range checkResult.migrateFrom {
-			require.Equal(t, checkResult.migrateFrom[i].ds.Index, lockResult.migrateFrom[i].ds.Index)
+		require.Equal(t, len(checkResult.compactFrom), len(lockResult.compactFrom))
+		for i := range checkResult.compactFrom {
+			require.Equal(t, checkResult.compactFrom[i].ds.Index, lockResult.compactFrom[i].ds.Index)
 		}
 
 		t.Logf("check duration (no skip):   %v", checkDuration)
@@ -820,7 +820,7 @@ func TestMigrationSkipsDatasets(t *testing.T) {
 
 		// The second call with skipBefore should be significantly faster
 		require.Greater(t, checkDuration, lockCheckDuration,
-			"getMigrationList with skipBefore should be faster than without",
+			"getCompactionList with skipBefore should be faster than without",
 		)
 	})
 
@@ -828,34 +828,34 @@ func TestMigrationSkipsDatasets(t *testing.T) {
 		// Set maxMigrateDSProbe to 100 so the first iteration can't reach the
 		// eligible dataset at position 150. It will need 2 iterations.
 		c.Set("JobsDB."+tablePrefix+"."+"maxMigrateDSProbe", 100)
-		jobDB.lastMigrateProbeIndex = nil
+		jobDB.lastCompactionProbeIndex = nil
 
 		// 1st iteration: probes datasets 1..100, finds nothing, hits probe limit.
-		// Should store lastMigrateProbeIndex for resumption.
-		result1, err := jobDB.getMigrationList(dsList, jobDB.lastMigrateProbeIndex, jobDB.maintenanceDB())
+		// Should store lastCompactionProbeIndex for resumption.
+		result1, err := jobDB.getCompactionList(dsList, jobDB.lastCompactionProbeIndex, jobDB.maintenanceDB())
 		require.NoError(t, err)
-		require.Empty(t, result1.migrateFrom, "should not find eligible datasets in first 100")
+		require.Empty(t, result1.compactFrom, "should not find eligible datasets in first 100")
 		require.True(t, result1.probeLimitReached, "should hit probe limit")
 		require.NotNil(t, result1.lastProbed, "should have lastProbed set")
 
-		// Simulate what doMigrateDS does: save the resume point
-		jobDB.lastMigrateProbeIndex = result1.lastProbed
+		// Simulate what doCompaction does: save the resume point
+		jobDB.lastCompactionProbeIndex = result1.lastProbed
 
 		// 2nd iteration: resumes from where the first left off, finds the eligible dataset.
 		resumeStart := time.Now()
-		result2, err := jobDB.getMigrationList(dsList, jobDB.lastMigrateProbeIndex, jobDB.maintenanceDB())
+		result2, err := jobDB.getCompactionList(dsList, jobDB.lastCompactionProbeIndex, jobDB.maintenanceDB())
 		resumeDuration := time.Since(resumeStart)
 		require.NoError(t, err)
-		require.NotEmpty(t, result2.migrateFrom, "should find eligible datasets in second iteration")
-		require.Equal(t, dsList[eligibleDSPos].Index, result2.migrateFrom[0].ds.Index)
+		require.NotEmpty(t, result2.compactFrom, "should find eligible datasets in second iteration")
+		require.Equal(t, dsList[eligibleDSPos].Index, result2.compactFrom[0].ds.Index)
 
 		// Compare with a full scan from scratch
 		c.Set("JobsDB."+tablePrefix+"."+"maxMigrateDSProbe", totalDS)
 		fullStart := time.Now()
-		resultFull, err := jobDB.getMigrationList(dsList, nil, jobDB.maintenanceDB())
+		resultFull, err := jobDB.getCompactionList(dsList, nil, jobDB.maintenanceDB())
 		fullDuration := time.Since(fullStart)
 		require.NoError(t, err)
-		require.NotEmpty(t, resultFull.migrateFrom)
+		require.NotEmpty(t, resultFull.compactFrom)
 
 		t.Logf("full scan duration:    %v", fullDuration)
 		t.Logf("resumed scan duration: %v", resumeDuration)
@@ -878,9 +878,9 @@ func TestMigrationNonBlockingCompletedDSDrop(t *testing.T) {
 		c := config.New()
 		c.Set("JobsDB.maxDSSize", 100000)
 		jd := &Handle{
-			TriggerAddNewDS:  func() <-chan time.Time { return make(chan time.Time) },
-			TriggerMigrateDS: func() <-chan time.Time { return make(chan time.Time) },
-			config:           c,
+			TriggerAddNewDS:   func() <-chan time.Time { return make(chan time.Time) },
+			TriggerCompaction: func() <-chan time.Time { return make(chan time.Time) },
+			config:            c,
 		}
 		require.NoError(t, jd.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
 		t.Cleanup(jd.TearDown)
@@ -931,7 +931,7 @@ func TestMigrationNonBlockingCompletedDSDrop(t *testing.T) {
 		require.Len(t, snapshot, 2)
 		completedDS := snapshot[0]
 
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 
 		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
 		require.NotContains(t, listIndices, completedDS.Index, "completed DS should be removed from the published list")
@@ -959,7 +959,7 @@ func TestMigrationNonBlockingCompletedDSDrop(t *testing.T) {
 		_, _, release, err := jd.acquireDSListForRead(context.Background())
 		require.NoError(t, err)
 
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 
 		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
 		require.NotContains(t, listIndices, completedDS.Index, "completed DS hidden from new readers")
@@ -998,7 +998,7 @@ func TestMigrationNonBlockingCompletedDSDrop(t *testing.T) {
 		require.Len(t, snapshot, 2)
 		pendingDS := snapshot[0]
 
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 
 		require.False(t, tableExists(t, jd, pendingDS), "source DS must be dropped via legacy migration TX")
 		jd.dropDSListLock.RLock()
@@ -1033,7 +1033,7 @@ func TestMigrationNonBlockingCompletedDSDrop(t *testing.T) {
 		require.NoError(t, err)
 		defer release()
 
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 
 		jd.dropDSListLock.RLock()
 		require.Len(t, jd.dropDSList, 1, "only the completed DS should be enqueued for async drop")
@@ -1055,7 +1055,7 @@ func TestMigrationNonBlockingCompletedDSDrop(t *testing.T) {
 		completed1 := jd.getDSListSnapshot()[0]
 
 		// Flag off (default): legacy in-tx drop.
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 		require.False(t, tableExists(t, jd, completed1), "first migration must use the legacy in-tx drop")
 		jd.dropDSListLock.RLock()
 		require.Empty(t, jd.dropDSList)
@@ -1075,7 +1075,7 @@ func TestMigrationNonBlockingCompletedDSDrop(t *testing.T) {
 		require.NoError(t, err)
 		defer release()
 
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 
 		jd.dropDSListLock.RLock()
 		require.Len(t, jd.dropDSList, 1, "second migration must use the async drop path after the flag is on")
@@ -1096,9 +1096,9 @@ func TestNonBlockingCompaction(t *testing.T) {
 		c := config.New()
 		c.Set("JobsDB.maxDSSize", 100000)
 		jd := &Handle{
-			TriggerAddNewDS:  func() <-chan time.Time { return make(chan time.Time) },
-			TriggerMigrateDS: func() <-chan time.Time { return make(chan time.Time) },
-			config:           c,
+			TriggerAddNewDS:   func() <-chan time.Time { return make(chan time.Time) },
+			TriggerCompaction: func() <-chan time.Time { return make(chan time.Time) },
+			config:            c,
 		}
 		require.NoError(t, jd.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
 		t.Cleanup(jd.TearDown)
@@ -1173,7 +1173,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 		require.Len(t, snapshot, 2)
 		sourceDS := snapshot[0]
 
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 
 		require.False(t, tableExists(t, jd, sourceDS), "legacy flow drops source in-TX")
 		jd.dropDSListLock.RLock()
@@ -1200,7 +1200,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 		_, _, release, err := jd.acquireDSListForRead(context.Background())
 		require.NoError(t, err)
 
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 
 		// Source must be hidden from the published list and replaced with a dest.
 		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
@@ -1259,7 +1259,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 			}
 		}()
 
-		// Block compaction after getMigrationList's optimistic pending-count
+		// Block compaction after getCompactionList's optimistic pending-count
 		// decision but before the TX copies jobs. doCompactDS takes this shared
 		// advisory lock only after computing migrationList.
 		blocker, err := jd.dbHandle.BeginTx(context.Background(), nil)
@@ -1274,7 +1274,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 
 		done := make(chan error, 1)
 		go func() {
-			done <- jd.doMigrateDS(context.Background())
+			done <- jd.doCompaction(context.Background())
 		}()
 
 		require.Eventually(t, func() bool {
@@ -1343,7 +1343,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 		fillDS(t, jd, jobs, 10) // 10 succeeded (ids 1..10), 10 pending (ids 11..20)
 		createDS(t, jd, "2")    // empty last DS
 
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 
 		_, ranges, release, err := jd.acquireDSListForRead(context.Background())
 		require.NoError(t, err)
@@ -1366,7 +1366,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
 		// Disable needsPair so DS_2 (non-terminal only) is NOT eligible for migration.
-		// We need DS_2 non-empty so checkIfMigrateDS's created_at scan doesn't trip on NULL.
+		// We need DS_2 non-empty so checkIfCompactDS's created_at scan doesn't trip on NULL.
 		c.Set("JobsDB."+jd.tablePrefix+"."+"jobMinRowsLeftMigrateThreshold", 0.0)
 
 		jobs := genJobs(defaultWorkspaceID, "test", 30, 1)
@@ -1375,7 +1375,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 		fillDS(t, jd, jobs[10:20], 10) // DS_2: 10 non-terminal — ineligible with threshold=0
 		createDS(t, jd, "3")           // empty last DS (exempt via idxCheck)
 
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 
 		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
 		// Source DS_1 was compacted into DS_1_1. DS_2 and DS_3 were not in migrateFrom
@@ -1403,7 +1403,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 		_, _, release, err := jd.acquireDSListForRead(context.Background())
 		require.NoError(t, err)
 
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 
 		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
 		require.NotContains(t, listIndices, completedDS.Index, "completed source hidden from list")
@@ -1440,7 +1440,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 		require.NoError(t, err)
 		defer release()
 
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 
 		// Direct INSERT into the (compacted-away) source status table must trip the
 		// readonly trigger and raise RS001 — proof the trigger fences late writers.
@@ -1482,7 +1482,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 		_, _, release, err := jd.acquireDSListForRead(context.Background())
 		require.NoError(t, err)
 
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 		require.True(t, tableExists(t, jd, sourceDS), "drop blocked by held reader (simulates crash before drop)")
 		require.True(t, tableMarkedPreDrop(t, jd, sourceDS.JobTable))
 
@@ -1508,7 +1508,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 		fillDS(t, jd, allJobs[:10], 5)
 		createDS(t, jd, "2")
 		source1 := jd.getDSListSnapshot()[0]
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 		require.False(t, tableExists(t, jd, source1), "first migration uses legacy in-TX drop")
 		jd.dropDSListLock.RLock()
 		require.Empty(t, jd.dropDSList)
@@ -1532,7 +1532,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 		require.NoError(t, err)
 		defer release()
 
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 		jd.dropDSListLock.RLock()
 		require.NotEmpty(t, jd.dropDSList, "second migration must use the async drop path")
 		jd.dropDSListLock.RUnlock()
@@ -1563,7 +1563,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 		_, _, release, err := jd.acquireDSListForRead(context.Background())
 		require.NoError(t, err)
 
-		require.NoError(t, jd.doMigrateDS(context.Background()))
+		require.NoError(t, jd.doCompaction(context.Background()))
 
 		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
 		require.NotContains(t, listIndices, sourceDS.Index, "source DS hidden from new readers")

@@ -23,23 +23,23 @@ import (
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
-// startMigrateDSLoop migrates jobs from src dataset (srcDS) to destination dataset (dest_ds)
+// startCompactionLoop migrates jobs from src dataset (srcDS) to destination dataset (dest_ds)
 // First all the unprocessed jobs are copied over. Then all the jobs which haven't
 // completed (state is failed or waiting or waiting_retry or executiong) are copied
 // over. Then the status (only the latest) is set for those jobs
-func (jd *Handle) startMigrateDSLoop(ctx context.Context) {
+func (jd *Handle) startCompactionLoop(ctx context.Context) {
 	jd.backgroundGroup.Go(crash.Wrapper(func() error {
-		jd.migrateDSLoop(ctx)
+		jd.compactionLoop(ctx)
 		return nil
 	}))
 }
 
-func (jd *Handle) migrateDSLoop(ctx context.Context) {
+func (jd *Handle) compactionLoop(ctx context.Context) {
 	for {
 		select {
-		case <-jd.TriggerMigrateDS():
-			if jd.migrateDSPaused.Load() {
-				jd.logger.Debugn("migration loop paused")
+		case <-jd.TriggerCompaction():
+			if jd.compactionPaused.Load() {
+				jd.logger.Debugn("compaction loop paused")
 				continue
 			}
 		case <-ctx.Done():
@@ -47,13 +47,13 @@ func (jd *Handle) migrateDSLoop(ctx context.Context) {
 		}
 		migrate := func() error {
 			start := time.Now()
-			jd.logger.Debugn("Start", logger.NewStringField("operation", "migrateDSLoop"))
-			timeoutCtx, cancel := context.WithTimeout(ctx, jd.conf.migration.migrateDSTimeout.Load())
+			jd.logger.Debugn("Start", logger.NewStringField("operation", "compactionLoop"))
+			timeoutCtx, cancel := context.WithTimeout(ctx, jd.conf.compaction.timeout.Load())
 			defer cancel()
-			err := jd.doMigrateDS(timeoutCtx)
+			err := jd.doCompaction(timeoutCtx)
 			jd.stats.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
 			if err != nil {
-				return fmt.Errorf("migrate ds: %w", err)
+				return fmt.Errorf("compact ds: %w", err)
 			}
 			return nil
 		}
@@ -61,14 +61,14 @@ func (jd *Handle) migrateDSLoop(ctx context.Context) {
 			if !jd.conf.skipMaintenanceError {
 				panic(err)
 			}
-			jd.logger.Errorn("migrateDSLoop error", obskit.Error(err))
+			jd.logger.Errorn("compactionLoop error", obskit.Error(err))
 		}
 	}
 }
 
-func (jd *Handle) doMigrateDS(ctx context.Context) error {
-	if jd.conf.migration.nonBlockingCompaction.Load() {
-		return jd.doCompactDS(ctx)
+func (jd *Handle) doCompaction(ctx context.Context) error {
+	if jd.conf.compaction.nonBlockingCompaction.Load() {
+		return jd.doNonBlockingCompaction(ctx)
 	}
 	dsList, _, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
@@ -81,18 +81,18 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 	}
 	release()
 
-	optimisticCheck, err := jd.getMigrationList(dsList, jd.lastMigrateProbeIndex, jd.maintenanceDB())
-	jd.lastMigrateProbeIndex = nil
+	optimisticCheck, err := jd.getCompactionList(dsList, jd.lastCompactionProbeIndex, jd.maintenanceDB())
+	jd.lastCompactionProbeIndex = nil
 	if err != nil {
-		return fmt.Errorf("could not get migration list: %w", err)
+		return fmt.Errorf("could not get compaction list: %w", err)
 	}
 
 	// Fast path: route datasets that have no pending jobs through the async
-	// dropDSLoop instead of the in-TX postMigrateHandleDS path. This skips the
-	// dsMigrationLock for empty-source drops so concurrent readers are not blocked.
-	if jd.conf.migration.nonBlockingCompletedDSDrop.Load() {
+	// dropDSLoop instead of the in-TX postCompactionHandleDS path. This skips the
+	// dsCompactionLock for empty-source drops so concurrent readers are not blocked.
+	if jd.conf.compaction.nonBlockingCompletedDSDrop.Load() {
 		completed := lo.FilterMap(
-			optimisticCheck.migrateFrom,
+			optimisticCheck.compactFrom,
 			func(d dsWithPendingJobCount, _ int) (dataSetT, bool) {
 				return d.ds, d.numJobsPending == 0
 			},
@@ -100,7 +100,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 		if len(completed) > 0 {
 			if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
 				// addCompletedDSToDropList republishes dsList without the completed datasets;
-				// reuse that snapshot so the second getMigrationList pass inside the
+				// reuse that snapshot so the second getCompactionList pass inside the
 				// TX does not re-encounter datasets we just queued for async drop.
 				newList, err := jd.addCompletedDSToDropList(ctx, l, completed...)
 				if err != nil {
@@ -111,18 +111,18 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 			}); err != nil {
 				return fmt.Errorf("enqueue completed datasets for async drop: %w", err)
 			}
-			optimisticCheck.migrateFrom = lo.Filter(
-				optimisticCheck.migrateFrom,
+			optimisticCheck.compactFrom = lo.Filter(
+				optimisticCheck.compactFrom,
 				func(d dsWithPendingJobCount, _ int) bool { return d.numJobsPending > 0 },
 			)
 		}
 	}
 
-	if len(optimisticCheck.migrateFrom) == 0 {
+	if len(optimisticCheck.compactFrom) == 0 {
 		// if we reached the probe limit, we know that all datasets before lastProbed are ineligible,
 		// so we can use lastProbed as the resume point for the next iteration
 		if optimisticCheck.probeLimitReached {
-			jd.lastMigrateProbeIndex = optimisticCheck.lastProbed
+			jd.lastCompactionProbeIndex = optimisticCheck.lastProbed
 		}
 		return nil // no eligible datasets found, nothing to migrate
 	}
@@ -134,29 +134,29 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 	err = jd.withMaintenanceTx(ctx, func(tx *Tx) error {
 		return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error { // cannot run while schema migration is running
 			// Take the lock and run actual migration
-			if !jd.dsMigrationLock.TryLockWithCtx(ctx) {
-				return fmt.Errorf("acquire dsMigrationLock: %w", ctx.Err())
+			if !jd.dsCompactionLock.TryLockWithCtx(ctx) {
+				return fmt.Errorf("acquire dsCompactionLock: %w", ctx.Err())
 			}
-			defer jd.dsMigrationLock.Unlock()
-			// repeat the check after the dsMigrationLock is acquired to get correct pending jobs count.
-			// the pending jobs count cannot change after the dsMigrationLock is acquired.
+			defer jd.dsCompactionLock.Unlock()
+			// repeat the check after the dsCompactionLock is acquired to get correct pending jobs count.
+			// the pending jobs count cannot change after the dsCompactionLock is acquired.
 			// skip datasets before the first eligible one found in the optimistic check.
-			migrateResult, err := jd.getMigrationList(dsList, optimisticCheck.firstEligible, tx)
+			compactionResult, err := jd.getCompactionList(dsList, optimisticCheck.firstEligible, tx)
 			if err != nil {
-				return fmt.Errorf("could not get migration list: %w", err)
+				return fmt.Errorf("could not get compaction list: %w", err)
 			}
-			if len(migrateResult.migrateFrom) == 0 {
+			if len(compactionResult.compactFrom) == 0 {
 				return nil
 			}
 
-			migrateFrom := migrateResult.migrateFrom
-			pendingJobsCount := migrateResult.pendingJobsCount
-			insertBeforeDS := migrateResult.insertBeforeDS
-			migrateFromDatasets := lo.Map(migrateFrom, func(ds dsWithPendingJobCount, _ int) dataSetT { return ds.ds })
+			compactFrom := compactionResult.compactFrom
+			pendingJobsCount := compactionResult.pendingJobsCount
+			insertBeforeDS := compactionResult.insertBeforeDS
+			compactFromDatasets := lo.Map(compactFrom, func(ds dsWithPendingJobCount, _ int) dataSetT { return ds.ds })
 			if pendingJobsCount > 0 { // migrate incomplete jobs
 				var destination dataSetT
 				if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
-					dsIdx, err := jd.computeNewIdxForIntraNodeMigration(l, insertBeforeDS, tx)
+					dsIdx, err := jd.computeNewIdxForIntraNodeCompaction(l, insertBeforeDS, tx)
 					if err != nil {
 						return fmt.Errorf("computing new index for intra-node migration: %w", err)
 					}
@@ -167,15 +167,15 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 				}
 
 				jd.logger.Infon(
-					"[[ migrateDSLoop ]]",
+					"[[ compactionLoop ]]",
 					logger.NewIntField("pendingJobsCount", int64(pendingJobsCount)),
-					logger.NewIntField("migrateFrom", int64(len(migrateFrom))),
-					logger.NewStringField("from", strings.Join(lo.Map(migrateFromDatasets, func(d dataSetT, _ int) string { return d.Index }), ",")),
+					logger.NewIntField("compactFrom", int64(len(compactFrom))),
+					logger.NewStringField("from", strings.Join(lo.Map(compactFromDatasets, func(d dataSetT, _ int) string { return d.Index }), ",")),
 					logger.NewStringField("to", destination.Index),
 					logger.NewStringField("insert before", insertBeforeDS.Index),
 				)
 
-				opPayload, err := jsonrs.Marshal(&journalOpPayloadT{From: migrateFromDatasets, To: destination})
+				opPayload, err := jsonrs.Marshal(&journalOpPayloadT{From: compactFromDatasets, To: destination})
 				if err != nil {
 					return fmt.Errorf("marshal journal payload: %w", err)
 				}
@@ -189,32 +189,32 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 					return fmt.Errorf("create dataset tables: %w", err)
 				}
 
-				totalJobsMigrated := 0
-				var noJobsMigrated int
+				totalJobsCompacted := 0
+				var noJobsCompacted int
 				copyStart := time.Now()
-				for i := range migrateFrom {
-					source := migrateFrom[i]
+				for i := range compactFrom {
+					source := compactFrom[i]
 					if source.numJobsPending > 0 {
 						jd.logger.Infon(
-							"[[ migrateDSLoop ]]: Migrate",
+							"[[ compactionLoop ]]: Migrate",
 							logger.NewStringField("from", source.ds.Index),
 							logger.NewStringField("to", destination.Index),
 						)
-						noJobsMigrated, err = jd.migrateJobsInTx(ctx, tx, source.ds, destination)
+						noJobsCompacted, err = jd.migrateJobsInTx(ctx, tx, source.ds, destination)
 						if err != nil {
 							return fmt.Errorf("migrate jobs: %w", err)
 						}
 						jd.assert(
-							noJobsMigrated == source.numJobsPending,
+							noJobsCompacted == source.numJobsPending,
 							fmt.Sprintf(
-								"noJobsMigrated: %d != source.numJobsPending: %d",
-								noJobsMigrated, source.numJobsPending,
+								"noJobsCompacted: %d != source.numJobsPending: %d",
+								noJobsCompacted, source.numJobsPending,
 							),
 						)
-						totalJobsMigrated += noJobsMigrated
+						totalJobsCompacted += noJobsCompacted
 					} else {
 						jd.logger.Infon(
-							"[[ migrateDSLoop ]]: No jobs to migrate",
+							"[[ compactionLoop ]]: No jobs to migrate",
 							logger.NewStringField("from", source.ds.Index),
 							logger.NewStringField("to", destination.Index),
 						)
@@ -227,10 +227,10 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 				if err = jd.journalMarkDoneInTx(tx, opID); err != nil {
 					return fmt.Errorf("mark journal done: %w", err)
 				}
-				jd.logger.Infon("[[ migrateDSLoop ]]: Jobs migrated", logger.NewIntField("count", int64(totalJobsMigrated)))
+				jd.logger.Infon("[[ compactionLoop ]]: Jobs migrated", logger.NewIntField("count", int64(totalJobsCompacted)))
 			}
 
-			opPayload, err := jsonrs.Marshal(&journalOpPayloadT{From: migrateFromDatasets})
+			opPayload, err := jsonrs.Marshal(&journalOpPayloadT{From: compactFromDatasets})
 			if err != nil {
 				return fmt.Errorf("marshal journal payload: %w", err)
 			}
@@ -244,11 +244,11 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 				return fmt.Errorf("acquire lock: %w", err)
 			}
 			tx.AddSuccessListener(func() {
-				for _, ds := range migrateFromDatasets {
+				for _, ds := range compactFromDatasets {
 					jd.distinctValuesCache.RemoveDataset(ds.JobTable)
 				}
 			})
-			if err = jd.postMigrateHandleDS(tx, migrateFromDatasets); err != nil {
+			if err = jd.postCompactionHandleDS(tx, compactFromDatasets); err != nil {
 				return fmt.Errorf("post migrate handle ds: %w", err)
 			}
 			if err = jd.journalMarkDoneInTx(tx, opID); err != nil {
@@ -259,7 +259,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 	})
 	if l != nil {
 		defer jd.stats.NewTaggedStat("migration_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(lockStart)
-		jd.logger.Infon("[[ migrateDSLoop ]]: Lock duration", logger.NewDurationField("duration", time.Since(lockStart)))
+		jd.logger.Infon("[[ compactionLoop ]]: Lock duration", logger.NewDurationField("duration", time.Since(lockStart)))
 		defer func() { lockChan <- l }()
 		if err == nil {
 			if err = jd.doRefreshDSRangeList(l); err != nil {
@@ -275,13 +275,13 @@ type dsWithPendingJobCount struct {
 	numJobsPending int
 }
 
-// migrationListResult holds the output of getMigrationList
-type migrationListResult struct {
-	// migrateFrom is the list of datasets eligible for migration,
+// compactionListResult holds the output of getCompactionList
+type compactionListResult struct {
+	// compactFrom is the list of datasets eligible for compaction,
 	// along with the number of pending (non-terminal) jobs in each.
-	migrateFrom []dsWithPendingJobCount
+	compactFrom []dsWithPendingJobCount
 	// pendingJobsCount is the total number of unfinished jobs across all
-	// datasets in migrateFrom. When > 0, these jobs need to be copied
+	// datasets in compactFrom. When > 0, these jobs need to be copied
 	// to a new destination dataset.
 	pendingJobsCount int
 	// insertBeforeDS is the dataset before which the new (migrated)
@@ -291,11 +291,11 @@ type migrationListResult struct {
 	// for migration. nil if no eligible datasets were found.
 	firstEligible *dsindex.Index
 	// lastProbed is the parsed dsindex of the last dataset that was checked
-	// (had checkIfMigrateDS called on it). Used for cross-invocation resumption
+	// (had checkIfCompactDS called on it). Used for cross-invocation resumption
 	// so the next migration loop iteration can skip already-probed datasets.
 	// nil if no datasets were probed.
 	lastProbed *dsindex.Index
-	// probeLimitReached is true when the loop stopped because migrateDSProbeCount
+	// probeLimitReached is true when the loop stopped because compactionProbeCount
 	// exceeded maxMigrateDSProbe. Only when this is true should lastProbed be used
 	// as a cross-invocation resume point, since other exit conditions (idxCheck,
 	// found eligible datasets, etc.) don't guarantee that skipped datasets won't
@@ -346,7 +346,7 @@ func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT
 
 	toVacuumFull := []string{}
 	for _, ds := range dsList {
-		if tableSizes[ds.JobStatusTable] > jd.conf.migration.vacuumFullStatusTableThreshold.Load() {
+		if tableSizes[ds.JobStatusTable] > jd.conf.compaction.vacuumFullStatusTableThreshold.Load() {
 			toVacuumFull = append(toVacuumFull, ds.JobStatusTable)
 		}
 	}
@@ -396,10 +396,10 @@ func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) (
 			if jobs == 0 { // using max ds size if we have no stats for the number of jobs
 				jobs = float64(jd.conf.MaxDSSize.Load())
 			}
-			return statuses/jobs > jd.conf.migration.jobStatusMigrateThres.Load()
+			return statuses/jobs > jd.conf.compaction.jobStatusCompactionThres.Load()
 		})
 
-	return lo.Slice(datasets, 0, jd.conf.migration.maxMigrateDSProbe.Load()), nil
+	return lo.Slice(datasets, 0, jd.conf.compaction.maxCompactionProbe.Load()), nil
 }
 
 // based on an estimate cleans up the status tables
@@ -476,7 +476,7 @@ func (jd *Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, ca
 		return false, err
 	}
 
-	if numJobStatusDeleted > jd.conf.migration.vacuumAnalyzeStatusTableThreshold.Load() && canBeVacuumed {
+	if numJobStatusDeleted > jd.conf.compaction.vacuumAnalyzeStatusTableThreshold.Load() && canBeVacuumed {
 		vacuum = true
 	} else {
 		_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, table))
@@ -485,16 +485,16 @@ func (jd *Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, ca
 	return vacuum, err
 }
 
-// getMigrationList returns the list of datasets to migrate from,
+// getCompactionList returns the list of datasets to migrate from,
 // the number of unfinished jobs contained in these datasets
 // and the dataset before which the new (migrated) dataset that will hold these jobs needs to be created.
 //
 // If skipBefore is non-nil, datasets whose parsed index is Less than skipBefore
-// are skipped (not checked). This avoids redundant checkIfMigrateDS calls for
+// are skipped (not checked). This avoids redundant checkIfCompactDS calls for
 // datasets already known to be ineligible.
-func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index, db sqlDbOrTx) (result migrationListResult, err error) {
+func (jd *Handle) getCompactionList(dsList []dataSetT, skipBefore *dsindex.Index, db sqlDbOrTx) (result compactionListResult, err error) {
 	var (
-		liveDSCount, migrateDSProbeCount int
+		liveDSCount, compactionProbeCount int
 		// we don't want `maxDSSize` value to change, during dsList loop
 		maxDSSize = jd.conf.MaxDSSize.Load()
 		waiting   *dsWithPendingJobCount
@@ -505,7 +505,7 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index,
 		for i, ds := range dsList {
 			list[i] = ds.String()
 		}
-		jd.logger.Debugn("[[ migrateDSLoop ]]: DS list", logger.NewStringField("dsList", strings.Join(list, ",")))
+		jd.logger.Debugn("[[ compactionLoop ]]: DS list", logger.NewStringField("dsList", strings.Join(list, ",")))
 	}
 
 	for idx, ds := range dsList {
@@ -522,17 +522,17 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index,
 		// exempting the last dataset from migration since it is the one being currently written to.
 		idxCheck := idx == len(dsList)-1
 
-		if liveDSCount >= jd.conf.migration.maxMigrateOnce.Load() || result.pendingJobsCount >= maxDSSize || idxCheck {
+		if liveDSCount >= jd.conf.compaction.maxCompactOnce.Load() || result.pendingJobsCount >= maxDSSize || idxCheck {
 			break
 		}
 
-		migrate, needsPair, recordsLeft, migrateErr := jd.checkIfMigrateDS(ds, db)
+		migrate, needsPair, recordsLeft, migrateErr := jd.checkIfCompactDS(ds, db)
 		if migrateErr != nil {
 			return result, migrateErr
 		}
 		result.lastProbed = dsindex.MustParse(ds.Index)
 		jd.logger.Debugn(
-			"[[ migrateDSLoop ]]: Migrate check",
+			"[[ compactionLoop ]]: Migrate check",
 			logger.NewBoolField("migrate", migrate),
 			logger.NewBoolField("needsPair", needsPair),
 			logger.NewIntField("recordsLeft", int64(recordsLeft)),
@@ -541,7 +541,7 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index,
 
 		if migrate {
 			if !needsPair {
-				result.migrateFrom = append(result.migrateFrom, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
+				result.compactFrom = append(result.compactFrom, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
 				result.insertBeforeDS = dsList[idx+1]
 				result.pendingJobsCount += recordsLeft
 				liveDSCount++
@@ -550,7 +550,7 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index,
 					if waiting.numJobsPending+recordsLeft > maxDSSize {
 						waiting = nil
 					} else {
-						result.migrateFrom = append(result.migrateFrom, *waiting, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
+						result.compactFrom = append(result.compactFrom, *waiting, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
 						result.insertBeforeDS = dsList[idx+1]
 						result.pendingJobsCount += waiting.numJobsPending + recordsLeft
 						liveDSCount += 2
@@ -560,7 +560,7 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index,
 					if result.pendingJobsCount+recordsLeft > maxDSSize {
 						break // adding this dataset would exceed maxDSSize, leave it for the next migration cycle
 					}
-					result.migrateFrom = append(result.migrateFrom, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
+					result.compactFrom = append(result.compactFrom, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
 					result.insertBeforeDS = dsList[idx+1]
 					result.pendingJobsCount += recordsLeft
 					liveDSCount++
@@ -574,19 +574,19 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index,
 			if liveDSCount > 0 {
 				break
 			}
-			if migrateDSProbeCount > jd.conf.migration.maxMigrateDSProbe.Load() {
+			if compactionProbeCount > jd.conf.compaction.maxCompactionProbe.Load() {
 				result.probeLimitReached = true
 				break
 			}
 		}
-		migrateDSProbeCount++
+		compactionProbeCount++
 	}
-	if len(result.migrateFrom) > 0 {
-		// sort migrateFrom, since needsPair & maxDSRetentionPeriod logic may have added datasets out of order
-		slices.SortFunc(result.migrateFrom, func(a, b dsWithPendingJobCount) int {
+	if len(result.compactFrom) > 0 {
+		// sort compactFrom, since needsPair & maxDSRetentionPeriod logic may have added datasets out of order
+		slices.SortFunc(result.compactFrom, func(a, b dsWithPendingJobCount) int {
 			return dsindex.MustParse(a.ds.Index).Compare(dsindex.MustParse(b.ds.Index))
 		})
-		result.firstEligible = dsindex.MustParse(result.migrateFrom[0].ds.Index)
+		result.firstEligible = dsindex.MustParse(result.compactFrom[0].ds.Index)
 	}
 	return result, nil
 }
@@ -748,8 +748,8 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 	return numJobsMigrated, nil
 }
 
-func (jd *Handle) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBeforeDS dataSetT, db sqlDbOrTx) (string, error) { // Within the node
-	jd.logger.Debugn("computeNewIdxForIntraNodeMigration", logger.NewStringField("insertBeforeDS", insertBeforeDS.String()))
+func (jd *Handle) computeNewIdxForIntraNodeCompaction(l lock.LockToken, insertBeforeDS dataSetT, db sqlDbOrTx) (string, error) { // Within the node
+	jd.logger.Debugn("computeNewIdxForIntraNodeCompaction", logger.NewStringField("insertBeforeDS", insertBeforeDS.String()))
 	dList, err := jd.doRefreshDSList(l, db)
 	if err != nil {
 		return "", fmt.Errorf("refreshDSList: %w", err)
@@ -794,10 +794,10 @@ func (jd *Handle) lockAndFenceStatusTable(ctx context.Context, tx *Tx, statusTab
 	return nil
 }
 
-// doCompactDS is the non-blocking compaction flow which replaces the legacy doMigrateDS body when the nonBlockingCompaction flag is enabled.
+// doNonBlockingCompaction is the non-blocking compaction flow which replaces the legacy doCompaction body when the nonBlockingCompaction flag is enabled.
 //
 // Lock semantics (vs. legacy):
-//   - dsMigrationLock is NOT taken. Concurrent reads via inUpdateSafeCtx grab their
+//   - dsCompactionLock is NOT taken. Concurrent reads via inUpdateSafeCtx grab their
 //     existing read lock against an uncontended write side.
 //   - dsListLock is taken exactly once, asynchronously, right before COMMIT — only
 //     the swap (in-memory) + COMMIT + enqueue + publish happen inside the lock window.
@@ -807,7 +807,7 @@ func (jd *Handle) lockAndFenceStatusTable(ctx context.Context, tx *Tx, statusTab
 //   - When compactionDeferStatusLock is set, the source status lock is deferred:
 //     pending jobs are copied first with no lock held, then each source status table
 //     is locked one after another only to copy the latest statuses of the moved jobs.
-func (jd *Handle) doCompactDS(ctx context.Context) error {
+func (jd *Handle) doNonBlockingCompaction(ctx context.Context) error {
 	dsList, _, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
 		return fmt.Errorf("could not acquire a dslist read lock: %w", err)
@@ -818,19 +818,19 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 	}
 	release()
 
-	migrationList, err := jd.getMigrationList(dsList, jd.lastMigrateProbeIndex, jd.maintenanceDB())
-	jd.lastMigrateProbeIndex = nil
+	migrationList, err := jd.getCompactionList(dsList, jd.lastCompactionProbeIndex, jd.maintenanceDB())
+	jd.lastCompactionProbeIndex = nil
 	if err != nil {
-		return fmt.Errorf("could not get migration list: %w", err)
+		return fmt.Errorf("could not get compaction list: %w", err)
 	}
-	if len(migrationList.migrateFrom) == 0 {
+	if len(migrationList.compactFrom) == 0 {
 		if migrationList.probeLimitReached {
-			jd.lastMigrateProbeIndex = migrationList.lastProbed
+			jd.lastCompactionProbeIndex = migrationList.lastProbed
 		}
 		return nil
 	}
 
-	migrateFromDatasets := lo.Map(migrationList.migrateFrom, func(d dsWithPendingJobCount, _ int) dataSetT {
+	compactFromDatasets := lo.Map(migrationList.compactFrom, func(d dsWithPendingJobCount, _ int) dataSetT {
 		return d.ds
 	})
 
@@ -838,7 +838,7 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 	// the async-drop path — no copy, no destination, no in-TX work needed.
 	if migrationList.pendingJobsCount == 0 {
 		if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
-			_, err := jd.addCompletedDSToDropList(ctx, l, migrateFromDatasets...)
+			_, err := jd.addCompletedDSToDropList(ctx, l, compactFromDatasets...)
 			return err
 		}); err != nil {
 			return fmt.Errorf("enqueue completed datasets for async drop: %w", err)
@@ -858,8 +858,8 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 	jd.logger.Infon(
 		"[[ doCompactDS ]]",
 		logger.NewIntField("pendingJobsCount", int64(migrationList.pendingJobsCount)),
-		logger.NewIntField("migrateFrom", int64(len(migrateFromDatasets))),
-		logger.NewStringField("from", strings.Join(lo.Map(migrateFromDatasets, func(d dataSetT, _ int) string { return d.Index }), ",")),
+		logger.NewIntField("compactFrom", int64(len(compactFromDatasets))),
+		logger.NewStringField("from", strings.Join(lo.Map(compactFromDatasets, func(d dataSetT, _ int) string { return d.Index }), ",")),
 		logger.NewStringField("to", destination.Index),
 		logger.NewStringField("insert before", migrationList.insertBeforeDS.Index),
 	)
@@ -873,7 +873,7 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 
 	err = jd.withMaintenanceTx(ctx, func(tx *Tx) error {
 		return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error {
-			opPayload, err := jsonrs.Marshal(&journalOpPayloadT{From: migrateFromDatasets, To: destination})
+			opPayload, err := jsonrs.Marshal(&journalOpPayloadT{From: compactFromDatasets, To: destination})
 			if err != nil {
 				return fmt.Errorf("marshal journal payload: %w", err)
 			}
@@ -889,11 +889,11 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 			}
 
 			var copyStart time.Time
-			if jd.conf.migration.compactionDeferStatusLock.Load() {
+			if jd.conf.compaction.compactionDeferStatusLock.Load() {
 				// Deferred-status-lock mode. Phase 1: copy the pending jobs from every
 				// source WITHOUT locking any status table — this is the slow,
 				// payload-heavy work, and it must not sit inside the lock window.
-				for i, source := range migrationList.migrateFrom {
+				for i, source := range migrationList.compactFrom {
 					if source.numJobsPending == 0 {
 						jd.logger.Infon(
 							"[[ doCompactDS ]]: No jobs to migrate",
@@ -912,7 +912,7 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 					totalCopied += count
 					// numJobsPending now reflects what phase 1 actually copied, so
 					// phase 2 below only locks sources that contributed jobs.
-					migrationList.migrateFrom[i].numJobsPending = count
+					migrationList.compactFrom[i].numJobsPending = count
 				}
 				// Build the jobs-table indices before taking any status lock.
 				if totalCopied > 0 {
@@ -923,7 +923,7 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 				// Phase 2: lock each source status table one after another and copy the
 				// latest status of the moved jobs. This is the only work under the lock,
 				// and the status rows carry no payload, so the lock window is minimal.
-				for _, source := range migrationList.migrateFrom {
+				for _, source := range migrationList.compactFrom {
 					if source.numJobsPending == 0 {
 						continue
 					}
@@ -951,7 +951,7 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 					}
 				}
 			} else {
-				for i, source := range migrationList.migrateFrom {
+				for i, source := range migrationList.compactFrom {
 					if source.numJobsPending == 0 {
 						jd.logger.Infon(
 							"[[ doCompactDS ]]: No jobs to migrate",
@@ -979,7 +979,7 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 						return fmt.Errorf("copying jobs from %s: %w", source.ds.Index, err)
 					}
 					totalCopied += count
-					migrationList.migrateFrom[i].numJobsPending = count
+					migrationList.compactFrom[i].numJobsPending = count
 				}
 				if err := jd.createDSIndicesInTx(ctx, tx, destination); err != nil {
 					return fmt.Errorf("creating %v indices: %w", destination, err)
@@ -993,7 +993,7 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 			// the swap, so that on a crash before the async drop runs, the next
 			// startup's cleanupPreDropTables drops the leftovers and getAllTableNames
 			// keeps them hidden in the meantime.
-			for _, source := range migrateFromDatasets {
+			for _, source := range compactFromDatasets {
 				if err := jd.markPreDropDSInTx(ctx, tx, source); err != nil {
 					return fmt.Errorf("marking pre-drop %s: %w", source.Index, err)
 				}
@@ -1030,7 +1030,7 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 	defer func() {
 		lockChan <- l
 		jd.stats.NewTaggedStat("migration_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(lockStart)
-		jd.logger.Infon("[[ migrateDSLoop ]]: Lock duration", logger.NewDurationField("duration", time.Since(lockStart)))
+		jd.logger.Infon("[[ compactionLoop ]]: Lock duration", logger.NewDurationField("duration", time.Since(lockStart)))
 	}()
 	if err != nil {
 		return err
@@ -1053,7 +1053,7 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 	for _, entry := range jd.dropDSList {
 		existing[entry.ds.Index] = struct{}{}
 	}
-	for _, src := range migrationList.migrateFrom {
+	for _, src := range migrationList.compactFrom {
 		if _, ok := existing[src.ds.Index]; ok {
 			continue
 		}
@@ -1066,7 +1066,7 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 }
 
 // computeInsertIdxFromList computes the destination dataset index for an intra-node
-// compaction using a provided dataset list. Unlike computeNewIdxForIntraNodeMigration,
+// compaction using a provided dataset list. Unlike computeNewIdxForIntraNodeCompaction,
 // it does not require a dsListLock token because it operates on the caller-supplied
 // snapshot rather than re-reading the list from PG.
 func computeInsertIdxFromList(dList []dataSetT, insertBeforeDS dataSetT) (string, error) {
@@ -1084,9 +1084,9 @@ func computeInsertIdxFromList(dList []dataSetT, insertBeforeDS dataSetT) (string
 	return "", fmt.Errorf("insertBeforeDS %q not found in list", insertBeforeDS.Index)
 }
 
-func (jd *Handle) postMigrateHandleDS(tx *Tx, migrateFrom []dataSetT) error {
+func (jd *Handle) postCompactionHandleDS(tx *Tx, compactFrom []dataSetT) error {
 	// Rename datasets before dropping them, so that they can be uploaded to s3
-	for _, ds := range migrateFrom {
+	for _, ds := range compactFrom {
 		jd.logger.Debugn("dropping dataset", logger.NewStringField("jobTable", ds.JobTable))
 		if err := jd.dropDSInTx(tx, ds); err != nil {
 			return err
@@ -1115,10 +1115,10 @@ func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 	return result.String(), nil
 }
 
-// checkIfMigrateDS checks when DB is full or DB needs to be migrated.
+// checkIfCompactDS checks when DB is full or DB needs to be migrated.
 // We migrate the DB ONCE most of the jobs have been processed (succeeded/aborted)
 // Or when the job_status table gets too big because of lots of retries/failures
-func (jd *Handle) checkIfMigrateDS(ds dataSetT, db sqlDbOrTx) (
+func (jd *Handle) checkIfCompactDS(ds dataSetT, db sqlDbOrTx) (
 	migrate, needsPair bool, recordsLeft int, err error,
 ) {
 	defer jd.getTimerStat(
@@ -1159,7 +1159,7 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT, db sqlDbOrTx) (
 		return true, false, recordsLeft, nil
 	}
 
-	needsPair = recordsLeft > 0 && float64(recordsLeft) < jd.conf.migration.jobMinRowsLeftMigrateThreshold.Load()*float64(jd.conf.MaxDSSize.Load())
+	needsPair = recordsLeft > 0 && float64(recordsLeft) < jd.conf.compaction.jobMinRowsLeftCompactionThreshold.Load()*float64(jd.conf.MaxDSSize.Load())
 
 	if needsPair || recordsLeft == 0 {
 		return true, needsPair, recordsLeft, nil
