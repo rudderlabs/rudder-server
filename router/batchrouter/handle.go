@@ -395,7 +395,9 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	}
 
 	workspaceID := batchJobs.Connection.Destination.WorkspaceID
-	datePrefixLayout := brt.resolveDatePrefixOverride(workspaceID, batchJobs.Connection.Destination.ID)
+	destinationID := batchJobs.Connection.Destination.ID
+
+	datePrefixLayout := brt.resolveDatePrefixOverride(workspaceID, destinationID)
 	if datePrefixLayout == "" {
 		dateFormat, _ := brt.dateFormatProvider.GetFormat(brt.logger, uploader, batchJobs.Connection, folderName)
 		datePrefixLayout = dateFormat
@@ -481,10 +483,11 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 }
 
 func (brt *Handle) resolveDatePrefixOverride(workspaceID, destinationID string) string {
-	if override := brt.conf.GetStringVar("", fmt.Sprintf("BatchRouter.datePrefixOverride.%s.%s", workspaceID, destinationID)); override != "" {
+	prefixOverride := "BatchRouter.datePrefixOverride"
+	if override := brt.conf.GetStringVar("", fmt.Sprintf("%s.%s.%s", prefixOverride, workspaceID, destinationID)); override != "" {
 		return override
 	}
-	if override := brt.conf.GetStringVar("", fmt.Sprintf("BatchRouter.datePrefixOverride.%s", workspaceID)); override != "" {
+	if override := brt.conf.GetStringVar("", fmt.Sprintf("%s.%s", prefixOverride, workspaceID)); override != "" {
 		return override
 	}
 	return brt.datePrefixOverride.Load()
