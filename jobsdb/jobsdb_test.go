@@ -1271,6 +1271,109 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		require.NoError(t, row.Scan(&count))
 		require.Equal(t, 2, count, "expected 2 jobs in DS-2 after retried store via external tx")
 	})
+
+	t.Run("WithStoreSafeTxFromTx retries on ErrStaleDsList when table is dropped by compaction", func(t *testing.T) {
+		c := config.New()
+		c.Set("JobsDB.maxDSSize", 1)
+
+		triggerAddNewDS := make(chan time.Time)
+		triggerMigrateDS := make(chan time.Time)
+		blockTrigger := make(chan time.Time) // never fires
+
+		statStore, err := memstats.New()
+		require.NoError(t, err)
+
+		prefix := strings.ToLower(rsRand.String(5))
+
+		// jobsDB1 has all loop triggers blocked so its in-memory DS list stays stale.
+		jobsDB1 := &Handle{
+			TriggerAddNewDS:  func() <-chan time.Time { return blockTrigger },
+			TriggerMigrateDS: func() <-chan time.Time { return blockTrigger },
+			TriggerRefreshDS: func() <-chan time.Time { return blockTrigger },
+			config:           c,
+			stats:            statStore,
+		}
+		require.NoError(t, jobsDB1.Setup(ReadWrite, true, prefix))
+		defer jobsDB1.TearDown()
+
+		// jobsDB2 controls the addNewDS and migrateDS loops.
+		jobsDB2 := &Handle{
+			TriggerAddNewDS:  func() <-chan time.Time { return triggerAddNewDS },
+			TriggerMigrateDS: func() <-chan time.Time { return triggerMigrateDS },
+			config:           c,
+			stats:            statStore,
+		}
+		require.NoError(t, jobsDB2.Setup(ReadWrite, false, prefix))
+		defer jobsDB2.TearDown()
+
+		require.Len(t, jobsDB1.getDSListSnapshot(), 1)
+		ds1 := jobsDB1.getDSListSnapshot()[0]
+
+		// Add one job to DS1 (fills it: maxDSSize=1).
+		require.NoError(t, jobsDB1.Store(context.Background(), []*JobT{{
+			Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+			EventPayload: []byte(`{"testKey":"testValue"}`),
+			UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+			UUID:         uuid.New(),
+			CustomVal:    "MOCKDS",
+			EventCount:   1,
+		}}))
+
+		// Run addDSLoop via jobsDB2 to create DS2; DS1 becomes readonly.
+		triggerAddNewDS <- time.Now()
+		require.Eventually(t, func() bool {
+			return len(jobsDB2.getDSListSnapshot()) == 2
+		}, 5*time.Second, 10*time.Millisecond, "expected DS2 to be created")
+
+		// jobsDB1 still has its stale DS list (DS1 as the last dataset).
+		require.Len(t, jobsDB1.getDSListSnapshot(), 1, "jobsDB1 should have stale DS list with DS1 as last")
+
+		// Mark the job as completed so DS1 becomes eligible for compaction.
+		res, err := jobsDB2.GetUnprocessed(context.Background(), GetQueryParams{JobsLimit: 10})
+		require.NoError(t, err)
+		require.Len(t, res.Jobs, 1)
+		require.NoError(t, jobsDB2.UpdateJobStatus(context.Background(), []*JobStatusT{{
+			JobID:      res.Jobs[0].JobID,
+			JobState:   Succeeded.State,
+			AttemptNum: 1,
+			CustomVal:  res.Jobs[0].CustomVal,
+		}}))
+
+		// Trigger migration via jobsDB2: DS1 has no pending jobs, so it is dropped.
+		triggerMigrateDS <- time.Now()
+
+		// Wait for DS1's job table to be physically dropped from the database.
+		require.Eventually(t, func() bool {
+			var exists bool
+			_ = jobsDB1.dbHandle.QueryRow(`SELECT to_regclass($1) IS NOT NULL`, ds1.JobTable).Scan(&exists)
+			return !exists
+		}, 5*time.Second, 10*time.Millisecond, "DS1 job table should be physically dropped by compaction")
+
+		// jobsDB1 has a stale DS list (DS1 as last) but DS1 is now gone.
+		// Begin a store tx via WithStoreSafeTxFromTx: it captures DS1 as lastDS.
+		// Writing to DS1 fails with UndefinedTable → ErrStaleDsList → DS list refreshed → retry on DS2.
+		newJobs := []*JobT{{
+			Parameters:   []byte(`{"batch_id":2,"source_id":"sourceID","source_job_run_id":""}`),
+			EventPayload: []byte(`{"testKey":"testValue2"}`),
+			UserID:       "b-292e-4e79-9880-f8009e0ae4a3",
+			UUID:         uuid.New(),
+			CustomVal:    "MOCKDS",
+			EventCount:   1,
+		}}
+		require.NoError(t, jobsDB1.WithTx(context.Background(), func(tx *Tx) error {
+			return jobsDB1.WithStoreSafeTxFromTx(context.Background(), tx, func(stx StoreSafeTx) error {
+				return jobsDB1.StoreInTx(context.Background(), stx, newJobs)
+			})
+		}))
+
+		// After the retry, jobsDB1's DS list should be refreshed and the job should be in DS2.
+		ds1Snapshot := jobsDB1.getDSListSnapshot()
+		require.Len(t, ds1Snapshot, 1, "jobsDB1 should have only DS2 after DS1 was dropped")
+		var count int
+		row := jobsDB1.dbHandle.QueryRow(fmt.Sprintf("select count(*) from %q", ds1Snapshot[0].JobTable))
+		require.NoError(t, row.Scan(&count))
+		require.Equal(t, 1, count, "job should have been written to DS2 after the dropped-table retry")
+	})
 }
 
 func TestCacheScenarios(t *testing.T) {
