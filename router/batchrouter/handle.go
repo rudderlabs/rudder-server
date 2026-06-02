@@ -394,15 +394,15 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 		folderName = config.GetStringVar("rudder-logs", "DESTINATION_BUCKET_FOLDER_NAME")
 	}
 
-	var datePrefixLayout string
-	if brt.datePrefixOverride.Load() != "" {
-		datePrefixLayout = brt.datePrefixOverride.Load()
-	} else {
+	workspaceID := batchJobs.Connection.Destination.WorkspaceID
+	destinationID := batchJobs.Connection.Destination.ID
+
+	datePrefixLayout := brt.resolveDatePrefixOverride(workspaceID, destinationID)
+	if datePrefixLayout == "" {
 		dateFormat, _ := brt.dateFormatProvider.GetFormat(brt.logger, uploader, batchJobs.Connection, folderName)
 		datePrefixLayout = dateFormat
 	}
 
-	workspaceID := batchJobs.Connection.Destination.WorkspaceID
 	customTimezone := brt.conf.GetStringVar("", "BatchRouter.customTimezone."+workspaceID)
 
 	now := brt.now()
@@ -480,6 +480,17 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 		BytesPerTable:    bytesPerTable,
 		UseRudderStorage: useRudderStorage,
 	}
+}
+
+func (brt *Handle) resolveDatePrefixOverride(workspaceID, destinationID string) string {
+	prefixOverride := "BatchRouter.datePrefixOverride"
+	if override := brt.conf.GetStringVar("", fmt.Sprintf("%s.%s.%s", prefixOverride, workspaceID, destinationID)); override != "" {
+		return override
+	}
+	if override := brt.conf.GetStringVar("", fmt.Sprintf("%s.%s", prefixOverride, workspaceID)); override != "" {
+		return override
+	}
+	return brt.datePrefixOverride.Load()
 }
 
 // pingWarehouse notifies the warehouse about a new data upload (staging files)

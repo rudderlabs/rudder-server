@@ -1,8 +1,12 @@
 package batchrouter
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -580,6 +584,127 @@ func TestBytesPerTable(t *testing.T) {
 			} else {
 				require.Len(t, result.BytesPerTable, 0)
 			}
+		})
+	}
+}
+
+func TestUploadDatePrefixOverridePrecedence(t *testing.T) {
+	now := time.Date(2021, 6, 28, 21, 1, 30, 0, time.UTC)
+
+	testCases := []struct {
+		name               string
+		workspaceID        string
+		destinationID      string
+		configure          func()
+		expectedDatePrefix string
+		expectLookup       bool
+	}{
+		{
+			name:          "destination scoped override has highest precedence",
+			workspaceID:   "workspace-1",
+			destinationID: "destination-1",
+			configure: func() {
+				config.Set("BatchRouter.datePrefixOverride", "MM-DD-YYYY")
+				config.Set("BatchRouter.datePrefixOverride.workspace-1", "MM-DD-YYYY")
+				config.Set("BatchRouter.datePrefixOverride.workspace-1.destination-1", "YYYY-MM-DD")
+			},
+			expectedDatePrefix: "2021-06-28",
+		},
+		{
+			name:          "workspace scoped override takes precedence over global",
+			workspaceID:   "workspace-2",
+			destinationID: "destination-2",
+			configure: func() {
+				config.Set("BatchRouter.datePrefixOverride", "MM-DD-YYYY")
+				config.Set("BatchRouter.datePrefixOverride.workspace-2", "YYYY-MM-DD")
+			},
+			expectedDatePrefix: "2021-06-28",
+		},
+		{
+			name:          "global override is used when scoped keys are absent",
+			workspaceID:   "workspace-3",
+			destinationID: "destination-3",
+			configure: func() {
+				config.Set("BatchRouter.datePrefixOverride", "MM-DD-YYYY")
+			},
+			expectedDatePrefix: "06-28-2021",
+		},
+		{
+			name:               "provider format fallback is used when no override is configured",
+			workspaceID:        "workspace-4",
+			destinationID:      "destination-4",
+			configure:          func() {},
+			expectedDatePrefix: "06-28-2021",
+			expectLookup:       true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			config.Reset()
+			t.Cleanup(config.Reset)
+			tc.configure()
+
+			mockCtrl := gomock.NewController(t)
+			mockFileManager := mock_filemanager.NewMockFileManager(mockCtrl)
+			jobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+
+			var capturedKeyPrefixes []string
+			mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+				func(_ context.Context, _ *os.File, keyPrefixes ...string) (filemanager.UploadedFile, error) {
+					capturedKeyPrefixes = append([]string{}, keyPrefixes...)
+					return filemanager.UploadedFile{
+						Location:   "local",
+						ObjectName: strings.Join(append(keyPrefixes, "file"), "/"),
+					}, nil
+				},
+			)
+
+			if tc.expectLookup {
+				mockFileManager.EXPECT().Prefix().Return("mockPrefix").Times(1)
+				mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), "", "mockPrefix/rudder-logs/source-1", int64(5)).
+					Return(filemanager.MockListSession([]*filemanager.FileInfo{
+						{Key: "mockPrefix/rudder-logs/source-1/01-02-2006/file"},
+					}, nil)).
+					Times(1)
+			}
+
+			jobsDB.EXPECT().JournalMarkStart(gomock.Any(), gomock.Any()).Times(1).Return(int64(1), nil)
+
+			brt := &Handle{
+				logger: logger.NewLogger().Child("batchrouter"),
+				fileManagerFactory: func(_ *filemanager.Settings) (filemanager.FileManager, error) {
+					return mockFileManager, nil
+				},
+				datePrefixOverride: config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride"),
+				customDatePrefix:   config.GetReloadableStringVar("", "BatchRouter.customDatePrefix"),
+				dateFormatProvider: &storageDateFormatProvider{dateFormatsCache: make(map[string]string)},
+				conf:               config.Default,
+				now: func() time.Time {
+					return now
+				},
+				jobsDB: jobsDB,
+			}
+
+			result := brt.upload("S3", &BatchedJobs{
+				Jobs: []*jobsdb.JobT{
+					{
+						EventPayload: []byte(`{"receivedAt": "2019-10-12T07:20:50.52Z"}`),
+					},
+				},
+				Connection: &Connection{
+					Source: backendconfig.SourceT{
+						ID: "source-1",
+					},
+					Destination: backendconfig.DestinationT{
+						ID:          tc.destinationID,
+						WorkspaceID: tc.workspaceID,
+					},
+				},
+			}, false)
+
+			require.NoError(t, result.Error)
+			require.Equal(t, tc.expectedDatePrefix, capturedKeyPrefixes[2])
 		})
 	}
 }
