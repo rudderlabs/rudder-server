@@ -78,6 +78,11 @@ func (d *Dynamic) Run(ctx context.Context) error {
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	defer func() {
+		if d.currentMode == servermode.NormalMode {
+			d.stop()
+		}
+	}()
 
 	serverModeChan := d.Provider.ServerMode(ctx)
 	if d.GatewayComponent {
@@ -93,15 +98,15 @@ func (d *Dynamic) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			if d.currentMode == servermode.NormalMode {
-				d.stop()
-			}
 			return nil
 		case req := <-serverModeChan:
 			if req.Err() != nil {
+				if ctx.Err() != nil { // context is cancelled, no need to return an error
+					return nil
+				}
+				d.logger.Errorn("Server mode request failed", obskit.Error(req.Err()))
 				return req.Err()
 			}
-
 			d.logger.Infon("Got trigger to change the mode",
 				logger.NewStringField("newMode", string(req.Mode())),
 				logger.NewStringField("oldMode", string(d.currentMode)))
@@ -117,7 +122,7 @@ func (d *Dynamic) Run(ctx context.Context) error {
 			d.logger.Debugn("Acknowledging the mode change")
 
 			if err := req.Ack(ctx); err != nil {
-				return fmt.Errorf("ack mode change: %w", err)
+				return fmt.Errorf("acking mode change: %w", err)
 			}
 		}
 	}
@@ -129,34 +134,58 @@ func (d *Dynamic) start() error {
 	}
 	d.logger.Infon("Starting the server")
 	start := time.Now()
+	var started []lifecycle
+	rollback := func() {
+		for i := len(started) - 1; i >= 0; i-- {
+			started[i].Stop()
+		}
+	}
 	if err := d.GatewayDB.Start(); err != nil {
 		return fmt.Errorf("gateway db start: %w", err)
 	}
+	started = append(started, d.GatewayDB)
 	if err := d.EventSchemaDB.Start(); err != nil {
+		rollback()
 		return fmt.Errorf("event schemas db start: %w", err)
 	}
+	started = append(started, d.EventSchemaDB)
 	if err := d.ArchivalDB.Start(); err != nil {
+		rollback()
 		return fmt.Errorf("archival db start: %w", err)
 	}
+	started = append(started, d.ArchivalDB)
 	if err := d.RouterDB.Start(); err != nil {
+		rollback()
 		return fmt.Errorf("router db start: %w", err)
 	}
+	started = append(started, d.RouterDB)
 	if err := d.BatchRouterDB.Start(); err != nil {
+		rollback()
 		return fmt.Errorf("batch router db start: %w", err)
 	}
+	started = append(started, d.BatchRouterDB)
 	if err := d.PartitionMigrator.Start(); err != nil {
+		rollback()
 		return fmt.Errorf("partition migrator start: %w", err)
 	}
+	started = append(started, d.PartitionMigrator)
 	if err := d.Processor.Start(); err != nil {
+		rollback()
 		return fmt.Errorf("processor start: %w", err)
 	}
+	started = append(started, d.Processor)
 	if err := d.Archiver.Start(); err != nil {
+		rollback()
 		return fmt.Errorf("archiver start: %w", err)
 	}
+	started = append(started, d.Archiver)
 	if err := d.SchemaForwarder.Start(); err != nil {
+		rollback()
 		return fmt.Errorf("jobs forwarder start: %w", err)
 	}
+	started = append(started, d.SchemaForwarder)
 	if err := d.Router.Start(); err != nil {
+		rollback()
 		return fmt.Errorf("router start: %w", err)
 	}
 	d.serverStartTimeStat.SendTiming(time.Since(start))
