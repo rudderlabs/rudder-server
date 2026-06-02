@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.76.1](https://github.com/rudderlabs/rudder-server/compare/v1.76.0...v1.76.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* support scoped batchrouter datePrefixOverride ([#7037](https://github.com/rudderlabs/rudder-server/issues/7037)) ([83de6a9](https://github.com/rudderlabs/rudder-server/commit/83de6a9970a752e123c18ce21a90bfabd76f7497))
+
 ## [1.76.0](https://github.com/rudderlabs/rudder-server/compare/v1.75.0...v1.76.0) (2026-05-25)
 
 
