@@ -104,41 +104,6 @@ type GetQueryParams struct {
 	PayloadSizeLimit int64
 }
 
-// StoreSafeTx sealed interface
-type StoreSafeTx interface {
-	Tx() *Tx
-	SqlTx() *sql.Tx
-	storeSafeTxIdentifier() string
-	getLastDS() dataSetT
-}
-
-type storeSafeTx struct {
-	tx       *Tx
-	identity string
-	lastDS   dataSetT
-}
-
-func (r *storeSafeTx) storeSafeTxIdentifier() string {
-	return r.identity
-}
-
-func (r *storeSafeTx) Tx() *Tx {
-	return r.tx
-}
-
-func (r *storeSafeTx) SqlTx() *sql.Tx {
-	return r.tx.Tx
-}
-
-func (r *storeSafeTx) getLastDS() dataSetT {
-	return r.lastDS
-}
-
-// EmptyStoreSafeTx returns an empty interface usable only for tests
-func EmptyStoreSafeTx() StoreSafeTx {
-	return &storeSafeTx{tx: &Tx{}}
-}
-
 // UpdateSafeTx sealed interface
 type UpdateSafeTx interface {
 	Tx() *Tx
@@ -229,23 +194,6 @@ type JobsDB interface {
 	//	      jobsdb.StoreInTx(ctx, tx, jobList)
 	//    })
 	StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) error
-
-	// StoreEachBatchRetry tries to store all the provided job batches to the database
-	//
-	// returns the uuids of first job of each failed batch
-	// Deprecated: use Store instead
-	StoreEachBatchRetry(ctx context.Context, jobBatches [][]*JobT) map[uuid.UUID]string
-
-	// StoreEachBatchRetryInTx tries to store all the provided job batches to the database, using an existing transaction.
-	//
-	// returns the uuids of first job of each failed batch
-	//
-	// Please ensure that you are using an StoreSafeTx, e.g.
-	//    jobsdb.WithStoreSafeTx(func(tx StoreSafeTx) error {
-	//	      jobsdb.StoreEachBatchRetryInTx(ctx, tx, jobBatches)
-	//    })
-	// Deprecated: use StoreInTx instead
-	StoreEachBatchRetryInTx(ctx context.Context, tx StoreSafeTx, jobBatches [][]*JobT) (map[uuid.UUID]string, error)
 
 	// WithUpdateSafeTx prepares an update-safe environment and then starts a transaction
 	// that can be used by the provided function. An update-safe transaction shall be used if the provided function
@@ -592,25 +540,18 @@ type Handle struct {
 	excludedReadPartitions     map[string]struct{}
 
 	// table count stats
-	statTableCount        stats.Measurement
-	statPreDropTableCount stats.Measurement
-
+	statTableCount                  stats.Measurement
 	statReadExcludedPartitionsCount stats.Gauge
 
 	// ds creation and drop period stats
-	statNewDSPeriod               stats.Measurement
-	newDSCreationTime             time.Time
-	statDropDSPeriod              stats.Measurement
-	dsDropTime                    time.Time
-	isStatNewDSPeriodInitialized  bool
-	isStatDropDSPeriodInitialized bool
+	statNewDSPeriod   stats.Timer
+	newDSCreationTime time.Time
+	statDropDSPeriod  stats.Timer
+	dsDropTime        time.Time
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  *errgroup.Group
 
-	// skipSetupDBSetup is useful for testing as we mock the database client
-	// TriggerAddNewDS, TriggerMigrateDS is useful for triggering addNewDS to run from tests.
-	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS  func() <-chan time.Time
 	migrateDSPaused  atomic.Bool
 	TriggerMigrateDS func() <-chan time.Time
@@ -1132,7 +1073,6 @@ func (jd *Handle) workersAndAuxSetup() {
 	)
 
 	jd.logger.Infon("Connected to DB")
-	jd.statPreDropTableCount = jd.stats.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statTableCount = jd.stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statNewDSPeriod = jd.stats.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statDropDSPeriod = jd.stats.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
@@ -1706,11 +1646,10 @@ func (jd *Handle) addNewDSInTx(ctx context.Context, tx *Tx, l lock.LockToken, ds
 		return err
 	}
 	// Tracking time interval between new ds creations. Hence calling end before start
-	if jd.isStatNewDSPeriodInitialized {
+	if !jd.newDSCreationTime.IsZero() {
 		jd.statNewDSPeriod.Since(jd.newDSCreationTime)
 	}
 	jd.newDSCreationTime = time.Now()
-	jd.isStatNewDSPeriodInitialized = true
 
 	return nil
 }
@@ -2135,11 +2074,10 @@ func (jd *Handle) postDropDs(ds dataSetT) {
 	jd.noResultsCache.InvalidateDataset(ds.Index)
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
-	if jd.isStatDropDSPeriodInitialized {
+	if !jd.dsDropTime.IsZero() {
 		jd.statDropDSPeriod.Since(jd.dsDropTime)
 	}
 	jd.dsDropTime = time.Now()
-	jd.isStatDropDSPeriodInitialized = true
 }
 
 func (jd *Handle) dropAllDS(l lock.LockToken) error {
@@ -2164,76 +2102,6 @@ func (jd *Handle) dropAllDS(l lock.LockToken) error {
 		return fmt.Errorf("refreshDSRangeList: %w", err)
 	}
 	return nil
-}
-
-func (jd *Handle) internalStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) error {
-	tags := &statTags{CustomValFilters: []string{jd.tablePrefix}}
-	defer jd.getTimerStat(
-		"store_jobs",
-		tags,
-	).RecordDuration()()
-
-	tx.AddSuccessListener(func() {
-		jd.invalidateCacheForJobs(ds, jobList)
-	})
-	tx.AddSuccessListener(func() {
-		statTags := tags.getStatsTags(jd.tablePrefix)
-		jd.stats.NewTaggedStat("jobsdb_stored_jobs", stats.CountType, statTags).Count(len(jobList))
-		jd.stats.NewTaggedStat("jobsdb_stored_bytes", stats.CountType, statTags).Count(lo.SumBy(jobList, func(j *JobT) int { return len(j.EventPayload) }))
-	})
-
-	return jd.doStoreJobsInTx(ctx, tx, ds, jobList)
-}
-
-func (jd *Handle) WithStoreSafeTx(ctx context.Context, f func(tx StoreSafeTx) error) error {
-	return jd.inStoreSafeCtx(ctx, func(lastDS dataSetT) error {
-		return jd.WithTx(ctx, func(tx *Tx) error {
-			return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix, lastDS: lastDS})
-		})
-	})
-}
-
-func (jd *Handle) WithStoreSafeTxFromTx(ctx context.Context, tx *Tx, f func(tx StoreSafeTx) error) error {
-	return jd.inStoreSafeCtx(ctx, func(lastDS dataSetT) error {
-		return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix, lastDS: lastDS})
-	})
-}
-
-func (jd *Handle) inStoreSafeCtx(ctx context.Context, f func(lastDS dataSetT) error) error {
-	var lastDS dataSetT
-	op := func() error {
-		if !jd.dsListLock.RTryLockWithCtx(ctx) {
-			return fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
-		}
-		lastDS = jd.getLastDS()
-		if jd.conf.holdDSListLockDuringStore.Load() {
-			defer jd.dsListLock.RUnlock()
-			return f(lastDS)
-		}
-		jd.dsListLock.RUnlock()
-		return f(lastDS)
-	}
-	for {
-		err := op()
-		if err != nil && errors.Is(err, ErrStaleDsList) {
-			jd.logger.Warnn("[JobsDB] :: Stale dataset list detected, retrying after refreshing DS cache", obskit.Error(ErrStaleDsList))
-			if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
-				if jd.getLastDS().Index != lastDS.Index {
-					// The last dataset has already been refreshed, so we can just retry
-					return nil
-				}
-				err = jd.doRefreshDSRangeList(l)
-				if err != nil {
-					return fmt.Errorf("refreshing ds list: %w", err)
-				}
-				return nil
-			}); err != nil {
-				return err
-			}
-		} else {
-			return err
-		}
-	}
 }
 
 func (jd *Handle) WithUpdateSafeTx(ctx context.Context, f func(tx UpdateSafeTx) error) error {
@@ -2302,43 +2170,6 @@ func (jd *Handle) withTxOnDB(ctx context.Context, db *sql.DB, f func(tx *Tx) err
 		return err
 	}
 	return tx.Commit()
-}
-
-func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
-	cacheKeys := make(map[string]map[string]map[string]struct{})
-	for _, job := range jobList {
-		partitionID := job.PartitionID
-		if partitionID == "" {
-			// If there is no partition id, use "none" so that cache invalidation doesn't invalidate the whole tree
-			// No need to log a warning, because partitioning is optional, it is not enabled for all jobsdbs
-			partitionID = "none"
-		}
-		partitions := []string{partitionID}
-		workspace := job.WorkspaceId
-		customVal := job.CustomVal
-
-		if _, ok := cacheKeys[workspace]; !ok {
-			cacheKeys[workspace] = make(map[string]map[string]struct{})
-		}
-		if _, ok := cacheKeys[workspace][customVal]; !ok {
-			cacheKeys[workspace][customVal] = make(map[string]struct{})
-		}
-
-		var params []string
-		var parameterFilters []ParameterFilterT
-
-		for _, key := range cacheParameterFilters {
-			val := gjson.GetBytes(job.Parameters, key).String()
-			params = append(params, key+":"+val)
-			parameterFilters = append(parameterFilters, ParameterFilterT{Name: key, Value: val})
-		}
-
-		paramsKey := strings.Join(params, "#")
-		if _, ok := cacheKeys[workspace][customVal][paramsKey]; !ok {
-			cacheKeys[workspace][customVal][paramsKey] = struct{}{}
-			jd.noResultsCache.Invalidate(ds.Index, partitions, workspace, []string{customVal}, []string{Unprocessed.State}, parameterFilters)
-		}
-	}
 }
 
 type moreToken struct {
@@ -2505,75 +2336,6 @@ func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameter Para
 			return jd.getDistinctValuesPerDataset(ctx, datasets, parameter, customValFilter)
 		},
 	)
-}
-
-func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) error {
-	store := func() error {
-		var stmt *sql.Stmt
-		var err error
-
-		stmt, err = tx.PrepareContext(ctx, misc.DBCopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id", "partition_id"))
-		if err != nil {
-			return err
-		}
-
-		defer func() { _ = stmt.Close() }()
-		for _, job := range jobList {
-			eventCount := max(job.EventCount, 1)
-			// Assign partition ID if not already assigned
-			if job.PartitionID == "" && jd.conf.numPartitions > 0 {
-				job.PartitionID = jd.conf.partitionFunction(job)
-			}
-			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId, job.PartitionID); err != nil {
-				return err
-			}
-		}
-		if _, err = stmt.ExecContext(ctx); err != nil {
-			return err
-		}
-		if len(jobList) > jd.conf.analyzeThreshold.Load() {
-			_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobTable))
-		}
-
-		return err
-	}
-	const (
-		savepointSql = "SAVEPOINT doStoreJobsInTx"
-		rollbackSql  = "ROLLBACK TO " + savepointSql
-	)
-	if _, err := tx.ExecContext(ctx, savepointSql); err != nil {
-		return err
-	}
-	sanitized := false
-	for {
-		err := store()
-		if err == nil {
-			return nil
-		}
-		var e *pq.Error
-		if !errors.As(err, &e) {
-			return err
-		}
-		if e.Code == pgErrorCodeTableReadonly {
-			if _, rbErr := tx.ExecContext(ctx, rollbackSql); rbErr != nil {
-				return rbErr
-			}
-			return ErrStaleDsList
-		}
-		if _, ok := dbInvalidJsonErrors[string(e.Code)]; ok && !sanitized {
-			if _, rbErr := tx.ExecContext(ctx, rollbackSql); rbErr != nil {
-				return rbErr
-			}
-			for i := range jobList {
-				if sErr := jobList[i].sanitizeJSON(); sErr != nil {
-					return fmt.Errorf("sanitizeJSON: %w", sErr)
-				}
-			}
-			sanitized = true
-			continue
-		}
-		return err
-	}
 }
 
 type JobsResult struct {
@@ -3660,138 +3422,6 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 		}
 	}
 	return updatedStatesByDS, err
-}
-
-// Store stores new jobs to the jobsdb.
-// If enableWriterQueue is true, this goes through writer worker pool.
-func (jd *Handle) Store(ctx context.Context, jobList []*JobT) error {
-	return jd.WithStoreSafeTx(ctx, func(tx StoreSafeTx) error {
-		return jd.StoreInTx(ctx, tx, jobList)
-	})
-}
-
-// StoreInTx stores new jobs to the jobsdb.
-// If enableWriterQueue is true, this goes through writer worker pool.
-func (jd *Handle) StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) error {
-	if tx.storeSafeTxIdentifier() != jd.Identifier() {
-		return fmt.Errorf("invalid store safe tx identifier, expected: %s, actual: %s", jd.Identifier(), tx.storeSafeTxIdentifier())
-	}
-	storeCmd := func() error {
-		command := func() error {
-			err := jd.internalStoreJobsInTx(ctx, tx.Tx(), tx.getLastDS(), jobList)
-			return err
-		}
-		err := executeDbRequest(ctx, jd, newWriteDbRequest("store", nil, command))
-		return err
-	}
-	return storeCmd()
-}
-
-func (jd *Handle) StoreEachBatchRetry(
-	ctx context.Context,
-	jobBatches [][]*JobT,
-) map[uuid.UUID]string {
-	var res map[uuid.UUID]string
-	_ = jd.WithStoreSafeTx(ctx, func(tx StoreSafeTx) error {
-		var err error
-		res, err = jd.StoreEachBatchRetryInTx(ctx, tx, jobBatches)
-		return err
-	})
-	return res
-}
-
-func (jd *Handle) StoreEachBatchRetryInTx(
-	ctx context.Context,
-	tx StoreSafeTx,
-	jobBatches [][]*JobT,
-) (map[uuid.UUID]string, error) {
-	if tx.storeSafeTxIdentifier() != jd.Identifier() {
-		return nil, fmt.Errorf("invalid store safe tx identifier, expected: %s, actual: %s", jd.Identifier(), tx.storeSafeTxIdentifier())
-	}
-	var (
-		err error
-		res map[uuid.UUID]string
-	)
-	storeCmd := func() error {
-		command := func() map[uuid.UUID]string {
-			res, err = jd.internalStoreEachBatchRetryInTx(
-				ctx,
-				tx.Tx(),
-				tx.getLastDS(),
-				jobBatches,
-			)
-			return res
-		}
-		res = executeDbRequest(ctx, jd, newWriteDbRequest("store_each_batch_retry", nil, command))
-		return err
-	}
-	_ = storeCmd()
-	return res, err
-}
-
-func (jd *Handle) internalStoreEachBatchRetryInTx(ctx context.Context, tx *Tx, ds dataSetT, jobBatches [][]*JobT) (errorMessagesMap map[uuid.UUID]string, err error) {
-	const (
-		savepointSql = "SAVEPOINT storeBatchWithRetryEach"
-		rollbackSql  = "ROLLBACK TO " + savepointSql
-	)
-
-	failAll := func(err error) map[uuid.UUID]string {
-		errorMessagesMap = make(map[uuid.UUID]string, len(jobBatches))
-		for i := range jobBatches {
-			errorMessagesMap[jobBatches[i][0].UUID] = err.Error()
-		}
-		return errorMessagesMap
-	}
-	defer jd.getTimerStat("store_jobs_retry_each_batch", nil).RecordDuration()()
-	_, err = tx.ExecContext(ctx, savepointSql)
-	if err != nil {
-		return failAll(err), nil
-	}
-	err = jd.doStoreJobsInTx(ctx, tx, ds, lo.Flatten(jobBatches))
-	if err == nil {
-		tx.AddSuccessListener(func() {
-			jd.invalidateCacheForJobs(ds, lo.Flatten(jobBatches))
-		})
-		return errorMessagesMap, err
-	}
-	if errors.Is(err, ErrStaleDsList) {
-		return nil, err
-	}
-	_, err = tx.ExecContext(ctx, rollbackSql)
-	if err != nil {
-		return failAll(err), nil
-	}
-
-	// retry storing each batch separately
-	errorMessagesMap = make(map[uuid.UUID]string)
-	var txErr error
-	for _, jobBatch := range jobBatches {
-		if txErr != nil { // stop trying treat all remaining as failed
-			errorMessagesMap[jobBatch[0].UUID] = txErr.Error()
-			continue
-		}
-		// savepoint
-		_, txErr = tx.ExecContext(ctx, savepointSql)
-		if txErr != nil {
-			errorMessagesMap[jobBatch[0].UUID] = txErr.Error()
-			continue
-		}
-
-		err = jd.doStoreJobsInTx(ctx, tx, ds, jobBatch)
-		if err != nil {
-			if errors.Is(err, ErrStaleDsList) {
-				return nil, err
-			}
-			errorMessagesMap[jobBatch[0].UUID] = err.Error()
-			// rollback to savepoint
-			_, txErr = tx.ExecContext(ctx, rollbackSql)
-			continue
-		}
-		tx.AddSuccessListener(func() {
-			jd.invalidateCacheForJobs(ds, jobBatch)
-		})
-	}
-	return errorMessagesMap, err
 }
 
 /*
