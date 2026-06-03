@@ -229,11 +229,11 @@ func (jd *Handle) doRefreshDSRangeListWithDB(l lock.LockToken, db sqlDbOrTx) err
 
 		// We store ranges EXCEPT for
 		// 1. the last element (which is being actively written to)
-		// 2. Migration target ds
+		// 2. Compaction target ds
 
 		// Skipping asserts and updating prevMax if a ds is found to be empty
 		// Happens if this function is called between addNewDS and populating data in two scenarios
-		// Scenario-1: During internal migrations
+		// Scenario-1: During internal compaction
 		// Scenario-2: During scaleup scaledown
 		if !minID.Valid || !maxID.Valid {
 			continue

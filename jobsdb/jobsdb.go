@@ -4,7 +4,7 @@ Implementation of JobsDB for keeping track of jobs (type JobT) and job status
 in job_status_%d table. Each such table pair (e.g. jobs_1, job_status_1) is called
 a dataset (type dataSetT). After a dataset grows beyond a size, a new dataset is
 created and jobs are written to a new dataset. When most of the jobs from a dataset
-have been processed, we migrate the remaining jobs to a new intermediate
+have been processed, we compact the remaining jobs into a new intermediate
 dataset and delete the old dataset. The range of job ids in a dataset are tracked
 via the dataSetRangeT struct
 
@@ -310,14 +310,14 @@ type Handle struct {
 	dsRangeFuncMap      map[string]func() (dsRangeMinMax, error)
 	distinctValuesCache *distinctValuesCache
 	dsListLock          *lock.Locker
-	dsMigrationLock     *lock.Locker
-	// lastMigrateProbeIndex stores the dsindex of the last dataset probed by
-	// getMigrationList when no eligible datasets were found and scanning was
-	// cut short by maxMigrateDSProbe. The next invocation resumes from here
+	dsCompactionLock    *lock.Locker
+	// lastCompactionProbeIndex stores the dsindex of the last dataset probed by
+	// getCompactionList when no eligible datasets were found and scanning was
+	// cut short by maxCompactDSProbe. The next invocation resumes from here
 	// instead of re-scanning from the beginning.
-	// Only accessed from the single migrateDSLoop goroutine.
-	lastMigrateProbeIndex *dsindex.Index
-	noResultsCache        *cache.NoResultsCache[ParameterFilterT]
+	// Only accessed from the single compactionLoop goroutine.
+	lastCompactionProbeIndex *dsindex.Index
+	noResultsCache           *cache.NoResultsCache[ParameterFilterT]
 
 	excludedReadPartitionsLock sync.RWMutex
 	excludedReadPartitions     map[string]struct{}
@@ -340,12 +340,11 @@ type Handle struct {
 	backgroundGroup  *errgroup.Group
 
 	// skipSetupDBSetup is useful for testing as we mock the database client
-	// TriggerAddNewDS, TriggerMigrateDS is useful for triggering addNewDS to run from tests.
-	// TODO: Ideally we should refactor the code to not use this override.
-	TriggerAddNewDS  func() <-chan time.Time
-	migrateDSPaused  atomic.Bool
-	TriggerMigrateDS func() <-chan time.Time
-	TriggerRefreshDS func() <-chan time.Time
+	// TriggerAddNewDS, TriggerCompaction is useful for triggering addNewDS to run from tests.
+	TriggerAddNewDS   func() <-chan time.Time
+	compactionPaused  atomic.Bool
+	TriggerCompaction func() <-chan time.Time
+	TriggerRefreshDS  func() <-chan time.Time
 
 	lifecycle struct {
 		mu      sync.Mutex
@@ -387,21 +386,21 @@ type Handle struct {
 		getJobsUseLateralJoin config.ValueLoader[bool]
 		dbTablesVersion       int // version of the database tables schema (0 means latest)
 
-		migration struct {
-			maxMigrateOnce, maxMigrateDSProbe config.ValueLoader[int]
+		compaction struct {
+			maxCompactOnce, maxCompactDSProbe config.ValueLoader[int]
 			vacuumFullStatusTableThreshold    config.ValueLoader[int64]
 			vacuumAnalyzeStatusTableThreshold config.ValueLoader[int64]
-			jobStatusMigrateThres             config.ValueLoader[float64]
-			jobMinRowsLeftMigrateThreshold    config.ValueLoader[float64]
-			migrateDSLoopSleepDuration        config.ValueLoader[time.Duration]
-			migrateDSTimeout                  config.ValueLoader[time.Duration]
+			jobStatusCompactionThres          config.ValueLoader[float64]
+			jobMinRowsLeftCompactionThreshold config.ValueLoader[float64]
+			compactionLoopSleepDuration       config.ValueLoader[time.Duration]
+			compactionTimeout                 config.ValueLoader[time.Duration]
 			// nonBlockingCompletedDSDrop routes datasets with zero pending jobs
-			// through the async dropDSLoop instead of the in-TX postMigrateHandleDS
-			// path, so the drop is migration-lock-free and does not block concurrent readers.
+			// through the async dropDSLoop instead of the in-TX postCompactionHandleDS
+			// path, so the drop is compaction-lock-free and does not block concurrent readers.
 			nonBlockingCompletedDSDrop config.ValueLoader[bool]
 			// nonBlockingCompaction gates the new compaction TX shape (EXCLUSIVE
 			// lock + readonly trigger on the source status table, async source drop).
-			// When disabled, falls back to the legacy doMigrateDS flow.
+			// When disabled, falls back to the legacy doCompaction flow.
 			nonBlockingCompaction config.ValueLoader[bool]
 			// compactionDeferStatusLock further minimizes the status-table lock
 			// window during non-blocking compaction by splitting the copy into two

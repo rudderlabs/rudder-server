@@ -489,15 +489,15 @@ func TestJobsDB(t *testing.T) {
 	t.Run("should migrate the datasets after maxDSRetentionPeriod (except the right most one)", func(t *testing.T) {
 		customVal := "MOCKDS"
 		triggerAddNewDS := make(chan time.Time)
-		triggerMigrateDS := make(chan time.Time)
+		triggerCompaction := make(chan time.Time)
 
 		c := config.New()
 		jobDB := Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
-			TriggerMigrateDS: func() <-chan time.Time {
-				return triggerMigrateDS
+			TriggerCompaction: func() <-chan time.Time {
+				return triggerCompaction
 			},
 			config: c,
 		}
@@ -549,8 +549,8 @@ func TestJobsDB(t *testing.T) {
 
 		time.Sleep(time.Second * 2) // wait for some time to pass so that retention condition satisfies
 
-		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
-		triggerMigrateDS <- time.Now() // Second time, waits for the first loop to finish
+		triggerCompaction <- time.Now() // trigger compactionLoop to run
+		triggerCompaction <- time.Now() // Second time, waits for the first loop to finish
 
 		dsIndicesList := jobDBInspector.getDSListSnapshot()
 		require.EqualValues(t, "1_1", dsIndicesList[0].Index)
@@ -569,12 +569,12 @@ func TestJobsDB(t *testing.T) {
 	t.Run("should migrate small datasets in pairs", func(t *testing.T) {
 		customVal := "MOCKDS"
 		triggerAddNewDS := make(chan time.Time)
-		triggerMigrateDS := make(chan time.Time)
+		triggerCompaction := make(chan time.Time)
 		trigger := func() {
 			triggerAddNewDS <- time.Now()
 			triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
-			triggerMigrateDS <- time.Now()
-			triggerMigrateDS <- time.Now() // Second time, waits for the first loop to finish
+			triggerCompaction <- time.Now()
+			triggerCompaction <- time.Now() // Second time, waits for the first loop to finish
 		}
 
 		c.Set("jobsdb.maxDSSize", 10)
@@ -583,8 +583,8 @@ func TestJobsDB(t *testing.T) {
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
-			TriggerMigrateDS: func() <-chan time.Time {
-				return triggerMigrateDS
+			TriggerCompaction: func() <-chan time.Time {
+				return triggerCompaction
 			},
 			config: c,
 		}
@@ -798,7 +798,7 @@ func TestJobsDB(t *testing.T) {
 	t.Run(`migrates only moves non-terminal jobs to a new DS`, func(t *testing.T) {
 		customVal := "MOCKDS"
 		triggerAddNewDS := make(chan time.Time)
-		triggerMigrateDS := make(chan time.Time)
+		triggerCompaction := make(chan time.Time)
 
 		config.Reset()
 		c := config.New()
@@ -806,8 +806,8 @@ func TestJobsDB(t *testing.T) {
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
-			TriggerMigrateDS: func() <-chan time.Time {
-				return triggerMigrateDS
+			TriggerCompaction: func() <-chan time.Time {
+				return triggerCompaction
 			},
 			config: c,
 		}
@@ -823,11 +823,11 @@ func TestJobsDB(t *testing.T) {
 			numUnprocessedJobs = 10
 			numSucceededJobs   = 10
 			jobs               = genJobs(defaultWorkspaceID, customVal, numTotalJobs, 1)
-			// first #numFailedJobs jobs marked Failed - should be migrated
+			// first #numFailedJobs jobs marked Failed - should be compacted
 			failedStatuses = genJobStatuses(jobs[:numFailedJobs], Failed.State)
-			// #numFailedJobs - #numFailedJobs+#numSucceededJobs jobs marked as succeeded - should not be migrated
+			// #numFailedJobs - #numFailedJobs+#numSucceededJobs jobs marked as succeeded - should not be compacted
 			succeededStatuses = genJobStatuses(jobs[numFailedJobs:numFailedJobs+numSucceededJobs], Succeeded.State)
-			// #numFailedJobs+#numSucceededJobs - #numTotalJobs jobs are unprocessed - should be migrated
+			// #numFailedJobs+#numSucceededJobs - #numTotalJobs jobs are unprocessed - should be compacted
 		)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
 
@@ -852,8 +852,8 @@ func TestJobsDB(t *testing.T) {
 
 		time.Sleep(time.Second * 2) // wait for some time to pass so that retention condition satisfies
 
-		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
-		triggerMigrateDS <- time.Now() // Second time, waits for the first loop to finish
+		triggerCompaction <- time.Now() // trigger compactionLoop to run
+		triggerCompaction <- time.Now() // Second time, waits for the first loop to finish
 
 		dsIndicesList := jobDBInspector.getDSListSnapshot()
 		require.EqualValues(t, 2, len(jobDBInspector.getDSListSnapshot()))

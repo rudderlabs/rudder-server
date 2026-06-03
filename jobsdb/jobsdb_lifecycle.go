@@ -59,7 +59,7 @@ func (jd *Handle) init() {
 		jd.stats = stats.Default
 	}
 	jd.dsListLock = lock.NewLocker("dsListLock", jd.tablePrefix, jd.stats)
-	jd.dsMigrationLock = lock.NewLocker("dsMigrationLock", jd.tablePrefix, jd.stats)
+	jd.dsCompactionLock = lock.NewLocker("dsCompactionLock", jd.tablePrefix, jd.stats)
 
 	jd.loadConfig()
 
@@ -89,11 +89,11 @@ func (jd *Handle) init() {
 			maxConns += jd.conf.maxReaders + jd.conf.maxWriters
 			switch jd.ownerType {
 			case Read:
-				maxConns += 3 // migrate, refreshDsList, dropDS
+				maxConns += 3 // compact, refreshDsList, dropDS
 			case Write:
 				maxConns += 1 // addNewDS
 			case ReadWrite:
-				maxConns += 3 // migrate, addNewDS, dropDS
+				maxConns += 3 // compact, addNewDS, dropDS
 			}
 			if maxConns >= jd.conf.maxOpenConnections {
 				maxConns = jd.conf.maxOpenConnections
@@ -186,7 +186,7 @@ func (jd *Handle) workersAndAuxSetup() {
 	jd.statReadExcludedPartitionsCount = jd.stats.NewTaggedStat("jobsdb_read_excluded_partitions_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 }
 
-// Start starts the jobsdb worker and housekeeping (migration, archive) threads.
+// Start starts the jobsdb worker and housekeeping (compaction, archive) threads.
 // Start should be called before any other jobsdb methods are called.
 func (jd *Handle) Start() error {
 	jd.lifecycle.mu.Lock()
@@ -251,7 +251,7 @@ func (jd *Handle) readerSetup(ctx context.Context, l lock.LockToken) {
 		return nil
 	}))
 
-	jd.startMigrateDSLoop(ctx)
+	jd.startCompactionLoop(ctx)
 	jd.startDropDSLoop(ctx)
 }
 
@@ -294,7 +294,7 @@ func (jd *Handle) readerWriterSetup(ctx context.Context, l lock.LockToken) {
 	}())
 	jd.assertError(jd.loadReadExcludedPartitions())
 
-	jd.startMigrateDSLoop(ctx)
+	jd.startCompactionLoop(ctx)
 	jd.startDropDSLoop(ctx)
 }
 
@@ -421,7 +421,7 @@ The drawback with this approach is that migrating a DS can take a long
 time and can potentially block the jobs/job-batch store call. Blocking jobs store
 is bad since user ACK won't be sent unless jobs store returns.
 
-To handle this, we separate out the locks into dsListLock and dsMigrationLock.
+To handle this, we separate out the locks into dsListLock and dsCompactionLock.
 Store() only needs to access the last element of dsList and is not
 impacted by movement of data across ds so it only takes the dsListLock.
 Other functions are impacted by movement of data across DS in background

@@ -106,13 +106,13 @@ func (jd *Handle) WithUpdateSafeTxFromTx(ctx context.Context, tx *Tx, f func(tx 
 }
 
 func (jd *Handle) inUpdateSafeCtx(ctx context.Context, f func(dsList []dataSetT, dsRangeList []dataSetRangeT) error) error {
-	// The order of lock is very important. The migrateDSLoop
+	// The order of lock is very important. The compactionLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
-	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-		return fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
+		return fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
 	}
-	defer jd.dsMigrationLock.RUnlock()
+	defer jd.dsCompactionLock.RUnlock()
 
 	dsList, dsRangeList, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
@@ -493,7 +493,7 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 
 	// The last (most active DS) might not have range element as it is being written to
 	if lastPos < len(statusList) {
-		// Make sure range is missing for the last ds and migration ds (if at all present)
+		// Make sure range is missing for the last ds and compaction ds (if at all present)
 		jd.assert(len(dsRangeList) >= len(dsList)-2, fmt.Sprintf("len(dsRangeList):%d < len(dsList):%d-2", len(dsRangeList), len(dsList)))
 		// Update status in the last element
 		jd.logger.Debugn("RangeEnd",

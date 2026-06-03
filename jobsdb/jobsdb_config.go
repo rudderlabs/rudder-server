@@ -26,27 +26,27 @@ func (jd *Handle) loadConfig() {
 	jd.conf.refreshDSTimeout = jd.config.GetReloadableDurationVar(10, time.Minute, jd.configKeys("refreshDS.timeout")...)
 	jd.conf.addNewDSTimeout = jd.config.GetReloadableDurationVar(5, time.Minute, jd.configKeys("addNewDS.timeout")...)
 
-	// migrationConfig
+	// compactionConfig
 
-	// migrateDSLoopSleepDuration: How often is the loop (which checks for migrating DS) run
-	jd.conf.migration.migrateDSLoopSleepDuration = jd.config.GetReloadableDurationVar(30, time.Second, jd.configKeys("migrateDSLoopSleepDuration", "migrateDSLoopSleepDurationInS")...)
-	jd.conf.migration.migrateDSTimeout = jd.config.GetReloadableDurationVar(10, time.Minute, jd.configKeys("migrateDS.timeout")...)
-	// jobStatusMigrateThres: A DS is migrated if the job_status exceeds this (* no_of_jobs)
-	jd.conf.migration.jobStatusMigrateThres = jd.config.GetReloadableFloat64Var(3, jd.configKeys("jobStatusMigrateThreshold")...)
-	// jobMinRowsLeftMigrateThreshold: A DS with a low number of pending rows should be eligible for migration if the number of pending rows are
-	// less than jobMinRowsLeftMigrateThreshold percent of maxDSSize (e.g. if jobMinRowsLeftMigrateThreshold is 0.5
-	// then DSs that have less than 50% of maxDSSize pending rows are eligible for migration)
-	jd.conf.migration.jobMinRowsLeftMigrateThreshold = jd.config.GetReloadableFloat64Var(0.6, jd.configKeys("jobMinRowsLeftMigrateThreshold")...)
-	// maxMigrateOnce: Maximum number of DSs that are migrated together into one destination
-	jd.conf.migration.maxMigrateOnce = jd.config.GetReloadableIntVar(10, 1, jd.configKeys("maxMigrateOnce")...)
-	// maxMigrateDSProbe: Maximum number of DSs that are checked from left to right if they are eligible for migration
-	jd.conf.migration.maxMigrateDSProbe = jd.config.GetReloadableIntVar(10, 1, jd.configKeys("maxMigrateDSProbe")...)
-	jd.conf.migration.vacuumFullStatusTableThreshold = jd.config.GetReloadableInt64Var(500*bytesize.MB, 1, jd.configKeys("vacuumFullStatusTableThreshold")...)
-	jd.conf.migration.vacuumAnalyzeStatusTableThreshold = jd.config.GetReloadableInt64Var(30000, 1, jd.configKeys("vacuumAnalyzeStatusTableThreshold")...)
-	jd.conf.migration.nonBlockingCompletedDSDrop = jd.config.GetReloadableBoolVar(false, jd.configKeys("nonBlockingCompletedDSDrop")...)
-	jd.conf.migration.nonBlockingCompaction = jd.config.GetReloadableBoolVar(false, jd.configKeys("nonBlockingCompaction")...)
-	jd.conf.migration.compactionDeferStatusLock = jd.config.GetReloadableBoolVar(false, jd.configKeys("compactionDeferStatusLock")...)
-	jd.conf.migration.getJobsRetryOnCompaction = jd.config.GetReloadableBoolVar(true, jd.configKeys("getJobsRetryOnCompaction")...)
+	// compactionLoopSleepDuration: How often is the loop (which checks for compacting DS) run
+	jd.conf.compaction.compactionLoopSleepDuration = jd.config.GetReloadableDurationVar(30, time.Second, jd.configKeys("migrateDSLoopSleepDuration", "migrateDSLoopSleepDurationInS")...)
+	jd.conf.compaction.compactionTimeout = jd.config.GetReloadableDurationVar(10, time.Minute, jd.configKeys("migrateDS.timeout")...)
+	// jobStatusCompactionThres: A DS is compacted if the job_status exceeds this (* no_of_jobs)
+	jd.conf.compaction.jobStatusCompactionThres = jd.config.GetReloadableFloat64Var(3, jd.configKeys("jobStatusMigrateThreshold")...)
+	// jobMinRowsLeftCompactionThreshold: A DS with a low number of pending rows should be eligible for compaction if the number of pending rows are
+	// less than jobMinRowsLeftCompactionThreshold percent of maxDSSize (e.g. if jobMinRowsLeftCompactionThreshold is 0.5
+	// then DSs that have less than 50% of maxDSSize pending rows are eligible for compaction)
+	jd.conf.compaction.jobMinRowsLeftCompactionThreshold = jd.config.GetReloadableFloat64Var(0.6, jd.configKeys("jobMinRowsLeftMigrateThreshold")...)
+	// maxCompactOnce: Maximum number of DSs that are compacted together into one destination
+	jd.conf.compaction.maxCompactOnce = jd.config.GetReloadableIntVar(10, 1, jd.configKeys("maxMigrateOnce")...)
+	// maxCompactDSProbe: Maximum number of DSs that are checked from left to right if they are eligible for compaction
+	jd.conf.compaction.maxCompactDSProbe = jd.config.GetReloadableIntVar(10, 1, jd.configKeys("maxMigrateDSProbe")...)
+	jd.conf.compaction.vacuumFullStatusTableThreshold = jd.config.GetReloadableInt64Var(500*bytesize.MB, 1, jd.configKeys("vacuumFullStatusTableThreshold")...)
+	jd.conf.compaction.vacuumAnalyzeStatusTableThreshold = jd.config.GetReloadableInt64Var(30000, 1, jd.configKeys("vacuumAnalyzeStatusTableThreshold")...)
+	jd.conf.compaction.nonBlockingCompletedDSDrop = jd.config.GetReloadableBoolVar(false, jd.configKeys("nonBlockingCompletedDSDrop")...)
+	jd.conf.compaction.nonBlockingCompaction = jd.config.GetReloadableBoolVar(false, jd.configKeys("nonBlockingCompaction")...)
+	jd.conf.compaction.compactionDeferStatusLock = jd.config.GetReloadableBoolVar(false, jd.configKeys("compactionDeferStatusLock")...)
+	jd.conf.compaction.getJobsRetryOnCompaction = jd.config.GetReloadableBoolVar(true, jd.configKeys("getJobsRetryOnCompaction")...)
 
 	// maxDSSize: Maximum size of a DS. The process which adds new DS runs in the background
 	// (every few seconds) so a DS may go beyond this size
@@ -72,9 +72,9 @@ func (jd *Handle) loadConfig() {
 		}
 	}
 
-	if jd.TriggerMigrateDS == nil {
-		jd.TriggerMigrateDS = func() <-chan time.Time {
-			return time.After(jd.conf.migration.migrateDSLoopSleepDuration.Load())
+	if jd.TriggerCompaction == nil {
+		jd.TriggerCompaction = func() <-chan time.Time {
+			return time.After(jd.conf.compaction.compactionLoopSleepDuration.Load())
 		}
 	}
 

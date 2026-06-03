@@ -68,13 +68,13 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 var cacheParameterFilters = []string{"source_id", "destination_id"}
 
 func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) error {
-	// pause migration to avoid any read locks being blocked during pileup count
-	jd.migrateDSPaused.Store(true)
-	defer jd.migrateDSPaused.Store(false)
-	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-		return fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+	// pause compaction to avoid any read locks being blocked during pileup count
+	jd.compactionPaused.Store(true)
+	defer jd.compactionPaused.Store(false)
+	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
+		return fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
 	}
-	defer jd.dsMigrationLock.RUnlock()
+	defer jd.dsCompactionLock.RUnlock()
 	dsList, _, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
 		return err
@@ -205,10 +205,10 @@ func (jd *Handle) getDistinctValuesPerDataset(
 }
 
 func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameter ParameterName, customValFilter string) ([]string, error) {
-	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
+		return nil, fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
 	}
-	defer jd.dsMigrationLock.RUnlock()
+	defer jd.dsCompactionLock.RUnlock()
 	dsList, _, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
 		return nil, err
@@ -594,13 +594,13 @@ func (jd *Handle) doGetJobs(ctx context.Context, params GetQueryParams, more Mor
 	}
 	defer jd.getTimerStat("jobsdb_get_jobs_time", tags).RecordDuration()()
 
-	// The order of lock is very important. The migrateDSLoop
+	// The order of lock is very important. The compactionLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
-	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
+		return nil, fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
 	}
-	defer jd.dsMigrationLock.RUnlock()
+	defer jd.dsCompactionLock.RUnlock()
 	dsList, dsRangeList, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
 		return nil, err
@@ -693,7 +693,7 @@ func (jd *Handle) doGetJobs(ctx context.Context, params GetQueryParams, more Mor
 	jd.stats.NewTaggedStat("jobsdb_queried_bytes", stats.CountType, statTags).Count(lo.SumBy(res.Jobs, func(j *JobT) int { return len(j.EventPayload) })) // number of bytes that we queried
 	// Validate that none of the datasets we examined were compacted while we
 	// were querying. If any of them were, it means our result may be stale and we need to retry.
-	if jd.conf.migration.nonBlockingCompaction.Load() && jd.conf.migration.getJobsRetryOnCompaction.Load() {
+	if jd.conf.compaction.nonBlockingCompaction.Load() && jd.conf.compaction.getJobsRetryOnCompaction.Load() {
 		jd.dropDSListLock.RLock()
 		_, found := lo.Find(jd.dropDSList, func(entry dropDSEntry) bool {
 			if !entry.compacted {

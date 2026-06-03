@@ -22,8 +22,8 @@ type journalOpPayloadT struct {
 
 const (
 	addDSOperation             = "ADD_DS"
-	migrateCopyOperation       = "MIGRATE_COPY"
-	postMigrateDSOperation     = "POST_MIGRATE_DS_OP"
+	compactionCopyOperation    = "MIGRATE_COPY"
+	postCompactionDSOperation  = "POST_MIGRATE_DS_OP"
 	dropDSOperation            = "DROP_DS"
 	RawDataDestUploadOperation = "S3_DEST_UPLOAD"
 )
@@ -53,8 +53,8 @@ func (jd *Handle) JournalMarkStart(opType string, opPayload json.RawMessage) (in
 func (jd *Handle) JournalMarkStartInTx(tx *Tx, opType string, opPayload json.RawMessage) (int64, error) {
 	var opID int64
 	jd.assert(opType == addDSOperation ||
-		opType == migrateCopyOperation ||
-		opType == postMigrateDSOperation ||
+		opType == compactionCopyOperation ||
+		opType == postCompactionDSOperation ||
 		opType == dropDSOperation ||
 		opType == RawDataDestUploadOperation, fmt.Sprintf("opType: %s is not a supported op", opType))
 
@@ -115,7 +115,7 @@ func (jd *Handle) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	case addDSGoRoutine:
 		opTypes = []string{addDSOperation}
 	case mainGoRoutine:
-		opTypes = []string{migrateCopyOperation, postMigrateDSOperation, dropDSOperation}
+		opTypes = []string{compactionCopyOperation, postCompactionDSOperation, dropDSOperation}
 	}
 
 	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
@@ -167,20 +167,20 @@ func (jd *Handle) recoverFromCrash(owner OwnerType, goRoutineType string) {
 		// Drop the table we were trying to create
 		jd.logger.Infon("Recovering new DS operation", logger.NewStringField("newDS", newDS.String()))
 		jd.dropDSForRecovery(newDS)
-	case migrateCopyOperation:
-		migrateDest := opPayloadJSON.To
+	case compactionCopyOperation:
+		compactionDest := opPayloadJSON.To
 		// Delete the destination of the interrupted
-		// migration. After we start, code should
-		// redo the migration
-		jd.logger.Infon("Recovering migrateCopy operation", logger.NewStringField("migrateDest", migrateDest.String()))
-		jd.dropDSForRecovery(migrateDest)
+		// compaction. After we start, code should
+		// redo the compaction
+		jd.logger.Infon("Recovering compactionCopy operation", logger.NewStringField("compactionDest", compactionDest.String()))
+		jd.dropDSForRecovery(compactionDest)
 		undoOp = true
-	case postMigrateDSOperation:
-		var migrateSrc dataSetTList = opPayloadJSON.From
-		for _, ds := range migrateSrc {
+	case postCompactionDSOperation:
+		var compactionSrc dataSetTList = opPayloadJSON.From
+		for _, ds := range compactionSrc {
 			jd.dropDSForRecovery(ds)
 		}
-		jd.logger.Infon("Recovering migrateDel operation", logger.NewStringField("migrateSrc", migrateSrc.String()))
+		jd.logger.Infon("Recovering compactionDel operation", logger.NewStringField("compactionSrc", compactionSrc.String()))
 		undoOp = false
 	}
 

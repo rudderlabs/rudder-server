@@ -213,7 +213,7 @@ func (jd *Handle) createDSStatusIndicesInTx(ctx context.Context, tx *Tx, newDS d
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id_js" ON %[1]q(job_id asc,id desc,job_state)`, newDS.JobStatusTable)); err != nil {
 		return fmt.Errorf("adding job_id_id index: %w", err)
 	}
-	// index used for maxDSRetention during migration
+	// index used for maxDSRetention during compaction
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_id_js" ON %[1]q(id ,job_state) INCLUDE (exec_time)`, newDS.JobStatusTable)); err != nil {
 		return fmt.Errorf("adding job_id_js index: %w", err)
 	}
