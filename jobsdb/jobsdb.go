@@ -1904,29 +1904,21 @@ func (jd *Handle) GetMaxDSIndex() (maxDSIndex int64) {
 	return maxDSIndex
 }
 
-func (jd *Handle) prepareAndExecStmtInTx(tx *sql.Tx, sqlStatement string) {
-	stmt, err := tx.Prepare(sqlStatement)
-	jd.assertError(err)
-	defer func() { _ = stmt.Close() }()
-
-	_, err = stmt.Exec()
+func (jd *Handle) execStmtInTx(tx *sql.Tx, sqlStatement string) {
+	_, err := tx.Exec(sqlStatement)
 	jd.assertError(err)
 }
 
-func (jd *Handle) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement string) {
+func (jd *Handle) execStmtInTxAllowMissing(tx *sql.Tx, sqlStatement string) {
 	const (
-		savepointSql = "SAVEPOINT prepareAndExecStmtInTxAllowMissing"
+		savepointSql = "SAVEPOINT execStmtInTxAllowMissing"
 		rollbackSql  = "ROLLBACK TO " + savepointSql
 	)
 
-	stmt, err := tx.Prepare(sqlStatement)
-	jd.assertError(err)
-	defer func() { _ = stmt.Close() }()
-
-	_, err = tx.Exec(savepointSql)
+	_, err := tx.Exec(savepointSql)
 	jd.assertError(err)
 
-	_, err = stmt.Exec()
+	_, err = tx.Exec(sqlStatement)
 	if err != nil {
 		var pqError *pq.Error
 		ok := errors.As(err, &pqError)
@@ -2126,15 +2118,15 @@ func (jd *Handle) dropDSForRecovery(ds dataSetT) {
 	tx, err := jd.maintenanceDB().Begin()
 	jd.assertError(err)
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)
-	jd.prepareAndExecStmtInTxAllowMissing(tx, sqlStatement)
+	jd.execStmtInTxAllowMissing(tx, sqlStatement)
 
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)
-	jd.prepareAndExecStmtInTxAllowMissing(tx, sqlStatement)
+	jd.execStmtInTxAllowMissing(tx, sqlStatement)
 
 	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobStatusTable)
-	jd.prepareAndExecStmtInTx(tx, sqlStatement)
+	jd.execStmtInTx(tx, sqlStatement)
 	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobTable)
-	jd.prepareAndExecStmtInTx(tx, sqlStatement)
+	jd.execStmtInTx(tx, sqlStatement)
 	err = tx.Commit()
 	jd.assertError(err)
 }
@@ -2725,7 +2717,6 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		joinTable = fmt.Sprintf(`%q job_latest_state ON jobs.job_id=job_latest_state.job_id`, joinTable)
 	}
 
-	var rows *sql.Rows
 	sqlStatement := fmt.Sprintf(`SELECT
 									jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
 									jobs.created_at, jobs.expire_at, jobs.workspace_id, jobs.partition_id,
@@ -2764,12 +2755,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		sqlStatement = `SELECT * FROM (` + sqlStatement + `) t WHERE ` + strings.Join(wrapQuery, " AND ")
 	}
 
-	stmt, err := jd.getDB(ctx).PrepareContext(ctx, sqlStatement)
-	if err != nil {
-		return JobsResult{}, false, err
-	}
-	defer func() { _ = stmt.Close() }()
-	rows, err = stmt.QueryContext(ctx, args...)
+	rows, err := jd.getDB(ctx).QueryContext(ctx, sqlStatement, args...)
 	if err != nil {
 		return JobsResult{}, false, err
 	}
@@ -3373,11 +3359,7 @@ func (jd *Handle) GetJournalEntries(opType string) (entries []JournalEntryT) {
 									AND
 									owner='%s'
 									ORDER BY id`, jd.tablePrefix, opType, jd.ownerType)
-	stmt, err := jd.dbHandle.Prepare(sqlStatement)
-	jd.assertError(err)
-	defer func() { _ = stmt.Close() }()
-
-	rows, err := stmt.Query()
+	rows, err := jd.dbHandle.Query(sqlStatement)
 	jd.assertError(err)
 	defer func() { _ = rows.Close() }()
 
