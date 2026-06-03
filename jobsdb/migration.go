@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -169,6 +170,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 					"[[ migrateDSLoop ]]",
 					logger.NewIntField("pendingJobsCount", int64(pendingJobsCount)),
 					logger.NewIntField("migrateFrom", int64(len(migrateFrom))),
+					logger.NewStringField("from", strings.Join(lo.Map(migrateFromDatasets, func(d dataSetT, _ int) string { return d.Index }), ",")),
 					logger.NewStringField("to", destination.Index),
 					logger.NewStringField("insert before", insertBeforeDS.Index),
 				)
@@ -257,6 +259,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 	})
 	if l != nil {
 		defer jd.stats.NewTaggedStat("migration_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(lockStart)
+		jd.logger.Infon("[[ migrateDSLoop ]]: Lock duration", logger.NewDurationField("duration", time.Since(lockStart)))
 		defer func() { lockChan <- l }()
 		if err == nil {
 			if err = jd.doRefreshDSRangeList(l); err != nil {
@@ -579,6 +582,10 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index,
 		migrateDSProbeCount++
 	}
 	if len(result.migrateFrom) > 0 {
+		// sort migrateFrom, since needsPair & maxDSRetentionPeriod logic may have added datasets out of order
+		slices.SortFunc(result.migrateFrom, func(a, b dsWithPendingJobCount) int {
+			return dsindex.MustParse(a.ds.Index).Compare(dsindex.MustParse(b.ds.Index))
+		})
 		result.firstEligible = dsindex.MustParse(result.migrateFrom[0].ds.Index)
 	}
 	return result, nil
@@ -773,6 +780,7 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 		"[[ doCompactDS ]]",
 		logger.NewIntField("pendingJobsCount", int64(migrationList.pendingJobsCount)),
 		logger.NewIntField("migrateFrom", int64(len(migrateFromDatasets))),
+		logger.NewStringField("from", strings.Join(lo.Map(migrateFromDatasets, func(d dataSetT, _ int) string { return d.Index }), ",")),
 		logger.NewStringField("to", destination.Index),
 		logger.NewStringField("insert before", migrationList.insertBeforeDS.Index),
 	)
@@ -893,7 +901,8 @@ func (jd *Handle) doCompactDS(ctx context.Context) error {
 	}
 	defer func() {
 		lockChan <- l
-		defer jd.stats.NewTaggedStat("migration_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(lockStart)
+		jd.stats.NewTaggedStat("migration_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(lockStart)
+		jd.logger.Infon("[[ migrateDSLoop ]]: Lock duration", logger.NewDurationField("duration", time.Since(lockStart)))
 	}()
 	if err != nil {
 		return err

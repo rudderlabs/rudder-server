@@ -84,6 +84,16 @@ func Test_Index_Increment(t *testing.T) {
 	})
 }
 
+func Test_Index_Compare(t *testing.T) {
+	require.Equal(t, -1, dsindex.MustParse("0").Compare(dsindex.MustParse("1")))
+	require.Equal(t, -1, dsindex.MustParse("0_1").Compare(dsindex.MustParse("1")))
+	require.Equal(t, -1, dsindex.MustParse("1_1").Compare(dsindex.MustParse("1_2")))
+	require.Equal(t, 0, dsindex.MustParse("1").Compare(dsindex.MustParse("1")))
+	require.Equal(t, 0, dsindex.MustParse("1_1").Compare(dsindex.MustParse("1_1")))
+	require.Equal(t, 1, dsindex.MustParse("1").Compare(dsindex.MustParse("0_1")))
+	require.Equal(t, 1, dsindex.MustParse("1_1_1").Compare(dsindex.MustParse("1_1")))
+}
+
 func Test_Index_Bump(t *testing.T) {
 	t.Run("success scenarios", func(t *testing.T) {
 		require.Equal(t, "0_1", dsindex.MustParse("0").MustBump(dsindex.MustParse("1")).String())
