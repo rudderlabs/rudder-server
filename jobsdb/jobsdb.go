@@ -677,6 +677,13 @@ type Handle struct {
 			// lock + readonly trigger on the source status table, async source drop).
 			// When disabled, falls back to the legacy doMigrateDS flow.
 			nonBlockingCompaction config.ValueLoader[bool]
+			// compactionDeferStatusLock further minimizes the status-table lock
+			// window during non-blocking compaction by splitting the copy into two
+			// phases: pending jobs are copied first WITHOUT any status-table lock,
+			// then each source status table is locked EXCLUSIVE one after another only
+			// to copy the latest statuses of the moved jobs. Requires
+			// nonBlockingCompaction; has no effect on its own.
+			compactionDeferStatusLock config.ValueLoader[bool]
 			// getJobsRetryOnCompaction gates the snapshot revalidation in getJobs:
 			// when set, getJobs detects that a queried dataset is no longer in the
 			// published list (e.g. a non-blocking compaction completed mid-read) and
@@ -1177,6 +1184,7 @@ func (jd *Handle) loadConfig() {
 	jd.conf.migration.vacuumAnalyzeStatusTableThreshold = jd.config.GetReloadableInt64Var(30000, 1, jd.configKeys("vacuumAnalyzeStatusTableThreshold")...)
 	jd.conf.migration.nonBlockingCompletedDSDrop = jd.config.GetReloadableBoolVar(false, jd.configKeys("nonBlockingCompletedDSDrop")...)
 	jd.conf.migration.nonBlockingCompaction = jd.config.GetReloadableBoolVar(false, jd.configKeys("nonBlockingCompaction")...)
+	jd.conf.migration.compactionDeferStatusLock = jd.config.GetReloadableBoolVar(false, jd.configKeys("compactionDeferStatusLock")...)
 	jd.conf.migration.getJobsRetryOnCompaction = jd.config.GetReloadableBoolVar(true, jd.configKeys("getJobsRetryOnCompaction")...)
 
 	// masterBackupEnabled = true => all the jobsdb are eligible for backup
@@ -1813,7 +1821,16 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 	return nil
 }
 
+// createDSIndicesInTx creates the indices for the given dataset.
 func (jd *Handle) createDSIndicesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
+	if err := jd.createDSJobIndicesInTx(ctx, tx, newDS); err != nil {
+		return err
+	}
+	return jd.createDSStatusIndicesInTx(ctx, tx, newDS)
+}
+
+// createDSJobIndicesInTx creates the indices that live on the jobs table
+func (jd *Handle) createDSJobIndicesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws" ON %[1]q (workspace_id)`, newDS.JobTable)); err != nil {
 		return fmt.Errorf("creating workspace_id index: %w", err)
 	}
@@ -1828,6 +1845,12 @@ func (jd *Handle) createDSIndicesInTx(ctx context.Context, tx *Tx, newDS dataSet
 			return fmt.Errorf("creating %s index: %w", param, err)
 		}
 	}
+	return nil
+}
+
+// createDSStatusIndicesInTx creates the indices on the job status table plus the
+// v_last view.
+func (jd *Handle) createDSStatusIndicesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id_js" ON %[1]q(job_id asc,id desc,job_state)`, newDS.JobStatusTable)); err != nil {
 		return fmt.Errorf("adding job_id_id index: %w", err)
 	}

@@ -58,6 +58,7 @@ type flagSet struct {
 	name                       string
 	nonBlockingCompletedDSDrop bool
 	nonBlockingCompaction      bool
+	compactionDeferStatusLock  bool
 }
 
 func (p *compaction) Run(ctx context.Context) error {
@@ -124,6 +125,7 @@ func (p *compaction) Run(ctx context.Context) error {
 		{name: "baseline (blocking compaction)", nonBlockingCompletedDSDrop: false, nonBlockingCompaction: false},
 		{name: "nonBlockingCompletedDSDrop", nonBlockingCompletedDSDrop: true, nonBlockingCompaction: false},
 		{name: "nonBlockingCompaction", nonBlockingCompaction: true},
+		{name: "nonBlockingCompaction + deferStatusLock", nonBlockingCompaction: true, compactionDeferStatusLock: true},
 	}
 
 	type result struct {
@@ -141,6 +143,7 @@ func (p *compaction) Run(ctx context.Context) error {
 		// Apply the flag combination under test.
 		p.conf.Set("JobsDB."+tablePrefix+".nonBlockingCompletedDSDrop", s.nonBlockingCompletedDSDrop)
 		p.conf.Set("JobsDB."+tablePrefix+".nonBlockingCompaction", s.nonBlockingCompaction)
+		p.conf.Set("JobsDB."+tablePrefix+".compactionDeferStatusLock", s.compactionDeferStatusLock)
 
 		// Deterministic addNewDS trigger so we can seed exactly [datasets]
 		// datasets of [jobsPerDataset] jobs each.
