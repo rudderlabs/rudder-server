@@ -825,8 +825,9 @@ func TestCompactionSkipsDatasets(t *testing.T) {
 	})
 
 	t.Run("cross-invocation resume", func(t *testing.T) {
-		// Set maxMigrateDSProbe to 100 so the first iteration can't reach the
-		// eligible dataset at position 150. It will need 2 iterations.
+		// Set maxCompactDSProbe (via its legacy key) to 100 so the first
+		// iteration can't reach the eligible dataset at position 150. It will
+		// need 2 iterations.
 		c.Set("JobsDB."+tablePrefix+"."+"maxMigrateDSProbe", 100)
 		jobDB.lastCompactionProbeIndex = nil
 

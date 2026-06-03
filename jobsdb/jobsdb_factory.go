@@ -9,51 +9,60 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
+// OptsFunc configures a JobsDB handle before initialization.
 type OptsFunc func(jd *Handle)
 
-// WithClearDB if set to true it will remove all existing tables
+// WithClearDB removes existing JobsDB tables during setup when clearDB is true.
 func WithClearDB(clearDB bool) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.clearAll = clearDB
 	}
 }
 
+// WithDSLimit limits how many datasets read paths scan per query.
 func WithDSLimit(limit config.ValueLoader[int]) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.dsLimit = limit
 	}
 }
 
+// WithDBHandle uses dbHandle instead of opening the default database handle.
 func WithDBHandle(dbHandle *sql.DB) OptsFunc {
 	return func(jd *Handle) {
 		jd.dbHandle = dbHandle
 	}
 }
 
+// WithConfig uses c for JobsDB configuration lookups.
 func WithConfig(c *config.Config) OptsFunc {
 	return func(jd *Handle) {
 		jd.config = c
 	}
 }
 
+// WithStats uses s for JobsDB metrics.
 func WithStats(s stats.Stats) OptsFunc {
 	return func(jd *Handle) {
 		jd.stats = s
 	}
 }
 
+// WithSkipMaintenanceErr lets setup continue when maintenance queries fail.
 func WithSkipMaintenanceErr(ignore bool) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.skipMaintenanceError = ignore
 	}
 }
 
+// WithJobMaxAge sets the maximum age used by old-job cleanup.
 func WithJobMaxAge(jobMaxAge config.ValueLoader[time.Duration]) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.jobMaxAge = jobMaxAge
 	}
 }
 
+// WithNumPartitions enables partition-aware reads and writes.
+// numPartitions must be a power of two.
 func WithNumPartitions(numPartitions int) OptsFunc {
 	{
 		return func(jd *Handle) {
@@ -104,21 +113,24 @@ func WithTriggerAddNewDS(trigger func() <-chan time.Time) OptsFunc {
 	}
 }
 
-// withDatabaseTablesVersion sets the database tables version to use (internal use only for verifying database table migrations)
+// withDatabaseTablesVersion sets the schema version used by table migration tests.
 func withDatabaseTablesVersion(dbVersion int) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.dbTablesVersion = dbVersion
 	}
 }
 
+// NewForRead creates a JobsDB handle for read-only ownership.
 func NewForRead(tablePrefix string, opts ...OptsFunc) *Handle {
 	return newOwnerType(Read, tablePrefix, opts...)
 }
 
+// NewForWrite creates a JobsDB handle for write-only ownership.
 func NewForWrite(tablePrefix string, opts ...OptsFunc) *Handle {
 	return newOwnerType(Write, tablePrefix, opts...)
 }
 
+// NewForReadWrite creates a JobsDB handle that owns both reads and writes.
 func NewForReadWrite(tablePrefix string, opts ...OptsFunc) *Handle {
 	return newOwnerType(ReadWrite, tablePrefix, opts...)
 }

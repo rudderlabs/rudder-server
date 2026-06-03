@@ -26,21 +26,23 @@ func (jd *Handle) loadConfig() {
 	jd.conf.refreshDSTimeout = jd.config.GetReloadableDurationVar(10, time.Minute, jd.configKeys("refreshDS.timeout")...)
 	jd.conf.addNewDSTimeout = jd.config.GetReloadableDurationVar(5, time.Minute, jd.configKeys("addNewDS.timeout")...)
 
-	// compactionConfig
+	// compactionConfig.
+	// Compaction-named keys are the primary names; migrate-named keys are
+	// legacy aliases. Scoped keys are checked before global keys.
 
 	// compactionLoopSleepDuration: How often is the loop (which checks for compacting DS) run
-	jd.conf.compaction.compactionLoopSleepDuration = jd.config.GetReloadableDurationVar(30, time.Second, jd.configKeys("migrateDSLoopSleepDuration", "migrateDSLoopSleepDurationInS")...)
-	jd.conf.compaction.compactionTimeout = jd.config.GetReloadableDurationVar(10, time.Minute, jd.configKeys("migrateDS.timeout")...)
+	jd.conf.compaction.compactionLoopSleepDuration = jd.config.GetReloadableDurationVar(30, time.Second, jd.configKeys("compactionLoopSleepDuration", "migrateDSLoopSleepDuration", "migrateDSLoopSleepDurationInS")...)
+	jd.conf.compaction.compactionTimeout = jd.config.GetReloadableDurationVar(10, time.Minute, jd.configKeys("compactionTimeout", "migrateDS.timeout")...)
 	// jobStatusCompactionThres: A DS is compacted if the job_status exceeds this (* no_of_jobs)
-	jd.conf.compaction.jobStatusCompactionThres = jd.config.GetReloadableFloat64Var(3, jd.configKeys("jobStatusMigrateThreshold")...)
+	jd.conf.compaction.jobStatusCompactionThres = jd.config.GetReloadableFloat64Var(3, jd.configKeys("jobStatusCompactionThres", "jobStatusMigrateThreshold")...)
 	// jobMinRowsLeftCompactionThreshold: A DS with a low number of pending rows should be eligible for compaction if the number of pending rows are
 	// less than jobMinRowsLeftCompactionThreshold percent of maxDSSize (e.g. if jobMinRowsLeftCompactionThreshold is 0.5
 	// then DSs that have less than 50% of maxDSSize pending rows are eligible for compaction)
-	jd.conf.compaction.jobMinRowsLeftCompactionThreshold = jd.config.GetReloadableFloat64Var(0.6, jd.configKeys("jobMinRowsLeftMigrateThreshold")...)
+	jd.conf.compaction.jobMinRowsLeftCompactionThreshold = jd.config.GetReloadableFloat64Var(0.6, jd.configKeys("jobMinRowsLeftCompactionThreshold", "jobMinRowsLeftMigrateThreshold")...)
 	// maxCompactOnce: Maximum number of DSs that are compacted together into one destination
-	jd.conf.compaction.maxCompactOnce = jd.config.GetReloadableIntVar(10, 1, jd.configKeys("maxMigrateOnce")...)
+	jd.conf.compaction.maxCompactOnce = jd.config.GetReloadableIntVar(10, 1, jd.configKeys("maxCompactOnce", "maxMigrateOnce")...)
 	// maxCompactDSProbe: Maximum number of DSs that are checked from left to right if they are eligible for compaction
-	jd.conf.compaction.maxCompactDSProbe = jd.config.GetReloadableIntVar(10, 1, jd.configKeys("maxMigrateDSProbe")...)
+	jd.conf.compaction.maxCompactDSProbe = jd.config.GetReloadableIntVar(10, 1, jd.configKeys("maxCompactDSProbe", "maxMigrateDSProbe")...)
 	jd.conf.compaction.vacuumFullStatusTableThreshold = jd.config.GetReloadableInt64Var(500*bytesize.MB, 1, jd.configKeys("vacuumFullStatusTableThreshold")...)
 	jd.conf.compaction.vacuumAnalyzeStatusTableThreshold = jd.config.GetReloadableInt64Var(30000, 1, jd.configKeys("vacuumAnalyzeStatusTableThreshold")...)
 	jd.conf.compaction.nonBlockingCompletedDSDrop = jd.config.GetReloadableBoolVar(false, jd.configKeys("nonBlockingCompletedDSDrop")...)
@@ -90,10 +92,12 @@ func (jd *Handle) loadConfig() {
 }
 
 func (jd *Handle) configKeys(key string, additionalKeys ...string) []string {
-	res := []string{
-		"JobsDB." + jd.tablePrefix + "." + key,
-		"JobsDB." + key,
+	res := make([]string, 0, 2+2*len(additionalKeys))
+	res = append(res, "JobsDB."+jd.tablePrefix+"."+key)
+	for _, additionalKey := range additionalKeys {
+		res = append(res, "JobsDB."+jd.tablePrefix+"."+additionalKey)
 	}
+	res = append(res, "JobsDB."+key)
 	for _, additionalKey := range additionalKeys {
 		res = append(res, "JobsDB."+additionalKey)
 	}

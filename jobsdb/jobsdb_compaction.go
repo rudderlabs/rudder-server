@@ -23,10 +23,10 @@ import (
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
-// startCompactionLoop compacts jobs from src dataset (srcDS) to destination dataset (dest_ds)
-// First all the unprocessed jobs are copied over. Then all the jobs which haven't
-// completed (state is failed or waiting or waiting_retry or executiong) are copied
-// over. Then the status (only the latest) is set for those jobs
+// startCompactionLoop starts the background compaction worker.
+// Compaction copies unfinished jobs from eligible source datasets to a destination
+// dataset, copies the latest status for moved jobs, and then drops or queues the
+// source datasets for asynchronous drop.
 func (jd *Handle) startCompactionLoop(ctx context.Context) {
 	jd.backgroundGroup.Go(crash.Wrapper(func() error {
 		jd.compactionLoop(ctx)
@@ -1085,7 +1085,6 @@ func computeInsertIdxFromList(dList []dataSetT, insertBeforeDS dataSetT) (string
 }
 
 func (jd *Handle) postCompactionHandleDS(tx *Tx, compactFrom []dataSetT) error {
-	// Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range compactFrom {
 		jd.logger.Debugn("dropping dataset", logger.NewStringField("jobTable", ds.JobTable))
 		if err := jd.dropDSInTx(tx, ds); err != nil {

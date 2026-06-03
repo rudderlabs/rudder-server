@@ -1,18 +1,16 @@
 /*
-Implementation of JobsDB for keeping track of jobs (type JobT) and job status
-(type JobStatusT). Jobs are stored in jobs_%d table while job status is stored
-in job_status_%d table. Each such table pair (e.g. jobs_1, job_status_1) is called
-a dataset (type dataSetT). After a dataset grows beyond a size, a new dataset is
-created and jobs are written to a new dataset. When most of the jobs from a dataset
-have been processed, we compact the remaining jobs into a new intermediate
-dataset and delete the old dataset. The range of job ids in a dataset are tracked
-via the dataSetRangeT struct
+Package jobsdb implements a dataset-based job store backed by PostgreSQL.
 
-The key reason for choosing this structure is to avoid costly DELETE and UPDATE
-operations in DB. Instead, we just use WRITE (append) and DELETE TABLE (deleting a file)
-operations which are fast.
-Also, keeping each dataset small (enough to cache in memory) ensures that reads are
-mostly serviced from memory cache.
+Jobs and job statuses are stored in prefixed dataset table pairs, e.g.
+<prefix>_jobs_1 and <prefix>_job_status_1. Each pair is a dataset (dataSetT).
+New jobs are appended to the latest dataset. When a dataset becomes full, JobsDB
+creates a new dataset and makes the previous one read-only. Compaction copies
+unfinished jobs from older datasets into an intermediate dataset and drops, or
+asynchronously queues for drop, the old datasets.
+
+Dataset job-id ranges are tracked in memory with dataSetRangeT. Reads use those
+ranges, the dataset list, and no-result/distinct-value caches to avoid unnecessary
+queries.
 */
 
 package jobsdb
@@ -79,7 +77,7 @@ type JobsDB interface {
 	/* Commands */
 
 	// WithTx begins a new transaction that can be used by the provided function.
-	// If the function returns an error, the transaction will be rollbacked and return the error,
+	// If the function returns an error, the transaction will be rolled back and return the error,
 	// otherwise the transaction will be committed and a nil error will be returned.
 	WithTx(context.Context, func(tx *Tx) error) error
 
@@ -145,8 +143,8 @@ type JobsDB interface {
 	// It also returns a MoreToken that can be used to fetch more jobs, if available, with a subsequent call.
 	GetToProcess(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error)
 
-	// GetPileUpCounts returns statistics (counters) of incomplete jobs
-	// grouped by workspaceId and destination type
+	// GetPileUpCounts returns statistics of incomplete jobs grouped by workspace ID,
+	// custom value, and destination ID.
 	GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) (err error)
 
 	// GetDistinctParameterValues returns the list of distinct parameter("source_id", "destination_id", "workspace_id") values inside the jobs tables filtering for the passed customVal
@@ -195,14 +193,12 @@ type asserter interface {
 }
 
 /*
-JobStatusT is used for storing status of the job. It is
-the responsibility of the user of this module to set appropriate
-job status. State can be one of
-ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted
+JobStatusT is used for storing the status of a job. The caller is responsible
+for setting an appropriate job state.
 */
 type JobStatusT struct {
 	JobID         int64           `json:"JobID"`
-	JobState      string          `json:"JobState"` // ENUM waiting, executing, succeeded, waiting_retry, filtered, failed, aborted, migrating, migrated, wont_migrate
+	JobState      string          `json:"JobState"` // one of the valid jobStates; Unprocessed is represented by the absence of a status row
 	AttemptNum    int             `json:"AttemptNum"`
 	ExecTime      time.Time       `json:"ExecTime"`
 	RetryTime     time.Time       `json:"RetryTime"`
@@ -210,7 +206,7 @@ type JobStatusT struct {
 	ErrorResponse json.RawMessage `json:"ErrorResponse"`
 	Parameters    json.RawMessage `json:"Parameters"`
 	JobParameters json.RawMessage `json:"-"`           // not stored in DB
-	WorkspaceId   string          `json:"WorkspaceId"` // TODO: do we really need this field stored in DB?
+	WorkspaceId   string          `json:"WorkspaceId"` // not stored in DB
 	PartitionID   string          `json:"-"`           // not stored in DB
 	CustomVal     string          `json:"-"`           // not stored in DB
 }
@@ -290,8 +286,8 @@ func (job *JobT) sanitizeJSON() error {
 }
 
 /*
-Handle is the main type implementing the database for implementing
-jobs. The caller must call the SetUp function on a Handle object
+Handle is the main JobsDB implementation. Use NewForRead, NewForWrite,
+NewForReadWrite, or Setup to initialize it.
 */
 type Handle struct {
 	dbHandle             *sql.DB
@@ -588,7 +584,8 @@ func (jd *Handle) printLists(console bool) {
 	}
 }
 
-// DefaultParititionFunction is the default function to compute partition key for a job
+// The default partition function computes the partition key for a job.
+// The exported function name is misspelled for API compatibility.
 func DefaultParititionFunction(job *JobT, numPartitions int) string {
 	var partitionIdx uint32
 	if numPartitions > 0 {

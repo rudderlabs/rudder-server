@@ -42,9 +42,9 @@ type GetQueryParams struct {
 	// A value less than or equal to zero will disable this limit (no limit),
 	// only values greater than zero are considered as valid limits.
 	EventsLimit int
-	// Limit the total job payload size
-	// A value less than or equal to zero will disable this limit (no limit),
-	// only values greater than zero are considered as valid limits.
+	// Limit the total job payload size.
+	// A value of zero disables this limit (no limit).
+	// A negative value returns no results.
 	PayloadSizeLimit int64
 }
 
@@ -232,9 +232,8 @@ type JobsResult struct {
 }
 
 /*
-stateFilters and customValFilters do a OR query on values passed in array
-parameterFilters do a AND query on values included in the map.
-A JobsLimit less than or equal to zero indicates no limit.
+stateFilters, customValFilters, and parameterFilters each OR the values passed
+within that filter list. JobsLimit less than or equal to zero returns no results.
 */
 func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, params GetQueryParams) (JobsResult, bool, error) { // skipcq: CRT-P0003
 	stateFilters := params.stateFilters
@@ -545,10 +544,8 @@ func (jd *Handle) GetFailed(ctx context.Context, params GetQueryParams) (JobsRes
 }
 
 /*
-getJobs returns events of a given state. This does not update any state itself and
-realises on the caller to update it. That means that successive calls to getJobs("failed")
-can return the same set of events. It is the responsibility of the caller to call it from
-one thread, update the state (to "waiting") in the same thread and pass on the processors
+getJobs returns jobs matching the requested states and filters. It does not update
+state, so repeated calls can return the same jobs until the caller writes new statuses.
 */
 func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
 	// Retry loop: if the published dsList drops one of the datasets we queried
@@ -594,9 +591,9 @@ func (jd *Handle) doGetJobs(ctx context.Context, params GetQueryParams, more Mor
 	}
 	defer jd.getTimerStat("jobsdb_get_jobs_time", tags).RecordDuration()()
 
-	// The order of lock is very important. The compactionLoop
-	// takes lock in this order so reversing this will cause
-	// deadlocks
+	// Keep this order: take the compaction read lock before acquiring the
+	// dataset-list snapshot. Compaction and drop paths publish snapshots under
+	// the same ordering, so reversing it can deadlock.
 	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
 		return nil, fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
 	}
@@ -711,10 +708,8 @@ func (jd *Handle) doGetJobs(ctx context.Context, params GetQueryParams, more Mor
 }
 
 /*
-GetJobs returns events of a given state. This does not update any state itself and
-realises on the caller to update it. That means that successive calls to GetJobs("failed")
-can return the same set of events. It is the responsibility of the caller to call it from
-one thread, update the state (to "waiting") in the same thread and pass on the processors
+GetJobs returns jobs matching any of the requested states. It does not update state,
+so repeated calls can return the same jobs until the caller writes new statuses.
 */
 func (jd *Handle) GetJobs(ctx context.Context, states []string, params GetQueryParams) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit == 0 {

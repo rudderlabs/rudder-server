@@ -20,10 +20,9 @@ import (
 )
 
 /*
-UpdateJobStatusInTx updates the status of a batch of jobs in the past transaction
-customValFilters[] is passed, so we can efficiently mark empty cache
-Later we can move this to query
-IMP NOTE: AcquireUpdateJobStatusLocks Should be called before calling this function
+UpdateJobStatusInTx appends status rows for a batch of jobs using an existing
+UpdateSafeTx. The transaction carries a dataset snapshot used to route each
+status to the correct dataset; stale snapshots are refreshed and retried.
 */
 func (jd *Handle) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT) error {
 	if len(statusList) == 0 {
@@ -66,8 +65,8 @@ func (jd *Handle) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, stat
 
 		jd.logger.Warnn("[JobsDB] :: Stale dataset list detected while updating job statuses, retrying after refreshing DS cache", obskit.Error(ErrStaleDsList))
 		if refreshErr := func() error {
-			// we don't need to actually refresh the ds list from the database, since compaction already does this,
-			// but we do need to acquire a read lock on dsListLock to ensure that the ds list is actually refreshed.
+			// Compaction already refreshed the in-memory ds list; taking dsListLock
+			// only waits for that publication before updating the transaction snapshot.
 			if lock := jd.dsListLock.RTryLockWithCtx(ctx); !lock {
 				return fmt.Errorf("acquiring read lock for refreshing ds list in update job status: %w", ctx.Err())
 			}
@@ -106,9 +105,9 @@ func (jd *Handle) WithUpdateSafeTxFromTx(ctx context.Context, tx *Tx, f func(tx 
 }
 
 func (jd *Handle) inUpdateSafeCtx(ctx context.Context, f func(dsList []dataSetT, dsRangeList []dataSetRangeT) error) error {
-	// The order of lock is very important. The compactionLoop
-	// takes lock in this order so reversing this will cause
-	// deadlocks
+	// Keep this order: take the compaction read lock before acquiring the
+	// dataset-list snapshot. Compaction and drop paths publish snapshots under
+	// the same ordering, so reversing it can deadlock.
 	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
 		return fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
 	}
@@ -330,9 +329,8 @@ func (jd *Handle) UpdateJobStatus(ctx context.Context, statusList []*JobStatusT)
 }
 
 /*
-internalUpdateJobStatusInTx updates the status of a batch of jobs
-customValFilters[] is passed, so we can efficiently mark empty cache
-Later we can move this to query
+internalUpdateJobStatusInTx appends status rows and registers post-commit cache
+invalidation and metrics listeners.
 */
 func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []dataSetT, dsRangeList []dataSetRangeT, statusList []*JobStatusT) error {
 	// capture stats
@@ -419,9 +417,8 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 }
 
 /*
-doUpdateJobStatusInTx updates the status of a batch of jobs
-customValFilters[] is passed, so we can efficiently mark empty cache
-Later we can move this to query
+doUpdateJobStatusInTx groups the status rows by dataset and appends them to the
+corresponding status tables.
 */
 func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []dataSetT, dsRangeList []dataSetRangeT, statusList []*JobStatusT) (updatedStatesByDS map[dataSetT]updateJobStatusStats, err error) {
 	if len(statusList) == 0 {

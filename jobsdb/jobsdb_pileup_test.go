@@ -124,7 +124,7 @@ func TestJobsdbPileupCount(t *testing.T) {
 	//   - one will get pileup counts
 	//   - another one will update job statuses as terminal
 	//   - the third one will try to get unprocessed jobs
-	//   - the last one will try to trigger migrations
+	//   - the last one will try to trigger compaction
 	//
 	// Finally, the pileup count should be 0
 	start := time.Now()

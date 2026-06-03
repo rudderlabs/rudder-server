@@ -23,10 +23,9 @@ import (
 )
 
 /*
-Setup is used to initialize the HandleT structure.
-clearAll = True means it will remove all existing tables
-tablePrefix must be unique and is used to separate
-multiple users of JobsDB
+Setup initializes and starts a Handle.
+clearAll removes existing tables for writer handles.
+tablePrefix must be unique and separates multiple JobsDB instances.
 */
 func (jd *Handle) Setup(
 	ownerType OwnerType, clearAll bool, tablePrefix string,
@@ -186,7 +185,7 @@ func (jd *Handle) workersAndAuxSetup() {
 	jd.statReadExcludedPartitionsCount = jd.stats.NewTaggedStat("jobsdb_read_excluded_partitions_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 }
 
-// Start starts the jobsdb worker and housekeeping (compaction, archive) threads.
+// Start starts the jobsdb background workers for this handle's owner type.
 // Start should be called before any other jobsdb methods are called.
 func (jd *Handle) Start() error {
 	jd.lifecycle.mu.Lock()
@@ -404,28 +403,21 @@ func (jd *Handle) dropDSLoop(ctx context.Context) error {
 }
 
 /*
-The next set of functions are the user visible functions to get/set job status.
-For reading jobs, it scans from the oldest DS to the latest till it has found
-enough jobs. For updating status, it finds the DS to which the job belongs
-(using the in-memory range list) and adds the status to the appropriate DS.
-These functions can race with the internal function to add new DS and create
-new DS. Synchronization is handled by locks as described below.
+JobsDB uses separate locks for dataset-list publication and compaction.
 
-In theory, we can keep just one lock. All operations which
-change the DS structure (e.g. adding new dataset or moving records
-from one DS to another thearby updating the DS range) can take a write lock
-while functions which don't update the DS structure (as in list of DS or
-ranges within DS can take the read lock) as they can run in paralle.
+Store only needs a snapshot of the latest dataset, so it reads dsListLock and
+then writes to that dataset. If the snapshot is stale because another worker
+rolled the dataset over, the store path retries after refreshing the list.
 
-The drawback with this approach is that migrating a DS can take a long
-time and can potentially block the jobs/job-batch store call. Blocking jobs store
-is bad since user ACK won't be sent unless jobs store returns.
+Reads and status updates need a dataset snapshot that stays valid while they
+query or route statuses. They take the compaction read lock and acquire a
+versioned dataset-list snapshot. Dataset drops wait for older snapshot versions
+to drain before physically dropping tables.
 
-To handle this, we separate out the locks into dsListLock and dsCompactionLock.
-Store() only needs to access the last element of dsList and is not
-impacted by movement of data across ds so it only takes the dsListLock.
-Other functions are impacted by movement of data across DS in background
-so take both the list and data lock
+Legacy compaction takes the compaction write lock while moving jobs. The
+non-blocking compaction path avoids that write lock, fences source status
+tables with read-only triggers, publishes the refreshed dataset list near commit,
+and queues old datasets for asynchronous drop.
 */
 func (jd *Handle) addNewDSLoop(ctx context.Context) {
 	for {
