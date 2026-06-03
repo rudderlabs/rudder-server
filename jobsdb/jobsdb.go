@@ -39,6 +39,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/lib/pq/pqerror"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
@@ -372,7 +373,8 @@ func (jd *Handle) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, stat
 		savepointSql  = "SAVEPOINT " + savepointName
 		rollbackSql   = "ROLLBACK TO SAVEPOINT " + savepointName
 	)
-	for {
+	maxRetries := jd.conf.staleDSListMaxRetries.Load()
+	for attempt := 0; ; attempt++ {
 		if _, err := tx.Tx().ExecContext(ctx, savepointSql); err != nil {
 			return fmt.Errorf("executing updateJobStatusInTx savepoint: %w", err)
 		}
@@ -382,6 +384,9 @@ func (jd *Handle) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, stat
 		}
 		if !errors.Is(err, ErrStaleDsList) {
 			return err
+		}
+		if attempt >= maxRetries {
+			return fmt.Errorf("stale dataset list after %d retries: %w", maxRetries, err)
 		}
 		if _, rbErr := tx.Tx().ExecContext(ctx, rollbackSql); rbErr != nil {
 			return fmt.Errorf("rolling back to updateJobStatusInTx savepoint: %w", rbErr)
@@ -648,6 +653,7 @@ type Handle struct {
 		partitionFunction               func(job *JobT) string
 		warnOnStatusMissingPartitionID  config.ValueLoader[bool]
 		holdDSListLockDuringStore       config.ValueLoader[bool] // escape hatch: hold the dsList read lock for the entire store callback
+		staleDSListMaxRetries           config.ValueLoader[int]
 		noResultsCacheStateOptimization config.ValueLoader[bool]
 		// getJobsUseLateralJoin replaces the v_last_* view join in getJobsDS with a
 		// correlated LATERAL subquery against the raw job_status table.
@@ -1178,6 +1184,7 @@ func (jd *Handle) loadConfig() {
 	// Default false: snapshot lastDS and release the dsList read lock before running the store callback,
 	// so long-running stores don't block dsList writers. Flip to true to revert to holding the lock for the whole callback.
 	jd.conf.holdDSListLockDuringStore = jd.config.GetReloadableBoolVar(false, jd.configKeys("holdDSListLockDuringStore")...)
+	jd.conf.staleDSListMaxRetries = jd.config.GetReloadableIntVar(3, 1, jd.configKeys("staleDSListMaxRetries")...)
 
 	// when true, the per-state noResultsCache optimization is enabled: stateFilters are narrowed
 	// against the cache before querying, and (!ok && !limitsReached) is used as a commit predicate.
@@ -1890,7 +1897,7 @@ func (jd *Handle) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement st
 	if err != nil {
 		var pqError *pq.Error
 		ok := errors.As(err, &pqError)
-		if ok && pqError.Code == ("42P01") {
+		if ok && pqError.Code == pqerror.UndefinedTable {
 			jd.logger.Infon("sql statement exec failed because table doesn't exist",
 				logger.NewStringField("tablePrefix", jd.tablePrefix),
 				logger.NewStringField("sqlStatement", sqlStatement),
@@ -2181,9 +2188,13 @@ func (jd *Handle) inStoreSafeCtx(ctx context.Context, f func(lastDS dataSetT) er
 		jd.dsListLock.RUnlock()
 		return f(lastDS)
 	}
-	for {
+	maxRetries := jd.conf.staleDSListMaxRetries.Load()
+	for attempt := 0; ; attempt++ {
 		err := op()
 		if err != nil && errors.Is(err, ErrStaleDsList) {
+			if attempt >= maxRetries {
+				return fmt.Errorf("stale dataset list after %d retries: %w", maxRetries, err)
+			}
 			jd.logger.Warnn("[JobsDB] :: Stale dataset list detected, retrying after refreshing DS cache", obskit.Error(ErrStaleDsList))
 			if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
 				if jd.getLastDS().Index != lastDS.Index {
@@ -2522,7 +2533,9 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 		if !errors.As(err, &e) {
 			return err
 		}
-		if e.Code == pgErrorCodeTableReadonly {
+		// The table might be in read-only mode or might no longer exist (dropped by compaction goroutine).
+		// In both cases, we should return a stale dataset list error to trigger a refresh
+		if e.Code == pgErrorCodeTableReadonly || e.Code == pqerror.UndefinedTable {
 			if _, rbErr := tx.ExecContext(ctx, rollbackSql); rbErr != nil {
 				return rbErr
 			}

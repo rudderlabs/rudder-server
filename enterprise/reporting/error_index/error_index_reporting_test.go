@@ -398,7 +398,6 @@ func TestErrorIndexReporter(t *testing.T) {
 				},
 			}, tx)
 			require.Error(t, err)
-			require.Error(t, tx.Commit())
 
 			<-syncerDone
 		})
