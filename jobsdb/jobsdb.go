@@ -297,8 +297,6 @@ type JobsDB interface {
 	JournalMarkStart(opType string, opPayload json.RawMessage) (int64, error)
 	JournalMarkDone(opID int64) error
 
-	IsMasterBackupEnabled() bool
-
 	ReadExcludedPartitionsManager
 
 	// lifecycle management
@@ -322,10 +320,7 @@ const (
 	WorkspaceID   parameterName = "workspace_id"
 )
 
-/*
-assertInterface contains public assert methods
-*/
-type assertInterface interface {
+type asserter interface {
 	assert(cond bool, errorString string)
 	assertError(err error)
 }
@@ -413,7 +408,7 @@ type JobStatusT struct {
 	CustomVal     string          `json:"-"`           // not stored in DB
 }
 
-type ConnectionDetails struct {
+type ConnectionID struct {
 	SourceID      string
 	DestinationID string
 }
@@ -674,14 +669,7 @@ type Handle struct {
 			// has no effect on its own.
 			getJobsRetryOnCompaction config.ValueLoader[bool]
 		}
-		backup struct {
-			masterBackupEnabled config.ValueLoader[bool]
-		}
 	}
-}
-
-func (jd *Handle) IsMasterBackupEnabled() bool {
-	return jd.conf.backup.masterBackupEnabled.Load()
 }
 
 // The struct which is written to the journal
@@ -1169,9 +1157,6 @@ func (jd *Handle) loadConfig() {
 	jd.conf.migration.nonBlockingCompaction = jd.config.GetReloadableBoolVar(false, jd.configKeys("nonBlockingCompaction")...)
 	jd.conf.migration.compactionDeferStatusLock = jd.config.GetReloadableBoolVar(false, jd.configKeys("compactionDeferStatusLock")...)
 	jd.conf.migration.getJobsRetryOnCompaction = jd.config.GetReloadableBoolVar(true, jd.configKeys("getJobsRetryOnCompaction")...)
-
-	// masterBackupEnabled = true => all the jobsdb are eligible for backup
-	jd.conf.backup.masterBackupEnabled = jd.config.GetReloadableBoolVar(true, jd.configKeys("backup.enabled")...)
 
 	// maxDSSize: Maximum size of a DS. The process which adds new DS runs in the background
 	// (every few seconds) so a DS may go beyond this size

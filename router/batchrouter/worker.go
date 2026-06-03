@@ -81,7 +81,7 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 	var drainList []*jobsdb.JobStatusT
 	var drainJobList []*jobsdb.JobT
 	drainStatsbyDest := make(map[string]*routerutils.DrainStats)
-	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
+	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionID)
 
 	// Organize jobs by destination and source
 	type jobEntry struct {
@@ -97,7 +97,7 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 	for _, job := range destinationJobs.jobs {
 		sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
 		destinationID := destWithSources.Destination.ID
-		jobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
+		jobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionID{
 			SourceID:      sourceID,
 			DestinationID: destinationID,
 		}
