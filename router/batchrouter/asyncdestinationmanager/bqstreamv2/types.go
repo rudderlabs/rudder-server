@@ -1,4 +1,4 @@
-package bqstreaming
+package bqstreamv2
 
 import (
 	"context"
@@ -18,6 +18,8 @@ import (
 )
 
 type (
+	// Manager streams events into BigQuery through the Storage Write API,
+	// caching table schemas (TTL) and stream writers across uploads.
 	Manager struct {
 		appConfig                 *config.Config
 		logger                    logger.Logger
@@ -69,13 +71,15 @@ type (
 		NewStreamWriter(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error)
 	}
 
-	streamWriterFactoryImpl struct{}
+	streamWriterFactoryImpl struct {
+		maxInflightRequests int
+		maxInflightBytes    int64
+	}
 
 	StreamWriter interface {
 		AppendRows(ctx context.Context, data [][]byte) (AppendResult, error)
 		Close() error
 	}
-
 	tableStreamWriter struct {
 		writer     StreamWriter
 		descriptor protoreflect.MessageDescriptor
@@ -87,10 +91,11 @@ type (
 
 	TableSchemaCache interface {
 		Len() int
-		Get(key string, now time.Time) (whutils.ModelTableSchema, bool)
-		Peek(key string) (whutils.ModelTableSchema, bool)
-		Set(key string, schema whutils.ModelTableSchema, now time.Time)
-		Invalidate(key string)
+		Get(tableName string, now time.Time) (whutils.ModelTableSchema, bool)
+		Has(tableName string, now time.Time) bool
+		Peek(tableName string) (whutils.ModelTableSchema, bool)
+		Set(tableName string, schema whutils.ModelTableSchema, now time.Time)
+		Invalidate(tableName string)
 	}
 
 	streamWriterImpl struct {
@@ -130,6 +135,12 @@ type (
 		eventsSchema whutils.ModelTableSchema
 	}
 
+	tableProcessResult struct {
+		succeededJobIDs []int64
+		failedJobIDs    []int64
+		err             error
+	}
+
 	discardEvent struct {
 		tableName   string
 		columnName  string
@@ -149,8 +160,8 @@ func (d *destConfig) Decode(m map[string]any) error {
 		return err
 	}
 	d.Namespace = whutils.ToProviderCase(
-		whutils.BQStreaming,
-		whutils.ToSafeNamespace(whutils.BQStreaming, d.Namespace),
+		whutils.BQStreamV2,
+		whutils.ToSafeNamespace(whutils.BQStreamV2, d.Namespace),
 	)
 	return nil
 }

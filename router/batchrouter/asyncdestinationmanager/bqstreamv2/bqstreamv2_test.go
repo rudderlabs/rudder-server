@@ -1,4 +1,4 @@
-package bqstreaming
+package bqstreamv2
 
 import (
 	"context"
@@ -98,12 +98,12 @@ func (m *mockAppendResult) GetResult(ctx context.Context) (int64, error) {
 	return m.getResultOutput(ctx)
 }
 
-func TestBQStreaming(t *testing.T) {
+func TestBQStreamV2(t *testing.T) {
 	destination := &backendconfig.DestinationT{
 		ID:          "test-destination",
 		WorkspaceID: "test-workspace",
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
-			Name: "BQ_STREAMING",
+			Name: "BQSTREAM_V2",
 		},
 		Config: make(map[string]any),
 	}
@@ -139,10 +139,10 @@ func TestBQStreaming(t *testing.T) {
 		require.Equal(t, 1, output.AbortCount)
 		require.Contains(t, output.AbortReason, "opening async file")
 		require.Equal(t, "test-destination", output.DestinationID)
-		require.EqualValues(t, 1, statsStore.Get("bq_streaming_jobs", stats.Tags{
+		require.EqualValues(t, 1, statsStore.Get("bqstream_v2_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
-			"destType":      "BQ_STREAMING",
+			"destType":      "BQSTREAM_V2",
 			"destinationId": "test-destination",
 			"status":        "aborted",
 		}).LastValue())
@@ -162,10 +162,10 @@ func TestBQStreaming(t *testing.T) {
 		require.Equal(t, 1, output.AbortCount)
 		require.Contains(t, output.AbortReason, "unmarshalling event line")
 		require.Equal(t, "test-destination", output.DestinationID)
-		require.EqualValues(t, 1, statsStore.Get("bq_streaming_jobs", stats.Tags{
+		require.EqualValues(t, 1, statsStore.Get("bqstream_v2_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
-			"destType":      "BQ_STREAMING",
+			"destType":      "BQSTREAM_V2",
 			"destinationId": "test-destination",
 			"status":        "aborted",
 		}).LastValue())
@@ -396,43 +396,6 @@ func TestBQStreaming(t *testing.T) {
 			},
 		}
 		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
-			ImportingJobIDs: []int64{1},
-			Destination:     destination,
-			FileName:        "testdata/successful_records.txt",
-		})
-		require.ElementsMatch(t, []int64{1001, 1002, 1003, 1004}, output.FailedJobIDs)
-		require.Equal(t, 4, output.FailedCount)
-		require.Contains(t, output.FailedReason, "no warehouse schema found for discards table")
-
-		output = sm.Upload(context.Background(), &common.AsyncDestinationStruct{
-			ImportingJobIDs: []int64{1},
-			Destination:     destination,
-			FileName:        "testdata/successful_records.txt",
-		})
-		require.ElementsMatch(t, []int64{1001, 1002, 1003, 1004}, output.FailedJobIDs)
-		require.Equal(t, 4, output.FailedCount)
-		require.Contains(t, output.FailedReason, "no warehouse schema found for discards table")
-
-		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
-			output := &mockIntegrationManager{
-				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
-					output := whutils.ModelSchema{
-						"rudder_discards": {
-							"column_name":  "string",
-							"column_value": "string",
-							"reason":       "string",
-							"received_at":  "datetime",
-							"row_id":       "string",
-							"table_name":   "string",
-							"uuid_ts":      "datetime",
-						},
-					}
-					return output, nil
-				},
-			}
-			return output, nil
-		}
-		output = sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			ImportingJobIDs: []int64{1},
 			Destination:     destination,
 			FileName:        "testdata/successful_records.txt",
@@ -849,10 +812,10 @@ func TestBQStreaming(t *testing.T) {
 			FileName:        "testdata/successful_duplicate_records.txt",
 		})
 		require.ElementsMatch(t, []int64{1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008}, output.SucceededJobIDs)
-		require.EqualValues(t, 2, statsStore.Get("bq_streaming_duplicate_events", stats.Tags{
+		require.EqualValues(t, 2, statsStore.Get("bqstream_v2_duplicate_events", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
-			"destType":      "BQ_STREAMING",
+			"destType":      "BQSTREAM_V2",
 			"destinationId": "test-destination",
 			"reason":        "batch",
 		}).LastValue())
@@ -865,8 +828,7 @@ func TestBQStreaming(t *testing.T) {
 		maxInsertRequestSizeBytes := 8 * bytesize.MB
 
 		conf := config.New()
-		conf.Set("BQStreaming.maxBufferCapacity", int64(64*1024*1024))
-		conf.Set("BQStreaming.maxInsertRequestSizeBytes", maxInsertRequestSizeBytes)
+		conf.Set("BQStreamV2.maxBufferCapacity", int64(64*1024*1024))
 
 		sm := NewManager(conf, logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
@@ -893,7 +855,7 @@ func TestBQStreaming(t *testing.T) {
 			},
 		}
 
-		f, err := os.CreateTemp("", "bq-streaming-chunking-*.txt")
+		f, err := os.CreateTemp("", "bqstream-v2-chunking-*.txt")
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = os.Remove(f.Name()) })
 		t.Cleanup(func() { _ = f.Close() })
@@ -929,7 +891,7 @@ func TestBQStreaming(t *testing.T) {
 			Count:       3,
 		})
 		require.ElementsMatch(t, []int64{1001, 1002, 1003, 1004}, output.SucceededJobIDs)
-		require.Equal(t, int64(2), appendCalls.Load())
+		require.Equal(t, int64(3), appendCalls.Load())
 	})
 
 	t.Run("Upload: table schema is cached upon fetching from warehouse", func(t *testing.T) {

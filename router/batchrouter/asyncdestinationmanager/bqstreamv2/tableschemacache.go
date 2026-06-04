@@ -1,4 +1,4 @@
-package bqstreaming
+package bqstreamv2
 
 import (
 	"maps"
@@ -7,14 +7,16 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+// NewTableSchemaCache creates a TTL-based table schema cache; schemas are
+// cloned on Set/Get/Peek so callers can mutate their copies safely.
 func NewTableSchemaCache(ttl time.Duration) TableSchemaCache {
 	return &tableSchemaCacheImpl{ttl: ttl, items: make(map[string]tableSchemaCacheItem)}
 }
 
 // Get gets the table schema from the cache.
-func (c *tableSchemaCacheImpl) Get(key string, now time.Time) (whutils.ModelTableSchema, bool) {
+func (c *tableSchemaCacheImpl) Get(tableName string, now time.Time) (whutils.ModelTableSchema, bool) {
 	c.mu.RLock()
-	item, ok := c.items[key]
+	item, ok := c.items[tableName]
 	c.mu.RUnlock()
 	if !ok || now.After(item.expiresAt) {
 		return nil, false
@@ -22,10 +24,19 @@ func (c *tableSchemaCacheImpl) Get(key string, now time.Time) (whutils.ModelTabl
 	return cloneSchema(item.schema), true
 }
 
-// Peek returns the cached table schema regardless of expiry.
-func (c *tableSchemaCacheImpl) Peek(key string) (whutils.ModelTableSchema, bool) {
+// Has reports whether a non-expired schema exists for the table, without
+// cloning it.
+func (c *tableSchemaCacheImpl) Has(tableName string, now time.Time) bool {
 	c.mu.RLock()
-	item, ok := c.items[key]
+	item, ok := c.items[tableName]
+	c.mu.RUnlock()
+	return ok && !now.After(item.expiresAt)
+}
+
+// Peek returns the cached table schema regardless of expiry.
+func (c *tableSchemaCacheImpl) Peek(tableName string) (whutils.ModelTableSchema, bool) {
+	c.mu.RLock()
+	item, ok := c.items[tableName]
 	c.mu.RUnlock()
 	if !ok {
 		return nil, false
@@ -34,16 +45,16 @@ func (c *tableSchemaCacheImpl) Peek(key string) (whutils.ModelTableSchema, bool)
 }
 
 // Set sets the table schema in the cache.
-func (c *tableSchemaCacheImpl) Set(key string, schema whutils.ModelTableSchema, now time.Time) {
+func (c *tableSchemaCacheImpl) Set(tableName string, schema whutils.ModelTableSchema, now time.Time) {
 	c.mu.Lock()
-	c.items[key] = tableSchemaCacheItem{schema: cloneSchema(schema), expiresAt: now.Add(c.ttl)}
+	c.items[tableName] = tableSchemaCacheItem{schema: cloneSchema(schema), expiresAt: now.Add(c.ttl)}
 	c.mu.Unlock()
 }
 
 // Invalidate invalidates the table schema in the cache.
-func (c *tableSchemaCacheImpl) Invalidate(key string) {
+func (c *tableSchemaCacheImpl) Invalidate(tableName string) {
 	c.mu.Lock()
-	delete(c.items, key)
+	delete(c.items, tableName)
 	c.mu.Unlock()
 }
 

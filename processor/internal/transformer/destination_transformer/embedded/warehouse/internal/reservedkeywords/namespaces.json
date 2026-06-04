@@ -1060,7 +1060,7 @@
     "MERGE",
     "SELECT"
   ],
-  "BQ_STREAMING": [
+  "BQSTREAM_V2": [
     "ALL",
     "FROM",
     "NATURAL",

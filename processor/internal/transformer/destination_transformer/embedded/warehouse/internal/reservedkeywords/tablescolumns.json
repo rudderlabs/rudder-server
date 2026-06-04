@@ -1060,7 +1060,7 @@
     "NULL",
     "UNBOUNDED"
   ],
-  "BQ_STREAMING": [
+  "BQSTREAM_V2": [
     "CUBE",
     "RANGE",
     "WHEN",

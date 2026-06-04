@@ -1,4 +1,4 @@
-package bqstreaming
+package bqstreamv2
 
 import (
 	"sort"
@@ -22,7 +22,7 @@ var dataTypesMap = map[string]bigquery.FieldType{
 //
 // The fields MUST be emitted in a deterministic (sorted) order. adapt.StorageSchemaToProto2Descriptor
 // assigns proto field numbers by position, and the descriptor is built independently for both the
-// row encoder (descriptorForSchema) and the managed stream (NewTableWriter). If the order differed
+// row encoder (descriptorForSchema) and the managed stream (NewStreamWriter). If the order differed
 // between those two calls, the encoded field numbers would not line up with the stream's schema
 // descriptor and BigQuery would decode every column into the wrong/mismatched field, surfacing as
 // all-NULL rows.

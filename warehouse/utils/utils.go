@@ -44,7 +44,7 @@ const (
 	BQ                = "BQ"
 	SNOWFLAKE         = "SNOWFLAKE"
 	SnowpipeStreaming = "SNOWPIPE_STREAMING"
-	BQStreaming       = "BQ_STREAMING"
+	BQStreamV2        = "BQSTREAM_V2"
 	POSTGRES          = "POSTGRES"
 	CLICKHOUSE        = "CLICKHOUSE"
 	MSSQL             = "MSSQL"
@@ -137,7 +137,7 @@ var (
 )
 
 func pseudoWarehouseDestinations() map[string]struct{} {
-	all := append(slices.Clone(WarehouseDestinations), SnowpipeStreaming, BQStreaming)
+	all := append(slices.Clone(WarehouseDestinations), SnowpipeStreaming, BQStreamV2)
 	return lo.SliceToMap(all, func(destination string) (string, struct{}) {
 		return destination, struct{}{}
 	})

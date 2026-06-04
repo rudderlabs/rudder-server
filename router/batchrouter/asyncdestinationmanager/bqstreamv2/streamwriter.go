@@ -1,4 +1,4 @@
-package bqstreaming
+package bqstreamv2
 
 import (
 	"context"
@@ -15,11 +15,17 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-// NewStreamWriter creates a new stream writer for the given destination configuration, table name, and table schema.
+// NewStreamWriter creates a managed stream for the table, with bounded
+// in-flight appends for backpressure.
+//
+// Each writer dials its own client so that evicting a writer (e.g. after a
+// table is deleted and re-created) also discards its gRPC connection: the
+// Storage Write API resolves the default stream through connection-cached
+// table metadata, and appends over an existing connection can keep failing
+// with NotFound long after the table exists again. A fresh connection
+// resolves the new table generation immediately.
 func (s *streamWriterFactoryImpl) NewStreamWriter(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error) {
 	credBytes := []byte(destConf.Credentials)
-	destinationTable := fmt.Sprintf("projects/%s/datasets/%s/tables/%s", destConf.ProjectID, destConf.Namespace, tableName)
-
 	if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
 		return nil, fmt.Errorf("incompatible credentials: %w", err)
 	}
@@ -28,40 +34,41 @@ func (s *streamWriterFactoryImpl) NewStreamWriter(ctx context.Context, destConf 
 	if err != nil {
 		return nil, fmt.Errorf("creating managedwriter client: %w", err)
 	}
+	defer func() {
+		if err != nil {
+			_ = client.Close()
+		}
+	}()
 
 	storageTableSchema, err := adapt.BQSchemaToStorageTableSchema(toBigQuerySchema(tableSchema))
 	if err != nil {
-		_ = client.Close()
 		return nil, fmt.Errorf("converting schema: %w", err)
 	}
 
 	desc, err := adapt.StorageSchemaToProto2Descriptor(storageTableSchema, "root")
 	if err != nil {
-		_ = client.Close()
 		return nil, fmt.Errorf("building descriptor: %w", err)
 	}
 
 	md, ok := desc.(protoreflect.MessageDescriptor)
 	if !ok {
-		_ = client.Close()
 		return nil, fmt.Errorf("unexpected descriptor type: %T", desc)
 	}
 
 	descProto, err := adapt.NormalizeDescriptor(md)
 	if err != nil {
-		_ = client.Close()
 		return nil, fmt.Errorf("normalizing descriptor: %w", err)
 	}
 
-	options := []managedwriter.WriterOption{
+	destinationTable := fmt.Sprintf("projects/%s/datasets/%s/tables/%s", destConf.ProjectID, destConf.Namespace, tableName)
+	stream, err := client.NewManagedStream(ctx,
 		managedwriter.WithType(managedwriter.DefaultStream),
 		managedwriter.WithDestinationTable(destinationTable),
 		managedwriter.WithSchemaDescriptor(descProto),
-	}
-
-	stream, err := client.NewManagedStream(ctx, options...)
+		managedwriter.WithMaxInflightRequests(s.maxInflightRequests),
+		managedwriter.WithMaxInflightBytes(int(s.maxInflightBytes)),
+	)
 	if err != nil {
-		_ = client.Close()
 		return nil, fmt.Errorf("creating managed stream: %w", err)
 	}
 	return &streamWriterImpl{stream: stream, client: client}, nil
@@ -72,10 +79,7 @@ func (s *streamWriterImpl) AppendRows(ctx context.Context, data [][]byte) (Appen
 	return s.stream.AppendRows(ctx, data)
 }
 
-// Close closes the stream writer and its underlying client.
+// Close closes the stream and its client; they share one lifecycle.
 func (s *streamWriterImpl) Close() error {
-	streamErr := s.stream.Close()
-	clientErr := s.client.Close()
-
-	return errors.Join(streamErr, clientErr)
+	return errors.Join(s.stream.Close(), s.client.Close())
 }

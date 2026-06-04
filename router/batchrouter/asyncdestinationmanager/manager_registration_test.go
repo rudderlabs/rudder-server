@@ -15,10 +15,10 @@ import (
 
 func TestBigQueryStreamingIsRegistered(t *testing.T) {
 	t.Parallel()
-	require.True(t, common.IsAsyncRegularDestination("BQ_STREAMING"))
+	require.True(t, common.IsAsyncRegularDestination("BQSTREAM_V2"))
 
 	destination := &backendconfig.DestinationT{
-		DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "BQ_STREAMING"},
+		DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "BQSTREAM_V2"},
 	}
 	m, err := NewManager(config.Default, logger.NOP, stats.NOP, destination, nil)
 	require.NoError(t, err)

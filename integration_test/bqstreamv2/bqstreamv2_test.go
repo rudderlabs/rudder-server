@@ -1,4 +1,4 @@
-package bqstreaming
+package bqstreamv2
 
 import (
 	"bytes"
@@ -45,9 +45,9 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const destinationType = "BQ_STREAMING"
+const destinationType = "BQSTREAM_V2"
 
-func TestBQStreaming(t *testing.T) {
+func TestBQStreamV2(t *testing.T) {
 	if _, exists := os.LookupEnv(bqhelper.TestKey); !exists {
 		if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
 			t.Fatalf("%s environment variable not set", bqhelper.TestKey)
@@ -66,7 +66,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("namespace and table already exists", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, source, destination := setupBackendConfigTestServer(t, credentials, namespace)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -111,7 +111,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("namespace does not exists", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, source, destination := setupBackendConfigTestServer(t, credentials, namespace)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -149,7 +149,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("table does not exists", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, source, destination := setupBackendConfigTestServer(t, credentials, namespace)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -191,7 +191,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("events with different schema", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, source, destination := setupBackendConfigTestServer(t, credentials, namespace)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -254,7 +254,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("discards", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, source, destination := setupBackendConfigTestServer(t, credentials, namespace)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -322,7 +322,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("discards migration for reason", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, source, destination := setupBackendConfigTestServer(t, credentials, namespace)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -386,7 +386,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("discards migrated", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, source, destination := setupBackendConfigTestServer(t, credentials, namespace)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -450,7 +450,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("many tables", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, source, destination := setupBackendConfigTestServer(t, credentials, namespace)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -531,7 +531,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("schema modified after stream writer creation (schema deleted)", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, _, destination := setupBackendConfigTestServer(t, credentials, namespace)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -574,7 +574,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("schema modified after stream writer creation (table deleted)", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, _, destination := setupBackendConfigTestServer(t, credentials, namespace)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -620,7 +620,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("schema modified after stream writer creation (columns deleted)", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, _, destination := setupBackendConfigTestServer(t, credentials, namespace)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -681,7 +681,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("schema modified after stream writer creation (datatype changed for all tables)", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, _, destination := setupBackendConfigTestServer(t, credentials, namespace)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -747,7 +747,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("JSON columns", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, source, destination := setupBackendConfigTestServer(t, credentials, namespace)
 		destination.Config["jsonPaths"] = "track.properties.objectInfo,track.properties.arrayInfo"
 
@@ -793,7 +793,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("All datatypes", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, source, destination := setupBackendConfigTestServer(t, credentials, namespace)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -843,7 +843,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("partitioning (partitionColumn: received_at, partitionType: day)", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, source, destination := setupBackendConfigTestServer(t, credentials, namespace)
 		destination.Config["partitionColumn"] = "received_at"
 		destination.Config["partitionType"] = "day"
@@ -896,7 +896,7 @@ func TestBQStreaming(t *testing.T) {
 	t.Run("identify event should not contain users", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
-		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreaming, namespace)
+		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamV2, namespace)
 		backendConfigServer, source, destination := setupBackendConfigTestServer(t, credentials, namespace)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -1017,14 +1017,14 @@ func runRudderServer(
 	config.Set("DB.user", postgresContainer.User)
 	config.Set("DB.name", postgresContainer.Database)
 	config.Set("DB.password", postgresContainer.Password)
-	config.Set("BatchRouter.BQ_STREAMING.pingFrequency", "1s")                    // default 30s
-	config.Set("BatchRouter.BQ_STREAMING.uploadFreq", "1s")                       // default 30s
-	config.Set("BatchRouter.BQ_STREAMING.minIdleSleep", "1s")                     // default 2s
-	config.Set("BatchRouter.BQ_STREAMING.maxEventsInABatch", 10000)               // default 10000
-	config.Set("BatchRouter.BQ_STREAMING.maxPayloadSizeInBytes", 512*bytesize.KB) // default 10kb
-	config.Set("BatchRouter.BQ_STREAMING.asyncUploadWorkerTimeout", "1s")         // default 10s
-	config.Set("BatchRouter.BQ_STREAMING.asyncUploadTimeout", "1s")               // default 30m
-	config.Set("BatchRouter.BQ_STREAMING.pollStatusLoopSleep", "1s")              // default 10s
+	config.Set("BatchRouter.BQSTREAM_V2.pingFrequency", "1s")                    // default 30s
+	config.Set("BatchRouter.BQSTREAM_V2.uploadFreq", "1s")                       // default 30s
+	config.Set("BatchRouter.BQSTREAM_V2.minIdleSleep", "1s")                     // default 2s
+	config.Set("BatchRouter.BQSTREAM_V2.maxEventsInABatch", 10000)               // default 10000
+	config.Set("BatchRouter.BQSTREAM_V2.maxPayloadSizeInBytes", 512*bytesize.KB) // default 10kb
+	config.Set("BatchRouter.BQSTREAM_V2.asyncUploadWorkerTimeout", "1s")         // default 10s
+	config.Set("BatchRouter.BQSTREAM_V2.asyncUploadTimeout", "1s")               // default 30m
+	config.Set("BatchRouter.BQSTREAM_V2.pollStatusLoopSleep", "1s")              // default 10s
 	config.Set("Processor.enableWarehouseTransformations", true)
 	config.Set("Processor.verifyWarehouseTransformations", false)
 	config.Set("BatchRouter.isolationMode", "none")
@@ -1049,7 +1049,7 @@ func runRudderServer(
 		}
 	}()
 	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "TOKEN", Version: uuid.NewString()})
-	c := r.Run(ctx, cancel, []string{"bq-streaming-rudder-server"})
+	c := r.Run(ctx, cancel, []string{"bqstream-v2-rudder-server"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}
@@ -1185,7 +1185,7 @@ func dropSchema(t testing.TB, db *bigquery.Client, namespace string) {
 }
 
 func randSchema() string {
-	return "bqstreaming_test_" + whutils.RandHex()
+	return "bqstreamv2_test_" + whutils.RandHex()
 }
 
 // executeQuery runs a statement against BigQuery, retrying for a while since
