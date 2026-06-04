@@ -51,6 +51,7 @@ type processorApp struct {
 	config         struct {
 		eschDSLimit    config.ValueLoader[int]
 		arcDSLimit     config.ValueLoader[int]
+		procDSLimit    config.ValueLoader[int]
 		rtDSLimit      config.ValueLoader[int]
 		batchrtDSLimit config.ValueLoader[int]
 		gwDSLimit      config.ValueLoader[int]
@@ -77,6 +78,7 @@ func (a *processorApp) Setup() error {
 	a.config.batchrtDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.batch_rt.dsLimit", "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.eschDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.esch.dsLimit", "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.arcDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.arc.dsLimit", "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
+	a.config.procDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.proc.dsLimit", "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	if err := rudderCoreDBValidator(); err != nil {
 		return err
 	}
@@ -257,6 +259,23 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 	)
 	defer arcRWDB.Close()
 
+	var procRWDB jobsdb.JobsDB
+	if config.GetBoolVar(false, "Processor.DestinationIsolation.enabled") {
+		procRWHandle := jobsdb.NewForReadWrite(
+			"proc",
+			jobsdb.WithClearDB(options.ClearDB),
+			jobsdb.WithDSLimit(a.config.procDSLimit),
+			jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(false, "Processor.jobsDB.skipMaintenanceError")),
+			jobsdb.WithStats(statsFactory),
+			jobsdb.WithDBHandle(jobsdbPool),
+			jobsdb.WithPriorityPoolDB(priorityPool),
+			jobsdb.WithMaintenancePoolDB(maintenancePool),
+			jobsdb.WithNumPartitions(partitionCount),
+		)
+		defer procRWHandle.Close()
+		procRWDB = jobsdb.NewPendingEventsJobsDB(procRWHandle, pendingEventsRegistry)
+	}
+
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBoolVar(false, "EventSchemas2.enabled") {
 		client, err := pulsar.NewClient(config)
@@ -278,7 +297,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 	ppmSetup, err := setupProcessorPartitionMigrator(ctx, shutdownFn, jobsdbPool, priorityPool, maintenancePool,
 		config, statsFactory,
 		gwRODB, nil,
-		rtRWDB, brtRWDB,
+		rtRWDB, brtRWDB, procRWDB,
 		modeProvider.EtcdClient,
 	)
 	defer ppmSetup.Finally() // always run finally to clean up resources regardless of error
@@ -289,6 +308,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 	gwRODB = ppmSetup.GwDB
 	rtRWDB = ppmSetup.RtDB
 	brtRWDB = ppmSetup.BrtDB
+	procRWDB = ppmSetup.ProcDB
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
@@ -334,6 +354,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		trackedUsersReporter,
 		pendingEventsRegistry,
 		proc.WithAdaptiveLimit(adaptiveLimit),
+		proc.WithProcDB(procRWDB),
 	)
 	routerLogger := logger.NewLogger().Child("router")
 	throttlerFactory, err := throttler.NewFactory(config, statsFactory, routerLogger.Child("throttler"))
@@ -375,6 +396,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		GatewayDB:         gwRODB,
 		RouterDB:          rtRWDB,
 		BatchRouterDB:     brtRWDB,
+		ProcessorDB:       procRWDB,
 		SchemaForwarder:   schemaForwarder,
 		EventSchemaDB:     eschRWDB,
 		ArchivalDB:        arcRWDB,
