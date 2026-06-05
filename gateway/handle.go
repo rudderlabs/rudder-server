@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/sanitize"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
+	"github.com/rudderlabs/rudder-go-kit/throttling"
 	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-schemas/go/stream"
@@ -76,6 +78,9 @@ type Handle struct {
 	addToBatchRequestQWaitTime                    stats.Measurement
 	processRequestTime                            stats.Measurement
 	emptyAnonIdHeaderStat                         stats.Measurement
+	internalBatchThrottleSkipDisabledCounter      stats.Counter
+	internalBatchThrottleSkipNoHeaderCounter      stats.Counter
+	internalBatchThrottleSkipInvalidHeaderCounter stats.Counter
 
 	// state initialised during Setup
 
@@ -93,6 +98,8 @@ type Handle struct {
 	backendConfigInitialisedChan   chan struct{}
 	transformerFeaturesInitialised chan struct{}
 	now                            func() time.Time
+
+	internalBatchLimiter *throttling.Limiter
 
 	// other state
 
@@ -117,6 +124,8 @@ type Handle struct {
 
 		maxReqSize                           config.ValueLoader[int]
 		enableRateLimit                      config.ValueLoader[bool]
+		internalBatchThrottleEvents          config.ValueLoader[int]
+		internalBatchThrottleWindow          config.ValueLoader[time.Duration]
 		enableSuppressUserFeature            bool
 		diagnosisTickerTime                  time.Duration
 		ReadTimeout                          time.Duration
@@ -695,6 +704,25 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 	userWebRequestWorker.webRequestQ <- &webReq
 }
 
+// internalBatchAllow checks whether the incoming batch of n events is within the configured
+// global throttle for the internal batch endpoint. It returns true if the request is allowed.
+// Rate and window are passed per-call so the limiter itself is created once and the config
+// can be reloaded without recreating it.
+func (gw *Handle) internalBatchAllow(ctx context.Context, n int) bool {
+	limit := gw.conf.internalBatchThrottleEvents.Load()
+	if limit <= 0 {
+		gw.internalBatchThrottleSkipDisabledCounter.Increment()
+		return true
+	}
+	windowSecs := max(int64(gw.conf.internalBatchThrottleWindow.Load().Seconds()), 1)
+	allowed, _, err := gw.internalBatchLimiter.Allow(ctx, int64(n), int64(limit), windowSecs, "internalBatch")
+	if err != nil {
+		gw.logger.Errorn("internal batch throttle error, allowing request", obskit.Error(err))
+		return true
+	}
+	return allowed
+}
+
 func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var (
@@ -709,8 +737,17 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			stat             = gwstats.SourceStat{ReqType: reqType}
 		)
 
-		// TODO: add tracing
 		gw.logger.LogRequest(r)
+
+		if batchSizeStr := r.Header.Get("X-Batch-Size"); batchSizeStr == "" {
+			gw.internalBatchThrottleSkipNoHeaderCounter.Increment()
+		} else if batchSize, parseErr := strconv.Atoi(batchSizeStr); parseErr != nil || batchSize <= 0 {
+			gw.internalBatchThrottleSkipInvalidHeaderCounter.Increment()
+		} else if !gw.internalBatchAllow(ctx, batchSize) {
+			http.Error(w, response.GetStatus(response.TooManyRequests), http.StatusTooManyRequests)
+			return
+		}
+
 		body, err = gw.getPayloadFromRequest(r)
 		if err != nil {
 			stat.RequestFailed("requestBodyReadFailed")

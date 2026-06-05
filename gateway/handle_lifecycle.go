@@ -26,6 +26,7 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/throttling"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 
@@ -103,6 +104,16 @@ func (gw *Handle) Setup(
 	gw.conf.maxReqSize = config.GetReloadableIntVar(4000, 1024, "Gateway.maxReqSizeInKB")
 	// Enable rate limit on incoming events. false by default
 	gw.conf.enableRateLimit = config.GetReloadableBoolVar(false, "Gateway.enableRateLimit")
+	// Global throttle for the internal batch endpoint: max events per window, <=0 means disabled
+	gw.conf.internalBatchThrottleEvents = config.GetReloadableIntVar(0, 1, "Gateway.internalBatchThrottleEvents")
+	gw.conf.internalBatchThrottleWindow = config.GetReloadableDurationVar(1, time.Second, "Gateway.internalBatchThrottleWindow")
+	{
+		l, err := throttling.New(throttling.WithInMemoryGCRA(0))
+		if err != nil {
+			return fmt.Errorf("failed to create internal batch throttler: %w", err)
+		}
+		gw.internalBatchLimiter = l
+	}
 	// Enable suppress user feature. false by default
 	gw.conf.enableSuppressUserFeature = config.GetBoolVar(true, "Gateway.enableSuppressUserFeature")
 	// Time period for diagnosis ticker
@@ -129,6 +140,9 @@ func (gw *Handle) Setup(
 	gw.addToBatchRequestQWaitTime = gw.stats.NewStat("gateway.batch_request_queue_wait_time", stats.TimerType)
 	gw.processRequestTime = gw.stats.NewStat("gateway.process_request_time", stats.TimerType)
 	gw.emptyAnonIdHeaderStat = gw.stats.NewStat("gateway.empty_anonymous_id_header", stats.CountType)
+	gw.internalBatchThrottleSkipDisabledCounter = gw.stats.NewTaggedStat("gateway.internal_batch_throttle_skip", stats.CountType, stats.Tags{"reason": "disabled"})
+	gw.internalBatchThrottleSkipNoHeaderCounter = gw.stats.NewTaggedStat("gateway.internal_batch_throttle_skip", stats.CountType, stats.Tags{"reason": "no_header"})
+	gw.internalBatchThrottleSkipInvalidHeaderCounter = gw.stats.NewTaggedStat("gateway.internal_batch_throttle_skip", stats.CountType, stats.Tags{"reason": "invalid_header"})
 
 	gw.now = timeutil.Now
 	gw.diagnosisTicker = time.NewTicker(gw.conf.diagnosisTickerTime)
