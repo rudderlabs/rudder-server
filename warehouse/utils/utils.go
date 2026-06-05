@@ -44,6 +44,7 @@ const (
 	BQ                = "BQ"
 	SNOWFLAKE         = "SNOWFLAKE"
 	SnowpipeStreaming = "SNOWPIPE_STREAMING"
+	BQStreamV2        = "BQSTREAM_V2"
 	POSTGRES          = "POSTGRES"
 	CLICKHOUSE        = "CLICKHOUSE"
 	MSSQL             = "MSSQL"
@@ -136,7 +137,7 @@ var (
 )
 
 func pseudoWarehouseDestinations() map[string]struct{} {
-	all := append(slices.Clone(WarehouseDestinations), SnowpipeStreaming)
+	all := append(slices.Clone(WarehouseDestinations), SnowpipeStreaming, BQStreamV2)
 	return lo.SliceToMap(all, func(destination string) (string, struct{}) {
 		return destination, struct{}{}
 	})
@@ -234,6 +235,7 @@ type LoadFile struct {
 type (
 	ModelWarehouse   = model.Warehouse
 	ModelTableSchema = model.TableSchema
+	ModelSchema      = model.Schema
 )
 
 func IDResolutionEnabled() bool {

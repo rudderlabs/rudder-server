@@ -637,6 +637,8 @@ func setupConfig(resource *transformertest.Resource, configOverride map[string]a
 	c := config.New()
 	c.Set("DEST_TRANSFORM_URL", resource.TransformerURL)
 	c.Set("USER_TRANSFORM_URL", resource.TransformerURL)
+	c.Set("Processor.enableWarehouseTransformations", true)
+	c.Set("Processor.verifyWarehouseTransformations", false)
 
 	for k, v := range configOverride {
 		c.Set(k, v)
