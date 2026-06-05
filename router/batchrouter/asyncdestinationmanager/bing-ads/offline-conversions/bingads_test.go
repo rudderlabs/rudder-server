@@ -3,6 +3,7 @@ package offline_conversions
 import (
 	"archive/zip"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -511,6 +513,80 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			resp, err := uploader.Transform(job)
 			Expect(resp).To(Equal(expectedResp))
 			Expect(err).To(BeNil())
+		})
+
+		It("Transform() Test -> preserves fields.event_id for downstream deduplication", func() {
+			job := &jobsdb.JobT{
+				JobID: 42,
+				EventPayload: []byte("{\n  \"type\": \"record\",\n  \"action\": \"insert\",\n  \"fields\": {\n    \"conversionName\": \"Test-Integration\",\n    \"conversionTime\": \"2025-12-06T10:15:03+00:00\",\n    \"conversionValue\": \"15.942148760330578\",\n    \"microsoftClickId\": \"43d27c9a7f43100dcedc159df987176b\",\n    \"event_id\": \"evt-123\"\n  }\n}"),
+			}
+			uploader := &BingAdsBulkUploader{
+				isHashRequired: false,
+			}
+			expectedResp := `{"message":{"fields":{"conversionName":"Test-Integration","conversionTime":"12/6/2025 10:15:03 AM","conversionValue":"15.942148760330578","event_id":"evt-123","microsoftClickId":"43d27c9a7f43100dcedc159df987176b"},"action":"insert"},"metadata":{"jobId":42}}`
+
+			resp, err := uploader.Transform(job)
+			Expect(err).To(BeNil())
+			Expect(resp).To(Equal(expectedResp))
+		})
+
+		It("populateZipFile() Test -> writes event_id as Transaction Id and keeps Id as jobId", func() {
+			uploader := &BingAdsBulkUploader{
+				fileSizeLimit: 1024,
+				eventsLimit:   10,
+			}
+			actions := []string{"insert", "update", "delete"}
+			for _, action := range actions {
+				actionFile, err := createActionFile(action)
+				Expect(err).To(BeNil())
+
+				data := Data{
+					Message: Message{
+						Action: action,
+						Fields: json.RawMessage(`{
+							"conversionCurrencyCode":"USD",
+							"conversionName":"Test-Integration",
+							"conversionTime":"4/1/2024 9:23:54 AM",
+							"conversionValue":"100",
+							"microsoftClickId":"OriginalMicrosoftClickID",
+							"email":"test@example.com",
+							"phone":"+1234567890",
+							"adjustedConversionTime":"4/1/2024 9:24:54 AM",
+							"event_id":"evt-123"
+						}`),
+					},
+					Metadata: Metadata{
+						JobID: 99,
+					},
+				}
+
+				err = uploader.populateZipFile(actionFile, "sample-line", data)
+				Expect(err).To(BeNil())
+
+				actionFile.CSVWriter.Flush()
+				file, err := os.Open(actionFile.CSVFilePath)
+				Expect(err).To(BeNil())
+
+				records, err := csv.NewReader(file).ReadAll()
+				closeErr := file.Close()
+				Expect(closeErr).To(BeNil())
+				Expect(err).To(BeNil())
+				Expect(len(records)).To(Equal(3))
+
+				header := records[0]
+				row := records[2]
+
+				transactionIDIndex := slices.Index(header, "Transaction Id")
+				Expect(transactionIDIndex).To(BeNumerically(">=", 0))
+				Expect(row[transactionIDIndex]).To(Equal("evt-123"))
+
+				jobIDIndex := slices.Index(header, "Id")
+				Expect(jobIDIndex).To(BeNumerically(">=", 0))
+				Expect(row[jobIDIndex]).To(Equal("99"))
+
+				Expect(os.Remove(actionFile.CSVFilePath)).To(Succeed())
+				_ = os.Remove(actionFile.ZipFilePath)
+			}
 		})
 
 		It("Transform() Test -> adjustedConversionTime not available", func() {

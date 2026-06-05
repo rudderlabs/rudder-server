@@ -70,6 +70,7 @@ type RecordFields struct {
 	ConversionTime            string `json:"conversionTime"`
 	Email                     string `json:"email"`
 	Phone                     string `json:"phone"`
+	EventID                   string `json:"event_id"`
 	MicrosoftClickId          string `json:"microsoftClickId"`
 	ConversionAdjustedTime    string `json:"conversionAdjustedTime"`
 	ExternalAttributionCredit string `json:"externalAttributionCredit"`
