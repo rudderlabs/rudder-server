@@ -7,9 +7,13 @@ import (
 
 	managedwriter "cloud.google.com/go/bigquery/storage/managedwriter"
 	"github.com/mitchellh/mapstructure"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -17,6 +21,16 @@ type (
 	// Manager streams events into BigQuery through the Storage Write API,
 	// caching table schemas (TTL) and stream writers across uploads.
 	Manager struct {
+		appConfig                 *config.Config
+		logger                    logger.Logger
+		statsFactory              stats.Stats
+		destination               *backendconfig.DestinationT
+		integrationManagerCreator func(ctx context.Context, cfg destConfig) (IntegrationManager, error)
+
+		streamWriterFactory StreamWriterFactory
+		streamWritersMu     sync.Mutex
+		streamWriters       map[string]tableStreamWriter
+
 		now func() time.Time
 
 		config struct {
@@ -24,6 +38,16 @@ type (
 			tableWorkers      config.ValueLoader[int]
 			maxChunkBytes     config.ValueLoader[int64]
 			schemaCacheTTL    config.ValueLoader[time.Duration]
+		}
+
+		stats struct {
+			jobs struct {
+				succeeded stats.Counter
+				failed    stats.Counter
+				aborted   stats.Counter
+			}
+			discards               stats.Counter
+			duplicateEventsInBatch stats.Counter
 		}
 
 		schemaCache TableSchemaCache
@@ -56,6 +80,11 @@ type (
 		AppendRows(ctx context.Context, data [][]byte) (AppendResult, error)
 		Close() error
 	}
+	tableStreamWriter struct {
+		writer     StreamWriter
+		descriptor protoreflect.MessageDescriptor
+	}
+
 	AppendResult interface {
 		GetResult(ctx context.Context) (int64, error)
 	}
@@ -104,6 +133,12 @@ type (
 		jobIDs       []int64
 		events       []*event
 		eventsSchema whutils.ModelTableSchema
+	}
+
+	tableProcessResult struct {
+		succeededJobIDs []int64
+		failedJobIDs    []int64
+		err             error
 	}
 
 	discardEvent struct {

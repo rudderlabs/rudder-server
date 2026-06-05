@@ -1,0 +1,3 @@
+{"message":{"metadata":{"table":"users","columns":{"id":"int","name":"string","age":"int","received_at":"datetime"}},"data":{"id":1,"name":"alice","age":30,"received_at":"2023-05-12T04:36:50.199Z"}},"metadata":{"job_id":1001}}
+{"message":{"metadata":{"table":"products","columns":{"id":"int","product_id":"string","price":"float","in_stock":"boolean","received_at":"datetime"}},"data":{"id":2,"product_id":"prod456","price":20.99,"in_stock":true,"received_at":"2023-05-12T04:36:50.199Z"}},"metadata":{"job_id":1002}}
+{"message":{"metadata":{"table":"bad_events","columns":{"id":"int","name
