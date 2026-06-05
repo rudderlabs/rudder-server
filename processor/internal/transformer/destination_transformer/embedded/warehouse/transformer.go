@@ -259,7 +259,7 @@ func (t *Transformer) getColumns(
 	uuidTS := whutils.ToProviderCase(destType, "uuid_ts")
 	columns[uuidTS] = model.DateTimeDataType
 
-	if destType == whutils.BQ {
+	if destType == whutils.BQ || destType == whutils.BQStreamV2 {
 		columns["loaded_at"] = model.DateTimeDataType
 	}
 
