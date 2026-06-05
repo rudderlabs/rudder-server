@@ -31,6 +31,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/gateway/internal/firstevent"
 	"github.com/rudderlabs/rudder-server/gateway/throttler"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 	"github.com/rudderlabs/rudder-server/gateway/validator"
@@ -83,6 +84,7 @@ func (gw *Handle) Setup(
 	gw.rsourcesService = rsourcesService
 	gw.sourcehandle = sourcehandle
 	gw.inFlightRequests = new(sync.WaitGroup)
+	gw.firstEventTracker = firstevent.NewTracker(config, logger)
 
 	// Port where GW is running
 	gw.conf.webPort = config.GetIntVar(8080, 1, "Gateway.webPort")

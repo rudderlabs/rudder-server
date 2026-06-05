@@ -32,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/internal/bot"
+	"github.com/rudderlabs/rudder-server/gateway/internal/firstevent"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/throttler"
@@ -53,17 +54,18 @@ type messageValidator interface {
 type Handle struct {
 	// dependencies
 
-	config          *config.Config
-	logger          logger.Logger
-	stats           stats.Stats
-	tracer          stats.Tracer
-	application     app.App
-	backendConfig   backendconfig.BackendConfig
-	jobsDB          jobsdb.JobsDB
-	rateLimiter     throttler.Throttler
-	versionHandler  func(w http.ResponseWriter, r *http.Request)
-	rsourcesService rsources.JobService
-	sourcehandle    sourcedebugger.SourceDebugger
+	config            *config.Config
+	logger            logger.Logger
+	stats             stats.Stats
+	tracer            stats.Tracer
+	application       app.App
+	backendConfig     backendconfig.BackendConfig
+	jobsDB            jobsdb.JobsDB
+	rateLimiter       throttler.Throttler
+	versionHandler    func(w http.ResponseWriter, r *http.Request)
+	rsourcesService   rsources.JobService
+	sourcehandle      sourcedebugger.SourceDebugger
+	firstEventTracker *firstevent.Tracker
 
 	// statistic measurements initialised during Setup
 
@@ -538,6 +540,13 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	}
 	err = nil
 	jobData.jobs = jobs
+	if len(jobs) > 0 && gw.firstEventTracker.ShouldFire(sourceID) {
+		sourceType := ""
+		if src, ok := gw.getSourceConfigFromSourceID(sourceID); ok {
+			sourceType = src.SourceDefinition.Name
+		}
+		gw.firstEventTracker.Track(sourceID, workspaceId, sourceType, sourceCategory, gw.now().Format(misc.RFC3339Milli))
+	}
 	return jobData, err
 }
 
