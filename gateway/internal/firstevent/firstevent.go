@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	"github.com/rudderlabs/analytics-go"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
