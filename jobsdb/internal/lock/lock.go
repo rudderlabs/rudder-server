@@ -26,6 +26,10 @@ type Locker struct {
 	writeLockTimeAsync      stats.Measurement
 	writeLockTotalTime      stats.Measurement
 	writeLockTotalTimeAsync stats.Measurement
+
+	// set by TryLockWithCtx on successful acquisition; read and cleared by Unlock
+	tryLockStart    time.Time
+	tryLockAcquired time.Time
 }
 
 func NewLocker(name, prefix string, s stats.Stats) *Locker {
@@ -75,7 +79,10 @@ func (r *Locker) RUnlock() {
 func (r *Locker) TryLockWithCtx(ctx context.Context) bool {
 	start := time.Now()
 	if r.m.TryLockWithContext(ctx) {
+		acquired := time.Now()
 		r.writeLockWait.Since(start)
+		r.tryLockStart = start
+		r.tryLockAcquired = acquired
 		return true
 	}
 	return false
@@ -84,6 +91,12 @@ func (r *Locker) TryLockWithCtx(ctx context.Context) bool {
 // Unlock releases a lock
 func (r *Locker) Unlock() {
 	r.m.Unlock()
+	if !r.tryLockAcquired.IsZero() {
+		r.writeLockTime.Since(r.tryLockAcquired)
+		r.writeLockTotalTime.Since(r.tryLockStart)
+		r.tryLockAcquired = time.Time{}
+		r.tryLockStart = time.Time{}
+	}
 }
 
 // WithLock acquires a lock for the duration that the provided function
