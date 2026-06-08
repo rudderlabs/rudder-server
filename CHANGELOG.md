@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.77.0](https://github.com/rudderlabs/rudder-server/compare/v1.76.0...v1.77.0) (2026-06-08)
+
+
+### Features
+
+* **jobsdb:** deferred status table lock during compaction ([#7020](https://github.com/rudderlabs/rudder-server/issues/7020)) ([d156057](https://github.com/rudderlabs/rudder-server/commit/d156057e5c1b66896c0616e7172074dd9cde5bfa))
+* **jobsdb:** non-blocking dataset compaction ([#6967](https://github.com/rudderlabs/rudder-server/issues/6967)) ([e0838dc](https://github.com/rudderlabs/rudder-server/commit/e0838dcf70ce97290ba0c3320757650aca6fa514))
+* **jobsdb:** versioned dataset list and non-blocking drop for completed datasets ([#6962](https://github.com/rudderlabs/rudder-server/issues/6962)) ([d7fe1ae](https://github.com/rudderlabs/rudder-server/commit/d7fe1ae941edc7a5299a6bb1a54744f78cd6bebb))
+
+
+### Bug Fixes
+
+* flaky cluster test ([#7003](https://github.com/rudderlabs/rudder-server/issues/7003)) ([d7fe1ae](https://github.com/rudderlabs/rudder-server/commit/d7fe1ae941edc7a5299a6bb1a54744f78cd6bebb))
+* **jobsdb:** pq 42P01 error when trying to store to a dataset that has been dropped ([#7041](https://github.com/rudderlabs/rudder-server/issues/7041)) ([9db406d](https://github.com/rudderlabs/rudder-server/commit/9db406d286071cee3b366bdff512d5b848373db3))
+* server panics with sql database is closed in case of an etcd error ([#7023](https://github.com/rudderlabs/rudder-server/issues/7023)) ([15dc39a](https://github.com/rudderlabs/rudder-server/commit/15dc39a76a347967a888072ba5b45c3eaf468329))
+* support scoped batchrouter datePrefixOverride ([#7037](https://github.com/rudderlabs/rudder-server/issues/7037)) ([9e8a0a8](https://github.com/rudderlabs/rudder-server/commit/9e8a0a87e58cef8e0479d012900255f5c0cc853a))
+
+
+### Miscellaneous
+
+* capture scheduler lag in stats ([#7017](https://github.com/rudderlabs/rudder-server/issues/7017)) ([0dcf2b4](https://github.com/rudderlabs/rudder-server/commit/0dcf2b45982779b39caa4b17789d5c6a8388fd28))
+* **deps:** bump actions/create-github-app-token from 3.0.0 to 3.1.1 ([#6969](https://github.com/rudderlabs/rudder-server/issues/6969)) ([ee7f735](https://github.com/rudderlabs/rudder-server/commit/ee7f7355d8b347dae257d8eb44fdb929c6f6f64d))
+* **deps:** bump actions/create-github-app-token from 3.1.1 to 3.2.0 ([#7013](https://github.com/rudderlabs/rudder-server/issues/7013)) ([ac5681b](https://github.com/rudderlabs/rudder-server/commit/ac5681b49f46d775d1a3c40b5934cce19de5eb95))
+* **deps:** bump actions/labeler from 5.0.0 to 6.1.0 ([#6970](https://github.com/rudderlabs/rudder-server/issues/6970)) ([e748b86](https://github.com/rudderlabs/rudder-server/commit/e748b86168f0ef8f1fc71cc83e5821a4858c2d20))
+* **deps:** bump actions/stale from 10.2.0 to 10.3.0 ([#7031](https://github.com/rudderlabs/rudder-server/issues/7031)) ([6cf6804](https://github.com/rudderlabs/rudder-server/commit/6cf6804bce9f1d986be775efba2b4481976761e0))
+* **deps:** bump aws-actions/amazon-ecr-login from 2.1.4 to 2.1.5 ([#6972](https://github.com/rudderlabs/rudder-server/issues/6972)) ([e38a99d](https://github.com/rudderlabs/rudder-server/commit/e38a99d83f1d246765bdd550de18129f2d811f74))
+* **deps:** bump aws-actions/configure-aws-credentials from 5.0.0 to 6.1.1 ([#6971](https://github.com/rudderlabs/rudder-server/issues/6971)) ([1114b7f](https://github.com/rudderlabs/rudder-server/commit/1114b7f2e40ff385cd4dcde9ffdb249dc283a895))
+* **deps:** bump aws-actions/configure-aws-credentials from 6.1.1 to 6.1.2 ([#7049](https://github.com/rudderlabs/rudder-server/issues/7049)) ([e210e68](https://github.com/rudderlabs/rudder-server/commit/e210e6832da3246c05ba0b8028cfb656f923ff71))
+* **deps:** bump codecov/codecov-action from 6.0.0 to 6.0.1 ([#7016](https://github.com/rudderlabs/rudder-server/issues/7016)) ([3d639f5](https://github.com/rudderlabs/rudder-server/commit/3d639f539d46a7a041fab17946a3acfc1cee5430))
+* **deps:** bump docker/login-action from 4.1.0 to 4.2.0 ([#7035](https://github.com/rudderlabs/rudder-server/issues/7035)) ([b39183b](https://github.com/rudderlabs/rudder-server/commit/b39183b2fbf53c5c600b1d51d24705454aedb9ee))
+* **deps:** bump docker/metadata-action from 6.0.0 to 6.1.0 ([#7032](https://github.com/rudderlabs/rudder-server/issues/7032)) ([574f7c8](https://github.com/rudderlabs/rudder-server/commit/574f7c8e7d12d8acd417113db77209baa4d06610))
+* **deps:** bump docker/setup-buildx-action from 4.0.0 to 4.1.0 ([#7034](https://github.com/rudderlabs/rudder-server/issues/7034)) ([ff49009](https://github.com/rudderlabs/rudder-server/commit/ff49009499895262c14fd27c5cf9ba5be7a270a7))
+* **deps:** bump golangci/golangci-lint-action from 8.0.0 to 9.2.1 ([#7044](https://github.com/rudderlabs/rudder-server/issues/7044)) ([56070dc](https://github.com/rudderlabs/rudder-server/commit/56070dc5e5364dbccf11b284bbe251cdf5de7f69))
+* **deps:** bump slackapi/slack-github-action from 3.0.1 to 3.0.3 ([#6968](https://github.com/rudderlabs/rudder-server/issues/6968)) ([fd70e60](https://github.com/rudderlabs/rudder-server/commit/fd70e6047a3b0c5e1519fc6fee42955a1c368435))
+* **deps:** bump step-security/harden-runner from 2.19.1 to 2.19.3 ([#7012](https://github.com/rudderlabs/rudder-server/issues/7012)) ([b4dc9b2](https://github.com/rudderlabs/rudder-server/commit/b4dc9b2d24b0c0df0e150921a251197f7cf71f31))
+* **deps:** bump step-security/harden-runner from 2.19.3 to 2.19.4 ([#7033](https://github.com/rudderlabs/rudder-server/issues/7033)) ([ba82100](https://github.com/rudderlabs/rudder-server/commit/ba821008f151f5e00e2ba80f97e00291f2272fa2))
+* **jobsdb:** avoid refreshing ds list from database in case of a stale ds error while updating job statuses ([#7024](https://github.com/rudderlabs/rudder-server/issues/7024)) ([de98ede](https://github.com/rudderlabs/rudder-server/commit/de98ede8cab8f70be592ab3a163635ea5a7ddd4a))
+* **jobsdb:** lateral join for getting jobs ([#7007](https://github.com/rudderlabs/rudder-server/issues/7007)) ([7148a30](https://github.com/rudderlabs/rudder-server/commit/7148a30aa5b8234e3377d133c416a2b5b44154df))
+* remove deprecated bulkStatusEnabled flag for snowpipe streaming ([#6992](https://github.com/rudderlabs/rudder-server/issues/6992)) ([d7fe1ae](https://github.com/rudderlabs/rudder-server/commit/d7fe1ae941edc7a5299a6bb1a54744f78cd6bebb))
+
 ## [1.76.1](https://github.com/rudderlabs/rudder-server/compare/v1.76.0...v1.76.1) (2026-06-02)
 
 
