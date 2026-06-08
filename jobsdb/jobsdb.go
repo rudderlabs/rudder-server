@@ -1478,7 +1478,8 @@ func (jd *Handle) addCompletedDSToDropList(ctx context.Context, l lock.LockToken
 			_, ok := toDrop[dsRange.ds.Index]
 			return !ok
 		}))
-
+	// update table count gauge after setting the new ds list
+	jd.statTableCount.Gauge(len(newList))
 	jd.dropNotifyPing()
 	return newList, nil
 }
