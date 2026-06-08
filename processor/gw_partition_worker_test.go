@@ -59,7 +59,7 @@ func TestWorkerPool(t *testing.T) {
 
 		// create a worker pool
 		wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker {
-			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""), stats.NOP)
+			return newGwPartitionWorker(partition, wh, stats.NOP.NewTracer(""), stats.NOP)
 		}, logger.NOP)
 
 		// start pinging for work for 100 partitions
@@ -135,7 +135,7 @@ func TestWorkerPoolIdle(t *testing.T) {
 	// create a worker pool
 	wp := workerpool.New(poolCtx,
 		func(partition string) workerpool.Worker {
-			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""), stats.NOP)
+			return newGwPartitionWorker(partition, wh, stats.NOP.NewTracer(""), stats.NOP)
 		},
 		logger.NOP,
 		workerpool.WithCleanupPeriod(200*time.Millisecond),
