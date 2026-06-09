@@ -83,7 +83,7 @@ func encodeRows(rows []Row, md protoreflect.MessageDescriptor, schema whutils.Mo
 			if !ok {
 				return nil, fmt.Errorf("encoding row: unknown column %q", columnName)
 			}
-			fieldValue, err := protoValueFor(fd, value)
+			fieldValue, err := protoValueFor(fd, value, schema[columnName])
 			if err != nil {
 				return nil, fmt.Errorf("encoding row: column %q: %w", columnName, err)
 			}
@@ -103,7 +103,7 @@ func encodeRows(rows []Row, md protoreflect.MessageDescriptor, schema whutils.Mo
 // coercions protojson did (integral floats and numeric strings for int64,
 // etc.). Only the kinds reachable through dataTypesMap are handled; anything
 // else fails loudly until support is added explicitly.
-func protoValueFor(fd protoreflect.FieldDescriptor, value any) (protoreflect.Value, error) {
+func protoValueFor(fd protoreflect.FieldDescriptor, value any, dataType string) (protoreflect.Value, error) {
 	switch fd.Kind() {
 	case protoreflect.StringKind:
 		if v, ok := value.(string); ok {
@@ -150,7 +150,7 @@ func protoValueFor(fd protoreflect.FieldDescriptor, value any) (protoreflect.Val
 			}
 		}
 	}
-	return protoreflect.Value{}, fmt.Errorf("invalid value of type %T for %s field", value, fd.Kind())
+	return protoreflect.Value{}, fmt.Errorf("invalid value of type %T for %s field of type %s", value, dataType, fd.Kind())
 }
 
 // normalizeRow converts

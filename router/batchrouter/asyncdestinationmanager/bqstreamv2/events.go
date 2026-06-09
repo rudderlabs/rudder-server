@@ -99,7 +99,7 @@ func (m *Manager) groupAndChunkEvents(events []*event) map[string][]tableEvents 
 			if len(currentChunk) == 0 {
 				return
 			}
-			groupedAndChunkedEvents[tableName] = append(groupedAndChunkedEvents[tableName], tableEvents{
+			groupedAndChunkedEvents[providerTableName] = append(groupedAndChunkedEvents[providerTableName], tableEvents{
 				tableName: providerTableName,
 				events:    currentChunk,
 				jobIDs: lo.Map(currentChunk, func(e *event, _ int) int64 {
