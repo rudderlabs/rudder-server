@@ -39,7 +39,6 @@ import (
 
 type warehouseClient interface {
 	Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response
-	CompareResponsesAndUpload(ctx context.Context, events []types.TransformerEvent, legacyResponse types.Response)
 }
 
 type Opt func(*Client)
@@ -93,8 +92,6 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	}
 
 	handle.warehouseClient = warehouse.New(conf, log, stat)
-	handle.config.warehouseTransformations.enable = conf.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
-	handle.config.warehouseTransformations.verify = conf.GetReloadableBoolVar(true, "Processor.verifyWarehouseTransformations")
 
 	for _, opt := range opts {
 		opt(handle)
@@ -388,11 +385,6 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 
 	destType := clientEvents[0].Destination.DestinationDefinition.Name
 	if c.canRunWarehouseTransformations(destType) {
-		if c.config.warehouseTransformations.verify.Load() {
-			legacyResponse := c.transform(ctx, clientEvents)
-			c.warehouseClient.CompareResponsesAndUpload(ctx, deepCopy(clientEvents), deepCopy(legacyResponse))
-			return legacyResponse
-		}
 		return c.warehouseClient.Transform(ctx, clientEvents)
 	}
 
@@ -412,17 +404,9 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	return impl(ctx, clientEvents)
 }
 
-func deepCopy[T any](src T) T {
-	var dst T
-	if data, err := jsonrs.Marshal(src); err == nil {
-		_ = jsonrs.Unmarshal(data, &dst)
-	}
-	return dst
-}
-
 func (c *Client) canRunWarehouseTransformations(destType string) bool {
 	if _, ok := warehouseutils.PseudoWarehouseDestinationMap[destType]; ok {
-		return c.config.warehouseTransformations.enable.Load()
+		return true
 	}
 	return false
 }

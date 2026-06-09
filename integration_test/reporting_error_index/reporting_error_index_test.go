@@ -705,9 +705,9 @@ func TestReportingErrorIndex(t *testing.T) {
 			require.NoError(t, err)
 
 			requireJobsCount(t, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
-			requireJobsCount(t, postgresContainer.DB, "batch_rt", jobsdb.Aborted.State, eventsCount)
-			requireJobsCount(t, postgresContainer.DB, "err_idx", jobsdb.Succeeded.State, eventsCount)
-			requireMessagesCount(t, ctx, minioResource, eventsCount, []lo.Tuple2[string, string]{
+			requireJobsCount(t, postgresContainer.DB, "batch_rt", jobsdb.Aborted.State, 2*eventsCount)
+			requireJobsCount(t, postgresContainer.DB, "err_idx", jobsdb.Succeeded.State, 2*eventsCount)
+			requireMessagesCount(t, ctx, minioResource, 2*eventsCount, []lo.Tuple2[string, string]{
 				{A: "source_id", B: "source-1"},
 				{A: "destination_id", B: "destination-1"},
 				{A: "failed_stage", B: "batch_router"},
