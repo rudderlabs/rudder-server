@@ -193,9 +193,8 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 		"Router.noOfWorkers":                                       strconv.Itoa(numPartitions),
 		"Router.Network.IncludeInstanceIdInHeader":                 "true", // for debugging in case of receiving out-of-order events
 		"Router.jobIterator.maxQueries":                            "1",
-		"Gateway.allowPartialWriteWithErrors":                      "false", // not going through the lecacy gateway path
-		"PartitionMigration.Processor.SourceNode.readExcludeSleep": "15s",   // sleep a bit less than the default one to speed up the test
-		"PartitionMigration.SourceNode.inProgressPollSleep":        "1s",    // poll faster for test speed
+		"PartitionMigration.Processor.SourceNode.readExcludeSleep": "15s", // sleep a bit less than the default one to speed up the test
+		"PartitionMigration.SourceNode.inProgressPollSleep":        "1s",  // poll faster for test speed
 
 		// we want to create multiple datasets during the test and ensure that migration works correctly with ds limits as well
 		"JobsDB.maxDSSize":                      "200",

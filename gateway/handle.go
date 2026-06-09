@@ -124,7 +124,6 @@ type Handle struct {
 		WriteTimeout                         time.Duration
 		IdleTimeout                          time.Duration
 		allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
-		gwAllowPartialWriteWithErrors        config.ValueLoader[bool]
 		webhookV2HandlerEnabled              bool
 	}
 
