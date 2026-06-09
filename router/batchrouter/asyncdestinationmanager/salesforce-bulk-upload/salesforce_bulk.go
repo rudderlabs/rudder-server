@@ -60,12 +60,12 @@ func NewUploader(
 	destination *backendconfig.DestinationT,
 ) *Uploader {
 	u := &Uploader{
-		logger:          logger,
-		apiService:      apiService,
-		dataHashToJobID: make(map[string][]int64),
-		destination:     destination,
-		statsFactory:    statsFactory,
-		destName:        destName,
+		logger:            logger,
+		apiService:        apiService,
+		externalIDToJobID: make(map[string][]int64),
+		destination:       destination,
+		statsFactory:      statsFactory,
+		destName:          destName,
 	}
 	u.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "SalesforceBulkUpload.maxBufferCapacity")
 	return u
@@ -203,7 +203,7 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 		s.logger.Infon("Aborting events with missing externalId", logger.NewIntField("abortedJobs", int64(len(abortedJobIDs))))
 	}
 
-	csvFilePath, _, hashToJobID, err := createCSVFile(
+	csvFilePath, externalIDToJobID, err := createCSVFile(
 		destinationID,
 		objectInfo.ExternalIDField,
 		validJobs,
@@ -222,14 +222,14 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 			DestinationID: destinationID,
 		}
 	}
-	s.dataHashToJobID = hashToJobID
+	s.externalIDToJobID = externalIDToJobID
 
 	// The source is expected to send unique externalIds per batch. Fewer keys
 	// than valid jobs means duplicates collided onto the same key, which makes
 	// per-job status attribution ambiguous after polling.
-	if len(hashToJobID) < len(validJobs) {
+	if len(externalIDToJobID) < len(validJobs) {
 		s.logger.Warnn("Duplicate externalId values detected in batch; per-job status attribution may be ambiguous",
-			logger.NewIntField("uniqueExternalIds", int64(len(hashToJobID))),
+			logger.NewIntField("uniqueExternalIds", int64(len(externalIDToJobID))),
 			logger.NewIntField("jobs", int64(len(validJobs))),
 		)
 	}
@@ -324,7 +324,7 @@ func (s *Uploader) Poll(_ context.Context, pollInput common.AsyncPoll) common.Po
 	case "JobComplete":
 		hasFailed := jobStatus.NumberRecordsFailed > 0
 		if !hasFailed {
-			s.clearDataHashToJobID()
+			s.clearExternalIDToJobID()
 		}
 		return common.PollStatusResponse{
 			StatusCode: http.StatusOK,
@@ -356,7 +356,7 @@ func (s *Uploader) Poll(_ context.Context, pollInput common.AsyncPoll) common.Po
 
 func (s *Uploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUploadStatsResponse {
 	defer func() {
-		s.clearDataHashToJobID()
+		s.clearExternalIDToJobID()
 	}()
 	var saleforceJobInfo SalesforceJobInfo
 	importId := gjson.GetBytes(input.Parameters, "importId").String()
@@ -433,8 +433,8 @@ func (s *Uploader) matchRecordsToJobs(
 	}
 
 	for _, failedRecord := range failedRecords {
-		key := calculateHashCode(failedRecord[externalIDField])
-		if jobIDs, exists := s.dataHashToJobID[key]; exists {
+		key := failedRecord[externalIDField]
+		if jobIDs, exists := s.externalIDToJobID[key]; exists {
 			for _, jobID := range jobIDs {
 				metadata.AbortedKeys = append(metadata.AbortedKeys, jobID)
 				if errorMsg, ok := failedRecord["sf__Error"]; ok && errorMsg != "" {
@@ -447,8 +447,8 @@ func (s *Uploader) matchRecordsToJobs(
 	}
 
 	for _, successRecord := range successRecords {
-		key := calculateHashCode(successRecord[externalIDField])
-		if jobIDs, exists := s.dataHashToJobID[key]; exists {
+		key := successRecord[externalIDField]
+		if jobIDs, exists := s.externalIDToJobID[key]; exists {
 			metadata.SucceededKeys = append(metadata.SucceededKeys, jobIDs...)
 		}
 	}
@@ -467,7 +467,7 @@ func (s *Uploader) matchRecordsToJobs(
 		matchedJobIDs := append(append([]int64{}, metadata.SucceededKeys...), metadata.AbortedKeys...)
 		missingJobIDs, _ := lo.Difference(importingJobIDs, matchedJobIDs)
 
-		if len(s.dataHashToJobID) == 0 {
+		if len(s.externalIDToJobID) == 0 {
 			// No correlation data at all (e.g. the process restarted between
 			// Upload and GetUploadStats and lost the in-memory map). This is a
 			// systemic loss, not a per-record mismatch, so keep these jobs
@@ -491,6 +491,6 @@ func (s *Uploader) matchRecordsToJobs(
 	return metadata
 }
 
-func (s *Uploader) clearDataHashToJobID() {
-	s.dataHashToJobID = make(map[string][]int64)
+func (s *Uploader) clearExternalIDToJobID() {
+	s.externalIDToJobID = make(map[string][]int64)
 }

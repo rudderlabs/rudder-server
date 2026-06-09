@@ -180,7 +180,7 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			csvFilePath, headers, hashToJobID, err := createCSVFile(
+			csvFilePath, externalIDToJobID, err := createCSVFile(
 				"test-dest-123",
 				"Email",
 				tc.jobs,
@@ -193,7 +193,6 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 
 			require.NoError(t, err)
 			require.NotEmpty(t, csvFilePath)
-			require.NotEmpty(t, headers)
 
 			_, err = os.Stat(csvFilePath)
 			require.NoError(t, err)
@@ -202,46 +201,9 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 				require.NoError(t, os.Remove(csvFilePath))
 			})
 
-			require.Len(t, hashToJobID, tc.expectedInserted)
+			require.Len(t, externalIDToJobID, tc.expectedInserted)
 		})
 	}
-}
-
-func TestSalesforceBulk_calculateHashCode(t *testing.T) {
-	t.Run("upload key and result key match for the same externalId, regardless of other columns", func(t *testing.T) {
-		t.Parallel()
-
-		// What we sent: the row keyed only on the externalId (Email) value.
-		uploadKey := calculateHashCode("integration@example.com")
-
-		// What Salesforce returns: the externalId round-trips unchanged even
-		// though the CreatedDate column was truncated from microseconds to
-		// milliseconds on store.
-		resultRecord := map[string]string{
-			"Email":       "integration@example.com",
-			"CreatedDate": "2025-11-25T03:45:21.142Z", // sent .14287Z, stored .142Z
-			"sf__Id":      "003xx000006TmiQCCU",
-			"sf__Created": "true",
-		}
-		resultKey := calculateHashCode(resultRecord["Email"])
-
-		require.Equal(t, uploadKey, resultKey,
-			"externalId-based key must survive Salesforce coercion of other columns")
-	})
-
-	t.Run("different externalIds produce different keys", func(t *testing.T) {
-		t.Parallel()
-		require.NotEqual(t,
-			calculateHashCode("user1@example.com"),
-			calculateHashCode("user2@example.com"),
-		)
-	})
-
-	t.Run("consistent across calls and never empty", func(t *testing.T) {
-		t.Parallel()
-		require.NotEmpty(t, calculateHashCode("a@b.com"))
-		require.Equal(t, calculateHashCode("a@b.com"), calculateHashCode("a@b.com"))
-	})
 }
 
 func TestSalesforceBulk_createCSVFile_NumericNoScientificNotation(t *testing.T) {
@@ -257,7 +219,7 @@ func TestSalesforceBulk_createCSVFile_NumericNoScientificNotation(t *testing.T) 
 		},
 	}
 
-	csvFilePath, _, _, err := createCSVFile("test-dest-numeric", "Email", jobs)
+	csvFilePath, _, err := createCSVFile("test-dest-numeric", "Email", jobs)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.Remove(csvFilePath) })
 
@@ -294,7 +256,7 @@ func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
 		},
 	}
 
-	csvFilePath, _, _, err := createCSVFile("test-dest-null", "Email", jobs)
+	csvFilePath, _, err := createCSVFile("test-dest-null", "Email", jobs)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.Remove(csvFilePath) })
 
@@ -339,7 +301,7 @@ func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 			},
 		}
 
-		csvFilePath, headers, hashToJobID, err := createCSVFile(
+		csvFilePath, externalIDToJobID, err := createCSVFile(
 			"test-dest",
 			"Email",
 			jobs,
@@ -348,12 +310,7 @@ func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 		require.NoError(t, err)
 		defer os.Remove(csvFilePath)
 
-		require.Len(t, hashToJobID, 3)
-		require.Contains(t, headers, "Email")
-		require.Contains(t, headers, "FirstName")
-		require.Contains(t, headers, "LastName")
-		require.Contains(t, headers, "Phone")
-		require.Contains(t, headers, "Company")
+		require.Len(t, externalIDToJobID, 3)
 
 		file, err := os.Open(csvFilePath)
 		require.NoError(t, err)
@@ -366,6 +323,11 @@ func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 
 		headerRow := records[0]
 		require.Len(t, headerRow, 5)
+		require.Contains(t, headerRow, "Email")
+		require.Contains(t, headerRow, "FirstName")
+		require.Contains(t, headerRow, "LastName")
+		require.Contains(t, headerRow, "Phone")
+		require.Contains(t, headerRow, "Company")
 
 		for i, row := range records[1:] {
 			require.Len(t, row, 5, "Row %d should have 5 columns", i+1)

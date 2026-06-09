@@ -1,7 +1,6 @@
 package salesforcebulkupload
 
 import (
-	"crypto/sha256"
 	"encoding/csv"
 	"fmt"
 	"os"
@@ -63,14 +62,14 @@ func createCSVFile(
 	destinationID string,
 	externalIDField string,
 	input []common.AsyncJob,
-) (string, []string, map[string][]int64, error) {
+) (string, map[string][]int64, error) {
 	if err := os.MkdirAll(CSVDir, 0o755); err != nil {
-		return "", nil, nil, fmt.Errorf("creating CSV directory: %w", err)
+		return "", nil, fmt.Errorf("creating CSV directory: %w", err)
 	}
 	csvFilePath := filepath.Join(CSVDir, fmt.Sprintf("salesforce_%s_%d.csv", destinationID, time.Now().Unix()))
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("creating CSV file: %w", err)
+		return "", nil, fmt.Errorf("creating CSV file: %w", err)
 	}
 	defer csvFile.Close()
 
@@ -92,7 +91,7 @@ func createCSVFile(
 	sort.Strings(headers)
 
 	if err := writer.Write(headers); err != nil {
-		return "", nil, nil, fmt.Errorf("writing CSV header: %w", err)
+		return "", nil, fmt.Errorf("writing CSV header: %w", err)
 	}
 
 	headerIndex := make(map[string]int, len(headers))
@@ -102,37 +101,32 @@ func createCSVFile(
 
 	externalIDIndex, ok := headerIndex[externalIDField]
 	if !ok {
-		return "", nil, nil, fmt.Errorf("externalId field %q not present in job data", externalIDField)
+		return "", nil, fmt.Errorf("externalId field %q not present in job data", externalIDField)
 	}
 
-	dataHashToJobID := make(map[string][]int64)
+	externalIDToJobID := make(map[string][]int64)
 	for _, job := range input {
 		row := make([]string, len(headers))
 		for key, value := range job.Message {
 			if idx, ok := headerIndex[key]; ok {
 				formattedValue, err := common.FormatCSVValue(value)
 				if err != nil {
-					return "", nil, nil, fmt.Errorf("formatting CSV cell %q: %w", key, err)
+					return "", nil, fmt.Errorf("formatting CSV cell %q: %w", key, err)
 				}
 				row[idx] = formattedValue
 			}
 		}
 		jobID := int64(job.Metadata["job_id"].(float64))
 		if err := writer.Write(row); err != nil {
-			return "", nil, nil, fmt.Errorf("writing CSV row: %w", err)
+			return "", nil, fmt.Errorf("writing CSV row: %w", err)
 		}
 		// Correlate on the externalId value alone, not the whole row: Salesforce
 		// coerces other columns on store (datetime ms-truncation, number scale,
-		// ...) so a whole-row hash would not survive the round-trip. Events with
+		// ...) so a whole-row key would not survive the round-trip. Events with
 		// an empty externalId are dropped in Upload before reaching here.
-		key := calculateHashCode(row[externalIDIndex])
-		dataHashToJobID[key] = append(dataHashToJobID[key], jobID)
+		key := row[externalIDIndex]
+		externalIDToJobID[key] = append(externalIDToJobID[key], jobID)
 	}
 
-	return csvFilePath, headers, dataHashToJobID, nil
-}
-
-func calculateHashCode(value string) string {
-	hash := sha256.Sum256([]byte(value))
-	return fmt.Sprintf("%x", hash)
+	return csvFilePath, externalIDToJobID, nil
 }
