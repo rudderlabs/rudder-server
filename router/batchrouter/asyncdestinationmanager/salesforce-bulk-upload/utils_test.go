@@ -6,33 +6,25 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
 func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 	testCases := []struct {
 		name     string
-		jobs     []common.AsyncJob
+		jobs     []SalesforceAsyncJob
 		expected *ObjectInfo
 		wantErr  bool
 		errorMsg string
 	}{
 		{
 			name: "valid externalId with Contact object",
-			jobs: []common.AsyncJob{
+			jobs: []SalesforceAsyncJob{
 				{
-					Message: map[string]any{
-						"Email": "test@example.com",
-					},
-					Metadata: map[string]any{
-						"job_id": float64(1),
-						"externalId": []any{
-							map[string]any{
-								"type":           "SALESFORCE_BULK_UPLOAD-Contact",
-								"id":             "test@example.com",
-								"identifierType": "Email",
-							},
+					Message: map[string]any{"Email": "test@example.com"},
+					Metadata: SalesforceJobMetadata{
+						JobID: 1,
+						ExternalID: []SalesforceExternalID{
+							{Type: "SALESFORCE_BULK_UPLOAD-Contact", ID: "test@example.com", IdentifierType: "Email"},
 						},
 					},
 				},
@@ -45,19 +37,13 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 		},
 		{
 			name: "valid externalId with Lead object",
-			jobs: []common.AsyncJob{
+			jobs: []SalesforceAsyncJob{
 				{
-					Message: map[string]any{
-						"Email": "lead@example.com",
-					},
-					Metadata: map[string]any{
-						"job_id": float64(2),
-						"externalId": []any{
-							map[string]any{
-								"type":           "SALESFORCE_BULK_UPLOAD-Lead",
-								"id":             "lead@example.com",
-								"identifierType": "Email",
-							},
+					Message: map[string]any{"Email": "lead@example.com"},
+					Metadata: SalesforceJobMetadata{
+						JobID: 2,
+						ExternalID: []SalesforceExternalID{
+							{Type: "SALESFORCE_BULK_UPLOAD-Lead", ID: "lead@example.com", IdentifierType: "Email"},
 						},
 					},
 				},
@@ -70,20 +56,16 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 		},
 		{
 			name:     "empty jobs array",
-			jobs:     []common.AsyncJob{},
+			jobs:     []SalesforceAsyncJob{},
 			wantErr:  true,
 			errorMsg: "no jobs to process",
 		},
 		{
-			name: "missing externalId - falls back to config",
-			jobs: []common.AsyncJob{
+			name: "missing externalId",
+			jobs: []SalesforceAsyncJob{
 				{
-					Message: map[string]any{
-						"Email": "test@example.com",
-					},
-					Metadata: map[string]any{
-						"job_id": float64(3),
-					},
+					Message:  map[string]any{"Email": "test@example.com"},
+					Metadata: SalesforceJobMetadata{JobID: 3},
 				},
 			},
 			wantErr:  true,
@@ -91,16 +73,14 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 		},
 		{
 			name: "empty externalId array",
-			jobs: []common.AsyncJob{
+			jobs: []SalesforceAsyncJob{
 				{
-					Message: map[string]any{},
-					Metadata: map[string]any{
-						"externalId": []any{},
-					},
+					Message:  map[string]any{},
+					Metadata: SalesforceJobMetadata{ExternalID: []SalesforceExternalID{}},
 				},
 			},
 			wantErr:  true,
-			errorMsg: "at least one element",
+			errorMsg: "externalId not found in the first job",
 		},
 	}
 
@@ -128,51 +108,23 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 func TestSalesforceBulk_createCSVFile(t *testing.T) {
 	testCases := []struct {
 		name             string
-		jobs             []common.AsyncJob
+		jobs             []SalesforceAsyncJob
 		expectedInserted int
-		expectedOverflow int
 		wantErr          bool
 	}{
 		{
 			name: "create CSV with valid jobs",
-			jobs: []common.AsyncJob{
+			jobs: []SalesforceAsyncJob{
 				{
-					Message: map[string]any{
-						"Email":     "test1@example.com",
-						"FirstName": "John",
-						"LastName":  "Doe",
-					},
-					Metadata: map[string]any{
-						"job_id": float64(1),
-						"externalId": []any{
-							map[string]any{
-								"type":           "SALESFORCE_BULK_UPLOAD-Contact",
-								"id":             "test1@example.com",
-								"identifierType": "Email",
-							},
-						},
-					},
+					Message:  map[string]any{"Email": "test1@example.com", "FirstName": "John", "LastName": "Doe"},
+					Metadata: SalesforceJobMetadata{JobID: 1},
 				},
 				{
-					Message: map[string]any{
-						"Email":     "test2@example.com",
-						"FirstName": "Jane",
-						"LastName":  "Smith",
-					},
-					Metadata: map[string]any{
-						"job_id": float64(2),
-						"externalId": []any{
-							map[string]any{
-								"type":           "SALESFORCE_BULK_UPLOAD-Contact",
-								"id":             "test2@example.com",
-								"identifierType": "Email",
-							},
-						},
-					},
+					Message:  map[string]any{"Email": "test2@example.com", "FirstName": "Jane", "LastName": "Smith"},
+					Metadata: SalesforceJobMetadata{JobID: 2},
 				},
 			},
 			expectedInserted: 2,
-			expectedOverflow: 0,
 			wantErr:          false,
 		},
 	}
@@ -208,14 +160,14 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 
 func TestSalesforceBulk_createCSVFile_NumericNoScientificNotation(t *testing.T) {
 	t.Parallel()
-	jobs := []common.AsyncJob{
+	jobs := []SalesforceAsyncJob{
 		{
 			Message: map[string]any{
 				"Email":          "user@example.com",
 				"Account_Number": float64(1234567890),
 				"Account_IDs":    []any{float64(1234567890), float64(9876543210)},
 			},
-			Metadata: map[string]any{"job_id": float64(1)},
+			Metadata: SalesforceJobMetadata{JobID: 1},
 		},
 	}
 
@@ -235,7 +187,7 @@ func TestSalesforceBulk_createCSVFile_NumericNoScientificNotation(t *testing.T) 
 }
 
 func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
-	jobs := []common.AsyncJob{
+	jobs := []SalesforceAsyncJob{
 		{
 			Message: map[string]any{
 				"Email":     "middle@example.com",
@@ -243,7 +195,7 @@ func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
 				"LastName":  nil,
 				"Phone":     "555-0001",
 			},
-			Metadata: map[string]any{"job_id": float64(1)},
+			Metadata: SalesforceJobMetadata{JobID: 1},
 		},
 		{
 			Message: map[string]any{
@@ -252,7 +204,7 @@ func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
 				"LastName":  "User",
 				"Phone":     nil,
 			},
-			Metadata: map[string]any{"job_id": float64(2)},
+			Metadata: SalesforceJobMetadata{JobID: 2},
 		},
 	}
 
@@ -274,30 +226,18 @@ func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
 
 func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 	t.Run("jobs with different fields get union of all fields in CSV", func(t *testing.T) {
-		jobs := []common.AsyncJob{
+		jobs := []SalesforceAsyncJob{
 			{
-				Message: map[string]any{
-					"Email":     "user1@example.com",
-					"FirstName": "John",
-				},
-				Metadata: map[string]any{"job_id": float64(1)},
+				Message:  map[string]any{"Email": "user1@example.com", "FirstName": "John"},
+				Metadata: SalesforceJobMetadata{JobID: 1},
 			},
 			{
-				Message: map[string]any{
-					"Email":    "user2@example.com",
-					"LastName": "Smith",
-					"Phone":    "555-1234",
-				},
-				Metadata: map[string]any{"job_id": float64(2)},
+				Message:  map[string]any{"Email": "user2@example.com", "LastName": "Smith", "Phone": "555-1234"},
+				Metadata: SalesforceJobMetadata{JobID: 2},
 			},
 			{
-				Message: map[string]any{
-					"Email":     "user3@example.com",
-					"FirstName": "Jane",
-					"LastName":  "Doe",
-					"Company":   "Acme Inc",
-				},
-				Metadata: map[string]any{"job_id": float64(3)},
+				Message:  map[string]any{"Email": "user3@example.com", "FirstName": "Jane", "LastName": "Doe", "Company": "Acme Inc"},
+				Metadata: SalesforceJobMetadata{JobID: 3},
 			},
 		}
 

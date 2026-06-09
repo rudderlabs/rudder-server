@@ -283,6 +283,42 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.Empty(t, result.FailedJobIDs)
 		require.JSONEq(t, `{"importId":{"id":"sf-job-123","externalIdField":"Email"},"importCount":2}`, string(result.ImportingParameters))
 	})
+
+	t.Run("all events missing externalId are aborted without contacting Salesforce", func(t *testing.T) {
+		allAbortedFile, err := os.CreateTemp("", "test_upload_allaborted_*.json")
+		require.NoError(t, err)
+		defer os.Remove(allAbortedFile.Name())
+
+		extID := func(id string) []any {
+			return []any{map[string]any{"id": id, "identifierType": "Email", "type": "SALESFORCE_BULK_UPLOAD-Lead"}}
+		}
+		jobs := []common.AsyncJob{
+			{Message: map[string]any{"Email": "", "FirstName": "A"}, Metadata: map[string]any{"job_id": float64(1), "externalId": extID("")}},
+			{Message: map[string]any{"FirstName": "B"}, Metadata: map[string]any{"job_id": float64(2), "externalId": extID("")}},
+		}
+		for _, job := range jobs {
+			jobBytes, _ := jsonrs.Marshal(job)
+			_, err := allAbortedFile.Write(append(jobBytes, '\n'))
+			require.NoError(t, err)
+		}
+		require.NoError(t, allAbortedFile.Close())
+
+		ctrl := gomock.NewController(t)
+		// No CreateJob/UploadData/CloseJob expectations: Salesforce must not be contacted.
+		mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
+		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
+
+		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination:     &backendconfig.DestinationT{ID: "test-dest-1"},
+			FileName:        allAbortedFile.Name(),
+			ImportingJobIDs: []int64{1, 2},
+		})
+
+		require.Empty(t, result.ImportingJobIDs)
+		require.ElementsMatch(t, []int64{1, 2}, result.AbortJobIDs)
+		require.Equal(t, 2, result.AbortCount)
+		require.Contains(t, result.AbortReason, "externalId")
+	})
 }
 
 func TestSalesforceBulk_Poll(t *testing.T) {

@@ -14,54 +14,41 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func extractObjectInfo(jobs []common.AsyncJob) (*ObjectInfo, error) {
+func extractObjectInfo(jobs []SalesforceAsyncJob) (*ObjectInfo, error) {
 	if len(jobs) == 0 {
 		return nil, fmt.Errorf("no jobs to process")
 	}
-
-	firstJob := jobs[0]
-
-	externalIDRaw, ok := firstJob.Metadata["externalId"]
-	if !ok {
+	if len(jobs[0].Metadata.ExternalID) == 0 {
 		return nil, fmt.Errorf("externalId not found in the first job")
 	}
 
-	objectInfo, err := extractFromVDM(externalIDRaw)
+	objectInfo, err := extractFromVDM(jobs[0].Metadata.ExternalID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract object info: %w", err)
 	}
 	return objectInfo, nil
 }
 
-func extractFromVDM(externalIDRaw any) (*ObjectInfo, error) {
-	externalIDArray, ok := externalIDRaw.([]any)
-	if !ok || len(externalIDArray) == 0 {
+func extractFromVDM(externalIDs []SalesforceExternalID) (*ObjectInfo, error) {
+	if len(externalIDs) == 0 {
 		return nil, fmt.Errorf("externalId must be an array with at least one element")
 	}
 
-	externalIDMap, ok := externalIDArray[0].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("externalId[0] must be an object")
-	}
-
-	typeStr, _ := externalIDMap["type"].(string)
-	if typeStr == "" {
+	first := externalIDs[0]
+	if first.Type == "" {
 		return nil, fmt.Errorf("externalId type is required")
 	}
-	objectType := strings.Replace(typeStr, "SALESFORCE_BULK_UPLOAD-", "", 1)
-	identifierType, _ := externalIDMap["identifierType"].(string)
-	identifierValue, _ := externalIDMap["id"].(string)
 	return &ObjectInfo{
-		ObjectType:      objectType,
-		ExternalIDField: identifierType,
-		ExternalIDValue: identifierValue,
+		ObjectType:      strings.Replace(first.Type, "SALESFORCE_BULK_UPLOAD-", "", 1),
+		ExternalIDField: first.IdentifierType,
+		ExternalIDValue: first.ID,
 	}, nil
 }
 
 func createCSVFile(
 	destinationID string,
 	externalIDField string,
-	input []common.AsyncJob,
+	input []SalesforceAsyncJob,
 ) (string, map[string][]int64, error) {
 	if err := os.MkdirAll(CSVDir, 0o755); err != nil {
 		return "", nil, fmt.Errorf("creating CSV directory: %w", err)
@@ -116,7 +103,7 @@ func createCSVFile(
 				row[idx] = formattedValue
 			}
 		}
-		jobID := int64(job.Metadata["job_id"].(float64))
+		jobID := job.Metadata.JobID
 		if err := writer.Write(row); err != nil {
 			return "", nil, fmt.Errorf("writing CSV row: %w", err)
 		}

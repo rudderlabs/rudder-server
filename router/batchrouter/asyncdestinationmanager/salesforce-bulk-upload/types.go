@@ -83,6 +83,35 @@ type ObjectInfo struct {
 	ExternalIDValue string
 }
 
+// SalesforceExternalID is a single VDM externalId entry (the upsert key spec).
+type SalesforceExternalID struct {
+	ID             string `json:"id"`
+	IdentifierType string `json:"identifierType"`
+	Type           string `json:"type"`
+}
+
+// SalesforceJobMetadata is the metadata this connector's Transform writes for
+// each event and reads back during Upload.
+type SalesforceJobMetadata struct {
+	JobID           int64                  `json:"job_id"`
+	RudderOperation string                 `json:"rudderOperation"`
+	ExternalID      []SalesforceExternalID `json:"externalId"`
+}
+
+// SalesforceAsyncJob is the typed representation of a transformed event line.
+// Message holds the arbitrary traits plus the externalId field/value.
+type SalesforceAsyncJob struct {
+	Message  map[string]any        `json:"message"`
+	Metadata SalesforceJobMetadata `json:"metadata"`
+}
+
 const (
 	destName = "SALESFORCE_BULK_UPLOAD"
+
+	// externalIDFieldEmptyReason is returned for the whole batch when the upsert
+	// externalId field name itself could not be resolved.
+	externalIDFieldEmptyReason = "externalId field is empty; cannot correlate poll results back to jobs"
+	// missingExternalIDReason is the abort reason for individual events that
+	// carry no externalId value (no upsert key).
+	missingExternalIDReason = "externalId is missing for the event; cannot upsert to Salesforce"
 )
