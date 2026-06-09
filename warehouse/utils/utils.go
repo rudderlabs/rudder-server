@@ -44,6 +44,7 @@ const (
 	BQ                = "BQ"
 	SNOWFLAKE         = "SNOWFLAKE"
 	SnowpipeStreaming = "SNOWPIPE_STREAMING"
+	BQStreamV2        = "BQSTREAM_V2"
 	POSTGRES          = "POSTGRES"
 	CLICKHOUSE        = "CLICKHOUSE"
 	MSSQL             = "MSSQL"
@@ -128,6 +129,7 @@ var (
 	awsCredsExpiryInS      config.ValueLoader[int64]
 
 	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}
+	StreamDestinations        = []string{SnowpipeStreaming, BQStreamV2}
 	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
 	S3PathStyleRegex          = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
 	S3VirtualHostedRegex      = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
@@ -136,7 +138,7 @@ var (
 )
 
 func pseudoWarehouseDestinations() map[string]struct{} {
-	all := append(slices.Clone(WarehouseDestinations), SnowpipeStreaming)
+	all := append(slices.Clone(WarehouseDestinations), StreamDestinations...)
 	return lo.SliceToMap(all, func(destination string) (string, struct{}) {
 		return destination, struct{}{}
 	})
@@ -234,6 +236,7 @@ type LoadFile struct {
 type (
 	ModelWarehouse   = model.Warehouse
 	ModelTableSchema = model.TableSchema
+	ModelSchema      = model.Schema
 )
 
 func IDResolutionEnabled() bool {
