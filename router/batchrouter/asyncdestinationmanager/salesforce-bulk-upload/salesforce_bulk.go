@@ -183,10 +183,30 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 			DestinationID: destinationID,
 		}
 	}
+
+	// Drop events without an externalId value up front: with no upsert key they
+	// cannot be sent to Salesforce, so abort them with an error rather than
+	// emitting an uncorrelatable CSV row. Valid events continue to the upload.
+	validJobs := make([]common.AsyncJob, 0, len(input))
+	validJobIDs := make([]int64, 0, len(input))
+	var abortedJobIDs []int64
+	for _, job := range input {
+		jobID := int64(job.Metadata["job_id"].(float64))
+		if externalIDValue, _ := common.FormatCSVValue(job.Message[objectInfo.ExternalIDField]); externalIDValue == "" {
+			abortedJobIDs = append(abortedJobIDs, jobID)
+			continue
+		}
+		validJobs = append(validJobs, job)
+		validJobIDs = append(validJobIDs, jobID)
+	}
+	if len(abortedJobIDs) > 0 {
+		s.logger.Infon("Aborting events with missing externalId", logger.NewIntField("abortedJobs", int64(len(abortedJobIDs))))
+	}
+
 	csvFilePath, _, hashToJobID, err := createCSVFile(
 		destinationID,
 		objectInfo.ExternalIDField,
-		input,
+		validJobs,
 	)
 	defer func() {
 		if err := os.Remove(csvFilePath); err != nil {
@@ -205,18 +225,18 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 	s.dataHashToJobID = hashToJobID
 
 	// The source is expected to send unique externalIds per batch. Fewer keys
-	// than jobs means duplicates collided onto the same key, which makes
+	// than valid jobs means duplicates collided onto the same key, which makes
 	// per-job status attribution ambiguous after polling.
-	if len(hashToJobID) < len(input) {
+	if len(hashToJobID) < len(validJobs) {
 		s.logger.Warnn("Duplicate externalId values detected in batch; per-job status attribution may be ambiguous",
 			logger.NewIntField("uniqueExternalIds", int64(len(hashToJobID))),
-			logger.NewIntField("jobs", int64(len(input))),
+			logger.NewIntField("jobs", int64(len(validJobs))),
 		)
 	}
 
 	s.logger.Infon("Created CSV file",
 		logger.NewStringField("csvFilePath", csvFilePath),
-		logger.NewIntField("jobs", int64(len(input))),
+		logger.NewIntField("jobs", int64(len(validJobs))),
 	)
 	sfJobID, apiError := s.apiService.CreateJob(
 		objectInfo.ObjectType,
@@ -268,15 +288,18 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 			ID:              sfJobID,
 			ExternalIDField: objectInfo.ExternalIDField,
 		},
-		ImportCount: len(importingJobIDs),
+		ImportCount: len(validJobIDs),
 	})
 	if err != nil {
 		s.logger.Errorn("marshalling parameters", obskit.Error(err))
 	}
 	return common.AsyncUploadOutput{
-		ImportingJobIDs:     importingJobIDs,
+		ImportingJobIDs:     validJobIDs,
 		ImportingParameters: importParameters,
-		ImportingCount:      len(importingJobIDs),
+		ImportingCount:      len(validJobIDs),
+		AbortJobIDs:         abortedJobIDs,
+		AbortReason:         "externalId is missing for the event; cannot upsert to Salesforce",
+		AbortCount:          len(abortedJobIDs),
 		DestinationID:       destinationID,
 	}
 }

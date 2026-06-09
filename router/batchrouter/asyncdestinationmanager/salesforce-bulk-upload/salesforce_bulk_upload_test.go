@@ -240,6 +240,49 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.Greater(t, result.FailedCount, 0)
 		require.Contains(t, result.FailedReason, "Error creating Salesforce job: Rate limit exceeded")
 	})
+
+	t.Run("events with missing externalId are aborted up front, valid ones imported", func(t *testing.T) {
+		mixedFile, err := os.CreateTemp("", "test_upload_mixed_*.json")
+		require.NoError(t, err)
+		defer os.Remove(mixedFile.Name())
+
+		extID := func(id string) []any {
+			return []any{map[string]any{"id": id, "identifierType": "Email", "type": "SALESFORCE_BULK_UPLOAD-Lead"}}
+		}
+		jobs := []common.AsyncJob{
+			{Message: map[string]any{"Email": "a@example.com", "FirstName": "A"}, Metadata: map[string]any{"job_id": float64(1), "externalId": extID("a@example.com")}},
+			{Message: map[string]any{"Email": "", "FirstName": "B"}, Metadata: map[string]any{"job_id": float64(2), "externalId": extID("")}}, // empty externalId -> aborted
+			{Message: map[string]any{"FirstName": "C"}, Metadata: map[string]any{"job_id": float64(3), "externalId": extID("")}},              // missing externalId -> aborted
+			{Message: map[string]any{"Email": "d@example.com", "FirstName": "D"}, Metadata: map[string]any{"job_id": float64(4), "externalId": extID("d@example.com")}},
+		}
+		for _, job := range jobs {
+			jobBytes, _ := jsonrs.Marshal(job)
+			_, err := mixedFile.Write(append(jobBytes, '\n'))
+			require.NoError(t, err)
+		}
+		require.NoError(t, mixedFile.Close())
+
+		ctrl := gomock.NewController(t)
+		mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
+		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("sf-job-123", nil)
+		mockAPI.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
+		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
+		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
+
+		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination:     &backendconfig.DestinationT{ID: "test-dest-1"},
+			FileName:        mixedFile.Name(),
+			ImportingJobIDs: []int64{1, 2, 3, 4},
+		})
+
+		require.ElementsMatch(t, []int64{1, 4}, result.ImportingJobIDs)
+		require.Equal(t, 2, result.ImportingCount)
+		require.ElementsMatch(t, []int64{2, 3}, result.AbortJobIDs)
+		require.Equal(t, 2, result.AbortCount)
+		require.Contains(t, result.AbortReason, "externalId")
+		require.Empty(t, result.FailedJobIDs)
+		require.JSONEq(t, `{"importId":{"id":"sf-job-123","externalIdField":"Email"},"importCount":2}`, string(result.ImportingParameters))
+	})
 }
 
 func TestSalesforceBulk_Poll(t *testing.T) {

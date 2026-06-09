@@ -123,7 +123,8 @@ func createCSVFile(
 		}
 		// Correlate on the externalId value alone, not the whole row: Salesforce
 		// coerces other columns on store (datetime ms-truncation, number scale,
-		// ...) so a whole-row hash would not survive the round-trip.
+		// ...) so a whole-row hash would not survive the round-trip. Events with
+		// an empty externalId are dropped in Upload before reaching here.
 		key := calculateHashCode(row[externalIDIndex])
 		dataHashToJobID[key] = append(dataHashToJobID[key], jobID)
 	}
