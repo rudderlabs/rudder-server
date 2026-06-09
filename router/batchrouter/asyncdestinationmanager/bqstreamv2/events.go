@@ -19,8 +19,8 @@ import (
 var (
 	idColumnName         = whutils.ToProviderCase(whutils.BQStreamV2, "id")
 	receivedAtColumnName = whutils.ToProviderCase(whutils.BQStreamV2, "received_at")
-	uuidTSColumnName     = whutils.ToProviderCase(whutils.BQ, "uuid_ts")
-	loadedAtColumnName   = whutils.ToProviderCase(whutils.BQ, "loaded_at")
+	uuidTSColumnName     = whutils.ToProviderCase(whutils.BQStreamV2, "uuid_ts")
+	loadedAtColumnName   = whutils.ToProviderCase(whutils.BQStreamV2, "loaded_at")
 
 	sliceOfAnyType = reflect.TypeFor[[]any]()
 )
@@ -48,8 +48,8 @@ func (m *Manager) eventsFromFile(fileName string, eventsCount int) ([]*event, er
 			return nil, fmt.Errorf("unmarshalling event line: %w", err)
 		}
 
-		isUUIDTimestampSet := m.setUUIDTimestamp(&e, formattedTS)
-		isLoadedAtTimestampSet := m.setLoadedAtTimestamp(&e, formattedTS)
+		isUUIDTimestampSet := setColumnTimestamp(&e, uuidTSColumnName, formattedTS)
+		isLoadedAtTimestampSet := setColumnTimestamp(&e, loadedAtColumnName, formattedTS)
 
 		e.MessageDataByteSize = int64(len(line))
 		if isUUIDTimestampSet {
@@ -67,6 +67,19 @@ func (m *Manager) eventsFromFile(fileName string, eventsCount int) ([]*event, er
 	return events, nil
 }
 
+// setColumnTimestamp sets the given column timestamp in the event message data and
+// reports whether it was actually set.
+func setColumnTimestamp(e *event, columnName, formattedTS string) bool {
+	if e.Message.Metadata.Columns == nil {
+		return false
+	}
+	if _, ok := e.Message.Metadata.Columns[columnName]; ok {
+		e.Message.Data[columnName] = formattedTS
+		return true
+	}
+	return false
+}
+
 // groupAndChunkEvents groups events by table and splits each table's events
 // into chunks bounded by maxChunkBytes (the per-append payload limit).
 func (m *Manager) groupAndChunkEvents(events []*event) map[string][]tableEvents {
@@ -78,7 +91,7 @@ func (m *Manager) groupAndChunkEvents(events []*event) map[string][]tableEvents 
 
 	for tableName, tableEventsList := range groupedEvents {
 		eventsSchema := schemaFromEvents(tableEventsList)
-		providerTableName := whutils.ToProviderCase(whutils.BQ, tableName)
+		providerTableName := whutils.ToProviderCase(whutils.BQStreamV2, tableName)
 
 		var currentChunkBytes int64
 		var currentChunk []*event
@@ -86,7 +99,7 @@ func (m *Manager) groupAndChunkEvents(events []*event) map[string][]tableEvents 
 			if len(currentChunk) == 0 {
 				return
 			}
-			groupedAndChunkedEvents[tableName] = append(groupedAndChunkedEvents[tableName], tableEvents{
+			groupedAndChunkedEvents[providerTableName] = append(groupedAndChunkedEvents[providerTableName], tableEvents{
 				tableName: providerTableName,
 				events:    currentChunk,
 				jobIDs: lo.Map(currentChunk, func(e *event, _ int) int64 {
@@ -164,6 +177,10 @@ func getDiscardedRecordsFromEvent(log logger.Logger, event *event, warehouseSche
 				receivedAt, receivedAtExists := event.Message.Data[receivedAtColumnName]
 
 				if !idExists || !receivedAtExists {
+					log.Warnn("Missing ID or Received At in event",
+						logger.NewStringField("tableName", tableName),
+						logger.NewStringField("columnName", columnName),
+					)
 					continue
 				}
 

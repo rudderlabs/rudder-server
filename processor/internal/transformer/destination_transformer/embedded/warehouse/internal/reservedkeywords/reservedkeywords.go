@@ -8,6 +8,8 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
@@ -23,6 +25,14 @@ var (
 func init() {
 	reservedTablesColumns = load(tablesColumnsFile, "tablescolumns.json")
 	reservedNamespaces = load(namespacesFile, "namespaces.json")
+
+	// BQStreamV2 has the same reserved keywords as BQ, so we can use the same map
+	reservedTablesColumns[whutils.BQStreamV2] = reservedTablesColumns[whutils.BQ]
+	reservedNamespaces[whutils.BQStreamV2] = reservedNamespaces[whutils.BQ]
+
+	// SnowpipeStreaming has the same reserved keywords as SNOWFLAKE, so we can use the same map
+	reservedTablesColumns[whutils.SnowpipeStreaming] = reservedTablesColumns[whutils.SNOWFLAKE]
+	reservedNamespaces[whutils.SnowpipeStreaming] = reservedNamespaces[whutils.SNOWFLAKE]
 }
 
 func load(file embed.FS, fileName string) map[string]map[string]struct{} {

@@ -47,7 +47,7 @@ func TestStreamWriterIntegration(t *testing.T) {
 	})
 	require.NoError(t, dataset.Table(tableName).Create(ctx, &bigquery.TableMetadata{Schema: toBigQuerySchema(tableSchema)}))
 
-	factory := &streamWriterFactoryImpl{maxInflightRequests: 10, maxInflightBytes: 10 * 1024 * 1024}
+	factory := NewStreamWriterFactory(10, 10*1024*1024)
 
 	t.Run("incompatible credentials", func(t *testing.T) {
 		_, err := factory.NewStreamWriter(ctx, destConfig{
@@ -67,7 +67,7 @@ func TestStreamWriterIntegration(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = writer.Close() })
 
-		md, err := (&Manager{}).descriptorForSchema(tableSchema)
+		md, err := descriptorForSchema(tableSchema)
 		require.NoError(t, err)
 
 		encoded, err := encodeRows([]Row{

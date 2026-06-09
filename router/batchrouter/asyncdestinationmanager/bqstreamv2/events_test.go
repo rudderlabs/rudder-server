@@ -55,16 +55,14 @@ func TestEventsFromFile(t *testing.T) {
 }
 
 func TestSetTimestamps(t *testing.T) {
-	m := &Manager{}
-
 	e := &event{}
-	require.False(t, m.setUUIDTimestamp(e, "ts"))
-	require.False(t, m.setLoadedAtTimestamp(e, "ts"))
+	require.False(t, setColumnTimestamp(e, uuidTSColumnName, "ts"))
+	require.False(t, setColumnTimestamp(e, loadedAtColumnName, "ts"))
 
 	e.Message.Metadata.Columns = map[string]string{uuidTSColumnName: "datetime", loadedAtColumnName: "datetime"}
 	e.Message.Data = map[string]any{}
-	require.True(t, m.setUUIDTimestamp(e, "ts1"))
-	require.True(t, m.setLoadedAtTimestamp(e, "ts2"))
+	require.True(t, setColumnTimestamp(e, uuidTSColumnName, "ts1"))
+	require.True(t, setColumnTimestamp(e, loadedAtColumnName, "ts2"))
 	require.Equal(t, "ts1", e.Message.Data[uuidTSColumnName])
 	require.Equal(t, "ts2", e.Message.Data[loadedAtColumnName])
 }
@@ -93,7 +91,7 @@ func TestGroupAndChunkEvents(t *testing.T) {
 
 	pages := grouped["pages"]
 	require.Len(t, pages, 2) // 60+60 exceeds the 100-byte chunk limit
-	require.Equal(t, whutils.ToProviderCase(whutils.BQ, "pages"), pages[0].tableName)
+	require.Equal(t, whutils.ToProviderCase(whutils.BQStreamV2, "pages"), pages[0].tableName)
 	require.Equal(t, []int64{1}, pages[0].jobIDs)
 	require.Equal(t, []int64{2}, pages[1].jobIDs)
 	// chunks of the same table share the merged events schema

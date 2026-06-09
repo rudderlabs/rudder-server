@@ -45,7 +45,10 @@ func TestEncodeRowsMatchesProtoJSON(t *testing.T) {
 func encodeRowsProtoJSON(rows []Row, md protoreflect.MessageDescriptor, schema whutils.ModelTableSchema) ([][]byte, error) {
 	encodedRows := make([][]byte, 0, len(rows))
 	for _, row := range rows {
-		normalizeRow(row, schema)
+		err := normalizeRow(row, schema)
+		if err != nil {
+			return nil, fmt.Errorf("normalizing row: %w", err)
+		}
 		message := dynamicpb.NewMessage(md)
 
 		rowJSON, err := jsonrs.Marshal(row)
@@ -110,7 +113,7 @@ func benchmarkSchemaAndRows(tb testing.TB, numRows int) (whutils.ModelTableSchem
 		"sent_at": "datetime", "timestamp": "datetime", "uuid_ts": "datetime", "loaded_at": "datetime",
 	}
 
-	md, err := (&Manager{}).descriptorForSchema(schema)
+	md, err := descriptorForSchema(schema)
 	require.NoError(tb, err)
 
 	ts := time.Now().UTC().Format(time.RFC3339Nano)
@@ -145,7 +148,7 @@ func wideSchemaAndRows(tb testing.TB, numRows int) (whutils.ModelTableSchema, pr
 		schema[fmt.Sprintf("column_%03d", i)] = columnTypes[i%len(columnTypes)]
 	}
 
-	md, err := (&Manager{}).descriptorForSchema(schema)
+	md, err := descriptorForSchema(schema)
 	require.NoError(tb, err)
 
 	ts := time.Now().UTC().Format(time.RFC3339Nano)
