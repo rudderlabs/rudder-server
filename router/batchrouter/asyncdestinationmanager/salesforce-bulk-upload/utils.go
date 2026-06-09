@@ -61,6 +61,7 @@ func extractFromVDM(externalIDRaw any) (*ObjectInfo, error) {
 
 func createCSVFile(
 	destinationID string,
+	externalIDField string,
 	input []common.AsyncJob,
 ) (string, []string, map[string][]int64, error) {
 	if err := os.MkdirAll(CSVDir, 0o755); err != nil {
@@ -99,6 +100,11 @@ func createCSVFile(
 		headerIndex[key] = i
 	}
 
+	externalIDIndex, ok := headerIndex[externalIDField]
+	if !ok {
+		return "", nil, nil, fmt.Errorf("externalId field %q not present in job data", externalIDField)
+	}
+
 	dataHashToJobID := make(map[string][]int64)
 	for _, job := range input {
 		row := make([]string, len(headers))
@@ -115,23 +121,17 @@ func createCSVFile(
 		if err := writer.Write(row); err != nil {
 			return "", nil, nil, fmt.Errorf("writing CSV row: %w", err)
 		}
-		hash := calculateHashCode(row)
-		dataHashToJobID[hash] = append(dataHashToJobID[hash], jobID)
+		// Correlate on the externalId value alone, not the whole row: Salesforce
+		// coerces other columns on store (datetime ms-truncation, number scale,
+		// ...) so a whole-row hash would not survive the round-trip.
+		key := calculateHashCode(row[externalIDIndex])
+		dataHashToJobID[key] = append(dataHashToJobID[key], jobID)
 	}
 
 	return csvFilePath, headers, dataHashToJobID, nil
 }
 
-func calculateHashCode(row []string) string {
-	joined := strings.Join(row, ",")
-	hash := sha256.Sum256([]byte(joined))
+func calculateHashCode(value string) string {
+	hash := sha256.Sum256([]byte(value))
 	return fmt.Sprintf("%x", hash)
-}
-
-func calculateHashFromRecord(record map[string]string, csvHeaders []string) string {
-	values := make([]string, 0, len(csvHeaders))
-	for _, header := range csvHeaders {
-		values = append(values, record[header])
-	}
-	return calculateHashCode(values)
 }

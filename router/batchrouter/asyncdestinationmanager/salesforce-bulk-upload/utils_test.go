@@ -182,6 +182,7 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 			t.Parallel()
 			csvFilePath, headers, hashToJobID, err := createCSVFile(
 				"test-dest-123",
+				"Email",
 				tc.jobs,
 			)
 
@@ -207,161 +208,39 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 }
 
 func TestSalesforceBulk_calculateHashCode(t *testing.T) {
-	testCases := []struct {
-		name     string
-		row      []string
-		expected string
-	}{
-		{
-			name:     "simple row",
-			row:      []string{"test@example.com", "John", "Doe"},
-			expected: calculateHashCode([]string{"test@example.com", "John", "Doe"}),
-		},
-		{
-			name:     "empty row",
-			row:      []string{},
-			expected: calculateHashCode([]string{}),
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			result := calculateHashCode(tc.row)
-
-			require.NotEmpty(t, result)
-			require.Equal(t, tc.expected, result)
-		})
-	}
-}
-
-func TestSalesforceBulk_calculateHashFromRecord(t *testing.T) {
-	testCases := []struct {
-		name        string
-		record      map[string]string
-		csvHeaders  []string
-		expected    string
-		shouldMatch bool
-		compareWith []string
-	}{
-		{
-			name: "match original CSV row - ignores Salesforce columns",
-			record: map[string]string{
-				"Email":       "test@example.com",
-				"FirstName":   "John",
-				"LastName":    "Doe",
-				"sf__Id":      "003xx000004TmiQAAS",
-				"sf__Created": "true",
-				"sf__Error":   "",
-			},
-			csvHeaders:  []string{"Email", "FirstName", "LastName"},
-			shouldMatch: true,
-			compareWith: []string{"test@example.com", "John", "Doe"},
-		},
-		{
-			name: "handles user's sf__ fields correctly",
-			record: map[string]string{
-				"Email":             "user@example.com",
-				"sf__AccountStatus": "Active",
-				"FirstName":         "Jane",
-				"sf__Id":            "003xx000005TmiQBBT",
-			},
-			csvHeaders:  []string{"Email", "FirstName", "sf__AccountStatus"},
-			shouldMatch: true,
-			compareWith: []string{"user@example.com", "Jane", "Active"},
-		},
-		{
-			name: "consistent hash with sorted headers",
-			record: map[string]string{
-				"LastName":  "Smith",
-				"Email":     "smith@example.com",
-				"FirstName": "Bob",
-			},
-			csvHeaders:  []string{"Email", "FirstName", "LastName"},
-			shouldMatch: true,
-			compareWith: []string{"smith@example.com", "Bob", "Smith"},
-		},
-		{
-			name: "handles missing fields with empty strings",
-			record: map[string]string{
-				"Email":     "partial@example.com",
-				"FirstName": "Only",
-			},
-			csvHeaders:  []string{"Email", "FirstName", "LastName"},
-			shouldMatch: true,
-			compareWith: []string{"partial@example.com", "Only", ""},
-		},
-		{
-			name:        "empty record",
-			record:      map[string]string{},
-			csvHeaders:  []string{"Email", "FirstName"},
-			shouldMatch: true,
-			compareWith: []string{"", ""},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			hash := calculateHashFromRecord(tc.record, tc.csvHeaders)
-
-			require.NotEmpty(t, hash)
-
-			if tc.shouldMatch {
-				expectedHash := calculateHashCode(tc.compareWith)
-				require.Equal(t, expectedHash, hash,
-					"Hash from record should match hash from original CSV values")
-			}
-
-			hash2 := calculateHashFromRecord(tc.record, tc.csvHeaders)
-			require.Equal(t, hash, hash2, "Hash should be consistent across multiple calls")
-		})
-	}
-}
-
-func TestSalesforceBulk_calculateHashFromRecord_Integration(t *testing.T) {
-	t.Run("upload and result matching flow", func(t *testing.T) {
+	t.Run("upload key and result key match for the same externalId, regardless of other columns", func(t *testing.T) {
 		t.Parallel()
 
-		csvHeaders := []string{"Email", "FirstName", "LastName"}
-		uploadRow := []string{"integration@example.com", "Test", "User"}
-		uploadHash := calculateHashCode(uploadRow)
+		// What we sent: the row keyed only on the externalId (Email) value.
+		uploadKey := calculateHashCode("integration@example.com")
 
-		salesforceResult := map[string]string{
+		// What Salesforce returns: the externalId round-trips unchanged even
+		// though the CreatedDate column was truncated from microseconds to
+		// milliseconds on store.
+		resultRecord := map[string]string{
 			"Email":       "integration@example.com",
-			"FirstName":   "Test",
-			"LastName":    "User",
+			"CreatedDate": "2025-11-25T03:45:21.142Z", // sent .14287Z, stored .142Z
 			"sf__Id":      "003xx000006TmiQCCU",
 			"sf__Created": "true",
-			"sf__Error":   "",
 		}
-		resultHash := calculateHashFromRecord(salesforceResult, csvHeaders)
+		resultKey := calculateHashCode(resultRecord["Email"])
 
-		require.Equal(t, uploadHash, resultHash,
-			"Upload hash and result hash should match for same data")
+		require.Equal(t, uploadKey, resultKey,
+			"externalId-based key must survive Salesforce coercion of other columns")
 	})
 
-	t.Run("different data produces different hashes", func(t *testing.T) {
+	t.Run("different externalIds produce different keys", func(t *testing.T) {
 		t.Parallel()
+		require.NotEqual(t,
+			calculateHashCode("user1@example.com"),
+			calculateHashCode("user2@example.com"),
+		)
+	})
 
-		csvHeaders := []string{"Email", "FirstName"}
-
-		record1 := map[string]string{
-			"Email":     "user1@example.com",
-			"FirstName": "User",
-		}
-		record2 := map[string]string{
-			"Email":     "user2@example.com",
-			"FirstName": "User",
-		}
-
-		hash1 := calculateHashFromRecord(record1, csvHeaders)
-		hash2 := calculateHashFromRecord(record2, csvHeaders)
-
-		require.NotEqual(t, hash1, hash2,
-			"Different records should produce different hashes")
+	t.Run("consistent across calls and never empty", func(t *testing.T) {
+		t.Parallel()
+		require.NotEmpty(t, calculateHashCode("a@b.com"))
+		require.Equal(t, calculateHashCode("a@b.com"), calculateHashCode("a@b.com"))
 	})
 }
 
@@ -378,7 +257,7 @@ func TestSalesforceBulk_createCSVFile_NumericNoScientificNotation(t *testing.T) 
 		},
 	}
 
-	csvFilePath, _, _, err := createCSVFile("test-dest-numeric", jobs)
+	csvFilePath, _, _, err := createCSVFile("test-dest-numeric", "Email", jobs)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.Remove(csvFilePath) })
 
@@ -415,7 +294,7 @@ func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
 		},
 	}
 
-	csvFilePath, _, _, err := createCSVFile("test-dest-null", jobs)
+	csvFilePath, _, _, err := createCSVFile("test-dest-null", "Email", jobs)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.Remove(csvFilePath) })
 
@@ -462,6 +341,7 @@ func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 
 		csvFilePath, headers, hashToJobID, err := createCSVFile(
 			"test-dest",
+			"Email",
 			jobs,
 		)
 

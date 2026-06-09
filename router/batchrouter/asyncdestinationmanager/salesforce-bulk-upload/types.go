@@ -48,8 +48,12 @@ type apiService struct {
 }
 
 type SalesforceJobInfo struct {
-	ID      string   `json:"id"`
-	Headers []string `json:"headers"`
+	ID string `json:"id"`
+	// ExternalIDField is the upsert key field name. Job statuses are correlated
+	// after polling by hashing this field's value (not the whole row), so that
+	// Salesforce's value coercion on other columns (e.g. datetime millisecond
+	// truncation, number scale) does not break the match.
+	ExternalIDField string `json:"externalIdField"`
 }
 
 type JobResponse struct {

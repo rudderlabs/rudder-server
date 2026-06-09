@@ -184,7 +184,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 
 		require.Equal(t, 2, result.ImportingCount)
 		require.Equal(t, 0, result.FailedCount)
-		require.JSONEq(t, `{"importId":{"id":"sf-job-123","headers":["Email","FirstName","LastName"]}, "importCount":2}`, string(result.ImportingParameters))
+		require.JSONEq(t, `{"importId":{"id":"sf-job-123","externalIdField":"Email"}, "importCount":2}`, string(result.ImportingParameters))
 	})
 
 	t.Run("upload with API error", func(t *testing.T) {
@@ -328,51 +328,123 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 }
 
 func TestSalesforceBulk_GetUploadStats(t *testing.T) {
-	t.Run("successful stats retrieval with failures", func(t *testing.T) {
+	// uploadTwoJobs uploads two jobs (job_id 1 -> test1@, job_id 2 -> test2@,
+	// externalId field "Email") so the uploader's in-memory correlation map is
+	// populated, then returns the uploader ready for GetUploadStats.
+	uploadTwoJobs := func(t *testing.T, mockAPI *salesforcebulkupload_mocks.MockAPIServiceInterface) *salesforcebulkupload.Uploader {
+		t.Helper()
 		tempFile, err := os.CreateTemp("", "test_upload_*.json")
 		require.NoError(t, err)
-		defer os.Remove(tempFile.Name())
-		testData := make([]common.AsyncJob, 0)
-		testData = append(testData, common.AsyncJob{
-			Message: map[string]any{
-				"Email":     "test1@example.com",
-				"FirstName": "John",
-				"LastName":  "Doe",
+		t.Cleanup(func() { _ = os.Remove(tempFile.Name()) })
+		jobs := []common.AsyncJob{
+			{
+				Message: map[string]any{"Email": "test1@example.com", "FirstName": "John"},
+				Metadata: map[string]any{
+					"job_id":     float64(1),
+					"externalId": []any{map[string]any{"id": "test1@example.com", "identifierType": "Email", "type": "SALESFORCE_BULK_UPLOAD-Lead"}},
+				},
 			},
-			Metadata: map[string]any{
-				"job_id": float64(1),
+			{
+				Message: map[string]any{"Email": "test2@example.com", "FirstName": "Jane"},
+				Metadata: map[string]any{
+					"job_id":     float64(2),
+					"externalId": []any{map[string]any{"id": "test2@example.com", "identifierType": "Email", "type": "SALESFORCE_BULK_UPLOAD-Lead"}},
+				},
 			},
-		})
-		for _, job := range testData {
+		}
+		for _, job := range jobs {
 			jobBytes, _ := jsonrs.Marshal(job)
-			_, err := tempFile.Write(jobBytes)
-			require.NoError(t, err)
-			_, err = tempFile.Write([]byte("\n"))
+			_, err := tempFile.Write(append(jobBytes, '\n'))
 			require.NoError(t, err)
 		}
-		tempFile.Close()
+		require.NoError(t, tempFile.Close())
 
-		ctrl := gomock.NewController(t)
-		mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
-		mockAPI.EXPECT().GetFailedRecords(gomock.Any()).Return([]map[string]string{}, nil)
-		mockAPI.EXPECT().GetSuccessfulRecords(gomock.Any()).Return([]map[string]string{{"Email": "test1@example.com", "FirstName": "John", "LastName": "Doe"}, {"Email": "test2@example.com", "FirstName": "Jane", "LastName": "Smith"}}, nil)
+		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("sf-job-123", nil)
+		mockAPI.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
+		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
 
 		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
-		uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
-			Destination: &backendconfig.DestinationT{ID: "test-dest"},
-			FileName:    tempFile.Name(),
+		out := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination:     &backendconfig.DestinationT{ID: "test-dest"},
+			FileName:        tempFile.Name(),
+			ImportingJobIDs: []int64{1, 2},
 		})
+		require.Equal(t, 0, out.FailedCount)
+		return uploader
+	}
+
+	importIDParams := json.RawMessage(`{"importId":"{\"id\":\"sf-job-123\",\"externalIdField\":\"Email\"}","metadata":{"csvHeader":""}}`)
+
+	t.Run("matches succeeded and aborted jobs by externalId", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
+		uploader := uploadTwoJobs(t, mockAPI)
+
+		// job 1 succeeded; job 2 failed. The CreatedDate column is coerced by
+		// Salesforce but the Email (externalId) round-trips, so both still match.
+		mockAPI.EXPECT().GetSuccessfulRecords(gomock.Any()).Return([]map[string]string{
+			{"Email": "test1@example.com", "FirstName": "John", "CreatedDate": "2025-11-25T03:45:21.142Z", "sf__Id": "001"},
+		}, nil)
+		mockAPI.EXPECT().GetFailedRecords(gomock.Any()).Return([]map[string]string{
+			{"Email": "test2@example.com", "FirstName": "Jane", "sf__Error": "REQUIRED_FIELD_MISSING:LastName"},
+		}, nil)
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
-			Parameters: json.RawMessage(`{"importId":"{\"id\":\"sf-job-123\",\"headers\":[\"Email\",\"FirstName\",\"LastName\"]}","metadata":{"csvHeader":""}}`),
-			ImportingList: []*jobsdb.JobT{
-				{JobID: 1},
-				{JobID: 2},
-			},
+			Parameters:    importIDParams,
+			ImportingList: []*jobsdb.JobT{{JobID: 1}, {JobID: 2}},
 		})
 
 		require.Equal(t, 200, result.StatusCode)
-		require.NotNil(t, result.Metadata)
+		require.Equal(t, []int64{1}, result.Metadata.SucceededKeys)
+		require.Equal(t, []int64{2}, result.Metadata.AbortedKeys)
+		require.Empty(t, result.Metadata.FailedKeys)
+		require.Equal(t, "REQUIRED_FIELD_MISSING:LastName", result.Metadata.AbortedReasons[2])
+	})
+
+	t.Run("unmatched records with a populated map are aborted, not retried", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
+		uploader := uploadTwoJobs(t, mockAPI)
+
+		// Salesforce reformatted the externalId itself (e.g. a numeric/date
+		// external id), so neither returned record matches any uploaded job.
+		mockAPI.EXPECT().GetSuccessfulRecords(gomock.Any()).Return([]map[string]string{
+			{"Email": "TEST1@EXAMPLE.COM", "sf__Id": "001"},
+		}, nil)
+		mockAPI.EXPECT().GetFailedRecords(gomock.Any()).Return([]map[string]string{
+			{"Email": "TEST2@EXAMPLE.COM", "sf__Error": "boom"},
+		}, nil)
+
+		result := uploader.GetUploadStats(common.GetUploadStatsInput{
+			Parameters:    importIDParams,
+			ImportingList: []*jobsdb.JobT{{JobID: 1}, {JobID: 2}},
+		})
+
+		require.Equal(t, 200, result.StatusCode)
+		require.ElementsMatch(t, []int64{1, 2}, result.Metadata.AbortedKeys)
+		require.Empty(t, result.Metadata.FailedKeys)
+		require.NotEmpty(t, result.Metadata.AbortedReasons[1])
+		require.NotEmpty(t, result.Metadata.AbortedReasons[2])
+	})
+
+	t.Run("empty correlation map keeps jobs retryable", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
+		// No Upload call: simulates a process restart that lost the in-memory map.
+		mockAPI.EXPECT().GetFailedRecords(gomock.Any()).Return([]map[string]string{}, nil)
+		mockAPI.EXPECT().GetSuccessfulRecords(gomock.Any()).Return([]map[string]string{
+			{"Email": "test1@example.com"}, {"Email": "test2@example.com"},
+		}, nil)
+
+		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
+		result := uploader.GetUploadStats(common.GetUploadStatsInput{
+			Parameters:    importIDParams,
+			ImportingList: []*jobsdb.JobT{{JobID: 1}, {JobID: 2}},
+		})
+
+		require.Equal(t, 200, result.StatusCode)
+		require.ElementsMatch(t, []int64{1, 2}, result.Metadata.FailedKeys)
+		require.Empty(t, result.Metadata.AbortedKeys)
 	})
 
 	t.Run("handles API error fetching failed records", func(t *testing.T) {

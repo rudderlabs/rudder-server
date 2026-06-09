@@ -175,8 +175,17 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 			DestinationID: destinationID,
 		}
 	}
-	csvFilePath, csvHeaders, hashToJobID, err := createCSVFile(
+	if objectInfo.ExternalIDField == "" {
+		return common.AsyncUploadOutput{
+			FailedJobIDs:  importingJobIDs,
+			FailedReason:  "externalId field is empty; cannot correlate poll results back to jobs",
+			FailedCount:   len(importingJobIDs),
+			DestinationID: destinationID,
+		}
+	}
+	csvFilePath, _, hashToJobID, err := createCSVFile(
 		destinationID,
+		objectInfo.ExternalIDField,
 		input,
 	)
 	defer func() {
@@ -194,6 +203,16 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 		}
 	}
 	s.dataHashToJobID = hashToJobID
+
+	// The source is expected to send unique externalIds per batch. Fewer keys
+	// than jobs means duplicates collided onto the same key, which makes
+	// per-job status attribution ambiguous after polling.
+	if len(hashToJobID) < len(input) {
+		s.logger.Warnn("Duplicate externalId values detected in batch; per-job status attribution may be ambiguous",
+			logger.NewIntField("uniqueExternalIds", int64(len(hashToJobID))),
+			logger.NewIntField("jobs", int64(len(input))),
+		)
+	}
 
 	s.logger.Infon("Created CSV file",
 		logger.NewStringField("csvFilePath", csvFilePath),
@@ -246,8 +265,8 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 
 	importParameters, err := jsonrs.Marshal(common.ImportParameters{
 		ImportId: SalesforceJobInfo{
-			ID:      sfJobID,
-			Headers: csvHeaders,
+			ID:              sfJobID,
+			ExternalIDField: objectInfo.ExternalIDField,
 		},
 		ImportCount: len(importingJobIDs),
 	})
@@ -343,7 +362,7 @@ func (s *Uploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUp
 		}
 	}
 
-	metadata := s.matchRecordsToJobs(input.ImportingList, failedRecords, successRecords, saleforceJobInfo.Headers)
+	metadata := s.matchRecordsToJobs(input.ImportingList, failedRecords, successRecords, saleforceJobInfo.ExternalIDField)
 	return common.GetUploadStatsResponse{
 		StatusCode: http.StatusOK,
 		Metadata:   metadata,
@@ -380,7 +399,7 @@ func (s *Uploader) handlePollError(apiError *APIError) common.PollStatusResponse
 func (s *Uploader) matchRecordsToJobs(
 	importingList []*jobsdb.JobT,
 	failedRecords, successRecords []map[string]string,
-	headers []string,
+	externalIDField string,
 ) common.EventStatMeta {
 	metadata := common.EventStatMeta{
 		FailedKeys:     make([]int64, 0),
@@ -391,8 +410,8 @@ func (s *Uploader) matchRecordsToJobs(
 	}
 
 	for _, failedRecord := range failedRecords {
-		hash := calculateHashFromRecord(failedRecord, headers)
-		if jobIDs, exists := s.dataHashToJobID[hash]; exists {
+		key := calculateHashCode(failedRecord[externalIDField])
+		if jobIDs, exists := s.dataHashToJobID[key]; exists {
 			for _, jobID := range jobIDs {
 				metadata.AbortedKeys = append(metadata.AbortedKeys, jobID)
 				if errorMsg, ok := failedRecord["sf__Error"]; ok && errorMsg != "" {
@@ -405,8 +424,8 @@ func (s *Uploader) matchRecordsToJobs(
 	}
 
 	for _, successRecord := range successRecords {
-		hash := calculateHashFromRecord(successRecord, headers)
-		if jobIDs, exists := s.dataHashToJobID[hash]; exists {
+		key := calculateHashCode(successRecord[externalIDField])
+		if jobIDs, exists := s.dataHashToJobID[key]; exists {
 			metadata.SucceededKeys = append(metadata.SucceededKeys, jobIDs...)
 		}
 	}
@@ -422,12 +441,29 @@ func (s *Uploader) matchRecordsToJobs(
 		importingJobIDs := lo.Map(importingList, func(job *jobsdb.JobT, _ int) int64 {
 			return job.JobID
 		})
-		missingJobIDs, _ := lo.Difference(importingJobIDs, append(metadata.SucceededKeys, metadata.AbortedKeys...))
+		matchedJobIDs := append(append([]int64{}, metadata.SucceededKeys...), metadata.AbortedKeys...)
+		missingJobIDs, _ := lo.Difference(importingJobIDs, matchedJobIDs)
 
-		metadata.FailedKeys = missingJobIDs
-		metadata.FailedReasons = lo.SliceToMap(missingJobIDs, func(jobID int64) (int64, string) {
-			return jobID, "Input hash is not found in the data hash to job ID map or the job is not found in the successRespons or failedResponse"
-		})
+		if len(s.dataHashToJobID) == 0 {
+			// No correlation data at all (e.g. the process restarted between
+			// Upload and GetUploadStats and lost the in-memory map). This is a
+			// systemic loss, not a per-record mismatch, so keep these jobs
+			// retryable rather than permanently dropping a batch that may have
+			// succeeded in Salesforce.
+			metadata.FailedKeys = missingJobIDs
+			metadata.FailedReasons = lo.SliceToMap(missingJobIDs, func(jobID int64) (int64, string) {
+				return jobID, "Correlation map is empty (likely a restart between upload and stats); retrying"
+			})
+		} else {
+			// The map was populated but these records could not be matched back
+			// to a job, most likely because Salesforce reformatted the
+			// externalId value on store. Retrying would re-upload the same value
+			// and miss again, so abort instead of looping through retries.
+			metadata.AbortedKeys = append(metadata.AbortedKeys, missingJobIDs...)
+			for _, jobID := range missingJobIDs {
+				metadata.AbortedReasons[jobID] = "Could not correlate Salesforce result back to the job: externalId not found in success/failed records (possibly reformatted by Salesforce on store)"
+			}
+		}
 	}
 	return metadata
 }
