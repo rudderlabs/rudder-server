@@ -61,8 +61,8 @@ const (
 	tableNameLimit = 127
 )
 
-// dataTypesMap maps datatype stored in rudder to datatype in bigquery
-var dataTypesMap = map[string]bigquery.FieldType{
+// DataTypesMap maps datatype stored in rudder to datatype in bigquery
+var DataTypesMap = map[string]bigquery.FieldType{
 	"boolean":  bigquery.BooleanFieldType,
 	"int":      bigquery.IntegerFieldType,
 	"float":    bigquery.FloatFieldType,
@@ -137,7 +137,7 @@ func New(conf *config.Config, log logger.Logger) *BigQuery {
 
 func getTableSchema(tableSchema model.TableSchema) []*bigquery.FieldSchema {
 	return lo.MapToSlice(tableSchema, func(columnName, columnType string) *bigquery.FieldSchema {
-		return &bigquery.FieldSchema{Name: columnName, Type: dataTypesMap[columnType]}
+		return &bigquery.FieldSchema{Name: columnName, Type: DataTypesMap[columnType]}
 	})
 }
 
@@ -922,7 +922,7 @@ func (bq *BigQuery) AddColumns(ctx context.Context, tableName string, columnsInf
 	newSchema := meta.Schema
 	for _, columnInfo := range columnsInfo {
 		newSchema = append(newSchema,
-			&bigquery.FieldSchema{Name: columnInfo.Name, Type: dataTypesMap[columnInfo.Type]},
+			&bigquery.FieldSchema{Name: columnInfo.Name, Type: DataTypesMap[columnInfo.Type]},
 		)
 	}
 

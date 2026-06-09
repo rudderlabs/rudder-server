@@ -8,12 +8,15 @@ import (
 	managedwriter "cloud.google.com/go/bigquery/storage/managedwriter"
 	"cloud.google.com/go/bigquery/storage/managedwriter/adapt"
 	"google.golang.org/api/option"
-	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/rudderlabs/rudder-go-kit/googleutil"
 
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+func NewStreamWriterFactory(maxInflightRequests int, maxInflightBytes int64) StreamWriterFactory {
+	return &streamWriterFactoryImpl{maxInflightRequests: maxInflightRequests, maxInflightBytes: maxInflightBytes}
+}
 
 // NewStreamWriter creates a managed stream for the table, with bounded
 // in-flight appends for backpressure.
@@ -40,19 +43,9 @@ func (s *streamWriterFactoryImpl) NewStreamWriter(ctx context.Context, destConf 
 		}
 	}()
 
-	storageTableSchema, err := adapt.BQSchemaToStorageTableSchema(toBigQuerySchema(tableSchema))
+	md, err := descriptorForSchema(tableSchema)
 	if err != nil {
 		return nil, fmt.Errorf("converting schema: %w", err)
-	}
-
-	desc, err := adapt.StorageSchemaToProto2Descriptor(storageTableSchema, "root")
-	if err != nil {
-		return nil, fmt.Errorf("building descriptor: %w", err)
-	}
-
-	md, ok := desc.(protoreflect.MessageDescriptor)
-	if !ok {
-		return nil, fmt.Errorf("unexpected descriptor type: %T", desc)
 	}
 
 	descProto, err := adapt.NormalizeDescriptor(md)

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	managedwriter "cloud.google.com/go/bigquery/storage/managedwriter"
-	"github.com/mitchellh/mapstructure"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 
@@ -118,41 +117,3 @@ type (
 
 	Row map[string]any
 )
-
-// Decode decodes the destination configuration from the given map. Also, converts the namespace to the provider case.
-func (d *destConfig) Decode(m map[string]any) error {
-	if err := mapstructure.Decode(m, d); err != nil {
-		return err
-	}
-	d.Namespace = whutils.ToProviderCase(
-		whutils.BQStreamV2,
-		whutils.ToSafeNamespace(whutils.BQStreamV2, d.Namespace),
-	)
-	return nil
-}
-
-// setUUIDTimestamp sets the uuid_ts timestamp in the event message data and
-// reports whether it was actually set.
-func (m *Manager) setUUIDTimestamp(e *event, formattedTS string) bool {
-	if e.Message.Metadata.Columns == nil {
-		return false
-	}
-	if _, columnExists := e.Message.Metadata.Columns[uuidTSColumnName]; columnExists {
-		e.Message.Data[uuidTSColumnName] = formattedTS
-		return true
-	}
-	return false
-}
-
-// setLoadedAtTimestamp sets the loaded_at timestamp in the event message data
-// and reports whether it was actually set.
-func (m *Manager) setLoadedAtTimestamp(e *event, formattedTS string) bool {
-	if e.Message.Metadata.Columns == nil {
-		return false
-	}
-	if _, columnExists := e.Message.Metadata.Columns[loadedAtColumnName]; columnExists {
-		e.Message.Data[loadedAtColumnName] = formattedTS
-		return true
-	}
-	return false
-}
