@@ -107,20 +107,6 @@ func (mr *MockJobServiceMockRecorder) CleanupLoop(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupLoop", reflect.TypeOf((*MockJobService)(nil).CleanupLoop), ctx)
 }
 
-// Delete mocks base method.
-func (m *MockJobService) Delete(ctx context.Context, jobRunId string, filter JobFilter) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Delete", ctx, jobRunId, filter)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Delete indicates an expected call of Delete.
-func (mr *MockJobServiceMockRecorder) Delete(ctx, jobRunId, filter any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockJobService)(nil).Delete), ctx, jobRunId, filter)
-}
-
 // DeleteFailedRecords mocks base method.
 func (m *MockJobService) DeleteFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) error {
 	m.ctrl.T.Helper()
@@ -162,21 +148,6 @@ func (m *MockJobService) GetFailedRecords(ctx context.Context, jobRunId string, 
 func (mr *MockJobServiceMockRecorder) GetFailedRecords(ctx, jobRunId, filter, paging any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFailedRecords", reflect.TypeOf((*MockJobService)(nil).GetFailedRecords), ctx, jobRunId, filter, paging)
-}
-
-// GetFailedRecordsV1 mocks base method.
-func (m *MockJobService) GetFailedRecordsV1(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecordsV1, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetFailedRecordsV1", ctx, jobRunId, filter, paging)
-	ret0, _ := ret[0].(JobFailedRecordsV1)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetFailedRecordsV1 indicates an expected call of GetFailedRecordsV1.
-func (mr *MockJobServiceMockRecorder) GetFailedRecordsV1(ctx, jobRunId, filter, paging any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFailedRecordsV1", reflect.TypeOf((*MockJobService)(nil).GetFailedRecordsV1), ctx, jobRunId, filter, paging)
 }
 
 // GetStatus mocks base method.

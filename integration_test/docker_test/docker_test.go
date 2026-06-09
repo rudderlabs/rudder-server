@@ -363,6 +363,8 @@ func setupMainFlow(svcCtx context.Context, cancel context.CancelFunc, t *testing
 
 	httpPort = strconv.Itoa(httpPortInt)
 	t.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
+	// we need to use the internal rETL endpoints in this test, even for open source
+	t.Setenv("RSERVER_GATEWAY_INTERNAL_ENDPOINTS_ENABLED", "true")
 
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 
@@ -760,30 +762,19 @@ func sendRETL(t *testing.T, payload *strings.Reader, sourceID, DestinationID str
 	)
 
 	req, err := http.NewRequest(method, url, payload)
-	if err != nil {
-		t.Logf("sendEvent error: %v", err)
-		return
-	}
+	require.NoError(t, err)
 
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("X-Rudder-Source-Id", sourceID)
 	req.Header.Add("X-Rudder-Destination-Id", DestinationID)
 
 	res, err := httpClient.Do(req)
-	if err != nil {
-		t.Logf("sendEvent error: %v", err)
-		return
-	}
+	require.NoError(t, err)
 	defer func() { httputil.CloseResponse(res) }()
 
 	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		t.Logf("sendEvent error: %v", err)
-		return
-	}
-	if res.Status != "200 OK" {
-		return
-	}
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
 
 	t.Logf("Event Sent Successfully: (%s)", body)
 }

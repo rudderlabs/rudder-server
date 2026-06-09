@@ -126,6 +126,8 @@ type Handle struct {
 		allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
 		gwAllowPartialWriteWithErrors        config.ValueLoader[bool]
 		webhookV2HandlerEnabled              bool
+		internalEndpointsEnabled             bool
+		legacyWarehouseEndpointsEnabled      bool
 	}
 
 	// additional internal http handlers
