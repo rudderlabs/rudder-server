@@ -242,7 +242,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 
 		require.Equal(t, 0, result.ImportingCount)
 		require.Greater(t, result.FailedCount, 0)
-		require.Contains(t, result.FailedReason, "Error creating Salesforce job: Internal Server Error")
+		require.Contains(t, result.FailedReason, "creating Salesforce job: Internal Server Error")
 	})
 
 	t.Run("upload with rate limit error", func(t *testing.T) {
@@ -269,7 +269,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 
 		require.Equal(t, 0, result.ImportingCount)
 		require.Greater(t, result.FailedCount, 0)
-		require.Contains(t, result.FailedReason, "Error creating Salesforce job: Rate limit exceeded")
+		require.Contains(t, result.FailedReason, "creating Salesforce job: Rate limit exceeded")
 	})
 
 	t.Run("events with missing externalId are aborted up front, valid ones imported", func(t *testing.T) {

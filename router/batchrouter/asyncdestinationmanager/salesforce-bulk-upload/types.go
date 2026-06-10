@@ -114,4 +114,10 @@ const (
 	// missingExternalIDReason is the abort reason for individual events that
 	// carry no externalId value (no upsert key).
 	missingExternalIDReason = "externalId is missing for the event; cannot upsert to Salesforce"
+	// emptyCorrelationMapReason keeps jobs retryable when the in-memory map is
+	// gone (e.g. a process restart between Upload and GetUploadStats).
+	emptyCorrelationMapReason = "correlation map is empty (likely a restart between upload and stats); retrying"
+	// resultCorrelationFailedReason aborts jobs whose externalId did not come
+	// back in the Salesforce success/failed records (e.g. reformatted on store).
+	resultCorrelationFailedReason = "could not correlate Salesforce result back to the job: externalId not found in success/failed records (possibly reformatted by Salesforce on store)"
 )

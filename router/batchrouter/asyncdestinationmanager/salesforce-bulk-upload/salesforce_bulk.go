@@ -3,6 +3,7 @@ package salesforcebulkupload
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -26,6 +27,8 @@ import (
 	oauthv2common "github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	oauthv2httpclient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 )
+
+var errExternalIDRequired = errors.New("externalId is required but not present in the event")
 
 func NewManager(
 	conf *config.Config,
@@ -79,7 +82,7 @@ func (s *Uploader) Transform(job *jobsdb.JobT) (string, error) {
 	// externalId is mandatory — it is the upsert key. Fail the event up front if
 	// it is absent rather than letting it flow downstream.
 	if !externalID.Exists() {
-		return "", fmt.Errorf("externalId is required but not present in the event")
+		return "", errExternalIDRequired
 	}
 	var externalIDs []SalesforceExternalID
 	if err := jsonrs.Unmarshal([]byte(externalID.Raw), &externalIDs); err != nil {
@@ -163,12 +166,12 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 
 	input, err := s.readJobsFromFile(filePath)
 	if err != nil {
-		return s.failedJobs(asyncDestStruct, fmt.Sprintf("Error reading jobs from file: %v", err))
+		return s.failedJobs(asyncDestStruct, fmt.Sprintf("reading jobs from file: %v", err))
 	}
 
 	objectInfo, err := extractObjectInfo(input)
 	if err != nil {
-		return s.failedJobs(asyncDestStruct, fmt.Sprintf("Error extracting object info: %v", err))
+		return s.failedJobs(asyncDestStruct, fmt.Sprintf("extracting object info: %v", err))
 	}
 	if objectInfo.ExternalIDField == "" {
 		return s.failedJobs(asyncDestStruct, externalIDFieldEmptyReason)
@@ -216,7 +219,7 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 	}()
 	if err != nil {
 		s.logger.Errorn("Error creating CSV", obskit.Error(err))
-		return s.failedJobs(asyncDestStruct, fmt.Sprintf("Error creating CSV: %v", err))
+		return s.failedJobs(asyncDestStruct, fmt.Sprintf("creating CSV: %v", err))
 	}
 	s.externalIDToJobID = externalIDToJobID
 
@@ -253,7 +256,7 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 	)
 	if apiError != nil {
 		s.logger.Errorn("Error creating Salesforce job for operation upsert.", logger.NewStringField("apiErrorMessage", apiError.Message), logger.NewStringField("category", apiError.Category), logger.NewIntField("statusCode", int64(apiError.StatusCode)))
-		return s.failedJobs(asyncDestStruct, fmt.Sprintf("Error creating Salesforce job: %v", apiError.Message))
+		return s.failedJobs(asyncDestStruct, fmt.Sprintf("creating Salesforce job: %v", apiError.Message))
 	}
 
 	uploadStartTime := time.Now()
@@ -264,7 +267,7 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 		if err := s.apiService.DeleteJob(sfJobID); err != nil {
 			s.logger.Errorn("Error deleting Salesforce job.", logger.NewStringField("apiErrorMessage", err.Message))
 		}
-		return s.failedJobs(asyncDestStruct, fmt.Sprintf("Error uploading data: %v", apiError.Message))
+		return s.failedJobs(asyncDestStruct, fmt.Sprintf("uploading data: %v", apiError.Message))
 	}
 
 	apiError = s.apiService.CloseJob(sfJobID)
@@ -273,7 +276,7 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 		if err := s.apiService.DeleteJob(sfJobID); err != nil {
 			s.logger.Errorn("Error deleting Salesforce job.", logger.NewStringField("apiErrorMessage", err.Message))
 		}
-		return s.failedJobs(asyncDestStruct, fmt.Sprintf("Error closing job: %v", apiError.Message))
+		return s.failedJobs(asyncDestStruct, fmt.Sprintf("closing job: %v", apiError.Message))
 	}
 
 	s.logger.Infon("Successfully created and closed Salesforce Bulk job", logger.NewStringField("jobID", sfJobID))
@@ -473,7 +476,7 @@ func (s *Uploader) matchRecordsToJobs(
 			// succeeded in Salesforce.
 			metadata.FailedKeys = missingJobIDs
 			metadata.FailedReasons = lo.SliceToMap(missingJobIDs, func(jobID int64) (int64, string) {
-				return jobID, "Correlation map is empty (likely a restart between upload and stats); retrying"
+				return jobID, emptyCorrelationMapReason
 			})
 		} else {
 			// The map was populated but these records could not be matched back
@@ -482,7 +485,7 @@ func (s *Uploader) matchRecordsToJobs(
 			// and miss again, so abort instead of looping through retries.
 			metadata.AbortedKeys = append(metadata.AbortedKeys, missingJobIDs...)
 			for _, jobID := range missingJobIDs {
-				metadata.AbortedReasons[jobID] = "Could not correlate Salesforce result back to the job: externalId not found in success/failed records (possibly reformatted by Salesforce on store)"
+				metadata.AbortedReasons[jobID] = resultCorrelationFailedReason
 			}
 		}
 	}

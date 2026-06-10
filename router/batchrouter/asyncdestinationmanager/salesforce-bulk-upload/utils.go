@@ -18,11 +18,12 @@ func extractObjectInfo(jobs []SalesforceAsyncJob) (*ObjectInfo, error) {
 	if len(jobs) == 0 {
 		return nil, fmt.Errorf("no jobs to process")
 	}
-	if len(jobs[0].Metadata.ExternalID) == 0 {
+	externalID := jobs[0].Metadata.ExternalID
+	if len(externalID) == 0 {
 		return nil, fmt.Errorf("externalId not found in the first job")
 	}
 
-	objectInfo, err := extractFromVDM(jobs[0].Metadata.ExternalID)
+	objectInfo, err := extractFromVDM(externalID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract object info: %w", err)
 	}
