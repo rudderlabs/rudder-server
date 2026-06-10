@@ -327,6 +327,7 @@ func TestCompaction(t *testing.T) {
 		c := config.New()
 		c.Set("JobsDB.maxDSSize", 1)
 		c.Set("JobsDB.jobMinRowsLeftMigrateThres", 0.2)
+		c.Set("JobsDB.compactionMinDSAge", "0s") // datasets are compacted right after creation in this test
 
 		_ = startPostgres(t)
 
@@ -667,6 +668,7 @@ func TestCompactionMaxDSSizeGuard(t *testing.T) {
 		c := config.New()
 		c.Set("JobsDB.maxDSSize", maxDSSize)
 		c.Set("JobsDB.jobMinRowsLeftMigrateThreshold", threshold)
+		c.Set("JobsDB.compactionMinDSAge", "0s") // datasets are compacted right after creation in this test
 		triggerAddNewDS := make(chan time.Time)
 		jd := &Handle{
 			TriggerAddNewDS:   func() <-chan time.Time { return triggerAddNewDS },
@@ -737,6 +739,109 @@ func TestCompactionMaxDSSizeGuard(t *testing.T) {
 		result, err := jd.getCompactionList(dsList, nil, jd.maintenanceDB())
 		require.NoError(t, err)
 		require.Empty(t, result.compactFrom)
+	})
+}
+
+func TestCompactionMinDSAge(t *testing.T) {
+	_ = startPostgres(t)
+
+	// newJobDB creates a Handle with maxDSSize=10, pair threshold=0.7 and a one-hour compactionMinDSAge.
+	newJobDB := func(t *testing.T) (*Handle, chan time.Time, *config.Config) {
+		t.Helper()
+		c := config.New()
+		c.Set("JobsDB.maxDSSize", 10)
+		c.Set("JobsDB.jobMinRowsLeftMigrateThreshold", 0.7)
+		c.Set("JobsDB.compactionMinDSAge", "1h")
+		triggerAddNewDS := make(chan time.Time)
+		jd := &Handle{
+			TriggerAddNewDS:   func() <-chan time.Time { return triggerAddNewDS },
+			TriggerCompaction: func() <-chan time.Time { return make(chan time.Time) },
+			config:            c,
+		}
+		require.NoError(t, jd.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
+		t.Cleanup(jd.TearDown)
+		return jd, triggerAddNewDS, c
+	}
+
+	// addDS stores `jobs` with len(jobs)-pending marked as succeeded, then triggers addNewDS.
+	addDS := func(t *testing.T, jd *Handle, trigger chan time.Time, jobs []*JobT, pending int) {
+		t.Helper()
+		require.NoError(t, jd.Store(context.Background(), jobs))
+		if terminal := len(jobs) - pending; terminal > 0 {
+			require.NoError(t, jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[:terminal], "executing")))
+			require.NoError(t, jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[:terminal], "succeeded")))
+		}
+		trigger <- time.Now()
+		trigger <- time.Now()
+	}
+
+	t.Run("freshly created datasets needing a pair are skipped until old enough", func(t *testing.T) {
+		jd, trigger, c := newJobDB(t)
+		allJobs := genJobs(defaultWorkspaceID, "test", 30, 1)
+		addDS(t, jd, trigger, allJobs[:10], 3)   // 3 pending < 7 → needsPair
+		addDS(t, jd, trigger, allJobs[10:20], 3) // 3 pending < 7 → needsPair
+		require.NoError(t, jd.Store(context.Background(), allJobs[20:]))
+
+		dsList := jd.getDSListSnapshot()
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxMigrateDSProbe", len(dsList))
+
+		// the jobs table comment should carry the dataset's creation time
+		var comment string
+		require.NoError(t, jd.maintenanceDB().QueryRow(
+			fmt.Sprintf(`SELECT obj_description('%s'::regclass, 'pg_class')`, dsList[0].JobTable),
+		).Scan(&comment))
+		require.WithinDuration(t, time.Now(), dsCreatedAt(comment), time.Minute)
+
+		// both datasets are younger than compactionMinDSAge → nothing to compact
+		result, err := jd.getCompactionList(dsList, nil, jd.maintenanceDB())
+		require.NoError(t, err)
+		require.Empty(t, result.compactFrom)
+
+		// backdate their creation time beyond compactionMinDSAge → both become eligible
+		for _, ds := range dsList[:2] {
+			_, err := jd.maintenanceDB().Exec(fmt.Sprintf(`COMMENT ON TABLE %q IS '%s'`, ds.JobTable, dsCreatedAtComment(time.Now().Add(-2*time.Hour))))
+			require.NoError(t, err)
+		}
+		result, err = jd.getCompactionList(dsList, nil, jd.maintenanceDB())
+		require.NoError(t, err)
+		require.Len(t, result.compactFrom, 2)
+		require.Equal(t, 6, result.pendingJobsCount)
+	})
+
+	t.Run("completed datasets are eligible regardless of age", func(t *testing.T) {
+		jd, trigger, c := newJobDB(t)
+		allJobs := genJobs(defaultWorkspaceID, "test", 20, 1)
+		addDS(t, jd, trigger, allJobs[:10], 0) // fully processed
+		require.NoError(t, jd.Store(context.Background(), allJobs[10:]))
+
+		dsList := jd.getDSListSnapshot()
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxMigrateDSProbe", len(dsList))
+
+		result, err := jd.getCompactionList(dsList, nil, jd.maintenanceDB())
+		require.NoError(t, err)
+		require.Len(t, result.compactFrom, 1)
+		require.Equal(t, 0, result.pendingJobsCount)
+	})
+
+	t.Run("datasets without a recorded creation time are eligible", func(t *testing.T) {
+		jd, trigger, c := newJobDB(t)
+		allJobs := genJobs(defaultWorkspaceID, "test", 30, 1)
+		addDS(t, jd, trigger, allJobs[:10], 3)
+		addDS(t, jd, trigger, allJobs[10:20], 3)
+		require.NoError(t, jd.Store(context.Background(), allJobs[20:]))
+
+		dsList := jd.getDSListSnapshot()
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxMigrateDSProbe", len(dsList))
+
+		// simulate datasets created before creation times were introduced
+		for _, ds := range dsList[:2] {
+			_, err := jd.maintenanceDB().Exec(fmt.Sprintf(`COMMENT ON TABLE %q IS NULL`, ds.JobTable))
+			require.NoError(t, err)
+		}
+		result, err := jd.getCompactionList(dsList, nil, jd.maintenanceDB())
+		require.NoError(t, err)
+		require.Len(t, result.compactFrom, 2)
+		require.Equal(t, 6, result.pendingJobsCount)
 	})
 }
 

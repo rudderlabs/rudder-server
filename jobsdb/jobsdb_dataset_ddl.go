@@ -177,6 +177,12 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		parameters JSONB DEFAULT '{}'::JSONB);`, newDS.JobStatusTable)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobStatusTable, err)
 	}
+
+	// Record the dataset's creation time as a comment on the jobs table, so that
+	// compaction can tell how recently a dataset was created (see checkIfCompactDS).
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`COMMENT ON TABLE %q IS '%s'`, newDS.JobTable, dsCreatedAtComment(time.Now()))); err != nil {
+		return fmt.Errorf("commenting creation time on %s: %w", newDS.JobTable, err)
+	}
 	return nil
 }
 
