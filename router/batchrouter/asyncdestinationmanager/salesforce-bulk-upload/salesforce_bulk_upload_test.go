@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -185,6 +186,36 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.Equal(t, 2, result.ImportingCount)
 		require.Equal(t, 0, result.FailedCount)
 		require.JSONEq(t, `{"importId":{"id":"sf-job-123","externalIdField":"Email"}, "importCount":2}`, string(result.ImportingParameters))
+	})
+
+	t.Run("emits payload_size, events_per_file and async_upload_time metrics", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		dest := &backendconfig.DestinationT{ID: "test-dest-1", WorkspaceID: "test-ws-1"}
+		ctrl := gomock.NewController(t)
+		mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
+		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("sf-job-123", nil)
+		mockAPI.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
+		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
+		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, statsStore, mockAPI, dest)
+
+		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination:     dest,
+			FileName:        tempFile.Name(),
+			ImportingJobIDs: []int64{1, 2},
+		})
+		require.Equal(t, 2, result.ImportingCount)
+
+		tags := stats.Tags{
+			"module":        "batch_router",
+			"destType":      "SALESFORCE_BULK_UPLOAD",
+			"destinationId": "test-dest-1",
+			"workspaceId":   "test-ws-1",
+		}
+		require.Equal(t, float64(2), statsStore.Get("events_per_file", tags).LastValue())
+		require.Greater(t, statsStore.Get("payload_size", tags).LastValue(), float64(0))
+		require.Len(t, statsStore.Get("async_upload_time", tags).Durations(), 1)
 	})
 
 	t.Run("upload with API error", func(t *testing.T) {

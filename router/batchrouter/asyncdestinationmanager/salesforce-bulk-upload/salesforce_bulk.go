@@ -230,6 +230,18 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 		)
 	}
 
+	// Track the size of the CSV we send to Salesforce and how many events it packs.
+	statTags := stats.Tags{
+		"module":        "batch_router",
+		"destType":      s.destName,
+		"destinationId": asyncDestStruct.Destination.ID,
+		"workspaceId":   asyncDestStruct.Destination.WorkspaceID,
+	}
+	s.statsFactory.NewTaggedStat("events_per_file", stats.HistogramType, statTags).Observe(float64(len(validJobs)))
+	if fileInfo, statErr := os.Stat(csvFilePath); statErr == nil {
+		s.statsFactory.NewTaggedStat("payload_size", stats.HistogramType, statTags).Observe(float64(fileInfo.Size()))
+	}
+
 	s.logger.Infon("Created CSV file",
 		logger.NewStringField("csvFilePath", csvFilePath),
 		logger.NewIntField("jobs", int64(len(validJobs))),
@@ -244,7 +256,9 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 		return s.failedJobs(asyncDestStruct, fmt.Sprintf("Error creating Salesforce job: %v", apiError.Message))
 	}
 
+	uploadStartTime := time.Now()
 	apiError = s.apiService.UploadData(sfJobID, csvFilePath)
+	s.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, statTags).Since(uploadStartTime)
 	if apiError != nil {
 		s.logger.Errorn("Error uploading data for operation upsert", logger.NewStringField("apiErrorMessage", apiError.Message))
 		if err := s.apiService.DeleteJob(sfJobID); err != nil {
