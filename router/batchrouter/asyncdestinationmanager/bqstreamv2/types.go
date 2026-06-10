@@ -27,7 +27,8 @@ type (
 		integrationManagerCreator IntegrationManagerCreator
 
 		streamWriterFactory StreamWriterFactory
-		streamWritersMu     sync.Mutex // guards streamWriters
+		streamWritersMu     sync.RWMutex // guards streamWriters
+
 		// streamWriters caches open Storage Write API streams (and their
 		// BigQuery clients) which, by design, outlive a single upload
 		// (writerForTable dials with context.WithoutCancel). They are only
@@ -79,7 +80,7 @@ type (
 
 	IntegrationManagerCreator func(ctx context.Context, cfg destConfig) (IntegrationManager, error)
 	StreamWriterFactory       interface {
-		NewStreamWriter(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error)
+		NewTableStreamWriter(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error)
 	}
 
 	streamWriterFactoryImpl struct {
@@ -93,9 +94,10 @@ type (
 	}
 
 	tableStreamWriter struct {
-		writer     StreamWriter
+		writer   StreamWriter
+		writerMu sync.RWMutex // guards writer
+
 		descriptor protoreflect.MessageDescriptor
-		mu         sync.RWMutex
 		closed     bool // true once the writer is closed, preventing new appends
 	}
 	AppendResult interface {

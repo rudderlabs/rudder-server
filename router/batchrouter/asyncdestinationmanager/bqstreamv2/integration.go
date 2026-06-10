@@ -8,30 +8,9 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-func (m *Manager) createIntegrationManager(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
-	modelWarehouse := whutils.ModelWarehouse{
-		WorkspaceID: m.destination.WorkspaceID,
-		Destination: *m.destination,
-		Namespace:   cfg.Namespace,
-		Type:        m.destination.DestinationDefinition.Name,
-		Identifier:  m.destination.WorkspaceID + ":" + m.destination.ID,
-	}
-
-	bigQueryManager, err := manager.New(whutils.BQStreamV2, m.appConfig, m.logger, m.statsFactory)
-	if err != nil {
-		return nil, fmt.Errorf("creating bigquery manager: %w", err)
-	}
-	err = bigQueryManager.Setup(ctx, modelWarehouse, whutils.NewNoOpUploader())
-	if err != nil {
-		return nil, fmt.Errorf("setting up bigquery manager: %w", err)
-	}
-	return bigQueryManager, nil
-}
 
 // fetchSchemaFromWarehouseForTables fetches the namespace schema and filters it down
 // to the given tables.

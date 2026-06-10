@@ -89,7 +89,6 @@ func createTestGateway(t *testing.T, eventBlockingSettings backendconfig.EventBl
 			WriteTimeout                                                                      time.Duration
 			IdleTimeout                                                                       time.Duration
 			allowReqsWithoutUserIDAndAnonymousID                                              config.ValueLoader[bool]
-			gwAllowPartialWriteWithErrors                                                     config.ValueLoader[bool]
 			webhookV2HandlerEnabled                                                           bool
 		}{
 			webhookV2HandlerEnabled: false,

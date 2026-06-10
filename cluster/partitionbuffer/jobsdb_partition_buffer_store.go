@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/google/uuid"
-
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	utilstx "github.com/rudderlabs/rudder-server/utils/tx"
 )
@@ -104,13 +102,4 @@ func (b *jobsDBPartitionBuffer) versionDiff(ctx context.Context, tx *utilstx.Tx)
 		return 0, err
 	}
 	return dbVersion - b.bufferedPartitionsVersion, nil
-}
-
-// failAllBatches returns a map of job UUIDs to the provided error message for the first job of each batch
-func failAllBatches(jobBatches [][]*jobsdb.JobT, err error) map[uuid.UUID]string {
-	errorMessagesMap := make(map[uuid.UUID]string, len(jobBatches))
-	for i := range jobBatches {
-		errorMessagesMap[jobBatches[i][0].UUID] = err.Error()
-	}
-	return errorMessagesMap
 }

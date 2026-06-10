@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	warehouseintegrationsmanager "github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -108,7 +109,23 @@ func newManager(
 	}))
 
 	m.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
-		return m.createIntegrationManager(ctx, cfg)
+		modelWarehouse := whutils.ModelWarehouse{
+			WorkspaceID: m.destination.WorkspaceID,
+			Destination: *m.destination,
+			Namespace:   cfg.Namespace,
+			Type:        m.destination.DestinationDefinition.Name,
+			Identifier:  m.destination.WorkspaceID + ":" + m.destination.ID,
+		}
+
+		bigQueryManager, err := warehouseintegrationsmanager.New(whutils.BQStreamV2, m.appConfig, m.logger, m.statsFactory)
+		if err != nil {
+			return nil, fmt.Errorf("creating bigquery manager: %w", err)
+		}
+		err = bigQueryManager.Setup(ctx, modelWarehouse, whutils.NewNoOpUploader())
+		if err != nil {
+			return nil, fmt.Errorf("setting up bigquery manager: %w", err)
+		}
+		return bigQueryManager, nil
 	}
 	return m
 }
@@ -458,9 +475,9 @@ func (m *Manager) streamEventBatches(ctx context.Context, cfg destConfig, tableN
 			continue
 		}
 
-		if err := tableStreamWriter.streamEncodedRows(ctx, encodedRows); err != nil {
+		if err := tableStreamWriter.AppendRows(ctx, encodedRows); err != nil {
 			result.failedIDs = append(result.failedIDs, tableEvents.jobIDs...)
-			result.failedError = errors.Join(result.failedError, fmt.Errorf("streaming encoded rows: %w", err))
+			result.failedError = errors.Join(result.failedError, fmt.Errorf("appending rows: %w", err))
 			continue
 		}
 
@@ -490,10 +507,9 @@ func (m *Manager) streamDiscardedEvents(ctx context.Context, cfg destConfig, tab
 		return fmt.Errorf("encoding rows: %w", err)
 	}
 
-	if err := tableStreamWriter.streamEncodedRows(ctx, encodedRows); err != nil {
-		return fmt.Errorf("streaming encoded rows: %w", err)
+	if err := tableStreamWriter.AppendRows(ctx, encodedRows); err != nil {
+		return fmt.Errorf("appending rows: %w", err)
 	}
-
 	return nil
 }
 
@@ -539,7 +555,7 @@ func (m *Manager) createTableAndAddColumnsIfNeeded(ctx context.Context, cfg dest
 	return nil
 }
 
-// writerForTable returns the table's cached stream writer handle, creating it
+// writerForTable returns the table's cached stream writer, creating it
 // from the given schema on a miss. The writer and its proto descriptor share
 // one lifecycle: created together, evicted (and closed) together on schema
 // change, so encoded rows always line up with the stream. Writers outlive the
@@ -551,44 +567,27 @@ func (m *Manager) createTableAndAddColumnsIfNeeded(ctx context.Context, cfg dest
 // keeps the winner when two workers race to build the same writer (the shared
 // discards stream), discarding the loser's duplicate.
 func (m *Manager) writerForTable(ctx context.Context, cfg destConfig, tableName string, schema whutils.ModelTableSchema) (*tableStreamWriter, error) {
-	m.streamWritersMu.Lock()
-	if handle, ok := m.streamWriters[tableName]; ok {
-		m.streamWritersMu.Unlock()
-		return handle, nil
+	m.streamWritersMu.RLock()
+	tableStreamWriter, ok := m.streamWriters[tableName]
+	m.streamWritersMu.RUnlock()
+
+	if ok {
+		return tableStreamWriter, nil
 	}
-	m.streamWritersMu.Unlock()
-
-	m.logger.Infon("Creating writer for table", logger.NewStringField("table", tableName))
-
-	descriptor, err := descriptorForSchema(schema)
-	if err != nil {
-		return nil, fmt.Errorf("creating descriptor for table: %w", err)
-	}
-
-	w, err := m.streamWriterFactory.NewStreamWriter(context.WithoutCancel(ctx), cfg, tableName, schema)
-	if err != nil {
-		return nil, fmt.Errorf("creating writer for table: %w", err)
-	}
-
-	m.logger.Infon("Writer created for table", logger.NewStringField("table", tableName))
-
-	tableStreamWriter := NewTableStreamWriter(w, descriptor)
 
 	m.streamWritersMu.Lock()
-	if existing, ok := m.streamWriters[tableName]; ok {
-		m.streamWritersMu.Unlock()
-		// Another worker won the race while we were dialing; keep theirs and
-		// discard the writer we just created.
-		if err := w.Close(); err != nil {
-			m.logger.Warnn("Failed to close duplicate stream writer",
-				logger.NewStringField("table", tableName),
-				obskit.Error(err),
-			)
-		}
-		return existing, nil
+	defer m.streamWritersMu.Unlock()
+
+	m.logger.Infon("Creating table stream writer for table", logger.NewStringField("table", tableName))
+
+	tableStreamWriter, err := m.streamWriterFactory.NewTableStreamWriter(context.WithoutCancel(ctx), cfg, tableName, schema)
+	if err != nil {
+		return nil, fmt.Errorf("creating table stream writer for table: %w", err)
 	}
+
+	m.logger.Infon("Created table stream writer for table", logger.NewStringField("table", tableName))
+
 	m.streamWriters[tableName] = tableStreamWriter
-	m.streamWritersMu.Unlock()
 
 	return tableStreamWriter, nil
 }
@@ -605,21 +604,20 @@ func (m *Manager) invalidateTableCacheAndStreamWriter(cfg destConfig, tableName 
 	m.schemaCache.Invalidate(tableName)
 
 	m.streamWritersMu.Lock()
-	handle, ok := m.streamWriters[tableName]
-	if ok {
-		delete(m.streamWriters, tableName)
-	}
-	m.streamWritersMu.Unlock()
+	defer m.streamWritersMu.Unlock()
 
+	tableStreamWriter, ok := m.streamWriters[tableName]
 	if !ok {
 		return
 	}
+
+	delete(m.streamWriters, tableName)
 
 	// close() takes the writer's exclusive lock, so it drains in-flight appends
 	// (e.g. other workers sharing the discards stream) and blocks new ones
 	// rather than racing a concurrent AppendRows. It is closed outside the map
 	// mutex so that lock is never held across network I/O.
-	if err := handle.close(); err != nil {
+	if err := tableStreamWriter.Close(); err != nil {
 		m.logger.Warnn("Failed to close stream writer",
 			logger.NewStringField("table", tableName),
 			obskit.Error(err),

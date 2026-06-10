@@ -13,6 +13,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -66,11 +67,11 @@ func (m *mockIntegrationManager) Cleanup(_ context.Context) {
 }
 
 type mockStreamWriterFactory struct {
-	newStreamWriterOutputMap map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error)
+	newTableStreamWriterOutputMap map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error)
 }
 
-func (m *mockStreamWriterFactory) NewStreamWriter(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error) {
-	return m.newStreamWriterOutputMap[tableName](ctx, destConf, tableName, tableSchema)
+func (m *mockStreamWriterFactory) NewTableStreamWriter(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) {
+	return m.newTableStreamWriterOutputMap[tableName](ctx, destConf, tableName, tableSchema)
 }
 
 type mockStreamWriter struct {
@@ -108,7 +109,14 @@ func TestBQStreamV2(t *testing.T) {
 	}
 	validations.Init()
 
-	noOpStreamWriterFn := func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error) { //nolint:unparam
+	requireDescriptorForSchema := func(tb testing.TB, tableSchema whutils.ModelTableSchema) protoreflect.MessageDescriptor {
+		tb.Helper()
+		descriptor, err := descriptorForSchema(tableSchema)
+		require.NoError(t, err)
+		return descriptor
+	}
+
+	noOpStreamWriterFn := func(_ context.Context, _ destConfig, _ string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) { //nolint:unparam
 		output := &mockStreamWriter{
 			appendRowsOutput: func(ctx context.Context, data [][]byte) (AppendResult, error) {
 				output := &mockAppendResult{
@@ -122,7 +130,7 @@ func TestBQStreamV2(t *testing.T) {
 				return nil
 			},
 		}
-		return output, nil
+		return &tableStreamWriter{writer: output, descriptor: requireDescriptorForSchema(t, tableSchema)}, nil
 	}
 
 	t.Run("Upload: Invalid file path", func(t *testing.T) {
@@ -304,7 +312,7 @@ func TestBQStreamV2(t *testing.T) {
 			return output, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users":    noOpStreamWriterFn,
 				"products": noOpStreamWriterFn,
 			},
@@ -389,7 +397,7 @@ func TestBQStreamV2(t *testing.T) {
 			return output, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users":    noOpStreamWriterFn,
 				"products": noOpStreamWriterFn,
 			},
@@ -458,7 +466,7 @@ func TestBQStreamV2(t *testing.T) {
 			return output, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users":    noOpStreamWriterFn,
 				"products": noOpStreamWriterFn,
 			},
@@ -502,7 +510,7 @@ func TestBQStreamV2(t *testing.T) {
 			return output, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users":    noOpStreamWriterFn,
 				"products": noOpStreamWriterFn,
 			},
@@ -557,7 +565,7 @@ func TestBQStreamV2(t *testing.T) {
 			return output, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users": noOpStreamWriterFn,
 			},
 		}
@@ -589,8 +597,8 @@ func TestBQStreamV2(t *testing.T) {
 			return output, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
-				"rudder_discards": func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error) {
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
+				"rudder_discards": func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error) {
 					return nil, fmt.Errorf("failed to create discards writer")
 				},
 				"users":    noOpStreamWriterFn,
@@ -625,14 +633,14 @@ func TestBQStreamV2(t *testing.T) {
 			return output, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
-				"rudder_discards": func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error) { // nolint:unparam
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
+				"rudder_discards": func(_ context.Context, _ destConfig, _ string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) { // nolint:unparam
 					output := &mockStreamWriter{
 						appendRowsOutput: func(ctx context.Context, data [][]byte) (AppendResult, error) {
 							return nil, fmt.Errorf("failed to append discarded rows")
 						},
 					}
-					return output, nil
+					return &tableStreamWriter{writer: output, descriptor: requireDescriptorForSchema(t, tableSchema)}, nil
 				},
 				"users":    noOpStreamWriterFn,
 				"products": noOpStreamWriterFn,
@@ -666,8 +674,8 @@ func TestBQStreamV2(t *testing.T) {
 			return output, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
-				"rudder_discards": func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error) { // nolint:unparam
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
+				"rudder_discards": func(_ context.Context, _ destConfig, _ string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) { // nolint:unparam
 					output := &mockStreamWriter{
 						appendRowsOutput: func(ctx context.Context, data [][]byte) (AppendResult, error) {
 							output := &mockAppendResult{
@@ -678,7 +686,7 @@ func TestBQStreamV2(t *testing.T) {
 							return output, nil
 						},
 					}
-					return output, nil
+					return &tableStreamWriter{writer: output, descriptor: requireDescriptorForSchema(t, tableSchema)}, nil
 				},
 				"users":    noOpStreamWriterFn,
 				"products": noOpStreamWriterFn,
@@ -704,9 +712,9 @@ func TestBQStreamV2(t *testing.T) {
 			return &mockIntegrationManager{}, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users": noOpStreamWriterFn,
-				"products": func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error) {
+				"products": func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error) {
 					return nil, fmt.Errorf("failed to create events writer")
 				},
 			},
@@ -731,15 +739,15 @@ func TestBQStreamV2(t *testing.T) {
 			return &mockIntegrationManager{}, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users": noOpStreamWriterFn,
-				"products": func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error) { // nolint:unparam
+				"products": func(_ context.Context, _ destConfig, _ string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) { // nolint:unparam
 					output := &mockStreamWriter{
 						appendRowsOutput: func(ctx context.Context, data [][]byte) (AppendResult, error) {
 							return nil, fmt.Errorf("failed to append products rows")
 						},
 					}
-					return output, nil
+					return &tableStreamWriter{writer: output, descriptor: requireDescriptorForSchema(t, tableSchema)}, nil
 				},
 			},
 		}
@@ -763,9 +771,9 @@ func TestBQStreamV2(t *testing.T) {
 			return &mockIntegrationManager{}, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users": noOpStreamWriterFn,
-				"products": func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error) { // nolint:unparam
+				"products": func(_ context.Context, _ destConfig, _ string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) { // nolint:unparam
 					output := &mockStreamWriter{
 						appendRowsOutput: func(ctx context.Context, data [][]byte) (AppendResult, error) {
 							output := &mockAppendResult{
@@ -776,7 +784,7 @@ func TestBQStreamV2(t *testing.T) {
 							return output, nil
 						},
 					}
-					return output, nil
+					return &tableStreamWriter{writer: output, descriptor: requireDescriptorForSchema(t, tableSchema)}, nil
 				},
 			},
 		}
@@ -800,7 +808,7 @@ func TestBQStreamV2(t *testing.T) {
 			return &mockIntegrationManager{}, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users":    noOpStreamWriterFn,
 				"products": noOpStreamWriterFn,
 			},
@@ -836,8 +844,8 @@ func TestBQStreamV2(t *testing.T) {
 
 		appendCalls := atomic.Int64{}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
-				"users": func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error) { //nolint:unparam
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
+				"users": func(_ context.Context, _ destConfig, _ string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) { //nolint:unparam
 					output := &mockStreamWriter{
 						appendRowsOutput: func(ctx context.Context, data [][]byte) (AppendResult, error) {
 							appendCalls.Add(1)
@@ -849,7 +857,7 @@ func TestBQStreamV2(t *testing.T) {
 							return outputResult, nil
 						},
 					}
-					return output, nil
+					return &tableStreamWriter{writer: output, descriptor: requireDescriptorForSchema(t, tableSchema)}, nil
 				},
 			},
 		}
@@ -913,7 +921,7 @@ func TestBQStreamV2(t *testing.T) {
 			return output, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users":    noOpStreamWriterFn,
 				"products": noOpStreamWriterFn,
 			},
@@ -942,7 +950,7 @@ func TestBQStreamV2(t *testing.T) {
 		sm.schemaCache.Set("users", whutils.ModelTableSchema{"id": "int", "name": "string", "age": "int", "received_at": "datetime"}, now)
 		sm.schemaCache.Set("products", whutils.ModelTableSchema{"id": "int", "name": "string", "price": "float", "in_stock": "boolean", "received_at": "datetime"}, now)
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users":    noOpStreamWriterFn,
 				"products": noOpStreamWriterFn,
 			},
@@ -977,7 +985,7 @@ func TestBQStreamV2(t *testing.T) {
 		}
 		sm.schemaCache.Set("users", whutils.ModelTableSchema{"id": "int", "name": "string", "age": "int", "received_at": "datetime"}, timeutil.Now())
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users":    noOpStreamWriterFn,
 				"products": noOpStreamWriterFn,
 			},
@@ -1003,7 +1011,7 @@ func TestBQStreamV2(t *testing.T) {
 			return &mockIntegrationManager{}, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users":    noOpStreamWriterFn,
 				"products": noOpStreamWriterFn,
 			},
@@ -1045,7 +1053,7 @@ func TestBQStreamV2(t *testing.T) {
 			return output, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users":    noOpStreamWriterFn,
 				"products": noOpStreamWriterFn,
 			},
@@ -1082,8 +1090,8 @@ func TestBQStreamV2(t *testing.T) {
 			return &mockIntegrationManager{}, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error){
-				"rudder_discards": func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error) {
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
+				"rudder_discards": func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error) {
 					return nil, fmt.Errorf("failed to create discards writer")
 				},
 				"users":    noOpStreamWriterFn,
@@ -1121,10 +1129,10 @@ func TestBQStreamV2(t *testing.T) {
 			return &mockIntegrationManager{}, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users":           noOpStreamWriterFn,
 				"rudder_discards": noOpStreamWriterFn,
-				"products": func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error) {
+				"products": func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error) {
 					return nil, fmt.Errorf("failed to create events writer")
 				},
 			},
@@ -1156,7 +1164,7 @@ func TestBQStreamV2(t *testing.T) {
 			return &mockIntegrationManager{}, nil
 		}
 		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (StreamWriter, error){
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users":    noOpStreamWriterFn,
 				"products": noOpStreamWriterFn,
 			},

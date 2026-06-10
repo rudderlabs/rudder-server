@@ -99,7 +99,6 @@ func (gw *Handle) Setup(
 	gw.conf.dbBatchWriteTimeout = config.GetReloadableDurationVar(5, time.Millisecond, "Gateway.dbBatchWriteTimeout", "Gateway.dbBatchWriteTimeoutInMS")
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
 	gw.conf.allowReqsWithoutUserIDAndAnonymousID = config.GetReloadableBoolVar(false, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
-	gw.conf.gwAllowPartialWriteWithErrors = config.GetReloadableBoolVar(true, "Gateway.allowPartialWriteWithErrors")
 	// Maximum request size to gateway
 	gw.conf.maxReqSize = config.GetReloadableIntVar(4000, 1024, "Gateway.maxReqSizeInKB")
 	// Enable rate limit on incoming events. false by default
@@ -487,22 +486,13 @@ func (gw *Handle) dbWriterWorkerProcess() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), gw.conf.WriteTimeout)
 		err := gw.jobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
-			if gw.conf.gwAllowPartialWriteWithErrors.Load() {
-				var err error
-				errorMessagesMap, err = gw.jobsDB.StoreEachBatchRetryInTx(ctx, tx, jobBatches)
-				if err != nil {
-					return err
+			if err := gw.jobsDB.StoreInTx(ctx, tx, lo.Flatten(jobBatches)); err != nil {
+				if !errors.Is(err, jobsdb.ErrStaleDsList) {
+					gw.logger.Errorn("Store into gateway db failed with error",
+						logger.NewIntField("jobBatchesCount", int64(len(jobBatches))),
+						obskit.Error(err))
 				}
-			} else {
-				err := gw.jobsDB.StoreInTx(ctx, tx, lo.Flatten(jobBatches))
-				if err != nil {
-					if !errors.Is(err, jobsdb.ErrStaleDsList) {
-						gw.logger.Errorn("Store into gateway db failed with error",
-							logger.NewIntField("jobBatchesCount", int64(len(jobBatches))),
-							obskit.Error(err))
-					}
-					return err
-				}
+				return err
 			}
 
 			// rsources stats
