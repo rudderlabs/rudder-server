@@ -91,6 +91,8 @@ func createTestGateway(t *testing.T, eventBlockingSettings backendconfig.EventBl
 			allowReqsWithoutUserIDAndAnonymousID                                              config.ValueLoader[bool]
 			gwAllowPartialWriteWithErrors                                                     config.ValueLoader[bool]
 			webhookV2HandlerEnabled                                                           bool
+			internalEndpointsEnabled                                                          bool
+			legacyWarehouseEndpointsEnabled                                                   bool
 		}{
 			webhookV2HandlerEnabled: false,
 		},

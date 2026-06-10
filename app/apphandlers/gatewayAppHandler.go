@@ -171,11 +171,13 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, _ func(), options *app
 	streamMsgValidator := stream.NewMessageValidator()
 	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), statsFactory, a.app, backendconfig.DefaultBackendConfig,
 		gwWODB, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
-		streamMsgValidator, gateway.WithInternalHttpHandlers(
+		streamMsgValidator,
+		gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
 				"/drain": drainConfigHttpHandler,
 			},
-		))
+		),
+		gateway.WithInternalEndpointsEnabled(config.GetBoolVar(options.EnterpriseToken != "", "Gateway.internalEndpointsEnabled")))
 	if err != nil {
 		return fmt.Errorf("failed to setup gateway: %w", err)
 	}

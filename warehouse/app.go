@@ -206,6 +206,7 @@ func (a *App) Setup(ctx context.Context) error {
 		a.bcManager,
 		a.sourcesManager,
 		a.triggerStore,
+		a.app.Options().EnterpriseToken != "",
 	)
 	a.admin = whadmin.New(
 		a.bcManager,
