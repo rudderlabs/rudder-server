@@ -49,7 +49,7 @@ func newRegularManager(
 	case "SALESFORCE_BULK_UPLOAD":
 		return salesforcebulkupload.NewManager(conf, logger, statsFactory, destination, backendConfig)
 	case "BQSTREAM_V2":
-		return common.SimpleAsyncDestinationManager{UploaderAndTransformer: bqstreamv2.NewManager(conf, logger, statsFactory, destination)}, nil
+		return bqstreamv2.NewManager(conf, logger, statsFactory, destination), nil
 	}
 	return nil, errors.New("invalid destination type")
 }

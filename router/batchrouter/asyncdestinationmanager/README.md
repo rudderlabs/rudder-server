@@ -82,9 +82,7 @@ Destinations that require complex polling and status checking:
 - Eloqua
 - Yandex Metrica
 - Klaviyo Bulk Upload
-- Lytics Bulk Upload
 - Snowpipe Streaming
-- BigQuery Streaming
 
 ### 2. SFTP Destinations
 
@@ -94,8 +92,8 @@ File-based destinations that use SFTP protocol:
 ### 3. Simple Async Destinations
 
 Destinations that don't require complex polling (using `SimpleAsyncDestinationManager`):
-- Basic file uploads
-- Fire-and-forget operations
+- Lytics Bulk Upload
+- BigQuery Streaming
 
 ## Onboarding New Integrations
 

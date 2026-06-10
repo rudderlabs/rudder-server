@@ -174,7 +174,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			return nil, fmt.Errorf("failed to create integration manager")
 		}
@@ -192,7 +192,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
@@ -215,7 +215,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
@@ -238,7 +238,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
@@ -264,7 +264,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
@@ -290,7 +290,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				createSchemaOutput: func() error {
@@ -321,7 +321,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				createTableOutputMap: map[string]func() error{
@@ -346,7 +346,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				createTableOutputMap: map[string]func() error{
@@ -371,7 +371,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				createTableOutputMap: map[string]func() error{
@@ -406,7 +406,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
@@ -444,7 +444,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				createTableOutputMap: map[string]func() error{
@@ -478,7 +478,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				createTableOutputMap: map[string]func() error{
@@ -539,7 +539,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
@@ -576,7 +576,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
@@ -612,7 +612,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
@@ -653,7 +653,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
@@ -699,7 +699,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			return &mockIntegrationManager{}, nil
 		}
@@ -726,7 +726,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			return &mockIntegrationManager{}, nil
 		}
@@ -758,7 +758,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			return &mockIntegrationManager{}, nil
 		}
@@ -795,7 +795,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			return &mockIntegrationManager{}, nil
 		}
@@ -829,7 +829,7 @@ func TestBQStreamV2(t *testing.T) {
 		conf := config.New()
 		conf.Set("BQStreamV2.maxBufferCapacity", int64(64*1024*1024))
 
-		sm := NewManager(conf, logger.NOP, statsStore, destination)
+		sm := newManager(conf, logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			return &mockIntegrationManager{}, nil
 		}
@@ -899,7 +899,7 @@ func TestBQStreamV2(t *testing.T) {
 
 		fetchSchemaCalls := atomic.Int64{}
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
@@ -935,7 +935,7 @@ func TestBQStreamV2(t *testing.T) {
 		require.NoError(t, err)
 
 		now := time.Now()
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			return &mockIntegrationManager{}, nil
 		}
@@ -962,7 +962,7 @@ func TestBQStreamV2(t *testing.T) {
 
 		fetchSchemaCalls := atomic.Int64{}
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
@@ -998,7 +998,7 @@ func TestBQStreamV2(t *testing.T) {
 
 		now := timeutil.Now()
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			return &mockIntegrationManager{}, nil
 		}
@@ -1032,7 +1032,7 @@ func TestBQStreamV2(t *testing.T) {
 
 		now := timeutil.Now()
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			output := &mockIntegrationManager{
 				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
@@ -1074,7 +1074,7 @@ func TestBQStreamV2(t *testing.T) {
 
 		now := timeutil.Now()
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.schemaCache.Set("products", whutils.ModelTableSchema{"id": "int", "product_id": "boolean", "price": "float", "in_stock": "boolean", "received_at": "datetime"}, now)
 		sm.schemaCache.Set("users", whutils.ModelTableSchema{"id": "int", "name": "string", "age": "int", "received_at": "datetime"}, now)
 		sm.schemaCache.Set("rudder_discards", whutils.ModelTableSchema{"column_name": "string", "column_value": "string", "reason": "string", "received_at": "datetime", "row_id": "string", "table_name": "string", "uuid_ts": "datetime"}, now)
@@ -1114,7 +1114,7 @@ func TestBQStreamV2(t *testing.T) {
 
 		now := timeutil.Now()
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.schemaCache.Set("products", whutils.ModelTableSchema{"id": "int", "product_id": "boolean", "price": "float", "in_stock": "boolean", "received_at": "datetime"}, now)
 		sm.schemaCache.Set("users", whutils.ModelTableSchema{"id": "int", "name": "string", "age": "int", "received_at": "datetime"}, now)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
@@ -1151,7 +1151,7 @@ func TestBQStreamV2(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := NewManager(config.New(), logger.NOP, statsStore, destination)
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			return &mockIntegrationManager{}, nil
 		}

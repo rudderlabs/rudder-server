@@ -24,11 +24,22 @@ type (
 		logger                    logger.Logger
 		statsFactory              stats.Stats
 		destination               *backendconfig.DestinationT
-		integrationManagerCreator func(ctx context.Context, cfg destConfig) (IntegrationManager, error)
+		integrationManagerCreator IntegrationManagerCreator
 
 		streamWriterFactory StreamWriterFactory
 		streamWritersMu     sync.Mutex // guards streamWriters
-		streamWriters       map[string]*tableStreamWriter
+		// streamWriters caches open Storage Write API streams (and their
+		// BigQuery clients) which, by design, outlive a single upload
+		// (writerForTable dials with context.WithoutCancel). They are only
+		// released via invalidateTableCacheAndStreamWriter (schema change /
+		// append error).
+		//
+		// NOTE: Manager has no Close/Cleanup, so the writers cached here are never torn down when the
+		// Manager itself is discarded — handle_lifecycle.go's refreshDestination
+		// builds a new Manager on every destination RevisionID change (common in
+		// multi-tenant) and Shutdown() simply drops it, in both cases leaking the
+		// open streams/connections. Fixing it needs a Close() that drains and closes every cached writer, wired into the refresh/teardown path; the interface gap in common.AsyncDestinationManager is broader than this PR.
+		streamWriters map[string]*tableStreamWriter
 
 		now func() time.Time
 
@@ -66,7 +77,8 @@ type (
 		Cleanup(ctx context.Context)
 	}
 
-	StreamWriterFactory interface {
+	IntegrationManagerCreator func(ctx context.Context, cfg destConfig) (IntegrationManager, error)
+	StreamWriterFactory       interface {
 		NewStreamWriter(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error)
 	}
 
@@ -142,7 +154,7 @@ type (
 
 	failedJobResult struct {
 		failedJobIDs   []int64
-		failedJobError string
+		failedJobError error
 	}
 
 	streamEventBatchesResult struct {

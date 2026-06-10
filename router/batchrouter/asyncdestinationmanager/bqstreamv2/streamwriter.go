@@ -8,6 +8,7 @@ import (
 	managedwriter "cloud.google.com/go/bigquery/storage/managedwriter"
 	"cloud.google.com/go/bigquery/storage/managedwriter/adapt"
 	"google.golang.org/api/option"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/rudderlabs/rudder-go-kit/googleutil"
 
@@ -75,4 +76,52 @@ func (s *streamWriterImpl) AppendRows(ctx context.Context, data [][]byte) (Appen
 // Close closes the stream and its client; they share one lifecycle.
 func (s *streamWriterImpl) Close() error {
 	return errors.Join(s.stream.Close(), s.client.Close())
+}
+
+func NewTableStreamWriter(writer StreamWriter, descriptor protoreflect.MessageDescriptor) *tableStreamWriter {
+	return &tableStreamWriter{writer: writer, descriptor: descriptor}
+}
+
+// streamEncodedBatches appends pre-encoded row batches through the stream,
+// pipelining them (fire all, then wait, so N batches cost ~one round trip). A
+// read lock is held for the whole call so an eviction (Close) cannot race the
+// in-flight appends, while concurrent appends from other workers sharing this
+// writer (the discards stream) still proceed in parallel.
+//
+// It returns one error per input batch, positionally aligned with
+// encodedBatches: a nil entry means that batch was durably appended. When the
+// writer has already been evicted, every batch fails with errWriterClosed so
+// the caller retries them against a freshly built writer.
+func (t *tableStreamWriter) streamEncodedRows(ctx context.Context, encodedRows [][]byte) error {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.closed {
+		return errWriterClosed
+	}
+
+	appendResult, err := t.writer.AppendRows(ctx, encodedRows)
+	if err != nil {
+		return fmt.Errorf("appending rows: %w", err)
+	}
+
+	_, err = appendResult.GetResult(ctx)
+	if err != nil {
+		return fmt.Errorf("getting full response: %w", err)
+	}
+
+	return nil
+}
+
+// close closes the stream writer once, taking the exclusive lock so it never
+// runs concurrently with an in-flight append.
+func (t *tableStreamWriter) close() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.closed {
+		return nil
+	}
+	t.closed = true
+	return t.writer.Close()
 }

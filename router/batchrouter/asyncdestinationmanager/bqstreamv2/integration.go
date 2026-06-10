@@ -33,16 +33,15 @@ func (m *Manager) createIntegrationManager(ctx context.Context, cfg destConfig) 
 	return bigQueryManager, nil
 }
 
-// fetchSchemaFromWarehouse fetches the namespace schema and filters it down
+// fetchSchemaFromWarehouseForTables fetches the namespace schema and filters it down
 // to the given tables.
-func (m *Manager) fetchSchemaFromWarehouse(ctx context.Context, cfg destConfig, tableNames []string) (whutils.ModelSchema, error) {
+func (m *Manager) fetchSchemaFromWarehouseForTables(ctx context.Context, cfg destConfig, integrationManagerCreator IntegrationManagerCreator, tableNames []string) (whutils.ModelSchema, error) {
 	m.logger.Infon("Fetching schema from warehouse")
 
-	bigQueryManager, err := m.integrationManagerCreator(ctx, cfg)
+	bigQueryManager, err := integrationManagerCreator(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("creating bigquery manager: %w", err)
 	}
-	defer bigQueryManager.Cleanup(ctx)
 
 	warehouseSchema, err := bigQueryManager.FetchSchema(ctx)
 	if err != nil {
@@ -62,16 +61,15 @@ func (m *Manager) fetchSchemaFromWarehouse(ctx context.Context, cfg destConfig, 
 }
 
 // createSchemaInWarehouse creates the schema in the warehouse.
-func (m *Manager) createSchemaInWarehouse(ctx context.Context, cfg destConfig) error {
+func (m *Manager) createSchemaInWarehouse(ctx context.Context, cfg destConfig, integrationManagerCreator IntegrationManagerCreator) error {
 	m.logger.Infon("Creating schema in warehouse",
 		logger.NewStringField(logfield.Namespace, cfg.Namespace),
 	)
 
-	bigQueryManager, err := m.integrationManagerCreator(ctx, cfg)
+	bigQueryManager, err := integrationManagerCreator(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("creating bigquery manager: %w", err)
 	}
-	defer bigQueryManager.Cleanup(ctx)
 
 	if err := bigQueryManager.CreateSchema(ctx); err != nil {
 		return fmt.Errorf("creating schema in warehouse: %w", err)
@@ -80,17 +78,16 @@ func (m *Manager) createSchemaInWarehouse(ctx context.Context, cfg destConfig) e
 }
 
 // createTableSchema creates the table schema in the warehouse.
-func (m *Manager) createTableSchema(ctx context.Context, cfg destConfig, tableName string, eventsSchema whutils.ModelTableSchema) error {
+func (m *Manager) createTableSchema(ctx context.Context, cfg destConfig, integrationManagerCreator IntegrationManagerCreator, tableName string, eventsSchema whutils.ModelTableSchema) error {
 	m.logger.Infon("Creating table schema",
 		logger.NewStringField(logfield.Namespace, cfg.Namespace),
 		logger.NewStringField(logfield.TableName, tableName),
 	)
 
-	bigQueryManager, err := m.integrationManagerCreator(ctx, cfg)
+	bigQueryManager, err := integrationManagerCreator(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("creating bigquery manager: %w", err)
 	}
-	defer bigQueryManager.Cleanup(ctx)
 
 	if err := bigQueryManager.CreateTable(ctx, tableName, eventsSchema); err != nil {
 		return fmt.Errorf("creating table schema: %w", err)
@@ -99,7 +96,7 @@ func (m *Manager) createTableSchema(ctx context.Context, cfg destConfig, tableNa
 }
 
 // addColumnsToTable adds the columns to the table in the warehouse.
-func (m *Manager) addColumnsToTable(ctx context.Context, cfg destConfig, tableName string, columns []whutils.ColumnInfo) error {
+func (m *Manager) addColumnsToTable(ctx context.Context, cfg destConfig, integrationManagerCreator IntegrationManagerCreator, tableName string, columns []whutils.ColumnInfo) error {
 	for _, column := range columns {
 		m.logger.Infon("Adding column",
 			logger.NewStringField("name", column.Name),
@@ -109,11 +106,10 @@ func (m *Manager) addColumnsToTable(ctx context.Context, cfg destConfig, tableNa
 		)
 	}
 
-	bigQueryManager, err := m.integrationManagerCreator(ctx, cfg)
+	bigQueryManager, err := integrationManagerCreator(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("creating bigquery manager: %w", err)
 	}
-	defer bigQueryManager.Cleanup(ctx)
 
 	if err := bigQueryManager.AddColumns(ctx, tableName, columns); err != nil {
 		return fmt.Errorf("adding columns: %w", err)

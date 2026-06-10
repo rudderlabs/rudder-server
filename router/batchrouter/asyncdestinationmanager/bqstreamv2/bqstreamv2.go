@@ -53,6 +53,15 @@ func NewManager(
 	log logger.Logger,
 	statsFactory stats.Stats,
 	destination *backendconfig.DestinationT,
+) common.AsyncDestinationManager {
+	return common.SimpleAsyncDestinationManager{UploaderAndTransformer: newManager(conf, log, statsFactory, destination)}
+}
+
+func newManager(
+	conf *config.Config,
+	log logger.Logger,
+	statsFactory stats.Stats,
+	destination *backendconfig.DestinationT,
 ) *Manager {
 	m := &Manager{
 		appConfig: conf,
@@ -101,7 +110,6 @@ func NewManager(
 	m.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 		return m.createIntegrationManager(ctx, cfg)
 	}
-
 	return m
 }
 
@@ -131,15 +139,37 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 		m.logger.Warnn("Failed to decode destination config",
 			obskit.Error(err),
 		)
-		return m.abortJobs(asyncDest, fmt.Errorf("failed to decode destination config: %w", err).Error())
+		return m.abortJobs(asyncDest, fmt.Errorf("decoding destination config: %w", err).Error())
 	}
+
+	// One integration manager is shared by every schema operation in this
+	// upload, created lazily on first use and cleaned up once, instead of
+	// dialing a client and running a dropDanglingStagingTables query per
+	// operation. getIntegrationManager memoises the (manager, error) outcome; an
+	// upload whose schemas are fully cached never calls it, so it dials nothing.
+	var (
+		integrationManager     IntegrationManager
+		integrationManagerErr  error
+		integrationManagerOnce sync.Once
+	)
+	integrationManagerCreator := func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
+		integrationManagerOnce.Do(func() {
+			integrationManager, integrationManagerErr = m.integrationManagerCreator(ctx, cfg)
+		})
+		return integrationManager, integrationManagerErr
+	}
+	defer func() {
+		if integrationManager != nil {
+			integrationManager.Cleanup(ctx)
+		}
+	}()
 
 	events, err := m.eventsFromFile(asyncDest.FileName, asyncDest.Count)
 	if err != nil {
 		m.logger.Warnn("Failed to read events from file",
 			obskit.Error(err),
 		)
-		return m.abortJobs(asyncDest, fmt.Errorf("failed to read events from file: %w", err).Error())
+		return m.abortJobs(asyncDest, fmt.Errorf("reading events from file: %w", err).Error())
 	}
 	m.logger.Infon("Read events from file",
 		logger.NewIntField("events", int64(len(events))),
@@ -149,7 +179,7 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 	groupedAndChunkedEvents := m.groupAndChunkEvents(events)
 	eventsTables := lo.Keys(groupedAndChunkedEvents)
 
-	if err := m.refreshSchemaCacheIfNeeded(ctx, cfg, groupedAndChunkedEvents); err != nil {
+	if err := m.refreshSchemaCacheIfNeeded(ctx, cfg, integrationManagerCreator, groupedAndChunkedEvents); err != nil {
 		m.logger.Warnn("Failed to refresh schema cache", obskit.Error(err))
 
 		return m.failOrAbortJobs(asyncDest, err)
@@ -158,10 +188,10 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 	// The discards table is shared by all table workers, so it is
 	// created/migrated once upfront instead of racing on BigQuery's
 	// etag-guarded metadata updates from concurrent workers.
-	if err := m.createTableAndAddColumnsIfNeeded(ctx, cfg, discardsTableName, discardsTableSchema); err != nil {
+	if err := m.createTableAndAddColumnsIfNeeded(ctx, cfg, integrationManagerCreator, discardsTableName, discardsTableSchema); err != nil {
 		m.logger.Warnn("Failed to create discards table and add columns", obskit.Error(err))
 
-		return m.failOrAbortJobs(asyncDest, fmt.Errorf("failed to create discards table and add columns: %w", err))
+		return m.failOrAbortJobs(asyncDest, fmt.Errorf("creating discards table and adding columns: %w", err))
 	}
 
 	tableWorkers := max(1, m.config.tableWorkers.Load())
@@ -178,7 +208,7 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 	for _, tableName := range eventsTables {
 		tableBatches := groupedAndChunkedEvents[tableName]
 		tableErrgroup.Go(func() error {
-			result := m.processTable(ctx, cfg, tableName, tableBatches)
+			result := m.processTable(ctx, cfg, integrationManagerCreator, tableName, tableBatches)
 
 			statusMu.Lock()
 			defer statusMu.Unlock()
@@ -189,29 +219,27 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 			failedJobIDs := failedJobResult.failedJobIDs
 			failedJobError := failedJobResult.failedJobError
 
-			if failedJobError != "" {
+			if failedJobError != nil {
 				m.logger.Warnn("Failed to process table",
 					logger.NewStringField("namespace", cfg.Namespace),
 					logger.NewStringField("table", tableName),
-					obskit.Error(errors.New(failedJobError)),
+					obskit.Error(failedJobError),
 				)
 
-				if shouldAbort(errors.New(failedJobError)) {
+				if shouldAbort(failedJobError) {
 					aborted = append(aborted, failedJobIDs...)
-					abortReason = failedJobError
+					abortReason = failedJobError.Error()
 				} else {
 					failed = append(failed, failedJobIDs...)
-					failedReason = failedJobError
+					failedReason = failedJobError.Error()
 				}
 			}
 			return nil
 		})
 	}
 
-	if err := tableErrgroup.Wait(); err != nil {
-		m.logger.Warnn("Failed to process tables", obskit.Error(err))
-		return m.failedJobs(asyncDest, fmt.Errorf("failed to process tables: %w", err).Error())
-	}
+	_ = tableErrgroup.Wait()
+
 	m.logger.Infon("Completed uploading data to BQStream V2 destination")
 
 	m.stats.jobs.succeeded.Count(len(succeeded))
@@ -233,21 +261,21 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 // refreshSchemaCacheIfNeeded fetches the warehouse schema when any of the
 // upload's tables is missing from the cache, creating the namespace if it
 // doesn't exist yet and refreshing the cached entries.
-func (m *Manager) refreshSchemaCacheIfNeeded(ctx context.Context, cfg destConfig, groupedAndChunkedEvents map[string][]tableEvents) error {
+func (m *Manager) refreshSchemaCacheIfNeeded(ctx context.Context, cfg destConfig, integrationManagerCreator IntegrationManagerCreator, groupedAndChunkedEvents map[string][]tableEvents) error {
 	if !m.shouldFetchSchema(groupedAndChunkedEvents) {
 		return nil
 	}
 
-	schema, err := m.fetchSchemaFromWarehouse(ctx, cfg, append(lo.Keys(groupedAndChunkedEvents), discardsTableName))
+	schema, err := m.fetchSchemaFromWarehouseForTables(ctx, cfg, integrationManagerCreator, append(lo.Keys(groupedAndChunkedEvents), discardsTableName))
 	if err != nil {
-		return fmt.Errorf("failed to fetch schema: %w", err)
+		return fmt.Errorf("fetching schema from warehouse for tables: %w", err)
 	}
 
 	if len(schema) == 0 {
 		m.logger.Infon("No schema found in warehouse")
 
-		if err := m.createSchemaInWarehouse(ctx, cfg); err != nil && !checkAndIgnoreAlreadyExistError(err) {
-			return fmt.Errorf("failed to create schema: %w", err)
+		if err := m.createSchemaInWarehouse(ctx, cfg, integrationManagerCreator); err != nil && !checkAndIgnoreAlreadyExistError(err) {
+			return fmt.Errorf("creating schema in warehouse: %w", err)
 		}
 		return nil
 	}
@@ -302,18 +330,18 @@ func (m *Manager) failedJobs(asyncDest *common.AsyncDestinationStruct, failedRea
 // rudder_discards), and appends the encoded rows through the table's cached
 // stream writer. Outcomes are reported per chunk: jobs of acknowledged chunks
 // succeed even when other chunks of the same table fail.
-func (m *Manager) processTable(ctx context.Context, cfg destConfig, tableName string, tableEventsList []tableEvents) tableProcessResult {
+func (m *Manager) processTable(ctx context.Context, cfg destConfig, integrationManagerCreator IntegrationManagerCreator, tableName string, tableEventsList []tableEvents) tableProcessResult {
 	m.logger.Infon("Processing table",
 		logger.NewStringField("namespace", cfg.Namespace),
 		logger.NewStringField("table", tableName),
 	)
 
 	eventsSchema := tableEventsList[0].eventsSchema
-	if err := m.createTableAndAddColumnsIfNeeded(ctx, cfg, tableName, eventsSchema); err != nil {
+	if err := m.createTableAndAddColumnsIfNeeded(ctx, cfg, integrationManagerCreator, tableName, eventsSchema); err != nil {
 		return tableProcessResult{
 			failedJobResult: failedJobResult{
 				failedJobIDs:   jobIDsFromTableEvents(tableEventsList),
-				failedJobError: fmt.Errorf("failed to create table and add columns: %w", err).Error(),
+				failedJobError: fmt.Errorf("creating table schema: %w", err),
 			},
 		}
 	}
@@ -323,7 +351,7 @@ func (m *Manager) processTable(ctx context.Context, cfg destConfig, tableName st
 		return tableProcessResult{
 			failedJobResult: failedJobResult{
 				failedJobIDs:   jobIDsFromTableEvents(tableEventsList),
-				failedJobError: fmt.Errorf("no warehouse schema found for table %s", tableName).Error(),
+				failedJobError: fmt.Errorf("no warehouse schema found for table %s", tableName),
 			},
 		}
 	}
@@ -358,7 +386,7 @@ func (m *Manager) processTable(ctx context.Context, cfg destConfig, tableName st
 			return tableProcessResult{
 				failedJobResult: failedJobResult{
 					failedJobIDs:   jobIDsFromTableEvents(tableEventsList),
-					failedJobError: fmt.Errorf("failed to stream discarded rows: %w", err).Error(),
+					failedJobError: fmt.Errorf("streaming discarded rows: %w", err),
 				},
 			}
 		}
@@ -390,7 +418,7 @@ func (m *Manager) processTable(ctx context.Context, cfg destConfig, tableName st
 		},
 	}
 	if streamResult.failedError != nil {
-		response.failedJobResult.failedJobError = streamResult.failedError.Error()
+		response.failedJobResult.failedJobError = streamResult.failedError
 	}
 	return response
 }
@@ -407,7 +435,7 @@ func (m *Manager) streamEventBatches(ctx context.Context, cfg destConfig, tableN
 		m.invalidateTableCacheAndStreamWriter(cfg, tableName)
 		return streamEventBatchesResult{
 			failedIDs:   jobIDsFromTableEvents(tableEventsList),
-			failedError: fmt.Errorf("failed to stream events rows: creating stream writer: %w", err),
+			failedError: fmt.Errorf("streaming events rows: creating stream writer: %w", err),
 		}
 	}
 
@@ -472,7 +500,7 @@ func (m *Manager) streamDiscardedEvents(ctx context.Context, cfg destConfig, tab
 // createTableAndAddColumnsIfNeeded creates the table when it is not in the
 // schema cache, or adds any event columns missing from the cached warehouse
 // schema, keeping the cache (and the dependent stream writer) in sync.
-func (m *Manager) createTableAndAddColumnsIfNeeded(ctx context.Context, cfg destConfig, tableName string, eventsSchema whutils.ModelTableSchema) error {
+func (m *Manager) createTableAndAddColumnsIfNeeded(ctx context.Context, cfg destConfig, integrationManagerCreator IntegrationManagerCreator, tableName string, eventsSchema whutils.ModelTableSchema) error {
 	warehouseSchema, ok := m.schemaCache.Get(tableName, m.now())
 	if !ok {
 		m.logger.Infon("No table schema found in cache",
@@ -480,12 +508,12 @@ func (m *Manager) createTableAndAddColumnsIfNeeded(ctx context.Context, cfg dest
 			logger.NewStringField("table", tableName),
 		)
 
-		err := m.createTableSchema(ctx, cfg, tableName, eventsSchema)
+		err := m.createTableSchema(ctx, cfg, integrationManagerCreator, tableName, eventsSchema)
 		if err != nil {
 			if !checkAndIgnoreAlreadyExistError(err) {
 				m.logger.Infon("Table schema already exists", logger.NewStringField("table", tableName))
 
-				return fmt.Errorf("table schema already exists: %w", err)
+				return fmt.Errorf("creating table schema: %w", err)
 			}
 			return nil
 		}
@@ -497,9 +525,9 @@ func (m *Manager) createTableAndAddColumnsIfNeeded(ctx context.Context, cfg dest
 
 	newColumns := findNewColumns(eventsSchema, warehouseSchema)
 	if len(newColumns) > 0 {
-		err := m.addColumnsToTable(ctx, cfg, tableName, newColumns)
+		err := m.addColumnsToTable(ctx, cfg, integrationManagerCreator, tableName, newColumns)
 		if err != nil {
-			return fmt.Errorf("failed to add columns: %w", err)
+			return fmt.Errorf("adding columns to table %s: %w", tableName, err)
 		}
 
 		for _, column := range newColumns {
@@ -544,7 +572,7 @@ func (m *Manager) writerForTable(ctx context.Context, cfg destConfig, tableName 
 
 	m.logger.Infon("Writer created for table", logger.NewStringField("table", tableName))
 
-	handle := &tableStreamWriter{writer: w, descriptor: descriptor}
+	tableStreamWriter := NewTableStreamWriter(w, descriptor)
 
 	m.streamWritersMu.Lock()
 	if existing, ok := m.streamWriters[tableName]; ok {
@@ -559,10 +587,10 @@ func (m *Manager) writerForTable(ctx context.Context, cfg destConfig, tableName 
 		}
 		return existing, nil
 	}
-	m.streamWriters[tableName] = handle
+	m.streamWriters[tableName] = tableStreamWriter
 	m.streamWritersMu.Unlock()
 
-	return handle, nil
+	return tableStreamWriter, nil
 }
 
 // invalidateTableCacheAndStreamWriter evicts the table's schema cache entry
@@ -597,48 +625,4 @@ func (m *Manager) invalidateTableCacheAndStreamWriter(cfg destConfig, tableName 
 			obskit.Error(err),
 		)
 	}
-}
-
-// streamEncodedBatches appends pre-encoded row batches through the stream,
-// pipelining them (fire all, then wait, so N batches cost ~one round trip). A
-// read lock is held for the whole call so an eviction (Close) cannot race the
-// in-flight appends, while concurrent appends from other workers sharing this
-// writer (the discards stream) still proceed in parallel.
-//
-// It returns one error per input batch, positionally aligned with
-// encodedBatches: a nil entry means that batch was durably appended. When the
-// writer has already been evicted, every batch fails with errWriterClosed so
-// the caller retries them against a freshly built writer.
-func (t *tableStreamWriter) streamEncodedRows(ctx context.Context, encodedRows [][]byte) error {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	if t.closed {
-		return errWriterClosed
-	}
-
-	appendResult, err := t.writer.AppendRows(ctx, encodedRows)
-	if err != nil {
-		return fmt.Errorf("appending rows: %w", err)
-	}
-
-	_, err = appendResult.GetResult(ctx)
-	if err != nil {
-		return fmt.Errorf("getting full response: %w", err)
-	}
-
-	return nil
-}
-
-// close closes the stream writer once, taking the exclusive lock so it never
-// runs concurrently with an in-flight append.
-func (t *tableStreamWriter) close() error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if t.closed {
-		return nil
-	}
-	t.closed = true
-	return t.writer.Close()
 }
