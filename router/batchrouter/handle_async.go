@@ -32,7 +32,7 @@ import (
 
 func (brt *Handle) getImportingJobs(ctx context.Context, augmentQueryParams func(*jobsdb.GetQueryParams), limit int) (jobsdb.JobsResult, error) {
 	var jobsResult jobsdb.JobsResult
-	// we need to get all importing jobs based on limit, overcoming dsLimits and payload size limits
+	// we need to get all importing jobs based on limit, overcoming dsLimits (no payload size limit is applied here)
 	var stop bool
 	var moreToken any
 	var iterations int
@@ -43,7 +43,6 @@ func (brt *Handle) getImportingJobs(ctx context.Context, augmentQueryParams func
 		queryParams := jobsdb.GetQueryParams{
 			CustomValFilters: []string{brt.destType},
 			JobsLimit:        jobsLimit,
-			PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
 		}
 		augmentQueryParams(&queryParams)
 		r, err := misc.QueryWithRetriesAndNotify(ctx, brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (*jobsdb.MoreJobsResult, error) {
@@ -64,6 +63,17 @@ func (brt *Handle) getImportingJobs(ctx context.Context, augmentQueryParams func
 			iterations == maxIterations // or we have reached max iterations
 	}
 	brt.asyncGetImportingIterations.Observe(float64(iterations))
+
+	if iterations == maxIterations {
+		// This is a safeguard against infinite loops and should never be hit under normal
+		// circumstances. If we are here, the loop was cut short by the iteration cap and there
+		// may still be importing jobs left unfetched.
+		brt.logger.Warnn("GetImportingJobs reached the maximum iteration count, importing jobs may have been left unfetched",
+			logger.NewIntField("iterations", int64(iterations)),
+			logger.NewIntField("maxIterations", int64(maxIterations)),
+			obskit.DestinationType(brt.destType),
+		)
+	}
 	return jobsResult, nil
 }
 
