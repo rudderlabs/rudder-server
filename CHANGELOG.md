@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.77.1](https://github.com/rudderlabs/rudder-server/compare/v1.77.0...v1.77.1) (2026-06-10)
+
+
+### Bug Fixes
+
+* internal endpoints enabled in open source version of rudder-server ([#7075](https://github.com/rudderlabs/rudder-server/issues/7075)) ([b4f62a1](https://github.com/rudderlabs/rudder-server/commit/b4f62a149aeba975fd67775209360ebbb02bc8f4))
+
 ## [1.77.0](https://github.com/rudderlabs/rudder-server/compare/v1.76.0...v1.77.0) (2026-06-08)
 
 
