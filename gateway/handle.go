@@ -125,6 +125,8 @@ type Handle struct {
 		IdleTimeout                          time.Duration
 		allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
 		webhookV2HandlerEnabled              bool
+		internalEndpointsEnabled             bool
+		legacyWarehouseEndpointsEnabled      bool
 	}
 
 	// additional internal http handlers

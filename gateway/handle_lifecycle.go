@@ -116,6 +116,8 @@ func (gw *Handle) Setup(
 	gw.conf.maxConcurrentRequests = config.GetIntVar(50000, 1, "Gateway.maxConcurrentRequests")
 	// enable webhook v2 handler. disabled by default
 	gw.conf.webhookV2HandlerEnabled = config.GetBoolVar(false, "Gateway.webhookV2HandlerEnabled")
+	gw.conf.legacyWarehouseEndpointsEnabled = config.GetBoolVar(true, "Gateway.legacyWarehouseEndpointsEnabled") // TODO: remove legacy endpoints after next release
+
 	// Registering stats
 	gw.batchSizeStat = gw.stats.NewStat("gateway.batch_size", stats.HistogramType)
 	gw.requestSizeStat = gw.stats.NewStat("gateway.request_size", stats.HistogramType)
@@ -313,6 +315,12 @@ func WithInternalHttpHandlers(handlers map[string]http.Handler) OptFunc {
 func WithNow(now func() time.Time) OptFunc {
 	return func(gw *Handle) {
 		gw.now = now
+	}
+}
+
+func WithInternalEndpointsEnabled(enabled bool) OptFunc {
+	return func(gw *Handle) {
+		gw.conf.internalEndpointsEnabled = enabled
 	}
 }
 
@@ -548,10 +556,6 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	component := "gateway"
 	srvMux := chi.NewRouter()
 	// rudder-sources new APIs
-	rsourcesHandlerV1 := rsources_http.NewV1Handler(
-		gw.rsourcesService,
-		gw.logger.Child("rsources"),
-	)
 	rsourcesHandlerV2 := rsources_http.NewV2Handler(
 		gw.rsourcesService,
 		gw.logger.Child("rsources_failed_keys"),
@@ -568,25 +572,30 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 		middleware.LimitConcurrentRequests(gw.conf.maxConcurrentRequests),
 		middleware.UncompressMiddleware,
 	)
-	srvMux.Route("/internal", func(r chi.Router) {
-		r.Post("/v1/extract", gw.webExtractHandler())
-		r.Post("/v1/retl", gw.webRetlHandler())
-		r.Get("/v1/warehouse/fetch-tables", gw.whProxy.ServeHTTP)
-		r.Post("/v1/audiencelist", gw.webAudienceListHandler())
-		r.Post("/v1/replay", gw.webReplayHandler())
-		r.Post("/v1/batch", gw.internalBatchHandler())
-
-		// TODO: delete this handler once we are ready to remove support for the v1 api
-		r.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV1.ServeHTTP))
-
-		r.Mount("/v2/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV2.ServeHTTP))
-		for path, handler := range gw.internalHttpHandlers {
-			r.Mount(path, withContentType("application/json; charset=utf-8", handler.ServeHTTP))
-		}
-	})
-
-	// TODO: delete this handler once we are ready to remove support for the v1 api
-	srvMux.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV1.ServeHTTP))
+	if gw.conf.internalEndpointsEnabled {
+		srvMux.Route("/internal", func(r chi.Router) {
+			r.Route("/v1", func(r chi.Router) {
+				r.Post("/extract", gw.webExtractHandler())
+				r.Post("/retl", gw.webRetlHandler())
+				r.Route("/warehouse", func(r chi.Router) {
+					r.Get("/fetch-tables", gw.whProxy.ServeHTTP)
+					r.Post("/pending-events", gw.whProxy.ServeHTTP)
+					r.Post("/trigger-upload", gw.whProxy.ServeHTTP)
+					r.Post("/jobs", gw.whProxy.ServeHTTP)
+					r.Get("/jobs/status", gw.whProxy.ServeHTTP)
+				})
+				r.Post("/audiencelist", gw.webAudienceListHandler())
+				r.Post("/replay", gw.webReplayHandler())
+				r.Post("/batch", gw.internalBatchHandler())
+			})
+			r.Route("/v2", func(r chi.Router) {
+				r.Mount("/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV2.ServeHTTP))
+			})
+			for path, handler := range gw.internalHttpHandlers {
+				r.Mount(path, withContentType("application/json; charset=utf-8", handler.ServeHTTP))
+			}
+		})
+	}
 
 	srvMux.Route("/v1", func(r chi.Router) {
 		r.Post("/alias", gw.webAliasHandler())
@@ -604,13 +613,14 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 
 		r.Get("/webhook", gw.webhookHandler())
 
-		r.Route("/warehouse", func(r chi.Router) {
-			r.Post("/pending-events", gw.whProxy.ServeHTTP)
-			r.Post("/trigger-upload", gw.whProxy.ServeHTTP)
-			r.Post("/jobs", gw.whProxy.ServeHTTP)
-
-			r.Get("/jobs/status", gw.whProxy.ServeHTTP)
-		})
+		if gw.conf.internalEndpointsEnabled && gw.conf.legacyWarehouseEndpointsEnabled {
+			r.Route("/warehouse", func(r chi.Router) {
+				r.Post("/pending-events", gw.whProxy.ServeHTTP)
+				r.Post("/trigger-upload", gw.whProxy.ServeHTTP)
+				r.Post("/jobs", gw.whProxy.ServeHTTP)
+				r.Get("/jobs/status", gw.whProxy.ServeHTTP)
+			})
+		}
 	})
 
 	srvMux.Get("/health", withContentType("application/json; charset=utf-8", app.LivenessHandler(gw.jobsDB)))

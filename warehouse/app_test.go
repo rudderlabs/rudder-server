@@ -66,6 +66,7 @@ func TestApp(t *testing.T) {
 	mockApp.EXPECT().Features().Return(&app.Features{
 		Reporting: report,
 	}).AnyTimes()
+	mockApp.EXPECT().Options().Return(&app.Options{}).AnyTimes()
 
 	t.Run("Serving HTTP", func(t *testing.T) {
 		testCases := []struct {

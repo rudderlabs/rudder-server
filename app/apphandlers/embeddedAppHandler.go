@@ -412,11 +412,13 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	gw := gateway.Handle{}
 	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), statsFactory, a.app, backendconfig.DefaultBackendConfig,
 		gwWODB, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
-		streamMsgValidator, gateway.WithInternalHttpHandlers(
+		streamMsgValidator,
+		gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
 				"/drain": drainConfigManager.DrainConfigHttpHandler(),
 			},
-		))
+		),
+		gateway.WithInternalEndpointsEnabled(config.GetBoolVar(options.EnterpriseToken != "", "Gateway.internalEndpointsEnabled")))
 	if err != nil {
 		return fmt.Errorf("could not setup gateway: %w", err)
 	}
