@@ -264,7 +264,6 @@ var _ = Describe("Gateway Enterprise", func() {
 		conf = config.New()
 		conf.Set("Gateway.enableRateLimit", false)
 		conf.Set("Gateway.enableSuppressUserFeature", true)
-		conf.Set("Gateway.enableEventSchemasFeature", false)
 	})
 
 	AfterEach(func() {
@@ -402,7 +401,6 @@ var _ = Describe("Gateway", func() {
 	BeforeEach(func() {
 		conf = config.New()
 		conf.Set("Gateway.enableRateLimit", false)
-		conf.Set("Gateway.enableEventSchemasFeature", false)
 		c = &testContext{}
 		c.Setup()
 	})
@@ -415,7 +413,7 @@ var _ = Describe("Gateway", func() {
 		It("should wait for backend config", func() {
 			c.initializeAppFeatures()
 			gateway := &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			err = gateway.Shutdown()
@@ -448,7 +446,7 @@ var _ = Describe("Gateway", func() {
 			GinkgoT().Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
 
 			gateway = &Handle{}
-			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			gateway.irh = mockRequestHandler{}
@@ -495,7 +493,7 @@ var _ = Describe("Gateway", func() {
 				}
 				resp, err := client.Do(req)
 				Expect(err).To(BeNil())
-				Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusOK), Equal(http.StatusNoContent)), "endpoint: "+ep)
+				Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusOK), Equal(http.StatusNoContent)), "endpoint: "+ep, "method: "+method)
 
 			}
 		}
@@ -543,7 +541,7 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1780,7 +1778,6 @@ var _ = Describe("Gateway", func() {
 			conf = config.New()
 			conf.Set("Gateway.enableRateLimit", false)
 			conf.Set("Gateway.enableSuppressUserFeature", true)
-			conf.Set("Gateway.enableEventSchemasFeature", false)
 
 			serverPort, err := kithelper.GetFreePort()
 			Expect(err).To(BeNil())
@@ -1796,7 +1793,7 @@ var _ = Describe("Gateway", func() {
 
 			gateway = &Handle{}
 			srcDebugger = mocksrcdebugger.NewMockSourceDebugger(c.mockCtrl)
-			err = gateway.Setup(context.Background(), conf, logger.NOP, statStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil)
+			err = gateway.Setup(context.Background(), conf, logger.NOP, statStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil, WithInternalEndpointsEnabled(true))
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
@@ -2135,7 +2132,7 @@ var _ = Describe("Gateway", func() {
 		BeforeEach(func() {
 			c.initializeAppFeatures()
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -2407,12 +2404,10 @@ func endpointsToVerify() ([]string, []string, []string) {
 		"/pixel/v1/track",
 		"/pixel/v1/page",
 		"/v1/webhook",
-		"/v1/job-status/123",
-		"/v1/job-status/123/failed-records",
-		"/v1/warehouse/jobs/status",
+		"/internal/v1/warehouse/jobs/status",
 		"/internal/v1/warehouse/fetch-tables",
-		"/internal/v1/job-status/123",
-		"/internal/v1/job-status/123/failed-records",
+		"/internal/v2/job-status/123",
+		"/internal/v2/job-status/123/failed-records",
 	}
 
 	postEndpoints := []string{
@@ -2432,14 +2427,14 @@ func endpointsToVerify() ([]string, []string, []string) {
 		"/internal/v1/retl",
 		"/internal/v1/replay",
 		"/internal/v1/audiencelist",
-		"/v1/warehouse/pending-events",
-		"/v1/warehouse/trigger-upload",
-		"/v1/warehouse/jobs",
-		// "/internal/v1/batch", will be tested in new unit test
+		"/internal/v1/warehouse/pending-events",
+		"/internal/v1/warehouse/trigger-upload",
+		"/internal/v1/warehouse/jobs",
 	}
 
 	deleteEndpoints := []string{
-		"/v1/job-status/1234",
+		"/internal/v2/job-status/1234",
+		"/internal/v2/job-status/123/failed-records",
 	}
 	return getEndpoints, postEndpoints, deleteEndpoints
 }
@@ -2604,7 +2599,7 @@ func createTestGatewayWithLeakyUploader(t *testing.T, endpoint, accessKeyID, sec
 	conf.Set("Gateway.leakyUploader.Storage.DisableSsl", true)
 	conf.Set("Gateway.leakyUploader.Storage.UseGlue", true)
 	conf.Set("Gateway.leakyUploader.Storage.S3ForcePathStyle", true)
-	err := gw.Setup(context.Background(), conf, logger.NewLogger().Withn(logger.NewStringField("component", "test")), stats.NOP, mockApp, mockBackendConfig, mockJobsDB, mockRateLimiter, mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+	err := gw.Setup(context.Background(), conf, logger.NewLogger().Withn(logger.NewStringField("component", "test")), stats.NOP, mockApp, mockBackendConfig, mockJobsDB, mockRateLimiter, mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		select {

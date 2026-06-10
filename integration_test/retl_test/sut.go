@@ -193,7 +193,7 @@ func (s *SUT) Start(t *testing.T) {
 	t.Logf("--- Setup done (%s)", time.Since(setupStart))
 
 	go func() {
-		r := runner.New(runner.ReleaseInfo{EnterpriseToken: os.Getenv("ENTERPRISE_TOKEN")})
+		r := runner.New(runner.ReleaseInfo{EnterpriseToken: "token"})
 		_ = r.Run(svcCtx, svcCancel, []string{"retl-test-rudder-server"})
 		close(s.done)
 	}()
@@ -335,7 +335,7 @@ func (s *SUT) SendRETL(t *testing.T, sourceID, destinationID string, payload bat
 func (s *SUT) JobStatus(t *testing.T, sourceID, jobRunID, jobTaskID string) (rsources.JobStatus, bool) {
 	var (
 		httpClient   = &http.Client{}
-		jobStatusURL = fmt.Sprintf("%s/v1/job-status/%s?%s", s.URL, jobRunID, url.Values{
+		jobStatusURL = fmt.Sprintf("%s/internal/v2/job-status/%s?%s", s.URL, jobRunID, url.Values{
 			"task_run_id": []string{jobTaskID},
 		}.Encode()) // job_run_id
 	)
