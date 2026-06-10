@@ -80,25 +80,7 @@ func createTestGateway(t *testing.T, eventBlockingSettings backendconfig.EventBl
 		stats:   statsStore,
 		logger:  logger.NOP,
 		webhook: mockWebhook,
-		conf: struct {
-			webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess                       int
-			maxUserWebRequestBatchSize, maxDBBatchSize, maxHeaderBytes, maxConcurrentRequests int
-			userWebRequestBatchTimeout, dbBatchWriteTimeout                                   config.ValueLoader[time.Duration]
-			maxReqSize                                                                        config.ValueLoader[int]
-			enableRateLimit                                                                   config.ValueLoader[bool]
-			internalBatchThrottleEvents                                                       config.ValueLoader[int]
-			internalBatchThrottleWindow                                                       config.ValueLoader[time.Duration]
-			enableSuppressUserFeature                                                         bool
-			diagnosisTickerTime                                                               time.Duration
-			ReadTimeout                                                                       time.Duration
-			ReadHeaderTimeout                                                                 time.Duration
-			WriteTimeout                                                                      time.Duration
-			IdleTimeout                                                                       time.Duration
-			allowReqsWithoutUserIDAndAnonymousID                                              config.ValueLoader[bool]
-			webhookV2HandlerEnabled                                                           bool
-			internalEndpointsEnabled                                                          bool
-			legacyWarehouseEndpointsEnabled                                                   bool
-		}{
+		conf: handleConfig{
 			webhookV2HandlerEnabled: false,
 		},
 		configSubscriberLock: sync.RWMutex{},
@@ -1016,24 +998,7 @@ func newThrottledHandle(t *testing.T, eventsLimit int, window time.Duration) *Ha
 		internalBatchThrottleSkipDisabledCounter: statsStore.NewTaggedStat("gateway.internal_batch_throttle_skip", stats.CountType, stats.Tags{"reason": "disabled"}),
 		internalBatchThrottleSkipNoHeaderCounter: statsStore.NewTaggedStat("gateway.internal_batch_throttle_skip", stats.CountType, stats.Tags{"reason": "no_header"}),
 		internalBatchThrottleSkipInvalidHeaderCounter: statsStore.NewTaggedStat("gateway.internal_batch_throttle_skip", stats.CountType, stats.Tags{"reason": "invalid_header"}),
-		conf: struct {
-			webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess                       int
-			maxUserWebRequestBatchSize, maxDBBatchSize, maxHeaderBytes, maxConcurrentRequests int
-			userWebRequestBatchTimeout, dbBatchWriteTimeout                                   config.ValueLoader[time.Duration]
-			maxReqSize                                                                        config.ValueLoader[int]
-			enableRateLimit                                                                   config.ValueLoader[bool]
-			internalBatchThrottleEvents                                                       config.ValueLoader[int]
-			internalBatchThrottleWindow                                                       config.ValueLoader[time.Duration]
-			enableSuppressUserFeature                                                         bool
-			diagnosisTickerTime                                                               time.Duration
-			ReadTimeout                                                                       time.Duration
-			ReadHeaderTimeout                                                                 time.Duration
-			WriteTimeout                                                                      time.Duration
-			IdleTimeout                                                                       time.Duration
-			allowReqsWithoutUserIDAndAnonymousID                                              config.ValueLoader[bool]
-			gwAllowPartialWriteWithErrors                                                     config.ValueLoader[bool]
-			webhookV2HandlerEnabled                                                           bool
-		}{
+		conf: handleConfig{
 			internalBatchThrottleEvents: config.SingleValueLoader(eventsLimit),
 			internalBatchThrottleWindow: config.SingleValueLoader(window),
 		},

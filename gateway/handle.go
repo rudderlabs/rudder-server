@@ -52,6 +52,27 @@ type messageValidator interface {
 	Validate(payload []byte, message *stream.MessageProperties) (bool, error)
 }
 
+type handleConfig struct {
+	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess                       int
+	maxUserWebRequestBatchSize, maxDBBatchSize, maxHeaderBytes, maxConcurrentRequests int
+	userWebRequestBatchTimeout, dbBatchWriteTimeout                                   config.ValueLoader[time.Duration]
+
+	maxReqSize                           config.ValueLoader[int]
+	enableRateLimit                      config.ValueLoader[bool]
+	internalBatchThrottleEvents          config.ValueLoader[int]
+	internalBatchThrottleWindow          config.ValueLoader[time.Duration]
+	enableSuppressUserFeature            bool
+	diagnosisTickerTime                  time.Duration
+	ReadTimeout                          time.Duration
+	ReadHeaderTimeout                    time.Duration
+	WriteTimeout                         time.Duration
+	IdleTimeout                          time.Duration
+	allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
+	webhookV2HandlerEnabled              bool
+	internalEndpointsEnabled             bool
+	legacyWarehouseEndpointsEnabled      bool
+}
+
 type Handle struct {
 	// dependencies
 
@@ -117,26 +138,7 @@ type Handle struct {
 	nonEventStreamSources             map[string]bool
 	blockedEventsWorkspaceTypeNameMap map[string]map[string]map[string]bool
 
-	conf struct { // configuration parameters
-		webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess                       int
-		maxUserWebRequestBatchSize, maxDBBatchSize, maxHeaderBytes, maxConcurrentRequests int
-		userWebRequestBatchTimeout, dbBatchWriteTimeout                                   config.ValueLoader[time.Duration]
-
-		maxReqSize                           config.ValueLoader[int]
-		enableRateLimit                      config.ValueLoader[bool]
-		internalBatchThrottleEvents          config.ValueLoader[int]
-		internalBatchThrottleWindow          config.ValueLoader[time.Duration]
-		enableSuppressUserFeature            bool
-		diagnosisTickerTime                  time.Duration
-		ReadTimeout                          time.Duration
-		ReadHeaderTimeout                    time.Duration
-		WriteTimeout                         time.Duration
-		IdleTimeout                          time.Duration
-		allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
-		webhookV2HandlerEnabled              bool
-		internalEndpointsEnabled             bool
-		legacyWarehouseEndpointsEnabled      bool
-	}
+	conf handleConfig
 
 	// additional internal http handlers
 	internalHttpHandlers map[string]http.Handler
