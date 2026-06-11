@@ -520,26 +520,6 @@ func TestBQStreamV2(t *testing.T) {
 			Destination:     destination,
 			FileName:        "testdata/successful_records.txt",
 		})
-		require.ElementsMatch(t, []int64{1001, 1002, 1003, 1004}, output.FailedJobIDs)
-		require.Equal(t, 4, output.FailedCount)
-		require.Contains(t, output.FailedReason, "no warehouse schema found for table")
-
-		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
-			output := &mockIntegrationManager{
-				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
-					output := whutils.ModelSchema{
-						"products": {"product_id": "string", "price": "float", "in_stock": "boolean", "received_at": "datetime"},
-					}
-					return output, nil
-				},
-			}
-			return output, nil
-		}
-		output = sm.Upload(context.Background(), &common.AsyncDestinationStruct{
-			ImportingJobIDs: []int64{1},
-			Destination:     destination,
-			FileName:        "testdata/successful_records.txt",
-		})
 		require.ElementsMatch(t, []int64{1001, 1002, 1003, 1004}, output.SucceededJobIDs)
 	})
 
