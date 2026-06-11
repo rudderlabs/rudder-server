@@ -43,7 +43,7 @@ func descriptorForSchema(schema whutils.ModelTableSchema) (protoreflect.MessageD
 //
 // The fields MUST be emitted in a deterministic (sorted) order. adapt.StorageSchemaToProto2Descriptor
 // assigns proto field numbers by position, and the descriptor is built independently for both the
-// row encoder (descriptorForSchema) and the managed stream (NewStreamWriter). If the order differed
+// row encoder (descriptorForSchema) and the managed stream (NewTableStreamWriter). If the order differed
 // between those two calls, the encoded field numbers would not line up with the stream's schema
 // descriptor and BigQuery would decode every column into the wrong/mismatched field, surfacing as
 // all-NULL rows.
@@ -101,7 +101,7 @@ func encodeRows(rows []Row, md protoreflect.MessageDescriptor, schema whutils.Mo
 
 // protoValueFor converts a row value for the given field, accepting the same
 // coercions protojson did (integral floats and numeric strings for int64,
-// etc.). Only the kinds reachable through dataTypesMap are handled; anything
+// etc.). Only the kinds reachable through DataTypesMap are handled; anything
 // else fails loudly until support is added explicitly.
 func protoValueFor(fd protoreflect.FieldDescriptor, value any, dataType string) (protoreflect.Value, error) {
 	switch fd.Kind() {

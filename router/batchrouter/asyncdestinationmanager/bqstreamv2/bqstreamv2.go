@@ -33,9 +33,9 @@ import (
 // upper bounds, leaving additional headroom).
 const defaultChunkSizeBytes int64 = 8 * bytesize.MB
 
-// errWriterClosed is reported (once per batch) when an append is attempted on a
-// stream writer a concurrent worker has already evicted/closed; the caller
-// fails those batches so a retry rebuilds the writer.
+// errWriterClosed is returned when an append is attempted on a stream writer a
+// concurrent worker has already evicted/closed; the caller fails the affected
+// jobs so a retry rebuilds the writer.
 var errWriterClosed = errors.New("stream writer already closed")
 
 var (
@@ -162,8 +162,9 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 	// One integration manager is shared by every schema operation in this
 	// upload, created lazily on first use and cleaned up once, instead of
 	// dialing a client and running a dropDanglingStagingTables query per
-	// operation. getIntegrationManager memoises the (manager, error) outcome; an
-	// upload whose schemas are fully cached never calls it, so it dials nothing.
+	// operation. integrationManagerCreator memoises the (manager, error)
+	// outcome; an upload whose schemas are fully cached never calls it, so it
+	// dials nothing.
 	var (
 		integrationManager     IntegrationManager
 		integrationManagerErr  error
@@ -213,7 +214,7 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 
 	tableWorkers := max(1, m.config.tableWorkers.Load())
 
-	tableErrgroup, ctx := errgroup.WithContext(ctx)
+	tableErrgroup := errgroup.Group{}
 	tableErrgroup.SetLimit(tableWorkers)
 
 	var (
@@ -440,12 +441,13 @@ func (m *Manager) processTable(ctx context.Context, cfg destConfig, integrationM
 	return response
 }
 
-// streamEventBatches appends each chunk through the table's cached stream
-// writer and reports outcomes per chunk: an acknowledged append is already
+// streamEventBatches appends the table's chunks through its cached stream
+// writer one at a time, waiting for each append to be acknowledged before the
+// next. Outcomes are reported per chunk: an acknowledged append is already
 // durable in BigQuery, so only the failed chunks' jobs are retried instead of
-// re-appending (and duplicating) the chunks that landed. Appends are pipelined
-// (fire all, then wait), and the writer and schema cache are evicted on any
-// failure so a retry rebuilds them against the current table schema.
+// re-appending (and duplicating) the chunks that landed. The writer and schema
+// cache are evicted on any failure so a retry rebuilds them against the current
+// table schema.
 func (m *Manager) streamEventBatches(ctx context.Context, cfg destConfig, tableName string, schema whutils.ModelTableSchema, tableEventsList []tableEvents) streamEventBatchesResult {
 	tableStreamWriter, err := m.writerForTable(ctx, cfg, tableName, schema)
 	if err != nil {
@@ -486,10 +488,10 @@ func (m *Manager) streamEventBatches(ctx context.Context, cfg destConfig, tableN
 	return result
 }
 
-// streamDiscardedEvents encodes the row batches and appends them through the
-// table's cached stream writer, pipelining the appends (fire all, then wait, so
-// N batches cost ~one round trip) and evicting the writer and schema cache on
-// any failure so a retry rebuilds them against the current table schema.
+// streamDiscardedEvents encodes the discarded rows and appends them through the
+// table's cached stream writer in a single append, waiting for it to be
+// acknowledged, and evicts the writer and schema cache on any failure so a
+// retry rebuilds them against the current table schema.
 func (m *Manager) streamDiscardedEvents(ctx context.Context, cfg destConfig, tableName string, schema whutils.ModelTableSchema, rows []Row) (err error) {
 	defer func() {
 		if err != nil {
@@ -524,14 +526,8 @@ func (m *Manager) createTableAndAddColumnsIfNeeded(ctx context.Context, cfg dest
 			logger.NewStringField("table", tableName),
 		)
 
-		err := m.createTableSchema(ctx, cfg, integrationManagerCreator, tableName, eventsSchema)
-		if err != nil {
-			if !checkAndIgnoreAlreadyExistError(err) {
-				m.logger.Infon("Table schema already exists", logger.NewStringField("table", tableName))
-
-				return fmt.Errorf("creating table schema: %w", err)
-			}
-			return nil
+		if err := m.createTableSchema(ctx, cfg, integrationManagerCreator, tableName, eventsSchema); err != nil && !checkAndIgnoreAlreadyExistError(err) {
+			return fmt.Errorf("creating table schema: %w", err)
 		}
 
 		m.invalidateTableCacheAndStreamWriter(cfg, tableName)
@@ -555,17 +551,19 @@ func (m *Manager) createTableAndAddColumnsIfNeeded(ctx context.Context, cfg dest
 	return nil
 }
 
-// writerForTable returns the table's cached stream writer, creating it
-// from the given schema on a miss. The writer and its proto descriptor share
-// one lifecycle: created together, evicted (and closed) together on schema
+// writerForTable returns the table's cached stream writer, creating it from the
+// given schema on a miss. The writer and its proto descriptor share one
+// lifecycle: created together and evicted (and closed) together on schema
 // change, so encoded rows always line up with the stream. Writers outlive the
-// upload, hence context.WithoutCancel.
+// upload (the factory dials with context.WithoutCancel) and are released only
+// by invalidateTableCacheAndStreamWriter.
 //
-// The map mutex is released before dialing the gRPC client / opening the
-// managed stream, so concurrent workers for other tables are not serialized
-// behind this table's network round-trips. A second lookup after creation
-// keeps the winner when two workers race to build the same writer (the shared
-// discards stream), discarding the loser's duplicate.
+// Lookups take the read lock; a miss upgrades to the write lock and creates the
+// writer while holding it, so concurrent creations (including the dial) are
+// serialized. After acquiring the write lock the map is re-checked, so two
+// workers racing to build the same writer (only possible for the shared
+// discards stream) resolve to a single cached writer instead of leaking the
+// loser's.
 func (m *Manager) writerForTable(ctx context.Context, cfg destConfig, tableName string, schema whutils.ModelTableSchema) (*tableStreamWriter, error) {
 	m.streamWritersMu.RLock()
 	tableStreamWriter, ok := m.streamWriters[tableName]
@@ -577,6 +575,14 @@ func (m *Manager) writerForTable(ctx context.Context, cfg destConfig, tableName 
 
 	m.streamWritersMu.Lock()
 	defer m.streamWritersMu.Unlock()
+
+	// Re-check under the write lock: another worker may have created the writer
+	// between our read-lock miss and acquiring the write lock (only the shared
+	// discards stream is built concurrently). Without this, both workers would
+	// create one and the loser's writer would be left open and uncached.
+	if tableStreamWriter, ok := m.streamWriters[tableName]; ok {
+		return tableStreamWriter, nil
+	}
 
 	m.logger.Infon("Creating table stream writer for table", logger.NewStringField("table", tableName))
 
@@ -613,10 +619,9 @@ func (m *Manager) invalidateTableCacheAndStreamWriter(cfg destConfig, tableName 
 
 	delete(m.streamWriters, tableName)
 
-	// close() takes the writer's exclusive lock, so it drains in-flight appends
+	// Close takes the writer's exclusive lock, so it drains in-flight appends
 	// (e.g. other workers sharing the discards stream) and blocks new ones
-	// rather than racing a concurrent AppendRows. It is closed outside the map
-	// mutex so that lock is never held across network I/O.
+	// rather than racing a concurrent AppendRows.
 	if err := tableStreamWriter.Close(); err != nil {
 		m.logger.Warnn("Failed to close stream writer",
 			logger.NewStringField("table", tableName),

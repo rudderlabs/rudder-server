@@ -18,7 +18,7 @@ func NewTableStreamWriterFactory(maxInflightRequests int, maxInflightBytes int64
 	return &streamWriterFactoryImpl{maxInflightRequests: maxInflightRequests, maxInflightBytes: maxInflightBytes}
 }
 
-// NewStreamWriter creates a managed stream for the table, with bounded
+// NewTableStreamWriter creates a managed stream for the table, with bounded
 // in-flight appends for backpressure.
 //
 // Each writer dials its own client so that evicting a writer (e.g. after a
@@ -77,16 +77,12 @@ func (s *streamWriterImpl) Close() error {
 	return errors.Join(s.stream.Close(), s.client.Close())
 }
 
-// AppendRows appends pre-encoded row batches through the stream,
-// pipelining them (fire all, then wait, so N batches cost ~one round trip). A
-// read lock is held for the whole call so an eviction (Close) cannot race the
-// in-flight appends, while concurrent appends from other workers sharing this
-// writer (the discards stream) still proceed in parallel.
-//
-// It returns one error per input batch, positionally aligned with
-// encodedBatches: a nil entry means that batch was durably appended. When the
-// writer has already been evicted, every batch fails with errWriterClosed so
-// the caller retries them against a freshly built writer.
+// AppendRows appends the pre-encoded rows through the stream and waits for the
+// append to be acknowledged. A read lock is held for the call so an eviction
+// (Close) cannot race the in-flight append, while concurrent appends from other
+// workers sharing this writer (the discards stream) still proceed in parallel.
+// It returns errWriterClosed if the writer has already been evicted, so the
+// caller retries against a freshly built writer.
 func (t *tableStreamWriter) AppendRows(ctx context.Context, data [][]byte) error {
 	t.writerMu.RLock()
 	defer t.writerMu.RUnlock()

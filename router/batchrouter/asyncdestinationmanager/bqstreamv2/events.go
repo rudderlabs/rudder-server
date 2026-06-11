@@ -163,8 +163,9 @@ func jobIDsFromTableEvents(tableEventsList []tableEvents) []int64 {
 
 // getDiscardedRecordsFromEvent mutates the event's data in place: values whose
 // event type differs from the warehouse column type are converted to the
-// warehouse type where possible and nilled out (and reported as discards)
-// otherwise; slice values are JSON-stringified for string columns.
+// warehouse type where possible, otherwise nilled out (and reported as a
+// discard, unless the event is missing its id/received_at). Slice values are
+// JSON-stringified regardless of column type.
 func getDiscardedRecordsFromEvent(log logger.Logger, event *event, warehouseSchema whutils.ModelTableSchema, tableName, formattedTS string) (discardedRecords []discardEvent) {
 	for columnName, actualType := range event.Message.Metadata.Columns {
 		if expectedType, exists := warehouseSchema[columnName]; exists && actualType != expectedType {
