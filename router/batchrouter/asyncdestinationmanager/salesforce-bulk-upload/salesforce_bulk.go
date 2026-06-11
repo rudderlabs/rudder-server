@@ -70,6 +70,14 @@ func NewUploader(
 		statsFactory:      statsFactory,
 		destName:          destName,
 	}
+	statTags := stats.Tags{"module": "batch_router", "destType": destName}
+	if destination != nil {
+		statTags["destinationId"] = destination.ID
+		statTags["workspaceId"] = destination.WorkspaceID
+	}
+	u.payloadSizeStat = statsFactory.NewTaggedStat("payload_size", stats.HistogramType, statTags)
+	u.eventsPerFileStat = statsFactory.NewTaggedStat("events_per_file", stats.HistogramType, statTags)
+	u.asyncUploadTimeStat = statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, statTags)
 	u.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "SalesforceBulkUpload.maxBufferCapacity")
 	return u
 }
@@ -207,7 +215,7 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 		return job.Metadata.JobID
 	})
 
-	csvFilePath, externalIDToJobID, err := createCSVFile(
+	csvFilePath, externalIDToJobID, fileSize, err := createCSVFile(
 		destinationID,
 		objectInfo.ExternalIDField,
 		validJobs,
@@ -234,16 +242,8 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 	}
 
 	// Track the size of the CSV we send to Salesforce and how many events it packs.
-	statTags := stats.Tags{
-		"module":        "batch_router",
-		"destType":      s.destName,
-		"destinationId": asyncDestStruct.Destination.ID,
-		"workspaceId":   asyncDestStruct.Destination.WorkspaceID,
-	}
-	s.statsFactory.NewTaggedStat("events_per_file", stats.HistogramType, statTags).Observe(float64(len(validJobs)))
-	if fileInfo, statErr := os.Stat(csvFilePath); statErr == nil {
-		s.statsFactory.NewTaggedStat("payload_size", stats.HistogramType, statTags).Observe(float64(fileInfo.Size()))
-	}
+	s.eventsPerFileStat.Observe(float64(len(validJobs)))
+	s.payloadSizeStat.Observe(float64(fileSize))
 
 	s.logger.Infon("Created CSV file",
 		logger.NewStringField("csvFilePath", csvFilePath),
@@ -261,7 +261,7 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 
 	uploadStartTime := time.Now()
 	apiError = s.apiService.UploadData(sfJobID, csvFilePath)
-	s.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, statTags).Since(uploadStartTime)
+	s.asyncUploadTimeStat.Since(uploadStartTime)
 	if apiError != nil {
 		s.logger.Errorn("Error uploading data for operation upsert", logger.NewStringField("apiErrorMessage", apiError.Message))
 		if err := s.apiService.DeleteJob(sfJobID); err != nil {

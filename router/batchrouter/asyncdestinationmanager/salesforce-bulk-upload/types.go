@@ -20,13 +20,16 @@ const (
 )
 
 type Uploader struct {
-	destName          string
-	logger            logger.Logger
-	statsFactory      stats.Stats
-	apiService        APIServiceInterface
-	externalIDToJobID map[string][]int64
-	destination       *backendconfig.DestinationT
-	config            struct {
+	destName            string
+	logger              logger.Logger
+	statsFactory        stats.Stats
+	apiService          APIServiceInterface
+	externalIDToJobID   map[string][]int64
+	destination         *backendconfig.DestinationT
+	payloadSizeStat     stats.Measurement
+	eventsPerFileStat   stats.Measurement
+	asyncUploadTimeStat stats.Measurement
+	config              struct {
 		maxBufferCapacity config.ValueLoader[int64]
 	}
 }

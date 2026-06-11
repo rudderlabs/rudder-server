@@ -3,6 +3,7 @@ package salesforcebulkupload
 import (
 	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,6 +14,19 @@ import (
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
+
+// countingWriter wraps an io.Writer and tracks the number of bytes written
+// through it, so createCSVFile can report the CSV size without a second stat.
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
+}
 
 func extractObjectInfo(jobs []SalesforceAsyncJob) (*ObjectInfo, error) {
 	if len(jobs) == 0 {
@@ -50,19 +64,19 @@ func createCSVFile(
 	destinationID string,
 	externalIDField string,
 	input []SalesforceAsyncJob,
-) (string, map[string][]int64, error) {
+) (string, map[string][]int64, int64, error) {
 	if err := os.MkdirAll(CSVDir, 0o755); err != nil {
-		return "", nil, fmt.Errorf("creating CSV directory: %w", err)
+		return "", nil, 0, fmt.Errorf("creating CSV directory: %w", err)
 	}
 	csvFilePath := filepath.Join(CSVDir, fmt.Sprintf("salesforce_%s_%d.csv", destinationID, time.Now().Unix()))
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
-		return "", nil, fmt.Errorf("creating CSV file: %w", err)
+		return "", nil, 0, fmt.Errorf("creating CSV file: %w", err)
 	}
 	defer csvFile.Close()
 
-	writer := csv.NewWriter(csvFile)
-	defer writer.Flush()
+	counter := &countingWriter{w: csvFile}
+	writer := csv.NewWriter(counter)
 
 	headerSet := make(map[string]struct{})
 	for _, job := range input {
@@ -79,7 +93,7 @@ func createCSVFile(
 	sort.Strings(headers)
 
 	if err := writer.Write(headers); err != nil {
-		return "", nil, fmt.Errorf("writing CSV header: %w", err)
+		return "", nil, 0, fmt.Errorf("writing CSV header: %w", err)
 	}
 
 	headerIndex := make(map[string]int, len(headers))
@@ -89,7 +103,7 @@ func createCSVFile(
 
 	externalIDIndex, ok := headerIndex[externalIDField]
 	if !ok {
-		return "", nil, fmt.Errorf("externalId field %q not present in job data", externalIDField)
+		return "", nil, 0, fmt.Errorf("externalId field %q not present in job data", externalIDField)
 	}
 
 	externalIDToJobID := make(map[string][]int64)
@@ -99,14 +113,14 @@ func createCSVFile(
 			if idx, ok := headerIndex[key]; ok {
 				formattedValue, err := common.FormatCSVValue(value)
 				if err != nil {
-					return "", nil, fmt.Errorf("formatting CSV cell %q: %w", key, err)
+					return "", nil, 0, fmt.Errorf("formatting CSV cell %q: %w", key, err)
 				}
 				row[idx] = formattedValue
 			}
 		}
 		jobID := job.Metadata.JobID
 		if err := writer.Write(row); err != nil {
-			return "", nil, fmt.Errorf("writing CSV row: %w", err)
+			return "", nil, 0, fmt.Errorf("writing CSV row: %w", err)
 		}
 		// Correlate on the externalId value alone, not the whole row: Salesforce
 		// coerces other columns on store (datetime ms-truncation, number scale,
@@ -116,5 +130,10 @@ func createCSVFile(
 		externalIDToJobID[key] = append(externalIDToJobID[key], jobID)
 	}
 
-	return csvFilePath, externalIDToJobID, nil
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return "", nil, 0, fmt.Errorf("flushing CSV writer: %w", err)
+	}
+
+	return csvFilePath, externalIDToJobID, counter.n, nil
 }
