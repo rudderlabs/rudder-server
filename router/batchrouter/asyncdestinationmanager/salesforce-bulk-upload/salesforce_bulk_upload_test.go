@@ -92,7 +92,7 @@ func TestSalesforceBulk_Transform(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, nil, nil)
+			uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, nil, &backendconfig.DestinationT{})
 			result, err := uploader.Transform(tc.job)
 
 			if tc.wantErr {
@@ -170,7 +170,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("sf-job-123", nil)
 		mockAPI.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
 		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
-		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
+		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
 
 		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: &backendconfig.DestinationT{
@@ -227,7 +227,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			Category:   "ServerError",
 		})
 
-		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
+		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
 
 		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: &backendconfig.DestinationT{
@@ -254,7 +254,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			Category:   "RateLimit",
 		})
 
-		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
+		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
 
 		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: &backendconfig.DestinationT{
@@ -298,7 +298,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("sf-job-123", nil)
 		mockAPI.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
 		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
-		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
+		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
 
 		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination:     &backendconfig.DestinationT{ID: "test-dest-1"},
@@ -337,7 +337,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		// No CreateJob/UploadData/CloseJob expectations: Salesforce must not be contacted.
 		mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
-		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
+		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
 
 		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination:     &backendconfig.DestinationT{ID: "test-dest-1"},
@@ -425,7 +425,7 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 				mockAPI.EXPECT().GetJobStatus(jobStatus.ID).Return(jobStatus, nil)
 			}
 
-			uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
+			uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
 
 			result := uploader.Poll(context.Background(), tc.pollInput)
 
@@ -473,7 +473,7 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 		mockAPI.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
 		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
 
-		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
+		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
 		out := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination:     &backendconfig.DestinationT{ID: "test-dest"},
 			FileName:        tempFile.Name(),
@@ -546,7 +546,7 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 			{"Email": "test1@example.com"}, {"Email": "test2@example.com"},
 		}, nil)
 
-		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
+		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
 			Parameters:    importIDParams,
 			ImportingList: []*jobsdb.JobT{{JobID: 1}, {JobID: 2}},
@@ -566,7 +566,7 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 			Category:   "ServerError",
 		})
 
-		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
+		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
 			Parameters: json.RawMessage(`{"importId":"{\"id\":\"test-job-123\",\"headers\":[\"Email\"]}","metadata":{"csvHeader":""}}`),
@@ -577,7 +577,7 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 	})
 
 	t.Run("handles invalid parameters", func(t *testing.T) {
-		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, nil, nil)
+		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, nil, &backendconfig.DestinationT{})
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
 			Parameters: json.RawMessage(`invalid json`),

@@ -26,9 +26,9 @@ type Uploader struct {
 	apiService          APIServiceInterface
 	externalIDToJobID   map[string][]int64
 	destination         *backendconfig.DestinationT
-	payloadSizeStat     stats.Measurement
-	eventsPerFileStat   stats.Measurement
-	asyncUploadTimeStat stats.Measurement
+	payloadSizeStat     stats.Histogram
+	eventsPerFileStat   stats.Histogram
+	asyncUploadTimeStat stats.Timer
 	config              struct {
 		maxBufferCapacity config.ValueLoader[int64]
 	}
@@ -53,7 +53,7 @@ type apiService struct {
 type SalesforceJobInfo struct {
 	ID string `json:"id"`
 	// ExternalIDField is the upsert key field name. Job statuses are correlated
-	// after polling by hashing this field's value (not the whole row), so that
+	// after polling on this field's value (not the whole row), so that
 	// Salesforce's value coercion on other columns (e.g. datetime millisecond
 	// truncation, number scale) does not break the match.
 	ExternalIDField string `json:"externalIdField"`
@@ -111,9 +111,6 @@ type SalesforceAsyncJob struct {
 const (
 	destName = "SALESFORCE_BULK_UPLOAD"
 
-	// externalIDFieldEmptyReason is returned for the whole batch when the upsert
-	// externalId field name itself could not be resolved.
-	externalIDFieldEmptyReason = "externalId field is empty; cannot correlate poll results back to jobs"
 	// missingExternalIDReason is the abort reason for individual events that
 	// carry no externalId value (no upsert key).
 	missingExternalIDReason = "externalId is missing for the event; cannot upsert to Salesforce"

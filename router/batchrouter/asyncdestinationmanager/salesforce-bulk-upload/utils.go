@@ -49,14 +49,17 @@ func extractFromVDM(externalIDs []SalesforceExternalID) (*ObjectInfo, error) {
 		return nil, fmt.Errorf("externalId must be an array with at least one element")
 	}
 
-	first := externalIDs[0]
-	if first.Type == "" {
+	externalID := externalIDs[0]
+	if externalID.Type == "" {
 		return nil, fmt.Errorf("externalId type is required")
 	}
+	if externalID.IdentifierType == "" {
+		return nil, fmt.Errorf("externalId identifierType is required")
+	}
 	return &ObjectInfo{
-		ObjectType:      strings.Replace(first.Type, "SALESFORCE_BULK_UPLOAD-", "", 1),
-		ExternalIDField: first.IdentifierType,
-		ExternalIDValue: first.ID,
+		ObjectType:      strings.Replace(externalID.Type, "SALESFORCE_BULK_UPLOAD-", "", 1),
+		ExternalIDField: externalID.IdentifierType,
+		ExternalIDValue: externalID.ID,
 	}, nil
 }
 

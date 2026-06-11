@@ -70,10 +70,11 @@ func NewUploader(
 		statsFactory:      statsFactory,
 		destName:          destName,
 	}
-	statTags := stats.Tags{"module": "batch_router", "destType": destName}
-	if destination != nil {
-		statTags["destinationId"] = destination.ID
-		statTags["workspaceId"] = destination.WorkspaceID
+	statTags := stats.Tags{
+		"module":        "batch_router",
+		"destType":      destName,
+		"destinationId": destination.ID,
+		"workspaceId":   destination.WorkspaceID,
 	}
 	u.payloadSizeStat = statsFactory.NewTaggedStat("payload_size", stats.HistogramType, statTags)
 	u.eventsPerFileStat = statsFactory.NewTaggedStat("events_per_file", stats.HistogramType, statTags)
@@ -172,26 +173,23 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 	destinationID := asyncDestStruct.Destination.ID
 	filePath := asyncDestStruct.FileName
 
-	input, err := s.readJobsFromFile(filePath)
+	jobs, err := s.readJobsFromFile(filePath)
 	if err != nil {
 		return s.failedJobs(asyncDestStruct, fmt.Sprintf("reading jobs from file: %v", err))
 	}
 
-	objectInfo, err := extractObjectInfo(input)
+	objectInfo, err := extractObjectInfo(jobs)
 	if err != nil {
 		return s.failedJobs(asyncDestStruct, fmt.Sprintf("extracting object info: %v", err))
-	}
-	if objectInfo.ExternalIDField == "" {
-		return s.failedJobs(asyncDestStruct, externalIDFieldEmptyReason)
 	}
 
 	// Drop events without an externalId value up front: with no upsert key they
 	// cannot be sent to Salesforce, so abort them with an error rather than
 	// emitting an uncorrelatable CSV row. Valid events continue to the upload.
-	validJobs := make([]SalesforceAsyncJob, 0, len(input))
+	validJobs := make([]SalesforceAsyncJob, 0, len(jobs))
 	var abortedJobIDs []int64
-	for _, job := range input {
-		if externalIDValue, _ := common.FormatCSVValue(job.Message[objectInfo.ExternalIDField]); externalIDValue == "" {
+	for _, job := range jobs {
+		if len(job.Metadata.ExternalID) == 0 || job.Metadata.ExternalID[0].ID == "" {
 			abortedJobIDs = append(abortedJobIDs, job.Metadata.JobID)
 			continue
 		}
