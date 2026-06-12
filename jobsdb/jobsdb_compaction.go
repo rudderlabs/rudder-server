@@ -666,8 +666,8 @@ func (jd *Handle) copyJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSe
 	}
 
 	copyQuery := fmt.Sprintf(
-		`insert into %[2]q (job_id,   workspace_id,   uuid,   user_id,   partition_id, custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at)
-		           (select j.job_id, j.workspace_id, j.uuid, j.user_id, j.partition_id, j.custom_val, j.parameters, %[4]s, j.event_count, j.created_at, j.expire_at from %[3]q j left join "v_last_%[1]s" js on js.job_id = j.job_id
+		`insert into %[2]q (job_id,   workspace_id,   uuid,   user_id,   partition_id, custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at,   consumers)
+		           (select j.job_id, j.workspace_id, j.uuid, j.user_id, j.partition_id, j.custom_val, j.parameters, %[4]s, j.event_count, j.created_at, j.expire_at, j.consumers from %[3]q j left join "v_last_%[1]s" js on js.job_id = j.job_id
 			where js.job_id is null or js.job_state = ANY('{%[5]s}') order by j.job_id)`,
 		srcDS.JobStatusTable,
 		destDS.JobTable,
@@ -689,8 +689,8 @@ func (jd *Handle) copyJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSe
 // copyJobStatusesInTx copies the LATEST status of every job in the destDS (terminal or not) from the srcDS status table to the destDS status table.
 func (jd *Handle) copyJobStatusesInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) error {
 	copyQuery := fmt.Sprintf(
-		`insert into %[2]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters)
-		           (select js.job_id, js.job_state, js.attempt, js.exec_time, js.retry_time, js.error_code, js.error_response, js.parameters from "v_last_%[1]s" js
+		`insert into %[2]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters, consumer)
+		           (select js.job_id, js.job_state, js.attempt, js.exec_time, js.retry_time, js.error_code, js.error_response, js.parameters, js.consumer from "v_last_%[1]s" js
 			where exists (select 1 from %[3]q dj where dj.job_id = js.job_id))`,
 		srcDS.JobStatusTable,
 		destDS.JobStatusTable,
@@ -717,14 +717,14 @@ func (jd *Handle) compactJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 		`with last_status as (select * from "v_last_%[1]s"),
 		inserted_jobs as
 		(
-			insert into %[3]q (job_id,   workspace_id,   uuid,   user_id,   partition_id, custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at)
-			           (select j.job_id, j.workspace_id, j.uuid, j.user_id, j.partition_id, j.custom_val, j.parameters, %[6]s, j.event_count, j.created_at, j.expire_at from %[2]q j left join last_status js on js.job_id = j.job_id
+			insert into %[3]q (job_id,   workspace_id,   uuid,   user_id,   partition_id, custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at,   consumers)
+			           (select j.job_id, j.workspace_id, j.uuid, j.user_id, j.partition_id, j.custom_val, j.parameters, %[6]s, j.event_count, j.created_at, j.expire_at, j.consumers from %[2]q j left join last_status js on js.job_id = j.job_id
 				where js.job_id is null or js.job_state = ANY('{%[5]s}') order by j.job_id) returning job_id
 		),
 		insertedStatuses as
 		(
-			insert into %[4]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters)
-			           (select job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters from last_status where job_state = ANY('{%[5]s}'))
+			insert into %[4]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters, consumer)
+			           (select job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters, consumer from last_status where job_state = ANY('{%[5]s}'))
 		)
 		select count(*) from inserted_jobs;`,
 		srcDS.JobStatusTable,

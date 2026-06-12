@@ -359,7 +359,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 
 	sqlStatement := fmt.Sprintf(`SELECT
 									jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
-									jobs.created_at, jobs.expire_at, jobs.workspace_id, jobs.partition_id,
+									jobs.created_at, jobs.expire_at, jobs.workspace_id, jobs.partition_id, jobs.consumers,
 									octet_length(jobs.event_payload::text) as payload_size,
 									sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
 									sum(octet_length(jobs.event_payload::text)) over (order by jobs.job_id) as running_payload_size,
@@ -426,7 +426,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		var jsErrorResponse []byte
 		var jsParameters []byte
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&payload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PartitionID, &discardRowPayloadSize, &runningEventCount, &runningPayloadSize,
+			&payload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PartitionID, pq.Array(&job.Consumers), &discardRowPayloadSize, &runningEventCount, &runningPayloadSize,
 			&jsState, &jsAttemptNum,
 			&jsExecTime, &jsRetryTime,
 			&jsErrorCode, &jsErrorResponse, &jsParameters)
