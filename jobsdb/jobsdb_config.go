@@ -70,6 +70,7 @@ func (jd *Handle) loadConfig() {
 	// against the cache before querying, and (!ok && !limitsReached) is used as a commit predicate.
 	jd.conf.noResultsCacheStateOptimization = jd.config.GetReloadableBoolVar(false, jd.configKeys("noResultsCacheStateOptimization")...)
 	jd.conf.getJobsUseLateralJoin = jd.config.GetReloadableBoolVar(true, jd.configKeys("getJobsUseLateralJoin")...)
+	jd.conf.disallowMultiConsumerDowngrade = jd.config.GetBoolVar(false, jd.configKeys("disallowMultiConsumerDowngrade")...)
 
 	if jd.TriggerAddNewDS == nil {
 		jd.TriggerAddNewDS = func() <-chan time.Time {

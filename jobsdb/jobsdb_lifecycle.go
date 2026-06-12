@@ -116,25 +116,28 @@ func (jd *Handle) init() {
 				if writer && jd.conf.clearAll {
 					jd.dropDatabaseTables(l)
 				}
-				templateData := func() map[string]any {
-					// Important: if jobsdb type is acting as a writer then refreshDSList
-					// doesn't return the full list of datasets, only the rightmost two.
-					// But we need to run the schema migration against all datasets, no matter
-					// whether jobsdb is a writer or not.
-					datasets, err := getDSList(jd, tx, jd.tablePrefix)
-					jd.assertError(err)
 
-					datasetIndices := make([]string, 0)
-					for _, dataset := range datasets {
-						datasetIndices = append(datasetIndices, dataset.Index)
-					}
+				// Important: if jobsdb type is acting as a writer then refreshDSList
+				// doesn't return the full list of datasets, only the rightmost two.
+				// But we need to run the schema migration against all datasets, no matter
+				// whether jobsdb is a writer or not.
+				allDatasets, err := getDSList(jd, tx, jd.tablePrefix)
+				jd.assertError(err)
 
-					return map[string]any{
-						"Prefix":              jd.tablePrefix,
-						"Datasets":            datasetIndices,
-						"PartitioningEnabled": jd.conf.numPartitions > 0,
-					}
-				}()
+				datasetIndices := make([]string, len(allDatasets))
+				for i, ds := range allDatasets {
+					datasetIndices[i] = ds.Index
+				}
+				templateData := map[string]any{
+					"Prefix":              jd.tablePrefix,
+					"Datasets":            datasetIndices,
+					"PartitioningEnabled": jd.conf.numPartitions > 0,
+				}
+
+				// One-way guard: opt-in check that panics if MC artifacts exist without WithMultiConsumer().
+				if !jd.conf.multiConsumer && jd.conf.disallowMultiConsumerDowngrade {
+					jd.assertNoMultiConsumerDowngrade(allDatasets)
+				}
 
 				if writer {
 					jd.setupDatabaseTables(templateData)
@@ -149,8 +152,16 @@ func (jd *Handle) init() {
 				// Changesets that run always can help in such cases, by bringing non-migrated tables into a usable state.
 				jd.runAlwaysChangesets(templateData)
 
+				// For multi-consumer handles, ensure every existing dataset has the
+				// v_last_c_ view and consumers registry table. This is the flip path:
+				// runs on first boot after WithMultiConsumer() is set, and is a no-op
+				// on subsequent boots once all datasets are up to date.
+				if jd.conf.multiConsumer {
+					jd.assertError(jd.applyMultiConsumerFlip(context.Background(), allDatasets))
+				}
+
 				// finally refresh the dataset list to make sure [datasetList] field is populated
-				err := jd.doRefreshDSRangeListWithDB(l, jd.dbHandle)
+				err = jd.doRefreshDSRangeListWithDB(l, jd.dbHandle)
 				jd.assertError(err)
 			})
 			return nil

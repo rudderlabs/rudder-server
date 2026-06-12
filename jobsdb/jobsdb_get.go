@@ -338,7 +338,11 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	}
 
 	joinType := "LEFT"
-	joinTable := "v_last_" + ds.JobStatusTable
+	viewPrefix := "v_last_"
+	if jd.conf.multiConsumer {
+		viewPrefix = "v_last_c_"
+	}
+	joinTable := viewPrefix + ds.JobStatusTable
 	onlyUnprocessed := slices.Equal(stateFilters, []string{Unprocessed.State})
 
 	if !containsUnprocessed { // If we are not querying for unprocessed jobs, we can use an inner join

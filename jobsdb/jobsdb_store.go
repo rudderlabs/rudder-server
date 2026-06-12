@@ -160,9 +160,13 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 			return err
 		}
 		if len(jobList) > jd.conf.analyzeThreshold.Load() {
-			_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobTable))
+			if _, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobTable)); err != nil {
+				return err
+			}
 		}
-
+		if jd.conf.multiConsumer {
+			err = jd.registerConsumers(ctx, tx, ds, jobList)
+		}
 		return err
 	}
 	const (
