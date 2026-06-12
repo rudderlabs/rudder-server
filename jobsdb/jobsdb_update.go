@@ -221,7 +221,7 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 	store := func() error {
 		updatedStates = updateJobStatusStats{} // reset in case of retry
 		stmt, err := tx.PrepareContext(ctx, misc.DBCopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
-			"retry_time", "error_code", "error_response", "parameters"))
+			"retry_time", "error_code", "error_response", "parameters", "consumer"))
 		if err != nil {
 			return err
 		}
@@ -275,7 +275,7 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 				status.ErrorResponse = []byte(`{}`)
 			}
 			_, err = stmt.ExecContext(ctx, status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
-				status.RetryTime, status.ErrorCode, string(status.ErrorResponse), string(status.Parameters))
+				status.RetryTime, status.ErrorCode, string(status.ErrorResponse), string(status.Parameters), status.Consumer)
 			if err != nil {
 				return err
 			}
