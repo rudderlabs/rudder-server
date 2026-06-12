@@ -246,6 +246,7 @@ jobs:
           - integration_test/warehouse
           - integration_test/retl_test
           - integration_test/snowpipestreaming
+          - integration_test/bqstreamv2
           - integration_test/srchydration
           - integration_test/tracing
           - integration_test/trackedusersreporting
