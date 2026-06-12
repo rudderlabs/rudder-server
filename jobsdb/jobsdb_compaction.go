@@ -304,7 +304,7 @@ type compactionListResult struct {
 }
 
 // based on size of given DSs, gives a list of DSs for us to vacuum full status tables
-func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT) ([]string, error) {
+func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT, dsConsumerCounts map[string]int64) ([]string, error) {
 	// get name and it's size of all tables
 	var rows *sql.Rows
 	rows, err := jd.maintenanceDB().QueryContext(
@@ -345,8 +345,10 @@ func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT
 	}
 
 	toVacuumFull := []string{}
+	threshold := jd.conf.compaction.vacuumFullStatusTableThreshold.Load()
 	for _, ds := range dsList {
-		if tableSizes[ds.JobStatusTable] > jd.conf.compaction.vacuumFullStatusTableThreshold.Load() {
+		scaledThreshold := threshold * max(dsConsumerCounts[ds.Index], 1)
+		if tableSizes[ds.JobStatusTable] > scaledThreshold {
 			toVacuumFull = append(toVacuumFull, ds.JobStatusTable)
 		}
 	}
@@ -354,7 +356,7 @@ func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT
 }
 
 // based on an estimate of the rows in DSs, gives a list of DSs for us to cleanup status tables
-func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) ([]dataSetT, error) {
+func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT, dsConsumerCounts map[string]int64) ([]dataSetT, error) {
 	// get analyzer estimates for the number of rows(jobs, statuses) in each DS
 	var rows *sql.Rows
 	rows, err := jd.maintenanceDB().QueryContext(
@@ -396,7 +398,10 @@ func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) (
 			if jobs == 0 { // using max ds size if we have no stats for the number of jobs
 				jobs = float64(jd.conf.MaxDSSize.Load())
 			}
-			return statuses/jobs > jd.conf.compaction.jobStatusCompactionThres.Load()
+			// For multi-consumer datasets, one status row per (job, consumer) is the healthy baseline,
+			// so scale the denominator by the consumer count to preserve threshold semantics.
+			multiplier := float64(max(dsConsumerCounts[ds.Index], 1))
+			return statuses/(jobs*multiplier) > jd.conf.compaction.jobStatusCompactionThres.Load()
 		})
 
 	return lo.Slice(datasets, 0, jd.conf.compaction.maxCompactDSProbe.Load()), nil
@@ -404,15 +409,27 @@ func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) (
 
 // based on an estimate cleans up the status tables
 func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) error {
-	var toVacuum []string
-	toVacuumFull, err := jd.getVacuumFullCandidates(ctx, dsList)
+	if jd.conf.compaction.skipStatusCompaction.Load() {
+		return nil
+	}
+	var (
+		toVacuum         []string
+		dsConsumerCounts map[string]int64
+	)
+	if jd.conf.multiConsumer {
+		var err error
+		if dsConsumerCounts, err = jd.consumersByDataset(ctx, dsList); err != nil {
+			return err
+		}
+	}
+	toVacuumFull, err := jd.getVacuumFullCandidates(ctx, dsList, dsConsumerCounts)
 	if err != nil {
 		return err
 	}
 	toVacuumFullMap := lo.Associate(toVacuumFull, func(k string) (string, struct{}) {
 		return k, struct{}{}
 	})
-	toCompact, err := jd.getCleanUpCandidates(ctx, dsList)
+	toCompact, err := jd.getCleanUpCandidates(ctx, dsList, dsConsumerCounts)
 	if err != nil {
 		return err
 	}
@@ -458,15 +475,15 @@ func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) er
 	return nil
 }
 
-// cleanStatusTable deletes all rows except for the latest status for each job
+// cleanStatusTable deletes all rows except for the latest status for each job (or job+consumer for multi-consumer).
 func (jd *Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, canBeVacuumed bool) (vacuum bool, err error) {
-	result, err := tx.ExecContext(
-		ctx,
-		fmt.Sprintf(`DELETE FROM %[1]q
-						WHERE NOT id = ANY(
-							SELECT DISTINCT ON (job_id) id from "%[1]s" ORDER BY job_id ASC, id DESC
-						)`, table),
-	)
+	var deleteSQL string
+	if jd.conf.multiConsumer {
+		deleteSQL = fmt.Sprintf(`DELETE FROM %[1]q WHERE NOT id = ANY(SELECT DISTINCT ON (job_id, consumer) id FROM %[1]q ORDER BY job_id ASC, consumer, id DESC)`, table)
+	} else {
+		deleteSQL = fmt.Sprintf(`DELETE FROM %[1]q WHERE NOT id = ANY(SELECT DISTINCT ON (job_id) id FROM %[1]q ORDER BY job_id ASC, id DESC)`, table)
+	}
+	result, err := tx.ExecContext(ctx, deleteSQL)
 	if err != nil {
 		return false, err
 	}
@@ -665,17 +682,53 @@ func (jd *Handle) copyJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSe
 		return 0, err
 	}
 
-	copyQuery := fmt.Sprintf(
-		`insert into %[2]q (job_id,   workspace_id,   uuid,   user_id,   partition_id, custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at,   consumers)
-		           (select j.job_id, j.workspace_id, j.uuid, j.user_id, j.partition_id, j.custom_val, j.parameters, %[4]s, j.event_count, j.created_at, j.expire_at, j.consumers from %[3]q j left join "v_last_%[1]s" js on js.job_id = j.job_id
-			where js.job_id is null or js.job_state = ANY('{%[5]s}') order by j.job_id)`,
-		srcDS.JobStatusTable,
-		destDS.JobTable,
-		srcDS.JobTable,
-		payloadLiteral,
-		strings.Join(validNonTerminalStates, ","),
+	if jd.conf.multiConsumer {
+		// multi-consumer: compute terminal consumers per job once, then trim them from the
+		// stored consumers array so the destination only carries pending work. Registry is
+		// seeded from the trimmed array returned by the INSERT.
+		var count int
+		err = tx.QueryRowContext(ctx, fmt.Sprintf(
+			`WITH terminal_by_job AS (
+				SELECT ls.job_id, array_agg(ls.consumer) AS done
+				FROM %[4]q ls
+				WHERE ls.job_state = ANY('{%[5]s}')
+				GROUP BY ls.job_id
+			),
+			inserted_jobs AS (
+				INSERT INTO %[1]q (job_id, workspace_id, uuid, user_id, partition_id, custom_val, parameters, event_payload, event_count, created_at, expire_at, consumers)
+				(SELECT j.job_id, j.workspace_id, j.uuid, j.user_id, j.partition_id, j.custom_val, j.parameters, %[2]s, j.event_count, j.created_at, j.expire_at,
+				        CASE WHEN t.done IS NULL THEN j.consumers
+				             ELSE array(SELECT c FROM unnest(j.consumers) c WHERE NOT c = ANY(t.done))
+				        END
+				 FROM %[3]q j
+				 LEFT JOIN terminal_by_job t ON t.job_id = j.job_id
+				 WHERE t.done IS NULL OR NOT (j.consumers <@ t.done)
+				 ORDER BY j.job_id) RETURNING consumers
+			),
+			seeded AS (
+				INSERT INTO %[6]q (consumer)
+				SELECT DISTINCT unnest(consumers) FROM inserted_jobs
+				ON CONFLICT DO NOTHING
+			)
+			SELECT count(*) FROM inserted_jobs`,
+			destDS.JobTable, payloadLiteral, srcDS.JobTable,
+			"v_last_c_"+srcDS.JobStatusTable, strings.Join(validTerminalStates, ","),
+			destDS.consumersRegistryTable(),
+		)).Scan(&count)
+		return count, err
+	}
+
+	// Single-consumer: classic left-join pattern, simple INSERT.
+	pendingFilter := fmt.Sprintf(
+		`LEFT JOIN "v_last_%s" js ON js.job_id = j.job_id WHERE js.job_id IS NULL OR js.job_state = ANY('{%s}')`,
+		srcDS.JobStatusTable, strings.Join(validNonTerminalStates, ","),
 	)
-	res, err := tx.ExecContext(ctx, copyQuery)
+	res, err := tx.ExecContext(ctx, fmt.Sprintf(
+		`INSERT INTO %[1]q (job_id, workspace_id, uuid, user_id, partition_id, custom_val, parameters, event_payload, event_count, created_at, expire_at, consumers)
+		(SELECT j.job_id, j.workspace_id, j.uuid, j.user_id, j.partition_id, j.custom_val, j.parameters, %[2]s, j.event_count, j.created_at, j.expire_at, j.consumers
+		 FROM %[3]q j %[4]s ORDER BY j.job_id)`,
+		destDS.JobTable, payloadLiteral, srcDS.JobTable, pendingFilter,
+	))
 	if err != nil {
 		return 0, err
 	}
@@ -687,15 +740,29 @@ func (jd *Handle) copyJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSe
 }
 
 // copyJobStatusesInTx copies the LATEST status of every job in the destDS (terminal or not) from the srcDS status table to the destDS status table.
+// For multi-consumer datasets, it uses v_last_c_ which has one row per (job_id, consumer), and only carries statuses for the consumers
+// still present in the destination job's (trimmed) consumers array.
 func (jd *Handle) copyJobStatusesInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) error {
-	copyQuery := fmt.Sprintf(
-		`insert into %[2]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters, consumer)
-		           (select js.job_id, js.job_state, js.attempt, js.exec_time, js.retry_time, js.error_code, js.error_response, js.parameters, js.consumer from "v_last_%[1]s" js
-			where exists (select 1 from %[3]q dj where dj.job_id = js.job_id))`,
-		srcDS.JobStatusTable,
-		destDS.JobStatusTable,
-		destDS.JobTable,
-	)
+	var copyQuery string
+	if jd.conf.multiConsumer {
+		// JOIN on consumer membership in the destination's trimmed consumers array:
+		// terminal consumers were stripped during copyJobsInTx, so this naturally
+		// excludes their statuses without any extra filtering logic.
+		copyQuery = fmt.Sprintf(
+			`INSERT INTO %[1]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters, consumer)
+			(SELECT ls.job_id, ls.job_state, ls.attempt, ls.exec_time, ls.retry_time, ls.error_code, ls.error_response, ls.parameters, ls.consumer
+			 FROM %[2]q ls
+			 JOIN %[3]q dj ON dj.job_id = ls.job_id AND ls.consumer = ANY(dj.consumers))`,
+			destDS.JobStatusTable, "v_last_c_"+srcDS.JobStatusTable, destDS.JobTable,
+		)
+	} else {
+		copyQuery = fmt.Sprintf(
+			`INSERT INTO %[1]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters, consumer)
+			(SELECT js.job_id, js.job_state, js.attempt, js.exec_time, js.retry_time, js.error_code, js.error_response, js.parameters, js.consumer
+			 FROM %[2]q js WHERE EXISTS (SELECT 1 FROM %[3]q dj WHERE dj.job_id = js.job_id))`,
+			destDS.JobStatusTable, "v_last_"+srcDS.JobStatusTable, destDS.JobTable,
+		)
+	}
 	if _, err := tx.ExecContext(ctx, copyQuery); err != nil {
 		return err
 	}
@@ -713,27 +780,73 @@ func (jd *Handle) compactJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 		return 0, err
 	}
 
-	compactDSQuery := fmt.Sprintf(
-		`with last_status as (select * from "v_last_%[1]s"),
-		inserted_jobs as
-		(
-			insert into %[3]q (job_id,   workspace_id,   uuid,   user_id,   partition_id, custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at,   consumers)
-			           (select j.job_id, j.workspace_id, j.uuid, j.user_id, j.partition_id, j.custom_val, j.parameters, %[6]s, j.event_count, j.created_at, j.expire_at, j.consumers from %[2]q j left join last_status js on js.job_id = j.job_id
-				where js.job_id is null or js.job_state = ANY('{%[5]s}') order by j.job_id) returning job_id
-		),
-		insertedStatuses as
-		(
-			insert into %[4]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters, consumer)
-			           (select job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters, consumer from last_status where job_state = ANY('{%[5]s}'))
+	// multi-consumer datasets: trim terminal consumers from the stored array so each
+	// destination job only carries pending work. Status rows are carried only for consumers
+	// still in the (trimmed) array. Registry is seeded from the trimmed RETURNING.
+	var compactDSQuery string
+	if jd.conf.multiConsumer {
+		compactDSQuery = fmt.Sprintf(
+			`WITH last_status AS (SELECT * FROM %[5]q),
+			terminal_by_job AS (
+				SELECT ls.job_id, array_agg(ls.consumer) AS done
+				FROM last_status ls
+				WHERE ls.job_state = ANY('{%[7]s}')
+				GROUP BY ls.job_id
+			),
+			inserted_jobs AS (
+				INSERT INTO %[1]q (job_id, workspace_id, uuid, user_id, partition_id, custom_val, parameters, event_payload, event_count, created_at, expire_at, consumers)
+				(SELECT j.job_id, j.workspace_id, j.uuid, j.user_id, j.partition_id, j.custom_val, j.parameters, %[4]s, j.event_count, j.created_at, j.expire_at,
+				        CASE WHEN t.done IS NULL THEN j.consumers
+				             ELSE array(SELECT c FROM unnest(j.consumers) c WHERE NOT c = ANY(t.done))
+				        END
+				 FROM %[2]q j
+				 LEFT JOIN terminal_by_job t ON t.job_id = j.job_id
+				 WHERE t.done IS NULL OR NOT (j.consumers <@ t.done)
+				 ORDER BY j.job_id) RETURNING job_id, consumers
+			),
+			inserted_consumers AS (
+				INSERT INTO %[6]q (consumer)
+				SELECT DISTINCT unnest(consumers) FROM inserted_jobs
+				ON CONFLICT DO NOTHING
+			),
+			insertedStatuses AS (
+				INSERT INTO %[3]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters, consumer)
+				(SELECT ls.job_id, ls.job_state, ls.attempt, ls.exec_time, ls.retry_time, ls.error_code, ls.error_response, ls.parameters, ls.consumer
+				 FROM last_status ls
+				 JOIN inserted_jobs ij ON ij.job_id = ls.job_id AND ls.consumer = ANY(ij.consumers))
+			)
+			SELECT count(*) FROM inserted_jobs;`,
+			destDS.JobTable,
+			srcDS.JobTable,
+			destDS.JobStatusTable,
+			payloadLiteral,
+			"v_last_c_"+srcDS.JobStatusTable,
+			destDS.consumersRegistryTable(),
+			strings.Join(validTerminalStates, ","),
 		)
-		select count(*) from inserted_jobs;`,
-		srcDS.JobStatusTable,
-		srcDS.JobTable,
-		destDS.JobTable,
-		destDS.JobStatusTable,
-		strings.Join(validNonTerminalStates, ","),
-		payloadLiteral,
-	)
+	} else {
+		compactDSQuery = fmt.Sprintf(
+			`WITH last_status AS (SELECT * FROM %[5]q),
+			inserted_jobs AS (
+				INSERT INTO %[1]q (job_id, workspace_id, uuid, user_id, partition_id, custom_val, parameters, event_payload, event_count, created_at, expire_at, consumers)
+				(SELECT j.job_id, j.workspace_id, j.uuid, j.user_id, j.partition_id, j.custom_val, j.parameters, %[4]s, j.event_count, j.created_at, j.expire_at, j.consumers
+				 FROM %[2]q j LEFT JOIN last_status js ON js.job_id = j.job_id
+				 WHERE js.job_id IS NULL OR js.job_state = ANY('{%[6]s}') ORDER BY j.job_id) RETURNING job_id
+			),
+			insertedStatuses AS (
+				INSERT INTO %[3]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters, consumer)
+				(SELECT job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters, consumer
+				 FROM last_status WHERE job_state = ANY('{%[6]s}'))
+			)
+			SELECT count(*) FROM inserted_jobs;`,
+			destDS.JobTable,
+			srcDS.JobTable,
+			destDS.JobStatusTable,
+			payloadLiteral,
+			"v_last_"+srcDS.JobStatusTable,
+			strings.Join(validNonTerminalStates, ","),
+		)
+	}
 
 	var numJobsCompacted int
 	if err := tx.QueryRowContext(
@@ -1133,17 +1246,32 @@ func (jd *Handle) checkIfCompactDS(ds dataSetT, db sqlDbOrTx) (
 	var maxCreatedAt time.Time
 	var tableComment sql.NullString
 
+	// For multi-consumer datasets, a job is terminal only when every consumer has a terminal
+	// latest status. For single-consumer datasets, there is at most one status row per job.
+	var terminalJobCountExpr string
+	if jd.conf.multiConsumer {
+		terminalJobCountExpr = fmt.Sprintf(
+			`(select count(*) from %[1]q j
+			  where (select count(*) from "v_last_c_%[2]s" ls
+			         where ls.job_id = j.job_id and ls.job_state = any($1)) = array_length(j.consumers, 1)
+			 ) as terminalJobCount`,
+			ds.JobTable, ds.JobStatusTable,
+		)
+	} else {
+		terminalJobCountExpr = fmt.Sprintf(`(select count(*) from "v_last_%s" where job_state = ANY($1)) as terminalJobCount`, ds.JobStatusTable)
+	}
+
 	query := fmt.Sprintf(
 		`with combinedResult as (
 			select
 			(select count(*) from %[1]q) as totalJobCount,
-			(select count(*) from "v_last_%[2]s" where job_state = ANY($1)) as terminalJobCount,
+			%[3]s,
 			(select created_at from %[1]q order by job_id desc limit 1) as maxCreatedAt,
 			COALESCE((select exec_time < $2 from %[2]q where job_state = ANY($1) order by id asc limit 1), false) as retentionExpired,
 			obj_description('%[1]s'::regclass, 'pg_class') as tableComment
 		)
 		select totalJobCount, terminalJobCount, maxCreatedAt, retentionExpired, tableComment from combinedResult`,
-		ds.JobTable, ds.JobStatusTable)
+		ds.JobTable, ds.JobStatusTable, terminalJobCountExpr)
 
 	if err := db.QueryRow(
 		query,
