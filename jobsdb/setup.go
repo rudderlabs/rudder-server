@@ -23,6 +23,7 @@ func (jd *Handle) RunAlwaysSchemaMigrationTable() string {
 // The following data are passed to JobsDB migration templates:
 // - Prefix: The table prefix used by this jobsdb instance.
 // - Datasets: Array of existing dataset indices.
+// - PartitioningEnabled: Whether this jobsdb instance is configured with partitions.
 func (jd *Handle) setupDatabaseTables(templateData map[string]any) {
 	// setup migrator with appropriate schema migrations table
 	m := &migrator.Migrator{

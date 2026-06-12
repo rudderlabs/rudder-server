@@ -20,11 +20,9 @@ type sqlDbOrTx interface {
 
 const preDropTableComment = "rudder:pre_drop:v1"
 
-/*
-Function to return an ordered list of datasets and datasetRanges
-Most callers use the in-memory list of dataset and datasetRanges
-*/
-func getDSList(jd assertInterface, dbHandle sqlDbOrTx, tablePrefix string) ([]dataSetT, error) {
+// getDSList returns the datasets found in Postgres, ordered by dataset index.
+// Most runtime paths use the in-memory dataset list instead.
+func getDSList(jd asserter, dbHandle sqlDbOrTx, tablePrefix string) ([]dataSetT, error) {
 	var datasetList []dataSetT
 
 	// Read the table names from PG
@@ -32,9 +30,9 @@ func getDSList(jd assertInterface, dbHandle sqlDbOrTx, tablePrefix string) ([]da
 	if err != nil {
 		return nil, fmt.Errorf("getAllTableNames: %w", err)
 	}
-	// Tables are of form jobs_ and job_status_. Iterate
-	// through them and sort them to produce and
-	// ordered list of datasets
+	// Tables are of form <prefix>_jobs_<index> and
+	// <prefix>_job_status_<index>. Pair them by index and sort the indexes to
+	// produce an ordered list of datasets.
 
 	jobNameMap := map[string]string{}
 	jobStatusNameMap := map[string]string{}
@@ -148,7 +146,7 @@ func preDropDatasetTables(tableName string) (jobTable, statusTable string, ok bo
 }
 
 // checkValidJobState Function to check validity of states
-func checkValidJobState(jd assertInterface, stateFilters []string) {
+func checkValidJobState(jd asserter, stateFilters []string) {
 	jobStateMap := lo.SliceToMap(jobStates, func(js jobStateT) (string, struct{}) { return js.State, struct{}{} })
 	for _, st := range stateFilters {
 		if _, ok := jobStateMap[st]; !ok {
@@ -157,7 +155,7 @@ func checkValidJobState(jd assertInterface, stateFilters []string) {
 	}
 }
 
-// constructQueryOR construct a query were paramKey is any of the values in paramValues
+// constructQueryOR constructs a query where paramKey is any of the values in paramList.
 func constructQueryOR(paramKey string, paramList []string, additionalPredicates ...string) string {
 	var queryList []string
 	for _, p := range paramList {
@@ -167,9 +165,8 @@ func constructQueryOR(paramKey string, paramList []string, additionalPredicates 
 	return "(" + strings.Join(queryList, " OR ") + ")"
 }
 
-// constructParameterJSONQuery construct and return query
+// constructParameterJSONQuery constructs a query where any parameter filter matches.
 func constructParameterJSONQuery(alias string, parameterFilters []ParameterFilterT) string {
-	// eg. query with optional destination_id (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>","destination_id":"<destination_id>"}'  OR (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>"}' AND batch_rt_jobs_1.parameters -> 'destination_id' IS NULL))
 	conditions := lo.Map(parameterFilters, func(parameter ParameterFilterT, _ int) string {
 		return fmt.Sprintf(`%s.parameters->>'%s'='%s'`, alias, parameter.Name, parameter.Value)
 	})

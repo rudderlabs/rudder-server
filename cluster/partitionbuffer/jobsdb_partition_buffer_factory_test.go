@@ -64,16 +64,6 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 		})
 		require.NoError(t, err, "it should be able to store jobs in tx")
 
-		res := pb.StoreEachBatchRetry(ctx, [][]*jobsdb.JobT{jobs(), jobs()})
-		require.Len(t, res, 0, "it should be able to store each batch retry")
-
-		err = pb.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
-			res, err := pb.StoreEachBatchRetryInTx(ctx, tx, [][]*jobsdb.JobT{jobs(), jobs()})
-			require.Len(t, res, 0, "it should be able to store each batch retry in tx")
-			return err
-		})
-		require.NoError(t, err, "it should be able to store each batch retry in tx")
-
 		err = pb.BufferPartitions(ctx, []string{"partition-1"})
 		require.NoError(t, err, "it should be able to buffer partitions")
 		err = pb.FlushBufferedPartitions(ctx, []string{"partition-1"})
@@ -99,16 +89,6 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 			return pb.StoreInTx(ctx, tx, jobs())
 		})
 		require.NoError(t, err, "it should be able to store jobs in tx")
-
-		res := pb.StoreEachBatchRetry(ctx, [][]*jobsdb.JobT{jobs(), jobs()})
-		require.Len(t, res, 0, "it should be able to store each batch retry")
-
-		err = pb.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
-			res, err := pb.StoreEachBatchRetryInTx(ctx, tx, [][]*jobsdb.JobT{jobs(), jobs()})
-			require.Len(t, res, 0, "it should be able to store each batch retry in tx")
-			return err
-		})
-		require.NoError(t, err, "it should be able to store each batch retry in tx")
 
 		err = pb.BufferPartitions(ctx, []string{"partition-1"})
 		require.NoError(t, err, "it should be able to buffer partitions")
@@ -148,22 +128,6 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 			return pb.StoreInTx(ctx, tx, jobs())
 		})
 		require.ErrorIs(t, err, ErrStoreNotSupported, "StoreInTx should not be supported in reader-only mode")
-
-		batch1 := jobs()
-		batch2 := jobs()
-		res := pb.StoreEachBatchRetry(ctx, [][]*jobsdb.JobT{batch1, batch2})
-		require.Len(t, res, 2, "StoreEachBatchRetry should return errors for 2 batches")
-		require.Contains(t, res[batch1[0].UUID], ErrStoreNotSupported.Error(), "Each job should have store not supported error")
-		require.Contains(t, res[batch2[0].UUID], ErrStoreNotSupported.Error(), "Each job should have store not supported error")
-
-		err = primaryWriter.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
-			res, err := pb.StoreEachBatchRetryInTx(ctx, tx, [][]*jobsdb.JobT{batch1, batch2})
-			require.Len(t, res, 2, "StoreEachBatchRetry should return errors for 2 batches")
-			require.Contains(t, res[batch1[0].UUID], ErrStoreNotSupported.Error(), "Each job should have store not supported error")
-			require.Contains(t, res[batch2[0].UUID], ErrStoreNotSupported.Error(), "Each job should have store not supported error")
-			return err
-		})
-		require.NoError(t, err, "StoreEachBatchRetryInTx should complete without error")
 
 		err = pb.BufferPartitions(ctx, []string{"partition-1"})
 		require.NoError(t, err, "it should be able to buffer partitions")

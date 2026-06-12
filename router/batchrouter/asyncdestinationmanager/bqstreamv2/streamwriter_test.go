@@ -47,10 +47,10 @@ func TestStreamWriterIntegration(t *testing.T) {
 	})
 	require.NoError(t, dataset.Table(tableName).Create(ctx, &bigquery.TableMetadata{Schema: toBigQuerySchema(tableSchema)}))
 
-	factory := &streamWriterFactoryImpl{maxInflightRequests: 10, maxInflightBytes: 10 * 1024 * 1024}
+	factory := NewTableStreamWriterFactory(10, 10*1024*1024)
 
 	t.Run("incompatible credentials", func(t *testing.T) {
-		_, err := factory.NewStreamWriter(ctx, destConfig{
+		_, err := factory.NewTableStreamWriter(ctx, destConfig{
 			ProjectID:   credentials.ProjectID,
 			Namespace:   namespace,
 			Credentials: "{}",
@@ -59,15 +59,15 @@ func TestStreamWriterIntegration(t *testing.T) {
 	})
 
 	t.Run("append rows end-to-end", func(t *testing.T) {
-		writer, err := factory.NewStreamWriter(ctx, destConfig{
+		tableStreamWriter, err := factory.NewTableStreamWriter(ctx, destConfig{
 			ProjectID:   credentials.ProjectID,
 			Namespace:   namespace,
 			Credentials: credentials.Credentials,
 		}, tableName, tableSchema)
 		require.NoError(t, err)
-		t.Cleanup(func() { _ = writer.Close() })
+		t.Cleanup(func() { _ = tableStreamWriter.Close() })
 
-		md, err := (&Manager{}).descriptorForSchema(tableSchema)
+		md, err := descriptorForSchema(tableSchema)
 		require.NoError(t, err)
 
 		encoded, err := encodeRows([]Row{
@@ -76,9 +76,7 @@ func TestStreamWriterIntegration(t *testing.T) {
 		}, md, tableSchema)
 		require.NoError(t, err)
 
-		result, err := writer.AppendRows(ctx, encoded)
-		require.NoError(t, err)
-		_, err = result.GetResult(ctx)
+		err = tableStreamWriter.AppendRows(ctx, encoded)
 		require.NoError(t, err)
 
 		records := bqhelper.RetrieveRecordsFromWarehouse(t, bqClient,

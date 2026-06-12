@@ -29,7 +29,7 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	if errors.As(err, &e) {
 		// 409 is returned when we try to create a table that already exists
 		// 400 is returned for all kinds of invalid input - so we need to check the error message too
-		if e.Code == 409 || (e.Code == 400 && strings.Contains(e.Message, "already exists in schema")) {
+		if e.Code == 409 || (e.Code == 400 && strings.Contains(strings.ToLower(e.Message), "already exists in schema")) {
 			return true
 		}
 	}

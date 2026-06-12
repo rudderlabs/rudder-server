@@ -32,7 +32,7 @@ import (
 
 func (brt *Handle) getImportingJobs(ctx context.Context, augmentQueryParams func(*jobsdb.GetQueryParams), limit int) (jobsdb.JobsResult, error) {
 	var jobsResult jobsdb.JobsResult
-	// we need to get all importing jobs based on limit, overcoming dsLimits and payload size limits
+	// we need to get all importing jobs based on limit, overcoming dsLimits (no payload size limit is applied here)
 	var stop bool
 	var moreToken any
 	var iterations int
@@ -43,7 +43,6 @@ func (brt *Handle) getImportingJobs(ctx context.Context, augmentQueryParams func
 		queryParams := jobsdb.GetQueryParams{
 			CustomValFilters: []string{brt.destType},
 			JobsLimit:        jobsLimit,
-			PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
 		}
 		augmentQueryParams(&queryParams)
 		r, err := misc.QueryWithRetriesAndNotify(ctx, brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (*jobsdb.MoreJobsResult, error) {
@@ -64,6 +63,17 @@ func (brt *Handle) getImportingJobs(ctx context.Context, augmentQueryParams func
 			iterations == maxIterations // or we have reached max iterations
 	}
 	brt.asyncGetImportingIterations.Observe(float64(iterations))
+
+	if iterations == maxIterations {
+		// This is a safeguard against infinite loops and should never be hit under normal
+		// circumstances. If we are here, the loop was cut short by the iteration cap and there
+		// may still be importing jobs left unfetched.
+		brt.logger.Warnn("GetImportingJobs reached the maximum iteration count, importing jobs may have been left unfetched",
+			logger.NewIntField("iterations", int64(iterations)),
+			logger.NewIntField("maxIterations", int64(maxIterations)),
+			obskit.DestinationType(brt.destType),
+		)
+	}
 	return jobsResult, nil
 }
 
@@ -119,13 +129,13 @@ func getFirstAttemptAtFromErrorResponse(msg stdjson.RawMessage) time.Time {
 	return res
 }
 
-func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultStatus jobsdb.JobStatusT, sourceID, destinationID string) ([]*jobsdb.JobStatusT, []*jobsdb.JobT, map[int64]jobsdb.ConnectionDetails) {
+func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultStatus jobsdb.JobStatusT, sourceID, destinationID string) ([]*jobsdb.JobStatusT, []*jobsdb.JobT, map[int64]jobsdb.ConnectionID) {
 	var abortedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	if defaultStatus.ErrorResponse == nil {
 		defaultStatus.ErrorResponse = routerutils.EmptyPayload
 	}
-	jobIdConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
+	jobIdConnectionDetailsMap := make(map[int64]jobsdb.ConnectionID)
 	for _, job := range importingList {
 		resp := enhanceResponseWithFirstAttemptedAt(job.LastJobStatus.ErrorResponse, defaultStatus.ErrorResponse)
 		status := jobsdb.JobStatusT{
@@ -142,7 +152,7 @@ func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultSta
 			PartitionID:   job.PartitionID,
 			CustomVal:     job.CustomVal,
 		}
-		jobIdConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
+		jobIdConnectionDetailsMap[job.JobID] = jobsdb.ConnectionID{
 			SourceID:      sourceID,
 			DestinationID: destinationID,
 		}
@@ -169,7 +179,7 @@ func (brt *Handle) getParamertsFromJobs(jobs []*jobsdb.JobT) map[int64]stdjson.R
 
 func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sourceID string, importingJob *jobsdb.JobT, importingCount int, pollResp common.PollStatusResponse) ([]*jobsdb.JobStatusT, error) {
 	var statusList []*jobsdb.JobStatusT
-	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
+	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionID)
 	list, err := brt.getImportingJobs(ctx, func(gqp *jobsdb.GetQueryParams) {
 		gqp.ParameterFilters = []jobsdb.ParameterFilterT{{Name: "destination_id", Value: destinationID}}
 	}, importingCount)
@@ -220,7 +230,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sour
 			successfulJobIDs := append(uploadStatsResp.Metadata.SucceededKeys, uploadStatsResp.Metadata.WarningKeys...)
 			for _, job := range importingList {
 				jobID := job.JobID
-				jobIDConnectionDetailsMap[jobID] = jobsdb.ConnectionDetails{
+				jobIDConnectionDetailsMap[jobID] = jobsdb.ConnectionID{
 					SourceID:      sourceID,
 					DestinationID: destinationID,
 				}
@@ -725,7 +735,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 	workspaceID := brt.GetWorkspaceIDForDestID(params.AsyncOutput.DestinationID)
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
-	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
+	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionID)
 
 	missingJobParameters := map[string][]int64{}
 	getJobParameters := func(state string, jobID int64) stdjson.RawMessage {
@@ -741,7 +751,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 		importingJobIDs := lo.Uniq(params.AsyncOutput.ImportingJobIDs)
 		for _, jobId := range importingJobIDs {
 			jobParameters := getJobParameters(jobsdb.Importing.State, jobId)
-			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionDetails{
+			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionID{
 				DestinationID: params.AsyncOutput.DestinationID,
 				SourceID:      gjson.GetBytes(jobParameters, "source_id").String(),
 			}
@@ -766,7 +776,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 		succeededJobIDs := lo.Uniq(params.AsyncOutput.SucceededJobIDs)
 		for _, jobId := range succeededJobIDs {
 			jobParameters := getJobParameters(jobsdb.Succeeded.State, jobId)
-			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionDetails{
+			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionID{
 				DestinationID: params.AsyncOutput.DestinationID,
 				SourceID:      gjson.GetBytes(jobParameters, "source_id").String(),
 			}
@@ -792,7 +802,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 		failedJobIDs := lo.Uniq(params.AsyncOutput.FailedJobIDs)
 		for _, jobId := range failedJobIDs {
 			jobParameters := getJobParameters(jobsdb.Failed.State, jobId)
-			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionDetails{
+			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionID{
 				DestinationID: params.AsyncOutput.DestinationID,
 				SourceID:      gjson.GetBytes(jobParameters, "source_id").String(),
 			}
@@ -837,7 +847,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 		}
 		for _, jobId := range toAbortJobIDs {
 			jobParameters := getJobParameters(jobsdb.Aborted.State, jobId)
-			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionDetails{
+			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionID{
 				DestinationID: params.AsyncOutput.DestinationID,
 				SourceID:      gjson.GetBytes(jobParameters, "source_id").String(),
 			}

@@ -21,7 +21,7 @@ func (c *tableSchemaCacheImpl) Get(tableName string, now time.Time) (whutils.Mod
 	if !ok || now.After(item.expiresAt) {
 		return nil, false
 	}
-	return cloneSchema(item.schema), true
+	return maps.Clone(item.schema), true
 }
 
 // Has reports whether a non-expired schema exists for the table, without
@@ -41,33 +41,29 @@ func (c *tableSchemaCacheImpl) Peek(tableName string) (whutils.ModelTableSchema,
 	if !ok {
 		return nil, false
 	}
-	return cloneSchema(item.schema), true
+	return maps.Clone(item.schema), true
 }
 
 // Set sets the table schema in the cache.
 func (c *tableSchemaCacheImpl) Set(tableName string, schema whutils.ModelTableSchema, now time.Time) {
 	c.mu.Lock()
-	c.items[tableName] = tableSchemaCacheItem{schema: cloneSchema(schema), expiresAt: now.Add(c.ttl)}
-	c.mu.Unlock()
+	defer c.mu.Unlock()
+
+	c.items[tableName] = tableSchemaCacheItem{schema: maps.Clone(schema), expiresAt: now.Add(c.ttl)}
 }
 
 // Invalidate invalidates the table schema in the cache.
 func (c *tableSchemaCacheImpl) Invalidate(tableName string) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	delete(c.items, tableName)
-	c.mu.Unlock()
 }
 
 // Len returns the number of items in the cache.
 func (c *tableSchemaCacheImpl) Len() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return len(c.items)
-}
 
-// cloneSchema clones the schema to avoid mutating the original schema.
-func cloneSchema(in whutils.ModelTableSchema) whutils.ModelTableSchema {
-	out := make(whutils.ModelTableSchema, len(in))
-	maps.Copy(out, in)
-	return out
+	return len(c.items)
 }

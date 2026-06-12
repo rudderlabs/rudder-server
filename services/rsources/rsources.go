@@ -154,7 +154,6 @@ func (npt *NextPageToken) String() string {
 
 type (
 	JobFailedRecordsV2      JobFailedRecords[FailedRecord]
-	JobFailedRecordsV1      JobFailedRecords[json.RawMessage]
 	JobFailedRecords[R any] struct {
 		ID     string                 `json:"id"`
 		Tasks  []TaskFailedRecords[R] `json:"tasks"`
@@ -215,9 +214,6 @@ type JobServiceConfig struct {
 type JobService interface {
 	StatsIncrementer
 
-	// Delete deletes all relevant information for a given jobRunId
-	Delete(ctx context.Context, jobRunId string, filter JobFilter) error
-
 	// DeleteJobStatus deletes the status for a given jobRunId
 	DeleteJobStatus(ctx context.Context, jobRunId string, filter JobFilter) error
 
@@ -232,9 +228,6 @@ type JobService interface {
 
 	// GetFailedRecords gets the failed records for a jobRunID, with filters on taskRunId and sourceId
 	GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecordsV2, error)
-
-	// GetFailedRecordsV1 gets the failed records for a jobRunID, with filters on taskRunId and sourceId
-	GetFailedRecordsV1(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecordsV1, error)
 
 	// CleanupLoop starts the cleanup loop in the background which will stop upon context termination or in case of an error
 	CleanupLoop(ctx context.Context) error
@@ -330,10 +323,6 @@ func (*noopService) AddFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ J
 
 func (*noopService) GetFailedRecords(_ context.Context, _ string, _ JobFilter, _ PagingInfo) (JobFailedRecordsV2, error) {
 	return JobFailedRecordsV2{}, nil
-}
-
-func (*noopService) GetFailedRecordsV1(_ context.Context, _ string, _ JobFilter, _ PagingInfo) (JobFailedRecordsV1, error) {
-	return JobFailedRecordsV1{}, nil
 }
 
 func (*noopService) CleanupLoop(ctx context.Context) error {

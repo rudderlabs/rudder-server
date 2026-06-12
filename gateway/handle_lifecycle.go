@@ -26,6 +26,7 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/throttling"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 
@@ -99,11 +100,20 @@ func (gw *Handle) Setup(
 	gw.conf.dbBatchWriteTimeout = config.GetReloadableDurationVar(5, time.Millisecond, "Gateway.dbBatchWriteTimeout", "Gateway.dbBatchWriteTimeoutInMS")
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
 	gw.conf.allowReqsWithoutUserIDAndAnonymousID = config.GetReloadableBoolVar(false, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
-	gw.conf.gwAllowPartialWriteWithErrors = config.GetReloadableBoolVar(true, "Gateway.allowPartialWriteWithErrors")
 	// Maximum request size to gateway
 	gw.conf.maxReqSize = config.GetReloadableIntVar(4000, 1024, "Gateway.maxReqSizeInKB")
 	// Enable rate limit on incoming events. false by default
 	gw.conf.enableRateLimit = config.GetReloadableBoolVar(false, "Gateway.enableRateLimit")
+	// Global throttle for the internal batch endpoint: max events per window, <=0 means disabled
+	gw.conf.internalBatchThrottleEvents = config.GetReloadableIntVar(0, 1, "Gateway.internalBatchThrottleEvents")
+	gw.conf.internalBatchThrottleWindow = config.GetReloadableDurationVar(1, time.Second, "Gateway.internalBatchThrottleWindow")
+	{
+		l, err := throttling.New(throttling.WithInMemoryGCRA(0))
+		if err != nil {
+			return fmt.Errorf("failed to create internal batch throttler: %w", err)
+		}
+		gw.internalBatchLimiter = l
+	}
 	// Enable suppress user feature. false by default
 	gw.conf.enableSuppressUserFeature = config.GetBoolVar(true, "Gateway.enableSuppressUserFeature")
 	// Time period for diagnosis ticker
@@ -117,6 +127,8 @@ func (gw *Handle) Setup(
 	gw.conf.maxConcurrentRequests = config.GetIntVar(50000, 1, "Gateway.maxConcurrentRequests")
 	// enable webhook v2 handler. disabled by default
 	gw.conf.webhookV2HandlerEnabled = config.GetBoolVar(false, "Gateway.webhookV2HandlerEnabled")
+	gw.conf.legacyWarehouseEndpointsEnabled = config.GetBoolVar(true, "Gateway.legacyWarehouseEndpointsEnabled") // TODO: remove legacy endpoints after next release
+
 	// Registering stats
 	gw.batchSizeStat = gw.stats.NewStat("gateway.batch_size", stats.HistogramType)
 	gw.requestSizeStat = gw.stats.NewStat("gateway.request_size", stats.HistogramType)
@@ -128,6 +140,9 @@ func (gw *Handle) Setup(
 	gw.addToBatchRequestQWaitTime = gw.stats.NewStat("gateway.batch_request_queue_wait_time", stats.TimerType)
 	gw.processRequestTime = gw.stats.NewStat("gateway.process_request_time", stats.TimerType)
 	gw.emptyAnonIdHeaderStat = gw.stats.NewStat("gateway.empty_anonymous_id_header", stats.CountType)
+	gw.internalBatchThrottleSkipDisabledCounter = gw.stats.NewTaggedStat("gateway.internal_batch_throttle_skip", stats.CountType, stats.Tags{"reason": "disabled"})
+	gw.internalBatchThrottleSkipNoHeaderCounter = gw.stats.NewTaggedStat("gateway.internal_batch_throttle_skip", stats.CountType, stats.Tags{"reason": "no_header"})
+	gw.internalBatchThrottleSkipInvalidHeaderCounter = gw.stats.NewTaggedStat("gateway.internal_batch_throttle_skip", stats.CountType, stats.Tags{"reason": "invalid_header"})
 
 	gw.now = timeutil.Now
 	gw.diagnosisTicker = time.NewTicker(gw.conf.diagnosisTickerTime)
@@ -317,6 +332,12 @@ func WithNow(now func() time.Time) OptFunc {
 	}
 }
 
+func WithInternalEndpointsEnabled(enabled bool) OptFunc {
+	return func(gw *Handle) {
+		gw.conf.internalEndpointsEnabled = enabled
+	}
+}
+
 // initUserWebRequestWorkers initiates `maxUserWebRequestWorkerProcess` number of `webRequestWorkers` that listen on their `webRequestQ` for new WebRequests.
 func (gw *Handle) initUserWebRequestWorkers() {
 	gw.userWebRequestWorkers = make([]*userWebRequestWorkerT, gw.conf.maxUserWebRequestWorkerProcess)
@@ -487,22 +508,13 @@ func (gw *Handle) dbWriterWorkerProcess() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), gw.conf.WriteTimeout)
 		err := gw.jobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
-			if gw.conf.gwAllowPartialWriteWithErrors.Load() {
-				var err error
-				errorMessagesMap, err = gw.jobsDB.StoreEachBatchRetryInTx(ctx, tx, jobBatches)
-				if err != nil {
-					return err
+			if err := gw.jobsDB.StoreInTx(ctx, tx, lo.Flatten(jobBatches)); err != nil {
+				if !errors.Is(err, jobsdb.ErrStaleDsList) {
+					gw.logger.Errorn("Store into gateway db failed with error",
+						logger.NewIntField("jobBatchesCount", int64(len(jobBatches))),
+						obskit.Error(err))
 				}
-			} else {
-				err := gw.jobsDB.StoreInTx(ctx, tx, lo.Flatten(jobBatches))
-				if err != nil {
-					if !errors.Is(err, jobsdb.ErrStaleDsList) {
-						gw.logger.Errorn("Store into gateway db failed with error",
-							logger.NewIntField("jobBatchesCount", int64(len(jobBatches))),
-							obskit.Error(err))
-					}
-					return err
-				}
+				return err
 			}
 
 			// rsources stats
@@ -558,10 +570,6 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	component := "gateway"
 	srvMux := chi.NewRouter()
 	// rudder-sources new APIs
-	rsourcesHandlerV1 := rsources_http.NewV1Handler(
-		gw.rsourcesService,
-		gw.logger.Child("rsources"),
-	)
 	rsourcesHandlerV2 := rsources_http.NewV2Handler(
 		gw.rsourcesService,
 		gw.logger.Child("rsources_failed_keys"),
@@ -578,25 +586,30 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 		middleware.LimitConcurrentRequests(gw.conf.maxConcurrentRequests),
 		middleware.UncompressMiddleware,
 	)
-	srvMux.Route("/internal", func(r chi.Router) {
-		r.Post("/v1/extract", gw.webExtractHandler())
-		r.Post("/v1/retl", gw.webRetlHandler())
-		r.Get("/v1/warehouse/fetch-tables", gw.whProxy.ServeHTTP)
-		r.Post("/v1/audiencelist", gw.webAudienceListHandler())
-		r.Post("/v1/replay", gw.webReplayHandler())
-		r.Post("/v1/batch", gw.internalBatchHandler())
-
-		// TODO: delete this handler once we are ready to remove support for the v1 api
-		r.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV1.ServeHTTP))
-
-		r.Mount("/v2/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV2.ServeHTTP))
-		for path, handler := range gw.internalHttpHandlers {
-			r.Mount(path, withContentType("application/json; charset=utf-8", handler.ServeHTTP))
-		}
-	})
-
-	// TODO: delete this handler once we are ready to remove support for the v1 api
-	srvMux.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV1.ServeHTTP))
+	if gw.conf.internalEndpointsEnabled {
+		srvMux.Route("/internal", func(r chi.Router) {
+			r.Route("/v1", func(r chi.Router) {
+				r.Post("/extract", gw.webExtractHandler())
+				r.Post("/retl", gw.webRetlHandler())
+				r.Route("/warehouse", func(r chi.Router) {
+					r.Get("/fetch-tables", gw.whProxy.ServeHTTP)
+					r.Post("/pending-events", gw.whProxy.ServeHTTP)
+					r.Post("/trigger-upload", gw.whProxy.ServeHTTP)
+					r.Post("/jobs", gw.whProxy.ServeHTTP)
+					r.Get("/jobs/status", gw.whProxy.ServeHTTP)
+				})
+				r.Post("/audiencelist", gw.webAudienceListHandler())
+				r.Post("/replay", gw.webReplayHandler())
+				r.Post("/batch", gw.internalBatchHandler())
+			})
+			r.Route("/v2", func(r chi.Router) {
+				r.Mount("/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV2.ServeHTTP))
+			})
+			for path, handler := range gw.internalHttpHandlers {
+				r.Mount(path, withContentType("application/json; charset=utf-8", handler.ServeHTTP))
+			}
+		})
+	}
 
 	srvMux.Route("/v1", func(r chi.Router) {
 		r.Post("/alias", gw.webAliasHandler())
@@ -614,13 +627,14 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 
 		r.Get("/webhook", gw.webhookHandler())
 
-		r.Route("/warehouse", func(r chi.Router) {
-			r.Post("/pending-events", gw.whProxy.ServeHTTP)
-			r.Post("/trigger-upload", gw.whProxy.ServeHTTP)
-			r.Post("/jobs", gw.whProxy.ServeHTTP)
-
-			r.Get("/jobs/status", gw.whProxy.ServeHTTP)
-		})
+		if gw.conf.internalEndpointsEnabled && gw.conf.legacyWarehouseEndpointsEnabled {
+			r.Route("/warehouse", func(r chi.Router) {
+				r.Post("/pending-events", gw.whProxy.ServeHTTP)
+				r.Post("/trigger-upload", gw.whProxy.ServeHTTP)
+				r.Post("/jobs", gw.whProxy.ServeHTTP)
+				r.Get("/jobs/status", gw.whProxy.ServeHTTP)
+			})
+		}
 	})
 
 	srvMux.Get("/health", withContentType("application/json; charset=utf-8", app.LivenessHandler(gw.jobsDB)))

@@ -204,10 +204,8 @@ func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspa
 		"RUDDER_TMPDIR":         t.TempDir(),
 		"DEPLOYMENT_TYPE":       string(deployment.MultiTenantType), // we need etcd
 
-		"AdminServer.enabled":                 "false", // disable admin server for simplicity
-		"Profiler.Enabled":                    "false", // we don't need to specify a port if disabled
-		"Gateway.allowPartialWriteWithErrors": "false", // not going through the lecacy gateway path
-
+		"AdminServer.enabled": "false", // disable admin server for simplicity
+		"Profiler.Enabled":    "false", // we don't need to specify a port if disabled
 		// we want to create multiple datasets during the test and ensure that migration works correctly with ds limits as well
 		"JobsDB.maxDSSize":                      "500",
 		"JobsDB.addNewDSLoopSleepDuration":      "2s",

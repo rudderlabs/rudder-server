@@ -4,18 +4,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"time"
 
+	"cloud.google.com/go/bigquery"
 	"cloud.google.com/go/bigquery/storage/managedwriter/adapt"
+	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
 
+	bigqueryintegration "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func (m *Manager) descriptorForSchema(schema whutils.ModelTableSchema) (protoreflect.MessageDescriptor, error) {
+const (
+	DateTimeDataType = "datetime"
+)
+
+func descriptorForSchema(schema whutils.ModelTableSchema) (protoreflect.MessageDescriptor, error) {
 	tableSchema, err := adapt.BQSchemaToStorageTableSchema(toBigQuerySchema(schema))
 	if err != nil {
 		return nil, fmt.Errorf("converting schema to storage table schema: %w", err)
@@ -31,10 +39,20 @@ func (m *Manager) descriptorForSchema(schema whutils.ModelTableSchema) (protoref
 	return md, nil
 }
 
-// streamWriterKey scopes cached writers to the destination's current project
-// and namespace, so a config revision cannot keep streaming to the old table.
-func streamWriterKey(cfg destConfig, tableName string) string {
-	return cfg.ProjectID + ":" + cfg.Namespace + ":" + tableName
+// toBigQuerySchema converts a rudder table schema into a BigQuery schema.
+//
+// The fields MUST be emitted in a deterministic (sorted) order. adapt.StorageSchemaToProto2Descriptor
+// assigns proto field numbers by position, and the descriptor is built independently for both the
+// row encoder (descriptorForSchema) and the managed stream (NewTableStreamWriter). If the order differed
+// between those two calls, the encoded field numbers would not line up with the stream's schema
+// descriptor and BigQuery would decode every column into the wrong/mismatched field, surfacing as
+// all-NULL rows.
+func toBigQuerySchema(schema whutils.ModelTableSchema) bigquery.Schema {
+	columnNames := lo.Keys(schema)
+	sort.Strings(columnNames)
+	return lo.Map(columnNames, func(columnName string, _ int) *bigquery.FieldSchema {
+		return &bigquery.FieldSchema{Name: columnName, Type: bigqueryintegration.DataTypesMap[schema[columnName]]}
+	})
 }
 
 // encodeRows encodes rows for the Storage Write API by populating a reused
@@ -51,9 +69,12 @@ func encodeRows(rows []Row, md protoreflect.MessageDescriptor, schema whutils.Mo
 	message := dynamicpb.NewMessage(md)
 	encodedRows := make([][]byte, 0, len(rows))
 	for _, row := range rows {
-		normalizeRow(row, schema)
+		if err := normalizeRow(row, schema); err != nil {
+			return nil, fmt.Errorf("normalizing row: %w", err)
+		}
 
 		proto.Reset(message)
+
 		for columnName, value := range row {
 			if value == nil {
 				continue
@@ -62,27 +83,27 @@ func encodeRows(rows []Row, md protoreflect.MessageDescriptor, schema whutils.Mo
 			if !ok {
 				return nil, fmt.Errorf("encoding row: unknown column %q", columnName)
 			}
-			fieldValue, err := protoValueFor(fd, value)
+			fieldValue, err := protoValueFor(fd, value, schema[columnName])
 			if err != nil {
 				return nil, fmt.Errorf("encoding row: column %q: %w", columnName, err)
 			}
 			message.Set(fd, fieldValue)
 		}
 
-		encoded, err := proto.Marshal(message)
+		encodedRow, err := proto.Marshal(message)
 		if err != nil {
 			return nil, fmt.Errorf("marshalling row: %w", err)
 		}
-		encodedRows = append(encodedRows, encoded)
+		encodedRows = append(encodedRows, encodedRow)
 	}
 	return encodedRows, nil
 }
 
 // protoValueFor converts a row value for the given field, accepting the same
 // coercions protojson did (integral floats and numeric strings for int64,
-// etc.). Only the kinds reachable through dataTypesMap are handled; anything
+// etc.). Only the kinds reachable through DataTypesMap are handled; anything
 // else fails loudly until support is added explicitly.
-func protoValueFor(fd protoreflect.FieldDescriptor, value any) (protoreflect.Value, error) {
+func protoValueFor(fd protoreflect.FieldDescriptor, value any, dataType string) (protoreflect.Value, error) {
 	switch fd.Kind() {
 	case protoreflect.StringKind:
 		if v, ok := value.(string); ok {
@@ -129,25 +150,28 @@ func protoValueFor(fd protoreflect.FieldDescriptor, value any) (protoreflect.Val
 			}
 		}
 	}
-	return protoreflect.Value{}, fmt.Errorf("invalid value of type %T for %s field", value, fd.Kind())
+	return protoreflect.Value{}, fmt.Errorf("invalid value of type %T for %s field of type %s", value, dataType, fd.Kind())
 }
 
-// normalizeRow converts datetime strings into the int64 epoch-micros
-// representation expected by TIMESTAMP fields.
-func normalizeRow(row Row, schema whutils.ModelTableSchema) {
+// normalizeRow converts
+// - datetime strings into the int64 epoch-micros representation expected by TIMESTAMP fields.
+func normalizeRow(row Row, schema whutils.ModelTableSchema) error {
 	for col, v := range row {
 		if v == nil {
 			continue
 		}
 		switch schema[col] {
-		case "datetime":
+		case DateTimeDataType:
 			s, ok := v.(string)
 			if !ok {
 				continue
 			}
-			if ts, err := time.Parse(time.RFC3339Nano, s); err == nil {
-				row[col] = ts.UnixMicro()
+			ts, err := time.Parse(time.RFC3339Nano, s)
+			if err != nil {
+				return fmt.Errorf("parsing datetime string %q: %w", s, err)
 			}
+			row[col] = ts.UnixMicro()
 		}
 	}
+	return nil
 }

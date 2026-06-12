@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -17,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	embeddedutils "github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/model"
@@ -33,8 +31,6 @@ const (
 	violationErrors     = "violationErrors"
 	redshiftStringLimit = 512
 )
-
-var unicodePattern = regexp.MustCompile(`\\u[0-9a-fA-F]{4}`)
 
 type Opts func(t *Transformer)
 
@@ -83,11 +79,6 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, op
 	t.config.concurrentTransformations = conf.GetReloadableIntVar(1, 1, "Warehouse.concurrentTransformations")
 	t.config.instanceID = conf.GetStringVar("1", "INSTANCE_ID")
 
-	var err error
-	t.loggedSamplesUploader, err = getSamplingUploader(t.conf, t.logger)
-	if err != nil {
-		t.logger.Errorn("Failed to create wt sampling file manager", obskit.Error(err))
-	}
 	return t
 }
 
