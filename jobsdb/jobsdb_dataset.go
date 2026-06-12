@@ -22,10 +22,16 @@ type dataSetT struct {
 	JobTable       string `json:"job"`
 	JobStatusTable string `json:"status"`
 	Index          string `json:"index"`
+	ConsumersTable string `json:"consumers,omitempty"` // non-empty only when the registry table exists
 }
 
 func (ds dataSetT) String() string {
 	return "JobTable=" + ds.JobTable + ",JobStatusTable=" + ds.JobStatusTable + ",Index=" + ds.Index
+}
+
+func (ds dataSetT) consumersRegistryTable() string {
+	prefix := strings.TrimSuffix(ds.JobTable, "_jobs_"+ds.Index)
+	return fmt.Sprintf("%s_consumers_%s", prefix, ds.Index)
 }
 
 type dataSetTList []dataSetT
