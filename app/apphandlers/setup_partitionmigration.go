@@ -33,6 +33,7 @@ type ProcessorPartitionMigratorSetup struct {
 	GwDB              jobsdb.JobsDB
 	RtDB              jobsdb.JobsDB
 	BrtDB             jobsdb.JobsDB
+	ProcDB            jobsdb.JobsDB
 	Finally           func()
 }
 
@@ -44,7 +45,8 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 	maintenancePool *sql.DB, // maintenance database handle (may be nil; jobsdb falls back to dbPool)
 	config *config.Config, stats stats.Stats,
 	gwRODB, gwWODB, // gateway reader and writer jobsDB handles. if gwWODB is nil, gwRODB is used for reading and a new writer gw DB is created internally
-	rtRWDB, brtRWDB jobsdb.JobsDB,
+	rtRWDB, brtRWDB,
+	procRWDB jobsdb.JobsDB, // may be nil if destination isolation is disabled
 	etcdClientProvider func() (etcdclient.Client, error),
 ) (ProcessorPartitionMigratorSetup, error) {
 	if !config.GetBoolVar(false, "PartitionMigration.enabled") {
@@ -56,6 +58,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 				GwDB:              gwRODB,
 				RtDB:              rtRWDB,
 				BrtDB:             brtRWDB,
+				ProcDB:            procRWDB,
 				Finally:           finally,
 			}, nil
 		}
@@ -65,6 +68,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 			GwDB:              gwWODB,
 			RtDB:              rtRWDB,
 			BrtDB:             brtRWDB,
+			ProcDB:            procRWDB,
 			Finally:           finally,
 		}, nil
 	}
@@ -199,6 +203,36 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 	}
 	ppmSetup.BrtDB = brtPartitionBuffer
 
+	// setup partition buffer for proc jobsDB (only when destination isolation is enabled)
+	var procPartitionBuffer partitionbuffer.JobsDBPartitionBuffer
+	if procRWDB != nil {
+		procBuffRWHandle := jobsdb.NewForReadWrite(
+			"proc_buf",
+			jobsdb.WithClearDB(false),
+			jobsdb.WithDSLimit(config.GetReloadableIntVar(0, 1, "JobsDB.proc_buf.dsLimit", "JobsDB.dsLimit")),
+			jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.proc_buf.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
+			jobsdb.WithStats(stats),
+			jobsdb.WithDBHandle(dbPool),
+			jobsdb.WithPriorityPoolDB(priorityPool),
+			jobsdb.WithMaintenancePoolDB(maintenancePool),
+		)
+		procPartitionBuffer, err = partitionbuffer.NewJobsDBPartitionBuffer(ctx,
+			partitionbuffer.WithReadWriteJobsDBs(procRWDB, procBuffRWHandle),
+			partitionbuffer.WithNumPartitions(partitionCount),
+			partitionbuffer.WithStats(stats),
+			partitionbuffer.WithLogger(log),
+			partitionbuffer.WithFlushBatchSize(bufferFlushBatchSize),
+			partitionbuffer.WithFlushPayloadSize(bufferFlushPayloadSize),
+			partitionbuffer.WithFlushMoveTimeout(bufferFlushMoveTimeout),
+			partitionbuffer.WithFlushMoveConcurrency(bufferFlushMoveConcurrency),
+			partitionbuffer.WithWatchdogInterval(bufferWatchdogInterval),
+		)
+		if err != nil {
+			return ppmSetup, fmt.Errorf("creating proc partition buffer: %w", err)
+		}
+		ppmSetup.ProcDB = procPartitionBuffer
+	}
+
 	// setup partition migrator
 	etcdClient, err := etcdClientProvider()
 	if err != nil {
@@ -234,6 +268,10 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		return ppmSetup, fmt.Errorf("creating target URL provider: %w", err)
 	}
 
+	readerJobsDBs := []jobsdb.JobsDB{gwRODB, rtRWDB, brtRWDB}
+	if procRWDB != nil {
+		readerJobsDBs = append(readerJobsDBs, procRWDB)
+	}
 	sourceMigrator, err := sourcenode.NewMigratorBuilder(nodeIndex, nodeName).
 		WithConfig(config).
 		WithStats(stats).
@@ -241,22 +279,36 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		WithShutdown(shutdownFn).
 		WithEtcdClient(etcdClient).
 		WithTargetURLProvider(targetURLProvider).
-		WithReaderJobsDBs([]jobsdb.JobsDB{gwRODB, rtRWDB, brtRWDB}).
+		WithReaderJobsDBs(readerJobsDBs).
 		Build()
 	if err != nil {
 		return ppmSetup, fmt.Errorf("creating source node migrator: %w", err)
 	}
 
+	bufferedProcessorDBs := []partitionbuffer.JobsDBPartitionBuffer{rtPartitionBuffer, brtPartitionBuffer}
+	unbufferedProcessorDBs := []jobsdb.JobsDB{rtRWDB, brtRWDB}
+	if procPartitionBuffer != nil {
+		bufferedProcessorDBs = append(bufferedProcessorDBs, procPartitionBuffer)
+		unbufferedProcessorDBs = append(unbufferedProcessorDBs, procRWDB)
+	}
+	var bufferedJobsDBGroups [][]partitionbuffer.JobsDBPartitionBuffer
+	if config.GetBoolVar(true, "PartitionMigration.singleBufferedGroup") { // by default we will be flushing all buffered DBs at once
+		bufferedJobsDBGroups = [][]partitionbuffer.JobsDBPartitionBuffer{
+			append(bufferedProcessorDBs, gwPartitionBuffer),
+		}
+	} else {
+		bufferedJobsDBGroups = [][]partitionbuffer.JobsDBPartitionBuffer{
+			bufferedProcessorDBs,
+			{gwPartitionBuffer},
+		}
+	}
 	targetMigrator, err := targetnode.NewMigratorBuilder(nodeIndex, nodeName).
 		WithConfig(config).
 		WithStats(stats).
 		WithLogger(log).
 		WithEtcdClient(etcdClient).
-		WithBufferedJobsDBs([][]partitionbuffer.JobsDBPartitionBuffer{
-			{rtPartitionBuffer, brtPartitionBuffer},
-			{gwPartitionBuffer},
-		}).
-		WithUnbufferedJobsDBs([]jobsdb.JobsDB{rtRWDB, brtRWDB, gwWODB}).
+		WithBufferedJobsDBs(bufferedJobsDBGroups).
+		WithUnbufferedJobsDBs(append(unbufferedProcessorDBs, gwWODB)).
 		Build()
 	if err != nil {
 		return ppmSetup, fmt.Errorf("creating target node migrator: %w", err)

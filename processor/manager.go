@@ -34,6 +34,7 @@ type LifecycleManager struct {
 	batchRouterDB              jobsdb.JobsDB
 	esDB                       jobsdb.JobsDB
 	arcDB                      jobsdb.JobsDB
+	procDB                     jobsdb.JobsDB
 	clearDB                    *bool
 	ReportingI                 types.Reporting // need not initialize again
 	BackendConfig              backendconfig.BackendConfig
@@ -65,6 +66,7 @@ func (proc *LifecycleManager) Start() error {
 		proc.batchRouterDB,
 		proc.esDB,
 		proc.arcDB,
+		proc.procDB,
 		proc.ReportingI,
 		proc.transientSources,
 		proc.fileuploader,
@@ -174,5 +176,11 @@ func WithStats(stats stats.Stats) Opts {
 func WithTransformerClients(transformerClients transformer.TransformerClients) Opts {
 	return func(l *LifecycleManager) {
 		l.Handle.transformerClients = transformerClients
+	}
+}
+
+func WithProcDB(db jobsdb.JobsDB) Opts {
+	return func(l *LifecycleManager) {
+		l.procDB = db
 	}
 }

@@ -158,6 +158,7 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 		"JobsDB.partitionCount":                           strconv.Itoa(numPartitions),
 		"PROCESSOR_NODE_HOST_PATTERN":                     "proc-node-{index}.localhost",
 		"PartitionMigration.failOnInvalidNodeHostPattern": "false",
+		"Processor.DestinationIsolation.enabled":          "true", // migrate proc jobs too
 
 		// let migrations do multiple small batches
 		"PartitionMigration.Executor.BatchSize":         "100",
