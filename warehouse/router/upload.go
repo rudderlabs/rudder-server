@@ -326,7 +326,7 @@ func (job *UploadJob) run() (err error) {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}
-	defer whManager.Cleanup(job.ctx)
+	defer whManager.Cleanup(context.Background())
 
 	job.schemaHandle, err = schema.New(
 		job.ctx,
@@ -526,7 +526,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	)
 
 	if !whutils.IsDatalakeDestination(destination.DestinationDefinition.Name) {
-		loadingFiles, err := job.loadFilesRepo.Get(job.ctx, job.upload.ID)
+		loadingFiles, err := job.loadFilesRepo.Get(context.Background(), job.upload.ID)
 		if err != nil {
 			return fmt.Errorf("fetching loading files: %w", err)
 		}
@@ -563,7 +563,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 
 	startTime := job.now()
 
-	g, ctx := errgroup.WithContext(job.ctx)
+	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(concurrency)
 	for _, chunk := range lo.Chunk(filesToDel, chunkSize) {
 		g.Go(func() error {
