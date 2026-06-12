@@ -134,7 +134,7 @@ func (jd *Handle) init() {
 					"PartitioningEnabled": jd.conf.numPartitions > 0,
 				}
 
-				// One-way guard: opt-in check that panics if MC artifacts exist without WithMultiConsumer().
+				// One-way guard: opt-in check that panics if multi-consumer artifacts exist without WithMultiConsumer().
 				if !jd.conf.multiConsumer && jd.conf.disallowMultiConsumerDowngrade {
 					jd.assertNoMultiConsumerDowngrade(allDatasets)
 				}

@@ -52,6 +52,11 @@ func (jd *Handle) loadConfig() {
 	jd.conf.compaction.nonBlockingCompaction = jd.config.GetReloadableBoolVar(false, jd.configKeys("nonBlockingCompaction")...)
 	jd.conf.compaction.compactionDeferStatusLock = jd.config.GetReloadableBoolVar(false, jd.configKeys("compactionDeferStatusLock")...)
 	jd.conf.compaction.getJobsRetryOnCompaction = jd.config.GetReloadableBoolVar(true, jd.configKeys("getJobsRetryOnCompaction")...)
+	if jd.conf.multiConsumer { // if multiConsumer is enabled, we skip status compaction by default
+		jd.conf.compaction.skipStatusCompaction = jd.config.GetReloadableBoolVar(true, jd.configKeys("skipMultiConsumerStatusCompaction", "skipStatusCompaction")...)
+	} else {
+		jd.conf.compaction.skipStatusCompaction = jd.config.GetReloadableBoolVar(false, jd.configKeys("skipStatusCompaction")...)
+	}
 
 	// maxDSSize: Maximum size of a DS. The process which adds new DS runs in the background
 	// (every few seconds) so a DS may go beyond this size
