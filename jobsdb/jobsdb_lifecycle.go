@@ -180,8 +180,12 @@ func (jd *Handle) workersAndAuxSetup() {
 	case "gw", "rt", "batch_rt", "arc":
 		defaultLogCacheBranchInvalidation = true
 	}
+	cacheParams := cacheParameterFilters
+	if jd.conf.multiConsumer {
+		cacheParams = append(cacheParams, consumerParamName)
+	}
 	jd.noResultsCache = cache.NewNoResultsCache(
-		cacheParameterFilters,
+		cacheParams,
 		func() time.Duration { return jd.conf.cacheExpiration.Load() },
 		cache.WithWarnOnBranchInvalidation[ParameterFilterT](
 			jd.config.GetReloadableBoolVar(defaultLogCacheBranchInvalidation, jd.configKeys("logCacheBranchInvalidation")...),
