@@ -62,6 +62,7 @@ func getDSList(jd asserter, dbHandle sqlDbOrTx, tablePrefix string) ([]dataSetT,
 
 	jobNameMap := map[string]string{}
 	jobStatusNameMap := map[string]string{}
+	consumersNameMap := map[string]string{}
 	var dnumList []string
 
 	for _, t := range tableNames {
@@ -74,6 +75,11 @@ func getDSList(jd asserter, dbHandle sqlDbOrTx, tablePrefix string) ([]dataSetT,
 		if strings.HasPrefix(t, tablePrefix+"_job_status_") {
 			dnum := t[len(tablePrefix+"_job_status_"):]
 			jobStatusNameMap[dnum] = t
+			continue
+		}
+		if strings.HasPrefix(t, tablePrefix+"_consumers_") {
+			dnum := t[len(tablePrefix+"_consumers_"):]
+			consumersNameMap[dnum] = t
 			continue
 		}
 	}
@@ -91,6 +97,7 @@ func getDSList(jd asserter, dbHandle sqlDbOrTx, tablePrefix string) ([]dataSetT,
 				JobTable:       jobName,
 				JobStatusTable: jobStatusName,
 				Index:          dnum,
+				ConsumersTable: consumersNameMap[dnum], // empty when registry table is absent
 			})
 	}
 

@@ -114,8 +114,6 @@ func WithTriggerAddNewDS(trigger func() <-chan time.Time) OptsFunc {
 }
 
 // WithMultiConsumer enables multi-consumer mode for this handle.
-// This is a one-way option: once datasets exist with the multi-consumer schema,
-// removing this option will cause startup to fail.
 func WithMultiConsumer() OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.multiConsumer = true

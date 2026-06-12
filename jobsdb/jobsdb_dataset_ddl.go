@@ -180,6 +180,13 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		return fmt.Errorf("creating %s: %w", newDS.JobStatusTable, err)
 	}
 
+	if jd.conf.multiConsumer {
+		registryTable := newDS.consumersRegistryTable()
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (consumer TEXT PRIMARY KEY)`, registryTable)); err != nil {
+			return fmt.Errorf("creating %s: %w", registryTable, err)
+		}
+	}
+
 	// Record the dataset's creation time as a comment on the jobs table, so that
 	// compaction can tell how recently a dataset was created (see checkIfCompactDS).
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`COMMENT ON TABLE %q IS '%s'`, newDS.JobTable, dsCreatedAtComment(time.Now()))); err != nil {
@@ -361,6 +368,9 @@ func (jd *Handle) cleanupPreDropTables(ctx context.Context) error {
 			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobTable)); err != nil {
 				return fmt.Errorf("drop %s: %w", ds.JobTable, err)
 			}
+			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %q`, ds.consumersRegistryTable())); err != nil {
+				return fmt.Errorf("drop %s: %w", ds.consumersRegistryTable(), err)
+			}
 			return nil
 		}); err != nil {
 			return err
@@ -376,6 +386,9 @@ func (jd *Handle) dropDSInTx(tx *Tx, ds dataSetT) error {
 		return err
 	}
 	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobTable)); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %q`, ds.consumersRegistryTable())); err != nil {
 		return err
 	}
 	jd.postDropDs(ds)
@@ -398,6 +411,8 @@ func (jd *Handle) dropDSForRecovery(ds dataSetT) {
 	jd.execStmtInTx(tx, sqlStatement)
 	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobTable)
 	jd.execStmtInTx(tx, sqlStatement)
+	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %q`, ds.consumersRegistryTable())
+	jd.execStmtInTxAllowMissing(tx, sqlStatement)
 	err = tx.Commit()
 	jd.assertError(err)
 }
