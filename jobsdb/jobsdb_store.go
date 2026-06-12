@@ -123,6 +123,19 @@ func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 			parameterFilters = append(parameterFilters, ParameterFilterT{Name: key, Value: val})
 		}
 
+		if jd.conf.multiConsumer {
+			consumers := job.Consumers
+			if len(consumers) == 0 {
+				consumers = []string{""}
+			}
+			for _, c := range consumers {
+				params = append(params, consumerParamName+":"+c)
+				parameterFilters = append(parameterFilters, ParameterFilterT{Name: consumerParamName, Value: c})
+			}
+			// also invalidate all-consumer query entries
+			parameterFilters = append(parameterFilters, ParameterFilterT{Name: consumerParamName, Value: "*"})
+		}
+
 		paramsKey := strings.Join(params, "#")
 		if _, ok := cacheKeys[workspace][customVal][paramsKey]; !ok {
 			cacheKeys[workspace][customVal][paramsKey] = struct{}{}

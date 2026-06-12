@@ -96,6 +96,80 @@ func TestMultiConsumerJobsDB_SingleConsumer(t *testing.T) {
 	verifyUnionJobsDBMetadata(t, postgres.DB, prefix, 3)
 }
 
+// TestMultiConsumerJobsDB_ConsumerIsolation verifies that consumer-scoped pickup is isolated:
+// consumer A's terminal status does not hide the job from consumer B, and the GIN membership
+// filter ensures only jobs assigned to the querying consumer are returned.
+func TestMultiConsumerJobsDB_ConsumerIsolation(t *testing.T) {
+	postgres := startPostgres(t)
+
+	c := config.New()
+	c.Set("jobsdb.maxDSSize", 10)
+
+	prefix := strings.ToLower(rand.String(5))
+	jd := NewForReadWrite(prefix,
+		WithDBHandle(postgres.DB),
+		WithConfig(c),
+		WithMultiConsumer(),
+	)
+	require.NoError(t, jd.Start())
+	defer jd.TearDown()
+
+	ctx := context.Background()
+	customVal := "ISO"
+
+	// store one job assigned to both consumers A and B
+	job := &JobT{
+		UUID:         uuid.New(),
+		UserID:       "user-1",
+		CustomVal:    customVal,
+		Parameters:   []byte(`{"source_id":"src1"}`),
+		EventPayload: []byte(`{}`),
+		EventCount:   1,
+		WorkspaceId:  defaultWorkspaceID,
+		Consumers:    []string{"A", "B"},
+	}
+	require.NoError(t, jd.Store(ctx, []*JobT{job}))
+
+	// both A and B see the job as unprocessed
+	resA, err := jd.GetUnprocessed(ctx, GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10, Consumer: "A"})
+	require.NoError(t, err)
+	require.Len(t, resA.Jobs, 1)
+
+	resB, err := jd.GetUnprocessed(ctx, GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10, Consumer: "B"})
+	require.NoError(t, err)
+	require.Len(t, resB.Jobs, 1)
+
+	// mark the job succeeded for consumer A
+	require.NoError(t, jd.UpdateJobStatus(ctx, []*JobStatusT{{
+		JobID:         resA.Jobs[0].JobID,
+		JobState:      Succeeded.State,
+		AttemptNum:    1,
+		ExecTime:      time.Now(),
+		RetryTime:     time.Now(),
+		ErrorCode:     "200",
+		ErrorResponse: []byte(`{}`),
+		Parameters:    []byte(`{}`),
+		WorkspaceId:   resA.Jobs[0].WorkspaceId,
+		CustomVal:     resA.Jobs[0].CustomVal,
+		Consumer:      "A",
+	}}))
+
+	// A sees no more unprocessed jobs
+	resA, err = jd.GetUnprocessed(ctx, GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10, Consumer: "A"})
+	require.NoError(t, err)
+	require.Empty(t, resA.Jobs, "consumer A's terminal status should hide the job from A")
+
+	// B still sees the job as unprocessed — A's status does not affect B
+	resB, err = jd.GetUnprocessed(ctx, GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10, Consumer: "B"})
+	require.NoError(t, err)
+	require.Len(t, resB.Jobs, 1, "consumer B should still see the job after A marked it done")
+
+	// a third consumer C never assigned to this job sees nothing
+	resC, err := jd.GetUnprocessed(ctx, GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10, Consumer: "C"})
+	require.NoError(t, err)
+	require.Empty(t, resC.Jobs, "consumer C is not in the job's consumers list")
+}
+
 // TestMultiConsumerJobsDB_Conversion verifies the single → multi-consumer upgrade path.
 //
 // A plain handle stores and processes jobs using the legacy schema. When the same prefix
@@ -207,12 +281,12 @@ func verifyUnionJobsDBMetadata(t *testing.T, db *sql.DB, prefix string, expected
 	var count int
 	for rows.Next() {
 		var (
-			tName    string
-			jobID    int64
+			tName     string
+			jobID     int64
 			consumers pq.StringArray
-			statusID sql.NullInt64
-			consumer sql.NullString
-			jobState sql.NullString
+			statusID  sql.NullInt64
+			consumer  sql.NullString
+			jobState  sql.NullString
 		)
 		require.NoError(t, rows.Scan(&tName, &jobID, &consumers, &statusID, &consumer, &jobState))
 		require.NotEmpty(t, tName)
@@ -221,4 +295,99 @@ func verifyUnionJobsDBMetadata(t *testing.T, db *sql.DB, prefix string, expected
 	}
 	require.NoError(t, rows.Err())
 	require.Equal(t, expectedRows, count)
+}
+
+// TestMultiConsumerJobsDB_Cache verifies that the noResultsCache is correctly keyed,
+// populated, and invalidated per consumer. The test accesses the cache directly (same
+// package) rather than inferring its state from timing or DB call counts.
+func TestMultiConsumerJobsDB_Cache(t *testing.T) {
+	postgres := startPostgres(t)
+
+	c := config.New()
+	c.Set("jobsdb.maxDSSize", 100)
+
+	prefix := strings.ToLower(rand.String(5))
+	jd := NewForReadWrite(prefix,
+		WithDBHandle(postgres.DB),
+		WithConfig(c),
+		WithMultiConsumer(),
+	)
+	require.NoError(t, jd.Start())
+	defer jd.TearDown()
+
+	ctx := context.Background()
+	customVal := "CACHE"
+
+	dsIndex := func() string {
+		return HandleInspector{Handle: jd}.getDSListSnapshot()[0].Index
+	}
+	// cacheHit checks whether the noResultsCache has a live "no unprocessed" entry for
+	// the given consumer — workspace and partition are wildcards (empty query params).
+	cacheHit := func(consumer string) bool {
+		return jd.noResultsCache.Get(
+			dsIndex(), nil, "",
+			[]string{customVal},
+			[]string{Unprocessed.State},
+			[]ParameterFilterT{{Name: "consumer", Value: consumer}},
+		)
+	}
+	makeJob := func(consumers []string) *JobT {
+		return &JobT{
+			UUID:         uuid.New(),
+			UserID:       "u1",
+			CustomVal:    customVal,
+			Parameters:   []byte(`{}`),
+			EventPayload: []byte(`{}`),
+			EventCount:   1,
+			WorkspaceId:  defaultWorkspaceID,
+			Consumers:    consumers,
+		}
+	}
+	succeedFor := func(job *JobT, consumer string) *JobStatusT {
+		return &JobStatusT{
+			JobID:         job.JobID,
+			JobState:      Succeeded.State,
+			AttemptNum:    1,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			ErrorCode:     "200",
+			ErrorResponse: []byte(`{}`),
+			Parameters:    []byte(`{}`),
+			WorkspaceId:   job.WorkspaceId,
+			CustomVal:     job.CustomVal,
+			Consumer:      consumer,
+		}
+	}
+
+	// Phase 1: empty DB — query A primes a "no results" cache entry for consumer A.
+	res, err := jd.GetUnprocessed(ctx, GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10, Consumer: "A"})
+	require.NoError(t, err)
+	require.Empty(t, res.Jobs)
+	require.True(t, cacheHit("A"), "cache should be set for A after 0-result query")
+
+	// Storing a job for consumer B must not invalidate consumer A's cache entry.
+	require.NoError(t, jd.Store(ctx, []*JobT{makeJob([]string{"B"})}))
+	require.True(t, cacheHit("A"), "B's store must not invalidate A's cache")
+
+	// Storing a job for consumer A must invalidate A's cache.
+	require.NoError(t, jd.Store(ctx, []*JobT{makeJob([]string{"A"})}))
+	require.False(t, cacheHit("A"), "A's store must invalidate A's cache")
+
+	// Phase 2: A fetches and marks its job succeeded; cache re-primed.
+	res, err = jd.GetUnprocessed(ctx, GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10, Consumer: "A"})
+	require.NoError(t, err)
+	require.Len(t, res.Jobs, 1)
+	require.NoError(t, jd.UpdateJobStatus(ctx, []*JobStatusT{succeedFor(res.Jobs[0], "A")}))
+
+	res, err = jd.GetUnprocessed(ctx, GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10, Consumer: "A"})
+	require.NoError(t, err)
+	require.Empty(t, res.Jobs)
+	require.True(t, cacheHit("A"), "cache should be re-primed for A after 0-result query")
+
+	// Phase 3: B marks its job succeeded; A's cache must survive.
+	res, err = jd.GetUnprocessed(ctx, GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10, Consumer: "B"})
+	require.NoError(t, err)
+	require.Len(t, res.Jobs, 1)
+	require.NoError(t, jd.UpdateJobStatus(ctx, []*JobStatusT{succeedFor(res.Jobs[0], "B")}))
+	require.True(t, cacheHit("A"), "B's status update must not invalidate A's cache")
 }
