@@ -180,6 +180,13 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		return fmt.Errorf("creating %s: %w", newDS.JobStatusTable, err)
 	}
 
+	if jd.conf.multiConsumer {
+		registryTable := newDS.consumersRegistryTable()
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (consumer TEXT PRIMARY KEY)`, registryTable)); err != nil {
+			return fmt.Errorf("creating %s: %w", registryTable, err)
+		}
+	}
+
 	// Record the dataset's creation time as a comment on the jobs table, so that
 	// compaction can tell how recently a dataset was created (see checkIfCompactDS).
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`COMMENT ON TABLE %q IS '%s'`, newDS.JobTable, dsCreatedAtComment(time.Now()))); err != nil {
@@ -212,22 +219,36 @@ func (jd *Handle) createDSJobIndicesInTx(ctx context.Context, tx *Tx, newDS data
 			return fmt.Errorf("creating %s index: %w", param, err)
 		}
 	}
+	if jd.conf.multiConsumer {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_consumers" ON %[1]q USING GIN (consumers)`, newDS.JobTable)); err != nil {
+			return fmt.Errorf("creating consumers GIN index: %w", err)
+		}
+	}
 	return nil
 }
 
 // createDSStatusIndicesInTx creates the indices on the job status table plus the
-// v_last view.
+// v_last view (single-consumer) or v_last_c_ view (multi-consumer).
 func (jd *Handle) createDSStatusIndicesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id_js" ON %[1]q(job_id asc,id desc,job_state)`, newDS.JobStatusTable)); err != nil {
-		return fmt.Errorf("adding job_id_id index: %w", err)
-	}
-	// index used for maxDSRetention during compaction
+	// retention index — consumer-agnostic, always created
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_id_js" ON %[1]q(id ,job_state) INCLUDE (exec_time)`, newDS.JobStatusTable)); err != nil {
-		return fmt.Errorf("adding job_id_js index: %w", err)
+		return fmt.Errorf("adding id_js index: %w", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
-		return fmt.Errorf("create view: %w", err)
+	if jd.conf.multiConsumer {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_c_id_js" ON %[1]q (job_id ASC, consumer, id DESC, job_state)`, newDS.JobStatusTable)); err != nil {
+			return fmt.Errorf("adding jid_c_id_js index: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_c_%[1]s" AS SELECT DISTINCT ON (job_id, consumer) * FROM %[1]q ORDER BY job_id ASC, consumer, id DESC`, newDS.JobStatusTable)); err != nil {
+			return fmt.Errorf("creating v_last_c view: %w", err)
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id_js" ON %[1]q(job_id asc,id desc,job_state)`, newDS.JobStatusTable)); err != nil {
+			return fmt.Errorf("adding jid_id_js index: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
+			return fmt.Errorf("creating v_last view: %w", err)
+		}
 	}
 	return nil
 }
@@ -342,6 +363,9 @@ func (jd *Handle) cleanupPreDropTables(ctx context.Context) error {
 			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobTable)); err != nil {
 				return fmt.Errorf("drop %s: %w", ds.JobTable, err)
 			}
+			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %q`, ds.consumersRegistryTable())); err != nil {
+				return fmt.Errorf("drop %s: %w", ds.consumersRegistryTable(), err)
+			}
 			return nil
 		}); err != nil {
 			return err
@@ -357,6 +381,9 @@ func (jd *Handle) dropDSInTx(tx *Tx, ds dataSetT) error {
 		return err
 	}
 	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobTable)); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %q`, ds.consumersRegistryTable())); err != nil {
 		return err
 	}
 	jd.postDropDs(ds)
@@ -379,6 +406,8 @@ func (jd *Handle) dropDSForRecovery(ds dataSetT) {
 	jd.execStmtInTx(tx, sqlStatement)
 	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobTable)
 	jd.execStmtInTx(tx, sqlStatement)
+	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %q`, ds.consumersRegistryTable())
+	jd.execStmtInTxAllowMissing(tx, sqlStatement)
 	err = tx.Commit()
 	jd.assertError(err)
 }

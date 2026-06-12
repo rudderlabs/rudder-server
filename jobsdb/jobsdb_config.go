@@ -52,6 +52,11 @@ func (jd *Handle) loadConfig() {
 	jd.conf.compaction.nonBlockingCompaction = jd.config.GetReloadableBoolVar(false, jd.configKeys("nonBlockingCompaction")...)
 	jd.conf.compaction.compactionDeferStatusLock = jd.config.GetReloadableBoolVar(false, jd.configKeys("compactionDeferStatusLock")...)
 	jd.conf.compaction.getJobsRetryOnCompaction = jd.config.GetReloadableBoolVar(true, jd.configKeys("getJobsRetryOnCompaction")...)
+	if jd.conf.multiConsumer { // if multiConsumer is enabled, we skip status compaction by default
+		jd.conf.compaction.skipStatusCompaction = jd.config.GetReloadableBoolVar(true, jd.configKeys("skipMultiConsumerStatusCompaction", "skipStatusCompaction")...)
+	} else {
+		jd.conf.compaction.skipStatusCompaction = jd.config.GetReloadableBoolVar(false, jd.configKeys("skipStatusCompaction")...)
+	}
 
 	// maxDSSize: Maximum size of a DS. The process which adds new DS runs in the background
 	// (every few seconds) so a DS may go beyond this size
@@ -70,6 +75,7 @@ func (jd *Handle) loadConfig() {
 	// against the cache before querying, and (!ok && !limitsReached) is used as a commit predicate.
 	jd.conf.noResultsCacheStateOptimization = jd.config.GetReloadableBoolVar(false, jd.configKeys("noResultsCacheStateOptimization")...)
 	jd.conf.getJobsUseLateralJoin = jd.config.GetReloadableBoolVar(true, jd.configKeys("getJobsUseLateralJoin")...)
+	jd.conf.disallowMultiConsumerDowngrade = jd.config.GetBoolVar(false, jd.configKeys("disallowMultiConsumerDowngrade")...)
 
 	if jd.TriggerAddNewDS == nil {
 		jd.TriggerAddNewDS = func() <-chan time.Time {

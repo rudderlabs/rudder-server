@@ -113,6 +113,13 @@ func WithTriggerAddNewDS(trigger func() <-chan time.Time) OptsFunc {
 	}
 }
 
+// WithMultiConsumer enables multi-consumer mode for this handle.
+func WithMultiConsumer() OptsFunc {
+	return func(jd *Handle) {
+		jd.conf.multiConsumer = true
+	}
+}
+
 // withDatabaseTablesVersion sets the schema version used by table migration tests.
 func withDatabaseTablesVersion(dbVersion int) OptsFunc {
 	return func(jd *Handle) {
