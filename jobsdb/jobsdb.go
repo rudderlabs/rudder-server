@@ -205,6 +205,7 @@ type JobStatusT struct {
 	ErrorCode     string          `json:"ErrorCode"`
 	ErrorResponse json.RawMessage `json:"ErrorResponse"`
 	Parameters    json.RawMessage `json:"Parameters"`
+	Consumer      string          `json:"Consumer"`
 	JobParameters json.RawMessage `json:"-"`           // not stored in DB
 	WorkspaceId   string          `json:"WorkspaceId"` // not stored in DB
 	PartitionID   string          `json:"-"`           // not stored in DB
@@ -248,6 +249,7 @@ type JobT struct {
 	Parameters    json.RawMessage `json:"Parameters"`
 	WorkspaceId   string          `json:"WorkspaceId"`
 	PartitionID   string          `json:"PartitionId"`
+	Consumers     []string        `json:"Consumers"`
 }
 
 func (job *JobT) String() string {

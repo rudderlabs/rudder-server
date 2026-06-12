@@ -1,0 +1,4 @@
+{{range .Datasets}}
+    ALTER TABLE "{{$.Prefix}}_jobs_{{.}}" ADD COLUMN IF NOT EXISTS consumers TEXT[] NOT NULL DEFAULT '{""}';
+    ALTER TABLE "{{$.Prefix}}_job_status_{{.}}" ADD COLUMN IF NOT EXISTS consumer TEXT NOT NULL DEFAULT '';
+{{end}}
