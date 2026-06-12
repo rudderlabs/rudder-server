@@ -390,6 +390,12 @@ type Handle struct {
 			jobMinRowsLeftCompactionThreshold config.ValueLoader[float64]
 			compactionLoopSleepDuration       config.ValueLoader[time.Duration]
 			compactionTimeout                 config.ValueLoader[time.Duration]
+			// compactionMinDSAge is the minimum age a partially-processed dataset
+			// (one that needs pairing) must reach before it becomes eligible for
+			// compaction, preventing freshly-created datasets (typically compaction
+			// destinations) from being compacted again right away. Datasets without
+			// a recorded creation time are always considered old enough.
+			compactionMinDSAge config.ValueLoader[time.Duration]
 			// nonBlockingCompletedDSDrop routes datasets with zero pending jobs
 			// through the async dropDSLoop instead of the in-TX postCompactionHandleDS
 			// path, so the drop is compaction-lock-free and does not block concurrent readers.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/samber/lo"
 
@@ -18,7 +19,32 @@ type sqlDbOrTx interface {
 	QueryRow(query string, args ...any) *sql.Row
 }
 
-const preDropTableComment = "rudder:pre_drop:v1"
+const (
+	preDropTableComment = "rudder:pre_drop:v1"
+	// dsCreatedAtCommentPrefix prefixes the jobs table comment that records the
+	// dataset's creation time in RFC3339 format.
+	dsCreatedAtCommentPrefix = "rudder:created_at:"
+)
+
+// dsCreatedAtComment returns the jobs table comment recording a dataset's creation time.
+func dsCreatedAtComment(createdAt time.Time) string {
+	return dsCreatedAtCommentPrefix + createdAt.UTC().Format(time.RFC3339Nano)
+}
+
+// dsCreatedAt extracts a dataset's creation time from its jobs table comment.
+// It returns the zero time when no creation time is recorded, e.g. for datasets
+// created before creation times were introduced.
+func dsCreatedAt(comment string) time.Time {
+	value, found := strings.CutPrefix(comment, dsCreatedAtCommentPrefix)
+	if !found {
+		return time.Time{}
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return createdAt
+}
 
 // getDSList returns the datasets found in Postgres, ordered by dataset index.
 // Most runtime paths use the in-memory dataset list instead.
