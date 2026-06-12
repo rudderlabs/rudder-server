@@ -212,6 +212,21 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("Content-Type", "application/json")
 	}
 
+// Short-circuit requests with a blank body before they hit the batch queue.
+ // GET-allowed sources (forwardGetRequestForSrcMap) carry their payload in the URL and are exempt.
+ _, isGetAllowed := webhook.config.forwardGetRequestForSrcMap[strings.ToLower(sourceDefName)]
+ if r.Method != http.MethodGet && !isGetAllowed && len(jsonByte) == 0 && r.ContentLength == 0 {
+     stat := webhook.statReporterCreator(arctx, reqType)
+     stat.RequestFailed(response.NoRequestBody)
+     stat.Report(webhook.stats)
+     webhook.failRequest(w, r,
+         response.GetStatus(response.NoRequestBody),
+         response.GetErrorStatusCode(response.NoRequestBody),
+     )
+     webhook.ackCount.Add(1)
+     return
+ }
+
 	done := make(chan transformerResponse)
 	req := webhookT{
 		request:     r,
