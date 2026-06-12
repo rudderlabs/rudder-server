@@ -10,6 +10,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	bingadsaudience "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/audience"
 	bingadsofflineconversions "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/offline-conversions"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bqstreamv2"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/eloqua"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload"
@@ -47,6 +48,8 @@ func newRegularManager(
 		return snowpipestreaming.New(conf, logger, statsFactory, destination), nil
 	case "SALESFORCE_BULK_UPLOAD":
 		return salesforcebulkupload.NewManager(conf, logger, statsFactory, destination, backendConfig)
+	case "BQSTREAM_V2":
+		return bqstreamv2.NewManager(conf, logger, statsFactory, destination), nil
 	}
 	return nil, errors.New("invalid destination type")
 }

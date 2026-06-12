@@ -14,11 +14,11 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func NewStreamWriterFactory(maxInflightRequests int, maxInflightBytes int64) StreamWriterFactory {
+func NewTableStreamWriterFactory(maxInflightRequests int, maxInflightBytes int64) StreamWriterFactory {
 	return &streamWriterFactoryImpl{maxInflightRequests: maxInflightRequests, maxInflightBytes: maxInflightBytes}
 }
 
-// NewStreamWriter creates a managed stream for the table, with bounded
+// NewTableStreamWriter creates a managed stream for the table, with bounded
 // in-flight appends for backpressure.
 //
 // Each writer dials its own client so that evicting a writer (e.g. after a
@@ -27,7 +27,7 @@ func NewStreamWriterFactory(maxInflightRequests int, maxInflightBytes int64) Str
 // table metadata, and appends over an existing connection can keep failing
 // with NotFound long after the table exists again. A fresh connection
 // resolves the new table generation immediately.
-func (s *streamWriterFactoryImpl) NewStreamWriter(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (StreamWriter, error) {
+func (s *streamWriterFactoryImpl) NewTableStreamWriter(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) {
 	credBytes := []byte(destConf.Credentials)
 	if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
 		return nil, fmt.Errorf("incompatible credentials: %w", err)
@@ -43,12 +43,12 @@ func (s *streamWriterFactoryImpl) NewStreamWriter(ctx context.Context, destConf 
 		}
 	}()
 
-	md, err := descriptorForSchema(tableSchema)
+	descriptor, err := descriptorForSchema(tableSchema)
 	if err != nil {
 		return nil, fmt.Errorf("converting schema: %w", err)
 	}
 
-	descProto, err := adapt.NormalizeDescriptor(md)
+	descProto, err := adapt.NormalizeDescriptor(descriptor)
 	if err != nil {
 		return nil, fmt.Errorf("normalizing descriptor: %w", err)
 	}
@@ -64,7 +64,7 @@ func (s *streamWriterFactoryImpl) NewStreamWriter(ctx context.Context, destConf 
 	if err != nil {
 		return nil, fmt.Errorf("creating managed stream: %w", err)
 	}
-	return &streamWriterImpl{stream: stream, client: client}, nil
+	return &tableStreamWriter{writer: &streamWriterImpl{stream: stream, client: client}, descriptor: descriptor}, nil
 }
 
 // AppendRows appends the given data to the stream.
@@ -75,4 +75,44 @@ func (s *streamWriterImpl) AppendRows(ctx context.Context, data [][]byte) (Appen
 // Close closes the stream and its client; they share one lifecycle.
 func (s *streamWriterImpl) Close() error {
 	return errors.Join(s.stream.Close(), s.client.Close())
+}
+
+// AppendRows appends the pre-encoded rows through the stream and waits for the
+// append to be acknowledged. A read lock is held for the call so an eviction
+// (Close) cannot race the in-flight append, while concurrent appends from other
+// workers sharing this writer (the discards stream) still proceed in parallel.
+// It returns errWriterClosed if the writer has already been evicted, so the
+// caller retries against a freshly built writer.
+func (t *tableStreamWriter) AppendRows(ctx context.Context, data [][]byte) error {
+	t.writerMu.RLock()
+	defer t.writerMu.RUnlock()
+
+	if t.closed {
+		return errWriterClosed
+	}
+
+	appendResult, err := t.writer.AppendRows(ctx, data)
+	if err != nil {
+		return fmt.Errorf("appending rows: %w", err)
+	}
+
+	_, err = appendResult.GetResult(ctx)
+	if err != nil {
+		return fmt.Errorf("getting full response: %w", err)
+	}
+
+	return nil
+}
+
+// Close closes the stream writer once, taking the exclusive lock so it never
+// runs concurrently with an in-flight append.
+func (t *tableStreamWriter) Close() error {
+	t.writerMu.Lock()
+	defer t.writerMu.Unlock()
+
+	if t.closed {
+		return nil
+	}
+	t.closed = true
+	return t.writer.Close()
 }
