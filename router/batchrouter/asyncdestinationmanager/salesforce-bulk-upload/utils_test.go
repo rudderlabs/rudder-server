@@ -6,33 +6,25 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
 func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 	testCases := []struct {
 		name     string
-		jobs     []common.AsyncJob
+		jobs     []SalesforceAsyncJob
 		expected *ObjectInfo
 		wantErr  bool
 		errorMsg string
 	}{
 		{
 			name: "valid externalId with Contact object",
-			jobs: []common.AsyncJob{
+			jobs: []SalesforceAsyncJob{
 				{
-					Message: map[string]any{
-						"Email": "test@example.com",
-					},
-					Metadata: map[string]any{
-						"job_id": float64(1),
-						"externalId": []any{
-							map[string]any{
-								"type":           "SALESFORCE_BULK_UPLOAD-Contact",
-								"id":             "test@example.com",
-								"identifierType": "Email",
-							},
+					Message: map[string]any{"Email": "test@example.com"},
+					Metadata: SalesforceJobMetadata{
+						JobID: 1,
+						ExternalID: []SalesforceExternalID{
+							{Type: "SALESFORCE_BULK_UPLOAD-Contact", ID: "test@example.com", IdentifierType: "Email"},
 						},
 					},
 				},
@@ -45,19 +37,13 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 		},
 		{
 			name: "valid externalId with Lead object",
-			jobs: []common.AsyncJob{
+			jobs: []SalesforceAsyncJob{
 				{
-					Message: map[string]any{
-						"Email": "lead@example.com",
-					},
-					Metadata: map[string]any{
-						"job_id": float64(2),
-						"externalId": []any{
-							map[string]any{
-								"type":           "SALESFORCE_BULK_UPLOAD-Lead",
-								"id":             "lead@example.com",
-								"identifierType": "Email",
-							},
+					Message: map[string]any{"Email": "lead@example.com"},
+					Metadata: SalesforceJobMetadata{
+						JobID: 2,
+						ExternalID: []SalesforceExternalID{
+							{Type: "SALESFORCE_BULK_UPLOAD-Lead", ID: "lead@example.com", IdentifierType: "Email"},
 						},
 					},
 				},
@@ -70,20 +56,16 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 		},
 		{
 			name:     "empty jobs array",
-			jobs:     []common.AsyncJob{},
+			jobs:     []SalesforceAsyncJob{},
 			wantErr:  true,
 			errorMsg: "no jobs to process",
 		},
 		{
-			name: "missing externalId - falls back to config",
-			jobs: []common.AsyncJob{
+			name: "missing externalId",
+			jobs: []SalesforceAsyncJob{
 				{
-					Message: map[string]any{
-						"Email": "test@example.com",
-					},
-					Metadata: map[string]any{
-						"job_id": float64(3),
-					},
+					Message:  map[string]any{"Email": "test@example.com"},
+					Metadata: SalesforceJobMetadata{JobID: 3},
 				},
 			},
 			wantErr:  true,
@@ -91,16 +73,14 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 		},
 		{
 			name: "empty externalId array",
-			jobs: []common.AsyncJob{
+			jobs: []SalesforceAsyncJob{
 				{
-					Message: map[string]any{},
-					Metadata: map[string]any{
-						"externalId": []any{},
-					},
+					Message:  map[string]any{},
+					Metadata: SalesforceJobMetadata{ExternalID: []SalesforceExternalID{}},
 				},
 			},
 			wantErr:  true,
-			errorMsg: "at least one element",
+			errorMsg: "externalId not found in the first job",
 		},
 	}
 
@@ -128,51 +108,23 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 func TestSalesforceBulk_createCSVFile(t *testing.T) {
 	testCases := []struct {
 		name             string
-		jobs             []common.AsyncJob
+		jobs             []SalesforceAsyncJob
 		expectedInserted int
-		expectedOverflow int
 		wantErr          bool
 	}{
 		{
 			name: "create CSV with valid jobs",
-			jobs: []common.AsyncJob{
+			jobs: []SalesforceAsyncJob{
 				{
-					Message: map[string]any{
-						"Email":     "test1@example.com",
-						"FirstName": "John",
-						"LastName":  "Doe",
-					},
-					Metadata: map[string]any{
-						"job_id": float64(1),
-						"externalId": []any{
-							map[string]any{
-								"type":           "SALESFORCE_BULK_UPLOAD-Contact",
-								"id":             "test1@example.com",
-								"identifierType": "Email",
-							},
-						},
-					},
+					Message:  map[string]any{"Email": "test1@example.com", "FirstName": "John", "LastName": "Doe"},
+					Metadata: SalesforceJobMetadata{JobID: 1},
 				},
 				{
-					Message: map[string]any{
-						"Email":     "test2@example.com",
-						"FirstName": "Jane",
-						"LastName":  "Smith",
-					},
-					Metadata: map[string]any{
-						"job_id": float64(2),
-						"externalId": []any{
-							map[string]any{
-								"type":           "SALESFORCE_BULK_UPLOAD-Contact",
-								"id":             "test2@example.com",
-								"identifierType": "Email",
-							},
-						},
-					},
+					Message:  map[string]any{"Email": "test2@example.com", "FirstName": "Jane", "LastName": "Smith"},
+					Metadata: SalesforceJobMetadata{JobID: 2},
 				},
 			},
 			expectedInserted: 2,
-			expectedOverflow: 0,
 			wantErr:          false,
 		},
 	}
@@ -180,8 +132,9 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			csvFilePath, headers, hashToJobID, err := createCSVFile(
+			csvFilePath, externalIDToJobID, fileSize, err := createCSVFile(
 				"test-dest-123",
+				"Email",
 				tc.jobs,
 			)
 
@@ -192,193 +145,34 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 
 			require.NoError(t, err)
 			require.NotEmpty(t, csvFilePath)
-			require.NotEmpty(t, headers)
 
-			_, err = os.Stat(csvFilePath)
+			info, err := os.Stat(csvFilePath)
 			require.NoError(t, err)
+			require.Equal(t, info.Size(), fileSize, "returned size should match the file on disk")
 
 			t.Cleanup(func() {
 				require.NoError(t, os.Remove(csvFilePath))
 			})
 
-			require.Len(t, hashToJobID, tc.expectedInserted)
+			require.Len(t, externalIDToJobID, tc.expectedInserted)
 		})
 	}
-}
-
-func TestSalesforceBulk_calculateHashCode(t *testing.T) {
-	testCases := []struct {
-		name     string
-		row      []string
-		expected string
-	}{
-		{
-			name:     "simple row",
-			row:      []string{"test@example.com", "John", "Doe"},
-			expected: calculateHashCode([]string{"test@example.com", "John", "Doe"}),
-		},
-		{
-			name:     "empty row",
-			row:      []string{},
-			expected: calculateHashCode([]string{}),
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			result := calculateHashCode(tc.row)
-
-			require.NotEmpty(t, result)
-			require.Equal(t, tc.expected, result)
-		})
-	}
-}
-
-func TestSalesforceBulk_calculateHashFromRecord(t *testing.T) {
-	testCases := []struct {
-		name        string
-		record      map[string]string
-		csvHeaders  []string
-		expected    string
-		shouldMatch bool
-		compareWith []string
-	}{
-		{
-			name: "match original CSV row - ignores Salesforce columns",
-			record: map[string]string{
-				"Email":       "test@example.com",
-				"FirstName":   "John",
-				"LastName":    "Doe",
-				"sf__Id":      "003xx000004TmiQAAS",
-				"sf__Created": "true",
-				"sf__Error":   "",
-			},
-			csvHeaders:  []string{"Email", "FirstName", "LastName"},
-			shouldMatch: true,
-			compareWith: []string{"test@example.com", "John", "Doe"},
-		},
-		{
-			name: "handles user's sf__ fields correctly",
-			record: map[string]string{
-				"Email":             "user@example.com",
-				"sf__AccountStatus": "Active",
-				"FirstName":         "Jane",
-				"sf__Id":            "003xx000005TmiQBBT",
-			},
-			csvHeaders:  []string{"Email", "FirstName", "sf__AccountStatus"},
-			shouldMatch: true,
-			compareWith: []string{"user@example.com", "Jane", "Active"},
-		},
-		{
-			name: "consistent hash with sorted headers",
-			record: map[string]string{
-				"LastName":  "Smith",
-				"Email":     "smith@example.com",
-				"FirstName": "Bob",
-			},
-			csvHeaders:  []string{"Email", "FirstName", "LastName"},
-			shouldMatch: true,
-			compareWith: []string{"smith@example.com", "Bob", "Smith"},
-		},
-		{
-			name: "handles missing fields with empty strings",
-			record: map[string]string{
-				"Email":     "partial@example.com",
-				"FirstName": "Only",
-			},
-			csvHeaders:  []string{"Email", "FirstName", "LastName"},
-			shouldMatch: true,
-			compareWith: []string{"partial@example.com", "Only", ""},
-		},
-		{
-			name:        "empty record",
-			record:      map[string]string{},
-			csvHeaders:  []string{"Email", "FirstName"},
-			shouldMatch: true,
-			compareWith: []string{"", ""},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			hash := calculateHashFromRecord(tc.record, tc.csvHeaders)
-
-			require.NotEmpty(t, hash)
-
-			if tc.shouldMatch {
-				expectedHash := calculateHashCode(tc.compareWith)
-				require.Equal(t, expectedHash, hash,
-					"Hash from record should match hash from original CSV values")
-			}
-
-			hash2 := calculateHashFromRecord(tc.record, tc.csvHeaders)
-			require.Equal(t, hash, hash2, "Hash should be consistent across multiple calls")
-		})
-	}
-}
-
-func TestSalesforceBulk_calculateHashFromRecord_Integration(t *testing.T) {
-	t.Run("upload and result matching flow", func(t *testing.T) {
-		t.Parallel()
-
-		csvHeaders := []string{"Email", "FirstName", "LastName"}
-		uploadRow := []string{"integration@example.com", "Test", "User"}
-		uploadHash := calculateHashCode(uploadRow)
-
-		salesforceResult := map[string]string{
-			"Email":       "integration@example.com",
-			"FirstName":   "Test",
-			"LastName":    "User",
-			"sf__Id":      "003xx000006TmiQCCU",
-			"sf__Created": "true",
-			"sf__Error":   "",
-		}
-		resultHash := calculateHashFromRecord(salesforceResult, csvHeaders)
-
-		require.Equal(t, uploadHash, resultHash,
-			"Upload hash and result hash should match for same data")
-	})
-
-	t.Run("different data produces different hashes", func(t *testing.T) {
-		t.Parallel()
-
-		csvHeaders := []string{"Email", "FirstName"}
-
-		record1 := map[string]string{
-			"Email":     "user1@example.com",
-			"FirstName": "User",
-		}
-		record2 := map[string]string{
-			"Email":     "user2@example.com",
-			"FirstName": "User",
-		}
-
-		hash1 := calculateHashFromRecord(record1, csvHeaders)
-		hash2 := calculateHashFromRecord(record2, csvHeaders)
-
-		require.NotEqual(t, hash1, hash2,
-			"Different records should produce different hashes")
-	})
 }
 
 func TestSalesforceBulk_createCSVFile_NumericNoScientificNotation(t *testing.T) {
 	t.Parallel()
-	jobs := []common.AsyncJob{
+	jobs := []SalesforceAsyncJob{
 		{
 			Message: map[string]any{
 				"Email":          "user@example.com",
 				"Account_Number": float64(1234567890),
 				"Account_IDs":    []any{float64(1234567890), float64(9876543210)},
 			},
-			Metadata: map[string]any{"job_id": float64(1)},
+			Metadata: SalesforceJobMetadata{JobID: 1},
 		},
 	}
 
-	csvFilePath, _, _, err := createCSVFile("test-dest-numeric", jobs)
+	csvFilePath, _, _, err := createCSVFile("test-dest-numeric", "Email", jobs)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.Remove(csvFilePath) })
 
@@ -394,7 +188,7 @@ func TestSalesforceBulk_createCSVFile_NumericNoScientificNotation(t *testing.T) 
 }
 
 func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
-	jobs := []common.AsyncJob{
+	jobs := []SalesforceAsyncJob{
 		{
 			Message: map[string]any{
 				"Email":     "middle@example.com",
@@ -402,7 +196,7 @@ func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
 				"LastName":  nil,
 				"Phone":     "555-0001",
 			},
-			Metadata: map[string]any{"job_id": float64(1)},
+			Metadata: SalesforceJobMetadata{JobID: 1},
 		},
 		{
 			Message: map[string]any{
@@ -411,11 +205,11 @@ func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
 				"LastName":  "User",
 				"Phone":     nil,
 			},
-			Metadata: map[string]any{"job_id": float64(2)},
+			Metadata: SalesforceJobMetadata{JobID: 2},
 		},
 	}
 
-	csvFilePath, _, _, err := createCSVFile("test-dest-null", jobs)
+	csvFilePath, _, _, err := createCSVFile("test-dest-null", "Email", jobs)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.Remove(csvFilePath) })
 
@@ -433,47 +227,31 @@ func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
 
 func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 	t.Run("jobs with different fields get union of all fields in CSV", func(t *testing.T) {
-		jobs := []common.AsyncJob{
+		jobs := []SalesforceAsyncJob{
 			{
-				Message: map[string]any{
-					"Email":     "user1@example.com",
-					"FirstName": "John",
-				},
-				Metadata: map[string]any{"job_id": float64(1)},
+				Message:  map[string]any{"Email": "user1@example.com", "FirstName": "John"},
+				Metadata: SalesforceJobMetadata{JobID: 1},
 			},
 			{
-				Message: map[string]any{
-					"Email":    "user2@example.com",
-					"LastName": "Smith",
-					"Phone":    "555-1234",
-				},
-				Metadata: map[string]any{"job_id": float64(2)},
+				Message:  map[string]any{"Email": "user2@example.com", "LastName": "Smith", "Phone": "555-1234"},
+				Metadata: SalesforceJobMetadata{JobID: 2},
 			},
 			{
-				Message: map[string]any{
-					"Email":     "user3@example.com",
-					"FirstName": "Jane",
-					"LastName":  "Doe",
-					"Company":   "Acme Inc",
-				},
-				Metadata: map[string]any{"job_id": float64(3)},
+				Message:  map[string]any{"Email": "user3@example.com", "FirstName": "Jane", "LastName": "Doe", "Company": "Acme Inc"},
+				Metadata: SalesforceJobMetadata{JobID: 3},
 			},
 		}
 
-		csvFilePath, headers, hashToJobID, err := createCSVFile(
+		csvFilePath, externalIDToJobID, _, err := createCSVFile(
 			"test-dest",
+			"Email",
 			jobs,
 		)
 
 		require.NoError(t, err)
 		defer os.Remove(csvFilePath)
 
-		require.Len(t, hashToJobID, 3)
-		require.Contains(t, headers, "Email")
-		require.Contains(t, headers, "FirstName")
-		require.Contains(t, headers, "LastName")
-		require.Contains(t, headers, "Phone")
-		require.Contains(t, headers, "Company")
+		require.Len(t, externalIDToJobID, 3)
 
 		file, err := os.Open(csvFilePath)
 		require.NoError(t, err)
@@ -486,6 +264,11 @@ func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 
 		headerRow := records[0]
 		require.Len(t, headerRow, 5)
+		require.Contains(t, headerRow, "Email")
+		require.Contains(t, headerRow, "FirstName")
+		require.Contains(t, headerRow, "LastName")
+		require.Contains(t, headerRow, "Phone")
+		require.Contains(t, headerRow, "Company")
 
 		for i, row := range records[1:] {
 			require.Len(t, row, 5, "Row %d should have 5 columns", i+1)

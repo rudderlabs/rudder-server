@@ -1,9 +1,9 @@
 package salesforcebulkupload
 
 import (
-	"crypto/sha256"
 	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,66 +15,71 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func extractObjectInfo(jobs []common.AsyncJob) (*ObjectInfo, error) {
+// countingWriter wraps an io.Writer and tracks the number of bytes written
+// through it, so createCSVFile can report the CSV size without a second stat.
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
+}
+
+func extractObjectInfo(jobs []SalesforceAsyncJob) (*ObjectInfo, error) {
 	if len(jobs) == 0 {
 		return nil, fmt.Errorf("no jobs to process")
 	}
-
-	firstJob := jobs[0]
-
-	externalIDRaw, ok := firstJob.Metadata["externalId"]
-	if !ok {
+	externalID := jobs[0].Metadata.ExternalID
+	if len(externalID) == 0 {
 		return nil, fmt.Errorf("externalId not found in the first job")
 	}
 
-	objectInfo, err := extractFromVDM(externalIDRaw)
+	objectInfo, err := extractFromVDM(externalID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract object info: %w", err)
 	}
 	return objectInfo, nil
 }
 
-func extractFromVDM(externalIDRaw any) (*ObjectInfo, error) {
-	externalIDArray, ok := externalIDRaw.([]any)
-	if !ok || len(externalIDArray) == 0 {
+func extractFromVDM(externalIDs []SalesforceExternalID) (*ObjectInfo, error) {
+	if len(externalIDs) == 0 {
 		return nil, fmt.Errorf("externalId must be an array with at least one element")
 	}
 
-	externalIDMap, ok := externalIDArray[0].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("externalId[0] must be an object")
-	}
-
-	typeStr, _ := externalIDMap["type"].(string)
-	if typeStr == "" {
+	externalID := externalIDs[0]
+	if externalID.Type == "" {
 		return nil, fmt.Errorf("externalId type is required")
 	}
-	objectType := strings.Replace(typeStr, "SALESFORCE_BULK_UPLOAD-", "", 1)
-	identifierType, _ := externalIDMap["identifierType"].(string)
-	identifierValue, _ := externalIDMap["id"].(string)
+	if externalID.IdentifierType == "" {
+		return nil, fmt.Errorf("externalId identifierType is required")
+	}
 	return &ObjectInfo{
-		ObjectType:      objectType,
-		ExternalIDField: identifierType,
-		ExternalIDValue: identifierValue,
+		ObjectType:      strings.Replace(externalID.Type, "SALESFORCE_BULK_UPLOAD-", "", 1),
+		ExternalIDField: externalID.IdentifierType,
+		ExternalIDValue: externalID.ID,
 	}, nil
 }
 
 func createCSVFile(
 	destinationID string,
-	input []common.AsyncJob,
-) (string, []string, map[string][]int64, error) {
+	externalIDField string,
+	input []SalesforceAsyncJob,
+) (string, map[string][]int64, int64, error) {
 	if err := os.MkdirAll(CSVDir, 0o755); err != nil {
-		return "", nil, nil, fmt.Errorf("creating CSV directory: %w", err)
+		return "", nil, 0, fmt.Errorf("creating CSV directory: %w", err)
 	}
 	csvFilePath := filepath.Join(CSVDir, fmt.Sprintf("salesforce_%s_%d.csv", destinationID, time.Now().Unix()))
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("creating CSV file: %w", err)
+		return "", nil, 0, fmt.Errorf("creating CSV file: %w", err)
 	}
 	defer csvFile.Close()
 
-	writer := csv.NewWriter(csvFile)
-	defer writer.Flush()
+	counter := &countingWriter{w: csvFile}
+	writer := csv.NewWriter(counter)
 
 	headerSet := make(map[string]struct{})
 	for _, job := range input {
@@ -91,7 +96,7 @@ func createCSVFile(
 	sort.Strings(headers)
 
 	if err := writer.Write(headers); err != nil {
-		return "", nil, nil, fmt.Errorf("writing CSV header: %w", err)
+		return "", nil, 0, fmt.Errorf("writing CSV header: %w", err)
 	}
 
 	headerIndex := make(map[string]int, len(headers))
@@ -99,39 +104,39 @@ func createCSVFile(
 		headerIndex[key] = i
 	}
 
-	dataHashToJobID := make(map[string][]int64)
+	externalIDIndex, ok := headerIndex[externalIDField]
+	if !ok {
+		return "", nil, 0, fmt.Errorf("externalId field %q not present in job data", externalIDField)
+	}
+
+	externalIDToJobID := make(map[string][]int64)
 	for _, job := range input {
 		row := make([]string, len(headers))
 		for key, value := range job.Message {
 			if idx, ok := headerIndex[key]; ok {
 				formattedValue, err := common.FormatCSVValue(value)
 				if err != nil {
-					return "", nil, nil, fmt.Errorf("formatting CSV cell %q: %w", key, err)
+					return "", nil, 0, fmt.Errorf("formatting CSV cell %q: %w", key, err)
 				}
 				row[idx] = formattedValue
 			}
 		}
-		jobID := int64(job.Metadata["job_id"].(float64))
+		jobID := job.Metadata.JobID
 		if err := writer.Write(row); err != nil {
-			return "", nil, nil, fmt.Errorf("writing CSV row: %w", err)
+			return "", nil, 0, fmt.Errorf("writing CSV row: %w", err)
 		}
-		hash := calculateHashCode(row)
-		dataHashToJobID[hash] = append(dataHashToJobID[hash], jobID)
+		// Correlate on the externalId value alone, not the whole row: Salesforce
+		// coerces other columns on store (datetime ms-truncation, number scale,
+		// ...) so a whole-row key would not survive the round-trip. Events with
+		// an empty externalId are dropped in Upload before reaching here.
+		key := row[externalIDIndex]
+		externalIDToJobID[key] = append(externalIDToJobID[key], jobID)
 	}
 
-	return csvFilePath, headers, dataHashToJobID, nil
-}
-
-func calculateHashCode(row []string) string {
-	joined := strings.Join(row, ",")
-	hash := sha256.Sum256([]byte(joined))
-	return fmt.Sprintf("%x", hash)
-}
-
-func calculateHashFromRecord(record map[string]string, csvHeaders []string) string {
-	values := make([]string, 0, len(csvHeaders))
-	for _, header := range csvHeaders {
-		values = append(values, record[header])
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return "", nil, 0, fmt.Errorf("flushing CSV writer: %w", err)
 	}
-	return calculateHashCode(values)
+
+	return csvFilePath, externalIDToJobID, counter.n, nil
 }
