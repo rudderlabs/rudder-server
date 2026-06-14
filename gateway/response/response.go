@@ -10,6 +10,8 @@ const (
 	Ok = "ok"
 	// RequestBodyNil - Request body is nil
 	RequestBodyNil = "request body is nil"
+	// NoRequestBody - Request body is empty
+	NoRequestBody = "request body is empty"
 	// InvalidRequestMethod - Request Method is invalid
 	InvalidRequestMethod = "invalid http request method"
 	// TooManyRequests - too many requests
@@ -88,6 +90,7 @@ const (
 var statusMap = map[string]status{
 	Ok:                      {message: Ok, code: http.StatusOK},
 	RequestBodyNil:          {message: RequestBodyNil, code: http.StatusBadRequest},
+	NoRequestBody:           {message: NoRequestBody, code: http.StatusBadRequest},
 	InvalidRequestMethod:    {message: InvalidRequestMethod, code: http.StatusBadRequest},
 	TooManyRequests:         {message: TooManyRequests, code: http.StatusTooManyRequests},
 	NoWriteKeyInBasicAuth:   {message: NoWriteKeyInBasicAuth, code: http.StatusUnauthorized},
