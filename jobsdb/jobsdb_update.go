@@ -382,7 +382,7 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 								},
 							)
 							// If multi-consumer, also invalidate consumer=* so that all-consumer
-							// queries (e.g. GetPendingJobs) are not served stale results after
+							// queries (e.g. GetPendingConsumerJobs) are not served stale results after
 							// any consumer writes a status.
 							if jd.conf.multiConsumer {
 								parameterFilters = append(parameterFilters, ParameterFilterT{Name: consumerParamName, Value: "*"})

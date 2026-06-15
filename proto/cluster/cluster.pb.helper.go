@@ -26,6 +26,7 @@ func (x *JobsBatchChunk) GetJobsdbJobs() ([]*jobsdb.JobT, error) {
 			Parameters:   j.Parameters,
 			WorkspaceId:  j.WorkspaceId,
 			PartitionID:  j.PartitionId,
+			Consumers:    j.Consumers,
 		})
 	}
 	return res, nil
@@ -44,5 +45,6 @@ func JobFromJobsdbJob(j *jobsdb.JobT, _ int) *Job {
 		Parameters:   j.Parameters,
 		WorkspaceId:  j.WorkspaceId,
 		PartitionId:  j.PartitionID,
+		Consumers:    j.Consumers,
 	}
 }

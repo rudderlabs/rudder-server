@@ -36,6 +36,11 @@ type GetQueryParams struct {
 	stateFilters                   []string
 	afterJobID                     *int64
 	ignoreReadPartitionsExclusions bool // if true, includes results from all partitions, ignoring any preconfigured excluded read partitions
+	// allPendingConsumers requests the multi-consumer "pending" variant (set internally by GetPendingConsumerJobs):
+	// instead of scoping to a single consumer, a job is returned once if any of its consumers' latest
+	// status matches stateFilters, with its Consumers field rewritten to exactly those matching consumers
+	// and no per-job status carried. Ignored on single-consumer handles.
+	allPendingConsumers bool
 
 	// query limits
 
@@ -67,6 +72,11 @@ type moreToken struct {
 
 func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
 	return jd.getMoreJobs(ctx, []string{Failed.State, Waiting.State, Unprocessed.State}, params, more)
+}
+
+func (jd *Handle) GetPendingConsumerJobs(ctx context.Context, states []string, params GetQueryParams) (JobsResult, error) {
+	params.allPendingConsumers = true // honored only by multi-consumer handles, in getJobsDS
+	return jd.GetJobs(ctx, states, params)
 }
 
 var cacheParameterFilters = []string{"source_id", "destination_id"}
@@ -323,10 +333,25 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	workspaceID := params.WorkspaceID
 	checkValidJobState(jd, stateFilters)
 
-	// For multi-consumer JobsDB, consumer is a cache dimension: consumer=X scopes lookups to that consumer.
+	// Multi-consumer "pending" variant (set internally by GetPendingConsumerJobs): instead of scoping to a single
+	// consumer, return each job once with its Consumers rewritten to the consumers whose latest status
+	// matches stateFilters, carrying no per-job status. Being an all-consumers query, it keys the
+	// noResultsCache on the wildcard consumer=* (which store/update writes invalidate). It also disables
+	// the per-state noResultsCache optimization (stateFilterOptimization below): that optimization infers
+	// "no jobs in state X" when X is absent from the result set's states, but this query reports which
+	// consumers match rather than each one's state (the scanned status is always NULL), so the inference
+	// would record false no-result markers. A no-result is therefore cached only when the whole query is empty.
+	pendingConsumersMode := jd.conf.multiConsumer && params.allPendingConsumers
+
+	// For multi-consumer JobsDB, consumer is a cache dimension: consumer=X scopes lookups to that consumer;
+	// the all-consumers pending variant uses consumer=*.
 	cacheParamFilters := parameterFilters
 	if jd.conf.multiConsumer {
-		cacheParamFilters = append(slices.Clone(parameterFilters), ParameterFilterT{Name: consumerParamName, Value: params.Consumer})
+		consumerKey := params.Consumer
+		if pendingConsumersMode {
+			consumerKey = "*"
+		}
+		cacheParamFilters = append(slices.Clone(parameterFilters), ParameterFilterT{Name: consumerParamName, Value: consumerKey})
 	}
 
 	if jd.noResultsCache.Get(ds.Index, partitionFilters, workspaceID, customValFilters, stateFilters, cacheParamFilters) {
@@ -344,7 +369,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		CustomValFilters: params.CustomValFilters,
 		WorkspaceID:      workspaceID,
 	}
-	stateFilterOptimization := jd.conf.noResultsCacheStateOptimization.Load()
+	stateFilterOptimization := jd.conf.noResultsCacheStateOptimization.Load() && !pendingConsumersMode
 
 	if stateFilterOptimization {
 		stateFilters = lo.Filter(stateFilters, func(state string, _ int) bool { // exclude states for which we already know that there are no jobs
@@ -371,13 +396,17 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	}
 
 	var filterConditions []string
-	additionalPredicates := lo.FilterMap(stateFilters, func(s string, _ int) (string, bool) {
-		return "(job_latest_state.job_id IS NULL)", s == Unprocessed.State
-	})
-	stateQuery := constructQueryOR("job_latest_state.job_state", lo.Filter(stateFilters, func(s string, _ int) bool {
-		return s != Unprocessed.State
-	}), additionalPredicates...)
-	filterConditions = append(filterConditions, stateQuery)
+	// In pendingConsumersMode the state predicate is evaluated per-consumer inside the aggregation lateral below,
+	// not against a single job_latest_state row.
+	if !pendingConsumersMode {
+		additionalPredicates := lo.FilterMap(stateFilters, func(s string, _ int) (string, bool) {
+			return "(job_latest_state.job_id IS NULL)", s == Unprocessed.State
+		})
+		stateQuery := constructQueryOR("job_latest_state.job_state", lo.Filter(stateFilters, func(s string, _ int) bool {
+			return s != Unprocessed.State
+		}), additionalPredicates...)
+		filterConditions = append(filterConditions, stateQuery)
+	}
 
 	if params.afterJobID != nil {
 		filterConditions = append(filterConditions, fmt.Sprintf("jobs.job_id > %d", *params.afterJobID))
@@ -413,13 +442,17 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		jd.excludedReadPartitionsLock.RUnlock()
 	}
 
-	// query args are shared between the inner query (consumer) and the outer wrap (limits).
-	// Consumer must be added first so its $n position is stable when wrap args are appended.
+	// query args are shared between the inner query (consumer/state) and the outer wrap (limits).
+	// They must be added first so their $n positions are stable when wrap args are appended.
 	var args []any
 
 	// innerConsumerClause is added inside LATERAL subqueries; outerConsumerClause is added to ON clauses.
 	var innerConsumerClause, outerConsumerClause string
-	if jd.conf.multiConsumer {
+	switch {
+	case pendingConsumersMode:
+		// $1 is the set of matched (non-unprocessed) states, used by the aggregation lateral below.
+		args = append(args, pq.Array(lo.Filter(stateFilters, func(s string, _ int) bool { return s != Unprocessed.State })))
+	case jd.conf.multiConsumer:
 		args = append(args, params.Consumer)
 		n := len(args)
 		filterConditions = append(filterConditions, fmt.Sprintf("jobs.consumers @> ARRAY[$%d]", n))
@@ -438,6 +471,15 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	}
 
 	joinType := "LEFT"
+	consumersExpr := "jobs.consumers"
+	statusExpr := `job_latest_state.job_state, job_latest_state.attempt,
+									job_latest_state.exec_time, job_latest_state.retry_time,
+									job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters`
+	if params.allPendingConsumers {
+		statusExpr = `NULL::text AS job_state, NULL::int AS attempt,
+									NULL::timestamptz AS exec_time, NULL::timestamptz AS retry_time,
+									NULL::text AS error_code, NULL::jsonb AS error_response, NULL::jsonb AS parameters`
+	}
 	viewPrefix := "v_last_"
 	if jd.conf.multiConsumer {
 		viewPrefix = "v_last_c_"
@@ -445,7 +487,26 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	joinTable := viewPrefix + ds.JobStatusTable
 	onlyUnprocessed := slices.Equal(stateFilters, []string{Unprocessed.State})
 
-	if !containsUnprocessed { // If we are not querying for unprocessed jobs, we can use an inner join
+	if pendingConsumersMode {
+		// Aggregate the matching consumers per job inside a LATERAL over the narrow consumers array, so the
+		// payload is never fanned out. The lateral exposes the same job_latest_state columns the SELECT/scan
+		// expect (all NULL — no status is carried) plus the trimmed consumers array; the INNER JOIN's ON
+		// drops jobs whose every consumer is already done (array_agg over the empty match set → NULL).
+		joinType = "INNER"
+		consumersExpr = "job_latest_state.consumers"
+		statePredicate := "last.job_state = ANY($1)"
+		if containsUnprocessed {
+			statePredicate = "(last.job_state IS NULL OR last.job_state = ANY($1))"
+		}
+		joinTable = fmt.Sprintf(`LATERAL (
+			SELECT array_agg(c.consumer) AS consumers
+			FROM unnest(jobs.consumers) AS c(consumer)
+			LEFT JOIN LATERAL (
+				SELECT job_state FROM %q WHERE job_id = jobs.job_id AND consumer = c.consumer ORDER BY id DESC LIMIT 1
+			) last ON true
+			WHERE %s
+		) job_latest_state ON job_latest_state.consumers IS NOT NULL`, ds.JobStatusTable, statePredicate)
+	} else if !containsUnprocessed { // If we are not querying for unprocessed jobs, we can use an inner join
 		joinType = "INNER"
 	} else if onlyUnprocessed {
 		// If we are querying only for unprocessed jobs, we should join with the status table instead of the view (performance reasons)
@@ -455,27 +516,35 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	// For the pure-unprocessed case the join is a NOT-EXISTS pattern (LEFT JOIN + IS NULL):
 	// we only need to know whether any status row exists, not which one is latest,
 	// so the lateral's ORDER BY / LIMIT 1 would be wasteful — skip it.
-	if jd.conf.getJobsUseLateralJoin.Load() && !onlyUnprocessed {
-		joinTable = fmt.Sprintf(`LATERAL (SELECT * FROM %q WHERE job_id = jobs.job_id%s ORDER BY id DESC LIMIT 1) job_latest_state ON true`, ds.JobStatusTable, innerConsumerClause)
-	} else {
-		joinTable = fmt.Sprintf(`%q job_latest_state ON jobs.job_id=job_latest_state.job_id%s`, joinTable, outerConsumerClause)
+	// (pendingConsumersMode already built its own join above.)
+	if !pendingConsumersMode {
+		if jd.conf.getJobsUseLateralJoin.Load() && !onlyUnprocessed {
+			joinTable = fmt.Sprintf(`LATERAL (SELECT * FROM %q WHERE job_id = jobs.job_id%s ORDER BY id DESC LIMIT 1) job_latest_state ON true`, ds.JobStatusTable, innerConsumerClause)
+		} else {
+			joinTable = fmt.Sprintf(`%q job_latest_state ON jobs.job_id=job_latest_state.job_id%s`, joinTable, outerConsumerClause)
+		}
 	}
 
 	sqlStatement := fmt.Sprintf(`SELECT
 									jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
-									jobs.created_at, jobs.expire_at, jobs.workspace_id, jobs.partition_id, jobs.consumers,
+									jobs.created_at, jobs.expire_at, jobs.workspace_id, jobs.partition_id, %[6]s,
 									octet_length(jobs.event_payload::text) as payload_size,
 									sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
 									sum(octet_length(jobs.event_payload::text)) over (order by jobs.job_id) as running_payload_size,
-									job_latest_state.job_state, job_latest_state.attempt,
-									job_latest_state.exec_time, job_latest_state.retry_time,
-									job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
+								%[7]s
 								FROM
 									%[1]q AS jobs
 									%[2]s JOIN %[3]s
 								    %[4]s
 									ORDER BY jobs.job_id %[5]s`,
-		ds.JobTable, joinType, joinTable, filterQuery, limitQuery)
+		ds.JobTable,   // 1
+		joinType,      // 2
+		joinTable,     // 3
+		filterQuery,   // 4
+		limitQuery,    // 5
+		consumersExpr, // 6
+		statusExpr,    // 7
+	)
 
 	var wrapQuery []string
 	if params.EventsLimit > 0 {
