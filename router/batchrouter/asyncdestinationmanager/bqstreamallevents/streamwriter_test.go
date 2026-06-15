@@ -26,7 +26,7 @@ func TestStreamWriterIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	namespace := "bqstreamv2_swtest_" + whutils.RandHex()
+	namespace := "bqstreamallevents_swtest_" + whutils.RandHex()
 	tableName := "pages"
 	tableSchema := whutils.ModelTableSchema{"id": "string", "received_at": "datetime", "val": "int"}
 
