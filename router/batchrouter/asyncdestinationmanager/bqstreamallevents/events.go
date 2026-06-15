@@ -1,4 +1,4 @@
-package bqstreamv2
+package bqstreamallevents
 
 import (
 	"bufio"
@@ -17,10 +17,10 @@ import (
 )
 
 var (
-	idColumnName         = whutils.ToProviderCase(whutils.BQStreamV2, "id")
-	receivedAtColumnName = whutils.ToProviderCase(whutils.BQStreamV2, "received_at")
-	uuidTSColumnName     = whutils.ToProviderCase(whutils.BQStreamV2, "uuid_ts")
-	loadedAtColumnName   = whutils.ToProviderCase(whutils.BQStreamV2, "loaded_at")
+	idColumnName         = whutils.ToProviderCase(whutils.BQStreamAllEvents, "id")
+	receivedAtColumnName = whutils.ToProviderCase(whutils.BQStreamAllEvents, "received_at")
+	uuidTSColumnName     = whutils.ToProviderCase(whutils.BQStreamAllEvents, "uuid_ts")
+	loadedAtColumnName   = whutils.ToProviderCase(whutils.BQStreamAllEvents, "loaded_at")
 
 	sliceOfAnyType = reflect.TypeFor[[]any]()
 )
@@ -91,7 +91,7 @@ func (m *Manager) groupAndChunkEvents(events []*event) map[string][]tableEvents 
 
 	for tableName, tableEventsList := range groupedEvents {
 		eventsSchema := schemaFromEvents(tableEventsList)
-		providerTableName := whutils.ToProviderCase(whutils.BQStreamV2, tableName)
+		providerTableName := whutils.ToProviderCase(whutils.BQStreamAllEvents, tableName)
 
 		var currentChunkBytes int64
 		var currentChunk []*event

@@ -1,4 +1,4 @@
-package bqstreamv2
+package bqstreamallevents
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func (m *Manager) fetchSchemaFromWarehouseForTables(ctx context.Context, cfg des
 	}
 
 	tableNamesSet := lo.SliceToMap(tableNames, func(tableName string) (string, struct{}) {
-		return whutils.ToProviderCase(whutils.BQStreamV2, tableName), struct{}{}
+		return whutils.ToProviderCase(whutils.BQStreamAllEvents, tableName), struct{}{}
 	})
 
 	filteredWarehouseSchema := lo.PickBy(warehouseSchema, func(tableName string, schema whutils.ModelTableSchema) bool {

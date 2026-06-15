@@ -1,4 +1,4 @@
-package bqstreamv2
+package bqstreamallevents
 
 import (
 	"context"
@@ -39,15 +39,15 @@ const defaultChunkSizeBytes int64 = 8 * bytesize.MB
 var errWriterClosed = errors.New("stream writer already closed")
 
 var (
-	usersTableName    = whutils.ToProviderCase(whutils.BQStreamV2, whutils.UsersTable)
-	discardsTableName = whutils.ToProviderCase(whutils.BQStreamV2, whutils.DiscardsTable)
+	usersTableName    = whutils.ToProviderCase(whutils.BQStreamAllEvents, whutils.UsersTable)
+	discardsTableName = whutils.ToProviderCase(whutils.BQStreamAllEvents, whutils.DiscardsTable)
 
 	discardsTableSchema = lo.MapEntries(whutils.DiscardsSchema, func(columnName, columnType string) (string, string) {
-		return whutils.ToProviderCase(whutils.BQStreamV2, columnName), columnType
+		return whutils.ToProviderCase(whutils.BQStreamAllEvents, columnName), columnType
 	})
 )
 
-// NewManager creates the BQSTREAM_V2 async destination manager, which
+// NewManager creates the BQSTREAM_ALL_EVENTS async destination manager, which
 // streams events into BigQuery through the Storage Write API.
 func NewManager(
 	conf *config.Config,
@@ -66,7 +66,7 @@ func newManager(
 ) *Manager {
 	m := &Manager{
 		appConfig: conf,
-		logger: log.Child("bqstreamv2").Withn(
+		logger: log.Child("bqstreamallevents").Withn(
 			obskit.WorkspaceID(destination.WorkspaceID),
 			obskit.DestinationID(destination.ID),
 			obskit.DestinationType(destination.DestinationDefinition.Name),
@@ -76,16 +76,16 @@ func newManager(
 		destination:   destination,
 		streamWriters: make(map[string]*tableStreamWriter),
 		streamWriterFactory: &streamWriterFactoryImpl{
-			maxInflightRequests: conf.GetIntVar(1000, 1, "BQStreamV2.maxInflightRequests"),
-			maxInflightBytes:    conf.GetInt64Var(100*bytesize.MB, bytesize.B, "BQStreamV2.maxInflightBytes"),
+			maxInflightRequests: conf.GetIntVar(1000, 1, "BQStreamAllEvents.maxInflightRequests"),
+			maxInflightBytes:    conf.GetInt64Var(100*bytesize.MB, bytesize.B, "BQStreamAllEvents.maxInflightBytes"),
 		},
 		now: timeutil.Now,
 	}
 
-	m.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "BQStreamV2.maxBufferCapacity")
-	m.config.tableWorkers = conf.GetReloadableIntVar(25, 1, "BQStreamV2.tableWorkers")
-	m.config.maxChunkBytes = conf.GetReloadableInt64Var(defaultChunkSizeBytes, bytesize.B, "BQStreamV2.maxChunkBytes")
-	m.config.schemaCacheTTL = conf.GetReloadableDurationVar(5, time.Minute, "BQStreamV2.schemaCacheTTL")
+	m.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "BQStreamAllEvents.maxBufferCapacity")
+	m.config.tableWorkers = conf.GetReloadableIntVar(25, 1, "BQStreamAllEvents.tableWorkers")
+	m.config.maxChunkBytes = conf.GetReloadableInt64Var(defaultChunkSizeBytes, bytesize.B, "BQStreamAllEvents.maxChunkBytes")
+	m.config.schemaCacheTTL = conf.GetReloadableDurationVar(5, time.Minute, "BQStreamAllEvents.schemaCacheTTL")
 	m.schemaCache = NewTableSchemaCache(m.config.schemaCacheTTL.Load())
 
 	tags := stats.Tags{
@@ -94,17 +94,17 @@ func newManager(
 		"destType":      destination.DestinationDefinition.Name,
 		"destinationId": destination.ID,
 	}
-	m.stats.jobs.succeeded = statsFactory.NewTaggedStat("bqstream_v2_jobs", stats.CountType, lo.Assign(tags, stats.Tags{
+	m.stats.jobs.succeeded = statsFactory.NewTaggedStat("bqstream_all_events_jobs", stats.CountType, lo.Assign(tags, stats.Tags{
 		"status": "succeeded",
 	}))
-	m.stats.jobs.failed = statsFactory.NewTaggedStat("bqstream_v2_jobs", stats.CountType, lo.Assign(tags, stats.Tags{
+	m.stats.jobs.failed = statsFactory.NewTaggedStat("bqstream_all_events_jobs", stats.CountType, lo.Assign(tags, stats.Tags{
 		"status": "failed",
 	}))
-	m.stats.jobs.aborted = statsFactory.NewTaggedStat("bqstream_v2_jobs", stats.CountType, lo.Assign(tags, stats.Tags{
+	m.stats.jobs.aborted = statsFactory.NewTaggedStat("bqstream_all_events_jobs", stats.CountType, lo.Assign(tags, stats.Tags{
 		"status": "aborted",
 	}))
-	m.stats.discards = statsFactory.NewTaggedStat("bqstream_v2_discards", stats.CountType, tags)
-	m.stats.duplicateEventsInBatch = statsFactory.NewTaggedStat("bqstream_v2_duplicate_events", stats.CountType, lo.Assign(tags, stats.Tags{
+	m.stats.discards = statsFactory.NewTaggedStat("bqstream_all_events_discards", stats.CountType, tags)
+	m.stats.duplicateEventsInBatch = statsFactory.NewTaggedStat("bqstream_all_events_duplicate_events", stats.CountType, lo.Assign(tags, stats.Tags{
 		"reason": "batch",
 	}))
 
@@ -117,7 +117,7 @@ func newManager(
 			Identifier:  m.destination.WorkspaceID + ":" + m.destination.ID,
 		}
 
-		bigQueryManager, err := warehouseintegrationsmanager.New(whutils.BQStreamV2, m.appConfig, m.logger, m.statsFactory)
+		bigQueryManager, err := warehouseintegrationsmanager.New(whutils.BQStreamAllEvents, m.appConfig, m.logger, m.statsFactory)
 		if err != nil {
 			return nil, fmt.Errorf("creating bigquery manager: %w", err)
 		}
@@ -141,7 +141,7 @@ func (m *Manager) Transform(job *jobsdb.JobT) (string, error) {
 // rows table by table with bounded concurrency, classifying failures into
 // retryable vs aborted per table.
 func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationStruct) common.AsyncUploadOutput {
-	m.logger.Infon("Uploading data to BQStream V2 destination")
+	m.logger.Infon("Uploading data to BQStream All Events destination")
 
 	// Deliberately detached from the caller's context: an in-flight upload must
 	// run to completion so per-chunk success/failure accounting stays accurate
@@ -258,7 +258,7 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 
 	_ = tableErrgroup.Wait()
 
-	m.logger.Infon("Completed uploading data to BQStream V2 destination")
+	m.logger.Infon("Completed uploading data to BQStream All Events destination")
 
 	m.stats.jobs.succeeded.Count(len(succeeded))
 	m.stats.jobs.failed.Count(len(failed))

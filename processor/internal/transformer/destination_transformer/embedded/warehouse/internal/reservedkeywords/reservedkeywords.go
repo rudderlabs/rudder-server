@@ -26,9 +26,9 @@ func init() {
 	reservedTablesColumns = load(tablesColumnsFile, "tablescolumns.json")
 	reservedNamespaces = load(namespacesFile, "namespaces.json")
 
-	// BQStreamV2 has the same reserved keywords as BQ, so we can use the same map
-	reservedTablesColumns[whutils.BQStreamV2] = reservedTablesColumns[whutils.BQ]
-	reservedNamespaces[whutils.BQStreamV2] = reservedNamespaces[whutils.BQ]
+	// BQStreamAllEvents has the same reserved keywords as BQ, so we can use the same map
+	reservedTablesColumns[whutils.BQStreamAllEvents] = reservedTablesColumns[whutils.BQ]
+	reservedNamespaces[whutils.BQStreamAllEvents] = reservedNamespaces[whutils.BQ]
 
 	// SnowpipeStreaming has the same reserved keywords as SNOWFLAKE, so we can use the same map
 	reservedTablesColumns[whutils.SnowpipeStreaming] = reservedTablesColumns[whutils.SNOWFLAKE]
