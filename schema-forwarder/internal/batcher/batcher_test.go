@@ -84,16 +84,17 @@ func TestEventSchemaMessageBatcher(t *testing.T) {
 }
 
 type mockTransformer struct {
-	fail bool
-	msg  *proto.EventSchemaMessage
+	fail     bool
+	msg      *proto.EventSchemaMessage
+	sourceID string
 }
 
 func (*mockTransformer) Start() {}
 func (*mockTransformer) Stop()  {}
 
-func (mt *mockTransformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, error) {
+func (mt *mockTransformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, string, error) {
 	if mt.fail {
-		return nil, errors.New("failed")
+		return nil, "", errors.New("failed")
 	}
-	return mt.msg, nil
+	return mt.msg, mt.sourceID, nil
 }
