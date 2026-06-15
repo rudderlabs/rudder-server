@@ -68,3 +68,5 @@ var (
 	SkipViewsSetting                 DestinationConfigSetting = destConfSetting("skipViews")
 	ManualSyncSetting                DestinationConfigSetting = destConfSetting("manualSync")
 )
+
+var EnableHierarchicalNamespaceSetting DestinationConfigSetting = destConfSetting("enableHierarchicalNamespace")

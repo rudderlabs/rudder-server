@@ -54,31 +54,67 @@ type testCredentials struct {
 	BucketName    string `json:"bucketName"`
 }
 
-const testKey = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
+const (
+	testKey             = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
+	hierarchicalTestKey = "DATABRICKS_HIERARCHICAL_INTEGRATION_TEST_CREDENTIALS"
+)
 
-func deltaLakeTestCredentials() (*testCredentials, error) {
-	cred, exists := os.LookupEnv(testKey)
-	if !exists {
-		return nil, errors.New("deltaLake test credentials not found")
+var errDeltaLakeTestCredentialsNotFound = errors.New("deltaLake test credentials not found")
+
+func deltaLakeTestCredentials(keys ...string) (*testCredentials, string, error) {
+	if len(keys) == 0 {
+		keys = []string{testKey}
 	}
 
-	var credentials testCredentials
-	err := jsonrs.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal deltaLake test credentials: %w", err)
+	for _, key := range keys {
+		cred, exists := os.LookupEnv(key)
+		if !exists {
+			continue
+		}
+
+		var credentials testCredentials
+		err := jsonrs.Unmarshal([]byte(cred), &credentials)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to unmarshal deltaLake test credentials from %s: %w", key, err)
+		}
+		return &credentials, key, nil
 	}
-	return &credentials, nil
+	return nil, "", fmt.Errorf("%w: %s", errDeltaLakeTestCredentialsNotFound, strings.Join(keys, ", "))
+}
+
+func requireDeltaLakeTestCredentials(t testing.TB, key string) *testCredentials {
+	t.Helper()
+
+	credentials, _, err := deltaLakeTestCredentials(key)
+	if err == nil {
+		return credentials
+	}
+	if !errors.Is(err, errDeltaLakeTestCredentialsNotFound) {
+		t.Fatalf("failed to load %s: %v", key, err)
+	}
+	if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
+		t.Fatalf("%s environment variable not set", key)
+	}
+	t.Skipf("Skipping %s as %s is not set", t.Name(), key)
+	return nil
 }
 
 func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
-	if _, exists := os.LookupEnv(testKey); !exists {
-		if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
-			t.Fatalf("%s environment variable not set", testKey)
+	credentials, credentialsKey, err := deltaLakeTestCredentials(testKey, hierarchicalTestKey)
+	if err != nil {
+		if !errors.Is(err, errDeltaLakeTestCredentialsNotFound) {
+			t.Fatal(err)
 		}
-		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
+		if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
+			t.Fatalf("%s or %s environment variable not set", testKey, hierarchicalTestKey)
+		}
+		t.Skipf("Skipping %s as %s and %s are not set", t.Name(), testKey, hierarchicalTestKey)
+	}
+	if credentialsKey != testKey {
+		credentials = nil
 	}
 
 	misc.Init()
@@ -86,9 +122,6 @@ func TestIntegration(t *testing.T) {
 	whutils.Init()
 
 	destType := whutils.DELTALAKE
-
-	credentials, err := deltaLakeTestCredentials()
-	require.NoError(t, err)
 
 	t.Run("Event flow", func(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
@@ -134,16 +167,19 @@ func TestIntegration(t *testing.T) {
 		userIDSQL := "SUBSTRING(user_id, 1, 16)"
 		uuidTSSQL := "DATE_FORMAT(uuid_ts, 'yyyy-MM-dd')"
 
-		testCases := []struct {
+		type eventFlowTestCase struct {
 			name                           string
 			warehouseEventsMap2            whth.EventsCountMap
 			useParquetLoadFiles            bool
 			configOverride                 map[string]any
-			additionalEnvs                 func(destinationID string) map[string]string
+			credentialsKey                 string
+			additionalEnvs                 func(destinationID string, credentials *testCredentials) map[string]string
 			eventFilePath1, eventFilePath2 string
 			useSameUserID                  bool
 			verifyRecords                  func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string)
-		}{
+		}
+
+		testCases := []eventFlowTestCase{
 			{
 				name:           "Merge Mode",
 				eventFilePath1: "../testdata/upload-job.events-1.json",
@@ -188,7 +224,7 @@ func TestIntegration(t *testing.T) {
 					"containerName":    "",
 					"bucketProvider":   "S3",
 				},
-				additionalEnvs: func(destinationID string) map[string]string {
+				additionalEnvs: func(destinationID string, credentials *testCredentials) map[string]string {
 					return map[string]string{
 						"RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID": credentials.AccessKeyID,
 						"RUDDER_AWS_S3_COPY_USER_ACCESS_KEY":    credentials.AccessKey,
@@ -302,9 +338,30 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 		}
+		testCases = append(testCases, eventFlowTestCase{
+			name:           "Hierarchical Namespace Merge Mode",
+			eventFilePath1: "../testdata/upload-job.events-1.json",
+			eventFilePath2: "../testdata/upload-job.events-1.json",
+			useSameUserID:  true,
+			credentialsKey: hierarchicalTestKey,
+			configOverride: map[string]any{
+				"bucketProvider":              "AZURE_BLOB",
+				"useRudderStorage":            false,
+				"preferAppend":                false,
+				"enableHierarchicalNamespace": true,
+			},
+			verifyRecords: testCases[0].verifyRecords,
+		})
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
+				credentials := credentials
+				if tc.credentialsKey != "" {
+					credentials = requireDeltaLakeTestCredentials(t, tc.credentialsKey)
+				} else if credentials == nil {
+					credentials = requireDeltaLakeTestCredentials(t, testKey)
+				}
+
 				var (
 					sourceID      = whutils.RandHex()
 					destinationID = whutils.RandHex()
@@ -351,7 +408,7 @@ func TestIntegration(t *testing.T) {
 				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_SLOW_QUERY_THRESHOLD", "0s")
 				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES", strconv.FormatBool(tc.useParquetLoadFiles))
 				if tc.additionalEnvs != nil {
-					for envKey, envValue := range tc.additionalEnvs(destinationID) {
+					for envKey, envValue := range tc.additionalEnvs(destinationID, credentials) {
 						t.Setenv(envKey, envValue)
 					}
 				}
@@ -450,6 +507,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validation", func(t *testing.T) {
+		credentials := requireDeltaLakeTestCredentials(t, testKey)
 		namespace := whth.RandSchema(destType)
 
 		port, err := strconv.Atoi(credentials.Port)
@@ -540,6 +598,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Load Table", func(t *testing.T) {
+		credentials := requireDeltaLakeTestCredentials(t, testKey)
 		ctx := context.Background()
 		namespace := whth.RandSchema(destType)
 

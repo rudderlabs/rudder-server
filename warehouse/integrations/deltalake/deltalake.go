@@ -999,7 +999,11 @@ func (d *Deltalake) canUseAuth() bool {
 
 // getLoadFolder returns the load folder for the warehouse load files
 func (d *Deltalake) getLoadFolder(location string) string {
-	loadFolder := warehouseutils.GetObjectFolderForDeltalake(d.ObjectStorage, location)
+	loadFolder := warehouseutils.GetObjectFolderForDeltalake(
+		d.ObjectStorage,
+		location,
+		d.Warehouse.GetBoolDestinationConfig(model.EnableHierarchicalNamespaceSetting),
+	)
 
 	if d.ObjectStorage == warehouseutils.S3 && d.hasAWSCredentials() {
 		loadFolder = strings.Replace(loadFolder, "s3://", "s3a://", 1)

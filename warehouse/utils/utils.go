@@ -294,7 +294,8 @@ func GetObjectFolder(provider, location string) (folder string) {
 // eg. For provider as S3: https://<bucket-name>.s3.amazonaws.com/<directory-name> --> s3://<bucket-name>/<directory-name>
 // eg. For provider as GCS: https://storage.cloud.google.com/<bucket-name>/<directory-name> --> gs://<bucket-name>/<directory-name>
 // eg. For provider as AZURE_BLOB: https://<storage-account-name>.blob.core.windows.net/<container-name>/<directory-name> --> wasbs://<container-name>@<storage-account-name>.blob.core.windows.net/<directory-name>
-func GetObjectFolderForDeltalake(provider, location string) (folder string) {
+// eg. For provider as AZURE_BLOB with hierarchical namespace: https://<storage-account-name>.blob.core.windows.net/<container-name>/<directory-name> --> abfss://<container-name>@<storage-account-name>.dfs.core.windows.net/<directory-name>
+func GetObjectFolderForDeltalake(provider, location string, enableHierarchicalNamespace bool) (folder string) {
 	switch provider {
 	case S3:
 		folder = GetS3LocationFolder(location)
@@ -305,6 +306,9 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 		blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
 		accountName := strings.Replace(blobUrlParts.Host, ".blob.core.windows.net", "", 1)
 		blobLocation := fmt.Sprintf("wasbs://%s@%s.blob.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
+		if enableHierarchicalNamespace {
+			blobLocation = fmt.Sprintf("abfss://%s@%s.dfs.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
+		}
 		folder = GetLocationFolder(blobLocation)
 	}
 	return folder
