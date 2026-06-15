@@ -98,6 +98,21 @@ func (mr *MockJobsDBMockRecorder) GetAborted(ctx, params any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAborted", reflect.TypeOf((*MockJobsDB)(nil).GetAborted), ctx, params)
 }
 
+// GetDistinctConsumers mocks base method.
+func (m *MockJobsDB) GetDistinctConsumers(ctx context.Context) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetDistinctConsumers", ctx)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetDistinctConsumers indicates an expected call of GetDistinctConsumers.
+func (mr *MockJobsDBMockRecorder) GetDistinctConsumers(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDistinctConsumers", reflect.TypeOf((*MockJobsDB)(nil).GetDistinctConsumers), ctx)
+}
+
 // GetDistinctParameterValues mocks base method.
 func (m *MockJobsDB) GetDistinctParameterValues(ctx context.Context, parameter jobsdb.ParameterName, customValFilter string) ([]string, error) {
 	m.ctrl.T.Helper()
