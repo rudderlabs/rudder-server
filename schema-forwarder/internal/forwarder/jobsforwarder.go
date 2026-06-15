@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,11 +39,13 @@ type JobsForwarder struct {
 	pulsarClient   *pulsar.Client          // pulsar client used to create producers
 	pulsarProducer pulsar.ProducerAdapter  // pulsar producer used to forward jobs to pulsar
 
-	topic                string                            // topic to which jobs are forwarded
-	maxSampleSize        config.ValueLoader[int64]         // max payload size for the samples to include in the schema messages
-	initialRetryInterval config.ValueLoader[time.Duration] // initial retry interval for the backoff mechanism
-	maxRetryInterval     config.ValueLoader[time.Duration] // max retry interval for the backoff mechanism
-	maxRetryElapsedTime  config.ValueLoader[time.Duration] // max retry elapsed time for the backoff mechanism
+	topic                string                              // topic to which jobs are forwarded
+	maxSampleSize        config.ValueLoader[int64]           // max payload size for the samples to include in the schema messages
+	initialRetryInterval config.ValueLoader[time.Duration]   // initial retry interval for the backoff mechanism
+	maxRetryInterval     config.ValueLoader[time.Duration]   // max retry interval for the backoff mechanism
+	maxRetryElapsedTime  config.ValueLoader[time.Duration]   // max retry elapsed time for the backoff mechanism
+	conf                 *config.Config                      // config used to resolve hierarchical settings at runtime
+	fullOrderKeyCache    map[string]*config.Reloadable[bool] // sourceID -> reloadable "full order key" setting, resolved hierarchically; only accessed by the single forwarder goroutine
 }
 
 // NewJobsForwarder returns a new, properly initialized, JobsForwarder
@@ -50,6 +53,7 @@ func NewJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client 
 	var forwarder JobsForwarder
 	forwarder.LoadMetaData(terminalErrFn, schemaDB, log, config, stat)
 
+	forwarder.conf = config
 	forwarder.transformer = transformer.New(backendConfig, config)
 	forwarder.sampler = newSampler[string](config.GetDurationVar(10, time.Minute, "SchemaForwarder.samplingPeriod"), config.GetIntVar(10000, 1, "SchemaForwarder.sampleCacheSize"))
 	forwarder.pulsarClient = client
@@ -65,6 +69,7 @@ func (jf *JobsForwarder) setupReloadableVars() {
 	jf.maxRetryInterval = config.GetReloadableDurationVar(60, time.Second, "SchemaForwarder.maxRetryInterval")
 	jf.maxRetryElapsedTime = config.GetReloadableDurationVar(60, time.Minute, "SchemaForwarder.maxRetryElapsedTime")
 	jf.maxSampleSize = config.GetReloadableInt64Var(10*bytesize.KB, 1, "SchemaForwarder.maxSampleSize")
+	jf.fullOrderKeyCache = make(map[string]*config.Reloadable[bool])
 }
 
 // Start starts the forwarder which will start forwarding jobs from database to the appropriate pulsar topics
@@ -142,7 +147,7 @@ func (jf *JobsForwarder) Start() error {
 					toForward := append([]*batcher.EventSchemaMessageBatch{}, messageBatches...)
 					for _, batch := range toForward {
 						msg := batch.Message
-						orderKey := msg.Key.WriteKey
+						orderKey := jf.orderKey(batch)
 						jf.pulsarProducer.SendMessageAsync(ctx, orderKey, orderKey, msg.MustMarshal(),
 							func(_ pulsarType.MessageID, _ *pulsarType.ProducerMessage, err error) {
 								if err == nil { // mark job as succeeded and remove from toRetry
@@ -241,4 +246,38 @@ func (jf *JobsForwarder) Stop() {
 	_ = jf.g.Wait()
 	jf.transformer.Stop()
 	jf.pulsarProducer.Close()
+}
+
+// orderKey builds the pulsar ordering/partition key for a batch.
+//
+// By default the key is the source's write key, which guarantees ordering and
+// co-location of all events belonging to the same source. When the full order
+// key is enabled (hierarchically, per source or globally) the event type and
+// event identifier are appended to the key, trading a coarser ordering
+// guarantee for finer-grained partitioning and higher downstream parallelism.
+func (jf *JobsForwarder) orderKey(batch *batcher.EventSchemaMessageBatch) string {
+	msg := batch.Message
+	if !jf.fullOrderKey(batch.SourceID).Load() {
+		return msg.Key.WriteKey
+	}
+	return strings.Join([]string{msg.Key.WriteKey, msg.Key.EventType, msg.Key.EventIdentifier}, ":")
+}
+
+// fullOrderKey returns the reloadable setting controlling whether the event type
+// and identifier should be included in the ordering key for the given source.
+// The setting is resolved hierarchically, the first key that is set wins, and
+// the resulting reloadable is cached per source id:
+//
+//	SchemaForwarder.<source-id>.fullOrderKey
+//	SchemaForwarder.fullOrderKey
+func (jf *JobsForwarder) fullOrderKey(sourceID string) *config.Reloadable[bool] {
+	if setting, ok := jf.fullOrderKeyCache[sourceID]; ok {
+		return setting
+	}
+	setting := jf.conf.GetReloadableBoolVar(false,
+		"SchemaForwarder."+sourceID+".fullOrderKey",
+		"SchemaForwarder.fullOrderKey",
+	)
+	jf.fullOrderKeyCache[sourceID] = setting
+	return setting
 }

@@ -72,8 +72,9 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 		require.Equal(t, schemaTransformer.getSchemaKeyFromJob(testdata.TrackEvent, testdata.WriteKeyEnabled), &testdata.TestEventSchemaKey)
 	})
 
-	t.Run("Test getWriteKeyFromParams", func(t *testing.T) {
-		require.Equal(t, schemaTransformer.getWriteKeyFromParams(testdata.TestParams), testdata.WriteKeyEnabled)
+	t.Run("Test writeKeyForSourceID", func(t *testing.T) {
+		require.Equal(t, schemaTransformer.writeKeyForSourceID(testdata.SourceIDEnabled), testdata.WriteKeyEnabled)
+		require.Empty(t, schemaTransformer.writeKeyForSourceID(""))
 	})
 
 	t.Run("Test getSchemaMessage", func(t *testing.T) {
@@ -87,8 +88,9 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 
 	t.Run("Test Transform", func(t *testing.T) {
 		timeNow := time.Now()
-		eventSchemaMessage, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
+		eventSchemaMessage, sourceID, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
 		require.Nil(t, err)
+		require.Equal(t, testdata.SourceIDEnabled, sourceID)
 		testSchemaMessage := generateTestEventSchemaMessage(timeNow)
 		require.Nil(t, err)
 		require.Equal(t, eventSchemaMessage.Schema, testSchemaMessage.Schema)
@@ -102,7 +104,7 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 		event1 := generateTestJob(t, time.Now())
 		event1.EventPayload = fmt.Appendf(nil, `{"type": "track", "event": %q}`, rand.String(schemaTransformer.identifierLimit+1))
 
-		e, err := schemaTransformer.Transform(event1)
+		e, _, err := schemaTransformer.Transform(event1)
 		require.Nil(t, e)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "event identifier size is greater than")
@@ -117,7 +119,7 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 		event2.EventPayload, err = jsonrs.Marshal(payload)
 		require.NoError(t, err)
 
-		e, err = schemaTransformer.Transform(event2)
+		e, _, err = schemaTransformer.Transform(event2)
 		require.Nil(t, e)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "event schema has more than")
@@ -143,7 +145,7 @@ func Test_SchemaTransformer_Interface(t *testing.T) {
 	<-closeChan
 	t.Run("Test Transform", func(t *testing.T) {
 		timeNow := time.Now()
-		eventSchemaMessage, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
+		eventSchemaMessage, _, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
 		require.Nil(t, err)
 		testSchemaMessage := generateTestEventSchemaMessage(timeNow)
 		require.Nil(t, err)
