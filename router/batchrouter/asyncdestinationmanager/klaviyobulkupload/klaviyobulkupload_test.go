@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"go.uber.org/mock/gomock"
 
@@ -100,7 +101,7 @@ func TestUpload(t *testing.T) {
 		}
 
 		output := uploader.Upload(context.Background(), asyncDestStruct)
-		assert.Equal(t, common.AsyncUploadOutput{
+		require.Equal(t, common.AsyncUploadOutput{
 			ImportingJobIDs:     []int64{1},
 			ImportingParameters: output.ImportingParameters,
 			FailedJobIDs:        nil,
@@ -111,10 +112,10 @@ func TestUpload(t *testing.T) {
 			AbortCount:          0,
 			SucceededJobIDs:     nil,
 			SuccessResponse:     "",
-			ImportingCount:      0,
+			ImportingCount:      1,
 			DestinationID:       destination.ID,
 		}, output)
-		assert.Equal(t, `{"importId":"importId1","importCount":0}`, string(output.ImportingParameters))
+		require.Equal(t, `{"importId":"importId1","importCount":0}`, string(output.ImportingParameters))
 	})
 
 	t.Run("Unsuccessful Upload", func(t *testing.T) {
@@ -131,7 +132,7 @@ func TestUpload(t *testing.T) {
 		}
 
 		output := uploader.Upload(context.Background(), asyncDestStruct)
-		assert.Equal(t, common.AsyncUploadOutput{
+		require.Equal(t, common.AsyncUploadOutput{
 			ImportingJobIDs:     []int64{},
 			ImportingParameters: output.ImportingParameters,
 			FailedJobIDs:        []int64{1},
@@ -226,21 +227,21 @@ func TestUpload(t *testing.T) {
 			ImportingJobIDs: []int64{1, 2, 3, 4, 5, 6},
 		})
 
-		assert.Equal(t, common.AsyncUploadOutput{
+		require.Equal(t, common.AsyncUploadOutput{
 			FailedJobIDs:        []int64{1, 2},                                                                                                                       // chunk 1: 429, retryable
-			FailedCount:         2,                                                                                                                                   // matches FailedJobIDs
+			FailedCount:         2,                                                                                                                                    // matches FailedJobIDs
 			AbortJobIDs:         []int64{3, 4},                                                                                                                       // chunk 2: 400, non-retryable
-			AbortReason:         "upload rejected by Klaviyo with status 400: {ID=, Code=, Title=, Detail=invalid payload structure, Source={Pointer=, Parameter=}}", // exact reason
+			AbortReason:         "upload rejected by Klaviyo with status 400: {ID=, Code=, Title=, Detail=invalid payload structure, Source={Pointer=, Parameter=}}",  // exact reason
+			AbortCount:          2,                                                                                                                                    // matches AbortJobIDs
 			ImportingJobIDs:     []int64{5, 6},                                                                                                                       // chunk 3: success
-			ImportingParameters: output.ImportingParameters,                                                                                                          // validated below
-			AbortCount:          0,
+			ImportingParameters: output.ImportingParameters,                                                                                                           // validated below
+			ImportingCount:      2,                                                                                                                                    // matches ImportingJobIDs
 			SucceededJobIDs:     nil,
 			SuccessResponse:     "",
 			FailedReason:        "upload failed with status 429: {ID=, Code=, Title=, Detail=rate limit exceeded, Source={Pointer=, Parameter=}}",
-			ImportingCount:      0,
 			DestinationID:       destination.ID,
 		}, output)
-		assert.Equal(t, `{"importId":"importId3","importCount":0}`, string(output.ImportingParameters))
+		require.Equal(t, `{"importId":"importId3","importCount":0}`, string(output.ImportingParameters))
 	})
 }
 

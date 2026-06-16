@@ -361,7 +361,9 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 		FailedCount:         len(failedJobs),
 		AbortJobIDs:         abortedJobs,
 		AbortReason:         abortReason,
+		AbortCount:          len(abortedJobs),
 		ImportingJobIDs:     successJobs,
+		ImportingCount:      len(successJobs),
 		DestinationID:       destination.ID,
 	}
 }
