@@ -89,7 +89,6 @@ type Api struct {
 		webPort                  int
 		mode                     string
 		internalEndpointsEnabled bool
-		legacyEndpointsEnabled   bool
 	}
 }
 
@@ -128,7 +127,6 @@ func NewApi(
 	a.config.runningMode = conf.GetStringVar("", "Warehouse.runningMode")
 	a.config.webPort = conf.GetIntVar(8082, 1, "Warehouse.webPort")
 	a.config.internalEndpointsEnabled = conf.GetBoolVar(enterprise, "Warehouse.internalEndpointsEnabled")
-	a.config.legacyEndpointsEnabled = conf.GetBoolVar(true, "Warehouse.legacyEndpointsEnabled") // TODO: remove legacy endpoints after next release
 	return a
 }
 
@@ -201,17 +199,6 @@ func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
 				})
 			})
 		})
-		if a.config.legacyEndpointsEnabled {
-			r.Route("/v1", func(r chi.Router) {
-				r.Route("/warehouse", func(r chi.Router) {
-					r.Post("/pending-events", a.logMiddleware(a.pendingEventsHandler))
-					r.Post("/trigger-upload", a.logMiddleware(a.triggerUploadHandler))
-
-					r.Post("/jobs", a.logMiddleware(a.sourceManager.InsertJobHandler))       // TODO: add degraded mode
-					r.Get("/jobs/status", a.logMiddleware(a.sourceManager.StatusJobHandler)) // TODO: add degraded mode
-				})
-			})
-		}
 	}
 }
 

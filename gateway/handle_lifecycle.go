@@ -127,7 +127,6 @@ func (gw *Handle) Setup(
 	gw.conf.maxConcurrentRequests = config.GetIntVar(50000, 1, "Gateway.maxConcurrentRequests")
 	// enable webhook v2 handler. disabled by default
 	gw.conf.webhookV2HandlerEnabled = config.GetBoolVar(false, "Gateway.webhookV2HandlerEnabled")
-	gw.conf.legacyWarehouseEndpointsEnabled = config.GetBoolVar(true, "Gateway.legacyWarehouseEndpointsEnabled") // TODO: remove legacy endpoints after next release
 
 	// Registering stats
 	gw.batchSizeStat = gw.stats.NewStat("gateway.batch_size", stats.HistogramType)
@@ -626,15 +625,6 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 		r.Post("/webhook", gw.webhookHandler())
 
 		r.Get("/webhook", gw.webhookHandler())
-
-		if gw.conf.internalEndpointsEnabled && gw.conf.legacyWarehouseEndpointsEnabled {
-			r.Route("/warehouse", func(r chi.Router) {
-				r.Post("/pending-events", gw.whProxy.ServeHTTP)
-				r.Post("/trigger-upload", gw.whProxy.ServeHTTP)
-				r.Post("/jobs", gw.whProxy.ServeHTTP)
-				r.Get("/jobs/status", gw.whProxy.ServeHTTP)
-			})
-		}
 	})
 
 	srvMux.Get("/health", withContentType("application/json; charset=utf-8", app.LivenessHandler(gw.jobsDB)))
