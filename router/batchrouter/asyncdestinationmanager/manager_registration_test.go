@@ -13,12 +13,12 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func TestBigQueryStreamingIsRegistered(t *testing.T) {
+func TestBQStreamAllEventsIsRegistered(t *testing.T) {
 	t.Parallel()
-	require.True(t, common.IsAsyncRegularDestination("BQSTREAM_V2"))
+	require.True(t, common.IsAsyncRegularDestination("BQSTREAM_ALL_EVENTS"))
 
 	destination := &backendconfig.DestinationT{
-		DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "BQSTREAM_V2"},
+		DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "BQSTREAM_ALL_EVENTS"},
 	}
 	m, err := NewManager(config.Default, logger.NOP, stats.NOP, destination, nil)
 	require.NoError(t, err)

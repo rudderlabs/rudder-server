@@ -1,4 +1,4 @@
-package bqstreamv2
+package bqstreamallevents
 
 import (
 	"github.com/mitchellh/mapstructure"
@@ -12,8 +12,8 @@ func (d *destConfig) Decode(m map[string]any) error {
 		return err
 	}
 	d.Namespace = whutils.ToProviderCase(
-		whutils.BQStreamV2,
-		whutils.ToSafeNamespace(whutils.BQStreamV2, d.Namespace),
+		whutils.BQStreamAllEvents,
+		whutils.ToSafeNamespace(whutils.BQStreamAllEvents, d.Namespace),
 	)
 	return nil
 }
