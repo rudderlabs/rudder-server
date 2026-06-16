@@ -3,6 +3,7 @@ package salesforcebulkupload
 import (
 	"bufio"
 	"context"
+	stdjson "encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -63,12 +64,11 @@ func NewUploader(
 	destination *backendconfig.DestinationT,
 ) *Uploader {
 	u := &Uploader{
-		logger:            logger,
-		apiService:        apiService,
-		externalIDToJobID: make(map[string][]int64),
-		destination:       destination,
-		statsFactory:      statsFactory,
-		destName:          destName,
+		logger:       logger,
+		apiService:   apiService,
+		destination:  destination,
+		statsFactory: statsFactory,
+		destName:     destName,
 	}
 	statTags := stats.Tags{
 		"module":        "batch_router",
@@ -213,7 +213,7 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 		return job.Metadata.JobID
 	})
 
-	csvFilePath, externalIDToJobID, fileSize, err := createCSVFile(
+	csvFilePath, fileSize, err := createCSVFile(
 		destinationID,
 		objectInfo.ExternalIDField,
 		validJobs,
@@ -227,16 +227,18 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 		s.logger.Errorn("Error creating CSV", obskit.Error(err))
 		return s.failedJobs(asyncDestStruct, fmt.Sprintf("creating CSV: %v", err))
 	}
-	s.externalIDToJobID = externalIDToJobID
 
-	// The source is expected to send unique externalIds per batch. Fewer keys
-	// than valid jobs means duplicates collided onto the same key, which makes
-	// per-job status attribution ambiguous after polling.
-	if len(externalIDToJobID) < len(validJobs) {
-		s.logger.Warnn("Duplicate externalId values detected in batch; per-job status attribution may be ambiguous",
-			logger.NewIntField("uniqueExternalIds", int64(len(externalIDToJobID))),
-			logger.NewIntField("jobs", int64(len(validJobs))),
-		)
+	// Persist each job's externalId in its importing status params, so the
+	// correlation can be rebuilt from the DB at poll time (restart-safe, no
+	// in-memory state, no payload reads).
+	jobImportingParameters := make(map[int64]stdjson.RawMessage, len(validJobs))
+	for _, job := range validJobs {
+		md, err := jsonrs.Marshal(importingMetadata{ExternalIDHash: hashExternalID(job.Metadata.ExternalID[0].ID)})
+		if err != nil {
+			s.logger.Errorn("marshalling importing metadata", logger.NewIntField("jobID", job.Metadata.JobID), obskit.Error(err))
+			continue
+		}
+		jobImportingParameters[job.Metadata.JobID] = md
 	}
 
 	// Track the size of the CSV we send to Salesforce and how many events it packs.
@@ -290,10 +292,11 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 		s.logger.Errorn("marshalling parameters", obskit.Error(err))
 	}
 	output := common.AsyncUploadOutput{
-		ImportingJobIDs:     validJobIDs,
-		ImportingParameters: importParameters,
-		ImportingCount:      len(validJobIDs),
-		DestinationID:       destinationID,
+		ImportingJobIDs:        validJobIDs,
+		ImportingParameters:    importParameters,
+		ImportingCount:         len(validJobIDs),
+		JobImportingParameters: jobImportingParameters,
+		DestinationID:          destinationID,
 	}
 	if len(abortedJobIDs) > 0 {
 		output.AbortJobIDs = abortedJobIDs
@@ -321,14 +324,10 @@ func (s *Uploader) Poll(_ context.Context, pollInput common.AsyncPoll) common.Po
 
 	switch jobStatus.State {
 	case "JobComplete":
-		hasFailed := jobStatus.NumberRecordsFailed > 0
-		if !hasFailed {
-			s.clearExternalIDToJobID()
-		}
 		return common.PollStatusResponse{
 			StatusCode: http.StatusOK,
 			Complete:   true,
-			HasFailed:  hasFailed,
+			HasFailed:  jobStatus.NumberRecordsFailed > 0,
 			InProgress: false,
 		}
 	case "InProgress", "UploadComplete":
@@ -354,9 +353,6 @@ func (s *Uploader) Poll(_ context.Context, pollInput common.AsyncPoll) common.Po
 }
 
 func (s *Uploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUploadStatsResponse {
-	defer func() {
-		s.clearExternalIDToJobID()
-	}()
 	var saleforceJobInfo SalesforceJobInfo
 	importId := gjson.GetBytes(input.Parameters, "importId").String()
 	err := jsonrs.Unmarshal([]byte(importId), &saleforceJobInfo)
@@ -431,9 +427,23 @@ func (s *Uploader) matchRecordsToJobs(
 		AbortedReasons: make(map[int64]string),
 	}
 
+	// Rebuild externalIdHash -> jobIDs from the per-job metadata persisted on the
+	// importing job statuses. This is durable across restarts and needs no
+	// in-memory state or job payloads. We key on the hash because the raw
+	// externalId (often PII) is never stored; the Salesforce-returned externalId
+	// is re-hashed below to match.
+	externalIDHashToJobID := make(map[string][]int64)
+	for _, job := range importingList {
+		externalIDHash := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.externalIdHash").String()
+		if externalIDHash == "" {
+			continue
+		}
+		externalIDHashToJobID[externalIDHash] = append(externalIDHashToJobID[externalIDHash], job.JobID)
+	}
+
 	for _, failedRecord := range failedRecords {
-		key := failedRecord[externalIDField]
-		if jobIDs, exists := s.externalIDToJobID[key]; exists {
+		key := hashExternalID(failedRecord[externalIDField])
+		if jobIDs, exists := externalIDHashToJobID[key]; exists {
 			for _, jobID := range jobIDs {
 				metadata.AbortedKeys = append(metadata.AbortedKeys, jobID)
 				if errorMsg, ok := failedRecord["sf__Error"]; ok && errorMsg != "" {
@@ -446,50 +456,44 @@ func (s *Uploader) matchRecordsToJobs(
 	}
 
 	for _, successRecord := range successRecords {
-		key := successRecord[externalIDField]
-		if jobIDs, exists := s.externalIDToJobID[key]; exists {
+		key := hashExternalID(successRecord[externalIDField])
+		if jobIDs, exists := externalIDHashToJobID[key]; exists {
 			metadata.SucceededKeys = append(metadata.SucceededKeys, jobIDs...)
 		}
 	}
 
 	if len(metadata.SucceededKeys)+len(metadata.AbortedKeys) != len(importingList) {
-		s.logger.Errorn(
-			"Number of succeeded and aborted keys do not match the number of importing jobs",
-			logger.NewIntField("succeeded_keys", int64(len(metadata.SucceededKeys))),
-			logger.NewIntField("aborted_keys", int64(len(metadata.AbortedKeys))),
-			logger.NewIntField("importing_jobs", int64(len(importingList))),
-		)
-
 		importingJobIDs := lo.Map(importingList, func(job *jobsdb.JobT, _ int) int64 {
 			return job.JobID
 		})
 		matchedJobIDs := lo.Concat(metadata.SucceededKeys, metadata.AbortedKeys)
 		missingJobIDs, _ := lo.Difference(importingJobIDs, matchedJobIDs)
 
-		if len(s.externalIDToJobID) == 0 {
-			// No correlation data at all (e.g. the process restarted between
-			// Upload and GetUploadStats and lost the in-memory map). This is a
-			// systemic loss, not a per-record mismatch, so keep these jobs
-			// retryable rather than permanently dropping a batch that may have
-			// succeeded in Salesforce.
-			metadata.FailedKeys = missingJobIDs
-			metadata.FailedReasons = lo.SliceToMap(missingJobIDs, func(jobID int64) (int64, string) {
-				return jobID, emptyCorrelationMapReason
-			})
+		// Abort the unmatched jobs. Re-uploading would only re-upsert records
+		// already in Salesforce, so retrying is pointless here.
+		reason := resultCorrelationFailedReason
+		if len(externalIDHashToJobID) == 0 {
+			// We could not correlate ANY result back to a job — abnormal state
+			// (pre-change in-flight jobs or a metadata-persistence bug). Log
+			// loudly so it can be alerted on.
+			s.logger.Errorn(
+				"No externalId correlation metadata found on importing jobs; aborting batch (records may already be in Salesforce)",
+				logger.NewIntField("importing_jobs", int64(len(importingList))),
+				logger.NewIntField("aborted", int64(len(missingJobIDs))),
+			)
+			reason = noCorrelationMetadataReason
 		} else {
-			// The map was populated but these records could not be matched back
-			// to a job, most likely because Salesforce reformatted the
-			// externalId value on store. Retrying would re-upload the same value
-			// and miss again, so abort instead of looping through retries.
-			metadata.AbortedKeys = append(metadata.AbortedKeys, missingJobIDs...)
-			for _, jobID := range missingJobIDs {
-				metadata.AbortedReasons[jobID] = resultCorrelationFailedReason
-			}
+			s.logger.Errorn(
+				"Some Salesforce results could not be correlated back to jobs; aborting them",
+				logger.NewIntField("succeeded_keys", int64(len(metadata.SucceededKeys))),
+				logger.NewIntField("aborted_keys", int64(len(metadata.AbortedKeys))),
+				logger.NewIntField("importing_jobs", int64(len(importingList))),
+			)
+		}
+		metadata.AbortedKeys = append(metadata.AbortedKeys, missingJobIDs...)
+		for _, jobID := range missingJobIDs {
+			metadata.AbortedReasons[jobID] = reason
 		}
 	}
 	return metadata
-}
-
-func (s *Uploader) clearExternalIDToJobID() {
-	s.externalIDToJobID = make(map[string][]int64)
 }

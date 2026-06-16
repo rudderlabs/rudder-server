@@ -24,7 +24,6 @@ type Uploader struct {
 	logger              logger.Logger
 	statsFactory        stats.Stats
 	apiService          APIServiceInterface
-	externalIDToJobID   map[string][]int64
 	destination         *backendconfig.DestinationT
 	payloadSizeStat     stats.Histogram
 	eventsPerFileStat   stats.Histogram
@@ -108,15 +107,27 @@ type SalesforceAsyncJob struct {
 	Metadata SalesforceJobMetadata `json:"metadata"`
 }
 
+// importingMetadata is the per-job metadata persisted on the importing job
+// status params (JobImportingParameters). It lets us rebuild the externalId →
+// jobID correlation at poll time from the DB, without any in-memory state or
+// reading the job payload. We store the SHA-256 hash (not the raw externalId)
+// because the externalId is often PII (e.g. an email); correlation re-hashes the
+// Salesforce-returned externalId to match.
+type importingMetadata struct {
+	ExternalIDHash string `json:"externalIdHash"`
+}
+
 const (
 	destName = "SALESFORCE_BULK_UPLOAD"
 
 	// missingExternalIDReason is the abort reason for individual events that
 	// carry no externalId value (no upsert key).
 	missingExternalIDReason = "externalId is missing for the event; cannot upsert to Salesforce"
-	// emptyCorrelationMapReason keeps jobs retryable when the in-memory map is
-	// gone (e.g. a process restart between Upload and GetUploadStats).
-	emptyCorrelationMapReason = "correlation map is empty (likely a restart between upload and stats); retrying"
+	// noCorrelationMetadataReason aborts jobs when no externalId metadata is
+	// present on the importing job statuses, so none of the Salesforce results
+	// can be correlated back (e.g. pre-change in-flight jobs, or a bug). This is
+	// logged at error level so it can be alerted on.
+	noCorrelationMetadataReason = "no externalId correlation metadata found on the importing job; cannot correlate Salesforce result"
 	// resultCorrelationFailedReason aborts jobs whose externalId did not come
 	// back in the Salesforce success/failed records (e.g. reformatted on store).
 	resultCorrelationFailedReason = "could not correlate Salesforce result back to the job: externalId not found in success/failed records (possibly reformatted by Salesforce on store)"

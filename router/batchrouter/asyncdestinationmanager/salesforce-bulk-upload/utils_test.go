@@ -132,7 +132,7 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			csvFilePath, externalIDToJobID, fileSize, err := createCSVFile(
+			csvFilePath, fileSize, err := createCSVFile(
 				"test-dest-123",
 				"Email",
 				tc.jobs,
@@ -153,8 +153,6 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 			t.Cleanup(func() {
 				require.NoError(t, os.Remove(csvFilePath))
 			})
-
-			require.Len(t, externalIDToJobID, tc.expectedInserted)
 		})
 	}
 }
@@ -172,7 +170,7 @@ func TestSalesforceBulk_createCSVFile_NumericNoScientificNotation(t *testing.T) 
 		},
 	}
 
-	csvFilePath, _, _, err := createCSVFile("test-dest-numeric", "Email", jobs)
+	csvFilePath, _, err := createCSVFile("test-dest-numeric", "Email", jobs)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.Remove(csvFilePath) })
 
@@ -209,7 +207,7 @@ func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
 		},
 	}
 
-	csvFilePath, _, _, err := createCSVFile("test-dest-null", "Email", jobs)
+	csvFilePath, _, err := createCSVFile("test-dest-null", "Email", jobs)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.Remove(csvFilePath) })
 
@@ -242,7 +240,7 @@ func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 			},
 		}
 
-		csvFilePath, externalIDToJobID, _, err := createCSVFile(
+		csvFilePath, _, err := createCSVFile(
 			"test-dest",
 			"Email",
 			jobs,
@@ -250,8 +248,6 @@ func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 
 		require.NoError(t, err)
 		defer os.Remove(csvFilePath)
-
-		require.Len(t, externalIDToJobID, 3)
 
 		file, err := os.Open(csvFilePath)
 		require.NoError(t, err)

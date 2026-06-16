@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -745,6 +746,29 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 				DestinationID: params.AsyncOutput.DestinationID,
 				SourceID:      gjson.GetBytes(jobParameters, "source_id").String(),
 			}
+			// Persist per-job metadata (e.g. the externalId) in the stored status
+			// Parameters, so it can be read back at poll time without loading the
+			// job payload or relying on any in-memory state. Example shape:
+			// {
+			//   "importId": {"id": "750Ie000003ZFLSIA4", "externalIdField": "Email"},
+			//   "importCount": 3,
+			//   "metadata": {"externalIdHash": "<sha256 hex of the externalId>"}
+			// }
+			statusParameters := params.AsyncOutput.ImportingParameters
+			if jobImportingParameters, ok := params.AsyncOutput.JobImportingParameters[jobId]; ok {
+				// copy the shared ImportingParameters before mutating, so each job's
+				// metadata does not leak into the others
+				base := append([]byte(nil), params.AsyncOutput.ImportingParameters...)
+				if merged, setErr := sjson.SetBytes(base, "metadata", jobImportingParameters); setErr != nil {
+					brt.logger.Errorn("[Batch Router] Failed to persist per-job importing metadata on status params",
+						obskit.DestinationType(brt.destType),
+						logger.NewIntField("jobId", jobId),
+						obskit.Error(setErr),
+					)
+				} else {
+					statusParameters = merged
+				}
+			}
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
 				JobState:      jobsdb.Importing.State,
@@ -753,7 +777,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 				RetryTime:     time.Now(),
 				ErrorCode:     "200",
 				ErrorResponse: routerutils.EnhanceJsonWithTime(params.FirstAttemptedAts[jobId], "firstAttemptedAt", routerutils.EmptyPayload),
-				Parameters:    params.AsyncOutput.ImportingParameters,
+				Parameters:    statusParameters,
 				JobParameters: jobParameters,
 				WorkspaceId:   workspaceID,
 				PartitionID:   params.PartitionIDs[jobId],

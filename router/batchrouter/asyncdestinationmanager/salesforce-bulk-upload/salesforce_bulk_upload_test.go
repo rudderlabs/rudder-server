@@ -2,6 +2,8 @@ package salesforcebulkupload_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"testing"
@@ -22,6 +24,13 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	salesforcebulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/salesforce-bulk-upload"
 )
+
+// extIDHash mirrors the connector's externalId hashing so tests can assert the
+// hashed value persisted in the importing job status params.
+func extIDHash(externalID string) string {
+	sum := sha256.Sum256([]byte(externalID))
+	return hex.EncodeToString(sum[:])
+}
 
 func TestSalesforceBulk_Transform(t *testing.T) {
 	testCases := []struct {
@@ -186,6 +195,9 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.Equal(t, 2, result.ImportingCount)
 		require.Equal(t, 0, result.FailedCount)
 		require.JSONEq(t, `{"importId":{"id":"sf-job-123","externalIdField":"Email"}, "importCount":2}`, string(result.ImportingParameters))
+		require.Len(t, result.JobImportingParameters, 2)
+		require.JSONEq(t, `{"externalIdHash":"`+extIDHash("test1@example.com")+`"}`, string(result.JobImportingParameters[1]))
+		require.JSONEq(t, `{"externalIdHash":"`+extIDHash("test2@example.com")+`"}`, string(result.JobImportingParameters[2]))
 	})
 
 	t.Run("emits payload_size, events_per_file and async_upload_time metrics", func(t *testing.T) {
@@ -438,57 +450,26 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 }
 
 func TestSalesforceBulk_GetUploadStats(t *testing.T) {
-	// uploadTwoJobs uploads two jobs (job_id 1 -> test1@, job_id 2 -> test2@,
-	// externalId field "Email") so the uploader's in-memory correlation map is
-	// populated, then returns the uploader ready for GetUploadStats.
-	uploadTwoJobs := func(t *testing.T, mockAPI *salesforcebulkupload_mocks.MockAPIServiceInterface) *salesforcebulkupload.Uploader {
-		t.Helper()
-		tempFile, err := os.CreateTemp("", "test_upload_*.json")
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = os.Remove(tempFile.Name()) })
-		jobs := []common.AsyncJob{
-			{
-				Message: map[string]any{"Email": "test1@example.com", "FirstName": "John"},
-				Metadata: map[string]any{
-					"job_id":     float64(1),
-					"externalId": []any{map[string]any{"id": "test1@example.com", "identifierType": "Email", "type": "SALESFORCE_BULK_UPLOAD-Lead"}},
-				},
-			},
-			{
-				Message: map[string]any{"Email": "test2@example.com", "FirstName": "Jane"},
-				Metadata: map[string]any{
-					"job_id":     float64(2),
-					"externalId": []any{map[string]any{"id": "test2@example.com", "identifierType": "Email", "type": "SALESFORCE_BULK_UPLOAD-Lead"}},
-				},
+	// importingJob builds an importing job whose status params carry the per-job
+	// externalId metadata, exactly as handle_async persists it during upload.
+	// The stored value is the SHA-256 hash of the externalId, not the raw value.
+	importingJob := func(jobID int64, externalID string) *jobsdb.JobT {
+		return &jobsdb.JobT{
+			JobID: jobID,
+			LastJobStatus: jobsdb.JobStatusT{
+				Parameters: []byte(`{"metadata":{"externalIdHash":"` + extIDHash(externalID) + `"}}`),
 			},
 		}
-		for _, job := range jobs {
-			jobBytes, _ := jsonrs.Marshal(job)
-			_, err := tempFile.Write(append(jobBytes, '\n'))
-			require.NoError(t, err)
-		}
-		require.NoError(t, tempFile.Close())
-
-		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("sf-job-123", nil)
-		mockAPI.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
-		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
-
-		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
-		out := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
-			Destination:     &backendconfig.DestinationT{ID: "test-dest"},
-			FileName:        tempFile.Name(),
-			ImportingJobIDs: []int64{1, 2},
-		})
-		require.Equal(t, 0, out.FailedCount)
-		return uploader
+	}
+	newUploader := func(mockAPI *salesforcebulkupload_mocks.MockAPIServiceInterface) *salesforcebulkupload.Uploader {
+		return salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
 	}
 
 	importIDParams := json.RawMessage(`{"importId":"{\"id\":\"sf-job-123\",\"externalIdField\":\"Email\"}","metadata":{"csvHeader":""}}`)
 
-	t.Run("matches succeeded and aborted jobs by externalId", func(t *testing.T) {
+	t.Run("matches succeeded and aborted jobs by externalId from job status params", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
-		uploader := uploadTwoJobs(t, mockAPI)
 
 		// job 1 succeeded; job 2 failed. The CreatedDate column is coerced by
 		// Salesforce but the Email (externalId) round-trips, so both still match.
@@ -499,9 +480,9 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 			{"Email": "test2@example.com", "FirstName": "Jane", "sf__Error": "REQUIRED_FIELD_MISSING:LastName"},
 		}, nil)
 
-		result := uploader.GetUploadStats(common.GetUploadStatsInput{
+		result := newUploader(mockAPI).GetUploadStats(common.GetUploadStatsInput{
 			Parameters:    importIDParams,
-			ImportingList: []*jobsdb.JobT{{JobID: 1}, {JobID: 2}},
+			ImportingList: []*jobsdb.JobT{importingJob(1, "test1@example.com"), importingJob(2, "test2@example.com")},
 		})
 
 		require.Equal(t, 200, result.StatusCode)
@@ -511,13 +492,12 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 		require.Equal(t, "REQUIRED_FIELD_MISSING:LastName", result.Metadata.AbortedReasons[2])
 	})
 
-	t.Run("unmatched records with a populated map are aborted, not retried", func(t *testing.T) {
+	t.Run("unmatched records are aborted, not retried", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
-		uploader := uploadTwoJobs(t, mockAPI)
 
 		// Salesforce reformatted the externalId itself (e.g. a numeric/date
-		// external id), so neither returned record matches any uploaded job.
+		// external id), so neither returned record matches any importing job.
 		mockAPI.EXPECT().GetSuccessfulRecords(gomock.Any()).Return([]map[string]string{
 			{"Email": "TEST1@EXAMPLE.COM", "sf__Id": "001"},
 		}, nil)
@@ -525,9 +505,9 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 			{"Email": "TEST2@EXAMPLE.COM", "sf__Error": "boom"},
 		}, nil)
 
-		result := uploader.GetUploadStats(common.GetUploadStatsInput{
+		result := newUploader(mockAPI).GetUploadStats(common.GetUploadStatsInput{
 			Parameters:    importIDParams,
-			ImportingList: []*jobsdb.JobT{{JobID: 1}, {JobID: 2}},
+			ImportingList: []*jobsdb.JobT{importingJob(1, "test1@example.com"), importingJob(2, "test2@example.com")},
 		})
 
 		require.Equal(t, 200, result.StatusCode)
@@ -537,24 +517,24 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 		require.NotEmpty(t, result.Metadata.AbortedReasons[2])
 	})
 
-	t.Run("empty correlation map keeps jobs retryable", func(t *testing.T) {
+	t.Run("no externalId metadata on importing jobs aborts the batch", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
-		// No Upload call: simulates a process restart that lost the in-memory map.
 		mockAPI.EXPECT().GetFailedRecords(gomock.Any()).Return([]map[string]string{}, nil)
 		mockAPI.EXPECT().GetSuccessfulRecords(gomock.Any()).Return([]map[string]string{
 			{"Email": "test1@example.com"}, {"Email": "test2@example.com"},
 		}, nil)
 
-		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
-		result := uploader.GetUploadStats(common.GetUploadStatsInput{
+		// importing jobs with no metadata in their status params → the map can't
+		// be rebuilt, so the batch is aborted (and logged for alerting).
+		result := newUploader(mockAPI).GetUploadStats(common.GetUploadStatsInput{
 			Parameters:    importIDParams,
 			ImportingList: []*jobsdb.JobT{{JobID: 1}, {JobID: 2}},
 		})
 
 		require.Equal(t, 200, result.StatusCode)
-		require.ElementsMatch(t, []int64{1, 2}, result.Metadata.FailedKeys)
-		require.Empty(t, result.Metadata.AbortedKeys)
+		require.ElementsMatch(t, []int64{1, 2}, result.Metadata.AbortedKeys)
+		require.Empty(t, result.Metadata.FailedKeys)
 	})
 
 	t.Run("handles API error fetching failed records", func(t *testing.T) {
