@@ -229,13 +229,13 @@ func TestUpload(t *testing.T) {
 
 		require.Equal(t, common.AsyncUploadOutput{
 			FailedJobIDs:        []int64{1, 2},                                                                                                                       // chunk 1: 429, retryable
-			FailedCount:         2,                                                                                                                                    // matches FailedJobIDs
+			FailedCount:         2,                                                                                                                                   // matches FailedJobIDs
 			AbortJobIDs:         []int64{3, 4},                                                                                                                       // chunk 2: 400, non-retryable
-			AbortReason:         "upload rejected by Klaviyo with status 400: {ID=, Code=, Title=, Detail=invalid payload structure, Source={Pointer=, Parameter=}}",  // exact reason
-			AbortCount:          2,                                                                                                                                    // matches AbortJobIDs
+			AbortReason:         "upload rejected by Klaviyo with status 400: {ID=, Code=, Title=, Detail=invalid payload structure, Source={Pointer=, Parameter=}}", // exact reason
+			AbortCount:          2,                                                                                                                                   // matches AbortJobIDs
 			ImportingJobIDs:     []int64{5, 6},                                                                                                                       // chunk 3: success
-			ImportingParameters: output.ImportingParameters,                                                                                                           // validated below
-			ImportingCount:      2,                                                                                                                                    // matches ImportingJobIDs
+			ImportingParameters: output.ImportingParameters,                                                                                                          // validated below
+			ImportingCount:      2,                                                                                                                                   // matches ImportingJobIDs
 			SucceededJobIDs:     nil,
 			SuccessResponse:     "",
 			FailedReason:        "upload failed with status 429: {ID=, Code=, Title=, Detail=rate limit exceeded, Source={Pointer=, Parameter=}}",
