@@ -81,6 +81,7 @@ func (k *KlaviyoAPIServiceImpl) UploadProfiles(profiles Payload) (*UploadResp, e
 	if uploadRespErr != nil {
 		return nil, uploadRespErr
 	}
+	uploadResp.StatusCode = resp.StatusCode
 	if len(uploadResp.Errors) > 0 {
 		return &uploadResp, fmt.Errorf("upload failed with errors: %+v", uploadResp.Errors)
 	}
