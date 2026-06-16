@@ -445,7 +445,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
-	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
+	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionID)
 	for _, workerJobStatus := range *workerJobStatuses {
 		parameters := workerJobStatus.parameters
 		errorCode, _ := strconv.Atoi(workerJobStatus.status.ErrorCode)
@@ -454,7 +454,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		// REPORTING - ROUTER - START
 		eventName := jsonparser.GetStringOrEmpty(workerJobStatus.job.Parameters, "event_name")
 		eventType := jsonparser.GetStringOrEmpty(workerJobStatus.job.Parameters, "event_type")
-		jobIDConnectionDetailsMap[workerJobStatus.job.JobID] = jobsdb.ConnectionDetails{
+		jobIDConnectionDetailsMap[workerJobStatus.job.JobID] = jobsdb.ConnectionID{
 			SourceID:      parameters.SourceID,
 			DestinationID: parameters.DestinationID,
 		}

@@ -19,7 +19,7 @@ func TestUpdateProcessedEventsMetrics(t *testing.T) {
 	destType1 := "test-dest-type-1"
 	destType2 := "test-dest-type-2"
 	destinationID3 := "test-destination-id-3"
-	jobIDConnectionDetailsMap := map[int64]jobsdb.ConnectionDetails{
+	jobIDConnectionDetailsMap := map[int64]jobsdb.ConnectionID{
 		1: {
 			SourceID:      sourceID1,
 			DestinationID: destinationID1,

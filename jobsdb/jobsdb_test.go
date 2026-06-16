@@ -658,9 +658,9 @@ func TestDropDSLoop(t *testing.T) {
 		statStore, err := memstats.New()
 		require.NoError(t, err)
 		jobsDB := &Handle{
-			TriggerAddNewDS:  func() <-chan time.Time { return make(chan time.Time) },
-			TriggerMigrateDS: func() <-chan time.Time { return make(chan time.Time) },
-			stats:            statStore,
+			TriggerAddNewDS:   func() <-chan time.Time { return make(chan time.Time) },
+			TriggerCompaction: func() <-chan time.Time { return make(chan time.Time) },
+			stats:             statStore,
 		}
 		prefix := strings.ToLower(rsRand.String(5))
 		require.NoError(t, jobsDB.Setup(ReadWrite, false, prefix))
@@ -1190,8 +1190,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		require.Equal(t, 2, len(jobsDB2.getDSListSnapshot()), "expected jobsDB2 to have refreshed its ds list")
 
 		require.Equal(t, 1, len(jobsDB3.getDSListSnapshot()), "expected jobsDB3 to still have a list length of 1")
-		errorsMap := jobsDB3.StoreEachBatchRetry(context.Background(), [][]*JobT{generateJobs(2)})
-		require.Equal(t, 0, len(errorsMap))
+		require.NoError(t, jobsDB3.Store(context.Background(), generateJobs(2)))
 
 		require.Equal(t, 2, len(jobsDB3.getDSListSnapshot()), "expected jobsDB3 to have refreshed its ds list")
 
@@ -1286,7 +1285,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		c.Set("JobsDB.maxDSSize", 1)
 
 		triggerAddNewDS := make(chan time.Time)
-		triggerMigrateDS := make(chan time.Time)
+		triggerCompaction := make(chan time.Time)
 		blockTrigger := make(chan time.Time) // never fires
 
 		statStore, err := memstats.New()
@@ -1296,21 +1295,21 @@ func TestThreadSafeJobStorage(t *testing.T) {
 
 		// jobsDB1 has all loop triggers blocked so its in-memory DS list stays stale.
 		jobsDB1 := &Handle{
-			TriggerAddNewDS:  func() <-chan time.Time { return blockTrigger },
-			TriggerMigrateDS: func() <-chan time.Time { return blockTrigger },
-			TriggerRefreshDS: func() <-chan time.Time { return blockTrigger },
-			config:           c,
-			stats:            statStore,
+			TriggerAddNewDS:   func() <-chan time.Time { return blockTrigger },
+			TriggerCompaction: func() <-chan time.Time { return blockTrigger },
+			TriggerRefreshDS:  func() <-chan time.Time { return blockTrigger },
+			config:            c,
+			stats:             statStore,
 		}
 		require.NoError(t, jobsDB1.Setup(ReadWrite, true, prefix))
 		defer jobsDB1.TearDown()
 
-		// jobsDB2 controls the addNewDS and migrateDS loops.
+		// jobsDB2 controls the addNewDS and compaction loops.
 		jobsDB2 := &Handle{
-			TriggerAddNewDS:  func() <-chan time.Time { return triggerAddNewDS },
-			TriggerMigrateDS: func() <-chan time.Time { return triggerMigrateDS },
-			config:           c,
-			stats:            statStore,
+			TriggerAddNewDS:   func() <-chan time.Time { return triggerAddNewDS },
+			TriggerCompaction: func() <-chan time.Time { return triggerCompaction },
+			config:            c,
+			stats:             statStore,
 		}
 		require.NoError(t, jobsDB2.Setup(ReadWrite, false, prefix))
 		defer jobsDB2.TearDown()
@@ -1348,8 +1347,8 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			CustomVal:  res.Jobs[0].CustomVal,
 		}}))
 
-		// Trigger migration via jobsDB2: DS1 has no pending jobs, so it is dropped.
-		triggerMigrateDS <- time.Now()
+		// Trigger compaction via jobsDB2: DS1 has no pending jobs, so it is dropped.
+		triggerCompaction <- time.Now()
 
 		// Wait for DS1's job table to be physically dropped from the database.
 		require.Eventually(t, func() bool {
@@ -2087,13 +2086,13 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	statStore, err := memstats.New()
 	require.NoError(t, err)
 	triggerAddNewDS := make(chan time.Time)
-	triggerMigrateDS := make(chan time.Time)
+	triggerCompaction := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
-		TriggerMigrateDS: func() <-chan time.Time {
-			return triggerMigrateDS
+		TriggerCompaction: func() <-chan time.Time {
+			return triggerCompaction
 		},
 		config: c,
 		stats:  statStore,
@@ -2182,8 +2181,8 @@ func TestGetDistinctParameterValues(t *testing.T) {
 		}
 	})
 	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses))
-	triggerMigrateDS <- time.Now()
-	triggerMigrateDS <- time.Now()
+	triggerCompaction <- time.Now()
+	triggerCompaction <- time.Now()
 
 	parameterValues, err = jobsDB.GetDistinctParameterValues(context.Background(), SourceID, "")
 	require.NoError(t, err)
@@ -2429,13 +2428,13 @@ func TestUpdateJobStatus(t *testing.T) {
 	statStore, err := memstats.New()
 	require.NoError(t, err)
 	triggerAddNewDS := make(chan time.Time)
-	triggerMigrateDS := make(chan time.Time)
+	triggerCompaction := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
-		TriggerMigrateDS: func() <-chan time.Time {
-			return triggerMigrateDS
+		TriggerCompaction: func() <-chan time.Time {
+			return triggerCompaction
 		},
 		config: c,
 		stats:  statStore,

@@ -1634,10 +1634,7 @@ func TestUploadsFromGatewayEvents(t *testing.T) {
 
 	wg, ctx := errgroup.WithContext(ctx)
 	wg.Go(func() error {
-		err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcServer.URL, transformerResource.TransformerURL, t.TempDir(), []lo.Tuple2[string, any]{
-			{A: "Processor.enableWarehouseTransformations", B: true},
-			{A: "Processor.verifyWarehouseTransformations", B: true},
-		}...)
+		err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcServer.URL, transformerResource.TransformerURL, t.TempDir())
 		if err != nil {
 			t.Logf("rudder-server exited with error: %v", err)
 		}
@@ -2144,6 +2141,9 @@ func TestDestinationTransformation(t *testing.T) {
                       "sentAt": "2023-05-12T04:08:48.750+00:00",
                       "timestamp": "2023-05-12T04:08:48.750+00:00"
 					},
+					"metadata": {
+						"destinationType": "{{.destinationType}}"
+					},
 					"destination": {{.destination}}
 				 }
 				]
@@ -2154,7 +2154,8 @@ func TestDestinationTransformation(t *testing.T) {
 
 			b := new(strings.Builder)
 			err = tpl.Execute(b, map[string]any{
-				"destination": string(destinationJSON),
+				"destination":     string(destinationJSON),
+				"destinationType": tc.destType,
 			})
 			require.NoError(t, err)
 
@@ -2178,7 +2179,6 @@ func runRudderServer(
 	port int,
 	postgresContainer *postgres.Resource,
 	cbURL, transformerURL, tmpDir string,
-	configOverrides ...lo.Tuple2[string, any],
 ) (err error) {
 	config.Set("CONFIG_BACKEND_URL", cbURL)
 	config.Set("WORKSPACE_TOKEN", "token")
@@ -2205,9 +2205,6 @@ func runRudderServer(
 	config.Set("recovery.enabled", false)
 	config.Set("Profiler.Enabled", false)
 	config.Set("Gateway.enableSuppressUserFeature", false)
-	for _, override := range configOverrides {
-		config.Set(override.A, override.B)
-	}
 
 	defer func() {
 		if r := recover(); r != nil {

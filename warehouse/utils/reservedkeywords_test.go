@@ -8,7 +8,7 @@ import (
 )
 
 func TestReservedKeywords(t *testing.T) {
-	for _, destinationType := range WarehouseDestinations {
+	for destinationType := range PseudoWarehouseDestinationMap {
 		require.NotNil(t, ReservedKeywords[destinationType], fmt.Sprintf("Reserved Keywords coming to be nil for destinationType %s", destinationType))
 	}
 }

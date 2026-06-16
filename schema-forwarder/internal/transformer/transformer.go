@@ -23,7 +23,7 @@ import (
 
 type Transformer interface {
 	Start()
-	Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, error)
+	Transform(job *jobsdb.JobT) (msg *proto.EventSchemaMessage, sourceID string, err error)
 	Stop()
 }
 
@@ -66,25 +66,26 @@ func (st *transformer) Stop() {
 }
 
 // Transform transforms the job into a schema message and returns the schema message along with write key
-func (st *transformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, error) {
+func (st *transformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, string, error) {
 	var eventPayload map[string]any
 	if err := jsonrs.Unmarshal(job.EventPayload, &eventPayload); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	writeKey := st.getWriteKeyFromParams(job.Parameters)
+	sourceID := gjson.GetBytes(job.Parameters, "source_id").Str
+	writeKey := st.writeKeyForSourceID(sourceID)
 	if writeKey == "" {
-		return nil, fmt.Errorf("writeKey could not be found")
+		return nil, "", fmt.Errorf("writeKey could not be found")
 	}
 	schemaKey := st.getSchemaKeyFromJob(eventPayload, writeKey)
 	if st.identifierLimit > 0 && len(schemaKey.EventIdentifier) > st.identifierLimit {
-		return nil, fmt.Errorf("event identifier size is greater than %d", st.identifierLimit)
+		return nil, "", fmt.Errorf("event identifier size is greater than %d", st.identifierLimit)
 	}
 	schemaMessage, err := st.getSchemaMessage(schemaKey, eventPayload, []byte("{}"), job.WorkspaceId, job.CreatedAt)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return schemaMessage, nil
+	return schemaMessage, sourceID, nil
 }
 
 // getSchemaKeyFromJob returns the schema key from the job based on the event type and event identifier
@@ -193,13 +194,12 @@ func (st *transformer) disablePIIReporting(writeKey string) bool {
 	return st.newPIIReportingSettings[writeKey]
 }
 
-// getWriteKeyFromParams returns the write key from the job parameters
-func (st *transformer) getWriteKeyFromParams(parameters json.RawMessage) string {
-	sourceId := gjson.GetBytes(parameters, "source_id").Str
-	if sourceId == "" {
-		return sourceId
+// writeKeyForSourceID returns the write key configured for the given source id
+func (st *transformer) writeKeyForSourceID(sourceID string) string {
+	if sourceID == "" {
+		return ""
 	}
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.sourceWriteKeyMap[sourceId]
+	return st.sourceWriteKeyMap[sourceID]
 }
