@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -258,6 +259,7 @@ func (kbu *KlaviyoBulkUploader) ExtractProfile(Data Data) Profile {
 func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 	var failedJobs []int64
+	var failedReason string
 	var abortedJobs []int64
 	var abortReason string
 	var successJobs []int64
@@ -317,16 +319,26 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 		combinedPayload := createFinalPayload(profileChunk, listId)
 		uploadResp, err := kbu.KlaviyoAPIService.UploadProfiles(combinedPayload)
 		if err != nil {
-			// Mark all job IDs in this profile chunk as failed
-			uploadError := ""
-			if uploadResp != nil && len(uploadResp.Errors) > 0 {
-				uploadError = uploadResp.Errors.String()
+			var uploadError string
+			var statusCode int
+			if uploadResp != nil {
+				statusCode = uploadResp.StatusCode
+				if len(uploadResp.Errors) > 0 {
+					uploadError = uploadResp.Errors.String()
+				}
 			}
-			failedJobs = append(failedJobs, jobIDChunks[idx]...)
 			kbu.Logger.Errorn("Error while uploading profiles",
 				obskit.Error(err),
 				obskit.DestinationID(destinationID),
 				logger.NewStringField("uploadErrors", uploadError))
+
+			if statusCode >= http.StatusBadRequest && statusCode < http.StatusInternalServerError && statusCode != http.StatusTooManyRequests {
+				abortedJobs = append(abortedJobs, jobIDChunks[idx]...)
+				abortReason = fmt.Sprintf("upload rejected by Klaviyo with status %d: %s", statusCode, uploadError)
+			} else {
+				failedJobs = append(failedJobs, jobIDChunks[idx]...)
+				failedReason = fmt.Sprintf("upload failed with status %d: %s", statusCode, uploadError)
+			}
 			continue
 		}
 
@@ -339,16 +351,19 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 	if err != nil {
 		return kbu.generateKlaviyoErrorOutput("Error while marshaling parameters.", err, importingJobIDs, destinationID)
 	}
-	successJobs, _ = lo.Difference(importingJobIDs, failedJobs)
+	successJobs, _ = lo.Difference(importingJobIDs, append(failedJobs, abortedJobs...))
 	eventsSuccessStat.Count(len(asyncDestStruct.ImportingJobIDs))
 
 	return common.AsyncUploadOutput{
 		ImportingParameters: importParameters,
 		FailedJobIDs:        failedJobs,
+		FailedReason:        failedReason,
+		FailedCount:         len(failedJobs),
 		AbortJobIDs:         abortedJobs,
 		AbortReason:         abortReason,
-		FailedCount:         len(failedJobs),
+		AbortCount:          len(abortedJobs),
 		ImportingJobIDs:     successJobs,
+		ImportingCount:      len(successJobs),
 		DestinationID:       destination.ID,
 	}
 }

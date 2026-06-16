@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"go.uber.org/mock/gomock"
 
@@ -100,12 +101,21 @@ func TestUpload(t *testing.T) {
 		}
 
 		output := uploader.Upload(context.Background(), asyncDestStruct)
-		assert.NotNil(t, output)
-		assert.Equal(t, destination.ID, output.DestinationID)
-		assert.Empty(t, output.FailedJobIDs)
-		assert.Empty(t, output.AbortJobIDs)
-		assert.Empty(t, output.AbortReason)
-		assert.NotEmpty(t, output.ImportingJobIDs)
+		require.Equal(t, common.AsyncUploadOutput{
+			ImportingJobIDs:     []int64{1},
+			ImportingParameters: output.ImportingParameters,
+			FailedJobIDs:        nil,
+			FailedReason:        "",
+			FailedCount:         0,
+			AbortJobIDs:         nil,
+			AbortReason:         "",
+			AbortCount:          0,
+			SucceededJobIDs:     nil,
+			SuccessResponse:     "",
+			ImportingCount:      1,
+			DestinationID:       destination.ID,
+		}, output)
+		require.Equal(t, `{"importId":"importId1","importCount":0}`, string(output.ImportingParameters))
 	})
 
 	t.Run("Unsuccessful Upload", func(t *testing.T) {
@@ -122,12 +132,24 @@ func TestUpload(t *testing.T) {
 		}
 
 		output := uploader.Upload(context.Background(), asyncDestStruct)
-		assert.NotNil(t, output)
-		assert.Equal(t, destination.ID, output.DestinationID)
-		assert.NotEmpty(t, output.FailedJobIDs)
-		assert.Empty(t, output.ImportingJobIDs)
+		require.Equal(t, common.AsyncUploadOutput{
+			ImportingJobIDs:     []int64{},
+			ImportingParameters: output.ImportingParameters,
+			FailedJobIDs:        []int64{1},
+			FailedReason:        "upload failed with status 0: ",
+			FailedCount:         1,
+			AbortJobIDs:         nil,
+			AbortReason:         "",
+			AbortCount:          0,
+			SucceededJobIDs:     nil,
+			SuccessResponse:     "",
+			ImportingCount:      0,
+			DestinationID:       destination.ID,
+		}, output)
 	})
-	t.Run("UploadThreeChunksWithMiddleFailure", func(t *testing.T) {
+	// 3 chunks: chunk 1 fails with 429 (retryable), chunk 2 fails with 400 (non-retryable), chunk 3 succeeds.
+	// Validates that retryable and non-retryable errors are routed correctly in the same upload.
+	t.Run("UploadThreeChunksWithMixedFailures", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
@@ -135,7 +157,6 @@ func TestUpload(t *testing.T) {
 		uploader.BatchSize = 2
 		uploader.KlaviyoAPIService = mockKlaviyoAPIService
 
-		// Create a temporary file with test data
 		tempFile, err := os.CreateTemp("", "test_upload_3chunks_*.jsonl")
 		if err != nil {
 			t.Fatal(err)
@@ -153,7 +174,6 @@ func TestUpload(t *testing.T) {
 			fmt.Sprintf(testProfileTemplate, "user6", "user6", 6, 6),
 		}
 
-		// Write profiles to file, one per line
 		for i, profile := range profiles {
 			if i > 0 {
 				_, err = tempFile.WriteString("\n")
@@ -168,108 +188,60 @@ func TestUpload(t *testing.T) {
 		}
 		tempFile.Close()
 
-		// Mock expectations: Chunk 1 succeeds, Chunk 2 fails, Chunk 3 succeeds
-		// Track which job IDs are in each chunk
-		var chunk1JobIDs []int64
-		var chunk2JobIDs []int64
-		var chunk3JobIDs []int64
 		callCount := 0
-
 		mockKlaviyoAPIService.EXPECT().
 			UploadProfiles(gomock.Any()).
 			DoAndReturn(func(payload klaviyobulkupload.Payload) (*klaviyobulkupload.UploadResp, error) {
 				callCount++
-
-				// Extract job IDs from this chunk by checking the profiles
-				// We'll identify jobs by their email addresses
-				var jobIDsInChunk []int64
-				for _, profile := range payload.Data.Attributes.Profiles.Data {
-					email := profile.Attributes.Email
-					switch email {
-					case "user1@mail.com":
-						jobIDsInChunk = append(jobIDsInChunk, 1)
-					case "user2@mail.com":
-						jobIDsInChunk = append(jobIDsInChunk, 2)
-					case "user3@mail.com":
-						jobIDsInChunk = append(jobIDsInChunk, 3)
-					case "user4@mail.com":
-						jobIDsInChunk = append(jobIDsInChunk, 4)
-					case "user5@mail.com":
-						jobIDsInChunk = append(jobIDsInChunk, 5)
-					case "user6@mail.com":
-						jobIDsInChunk = append(jobIDsInChunk, 6)
-					}
-				}
-
 				switch callCount {
 				case 1:
-					// First chunk - succeed
-					chunk1JobIDs = jobIDsInChunk
-					return &klaviyobulkupload.UploadResp{
-						Data: struct {
-							Id string "json:\"id\""
-						}{
-							Id: "importId1",
-						},
-						Errors: nil,
-					}, nil
-				case 2:
-					// Second chunk - fail
-					chunk2JobIDs = jobIDsInChunk
+					// Chunk 1 — 429 Too Many Requests (retryable)
 					return &klaviyobulkupload.UploadResp{
 						Errors: []klaviyobulkupload.ErrorDetail{
-							{Detail: "chunk 2 upload failed"},
+							{Detail: "rate limit exceeded"},
 						},
-					}, fmt.Errorf("chunk 2 upload failed")
+						StatusCode: http.StatusTooManyRequests,
+					}, fmt.Errorf("rate limit exceeded")
+				case 2:
+					// Chunk 2 — 400 Bad Request (non-retryable)
+					return &klaviyobulkupload.UploadResp{
+						Errors: []klaviyobulkupload.ErrorDetail{
+							{Detail: "invalid payload structure"},
+						},
+						StatusCode: http.StatusBadRequest,
+					}, fmt.Errorf("invalid payload structure")
 				case 3:
-					// Third chunk - succeed
-					chunk3JobIDs = jobIDsInChunk
+					// Chunk 3 — success
 					return &klaviyobulkupload.UploadResp{
 						Data: struct {
 							Id string "json:\"id\""
-						}{
-							Id: "importId3",
-						},
-						Errors: nil,
+						}{Id: "importId3"},
 					}, nil
 				}
-				// Should not reach here
 				return nil, fmt.Errorf("unexpected call count: %d", callCount)
-			}).
-			AnyTimes() // Allow any number of calls, but we expect 3
+			}).Times(3)
 
-		asyncDestStruct := &common.AsyncDestinationStruct{
+		output := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination:     destination,
 			FileName:        tempFile.Name(),
 			ImportingJobIDs: []int64{1, 2, 3, 4, 5, 6},
-		}
+		})
 
-		output := uploader.Upload(context.Background(), asyncDestStruct)
-		assert.NotNil(t, output)
-
-		// Verify that job IDs from chunk 2 (the failed chunk) are in FailedJobIDs
-		assert.NotEmpty(t, chunk2JobIDs, "Chunk 2 should contain at least one job ID")
-		assert.Equal(t, chunk2JobIDs, output.FailedJobIDs, "FailedCount should match the number of failed job IDs")
-
-		allSuccessfulJobIDs := append(chunk1JobIDs, chunk3JobIDs...)
-		for _, jobID := range allSuccessfulJobIDs {
-			assert.Contains(t, output.ImportingJobIDs, jobID, "Job IDs from successful chunks should be in ImportingJobIDs")
-			assert.NotContains(t, output.FailedJobIDs, jobID, "Job IDs from successful chunks should not be in FailedJobIDs")
-		}
-
-		// Verify ImportingParameters contains import IDs for successful chunks only
-		assert.NotNil(t, output.ImportingParameters)
-		importParamsJSON := string(output.ImportingParameters)
-		assert.Contains(t, importParamsJSON, "importId1", "Should contain importId1 from chunk 1")
-		assert.Contains(t, importParamsJSON, "importId3", "Should contain importId3 from chunk 3")
-		assert.NotContains(t, importParamsJSON, "importId2", "Should not contain importId2 since chunk 2 failed")
-
-		// Verify FailedCount matches the number of failed job IDs
-		assert.Equal(t, len(output.FailedJobIDs), output.FailedCount, "FailedCount should match the number of failed job IDs")
-
-		// Verify that all 6 job IDs are accounted for (either in failed or successful)
-		totalAccounted := len(output.FailedJobIDs) + len(output.ImportingJobIDs)
-		assert.Equal(t, 6, totalAccounted, "All 6 job IDs should be accounted for")
+		require.Equal(t, common.AsyncUploadOutput{
+			FailedJobIDs:        []int64{1, 2},                                                                                                                       // chunk 1: 429, retryable
+			FailedCount:         2,                                                                                                                                   // matches FailedJobIDs
+			AbortJobIDs:         []int64{3, 4},                                                                                                                       // chunk 2: 400, non-retryable
+			AbortReason:         "upload rejected by Klaviyo with status 400: {ID=, Code=, Title=, Detail=invalid payload structure, Source={Pointer=, Parameter=}}", // exact reason
+			AbortCount:          2,                                                                                                                                   // matches AbortJobIDs
+			ImportingJobIDs:     []int64{5, 6},                                                                                                                       // chunk 3: success
+			ImportingParameters: output.ImportingParameters,                                                                                                          // validated below
+			ImportingCount:      2,                                                                                                                                   // matches ImportingJobIDs
+			SucceededJobIDs:     nil,
+			SuccessResponse:     "",
+			FailedReason:        "upload failed with status 429: {ID=, Code=, Title=, Detail=rate limit exceeded, Source={Pointer=, Parameter=}}",
+			DestinationID:       destination.ID,
+		}, output)
+		require.Equal(t, `{"importId":"importId3","importCount":0}`, string(output.ImportingParameters))
 	})
 }
 
