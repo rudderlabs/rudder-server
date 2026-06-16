@@ -2,8 +2,6 @@ package salesforcebulkupload_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"testing"
@@ -24,13 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	salesforcebulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/salesforce-bulk-upload"
 )
-
-// extIDHash mirrors the connector's externalId hashing so tests can assert the
-// hashed value persisted in the importing job status params.
-func extIDHash(externalID string) string {
-	sum := sha256.Sum256([]byte(externalID))
-	return hex.EncodeToString(sum[:])
-}
 
 func TestSalesforceBulk_Transform(t *testing.T) {
 	testCases := []struct {
@@ -222,8 +213,8 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.Equal(t, 0, result.FailedCount)
 		require.JSONEq(t, `{"importId":{"id":"sf-job-123","externalIdField":"Email"}, "importCount":2}`, string(result.ImportingParameters))
 		require.Len(t, result.JobImportingParameters, 2)
-		require.JSONEq(t, `{"externalIdHash":"`+extIDHash("test1@example.com")+`"}`, string(result.JobImportingParameters[1]))
-		require.JSONEq(t, `{"externalIdHash":"`+extIDHash("test2@example.com")+`"}`, string(result.JobImportingParameters[2]))
+		require.JSONEq(t, `{"externalIdHash":"`+salesforcebulkupload.HashExternalID("test1@example.com")+`"}`, string(result.JobImportingParameters[1]))
+		require.JSONEq(t, `{"externalIdHash":"`+salesforcebulkupload.HashExternalID("test2@example.com")+`"}`, string(result.JobImportingParameters[2]))
 	})
 
 	t.Run("emits brt_async_dest_payload_size, brt_async_dest_events_per_file and brt_async_dest_async_upload_time metrics", func(t *testing.T) {
@@ -404,7 +395,7 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 		return &jobsdb.JobT{
 			JobID: jobID,
 			LastJobStatus: jobsdb.JobStatusT{
-				Parameters: []byte(`{"metadata":{"externalIdHash":"` + extIDHash(externalID) + `"}}`),
+				Parameters: []byte(`{"metadata":{"externalIdHash":"` + salesforcebulkupload.HashExternalID(externalID) + `"}}`),
 			},
 		}
 	}

@@ -17,12 +17,12 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-// hashExternalID returns the SHA-256 hex digest of an externalId value. The
+// HashExternalID returns the SHA-256 hex digest of an externalId value. The
 // externalId is often PII (e.g. an email), so we persist only its hash in the
 // importing job status params and correlate by re-hashing the Salesforce-returned
 // externalId at poll time. This is safe because Salesforce returns the upsert key
 // unchanged (its value coercion only affects non-key columns).
-func hashExternalID(externalID string) string {
+func HashExternalID(externalID string) string {
 	sum := sha256.Sum256([]byte(externalID))
 	return hex.EncodeToString(sum[:])
 }

@@ -251,7 +251,7 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 	// created and closed, so we don't do this work for a failed upload.
 	jobImportingParameters := make(map[int64]stdjson.RawMessage, len(jobs))
 	for _, job := range jobs {
-		md, err := jsonrs.Marshal(importingMetadata{ExternalIDHash: hashExternalID(job.Metadata.ExternalIDs[0].ID)})
+		md, err := jsonrs.Marshal(importingMetadata{ExternalIDHash: HashExternalID(job.Metadata.ExternalIDs[0].ID)})
 		if err != nil {
 			s.logger.Errorn("marshalling importing metadata", logger.NewIntField("jobID", job.Metadata.JobID), obskit.Error(err))
 			continue
@@ -431,7 +431,7 @@ func (s *Uploader) matchRecordsToJobs(
 	}
 
 	for _, failedRecord := range failedRecords {
-		key := hashExternalID(failedRecord[externalIDField])
+		key := HashExternalID(failedRecord[externalIDField])
 		if jobIDs, exists := externalIDHashToJobID[key]; exists {
 			for _, jobID := range jobIDs {
 				metadata.AbortedKeys = append(metadata.AbortedKeys, jobID)
@@ -445,7 +445,7 @@ func (s *Uploader) matchRecordsToJobs(
 	}
 
 	for _, successRecord := range successRecords {
-		key := hashExternalID(successRecord[externalIDField])
+		key := HashExternalID(successRecord[externalIDField])
 		if jobIDs, exists := externalIDHashToJobID[key]; exists {
 			metadata.SucceededKeys = append(metadata.SucceededKeys, jobIDs...)
 		}
