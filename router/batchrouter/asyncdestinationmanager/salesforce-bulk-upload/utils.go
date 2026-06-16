@@ -44,7 +44,7 @@ func extractObjectInfo(jobs []SalesforceAsyncJob) (*ObjectInfo, error) {
 	if len(jobs) == 0 {
 		return nil, fmt.Errorf("no jobs to process")
 	}
-	externalID := jobs[0].Metadata.ExternalID
+	externalID := jobs[0].Metadata.ExternalIDs
 	if len(externalID) == 0 {
 		return nil, fmt.Errorf("externalId not found in the first job")
 	}
@@ -67,6 +67,9 @@ func extractFromVDM(externalIDs []SalesforceExternalID) (*ObjectInfo, error) {
 	}
 	if externalID.IdentifierType == "" {
 		return nil, fmt.Errorf("externalId identifierType is required")
+	}
+	if externalID.ID == "" {
+		return nil, fmt.Errorf("externalId id is required")
 	}
 	return &ObjectInfo{
 		ObjectType:      strings.Replace(externalID.Type, "SALESFORCE_BULK_UPLOAD-", "", 1),

@@ -97,7 +97,7 @@ type SalesforceExternalID struct {
 type SalesforceJobMetadata struct {
 	JobID           int64                  `json:"job_id"`
 	RudderOperation string                 `json:"rudderOperation"`
-	ExternalID      []SalesforceExternalID `json:"externalId"`
+	ExternalIDs     []SalesforceExternalID `json:"externalId"`
 }
 
 // SalesforceAsyncJob is the typed representation of a transformed event line.
@@ -120,9 +120,6 @@ type importingMetadata struct {
 const (
 	destName = "SALESFORCE_BULK_UPLOAD"
 
-	// missingExternalIDReason is the abort reason for individual events that
-	// carry no externalId value (no upsert key).
-	missingExternalIDReason = "externalId is missing for the event; cannot upsert to Salesforce"
 	// noCorrelationMetadataReason aborts jobs when no externalId metadata is
 	// present on the importing job statuses, so none of the Salesforce results
 	// can be correlated back (e.g. pre-change in-flight jobs, or a bug). This is

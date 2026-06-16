@@ -71,7 +71,7 @@ func TestSalesforceBulk_Transform(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "successful transform with valid payload",
+			name: "transform fails when externalId is absent",
 			job: &jobsdb.JobT{
 				JobID: 123,
 				EventPayload: []byte(`{
@@ -88,6 +88,32 @@ func TestSalesforceBulk_Transform(t *testing.T) {
 						"Industry": "AZ",
 						"LastName": "Gonzalez",
 						"Phone": "555-111-0020"
+					},
+					"type": "identify",
+					"userId": "evelyn.gonzalez@example.com"
+				}`),
+			},
+			wantErr: true,
+		},
+		{
+			name: "transform fails when externalId id is empty",
+			job: &jobsdb.JobT{
+				JobID: 124,
+				EventPayload: []byte(`{
+					"channel": "sources",
+					"context": {
+						"externalId": [
+							{
+								"id": "",
+								"identifierType": "Email",
+								"type": "SALESFORCE_BULK_UPLOAD-Lead"
+							}
+						],
+						"mappedToDestination": "true"
+					},
+					"traits": {
+						"FirstName": "Evelyn",
+						"LastName": "Gonzalez"
 					},
 					"type": "identify",
 					"userId": "evelyn.gonzalez@example.com"
@@ -200,7 +226,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.JSONEq(t, `{"externalIdHash":"`+extIDHash("test2@example.com")+`"}`, string(result.JobImportingParameters[2]))
 	})
 
-	t.Run("emits payload_size, events_per_file and async_upload_time metrics", func(t *testing.T) {
+	t.Run("emits brt_async_dest_payload_size, brt_async_dest_events_per_file and brt_async_dest_async_upload_time metrics", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
@@ -225,9 +251,9 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			"destinationId": "test-dest-1",
 			"workspaceId":   "test-ws-1",
 		}
-		require.Equal(t, float64(2), statsStore.Get("events_per_file", tags).LastValue())
-		require.Greater(t, statsStore.Get("payload_size", tags).LastValue(), float64(0))
-		require.Len(t, statsStore.Get("async_upload_time", tags).Durations(), 1)
+		require.Equal(t, float64(2), statsStore.Get("brt_async_dest_events_per_file", tags).LastValue())
+		require.Greater(t, statsStore.Get("brt_async_dest_payload_size", tags).LastValue(), float64(0))
+		require.Len(t, statsStore.Get("brt_async_dest_async_upload_time", tags).Durations(), 1)
 	})
 
 	t.Run("upload with API error", func(t *testing.T) {
@@ -282,85 +308,6 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.Equal(t, 0, result.ImportingCount)
 		require.Greater(t, result.FailedCount, 0)
 		require.Contains(t, result.FailedReason, "creating Salesforce job: Rate limit exceeded")
-	})
-
-	t.Run("events with missing externalId are aborted up front, valid ones imported", func(t *testing.T) {
-		mixedFile, err := os.CreateTemp("", "test_upload_mixed_*.json")
-		require.NoError(t, err)
-		defer os.Remove(mixedFile.Name())
-
-		extID := func(id string) []any {
-			return []any{map[string]any{"id": id, "identifierType": "Email", "type": "SALESFORCE_BULK_UPLOAD-Lead"}}
-		}
-		jobs := []common.AsyncJob{
-			{Message: map[string]any{"Email": "a@example.com", "FirstName": "A"}, Metadata: map[string]any{"job_id": float64(1), "externalId": extID("a@example.com")}},
-			{Message: map[string]any{"Email": "", "FirstName": "B"}, Metadata: map[string]any{"job_id": float64(2), "externalId": extID("")}}, // empty externalId -> aborted
-			{Message: map[string]any{"FirstName": "C"}, Metadata: map[string]any{"job_id": float64(3), "externalId": extID("")}},              // missing externalId -> aborted
-			{Message: map[string]any{"Email": "d@example.com", "FirstName": "D"}, Metadata: map[string]any{"job_id": float64(4), "externalId": extID("d@example.com")}},
-		}
-		for _, job := range jobs {
-			jobBytes, _ := jsonrs.Marshal(job)
-			_, err := mixedFile.Write(append(jobBytes, '\n'))
-			require.NoError(t, err)
-		}
-		require.NoError(t, mixedFile.Close())
-
-		ctrl := gomock.NewController(t)
-		mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
-		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("sf-job-123", nil)
-		mockAPI.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
-		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
-		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
-
-		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
-			Destination:     &backendconfig.DestinationT{ID: "test-dest-1"},
-			FileName:        mixedFile.Name(),
-			ImportingJobIDs: []int64{1, 2, 3, 4},
-		})
-
-		require.ElementsMatch(t, []int64{1, 4}, result.ImportingJobIDs)
-		require.Equal(t, 2, result.ImportingCount)
-		require.ElementsMatch(t, []int64{2, 3}, result.AbortJobIDs)
-		require.Equal(t, 2, result.AbortCount)
-		require.Contains(t, result.AbortReason, "externalId")
-		require.Empty(t, result.FailedJobIDs)
-		require.JSONEq(t, `{"importId":{"id":"sf-job-123","externalIdField":"Email"},"importCount":2}`, string(result.ImportingParameters))
-	})
-
-	t.Run("all events missing externalId are aborted without contacting Salesforce", func(t *testing.T) {
-		allAbortedFile, err := os.CreateTemp("", "test_upload_allaborted_*.json")
-		require.NoError(t, err)
-		defer os.Remove(allAbortedFile.Name())
-
-		extID := func(id string) []any {
-			return []any{map[string]any{"id": id, "identifierType": "Email", "type": "SALESFORCE_BULK_UPLOAD-Lead"}}
-		}
-		jobs := []common.AsyncJob{
-			{Message: map[string]any{"Email": "", "FirstName": "A"}, Metadata: map[string]any{"job_id": float64(1), "externalId": extID("")}},
-			{Message: map[string]any{"FirstName": "B"}, Metadata: map[string]any{"job_id": float64(2), "externalId": extID("")}},
-		}
-		for _, job := range jobs {
-			jobBytes, _ := jsonrs.Marshal(job)
-			_, err := allAbortedFile.Write(append(jobBytes, '\n'))
-			require.NoError(t, err)
-		}
-		require.NoError(t, allAbortedFile.Close())
-
-		ctrl := gomock.NewController(t)
-		// No CreateJob/UploadData/CloseJob expectations: Salesforce must not be contacted.
-		mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
-		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
-
-		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
-			Destination:     &backendconfig.DestinationT{ID: "test-dest-1"},
-			FileName:        allAbortedFile.Name(),
-			ImportingJobIDs: []int64{1, 2},
-		})
-
-		require.Empty(t, result.ImportingJobIDs)
-		require.ElementsMatch(t, []int64{1, 2}, result.AbortJobIDs)
-		require.Equal(t, 2, result.AbortCount)
-		require.Contains(t, result.AbortReason, "externalId")
 	})
 }
 

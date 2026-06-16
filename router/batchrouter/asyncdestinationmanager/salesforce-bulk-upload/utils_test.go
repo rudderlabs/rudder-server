@@ -23,7 +23,7 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 					Message: map[string]any{"Email": "test@example.com"},
 					Metadata: SalesforceJobMetadata{
 						JobID: 1,
-						ExternalID: []SalesforceExternalID{
+						ExternalIDs: []SalesforceExternalID{
 							{Type: "SALESFORCE_BULK_UPLOAD-Contact", ID: "test@example.com", IdentifierType: "Email"},
 						},
 					},
@@ -42,7 +42,7 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 					Message: map[string]any{"Email": "lead@example.com"},
 					Metadata: SalesforceJobMetadata{
 						JobID: 2,
-						ExternalID: []SalesforceExternalID{
+						ExternalIDs: []SalesforceExternalID{
 							{Type: "SALESFORCE_BULK_UPLOAD-Lead", ID: "lead@example.com", IdentifierType: "Email"},
 						},
 					},
@@ -76,7 +76,7 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 			jobs: []SalesforceAsyncJob{
 				{
 					Message:  map[string]any{},
-					Metadata: SalesforceJobMetadata{ExternalID: []SalesforceExternalID{}},
+					Metadata: SalesforceJobMetadata{ExternalIDs: []SalesforceExternalID{}},
 				},
 			},
 			wantErr:  true,
