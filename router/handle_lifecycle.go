@@ -170,6 +170,14 @@ func (rt *Handle) Setup(
 	rt.eventOrderingDisabledForDestination = func(destinationID string) bool {
 		return slices.Contains(orderingDisabledDestinationIDs.Load(), destinationID)
 	}
+	orderingPanicOnIllegalSequence := config.GetReloadableBoolVar(true, getRouterConfigKeys("orderingPanicOnIllegalSequence", destType)...)
+	illegalJobSequenceStats := map[string]stats.Measurement{}
+	for _, location := range []string{"enter", "wait", "job_failed"} {
+		illegalJobSequenceStats[location] = stats.Default.NewTaggedStat("router_illegal_job_sequence", stats.CountType, stats.Tags{
+			"destType": rt.destType,
+			"location": location,
+		})
+	}
 	rt.barrier = eventorder.NewBarrier(eventorder.WithMetadata(map[string]string{
 		"destType":         rt.destType,
 		"batching":         strconv.FormatBool(rt.enableBatching),
@@ -182,6 +190,12 @@ func (rt *Handle) Setup(
 		eventorder.WithDebugInfoProvider(rt.eventOrderDebugInfo),
 		eventorder.WithOrderingDisabledCheckForBarrierKey(func(key eventorder.BarrierKey) bool {
 			return rt.eventOrderingDisabledForWorkspace(key.WorkspaceID) || rt.eventOrderingDisabledForDestination(key.DestinationID)
+		}),
+		eventorder.WithPanicOnIllegalJobSequence(orderingPanicOnIllegalSequence),
+		eventorder.WithIllegalJobSequenceCallback(func(location string) {
+			if m, ok := illegalJobSequenceStats[location]; ok {
+				m.Increment()
+			}
 		}),
 	)
 
