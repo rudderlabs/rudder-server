@@ -71,7 +71,7 @@ func newManager(destType string, conf *config.Config, logger logger.Logger, stat
 	switch destType {
 	case warehouseutils.RS:
 		return redshift.New(conf, logger, stats), nil
-	case warehouseutils.BQ:
+	case warehouseutils.BQ, warehouseutils.BQStreamAllEvents:
 		return bigquery.New(conf, logger), nil
 	case warehouseutils.SNOWFLAKE, warehouseutils.SnowpipeStreaming:
 		return snowflake.New(conf, logger, stats), nil
@@ -96,7 +96,7 @@ func NewWarehouseOperations(destType string, conf *config.Config, logger logger.
 	switch destType {
 	case warehouseutils.RS:
 		return redshift.New(conf, logger, stats), nil
-	case warehouseutils.BQ:
+	case warehouseutils.BQ, warehouseutils.BQStreamAllEvents:
 		return bigquery.New(conf, logger), nil
 	case warehouseutils.SNOWFLAKE, warehouseutils.SnowpipeStreaming:
 		return snowflake.New(conf, logger, stats), nil

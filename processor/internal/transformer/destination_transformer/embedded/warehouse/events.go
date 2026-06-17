@@ -416,7 +416,7 @@ func (t *Transformer) usersResponse(tec *transformEventContext, commonData map[s
 }
 
 func shouldSkipUsersTable(tec *transformEventContext) bool {
-	return tec.event.Metadata.DestinationType == whutils.SnowpipeStreaming ||
+	return lo.Contains(whutils.StreamDestinations, tec.event.Metadata.DestinationType) ||
 		tec.destOpts.skipUsersTable ||
 		tec.intrOpts.skipUsersTable
 }

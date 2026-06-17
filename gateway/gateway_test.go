@@ -339,11 +339,11 @@ var _ = Describe("Gateway Enterprise", func() {
 			).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			mockCall := c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(
+			mockCall := c.mockJobsDB.EXPECT().StoreInTx(
 				gomock.Any(),
 				gomock.Any(),
 				gomock.Any(),
-			).DoAndReturn(jobsToEmptyErrors).Times(1)
+			).Return(nil).Times(1)
 			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job")
 			mockCall.Do(func(context.Context, any, any) { tFunc() })
 
@@ -624,7 +624,7 @@ var _ = Describe("Gateway", func() {
 						_ = f(jobsdb.EmptyStoreSafeTx())
 					}).Return(nil)
 					c.mockJobsDB.
-						EXPECT().StoreEachBatchRetryInTx(
+						EXPECT().StoreInTx(
 						gomock.Any(),
 						gomock.Any(),
 						gomock.Any(),
@@ -633,26 +633,23 @@ var _ = Describe("Gateway", func() {
 							func(
 								ctx context.Context,
 								tx jobsdb.StoreSafeTx,
-								jobBatches [][]*jobsdb.JobT,
-							) (map[uuid.UUID]string, error) {
-								for _, batch := range jobBatches {
-									for _, job := range batch {
-										// each call should be included in a separate batch, with a separate batch_id
-										assertJobMetadata(job)
+								jobs []*jobsdb.JobT,
+							) error {
+								for _, job := range jobs {
+									assertJobMetadata(job)
 
-										responseData := []byte(job.EventPayload)
-										payload := gjson.GetBytes(responseData, "batch.0")
+									responseData := []byte(job.EventPayload)
+									payload := gjson.GetBytes(responseData, "batch.0")
 
-										assertJobBatchItem(payload)
+									assertJobBatchItem(payload)
 
-										messageType := payload.Get("type")
-										Expect(messageType.String()).To(Equal(handlerType))
-										Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
-									}
+									messageType := payload.Get("type")
+									Expect(messageType.String()).To(Equal(handlerType))
+									Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
 								}
 								c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
 
-								return jobsToEmptyErrors(ctx, tx, jobBatches)
+								return nil
 							}).
 						Times(1)
 
@@ -702,7 +699,7 @@ var _ = Describe("Gateway", func() {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 			c.mockJobsDB.
-				EXPECT().StoreEachBatchRetryInTx(
+				EXPECT().StoreInTx(
 				gomock.Any(),
 				gomock.Any(),
 				gomock.Any(),
@@ -711,10 +708,10 @@ var _ = Describe("Gateway", func() {
 					func(
 						ctx context.Context,
 						tx jobsdb.StoreSafeTx,
-						jobBatches [][]*jobsdb.JobT,
-					) (map[uuid.UUID]string, error) {
+						jobs []*jobsdb.JobT,
+					) error {
 						c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
-						return jobsToEmptyErrors(ctx, tx, jobBatches)
+						return nil
 					}).
 				Times(1)
 
@@ -765,11 +762,11 @@ var _ = Describe("Gateway", func() {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 			c.mockJobsDB.
-				EXPECT().StoreEachBatchRetryInTx(
+				EXPECT().StoreInTx(
 				gomock.Any(),
 				gomock.Any(),
 				gomock.Any(),
-			).AnyTimes()
+			).Return(nil).AnyTimes()
 
 			// With userId
 			expectHandlerResponse(
@@ -843,7 +840,7 @@ var _ = Describe("Gateway", func() {
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(3)
+			c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
 
 			for handlerType, handler := range extractHandlers {
 				var body string
@@ -895,7 +892,7 @@ var _ = Describe("Gateway", func() {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 
-			mockCall := c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
+			mockCall := c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
 			mockCall.Do(func(context.Context, any, any) {
 				c.asyncHelper.ExpectAndNotifyCallbackWithName("")()
 			})
@@ -1004,7 +1001,7 @@ var _ = Describe("Gateway", func() {
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			mockCall := c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
+			mockCall := c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
 			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("")
 			mockCall.Do(func(context.Context, any, any) { tFunc() })
 
@@ -1325,12 +1322,12 @@ var _ = Describe("Gateway", func() {
 				if handlerType != "batch" && handlerType != "import" {
 					validBody := createJSONBody("custom-property", "custom-value")
 
-					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
-						_ = f(jobsdb.EmptyStoreSafeTx())
-					}).Return(nil)
+					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) error {
+						return f(jobsdb.EmptyStoreSafeTx())
+					})
 					c.mockJobsDB.
-						EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-						DoAndReturn(jobsToJobsdbErrors).
+						EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+						Return(errors.New("tx error")).
 						Times(1)
 
 					expectHandlerResponse(
@@ -2455,21 +2452,6 @@ func allHandlers(gw *Handle) map[string]http.HandlerFunc {
 		"audiencelist": gw.webAudienceListHandler(),
 		"extract":      gw.webExtractHandler(),
 	}
-}
-
-// converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
-func jobsToEmptyErrors(_ context.Context, _ jobsdb.StoreSafeTx, _ [][]*jobsdb.JobT) (map[uuid.UUID]string, error) {
-	return make(map[uuid.UUID]string), nil
-}
-
-// converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
-func jobsToJobsdbErrors(_ context.Context, _ jobsdb.StoreSafeTx, jobs [][]*jobsdb.JobT) (map[uuid.UUID]string, error) {
-	errorsMap := make(map[uuid.UUID]string, len(jobs))
-	for _, batch := range jobs {
-		errorsMap[batch[0].UUID] = "tx error"
-	}
-
-	return errorsMap, nil
 }
 
 func TestContentTypeFunction(t *testing.T) {

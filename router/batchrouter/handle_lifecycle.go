@@ -206,7 +206,7 @@ func (brt *Handle) setupReloadableVars() {
 	brt.warehouseServiceMaxRetryTime = config.GetReloadableDurationVar(3, time.Hour, "BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	brt.datePrefixOverride = config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride")
 	brt.customDatePrefix = config.GetReloadableStringVar("", "BatchRouter.customDatePrefix")
-	brt.maxImportingQueryIterations = config.GetReloadableIntVar(50, 1, "BatchRouter."+brt.destType+".maxImportingQueryIterations", "BatchRouter.maxImportingQueryIterations")
+	brt.maxImportingQueryIterations = config.GetReloadableIntVar(100, 1, "BatchRouter."+brt.destType+".maxImportingQueryIterations", "BatchRouter.maxImportingQueryIterations")
 }
 
 func (brt *Handle) startAsyncDestinationManager() {

@@ -144,6 +144,7 @@ func (p *compaction) Run(ctx context.Context) error {
 		p.conf.Set("JobsDB."+tablePrefix+".nonBlockingCompletedDSDrop", s.nonBlockingCompletedDSDrop)
 		p.conf.Set("JobsDB."+tablePrefix+".nonBlockingCompaction", s.nonBlockingCompaction)
 		p.conf.Set("JobsDB."+tablePrefix+".compactionDeferStatusLock", s.compactionDeferStatusLock)
+		p.conf.Set("JobsDB.compactionMinDSAge", "0s")
 
 		// Deterministic addNewDS trigger so we can seed exactly [datasets]
 		// datasets of [jobsPerDataset] jobs each.
