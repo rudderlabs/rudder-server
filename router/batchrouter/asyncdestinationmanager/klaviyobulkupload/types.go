@@ -57,7 +57,8 @@ type UploadResp struct {
 	Data struct {
 		Id string `json:"id"`
 	} `json:"data"`
-	Errors ErrorDetailList `json:"errors"`
+	Errors     ErrorDetailList `json:"errors"`
+	StatusCode int             `json:"-"`
 }
 
 type PollResp struct {
