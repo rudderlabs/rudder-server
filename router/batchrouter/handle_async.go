@@ -1,6 +1,7 @@
 package batchrouter
 
 import (
+	"bytes"
 	"context"
 	stdjson "encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -745,6 +747,25 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 				DestinationID: params.AsyncOutput.DestinationID,
 				SourceID:      gjson.GetBytes(jobParameters, "source_id").String(),
 			}
+			// Persist any per-job metadata onto the stored status Parameters, so a
+			// destination can read it back at poll time without loading the job
+			// payload or relying on in-memory state. The metadata shape is
+			// destination-specific.
+			statusParameters := params.AsyncOutput.ImportingParameters
+			if jobImportingParameters, ok := params.AsyncOutput.JobImportingParameters[jobId]; ok {
+				// copy the shared ImportingParameters before mutating, so each job's
+				// metadata does not leak into the others
+				base := bytes.Clone(params.AsyncOutput.ImportingParameters)
+				if merged, mergedErr := sjson.SetBytes(base, "metadata", jobImportingParameters); mergedErr != nil {
+					brt.logger.Errorn("[Batch Router] Failed to persist per-job importing metadata on status params",
+						obskit.DestinationType(brt.destType),
+						logger.NewIntField("jobId", jobId),
+						obskit.Error(mergedErr),
+					)
+				} else {
+					statusParameters = merged
+				}
+			}
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
 				JobState:      jobsdb.Importing.State,
@@ -753,7 +774,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 				RetryTime:     time.Now(),
 				ErrorCode:     "200",
 				ErrorResponse: routerutils.EnhanceJsonWithTime(params.FirstAttemptedAts[jobId], "firstAttemptedAt", routerutils.EmptyPayload),
-				Parameters:    params.AsyncOutput.ImportingParameters,
+				Parameters:    statusParameters,
 				JobParameters: jobParameters,
 				WorkspaceId:   workspaceID,
 				PartitionID:   params.PartitionIDs[jobId],
