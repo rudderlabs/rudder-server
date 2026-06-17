@@ -71,7 +71,6 @@ func NewUploader(
 		destName:     destName,
 	}
 	statTags := stats.Tags{
-		"module":        "batch_router",
 		"destType":      destName,
 		"destinationId": destination.ID,
 		"workspaceId":   destination.WorkspaceID,

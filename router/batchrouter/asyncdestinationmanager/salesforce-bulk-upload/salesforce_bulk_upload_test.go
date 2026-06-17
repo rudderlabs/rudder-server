@@ -237,7 +237,6 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.Equal(t, 2, result.ImportingCount)
 
 		tags := stats.Tags{
-			"module":        "batch_router",
 			"destType":      "SALESFORCE_BULK_UPLOAD",
 			"destinationId": "test-dest-1",
 			"workspaceId":   "test-ws-1",
