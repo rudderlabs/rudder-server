@@ -352,7 +352,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	// we only need to know whether any status row exists, not which one is latest,
 	// so the lateral's ORDER BY / LIMIT 1 would be wasteful — skip it.
 	if jd.conf.getJobsUseLateralJoin.Load() && !onlyUnprocessed {
-		joinTable = fmt.Sprintf(`LATERAL (SELECT * FROM %q WHERE job_id = jobs.job_id ORDER BY id DESC LIMIT 1) job_latest_state ON true`, joinTable)
+		joinTable = fmt.Sprintf(`LATERAL (SELECT * FROM %q WHERE job_id = jobs.job_id ORDER BY id DESC LIMIT 1) job_latest_state ON true`, ds.JobStatusTable)
 	} else {
 		joinTable = fmt.Sprintf(`%q job_latest_state ON jobs.job_id=job_latest_state.job_id`, joinTable)
 	}
