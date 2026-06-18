@@ -216,9 +216,10 @@ func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspa
 	}
 
 	procCommonEnv := map[string]string{
-		"LOG_LEVEL":                   "WARN",
-		"APP_TYPE":                    "processor",
-		"PROCESSOR_NODE_HOST_PATTERN": "proc-node-{index}.localhost",
+		"LOG_LEVEL":                              "WARN",
+		"APP_TYPE":                               "processor",
+		"PROCESSOR_NODE_HOST_PATTERN":            "proc-node-{index}.localhost",
+		"Processor.DestinationIsolation.enabled": "true", // migrate proc jobs too
 
 		"PartitionMigration.enabled":                               "true",
 		"PartitionMigration.failOnInvalidNodeHostPattern":          "false",

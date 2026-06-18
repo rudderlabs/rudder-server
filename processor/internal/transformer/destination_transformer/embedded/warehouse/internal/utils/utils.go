@@ -28,7 +28,7 @@ var (
 	rudderIsolatedTables                     = sliceToMap([]string{"users", "identifies"})
 	sourceCategoriesToUseRecordID            = sliceToMap([]string{"cloud", "singer-protocol"})
 	identityEnabledWarehouses                = sliceToMap([]string{whutils.SNOWFLAKE, whutils.BQ})
-	destinationSupportJSONPathAsPartOfConfig = sliceToMap([]string{whutils.POSTGRES, whutils.RS, whutils.SNOWFLAKE, whutils.SnowpipeStreaming, whutils.BQ, whutils.BQStreamV2})
+	destinationSupportJSONPathAsPartOfConfig = sliceToMap([]string{whutils.POSTGRES, whutils.RS, whutils.SNOWFLAKE, whutils.SnowpipeStreaming, whutils.BQ, whutils.BQStreamAllEvents})
 
 	supportedJSONPathPrefixes     = []string{"track.", "identify.", "page.", "screen.", "alias.", "group.", "extract."}
 	fullEventColumnTypeByDestType = map[string]string{
@@ -36,7 +36,7 @@ var (
 		whutils.SnowpipeStreaming: model.JSONDataType,
 		whutils.RS:                model.TextDataType,
 		whutils.BQ:                model.StringDataType,
-		whutils.BQStreamV2:        model.StringDataType,
+		whutils.BQStreamAllEvents: model.StringDataType,
 		whutils.POSTGRES:          model.JSONDataType,
 		whutils.MSSQL:             model.JSONDataType,
 		whutils.AzureSynapse:      model.JSONDataType,

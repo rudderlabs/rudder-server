@@ -62,18 +62,19 @@ type PollStatusResponse struct {
 }
 
 type AsyncUploadOutput struct {
-	ImportingJobIDs     []int64
-	ImportingParameters stdjson.RawMessage
-	FailedJobIDs        []int64
-	SucceededJobIDs     []int64
-	SuccessResponse     string
-	FailedReason        string
-	AbortJobIDs         []int64
-	AbortReason         string
-	ImportingCount      int
-	FailedCount         int
-	AbortCount          int
-	DestinationID       string
+	ImportingJobIDs        []int64
+	ImportingParameters    stdjson.RawMessage
+	FailedJobIDs           []int64
+	SucceededJobIDs        []int64
+	SuccessResponse        string
+	FailedReason           string
+	AbortJobIDs            []int64
+	AbortReason            string
+	ImportingCount         int
+	FailedCount            int
+	AbortCount             int
+	DestinationID          string
+	JobImportingParameters map[int64]stdjson.RawMessage
 }
 
 type AsyncPoll struct {

@@ -1,4 +1,4 @@
-package bqstreamv2
+package bqstreamallevents
 
 import (
 	"bufio"
@@ -17,10 +17,10 @@ import (
 )
 
 var (
-	idColumnName         = whutils.ToProviderCase(whutils.BQStreamV2, "id")
-	receivedAtColumnName = whutils.ToProviderCase(whutils.BQStreamV2, "received_at")
-	uuidTSColumnName     = whutils.ToProviderCase(whutils.BQStreamV2, "uuid_ts")
-	loadedAtColumnName   = whutils.ToProviderCase(whutils.BQStreamV2, "loaded_at")
+	idColumnName         = whutils.ToProviderCase(whutils.BQStreamAllEvents, "id")
+	receivedAtColumnName = whutils.ToProviderCase(whutils.BQStreamAllEvents, "received_at")
+	uuidTSColumnName     = whutils.ToProviderCase(whutils.BQStreamAllEvents, "uuid_ts")
+	loadedAtColumnName   = whutils.ToProviderCase(whutils.BQStreamAllEvents, "loaded_at")
 
 	sliceOfAnyType = reflect.TypeFor[[]any]()
 )
@@ -91,7 +91,7 @@ func (m *Manager) groupAndChunkEvents(events []*event) map[string][]tableEvents 
 
 	for tableName, tableEventsList := range groupedEvents {
 		eventsSchema := schemaFromEvents(tableEventsList)
-		providerTableName := whutils.ToProviderCase(whutils.BQStreamV2, tableName)
+		providerTableName := whutils.ToProviderCase(whutils.BQStreamAllEvents, tableName)
 
 		var currentChunkBytes int64
 		var currentChunk []*event
@@ -163,8 +163,9 @@ func jobIDsFromTableEvents(tableEventsList []tableEvents) []int64 {
 
 // getDiscardedRecordsFromEvent mutates the event's data in place: values whose
 // event type differs from the warehouse column type are converted to the
-// warehouse type where possible and nilled out (and reported as discards)
-// otherwise; slice values are JSON-stringified for string columns.
+// warehouse type where possible, otherwise nilled out (and reported as a
+// discard, unless the event is missing its id/received_at). Slice values are
+// JSON-stringified regardless of column type.
 func getDiscardedRecordsFromEvent(log logger.Logger, event *event, warehouseSchema whutils.ModelTableSchema, tableName, formattedTS string) (discardedRecords []discardEvent) {
 	for columnName, actualType := range event.Message.Metadata.Columns {
 		if expectedType, exists := warehouseSchema[columnName]; exists && actualType != expectedType {
@@ -177,7 +178,10 @@ func getDiscardedRecordsFromEvent(log logger.Logger, event *event, warehouseSche
 				receivedAt, receivedAtExists := event.Message.Data[receivedAtColumnName]
 
 				if !idExists || !receivedAtExists {
-					log.Warnn("Missing ID or Received At in event", logger.NewStringField("tableName", tableName))
+					log.Warnn("Missing ID or Received At in event",
+						logger.NewStringField("tableName", tableName),
+						logger.NewStringField("columnName", columnName),
+					)
 					continue
 				}
 

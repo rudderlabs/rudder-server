@@ -1,4 +1,4 @@
-package bqstreamv2
+package bqstreamallevents
 
 import (
 	"fmt"
@@ -122,7 +122,7 @@ func benchmarkSchemaAndRows(tb testing.TB, numRows int) (whutils.ModelTableSchem
 		id := strconv.Itoa(i)
 		rows = append(rows, Row{
 			"id": id, "user_id": "user_" + id, "event": "product_reviewed", "event_text": "Product Reviewed",
-			"context_destination_id": "destination1", "context_destination_type": "BQSTREAM_V2",
+			"context_destination_id": "destination1", "context_destination_type": "BQSTREAM_ALL_EVENTS",
 			"context_source_id": "source1", "context_source_type": "HTTP",
 			"context_ip": "14.5.67.21", "context_request_ip": "14.5.67.21",
 			"product_id": "9578257311", "review_id": "86ac1cd43",

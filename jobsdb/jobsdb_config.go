@@ -39,6 +39,9 @@ func (jd *Handle) loadConfig() {
 	// less than jobMinRowsLeftCompactionThreshold percent of maxDSSize (e.g. if jobMinRowsLeftCompactionThreshold is 0.5
 	// then DSs that have less than 50% of maxDSSize pending rows are eligible for compaction)
 	jd.conf.compaction.jobMinRowsLeftCompactionThreshold = jd.config.GetReloadableFloat64Var(0.6, jd.configKeys("jobMinRowsLeftCompactionThreshold", "jobMinRowsLeftMigrateThreshold")...)
+	// compactionMinDSAge: a partially-processed DS (one that needs pairing) is not eligible for compaction
+	// until it is at least this old, so that freshly-created compaction destinations are not compacted again right away
+	jd.conf.compaction.compactionMinDSAge = jd.config.GetReloadableDurationVar(2, time.Minute, jd.configKeys("compactionMinDSAge")...)
 	// maxCompactOnce: Maximum number of DSs that are compacted together into one destination
 	jd.conf.compaction.maxCompactOnce = jd.config.GetReloadableIntVar(10, 1, jd.configKeys("maxCompactOnce", "maxMigrateOnce")...)
 	// maxCompactDSProbe: Maximum number of DSs that are checked from left to right if they are eligible for compaction

@@ -112,6 +112,7 @@ type Handle struct {
 	batchRouterDB              jobsdb.JobsDB
 	eventSchemaDB              jobsdb.JobsDB
 	archivalDB                 jobsdb.JobsDB
+	procDB                     jobsdb.JobsDB
 	pendingEventsRegistry      rmetrics.PendingEventsRegistry
 	logger                     logger.Logger
 	enrichers                  []enricher.PipelineEnricher
@@ -407,7 +408,7 @@ func (proc *Handle) Setup(
 	ctx context.Context,
 	backendConfig backendconfig.BackendConfig,
 	gatewayDB, routerDB, batchRouterDB,
-	eventSchemaDB, archivalDB jobsdb.JobsDB,
+	eventSchemaDB, archivalDB, procDB jobsdb.JobsDB,
 	reporting reportingtypes.Reporting,
 	transientSources transientsource.Service,
 	fileuploader fileuploader.Provider,
@@ -440,6 +441,7 @@ func (proc *Handle) Setup(
 	proc.batchRouterDB = batchRouterDB
 	proc.eventSchemaDB = eventSchemaDB
 	proc.archivalDB = archivalDB
+	proc.procDB = procDB
 
 	proc.pendingEventsRegistry = pendingEventsRegistry
 
@@ -3882,6 +3884,9 @@ func (proc *Handle) jobSplitter(
 
 func (proc *Handle) crashRecover() {
 	proc.gatewayDB.DeleteExecuting()
+	if proc.procDB != nil {
+		proc.procDB.DeleteExecuting()
+	}
 }
 
 func (proc *Handle) updateSourceStats(sourceStats map[dupStatKey]int, bucket string) {
@@ -3975,6 +3980,9 @@ func (proc *Handle) pipelineDelayStats(partition string, first, last *jobsdb.Job
 
 func (proc *Handle) countPendingEvents(ctx context.Context) error {
 	dbs := map[string]jobsdb.JobsDB{"rt": proc.routerDB, "batch_rt": proc.batchRouterDB}
+	if proc.procDB != nil {
+		dbs["proc"] = proc.procDB
+	}
 	jobdDBQueryRequestTimeout := proc.conf.GetDurationVar(600, time.Second, "JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
 	jobdDBMaxRetries := proc.conf.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
 

@@ -590,6 +590,7 @@ func TestJobsDB(t *testing.T) {
 		}
 		prefix := strings.ToLower(rand.String(5))
 		c.Set("JobsDB.jobMinRowsLeftMigrateThreshold", 0.41)
+		c.Set("JobsDB.compactionMinDSAge", "0s") // datasets are compacted right after creation in this test
 		err := jobDB.Setup(ReadWrite, true, prefix)
 		require.NoError(t, err)
 		defer jobDB.TearDown()

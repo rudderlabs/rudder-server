@@ -1116,7 +1116,10 @@ func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 
 // checkIfCompactDS checks when DB is full or DB needs to be compacted.
 // We compact the DB ONCE most of the jobs have been processed (succeeded/aborted)
-// Or when the job_status table gets too big because of lots of retries/failures
+// Or when the job_status table gets too big because of lots of retries/failures.
+// Partially-processed datasets that would need pairing are not eligible until
+// they are at least compactionMinDSAge old, so that freshly-created compaction
+// destinations are not compacted again right away.
 func (jd *Handle) checkIfCompactDS(ds dataSetT, db sqlDbOrTx) (
 	compact, needsPair bool, recordsLeft int, err error,
 ) {
@@ -1128,6 +1131,7 @@ func (jd *Handle) checkIfCompactDS(ds dataSetT, db sqlDbOrTx) (
 	var delCount, totalCount int
 	var oldTerminalJobsExist bool
 	var maxCreatedAt time.Time
+	var tableComment sql.NullString
 
 	query := fmt.Sprintf(
 		`with combinedResult as (
@@ -1135,16 +1139,17 @@ func (jd *Handle) checkIfCompactDS(ds dataSetT, db sqlDbOrTx) (
 			(select count(*) from %[1]q) as totalJobCount,
 			(select count(*) from "v_last_%[2]s" where job_state = ANY($1)) as terminalJobCount,
 			(select created_at from %[1]q order by job_id desc limit 1) as maxCreatedAt,
-			COALESCE((select exec_time < $2 from %[2]q where job_state = ANY($1) order by id asc limit 1), false) as retentionExpired
+			COALESCE((select exec_time < $2 from %[2]q where job_state = ANY($1) order by id asc limit 1), false) as retentionExpired,
+			obj_description('%[1]s'::regclass, 'pg_class') as tableComment
 		)
-		select totalJobCount, terminalJobCount, maxCreatedAt, retentionExpired from combinedResult`,
+		select totalJobCount, terminalJobCount, maxCreatedAt, retentionExpired, tableComment from combinedResult`,
 		ds.JobTable, ds.JobStatusTable)
 
 	if err := db.QueryRow(
 		query,
 		pq.Array(validTerminalStates),
 		time.Now().Add(-1*jd.conf.maxDSRetentionPeriod.Load()),
-	).Scan(&totalCount, &delCount, &maxCreatedAt, &oldTerminalJobsExist); err != nil {
+	).Scan(&totalCount, &delCount, &maxCreatedAt, &oldTerminalJobsExist, &tableComment); err != nil {
 		return false, false, 0, fmt.Errorf("error running check query in %s: %w", ds.JobStatusTable, err)
 	}
 
@@ -1159,6 +1164,15 @@ func (jd *Handle) checkIfCompactDS(ds dataSetT, db sqlDbOrTx) (
 	}
 
 	needsPair = recordsLeft > 0 && float64(recordsLeft) < jd.conf.compaction.jobMinRowsLeftCompactionThreshold.Load()*float64(jd.conf.MaxDSSize.Load())
+
+	// A dataset that needs pairing is skipped while it is younger than
+	// compactionMinDSAge: it is usually a freshly-written compaction destination,
+	// and compacting it again right away would just churn its rows through yet
+	// another dataset. Datasets without a recorded creation time (created before
+	// creation times were introduced) yield a zero time and are never skipped.
+	if needsPair && time.Since(dsCreatedAt(tableComment.String)) < jd.conf.compaction.compactionMinDSAge.Load() {
+		return false, false, recordsLeft, nil
+	}
 
 	if needsPair || recordsLeft == 0 {
 		return true, needsPair, recordsLeft, nil

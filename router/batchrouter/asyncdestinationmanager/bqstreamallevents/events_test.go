@@ -1,4 +1,4 @@
-package bqstreamv2
+package bqstreamallevents
 
 import (
 	"os"
@@ -91,7 +91,7 @@ func TestGroupAndChunkEvents(t *testing.T) {
 
 	pages := grouped["pages"]
 	require.Len(t, pages, 2) // 60+60 exceeds the 100-byte chunk limit
-	require.Equal(t, whutils.ToProviderCase(whutils.BQStreamV2, "pages"), pages[0].tableName)
+	require.Equal(t, whutils.ToProviderCase(whutils.BQStreamAllEvents, "pages"), pages[0].tableName)
 	require.Equal(t, []int64{1}, pages[0].jobIDs)
 	require.Equal(t, []int64{2}, pages[1].jobIDs)
 	// chunks of the same table share the merged events schema
