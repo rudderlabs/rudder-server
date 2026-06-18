@@ -35,11 +35,23 @@ running it inside the Cursor Cloud VM.
   (`DEST_TRANSFORM_URL`, default `http://localhost:9090`). Until `/features` answers, the gateway
   does NOT open port 8080 (`WebHandler waiting for transformer feature before starting`).
 - The real `rudder-transformer` is a separate service (its own repo / Docker image
-  `rudderstack/rudder-transformer`) and is NOT in this workspace. Docker is not installed here.
+  `rudderstack/rudder-transformer`) and is NOT in this workspace. It can be started via
+  `docker compose up transformer` (see Docker note below), but that requires pulling the image.
 - For a transformer-free smoke test, point `DEST_TRANSFORM_URL` at any stub that returns the
   feature JSON on `GET /features` (a 404 also works — the server falls back to default features).
   With a passthrough stub the full pipeline (gateway → JobsDB → processor → router → destination)
   runs end to end.
+
+### Docker
+- Docker CE + the compose plugin are installed. There is no systemd, so start the daemon manually
+  (once per VM boot) before using Docker:
+  `sudo dockerd >/tmp/dockerd.log 2>&1 &` (configured with the `fuse-overlayfs` storage driver).
+  Verify with `sudo docker info`. Local `docker build`/`docker run` work.
+- GOTCHA (egress): pulling images from Docker Hub currently fails. The registry API
+  (`registry-1.docker.io`, `auth.docker.io`) is reachable, but image **layer blobs** are redirected
+  to `docker-images-prod.s3.dualstack.us-east-1.amazonaws.com`, which the VM's egress policy resets
+  (`SSL_ERROR_SYSCALL` / `EOF`). Until that host is allow-listed, `docker compose` stacks that pull
+  images (e.g. the transformer, or `docker-compose.yml`) cannot start; build from local context works.
 - Statsd (`:8125`) and diagnostics calls are best-effort; "connection refused" logs for statsd are
   harmless in local dev.
 
