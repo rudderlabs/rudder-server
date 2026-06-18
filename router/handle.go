@@ -113,7 +113,7 @@ type Handle struct {
 	backgroundCancel               context.CancelFunc
 	backgroundWait                 func() error
 	startEnded                     chan struct{}
-	barrier                        *eventorder.Barrier
+	newBarrierFn                   func() *eventorder.Barrier
 
 	eventOrderingDisabledForWorkspace   func(workspaceID string) bool
 	eventOrderingDisabledForDestination func(destinationID string) bool
@@ -150,7 +150,7 @@ func (rt *Handle) activePartitions(ctx context.Context) []string {
 
 // pickup picks up jobs from the jobsDB for the provided partition and returns the number of jobs picked up and whether the limits were reached or not
 // picked up jobs are distributed to the workers
-func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worker, pickupBatchSizeGauge Gauge[int]) (pickupCount int, limitsReached bool) {
+func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worker, pickupBatchSizeGauge Gauge[int], barrier *eventorder.Barrier) (pickupCount int, limitsReached bool) {
 	// pickup limiter with dynamic priority
 	start := time.Now()
 	var discardedCount int
@@ -165,7 +165,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 
 	//#JobOrder (See comment marked #JobOrder
 	if rt.guaranteeUserEventOrder {
-		rt.barrier.Sync()
+		barrier.Sync()
 	}
 
 	var firstJob *jobsdb.JobT
@@ -296,7 +296,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			panic(err)
 		}
 		findStart := time.Now()
-		workerJobSlot, err := rt.findWorkerSlot(ctx, workers, job, parameters, blockedOrderKeys)
+		workerJobSlot, err := rt.findWorkerSlot(ctx, workers, barrier, job, parameters, blockedOrderKeys)
 		findWorkerSlotDuration += time.Since(findStart)
 		if err == nil {
 			traceParent := jsonparser.GetStringOrEmpty(job.Parameters, "traceparent")
@@ -654,7 +654,7 @@ func reserveAnyWorkerSlot(workers []*worker) *reservedSlot {
 	return nil
 }
 
-func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jobsdb.JobT, parameters routerutils.JobParameters, blockedOrderKeys map[eventorder.BarrierKey]struct{}) (*workerJobSlot, error) {
+func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, barrier *eventorder.Barrier, job *jobsdb.JobT, parameters routerutils.JobParameters, blockedOrderKeys map[eventorder.BarrierKey]struct{}) (*workerJobSlot, error) {
 	if rt.backgroundCtx.Err() != nil {
 		return nil, types.ErrContextCancelled
 	}
@@ -665,7 +665,7 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 	}
 
 	eventOrderingDisabled := !rt.guaranteeUserEventOrder
-	if (rt.guaranteeUserEventOrder && rt.barrier.Disabled(orderKey)) ||
+	if (rt.guaranteeUserEventOrder && barrier.Disabled(orderKey)) ||
 		(rt.eventOrderingDisabledForWorkspace(job.WorkspaceId) ||
 			rt.eventOrderingDisabledForDestination(parameters.DestinationID)) {
 		eventOrderingDisabled = true
