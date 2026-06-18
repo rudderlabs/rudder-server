@@ -703,7 +703,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		// REPORTING - START
 		if brt.reporting != nil && brt.reportingEnabled {
 			// Update metrics maps
-			errorCode := getBRTErrorCode(jobState)
+			errorCode := getBRTErrorCode(jobState, status.ErrorCode)
 			var cd *types.ConnectionDetails
 			key := parameters.SourceID + ":" + parameters.DestinationID + ":" + parameters.SourceJobRunID + ":" + jobState + ":" + strconv.Itoa(errorCode) + ":" + parameters.EventName + ":" + parameters.EventType
 			if _, ok := connectionDetailsMap[key]; !ok {
