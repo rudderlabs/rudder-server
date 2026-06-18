@@ -28,3 +28,14 @@ func getReloadableRouterConfigInt(key, destType string, defaultValue int) config
 func getRouterConfigKeys(key, destType string) []string {
 	return []string{"Router." + destType + "." + key, "Router." + key}
 }
+
+func getHierarchicalRouterConfigKeys(destType string, keys ...string) []string {
+	orderedKeys := make([]string, 0, len(keys)*2)
+	for i := range keys {
+		orderedKeys = append(orderedKeys, "Router."+destType+"."+keys[i])
+	}
+	for i := range keys {
+		orderedKeys = append(orderedKeys, "Router."+keys[i])
+	}
+	return orderedKeys
+}

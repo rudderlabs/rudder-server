@@ -51,14 +51,14 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 			workerBuffer: newWorkerBuffer(
 				rt.maxNoOfJobsPerChannel,
 				newBufferSizeCalculatorSwitcher(
-					rt.reloadableConfig.enableExperimentalBufferSizeCalculator,
+					rt.reloadableConfig.enableDynamicBufferSizeCalculator,
 					pw.pickupBatchSizeGauge,
 					rt.noOfWorkers,
 					rt.reloadableConfig.noOfJobsToBatchInAWorker,
 					workLoopThroughput,
-					rt.reloadableConfig.experimentalBufferSizeScalingFactor,
+					rt.reloadableConfig.dynamicBufferSizeScalingFactor,
 					rt.noOfJobsPerChannel,
-					rt.reloadableConfig.experimentalBufferSizeMinimum,
+					rt.reloadableConfig.dynamicBufferSizeMinimum,
 				),
 				&workerBufferStats{
 					onceEvery:       kitsync.NewOnceEvery(5 * time.Second),

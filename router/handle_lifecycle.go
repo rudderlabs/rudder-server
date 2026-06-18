@@ -334,9 +334,9 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.failingJobsPenaltySleep = config.GetReloadableDurationVar(2000, time.Millisecond, getRouterConfigKeys("failingJobsPenaltySleep", rt.destType)...)
 	rt.reloadableConfig.failingJobsPenaltyThreshold = config.GetReloadableFloat64Var(0.6, getRouterConfigKeys("failingJobsPenaltyThreshold", rt.destType)...)
 	rt.reloadableConfig.oauthV2ExpirationTimeDiff = config.GetReloadableDurationVar(5, time.Minute, getRouterConfigKeys("oauth.expirationTimeDiff", rt.destType)...)
-	rt.reloadableConfig.enableExperimentalBufferSizeCalculator = config.GetReloadableBoolVar(false, getRouterConfigKeys("enableExperimentalBufferSizeCalculator", rt.destType)...)
-	rt.reloadableConfig.experimentalBufferSizeScalingFactor = config.GetReloadableFloat64Var(2.0, getRouterConfigKeys("experimentalBufferSizeScalingFactor", rt.destType)...)
-	rt.reloadableConfig.experimentalBufferSizeMinimum = config.GetReloadableIntVar(500, 1, getRouterConfigKeys("experimentalBufferSizeMinimum", rt.destType)...)
+	rt.reloadableConfig.enableDynamicBufferSizeCalculator = config.GetReloadableBoolVar(true, getHierarchicalRouterConfigKeys(rt.destType, "enableDynamicBufferSizeCalculator", "enableExperimentalBufferSizeCalculator")...)
+	rt.reloadableConfig.dynamicBufferSizeScalingFactor = config.GetReloadableFloat64Var(2.0, getHierarchicalRouterConfigKeys(rt.destType, "dynamicBufferSizeScalingFactor", "experimentalBufferSizeScalingFactor")...)
+	rt.reloadableConfig.dynamicBufferSizeMinimum = config.GetReloadableIntVar(500, 1, getHierarchicalRouterConfigKeys(rt.destType, "dynamicBufferSizeMinimum", "experimentalBufferSizeMinimum")...)
 	rt.diagnosisTickerTime = config.GetDurationVar(60, time.Second, "Diagnostics.routerTimePeriod", "Diagnostics.routerTimePeriodInS")
 	rt.netClientTimeout = config.GetDurationVar(10, time.Second,
 		"Router."+rt.destType+".httpTimeout",
