@@ -306,11 +306,9 @@ func GetObjectFolderForDeltalake(provider, location string, enableHierarchicalNa
 		blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
 		accountName := strings.Replace(blobUrlParts.Host, ".blob.core.windows.net", "", 1)
 
-		var blobLocation string
+		blobLocation := fmt.Sprintf("wasbs://%s@%s.blob.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
 		if enableHierarchicalNamespace {
 			blobLocation = fmt.Sprintf("abfss://%s@%s.dfs.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
-		} else {
-			blobLocation = fmt.Sprintf("wasbs://%s@%s.blob.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
 		}
 		folder = GetLocationFolder(blobLocation)
 	}
