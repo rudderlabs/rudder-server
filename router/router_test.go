@@ -507,6 +507,7 @@ var _ = Describe("router", func() {
 		conf = config.New()
 		config.Reset()
 		config.Set("Router.jobRetention", "175200h") // 20 Years(20*365*24)
+		config.Set("Router.enableDynamicBufferSizeCalculator", false)
 		c = &testContext{}
 		c.Setup()
 	})
