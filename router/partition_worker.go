@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
+	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/utils/cache"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -21,6 +22,7 @@ import (
 // A partition worker uses multiple workers internally to process the jobs that are being picked up asynchronously.
 func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *partitionWorker {
 	samplerCtx, samplerCancel := context.WithCancel(context.Background())
+	barrier := rt.newBarrierFn()
 	pw := &partitionWorker{
 		logger:               rt.logger.Child("p-" + partition),
 		rt:                   rt,
@@ -30,6 +32,7 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 		pickupBatchSizeGauge: newGaugeWithLastValue[int](stats.Default.NewTaggedStat("router_pickup_batch_size_gauge", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition})),
 	}
 	pw.g, _ = errgroup.WithContext(context.Background())
+	pw.barrier = barrier
 	pw.workers = make([]*worker, rt.noOfWorkers)
 	deliveryTimeStat := stats.Default.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destType})
 	routerDeliveryLatencyStat := stats.Default.NewTaggedStat("router_delivery_latency", stats.TimerType, stats.Tags{"destType": rt.destType})
@@ -65,7 +68,7 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 					currentCapacity: bufferCapacityStat,
 					currentSize:     bufferSizeStat,
 				}),
-			barrier:                   rt.barrier,
+			barrier:                   barrier,
 			rt:                        rt,
 			deliveryTimeStat:          deliveryTimeStat,
 			routerDeliveryLatencyStat: routerDeliveryLatencyStat,
@@ -126,6 +129,7 @@ type partitionWorker struct {
 	samplerCancel        context.CancelFunc      // stops the buffer-capacity sampler goroutine
 	pickupBatchSizeGauge GaugeWithLastValue[int] // gauge to track the pickup batch size used in the last pickup iteration
 	workers              []*worker               // workers that are responsible for processing the jobs
+	barrier              *eventorder.Barrier     // barrier for this partition's event ordering
 
 	pickupCount   int  // number of jobs picked up by the workers in the last iteration
 	limitsReached bool // whether the limits were reached in the last iteration
@@ -134,7 +138,7 @@ type partitionWorker struct {
 // Work picks up jobs for the partitioned worker and returns whether it worked or not
 func (pw *partitionWorker) Work() bool {
 	start := time.Now()
-	pw.pickupCount, pw.limitsReached = pw.rt.pickup(pw.ctx, pw.partition, pw.workers, pw.pickupBatchSizeGauge)
+	pw.pickupCount, pw.limitsReached = pw.rt.pickup(pw.ctx, pw.partition, pw.workers, pw.pickupBatchSizeGauge, pw.barrier)
 	// the following stats are used to track the total time taken for the pickup process and the number of jobs picked up
 	stats.Default.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": pw.rt.destType}).Since(start)
 	stats.Default.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": pw.rt.destType, "partition": pw.partition}).Count(pw.pickupCount)

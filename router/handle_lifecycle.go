@@ -170,20 +170,36 @@ func (rt *Handle) Setup(
 	rt.eventOrderingDisabledForDestination = func(destinationID string) bool {
 		return slices.Contains(orderingDisabledDestinationIDs.Load(), destinationID)
 	}
-	rt.barrier = eventorder.NewBarrier(eventorder.WithMetadata(map[string]string{
-		"destType":         rt.destType,
-		"batching":         strconv.FormatBool(rt.enableBatching),
-		"transformerProxy": strconv.FormatBool(rt.reloadableConfig.transformerProxy.Load()),
-	}),
-		eventorder.WithEventOrderKeyThreshold(rt.eventOrderKeyThreshold),
-		eventorder.WithDisabledStateDuration(rt.eventOrderDisabledStateDuration),
-		eventorder.WithHalfEnabledStateDuration(rt.eventOrderHalfEnabledStateDuration),
-		eventorder.WithDrainConcurrencyLimit(rt.drainConcurrencyLimit),
-		eventorder.WithDebugInfoProvider(rt.eventOrderDebugInfo),
-		eventorder.WithOrderingDisabledCheckForBarrierKey(func(key eventorder.BarrierKey) bool {
-			return rt.eventOrderingDisabledForWorkspace(key.WorkspaceID) || rt.eventOrderingDisabledForDestination(key.DestinationID)
+	orderingPanicOnIllegalSequence := config.GetReloadableBoolVar(true, getRouterConfigKeys("orderingPanicOnIllegalSequence", destType)...)
+	illegalJobSequenceStats := map[string]stats.Measurement{}
+	for _, location := range []string{"enter", "wait", "job_failed"} {
+		illegalJobSequenceStats[location] = stats.Default.NewTaggedStat("router_illegal_job_sequence", stats.CountType, stats.Tags{
+			"destType": rt.destType,
+			"location": location,
+		})
+	}
+	rt.newBarrierFn = func() *eventorder.Barrier {
+		return eventorder.NewBarrier(eventorder.WithMetadata(map[string]string{
+			"destType":         rt.destType,
+			"batching":         strconv.FormatBool(rt.enableBatching),
+			"transformerProxy": strconv.FormatBool(rt.reloadableConfig.transformerProxy.Load()),
 		}),
-	)
+			eventorder.WithEventOrderKeyThreshold(rt.eventOrderKeyThreshold),
+			eventorder.WithDisabledStateDuration(rt.eventOrderDisabledStateDuration),
+			eventorder.WithHalfEnabledStateDuration(rt.eventOrderHalfEnabledStateDuration),
+			eventorder.WithDrainConcurrencyLimit(rt.drainConcurrencyLimit),
+			eventorder.WithDebugInfoProvider(rt.eventOrderDebugInfo),
+			eventorder.WithOrderingDisabledCheckForBarrierKey(func(key eventorder.BarrierKey) bool {
+				return rt.eventOrderingDisabledForWorkspace(key.WorkspaceID) || rt.eventOrderingDisabledForDestination(key.DestinationID)
+			}),
+			eventorder.WithPanicOnIllegalJobSequence(orderingPanicOnIllegalSequence),
+			eventorder.WithIllegalJobSequenceCallback(func(location string) {
+				if m, ok := illegalJobSequenceStats[location]; ok {
+					m.Increment()
+				}
+			}),
+		)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
