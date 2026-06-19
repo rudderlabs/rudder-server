@@ -538,6 +538,12 @@ func TestGetObjectFolderForDeltalake(t *testing.T) {
 			objectFolder: "s3://test-bucket/myfolder",
 		},
 		{
+			name:         "S3 without object name",
+			provider:     "S3",
+			location:     "https://test-bucket.s3.amazonaws.com/myfolder",
+			objectFolder: "s3://test-bucket",
+		},
+		{
 			name:         "GCS",
 			provider:     "GCS",
 			location:     "https://storage.googleapis.com/test-bucket/test-object.csv",
