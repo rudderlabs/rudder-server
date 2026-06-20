@@ -1000,7 +1000,9 @@ func (d *Deltalake) canUseAuth() bool {
 // getLoadFolder returns the load folder for the warehouse load files.
 // Azure hierarchical namespace only changes the COPY path to abfss://; the storage
 // account must have HNS enabled and Databricks must be configured to auth to the
-// dfs.core.windows.net endpoint.
+// dfs.core.windows.net endpoint. Rudder still uploads staging files through the
+// Azure Blob endpoint; HNS accounts expose the same container/blob namespace through
+// both blob.core.windows.net and dfs.core.windows.net.
 func (d *Deltalake) getLoadFolder(location string) string {
 	loadFolder := warehouseutils.GetObjectFolderForDeltalake(
 		d.ObjectStorage,

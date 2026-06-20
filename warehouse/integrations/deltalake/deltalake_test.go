@@ -106,7 +106,7 @@ func TestLoadTableWithAzureHierarchicalNamespaceCopyError(t *testing.T) {
 	)
 	require.Error(t, err)
 	require.ErrorIs(t, err, copyErr)
-	require.Contains(t, err.Error(), "Azure Blob hierarchical namespace is enabled")
+	require.Contains(t, err.Error(), "hierarchical namespace is enabled for Azure Blob")
 	require.Contains(t, err.Error(), "hierarchical namespace enabled")
 	require.Contains(t, err.Error(), "dfs.core.windows.net")
 	require.Contains(t, err.Error(), "Rudder does not send inline Azure credentials")
