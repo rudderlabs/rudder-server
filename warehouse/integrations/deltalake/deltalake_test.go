@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	dbsql "github.com/databricks/databricks-sql-go"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -34,6 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -71,6 +73,44 @@ func deltaLakeTestCredentials(key string) (*testCredentials, error) {
 		return nil, fmt.Errorf("failed to unmarshal deltaLake test credentials: %w", err)
 	}
 	return &credentials, nil
+}
+
+func TestLoadTableWithAzureHierarchicalNamespaceCopyError(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	copyErr := errors.New("opaque storage error")
+	mock.ExpectExec("COPY INTO").WillReturnError(copyErr)
+
+	d := deltalake.New(config.New(), logger.NOP, stats.NOP)
+	d.DB = sqlmiddleware.New(db)
+	d.Namespace = "test_namespace"
+	d.ObjectStorage = whutils.AzureBlob
+	d.Warehouse = model.Warehouse{
+		Destination: backendconfig.DestinationT{
+			Config: map[string]any{
+				model.EnableHierarchicalNamespaceSetting.String(): true,
+			},
+		},
+	}
+
+	err = d.TestLoadTable(
+		context.Background(),
+		"https://testaccount.blob.core.windows.net/test-container/myfolder/test-object.csv",
+		"test_table",
+		nil,
+		whutils.LoadFileTypeCsv,
+	)
+	require.Error(t, err)
+	require.ErrorIs(t, err, copyErr)
+	require.Contains(t, err.Error(), "Azure Blob hierarchical namespace is enabled")
+	require.Contains(t, err.Error(), "hierarchical namespace enabled")
+	require.Contains(t, err.Error(), "dfs.core.windows.net")
+	require.Contains(t, err.Error(), "Rudder does not send inline Azure credentials")
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestIntegration(t *testing.T) {
