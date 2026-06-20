@@ -270,8 +270,8 @@ func TestIntegration(t *testing.T) {
 				eventFilePath2: "../testdata/upload-job.events-1.json",
 				useSameUserID:  true,
 				configOverride: map[string]any{
-					"preferAppend":             true,
-					"useHierarchicalNamespace": false,
+					"preferAppend":                true,
+					"enableHierarchicalNamespace": false,
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
 					t.Helper()
