@@ -1020,7 +1020,7 @@ func (d *Deltalake) loadErrorWithStorageContext(err error, loadFolder string) er
 		return err
 	}
 
-	return fmt.Errorf("Azure Blob hierarchical namespace is enabled, so Databricks COPY uses an abfss:// path; verify the Azure storage account has hierarchical namespace enabled and Databricks cluster or Unity Catalog authentication is configured for the dfs.core.windows.net endpoint because Rudder does not send inline Azure credentials for Azure COPY: %w", err)
+	return fmt.Errorf("hierarchical namespace is enabled for Azure Blob, so Databricks COPY uses an abfss:// path; verify the Azure storage account has hierarchical namespace enabled and Databricks cluster or Unity Catalog authentication is configured for the dfs.core.windows.net endpoint because Rudder does not send inline Azure credentials for Azure COPY: %w", err)
 }
 
 // hasAWSCredentials returns true if the warehouse is configured to use AWS credentials
