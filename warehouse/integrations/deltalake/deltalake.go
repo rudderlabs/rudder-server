@@ -776,7 +776,7 @@ func (d *Deltalake) copyIntoLoadTable(
 	}
 
 	if _, err := d.DB.ExecContext(ctx, copyStmt); err != nil {
-		return fmt.Errorf("executing copy query: %w", d.loadErrorWithStorageContext(err, loadFolder))
+		return fmt.Errorf("executing copy query: %w", err)
 	}
 	return nil
 }
@@ -1015,14 +1015,6 @@ func (d *Deltalake) getLoadFolder(location string) string {
 	}
 
 	return loadFolder
-}
-
-func (d *Deltalake) loadErrorWithStorageContext(err error, loadFolder string) error {
-	if d.ObjectStorage != warehouseutils.AzureBlob || !strings.HasPrefix(loadFolder, "abfss://") {
-		return err
-	}
-
-	return fmt.Errorf("hierarchical namespace is enabled for Azure Blob, so Databricks COPY uses an abfss:// path; verify the Azure storage account has hierarchical namespace enabled and Databricks cluster or Unity Catalog authentication is configured for the dfs.core.windows.net endpoint because Rudder does not send inline Azure credentials for Azure COPY: %w", err)
 }
 
 // hasAWSCredentials returns true if the warehouse is configured to use AWS credentials
@@ -1415,7 +1407,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 
 	_, err = d.DB.ExecContext(ctx, query)
 	if err != nil {
-		return fmt.Errorf("loading test table: %w", d.loadErrorWithStorageContext(err, loadFolder))
+		return fmt.Errorf("loading test table: %w", err)
 	}
 
 	return nil

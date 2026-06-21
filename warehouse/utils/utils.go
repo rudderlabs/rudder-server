@@ -302,17 +302,20 @@ func GetObjectFolderForDeltalake(provider, location string, enableHierarchicalNa
 	case GCS:
 		folder = GetGCSLocationFolder(location, GCSLocationOptions{TLDFormat: "gs"})
 	case AzureBlob:
-		blobUrl, _ := url.Parse(location)
-		blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
-		accountName := strings.Replace(blobUrlParts.Host, ".blob.core.windows.net", "", 1)
-
-		blobLocation := fmt.Sprintf("wasbs://%s@%s.blob.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
-		if enableHierarchicalNamespace {
-			blobLocation = fmt.Sprintf("abfss://%s@%s.dfs.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
-		}
-		folder = GetLocationFolder(blobLocation)
+		folder = GetLocationFolder(getAzureBlobLocation(location, enableHierarchicalNamespace))
 	}
 	return folder
+}
+
+func getAzureBlobLocation(location string, enableHierarchicalNamespace bool) string {
+	blobUrl, _ := url.Parse(location)
+	blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
+	accountName := strings.Replace(blobUrlParts.Host, ".blob.core.windows.net", "", 1)
+
+	if enableHierarchicalNamespace {
+		return fmt.Sprintf("abfss://%s@%s.dfs.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
+	}
+	return fmt.Sprintf("wasbs://%s@%s.blob.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
 }
 
 func GetColumnsFromTableSchema(schema model.TableSchema) []string {
