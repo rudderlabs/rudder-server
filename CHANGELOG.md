@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.77.3](https://github.com/rudderlabs/rudder-server/compare/v1.77.2...v1.77.3) (2026-06-17)
+
+
+### Bug Fixes
+
+* **batchrouter:** correlate poll results by externalId instead of whole-row hash ([ea126d3](https://github.com/rudderlabs/rudder-server/commit/ea126d39bb8a6263e92eb01ee0b795c71165c039))
+
+## [1.77.2](https://github.com/rudderlabs/rudder-server/compare/v1.77.1...v1.77.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* abort non-retryable Klaviyo upload errors instead of retrying ([#7085](https://github.com/rudderlabs/rudder-server/issues/7085)) ([a31d6e5](https://github.com/rudderlabs/rudder-server/commit/a31d6e581cfb4b64c50274e95d90a5155b2a125c))
+
 ## [1.77.1](https://github.com/rudderlabs/rudder-server/compare/v1.77.0...v1.77.1) (2026-06-10)
 
 

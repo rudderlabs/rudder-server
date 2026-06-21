@@ -70,7 +70,6 @@ type handleConfig struct {
 	allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
 	webhookV2HandlerEnabled              bool
 	internalEndpointsEnabled             bool
-	legacyWarehouseEndpointsEnabled      bool
 }
 
 type Handle struct {

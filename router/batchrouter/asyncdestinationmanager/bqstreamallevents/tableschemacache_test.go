@@ -1,4 +1,4 @@
-package bqstreamv2
+package bqstreamallevents
 
 import (
 	"testing"

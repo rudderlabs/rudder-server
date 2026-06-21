@@ -64,6 +64,22 @@ func WithOrderingDisabledCheckForBarrierKey(orderingDisabledForKey func(key Barr
 	}
 }
 
+// WithPanicOnIllegalJobSequence controls whether an illegal job sequence causes a panic.
+// When disabled (default), out-of-order jobs are treated as normal and the illegalSequenceCallback is invoked instead.
+func WithPanicOnIllegalJobSequence(panicOnIllegalSequence config.ValueLoader[bool]) OptFn {
+	return func(b *Barrier) {
+		b.panicOnIllegalSequence = panicOnIllegalSequence
+	}
+}
+
+// WithIllegalJobSequenceCallback sets a callback invoked when an illegal job sequence is detected and panics are disabled.
+// The location parameter identifies where the illegal sequence was detected: "enter", "wait", or "job_failed".
+func WithIllegalJobSequenceCallback(callback func(location string)) OptFn {
+	return func(b *Barrier) {
+		b.illegalSequenceCallback = callback
+	}
+}
+
 // NewBarrier creates a new properly initialized Barrier
 func NewBarrier(fns ...OptFn) *Barrier {
 	b := &Barrier{
@@ -73,6 +89,7 @@ func NewBarrier(fns ...OptFn) *Barrier {
 		disabledStateDuration:    config.SingleValueLoader(10 * time.Minute),
 		halfEnabledStateDuration: config.SingleValueLoader(5 * time.Minute),
 		drainLimit:               config.SingleValueLoader(0),
+		panicOnIllegalSequence:   config.SingleValueLoader(false),
 	}
 	for _, fn := range fns {
 		fn(b)
@@ -107,6 +124,9 @@ type Barrier struct {
 	debugInfo func(key BarrierKey) string
 
 	orderingDisabledForKey func(key BarrierKey) bool
+
+	panicOnIllegalSequence  config.ValueLoader[bool]
+	illegalSequenceCallback func(location string)
 }
 
 type BarrierKey struct {
@@ -166,13 +186,18 @@ func (b *Barrier) Enter(key BarrierKey, jobID int64) (accepted bool, previousFai
 			if b.debugInfo != nil {
 				debugInfo = "\nDEBUG INFO:\n" + b.debugInfo(key)
 			}
-			panic(fmt.Errorf("detected illegal job sequence during barrier enter %+v: key %q, previousFailedJob:%d > jobID:%d (previouslyDisabled: %t)%s",
-				b.metadata,
-				key,
-				failedJob,
-				jobID,
-				!barrier.stateTime.IsZero(),
-				debugInfo))
+			if b.panicOnIllegalSequence.Load() {
+				panic(fmt.Errorf("detected illegal job sequence during barrier enter %+v: key %q, previousFailedJob:%d > jobID:%d (previouslyDisabled: %t)%s",
+					b.metadata,
+					key,
+					failedJob,
+					jobID,
+					!barrier.stateTime.IsZero(),
+					debugInfo))
+			}
+			if b.illegalSequenceCallback != nil {
+				b.illegalSequenceCallback("enter")
+			}
 		}
 		accepted = jobID == failedJob
 	} else {
@@ -227,15 +252,20 @@ func (b *Barrier) Wait(key BarrierKey, jobID int64) (wait bool, previousFailedJo
 			if b.debugInfo != nil {
 				debugInfo = "\nDEBUG INFO:\n" + b.debugInfo(key)
 			}
-			panic(fmt.Errorf("detected illegal job sequence during barrier wait %+v: key %q, previousFailedJob:%d > jobID:%d  (previouslyDisabled: %t)%s",
-				b.metadata,
-				key,
-				failedJob,
-				jobID,
-				!barrier.stateTime.IsZero(),
-				debugInfo))
+			if b.panicOnIllegalSequence.Load() {
+				panic(fmt.Errorf("detected illegal job sequence during barrier wait %+v: key %q, previousFailedJob:%d > jobID:%d  (previouslyDisabled: %t)%s",
+					b.metadata,
+					key,
+					failedJob,
+					jobID,
+					!barrier.stateTime.IsZero(),
+					debugInfo))
+			}
+			if b.illegalSequenceCallback != nil {
+				b.illegalSequenceCallback("wait")
+			}
 		}
-		return jobID > failedJob, &failedJob // wait if this is not the failed job
+		return jobID != failedJob, &failedJob // wait if this is not the failed job
 	}
 	// no failed job, don't wait
 	return false, nil
@@ -449,13 +479,18 @@ func (c *jobFailedCommand) execute(b *Barrier) {
 		if b.debugInfo != nil {
 			debugInfo = "\nDEBUG INFO:\n" + b.debugInfo(c.key)
 		}
-		panic(fmt.Errorf("detected illegal job sequence during barrier job failed %+v: key %q, previousFailedJob:%d > jobID:%d (previouslyDisabled: %t)%s",
-			b.metadata,
-			c.key,
-			*barrier.failedJobID,
-			c.jobID,
-			!barrier.stateTime.IsZero(),
-			debugInfo))
+		if b.panicOnIllegalSequence.Load() {
+			panic(fmt.Errorf("detected illegal job sequence during barrier job failed %+v: key %q, previousFailedJob:%d > jobID:%d (previouslyDisabled: %t)%s",
+				b.metadata,
+				c.key,
+				*barrier.failedJobID,
+				c.jobID,
+				!barrier.stateTime.IsZero(),
+				debugInfo))
+		}
+		if b.illegalSequenceCallback != nil {
+			b.illegalSequenceCallback("job_failed")
+		}
 	}
 	barrier.drainLimiter = nil // turn off drain limiter
 }

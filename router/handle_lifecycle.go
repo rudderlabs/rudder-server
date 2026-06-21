@@ -170,20 +170,36 @@ func (rt *Handle) Setup(
 	rt.eventOrderingDisabledForDestination = func(destinationID string) bool {
 		return slices.Contains(orderingDisabledDestinationIDs.Load(), destinationID)
 	}
-	rt.barrier = eventorder.NewBarrier(eventorder.WithMetadata(map[string]string{
-		"destType":         rt.destType,
-		"batching":         strconv.FormatBool(rt.enableBatching),
-		"transformerProxy": strconv.FormatBool(rt.reloadableConfig.transformerProxy.Load()),
-	}),
-		eventorder.WithEventOrderKeyThreshold(rt.eventOrderKeyThreshold),
-		eventorder.WithDisabledStateDuration(rt.eventOrderDisabledStateDuration),
-		eventorder.WithHalfEnabledStateDuration(rt.eventOrderHalfEnabledStateDuration),
-		eventorder.WithDrainConcurrencyLimit(rt.drainConcurrencyLimit),
-		eventorder.WithDebugInfoProvider(rt.eventOrderDebugInfo),
-		eventorder.WithOrderingDisabledCheckForBarrierKey(func(key eventorder.BarrierKey) bool {
-			return rt.eventOrderingDisabledForWorkspace(key.WorkspaceID) || rt.eventOrderingDisabledForDestination(key.DestinationID)
+	orderingPanicOnIllegalSequence := config.GetReloadableBoolVar(true, getRouterConfigKeys("orderingPanicOnIllegalSequence", destType)...)
+	illegalJobSequenceStats := map[string]stats.Measurement{}
+	for _, location := range []string{"enter", "wait", "job_failed"} {
+		illegalJobSequenceStats[location] = stats.Default.NewTaggedStat("router_illegal_job_sequence", stats.CountType, stats.Tags{
+			"destType": rt.destType,
+			"location": location,
+		})
+	}
+	rt.newBarrierFn = func() *eventorder.Barrier {
+		return eventorder.NewBarrier(eventorder.WithMetadata(map[string]string{
+			"destType":         rt.destType,
+			"batching":         strconv.FormatBool(rt.enableBatching),
+			"transformerProxy": strconv.FormatBool(rt.reloadableConfig.transformerProxy.Load()),
 		}),
-	)
+			eventorder.WithEventOrderKeyThreshold(rt.eventOrderKeyThreshold),
+			eventorder.WithDisabledStateDuration(rt.eventOrderDisabledStateDuration),
+			eventorder.WithHalfEnabledStateDuration(rt.eventOrderHalfEnabledStateDuration),
+			eventorder.WithDrainConcurrencyLimit(rt.drainConcurrencyLimit),
+			eventorder.WithDebugInfoProvider(rt.eventOrderDebugInfo),
+			eventorder.WithOrderingDisabledCheckForBarrierKey(func(key eventorder.BarrierKey) bool {
+				return rt.eventOrderingDisabledForWorkspace(key.WorkspaceID) || rt.eventOrderingDisabledForDestination(key.DestinationID)
+			}),
+			eventorder.WithPanicOnIllegalJobSequence(orderingPanicOnIllegalSequence),
+			eventorder.WithIllegalJobSequenceCallback(func(location string) {
+				if m, ok := illegalJobSequenceStats[location]; ok {
+					m.Increment()
+				}
+			}),
+		)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
@@ -334,9 +350,9 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.failingJobsPenaltySleep = config.GetReloadableDurationVar(2000, time.Millisecond, getRouterConfigKeys("failingJobsPenaltySleep", rt.destType)...)
 	rt.reloadableConfig.failingJobsPenaltyThreshold = config.GetReloadableFloat64Var(0.6, getRouterConfigKeys("failingJobsPenaltyThreshold", rt.destType)...)
 	rt.reloadableConfig.oauthV2ExpirationTimeDiff = config.GetReloadableDurationVar(5, time.Minute, getRouterConfigKeys("oauth.expirationTimeDiff", rt.destType)...)
-	rt.reloadableConfig.enableExperimentalBufferSizeCalculator = config.GetReloadableBoolVar(false, getRouterConfigKeys("enableExperimentalBufferSizeCalculator", rt.destType)...)
-	rt.reloadableConfig.experimentalBufferSizeScalingFactor = config.GetReloadableFloat64Var(2.0, getRouterConfigKeys("experimentalBufferSizeScalingFactor", rt.destType)...)
-	rt.reloadableConfig.experimentalBufferSizeMinimum = config.GetReloadableIntVar(500, 1, getRouterConfigKeys("experimentalBufferSizeMinimum", rt.destType)...)
+	rt.reloadableConfig.enableDynamicBufferSizeCalculator = config.GetReloadableBoolVar(true, getHierarchicalRouterConfigKeys(rt.destType, "enableDynamicBufferSizeCalculator", "enableExperimentalBufferSizeCalculator")...)
+	rt.reloadableConfig.dynamicBufferSizeScalingFactor = config.GetReloadableFloat64Var(2.0, getHierarchicalRouterConfigKeys(rt.destType, "dynamicBufferSizeScalingFactor", "experimentalBufferSizeScalingFactor")...)
+	rt.reloadableConfig.dynamicBufferSizeMinimum = config.GetReloadableIntVar(500, 1, getHierarchicalRouterConfigKeys(rt.destType, "dynamicBufferSizeMinimum", "experimentalBufferSizeMinimum")...)
 	rt.diagnosisTickerTime = config.GetDurationVar(60, time.Second, "Diagnostics.routerTimePeriod", "Diagnostics.routerTimePeriodInS")
 	rt.netClientTimeout = config.GetDurationVar(10, time.Second,
 		"Router."+rt.destType+".httpTimeout",

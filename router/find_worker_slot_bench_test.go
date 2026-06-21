@@ -24,8 +24,8 @@ import (
 //
 //   - mode: which workerBuffer configuration is in use:
 //     simple                — newSimpleWorkerBuffer (fixed capacity, no calculator)
-//     dynamic/standard      — newWorkerBuffer + newBufferSizeCalculatorSwitcher (experimental=false)
-//     dynamic/experimental  — newWorkerBuffer + newBufferSizeCalculatorSwitcher (experimental=true)
+//     dynamic/standard  — newWorkerBuffer + newBufferSizeCalculatorSwitcher (dynamic=false)
+//     dynamic/dynamic   — newWorkerBuffer + newBufferSizeCalculatorSwitcher (dynamic=true)
 //
 //   - strategy: how a worker with capacity is chosen:
 //     filter     — the old approach: lo.Filter on AvailableSlots, rand.Intn into the
@@ -49,7 +49,7 @@ func BenchmarkFindWorkerSlot(b *testing.B) {
 		jobQueryBatchSize      = 10000
 		workLoopThroughputObs  = 100.0
 		scalingFactor          = 2.0
-		experimentalMinSize    = 500
+		dynamicMinSize         = 500
 		simpleBufferCapacity   = 1000 // matches the standard calculator's output for these defaults
 	)
 
@@ -89,30 +89,30 @@ func BenchmarkFindWorkerSlot(b *testing.B) {
 			name: "dynamic/standard",
 			newBuf: func() (*workerBuffer, int) {
 				calc := newBufferSizeCalculatorSwitcher(
-					config.SingleValueLoader(false), // experimental disabled
+					config.SingleValueLoader(false), // dynamic disabled
 					config.SingleValueLoader(jobQueryBatchSize),
 					numWorkers,
 					config.SingleValueLoader(noOfJobsToBatchPerWork),
 					seededSMA(workLoopThroughputObs),
 					config.SingleValueLoader(scalingFactor),
 					noOfJobsPerChannel,
-					config.SingleValueLoader(experimentalMinSize),
+					config.SingleValueLoader(dynamicMinSize),
 				)
 				return newWorkerBuffer(maxNoOfJobsPerChannel, calc, newBufferStats()), calc()
 			},
 		},
 		{
-			name: "dynamic/experimental",
+			name: "dynamic/dynamic",
 			newBuf: func() (*workerBuffer, int) {
 				calc := newBufferSizeCalculatorSwitcher(
-					config.SingleValueLoader(true), // experimental enabled
+					config.SingleValueLoader(true), // dynamic enabled
 					config.SingleValueLoader(jobQueryBatchSize),
 					numWorkers,
 					config.SingleValueLoader(noOfJobsToBatchPerWork),
 					seededSMA(workLoopThroughputObs),
 					config.SingleValueLoader(scalingFactor),
 					noOfJobsPerChannel,
-					config.SingleValueLoader(experimentalMinSize),
+					config.SingleValueLoader(dynamicMinSize),
 				)
 				return newWorkerBuffer(maxNoOfJobsPerChannel, calc, newBufferStats()), calc()
 			},
@@ -214,7 +214,7 @@ func BenchmarkFindWorkerSlot(b *testing.B) {
 }
 
 // seededSMA returns a SimpleMovingAverage primed with a single observation, so the
-// experimental calculator sees a stable, non-zero throughput throughout the benchmark.
+// dynamic calculator sees a stable, non-zero throughput throughout the benchmark.
 func seededSMA(observation float64) metric.SimpleMovingAverage {
 	sma := metric.NewSimpleMovingAverage(1)
 	sma.Observe(observation)

@@ -44,7 +44,7 @@ const (
 	BQ                = "BQ"
 	SNOWFLAKE         = "SNOWFLAKE"
 	SnowpipeStreaming = "SNOWPIPE_STREAMING"
-	BQStreamV2        = "BQSTREAM_V2"
+	BQStreamAllEvents = "BQSTREAM_ALL_EVENTS"
 	POSTGRES          = "POSTGRES"
 	CLICKHOUSE        = "CLICKHOUSE"
 	MSSQL             = "MSSQL"
@@ -129,7 +129,7 @@ var (
 	awsCredsExpiryInS      config.ValueLoader[int64]
 
 	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}
-	StreamDestinations        = []string{SnowpipeStreaming, BQStreamV2}
+	StreamDestinations        = []string{SnowpipeStreaming, BQStreamAllEvents}
 	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
 	S3PathStyleRegex          = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
 	S3VirtualHostedRegex      = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)

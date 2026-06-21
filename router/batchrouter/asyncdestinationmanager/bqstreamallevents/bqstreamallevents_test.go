@@ -1,4 +1,4 @@
-package bqstreamv2
+package bqstreamallevents
 
 import (
 	"context"
@@ -98,12 +98,12 @@ func (m *mockAppendResult) GetResult(ctx context.Context) (int64, error) {
 	return m.getResultOutput(ctx)
 }
 
-func TestBQStreamV2(t *testing.T) {
+func TestBQStreamAllEvents(t *testing.T) {
 	destination := &backendconfig.DestinationT{
 		ID:          "test-destination",
 		WorkspaceID: "test-workspace",
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
-			Name: "BQSTREAM_V2",
+			Name: "BQSTREAM_ALL_EVENTS",
 		},
 		Config: make(map[string]any),
 	}
@@ -146,10 +146,10 @@ func TestBQStreamV2(t *testing.T) {
 		require.Equal(t, 1, output.AbortCount)
 		require.Contains(t, output.AbortReason, "opening async file")
 		require.Equal(t, "test-destination", output.DestinationID)
-		require.EqualValues(t, 1, statsStore.Get("bqstream_v2_jobs", stats.Tags{
+		require.EqualValues(t, 1, statsStore.Get("bqstream_all_events_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
-			"destType":      "BQSTREAM_V2",
+			"destType":      "BQSTREAM_ALL_EVENTS",
 			"destinationId": "test-destination",
 			"status":        "aborted",
 		}).LastValue())
@@ -169,10 +169,10 @@ func TestBQStreamV2(t *testing.T) {
 		require.Equal(t, 1, output.AbortCount)
 		require.Contains(t, output.AbortReason, "unmarshalling event line")
 		require.Equal(t, "test-destination", output.DestinationID)
-		require.EqualValues(t, 1, statsStore.Get("bqstream_v2_jobs", stats.Tags{
+		require.EqualValues(t, 1, statsStore.Get("bqstream_all_events_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
-			"destType":      "BQSTREAM_V2",
+			"destType":      "BQSTREAM_ALL_EVENTS",
 			"destinationId": "test-destination",
 			"status":        "aborted",
 		}).LastValue())
@@ -799,10 +799,10 @@ func TestBQStreamV2(t *testing.T) {
 			FileName:        "testdata/successful_duplicate_records.txt",
 		})
 		require.ElementsMatch(t, []int64{1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008}, output.SucceededJobIDs)
-		require.EqualValues(t, 2, statsStore.Get("bqstream_v2_duplicate_events", stats.Tags{
+		require.EqualValues(t, 2, statsStore.Get("bqstream_all_events_duplicate_events", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
-			"destType":      "BQSTREAM_V2",
+			"destType":      "BQSTREAM_ALL_EVENTS",
 			"destinationId": "test-destination",
 			"reason":        "batch",
 		}).LastValue())
@@ -815,7 +815,7 @@ func TestBQStreamV2(t *testing.T) {
 		maxInsertRequestSizeBytes := 8 * bytesize.MB
 
 		conf := config.New()
-		conf.Set("BQStreamV2.maxBufferCapacity", int64(64*1024*1024))
+		conf.Set("BQStreamAllEvents.maxBufferCapacity", int64(64*1024*1024))
 
 		sm := newManager(conf, logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
@@ -842,7 +842,7 @@ func TestBQStreamV2(t *testing.T) {
 			},
 		}
 
-		f, err := os.CreateTemp("", "bqstream-v2-chunking-*.txt")
+		f, err := os.CreateTemp("", "bqstream-all-events-chunking-*.txt")
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = os.Remove(f.Name()) })
 		t.Cleanup(func() { _ = f.Close() })

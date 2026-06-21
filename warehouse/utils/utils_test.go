@@ -567,7 +567,7 @@ func TestGetObjectFolderForDeltalake(t *testing.T) {
 	for _, input := range inputs {
 		t.Run(input.name, func(t *testing.T) {
 			objectFolder := GetObjectFolderForDeltalake(input.provider, input.location, input.enableHierarchicalNamespace)
-			require.Equal(t, objectFolder, input.objectFolder)
+			require.Equal(t, input.objectFolder, objectFolder)
 		})
 	}
 }
