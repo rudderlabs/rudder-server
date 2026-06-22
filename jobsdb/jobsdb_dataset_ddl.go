@@ -212,22 +212,41 @@ func (jd *Handle) createDSJobIndicesInTx(ctx context.Context, tx *Tx, newDS data
 			return fmt.Errorf("creating %s index: %w", param, err)
 		}
 	}
+	if jd.conf.multiConsumer {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_consumers" ON %[1]q USING GIN (consumers)`, newDS.JobTable)); err != nil {
+			return fmt.Errorf("creating consumers GIN index: %w", err)
+		}
+	}
 	return nil
 }
 
 // createDSStatusIndicesInTx creates the indices on the job status table plus the
-// v_last view.
+// v_last view. On multi-consumer handles it also creates the v_last_c_ view and
+// the wider (job_id, consumer, id DESC, job_state) pickup index.
+// v_last_ is always created so that a soft downgrade (disabling WithMultiConsumer without
+// the guard) finds the view and can at least start — callers accept single-consumer semantics
+// during a downgrade window.
 func (jd *Handle) createDSStatusIndicesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id_js" ON %[1]q(job_id asc,id desc,job_state)`, newDS.JobStatusTable)); err != nil {
-		return fmt.Errorf("adding job_id_id index: %w", err)
-	}
-	// index used for maxDSRetention during compaction
+	// retention index — consumer-agnostic, always created
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_id_js" ON %[1]q(id ,job_state) INCLUDE (exec_time)`, newDS.JobStatusTable)); err != nil {
-		return fmt.Errorf("adding job_id_js index: %w", err)
+		return fmt.Errorf("adding id_js index: %w", err)
+	}
+	// v_last_ is always created (see comment above)
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
+		return fmt.Errorf("creating v_last view: %w", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
-		return fmt.Errorf("create view: %w", err)
+	if jd.conf.multiConsumer {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_c_id_js" ON %[1]q (job_id ASC, consumer, id DESC, job_state)`, newDS.JobStatusTable)); err != nil {
+			return fmt.Errorf("adding jid_c_id_js index: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_c_%[1]s" AS SELECT DISTINCT ON (job_id, consumer) * FROM %[1]q ORDER BY job_id ASC, consumer, id DESC`, newDS.JobStatusTable)); err != nil {
+			return fmt.Errorf("creating v_last_c view: %w", err)
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id_js" ON %[1]q(job_id asc,id desc,job_state)`, newDS.JobStatusTable)); err != nil {
+			return fmt.Errorf("adding jid_id_js index: %w", err)
+		}
 	}
 	return nil
 }

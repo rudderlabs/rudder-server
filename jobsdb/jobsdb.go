@@ -375,6 +375,7 @@ type Handle struct {
 		MaxDSSize                       config.ValueLoader[int]
 		numPartitions                   int // if zero or negative, no partitioning
 		partitionFunction               func(job *JobT) string
+		multiConsumer                   bool // if true, enables per-consumer indexes, views, and query paths
 		warnOnStatusMissingPartitionID  config.ValueLoader[bool]
 		holdDSListLockDuringStore       config.ValueLoader[bool] // escape hatch: hold the dsList read lock for the entire store callback
 		staleDSListMaxRetries           config.ValueLoader[int]
