@@ -435,36 +435,29 @@ func strippableProfiles(resp *UploadResp, statusCode int) (map[int]string, bool)
 	if resp == nil || !isClientError(statusCode) {
 		return nil, false
 	}
-	indices, allAttributed := extractInvalidProfileIndices(resp.Errors)
-	if !allAttributed || len(indices) == 0 {
-		return nil, false
-	}
-	return indices, true
+	return extractInvalidProfileIndices(resp.Errors)
 }
 
 // extractInvalidProfileIndices inspects the errors returned by a synchronous 400
 // from Klaviyo and maps each offending profile's index (within the uploaded
-// payload) to its error detail. The second return value is true only when every
-// error could be attributed to a specific profile; if any error is structural
-// (e.g. an invalid list ID, which has no profile pointer) it returns false so the
-// caller can fall back to aborting the whole chunk instead of retrying blindly.
+// payload) to its error detail. The second return value is true only when there
+// is at least one error and every error was attributed to a specific profile. If
+// any error is structural (e.g. an invalid list ID, which has no profile pointer)
+// it returns false so the caller aborts the whole chunk instead of retrying blindly.
 func extractInvalidProfileIndices(errs ErrorDetailList) (map[int]string, bool) {
 	indices := make(map[int]string)
-	allAttributed := true
 	for _, e := range errs {
 		match := profileIndexRegex.FindStringSubmatch(e.Source.Pointer)
 		if match == nil {
-			allAttributed = false
-			continue
+			return nil, false
 		}
 		idx, err := strconv.Atoi(match[1])
 		if err != nil {
-			allAttributed = false
-			continue
+			return nil, false
 		}
 		indices[idx] = e.Detail
 	}
-	return indices, allAttributed
+	return indices, len(indices) > 0
 }
 
 // isClientError reports whether a status code is a non-retryable 4xx (excluding
