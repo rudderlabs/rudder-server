@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/cachettl"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/ro"
@@ -34,6 +35,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/activationrecords"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -98,6 +100,11 @@ type sourceObserver interface {
 type trackedUsersReporter interface {
 	ReportUsers(ctx context.Context, reports []*trackedusers.UsersReport, tx *Tx) error
 	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceIdFilter map[string]bool) []*trackedusers.UsersReport
+}
+
+type activationRecordsReporter interface {
+	GenerateReportsFromJobs(jobs []*jobsdb.JobT) []*activationrecords.ActivationRecord
+	ReportActivationRecords(ctx context.Context, reports []*activationrecords.ActivationRecord, tx *Tx) error
 }
 
 // Handle is a handle to the processor module
@@ -203,6 +210,8 @@ type Handle struct {
 
 	sourceObservers      []sourceObserver
 	trackedUsersReporter trackedUsersReporter
+
+	activationRecordsReporter activationRecordsReporter
 }
 type processorStats struct {
 	statGatewayDBR                func(partition string) stats.Measurement
@@ -418,6 +427,7 @@ func (proc *Handle) Setup(
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
 	trackedUsersReporter trackedusers.UsersReporter,
+	activationRecordsReporter activationrecords.ActivationRecordsReporter,
 	pendingEventsRegistry rmetrics.PendingEventsRegistry,
 ) error {
 	proc.reporting = reporting
@@ -473,6 +483,7 @@ func (proc *Handle) Setup(
 	proc.instanceID = misc.GetInstanceID()
 
 	proc.trackedUsersReporter = trackedUsersReporter
+	proc.activationRecordsReporter = activationRecordsReporter
 	proc.tracer = tracing.New(proc.statsFactory.NewTracer("processor"), tracing.WithNamePrefix("proc"))
 	proc.stats.statGatewayDBR = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_gateway_db_read", stats.CountType, stats.Tags{
@@ -2356,6 +2367,17 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	trackedUsersReports := proc.trackedUsersReporter.GenerateReportsFromJobs(preTrans.jobList, proc.getNonEventStreamSources())
 	proc.stats.trackedUsersReportGeneration(preTrans.partition).SendTiming(time.Since(trackedUsersReportGenStart))
 
+	activationRecordsReports := proc.activationRecordsReporter.GenerateReportsFromJobs(preTrans.jobList)
+	// Strip internal metering fields AFTER generate (the gate already read them) and
+	// BEFORE transformation, so context.activation never reaches the destination.
+	// DeleteKey returns (data, error); a key-not-found error means the path was absent,
+	// so only overwrite the payload on a nil error (clean no-op otherwise).
+	for _, job := range preTrans.jobList {
+		if stripped, err := jsonparser.DeleteKey(job.EventPayload, "batch", "[0]", "context", "activation"); err == nil {
+			job.EventPayload = stripped
+		}
+	}
+
 	return &transformationMessage{
 		preTrans.subJobs.ctx,
 		groupedEvents,
@@ -2372,6 +2394,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		preTrans.subJobs.hasMore,
 		preTrans.subJobs.rsourcesStats,
 		trackedUsersReports,
+		activationRecordsReports,
 	}, nil
 }
 
@@ -2444,6 +2467,8 @@ type transformationMessage struct {
 	hasMore             bool
 	rsourcesStats       rsources.StatsCollector
 	trackedUsersReports []*trackedusers.UsersReport
+
+	activationRecordsReports []*activationrecords.ActivationRecord
 }
 
 type userTransformData struct {
@@ -2454,6 +2479,7 @@ type userTransformData struct {
 	sourceDupStats                map[dupStatKey]int
 	dedupKeys                     map[string]struct{}
 	trackedUsersReports           []*trackedusers.UsersReport
+	activationRecordsReports      []*activationrecords.ActivationRecord
 
 	totalEvents int
 	start       time.Time
@@ -2547,6 +2573,7 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 		hasMore:                       in.hasMore,
 		rsourcesStats:                 in.rsourcesStats,
 		trackedUsersReports:           in.trackedUsersReports,
+		activationRecordsReports:      in.activationRecordsReports,
 		traces:                        traces,
 	}
 }
@@ -2615,6 +2642,7 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 	return &storeMessage{
 		in.ctx,
 		in.trackedUsersReports,
+		in.activationRecordsReports,
 		in.statusList,
 		destJobs,
 		batchDestJobs,
@@ -2637,10 +2665,12 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 type storeMessage struct {
 	ctx                 context.Context
 	trackedUsersReports []*trackedusers.UsersReport
-	statusList          []*jobsdb.JobStatusT
-	destJobs            []*jobsdb.JobT
-	batchDestJobs       []*jobsdb.JobT
-	droppedJobs         []*jobsdb.JobT
+
+	activationRecordsReports []*activationrecords.ActivationRecord
+	statusList               []*jobsdb.JobStatusT
+	destJobs                 []*jobsdb.JobT
+	batchDestJobs            []*jobsdb.JobT
+	droppedJobs              []*jobsdb.JobT
 
 	procErrorJobsByDestID map[string][]procErrorJob
 	routerDestIDs         []string
@@ -2676,6 +2706,7 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 	sm.totalEvents += subJob.totalEvents
 
 	sm.trackedUsersReports = append(sm.trackedUsersReports, subJob.trackedUsersReports...)
+	sm.activationRecordsReports = append(sm.activationRecordsReports, subJob.activationRecordsReports...)
 }
 
 func (proc *Handle) sendRetryStoreStats(attempt int) {
@@ -2881,6 +2912,11 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 			err = proc.trackedUsersReporter.ReportUsers(ctx, in.trackedUsersReports, tx.Tx())
 			if err != nil {
 				return fmt.Errorf("storing tracked users: %w", err)
+			}
+
+			err = proc.activationRecordsReporter.ReportActivationRecords(ctx, in.activationRecordsReports, tx.Tx())
+			if err != nil {
+				return fmt.Errorf("storing activation records: %w", err)
 			}
 
 			// this will publish stats for all sources involved in this batch
