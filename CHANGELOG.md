@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.77.4](https://github.com/rudderlabs/rudder-server/compare/v1.77.3...v1.77.4) (2026-06-22)
+
+
+### Bug Fixes
+
+* klaviyo upload partial failures ([#7107](https://github.com/rudderlabs/rudder-server/issues/7107)) ([621a070](https://github.com/rudderlabs/rudder-server/commit/621a07018fde61be36fdd2d97f5dce05a8f26831))
+
 ## [1.77.3](https://github.com/rudderlabs/rudder-server/compare/v1.77.2...v1.77.3) (2026-06-17)
 
 
