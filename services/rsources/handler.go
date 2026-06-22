@@ -35,6 +35,18 @@ var ErrInvalidPaginationToken = errors.New("rsources: invalid pagination token")
 // In postgres, the replication slot name can contain lower-case letters, underscore characters, and numbers.
 var replSlotDisallowedChars *regexp.Regexp = regexp.MustCompile(`[^a-z0-9_]`)
 
+// maxIdentifierLength is the maximum length of a postgres identifier (NAMEDATALEN-1). Longer
+// identifiers are silently truncated to this many bytes by the server.
+const maxIdentifierLength = 63
+
+// truncateIdentifier truncates an ASCII identifier to the length postgres would store it as.
+func truncateIdentifier(name string) string {
+	if len(name) > maxIdentifierLength {
+		return name[:maxIdentifierLength]
+	}
+	return name
+}
+
 type sourcesHandler struct {
 	log                  logger.Logger
 	config               JobServiceConfig
@@ -570,7 +582,17 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	}
 
 	normalizedHostname := replSlotDisallowedChars.ReplaceAllString(strings.ToLower(sh.config.LocalHostname), "_")
-	subscriptionName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostname)
+	// Postgres truncates identifiers to NAMEDATALEN-1 (63) bytes, so truncate the name ourselves
+	// to match what is actually stored in the catalog. The name is ASCII-only after normalization,
+	// so a byte slice is a safe truncation.
+	subscriptionName := truncateIdentifier(fmt.Sprintf("%s_rsources_stats_sub", normalizedHostname))
+
+	// Drop the subscription if its replication slot no longer exists on the publisher,
+	// so that it can be recreated below along with a fresh slot.
+	if err := sh.dropStaleSubscription(ctx, subscriptionName); err != nil {
+		return err
+	}
+
 	// Create subscription for the above publication (ignore already exists error)
 	subscriptionConn := sh.config.SubscriptionTargetConn
 	if subscriptionConn == "" {
@@ -586,6 +608,51 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 		return fmt.Errorf("failed to refresh subscription on shared database: %w", err)
 	}
 
+	return nil
+}
+
+// dropStaleSubscription drops the named subscription from the shared (subscriber) database if
+// its replication slot no longer exists on the local (publisher) database, allowing it to be
+// recreated together with a fresh slot. A subscription is considered stale when it has no
+// associated slot name, or the slot it references is absent on the publisher (e.g. the local
+// database was recreated, or the slot was dropped or invalidated due to WAL retention limits).
+//
+// It is a no-op when the subscription does not exist or its slot is healthy.
+func (sh *sourcesHandler) dropStaleSubscription(ctx context.Context, subscriptionName string) error {
+	var slotName sql.NullString
+	err := sh.sharedDB.QueryRowContext(ctx,
+		`SELECT subslotname FROM pg_subscription WHERE subname = $1`, subscriptionName).Scan(&slotName)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil // no subscription yet, nothing to reconcile
+	case err != nil:
+		return fmt.Errorf("failed to look up subscription %q on shared database: %w", subscriptionName, err)
+	}
+
+	if slotName.Valid {
+		var slotExists bool
+		if err := sh.localDB.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = $1)`,
+			slotName.String).Scan(&slotExists); err != nil {
+			return fmt.Errorf("failed to check replication slot %q on local database: %w", slotName.String, err)
+		}
+		if slotExists {
+			return nil // slot is healthy, nothing to do
+		}
+	}
+
+	sh.log.Warnn("dropping stale rsources subscription with missing replication slot",
+		logger.NewStringField("subscription", subscriptionName),
+		logger.NewStringField("slot", slotName.String))
+	// Detach the (missing) slot before dropping so that DROP SUBSCRIPTION doesn't attempt to
+	// contact the publisher to drop it. The statements run in a single round trip; lib/pq uses
+	// the simple query protocol since there are no bind parameters.
+	if _, err := sh.sharedDB.ExecContext(ctx, fmt.Sprintf(`
+		ALTER SUBSCRIPTION %[1]q DISABLE;
+		ALTER SUBSCRIPTION %[1]q SET (slot_name = NONE);
+		DROP SUBSCRIPTION %[1]q;`, subscriptionName)); err != nil {
+		return fmt.Errorf("failed to drop stale subscription %q on shared database: %w", subscriptionName, err)
+	}
 	return nil
 }
 
