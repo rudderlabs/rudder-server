@@ -161,7 +161,8 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		event_payload `+string(columnType)+` NOT NULL,
 		event_count INTEGER NOT NULL DEFAULT 1,
 		created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {
+		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+		consumers TEXT[] NOT NULL DEFAULT '{""}');`, newDS.JobTable)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobTable, err)
 	}
 
@@ -174,7 +175,8 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		retry_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 		error_code VARCHAR(32),
 		error_response JSONB DEFAULT '{}'::JSONB,
-		parameters JSONB DEFAULT '{}'::JSONB);`, newDS.JobStatusTable)); err != nil {
+		parameters JSONB DEFAULT '{}'::JSONB,
+		consumer TEXT NOT NULL DEFAULT '');`, newDS.JobStatusTable)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobStatusTable, err)
 	}
 
