@@ -22,6 +22,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/activationrecords"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -1933,9 +1935,17 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 				},
 			}
 
+			unprocessedJobsList[4].EventPayload, _ = sjson.SetBytes(
+				unprocessedJobsList[4].EventPayload,
+				"batch.0.context.activation",
+				map[string]string{"fingerprint": "fp-1", "origin": "rudder"},
+			)
+			Expect(len(jsonparser.GetValueOrEmpty(unprocessedJobsList[4].EventPayload, "batch", "[0]", "context", "activation"))).To(BeNumerically(">", 0))
+
 			mockTransformerClients := transformer.NewSimpleClients()
 			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
+			processor.activationRecordsReporter = activationrecords.NewNoopActivationRecordsReporter()
 
 			mockTransformerClients.SetDestinationTransformOutput(
 				// Return a fixed response that matches our expectations for store calls
@@ -2086,6 +2096,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 			}
 			Setup(processor, c, false, false)
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
+			processor.activationRecordsReporter = activationrecords.NewNoopActivationRecordsReporter()
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -2095,6 +2106,9 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 			Expect(c.mockTrackedUsersReporter.generateCalls[0].jobs).Should(Equal(unprocessedJobsList))
 			Expect(c.mockTrackedUsersReporter.reportCalls).To(HaveLen(1))
 			Expect(c.mockTrackedUsersReporter.reportCalls[0].reportedReports).Should(Equal(trackerUsersReports))
+			// MAR strips context.activation in the pre-transform stage (in place), so the record
+			// job's payload must no longer contain it after processing.
+			Expect(len(jsonparser.GetValueOrEmpty(unprocessedJobsList[4].EventPayload, "batch", "[0]", "context", "activation"))).To(Equal(0))
 		})
 	})
 })
@@ -2146,6 +2160,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
+				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
 			Expect(err).To(BeNil())
@@ -2178,6 +2193,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
+				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
 			Expect(err).To(BeNil())
@@ -2215,6 +2231,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
+				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
 			Expect(err).To(BeNil())
@@ -3222,6 +3239,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
+				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
 			Expect(err).To(BeNil())
@@ -3277,6 +3295,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
+				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
 			Expect(err).To(BeNil())
@@ -5296,6 +5315,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool,
 		transformationdebugger.NewNoOpService(),
 		[]enricher.PipelineEnricher{},
 		trackedusers.NewNoopDataCollector(),
+		activationrecords.NewNoopActivationRecordsReporter(),
 		rmetrics.NewPendingEventsRegistry(),
 	)
 	if len(t) == 0 {

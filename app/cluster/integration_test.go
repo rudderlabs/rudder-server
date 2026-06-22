@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	arc "github.com/rudderlabs/rudder-server/archiver"
 	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/activationrecords"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
@@ -135,6 +136,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		transformationdebugger.NewNoOpService(),
 		[]enricher.PipelineEnricher{},
 		trackedusers.NewNoopDataCollector(),
+		activationrecords.NewNoopActivationRecordsReporter(),
 		rmetrics.NewPendingEventsRegistry(),
 		processor.WithTransformerClients(mockTransformerClients),
 	)
