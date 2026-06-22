@@ -28,7 +28,7 @@ func newStandardBufferSizeCalculator(
 	}
 }
 
-// newExperimentalBufferSizeCalculator calculates the buffer size for a worker based on the following algorithm (minimum value returned is 1):
+// newDynamicBufferSizeCalculator calculates the buffer size for a worker based on the following algorithm (minimum value returned is 1):
 //
 //  1. Calculate the average throughput of jobs processed by the work loop per second (workLoopThroughput)
 //  2. Calculate the number of jobs that are queried during pickup divided by the number of workers (jobQueryBatchSize / noOfWorkers)
@@ -38,7 +38,7 @@ func newStandardBufferSizeCalculator(
 // Exceptional case:
 //
 //   - If throughput is less than 1 (workLoopThroughput < 1), set the buffer size to 1 so that we are forcing a slow buffer start & introducing backpressure in the buffer in case of slow processing.
-func newExperimentalBufferSizeCalculator(
+func newDynamicBufferSizeCalculator(
 	jobQueryBatchSize config.ValueLoader[int], // number of jobs that are queried during pickup
 	noOfWorkers int, // number of workers processing jobs
 	noOfJobsToBatchInAWorker config.ValueLoader[int], // number of jobs that a worker can batch together
@@ -65,10 +65,10 @@ func newExperimentalBufferSizeCalculator(
 	}
 }
 
-// newBufferSizeCalculatorSwitcher returns a function that switches between the standard and experimental calculators based on the
-// enableExperimentalBufferSizeCalculator flag
+// newBufferSizeCalculatorSwitcher returns a function that switches between the standard and dynamic calculators based on the
+// enableDynamicBufferSizeCalculator flag
 func newBufferSizeCalculatorSwitcher(
-	enableExperimentalBufferSizeCalculator config.ValueLoader[bool],
+	enableDynamicBufferSizeCalculator config.ValueLoader[bool],
 	jobQueryBatchSize config.ValueLoader[int], // number of jobs that are queried during pickup
 	noOfWorkers int, // number of workers processing jobs
 	noOfJobsToBatchInAWorker config.ValueLoader[int], // number of jobs that a worker can batch together
@@ -77,7 +77,7 @@ func newBufferSizeCalculatorSwitcher(
 	noOfJobsPerChannel int, // number of jobs per channel
 	minBufferSize config.ValueLoader[int], // minimum buffer size
 ) bufferSizeCalculator {
-	new := newExperimentalBufferSizeCalculator(
+	new := newDynamicBufferSizeCalculator(
 		jobQueryBatchSize,
 		noOfWorkers,
 		noOfJobsToBatchInAWorker,
@@ -91,7 +91,7 @@ func newBufferSizeCalculatorSwitcher(
 	)
 
 	return func() int {
-		if enableExperimentalBufferSizeCalculator.Load() {
+		if enableDynamicBufferSizeCalculator.Load() {
 			return new()
 		}
 		return legacy()

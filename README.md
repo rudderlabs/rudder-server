@@ -1,5 +1,5 @@
 <p align="center">
-📖 Just launched <b><a href="https://www.rudderstack.com/learn/">Data Learning Center</a></b> - Resources on data engineering and data infrastructure
+🚀 Just launched <b><a href="https://www.rudderstack.com/product/rudderai/">RudderAI</a></b> - the agentic layer for the entire customer data lifecycle
   <br/>
  </p>
 

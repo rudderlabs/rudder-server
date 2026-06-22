@@ -9,8 +9,14 @@ import (
 )
 
 var (
-	asyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BINGADS_AUDIENCE", "ELOQUA", "YANDEX_METRICA_OFFLINE_EVENTS", "BINGADS_OFFLINE_CONVERSIONS", "KLAVIYO_BULK_UPLOAD", "LYTICS_BULK_UPLOAD", "SNOWPIPE_STREAMING", "SALESFORCE_BULK_UPLOAD"}
-	sftpDestinations  = []string{"SFTP"}
+	asyncDestinations = []string{
+		"MARKETO_BULK_UPLOAD", "BINGADS_AUDIENCE", "ELOQUA", "YANDEX_METRICA_OFFLINE_EVENTS",
+		"BINGADS_OFFLINE_CONVERSIONS", "KLAVIYO_BULK_UPLOAD", "LYTICS_BULK_UPLOAD",
+		"SNOWPIPE_STREAMING", "SALESFORCE_BULK_UPLOAD", "BQSTREAM_ALL_EVENTS",
+	}
+	sftpDestinations = []string{"SFTP"}
+
+	allAsyncDestinations = append(asyncDestinations, sftpDestinations...)
 )
 
 func IsSFTPDestination(destination string) bool {
@@ -22,7 +28,7 @@ func IsAsyncRegularDestination(destination string) bool {
 }
 
 func IsAsyncDestination(destination string) bool {
-	return slices.Contains(append(asyncDestinations, sftpDestinations...), destination)
+	return slices.Contains(allAsyncDestinations, destination)
 }
 
 // FormatCSVValue stringifies a JSON-derived value for a CSV cell.

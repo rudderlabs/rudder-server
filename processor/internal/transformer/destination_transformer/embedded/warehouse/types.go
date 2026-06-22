@@ -1,14 +1,10 @@
 package warehouse
 
 import (
-	"context"
-	"io"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -37,11 +33,6 @@ type (
 			maxLoggedEvents              config.ValueLoader[int]
 			concurrentTransformations    config.ValueLoader[int]
 			instanceID                   string
-		}
-
-		loggedSamples         atomic.Int64
-		loggedSamplesUploader interface {
-			UploadReader(ctx context.Context, objName string, rdr io.Reader) (filemanager.UploadedFile, error)
 		}
 	}
 

@@ -1,7 +1,10 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/throttling"
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -76,24 +80,7 @@ func createTestGateway(t *testing.T, eventBlockingSettings backendconfig.EventBl
 		stats:   statsStore,
 		logger:  logger.NOP,
 		webhook: mockWebhook,
-		conf: struct {
-			webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess                       int
-			maxUserWebRequestBatchSize, maxDBBatchSize, maxHeaderBytes, maxConcurrentRequests int
-			userWebRequestBatchTimeout, dbBatchWriteTimeout                                   config.ValueLoader[time.Duration]
-			maxReqSize                                                                        config.ValueLoader[int]
-			enableRateLimit                                                                   config.ValueLoader[bool]
-			enableSuppressUserFeature                                                         bool
-			diagnosisTickerTime                                                               time.Duration
-			ReadTimeout                                                                       time.Duration
-			ReadHeaderTimeout                                                                 time.Duration
-			WriteTimeout                                                                      time.Duration
-			IdleTimeout                                                                       time.Duration
-			allowReqsWithoutUserIDAndAnonymousID                                              config.ValueLoader[bool]
-			gwAllowPartialWriteWithErrors                                                     config.ValueLoader[bool]
-			webhookV2HandlerEnabled                                                           bool
-			internalEndpointsEnabled                                                          bool
-			legacyWarehouseEndpointsEnabled                                                   bool
-		}{
+		conf: handleConfig{
 			webhookV2HandlerEnabled: false,
 		},
 		configSubscriberLock: sync.RWMutex{},
@@ -994,4 +981,120 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 			}
 		})
 	}
+}
+
+func newThrottledHandle(t *testing.T, eventsLimit int, window time.Duration) *Handle {
+	t.Helper()
+	l, err := throttling.New(throttling.WithInMemoryGCRA(0))
+	require.NoError(t, err)
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+	return &Handle{
+		logger:                                   logger.NOP,
+		stats:                                    statsStore,
+		internalBatchLimiter:                     l,
+		bodyReadTimeStat:                         statsStore.NewStat("gateway.http_body_read_time", stats.TimerType),
+		requestSizeStat:                          statsStore.NewStat("gateway.request_size", stats.HistogramType),
+		internalBatchThrottleSkipDisabledCounter: statsStore.NewTaggedStat("gateway.internal_batch_throttle_skip", stats.CountType, stats.Tags{"reason": "disabled"}),
+		internalBatchThrottleSkipNoHeaderCounter: statsStore.NewTaggedStat("gateway.internal_batch_throttle_skip", stats.CountType, stats.Tags{"reason": "no_header"}),
+		internalBatchThrottleSkipInvalidHeaderCounter: statsStore.NewTaggedStat("gateway.internal_batch_throttle_skip", stats.CountType, stats.Tags{"reason": "invalid_header"}),
+		conf: handleConfig{
+			internalBatchThrottleEvents: config.SingleValueLoader(eventsLimit),
+			internalBatchThrottleWindow: config.SingleValueLoader(window),
+		},
+	}
+}
+
+func TestInternalBatchAllow(t *testing.T) {
+	t.Run("disabled when limit is zero", func(t *testing.T) {
+		gw := newThrottledHandle(t, 0, time.Second)
+		for range 3 {
+			require.True(t, gw.internalBatchAllow(context.Background(), 50))
+		}
+		require.Equal(t, 3.0, gw.stats.(*memstats.Store).Get("gateway.internal_batch_throttle_skip", stats.Tags{"reason": "disabled"}).LastValue())
+	})
+
+	t.Run("disabled when limit is negative", func(t *testing.T) {
+		gw := newThrottledHandle(t, -1, time.Second)
+		for range 3 {
+			require.True(t, gw.internalBatchAllow(context.Background(), 50))
+		}
+		require.Equal(t, 3.0, gw.stats.(*memstats.Store).Get("gateway.internal_batch_throttle_skip", stats.Tags{"reason": "disabled"}).LastValue())
+	})
+
+	t.Run("allows requests within limit", func(t *testing.T) {
+		gw := newThrottledHandle(t, 100, time.Second)
+		require.True(t, gw.internalBatchAllow(context.Background(), 100))
+	})
+
+	t.Run("denies requests that exceed limit", func(t *testing.T) {
+		// GCRA burst is pre-filled to rate events. The max allowed single-shot cost
+		// is rate+1 (burst + 1 slot from the rate). Sending rate+1 exhausts the burst;
+		// any subsequent request is denied until the window replenishes.
+		gw := newThrottledHandle(t, 10, time.Second)
+		require.True(t, gw.internalBatchAllow(context.Background(), 11)) // rate+1 = exhausts burst
+		require.False(t, gw.internalBatchAllow(context.Background(), 1)) // denied: burst empty
+	})
+
+	t.Run("window is respected", func(t *testing.T) {
+		// Same burst exhaustion logic applies for any window size.
+		gw := newThrottledHandle(t, 10, 60*time.Second)
+		require.True(t, gw.internalBatchAllow(context.Background(), 11)) // rate+1 = exhausts burst
+		require.False(t, gw.internalBatchAllow(context.Background(), 1)) // denied: burst empty
+	})
+}
+
+func TestInternalBatchHandlerThrottle(t *testing.T) {
+	skipCounter := func(gw *Handle, reason string) float64 {
+		return gw.stats.(*memstats.Store).Get("gateway.internal_batch_throttle_skip", stats.Tags{"reason": reason}).LastValue()
+	}
+	makeRequest := func(gw *Handle, batchSizeHeader string) *httptest.ResponseRecorder {
+		handler := gw.callType("internalBatch", gw.internalBatchHandlerFunc())
+		req := httptest.NewRequest(http.MethodPost, "/internal/v1/batch", http.NoBody)
+		if batchSizeHeader != "" {
+			req.Header.Set("X-Batch-Size", batchSizeHeader)
+		}
+		w := httptest.NewRecorder()
+		handler(w, req)
+		return w
+	}
+
+	t.Run("returns 429 when throttle limit exceeded", func(t *testing.T) {
+		gw := newThrottledHandle(t, 10, time.Second)
+		require.True(t, gw.internalBatchAllow(context.Background(), 11)) // exhaust burst (rate+1)
+		w := makeRequest(gw, "1")
+		require.Equal(t, http.StatusTooManyRequests, w.Code)
+		require.Equal(t, 0.0, skipCounter(gw, "disabled"))
+		require.Equal(t, 0.0, skipCounter(gw, "no_header"))
+		require.Equal(t, 0.0, skipCounter(gw, "invalid_header"))
+	})
+
+	t.Run("no throttle when header is absent", func(t *testing.T) {
+		gw := newThrottledHandle(t, 10, time.Second)
+		require.True(t, gw.internalBatchAllow(context.Background(), 11)) // exhaust burst
+		w := makeRequest(gw, "")
+		require.NotEqual(t, http.StatusTooManyRequests, w.Code)
+		require.Equal(t, 1.0, skipCounter(gw, "no_header"))
+		require.Equal(t, 0.0, skipCounter(gw, "disabled"))
+		require.Equal(t, 0.0, skipCounter(gw, "invalid_header"))
+	})
+
+	t.Run("no throttle when header is invalid", func(t *testing.T) {
+		gw := newThrottledHandle(t, 10, time.Second)
+		require.True(t, gw.internalBatchAllow(context.Background(), 11)) // exhaust burst
+		w := makeRequest(gw, "not-a-number")
+		require.NotEqual(t, http.StatusTooManyRequests, w.Code)
+		require.Equal(t, 1.0, skipCounter(gw, "invalid_header"))
+		require.Equal(t, 0.0, skipCounter(gw, "disabled"))
+		require.Equal(t, 0.0, skipCounter(gw, "no_header"))
+	})
+
+	t.Run("no throttle when disabled", func(t *testing.T) {
+		gw := newThrottledHandle(t, 0, time.Second)
+		w := makeRequest(gw, "9999")
+		require.NotEqual(t, http.StatusTooManyRequests, w.Code)
+		require.Equal(t, 1.0, skipCounter(gw, "disabled"))
+		require.Equal(t, 0.0, skipCounter(gw, "no_header"))
+		require.Equal(t, 0.0, skipCounter(gw, "invalid_header"))
+	})
 }

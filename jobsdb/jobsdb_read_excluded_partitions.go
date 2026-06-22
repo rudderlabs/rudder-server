@@ -12,14 +12,15 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/tx"
 )
 
-// Management interface for read excluded partitions
+// ReadExcludedPartitionsManager manages partitions excluded from read queries.
 type ReadExcludedPartitionsManager interface {
-	// AddReadExcludedPartitionIDs adds partition IDs to the excluded read list
+	// AddReadExcludedPartitionIDs adds partition IDs to the read-exclusion list.
 	AddReadExcludedPartitionIDs(ctx context.Context, partitionIDs []string) error
-	// RemoveReadExcludedPartitionIDs removes partition IDs from the excluded read list
+	// RemoveReadExcludedPartitionIDs removes partition IDs from the read-exclusion list.
 	RemoveReadExcludedPartitionIDs(ctx context.Context, partitionIDs []string) error
 }
 
+// AddReadExcludedPartitionIDs adds partition IDs to the read-exclusion list.
 func (jd *Handle) AddReadExcludedPartitionIDs(ctx context.Context, partitionIDs []string) error {
 	if jd.conf.numPartitions <= 0 {
 		return fmt.Errorf("partitioning is not enabled for prefix %s", jd.tablePrefix)
@@ -55,6 +56,7 @@ func (jd *Handle) AddReadExcludedPartitionIDs(ctx context.Context, partitionIDs 
 	return nil
 }
 
+// RemoveReadExcludedPartitionIDs removes partition IDs from the read-exclusion list.
 func (jd *Handle) RemoveReadExcludedPartitionIDs(ctx context.Context, partitionIDs []string) error {
 	if jd.conf.numPartitions <= 0 {
 		return fmt.Errorf("partitioning is not enabled for prefix %s", jd.tablePrefix)
@@ -81,12 +83,11 @@ func (jd *Handle) RemoveReadExcludedPartitionIDs(ctx context.Context, partitionI
 	return nil
 }
 
-// loadReadExcludedPartitions loads the excluded read partitions from the database
-// and populates the excludedReadPartitions map in the JobsDB handle.
+// loadReadExcludedPartitions loads read-excluded partition IDs into memory.
 func (jd *Handle) loadReadExcludedPartitions() error {
 	jd.excludedReadPartitionsLock.Lock()
 	defer jd.excludedReadPartitionsLock.Unlock()
-	if jd.conf.numPartitions == 0 {
+	if jd.conf.numPartitions <= 0 {
 		// Partitioning is not enabled; nothing to read.
 		return nil
 	}

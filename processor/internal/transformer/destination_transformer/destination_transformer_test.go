@@ -33,7 +33,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type fakeTransformer struct {
@@ -651,75 +650,6 @@ func TestDestinationTransformer(t *testing.T) {
 					rsp := tr.Transform(context.TODO(), events)
 					require.Equal(t, rsp, expectedResponse)
 				})
-
-				t.Run("Destination warehouse transformations", func(t *testing.T) {
-					testCases := []struct {
-						name            string
-						destinationType string
-					}{
-						{
-							name:            "rs",
-							destinationType: warehouseutils.RS,
-						},
-						{
-							name:            "clickhouse",
-							destinationType: warehouseutils.CLICKHOUSE,
-						},
-						{
-							name:            "snowflake",
-							destinationType: warehouseutils.SNOWFLAKE,
-						},
-					}
-
-					for _, tc := range testCases {
-						t.Run(tc.name, func(t *testing.T) {
-							et := &endpointTransformer{
-								supportedPaths: []string{`/v0/destinations/` + tc.name},
-								t:              t,
-							}
-
-							srv := httptest.NewServer(et)
-							defer srv.Close()
-
-							c := config.New()
-							c.Set("Processor.maxRetry", 1)
-							c.Set("DEST_TRANSFORM_URL", srv.URL)
-
-							tr := destination_transformer.New(c, logger.NOP, stats.Default, destination_transformer.WithClient(srv.Client()))
-
-							events := append([]types.TransformerEvent{}, types.TransformerEvent{
-								Metadata: types.Metadata{
-									MessageID: msgID,
-								},
-								Message: map[string]any{
-									"src-key-1": msgID,
-								},
-								Destination: backendconfig.DestinationT{
-									DestinationDefinition: backendconfig.DestinationDefinitionT{
-										Name: tc.destinationType,
-									},
-									Transformations: []backendconfig.TransformationT{
-										{
-											ID:        "test-transformation",
-											VersionID: "test-version",
-										},
-									},
-								},
-								Credentials: []types.Credential{
-									{
-										ID:       "test-credential",
-										Key:      "test-key",
-										Value:    "test-value",
-										IsSecret: false,
-									},
-								},
-							})
-
-							rsp := tr.Transform(context.TODO(), events)
-							require.Equal(t, rsp, expectedResponse)
-						})
-					}
-				})
 			})
 		})
 	}
@@ -773,8 +703,6 @@ func TestEmbeddedWarehouseTransformer(t *testing.T) {
 	conf := config.New()
 	conf.Set("DEST_TRANSFORM_URL", transformerResource.TransformerURL)
 	conf.Set("USER_TRANSFORM_URL", transformerResource.TransformerURL)
-	conf.Set("Processor.enableWarehouseTransformations", true)
-	conf.Set("Processor.verifyWarehouseTransformations", true)
 
 	ctx := context.Background()
 	eventsCount := 10000

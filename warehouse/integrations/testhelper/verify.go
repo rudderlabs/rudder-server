@@ -189,7 +189,7 @@ func verifySourceJob(t testing.TB, tc *TestConfig) {
 		tc.WorkspaceID,
 	)
 
-	url := fmt.Sprintf("http://localhost:%d/v1/warehouse/jobs", tc.HTTPPort)
+	url := fmt.Sprintf("http://localhost:%d/internal/v1/warehouse/jobs", tc.HTTPPort)
 	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(payload))
 	require.NoError(t, err)
 
@@ -221,7 +221,7 @@ func verifySourceJob(t testing.TB, tc *TestConfig) {
 		"warehouse/jobs/status?job_run_id=%s&task_run_id=%s&source_id=%s&destination_id=%s&workspace_id=%s",
 		tc.JobRunID, tc.TaskRunID, tc.SourceID, tc.DestinationID, tc.WorkspaceID,
 	)
-	url = fmt.Sprintf("http://localhost:%d/v1/%s", tc.HTTPPort, queryParams)
+	url = fmt.Sprintf("http://localhost:%d/internal/v1/%s", tc.HTTPPort, queryParams)
 
 	operation := func() bool {
 		if req, err = http.NewRequest(http.MethodGet, url, strings.NewReader("")); err != nil {

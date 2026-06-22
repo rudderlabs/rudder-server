@@ -816,7 +816,7 @@ func TestHTTPApi(t *testing.T) {
 			})
 
 			t.Run("pending events", func(t *testing.T) {
-				pendingEventsURL := fmt.Sprintf("%s/v1/warehouse/pending-events?triggerUpload=true", serverURL)
+				pendingEventsURL := fmt.Sprintf("%s/internal/v1/warehouse/pending-events?triggerUpload=true", serverURL)
 				req, err := http.NewRequest(http.MethodPost, pendingEventsURL, bytes.NewReader([]byte(`
 				{
 				  "source_id": "test_source_id",
@@ -836,7 +836,7 @@ func TestHTTPApi(t *testing.T) {
 			})
 
 			t.Run("trigger upload", func(t *testing.T) {
-				triggerUploadURL := fmt.Sprintf("%s/v1/warehouse/trigger-upload", serverURL)
+				triggerUploadURL := fmt.Sprintf("%s/internal/v1/warehouse/trigger-upload", serverURL)
 				req, err := http.NewRequest(http.MethodPost, triggerUploadURL, bytes.NewReader([]byte(`
 				{
 				  "source_id": "test_source_id",
@@ -880,7 +880,7 @@ func TestHTTPApi(t *testing.T) {
 			})
 
 			t.Run("jobs", func(t *testing.T) {
-				jobsURL := fmt.Sprintf("%s/v1/warehouse/jobs", serverURL)
+				jobsURL := fmt.Sprintf("%s/internal/v1/warehouse/jobs", serverURL)
 				req, err := http.NewRequest(http.MethodPost, jobsURL, bytes.NewReader([]byte(`
 				{
 				  "source_id": "test_source_id",
@@ -910,7 +910,7 @@ func TestHTTPApi(t *testing.T) {
 				qp.Add("destination_id", destinationID)
 				qp.Add("workspace_id", workspaceID)
 
-				jobsStatusURL := fmt.Sprintf("%s/v1/warehouse/jobs/status?"+qp.Encode(), serverURL)
+				jobsStatusURL := fmt.Sprintf("%s/internal/v1/warehouse/jobs/status?"+qp.Encode(), serverURL)
 				req, err := http.NewRequest(http.MethodGet, jobsStatusURL, nil)
 				require.NoError(t, err)
 				req.Header.Set("Content-Type", "application/json")
@@ -969,25 +969,25 @@ func TestHTTPApi(t *testing.T) {
 					},
 					{
 						name:   "pending events",
-						url:    fmt.Sprintf("%s/v1/warehouse/pending-events", serverURL),
+						url:    fmt.Sprintf("%s/internal/v1/warehouse/pending-events", serverURL),
 						method: http.MethodPost,
 						body:   bytes.NewReader([]byte(`{}`)),
 					},
 					{
 						name:   "trigger upload",
-						url:    fmt.Sprintf("%s/v1/warehouse/trigger-upload", serverURL),
+						url:    fmt.Sprintf("%s/internal/v1/warehouse/trigger-upload", serverURL),
 						method: http.MethodPost,
 						body:   bytes.NewReader([]byte(`{}`)),
 					},
 					{
 						name:   "jobs",
-						url:    fmt.Sprintf("%s/v1/warehouse/jobs", serverURL),
+						url:    fmt.Sprintf("%s/internal/v1/warehouse/jobs", serverURL),
 						method: http.MethodPost,
 						body:   bytes.NewReader([]byte(`{}`)),
 					},
 					{
 						name:   "jobs status",
-						url:    fmt.Sprintf("%s/v1/warehouse/jobs/status", serverURL),
+						url:    fmt.Sprintf("%s/internal/v1/warehouse/jobs/status", serverURL),
 						method: http.MethodGet,
 						body:   nil,
 					},
