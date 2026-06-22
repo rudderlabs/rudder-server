@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -28,6 +29,10 @@ const (
 	MAXPAYLOADSIZE        = 4600000
 	IMPORT_ID_SEPARATOR   = ":"
 )
+
+// profileIndexRegex extracts the profile index from a Klaviyo error pointer such
+// as "/data/attributes/profiles/data/3/attributes/email".
+var profileIndexRegex = regexp.MustCompile(`/profiles/data/(\d+)`)
 
 func createFinalPayload(combinedProfiles []Profile, listId string) Payload {
 	payload := Payload{
@@ -316,33 +321,18 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 	var importIds []string // DelimitedImportIds is : separated importIds
 
 	for idx, profileChunk := range profileChunks {
-		combinedPayload := createFinalPayload(profileChunk, listId)
-		uploadResp, err := kbu.KlaviyoAPIService.UploadProfiles(combinedPayload)
-		if err != nil {
-			var uploadError string
-			var statusCode int
-			if uploadResp != nil {
-				statusCode = uploadResp.StatusCode
-				if len(uploadResp.Errors) > 0 {
-					uploadError = uploadResp.Errors.String()
-				}
-			}
-			kbu.Logger.Errorn("Error while uploading profiles",
-				obskit.Error(err),
-				obskit.DestinationID(destinationID),
-				logger.NewStringField("uploadErrors", uploadError))
-
-			if statusCode >= http.StatusBadRequest && statusCode < http.StatusInternalServerError && statusCode != http.StatusTooManyRequests {
-				abortedJobs = append(abortedJobs, jobIDChunks[idx]...)
-				abortReason = fmt.Sprintf("upload rejected by Klaviyo with status %d: %s", statusCode, uploadError)
-			} else {
-				failedJobs = append(failedJobs, jobIDChunks[idx]...)
-				failedReason = fmt.Sprintf("upload failed with status %d: %s", statusCode, uploadError)
-			}
-			continue
+		chunkResult := kbu.uploadChunk(profileChunk, jobIDChunks[idx], listId, destinationID)
+		if len(chunkResult.abortedJobs) > 0 {
+			abortedJobs = append(abortedJobs, chunkResult.abortedJobs...)
+			abortReason = chunkResult.abortReason
 		}
-
-		importIds = append(importIds, uploadResp.Data.Id)
+		if len(chunkResult.failedJobs) > 0 {
+			failedJobs = append(failedJobs, chunkResult.failedJobs...)
+			failedReason = chunkResult.failReason
+		}
+		if chunkResult.importID != "" {
+			importIds = append(importIds, chunkResult.importID)
+		}
 	}
 	importParameters, err := jsonrs.Marshal(common.ImportParameters{
 		ImportId:    strings.Join(importIds, IMPORT_ID_SEPARATOR),
@@ -365,6 +355,134 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 		ImportingJobIDs:     successJobs,
 		ImportingCount:      len(successJobs),
 		DestinationID:       destination.ID,
+	}
+}
+
+// uploadChunk uploads a single chunk of profiles. Klaviyo validates a chunk
+// all-or-nothing, so one invalid profile fails the whole batch with a 400. On a
+// 400 that pinpoints specific profiles, it aborts only those and retries ONCE
+// with the rest. There is no further looping: the single retry's outcome is
+// final. A 400 it can't attribute (e.g. an invalid list ID) and non-4xx errors
+// abort/fail the whole chunk respectively.
+func (kbu *KlaviyoBulkUploader) uploadChunk(profiles []Profile, jobIDs []int64, listId, destinationID string) chunkUploadResult {
+	var res chunkUploadResult
+
+	// First attempt with the full chunk.
+	resp, statusCode, detail, ok := kbu.tryUpload(profiles, listId, destinationID)
+	if ok {
+		res.importID = resp.Data.Id
+		return res
+	}
+
+	badIndices, canStrip := strippableProfiles(resp, statusCode)
+	if !canStrip {
+		res.recordError(jobIDs, statusCode, detail)
+		return res
+	}
+
+	// Abort the invalid profiles; keep the rest for a single retry.
+	var validProfiles []Profile
+	var validJobIDs []int64
+	for i := range profiles {
+		if reason, bad := badIndices[i]; bad {
+			res.abortedJobs = append(res.abortedJobs, jobIDs[i])
+			res.abortReason = fmt.Sprintf("profile rejected by Klaviyo's synchronous validation: %s", reason)
+			continue
+		}
+		validProfiles = append(validProfiles, profiles[i])
+		validJobIDs = append(validJobIDs, jobIDs[i])
+	}
+	if len(validProfiles) == 0 {
+		return res // every profile was rejected; all already aborted
+	}
+
+	// Single retry with the surviving profiles; its outcome is final.
+	retryResp, retryStatus, retryDetail, ok := kbu.tryUpload(validProfiles, listId, destinationID)
+	if ok {
+		res.importID = retryResp.Data.Id
+		return res
+	}
+	res.recordError(validJobIDs, retryStatus, retryDetail)
+	return res
+}
+
+// tryUpload performs a single upload attempt, logging and extracting the status
+// code and error detail on failure. resp may be nil on a transport error.
+func (kbu *KlaviyoBulkUploader) tryUpload(profiles []Profile, listId, destinationID string) (resp *UploadResp, statusCode int, detail string, ok bool) {
+	resp, err := kbu.KlaviyoAPIService.UploadProfiles(createFinalPayload(profiles, listId))
+	if err == nil {
+		return resp, 0, "", true
+	}
+	if resp != nil {
+		statusCode = resp.StatusCode
+		if len(resp.Errors) > 0 {
+			detail = resp.Errors.String()
+		}
+	}
+	kbu.Logger.Errorn("Error while uploading profiles",
+		obskit.Error(err),
+		obskit.DestinationID(destinationID),
+		logger.NewStringField("uploadErrors", detail))
+	return resp, statusCode, detail, false
+}
+
+// strippableProfiles returns the rejected profiles' indices (mapped to their error
+// detail) only when the failure is a synchronous 400 that attributes every error
+// to a specific profile. For any other failure (transport/5xx/429, a 4xx we can't
+// attribute, or no per-profile errors) it returns ok=false, telling the caller to
+// abort/fail the whole chunk rather than retry.
+func strippableProfiles(resp *UploadResp, statusCode int) (map[int]string, bool) {
+	if resp == nil || !isClientError(statusCode) {
+		return nil, false
+	}
+	indices, allAttributed := extractInvalidProfileIndices(resp.Errors)
+	if !allAttributed || len(indices) == 0 {
+		return nil, false
+	}
+	return indices, true
+}
+
+// extractInvalidProfileIndices inspects the errors returned by a synchronous 400
+// from Klaviyo and maps each offending profile's index (within the uploaded
+// payload) to its error detail. The second return value is true only when every
+// error could be attributed to a specific profile; if any error is structural
+// (e.g. an invalid list ID, which has no profile pointer) it returns false so the
+// caller can fall back to aborting the whole chunk instead of retrying blindly.
+func extractInvalidProfileIndices(errs ErrorDetailList) (map[int]string, bool) {
+	indices := make(map[int]string)
+	allAttributed := true
+	for _, e := range errs {
+		match := profileIndexRegex.FindStringSubmatch(e.Source.Pointer)
+		if match == nil {
+			allAttributed = false
+			continue
+		}
+		idx, err := strconv.Atoi(match[1])
+		if err != nil {
+			allAttributed = false
+			continue
+		}
+		indices[idx] = e.Detail
+	}
+	return indices, allAttributed
+}
+
+// isClientError reports whether a status code is a non-retryable 4xx (excluding
+// 429, which is retryable rate limiting).
+func isClientError(statusCode int) bool {
+	return statusCode >= http.StatusBadRequest && statusCode < http.StatusInternalServerError && statusCode != http.StatusTooManyRequests
+}
+
+// recordError classifies a set of jobs against a failed upload: a non-retryable
+// 4xx aborts them, anything else (5xx/429/transport) is reported as failed so the
+// batch router retries.
+func (r *chunkUploadResult) recordError(jobIDs []int64, statusCode int, detail string) {
+	if isClientError(statusCode) {
+		r.abortedJobs = append(r.abortedJobs, jobIDs...)
+		r.abortReason = fmt.Sprintf("upload rejected by Klaviyo with status %d: %s", statusCode, detail)
+	} else {
+		r.failedJobs = append(r.failedJobs, jobIDs...)
+		r.failReason = fmt.Sprintf("upload failed with status %d: %s", statusCode, detail)
 	}
 }
 

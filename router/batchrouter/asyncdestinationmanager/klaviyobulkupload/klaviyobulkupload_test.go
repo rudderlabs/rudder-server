@@ -245,6 +245,168 @@ func TestUpload(t *testing.T) {
 	})
 }
 
+// A chunk is rejected with a 400 that pinpoints one invalid profile (index 1).
+// That job must be aborted on its own and the chunk re-uploaded with the
+// remaining valid profiles, which then succeeds.
+func TestUploadStripAndRetryInvalidProfiles(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockKlaviyoAPIService := mockAPIService.NewMockKlaviyoAPIService(ctrl)
+	uploader := klaviyobulkupload.KlaviyoBulkUploader{
+		DestName:              "Klaviyo Bulk Upload",
+		DestinationConfig:     destination.Config,
+		Logger:                logger.NOP,
+		StatsFactory:          stats.NOP,
+		KlaviyoAPIService:     mockKlaviyoAPIService,
+		BatchSize:             10000,
+		MaxPayloadSize:        4600000,
+		MaxAllowedProfileSize: 512000,
+	}
+
+	tempFile, err := os.CreateTemp("", "test_upload_strip_*.jsonl")
+	require.NoError(t, err)
+	defer os.Remove(tempFile.Name())
+
+	const tmpl = `{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"%s","jobIdentifier":"%s:%d"}}]}}}}}},"metadata":{"job_id":%d}}`
+	lines := []string{
+		fmt.Sprintf(tmpl, "good1@mail.com", "good1", 1, 1),
+		fmt.Sprintf(tmpl, "bad@", "bad", 2, 2), // index 1 -> rejected by Klaviyo
+		fmt.Sprintf(tmpl, "good2@mail.com", "good2", 3, 3),
+	}
+	for i, line := range lines {
+		if i > 0 {
+			_, err = tempFile.WriteString("\n")
+			require.NoError(t, err)
+		}
+		_, err = tempFile.WriteString(line)
+		require.NoError(t, err)
+	}
+	tempFile.Close()
+
+	callCount := 0
+	mockKlaviyoAPIService.EXPECT().
+		UploadProfiles(gomock.Any()).
+		DoAndReturn(func(payload klaviyobulkupload.Payload) (*klaviyobulkupload.UploadResp, error) {
+			callCount++
+			switch callCount {
+			case 1:
+				// All 3 profiles sent; Klaviyo rejects the one at index 1.
+				require.Len(t, payload.Data.Attributes.Profiles.Data, 3)
+				return &klaviyobulkupload.UploadResp{
+					Errors: klaviyobulkupload.ErrorDetailList{
+						{
+							Code:   "invalid",
+							Title:  "Invalid input.",
+							Detail: "Invalid email address",
+							Source: klaviyobulkupload.ErrorSource{Pointer: "/data/attributes/profiles/data/1/attributes/email"},
+						},
+					},
+					StatusCode: http.StatusBadRequest,
+				}, fmt.Errorf("upload rejected")
+			case 2:
+				// Retry with the bad profile stripped -> 2 profiles, succeeds.
+				require.Len(t, payload.Data.Attributes.Profiles.Data, 2)
+				return &klaviyobulkupload.UploadResp{
+					Data: struct {
+						Id string "json:\"id\""
+					}{Id: "importIdRetry"},
+				}, nil
+			}
+			return nil, fmt.Errorf("unexpected call count: %d", callCount)
+		}).Times(2)
+
+	output := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
+		Destination:     destination,
+		FileName:        tempFile.Name(),
+		ImportingJobIDs: []int64{1, 2, 3},
+	})
+
+	require.Equal(t, []int64{2}, output.AbortJobIDs)
+	require.Equal(t, 1, output.AbortCount)
+	require.Equal(t, "profile rejected by Klaviyo's synchronous validation: Invalid email address", output.AbortReason)
+	require.ElementsMatch(t, []int64{1, 3}, output.ImportingJobIDs)
+	require.Equal(t, 2, output.ImportingCount)
+	require.Empty(t, output.FailedJobIDs)
+	require.Equal(t, `{"importId":"importIdRetry","importCount":0}`, string(output.ImportingParameters))
+}
+
+// The first upload is rejected (one profile stripped) and the single retry is
+// rejected too. There must be no third attempt; the stripped job and the
+// surviving jobs are all aborted.
+func TestUploadRetryAlsoFails(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockKlaviyoAPIService := mockAPIService.NewMockKlaviyoAPIService(ctrl)
+	uploader := klaviyobulkupload.KlaviyoBulkUploader{
+		DestName:              "Klaviyo Bulk Upload",
+		DestinationConfig:     destination.Config,
+		Logger:                logger.NOP,
+		StatsFactory:          stats.NOP,
+		KlaviyoAPIService:     mockKlaviyoAPIService,
+		BatchSize:             10000,
+		MaxPayloadSize:        4600000,
+		MaxAllowedProfileSize: 512000,
+	}
+
+	tempFile, err := os.CreateTemp("", "test_upload_retryfail_*.jsonl")
+	require.NoError(t, err)
+	defer os.Remove(tempFile.Name())
+
+	const tmpl = `{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"%s","jobIdentifier":"%s:%d"}}]}}}}}},"metadata":{"job_id":%d}}`
+	lines := []string{
+		fmt.Sprintf(tmpl, "good1@mail.com", "good1", 1, 1),
+		fmt.Sprintf(tmpl, "bad@", "bad", 2, 2),
+		fmt.Sprintf(tmpl, "good2@mail.com", "good2", 3, 3),
+	}
+	for i, line := range lines {
+		if i > 0 {
+			_, err = tempFile.WriteString("\n")
+			require.NoError(t, err)
+		}
+		_, err = tempFile.WriteString(line)
+		require.NoError(t, err)
+	}
+	tempFile.Close()
+
+	callCount := 0
+	mockKlaviyoAPIService.EXPECT().
+		UploadProfiles(gomock.Any()).
+		DoAndReturn(func(payload klaviyobulkupload.Payload) (*klaviyobulkupload.UploadResp, error) {
+			callCount++
+			switch callCount {
+			case 1: // index 1 rejected
+				return &klaviyobulkupload.UploadResp{
+					Errors: klaviyobulkupload.ErrorDetailList{
+						{Detail: "Invalid email address", Source: klaviyobulkupload.ErrorSource{Pointer: "/data/attributes/profiles/data/1/attributes/email"}},
+					},
+					StatusCode: http.StatusBadRequest,
+				}, fmt.Errorf("upload rejected")
+			case 2: // retry rejected again
+				return &klaviyobulkupload.UploadResp{
+					Errors: klaviyobulkupload.ErrorDetailList{
+						{Detail: "Invalid input.", Source: klaviyobulkupload.ErrorSource{Pointer: "/data/attributes/profiles/data/0/attributes/email"}},
+					},
+					StatusCode: http.StatusBadRequest,
+				}, fmt.Errorf("upload rejected")
+			}
+			return nil, fmt.Errorf("unexpected call count: %d", callCount)
+		}).Times(2)
+
+	output := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
+		Destination:     destination,
+		FileName:        tempFile.Name(),
+		ImportingJobIDs: []int64{1, 2, 3},
+	})
+
+	require.Equal(t, 2, callCount, "must try once then retry once, no third attempt")
+	require.ElementsMatch(t, []int64{1, 2, 3}, output.AbortJobIDs)
+	require.Equal(t, 3, output.AbortCount)
+	require.Empty(t, output.ImportingJobIDs)
+	require.Empty(t, output.FailedJobIDs)
+}
+
 func TestExtractProfileValidInput(t *testing.T) {
 	kbu := klaviyobulkupload.KlaviyoBulkUploader{}
 
