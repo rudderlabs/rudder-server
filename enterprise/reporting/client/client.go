@@ -32,9 +32,10 @@ const (
 )
 
 const (
-	RouteMetrics      Route = "/metrics?version=v1"
-	RouteRecordErrors Route = "/recordErrors"
-	RouteTrackedUsers Route = "/trackedUser"
+	RouteMetrics           Route = "/metrics?version=v1"
+	RouteRecordErrors      Route = "/recordErrors"
+	RouteTrackedUsers      Route = "/trackedUser"
+	RouteActivationRecords Route = "/activationRecords"
 )
 
 // Route contains the HTTP path and query string for the service.
