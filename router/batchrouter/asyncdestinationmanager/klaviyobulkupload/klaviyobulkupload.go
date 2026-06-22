@@ -334,6 +334,8 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 			importIds = append(importIds, chunkResult.importID)
 		}
 	}
+
+	successJobs, _ = lo.Difference(importingJobIDs, append(failedJobs, abortedJobs...))
 	importParameters, err := jsonrs.Marshal(common.ImportParameters{
 		ImportId:    strings.Join(importIds, IMPORT_ID_SEPARATOR),
 		ImportCount: len(successJobs),
@@ -341,7 +343,6 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 	if err != nil {
 		return kbu.generateKlaviyoErrorOutput("Error while marshaling parameters.", err, importingJobIDs, destinationID)
 	}
-	successJobs, _ = lo.Difference(importingJobIDs, append(failedJobs, abortedJobs...))
 	eventsSuccessStat.Count(len(asyncDestStruct.ImportingJobIDs))
 
 	return common.AsyncUploadOutput{

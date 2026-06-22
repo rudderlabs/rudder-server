@@ -115,7 +115,7 @@ func TestUpload(t *testing.T) {
 			ImportingCount:      1,
 			DestinationID:       destination.ID,
 		}, output)
-		require.Equal(t, `{"importId":"importId1","importCount":0}`, string(output.ImportingParameters))
+		require.Equal(t, `{"importId":"importId1","importCount":1}`, string(output.ImportingParameters))
 	})
 
 	t.Run("Unsuccessful Upload", func(t *testing.T) {
@@ -241,7 +241,7 @@ func TestUpload(t *testing.T) {
 			FailedReason:        "upload failed with status 429: {ID=, Code=, Title=, Detail=rate limit exceeded, Source={Pointer=, Parameter=}}",
 			DestinationID:       destination.ID,
 		}, output)
-		require.Equal(t, `{"importId":"importId3","importCount":0}`, string(output.ImportingParameters))
+		require.Equal(t, `{"importId":"importId3","importCount":2}`, string(output.ImportingParameters))
 	})
 }
 
@@ -328,7 +328,7 @@ func TestUploadStripAndRetryInvalidProfiles(t *testing.T) {
 	require.ElementsMatch(t, []int64{1, 3}, output.ImportingJobIDs)
 	require.Equal(t, 2, output.ImportingCount)
 	require.Empty(t, output.FailedJobIDs)
-	require.Equal(t, `{"importId":"importIdRetry","importCount":0}`, string(output.ImportingParameters))
+	require.Equal(t, `{"importId":"importIdRetry","importCount":2}`, string(output.ImportingParameters))
 }
 
 // The first upload is rejected (one profile stripped) and the single retry is
