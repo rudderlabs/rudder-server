@@ -54,10 +54,13 @@ type testCredentials struct {
 	BucketName    string `json:"bucketName"`
 }
 
-const testKey = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
+const (
+	testKey                      = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
+	testHierarchicalNamespaceKey = "DATABRICKS_HIERARCHICAL_NAMESPACE_INTEGRATION_TEST_CREDENTIALS"
+)
 
-func deltaLakeTestCredentials() (*testCredentials, error) {
-	cred, exists := os.LookupEnv(testKey)
+func deltaLakeTestCredentials(key string) (*testCredentials, error) {
+	cred, exists := os.LookupEnv(key)
 	if !exists {
 		return nil, errors.New("deltaLake test credentials not found")
 	}
@@ -74,11 +77,17 @@ func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
-	if _, exists := os.LookupEnv(testKey); !exists {
-		if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
-			t.Fatalf("%s environment variable not set", testKey)
+
+	for _, key := range []string{
+		testKey,
+		testHierarchicalNamespaceKey,
+	} {
+		if _, exists := os.LookupEnv(key); !exists {
+			if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
+				t.Fatalf("%s environment variable not set", key)
+			}
+			t.Skipf("Skipping %s as %s is not set", t.Name(), key)
 		}
-		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
 	}
 
 	misc.Init()
@@ -87,7 +96,9 @@ func TestIntegration(t *testing.T) {
 
 	destType := whutils.DELTALAKE
 
-	credentials, err := deltaLakeTestCredentials()
+	credentials, err := deltaLakeTestCredentials(testKey)
+	require.NoError(t, err)
+	hierarchicalCredentials, err := deltaLakeTestCredentials(testHierarchicalNamespaceKey)
 	require.NoError(t, err)
 
 	t.Run("Event flow", func(t *testing.T) {
@@ -136,6 +147,7 @@ func TestIntegration(t *testing.T) {
 
 		testCases := []struct {
 			name                           string
+			credentials                    *testCredentials
 			warehouseEventsMap2            whth.EventsCountMap
 			useParquetLoadFiles            bool
 			configOverride                 map[string]any
@@ -146,6 +158,7 @@ func TestIntegration(t *testing.T) {
 		}{
 			{
 				name:           "Merge Mode",
+				credentials:    credentials,
 				eventFilePath1: "../testdata/upload-job.events-1.json",
 				eventFilePath2: "../testdata/upload-job.events-1.json",
 				useSameUserID:  true,
@@ -173,7 +186,38 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 			{
+				name:           "Hierarchical Namespace Merge Mode",
+				credentials:    hierarchicalCredentials,
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-1.json",
+				useSameUserID:  true,
+				configOverride: map[string]any{
+					"preferAppend":                false,
+					"enableHierarchicalNamespace": true,
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersMergeRecord(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "product_track"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "pages"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "screens"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "aliases"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "groups"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsMergeRecords(userIDFormat, sourceID, destinationID, destType))
+				},
+			},
+			{
 				name:           "Merge Mode with use rudder storage",
+				credentials:    credentials,
 				eventFilePath1: "../testdata/upload-job.events-1.json",
 				eventFilePath2: "../testdata/upload-job.events-1.json",
 				useSameUserID:  true,
@@ -216,7 +260,8 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 			{
-				name: "Append Mode",
+				name:        "Append Mode",
+				credentials: credentials,
 				warehouseEventsMap2: whth.EventsCountMap{
 					// For all tables we will be appending because of preferAppend config
 					"identifies": 8, "users": 2, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "groups": 8,
@@ -225,7 +270,8 @@ func TestIntegration(t *testing.T) {
 				eventFilePath2: "../testdata/upload-job.events-1.json",
 				useSameUserID:  true,
 				configOverride: map[string]any{
-					"preferAppend": true,
+					"preferAppend":                true,
+					"enableHierarchicalNamespace": false,
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
 					t.Helper()
@@ -249,6 +295,7 @@ func TestIntegration(t *testing.T) {
 			},
 			{
 				name:           "Undefined preferAppend",
+				credentials:    credentials,
 				eventFilePath1: "../testdata/upload-job.events-1.json",
 				eventFilePath2: "../testdata/upload-job.events-1.json",
 				useSameUserID:  true,
@@ -274,6 +321,7 @@ func TestIntegration(t *testing.T) {
 			},
 			{
 				name:                "Parquet load files(merge)",
+				credentials:         credentials,
 				eventFilePath1:      "../testdata/upload-job.events-1.json",
 				eventFilePath2:      "../testdata/upload-job.events-1.json",
 				useSameUserID:       true,
@@ -310,6 +358,7 @@ func TestIntegration(t *testing.T) {
 					destinationID = whutils.RandHex()
 					writeKey      = whutils.RandHex()
 					namespace     = whth.RandSchema(destType)
+					credentials   = tc.credentials
 				)
 
 				destinationBuilder := backendconfigtest.NewDestinationBuilder(destType).
