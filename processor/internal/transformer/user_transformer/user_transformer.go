@@ -29,6 +29,7 @@ import (
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -155,6 +156,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		batches,
 		func(batch []types.TransformerEvent, i int) {
 			wg.Go(func() {
+				defer crash.Notify("Core")
 				responses, mirrorFiltered := u.sendBatch(ctx, userURL, labels, batch)
 				transformResponse[i] = sendBatchResult{responses: responses, mirrorFiltered: mirrorFiltered}
 			})
@@ -266,7 +268,17 @@ func (u *Client) sendBatch(
 		func() error {
 			respData, statusCode, err = u.doPost(ctx, rawJSON, url, labels)
 			if err != nil {
-				panic(err)
+				var transformationID string
+				if len(clientEvents[0].Destination.Transformations) > 0 {
+					transformationID = clientEvents[0].Destination.Transformations[0].ID
+				}
+				panic(fmt.Errorf("post to transformer failed for workspace %q source %q destination %q transformation %q url %q: %w",
+					clientEvents[0].Metadata.WorkspaceID,
+					clientEvents[0].Metadata.SourceID,
+					clientEvents[0].Metadata.DestinationID,
+					transformationID,
+					url,
+					err))
 			}
 			if statusCode == transformerutils.StatusCPDown {
 				u.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(1)
