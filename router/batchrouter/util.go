@@ -5,6 +5,7 @@ import (
 	stdjson "encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -61,11 +62,13 @@ func warehouseConnectionIdentifier(destType, connIdentifier string, source backe
 	return fmt.Sprintf(`namespace:%s::%s`, namespace, connIdentifier)
 }
 
-func getBRTErrorCode(state string) int {
+func getBRTErrorCode(state, errorCode string) int {
 	if state == jobsdb.Succeeded.State {
 		return 200
 	}
-
+	if code, err := strconv.Atoi(errorCode); err == nil && code != 0 {
+		return code
+	}
 	return 500
 }
 

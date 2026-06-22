@@ -187,6 +187,7 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 	if len(drainList) > 0 {
 		reportMetrics := brt.getReportMetrics(getReportMetricsParams{
 			StatusList:    drainList,
+			JobsList:      drainJobList,
 			ParametersMap: brt.getParamertsFromJobs(drainJobList),
 		})
 		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
