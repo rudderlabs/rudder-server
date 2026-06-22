@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/segmentio/go-hll"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -134,5 +135,33 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 16, reporter.hllSettings.Log2m)
 		require.Equal(t, 5, reporter.hllSettings.Regwidth)
+	})
+
+	t.Run("ForceFullSyncReplay", func(t *testing.T) {
+		// A force-full-sync replays the SAME jobs in a SEPARATE reporting cycle.
+		// The backend merges sketches across cycles (postgres hll union), so a
+		// replay of the same fingerprint MUST NOT inflate the cardinality —
+		// otherwise every retried sync would double-count monthly active records.
+		reporter, err := NewUniqueActivationRecordsReporter(logger.NOP, config.Default, stats.NOP)
+		require.NoError(t, err)
+
+		job := prepareJob("src1", "dst1", "fp1", "org1", "ws1")
+
+		first := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job})
+		require.Len(t, first, 1)
+		require.Equal(t, uint64(1), first[0].FingerprintHll.Cardinality())
+
+		second := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job})
+		require.Len(t, second, 1)
+		require.Equal(t, uint64(1), second[0].FingerprintHll.Cardinality())
+
+		// Merge the two cycles the way the backend would: union both sketches into
+		// a fresh HLL built with the reporter's settings. Same fingerprint twice
+		// across cycles still collapses to cardinality 1.
+		union, err := hll.NewHll(*reporter.hllSettings)
+		require.NoError(t, err)
+		union.Union(*first[0].FingerprintHll)
+		union.Union(*second[0].FingerprintHll)
+		require.Equal(t, uint64(1), union.Cardinality())
 	})
 }
