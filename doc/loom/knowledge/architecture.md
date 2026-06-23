@@ -85,3 +85,59 @@ rudder-server boots through `app/` which selects a run mode and an app handler:
 
 The reporting flusher (which ships the persisted reports to rudderstack-reporting) is started
 separately via the reporting mediator's `DatabaseSyncer()`, not through app/cluster.
+
+## MAR (Monthly Active Records) Pipeline — as implemented
+
+MAR is a near-exact sibling of the MTU pipeline, added as a second independent reporter
+in the tracked-users reporting infrastructure. Key differences:
+
+### MAR-specific files
+
+- `enterprise/activationrecords/records_reporter.go` — `UniqueActivationRecordsReporter`;
+  table `activation_records_reports`; migrations dir `activation_records`.
+- `enterprise/activationrecords/factory.go` — `Factory.Setup` returning noop when
+  `ActivationRecords.enabled=false`.
+- `enterprise/activationrecords/noop.go` — noop implementation returned when gate is off.
+- `enterprise/reporting/flusher/aggregator/activation_records_inapp.go` —
+  `ActivationRecordsInAppAggregator`; key = `workspace-source-destination-instance`;
+  one HLL field (`fingerprint_hll`). Const `activationRecordsTableName` (not `tableName`).
+- `enterprise/reporting/flusher/aggregator/activation_records_types.go` —
+  `ActivationRecordsReport` struct with `MarshalJSON`.
+- `enterprise/reporting/flusher/activation_records_test.go` — dockertest integration test.
+- `enterprise/activationrecords/records_reporter_test.go` — unit test (Docker-free).
+- `enterprise/activationrecords/wire_compat_test.go` — wire-compat test asserting HLL
+  round-trip params (`Settings().Log2m==16`, `Regwidth==5`).
+- `sql/migrations/activation_records/000001_init_schema.up.sql` — schema:
+  `activation_records_reports` table + `reported_at` index.
+
+### MAR vs MTU diff table
+
+| Aspect | MTU (tracked-users) | MAR (activation-records) |
+|--------|---------------------|--------------------------|
+| Feature flag | `TrackedUsers.enabled` | `ActivationRecords.enabled` |
+| Table | `tracked_users_reports` | `activation_records_reports` |
+| Migration dir | `tracked_users` | `activation_records` |
+| Migrations table | `tracked_users_reports_migrations` | `activation_records_reports_migrations` |
+| Aggregation key | `workspace-source-instance` | `workspace-source-destination-instance` |
+| HLL fields | `userid_hll`, `anonymousid_hll`, `identified_anonymousid_hll` | `fingerprint_hll` (one field) |
+| Input identifier | `userId` / `anonymousId` / event `type` | `batch[0].context.activation.fingerprint` |
+| Origin field | N/A | `batch[0].context.activation.origin` (carried column, NOT in key) |
+| Backend route | `/trackedUser` | `/activationRecords` |
+| Processor hook | `ReportUsers` | `ReportActivationRecords` |
+| Carrier field | `transformationMessage.trackedUsersReports` | `transformationMessage.activationRecordsReports` |
+
+### MAR aggregation key rationale
+
+`destination_id` is in the key because an activation record is per destination — records for
+(workspace, source, dest-A) must not be merged with (workspace, source, dest-B). `origin` is
+NOT in the key (constant per source in MAR's spec); it is carried as a plain column.
+
+### Wiring verified in integration-verify stage
+
+Both `processorAppHandler.go` (:118-122) and `embeddedAppHandler.go` (:107-111) call
+`Features().ActivationRecords.Setup` + `MigrateDatabase(...,"activation_records",...)`.
+`processor.go` has both call sites: `GenerateReportsFromJobs` (:2370, no filter arg) and
+`ReportActivationRecords` inside the store txn (:2917, `WithUpdateSafeTx`, same as
+`ReportUsers` :2912, `tx.Tx()`). `mediator.go` (:22,:107) registers the runner;
+`flusher/factory.go` (:21,:60-76) lists and branches the table; `client.go` (:38) has
+`/activationRecords`.

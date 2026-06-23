@@ -70,3 +70,57 @@ Line numbers verified 2026-06-22; treat as approximate anchors if code shifts.
 ### 8. Integration test pattern
 
 - enterprise/reporting/flusher/tracked_users_test.go: NO build tag; uses `dockertest.NewPool("")` + `postgres.Setup(pool, t)` (rudder-go-kit testhelper) to spin a Postgres container; sets `TrackedUsers.enabled=true` and DB.* config; mock reporting endpoint via webhook recorder. Requires Docker daemon.
+
+## MAR (Monthly Active Records) — New Files Added
+
+All paths relative to repo root. Line numbers as of the integration-verify commit.
+
+### enterprise/activationrecords/records_reporter.go
+
+- `const murmurSeed = 123` — identical to MTU's seed.
+- `const activationRecordsTable = "activation_records_reports"`.
+- `type recordKey struct { workspaceID, sourceID, destinationID }` — the aggregation grain.
+- `type recordAccumulator struct { origin string; hll *hll.Hll }` — `origin` is carried, not keyed.
+- `type ActivationRecord` — public report struct (WorkspaceID, SourceID, DestinationID, Origin, FingerprintHll).
+- `type ActivationRecordsReporter interface` — `GenerateReportsFromJobs`, `ReportActivationRecords`, `MigrateDatabase`.
+- `NewUniqueActivationRecordsReporter` — HLL settings: Log2m=16/Regwidth=5/AutoExplicitThreshold/SparseEnabled=true.
+- `GenerateReportsFromJobs` — reads `job.Parameters` source_id+destination_id, reads `batch.[0].context.activation.fingerprint+origin` (bracket notation!), groups by recordKey.
+- `ReportActivationRecords` — `pq.CopyIn` into activation_records_reports.
+- `MigrateDatabase` — `migrator.Migrator{MigrationsTable:"activation_records_reports_migrations"}.Migrate("activation_records")`.
+
+### enterprise/activationrecords/factory.go
+
+- `Factory.Setup(conf)` — returns noop when `!conf.GetBoolVar(false,"ActivationRecords.enabled")`.
+
+### enterprise/activationrecords/wire_compat_test.go
+
+- Asserts `hll.FromBytes(serialized).Settings().Log2m==16` and `Regwidth==5`; proves HLL
+  round-trip wire params without a database.
+
+### enterprise/reporting/flusher/aggregator/activation_records_inapp.go
+
+- `const activationRecordsTableName = "activation_records_reports"`.
+- `ActivationRecordsInAppAggregator.Aggregate`: key `fmt.Sprintf("%s-%s-%s-%s", workspace, source, destination, instance)`.
+- `marshalActivationRecordsReports` — marshals via `jsonrs.Marshal`.
+
+### enterprise/reporting/flusher/aggregator/activation_records_types.go
+
+- `ActivationRecordsReport` — `FingerprintHLL *hll.Hll \`json:"-"\`` + `FingerprintHLLHex string`; `MarshalJSON` hex-encodes HLL before marshalling.
+
+### enterprise/reporting/client/client.go
+
+- Added `RouteActivationRecords Route = "/activationRecords"`.
+
+### enterprise/reporting/mediator.go
+
+- Added `const ActivationRecordsReportsTable = "activation_records_reports"` and a second `CreateRunner` call.
+
+### enterprise/reporting/flusher/factory.go
+
+- `supportedTables` extended to `["tracked_users_reports","activation_records_reports"]`.
+- New branch gated by `conf.GetBoolVar(false,"ActivationRecords.enabled")`.
+
+### sql/migrations/activation_records/000001_init_schema.up.sql
+
+- `activation_records_reports` table schema: id, workspace_id, instance_id, source_id,
+  destination_id, origin, reported_at, fingerprint_hll + reported_at index.
