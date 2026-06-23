@@ -290,12 +290,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		SSHConfig:   sshConfig,
 	}
 	if destConfig.SslEnabled {
-		tlsInsecureSkipVerify := config.GetBoolVar(
-			false,
-			"Router.KAFKA.tlsInsecureSkipVerify",
-			"Router.kafkaTLSInsecureSkipVerify",
-			"KAFKA_TLS_INSECURE_SKIP_VERIFY",
-		)
+		insecureSkipVerify := config.GetBoolVar(false,"Router.KAFKA.tlsInsecureSkipVerify")
 		if destConfig.CACertificate != "" {
 			clientConf.TLS = &client.TLS{
 				CACertificate: []byte(destConfig.CACertificate),
