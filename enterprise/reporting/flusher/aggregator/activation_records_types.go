@@ -10,14 +10,14 @@ import (
 )
 
 type ActivationRecordsReport struct {
-	ReportedAt       time.Time `json:"reportedAt"`
-	WorkspaceID      string    `json:"workspaceId"`
-	SourceID         string    `json:"sourceId"`
-	DestinationID    string    `json:"destinationId"`
-	Origin           string    `json:"origin"`
-	InstanceID       string    `json:"instanceId"`
-	FingerprintHLL   *hll.Hll  `json:"-"`
-	FingerprintHLLHex string   `json:"fingerprintHLL"`
+	ReportedAt        time.Time `json:"reportedAt"`
+	WorkspaceID       string    `json:"workspaceId"`
+	SourceID          string    `json:"sourceId"`
+	DestinationID     string    `json:"destinationId"`
+	Origin            string    `json:"origin"`
+	InstanceID        string    `json:"instanceId"`
+	FingerprintHLL    *hll.Hll  `json:"-"`
+	FingerprintHLLHex string    `json:"fingerprintHLL"`
 }
 
 func (t *ActivationRecordsReport) MarshalJSON() ([]byte, error) {

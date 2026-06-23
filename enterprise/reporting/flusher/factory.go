@@ -23,7 +23,7 @@ var supportedTables = []string{"tracked_users_reports", "activation_records_repo
 // This function has to be called once for each table
 func CreateRunner(ctx context.Context, table string, log logger.Logger, stats stats.Stats, conf *config.Config, module string) (Runner, error) {
 	if !slices.Contains(supportedTables, table) {
-		return nil, errors.New("invalid table name. Only tracked_users_reports is supported now")
+		return nil, errors.New("invalid table name. Only tracked_users_reports and activation_records_reports are supported")
 	}
 
 	connStr := misc.GetConnectionString(conf, "reporting")

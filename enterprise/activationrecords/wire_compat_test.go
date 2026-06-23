@@ -53,10 +53,10 @@ func buildGatewayPayload(t *testing.T, activation map[string]any) []byte {
 // buildGatewayParams serializes job Parameters the way the gateway does
 // (mirror gateway/handle.go:484-493): source_id is always present, while
 // destination_id is omitted entirely when empty.
-func buildGatewayParams(t *testing.T, sourceID, destinationID string) []byte {
+func buildGatewayParams(t *testing.T, destinationID string) []byte {
 	t.Helper()
 	params := map[string]any{
-		"source_id":          sourceID,
+		"source_id":          "src-1",
 		"source_job_run_id":  "",
 		"source_task_run_id": "",
 		"traceparent":        "",
@@ -88,7 +88,7 @@ func TestWireCompat(t *testing.T) {
 		// This subtest reads the wire bytes directly with jsonparser (no reporter),
 		// so WorkspaceId is intentionally omitted — only the payload/params matter.
 		job := &jobsdb.JobT{
-			Parameters: buildGatewayParams(t, "src-1", "dst-1"),
+			Parameters: buildGatewayParams(t, "dst-1"),
 			EventPayload: buildGatewayPayload(t, map[string]any{
 				"fingerprint": "fp-abc",
 				"origin":      "data-graph-audience",
@@ -116,7 +116,7 @@ func TestWireCompat(t *testing.T) {
 		reporter := newWireCompatReporter(t)
 		job := &jobsdb.JobT{
 			WorkspaceId: "ws-1",
-			Parameters:  buildGatewayParams(t, "src-1", "dst-1"),
+			Parameters:  buildGatewayParams(t, "dst-1"),
 			EventPayload: buildGatewayPayload(t, map[string]any{
 				"fingerprint": "fp-abc",
 				"origin":      "data-graph-audience",
@@ -141,7 +141,7 @@ func TestWireCompat(t *testing.T) {
 		reporter := newWireCompatReporter(t)
 		job := &jobsdb.JobT{
 			WorkspaceId: "ws-1",
-			Parameters:  buildGatewayParams(t, "src-1", "dst-1"),
+			Parameters:  buildGatewayParams(t, "dst-1"),
 			EventPayload: buildGatewayPayload(t, map[string]any{
 				"fingerprint": "fp-abc",
 				"origin":      "data-graph-audience",
@@ -177,7 +177,7 @@ func TestWireCompat(t *testing.T) {
 		reporter := newWireCompatReporter(t)
 		job := &jobsdb.JobT{
 			WorkspaceId: "ws-1",
-			Parameters:  buildGatewayParams(t, "src-1", "dst-1"),
+			Parameters:  buildGatewayParams(t, "dst-1"),
 			EventPayload: buildGatewayPayload(t, map[string]any{
 				"origin": "data-graph-audience", // fingerprint key absent
 			}),
@@ -189,7 +189,7 @@ func TestWireCompat(t *testing.T) {
 		reporter := newWireCompatReporter(t)
 		job := &jobsdb.JobT{
 			WorkspaceId: "ws-1",
-			Parameters:  buildGatewayParams(t, "src-1", "dst-1"),
+			Parameters:  buildGatewayParams(t, "dst-1"),
 			EventPayload: buildGatewayPayload(t, map[string]any{
 				"fingerprint": "fp-abc", // origin key absent
 			}),
@@ -201,7 +201,7 @@ func TestWireCompat(t *testing.T) {
 		reporter := newWireCompatReporter(t)
 		job := &jobsdb.JobT{
 			WorkspaceId: "ws-1",
-			Parameters:  buildGatewayParams(t, "src-1", ""), // destination_id omitted
+			Parameters:  buildGatewayParams(t, ""), // destination_id omitted
 			EventPayload: buildGatewayPayload(t, map[string]any{
 				"fingerprint": "fp-abc",
 				"origin":      "data-graph-audience",
