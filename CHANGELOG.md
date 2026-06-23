@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.78.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.77.0...v1.78.0-rc.1) (2026-06-22)
+
+
+### Features
+
+* add and register bq stream v2 async destination manager ([#7057](https://github.com/rudderlabs/rudder-server/issues/7057)) ([787b7ac](https://github.com/rudderlabs/rudder-server/commit/787b7acb7f5bbca71688bb951d97f28c511f1ed9))
+* add BQSTREAM_V2 destination type and bqstreamv2 building blocks ([#7056](https://github.com/rudderlabs/rudder-server/issues/7056)) ([02e84e5](https://github.com/rudderlabs/rudder-server/commit/02e84e59bfc1d2318a8513e126d7619ae3b1ce1f))
+* **batchrouter:** raise getImportingJobs max iterations and remove payload size limit ([#7076](https://github.com/rudderlabs/rudder-server/issues/7076)) ([15707f6](https://github.com/rudderlabs/rudder-server/commit/15707f6e601c06b025cd192b730e723e30867895))
+* **gateway:** throttling support for internal batch endpoint ([#7055](https://github.com/rudderlabs/rudder-server/issues/7055)) ([6b6ba65](https://github.com/rudderlabs/rudder-server/commit/6b6ba657da5e30e061a3c8cf6b38876fadf2a256))
+* **jobsdb:** introduce compaction min ds age ([#7077](https://github.com/rudderlabs/rudder-server/issues/7077)) ([4d6d97a](https://github.com/rudderlabs/rudder-server/commit/4d6d97a7dec0e04c980ee1c8a51c623364b18659))
+* **processor:** new intermediate jobsdb ([#7048](https://github.com/rudderlabs/rudder-server/issues/7048)) ([dfef1f1](https://github.com/rudderlabs/rudder-server/commit/dfef1f136879cd95250d3878b506aa4d82e99f52))
+
+
+### Bug Fixes
+
+* abort non-retryable Klaviyo upload errors instead of retrying ([#7085](https://github.com/rudderlabs/rudder-server/issues/7085)) ([4c3e4f1](https://github.com/rudderlabs/rudder-server/commit/4c3e4f1b57d0f1911129f7820e56f7ea9fe2b24b))
+* **batchrouter:** correlate poll results by externalId instead of whole-row hash ([09326d2](https://github.com/rudderlabs/rudder-server/commit/09326d258568479ab5ba2c4fbeaea807ac934c14))
+* **batchrouter:** report real status code and sample event for drained jobs ([#7104](https://github.com/rudderlabs/rudder-server/issues/7104)) ([d3fab82](https://github.com/rudderlabs/rudder-server/commit/d3fab820afabc285f091847197f836e804fbf1e5))
+* internal endpoints enabled in open source version of rudder-server ([#7075](https://github.com/rudderlabs/rudder-server/issues/7075)) ([dc071cd](https://github.com/rudderlabs/rudder-server/commit/dc071cd0c2c911be63d98431e3ddf698238863de))
+* **jobsdb:** get jobs lateral join against the v_last view ([#7105](https://github.com/rudderlabs/rudder-server/issues/7105)) ([853d14c](https://github.com/rudderlabs/rudder-server/commit/853d14c5196a3c757bdc68ca4ac8d03f101712df))
+* klaviyo upload partial failures ([#7107](https://github.com/rudderlabs/rudder-server/issues/7107)) ([37e79e9](https://github.com/rudderlabs/rudder-server/commit/37e79e92b70773acb0edb8ba9739c415108ca981))
+* **router:** shared barrier causing illegal job sequence errors ([#7101](https://github.com/rudderlabs/rudder-server/issues/7101)) ([b5435ba](https://github.com/rudderlabs/rudder-server/commit/b5435bac3c5efae39a4e2ed8739d0b1c52fa3e1f))
+
+
+### Miscellaneous
+
+* add BQSTREAM_V2 integration tests ([#7058](https://github.com/rudderlabs/rudder-server/issues/7058)) ([478e217](https://github.com/rudderlabs/rudder-server/commit/478e217f8c75ac6fe4ba5fa28a5478f2fb44ad5f))
+* add rudderai announcement ([#7046](https://github.com/rudderlabs/rudder-server/issues/7046)) ([ff02fe8](https://github.com/rudderlabs/rudder-server/commit/ff02fe87d84a656b96ad9b5567d0aab2dcf67dee))
+* bump codecov-action to 7.0.0 ([#7070](https://github.com/rudderlabs/rudder-server/issues/7070)) ([31f0623](https://github.com/rudderlabs/rudder-server/commit/31f06234305b963e53f1921cce438cba43e36093))
+* cleanup embedded warehouse transformations ([#7072](https://github.com/rudderlabs/rudder-server/issues/7072)) ([31f0623](https://github.com/rudderlabs/rudder-server/commit/31f06234305b963e53f1921cce438cba43e36093))
+* **deps:** bump actions/checkout from 6.0.2 to 6.0.3 ([#7084](https://github.com/rudderlabs/rudder-server/issues/7084)) ([745d5ab](https://github.com/rudderlabs/rudder-server/commit/745d5aba9c202f7f8e4d7299dc35cc26d1f2389a))
+* **deps:** bump aws-actions/configure-aws-credentials from 6.1.2 to 6.2.0 ([#7081](https://github.com/rudderlabs/rudder-server/issues/7081)) ([19251cd](https://github.com/rudderlabs/rudder-server/commit/19251cd63c45fec87d5f3e0b481d9eb967f41cde))
+* **jobsdb:** refactoring and cleanup ([#7043](https://github.com/rudderlabs/rudder-server/issues/7043)) ([2e4ea92](https://github.com/rudderlabs/rudder-server/commit/2e4ea9277e22664162b837c95f81f16d47a84c68))
+* remove legacy warehouse endpoints ([#7090](https://github.com/rudderlabs/rudder-server/issues/7090)) ([6f85153](https://github.com/rudderlabs/rudder-server/commit/6f85153f2b4161c0dc8ee7eb1245aa512d35670a))
+* rename bqstream all events ([#7088](https://github.com/rudderlabs/rudder-server/issues/7088)) ([4d9ad19](https://github.com/rudderlabs/rudder-server/commit/4d9ad19259465d1d097a0f2948c8975d0d08af22))
+* **router:** rename experimental buffer size calculator to dynamic ([#7103](https://github.com/rudderlabs/rudder-server/issues/7103)) ([52896cd](https://github.com/rudderlabs/rudder-server/commit/52896cd5b6dae7751dcff3a5b205d528ad717d15))
+* support using the full event schema key as pulsar ordering key ([#7086](https://github.com/rudderlabs/rudder-server/issues/7086)) ([ff50611](https://github.com/rudderlabs/rudder-server/commit/ff506112cde7c5e09ba5b36521102e0233ccbab6))
+
 ## [1.77.4](https://github.com/rudderlabs/rudder-server/compare/v1.77.3...v1.77.4) (2026-06-22)
 
 
