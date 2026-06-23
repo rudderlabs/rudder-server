@@ -16,12 +16,21 @@
   no shared constant. Easy to drift — see mistakes.md.
 - **Two parallel app handlers** (processorAppHandler.go, embeddedAppHandler.go) duplicate the
   Setup→MigrateDatabase→inject sequence. Any new feature must be added to BOTH; nothing enforces it.
-- **supportedTables hard-codes a single table** and `CreateRunner` returns "Only
-  tracked_users_reports is supported now" both before and after the branch
-  (flusher/factory.go:26,60). MAR must extend `supportedTables` and add a parallel branch; the
-  error strings will be stale unless updated.
+- **[RESOLVED in MAR implementation]** `supportedTables` now lists both
+  `"tracked_users_reports"` and `"activation_records_reports"`; both error strings updated to
+  name both tables (flusher/factory.go). The pattern of hard-coding supported tables remains —
+  adding a third pipeline requires extending the slice and error strings again.
 - **`tracked_users` migrations have only an `.up.sql`** (no down migration), matching repo
   convention. Mirror that for MAR (forward-only).
 - **HLL settings are configurable via `TrackedUsers.precision`/`registerWidth`** despite being a
   wire contract. They CAN be overridden at runtime, which is a footgun — overriding them breaks
   backend compatibility. MAR inherits the same risk if it exposes equivalent keys.
+
+## loom acceptance timeout vs dockertest integration suites in ./processor/...
+
+The `./processor/...` glob includes 6+ dockertest integration suites (each spinning Postgres
+containers), taking ~344s total. If loom's built-in acceptance command timeout is shorter than
+that, `loom stage complete` will report `✗ TIMEOUT` on `go test ./processor/... -count=1` even
+though the criterion passes when run with `-timeout 1800s`. Future plans should scope the
+processor acceptance criterion to `-run '^TestProcessor$'` (Ginkgo unit suite, ~5s) for the
+fast MAR/MTU regression signal, and rely on CI for the full integration suite.
