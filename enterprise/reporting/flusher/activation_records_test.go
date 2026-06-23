@@ -64,16 +64,16 @@ func addDataToHLLAR(hllData *hll.Hll, min, max, count int) {
 	}
 }
 
-func generateActivationRecordsReport(reportedAt time.Time, workspaceId, sourceId, destinationId, origin string) *aggregator.ActivationRecordsReport {
+func generateActivationRecordsReport(reportedAt time.Time, workspaceId, destinationId string) *aggregator.ActivationRecordsReport {
 	fingerprintHLL, _ := hll.NewHll(hllSettingsAR())
 	addDataToHLLAR(&fingerprintHLL, 1, 10000, 10000)
 
 	return &aggregator.ActivationRecordsReport{
 		ReportedAt:     reportedAt,
 		WorkspaceID:    workspaceId,
-		SourceID:       sourceId,
+		SourceID:       "source1",
 		DestinationID:  destinationId,
-		Origin:         origin,
+		Origin:         "origin1",
 		InstanceID:     "instance1",
 		FingerprintHLL: &fingerprintHLL,
 	}
@@ -134,12 +134,12 @@ func TestActivationRecordsFlush(t *testing.T) {
 
 	// reports generated with tenMinAgo should be flushed
 	reports := []*aggregator.ActivationRecordsReport{
-		generateActivationRecordsReport(tenMinAgo, "workspace1", "source1", "dest1", "origin1"), // aggregates with report[1]
-		generateActivationRecordsReport(tenMinAgo, "workspace1", "source1", "dest1", "origin1"), // same key as report[0]
-		generateActivationRecordsReport(tenMinAgo, "workspace1", "source1", "dest2", "origin1"), // different dest → separate
-		generateActivationRecordsReport(tenMinAgo, "workspace2", "source1", "dest1", "origin1"), // different workspace → separate
+		generateActivationRecordsReport(tenMinAgo, "workspace1", "dest1"), // aggregates with report[1]
+		generateActivationRecordsReport(tenMinAgo, "workspace1", "dest1"), // same key as report[0]
+		generateActivationRecordsReport(tenMinAgo, "workspace1", "dest2"), // different dest → separate
+		generateActivationRecordsReport(tenMinAgo, "workspace2", "dest1"), // different workspace → separate
 
-		generateActivationRecordsReport(oneMinAgo, "workspace1", "source1", "dest1", "origin1"), // recent, NOT flushed
+		generateActivationRecordsReport(oneMinAgo, "workspace1", "dest1"), // recent, NOT flushed
 	}
 
 	// set up db
