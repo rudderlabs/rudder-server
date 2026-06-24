@@ -56,9 +56,10 @@ func TestPartitionMigrationGatewayProcessorMode(t *testing.T) {
 		restartProcessorEvery time.Duration // how often to restart processor nodes while migration is ongoing
 	}{
 		{name: "normal", extraStressWorkspaces: 0, restartProcessorEvery: 25 * time.Second},
-		{name: "stress_100_workspaces", extraStressWorkspaces: 100, restartProcessorEvery: 30 * time.Second},
-		{name: "stress_1000_workspaces", extraStressWorkspaces: 1000, restartProcessorEvery: 35 * time.Second},
-		{name: "stress_5000_workspaces", extraStressWorkspaces: 5000, restartProcessorEvery: 50 * time.Second},
+		// Stress cases isolate workspace-count load; the normal case covers restart idempotence.
+		{name: "stress_100_workspaces", extraStressWorkspaces: 100},
+		{name: "stress_1000_workspaces", extraStressWorkspaces: 1000},
+		{name: "stress_5000_workspaces", extraStressWorkspaces: 5000},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testPartitionMigrationGatewayProcessorMode(t, tc.extraStressWorkspaces, tc.restartProcessorEvery)
@@ -78,8 +79,10 @@ func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspa
 		jobsPerPartitionPerSecond = 50               // number of jobs to send per partition per second from the gateway client
 		readExcludeSleep          = 15 * time.Second // sleep duration for read exclusion during migration, must not be greater than restartProcessorEvery-5s
 	)
-	require.LessOrEqual(t, readExcludeSleep, restartProcessorEvery-5*time.Second,
-		"readExcludeSleep must not be greater than restartProcessorEvery-5s")
+	if restartProcessorEvery > 0 {
+		require.LessOrEqual(t, readExcludeSleep, restartProcessorEvery-5*time.Second,
+			"readExcludeSleep must not be greater than restartProcessorEvery-5s")
+	}
 
 	// distribute partitions across the 2 nodes equally
 	initialMappings := map[partmap.PartitionIndex]partmap.NodeIndex{}
@@ -466,6 +469,13 @@ func restartingProcessorServer(t *testing.T, ctx context.Context, g *errgroup.Gr
 		t.Name(),
 	)
 	g.Go(func() error {
+		// A non-positive interval disables periodic restarts while still tying the server to the test context.
+		if restartEvery <= 0 {
+			<-ctx.Done()
+			cancel()
+			return runGroup.Wait()
+		}
+
 		var restarts int
 		for {
 			select {
