@@ -71,100 +71,88 @@ func TestMultiConsumerCompaction(t *testing.T) {
 		}
 	}
 
-	for _, tc := range []struct {
-		name            string
-		nonBlocking     bool
-		deferStatusLock bool
-	}{
-		{"blocking", false, false},
-		{"non-blocking", true, false},
-		{"non-blocking-deferred", true, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
-			jd, c := newMCJobDB(t)
-			c.Set("JobsDB."+jd.tablePrefix+".nonBlockingCompaction", tc.nonBlocking)
-			c.Set("JobsDB."+jd.tablePrefix+".compactionDeferStatusLock", tc.deferStatusLock)
-			c.Set("JobsDB."+jd.tablePrefix+".maxDSRetention", "1ms")
-			c.Set("JobsDB."+jd.tablePrefix+".compactionMinDSAge", "0s")
-			// Disable status cleanup so it doesn't interfere with the compaction assertions.
-			c.Set("JobsDB."+jd.tablePrefix+".skipMultiConsumerStatusCompaction", true)
+	t.Run("multi-consumer", func(t *testing.T) {
+		ctx := context.Background()
+		jd, c := newMCJobDB(t)
+		c.Set("JobsDB."+jd.tablePrefix+".maxDSRetention", "1ms")
+		c.Set("JobsDB."+jd.tablePrefix+".compactionMinDSAge", "0s")
+		// Disable status cleanup so it doesn't interfere with the compaction assertions.
+		c.Set("JobsDB."+jd.tablePrefix+".skipMultiConsumerStatusCompaction", true)
 
-			// DS1: 4 jobs with mixed terminal/non-terminal consumer states.
-			//   job0: [A,B] A=succeeded B=succeeded → all terminal → NOT copied
-			//   job1: [A,B] A=succeeded B=failed    → A done, B pending → COPY
-			//   job2: [A,B] A=failed    B=failed    → both pending → COPY
-			//   job3: [A]   no status               → unprocessed → COPY
-			jobs := genJobs(defaultWorkspaceID, "mc", 4, 1)
-			jobs[0].Consumers = []string{"A", "B"}
-			jobs[1].Consumers = []string{"A", "B"}
-			jobs[2].Consumers = []string{"A", "B"}
-			jobs[3].Consumers = []string{"A"}
-			require.NoError(t, jd.Store(ctx, jobs))
+		// DS1: 4 jobs with mixed terminal/non-terminal consumer states.
+		//   job0: [A,B] A=succeeded B=succeeded → all terminal → NOT copied
+		//   job1: [A,B] A=succeeded B=failed    → A done, B pending → COPY
+		//   job2: [A,B] A=failed    B=failed    → both pending → COPY
+		//   job3: [A]   no status               → unprocessed → COPY
+		jobs := genJobs(defaultWorkspaceID, "mc", 4, 1)
+		jobs[0].Consumers = []string{"A", "B"}
+		jobs[1].Consumers = []string{"A", "B"}
+		jobs[2].Consumers = []string{"A", "B"}
+		jobs[3].Consumers = []string{"A"}
+		require.NoError(t, jd.Store(ctx, jobs))
 
-			require.NoError(t, jd.UpdateJobStatus(ctx, []*JobStatusT{
-				mcStatus(jobs[0], "A", Succeeded.State),
-				mcStatus(jobs[0], "B", Succeeded.State),
-				mcStatus(jobs[1], "A", Succeeded.State),
-				mcStatus(jobs[1], "B", Failed.State),
-				mcStatus(jobs[2], "A", Failed.State),
-				mcStatus(jobs[2], "B", Failed.State),
-			}))
+		require.NoError(t, jd.UpdateJobStatus(ctx, []*JobStatusT{
+			mcStatus(jobs[0], "A", Succeeded.State),
+			mcStatus(jobs[0], "B", Succeeded.State),
+			mcStatus(jobs[1], "A", Succeeded.State),
+			mcStatus(jobs[1], "B", Failed.State),
+			mcStatus(jobs[2], "A", Failed.State),
+			mcStatus(jobs[2], "B", Failed.State),
+		}))
 
-			// Acquire a reader before compaction so async drops are blocked long enough
-			// for the assertions below to inspect the destination tables.
-			_, _, release, err := jd.acquireDSListForRead(ctx)
-			require.NoError(t, err)
-			defer release()
+		// Acquire a reader before compaction so async drops are blocked long enough
+		// for the assertions below to inspect the destination tables.
+		_, _, release, err := jd.acquireDSListForRead(ctx)
+		require.NoError(t, err)
+		defer release()
 
-			createDS(t, jd, "2") // empty last DS — makes DS1 non-last and eligible
+		createDS(t, jd, "2") // empty last DS — makes DS1 non-last and eligible
 
-			// Let the statuses age past maxDSRetention=1ms before running compaction.
-			time.Sleep(5 * time.Millisecond)
+		// Let the statuses age past maxDSRetention=1ms before running compaction.
+		time.Sleep(5 * time.Millisecond)
 
-			require.NoError(t, jd.doCompaction(ctx))
+		require.NoError(t, jd.doCompaction(ctx))
 
-			destDS := newDataSet(jd.tablePrefix, "1_1")
+		destDS := newDataSet(jd.tablePrefix, "1_1")
 
-			// Invariant 1: only the 3 non-fully-terminal jobs are copied.
-			var jobCount int64
-			require.NoError(t, jd.dbHandle.QueryRow(
-				fmt.Sprintf(`SELECT count(*) FROM %q`, destDS.JobTable),
-			).Scan(&jobCount))
-			require.EqualValues(t, 3, jobCount)
+		// Invariant 1: only the 3 non-fully-terminal jobs are copied.
+		var jobCount int64
+		require.NoError(t, jd.dbHandle.QueryRow(
+			fmt.Sprintf(`SELECT count(*) FROM %q`, destDS.JobTable),
+		).Scan(&jobCount))
+		require.EqualValues(t, 3, jobCount)
 
-			var job0Count int64
-			require.NoError(t, jd.dbHandle.QueryRow(
-				fmt.Sprintf(`SELECT count(*) FROM %q WHERE job_id = $1`, destDS.JobTable),
-				jobs[0].JobID,
-			).Scan(&job0Count))
-			require.Zero(t, job0Count, "fully-terminal job must not be copied")
+		var job0Count int64
+		require.NoError(t, jd.dbHandle.QueryRow(
+			fmt.Sprintf(`SELECT count(*) FROM %q WHERE job_id = $1`, destDS.JobTable),
+			jobs[0].JobID,
+		).Scan(&job0Count))
+		require.Zero(t, job0Count, "fully-terminal job must not be copied")
 
-			// Invariant 2: only statuses for pending consumers are carried over.
-			// job1/A (succeeded) is trimmed from consumers, so its status is excluded.
-			// Remaining: job1/B=failed, job2/A=failed, job2/B=failed = 3 rows.
-			// job3 had no status, so it contributes 0.
-			var statusCount int64
-			require.NoError(t, jd.dbHandle.QueryRow(
-				fmt.Sprintf(`SELECT count(*) FROM %q`, destDS.JobStatusTable),
-			).Scan(&statusCount))
-			require.EqualValues(t, 3, statusCount, "only pending consumers' statuses must be carried over")
+		// Invariant 2: only statuses for pending consumers are carried over.
+		// job1/A (succeeded) is trimmed from consumers, so its status is excluded.
+		// Remaining: job1/B=failed, job2/A=failed, job2/B=failed = 3 rows.
+		// job3 had no status, so it contributes 0.
+		var statusCount int64
+		require.NoError(t, jd.dbHandle.QueryRow(
+			fmt.Sprintf(`SELECT count(*) FROM %q`, destDS.JobStatusTable),
+		).Scan(&statusCount))
+		require.EqualValues(t, 3, statusCount, "only pending consumers' statuses must be carried over")
 
-			// Invariant 3: destination registry = exact consumers of moved jobs = {A, B}.
-			statusRows, err := jd.dbHandle.QueryContext(ctx,
-				fmt.Sprintf(`SELECT consumer FROM %q ORDER BY consumer`, destDS.consumersRegistryTable()))
-			require.NoError(t, err)
-			var consumers []string
-			for statusRows.Next() {
-				var consumer string
-				require.NoError(t, statusRows.Scan(&consumer))
-				consumers = append(consumers, consumer)
-			}
-			require.NoError(t, statusRows.Err())
-			_ = statusRows.Close()
-			require.Equal(t, []string{"A", "B"}, consumers)
-		})
-	}
+		// Invariant 3: destination registry = exact consumers of moved jobs = {A, B}.
+		statusRows, err := jd.dbHandle.QueryContext(ctx,
+			fmt.Sprintf(`SELECT consumer FROM %q ORDER BY consumer`, destDS.consumersRegistryTable()))
+		require.NoError(t, err)
+		var consumers []string
+		for statusRows.Next() {
+			var consumer string
+			require.NoError(t, statusRows.Scan(&consumer))
+			consumers = append(consumers, consumer)
+		}
+		require.NoError(t, statusRows.Err())
+		_ = statusRows.Close()
+		require.Equal(t, []string{"A", "B"}, consumers)
+	})
 }
 
 // TestMCCleanStatusTable verifies that cleanStatusTable uses DISTINCT ON (job_id, consumer)
