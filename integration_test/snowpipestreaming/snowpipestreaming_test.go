@@ -1420,14 +1420,14 @@ func runRudderServer(
 	config.Set("DB.name", postgresContainer.Database)
 	config.Set("DB.password", postgresContainer.Password)
 	config.Set("SnowpipeStreaming.Client.URL", snowpipeClientsURL)
-	config.Set("BatchRouter.SNOWPIPE_STREAMING.pingFrequency", "1s")                    // default 30s
-	config.Set("BatchRouter.SNOWPIPE_STREAMING.uploadFreq", "1s")                       // default 30s
-	config.Set("BatchRouter.SNOWPIPE_STREAMING.minIdleSleep", "1s")                     // default 2s
+	config.Set("BatchRouter.SNOWPIPE_STREAMING.pingFrequency", "200ms")                 // default 30s
+	config.Set("BatchRouter.SNOWPIPE_STREAMING.uploadFreq", "200ms")                    // default 30s
+	config.Set("BatchRouter.SNOWPIPE_STREAMING.minIdleSleep", "200ms")                  // default 2s
 	config.Set("BatchRouter.SNOWPIPE_STREAMING.maxEventsInABatch", 10000)               // default 10000
 	config.Set("BatchRouter.SNOWPIPE_STREAMING.maxPayloadSizeInBytes", 512*bytesize.KB) // default 10kb
 	config.Set("BatchRouter.SNOWPIPE_STREAMING.asyncUploadWorkerTimeout", "1s")         // default 10s
 	config.Set("BatchRouter.SNOWPIPE_STREAMING.asyncUploadTimeout", "1s")               // default 30m
-	config.Set("BatchRouter.SNOWPIPE_STREAMING.pollStatusLoopSleep", "1s")              // default 10s
+	config.Set("BatchRouter.SNOWPIPE_STREAMING.pollStatusLoopSleep", "200ms")           // default 10s
 	config.Set("BatchRouter.isolationMode", "none")
 	config.Set("Warehouse.mode", "off")
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
@@ -1507,7 +1507,7 @@ func requireGatewayJobsCount(
 			return count == expectedCount
 		},
 		20*time.Second,
-		1*time.Second,
+		200*time.Millisecond,
 	)
 }
 
@@ -1535,7 +1535,7 @@ func requireBatchRouterJobsCount(
 			return count == expectedCount
 		},
 		200*time.Second,
-		1*time.Second,
+		200*time.Millisecond,
 	)
 }
 
