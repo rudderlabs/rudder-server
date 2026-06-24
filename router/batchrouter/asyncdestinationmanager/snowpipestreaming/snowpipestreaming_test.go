@@ -339,6 +339,78 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}).LastValue())
 	})
 
+	t.Run("Upload aborts event channel jobs when channel creation returns bad request", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.channelCache.Store("PRODUCTS", productsChannelResponse)
+
+		sm.api = &mockAPI{
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"USERS": func() (*model.ChannelResponse, error) {
+					return nil, fmt.Errorf("%w: invalid status code for create channel: 400, body: bad request", internalapi.ErrCreateChannelBadRequest)
+				},
+			},
+			insertOutputMap: map[string]func() (*model.InsertResponse, error){
+				"test-products-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel"},
+					}, nil
+				},
+			},
+		}
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    "testdata/successful_records.txt",
+		})
+		require.Equal(t, []int64{1002, 1004}, output.ImportingJobIDs)
+		require.Equal(t, 2, output.ImportingCount)
+		require.Equal(t, []int64{1001, 1003}, output.AbortJobIDs)
+		require.Equal(t, 2, output.AbortCount)
+		require.Contains(t, output.AbortReason, internalapi.ErrCreateChannelBadRequest.Error())
+		require.Empty(t, output.FailedJobIDs)
+		require.Zero(t, output.FailedCount)
+		require.Empty(t, output.FailedReason)
+		require.Equal(t, "test-destination", output.DestinationID)
+		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "importing",
+		}).LastValue())
+		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "aborted",
+		}).LastValue())
+		require.EqualValues(t, 0, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+	})
+
 	t.Run("Upload insert status failed", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)

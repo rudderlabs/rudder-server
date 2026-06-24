@@ -92,6 +92,9 @@ func (m *Manager) createChannel(
 
 	resp, err := m.api.CreateChannel(ctx, req)
 	if err != nil {
+		if errors.Is(err, internalapi.ErrCreateChannelBadRequest) {
+			return nil, fmt.Errorf("creating channel: %w, %w", errAbort, err)
+		}
 		return nil, fmt.Errorf("creating channel: %w", err)
 	}
 	if resp.Success {

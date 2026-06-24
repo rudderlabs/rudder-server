@@ -1,5 +1,9 @@
 package api
 
+import "errors"
+
+var ErrCreateChannelBadRequest = errors.New("create channel bad request")
+
 const (
 	ErrUnknownError                        = "ERR_UNKNOWN_ERROR"
 	ErrValidationError                     = "ERR_VALIDATION_ERROR"
