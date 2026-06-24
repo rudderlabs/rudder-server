@@ -116,25 +116,22 @@ func (jd *Handle) init() {
 				if writer && jd.conf.clearAll {
 					jd.dropDatabaseTables(l)
 				}
-				templateData := func() map[string]any {
-					// Important: if jobsdb type is acting as a writer then refreshDSList
-					// doesn't return the full list of datasets, only the rightmost two.
-					// But we need to run the schema migration against all datasets, no matter
-					// whether jobsdb is a writer or not.
-					datasets, err := getDSList(jd, tx, jd.tablePrefix)
-					jd.assertError(err)
+				// Important: if jobsdb type is acting as a writer then refreshDSList
+				// doesn't return the full list of datasets, only the rightmost two.
+				// But we need to run the schema migration against all datasets, no matter
+				// whether jobsdb is a writer or not.
+				datasets, err := getDSList(jd, tx, jd.tablePrefix)
+				jd.assertError(err)
 
-					datasetIndices := make([]string, 0)
-					for _, dataset := range datasets {
-						datasetIndices = append(datasetIndices, dataset.Index)
-					}
-
-					return map[string]any{
-						"Prefix":              jd.tablePrefix,
-						"Datasets":            datasetIndices,
-						"PartitioningEnabled": jd.conf.numPartitions > 0,
-					}
-				}()
+				datasetIndices := make([]string, 0)
+				for _, dataset := range datasets {
+					datasetIndices = append(datasetIndices, dataset.Index)
+				}
+				templateData := map[string]any{
+					"Prefix":              jd.tablePrefix,
+					"Datasets":            datasetIndices,
+					"PartitioningEnabled": jd.conf.numPartitions > 0,
+				}
 
 				if writer {
 					jd.setupDatabaseTables(templateData)
@@ -149,8 +146,12 @@ func (jd *Handle) init() {
 				// Changesets that run always can help in such cases, by bringing non-migrated tables into a usable state.
 				jd.runAlwaysChangesets(templateData)
 
+				// Apply the multi-consumer flip: upgrades datasets to multi-consumer schema when
+				// multiConsumer is enabled, or asserts no named consumers exist when disabled.
+				jd.assertError(jd.applyMultiConsumerFlip(context.Background(), tx, datasets))
+
 				// finally refresh the dataset list to make sure [datasetList] field is populated
-				err := jd.doRefreshDSRangeListWithDB(l, jd.dbHandle)
+				err = jd.doRefreshDSRangeListWithDB(l, jd.dbHandle)
 				jd.assertError(err)
 			})
 			return nil
