@@ -253,15 +253,16 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 				updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][customValKey(status.CustomVal)][jobStateKey(status.JobState)] = make(map[parameterFiltersKey]*UpdateJobStatusStats)
 			}
 			var parameters ParameterFilterList
-			var parametersKey parameterFiltersKey
 			if status.JobParameters != nil {
 				for _, param := range cacheParameterFilters {
 					v := gjson.GetBytes(status.JobParameters, param).Str
 					parameters = append(parameters, ParameterFilterT{Name: param, Value: v})
 				}
-				parametersKey = parameterFiltersKey(parameters.String())
-
 			}
+			if jd.conf.multiConsumer {
+				parameters = append(parameters, ParameterFilterT{Name: consumerParamName, Value: status.Consumer})
+			}
+			parametersKey := parameterFiltersKey(parameters.String())
 			pm, ok := updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][customValKey(status.CustomVal)][jobStateKey(status.JobState)][parametersKey]
 			if !ok {
 				pm = &UpdateJobStatusStats{parameters: parameters}
@@ -380,6 +381,12 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 									return pf.String() // uniqueness by string representation
 								},
 							)
+							// If multi-consumer, also invalidate consumer=* so that all-consumer
+							// queries (e.g. GetPendingJobs) are not served stale results after
+							// any consumer writes a status.
+							if jd.conf.multiConsumer {
+								parameterFilters = append(parameterFilters, ParameterFilterT{Name: consumerParamName, Value: "*"})
+							}
 							// invalidate cache for this combination
 							jd.noResultsCache.Invalidate(ds.Index, []string{string(partition)}, string(workspace), []string{string(customVal)}, stateList, parameterFilters)
 						}
