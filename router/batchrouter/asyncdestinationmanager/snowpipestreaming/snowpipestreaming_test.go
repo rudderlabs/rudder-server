@@ -339,7 +339,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}).LastValue())
 	})
 
-	t.Run("Upload aborts event channel jobs when channel creation returns bad request", func(t *testing.T) {
+	t.Run("Upload aborts event channel jobs when channel creation response reports bad request", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
@@ -350,7 +350,12 @@ func TestSnowpipeStreaming(t *testing.T) {
 		sm.api = &mockAPI{
 			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
 				"USERS": func() (*model.ChannelResponse, error) {
-					return nil, fmt.Errorf("%w: invalid status code for create channel: 400, body: bad request", internalapi.ErrCreateChannelBadRequest)
+					return &model.ChannelResponse{
+						Success:              false,
+						Code:                 internalapi.ErrUnknownError,
+						SnowflakeAPIMessage:  "bad request",
+						SnowflakeAPIHttpCode: http.StatusBadRequest,
+					}, nil
 				},
 			},
 			insertOutputMap: map[string]func() (*model.InsertResponse, error){
@@ -383,7 +388,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, 2, output.ImportingCount)
 		require.Equal(t, []int64{1001, 1003}, output.AbortJobIDs)
 		require.Equal(t, 2, output.AbortCount)
-		require.Contains(t, output.AbortReason, internalapi.ErrCreateChannelBadRequest.Error())
+		require.Contains(t, output.AbortReason, "bad request")
 		require.Empty(t, output.FailedJobIDs)
 		require.Zero(t, output.FailedCount)
 		require.Empty(t, output.FailedReason)
@@ -1129,7 +1134,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.ChannelResponse{
 						Success:              false,
 						SnowflakeAPIMessage:  "Unknown error occurred",
-						SnowflakeAPIHttpCode: internalapi.ApiStatusUnsupportedColumn,
+						SnowflakeAPIHttpCode: http.StatusBadRequest,
 					}, nil
 				},
 			},

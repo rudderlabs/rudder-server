@@ -79,9 +79,6 @@ func (a *API) CreateChannel(ctx context.Context, channelReq *model.CreateChannel
 	defer func() { httputil.CloseResponse(resp) }()
 
 	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusBadRequest {
-			return nil, fmt.Errorf("%w: invalid status code for create channel: %d, body: %s", ErrCreateChannelBadRequest, resp.StatusCode, string(mustRead(resp.Body)))
-		}
 		return nil, fmt.Errorf("invalid status code for create channel: %d, body: %s", resp.StatusCode, string(mustRead(resp.Body)))
 	}
 
