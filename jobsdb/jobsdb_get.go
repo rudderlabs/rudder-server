@@ -28,6 +28,10 @@ type GetQueryParams struct {
 	CustomValFilters []string
 	ParameterFilters []ParameterFilterT
 	PartitionFilters []string
+	// Consumer scopes the query to a single consumer.
+	// On a multi-consumer JobsDB this is always applied — an empty string targets the default '' consumer.
+	// On a single-consumer JobsDB this field is ignored.
+	Consumer string
 
 	stateFilters                   []string
 	afterJobID                     *int64
@@ -66,6 +70,8 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 }
 
 var cacheParameterFilters = []string{"source_id", "destination_id"}
+
+const consumerParamName = "consumer" // the name of the consumer parameter, used for multi-consumer scoping of queries and cache entries
 
 func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) error {
 	// pause compaction to avoid any read locks being blocked during pileup count
@@ -243,12 +249,18 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	workspaceID := params.WorkspaceID
 	checkValidJobState(jd, stateFilters)
 
-	if jd.noResultsCache.Get(ds.Index, partitionFilters, workspaceID, customValFilters, stateFilters, parameterFilters) {
+	// For multi-consumer JobsDB, consumer is a cache dimension: consumer=X scopes lookups to that consumer.
+	cacheParamFilters := parameterFilters
+	if jd.conf.multiConsumer {
+		cacheParamFilters = append(slices.Clone(parameterFilters), ParameterFilterT{Name: consumerParamName, Value: params.Consumer})
+	}
+
+	if jd.noResultsCache.Get(ds.Index, partitionFilters, workspaceID, customValFilters, stateFilters, cacheParamFilters) {
 		jd.logger.Debugn("[getJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v",
 			logger.NewStringField("ds", ds.String()),
 			logger.NewStringField("stateFilters", strings.Join(stateFilters, ",")),
 			logger.NewStringField("customValFilters", strings.Join(customValFilters, ",")),
-			logger.NewStringField("parameterFilters", parameterFilters.String()),
+			logger.NewStringField("parameterFilters", cacheParamFilters.String()),
 		)
 		return JobsResult{}, false, nil
 	}
@@ -262,7 +274,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 
 	if stateFilterOptimization {
 		stateFilters = lo.Filter(stateFilters, func(state string, _ int) bool { // exclude states for which we already know that there are no jobs
-			return !jd.noResultsCache.Get(ds.Index, partitionFilters, workspaceID, customValFilters, []string{state}, parameterFilters)
+			return !jd.noResultsCache.Get(ds.Index, partitionFilters, workspaceID, customValFilters, []string{state}, cacheParamFilters)
 		})
 	}
 
@@ -280,7 +292,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 			if state == Unprocessed.State && jd.ownerType == Read && lastDS {
 				continue
 			}
-			cacheTx[state] = jd.noResultsCache.StartNoResultTx(ds.Index, partitionFilters, workspaceID, customValFilters, []string{state}, parameterFilters)
+			cacheTx[state] = jd.noResultsCache.StartNoResultTx(ds.Index, partitionFilters, workspaceID, customValFilters, []string{state}, cacheParamFilters)
 		}
 	}
 
@@ -327,6 +339,20 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		jd.excludedReadPartitionsLock.RUnlock()
 	}
 
+	// query args are shared between the inner query (consumer) and the outer wrap (limits).
+	// Consumer must be added first so its $n position is stable when wrap args are appended.
+	var args []any
+
+	// innerConsumerClause is added inside LATERAL subqueries; outerConsumerClause is added to ON clauses.
+	var innerConsumerClause, outerConsumerClause string
+	if jd.conf.multiConsumer {
+		args = append(args, params.Consumer)
+		n := len(args)
+		filterConditions = append(filterConditions, fmt.Sprintf("jobs.consumers @> ARRAY[$%d]", n))
+		innerConsumerClause = fmt.Sprintf(" AND consumer = $%d", n)
+		outerConsumerClause = fmt.Sprintf(" AND job_latest_state.consumer = $%d", n)
+	}
+
 	var filterQuery string
 	if len(filterConditions) > 0 {
 		filterQuery = "WHERE " + strings.Join(filterConditions, " AND ")
@@ -338,7 +364,11 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	}
 
 	joinType := "LEFT"
-	joinTable := "v_last_" + ds.JobStatusTable
+	viewPrefix := "v_last_"
+	if jd.conf.multiConsumer {
+		viewPrefix = "v_last_c_"
+	}
+	joinTable := viewPrefix + ds.JobStatusTable
 	onlyUnprocessed := slices.Equal(stateFilters, []string{Unprocessed.State})
 
 	if !containsUnprocessed { // If we are not querying for unprocessed jobs, we can use an inner join
@@ -352,14 +382,14 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	// we only need to know whether any status row exists, not which one is latest,
 	// so the lateral's ORDER BY / LIMIT 1 would be wasteful — skip it.
 	if jd.conf.getJobsUseLateralJoin.Load() && !onlyUnprocessed {
-		joinTable = fmt.Sprintf(`LATERAL (SELECT * FROM %q WHERE job_id = jobs.job_id ORDER BY id DESC LIMIT 1) job_latest_state ON true`, ds.JobStatusTable)
+		joinTable = fmt.Sprintf(`LATERAL (SELECT * FROM %q WHERE job_id = jobs.job_id%s ORDER BY id DESC LIMIT 1) job_latest_state ON true`, ds.JobStatusTable, innerConsumerClause)
 	} else {
-		joinTable = fmt.Sprintf(`%q job_latest_state ON jobs.job_id=job_latest_state.job_id`, joinTable)
+		joinTable = fmt.Sprintf(`%q job_latest_state ON jobs.job_id=job_latest_state.job_id%s`, joinTable, outerConsumerClause)
 	}
 
 	sqlStatement := fmt.Sprintf(`SELECT
 									jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
-									jobs.created_at, jobs.expire_at, jobs.workspace_id, jobs.partition_id,
+									jobs.created_at, jobs.expire_at, jobs.workspace_id, jobs.partition_id, jobs.consumers,
 									octet_length(jobs.event_payload::text) as payload_size,
 									sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
 									sum(octet_length(jobs.event_payload::text)) over (order by jobs.job_id) as running_payload_size,
@@ -372,8 +402,6 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 								    %[4]s
 									ORDER BY jobs.job_id %[5]s`,
 		ds.JobTable, joinType, joinTable, filterQuery, limitQuery)
-
-	var args []any
 
 	var wrapQuery []string
 	if params.EventsLimit > 0 {
@@ -426,7 +454,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		var jsErrorResponse []byte
 		var jsParameters []byte
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&payload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PartitionID, &discardRowPayloadSize, &runningEventCount, &runningPayloadSize,
+			&payload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PartitionID, pq.Array(&job.Consumers), &discardRowPayloadSize, &runningEventCount, &runningPayloadSize,
 			&jsState, &jsAttemptNum,
 			&jsExecTime, &jsRetryTime,
 			&jsErrorCode, &jsErrorResponse, &jsParameters)

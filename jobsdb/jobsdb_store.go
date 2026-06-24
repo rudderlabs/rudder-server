@@ -123,6 +123,19 @@ func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 			parameterFilters = append(parameterFilters, ParameterFilterT{Name: key, Value: val})
 		}
 
+		if jd.conf.multiConsumer {
+			consumers := job.Consumers
+			if len(consumers) == 0 {
+				consumers = []string{""}
+			}
+			for _, c := range consumers {
+				params = append(params, consumerParamName+":"+c)
+				parameterFilters = append(parameterFilters, ParameterFilterT{Name: consumerParamName, Value: c})
+			}
+			// also invalidate all-consumer query entries
+			parameterFilters = append(parameterFilters, ParameterFilterT{Name: consumerParamName, Value: "*"})
+		}
+
 		paramsKey := strings.Join(params, "#")
 		if _, ok := cacheKeys[workspace][customVal][paramsKey]; !ok {
 			cacheKeys[workspace][customVal][paramsKey] = struct{}{}
@@ -136,7 +149,7 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 		var stmt *sql.Stmt
 		var err error
 
-		stmt, err = tx.PrepareContext(ctx, misc.DBCopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id", "partition_id"))
+		stmt, err = tx.PrepareContext(ctx, misc.DBCopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id", "partition_id", "consumers"))
 		if err != nil {
 			return err
 		}
@@ -148,7 +161,11 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 			if job.PartitionID == "" && jd.conf.numPartitions > 0 {
 				job.PartitionID = jd.conf.partitionFunction(job)
 			}
-			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId, job.PartitionID); err != nil {
+			consumers := job.Consumers
+			if len(consumers) == 0 {
+				consumers = []string{""}
+			}
+			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId, job.PartitionID, pq.Array(consumers)); err != nil {
 				return err
 			}
 		}
@@ -156,9 +173,13 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 			return err
 		}
 		if len(jobList) > jd.conf.analyzeThreshold.Load() {
-			_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobTable))
+			if _, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobTable)); err != nil {
+				return err
+			}
 		}
-
+		if jd.conf.multiConsumer {
+			err = jd.registerConsumers(ctx, tx, ds, jobList)
+		}
 		return err
 	}
 	const (
