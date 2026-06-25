@@ -70,6 +70,7 @@ type DestinationT struct {
 	DeliveryAccount       *Account `json:"deliveryAccount,omitempty"`
 	DeleteAccount         *Account `json:"deleteAccount,omitempty"`
 	HasDynamicConfig      bool     `json:"hasDynamicConfig"`
+	Version               int      `json:"version"` // integration major rudder-server carries to the transformer (never interprets); absent in the blob => 0, treated as v1 downstream.
 }
 
 // UpdateHasDynamicConfig checks if the destination config contains dynamic config patterns

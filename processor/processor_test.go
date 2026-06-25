@@ -260,6 +260,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "B",
 					Enabled:            true,
 					IsProcessorEnabled: true,
+					Version:            1,
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						ID:          "enabled-destination-b-definition-id",
 						Name:        "MINIO",
@@ -346,6 +347,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "B",
 					Enabled:            true,
 					IsProcessorEnabled: true,
+					Version:            1,
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						ID:          "enabled-destination-b-definition-id",
 						Name:        "MINIO",
@@ -859,6 +861,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "B",
 					Enabled:            true,
 					IsProcessorEnabled: true,
+					Version:            1,
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						ID:          "enabled-destination-b-definition-id",
 						Name:        "MINIO",

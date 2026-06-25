@@ -54,7 +54,7 @@ func TestV0Adapter(t *testing.T) {
 			},
 			DestName: "testDestType",
 		}
-		expectedPayload := `{"type":"a","endpoint":"a.com","method":"","userId":"","headers":null,"params":null,"body":{"jobId":1},"files":null,"metadata":{"jobId":1,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":true},"destinationConfig":{"key_1":"val_1","key_2":"val_2"}}`
+		expectedPayload := `{"type":"a","endpoint":"a.com","method":"","userId":"","headers":null,"params":null,"body":{"jobId":1},"files":null,"metadata":{"jobId":1,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":true},"destinationConfig":{"key_1":"val_1","key_2":"val_2"},"destinationVersion":0}`
 
 		payload, err := v0Adapter.getPayload(proxyReqParms)
 		require.Nil(t, err)
@@ -169,7 +169,7 @@ func TestV1Adapter(t *testing.T) {
 			},
 			DestName: "testDestType",
 		}
-		expectedPayload := `{"type":"a","endpoint":"a.com","method":"","userId":"","headers":null,"params":null,"body":{"jobId":1},"files":null,"metadata":[{"jobId":1,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":true},{"jobId":2,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":false}],"destinationConfig":{"key_1":"val_1","key_2":"val_2"}}`
+		expectedPayload := `{"type":"a","endpoint":"a.com","method":"","userId":"","headers":null,"params":null,"body":{"jobId":1},"files":null,"metadata":[{"jobId":1,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":true},{"jobId":2,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":false}],"destinationConfig":{"key_1":"val_1","key_2":"val_2"},"destinationVersion":0}`
 
 		payload, err := v1Adapter.getPayload(proxyReqParms)
 		require.Nil(t, err)
@@ -325,6 +325,29 @@ func TestV1Adapter(t *testing.T) {
 
 		require.Equal(t, "", response.authErrorCategory)
 	})
+}
+
+func TestProxyPayloadCarriesDestinationVersion(t *testing.T) {
+	params := &ProxyRequestParams{
+		ResponseData: ProxyRequestPayload{
+			Metadata:           []ProxyRequestMetadata{{JobID: 1}},
+			DestinationConfig:  map[string]any{"k": "v"},
+			DestinationVersion: 1,
+		},
+	}
+
+	for _, version := range []string{transformer.V0, transformer.V1} {
+		t.Run(version, func(t *testing.T) {
+			payload, err := NewTransformerProxyAdapter(version, logger.NOP).getPayload(params)
+			require.NoError(t, err)
+
+			var got struct {
+				DestinationVersion int `json:"destinationVersion"`
+			}
+			require.NoError(t, jsonrs.Unmarshal(payload, &got))
+			require.Equal(t, 1, got.DestinationVersion)
+		})
+	}
 }
 
 func Test_getTransformerProxyURL_env_priority(t *testing.T) {
