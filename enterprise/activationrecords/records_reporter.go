@@ -71,16 +71,23 @@ type UniqueActivationRecordsReporter struct {
 
 // NewUniqueActivationRecordsReporter constructs a UniqueActivationRecordsReporter.
 func NewUniqueActivationRecordsReporter(log logger.Logger, conf *config.Config, stats stats.Stats) (*UniqueActivationRecordsReporter, error) {
+	hllSettings := &hll.Settings{
+		Log2m:             conf.GetIntVar(16, 1, "ActivationRecords.precision"),
+		Regwidth:          conf.GetIntVar(5, 1, "ActivationRecords.registerWidth"),
+		ExplicitThreshold: hll.AutoExplicitThreshold,
+		SparseEnabled:     true,
+	}
+	// Validate the HLL settings once, at startup, so a misconfigured precision or
+	// registerWidth fails fast here (the app handler surfaces this error) instead of
+	// panicking deep in the processor hot path on every metered job.
+	if _, err := hll.NewHll(*hllSettings); err != nil {
+		return nil, fmt.Errorf("invalid activation records HLL settings: %w", err)
+	}
 	return &UniqueActivationRecordsReporter{
-		log: log,
-		hllSettings: &hll.Settings{
-			Log2m:             conf.GetIntVar(16, 1, "ActivationRecords.precision"),
-			Regwidth:          conf.GetIntVar(5, 1, "ActivationRecords.registerWidth"),
-			ExplicitThreshold: hll.AutoExplicitThreshold,
-			SparseEnabled:     true,
-		},
-		instanceID: config.GetStringVar("1", "INSTANCE_ID"),
-		stats:      stats,
+		log:         log,
+		hllSettings: hllSettings,
+		instanceID:  config.GetStringVar("1", "INSTANCE_ID"),
+		stats:       stats,
 		now: func() time.Time {
 			return timeutil.Now()
 		},
@@ -164,13 +171,20 @@ func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb
 			}
 			acc, exists := accumulators[key]
 			if !exists {
+				newHll, hllErr := hll.NewHll(*u.hllSettings)
+				if hllErr != nil {
+					// Settings are validated at construction, so this is unreachable in
+					// practice; degrade gracefully (skip + stat) rather than crash the
+					// processor pipeline if it ever does happen.
+					u.log.Errorn("creating HLL for activation records", obskit.Error(hllErr))
+					u.stats.NewTaggedStat("activation_records_skipped", stats.CountType, stats.Tags{
+						"reason": "hll_init_failed",
+					}).Increment()
+					continue
+				}
 				truncated, wasTruncated := truncateRunes(origin, 256)
 				if wasTruncated {
 					u.stats.NewTaggedStat("activation_records_origin_truncated", stats.CountType, stats.Tags{}).Increment()
-				}
-				newHll, hllErr := hll.NewHll(*u.hllSettings)
-				if hllErr != nil {
-					panic(hllErr)
 				}
 				acc = &recordAccumulator{origin: truncated, hll: &newHll}
 				accumulators[key] = acc
