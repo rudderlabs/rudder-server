@@ -13,6 +13,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonparser"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
@@ -148,7 +149,7 @@ func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb
 			continue
 		}
 		var batchElements []json.RawMessage
-		if err := json.Unmarshal(batchRaw, &batchElements); err != nil {
+		if err := jsonrs.Unmarshal(batchRaw, &batchElements); err != nil {
 			// batch field absent or not an array — skip job gracefully.
 			continue
 		}
