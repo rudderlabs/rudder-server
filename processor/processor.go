@@ -25,7 +25,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/cachettl"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
-	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/ro"
@@ -1858,6 +1857,9 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		}
 
 		for _, singularEvent := range gatewayBatchEvent.Batch {
+			if ctxMap, ok := singularEvent["context"].(map[string]any); ok {
+				delete(ctxMap, "activation")
+			}
 			messageId := stringify.Any(singularEvent["messageId"])
 			payloadFunc := ro.Memoize(func() json.RawMessage {
 				payloadBytes, err := jsonrs.Marshal(singularEvent)
@@ -2367,16 +2369,10 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	trackedUsersReports := proc.trackedUsersReporter.GenerateReportsFromJobs(preTrans.jobList, proc.getNonEventStreamSources())
 	proc.stats.trackedUsersReportGeneration(preTrans.partition).SendTiming(time.Since(trackedUsersReportGenStart))
 
+	// GenerateReportsFromJobs reads context.activation from the raw job payloads
+	// (left intact here so metering still works); the destination-bound copies are
+	// already stripped per-event in preprocessStage.
 	activationRecordsReports := proc.activationRecordsReporter.GenerateReportsFromJobs(preTrans.jobList)
-	// Strip internal metering fields AFTER generate (the gate already read them) and
-	// BEFORE transformation, so context.activation never reaches the destination.
-	// DeleteKey returns (data, error); a key-not-found error means the path was absent,
-	// so only overwrite the payload on a nil error (clean no-op otherwise).
-	for _, job := range preTrans.jobList {
-		if stripped, err := jsonparser.DeleteKey(job.EventPayload, "batch", "[0]", "context", "activation"); err == nil {
-			job.EventPayload = stripped
-		}
-	}
 
 	return &transformationMessage{
 		preTrans.subJobs.ctx,
@@ -2914,9 +2910,23 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 				return fmt.Errorf("storing tracked users: %w", err)
 			}
 
-			err = proc.activationRecordsReporter.ReportActivationRecords(ctx, in.activationRecordsReports, tx.Tx())
-			if err != nil {
-				return fmt.Errorf("storing activation records: %w", err)
+			// Best-effort MAR write: a failed COPY (e.g. constraint violation) poisons the
+			// surrounding Postgres transaction, which would abort gateway-status updates and
+			// drop event delivery. Wrap it in a SAVEPOINT so only the MAR insert rolls back.
+			if len(in.activationRecordsReports) > 0 {
+				sqlTx := tx.Tx()
+				if _, spErr := sqlTx.ExecContext(ctx, "SAVEPOINT activation_records"); spErr != nil {
+					proc.logger.Warnn("creating savepoint for activation records, skipping MAR write", obskit.Error(spErr))
+					proc.statsFactory.NewStat("activation_records_store_error", stats.CountType).Increment()
+				} else if marErr := proc.activationRecordsReporter.ReportActivationRecords(ctx, in.activationRecordsReports, sqlTx); marErr != nil {
+					proc.logger.Warnn("storing activation records, rolling back to savepoint (best-effort)", obskit.Error(marErr))
+					proc.statsFactory.NewStat("activation_records_store_error", stats.CountType).Increment()
+					if _, rbErr := sqlTx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT activation_records"); rbErr != nil {
+						proc.logger.Warnn("rolling back to savepoint for activation records", obskit.Error(rbErr))
+					}
+				} else if _, relErr := sqlTx.ExecContext(ctx, "RELEASE SAVEPOINT activation_records"); relErr != nil {
+					proc.logger.Warnn("releasing savepoint for activation records", obskit.Error(relErr))
+				}
 			}
 
 			// this will publish stats for all sources involved in this batch
