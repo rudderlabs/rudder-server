@@ -2,6 +2,7 @@ package warehouse_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/samber/lo"
@@ -53,4 +54,69 @@ func Benchmark_Transformer(b *testing.B) {
 			require.Nil(b, embeddedResponse.FailedEvents)
 		}
 	})
+}
+
+/*
+Benchmark_Transformer_HighCardinality models the production / multi-tenant case
+that the warehouse CPU profile was taken from: column-name cardinality is high
+enough that the per-batch transformColumnName cache (rebuilt per Transform call)
+has a low hit rate, so the snake_case conversion actually runs per distinct
+column instead of being served from cache.
+
+Each event carries a distinct set of camelCase / numbered trait keys, so the
+columns rarely repeat within a batch. This is the workload where replacing the
+regexp2-backed snake_case implementation with the ASCII fast path matters; the
+original Benchmark_Transformer (identical events) is cache-saturated and is
+insensitive to the snake_case cost.
+*/
+func Benchmark_Transformer_HighCardinality(b *testing.B) {
+	const (
+		batchSize      = 2000
+		traitsPerEvent = 40
+	)
+	metadata := getMetadata("identify", "POSTGRES")
+	destination := getDestination("POSTGRES", map[string]any{
+		"allowUsersContextTraits": true,
+	})
+
+	events := lo.Times(batchSize, func(eventIdx int) types.TransformerEvent {
+		traits := make(map[string]any, traitsPerEvent)
+		for j := range traitsPerEvent {
+			// Distinct, realistic-looking column names per event: a mix of
+			// camelCase and numbered identifiers that all exercise the
+			// transformColumnName / snake_case path with low cache reuse.
+			key := fmt.Sprintf("userTraitFieldName%dForEvent%dValue", j, eventIdx)
+			traits[key] = "some value"
+		}
+		message := types.SingularEventT{
+			"type":        "identify",
+			"messageId":   fmt.Sprintf("messageId-%d", eventIdx),
+			"anonymousId": "anonymousId",
+			"userId":      "userId",
+			"sentAt":      "2021-09-01T00:00:00.000Z",
+			"timestamp":   "2021-09-01T00:00:00.000Z",
+			"receivedAt":  "2021-09-01T00:00:00.000Z",
+			"channel":     "web",
+			"traits":      traits,
+			"context": map[string]any{
+				"traits": map[string]any{"name": "Richard Hendricks"},
+				"ip":     "1.2.3.4",
+			},
+		}
+		return types.TransformerEvent{
+			Message:     message,
+			Metadata:    metadata,
+			Destination: destination,
+		}
+	})
+
+	warehouseTransformer := warehouse.New(config.New(), logger.NOP, stats.NOP)
+	ctx := context.Background()
+	b.ReportAllocs()
+
+	for b.Loop() {
+		res := warehouseTransformer.Transform(ctx, events)
+		require.Len(b, res.Events, 2*batchSize) // identify -> identifies + users rows
+		require.Nil(b, res.FailedEvents)
+	}
 }
