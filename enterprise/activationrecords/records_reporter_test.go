@@ -130,6 +130,50 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 		}
 	})
 
+	t.Run("GenerateReportsFromJobs_MultiEventBatch", func(t *testing.T) {
+		reporter, err := NewUniqueActivationRecordsReporter(logger.NOP, config.Default, stats.NOP)
+		require.NoError(t, err)
+
+		// prepareTwoEventJob builds a job whose batch has TWO events with distinct fingerprints.
+		prepareTwoEventJob := func(sourceID, destinationID, fp1, fp2, origin, workspaceID string) *jobsdb.JobT {
+			return &jobsdb.JobT{
+				Parameters: fmt.Appendf(nil, `{"source_id":%q,"destination_id":%q}`, sourceID, destinationID),
+				EventPayload: fmt.Appendf(nil,
+					`{"batch":[{"context":{"activation":{"fingerprint":%q,"origin":%q}}},{"context":{"activation":{"fingerprint":%q,"origin":%q}}}]}`,
+					fp1, origin, fp2, origin,
+				),
+				UserID:      uuid.NewString(),
+				UUID:        uuid.New(),
+				CustomVal:   "GW",
+				WorkspaceId: workspaceID,
+			}
+		}
+
+		t.Run("two distinct fingerprints in same batch => cardinality 2", func(t *testing.T) {
+			job := prepareTwoEventJob("src1", "dst1", "fp-1", "fp-2", "org1", "ws1")
+			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job})
+			require.Len(t, reports, 1)
+			require.Equal(t, "org1", reports[0].Origin)
+			require.NotNil(t, reports[0].FingerprintHll)
+			require.Equal(t, uint64(2), reports[0].FingerprintHll.Cardinality())
+		})
+
+		t.Run("batch with one valid and one invalid element - valid element still metered", func(t *testing.T) {
+			// batch[0] has no fingerprint; batch[1] is valid.
+			job := &jobsdb.JobT{
+				Parameters:   fmt.Appendf(nil, `{"source_id":%q,"destination_id":%q}`, "src1", "dst1"),
+				EventPayload: []byte(`{"batch":[{"context":{"activation":{"origin":"org1"}}},{"context":{"activation":{"fingerprint":"fp-valid","origin":"org1"}}}]}`),
+				UserID:       uuid.NewString(),
+				UUID:         uuid.New(),
+				CustomVal:    "GW",
+				WorkspaceId:  "ws1",
+			}
+			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job})
+			require.Len(t, reports, 1)
+			require.Equal(t, uint64(1), reports[0].FingerprintHll.Cardinality())
+		})
+	})
+
 	t.Run("HLLSettings", func(t *testing.T) {
 		reporter, err := NewUniqueActivationRecordsReporter(logger.NOP, config.Default, stats.NOP)
 		require.NoError(t, err)

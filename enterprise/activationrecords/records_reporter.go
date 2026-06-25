@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -135,31 +136,46 @@ func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb
 			continue
 		}
 
-		// Array index MUST use bracket notation "[0]" — a bare "0" is parsed as an object key.
-		fingerprint := jsonparser.GetStringOrEmpty(job.EventPayload, "batch", "[0]", "context", "activation", "fingerprint")
-		origin := jsonparser.GetStringOrEmpty(job.EventPayload, "batch", "[0]", "context", "activation", "origin")
-		if fingerprint == "" || origin == "" {
-			u.stats.NewTaggedStat("activation_records_skipped", stats.CountType, stats.Tags{
-				"reason": "missing_fingerprint_or_origin",
-			}).Increment()
-			continue
-		}
-
 		key := recordKey{
 			workspaceID:   job.WorkspaceId,
 			sourceID:      sourceID,
 			destinationID: destinationID,
 		}
-		acc, exists := accumulators[key]
-		if !exists {
-			newHll, err := hll.NewHll(*u.hllSettings)
-			if err != nil {
-				panic(err)
-			}
-			acc = &recordAccumulator{origin: origin, hll: &newHll}
-			accumulators[key] = acc
+
+		// Extract the raw batch array bytes, then iterate each element.
+		batchRaw := jsonparser.GetValueOrEmpty(job.EventPayload, "batch")
+		if len(batchRaw) == 0 {
+			continue
 		}
-		acc.hll.AddRaw(murmur3.Sum64WithSeed([]byte(fingerprint), murmurSeed))
+		var batchElements []json.RawMessage
+		if err := json.Unmarshal(batchRaw, &batchElements); err != nil {
+			// batch field absent or not an array — skip job gracefully.
+			continue
+		}
+		for _, elem := range batchElements {
+			fingerprint := jsonparser.GetStringOrEmpty(elem, "context", "activation", "fingerprint")
+			origin := jsonparser.GetStringOrEmpty(elem, "context", "activation", "origin")
+			if fingerprint == "" || origin == "" {
+				u.stats.NewTaggedStat("activation_records_skipped", stats.CountType, stats.Tags{
+					"reason": "missing_fingerprint_or_origin",
+				}).Increment()
+				continue
+			}
+			acc, exists := accumulators[key]
+			if !exists {
+				truncated, wasTruncated := truncateRunes(origin, 256)
+				if wasTruncated {
+					u.stats.NewTaggedStat("activation_records_origin_truncated", stats.CountType, stats.Tags{}).Increment()
+				}
+				newHll, hllErr := hll.NewHll(*u.hllSettings)
+				if hllErr != nil {
+					panic(hllErr)
+				}
+				acc = &recordAccumulator{origin: truncated, hll: &newHll}
+				accumulators[key] = acc
+			}
+			acc.hll.AddRaw(murmur3.Sum64WithSeed([]byte(fingerprint), murmurSeed))
+		}
 	}
 
 	if len(accumulators) == 0 {
@@ -233,6 +249,16 @@ func (u *UniqueActivationRecordsReporter) hllToString(hllStruct *hll.Hll) (strin
 		return hex.EncodeToString(newHllStruct.ToBytes()), nil
 	}
 	return hex.EncodeToString(hllStruct.ToBytes()), nil
+}
+
+// truncateRunes truncates s to at most max runes.
+// Returns the (possibly truncated) string and whether truncation occurred.
+func truncateRunes(s string, max int) (string, bool) {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s, false
+	}
+	return string(runes[:max]), true
 }
 
 func (u *UniqueActivationRecordsReporter) recordHllSizeStats(report *ActivationRecord) {

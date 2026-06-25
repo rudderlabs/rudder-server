@@ -1935,46 +1935,61 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 				},
 			}
 
+			// Inject context.activation into BOTH batch.0 (message-3) and batch.1 (message-4),
+			// the two messages that reach destination A, to assert the strip covers every
+			// destination-bound event in a multi-event batch.
 			unprocessedJobsList[4].EventPayload, _ = sjson.SetBytes(
 				unprocessedJobsList[4].EventPayload,
 				"batch.0.context.activation",
 				map[string]string{"fingerprint": "fp-1", "origin": "rudder"},
 			)
+			unprocessedJobsList[4].EventPayload, _ = sjson.SetBytes(
+				unprocessedJobsList[4].EventPayload,
+				"batch.1.context.activation",
+				map[string]string{"fingerprint": "fp-2", "origin": "rudder"},
+			)
 			Expect(len(jsonparser.GetValueOrEmpty(unprocessedJobsList[4].EventPayload, "batch", "[0]", "context", "activation"))).To(BeNumerically(">", 0))
+			Expect(len(jsonparser.GetValueOrEmpty(unprocessedJobsList[4].EventPayload, "batch", "[1]", "context", "activation"))).To(BeNumerically(">", 0))
 
 			mockTransformerClients := transformer.NewSimpleClients()
 			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
 			processor.activationRecordsReporter = activationrecords.NewNoopActivationRecordsReporter()
 
-			mockTransformerClients.SetDestinationTransformOutput(
-				// Return a fixed response that matches our expectations for store calls
-				types.Response{
-					Events: []types.TransformerResponse{
-						{
-							Output: map[string]any{
-								"int-value":    0,
-								"string-value": fmt.Sprintf("value-%s", DestinationIDEnabledA),
-							},
-							Metadata: types.Metadata{
-								SourceID:      "source-from-transformer", // transformer should replay source id
-								SourceName:    "source-from-transformer-name",
-								DestinationID: "destination-from-transformer", // transformer should replay destination id
-							},
+			// Return a fixed response that matches our expectations for store calls.
+			destinationTransformOutput := types.Response{
+				Events: []types.TransformerResponse{
+					{
+						Output: map[string]any{
+							"int-value":    0,
+							"string-value": fmt.Sprintf("value-%s", DestinationIDEnabledA),
 						},
-						{
-							Output: map[string]any{
-								"int-value":    1,
-								"string-value": fmt.Sprintf("value-%s", DestinationIDEnabledA),
-							},
-							Metadata: types.Metadata{
-								SourceID:      "source-from-transformer", // transformer should replay source id
-								SourceName:    "source-from-transformer-name",
-								DestinationID: "destination-from-transformer", // transformer should replay destination id
-							},
+						Metadata: types.Metadata{
+							SourceID:      "source-from-transformer", // transformer should replay source id
+							SourceName:    "source-from-transformer-name",
+							DestinationID: "destination-from-transformer", // transformer should replay destination id
 						},
 					},
-				})
+					{
+						Output: map[string]any{
+							"int-value":    1,
+							"string-value": fmt.Sprintf("value-%s", DestinationIDEnabledA),
+						},
+						Metadata: types.Metadata{
+							SourceID:      "source-from-transformer", // transformer should replay source id
+							SourceName:    "source-from-transformer-name",
+							DestinationID: "destination-from-transformer", // transformer should replay destination id
+						},
+					},
+				},
+			}
+			// Capture the destination-bound transformer input so we can assert that
+			// context.activation never reaches the destination.
+			var capturedDestinationEvents []types.TransformerEvent
+			mockTransformerClients.WithDynamicDestinationTransform(func(_ context.Context, events []types.TransformerEvent) types.Response {
+				capturedDestinationEvents = append(capturedDestinationEvents, events...)
+				return destinationTransformOutput
+			})
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
@@ -2106,9 +2121,24 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 			Expect(c.mockTrackedUsersReporter.generateCalls[0].jobs).Should(Equal(unprocessedJobsList))
 			Expect(c.mockTrackedUsersReporter.reportCalls).To(HaveLen(1))
 			Expect(c.mockTrackedUsersReporter.reportCalls[0].reportedReports).Should(Equal(trackerUsersReports))
-			// MAR strips context.activation in the pre-transform stage (in place), so the record
-			// job's payload must no longer contain it after processing.
-			Expect(len(jsonparser.GetValueOrEmpty(unprocessedJobsList[4].EventPayload, "batch", "[0]", "context", "activation"))).To(Equal(0))
+			// MAR strips context.activation per-event in preprocessStage, so no
+			// destination-bound transformer input must contain it. The captured slice
+			// holds every event routed to destination A (across the whole batch), not
+			// just the two we injected, so assert on all of them.
+			Expect(capturedDestinationEvents).ToNot(BeEmpty())
+			seenInjectedMessages := map[string]bool{}
+			for _, event := range capturedDestinationEvents {
+				if ctxMap, ok := event.Message["context"].(map[string]any); ok {
+					Expect(ctxMap).ToNot(HaveKey("activation"))
+				}
+				if msgID, ok := event.Message["messageId"].(string); ok {
+					seenInjectedMessages[msgID] = true
+				}
+			}
+			// Both messages we injected context.activation into (batch.0/message-3 and
+			// batch.1/message-4) must have reached the destination transformer (stripped).
+			Expect(seenInjectedMessages).To(HaveKey("message-3"))
+			Expect(seenInjectedMessages).To(HaveKey("message-4"))
 		})
 	})
 })
