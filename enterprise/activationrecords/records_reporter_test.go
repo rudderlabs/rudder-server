@@ -40,6 +40,19 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 		}
 	}
 
+	t.Run("constructor validates HLL settings", func(t *testing.T) {
+		// Default settings are valid.
+		_, err := NewUniqueActivationRecordsReporter(logger.NOP, config.Default, stats.NOP)
+		require.NoError(t, err)
+
+		// An out-of-range precision (Log2m valid range is [4, 31]) must fail fast at
+		// construction rather than panicking later in the processor hot path.
+		badConf := config.New()
+		badConf.Set("ActivationRecords.precision", 99)
+		_, err = NewUniqueActivationRecordsReporter(logger.NOP, badConf, stats.NOP)
+		require.Error(t, err)
+	})
+
 	t.Run("GenerateReportsFromJobs", func(t *testing.T) {
 		reporter, err := NewUniqueActivationRecordsReporter(logger.NOP, config.Default, stats.NOP)
 		require.NoError(t, err)
