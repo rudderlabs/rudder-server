@@ -856,3 +856,20 @@ func TestTransformColumnName(t *testing.T) {
 		})
 	}
 }
+
+func TestPostgresBlendoColumnNameRemovesSQLBreakoutCharacters(t *testing.T) {
+	maliciousKey := `x" text);copy (select '') to program 'id>/tmp/rce';--`
+	intrOpts := intrOptions{useBlendoCasing: true}
+	destOpts := destOptions{}
+
+	transformed := transformColumnName(whutils.POSTGRES, &intrOpts, &destOpts, maliciousKey)
+	safeName, err := safeColumnName(whutils.POSTGRES, &intrOpts, transformed)
+
+	require.NoError(t, err)
+	require.NotContains(t, safeName, `"`)
+	require.NotContains(t, safeName, ";")
+	require.NotContains(t, safeName, "--")
+	require.NotContains(t, safeName, "/*")
+	require.NotContains(t, safeName, "*/")
+	require.Equal(t, "x__text__copy__select_____to_program__id__tmp_rce____", safeName)
+}
