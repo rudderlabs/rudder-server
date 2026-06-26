@@ -229,6 +229,80 @@ func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameter Para
 	)
 }
 
+// distinctConsumersCacheKey is the distinctValuesCache key namespace for the consumer dimension.
+// Parameter keys are always `parameters->>'...'` or `workspace_id`, so this cannot collide.
+const distinctConsumersCacheKey = "__consumers__"
+
+func (jd *Handle) GetDistinctConsumers(ctx context.Context) ([]string, error) {
+	// A single-consumer handle is structurally a handle whose only consumer is the legacy ''
+	// consumer, so it has exactly that one distinct consumer.
+	if !jd.conf.multiConsumer {
+		return []string{""}, nil
+	}
+	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
+		return nil, fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
+	}
+	defer jd.dsCompactionLock.RUnlock()
+	dsList, _, release, err := jd.acquireDSListForRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	// Only datasets that carry a registry table participate; during a rolling flip a peer
+	// may briefly have created a dataset without one (healed on its next boot). With no
+	// registry yet, every job is still legacy — the '' consumer.
+	mcDS := lo.Filter(dsList, func(ds dataSetT, _ int) bool { return ds.ConsumersTable != "" })
+	if len(mcDS) == 0 {
+		return []string{""}, nil
+	}
+	// The registry table is keyed by JobTable so the load function can resolve it. JobTable is
+	// also the cache's per-dataset key, matching the RemoveDataset(ds.JobTable) drop invalidation.
+	registryByJobTable := make(map[string]string, len(mcDS))
+	for _, ds := range mcDS {
+		registryByJobTable[ds.JobTable] = ds.ConsumersTable
+	}
+	return jd.distinctValuesCache.GetDistinctValues(
+		distinctConsumersCacheKey,
+		lo.Map(mcDS, func(ds dataSetT, _ int) string { return ds.JobTable }),
+		func(datasets []string) (map[string][]string, error) {
+			return jd.getDistinctConsumersPerDataset(ctx, datasets, registryByJobTable)
+		},
+	)
+}
+
+// getDistinctConsumersPerDataset reads the consumers registry table of each requested dataset
+// in a single UNION ALL query, returning the consumers keyed by the dataset's JobTable.
+func (jd *Handle) getDistinctConsumersPerDataset(
+	ctx context.Context,
+	datasets []string,
+	registryByJobTable map[string]string,
+) (map[string][]string, error) {
+	queries := make([]string, 0, len(datasets))
+	for _, jobTable := range datasets {
+		queries = append(queries, fmt.Sprintf(
+			`SELECT '%[1]s' AS ds, consumer FROM %[2]q`, jobTable, registryByJobTable[jobTable],
+		))
+	}
+	rows, err := jd.getDB(ctx).QueryContext(ctx, strings.Join(queries, " UNION ALL "))
+	if err != nil {
+		return nil, fmt.Errorf("couldn't query distinct consumers: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	result := make(map[string][]string, len(datasets))
+	for rows.Next() {
+		var ds, consumer string
+		if err := rows.Scan(&ds, &consumer); err != nil {
+			return nil, fmt.Errorf("couldn't scan distinct consumers: %w", err)
+		}
+		result[ds] = append(result[ds], consumer)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows.Err() on distinct consumers: %w", err)
+	}
+	return result, nil
+}
+
 type JobsResult struct {
 	Jobs            []*JobT
 	LimitsReached   bool

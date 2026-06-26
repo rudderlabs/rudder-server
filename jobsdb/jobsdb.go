@@ -150,6 +150,11 @@ type JobsDB interface {
 	// GetDistinctParameterValues returns the list of distinct parameter("source_id", "destination_id", "workspace_id") values inside the jobs tables filtering for the passed customVal
 	GetDistinctParameterValues(ctx context.Context, parameter ParameterName, customValFilter string) (values []string, err error)
 
+	// GetDistinctConsumers returns the list of distinct consumers known to a multi-consumer handle,
+	// read from the per-dataset consumers registry tables. Single-consumer handles return [""] —
+	// the legacy '' consumer that every job implicitly belongs to.
+	GetDistinctConsumers(ctx context.Context) (consumers []string, err error)
+
 	/* Admin */
 
 	Ping() error
