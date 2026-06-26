@@ -1,0 +1,24 @@
+syntax = "proto3";
+package proto;
+
+option go_package = ".;proto";
+
+// ProcessorService is the processor's general-purpose control-plane-facing gRPC
+// surface, reached over cp-router's dataplane-initiated connection. It is
+// deliberately generic: a single Forward RPC carries an opaque op + JSON payload
+// so cp-router stays transformation-agnostic and the processor routes internally
+// by op.
+service ProcessorService {
+  rpc Forward(ForwardRequest) returns (ForwardResponse);
+}
+
+message ForwardRequest {
+  string op = 1;
+  string workspace_id = 2;
+  bytes payload = 3;
+}
+
+message ForwardResponse {
+  int32 status_code = 1;
+  bytes body = 2;
+}
