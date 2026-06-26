@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -168,8 +170,26 @@ func TestDownloader(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, len(fileNames), len(loadFiles))
+
+			downloadDirs := make(map[string]struct{}, len(fileNames))
+			for _, fileName := range fileNames {
+				downloadDir, ok := loadFileDownloadDir(fileName)
+				require.Truef(t, ok, "expected %q to include %q", fileName, misc.RudderWarehouseLoadUploadsTmp)
+				downloadDirs[downloadDir] = struct{}{}
+			}
+			require.Len(t, downloadDirs, len(fileNames))
 		})
 	}
+}
+
+func loadFileDownloadDir(fileName string) (string, bool) {
+	parts := strings.Split(filepath.Clean(fileName), string(os.PathSeparator))
+	for i, part := range parts {
+		if part == misc.RudderWarehouseLoadUploadsTmp && i+1 < len(parts) {
+			return parts[i+1], true
+		}
+	}
+	return "", false
 }
 
 func newMockUploader(t testing.TB, loadFiles []warehouseutils.LoadFile) *mockuploader.MockUploader {
