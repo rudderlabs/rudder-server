@@ -420,6 +420,9 @@ type Handle struct {
 			// retries from scratch. Requires nonBlockingCompaction to also be set;
 			// has no effect on its own.
 			getJobsRetryOnCompaction config.ValueLoader[bool]
+			// skipStatusCompaction disables the periodic status-table cleanup
+			// (cleanupStatusTables) while leaving DS-level compaction (move + drop) intact.
+			skipStatusCompaction config.ValueLoader[bool]
 		}
 	}
 }
