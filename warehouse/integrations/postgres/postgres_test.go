@@ -5,11 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/lib/pq"
 	"github.com/lib/pq/pqerror"
 	"github.com/ory/dockertest/v3"
@@ -35,6 +37,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
@@ -43,6 +46,39 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
+
+func TestColumnsWithDataTypesQuotesIdentifiers(t *testing.T) {
+	columnName := `x" text);copy (select '') to program 'id>/tmp/rce';--`
+
+	fragment := postgres.ColumnsWithDataTypes(model.TableSchema{
+		columnName: model.StringDataType,
+	}, "")
+
+	require.Equal(t, `"x"" text);copy (select '') to program 'id>/tmp/rce';--" text`, fragment)
+	require.NotContains(t, fragment, `x" text);`)
+}
+
+func TestCreateTableQuotesSchemaAndTableIdentifiers(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	namespace := `schema";drop schema public;--`
+	tableName := `events");copy (select '') to program 'id>/tmp/rce';--`
+	pg := postgres.New(config.New(), logger.NOP, stats.NOP)
+	pg.DB = sqlmiddleware.New(db)
+	pg.Namespace = namespace
+
+	mock.ExpectExec(regexp.QuoteMeta(`SET search_path to "schema"";drop schema public;--"`)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta(`CREATE TABLE IF NOT EXISTS "schema"";drop schema public;--"."events"");copy (select '') to program 'id>/tmp/rce';--" ( "id" text )`)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	require.NoError(t, pg.CreateTable(context.Background(), tableName, model.TableSchema{
+		"id": model.StringDataType,
+	}))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
 
 func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {

@@ -268,7 +268,7 @@ func transformNameToBlendoCase(destType, name string) string {
 		key = "_" + key
 	}
 	if destType == whutils.POSTGRES {
-		key = misc.TruncateStr(name, postgresMaxIdentifierLength)
+		key = misc.TruncateStr(key, postgresMaxIdentifierLength)
 	}
 	return strings.ToLower(key)
 }
