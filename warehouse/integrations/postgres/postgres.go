@@ -542,10 +542,10 @@ func (pg *Postgres) Connect(_ context.Context, warehouse model.Warehouse) (clien
 }
 
 func (pg *Postgres) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]any, _ string) (err error) {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
-		pg.Namespace,
-		tableName,
-		fmt.Sprintf(`%q, %q`, "id", "val"),
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s.%s (%v) VALUES (%s)`,
+		quoteIdentifier(pg.Namespace),
+		quoteIdentifier(tableName),
+		fmt.Sprintf(`%s, %s`, quoteIdentifier("id"), quoteIdentifier("val")),
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
 	_, err = pg.DB.ExecContext(ctx, sqlStatement)
