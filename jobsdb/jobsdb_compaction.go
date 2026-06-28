@@ -587,8 +587,6 @@ func (jd *Handle) lockAndFenceStatusTable(ctx context.Context, tx *Tx, statusTab
 // doCompaction is the non-blocking compaction flow.
 //
 // Lock semantics:
-//   - dsCompactionLock is NOT taken. Concurrent reads via inUpdateSafeCtx grab their
-//     existing read lock against an uncontended write side.
 //   - dsListLock is taken exactly once, asynchronously, right before COMMIT — only
 //     the swap (in-memory) + COMMIT + enqueue + publish happen inside the lock window.
 //   - Source status tables are fenced with LOCK TABLE … IN EXCLUSIVE MODE and a

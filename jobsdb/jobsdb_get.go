@@ -84,13 +84,9 @@ var cacheParameterFilters = []string{"source_id", "destination_id"}
 const consumerParamName = "consumer" // the name of the consumer parameter, used for multi-consumer scoping of queries and cache entries
 
 func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) error {
-	// pause compaction to avoid any read locks being blocked during pileup count
+	// pause compaction to get a consistent view during pileup count
 	jd.compactionPaused.Store(true)
 	defer jd.compactionPaused.Store(false)
-	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
-		return fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
-	}
-	defer jd.dsCompactionLock.RUnlock()
 	dsList, _, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
 		return err
@@ -248,10 +244,6 @@ func (jd *Handle) getDistinctValuesPerDataset(
 }
 
 func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameter ParameterName, customValFilter string) ([]string, error) {
-	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
-	}
-	defer jd.dsCompactionLock.RUnlock()
 	dsList, _, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
 		return nil, err
@@ -276,10 +268,6 @@ func (jd *Handle) GetDistinctConsumers(ctx context.Context) ([]string, error) {
 	if !jd.conf.multiConsumer {
 		return []string{""}, nil
 	}
-	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
-	}
-	defer jd.dsCompactionLock.RUnlock()
 	dsList, _, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
 		return nil, err
@@ -769,13 +757,6 @@ func (jd *Handle) doGetJobs(ctx context.Context, params GetQueryParams, more Mor
 	}
 	defer jd.getTimerStat("jobsdb_get_jobs_time", tags).RecordDuration()()
 
-	// Keep this order: take the compaction read lock before acquiring the
-	// dataset-list snapshot. Compaction and drop paths publish snapshots under
-	// the same ordering, so reversing it can deadlock.
-	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
-	}
-	defer jd.dsCompactionLock.RUnlock()
 	dsList, dsRangeList, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
 		return nil, err

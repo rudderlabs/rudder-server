@@ -318,7 +318,6 @@ type Handle struct {
 	dsRangeFuncMap      map[string]func() (dsRangeMinMax, error)
 	distinctValuesCache *distinctValuesCache
 	dsListLock          *lock.Locker
-	dsCompactionLock    *lock.Locker
 	// lastCompactionProbeIndex stores the dsindex of the last dataset probed by
 	// getCompactionList when no eligible datasets were found and scanning was
 	// cut short by maxCompactDSProbe. The next invocation resumes from here
