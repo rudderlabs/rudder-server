@@ -120,11 +120,13 @@ func (m *migrator) removeReadExcludedPartitions(ctx context.Context, sourceParti
 // waitForNoInProgressJobs waits until there are no in-progress job statuses in all jobsdbs for the given source partitions.
 func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions []string) error {
 	defer m.stats.NewTaggedStat("partition_mig_src_wait_inprogress", stats.TimerType, m.statsTags()).RecordDuration()()
+	parentCtx := ctx
 	pollTimeoutCtx, cancel := context.WithTimeout(ctx, m.c.waitForInProgressTimeout.Load())
 	defer cancel()
 	pollGroup, pollCtx := errgroup.WithContext(pollTimeoutCtx)
 
 	getInProgressJobs := func(ctx context.Context, readerJobsDB jobsdb.JobsDB) (bool, error) {
+		start := time.Now()
 		for {
 			r, err := readerJobsDB.GetJobs(
 				ctx,
@@ -135,6 +137,13 @@ func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions
 				},
 			)
 			if err != nil {
+				if parentCtx.Err() == nil && pollTimeoutCtx.Err() == context.DeadlineExceeded {
+					m.logger.Errorn("Timeout reached before in-progress jobs query loop was done. Consider increasing PartitionMigration.Processor.SourceNode.waitForInProgressTimeout",
+						logger.NewStringField("jobsdb", readerJobsDB.Identifier()),
+						logger.NewStringField("partitions", misc.TruncatedList(sourcePartitions, 10)),
+						logger.NewDurationField("elapsed", time.Since(start)),
+					)
+				}
 				return false, fmt.Errorf("getting in-progress jobs from %q jobsdb: %w", readerJobsDB.Identifier(), err)
 			}
 			if len(r.Jobs) > 0 { // found in-progress jobs
@@ -187,7 +196,6 @@ func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions
 // Run watches for new migration jobs assigned to this source node and handles them asynchronously.
 // All go routines are added to the provided errgroup.Group. It returns an error if the watcher cannot be created.
 func (m *migrator) Run(ctx context.Context, wg *errgroup.Group) error {
-	ctx = jobsdb.WithPriorityPool(ctx)                 // use priority pool for migration job handling
 	m.pendingMigrationJobs = make(map[string]struct{}) // reset pending migration jobs map
 
 	// create a watcher for partition migration jobs
