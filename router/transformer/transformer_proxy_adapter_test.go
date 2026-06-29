@@ -54,7 +54,7 @@ func TestV0Adapter(t *testing.T) {
 			},
 			DestName: "testDestType",
 		}
-		expectedPayload := `{"type":"a","endpoint":"a.com","method":"","userId":"","headers":null,"params":null,"body":{"jobId":1},"files":null,"metadata":{"jobId":1,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":true},"destinationConfig":{"key_1":"val_1","key_2":"val_2"},"destinationVersion":0}`
+		expectedPayload := `{"type":"a","endpoint":"a.com","method":"","userId":"","headers":null,"params":null,"body":{"jobId":1},"files":null,"metadata":{"jobId":1,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":true},"destinationConfig":{"key_1":"val_1","key_2":"val_2"}}`
 
 		payload, err := v0Adapter.getPayload(proxyReqParms)
 		require.Nil(t, err)
@@ -169,7 +169,7 @@ func TestV1Adapter(t *testing.T) {
 			},
 			DestName: "testDestType",
 		}
-		expectedPayload := `{"type":"a","endpoint":"a.com","method":"","userId":"","headers":null,"params":null,"body":{"jobId":1},"files":null,"metadata":[{"jobId":1,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":true},{"jobId":2,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":false}],"destinationConfig":{"key_1":"val_1","key_2":"val_2"},"destinationVersion":0}`
+		expectedPayload := `{"type":"a","endpoint":"a.com","method":"","userId":"","headers":null,"params":null,"body":{"jobId":1},"files":null,"metadata":[{"jobId":1,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":true},{"jobId":2,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":false}],"destinationConfig":{"key_1":"val_1","key_2":"val_2"}}`
 
 		payload, err := v1Adapter.getPayload(proxyReqParms)
 		require.Nil(t, err)

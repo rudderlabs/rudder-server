@@ -65,17 +65,25 @@ func TestDestinationT_MarshalJSON_HasDynamicConfigAlwaysPresent(t *testing.T) {
 }
 
 func TestDestinationT_Version(t *testing.T) {
-	t.Run("marshals as a number under the version key, always present", func(t *testing.T) {
-		for _, v := range []int{0, 1, 2} {
+	t.Run("marshals as a number, omitted when zero", func(t *testing.T) {
+		for _, v := range []int{1, 2} {
 			data, err := jsonrs.Marshal(DestinationT{ID: "d1", Version: v})
 			require.NoError(t, err)
 
 			var raw map[string]json.RawMessage
 			require.NoError(t, jsonrs.Unmarshal(data, &raw))
 			val, ok := raw["version"]
-			require.True(t, ok, "version key must always be present (no omitempty)")
+			require.True(t, ok, "non-zero version must be present")
 			require.JSONEq(t, strconv.Itoa(v), string(val), "version must serialize as a JSON number")
 		}
+
+		// version 0 (== v1 default, == absent) is omitted to keep it off the wire
+		data, err := jsonrs.Marshal(DestinationT{ID: "d1", Version: 0})
+		require.NoError(t, err)
+		var raw map[string]json.RawMessage
+		require.NoError(t, jsonrs.Unmarshal(data, &raw))
+		_, ok := raw["version"]
+		require.False(t, ok, "zero version must be omitted (omitempty)")
 	})
 
 	// The workspace blob carries `version` on each destination. Config-backend writes it lowercase;
