@@ -87,8 +87,9 @@ type ProxyRequestMetadata struct {
 
 type ProxyRequestPayload struct {
 	integrations.PostParametersT
-	Metadata          []ProxyRequestMetadata `json:"metadata"`
-	DestinationConfig map[string]any         `json:"destinationConfig"`
+	Metadata           []ProxyRequestMetadata `json:"metadata"`
+	DestinationConfig  map[string]any         `json:"destinationConfig"`
+	DestinationVersion int                    `json:"destinationVersion,omitempty"`
 }
 
 type ProxyRequestParams struct {

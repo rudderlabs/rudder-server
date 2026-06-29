@@ -27,8 +27,9 @@ type transformerProxyAdapter interface {
 
 type ProxyRequestPayloadV0 struct {
 	integrations.PostParametersT
-	Metadata          ProxyRequestMetadata `json:"metadata"`
-	DestinationConfig map[string]any       `json:"destinationConfig"`
+	Metadata           ProxyRequestMetadata `json:"metadata"`
+	DestinationConfig  map[string]any       `json:"destinationConfig"`
+	DestinationVersion int                  `json:"destinationVersion,omitempty"`
 }
 
 type ProxyResponseV0 struct {
@@ -68,9 +69,10 @@ type (
 func (v0 *v0Adapter) getPayload(proxyReqParams *ProxyRequestParams) ([]byte, error) {
 	params := proxyReqParams.ResponseData
 	proxyReqPayload := &ProxyRequestPayloadV0{
-		PostParametersT:   params.PostParametersT,
-		Metadata:          params.Metadata[0],
-		DestinationConfig: params.DestinationConfig,
+		PostParametersT:    params.PostParametersT,
+		Metadata:           params.Metadata[0],
+		DestinationConfig:  params.DestinationConfig,
+		DestinationVersion: params.DestinationVersion,
 	}
 	return jsonrs.Marshal(proxyReqPayload)
 }

@@ -327,6 +327,29 @@ func TestV1Adapter(t *testing.T) {
 	})
 }
 
+func TestProxyPayloadCarriesDestinationVersion(t *testing.T) {
+	params := &ProxyRequestParams{
+		ResponseData: ProxyRequestPayload{
+			Metadata:           []ProxyRequestMetadata{{JobID: 1}},
+			DestinationConfig:  map[string]any{"k": "v"},
+			DestinationVersion: 1,
+		},
+	}
+
+	for _, version := range []string{transformer.V0, transformer.V1} {
+		t.Run(version, func(t *testing.T) {
+			payload, err := NewTransformerProxyAdapter(version, logger.NOP).getPayload(params)
+			require.NoError(t, err)
+
+			var got struct {
+				DestinationVersion int `json:"destinationVersion"`
+			}
+			require.NoError(t, jsonrs.Unmarshal(payload, &got))
+			require.Equal(t, 1, got.DestinationVersion)
+		})
+	}
+}
+
 func Test_getTransformerProxyURL_env_priority(t *testing.T) {
 	config.Reset()
 	t.Setenv("DELIVERY_TRANSFORMER_URL", "http://proxy:1234")
