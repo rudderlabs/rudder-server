@@ -84,13 +84,9 @@ var cacheParameterFilters = []string{"source_id", "destination_id"}
 const consumerParamName = "consumer" // the name of the consumer parameter, used for multi-consumer scoping of queries and cache entries
 
 func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) error {
-	// pause compaction to avoid any read locks being blocked during pileup count
+	// pause compaction to get a consistent view during pileup count
 	jd.compactionPaused.Store(true)
 	defer jd.compactionPaused.Store(false)
-	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
-		return fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
-	}
-	defer jd.dsCompactionLock.RUnlock()
 	dsList, _, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
 		return err
@@ -248,10 +244,6 @@ func (jd *Handle) getDistinctValuesPerDataset(
 }
 
 func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameter ParameterName, customValFilter string) ([]string, error) {
-	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
-	}
-	defer jd.dsCompactionLock.RUnlock()
 	dsList, _, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
 		return nil, err
@@ -276,10 +268,6 @@ func (jd *Handle) GetDistinctConsumers(ctx context.Context) ([]string, error) {
 	if !jd.conf.multiConsumer {
 		return []string{""}, nil
 	}
-	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
-	}
-	defer jd.dsCompactionLock.RUnlock()
 	dsList, _, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
 		return nil, err
@@ -363,11 +351,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	// Multi-consumer "pending" variant (set internally by GetPendingConsumerJobs): instead of scoping to a single
 	// consumer, return each job once with its Consumers rewritten to the consumers whose latest status
 	// matches stateFilters, carrying no per-job status. Being an all-consumers query, it keys the
-	// noResultsCache on the wildcard consumer=* (which store/update writes invalidate). It also disables
-	// the per-state noResultsCache optimization (stateFilterOptimization below): that optimization infers
-	// "no jobs in state X" when X is absent from the result set's states, but this query reports which
-	// consumers match rather than each one's state (the scanned status is always NULL), so the inference
-	// would record false no-result markers. A no-result is therefore cached only when the whole query is empty.
+	// noResultsCache on the wildcard consumer=* (which store/update writes invalidate).
 	pendingConsumersMode := jd.conf.multiConsumer && params.allPendingConsumers
 
 	// For multi-consumer JobsDB, consumer is a cache dimension: consumer=X scopes lookups to that consumer;
@@ -396,14 +380,6 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		CustomValFilters: params.CustomValFilters,
 		WorkspaceID:      workspaceID,
 	}
-	stateFilterOptimization := jd.conf.noResultsCacheStateOptimization.Load() && !pendingConsumersMode
-
-	if stateFilterOptimization {
-		stateFilters = lo.Filter(stateFilters, func(state string, _ int) bool { // exclude states for which we already know that there are no jobs
-			return !jd.noResultsCache.Get(ds.Index, partitionFilters, workspaceID, customValFilters, []string{state}, cacheParamFilters)
-		})
-	}
-
 	defer jd.getTimerStat("jobsdb_get_jobs_ds_time", &tags).RecordDuration()()
 
 	containsUnprocessed := lo.Contains(stateFilters, Unprocessed.State)
@@ -545,7 +521,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	// so the lateral's ORDER BY / LIMIT 1 would be wasteful — skip it.
 	// (pendingConsumersMode already built its own join above.)
 	if !pendingConsumersMode {
-		if jd.conf.getJobsUseLateralJoin.Load() && !onlyUnprocessed {
+		if !onlyUnprocessed {
 			joinTable = fmt.Sprintf(`LATERAL (SELECT * FROM %q WHERE job_id = jobs.job_id%s ORDER BY id DESC LIMIT 1) job_latest_state ON true`, ds.JobStatusTable, innerConsumerClause)
 		} else {
 			joinTable = fmt.Sprintf(`%q job_latest_state ON jobs.job_id=job_latest_state.job_id%s`, joinTable, outerConsumerClause)
@@ -610,7 +586,6 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	// inside the loop
 	var discardRowPayloadSize int64
 
-	resultsetStates := map[string]struct{}{}
 	for rows.Next() {
 		var job JobT
 		var runningEventCount int
@@ -633,7 +608,6 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		}
 		job.EventPayload = payload
 		if jsState.Valid {
-			resultsetStates[jsState.String] = struct{}{}
 			job.LastJobStatus.JobState = jsState.String
 			job.LastJobStatus.AttemptNum = int(jsAttemptNum.Int64)
 			job.LastJobStatus.ExecTime = jsExecTime.Time
@@ -645,8 +619,6 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 			job.LastJobStatus.WorkspaceId = job.WorkspaceId
 			job.LastJobStatus.PartitionID = job.PartitionID
 			job.LastJobStatus.CustomVal = job.CustomVal
-		} else {
-			resultsetStates[Unprocessed.State] = struct{}{}
 		}
 
 		if params.EventsLimit > 0 && runningEventCount > params.EventsLimit && len(jobList) > 0 {
@@ -677,12 +649,8 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 
 	if !skipCacheResult {
 		for state, cacheTx := range cacheTx {
-			// we are committing the cache Tx only if
-			// (a) no jobs are returned by the query or
-			// (b) the state is not present in the resultset and limits have not been reached
-			//     (skipped when the noResultsCache state-filter optimization is disabled)
-			_, ok := resultsetStates[state]
-			if len(jobList) == 0 || (stateFilterOptimization && !ok && !limitsReached) {
+			// we only cache a no-result when the whole query returned no jobs
+			if len(jobList) == 0 {
 				if allEntriesCommitted := cacheTx.Commit(); !allEntriesCommitted {
 					tags := &statTags{
 						StateFilters:     []string{state},
@@ -789,13 +757,6 @@ func (jd *Handle) doGetJobs(ctx context.Context, params GetQueryParams, more Mor
 	}
 	defer jd.getTimerStat("jobsdb_get_jobs_time", tags).RecordDuration()()
 
-	// Keep this order: take the compaction read lock before acquiring the
-	// dataset-list snapshot. Compaction and drop paths publish snapshots under
-	// the same ordering, so reversing it can deadlock.
-	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
-	}
-	defer jd.dsCompactionLock.RUnlock()
 	dsList, dsRangeList, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
 		return nil, err
@@ -888,7 +849,7 @@ func (jd *Handle) doGetJobs(ctx context.Context, params GetQueryParams, more Mor
 	jd.stats.NewTaggedStat("jobsdb_queried_bytes", stats.CountType, statTags).Count(lo.SumBy(res.Jobs, func(j *JobT) int { return len(j.EventPayload) })) // number of bytes that we queried
 	// Validate that none of the datasets we examined were compacted while we
 	// were querying. If any of them were, it means our result may be stale and we need to retry.
-	if jd.conf.compaction.nonBlockingCompaction.Load() && jd.conf.compaction.getJobsRetryOnCompaction.Load() {
+	if jd.conf.compaction.getJobsRetryOnCompaction.Load() {
 		jd.dropDSListLock.RLock()
 		_, found := lo.Find(jd.dropDSList, func(entry dropDSEntry) bool {
 			if !entry.compacted {

@@ -318,7 +318,6 @@ type Handle struct {
 	dsRangeFuncMap      map[string]func() (dsRangeMinMax, error)
 	distinctValuesCache *distinctValuesCache
 	dsListLock          *lock.Locker
-	dsCompactionLock    *lock.Locker
 	// lastCompactionProbeIndex stores the dsindex of the last dataset probed by
 	// getCompactionList when no eligible datasets were found and scanning was
 	// cut short by maxCompactDSProbe. The next invocation resumes from here
@@ -361,39 +360,34 @@ type Handle struct {
 
 	config *config.Config
 	conf   struct {
-		payloadColumnType               payloadColumnType
-		maxTableSize                    config.ValueLoader[int64]
-		cacheExpiration                 config.ValueLoader[time.Duration]
-		addNewDSLoopSleepDuration       config.ValueLoader[time.Duration]
-		addNewDSTimeout                 config.ValueLoader[time.Duration]
-		refreshDSListLoopSleepDuration  config.ValueLoader[time.Duration]
-		refreshDSTimeout                config.ValueLoader[time.Duration]
-		minDSRetentionPeriod            config.ValueLoader[time.Duration]
-		maxDSRetentionPeriod            config.ValueLoader[time.Duration]
-		jobMaxAge                       config.ValueLoader[time.Duration]
-		writeCapacity                   chan struct{}
-		readCapacity                    chan struct{}
-		enableWriterQueue               bool
-		enableReaderQueue               bool
-		clearAll                        bool
-		skipMaintenanceError            bool
-		dsLimit                         config.ValueLoader[int]
-		maxReaders                      int
-		maxWriters                      int
-		maxOpenConnections              int
-		analyzeThreshold                config.ValueLoader[int]
-		MaxDSSize                       config.ValueLoader[int]
-		numPartitions                   int // if zero or negative, no partitioning
-		partitionFunction               func(job *JobT) string
-		multiConsumer                   bool // if true, enables per-consumer indexes, views, and query paths
-		warnOnStatusMissingPartitionID  config.ValueLoader[bool]
-		holdDSListLockDuringStore       config.ValueLoader[bool] // escape hatch: hold the dsList read lock for the entire store callback
-		staleDSListMaxRetries           config.ValueLoader[int]
-		noResultsCacheStateOptimization config.ValueLoader[bool]
-		// getJobsUseLateralJoin replaces the v_last_* view join in getJobsDS with a
-		// correlated LATERAL subquery against the raw job_status table.
-		getJobsUseLateralJoin config.ValueLoader[bool]
-		dbTablesVersion       int // version of the database tables schema (0 means latest)
+		payloadColumnType              payloadColumnType
+		maxTableSize                   config.ValueLoader[int64]
+		cacheExpiration                config.ValueLoader[time.Duration]
+		addNewDSLoopSleepDuration      config.ValueLoader[time.Duration]
+		addNewDSTimeout                config.ValueLoader[time.Duration]
+		refreshDSListLoopSleepDuration config.ValueLoader[time.Duration]
+		refreshDSTimeout               config.ValueLoader[time.Duration]
+		minDSRetentionPeriod           config.ValueLoader[time.Duration]
+		maxDSRetentionPeriod           config.ValueLoader[time.Duration]
+		jobMaxAge                      config.ValueLoader[time.Duration]
+		writeCapacity                  chan struct{}
+		readCapacity                   chan struct{}
+		enableWriterQueue              bool
+		enableReaderQueue              bool
+		clearAll                       bool
+		skipMaintenanceError           bool
+		dsLimit                        config.ValueLoader[int]
+		maxReaders                     int
+		maxWriters                     int
+		maxOpenConnections             int
+		analyzeThreshold               config.ValueLoader[int]
+		MaxDSSize                      config.ValueLoader[int]
+		numPartitions                  int // if zero or negative, no partitioning
+		partitionFunction              func(job *JobT) string
+		multiConsumer                  bool // if true, enables per-consumer indexes, views, and query paths
+		warnOnStatusMissingPartitionID config.ValueLoader[bool]
+		staleDSListMaxRetries          config.ValueLoader[int]
+		dbTablesVersion                int // version of the database tables schema (0 means latest)
 
 		compaction struct {
 			maxCompactOnce, maxCompactDSProbe config.ValueLoader[int]
@@ -409,26 +403,10 @@ type Handle struct {
 			// destinations) from being compacted again right away. Datasets without
 			// a recorded creation time are always considered old enough.
 			compactionMinDSAge config.ValueLoader[time.Duration]
-			// nonBlockingCompletedDSDrop routes datasets with zero pending jobs
-			// through the async dropDSLoop instead of the in-TX postCompactionHandleDS
-			// path, so the drop is compaction-lock-free and does not block concurrent readers.
-			nonBlockingCompletedDSDrop config.ValueLoader[bool]
-			// nonBlockingCompaction gates the new compaction TX shape (EXCLUSIVE
-			// lock + readonly trigger on the source status table, async source drop).
-			// When disabled, falls back to the legacy doCompaction flow.
-			nonBlockingCompaction config.ValueLoader[bool]
-			// compactionDeferStatusLock further minimizes the status-table lock
-			// window during non-blocking compaction by splitting the copy into two
-			// phases: pending jobs are copied first WITHOUT any status-table lock,
-			// then each source status table is locked EXCLUSIVE one after another only
-			// to copy the latest statuses of the moved jobs. Requires
-			// nonBlockingCompaction; has no effect on its own.
-			compactionDeferStatusLock config.ValueLoader[bool]
 			// getJobsRetryOnCompaction gates the snapshot revalidation in getJobs:
 			// when set, getJobs detects that a queried dataset is no longer in the
-			// published list (e.g. a non-blocking compaction completed mid-read) and
-			// retries from scratch. Requires nonBlockingCompaction to also be set;
-			// has no effect on its own.
+			// published list (e.g. a compaction completed mid-read) and retries from
+			// scratch.
 			getJobsRetryOnCompaction config.ValueLoader[bool]
 			// skipStatusCompaction disables the periodic status-table cleanup
 			// (cleanupStatusTables) while leaving DS-level compaction (move + drop) intact.

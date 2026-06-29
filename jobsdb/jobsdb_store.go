@@ -60,10 +60,6 @@ func (jd *Handle) inStoreSafeCtx(ctx context.Context, f func(lastDS dataSetT) er
 			return fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 		}
 		lastDS = jd.getLastDS()
-		if jd.conf.holdDSListLockDuringStore.Load() {
-			defer jd.dsListLock.RUnlock()
-			return f(lastDS)
-		}
 		jd.dsListLock.RUnlock()
 		return f(lastDS)
 	}
