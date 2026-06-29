@@ -450,7 +450,7 @@ func sendActivationRecords(t *testing.T, gwURL string, fingerprints []string) {
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer kithttputil.CloseResponse(resp)
+	defer func() { kithttputil.CloseResponse(resp) }()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	require.Equalf(t, http.StatusOK, resp.StatusCode, "retl ingestion failed: %s", respBody)
