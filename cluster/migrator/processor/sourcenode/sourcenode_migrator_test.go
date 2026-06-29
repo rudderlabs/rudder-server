@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -831,7 +832,10 @@ func TestMigrator(t *testing.T) {
 				},
 			}
 
-			// Create a mock jobsdb wrapper for GW that fails GetToProcess initially
+			// Create a mock jobsdb wrapper for GW that fails the executor's
+			// GetPendingConsumerJobs reads initially. The mock only injects
+			// failures into the Run/onNewJob path, not Handle's in-progress poll
+			// (see mockJobsDB.GetPendingConsumerJobs).
 			mockGWJobsDB := &mockJobsDB{
 				JobsDB:                env.sourceGWJobsDB,
 				getToProcessFailCount: 3, // fail 3 times before succeeding
@@ -972,6 +976,20 @@ func (m *mockJobsDB) GetToProcess(ctx context.Context, params jobsdb.GetQueryPar
 		return nil, m.getToProcessErr
 	}
 	return m.JobsDB.GetToProcess(ctx, params, more)
+}
+
+func (m *mockJobsDB) GetPendingConsumerJobs(ctx context.Context, states []string, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
+	// Handle's waitForNoInProgressJobs is the only caller that polls with the
+	// Importing state; the migration executor (Run path) never does. Inject
+	// failures only for the executor's reads so they exercise the Run/onNewJob
+	// retry path and leave Handle's in-progress poll untouched.
+	if !slices.Contains(states, jobsdb.Importing.State) {
+		count := m.getToProcessCount.Add(1)
+		if m.getToProcessErr != nil && int(count) <= m.getToProcessFailCount {
+			return jobsdb.JobsResult{}, m.getToProcessErr
+		}
+	}
+	return m.JobsDB.GetPendingConsumerJobs(ctx, states, params)
 }
 
 func (m *mockJobsDB) AddReadExcludedPartitionIDs(ctx context.Context, partitionIDs []string) error {

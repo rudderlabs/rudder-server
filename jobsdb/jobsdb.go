@@ -143,6 +143,11 @@ type JobsDB interface {
 	// It also returns a MoreToken that can be used to fetch more jobs, if available, with a subsequent call.
 	GetToProcess(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error)
 
+	// GetPendingConsumerJobs returns jobs with at least one consumer whose latest status matches the given
+	// states (absent status = unprocessed), each carrying only the matching consumers in Consumers.
+	// On single-consumer handles it behaves per-job. Used by partition migration.
+	GetPendingConsumerJobs(ctx context.Context, states []string, params GetQueryParams) (JobsResult, error)
+
 	// GetPileUpCounts returns statistics of incomplete jobs grouped by workspace ID,
 	// custom value, and destination ID.
 	GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) (err error)

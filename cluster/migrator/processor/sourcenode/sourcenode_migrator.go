@@ -128,7 +128,7 @@ func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions
 	getInProgressJobs := func(ctx context.Context, readerJobsDB jobsdb.JobsDB) (bool, error) {
 		start := time.Now()
 		for {
-			r, err := readerJobsDB.GetJobs(
+			r, err := readerJobsDB.GetPendingConsumerJobs(
 				ctx,
 				[]string{jobsdb.Executing.State, jobsdb.Importing.State},
 				jobsdb.GetQueryParams{
