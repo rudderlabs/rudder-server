@@ -63,9 +63,6 @@ func (jd *Handle) loadConfig() {
 	// starting with false as default since initial set of migrated jobs will not have partitionID set
 	jd.conf.warnOnStatusMissingPartitionID = jd.config.GetReloadableBoolVar(false, jd.configKeys("warnOnStatusMissingPartitionID")...)
 
-	// Default false: snapshot lastDS and release the dsList read lock before running the store callback,
-	// so long-running stores don't block dsList writers. Flip to true to revert to holding the lock for the whole callback.
-	jd.conf.holdDSListLockDuringStore = jd.config.GetReloadableBoolVar(false, jd.configKeys("holdDSListLockDuringStore")...)
 	jd.conf.staleDSListMaxRetries = jd.config.GetReloadableIntVar(3, 1, jd.configKeys("staleDSListMaxRetries")...)
 
 	if jd.TriggerAddNewDS == nil {
