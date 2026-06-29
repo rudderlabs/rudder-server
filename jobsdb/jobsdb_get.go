@@ -97,6 +97,7 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, inc
 	}
 	defer release()
 
+	// Single-consumer: one pending row per job, destination_id read from the job's parameters.
 	queryString := `WITH pending AS (
 	SELECT
 		j.workspace_id AS workspace_id,
@@ -114,6 +115,32 @@ SELECT
 	destination_id,
 	COUNT(*)
 FROM pending GROUP BY workspace_id, custom_val, destination_id;`
+
+	// Multi-consumer: assuming for now that a consumer IS a destination, so fan out per consumer over the narrow consumers
+	// array (no payload), counting each (job, consumer) whose latest pre-cutoff status is missing or
+	// non-terminal. The per-consumer latest status uses the (job_id, consumer, id DESC) index.
+	if jd.conf.multiConsumer {
+		queryString = `WITH pending AS (
+	SELECT
+		j.workspace_id AS workspace_id,
+		j.custom_val AS custom_val,
+		c.consumer AS destination_id
+	FROM
+		%[1]q j
+		CROSS JOIN LATERAL unnest(j.consumers) AS c(consumer)
+		LEFT JOIN LATERAL (
+			SELECT job_state FROM %[2]q WHERE job_id = j.job_id AND consumer = c.consumer AND exec_time < $1 ORDER BY id DESC LIMIT 1
+		) s ON true
+	WHERE
+		s.job_state is null OR s.job_state = ANY($2)
+)
+SELECT
+	workspace_id,
+	custom_val,
+	destination_id,
+	COUNT(*)
+FROM pending GROUP BY workspace_id, custom_val, destination_id;`
+	}
 
 	g, ctx := errgroup.WithContext(ctx)
 	const defaultConcurrency = 4

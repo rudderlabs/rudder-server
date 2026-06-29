@@ -12,6 +12,11 @@ import (
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
+// defaultConsumers is the shared, immutable single-element slice holding the legacy ” consumer.
+// It is the consumers value stored for single-consumer handles and the fallback for multi-consumer
+// jobs with no explicit consumers. Reused (never mutated) to avoid per-job allocations on hot paths.
+var defaultConsumers = []string{""}
+
 // applyMultiConsumerFlip handles both directions of the multi-consumer transition.
 //
 // Upgrade (multiConsumer=true): ensures every dataset in dsList has the v_last_c_ view
