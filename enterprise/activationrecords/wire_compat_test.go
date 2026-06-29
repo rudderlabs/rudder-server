@@ -51,19 +51,17 @@ func buildGatewayPayload(t *testing.T, activation map[string]any) []byte {
 }
 
 // buildGatewayParams serializes job Parameters the way the gateway does
-// (mirror gateway/handle.go:484-493): source_id is always present, while
-// destination_id is omitted entirely when empty.
-func buildGatewayParams(t *testing.T, destinationID string) []byte {
+// (mirror gateway/handle.go:484-493): an rETL record job carries both source_id
+// and destination_id.
+func buildGatewayParams(t *testing.T) []byte {
 	t.Helper()
 	params := map[string]any{
 		"source_id":          "src-1",
+		"destination_id":     "dst-1",
 		"source_job_run_id":  "",
 		"source_task_run_id": "",
 		"traceparent":        "",
 		"source_category":    "",
-	}
-	if destinationID != "" {
-		params["destination_id"] = destinationID
 	}
 	out, err := jsonrs.Marshal(params)
 	require.NoError(t, err)
@@ -77,9 +75,11 @@ func newWireCompatReporter(t *testing.T) *UniqueActivationRecordsReporter {
 	return reporter
 }
 
-// TestWireCompat proves the READ/CONSUMER side of the end-to-end wire contract.
-// The MAR gate is fail-closed, so a write->read mismatch is invisible at runtime
-// (records silently undercount). It MUST therefore be locked by these tests.
+// TestWireCompat proves the parts of the READ/CONSUMER side of the end-to-end
+// wire contract that the records_reporter unit tests do NOT cover: reading the
+// activation fields straight out of the gateway-serialized payload, and the HLL
+// byte round-trip under the params the reporting backend uses. Grain derivation
+// and the fail-closed skip paths are covered by TestUniqueActivationRecordsReporter.
 func TestWireCompat(t *testing.T) {
 	// 1) jsonparser read-path — THE CORE WIRE TEST. The processor stage reads the
 	// fingerprint/origin straight out of the gateway-serialized EventPayload with
@@ -88,7 +88,7 @@ func TestWireCompat(t *testing.T) {
 		// This subtest reads the wire bytes directly with jsonparser (no reporter),
 		// so WorkspaceId is intentionally omitted — only the payload/params matter.
 		job := &jobsdb.JobT{
-			Parameters: buildGatewayParams(t, "dst-1"),
+			Parameters: buildGatewayParams(t),
 			EventPayload: buildGatewayPayload(t, map[string]any{
 				"fingerprint": "fp-abc",
 				"origin":      "data-graph-audience",
@@ -96,7 +96,7 @@ func TestWireCompat(t *testing.T) {
 		}
 
 		// Array index MUST use bracket notation "[0]" — a bare "0" is parsed as an
-		// object key and returns "" (mirror records_reporter.go:139-140).
+		// object key and returns "" (mirror records_reporter.go read path).
 		fingerprint := jsonparser.GetStringOrEmpty(job.EventPayload, "batch", "[0]", "context", "activation", "fingerprint")
 		origin := jsonparser.GetStringOrEmpty(job.EventPayload, "batch", "[0]", "context", "activation", "origin")
 
@@ -110,38 +110,13 @@ func TestWireCompat(t *testing.T) {
 		require.Equal(t, "dst-1", jsonparser.GetStringOrEmpty(job.Parameters, "destination_id"))
 	})
 
-	// 2) connection-grain derivation — the reporter must derive the
-	// source/destination grain from Parameters and carry Origin from the payload.
-	t.Run("connection-grain derivation carries source/destination/origin", func(t *testing.T) {
-		reporter := newWireCompatReporter(t)
-		job := &jobsdb.JobT{
-			WorkspaceId: "ws-1",
-			Parameters:  buildGatewayParams(t, "dst-1"),
-			EventPayload: buildGatewayPayload(t, map[string]any{
-				"fingerprint": "fp-abc",
-				"origin":      "data-graph-audience",
-			}),
-		}
-
-		reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job})
-
-		require.Len(t, reports, 1)
-		r := reports[0]
-		require.Equal(t, "ws-1", r.WorkspaceID)
-		require.Equal(t, "src-1", r.SourceID)
-		require.Equal(t, "dst-1", r.DestinationID)
-		require.Equal(t, "data-graph-audience", r.Origin)
-		require.NotNil(t, r.FingerprintHll)
-		require.Equal(t, uint64(1), r.FingerprintHll.Cardinality())
-	})
-
-	// 3) HLL wire-compat — encode via the production path, then decode the raw
+	// 2) HLL wire-compat — encode via the production path, then decode the raw
 	// bytes the way the backend does and prove a clean round-trip.
 	t.Run("HLL byte round-trip under Log2m=16 Regwidth=5", func(t *testing.T) {
 		reporter := newWireCompatReporter(t)
 		job := &jobsdb.JobT{
 			WorkspaceId: "ws-1",
-			Parameters:  buildGatewayParams(t, "dst-1"),
+			Parameters:  buildGatewayParams(t),
 			EventPayload: buildGatewayPayload(t, map[string]any{
 				"fingerprint": "fp-abc",
 				"origin":      "data-graph-audience",
@@ -169,44 +144,5 @@ func TestWireCompat(t *testing.T) {
 		require.Equal(t, 16, roundTripped.Settings().Log2m)
 		require.Equal(t, 5, roundTripped.Settings().Regwidth)
 		require.Equal(t, uint64(1), roundTripped.Cardinality())
-	})
-
-	// 4) fail-closed proofs — each missing field undercounts silently in prod, so
-	// each is locked here to 0 reports.
-	t.Run("fail-closed: missing fingerprint => 0 reports", func(t *testing.T) {
-		reporter := newWireCompatReporter(t)
-		job := &jobsdb.JobT{
-			WorkspaceId: "ws-1",
-			Parameters:  buildGatewayParams(t, "dst-1"),
-			EventPayload: buildGatewayPayload(t, map[string]any{
-				"origin": "data-graph-audience", // fingerprint key absent
-			}),
-		}
-		require.Empty(t, reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}))
-	})
-
-	t.Run("fail-closed: missing origin => 0 reports", func(t *testing.T) {
-		reporter := newWireCompatReporter(t)
-		job := &jobsdb.JobT{
-			WorkspaceId: "ws-1",
-			Parameters:  buildGatewayParams(t, "dst-1"),
-			EventPayload: buildGatewayPayload(t, map[string]any{
-				"fingerprint": "fp-abc", // origin key absent
-			}),
-		}
-		require.Empty(t, reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}))
-	})
-
-	t.Run("fail-closed: missing destination_id in Parameters => 0 reports", func(t *testing.T) {
-		reporter := newWireCompatReporter(t)
-		job := &jobsdb.JobT{
-			WorkspaceId: "ws-1",
-			Parameters:  buildGatewayParams(t, ""), // destination_id omitted
-			EventPayload: buildGatewayPayload(t, map[string]any{
-				"fingerprint": "fp-abc",
-				"origin":      "data-graph-audience",
-			}),
-		}
-		require.Empty(t, reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}))
 	})
 }
