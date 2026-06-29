@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"testing"
 	"time"
@@ -234,9 +233,7 @@ func TestActivationRecordsFlush(t *testing.T) {
 
 		body, _ := io.ReadAll(req.Body)
 		err := jsonrs.Unmarshal(body, &items)
-		if err != nil {
-			log.Fatalf("Error parsing body: %v", err)
-		}
+		require.NoError(t, err)
 
 		for _, item := range items {
 			k := fmt.Sprintf("%s-%s-%s-%s", item["workspaceId"], item["sourceId"], item["destinationId"], item["instanceId"])
