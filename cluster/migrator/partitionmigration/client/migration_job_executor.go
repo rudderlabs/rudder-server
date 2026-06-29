@@ -117,16 +117,19 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 	mpe.logger.Infon("Starting partition migration")
 
 	// refresh the DS list to ensure that we'll move partition data from all datasets
+	mpe.logger.Infon("Refreshing dataset list")
 	if err := mpe.sourceDB.RefreshDSList(ctx); err != nil {
-		return fmt.Errorf("refreshing DS list: %w", err)
+		return fmt.Errorf("refreshing dataset list: %w", err)
 	}
 
 	// mark any executing jobs as failed to handle previous interrupted migrations
+	mpe.logger.Infon("Marking executing jobs as failed")
 	if err := mpe.markExecutingJobsAsFailed(ctx); err != nil {
 		return fmt.Errorf("marking executing jobs as failed: %w", err)
 	}
 
 	// create a partition migrator client
+	mpe.logger.Infon("Creating partition migration client")
 	client, err := NewPartitionMigrationClient(mpe.target, mpe.conf)
 	if err != nil {
 		return fmt.Errorf("creating partition migrator client: %w", err)

@@ -402,6 +402,74 @@ func TestMigrator(t *testing.T) {
 			require.ElementsMatch(t, []string{"partition-1"}, rtExcluded)
 		})
 
+		t.Run("slow first in-progress query with no in-progress jobs does not shut down", func(t *testing.T) {
+			env := newHandleEnv(t)
+
+			// Use a timeout shorter than how long the in-progress query takes. This
+			// exercises the guarantee that the first query per jobsdb is exempt from
+			// the timeout (it runs against pollCtx, not the timeout context): even
+			// though each query outlives waitForInProgressTimeout, the query observes
+			// no in-progress jobs and Handle completes successfully without taking the
+			// shutdown path.
+			env.conf.Set("PartitionMigration.Processor.SourceNode.waitForInProgressTimeout", "200ms")
+
+			// Generate jobs in both jobsdbs but leave them unprocessed, so the
+			// in-progress poll (executing/importing) never finds any jobs.
+			require.NoError(t, env.gwJobsDB.Store(t.Context(), generateJobs(t, "partition-1", 10)))
+			require.NoError(t, env.rtJobsDB.Store(t.Context(), generateJobs(t, "partition-1", 10)))
+
+			// Wrap both jobsdbs so the in-progress poll query blocks for longer than
+			// the timeout, and count how many times each is polled.
+			mockGWJobsDB := &mockJobsDB{
+				JobsDB:              env.gwJobsDB,
+				inProgressPollDelay: 500 * time.Millisecond,
+			}
+			mockRTJobsDB := &mockJobsDB{
+				JobsDB:              env.rtJobsDB,
+				inProgressPollDelay: 500 * time.Millisecond,
+			}
+
+			// Create a migration job where this node is the source
+			migration := &etcdtypes.PartitionMigration{
+				ID:     "migration-5",
+				Status: etcdtypes.PartitionMigrationStatusNew,
+				Jobs: []*etcdtypes.PartitionMigrationJobHeader{
+					{
+						JobID:      "job-5",
+						SourceNode: env.nodeIndex,
+						TargetNode: 1,
+						Partitions: []string{"partition-1"},
+					},
+				},
+			}
+
+			shutdownCalled := false
+			m, err := NewMigratorBuilder(env.nodeIndex, "test-node").
+				WithConfig(env.conf).
+				WithReaderJobsDBs([]jobsdb.JobsDB{mockGWJobsDB, mockRTJobsDB}).
+				WithShutdown(func() { shutdownCalled = true }).
+				WithTargetURLProvider(func(targetNodeIndex int) (string, error) {
+					return "localhost:1234", nil
+				}).
+				WithEtcdClient(env.etcdClient).
+				Build()
+			require.NoError(t, err)
+
+			// Call Handle - should succeed even though the query outlives the timeout,
+			// because the first query is timeout-exempt and finds no in-progress jobs.
+			err = m.Handle(t.Context(), migration)
+			require.NoError(t, err, "Handle should complete successfully when no in-progress jobs are found")
+
+			// Verify shutdown was NOT called even though the query outlived the timeout.
+			require.False(t, shutdownCalled, "shutdown should not be called when no in-progress jobs are found")
+
+			// Each jobsdb must have executed its first (timeout-exempt) in-progress query.
+			require.GreaterOrEqual(t, int(mockGWJobsDB.inProgressPollCount.Load()), 1,
+				"gw should be polled for in-progress jobs at least once")
+			require.GreaterOrEqual(t, int(mockRTJobsDB.inProgressPollCount.Load()), 1,
+				"rt should be polled for in-progress jobs at least once")
+		})
+
 		t.Run("with jobsdb intermittent failures", func(t *testing.T) {
 			env := newHandleEnv(t)
 
@@ -968,6 +1036,9 @@ type mockJobsDB struct {
 	addReadExcludedPartitionIDsCount     atomic.Int32
 	addReadExcludedPartitionIDsFailCount int   // number of times AddReadExcludedPartitionIDs should fail before succeeding
 	addReadExcludedPartitionIDsErr       error // error to return when failing
+
+	inProgressPollCount atomic.Int32  // number of times Handle's in-progress poll queried this jobsdb
+	inProgressPollDelay time.Duration // delay injected into Handle's in-progress poll query
 }
 
 func (m *mockJobsDB) GetToProcess(ctx context.Context, params jobsdb.GetQueryParams, more jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
@@ -980,10 +1051,22 @@ func (m *mockJobsDB) GetToProcess(ctx context.Context, params jobsdb.GetQueryPar
 
 func (m *mockJobsDB) GetPendingConsumerJobs(ctx context.Context, states []string, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
 	// Handle's waitForNoInProgressJobs is the only caller that polls with the
-	// Importing state; the migration executor (Run path) never does. Inject
-	// failures only for the executor's reads so they exercise the Run/onNewJob
-	// retry path and leave Handle's in-progress poll untouched.
-	if !slices.Contains(states, jobsdb.Importing.State) {
+	// Importing state; the migration executor (Run path) never does.
+	if slices.Contains(states, jobsdb.Importing.State) {
+		// Handle's in-progress poll path. Count the query and optionally block
+		// it for inProgressPollDelay so a test can make the first (timeout-exempt)
+		// query outlive waitForInProgressTimeout.
+		m.inProgressPollCount.Add(1)
+		if m.inProgressPollDelay > 0 {
+			select {
+			case <-time.After(m.inProgressPollDelay):
+			case <-ctx.Done():
+				return jobsdb.JobsResult{}, ctx.Err()
+			}
+		}
+	} else {
+		// Inject failures only for the executor's reads so they exercise the
+		// Run/onNewJob retry path and leave Handle's in-progress poll untouched.
 		count := m.getToProcessCount.Add(1)
 		if m.getToProcessErr != nil && int(count) <= m.getToProcessFailCount {
 			return jobsdb.JobsResult{}, m.getToProcessErr
