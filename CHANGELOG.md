@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.79.0-rc.2](https://github.com/rudderlabs/rudder-server/compare/v1.78.0...v1.79.0-rc.2) (2026-06-29)
+
+
+### Features
+
+* support compressing payloads in reporting client ([#7124](https://github.com/rudderlabs/rudder-server/issues/7124)) ([365b530](https://github.com/rudderlabs/rudder-server/commit/365b530b559f0e4549b9a16885a48873ad795d53))
+* support deltalake azure hierarchical namespace folders ([#7089](https://github.com/rudderlabs/rudder-server/issues/7089)) ([61b41e4](https://github.com/rudderlabs/rudder-server/commit/61b41e42438a75fe71f18ac1217cc725ebb3ac81))
+
+
+### Bug Fixes
+
+* **jobsdb:** compaction panics with pq error column js.consumer does not exist at position ([#7133](https://github.com/rudderlabs/rudder-server/issues/7133)) ([f392a53](https://github.com/rudderlabs/rudder-server/commit/f392a5370bf06903bb0afcec122b319048c5bfad))
+* panic in user transformer client due to timeout doesn't get recorded by alerts ([#7116](https://github.com/rudderlabs/rudder-server/issues/7116)) ([61b41e4](https://github.com/rudderlabs/rudder-server/commit/61b41e42438a75fe71f18ac1217cc725ebb3ac81))
+* partition migration restarts server on slow in-progress wait ([#7129](https://github.com/rudderlabs/rudder-server/issues/7129)) ([d63d597](https://github.com/rudderlabs/rudder-server/commit/d63d59747077dfa17181a5bcdb2c22c893824c9c))
+
+
+### Miscellaneous
+
+* **jobsdb:** capturing multi-consumer pending events ([#7121](https://github.com/rudderlabs/rudder-server/issues/7121)) ([dc382f7](https://github.com/rudderlabs/rudder-server/commit/dc382f72b55efee948813850419da8cf14a15e5c))
+* **jobsdb:** cleanup legacy configuration flags ([#7122](https://github.com/rudderlabs/rudder-server/issues/7122)) ([58778d5](https://github.com/rudderlabs/rudder-server/commit/58778d544bb91e0d87c04644648e6454d3e98332))
+* **jobsdb:** multi-consumer compaction ([#7096](https://github.com/rudderlabs/rudder-server/issues/7096)) ([57f1ef5](https://github.com/rudderlabs/rudder-server/commit/57f1ef53329eceb55f62b26a08f40f0434695f35))
+* **jobsdb:** multi-consumer get and noresults cache handling ([#7095](https://github.com/rudderlabs/rudder-server/issues/7095)) ([9d5c58a](https://github.com/rudderlabs/rudder-server/commit/9d5c58af6e8fd4302a99287a32f15df8e3b36842))
+* **jobsdb:** multi-consumer get distinct consumers ([#7097](https://github.com/rudderlabs/rudder-server/issues/7097)) ([f68a56d](https://github.com/rudderlabs/rudder-server/commit/f68a56d77c3ad52bde28c400177784a1be9df10b))
+* **jobsdb:** multi-consumer partition migration ([#7098](https://github.com/rudderlabs/rudder-server/issues/7098)) ([9cda68d](https://github.com/rudderlabs/rudder-server/commit/9cda68d47ab59d20e57b53c4168062d21d79d52c))
+* **jobsdb:** multi-consumer-specific indexes and views ([#7093](https://github.com/rudderlabs/rudder-server/issues/7093)) ([61b41e4](https://github.com/rudderlabs/rudder-server/commit/61b41e42438a75fe71f18ac1217cc725ebb3ac81))
+* **jobsdb:** multiconsumer flip, registry table and unionjobsdb ([#7094](https://github.com/rudderlabs/rudder-server/issues/7094)) ([9eff2e9](https://github.com/rudderlabs/rudder-server/commit/9eff2e90346a52e9eead5b8bafcec13adc79570a))
+* **jobsdb:** new columns for multi-consumer jobsdb ([#7082](https://github.com/rudderlabs/rudder-server/issues/7082)) ([61b41e4](https://github.com/rudderlabs/rudder-server/commit/61b41e42438a75fe71f18ac1217cc725ebb3ac81))
+* recreate stale rsources subscription on shared db ([#7108](https://github.com/rudderlabs/rudder-server/issues/7108)) ([c59e9e5](https://github.com/rudderlabs/rudder-server/commit/c59e9e55a673f200e413586d3dfefee39829712b))
+* use priority pool at migration start while polling for pending jobs ([#7128](https://github.com/rudderlabs/rudder-server/issues/7128)) ([254ae15](https://github.com/rudderlabs/rudder-server/commit/254ae153e48943fed7e82ebda7d75388146b3965))
+
 ## [1.78.0](https://github.com/rudderlabs/rudder-server/compare/v1.77.0...v1.78.0) (2026-06-22)
 
 
