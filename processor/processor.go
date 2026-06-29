@@ -2910,23 +2910,9 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 				return fmt.Errorf("storing tracked users: %w", err)
 			}
 
-			// Best-effort MAR write: a failed COPY (e.g. constraint violation) poisons the
-			// surrounding Postgres transaction, which would abort gateway-status updates and
-			// drop event delivery. Wrap it in a SAVEPOINT so only the MAR insert rolls back.
-			if len(in.activationRecordsReports) > 0 {
-				sqlTx := tx.Tx()
-				if _, spErr := sqlTx.ExecContext(ctx, "SAVEPOINT activation_records"); spErr != nil {
-					proc.logger.Warnn("creating savepoint for activation records, skipping MAR write", obskit.Error(spErr))
-					proc.statsFactory.NewStat("activation_records_store_error", stats.CountType).Increment()
-				} else if marErr := proc.activationRecordsReporter.ReportActivationRecords(ctx, in.activationRecordsReports, sqlTx); marErr != nil {
-					proc.logger.Warnn("storing activation records, rolling back to savepoint (best-effort)", obskit.Error(marErr))
-					proc.statsFactory.NewStat("activation_records_store_error", stats.CountType).Increment()
-					if _, rbErr := sqlTx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT activation_records"); rbErr != nil {
-						proc.logger.Warnn("rolling back to savepoint for activation records", obskit.Error(rbErr))
-					}
-				} else if _, relErr := sqlTx.ExecContext(ctx, "RELEASE SAVEPOINT activation_records"); relErr != nil {
-					proc.logger.Warnn("releasing savepoint for activation records", obskit.Error(relErr))
-				}
+			err = proc.activationRecordsReporter.ReportActivationRecords(ctx, in.activationRecordsReports, tx.Tx())
+			if err != nil {
+				return fmt.Errorf("storing activation records: %w", err)
 			}
 
 			// this will publish stats for all sources involved in this batch
