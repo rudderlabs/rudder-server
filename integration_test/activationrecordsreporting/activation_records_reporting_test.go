@@ -39,7 +39,6 @@ const (
 	destinationID = "destination-1"
 	workspaceID   = "workspace-1"
 	instanceID    = "test-instance-1"
-	origin        = "test-origin"
 
 	// activationRecordsRoute is the path the reporting flusher POSTs MAR payloads to
 	// (enterprise/reporting/client.RouteActivationRecords).
@@ -78,7 +77,6 @@ type activationGrain struct {
 	sourceID      string
 	destinationID string
 	instanceID    string
-	origin        string
 	hll           *hll.Hll
 }
 
@@ -88,7 +86,6 @@ type grainSnapshot struct {
 	sourceID      string
 	destinationID string
 	instanceID    string
-	origin        string
 	cardinality   int
 }
 
@@ -99,7 +96,6 @@ type activationRecordEntry struct {
 	WorkspaceID       string    `json:"workspaceId"`
 	SourceID          string    `json:"sourceId"`
 	DestinationID     string    `json:"destinationId"`
-	Origin            string    `json:"origin"`
 	InstanceID        string    `json:"instanceId"`
 	FingerprintHLLHex string    `json:"fingerprintHLL"`
 }
@@ -160,7 +156,6 @@ func (m *mockReportingServer) record(body io.Reader) error {
 			sourceID:      e.SourceID,
 			destinationID: e.DestinationID,
 			instanceID:    e.InstanceID,
-			origin:        e.Origin,
 			hll:           &h,
 		}
 	}
@@ -179,7 +174,6 @@ func (m *mockReportingServer) snapshot(key string) (grainSnapshot, bool) {
 		sourceID:      g.sourceID,
 		destinationID: g.destinationID,
 		instanceID:    g.instanceID,
-		origin:        g.origin,
 		cardinality:   int(g.hll.Cardinality()),
 	}, true
 }
@@ -254,7 +248,6 @@ func TestActivationRecordsReporting(t *testing.T) {
 	require.Equal(t, sourceID, snap.sourceID)
 	require.Equal(t, destinationID, snap.destinationID)
 	require.Equal(t, instanceID, snap.instanceID)
-	require.Equal(t, origin, snap.origin)
 	// Fail-closed guard: assert the SPECIFIC nonzero cardinality so a vacuously
 	// passing (under-metered) pipeline is caught. The duplicate fingerprint must
 	// not inflate it.
@@ -271,8 +264,8 @@ func TestActivationRecordsReporting(t *testing.T) {
 func countActivationRecords(db *postgres.Resource) (int, error) {
 	var count int
 	err := db.DB.QueryRow(
-		fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE workspace_id = $1 AND source_id = $2 AND destination_id = $3 AND origin = $4", activationRecordsTable),
-		workspaceID, sourceID, destinationID, origin,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE workspace_id = $1 AND source_id = $2 AND destination_id = $3", activationRecordsTable),
+		workspaceID, sourceID, destinationID,
 	).Scan(&count)
 	if err != nil {
 		return 0, err
@@ -402,7 +395,7 @@ func runRudderServer(t testing.TB, ctx context.Context, cancel context.CancelFun
 }
 
 // retl payload envelope: a SingularEventBatch whose elements carry
-// context.activation.{fingerprint,origin}, sent to the rETL record endpoint.
+// context.activation.fingerprint, sent to the rETL record endpoint.
 type retlBatch struct {
 	Batch []retlEvent `json:"batch"`
 }
@@ -420,12 +413,11 @@ type retlEventCtx struct {
 
 type activationCtx struct {
 	Fingerprint string `json:"fingerprint"`
-	Origin      string `json:"origin"`
 }
 
 // sendActivationRecords posts one rETL batch carrying the given fingerprints.
-// Each event has a unique messageId (so none are deduped) and a shared origin
-// (so all land on the same grain). Mirrors retl_test/sut.go SendRETL.
+// Each event has a unique messageId (so none are deduped) and the same
+// source/destination (so all land on the same grain). Mirrors retl_test/sut.go SendRETL.
 func sendActivationRecords(t *testing.T, gwURL string, fingerprints []string) {
 	t.Helper()
 
@@ -435,7 +427,7 @@ func sendActivationRecords(t *testing.T, gwURL string, fingerprints []string) {
 			Type:      "identify",
 			MessageID: fmt.Sprintf("message-%d", i),
 			UserID:    fmt.Sprintf("user-%d", i),
-			Context:   retlEventCtx{Activation: activationCtx{Fingerprint: fp, Origin: origin}},
+			Context:   retlEventCtx{Activation: activationCtx{Fingerprint: fp}},
 		}
 	}
 
