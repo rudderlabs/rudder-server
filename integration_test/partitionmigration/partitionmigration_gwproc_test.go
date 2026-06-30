@@ -211,7 +211,6 @@ func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspa
 		"JobsDB.addNewDSLoopSleepDuration":      "2s",
 		"JobsDB.dsLimit":                        "3",
 		"JobsDB.refreshDSListLoopSleepDuration": "5s",
-		"JobsDB.nonBlockingCompletedDSDrop":     "true",
 		"JobsDB.partitionCount":                 strconv.Itoa(numPartitions),
 	}
 
@@ -256,7 +255,6 @@ func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspa
 		"JobsDB.addNewDSLoopSleepDuration":      "2s",
 		"JobsDB.dsLimit":                        "3",
 		"JobsDB.refreshDSListLoopSleepDuration": "5s",
-		"JobsDB.nonBlockingCompletedDSDrop":     "true",
 		"JobsDB.partitionCount":                 strconv.Itoa(numPartitions),
 
 		"Processor.pingerSleep":   "1s",

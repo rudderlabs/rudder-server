@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -25,10 +26,11 @@ import (
 )
 
 const (
-	StatRequestTotalBytes     = "reporting_client_http_request_total_bytes"
-	StatTotalDurationsSeconds = "reporting_client_http_total_duration_seconds"
-	StatRequestLatency        = "reporting_client_http_request_latency"
-	StatHttpRequest           = "reporting_client_http_request"
+	StatRequestTotalBytes      = "reporting_client_http_request_total_bytes"
+	StatRequestCompressedBytes = "reporting_client_http_request_compressed_bytes"
+	StatTotalDurationsSeconds  = "reporting_client_http_total_duration_seconds"
+	StatRequestLatency         = "reporting_client_http_request_latency"
+	StatHttpRequest            = "reporting_client_http_request"
 )
 
 const (
@@ -75,6 +77,9 @@ type Client struct {
 	moduleName string
 	instanceID string
 
+	compress         config.ValueLoader[bool]
+	compressionLevel config.ValueLoader[int]
+
 	conf *config.Config
 }
 
@@ -102,6 +107,8 @@ func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) 
 		route:               path,
 		instanceID:          conf.GetStringVar("1", "INSTANCE_ID"),
 		moduleName:          conf.GetStringVar("", "clientName"),
+		compress:            conf.GetReloadableBoolVar(false, "Reporting.httpClient.compression.enabled"),
+		compressionLevel:    conf.GetReloadableIntVar(gzip.DefaultCompression, 1, "Reporting.httpClient.compression.level"),
 		stats:               stats,
 		log:                 log,
 		conf:                conf,
@@ -113,6 +120,19 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 	if err != nil {
 		return err
 	}
+	uncompressedBytes := len(payloadBytes)
+
+	// bodyBytes is what we actually put on the wire: either the raw payload or
+	// its gzip-compressed form. It is materialized once here (not streamed)
+	// because the request body is replayed on every backoff retry attempt.
+	bodyBytes := payloadBytes
+	compressed := c.compress.Load()
+	if compressed {
+		bodyBytes, err = c.gzipCompress(payloadBytes)
+		if err != nil {
+			return fmt.Errorf("compressing payload: %w", err)
+		}
+	}
 
 	u, err := c.route.URL(c.reportingServiceURL)
 	if err != nil {
@@ -120,11 +140,14 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 	}
 
 	o := func() error {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewBuffer(payloadBytes))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(bodyBytes))
 		if err != nil {
 			return fmt.Errorf("constructing HTTP request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		if compressed {
+			req.Header.Set("Content-Encoding", "gzip")
+		}
 		req.SetBasicAuth(c.userName, c.password)
 		httpRequestStart := time.Now()
 		resp, err := c.httpClient.Do(req)
@@ -140,8 +163,9 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 		httpStatTags := lo.Assign(tags, map[string]string{"status": strconv.Itoa(resp.StatusCode)})
 		c.stats.NewTaggedStat(StatHttpRequest, stats.CountType, httpStatTags).Count(1)
 
-		// Record total bytes sent
-		c.stats.NewTaggedStat(StatRequestTotalBytes, stats.CountType, tags).Count(len(payloadBytes))
+		// Record total (uncompressed) bytes and the bytes actually sent on the wire
+		c.stats.NewTaggedStat(StatRequestTotalBytes, stats.CountType, tags).Count(uncompressedBytes)
+		c.stats.NewTaggedStat(StatRequestCompressedBytes, stats.CountType, tags).Count(len(bodyBytes))
 
 		// Record request duration
 		c.stats.NewTaggedStat(StatTotalDurationsSeconds, stats.CountType, tags).Count(int(duration.Seconds()))
@@ -167,6 +191,27 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 		c.log.Errorn(`Error making request to reporting service`, obskit.Error(err))
 	}
 	return err
+}
+
+// gzipCompress gzip-compresses the given bytes using the configured compression
+// level. The data is streamed through the gzip.Writer into a buffer so the result
+// can be replayed across retries and its size reported.
+func (c *Client) gzipCompress(b []byte) ([]byte, error) {
+	level := c.compressionLevel.Load()
+	var buf bytes.Buffer
+	gw, err := gzip.NewWriterLevel(&buf, level)
+	if err != nil {
+		c.log.Warnn("invalid gzip compression level, using default", logger.NewIntField("level", int64(level)))
+		gw, _ = gzip.NewWriterLevel(&buf, gzip.DefaultCompression)
+	}
+	if _, err := gw.Write(b); err != nil {
+		_ = gw.Close()
+		return nil, err
+	}
+	if err := gw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // getTags returns the common tags for reporting metrics

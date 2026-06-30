@@ -1,4 +1,5 @@
 {{range .Datasets}}
     ALTER TABLE "{{$.Prefix}}_jobs_{{.}}" ADD COLUMN IF NOT EXISTS consumers TEXT[] NOT NULL DEFAULT '{""}';
     ALTER TABLE "{{$.Prefix}}_job_status_{{.}}" ADD COLUMN IF NOT EXISTS consumer TEXT NOT NULL DEFAULT '';
+    CREATE OR REPLACE VIEW "v_last_{{$.Prefix}}_job_status_{{.}}" AS SELECT DISTINCT ON (job_id) * FROM "{{$.Prefix}}_job_status_{{.}}" ORDER BY job_id ASC, id DESC;
 {{end}}

@@ -126,16 +126,15 @@ func (jd *Handle) doRefreshDSList(l lock.LockToken, db sqlDbOrTx) (dataSetTList,
 }
 
 // addCompletedDSToDropList adds the given datasets to the dropDSList and removes them from the dsList. Caller must have the dsListLock write-locked.
-// It returns the freshly published dsList snapshot (with the queued datasets filtered out) so callers can avoid an extra read.
-func (jd *Handle) addCompletedDSToDropList(ctx context.Context, l lock.LockToken, dsList ...dataSetT) (dataSetTList, error) {
+func (jd *Handle) addCompletedDSToDropList(ctx context.Context, l lock.LockToken, dsList ...dataSetT) error {
 	if l == nil {
-		return nil, fmt.Errorf("cannot add to drop DS list without a valid lock token")
+		return fmt.Errorf("cannot add to drop DS list without a valid lock token")
 	}
 	jd.dropDSListLock.Lock()
 	defer jd.dropDSListLock.Unlock()
 	currentList, currentRangeList := jd.dsList.snapshot()
 	if len(dsList) == 0 {
-		return currentList, nil
+		return nil
 	}
 	version := jd.dsList.currentVersion()
 	previousDropDSList := append([]dropDSEntry(nil), jd.dropDSList...)
@@ -153,7 +152,7 @@ func (jd *Handle) addCompletedDSToDropList(ctx context.Context, l lock.LockToken
 		addedDSList = append(addedDSList, ds)
 	}
 	if len(addedDSList) == 0 {
-		return currentList, nil
+		return nil
 	}
 	toDrop := lo.SliceToMap(jd.dropDSList, func(entry dropDSEntry) (string, struct{}) {
 		return entry.ds.Index, struct{}{}
@@ -164,7 +163,7 @@ func (jd *Handle) addCompletedDSToDropList(ctx context.Context, l lock.LockToken
 	})
 	if err := jd.markPreDropDS(ctx, addedDSList...); err != nil {
 		jd.dropDSList = previousDropDSList
-		return currentList, err
+		return err
 	}
 	jd.dsList.set(
 		newList,
@@ -175,7 +174,7 @@ func (jd *Handle) addCompletedDSToDropList(ctx context.Context, l lock.LockToken
 	// update table count gauge after setting the new ds list
 	jd.statTableCount.Gauge(len(newList))
 	jd.dropNotifyPing()
-	return newList, nil
+	return nil
 }
 
 func (jd *Handle) dropNotifyPing() {

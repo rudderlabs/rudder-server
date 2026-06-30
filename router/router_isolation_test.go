@@ -223,8 +223,6 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
 	config.Set("JobsDB.backup.enabled", false)
 	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
-	config.Set("JobsDB.nonBlockingCompletedDSDrop", "true")
-	config.Set("JobsDB.compactionDeferStatusLock", "true")
 
 	config.Set("Router.isolationMode", string(spec.isolationMode))
 	config.Set("Router.Limiter.statsPeriod", "1s")

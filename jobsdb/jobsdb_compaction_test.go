@@ -553,7 +553,7 @@ func TestPayloadLiteral(t *testing.T) {
 	for i := range prefixes {
 		_, err := db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %[1]s_jobs_1 DROP CONSTRAINT %[1]s_jobs_1_pkey`, prefixes[i]))
 		require.NoError(t, err)
-	} // we drop these two because compactJobsInTx moved jobIDs too, and we're only interested in moving jobs between two different column types
+	} // we drop these two because copyJobsInTx moved jobIDs too, and we're only interested in moving jobs between two different column types
 	txn, err := db.Begin()
 	require.NoError(t, err)
 	for i := range prefixes {
@@ -563,7 +563,7 @@ func TestPayloadLiteral(t *testing.T) {
 			}
 			src := prefixes[i]
 			dest := prefixes[j]
-			_, err := textJD.compactJobsInTx(
+			_, err := textJD.copyJobsInTx(
 				ctx,
 				&tx.Tx{Tx: txn},
 				dataSetT{
@@ -973,229 +973,10 @@ func TestCompactionSkipsDatasets(t *testing.T) {
 	})
 }
 
-func TestCompactionNonBlockingCompletedDSDrop(t *testing.T) {
-	_ = startPostgres(t)
-
-	// newJobDB creates a ReadWrite Handle with the compaction and addNewDS loop triggers
-	// wired to never-firing channels — the tests below drive state changes synchronously
-	// via createDSInTx so there is no background addNewDSLoop racing with Store/UpdateJobStatus.
-	newJobDB := func(t *testing.T) (*Handle, *config.Config) {
-		t.Helper()
-		c := config.New()
-		c.Set("JobsDB.maxDSSize", 100000)
-		jd := &Handle{
-			TriggerAddNewDS:   func() <-chan time.Time { return make(chan time.Time) },
-			TriggerCompaction: func() <-chan time.Time { return make(chan time.Time) },
-			config:            c,
-		}
-		require.NoError(t, jd.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
-		t.Cleanup(jd.TearDown)
-		return jd, c
-	}
-
-	// createDS synchronously appends a new DS at the given index using addNewDSInTx
-	// (which also advances the new DS's job_id sequence to continue from the previous
-	// DS's max, preserving the monotonic range invariant), then refreshes the in-memory list.
-	createDS := func(t *testing.T, jd *Handle, idx string) {
-		t.Helper()
-		require.NoError(t, jd.dsListLock.WithLockInCtx(context.Background(), func(l lock.LockToken) error {
-			dsList, _ := jd.dsList.snapshot()
-			if err := jd.WithTx(context.Background(), func(txn *tx.Tx) error {
-				return jd.addNewDSInTx(context.Background(), txn, l, dsList, newDataSet(jd.tablePrefix, idx))
-			}); err != nil {
-				return err
-			}
-			return jd.doRefreshDSRangeList(l)
-		}))
-	}
-
-	// fillDS stores jobs in the current last DS, marks (len(jobs)-pending) of them as succeeded.
-	fillDS := func(t *testing.T, jd *Handle, jobs []*JobT, pending int) {
-		t.Helper()
-		require.NoError(t, jd.Store(context.Background(), jobs))
-		if terminal := len(jobs) - pending; terminal > 0 {
-			require.NoError(t, jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[:terminal], "executing")))
-			require.NoError(t, jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[:terminal], "succeeded")))
-		}
-	}
-
-	tableExists := func(t *testing.T, jd *Handle, ds dataSetT) bool {
-		t.Helper()
-		var exists bool
-		require.NoError(t, jd.dbHandle.QueryRow(`SELECT to_regclass($1) IS NOT NULL`, ds.JobTable).Scan(&exists))
-		return exists
-	}
-
-	t.Run("flag off: completed DS dropped in legacy in-tx path", func(t *testing.T) {
-		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", false)
-		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
-		fillDS(t, jd, jobs, 0) // DS_1 → all 10 succeeded (completed)
-		createDS(t, jd, "2")   // DS_2 → empty last (exempt from compaction)
-
-		snapshot := jd.getDSListSnapshot()
-		require.Len(t, snapshot, 2)
-		completedDS := snapshot[0]
-
-		require.NoError(t, jd.doCompaction(context.Background()))
-
-		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
-		require.NotContains(t, listIndices, completedDS.Index, "completed DS should be removed from the published list")
-		require.False(t, tableExists(t, jd, completedDS), "table must be dropped synchronously by the legacy in-tx path")
-		jd.dropDSListLock.RLock()
-		require.Empty(t, jd.dropDSList, "legacy path must not enqueue any async drop entries")
-		jd.dropDSListLock.RUnlock()
-	})
-
-	t.Run("flag on: completed DS routed to async drop list", func(t *testing.T) {
-		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", false)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompletedDSDrop", true)
-
-		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
-		fillDS(t, jd, jobs, 0) // DS_1 completed
-		createDS(t, jd, "2")   // DS_2 empty last
-
-		snapshot := jd.getDSListSnapshot()
-		require.Len(t, snapshot, 2)
-		completedDS := snapshot[0]
-
-		// Hold a reader on the current dsList version so dropDSLoop blocks on
-		// waitUntilDrained — lets us observe the enqueued entry before it is physically dropped.
-		_, _, release, err := jd.acquireDSListForRead(context.Background())
-		require.NoError(t, err)
-
-		require.NoError(t, jd.doCompaction(context.Background()))
-
-		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
-		require.NotContains(t, listIndices, completedDS.Index, "completed DS hidden from new readers")
-		jd.dropDSListLock.RLock()
-		require.Len(t, jd.dropDSList, 1, "completed DS must be enqueued for async drop")
-		require.Equal(t, completedDS.Index, jd.dropDSList[0].ds.Index)
-		jd.dropDSListLock.RUnlock()
-		require.Never(t,
-			func() bool { return !tableExists(t, jd, completedDS) },
-			200*time.Millisecond, 20*time.Millisecond,
-			"physical drop must block until the held reader releases",
-		)
-
-		release()
-
-		require.Eventually(t, func() bool {
-			jd.dropDSListLock.RLock()
-			pending := len(jd.dropDSList)
-			jd.dropDSListLock.RUnlock()
-			return !tableExists(t, jd, completedDS) && pending == 0
-		}, 5*time.Second, 50*time.Millisecond, "table must be physically dropped once the reader releases")
-	})
-
-	t.Run("flag on: DS with pending jobs still compacted through the legacy TX", func(t *testing.T) {
-		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", false)
-		// maxDSRetention=1ms makes DSes with old terminal jobs eligible without the needsPair logic,
-		// so a DS with pending jobs can be compacted alone.
-		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
-
-		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
-		fillDS(t, jd, jobs, 5) // DS_1: 5 succeeded + 5 pending
-		createDS(t, jd, "2")   // DS_2 empty last
-
-		snapshot := jd.getDSListSnapshot()
-		require.Len(t, snapshot, 2)
-		pendingDS := snapshot[0]
-
-		require.NoError(t, jd.doCompaction(context.Background()))
-
-		require.False(t, tableExists(t, jd, pendingDS), "source DS must be dropped via legacy compaction TX")
-		jd.dropDSListLock.RLock()
-		require.Empty(t, jd.dropDSList, "non-completed compact paths must not touch dropDSList")
-		jd.dropDSListLock.RUnlock()
-		listIndices := lo.Map(jd.getDSListSnapshot(), func(ds dataSetT, _ int) string { return ds.Index })
-		require.NotContains(t, listIndices, pendingDS.Index, "source DS must be removed from published list")
-		require.Contains(t, listIndices, "1_1", "expecting a freshly compacted destination DS at index 1_1")
-	})
-
-	t.Run("flag on: mixed - completed goes async, pending uses legacy TX", func(t *testing.T) {
-		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", false)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompletedDSDrop", true)
-		// maxDSRetention=1ms lets both DSes appear together in compactFrom in a single call.
-		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
-
-		allJobs := genJobs(defaultWorkspaceID, "test", 20, 1)
-		fillDS(t, jd, allJobs[:10], 0) // DS_1 completed
-		createDS(t, jd, "2")
-		fillDS(t, jd, allJobs[10:20], 5) // DS_2: 5 pending
-		createDS(t, jd, "3")             // DS_3 empty last
-
-		snapshot := jd.getDSListSnapshot()
-		require.Len(t, snapshot, 3)
-		completedDS := snapshot[0]
-		pendingDS := snapshot[1]
-
-		// Hold a reader so the async drop for the completed DS blocks; this lets us
-		// observe the dropDSList entry before dropDSLoop drains it.
-		_, _, release, err := jd.acquireDSListForRead(context.Background())
-		require.NoError(t, err)
-		defer release()
-
-		require.NoError(t, jd.doCompaction(context.Background()))
-
-		jd.dropDSListLock.RLock()
-		require.Len(t, jd.dropDSList, 1, "only the completed DS should be enqueued for async drop")
-		require.Equal(t, completedDS.Index, jd.dropDSList[0].ds.Index)
-		jd.dropDSListLock.RUnlock()
-
-		require.True(t, tableExists(t, jd, completedDS), "completed DS physical drop is blocked by the held reader")
-		require.False(t, tableExists(t, jd, pendingDS), "pending DS source must be dropped via legacy compaction TX")
-	})
-
-	t.Run("flag toggled at runtime: takes effect on the next compaction", func(t *testing.T) {
-		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", false)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompletedDSDrop", false)
-
-		allJobs := genJobs(defaultWorkspaceID, "test", 20, 1)
-		fillDS(t, jd, allJobs[:10], 0) // DS_1 completed
-		createDS(t, jd, "2")           // DS_2 empty last
-		completed1 := jd.getDSListSnapshot()[0]
-
-		// Flag off (default): legacy in-tx drop.
-		require.NoError(t, jd.doCompaction(context.Background()))
-		require.False(t, tableExists(t, jd, completed1), "first compaction must use the legacy in-tx drop")
-		jd.dropDSListLock.RLock()
-		require.Empty(t, jd.dropDSList)
-		jd.dropDSListLock.RUnlock()
-
-		// Flip the flag and prepare another completed DS to compact.
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompletedDSDrop", true)
-		fillDS(t, jd, allJobs[10:20], 0) // DS_2 now has 10 succeeded jobs (completed)
-		createDS(t, jd, "3")             // DS_3 empty last
-		snapshot := jd.getDSListSnapshot()
-		require.Len(t, snapshot, 2)
-		completed2 := snapshot[0]
-		require.Equal(t, "2", completed2.Index)
-
-		// Hold a reader so we can observe the async enqueue before dropDSLoop drains it.
-		_, _, release, err := jd.acquireDSListForRead(context.Background())
-		require.NoError(t, err)
-		defer release()
-
-		require.NoError(t, jd.doCompaction(context.Background()))
-
-		jd.dropDSListLock.RLock()
-		require.Len(t, jd.dropDSList, 1, "second compaction must use the async drop path after the flag is on")
-		require.Equal(t, completed2.Index, jd.dropDSList[0].ds.Index)
-		jd.dropDSListLock.RUnlock()
-		require.True(t, tableExists(t, jd, completed2), "physical drop blocked by held reader")
-	})
-}
-
 func TestNonBlockingCompaction(t *testing.T) {
 	_ = startPostgres(t)
 
-	// newJobDB mirrors the pattern used by TestCompactionNonBlockingCompletedDSDrop:
-	// the compaction and addNewDS loop triggers are wired to never-firing channels so
+	// newJobDB wires the compaction and addNewDS loop triggers to never-firing channels so
 	// the tests drive state changes synchronously.
 	newJobDB := func(t *testing.T) (*Handle, *config.Config) {
 		t.Helper()
@@ -1265,31 +1046,8 @@ func TestNonBlockingCompaction(t *testing.T) {
 		return marker.Valid && strings.HasPrefix(marker.String, "rudder:pre_drop:")
 	}
 
-	t.Run("flag off: legacy in-tx drop path is used", func(t *testing.T) {
+	t.Run("source goes through async drop with pre-drop marker and readonly trigger", func(t *testing.T) {
 		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", false)
-		// maxDSRetention=1ms makes a DS with old terminal jobs eligible immediately.
-		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
-
-		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
-		fillDS(t, jd, jobs, 5) // DS_1: 5 succeeded, 5 pending
-		createDS(t, jd, "2")   // empty last DS
-
-		snapshot := jd.getDSListSnapshot()
-		require.Len(t, snapshot, 2)
-		sourceDS := snapshot[0]
-
-		require.NoError(t, jd.doCompaction(context.Background()))
-
-		require.False(t, tableExists(t, jd, sourceDS), "legacy flow drops source in-TX")
-		jd.dropDSListLock.RLock()
-		require.Empty(t, jd.dropDSList, "legacy flow must not enqueue async drops")
-		jd.dropDSListLock.RUnlock()
-	})
-
-	t.Run("flag on: source goes through async drop with pre-drop marker and readonly trigger", func(t *testing.T) {
-		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
 
 		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
@@ -1340,9 +1098,8 @@ func TestNonBlockingCompaction(t *testing.T) {
 		}, 5*time.Second, 50*time.Millisecond, "source table must be physically dropped once the reader releases")
 	})
 
-	t.Run("flag on: zero-copy compaction drops empty dest but still async-drops source", func(t *testing.T) {
+	t.Run("zero-copy compaction drops empty dest but still async-drops source", func(t *testing.T) {
 		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
 
 		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
@@ -1366,7 +1123,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 		}()
 
 		// Block compaction after getCompactionList's optimistic pending-count
-		// decision but before the TX copies jobs. doCompactDS takes this shared
+		// decision but before the TX copies jobs. doCompaction takes this shared
 		// advisory lock only after computing compactionList.
 		blocker, err := jd.dbHandle.BeginTx(context.Background(), nil)
 		require.NoError(t, err)
@@ -1402,7 +1159,7 @@ func TestNonBlockingCompaction(t *testing.T) {
 		}, 5*time.Second, 50*time.Millisecond, "compaction should block on schema_migrate advisory lock")
 
 		// The optimistic check saw these as pending; before copy time they all
-		// become terminal, so compactJobsInTx copies zero rows.
+		// become terminal, so the copy moves zero rows.
 		require.NoError(t, jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[5:10], "succeeded")))
 
 		require.NoError(t, blocker.Commit())
@@ -1436,9 +1193,8 @@ func TestNonBlockingCompaction(t *testing.T) {
 		}, 5*time.Second, 50*time.Millisecond, "source table must be physically dropped once the reader releases")
 	})
 
-	t.Run("flag on: dsRangeList reflects dest's exact min/max", func(t *testing.T) {
+	t.Run("dsRangeList reflects dest's exact min/max", func(t *testing.T) {
 		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
 
 		// Store 20 jobs but mark the first 10 as terminal. Only the last 10
@@ -1467,9 +1223,8 @@ func TestNonBlockingCompaction(t *testing.T) {
 		require.EqualValues(t, 20, destRange.maxJobID, "dest max must reflect last copied job_id")
 	})
 
-	t.Run("flag on: published swap preserves non-compacted DSes in the current list", func(t *testing.T) {
+	t.Run("published swap preserves non-compacted DSes in the current list", func(t *testing.T) {
 		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
 		// Disable needsPair so DS_2 (non-terminal only) is NOT eligible for compaction.
 		// We need DS_2 non-empty so checkIfCompactDS's created_at scan doesn't trip on NULL.
@@ -1492,9 +1247,8 @@ func TestNonBlockingCompaction(t *testing.T) {
 		require.Contains(t, listIndices, "3", "non-compacted DS_3 must be preserved")
 	})
 
-	t.Run("flag on: completed-only sources skip the compaction TX and go straight to async drop", func(t *testing.T) {
-		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
+	t.Run("completed-only sources skip the compaction TX and go straight to async drop", func(t *testing.T) {
+		jd, _ := newJobDB(t)
 		// No maxDSRetention needed: a DS with all-terminal jobs is naturally eligible.
 
 		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
@@ -1529,9 +1283,8 @@ func TestNonBlockingCompaction(t *testing.T) {
 		}, 5*time.Second, 50*time.Millisecond)
 	})
 
-	t.Run("flag on: source status table rejects post-commit inserts with RS001", func(t *testing.T) {
+	t.Run("source status table rejects post-commit inserts with RS001", func(t *testing.T) {
 		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
 
 		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
@@ -1572,9 +1325,8 @@ func TestNonBlockingCompaction(t *testing.T) {
 		require.EqualValues(t, 5, destStatusCount, "status updates must land in dest after compaction")
 	})
 
-	t.Run("flag on: pre-drop marker survives a crash and cleanupPreDropTables drops the source on next startup", func(t *testing.T) {
+	t.Run("pre-drop marker survives a crash and cleanupPreDropTables drops the source on next startup", func(t *testing.T) {
 		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
 
 		jobs := genJobs(defaultWorkspaceID, "test", 10, 1)
@@ -1598,58 +1350,8 @@ func TestNonBlockingCompaction(t *testing.T) {
 		require.False(t, tableExists(t, jd, sourceDS), "cleanupPreDropTables must drop the marked source table")
 	})
 
-	t.Run("flag toggled at runtime: takes effect on the next compaction", func(t *testing.T) {
+	t.Run("copies pending jobs and their latest statuses, fences source", func(t *testing.T) {
 		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", false)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
-		// Disable needsPair so the first compaction's dest DS_1_1 isn't pulled back
-		// into the second iteration's compactFrom (only the freshly-filled DS_2 is).
-		c.Set("JobsDB."+jd.tablePrefix+"."+"jobMinRowsLeftMigrateThreshold", 0.0)
-
-		// Use a single genJobs slice so the local JobID values match the DB-assigned
-		// IDs across both batches (the sequence continues from DS_1's max).
-		allJobs := genJobs(defaultWorkspaceID, "test", 20, 1)
-
-		// First compaction with flag OFF → legacy in-TX drop.
-		fillDS(t, jd, allJobs[:10], 5)
-		createDS(t, jd, "2")
-		source1 := jd.getDSListSnapshot()[0]
-		require.NoError(t, jd.doCompaction(context.Background()))
-		require.False(t, tableExists(t, jd, source1), "first compaction uses legacy in-TX drop")
-		jd.dropDSListLock.RLock()
-		require.Empty(t, jd.dropDSList)
-		jd.dropDSListLock.RUnlock()
-
-		// Flip flag ON; fill the (now last) DS_2 with another batch and add DS_3.
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
-		fillDS(t, jd, allJobs[10:20], 5)
-		createDS(t, jd, "3")
-		snapshot := jd.getDSListSnapshot()
-		var source2 dataSetT
-		for _, ds := range snapshot {
-			if ds.Index == "2" {
-				source2 = ds
-				break
-			}
-		}
-		require.NotEmpty(t, source2.Index)
-
-		_, _, release, err := jd.acquireDSListForRead(context.Background())
-		require.NoError(t, err)
-		defer release()
-
-		require.NoError(t, jd.doCompaction(context.Background()))
-		jd.dropDSListLock.RLock()
-		require.NotEmpty(t, jd.dropDSList, "second compaction must use the async drop path")
-		jd.dropDSListLock.RUnlock()
-		require.True(t, tableExists(t, jd, source2), "drop blocked by held reader")
-		require.True(t, hasReadonlyTrigger(t, jd, source2), "source must carry readonly trigger after non-blocking compaction")
-	})
-
-	t.Run("flag on + deferStatusLock: copies pending jobs and their latest statuses, fences source", func(t *testing.T) {
-		jd, c := newJobDB(t)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"nonBlockingCompaction", true)
-		c.Set("JobsDB."+jd.tablePrefix+"."+"compactionDeferStatusLock", true)
 		c.Set("JobsDB."+jd.tablePrefix+"."+"maxDSRetention", "1ms")
 
 		// jobs 1..4 terminal (succeeded), 5..7 non-terminal (failed), 8..10 never
