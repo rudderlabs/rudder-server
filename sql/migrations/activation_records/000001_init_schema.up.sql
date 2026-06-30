@@ -4,7 +4,6 @@ CREATE TABLE activation_records_reports (
                            instance_id VARCHAR(64) NOT NULL,
                            source_id VARCHAR(64) NOT NULL,
                            destination_id VARCHAR(64) NOT NULL,
-                           origin TEXT NOT NULL,
                            reported_at TIMESTAMPTZ NOT NULL,
                            fingerprint_hll TEXT NOT NULL
 );
