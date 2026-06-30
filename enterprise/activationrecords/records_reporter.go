@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/segmentio/go-hll"
@@ -31,6 +32,11 @@ const (
 	murmurSeed = 123
 
 	activationRecordsTable = "activation_records_reports"
+
+	// retlSourceCategory is the SourceDefinition.Category of reverse-ETL ("warehouse
+	// actions") sources, stamped by the gateway into a job's source_category param.
+	// MAR meters activation records from these sources only.
+	retlSourceCategory = "warehouse"
 )
 
 // recordKey is the aggregation grain for activation records: one HLL sketch per
@@ -141,6 +147,18 @@ func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb
 			u.recordSkip("missing_source")
 			continue
 		}
+
+		// MAR meters reverse-ETL (warehouse) sources only. Classify by the source
+		// category the gateway stamps from SourceDefinition.Category, rather than
+		// relying solely on the fingerprint gate below: this prevents a client from
+		// being metered by stamping context.activation.fingerprint on a non-rETL
+		// (e.g. event-stream) source. Non-rETL is the expected majority of traffic,
+		// so skip it silently — no per-job skip stat on the hot path.
+		sourceCategory := jsonparser.GetStringOrEmpty(job.Parameters, "source_category")
+		if !strings.EqualFold(sourceCategory, retlSourceCategory) {
+			continue
+		}
+
 		destinationID := jsonparser.GetStringOrEmpty(job.Parameters, "destination_id")
 		if destinationID == "" {
 			u.log.Warnn("destination_id not found in job parameters",
