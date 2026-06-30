@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.79.1](https://github.com/rudderlabs/rudder-server/compare/v1.79.0...v1.79.1) (2026-06-30)
+
+
+### Miscellaneous
+
+* enable compression for google pubsub ([#7137](https://github.com/rudderlabs/rudder-server/issues/7137)) ([f48a5d3](https://github.com/rudderlabs/rudder-server/commit/f48a5d3d7f5312602a4acdaf2fd9e086638a6b41))
+
 ## [1.79.0](https://github.com/rudderlabs/rudder-server/compare/v1.78.0...v1.79.0) (2026-06-29)
 
 
