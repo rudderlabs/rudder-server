@@ -1198,7 +1198,13 @@ ul.nav-tabs {
               <div class="app-desc">Version: 1.0.0-oas3</div>
             <hr>
             <div id="app-description" class="app-desc">
-                The RudderStack HTTP API lets you track your customer event data and route it to your desired destinations.
+                <p>The RudderStack HTTP API lets you track your customer event data and route
+it to your desired destinations.</p>
+<p>Event payloads sent to the HTTP ingestion endpoints, including events inside
+batch requests, must not exceed 200 levels of JSON nesting. Events exceeding
+this limit are rejected during ingestion with error feedback returned to the
+sender.</p>
+
             </div>
           </div>
         </div>
