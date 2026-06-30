@@ -1857,8 +1857,16 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		}
 
 		for _, singularEvent := range gatewayBatchEvent.Batch {
+			// Strip only the fingerprint we stamp for MAR metering; context is a
+			// customer-extensible object and this code runs for every source type
+			// (not just rETL), so we must not clobber a customer-set context.activation.
 			if ctxMap, ok := singularEvent["context"].(map[string]any); ok {
-				delete(ctxMap, "activation")
+				if activation, ok := ctxMap["activation"].(map[string]any); ok {
+					delete(activation, "fingerprint")
+					if len(activation) == 0 {
+						delete(ctxMap, "activation")
+					}
+				}
 			}
 			messageId := stringify.Any(singularEvent["messageId"])
 			payloadFunc := ro.Memoize(func() json.RawMessage {
