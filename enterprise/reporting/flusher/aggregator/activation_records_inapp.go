@@ -38,7 +38,7 @@ func NewActivationRecordsInAppAggregator(db *sql.DB, s stats.Stats, conf *config
 }
 
 func (a *ActivationRecordsInAppAggregator) Aggregate(ctx context.Context, start, end time.Time) (jsonReports []json.RawMessage, err error) {
-	query := `SELECT reported_at, workspace_id, source_id, destination_id, origin, instance_id, fingerprint_hll FROM activation_records_reports WHERE reported_at >= $1 AND reported_at < $2 ORDER BY reported_at`
+	query := `SELECT reported_at, workspace_id, source_id, destination_id, instance_id, fingerprint_hll FROM activation_records_reports WHERE reported_at >= $1 AND reported_at < $2 ORDER BY reported_at`
 
 	rows, err := a.db.Query(query, start, end)
 	if err != nil {
@@ -51,7 +51,7 @@ func (a *ActivationRecordsInAppAggregator) Aggregate(ctx context.Context, start,
 	for rows.Next() {
 		total += 1
 		r := ActivationRecordsReport{}
-		err := rows.Scan(&r.ReportedAt, &r.WorkspaceID, &r.SourceID, &r.DestinationID, &r.Origin, &r.InstanceID, &r.FingerprintHLLHex)
+		err := rows.Scan(&r.ReportedAt, &r.WorkspaceID, &r.SourceID, &r.DestinationID, &r.InstanceID, &r.FingerprintHLLHex)
 		if err != nil {
 			return nil, fmt.Errorf("cannot scan row %w", err)
 		}

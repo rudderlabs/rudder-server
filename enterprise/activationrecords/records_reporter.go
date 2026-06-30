@@ -34,10 +34,7 @@ const (
 )
 
 // recordKey is the aggregation grain for activation records: one HLL sketch per
-// (workspace, source, destination). origin is intentionally NOT part of the key —
-// it is constant per source, so it is carried on the report as a plain column
-// (recordAccumulator.origin) rather than splitting a single connection into
-// multiple grains/rows.
+// (workspace, source, destination).
 type recordKey struct {
 	workspaceID   string
 	sourceID      string
@@ -45,8 +42,7 @@ type recordKey struct {
 }
 
 type recordAccumulator struct {
-	origin string
-	hll    *hll.Hll
+	hll *hll.Hll
 }
 
 // ActivationRecord holds a single aggregated activation record for a workspace/source/destination grain.
@@ -54,7 +50,6 @@ type ActivationRecord struct {
 	WorkspaceID    string
 	SourceID       string
 	DestinationID  string
-	Origin         string
 	FingerprintHll *hll.Hll
 }
 
@@ -123,7 +118,7 @@ func (u *UniqueActivationRecordsReporter) MigrateDatabase(dbConn string, conf *c
 }
 
 // GenerateReportsFromJobs aggregates activation records from a batch of jobs.
-// It is FAIL-CLOSED: jobs missing fingerprint or origin are skipped (counted via stats).
+// It is FAIL-CLOSED: jobs missing a fingerprint are skipped (counted via stats).
 func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT) []*ActivationRecord {
 	if len(jobs) == 0 {
 		return nil
@@ -181,11 +176,6 @@ func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb
 				u.recordSkip("missing_fingerprint")
 				continue
 			}
-			origin := jsonparser.GetStringOrEmpty(elem, "context", "activation", "origin")
-			if origin == "" {
-				u.recordSkip("missing_origin")
-				continue
-			}
 			acc, exists := accumulators[key]
 			if !exists {
 				newHll, hllErr := hll.NewHll(*u.hllSettings)
@@ -197,16 +187,7 @@ func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb
 					u.recordSkip("hll_init_failed")
 					continue
 				}
-				// origin is client-controlled (stamped by rudder-sources into the event
-				// payload). Defensively cap its length before carrying it onto the report
-				// and writing it to the DB, so a malformed/over-long value cannot bloat
-				// the row or the reporting POST. The column is TEXT, so this is
-				// belt-and-suspenders.
-				truncated, wasTruncated := truncateRunes(origin, 256)
-				if wasTruncated {
-					u.stats.NewStat("activation_records_origin_truncated", stats.CountType).Increment()
-				}
-				acc = &recordAccumulator{origin: truncated, hll: &newHll}
+				acc = &recordAccumulator{hll: &newHll}
 				accumulators[key] = acc
 			}
 			acc.hll.AddRaw(murmur3.Sum64WithSeed([]byte(fingerprint), murmurSeed))
@@ -223,7 +204,6 @@ func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb
 			WorkspaceID:    key.workspaceID,
 			SourceID:       key.sourceID,
 			DestinationID:  key.destinationID,
-			Origin:         acc.origin,
 			FingerprintHll: acc.hll,
 		})
 	}
@@ -240,7 +220,6 @@ func (u *UniqueActivationRecordsReporter) ReportActivationRecords(ctx context.Co
 		"instance_id",
 		"source_id",
 		"destination_id",
-		"origin",
 		"reported_at",
 		"fingerprint_hll",
 	))
@@ -260,7 +239,6 @@ func (u *UniqueActivationRecordsReporter) ReportActivationRecords(ctx context.Co
 			u.instanceID,
 			report.SourceID,
 			report.DestinationID,
-			report.Origin,
 			u.now(),
 			fingerprintHllString,
 		)
@@ -286,20 +264,10 @@ func (u *UniqueActivationRecordsReporter) hllToString(hllStruct *hll.Hll) (strin
 	return hex.EncodeToString(hllStruct.ToBytes()), nil
 }
 
-// truncateRunes truncates s to at most max runes.
-// Returns the (possibly truncated) string and whether truncation occurred.
-func truncateRunes(s string, max int) (string, bool) {
-	runes := []rune(s)
-	if len(runes) <= max {
-		return s, false
-	}
-	return string(runes[:max]), true
-}
-
 // recordSkip increments the activation_records_skipped counter with a reason tag.
 // A skip is fail-closed (the record is not metered); the reason lets us alert on
 // conditions that should not occur in production (missing workspace/source/
-// destination/batch/fingerprint/origin).
+// destination/batch/fingerprint).
 func (u *UniqueActivationRecordsReporter) recordSkip(reason string) {
 	u.stats.NewTaggedStat("activation_records_skipped", stats.CountType, stats.Tags{
 		"reason": reason,
