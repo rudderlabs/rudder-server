@@ -306,8 +306,9 @@ func setup(t testing.TB) testConfig {
 	// rETL source -> WEBHOOK destination. WithConnection puts the destination into
 	// source.Destinations so the gateway's authDestIDForSource can resolve the
 	// X-Rudder-Destination-Id header into the job's destination_id parameter (which
-	// MAR metering requires). The default "eventStream" source category is enough:
-	// the /internal/v1/retl route authenticates on source id, not category.
+	// MAR metering requires). The source carries the "warehouse" category (reverse-ETL):
+	// MAR meters warehouse sources only, so the gateway must stamp source_category=warehouse
+	// into the job params for these records to be metered.
 	bcServer := backendconfigtest.NewBuilder().
 		WithWorkspaceConfig(backendconfigtest.NewConfigBuilder().
 			WithWorkspaceID(workspaceID).
@@ -315,6 +316,7 @@ func setup(t testing.TB) testConfig {
 				backendconfigtest.NewSourceBuilder().
 					WithWorkspaceID(workspaceID).
 					WithID(sourceID).
+					WithSourceCategory("warehouse").
 					WithConnection(
 						backendconfigtest.NewDestinationBuilder("WEBHOOK").
 							WithID(destinationID).

@@ -51,7 +51,7 @@ func buildGatewayPayload(t *testing.T, activation map[string]any) []byte {
 
 // buildGatewayParams serializes job Parameters the way the gateway does
 // (mirror gateway/handle.go:484-493): an rETL record job carries both source_id
-// and destination_id.
+// and destination_id, and source_category=warehouse (the reverse-ETL category).
 func buildGatewayParams(t *testing.T) []byte {
 	t.Helper()
 	params := map[string]any{
@@ -60,7 +60,7 @@ func buildGatewayParams(t *testing.T) []byte {
 		"source_job_run_id":  "",
 		"source_task_run_id": "",
 		"traceparent":        "",
-		"source_category":    "",
+		"source_category":    "warehouse",
 	}
 	out, err := jsonrs.Marshal(params)
 	require.NoError(t, err)
