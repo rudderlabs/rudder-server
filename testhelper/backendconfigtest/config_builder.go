@@ -35,3 +35,15 @@ func (b *ConfigBuilder) WithWorkspaceID(workspaceID string) *ConfigBuilder {
 	b.v.WorkspaceID = workspaceID
 	return b
 }
+
+// WithConnection adds a source-to-destination connection (keyed by connection id)
+// to the workspace config. Some pipelines (e.g. the router's reverse-ETL/warehouse
+// path) require a top-level connection entry, not just a destination nested under
+// the source via SourceBuilder.WithConnection.
+func (b *ConfigBuilder) WithConnection(connectionID string, connection backendconfig.Connection) *ConfigBuilder {
+	if b.v.Connections == nil {
+		b.v.Connections = map[string]backendconfig.Connection{}
+	}
+	b.v.Connections[connectionID] = connection
+	return b
+}
