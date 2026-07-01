@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.79.2](https://github.com/rudderlabs/rudder-server/compare/v1.79.1...v1.79.2) (2026-07-01)
+
+
+### Bug Fixes
+
+* **router:** transformer returning response with empty metadata array causes server to panic ([#7144](https://github.com/rudderlabs/rudder-server/issues/7144)) ([47573b3](https://github.com/rudderlabs/rudder-server/commit/47573b3c1e090b1ef949856d3a228ec8afdcfbcf))
+
 ## [1.79.1](https://github.com/rudderlabs/rudder-server/compare/v1.79.0...v1.79.1) (2026-06-30)
 
 
