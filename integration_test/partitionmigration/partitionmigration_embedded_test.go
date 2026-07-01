@@ -48,6 +48,20 @@ import (
 // 12. Waits for all requests to complete.
 // 13. Verifies that all requests were received successfully and in order.
 func TestPartitionMigrationEmbeddedMode(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		jobsDBFanoutEnabled bool // whether source nodes declare per-jobsdb fan-out on migration acknowledgement
+	}{
+		{name: "normal", jobsDBFanoutEnabled: true},
+		{name: "legacy_no_jobsdb_fanout", jobsDBFanoutEnabled: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testPartitionMigrationEmbeddedMode(t, tc.jobsDBFanoutEnabled)
+		})
+	}
+}
+
+func testPartitionMigrationEmbeddedMode(t *testing.T, jobsDBFanoutEnabled bool) {
 	const (
 		namespace     = "namespace123"
 		workspaceID   = "workspace123"
@@ -124,7 +138,9 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 	bc.URL = strings.Replace(bc.URL, "127.0.0.1", localIp, 1) // replace localhost with local IP for docker containers to access
 
 	// start rudder-orchestrator that will run the migration
+	// TODO: revert to the default (latest) tag once jobsdb fan-out (rudder-orchestrator PR #145) is released
 	rudoResource, err := rudo.Setup(pool, t,
+		rudo.WithTag("pr-145"),
 		rudo.WithBindIP(localIp),
 		rudo.WithEtcdHosts(etcdResource.Hosts),
 		rudo.WithGatewaySeparateService(false),
@@ -155,6 +171,7 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 	commonEnv := map[string]string{
 		"APP_TYPE":                                        "embedded",
 		"PartitionMigration.enabled":                      "true",
+		"PartitionMigration.jobsDBFanoutEnabled":          strconv.FormatBool(jobsDBFanoutEnabled),
 		"JobsDB.partitionCount":                           strconv.Itoa(numPartitions),
 		"PROCESSOR_NODE_HOST_PATTERN":                     "proc-node-{index}.localhost",
 		"PartitionMigration.failOnInvalidNodeHostPattern": "false",
