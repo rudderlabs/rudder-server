@@ -8,6 +8,7 @@ package proto
 
 import (
 	context "context"
+
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -26,6 +27,9 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ProcessorServiceClient interface {
+	// Forward proxies a control-plane request to the processor. Application
+	// outcomes ride in ForwardResponse.status_code/body; gRPC errors are
+	// reserved for transport/infra failures.
 	Forward(ctx context.Context, in *ForwardRequest, opts ...grpc.CallOption) (*ForwardResponse, error)
 }
 
@@ -50,6 +54,9 @@ func (c *processorServiceClient) Forward(ctx context.Context, in *ForwardRequest
 // All implementations must embed UnimplementedProcessorServiceServer
 // for forward compatibility
 type ProcessorServiceServer interface {
+	// Forward proxies a control-plane request to the processor. Application
+	// outcomes ride in ForwardResponse.status_code/body; gRPC errors are
+	// reserved for transport/infra failures.
 	Forward(context.Context, *ForwardRequest) (*ForwardResponse, error)
 	mustEmbedUnimplementedProcessorServiceServer()
 }
