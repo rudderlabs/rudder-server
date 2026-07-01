@@ -1599,7 +1599,8 @@ func TestUserTransformURLRouting(t *testing.T) {
 		f := newFixture(t)
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		require.PanicsWithValue(t,
+		require.PanicsWithValue(
+			t,
 			"per-workspace PyT enabled but workspaceID is empty",
 			func() {
 				tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, ""))
@@ -1892,4 +1893,93 @@ func TestColdStartCounter(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestForwardTest(t *testing.T) {
+	t.Run("each endpoint method posts to its pyt path and returns status/body", func(t *testing.T) {
+		var gotPath, gotContentType string
+		var gotBody []byte
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotPath = r.URL.Path
+			gotContentType = r.Header.Get("Content-Type")
+			gotBody, _ = io.ReadAll(r.Body)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}))
+		defer srv.Close()
+
+		conf := config.New()
+		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
+		client := user_transformer.New(conf, logger.NOP, stats.NOP)
+
+		cases := map[string]struct {
+			call     func(context.Context, string, []byte) (int, []byte, error)
+			wantPath string
+		}{
+			"Test":        {client.Test, "/test"},
+			"TestRun":     {client.TestRun, "/testRun"},
+			"TestLibrary": {client.TestLibrary, "/test-library"},
+			"ExtractLibs": {client.ExtractLibs, "/extract-libs"},
+		}
+		for name, tc := range cases {
+			t.Run(name, func(t *testing.T) {
+				status, body, err := tc.call(context.Background(), "WS-1", []byte(`{"code":"x"}`))
+				require.NoError(t, err)
+				require.Equal(t, http.StatusCreated, status)
+				require.JSONEq(t, `{"ok":true}`, string(body))
+				require.Equal(t, tc.wantPath, gotPath)
+				require.Equal(t, "application/json", gotContentType)
+				require.JSONEq(t, `{"code":"x"}`, string(gotBody))
+			})
+		}
+	})
+
+	t.Run("retries a cold-start 503 with a small backoff then succeeds", func(t *testing.T) {
+		var attempts atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if attempts.Add(1) < 3 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`done`))
+		}))
+		defer srv.Close()
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		conf := config.New()
+		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
+		client := user_transformer.New(conf, logger.NOP, statsStore,
+			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
+
+		status, body, err := client.Test(context.Background(), "ws-1", []byte(`{}`))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, status)
+		require.Equal(t, "done", string(body))
+		require.EqualValues(t, 3, attempts.Load())
+
+		total := 0
+		for _, m := range statsStore.GetByName("processor_user_transformer_cold_start_errors_total") {
+			total += int(m.Value)
+		}
+		require.Equal(t, 2, total, "each cold-start retry should increment the counter")
+	})
+
+	t.Run("stops retrying when the deadline is exceeded", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		defer srv.Close()
+
+		conf := config.New()
+		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
+		client := user_transformer.New(conf, logger.NOP, stats.NOP,
+			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
+
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		_, _, err := client.Test(ctx, "ws-1", []byte(`{}`))
+		require.Error(t, err)
+	})
 }
