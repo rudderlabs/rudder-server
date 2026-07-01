@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -32,6 +33,10 @@ type Migrator interface {
 
 	// Run watches for new migration jobs assigned to this source node
 	Run(ctx context.Context, wg *errgroup.Group) error
+
+	// JobsDBs returns the identifiers of the jobsdbs this source node moves, used to declare
+	// per-JobsDB migration fan-out when acknowledging a migration.
+	JobsDBs() []string
 }
 
 type migrator struct {
@@ -116,10 +121,10 @@ func (m *migrator) addReadExcludedPartitions(ctx context.Context, sourcePartitio
 	return g.Wait()
 }
 
-// removeReadExcludedPartitions unmarks the given partitions as excluded from reading in all jobsdbs
-func (m *migrator) removeReadExcludedPartitions(ctx context.Context, sourcePartitions []string) error {
+// removeReadExcludedPartitions unmarks the given partitions as excluded from reading in the given jobsdbs
+func (m *migrator) removeReadExcludedPartitions(ctx context.Context, jobsDBs []jobsdb.JobsDB, sourcePartitions []string) error {
 	g, ctx := errgroup.WithContext(ctx)
-	for _, readerJobsDB := range m.readerJobsDBs {
+	for _, readerJobsDB := range jobsDBs {
 		g.Go(func() error {
 			if err := readerJobsDB.RemoveReadExcludedPartitionIDs(ctx, sourcePartitions); err != nil {
 				return fmt.Errorf("removing read excluded partitions from %q jobsdb: %w", readerJobsDB.Identifier(), err)
@@ -128,6 +133,26 @@ func (m *migrator) removeReadExcludedPartitions(ctx context.Context, sourceParti
 		})
 	}
 	return g.Wait()
+}
+
+// JobsDBs returns the identifiers of the reader jobsdbs this source node moves.
+func (m *migrator) JobsDBs() []string {
+	return lo.Map(m.readerJobsDBs, func(db jobsdb.JobsDB, _ int) string { return db.Identifier() })
+}
+
+// resolveReaderJobsDBs returns the jobsdbs a migration job applies to: the single jobsdb named by a
+// fanned-out job, or all reader jobsdbs in legacy mode (empty jobsDB).
+func (m *migrator) resolveReaderJobsDBs(jobsDB string) []jobsdb.JobsDB {
+	if jobsDB == "" {
+		return m.readerJobsDBs
+	}
+	for _, db := range m.readerJobsDBs {
+		if db.Identifier() == jobsDB {
+			return []jobsdb.JobsDB{db}
+		}
+	}
+	m.logger.Warnn("no reader jobsdb found for migration job jobsdb, skipping", logger.NewStringField("jobsDB", jobsDB))
+	return nil
 }
 
 // waitForNoInProgressJobs waits until there are no in-progress job statuses in all jobsdbs for the given source partitions.
@@ -310,9 +335,12 @@ func (m *migrator) onNewJob(ctx context.Context, key string, job *etcdtypes.Part
 			if err != nil {
 				return fmt.Errorf("getting target URL: %w", err)
 			}
-			// move jobs from all source jobsdbs concurrently
+			// resolve the jobsdbs this job applies to: a single jobsdb for a fanned-out job, or all
+			// reader jobsdbs in legacy mode.
+			jobsDBs := m.resolveReaderJobsDBs(job.JobsDB)
+			// move jobs from the resolved source jobsdbs concurrently
 			jobG, jobCtx := errgroup.WithContext(ctx)
-			for _, db := range m.readerJobsDBs {
+			for _, db := range jobsDBs {
 				jobG.Go(func() error {
 					return client.NewMigrationJobExecutor(
 						job.JobID, m.nodeIndex, job.Partitions, db, target,
@@ -329,8 +357,8 @@ func (m *migrator) onNewJob(ctx context.Context, key string, job *etcdtypes.Part
 				return fmt.Errorf("moving jobs to target node for partition migration job: %w", err)
 			}
 
-			// remove read-excluded partitions from all jobsdbs
-			if err := m.removeReadExcludedPartitions(ctx, job.Partitions); err != nil {
+			// remove read-excluded partitions from the resolved jobsdbs
+			if err := m.removeReadExcludedPartitions(ctx, jobsDBs, job.Partitions); err != nil {
 				return fmt.Errorf("removing read excluded partitions after migration: %w", err)
 			}
 

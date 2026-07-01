@@ -19,6 +19,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/etcd"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
@@ -437,6 +438,102 @@ func TestMigrator(t *testing.T) {
 			require.Equal(t, 50, countJobsInTable(t, env.db, "gw", "partition-2"), "gw should have jobs for partition-2")
 			require.Equal(t, 50, countJobsInTable(t, env.db, "rt", "partition-1"), "rt should have jobs for partition-1")
 			require.Equal(t, 50, countJobsInTable(t, env.db, "rt", "partition-2"), "rt should have jobs for partition-2")
+		})
+
+		t.Run("jobsdb fan-out: job scoped to a single jobsdb only flushes that jobsdb", func(t *testing.T) {
+			env := newHandleEnv(t)
+
+			// Configure gRPC server port
+			port, err := testhelper.GetFreePort()
+			require.NoError(t, err)
+			env.conf.Set("PartitionMigration.Grpc.Server.Port", port)
+
+			// Mark the partitions as buffered using Handle (buffers both gw and rt)
+			migration := &etcdtypes.PartitionMigration{
+				ID:     "migration-1",
+				Status: etcdtypes.PartitionMigrationStatusNew,
+				Jobs: []*etcdtypes.PartitionMigrationJobHeader{
+					{
+						JobID:      "job-1",
+						SourceNode: 0,
+						TargetNode: env.nodeIndex,
+						Partitions: []string{"partition-1", "partition-2"},
+					},
+				},
+			}
+
+			// Create migrator
+			m, err := NewMigratorBuilder(env.nodeIndex, "test-target-node").
+				WithConfig(env.conf).
+				WithEtcdClient(env.etcdClient).
+				WithBufferedJobsDBs([][]partitionbuffer.JobsDBPartitionBuffer{
+					{env.rtBuffer},
+					{env.gwBuffer},
+				}).
+				WithUnbufferedJobsDBs([]jobsdb.JobsDB{env.gwJobsDB, env.rtJobsDB}).
+				Build()
+			require.NoError(t, err)
+
+			// Call Handle to mark partitions as buffered
+			err = m.Handle(t.Context(), migration)
+			require.NoError(t, err)
+
+			// Store jobs to both buffers
+			require.NoError(t, env.gwBuffer.Store(t.Context(), generateJobs(t, "partition-1", 50)))
+			require.NoError(t, env.rtBuffer.Store(t.Context(), generateJobs(t, "partition-1", 50)))
+
+			// Start Run
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			wg, ctx := errgroup.WithContext(ctx)
+			err = m.Run(ctx, wg)
+			require.NoError(t, err)
+
+			// Put a migration job scoped to the gw jobsdb only (fan-out mode)
+			migrationJob := &etcdtypes.PartitionMigrationJob{
+				PartitionMigrationJobHeader: etcdtypes.PartitionMigrationJobHeader{
+					JobID:      "job-1",
+					SourceNode: 0,
+					TargetNode: env.nodeIndex,
+					Partitions: []string{"partition-1", "partition-2"},
+					JobsDB:     "gw",
+				},
+				MigrationID: "migration-1",
+				Status:      etcdtypes.PartitionMigrationJobStatusMoved,
+			}
+			jobKey := "/" + env.namespace + "/migration/job/" + migrationJob.JobID
+			jobValue, err := jsonrs.Marshal(migrationJob)
+			require.NoError(t, err)
+			_, err = env.etcdClient.Put(t.Context(), jobKey, string(jobValue))
+			require.NoError(t, err)
+
+			// Wait until the gw-scoped job is marked as "completed"
+			require.Eventually(t, func() bool {
+				resp, err := env.etcdClient.Get(t.Context(), jobKey)
+				if err != nil || len(resp.Kvs) == 0 {
+					return false
+				}
+				var job etcdtypes.PartitionMigrationJob
+				if err := jsonrs.Unmarshal(resp.Kvs[0].Value, &job); err != nil {
+					return false
+				}
+				return job.Status == etcdtypes.PartitionMigrationJobStatusCompleted
+			}, 30*time.Second, 100*time.Millisecond, "job status should be marked as completed")
+
+			// Cancel context to stop Run
+			cancel()
+			require.NoError(t, wg.Wait())
+
+			// Verify that only gw was flushed: buffer emptied, jobs in primary, partitions unbuffered
+			require.Empty(t, getBufferedPartitions(t, env.db, "gw"), "gw buffered partitions should be empty after flush")
+			require.Equal(t, 0, countJobsInTable(t, env.db, "gw_buf", "partition-1"), "gw_buf should be empty after flush")
+			require.Equal(t, 50, countJobsInTable(t, env.db, "gw", "partition-1"), "gw should have jobs after flush")
+
+			// Verify that rt is untouched: still buffered, jobs still in buffer, primary empty
+			require.ElementsMatch(t, []string{"partition-1", "partition-2"}, getBufferedPartitions(t, env.db, "rt"),
+				"rt buffered partitions should remain: no job targeted rt")
+			require.Equal(t, 50, countJobsInTable(t, env.db, "rt_buf", "partition-1"), "rt_buf should still hold jobs: no job targeted rt")
+			require.Equal(t, 0, countJobsInTable(t, env.db, "rt", "partition-1"), "rt primary should be empty: no job targeted rt")
 		})
 
 		t.Run("flush initial error", func(t *testing.T) {
@@ -963,4 +1060,36 @@ func (m *mockEtcdClient) Put(ctx context.Context, key, val string, opts ...clien
 		return nil, m.putErr
 	}
 	return m.Client.Put(ctx, key, val, opts...)
+}
+
+// idBuffer is a partitionbuffer.JobsDBPartitionBuffer whose only meaningful method is Identifier.
+type idBuffer struct {
+	partitionbuffer.JobsDBPartitionBuffer
+	id string
+}
+
+func (b idBuffer) Identifier() string { return b.id }
+
+func TestResolveBufferedJobsDBs(t *testing.T) {
+	groups := [][]partitionbuffer.JobsDBPartitionBuffer{
+		{idBuffer{id: "rt"}, idBuffer{id: "batch_rt"}},
+		{idBuffer{id: "gw"}},
+	}
+	m := &migrator{logger: logger.NOP, bufferedJobsDBs: groups}
+
+	t.Run("legacy: empty jobsDB resolves to all grouped buffers", func(t *testing.T) {
+		got := m.resolveBufferedJobsDBs("")
+		require.Equal(t, groups, got)
+	})
+
+	t.Run("fan-out: named jobsDB resolves to a single one-member group", func(t *testing.T) {
+		got := m.resolveBufferedJobsDBs("gw")
+		require.Len(t, got, 1)
+		require.Len(t, got[0], 1)
+		require.Equal(t, "gw", got[0][0].Identifier())
+	})
+
+	t.Run("unknown jobsDB returns nil and logs a warning", func(t *testing.T) {
+		require.Nil(t, m.resolveBufferedJobsDBs("nope"))
+	})
 }

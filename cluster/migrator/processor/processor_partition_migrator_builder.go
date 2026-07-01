@@ -96,13 +96,14 @@ func (b *ProcessorPartitionMigratorBuilder) Build() (PartitionMigrator, error) {
 	}
 
 	return &processorPartitionMigrator{
-		nodeIndex:      b.nodeIndex,
-		nodeName:       b.nodeName,
-		config:         b.config,
-		logger:         b.logger,
-		stats:          b.stats,
-		etcdClient:     b.etcdClient,
-		sourceMigrator: b.sourceMigrator,
-		targetMigrator: b.targetMigrator,
+		nodeIndex:           b.nodeIndex,
+		nodeName:            b.nodeName,
+		config:              b.config,
+		logger:              b.logger,
+		stats:               b.stats,
+		etcdClient:          b.etcdClient,
+		sourceMigrator:      b.sourceMigrator,
+		targetMigrator:      b.targetMigrator,
+		jobsDBFanoutEnabled: b.config.GetReloadableBoolVar(false, "PartitionMigration.jobsDBFanoutEnabled"),
 	}, nil
 }
