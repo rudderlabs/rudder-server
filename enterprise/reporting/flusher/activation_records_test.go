@@ -72,6 +72,7 @@ func generateActivationRecordsReport(reportedAt time.Time, workspaceId, destinat
 		WorkspaceID:    workspaceId,
 		SourceID:       "source1",
 		DestinationID:  destinationId,
+		Origin:         "origin1",
 		InstanceID:     "instance1",
 		FingerprintHLL: &fingerprintHLL,
 	}
@@ -85,14 +86,16 @@ func addActivationRecordsReportsToDB(ctx context.Context, db *sql.DB, reports []
 				workspace_id,
 				source_id,
 				destination_id,
+				origin,
 				instance_id,
 				fingerprint_hll
-			) VALUES ($1, $2, $3, $4, $5, $6)
+			) VALUES ($1, $2, $3, $4, $5, $6, $7)
 		`,
 			report.ReportedAt,
 			report.WorkspaceID,
 			report.SourceID,
 			report.DestinationID,
+			report.Origin,
 			report.InstanceID,
 			hllToStringAR(report.FingerprintHLL),
 		)
@@ -199,6 +202,7 @@ func TestActivationRecordsFlush(t *testing.T) {
 			"workspaceId":    "workspace1",
 			"sourceId":       "source1",
 			"destinationId":  "dest1",
+			"origin":         "origin1",
 			"instanceId":     "instance1",
 			"fingerprintHLL": hllToStringAR(reports[0].FingerprintHLL),
 		},
@@ -207,6 +211,7 @@ func TestActivationRecordsFlush(t *testing.T) {
 			"workspaceId":    "workspace1",
 			"sourceId":       "source1",
 			"destinationId":  "dest2",
+			"origin":         "origin1",
 			"instanceId":     "instance1",
 			"fingerprintHLL": hllToStringAR(reports[2].FingerprintHLL),
 		},
@@ -215,6 +220,7 @@ func TestActivationRecordsFlush(t *testing.T) {
 			"workspaceId":    "workspace2",
 			"sourceId":       "source1",
 			"destinationId":  "dest1",
+			"origin":         "origin1",
 			"instanceId":     "instance1",
 			"fingerprintHLL": hllToStringAR(reports[3].FingerprintHLL),
 		},
@@ -244,6 +250,7 @@ func TestActivationRecordsFlush(t *testing.T) {
 			assert.Equal(t, expectedPayload["workspaceId"], item["workspaceId"])
 			assert.Equal(t, expectedPayload["sourceId"], item["sourceId"])
 			assert.Equal(t, expectedPayload["destinationId"], item["destinationId"])
+			assert.Equal(t, expectedPayload["origin"], item["origin"])
 			assert.Equal(t, expectedPayload["instanceId"], item["instanceId"])
 			assert.Equal(t, expectedPayload["fingerprintHLL"], item["fingerprintHLL"])
 		}

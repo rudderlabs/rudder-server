@@ -29,7 +29,7 @@ type singularEventBatch struct {
 
 // buildGatewayPayload serializes one event into the exact gateway EventPayload
 // shape using the same marshaller the gateway uses (jsonrs). The activation
-// fingerprint lives at batch[0].context.activation.* (mirror
+// fingerprint/origin live at batch[0].context.activation.* (mirror
 // gateway/handle.go:516-532). activation is the inner map so individual keys
 // can be omitted to exercise fail-closed paths.
 func buildGatewayPayload(t *testing.T, activation map[string]any) []byte {
@@ -88,6 +88,7 @@ func TestWireCompat(t *testing.T) {
 		Parameters:  buildGatewayParams(t),
 		EventPayload: buildGatewayPayload(t, map[string]any{
 			"fingerprint": "fp-abc",
+			"origin":      "data-graph-audience",
 		}),
 	}
 
@@ -95,14 +96,15 @@ func TestWireCompat(t *testing.T) {
 	require.Len(t, reports, 1)
 
 	// The reporter must resolve the full grain from the gateway's actual on-the-wire
-	// bytes: workspace from the job, source/destination from Parameters, and the
-	// fingerprint from batch[0].context.activation in the EventPayload (the read uses
-	// bracket notation "[0]" — a bare "0" would read "" and undercount). The reporter
-	// unit tests assert this against hand-written JSON; here it is the real jsonrs
-	// envelope, so a serialization drift is caught.
+	// bytes: workspace from the job, source/destination from Parameters, and
+	// fingerprint/origin from batch[0].context.activation in the EventPayload (the
+	// read uses bracket notation "[0]" — a bare "0" would read "" and undercount).
+	// The reporter unit tests assert this against hand-written JSON; here it is the
+	// real jsonrs envelope, so a serialization drift is caught.
 	require.Equal(t, "ws-1", reports[0].WorkspaceID)
 	require.Equal(t, "src-1", reports[0].SourceID)
 	require.Equal(t, "dst-1", reports[0].DestinationID)
+	require.Equal(t, "data-graph-audience", reports[0].Origin)
 
 	// HLL wire-compat: encode via the production path (ReportActivationRecords stores
 	// hllToString(hll), which hex-encodes hll.ToBytes()), then decode the raw bytes
