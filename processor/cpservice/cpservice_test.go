@@ -96,7 +96,7 @@ func TestForwardOverConnection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	_, err = cpRouter.forward(ctx, &proto.ForwardRequest{
+	resp, err := cpRouter.forward(ctx, &proto.ForwardRequest{
 		Op:          proto.Op_OP_TEST_RUN,
 		WorkspaceId: "ws-1",
 		Payload:     []byte(`{"code":"x"}`),
