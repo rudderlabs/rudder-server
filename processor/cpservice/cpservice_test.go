@@ -80,7 +80,7 @@ func TestForwardReturnsUnimplemented(t *testing.T) {
 	defer cancel()
 
 	_, err = cpRouter.forward(ctx, &proto.ForwardRequest{
-		Op:          "test",
+		Op:          proto.Op_OP_TEST,
 		WorkspaceId: "ws-1",
 		Payload:     []byte(`{}`),
 	})
