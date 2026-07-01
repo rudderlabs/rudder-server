@@ -444,24 +444,30 @@ func startOpenFaasFlask(
 }
 
 // startRudderTransformer starts a rudder-transformer container configured to use
-// the mock config backend and mock OpenFaaS gateway.
+// the mock config backend and mock OpenFaaS gateway. Optional extra environment
+// variables can be passed (e.g. "TRANSFORMER_TEST_MODE=true").
 // Returns the container resource and the URL to reach it from the host.
 func startRudderTransformer(
 	t *testing.T, pool *dockertest.Pool,
 	configBackendURL, openfaasGatewayURL string,
+	extraEnv ...string,
 ) string {
 	t.Helper()
 	const containerPort = "9090"
 	cfg := newContainerConfig(t, containerPort)
+	env := []string{
+		"CONFIG_BACKEND_URL=" + toContainerURL(configBackendURL),
+		"OPENFAAS_GATEWAY_URL=" + toContainerURL(openfaasGatewayURL),
+		"PORT=" + cfg.portStr(containerPort),
+		"NODE_OPTIONS=--no-node-snapshot",
+	}
+	for _, e := range extraEnv {
+		env = append(env, e)
+	}
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "rudderstack/rudder-transformer",
-		Tag:        "latest",
-		Env: []string{
-			"CONFIG_BACKEND_URL=" + toContainerURL(configBackendURL),
-			"OPENFAAS_GATEWAY_URL=" + toContainerURL(openfaasGatewayURL),
-			"PORT=" + cfg.portStr(containerPort),
-			"NODE_OPTIONS=--no-node-snapshot",
-		},
+		Repository:   "rudderstack/rudder-transformer",
+		Tag:          "latest",
+		Env:          env,
 		ExtraHosts:   cfg.ExtraHosts,
 		PortBindings: cfg.PortBindings,
 	}, cfg.hostConfigFn)
