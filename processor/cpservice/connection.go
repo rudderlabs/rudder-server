@@ -41,7 +41,11 @@ type Connector struct {
 	log           logger.Logger
 	backendConfig backendconfig.BackendConfig
 	cm            *controlplane.ConnectionManager
-	lastURL       string
+	// applyConn drives the cp-router connection state (url, active). It defaults to
+	// cm.Apply and is overridable in tests so the Run subscribe→apply→stop loop can
+	// be exercised without dialing a real cp-router.
+	applyConn func(url string, active bool)
+	lastURL   string
 }
 
 // NewConnector builds the cp-router connection for the processor, registering
@@ -68,7 +72,7 @@ func NewConnector(
 		AuthInfo: controlplane.AuthInfo{
 			Service:         ServiceName,
 			ConnectionToken: connectionToken,
-			InstanceID:      conf.GetStringVar("1", "INSTANCE_ID"),
+			InstanceID:      misc.GetInstanceID(),
 			TokenType:       tokenType,
 			Labels:          labels,
 		},
@@ -77,7 +81,9 @@ func NewConnector(
 		Logger:          log,
 		RegisterService: func(srv *grpc.Server) { proto.RegisterProcessorServiceServer(srv, handler) },
 	}
-	return &Connector{log: log, backendConfig: backendConfig, cm: cm}, nil
+	c := &Connector{log: log, backendConfig: backendConfig, cm: cm}
+	c.applyConn = cm.Apply
+	return c, nil
 }
 
 // Run subscribes to backend config and keeps the cp-router connection in sync
@@ -109,7 +115,7 @@ func (c *Connector) apply(configData map[string]backendconfig.ConfigT) {
 		flags := wConfig.ConnectionFlags
 		if active, ok := flags.Services[ServiceName]; ok {
 			c.lastURL = flags.URL
-			c.cm.Apply(flags.URL, active)
+			c.applyConn(flags.URL, active)
 			return
 		}
 	}
@@ -117,6 +123,6 @@ func (c *Connector) apply(configData map[string]backendconfig.ConfigT) {
 
 func (c *Connector) stop() {
 	if c.lastURL != "" {
-		c.cm.Apply(c.lastURL, false)
+		c.applyConn(c.lastURL, false)
 	}
 }
