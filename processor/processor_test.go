@@ -1938,20 +1938,18 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 				},
 			}
 
-			// Inject context.activation into BOTH batch.0 (message-3) and batch.1 (message-4),
-			// the two messages that reach destination A, to assert the strip covers every
-			// destination-bound event in a multi-event batch.
-			//
-			// batch.0 (message-3): only our metering fingerprint — stripping it must leave
-			// the context.activation namespace empty, so the whole namespace is removed.
+			// The source for these jobs (SourceIDEnabledNoUT) is an event-stream (webhook)
+			// source, not reverse-ETL. MAR only stamps/strips context.activation.fingerprint
+			// on reverse-ETL sources, so here the strip is gated OFF: whatever a non-rETL event
+			// carries under context.activation — including a value shaped like our metering
+			// fingerprint — must reach the destination untouched. Inject into batch.0
+			// (message-3) and batch.1 (message-4), the two messages routed to destination A, to
+			// assert this across a multi-event batch.
 			unprocessedJobsList[4].EventPayload, _ = sjson.SetBytes(
 				unprocessedJobsList[4].EventPayload,
 				"batch.0.context.activation",
 				map[string]string{"fingerprint": "fp-1"},
 			)
-			// batch.1 (message-4): a customer-set field alongside our fingerprint — preprocessStage
-			// runs for every source type, so it must strip ONLY our fingerprint and preserve the
-			// customer's own context.activation data.
 			unprocessedJobsList[4].EventPayload, _ = sjson.SetBytes(
 				unprocessedJobsList[4].EventPayload,
 				"batch.1.context.activation",
@@ -2130,35 +2128,31 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 			Expect(c.mockTrackedUsersReporter.generateCalls[0].jobs).Should(Equal(unprocessedJobsList))
 			Expect(c.mockTrackedUsersReporter.reportCalls).To(HaveLen(1))
 			Expect(c.mockTrackedUsersReporter.reportCalls[0].reportedReports).Should(Equal(trackerUsersReports))
-			// MAR strips ONLY context.activation.fingerprint per-event in preprocessStage,
-			// so no destination-bound transformer input may carry the fingerprint; an
-			// activation namespace holding only our fingerprint is removed entirely, while a
-			// customer-set field under context.activation must survive. The captured slice
-			// holds every event routed to destination A (across the whole batch), not just the
-			// two we injected, so assert on all of them.
+			// The strip is gated on source category: for this non-rETL (webhook) source
+			// preprocessStage must NOT touch context.activation, so every destination-bound
+			// event keeps exactly what it carried. The captured slice holds every event routed
+			// to destination A (across the whole batch), not just the two we injected.
 			Expect(capturedDestinationEvents).ToNot(BeEmpty())
 			seenInjectedMessages := map[string]bool{}
 			for _, event := range capturedDestinationEvents {
 				ctxMap, _ := event.Message["context"].(map[string]any)
-				if activation, ok := ctxMap["activation"].(map[string]any); ok {
-					Expect(activation).ToNot(HaveKey("fingerprint"))
-				}
 				msgID, _ := event.Message["messageId"].(string)
 				switch msgID {
 				case "message-3":
-					// only our fingerprint was present, so the whole namespace is gone
-					Expect(ctxMap).ToNot(HaveKey("activation"))
-				case "message-4":
-					// fingerprint stripped, customer's own field preserved
+					// non-rETL source: fingerprint-shaped value is preserved untouched
 					Expect(ctxMap).To(HaveKey("activation"))
-					Expect(ctxMap["activation"]).To(Equal(map[string]any{"custom": "keep-me"}))
+					Expect(ctxMap["activation"]).To(Equal(map[string]any{"fingerprint": "fp-1"}))
+				case "message-4":
+					// non-rETL source: full context.activation preserved untouched
+					Expect(ctxMap).To(HaveKey("activation"))
+					Expect(ctxMap["activation"]).To(Equal(map[string]any{"fingerprint": "fp-2", "custom": "keep-me"}))
 				}
 				if msgID != "" {
 					seenInjectedMessages[msgID] = true
 				}
 			}
 			// Both messages we injected context.activation into (batch.0/message-3 and
-			// batch.1/message-4) must have reached the destination transformer (stripped).
+			// batch.1/message-4) must have reached the destination transformer (preserved).
 			Expect(seenInjectedMessages).To(HaveKey("message-3"))
 			Expect(seenInjectedMessages).To(HaveKey("message-4"))
 		})

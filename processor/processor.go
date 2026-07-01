@@ -84,6 +84,10 @@ const (
 	DestTransformation    = "DEST_TRANSFORMATION"
 	EventFilter           = "EVENT_FILTER"
 	sourceCategoryWebhook = "webhook"
+	// sourceCategoryWarehouse is the SourceDefinition.Category of reverse-ETL
+	// ("warehouse actions") sources — the only sources on which we stamp
+	// context.activation.fingerprint for MAR metering.
+	sourceCategoryWarehouse = "warehouse"
 )
 
 func NewHandle(c *config.Config, transformerClients transformer.TransformerClients) *Handle {
@@ -959,6 +963,32 @@ func (proc *Handle) getBackendEnabledDestinationTypes(sourceId string) map[strin
 		}
 	}
 	return enabledDestinationTypes
+}
+
+// stripActivationMetadata removes the context.activation fields that MAR metering
+// stamps on reverse-ETL events (fingerprint and origin), so these internal metering
+// values never leak to a destination. If that leaves context.activation empty, the
+// namespace is removed too. It is a no-op for non-reverse-ETL sources — we never stamp
+// there, so any context.activation is customer-owned data that must be preserved
+// untouched. Other keys under context.activation are left in place, since they can only
+// be customer-set.
+func stripActivationMetadata(event types.SingularEventT, isReverseETLSource bool) {
+	if !isReverseETLSource {
+		return
+	}
+	ctxMap, ok := event["context"].(map[string]any)
+	if !ok {
+		return
+	}
+	activation, ok := ctxMap["activation"].(map[string]any)
+	if !ok {
+		return
+	}
+	delete(activation, "fingerprint")
+	delete(activation, "origin")
+	if len(activation) == 0 {
+		delete(ctxMap, "activation")
+	}
 }
 
 func getTimestampFromEvent(event types.SingularEventT, field string, defaultTimestamp time.Time) time.Time {
@@ -1856,18 +1886,16 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			}
 		}
 
+		// context.activation (fingerprint + origin) is stamped only on reverse-ETL
+		// (warehouse) sources for MAR metering. Strip it before delivery so these internal
+		// metering values never leak downstream — gated on source category so we never
+		// touch a customer-set context.activation on other source types. Metering reads
+		// these from the raw job payloads (see GenerateReportsFromJobs), which are left
+		// intact, so stripping these destination-bound copies is safe.
+		isReverseETLSource := strings.EqualFold(source.SourceDefinition.Category, sourceCategoryWarehouse)
+
 		for _, singularEvent := range gatewayBatchEvent.Batch {
-			// Strip only the fingerprint we stamp for MAR metering; context is a
-			// customer-extensible object and this code runs for every source type
-			// (not just rETL), so we must not clobber a customer-set context.activation.
-			if ctxMap, ok := singularEvent["context"].(map[string]any); ok {
-				if activation, ok := ctxMap["activation"].(map[string]any); ok {
-					delete(activation, "fingerprint")
-					if len(activation) == 0 {
-						delete(ctxMap, "activation")
-					}
-				}
-			}
+			stripActivationMetadata(singularEvent, isReverseETLSource)
 			messageId := stringify.Any(singularEvent["messageId"])
 			payloadFunc := ro.Memoize(func() json.RawMessage {
 				payloadBytes, err := jsonrs.Marshal(singularEvent)
