@@ -70,7 +70,8 @@ func (s *Service) ensureScaled(ctx context.Context, workspaceID string) error {
 			return nil, err
 		}
 		if count > 0 {
-			return nil, nil
+			// Already scaled; no-op.
+			return struct{}{}, nil
 		}
 		return nil, s.scaler.SetReplicaCount(ctx, workspaceID, s.scaleTo.Load())
 	})

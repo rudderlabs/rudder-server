@@ -170,13 +170,11 @@ func TestForward(t *testing.T) {
 		const n = 20
 		var wg sync.WaitGroup
 		for range n {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				_, err := svc.Forward(context.Background(),
 					&proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: "ws-1", Payload: []byte(`{}`)})
 				assert.NoError(t, err)
-			}()
+			})
 		}
 		// Let the goroutines pile onto the in-flight scale check before releasing.
 		require.Eventually(t, func() bool { return scaler.waiting.Load() > 0 }, time.Second, time.Millisecond)
