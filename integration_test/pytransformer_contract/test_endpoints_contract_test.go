@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/registry"
 
 	"github.com/rudderlabs/rudder-server/processor/usertransformer"
@@ -230,15 +233,29 @@ func startOpenFaasFlaskFprocess(
 	t.Helper()
 	const containerPort = "8080"
 	cfg := newContainerConfig(t, containerPort)
+	env := []string{
+		"fprocess=" + fprocess,
+		"port=" + cfg.portStr(containerPort),
+	}
+	// The flask runtime starts a Prometheus metrics server on a fixed port
+	// (default 9091). With host networking (Linux/CI) every flask container
+	// shares the host namespace, so concurrent containers (e.g. fn-ast and a
+	// per-request fn-test) collide on that port — the loser crashes and its
+	// fwatchdog exits, surfacing as "connection refused" on the invoke port.
+	// Give each container a unique metrics port to avoid the clash.
+	if runtime.GOOS != "darwin" {
+		metricsPort, err := kithelper.GetFreePort()
+		if err != nil {
+			return "", nil, fmt.Errorf("allocating metrics port: %w", err)
+		}
+		env = append(env, "METRICS_PORT="+strconv.Itoa(metricsPort))
+	}
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/openfaas-flask",
 		// Pinned to match the production version
 		Tag:  "1.13.2",
 		Auth: registry.AuthConfiguration(),
-		Env: []string{
-			"fprocess=" + fprocess,
-			"port=" + cfg.portStr(containerPort),
-		},
+		Env:  env,
 		// The image does not EXPOSE any port, and Docker ignores port bindings
 		// for unexposed ports — required for bridge networking (macOS).
 		ExposedPorts: []string{containerPort + "/tcp"},
