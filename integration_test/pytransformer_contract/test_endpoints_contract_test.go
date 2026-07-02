@@ -5,22 +5,23 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/registry"
 
 	"github.com/rudderlabs/rudder-server/processor/usertransformer"
@@ -113,8 +114,15 @@ func (g *dynamicFaasGateway) handle(w http.ResponseWriter, r *http.Request) {
 		if name == "" {
 			name = req.Name
 		}
-		g.t.Logf("DynamicFaasGateway: deploying %q with fprocess %q", name, req.EnvProcess)
-		url, container, err := startOpenFaasFlaskFprocess(g.t, g.pool, req.EnvProcess)
+		// rudder-transformer builds the fprocess with the config-backend URL as
+		// the host sees it (127.0.0.1 on Linux). The flask container runs in its
+		// own bridge namespace, so rewrite host-local addresses to
+		// host.docker.internal so the function can reach the host. On macOS the
+		// URL is already host.docker.internal, so this is a no-op there.
+		envProcess := strings.ReplaceAll(req.EnvProcess, "127.0.0.1", "host.docker.internal")
+		envProcess = strings.ReplaceAll(envProcess, "localhost", "host.docker.internal")
+		g.t.Logf("DynamicFaasGateway: deploying %q with fprocess %q", name, envProcess)
+		url, container, err := startOpenFaasFlaskFprocess(g.t, g.pool, envProcess)
 		if err != nil {
 			g.t.Errorf("DynamicFaasGateway: starting flask container for %q: %v", name, err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -245,36 +253,32 @@ func startOpenFaasFlaskFprocess(
 ) (string, *dockertest.Resource, error) {
 	t.Helper()
 	const containerPort = "8080"
-	cfg := newContainerConfig(t, containerPort)
-	env := []string{
-		"fprocess=" + fprocess,
-		"port=" + cfg.portStr(containerPort),
-	}
-	// of-watchdog runs a Prometheus metrics server on a fixed port (env
-	// metrics_port, default 8081). With host networking (Linux/CI) every flask
-	// container shares the host namespace, so concurrent containers (the
-	// long-lived fn-ast and a per-request fn-test) collide on 8081 —
-	// of-watchdog panics with "bind: address already in use", the container
-	// exits, and the invoke port never comes up ("connection refused"). Give
-	// each container a unique metrics port. macOS isolates namespaces, so it
-	// never collides there.
-	metricsPort, err := kithelper.GetFreePort()
-	if err != nil {
-		return "", nil, fmt.Errorf("allocating metrics port: %w", err)
-	}
-	env = append(env, "metrics_port="+strconv.Itoa(metricsPort))
+	// Each flask container runs in its own bridge-network namespace — never host
+	// networking — because of-watchdog binds a HARD-CODED Prometheus metrics
+	// port 8081 that is not configurable via env. Under host networking two
+	// flask containers (the long-lived fn-ast and a per-request fn-test) share
+	// the host namespace and collide on 8081: of-watchdog panics with
+	// "bind: address already in use", the container exits, and the invoke port
+	// never comes up ("connection refused"). A per-container namespace keeps
+	// each 8081 private. host.docker.internal (host-gateway) lets the function
+	// reach the host's config backend from inside the namespace.
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/openfaas-flask",
 		// Pinned to match the production version
 		Tag:  "1.13.2",
 		Auth: registry.AuthConfiguration(),
-		Env:  env,
+		Env: []string{
+			"fprocess=" + fprocess,
+			"port=" + containerPort,
+		},
 		// The image does not EXPOSE any port, and Docker ignores port bindings
-		// for unexposed ports — required for bridge networking (macOS).
+		// for unexposed ports.
 		ExposedPorts: []string{containerPort + "/tcp"},
-		ExtraHosts:   cfg.ExtraHosts,
-		PortBindings: cfg.PortBindings,
-	}, cfg.hostConfigFn)
+		ExtraHosts:   []string{"host.docker.internal:host-gateway"},
+		PortBindings: map[docker.Port][]docker.PortBinding{
+			docker.Port(containerPort + "/tcp"): {{HostIP: "127.0.0.1", HostPort: "0"}},
+		},
+	})
 	if err != nil {
 		return "", nil, err
 	}
@@ -282,7 +286,11 @@ func startOpenFaasFlaskFprocess(
 		// Best effort: functions deleted by rudder-transformer are already gone.
 		_ = pool.Purge(container)
 	})
-	return cfg.url(container, containerPort), container, nil
+	url := fmt.Sprintf("http://%s:%s",
+		container.GetBoundIP(containerPort+"/tcp"),
+		container.GetPort(containerPort+"/tcp"),
+	)
+	return url, container, nil
 }
 
 // TestPyTransformerTestEndpoints pins the wire contract of the four
@@ -328,7 +336,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 	// (getLibraryCodeV1: name/handleName), openfaas-flask-base (--lvids at
 	// startup: importName/code) and pyt (fetch_library: importName/code) — one
 	// response body serves all three.
-	configBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	configBackendHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/transformationLibrary/getByVersionId" {
 			t.Logf("ConfigBackend: unexpected path %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -349,8 +357,29 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			"code":       libraryCode,
 			"language":   "pythonfaas",
 		})
-	}))
+	})
+	// The flask containers run in isolated bridge namespaces and reach this
+	// server through host.docker.internal. On Linux that resolves to the docker
+	// bridge IP, so the server must listen on all interfaces — httptest's
+	// default 127.0.0.1 binding is unreachable from inside the container. macOS
+	// Docker Desktop forwards host.docker.internal to the host loopback, so the
+	// default binding is fine there.
+	configBackend := httptest.NewUnstartedServer(configBackendHandler)
+	if runtime.GOOS != "darwin" {
+		ln, lerr := net.Listen("tcp", "0.0.0.0:0")
+		require.NoError(t, lerr)
+		_ = configBackend.Listener.Close()
+		configBackend.Listener = ln
+	}
+	configBackend.Start()
 	defer configBackend.Close()
+	// Host-networked containers (rudder-transformer, pytransformer) and the test
+	// process reach the backend on the loopback; a wildcard listener reports
+	// 0.0.0.0, so pin the host explicitly. toContainerURL later rewrites this to
+	// host.docker.internal for the containers that need it.
+	_, configBackendPort, err := net.SplitHostPort(configBackend.Listener.Addr().String())
+	require.NoError(t, err)
+	configBackendURL := "http://127.0.0.1:" + configBackendPort
 
 	gateway := newDynamicFaasGateway(t, pool)
 
@@ -359,11 +388,11 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 		transformerURL, pyTransformerURL string
 	)
 	wg.Go(func() {
-		transformerURL = startRudderTransformer(t, pool, configBackend.URL, gateway.server.URL,
+		transformerURL = startRudderTransformer(t, pool, configBackendURL, gateway.server.URL,
 			"TRANSFORMER_TEST_MODE=true")
 	})
 	wg.Go(func() {
-		pyTransformerURL = startRudderPytransformer(t, pool, configBackend.URL)
+		pyTransformerURL = startRudderPytransformer(t, pool, configBackendURL)
 	})
 	wg.Go(func() {
 		// The AST routes invoke the long-lived fn-ast function (versionId

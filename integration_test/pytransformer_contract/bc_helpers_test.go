@@ -461,9 +461,7 @@ func startRudderTransformer(
 		"PORT=" + cfg.portStr(containerPort),
 		"NODE_OPTIONS=--no-node-snapshot",
 	}
-	for _, e := range extraEnv {
-		env = append(env, e)
-	}
+	env = append(env, extraEnv...)
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "rudderstack/rudder-transformer",
 		Tag:          "latest",
