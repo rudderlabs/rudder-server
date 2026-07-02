@@ -244,13 +244,6 @@ func startOpenFaasFlaskFprocess(
 	return cfg.url(container, containerPort), container, nil
 }
 
-// stripJSErrorPrefix removes the "Error: " prefix rudder-transformer's test
-// routes surface for validation errors: they respond with the first line of
-// error.stack ("Error: <message>"), while pyt returns the bare message.
-func stripJSErrorPrefix(s string) string {
-	return strings.TrimPrefix(s, "Error: ")
-}
-
 // TestPyTransformerTestEndpoints pins the wire contract of the four
 // control-plane endpoints introduced for the Python transformation-test flow,
 // comparing the new architecture against the old one:
@@ -573,7 +566,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			// BadCodeError (its import extraction parses the code before the
 			// function is even deployed), pyt surfaces its runtime compiler's
 			// message. Both must carry Python's syntax diagnosis.
-			oldErr := stripJSErrorPrefix(decodeError(t, oldBody))
+			oldErr := decodeError(t, oldBody)
 			newErr := decodeError(t, newBody)
 			t.Logf("compile error — old: %q new: %q", oldErr, newErr)
 			require.Contains(t, oldErr, "expected ':'")
@@ -592,8 +585,8 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 
 			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
 			require.Equal(t, oldStatus, newStatus)
-			require.Equal(t, "Invalid Request. Missing parameters in transformation code block", decodeError(t, newBody))
-			require.Equal(t, stripJSErrorPrefix(decodeError(t, oldBody)), decodeError(t, newBody))
+			require.Equal(t, "Error: Invalid Request. Missing parameters in transformation code block", decodeError(t, newBody))
+			require.Equal(t, decodeError(t, oldBody), decodeError(t, newBody))
 		})
 
 		t.Run("should return the verbatim missing-events error", func(t *testing.T) {
@@ -610,47 +603,39 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 
 			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
 			require.Equal(t, oldStatus, newStatus)
-			require.Equal(t, "Invalid request. Missing events", decodeError(t, newBody))
-			require.Equal(t, stripJSErrorPrefix(decodeError(t, oldBody)), decodeError(t, newBody))
+			require.Equal(t, "Error: Invalid request. Missing events", decodeError(t, newBody))
+			require.Equal(t, decodeError(t, oldBody), decodeError(t, newBody))
 		})
 
-		// Known strictness divergence: pyt decodes each event's metadata into a
-		// typed struct (MetadataPartial) when parsing the request body, so a
-		// type violation there fails the whole request with 400 "Invalid JSON".
-		// The old architecture treats metadata as opaque JSON and happily runs
-		// the transformation. Production rudder-server always sends well-typed
-		// metadata; this only surfaces for hand-crafted control-plane payloads.
-		t.Run("should reject typed-metadata violations the old architecture accepts", func(t *testing.T) {
-			code := "def transformEvent(event, metadata):\n    event['foo'] = 'bar'\n    return event"
-			cases := []struct {
-				name     string
-				metadata any
-			}{
-				{"messageId as number", map[string]any{"messageId": 123}},
-				{"jobId as string", map[string]any{"messageId": "m1", "jobId": "not-a-number"}},
-				{"metadata as non-object", "not-an-object"},
+		// Known security tightening: pyt compiles with RestrictedPython 8, whose
+		// transformer blocks generator/frame introspection attributes
+		// (INSPECT_ATTRIBUTES — the CVE-2023-37271 sandbox-escape fix: gi_frame,
+		// f_back, cr_frame, ...). The old architecture runs RestrictedPython 6.1,
+		// which predates the fix and only guards underscore-prefixed names, so
+		// the same code compiles AND executes there.
+		t.Run("should reject frame-introspection code the old architecture compiles and runs", func(t *testing.T) {
+			payload := map[string]any{
+				"trRevCode": map[string]any{
+					"code":        "def transformEvent(event, metadata):\n    gen = (x for x in [1])\n    event['has_frame'] = gen.gi_frame is None\n    return event",
+					"codeVersion": "1",
+					"language":    "pythonfaas",
+				},
+				"events": []map[string]any{
+					{"message": map[string]any{"messageId": "m1"}, "metadata": map[string]any{"messageId": "m1"}},
+				},
 			}
-			for _, tc := range cases {
-				t.Run(tc.name, func(t *testing.T) {
-					payload := map[string]any{
-						"trRevCode": map[string]any{"code": code, "codeVersion": "1", "language": "pythonfaas"},
-						"events": []map[string]any{
-							{"message": map[string]any{"messageId": "m1"}, "metadata": tc.metadata},
-						},
-					}
-					oldStatus, oldBody := callOld(t, "/transformation/test", payload)
-					newStatus, newBody := callNew(t, client.Test, payload)
+			oldStatus, oldBody := callOld(t, "/transformation/test", payload)
+			newStatus, newBody := callNew(t, client.Test, payload)
 
-					require.Equal(t, http.StatusOK, oldStatus, "old architecture accepts, body: %s", oldBody)
-					oldResp := decodeFlow(t, oldBody)
-					require.Len(t, oldResp.TransformedEvents, 1)
-					require.Equal(t, "bar", oldResp.TransformedEvents[0]["foo"],
-						"old architecture runs the transformation despite the metadata type violation")
+			require.Equal(t, http.StatusOK, oldStatus, "old architecture accepts, body: %s", oldBody)
+			oldResp := decodeFlow(t, oldBody)
+			require.Len(t, oldResp.TransformedEvents, 1)
+			require.Equal(t, false, oldResp.TransformedEvents[0]["has_frame"],
+				"old architecture executed the gi_frame access")
 
-					require.Equal(t, http.StatusBadRequest, newStatus, "pyt rejects, body: %s", newBody)
-					require.Contains(t, decodeError(t, newBody), "Invalid JSON")
-				})
-			}
+			require.Equal(t, http.StatusBadRequest, newStatus, "pyt rejects at compile, body: %s", newBody)
+			require.Contains(t, decodeError(t, newBody), "gi_frame")
+			require.Contains(t, decodeError(t, newBody), "restricted name")
 		})
 
 		// pyt-only: in the old architecture an unknown library version crashes
@@ -768,8 +753,8 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 
 			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
 			require.Equal(t, oldStatus, newStatus)
-			require.Equal(t, "Invalid Request. Missing parameters in transformation code block", decodeError(t, newBody))
-			require.Equal(t, stripJSErrorPrefix(decodeError(t, oldBody)), decodeError(t, newBody))
+			require.Equal(t, "Error: Invalid Request. Missing parameters in transformation code block", decodeError(t, newBody))
+			require.Equal(t, decodeError(t, oldBody), decodeError(t, newBody))
 		})
 
 		t.Run("should return the verbatim missing-events error", func(t *testing.T) {
@@ -787,8 +772,8 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 
 			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
 			require.Equal(t, oldStatus, newStatus)
-			require.Equal(t, "Invalid request. Missing events", decodeError(t, newBody))
-			require.Equal(t, stripJSErrorPrefix(decodeError(t, oldBody)), decodeError(t, newBody))
+			require.Equal(t, "Error: Invalid request. Missing events", decodeError(t, newBody))
+			require.Equal(t, decodeError(t, oldBody), decodeError(t, newBody))
 		})
 	})
 
