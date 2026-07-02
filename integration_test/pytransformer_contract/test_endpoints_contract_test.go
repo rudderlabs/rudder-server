@@ -686,7 +686,6 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"codeRevision": map[string]any{
 					"code":        "def transformEvent(event, metadata):\n    event['foo'] = 'bar'\n    return event",
 					"language":    "pythonfaas",
-					"versionId":   "v1",
 					"codeVersion": "1",
 				},
 				"input": []map[string]any{
@@ -713,7 +712,6 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"codeRevision": map[string]any{
 					"code":        "import mathhelper\ndef transformEvent(event, metadata):\n    event['doubled'] = mathhelper.double(event['value'])\n    event['secret'] = getCredential('API_KEY')\n    return event",
 					"language":    "pythonfaas",
-					"versionId":   "v1",
 					"codeVersion": "1",
 				},
 				"input": []map[string]any{
@@ -743,7 +741,6 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"codeRevision": map[string]any{
 					"code":        "def transformEvent(event, metadata):\n    raise ValueError('boom')",
 					"language":    "pythonfaas",
-					"versionId":   "v1",
 					"codeVersion": "1",
 				},
 				"input": []map[string]any{
@@ -774,7 +771,6 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"codeRevision": map[string]any{
 					"code":        "def transformEvent(event, metadata):\n    event['doubled'] = event['n'] * 2\n    return event",
 					"language":    "pythonfaas",
-					"versionId":   "v1",
 					"codeVersion": "1",
 				},
 				"input": []map[string]any{
@@ -805,7 +801,6 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"codeRevision": map[string]any{
 					"code":        "def transformEvent(event, metadata):\n    event['foo'] = 'bar'\n    return event",
 					"language":    "pythonfaas",
-					"versionId":   "v1",
 					"codeVersion": "1",
 				},
 				"input": []map[string]any{
@@ -845,7 +840,6 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"codeRevision": map[string]any{
 					"code":        "def transformEvent(event, metadata):\n    return event",
 					"language":    "pythonfaas",
-					"versionId":   "v1",
 					"codeVersion": "1",
 				},
 				"input": []map[string]any{},
