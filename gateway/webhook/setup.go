@@ -119,6 +119,7 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 	)
 	ctx, cancel := context.WithCancel(context.Background())
 	webhook.backgroundCancel = cancel
+	webhook.ctx = ctx
 
 	webhook.statReporterCreator = statReporterCreator
 
