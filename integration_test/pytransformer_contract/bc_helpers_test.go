@@ -590,12 +590,13 @@ func dumpContainerLogs(t *testing.T, pool *dockertest.Pool, container *dockertes
 	t.Logf("=== %s container logs ===\n%s=== end %s logs ===", name, buf.String(), name)
 }
 
-// waitForOpenFaasFlask polls the openfaas-flask-base fwatchdog health endpoint.
-// fwatchdog responds to GET / with X-REQUEST-TYPE: HEALTH-CHECK header.
-func waitForOpenFaasFlask(t *testing.T, pool *dockertest.Pool, baseURL string) {
-	t.Helper()
-	t.Logf("Waiting for openfaas-flask-base at %s to be healthy...", baseURL)
-	err := pool.Retry(func() error {
+// pollOpenFaasFlaskHealthy polls the openfaas-flask-base fwatchdog health
+// endpoint until it returns 200. fwatchdog responds to GET / with the
+// X-REQUEST-TYPE: HEALTH-CHECK header. It returns an error instead of failing
+// the test so it is safe to call from a non-test goroutine (e.g. the dynamic
+// gateway's HTTP handler).
+func pollOpenFaasFlaskHealthy(pool *dockertest.Pool, baseURL string) error {
+	return pool.Retry(func() error {
 		req, err := http.NewRequest(http.MethodGet, baseURL+"/", nil)
 		if err != nil {
 			return err
@@ -612,7 +613,14 @@ func waitForOpenFaasFlask(t *testing.T, pool *dockertest.Pool, baseURL string) {
 		}
 		return nil
 	})
-	require.NoError(t, err, "openfaas-flask-base failed to become healthy")
+}
+
+// waitForOpenFaasFlask polls the openfaas-flask-base fwatchdog health endpoint.
+// fwatchdog responds to GET / with X-REQUEST-TYPE: HEALTH-CHECK header.
+func waitForOpenFaasFlask(t *testing.T, pool *dockertest.Pool, baseURL string) {
+	t.Helper()
+	t.Logf("Waiting for openfaas-flask-base at %s to be healthy...", baseURL)
+	require.NoError(t, pollOpenFaasFlaskHealthy(pool, baseURL), "openfaas-flask-base failed to become healthy")
 	t.Logf("openfaas-flask-base is healthy at %s", baseURL)
 }
 
