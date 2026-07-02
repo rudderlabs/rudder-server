@@ -385,6 +385,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	if err != nil {
 		panic(err)
 	}
+	defer func() { _ = outputFile.Close() }()
 
 	brt.logger.Debugn("BRT: Starting upload to", logger.NewStringField("provider", provider))
 	var folderName string
