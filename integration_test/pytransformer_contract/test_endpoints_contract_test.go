@@ -94,6 +94,12 @@ func (g *dynamicFaasGateway) lookup(name string) (string, bool) {
 	return url, ok
 }
 
+func (g *dynamicFaasGateway) lookupContainer(name string) *dockertest.Resource {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.containers[name]
+}
+
 func (g *dynamicFaasGateway) handle(w http.ResponseWriter, r *http.Request) {
 	switch {
 	// Deploy function: start a flask-base container with the deployed envProcess.
@@ -208,9 +214,16 @@ func (g *dynamicFaasGateway) handle(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			defer func() { _ = resp.Body.Close() }()
+			respBody, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				g.t.Logf("DynamicFaasGateway: invoke %q returned %d: %s", name, resp.StatusCode, respBody)
+				if c := g.lookupContainer(name); c != nil {
+					dumpContainerLogs(g.t, g.pool, c, name)
+				}
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(resp.StatusCode)
-			_, _ = io.Copy(w, resp.Body)
+			_, _ = w.Write(respBody)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -451,7 +464,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			newStatus, newBody := callNew(t, client.Test, payload)
 
 			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus)
+			require.Equal(t, oldStatus, newStatus, "old status %d, old body: %s", oldStatus, oldBody)
 			resp := decodeFlow(t, newBody)
 			require.Len(t, resp.TransformedEvents, 2)
 			for _, ev := range resp.TransformedEvents {
