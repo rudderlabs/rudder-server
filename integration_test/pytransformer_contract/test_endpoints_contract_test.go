@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -251,19 +250,19 @@ func startOpenFaasFlaskFprocess(
 		"fprocess=" + fprocess,
 		"port=" + cfg.portStr(containerPort),
 	}
-	// The flask runtime starts a Prometheus metrics server on a fixed port
-	// (default 9091). With host networking (Linux/CI) every flask container
-	// shares the host namespace, so concurrent containers (e.g. fn-ast and a
-	// per-request fn-test) collide on that port — the loser crashes and its
-	// fwatchdog exits, surfacing as "connection refused" on the invoke port.
-	// Give each container a unique metrics port to avoid the clash.
-	if runtime.GOOS != "darwin" {
-		metricsPort, err := kithelper.GetFreePort()
-		if err != nil {
-			return "", nil, fmt.Errorf("allocating metrics port: %w", err)
-		}
-		env = append(env, "METRICS_PORT="+strconv.Itoa(metricsPort))
+	// of-watchdog runs a Prometheus metrics server on a fixed port (env
+	// metrics_port, default 8081). With host networking (Linux/CI) every flask
+	// container shares the host namespace, so concurrent containers (the
+	// long-lived fn-ast and a per-request fn-test) collide on 8081 —
+	// of-watchdog panics with "bind: address already in use", the container
+	// exits, and the invoke port never comes up ("connection refused"). Give
+	// each container a unique metrics port. macOS isolates namespaces, so it
+	// never collides there.
+	metricsPort, err := kithelper.GetFreePort()
+	if err != nil {
+		return "", nil, fmt.Errorf("allocating metrics port: %w", err)
 	}
+	env = append(env, "metrics_port="+strconv.Itoa(metricsPort))
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/openfaas-flask",
 		// Pinned to match the production version
