@@ -968,14 +968,11 @@ func (proc *Handle) getBackendEnabledDestinationTypes(sourceId string) map[strin
 // stripActivationMetadata removes the context.activation fields that MAR metering
 // stamps on reverse-ETL events (fingerprint and origin), so these internal metering
 // values never leak to a destination. If that leaves context.activation empty, the
-// namespace is removed too. It is a no-op for non-reverse-ETL sources — we never stamp
-// there, so any context.activation is customer-owned data that must be preserved
-// untouched. Other keys under context.activation are left in place, since they can only
-// be customer-set.
-func stripActivationMetadata(event types.SingularEventT, isReverseETLSource bool) {
-	if !isReverseETLSource {
-		return
-	}
+// namespace is removed too. Callers must gate this on reverse-ETL sources — we never
+// stamp elsewhere, so any context.activation on other source types is customer-owned
+// data that must be preserved untouched. Other keys under context.activation are left
+// in place, since they can only be customer-set.
+func stripActivationMetadata(event types.SingularEventT) {
 	ctxMap, ok := event["context"].(map[string]any)
 	if !ok {
 		return
@@ -1895,7 +1892,9 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		isReverseETLSource := strings.EqualFold(source.SourceDefinition.Category, sourceCategoryWarehouse)
 
 		for _, singularEvent := range gatewayBatchEvent.Batch {
-			stripActivationMetadata(singularEvent, isReverseETLSource)
+			if isReverseETLSource {
+				stripActivationMetadata(singularEvent)
+			}
 			messageId := stringify.Any(singularEvent["messageId"])
 			payloadFunc := ro.Memoize(func() json.RawMessage {
 				payloadBytes, err := jsonrs.Marshal(singularEvent)

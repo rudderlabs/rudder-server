@@ -99,7 +99,10 @@ func TestStripActivationMetadata(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			stripActivationMetadata(tc.event, tc.isReverseETL)
+			// Mirror the caller's gate: stripping only runs for reverse-ETL sources.
+			if tc.isReverseETL {
+				stripActivationMetadata(tc.event)
+			}
 
 			ctxMap, hasContext := tc.event["context"].(map[string]any)
 			require.Equal(t, tc.expectContextKept, hasContext, "context presence mismatch")
