@@ -144,23 +144,24 @@ func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb
 			continue
 		}
 
+		// MAR meters reverse-ETL (warehouse) sources only. Classify by the source
+		// category the gateway stamps from SourceDefinition.Category, rather than
+		// relying solely on the fingerprint gate below: this prevents a client from
+		// being metered by stamping context.activation.fingerprint on a non-rETL
+		// (e.g. event-stream) source. Non-rETL is the expected majority of traffic,
+		// so skip it silently — no per-job skip stat on the hot path. Gated before
+		// resolving source_id so event-stream jobs bail out without the extra parse.
+		sourceCategory := jsonparser.GetStringOrEmpty(job.Parameters, "source_category")
+		if !strings.EqualFold(sourceCategory, retlSourceCategory) {
+			continue
+		}
+
 		sourceID := jsonparser.GetStringOrEmpty(job.Parameters, "source_id")
 		if sourceID == "" {
 			u.log.Warnn("source_id not found in job parameters",
 				obskit.WorkspaceID(job.WorkspaceId),
 				logger.NewIntField("jobId", job.JobID))
 			u.recordSkip("missing_source")
-			continue
-		}
-
-		// MAR meters reverse-ETL (warehouse) sources only. Classify by the source
-		// category the gateway stamps from SourceDefinition.Category, rather than
-		// relying solely on the fingerprint gate below: this prevents a client from
-		// being metered by stamping context.activation.fingerprint on a non-rETL
-		// (e.g. event-stream) source. Non-rETL is the expected majority of traffic,
-		// so skip it silently — no per-job skip stat on the hot path.
-		sourceCategory := jsonparser.GetStringOrEmpty(job.Parameters, "source_category")
-		if !strings.EqualFold(sourceCategory, retlSourceCategory) {
 			continue
 		}
 
