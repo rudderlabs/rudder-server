@@ -413,6 +413,10 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context, modifier func(result uplo
 
 	process := func() <-chan *uploadProcessingResult {
 		processStream := make(chan *uploadProcessingResult, len(jr.outputFileWritersMap))
+		jr.outputFileWritersMapMu.RLock()
+		processStreamSize := len(jr.outputFileWritersMap)
+		jr.outputFileWritersMapMu.RUnlock()
+		processStream := make(chan *uploadProcessingResult, processStreamSize)
 
 		g, groupCtx := errgroup.WithContext(ctx)
 		g.SetLimit(jr.config.numLoadFileUploadWorkers)
@@ -420,7 +424,20 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context, modifier func(result uplo
 		go func() {
 			defer close(processStream)
 
-			for tableName, uploadFile := range jr.outputFileWritersMap {
+			jr.outputFileWritersMapMu.RLock()
++         jr.tableEventCountMapMu.RLock()
++         writersSnapshot := make(map[string]encoding.LoadFileWriter, len(jr.outputFileWritersMap))
++         for k, v := range jr.outputFileWritersMap {
++             writersSnapshot[k] = v
++         }
++         countSnapshot := make(map[string]int, len(jr.tableEventCountMap))
++         for k, v := range jr.tableEventCountMap {
++             countSnapshot[k] = v
++         }
++         jr.tableEventCountMapMu.RUnlock()
++         jr.outputFileWritersMapMu.RUnlock()
+
+			for tableName, uploadFile := range writersSnapshot  {
 				g.Go(func() error {
 					select {
 					case <-ctx.Done():
@@ -447,7 +464,7 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context, modifier func(result uplo
 						result := uploadResult{
 							TableName:             tableName,
 							Location:              uploadOutput.Location,
-							TotalRows:             jr.tableEventCountMap[tableName],
+							TotalRows:              countSnapshot[tableName],
 							ContentLength:         loadFileStats.Size(),
 							DestinationRevisionID: jr.job.DestinationRevisionID,
 							UseRudderStorage:      jr.job.UseRudderStorage,
