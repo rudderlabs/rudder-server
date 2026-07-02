@@ -127,6 +127,7 @@ func (g *dynamicFaasGateway) handle(w http.ResponseWriter, r *http.Request) {
 		// caller invokes prematurely and the deploy appears to have failed.
 		if err := pollOpenFaasFlaskHealthy(g.pool, url); err != nil {
 			g.t.Errorf("DynamicFaasGateway: %q did not become healthy: %v", name, err)
+			dumpContainerLogs(g.t, g.pool, container, name)
 			_ = g.pool.Purge(container)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
