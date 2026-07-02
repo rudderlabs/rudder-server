@@ -31,19 +31,19 @@ func CreateActionFileTemplate(csvFile *os.File, actionType string) (*csv.Writer,
 	switch actionType {
 	case "insert":
 		err = csvWriter.WriteAll([][]string{
-			{"Type", "Status", "Id", "Parent Id", "Client Id", "Name", "Conversion Currency Code", "Conversion Name", "Conversion Time", "Conversion Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "External Attribution Credit", "External Attribution Model"},
-			{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""},
+			{"Type", "Status", "Id", "Parent Id", "Client Id", "Name", "Conversion Currency Code", "Conversion Name", "Conversion Time", "Conversion Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "External Attribution Credit", "External Attribution Model", "Transaction Id"},
+			{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", "", ""},
 		})
 	case "update":
 		err = csvWriter.WriteAll([][]string{
-			{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Adjustment Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjusted Currency Code", "Adjustment Time"},
-			{"Format Version", "", "", "", "6.0", "", "", "", "", "", "", "", ""},
+			{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Adjustment Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjusted Currency Code", "Adjustment Time", "Transaction Id"},
+			{"Format Version", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""},
 		})
 	default:
 		// For deleting conversion
 		err = csvWriter.WriteAll([][]string{
-			{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjustment Time"},
-			{"Format Version", "", "", "", "6.0", "", "", "", "", "", ""},
+			{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjustment Time", "Transaction Id"},
+			{"Format Version", "", "", "", "6.0", "", "", "", "", "", "", ""},
 		})
 	}
 	if err != nil {
@@ -143,11 +143,11 @@ func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, line s
 		var err error
 		switch data.Message.Action {
 		case "insert":
-			err = actionFile.CSVWriter.Write([]string{fileType, "", strconv.FormatInt(jobId, 10), "", "", "", fields.ConversionCurrencyCode, fields.ConversionName, fields.ConversionTime, fields.ConversionValue, fields.MicrosoftClickId, fields.Email, fields.Phone, fields.ExternalAttributionCredit, fields.ExternalAttributionModel})
+			err = actionFile.CSVWriter.Write([]string{fileType, "", strconv.FormatInt(jobId, 10), "", "", "", fields.ConversionCurrencyCode, fields.ConversionName, fields.ConversionTime, fields.ConversionValue, fields.MicrosoftClickId, fields.Email, fields.Phone, fields.ExternalAttributionCredit, fields.ExternalAttributionModel, fields.EventID})
 		case "update":
-			err = actionFile.CSVWriter.Write([]string{fileType, "Restate", "", strconv.FormatInt(jobId, 10), "", fields.ConversionName, fields.ConversionTime, fields.ConversionValue, fields.MicrosoftClickId, fields.Email, fields.Phone, fields.ConversionCurrencyCode, fields.ConversionAdjustedTime})
+			err = actionFile.CSVWriter.Write([]string{fileType, "Restate", "", strconv.FormatInt(jobId, 10), "", fields.ConversionName, fields.ConversionTime, fields.ConversionValue, fields.MicrosoftClickId, fields.Email, fields.Phone, fields.ConversionCurrencyCode, fields.ConversionAdjustedTime, fields.EventID})
 		case "delete":
-			err = actionFile.CSVWriter.Write([]string{fileType, "Retract", "", strconv.FormatInt(jobId, 10), "", fields.ConversionName, fields.ConversionTime, fields.MicrosoftClickId, fields.Email, fields.Phone, fields.ConversionAdjustedTime})
+			err = actionFile.CSVWriter.Write([]string{fileType, "Retract", "", strconv.FormatInt(jobId, 10), "", fields.ConversionName, fields.ConversionTime, fields.MicrosoftClickId, fields.Email, fields.Phone, fields.ConversionAdjustedTime, fields.EventID})
 		default:
 			return fmt.Errorf("%v action is invalid", data.Message.Action)
 		}
