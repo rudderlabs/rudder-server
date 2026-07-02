@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -24,6 +26,10 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+func quoteIdentifier(identifier string) string {
+	return pq.QuoteIdentifier(identifier)
+}
 
 const (
 	verifyCA = "verify-ca"
@@ -256,7 +262,7 @@ func (pg *Postgres) getConnectionCredentials() credentials {
 func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToPostgres[dataType]))
+		arr = append(arr, fmt.Sprintf(`%s %s`, quoteIdentifier(prefix+name), rudderDataTypesMapToPostgres[dataType]))
 	}
 	return strings.Join(arr, ",")
 }
@@ -325,7 +331,7 @@ func (pg *Postgres) CreateSchema(ctx context.Context) (err error) {
 		)
 		return err
 	}
-	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %q`, pg.Namespace)
+	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, quoteIdentifier(pg.Namespace))
 	pg.logger.Infon("PG: Creating schema name in postgres for PG",
 		logger.NewStringField(logfield.DestinationID, pg.Warehouse.Destination.ID),
 		logger.NewStringField(logfield.Query, sqlStatement),
@@ -335,7 +341,7 @@ func (pg *Postgres) CreateSchema(ctx context.Context) (err error) {
 }
 
 func (pg *Postgres) createTable(ctx context.Context, name string, columns model.TableSchema) (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%[1]s"."%[2]s" ( %v )`, pg.Namespace, name, ColumnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %[1]s.%[2]s ( %v )`, quoteIdentifier(pg.Namespace), quoteIdentifier(name), ColumnsWithDataTypes(columns, ""))
 	pg.logger.Infon("PG: Creating table in postgres for PG",
 		logger.NewStringField(logfield.DestinationID, pg.Warehouse.Destination.ID),
 		logger.NewStringField(logfield.Query, sqlStatement),
@@ -346,7 +352,7 @@ func (pg *Postgres) createTable(ctx context.Context, name string, columns model.
 
 func (pg *Postgres) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
-	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
+	sqlStatement := fmt.Sprintf(`SET search_path to %s`, quoteIdentifier(pg.Namespace))
 	_, err = pg.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		return err
@@ -361,7 +367,7 @@ func (pg *Postgres) CreateTable(ctx context.Context, tableName string, columnMap
 }
 
 func (pg *Postgres) DropTable(ctx context.Context, tableName string) (err error) {
-	sqlStatement := fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, pg.Namespace, tableName)
+	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s`, quoteIdentifier(pg.Namespace), quoteIdentifier(tableName))
 	pg.logger.Infon("PG: Dropping table in postgres for PG",
 		logger.NewStringField(logfield.DestinationID, pg.Warehouse.Destination.ID),
 		logger.NewStringField(logfield.Query, sqlStatement),
@@ -377,7 +383,7 @@ func (pg *Postgres) AddColumns(ctx context.Context, tableName string, columnsInf
 	)
 
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
-	query = fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
+	query = fmt.Sprintf(`SET search_path to %s`, quoteIdentifier(pg.Namespace))
 	if _, err = pg.DB.ExecContext(ctx, query); err != nil {
 		return err
 	}
@@ -390,12 +396,12 @@ func (pg *Postgres) AddColumns(ctx context.Context, tableName string, columnsInf
 	queryBuilder.WriteString(fmt.Sprintf(`
 		ALTER TABLE
 		  %s.%s`,
-		pg.Namespace,
-		tableName,
+		quoteIdentifier(pg.Namespace),
+		quoteIdentifier(tableName),
 	))
 
 	for _, columnInfo := range columnsInfo {
-		queryBuilder.WriteString(fmt.Sprintf(` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, rudderDataTypesMapToPostgres[columnInfo.Type]))
+		queryBuilder.WriteString(fmt.Sprintf(` ADD COLUMN IF NOT EXISTS %s %s,`, quoteIdentifier(columnInfo.Name), rudderDataTypesMapToPostgres[columnInfo.Type]))
 	}
 
 	query = strings.TrimSuffix(queryBuilder.String(), ",")
@@ -536,10 +542,10 @@ func (pg *Postgres) Connect(_ context.Context, warehouse model.Warehouse) (clien
 }
 
 func (pg *Postgres) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]any, _ string) (err error) {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
-		pg.Namespace,
-		tableName,
-		fmt.Sprintf(`%q, %q`, "id", "val"),
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s.%s (%v) VALUES (%s)`,
+		quoteIdentifier(pg.Namespace),
+		quoteIdentifier(tableName),
+		fmt.Sprintf(`%s, %s`, quoteIdentifier("id"), quoteIdentifier("val")),
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
 	_, err = pg.DB.ExecContext(ctx, sqlStatement)
