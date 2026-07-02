@@ -1,0 +1,38 @@
+syntax = "proto3";
+package proto;
+
+option go_package = ".;proto";
+
+// ProcessorService is the rudderstack-processor's general-purpose CP-facing
+// gRPC surface. It is intentionally generic: cp-router stays
+// transformation-agnostic and the processor routes internally by `op`.
+service ProcessorService {
+  // Forward proxies a control-plane request to the processor. Application
+  // outcomes ride in ForwardResponse.status_code/body; gRPC errors are
+  // reserved for transport/infra failures.
+  rpc Forward(ForwardRequest) returns (ForwardResponse);
+}
+
+// Op identifies the processor operation; the processor maps it to a downstream
+// endpoint. Extend this enum to add future processor ops.
+enum Op {
+  OP_UNSPECIFIED = 0;
+  OP_TEST = 1;
+  OP_TEST_RUN = 2;
+  OP_TEST_LIBRARY = 3;
+  OP_EXTRACT_LIBS = 4;
+}
+
+message ForwardRequest {
+  Op op = 1;
+  string workspace_id = 2;
+  // payload is the opaque request body (JSON bytes); cp-router never models it.
+  bytes payload = 3;
+}
+
+message ForwardResponse {
+  // status_code carries the downstream HTTP status.
+  int32 status_code = 1;
+  // body is the opaque response body (JSON bytes).
+  bytes body = 2;
+}

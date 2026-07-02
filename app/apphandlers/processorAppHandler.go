@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	proc "github.com/rudderlabs/rudder-server/processor"
+	"github.com/rudderlabs/rudder-server/processor/cpservice"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routerManager "github.com/rudderlabs/rudder-server/router/manager"
@@ -433,6 +434,19 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		rsourcesService.Monitor(ctx, replicationLagStat, replicationSlotStat)
 		return nil
 	})
+
+	// Only the node-0 pod opens the cp-router dataplane connection (and, by
+	// extension, owns any privileged work served over it). Every other pod and
+	// the flag-off case skip the bootstrap entirely.
+	if cpservice.ShouldConnect(config) {
+		cpConnector, err := cpservice.NewConnector(config, a.log, backendconfig.DefaultBackendConfig, cpservice.NewService(a.log))
+		if err != nil {
+			return fmt.Errorf("setting up cp-router connection: %w", err)
+		}
+		g.Go(crash.Wrapper(func() error {
+			return cpConnector.Run(ctx)
+		}))
+	}
 
 	return g.Wait()
 }
