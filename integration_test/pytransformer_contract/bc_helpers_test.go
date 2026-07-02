@@ -444,24 +444,28 @@ func startOpenFaasFlask(
 }
 
 // startRudderTransformer starts a rudder-transformer container configured to use
-// the mock config backend and mock OpenFaaS gateway.
+// the mock config backend and mock OpenFaaS gateway. Optional extra environment
+// variables can be passed (e.g. "TRANSFORMER_TEST_MODE=true").
 // Returns the container resource and the URL to reach it from the host.
 func startRudderTransformer(
 	t *testing.T, pool *dockertest.Pool,
 	configBackendURL, openfaasGatewayURL string,
+	extraEnv ...string,
 ) string {
 	t.Helper()
 	const containerPort = "9090"
 	cfg := newContainerConfig(t, containerPort)
+	env := []string{
+		"CONFIG_BACKEND_URL=" + toContainerURL(configBackendURL),
+		"OPENFAAS_GATEWAY_URL=" + toContainerURL(openfaasGatewayURL),
+		"PORT=" + cfg.portStr(containerPort),
+		"NODE_OPTIONS=--no-node-snapshot",
+	}
+	env = append(env, extraEnv...)
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "rudderstack/rudder-transformer",
-		Tag:        "latest",
-		Env: []string{
-			"CONFIG_BACKEND_URL=" + toContainerURL(configBackendURL),
-			"OPENFAAS_GATEWAY_URL=" + toContainerURL(openfaasGatewayURL),
-			"PORT=" + cfg.portStr(containerPort),
-			"NODE_OPTIONS=--no-node-snapshot",
-		},
+		Repository:   "rudderstack/rudder-transformer",
+		Tag:          "latest",
+		Env:          env,
 		ExtraHosts:   cfg.ExtraHosts,
 		PortBindings: cfg.PortBindings,
 	}, cfg.hostConfigFn)
@@ -509,7 +513,7 @@ func startRudderPytransformer(
 
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
-		Tag:          "main", // todo: use latest after merging https://github.com/rudderlabs/rudder-pytransformer/pull/76
+		Tag:          "pr-109", // todo: use latest after merging https://github.com/rudderlabs/rudder-pytransformer/pull/76
 		Auth:         registry.AuthConfiguration(),
 		Env:          env,
 		ExtraHosts:   cfg.ExtraHosts,
@@ -584,12 +588,13 @@ func dumpContainerLogs(t *testing.T, pool *dockertest.Pool, container *dockertes
 	t.Logf("=== %s container logs ===\n%s=== end %s logs ===", name, buf.String(), name)
 }
 
-// waitForOpenFaasFlask polls the openfaas-flask-base fwatchdog health endpoint.
-// fwatchdog responds to GET / with X-REQUEST-TYPE: HEALTH-CHECK header.
-func waitForOpenFaasFlask(t *testing.T, pool *dockertest.Pool, baseURL string) {
-	t.Helper()
-	t.Logf("Waiting for openfaas-flask-base at %s to be healthy...", baseURL)
-	err := pool.Retry(func() error {
+// pollOpenFaasFlaskHealthy polls the openfaas-flask-base fwatchdog health
+// endpoint until it returns 200. fwatchdog responds to GET / with the
+// X-REQUEST-TYPE: HEALTH-CHECK header. It returns an error instead of failing
+// the test so it is safe to call from a non-test goroutine (e.g. the dynamic
+// gateway's HTTP handler).
+func pollOpenFaasFlaskHealthy(pool *dockertest.Pool, baseURL string) error {
+	return pool.Retry(func() error {
 		req, err := http.NewRequest(http.MethodGet, baseURL+"/", nil)
 		if err != nil {
 			return err
@@ -606,7 +611,14 @@ func waitForOpenFaasFlask(t *testing.T, pool *dockertest.Pool, baseURL string) {
 		}
 		return nil
 	})
-	require.NoError(t, err, "openfaas-flask-base failed to become healthy")
+}
+
+// waitForOpenFaasFlask polls the openfaas-flask-base fwatchdog health endpoint.
+// fwatchdog responds to GET / with X-REQUEST-TYPE: HEALTH-CHECK header.
+func waitForOpenFaasFlask(t *testing.T, pool *dockertest.Pool, baseURL string) {
+	t.Helper()
+	t.Logf("Waiting for openfaas-flask-base at %s to be healthy...", baseURL)
+	require.NoError(t, pollOpenFaasFlaskHealthy(pool, baseURL), "openfaas-flask-base failed to become healthy")
 	t.Logf("openfaas-flask-base is healthy at %s", baseURL)
 }
 
