@@ -209,12 +209,13 @@ func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb
 			if !exists {
 				newHll, hllErr := hll.NewHll(*u.hllSettings)
 				if hllErr != nil {
-					// Settings are validated at construction, so this is unreachable in
-					// practice; degrade gracefully (skip + stat) rather than crash the
-					// processor pipeline if it ever does happen.
-					u.log.Errorn("creating HLL for activation records", obskit.Error(hllErr))
-					u.recordSkip("hll_init_failed")
-					continue
+					// Unreachable: hllSettings is validated once at startup
+					// (NewUniqueActivationRecordsReporter), so NewHll cannot fail here with
+					// the same settings. If it somehow does, the failure is deterministic for
+					// every job in the batch, so skipping would silently under-count MAR
+					// billing data while reporting success. Panic to fail loud and let the
+					// batch retry, matching the panic in trackedusers' users_reporter.
+					panic(fmt.Errorf("creating HLL for activation records: %w", hllErr))
 				}
 				// origin is client-controlled (stamped by rudder-sources into the event
 				// payload). Defensively cap its length before carrying it onto the report
