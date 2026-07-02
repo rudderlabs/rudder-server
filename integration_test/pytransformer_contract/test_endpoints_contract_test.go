@@ -263,11 +263,8 @@ func startOpenFaasFlaskFprocess(
 // TestLibrary/ExtractLibs — the same methods cpservice.Forward uses in
 // production — so the test covers the exact client → pyt path.
 //
-// Responses are compared field-by-field except where rudder-pytransformer
+// Responses are compared byte-for-byte except where rudder-pytransformer
 // deliberately (and documentedly, see its README) diverges:
-//   - /test error elements: old is {error}, pyt adds the input event's metadata.
-//   - /testRun elements: old uses the transformedEvent key and no statusCode;
-//     pyt uses output and adds statusCode.
 //   - AST import-violation messages: pyt surfaces the runtime's wording
 //     ("Import of 'os' is not allowed. ...") instead of fn-ast's
 //     ("Unpermitted import(s). ...") — the runtime is the source of truth.
@@ -394,46 +391,17 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 		return resp
 	}
 
-	// compareTestBodies compares /transformation/test and pyt /test success
-	// bodies. Success elements are bare transformed events on both sides. Error
-	// elements are {error} on the old side and {error, metadata} on the new —
-	// the error text must match, the metadata addition is pyt's documented
-	// improvement.
-	compareTestBodies := func(t *testing.T, oldBody, newBody []byte) {
+	// compareTestFlowBodies compares old- and new-arch /test and /testRun bodies
+	// element-by-element — byte-identical on both sides. /test elements are bare
+	// transformed events on success and {error} on per-event failure; /testRun
+	// elements are {transformedEvent|error, metadata}.
+	compareTestFlowBodies := func(t *testing.T, oldBody, newBody []byte) {
 		t.Helper()
 		oldResp, newResp := decodeFlow(t, oldBody), decodeFlow(t, newBody)
 		require.Len(t, newResp.TransformedEvents, len(oldResp.TransformedEvents),
 			"old and new arch must return the same number of transformed events\nold: %s\nnew: %s", oldBody, newBody)
 		for i, oldEl := range oldResp.TransformedEvents {
-			newEl := newResp.TransformedEvents[i]
-			if oldErr, isErr := oldEl["error"]; isErr && len(oldEl) == 1 {
-				require.Equal(t, oldErr, newEl["error"], "error text for element %d", i)
-				continue
-			}
-			require.Equal(t, oldEl, newEl, "transformed event %d", i)
-		}
-		require.Equal(t, oldResp.Logs, newResp.Logs, "logs must match")
-	}
-
-	// compareTestRunBodies compares /transformation/testRun and pyt /testRun
-	// bodies. Old elements are {transformedEvent|error, metadata}; new elements
-	// are {output|error, metadata, statusCode} (documented key rename +
-	// statusCode addition).
-	compareTestRunBodies := func(t *testing.T, oldBody, newBody []byte) {
-		t.Helper()
-		oldResp, newResp := decodeFlow(t, oldBody), decodeFlow(t, newBody)
-		require.Len(t, newResp.TransformedEvents, len(oldResp.TransformedEvents),
-			"old and new arch must return the same number of transformed events\nold: %s\nnew: %s", oldBody, newBody)
-		for i, oldEl := range oldResp.TransformedEvents {
-			newEl := newResp.TransformedEvents[i]
-			require.Equal(t, oldEl["metadata"], newEl["metadata"], "metadata for element %d", i)
-			if oldErr, isErr := oldEl["error"]; isErr {
-				require.Equal(t, oldErr, newEl["error"], "error text for element %d", i)
-				require.EqualValues(t, 400, newEl["statusCode"], "pyt stamps statusCode 400 on errored elements")
-				continue
-			}
-			require.Equal(t, oldEl["transformedEvent"], newEl["output"], "transformed event %d", i)
-			require.EqualValues(t, 200, newEl["statusCode"], "pyt stamps statusCode 200 on successful elements")
+			require.Equal(t, oldEl, newResp.TransformedEvents[i], "transformed event %d", i)
 		}
 		require.Equal(t, oldResp.Logs, newResp.Logs, "logs must match")
 	}
@@ -461,7 +429,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			for _, ev := range resp.TransformedEvents {
 				require.Equal(t, "bar", ev["foo"])
 			}
-			compareTestBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, oldBody, newBody)
 		})
 
 		t.Run("should fetch libraries from the config backend", func(t *testing.T) {
@@ -484,7 +452,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			resp := decodeFlow(t, newBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			require.EqualValues(t, 42, resp.TransformedEvents[0]["doubled"])
-			compareTestBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, oldBody, newBody)
 		})
 
 		t.Run("should expose request credentials via getCredential", func(t *testing.T) {
@@ -507,7 +475,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			resp := decodeFlow(t, newBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			require.Equal(t, "secret123", resp.TransformedEvents[0]["secret"])
-			compareTestBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, oldBody, newBody)
 		})
 
 		t.Run("should keep a single event's error inline with HTTP 200", func(t *testing.T) {
@@ -538,11 +506,64 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			}
 			require.Len(t, errored, 1)
 			require.Contains(t, errored[0]["error"], "boom")
-			meta, ok := errored[0]["metadata"].(map[string]any)
-			require.True(t, ok, "pyt errored elements carry the input event's metadata")
-			require.Equal(t, "m1", meta["messageId"])
+			require.NotContains(t, errored[0], "metadata",
+				"errored /test elements are {error} only, matching rudder-transformer")
 
-			compareTestBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, oldBody, newBody)
+		})
+
+		// Both engines key per-event metadata by the message body's messageId,
+		// so two events sharing one id must still both be transformed.
+		t.Run("should transform both events when messageIds are duplicated", func(t *testing.T) {
+			payload := map[string]any{
+				"trRevCode": map[string]any{
+					"code":        "def transformEvent(event, metadata):\n    event['doubled'] = event['n'] * 2\n    return event",
+					"codeVersion": "1",
+					"language":    "pythonfaas",
+				},
+				"events": []map[string]any{
+					{"message": map[string]any{"messageId": "dup-1", "n": 1}, "metadata": map[string]any{"messageId": "dup-1", "sourceId": "s1"}},
+					{"message": map[string]any{"messageId": "dup-1", "n": 2}, "metadata": map[string]any{"messageId": "dup-1", "sourceId": "s2"}},
+				},
+			}
+			oldStatus, oldBody := callOld(t, "/transformation/test", payload)
+			newStatus, newBody := callNew(t, client.Test, payload)
+
+			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
+			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
+			resp := decodeFlow(t, newBody)
+			require.Len(t, resp.TransformedEvents, 2)
+			require.EqualValues(t, 2, resp.TransformedEvents[0]["doubled"])
+			require.EqualValues(t, 4, resp.TransformedEvents[1]["doubled"])
+			compareTestFlowBodies(t, oldBody, newBody)
+		})
+
+		// Metadata without a messageId is echoed as-is on errored elements —
+		// neither engine injects one (metadata is keyed by the body's messageId).
+		t.Run("should accept metadata without messageId", func(t *testing.T) {
+			payload := map[string]any{
+				"trRevCode": map[string]any{
+					"code":        "def transformEvent(event, metadata):\n    if event['n'] == 1:\n        raise ValueError('no meta id')\n    return event",
+					"codeVersion": "1",
+					"language":    "pythonfaas",
+				},
+				"events": []map[string]any{
+					{"message": map[string]any{"messageId": "m0", "n": 0}, "metadata": map[string]any{"sourceId": "s0"}},
+					{"message": map[string]any{"messageId": "m1", "n": 1}, "metadata": map[string]any{"sourceId": "s1"}},
+				},
+			}
+			oldStatus, oldBody := callOld(t, "/transformation/test", payload)
+			newStatus, newBody := callNew(t, client.Test, payload)
+
+			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
+			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
+			resp := decodeFlow(t, newBody)
+			require.Len(t, resp.TransformedEvents, 2)
+			errored := resp.TransformedEvents[1]
+			require.Contains(t, errored["error"], "no meta id")
+			require.NotContains(t, errored, "metadata",
+				"errored /test elements are {error} only, matching rudder-transformer")
+			compareTestFlowBodies(t, oldBody, newBody)
 		})
 
 		t.Run("should return HTTP 400 with a top-level error for a compile error", func(t *testing.T) {
@@ -660,7 +681,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 	})
 
 	t.Run("testRun endpoint", func(t *testing.T) {
-		t.Run("should echo each input event's metadata with output and statusCode", func(t *testing.T) {
+		t.Run("should echo each input event's metadata with the transformed event", func(t *testing.T) {
 			payload := map[string]any{
 				"codeRevision": map[string]any{
 					"code":        "def transformEvent(event, metadata):\n    event['foo'] = 'bar'\n    return event",
@@ -680,10 +701,11 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			resp := decodeFlow(t, newBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			el := resp.TransformedEvents[0]
-			output, ok := el["output"].(map[string]any)
-			require.True(t, ok, "pyt elements carry the transformed event under the output key")
-			require.Equal(t, "bar", output["foo"])
-			compareTestRunBodies(t, oldBody, newBody)
+			transformed, ok := el["transformedEvent"].(map[string]any)
+			require.True(t, ok, "element carries the transformed event under the transformedEvent key, matching rudder-transformer")
+			require.Equal(t, "bar", transformed["foo"])
+			require.NotContains(t, el, "statusCode", "no statusCode, matching rudder-transformer")
+			compareTestFlowBodies(t, oldBody, newBody)
 		})
 
 		t.Run("should resolve dependencies libraries and credentials", func(t *testing.T) {
@@ -709,14 +731,14 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
 			resp := decodeFlow(t, newBody)
 			require.Len(t, resp.TransformedEvents, 1)
-			output, ok := resp.TransformedEvents[0]["output"].(map[string]any)
+			transformed, ok := resp.TransformedEvents[0]["transformedEvent"].(map[string]any)
 			require.True(t, ok)
-			require.EqualValues(t, 42, output["doubled"])
-			require.Equal(t, "secret123", output["secret"])
-			compareTestRunBodies(t, oldBody, newBody)
+			require.EqualValues(t, 42, transformed["doubled"])
+			require.Equal(t, "secret123", transformed["secret"])
+			compareTestFlowBodies(t, oldBody, newBody)
 		})
 
-		t.Run("should keep a per-event error inline with element statusCode 400", func(t *testing.T) {
+		t.Run("should keep a per-event error inline with its metadata", func(t *testing.T) {
 			payload := map[string]any{
 				"codeRevision": map[string]any{
 					"code":        "def transformEvent(event, metadata):\n    raise ValueError('boom')",
@@ -736,9 +758,70 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			resp := decodeFlow(t, newBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			el := resp.TransformedEvents[0]
-			require.EqualValues(t, 400, el["statusCode"])
 			require.Contains(t, el["error"], "boom")
-			compareTestRunBodies(t, oldBody, newBody)
+			meta, ok := el["metadata"].(map[string]any)
+			require.True(t, ok, "errored /testRun elements keep the input event's metadata")
+			require.Equal(t, "m1", meta["messageId"])
+			require.NotContains(t, el, "statusCode", "no statusCode, matching rudder-transformer")
+			compareTestFlowBodies(t, oldBody, newBody)
+		})
+
+		// Both engines key echoed metadata by the message body's messageId, so
+		// with duplicated ids the LAST event's metadata wins for every element
+		// sharing the id — identical (if surprising) behaviour on both sides.
+		t.Run("should echo the last event's metadata for duplicated messageIds", func(t *testing.T) {
+			payload := map[string]any{
+				"codeRevision": map[string]any{
+					"code":        "def transformEvent(event, metadata):\n    event['doubled'] = event['n'] * 2\n    return event",
+					"language":    "pythonfaas",
+					"versionId":   "v1",
+					"codeVersion": "1",
+				},
+				"input": []map[string]any{
+					{"message": map[string]any{"messageId": "dup-1", "n": 1}, "metadata": map[string]any{"messageId": "dup-1", "sourceId": "s1"}},
+					{"message": map[string]any{"messageId": "dup-1", "n": 2}, "metadata": map[string]any{"messageId": "dup-1", "sourceId": "s2"}},
+				},
+			}
+			oldStatus, oldBody := callOld(t, "/transformation/testRun", payload)
+			newStatus, newBody := callNew(t, client.TestRun, payload)
+
+			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
+			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
+			resp := decodeFlow(t, newBody)
+			require.Len(t, resp.TransformedEvents, 2)
+			for i, el := range resp.TransformedEvents {
+				transformed, ok := el["transformedEvent"].(map[string]any)
+				require.True(t, ok)
+				require.EqualValues(t, (i+1)*2, transformed["doubled"])
+				meta, ok := el["metadata"].(map[string]any)
+				require.True(t, ok)
+				require.Equal(t, "s2", meta["sourceId"], "last event's metadata wins for element %d", i)
+			}
+			compareTestFlowBodies(t, oldBody, newBody)
+		})
+
+		t.Run("should echo metadata without messageId as-is", func(t *testing.T) {
+			payload := map[string]any{
+				"codeRevision": map[string]any{
+					"code":        "def transformEvent(event, metadata):\n    event['foo'] = 'bar'\n    return event",
+					"language":    "pythonfaas",
+					"versionId":   "v1",
+					"codeVersion": "1",
+				},
+				"input": []map[string]any{
+					{"message": map[string]any{"messageId": "m1"}, "metadata": map[string]any{"sourceId": "s1"}},
+				},
+			}
+			oldStatus, oldBody := callOld(t, "/transformation/testRun", payload)
+			newStatus, newBody := callNew(t, client.TestRun, payload)
+
+			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
+			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
+			resp := decodeFlow(t, newBody)
+			require.Len(t, resp.TransformedEvents, 1)
+			require.Equal(t, map[string]any{"sourceId": "s1"}, resp.TransformedEvents[0]["metadata"],
+				"metadata is echoed as-is, without injecting a messageId")
+			compareTestFlowBodies(t, oldBody, newBody)
 		})
 
 		t.Run("should return the verbatim missing-code error", func(t *testing.T) {
@@ -809,6 +892,39 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			require.Contains(t, decodeError(t, newBody), "Import of 'os' is not allowed.")
 		})
 
+		t.Run("should key the import map by the module path as written", func(t *testing.T) {
+			payload := map[string]any{
+				"code":     "import urllib.parse\nfrom dateutil.parser import parse",
+				"language": "pythonfaas",
+			}
+			oldStatus, oldBody := callOld(t, "/transformationLibrary/test", payload)
+			newStatus, newBody := callNew(t, client.TestLibrary, payload)
+
+			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
+			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
+			require.Equal(t, map[string]any{"urllib.parse": []any{}, "dateutil.parser": []any{}}, decodeImportMap(t, newBody))
+			require.Equal(t, decodeImportMap(t, oldBody), decodeImportMap(t, newBody))
+		})
+
+		// Known security tightening: pyt's runtime blocks urllib.request (raw
+		// HTTP would bypass the requests wrappers), and its validator agrees
+		// with its runtime. fn-ast accepted it (only the top-level "urllib" is
+		// whitelisted-checked there).
+		t.Run("should reject urllib.request that the old architecture accepts", func(t *testing.T) {
+			payload := map[string]any{
+				"code":     "import urllib.request",
+				"language": "pythonfaas",
+			}
+			oldStatus, oldBody := callOld(t, "/transformationLibrary/test", payload)
+			newStatus, newBody := callNew(t, client.TestLibrary, payload)
+
+			require.Equal(t, http.StatusOK, oldStatus, "old architecture accepts, body: %s", oldBody)
+			require.Equal(t, map[string]any{"urllib.request": []any{}}, decodeImportMap(t, oldBody))
+
+			require.Equal(t, http.StatusBadRequest, newStatus, "pyt rejects, body: %s", newBody)
+			require.Contains(t, decodeError(t, newBody), "Import of 'urllib.request' is not allowed.")
+		})
+
 		t.Run("should return HTTP 400 for a syntax error", func(t *testing.T) {
 			payload := map[string]any{
 				"code":     "def double(x)\n    return x * 2",
@@ -867,6 +983,40 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
 			require.Equal(t, map[string]any{"mylib": []any{}, "json": []any{}}, decodeImportMap(t, newBody))
 			require.Equal(t, decodeImportMap(t, oldBody), decodeImportMap(t, newBody))
+		})
+
+		t.Run("should extract dotted imports with their full path when validation is off", func(t *testing.T) {
+			payload := map[string]any{
+				"code":            "import os.path",
+				"language":        "pythonfaas",
+				"validateImports": false,
+			}
+			oldStatus, oldBody := callOld(t, "/extractLibs", payload)
+			newStatus, newBody := callNew(t, client.ExtractLibs, payload)
+
+			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
+			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
+			require.Equal(t, map[string]any{"os.path": []any{}}, decodeImportMap(t, newBody))
+			require.Equal(t, decodeImportMap(t, oldBody), decodeImportMap(t, newBody))
+		})
+
+		// Both reject relative imports (regardless of validateImports); the
+		// wording deliberately differs — fn-ast surfaces an incidental crash
+		// trace ("'NoneType' object has no attribute 'split'"), pyt a clean
+		// message.
+		t.Run("should reject relative imports like the old architecture", func(t *testing.T) {
+			payload := map[string]any{
+				"code":            "from . import helper",
+				"language":        "pythonfaas",
+				"validateImports": false,
+			}
+			oldStatus, oldBody := callOld(t, "/extractLibs", payload)
+			newStatus, newBody := callNew(t, client.ExtractLibs, payload)
+
+			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
+			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
+			require.NotEmpty(t, decodeError(t, oldBody))
+			require.Equal(t, "Relative imports are not allowed.", decodeError(t, newBody))
 		})
 
 		t.Run("should reject a non-whitelisted import when validation is on", func(t *testing.T) {
