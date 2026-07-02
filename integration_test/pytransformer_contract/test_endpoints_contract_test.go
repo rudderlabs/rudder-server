@@ -112,6 +112,16 @@ func (g *dynamicFaasGateway) handle(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		// Wait for the container to actually accept connections before returning
+		// 200. On Linux host networking the mapped port is unreachable
+		// (connection refused) until fwatchdog binds it — without this gate the
+		// caller invokes prematurely and the deploy appears to have failed.
+		if err := pollOpenFaasFlaskHealthy(g.pool, url); err != nil {
+			g.t.Errorf("DynamicFaasGateway: %q did not become healthy: %v", name, err)
+			_ = g.pool.Purge(container)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		g.register(name, url, container)
 		w.WriteHeader(http.StatusOK)
 
@@ -210,9 +220,10 @@ func (g *dynamicFaasGateway) handle(w http.ResponseWriter, r *http.Request) {
 
 // startOpenFaasFlaskFprocess starts an openfaas-flask-base container running
 // the given fprocess verbatim (as rudder-transformer deploys it). It does not
-// wait for readiness — awaitFunctionReadiness polls through the gateway's
-// health endpoint. Returns an error instead of failing the test because it is
-// called from the gateway's HTTP handler goroutine.
+// wait for readiness — callers gate on pollOpenFaasFlaskHealthy (the deploy
+// handler) or waitForOpenFaasFlask (fn-ast startup) before use. Returns an
+// error instead of failing the test because it is called from the gateway's
+// HTTP handler goroutine.
 func startOpenFaasFlaskFprocess(
 	t *testing.T, pool *dockertest.Pool, fprocess string,
 ) (string, *dockertest.Resource, error) {
