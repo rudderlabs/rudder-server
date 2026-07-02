@@ -925,6 +925,23 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			require.Contains(t, decodeError(t, newBody), "Import of 'urllib.request' is not allowed.")
 		})
 
+		// Both reject relative imports; the wording deliberately differs —
+		// fn-ast surfaces an incidental crash trace ("'NoneType' object has no
+		// attribute 'split'"), pyt a clean message.
+		t.Run("should reject relative imports like the old architecture", func(t *testing.T) {
+			payload := map[string]any{
+				"code":     "from . import helper",
+				"language": "pythonfaas",
+			}
+			oldStatus, oldBody := callOld(t, "/transformationLibrary/test", payload)
+			newStatus, newBody := callNew(t, client.TestLibrary, payload)
+
+			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
+			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
+			require.NotEmpty(t, decodeError(t, oldBody))
+			require.Equal(t, "Relative imports are not allowed.", decodeError(t, newBody))
+		})
+
 		t.Run("should return HTTP 400 for a syntax error", func(t *testing.T) {
 			payload := map[string]any{
 				"code":     "def double(x)\n    return x * 2",
