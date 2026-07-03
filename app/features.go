@@ -8,6 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/activationrecords"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -37,12 +38,17 @@ type ReportingFeature interface {
 
 // Features contains optional implementations of Enterprise only features.
 type Features struct {
-	SuppressUser SuppressUserFeature
-	ConfigEnv    ConfigEnvFeature
-	Reporting    ReportingFeature
-	TrackedUsers TrackedUsersFeature
+	SuppressUser      SuppressUserFeature
+	ConfigEnv         ConfigEnvFeature
+	Reporting         ReportingFeature
+	TrackedUsers      TrackedUsersFeature
+	ActivationRecords ActivationRecordsFeature
 }
 
 type TrackedUsersFeature interface {
 	Setup(c *config.Config) (trackedusers.UsersReporter, error)
+}
+
+type ActivationRecordsFeature interface {
+	Setup(c *config.Config) (activationrecords.ActivationRecordsReporter, error)
 }

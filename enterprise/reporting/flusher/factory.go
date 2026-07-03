@@ -18,12 +18,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var supportedTables = []string{"tracked_users_reports"}
+var supportedTables = []string{"tracked_users_reports", "activation_records_reports"}
 
 // This function has to be called once for each table
 func CreateRunner(ctx context.Context, table string, log logger.Logger, stats stats.Stats, conf *config.Config, module string) (Runner, error) {
 	if !slices.Contains(supportedTables, table) {
-		return nil, errors.New("invalid table name. Only tracked_users_reports is supported now")
+		return nil, errors.New("invalid table name. Only tracked_users_reports and activation_records_reports are supported")
 	}
 
 	connStr := misc.GetConnectionString(conf, "reporting")
@@ -57,5 +57,23 @@ func CreateRunner(ctx context.Context, table string, log logger.Logger, stats st
 		return c, err
 	}
 
-	return nil, errors.New("invalid table name. Only tracked_users_reports is supported now")
+	if table == "activation_records_reports" {
+		if !conf.GetBoolVar(false, "ActivationRecords.enabled") {
+			return &NOPCronRunner{}, nil
+		}
+
+		commonClient := client.New(client.RouteActivationRecords, conf, log, stats)
+
+		a := aggregator.NewActivationRecordsInAppAggregator(db, stats, conf, module)
+		f, err := NewFlusher(db, log, stats, conf, table, commonClient, a, module)
+		if err != nil {
+			return nil, fmt.Errorf("error creating flusher %w", err)
+		}
+
+		c := NewCronRunner(ctx, log, stats, conf, f, table, module)
+
+		return c, nil
+	}
+
+	return nil, errors.New("invalid table name. Only tracked_users_reports and activation_records_reports are supported")
 }

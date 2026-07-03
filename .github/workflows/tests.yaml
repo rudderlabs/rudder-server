@@ -251,6 +251,7 @@ jobs:
           - integration_test/srchydration
           - integration_test/tracing
           - integration_test/trackedusersreporting
+          - integration_test/activationrecordsreporting
           - integration_test/pytransformer_contract
           - integration_test/transformer_contract
           - processor

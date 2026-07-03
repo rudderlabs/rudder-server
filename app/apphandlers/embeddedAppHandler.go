@@ -104,6 +104,15 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	if err != nil {
 		return fmt.Errorf("could not run tracked users database migration: %w", err)
 	}
+
+	activationRecordsReporter, err := a.app.Features().ActivationRecords.Setup(config)
+	if err != nil {
+		return fmt.Errorf("could not setup activation records: %w", err)
+	}
+	err = activationRecordsReporter.MigrateDatabase(misc.GetConnectionString(config, "activation_records"), config)
+	if err != nil {
+		return fmt.Errorf("could not run activation records database migration: %w", err)
+	}
 	reporting := a.app.Features().Reporting.Setup(ctx, config, backendconfig.DefaultBackendConfig)
 	defer reporting.Stop()
 	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config, "reporting")})
@@ -357,6 +366,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		transformationhandle,
 		enrichers,
 		trackedUsersReporter,
+		activationRecordsReporter,
 		pendingEventsRegistry,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 		processor.WithProcDB(procRWDB),
