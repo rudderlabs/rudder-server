@@ -21,6 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/activationrecords"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
@@ -168,6 +169,7 @@ func TestProcessorManager(t *testing.T) {
 		transformationdebugger.NewNoOpService(),
 		[]enricher.PipelineEnricher{},
 		trackedusers.NewNoopDataCollector(),
+		activationrecords.NewNoopActivationRecordsReporter(),
 		rmetrics.NewPendingEventsRegistry(),
 		WithStats(statsStore),
 		func(m *LifecycleManager) {
