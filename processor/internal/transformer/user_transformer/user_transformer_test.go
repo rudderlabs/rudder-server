@@ -1909,6 +1909,7 @@ func TestForwardTest(t *testing.T) {
 		defer srv.Close()
 
 		conf := config.New()
+		conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
 		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
 		client := user_transformer.New(conf, logger.NOP, stats.NOP)
 
@@ -1949,6 +1950,7 @@ func TestForwardTest(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 		conf := config.New()
+		conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
 		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
 		client := user_transformer.New(conf, logger.NOP, statsStore,
 			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
@@ -1973,6 +1975,7 @@ func TestForwardTest(t *testing.T) {
 		defer srv.Close()
 
 		conf := config.New()
+		conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
 		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
 		client := user_transformer.New(conf, logger.NOP, stats.NOP,
 			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
