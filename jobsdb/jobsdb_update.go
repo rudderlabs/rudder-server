@@ -105,14 +105,6 @@ func (jd *Handle) WithUpdateSafeTxFromTx(ctx context.Context, tx *Tx, f func(tx 
 }
 
 func (jd *Handle) inUpdateSafeCtx(ctx context.Context, f func(dsList []dataSetT, dsRangeList []dataSetRangeT) error) error {
-	// Keep this order: take the compaction read lock before acquiring the
-	// dataset-list snapshot. Compaction and drop paths publish snapshots under
-	// the same ordering, so reversing it can deadlock.
-	if !jd.dsCompactionLock.RTryLockWithCtx(ctx) {
-		return fmt.Errorf("could not acquire a compaction read lock: %w", ctx.Err())
-	}
-	defer jd.dsCompactionLock.RUnlock()
-
 	dsList, dsRangeList, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
 		return err
@@ -382,7 +374,7 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 								},
 							)
 							// If multi-consumer, also invalidate consumer=* so that all-consumer
-							// queries (e.g. GetPendingJobs) are not served stale results after
+							// queries (e.g. GetPendingConsumerJobs) are not served stale results after
 							// any consumer writes a status.
 							if jd.conf.multiConsumer {
 								parameterFilters = append(parameterFilters, ParameterFilterT{Name: consumerParamName, Value: "*"})

@@ -117,16 +117,19 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 	mpe.logger.Infon("Starting partition migration")
 
 	// refresh the DS list to ensure that we'll move partition data from all datasets
+	mpe.logger.Infon("Refreshing dataset list")
 	if err := mpe.sourceDB.RefreshDSList(ctx); err != nil {
-		return fmt.Errorf("refreshing DS list: %w", err)
+		return fmt.Errorf("refreshing dataset list: %w", err)
 	}
 
 	// mark any executing jobs as failed to handle previous interrupted migrations
+	mpe.logger.Infon("Marking executing jobs as failed")
 	if err := mpe.markExecutingJobsAsFailed(ctx); err != nil {
 		return fmt.Errorf("marking executing jobs as failed: %w", err)
 	}
 
 	// create a partition migrator client
+	mpe.logger.Infon("Creating partition migration client")
 	client, err := NewPartitionMigrationClient(mpe.target, mpe.conf)
 	if err != nil {
 		return fmt.Errorf("creating partition migrator client: %w", err)
@@ -190,11 +193,11 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 			mpe.logger.Debugn("Getting next batch of jobs to process",
 				logger.NewIntField("batchIndex", int64(batchIndex)),
 			)
-			jobs, err := mpe.sourceDB.GetToProcess(streamCtx, jobsdb.GetQueryParams{
+			jobs, err := mpe.sourceDB.GetPendingConsumerJobs(streamCtx, []string{jobsdb.Failed.State, jobsdb.Waiting.State, jobsdb.Unprocessed.State}, jobsdb.GetQueryParams{
 				PartitionFilters: mpe.partitionIDs,
 				JobsLimit:        mpe.batchSize.Load(),
 				PayloadSizeLimit: mpe.payloadSizeLimit.Load(),
-			}, nil)
+			})
 			if err != nil {
 				return fmt.Errorf("getting batch %d of jobs to process: %w", batchIndex, err)
 			}
@@ -379,7 +382,7 @@ func (mpe *migrationJobExecutor) markExecutingJobsAsFailed(ctx context.Context) 
 	defer mpe.stats.NewTaggedStat("partition_mig_jobexec_fail_executing", stats.TimerType, mpe.statsTags()).RecordDuration()()
 	var total int
 	for done := false; !done; {
-		executingJobsResult, err := mpe.sourceDB.GetJobs(ctx, []string{jobsdb.Executing.State}, jobsdb.GetQueryParams{
+		executingJobsResult, err := mpe.sourceDB.GetPendingConsumerJobs(ctx, []string{jobsdb.Executing.State}, jobsdb.GetQueryParams{
 			PartitionFilters: mpe.partitionIDs,
 			JobsLimit:        mpe.batchSize.Load(),
 			PayloadSizeLimit: mpe.payloadSizeLimit.Load(),
@@ -422,25 +425,35 @@ func (mpe *migrationJobExecutor) updateJobStatus(ctx context.Context, jobs []*jo
 	default:
 	}
 	now := time.Now()
-	statusList := make([]*jobsdb.JobStatusT, len(jobs))
-	for i, job := range jobs {
+	// One status row per (job, consumer): jobs carry only their pending/matched consumers (GetPendingConsumerJobs
+	// trims Consumers to those), so this marks exactly the consumers being migrated. A single-consumer job
+	// carries {""}, yielding the usual single consumer='' row.
+	var statusList []*jobsdb.JobStatusT
+	for _, job := range jobs {
 		params := job.LastJobStatus.Parameters
 		if len(params) == 0 {
 			params = []byte("{}")
 		}
-		statusList[i] = &jobsdb.JobStatusT{
-			JobID:         job.JobID,
-			JobState:      state,
-			AttemptNum:    job.LastJobStatus.AttemptNum,
-			ExecTime:      now,
-			RetryTime:     now,
-			ErrorCode:     errorCode,
-			ErrorResponse: errorResponse,
-			Parameters:    params,
-			JobParameters: job.Parameters,
-			WorkspaceId:   job.WorkspaceId,
-			PartitionID:   job.PartitionID,
-			CustomVal:     job.CustomVal,
+		consumers := job.Consumers
+		if len(consumers) == 0 {
+			consumers = []string{""}
+		}
+		for _, consumer := range consumers {
+			statusList = append(statusList, &jobsdb.JobStatusT{
+				JobID:         job.JobID,
+				JobState:      state,
+				AttemptNum:    job.LastJobStatus.AttemptNum,
+				ExecTime:      now,
+				RetryTime:     now,
+				ErrorCode:     errorCode,
+				ErrorResponse: errorResponse,
+				Parameters:    params,
+				JobParameters: job.Parameters,
+				WorkspaceId:   job.WorkspaceId,
+				PartitionID:   job.PartitionID,
+				CustomVal:     job.CustomVal,
+				Consumer:      consumer,
+			})
 		}
 	}
 	return mpe.sourceDB.UpdateJobStatus(ctx, statusList)
