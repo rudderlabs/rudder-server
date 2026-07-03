@@ -75,6 +75,10 @@ func (m *migrator) Handle(ctx context.Context, migration *etcdtypes.PartitionMig
 	if len(sourcePartitions) == 0 {
 		return nil // no partitions to handle
 	}
+	m.logger.Infon("Marking source partitions as read-excluded",
+		logger.NewStringField("partitions", misc.TruncatedList(sourcePartitions, 10)),
+	)
+
 	if err := m.addReadExcludedPartitions(ctx, sourcePartitions); err != nil {
 		return fmt.Errorf("adding read excluded partitions: %w", err)
 	}
@@ -86,7 +90,16 @@ func (m *migrator) Handle(ctx context.Context, migration *etcdtypes.PartitionMig
 		return fmt.Errorf("waiting for read exclude sleep: %w", err)
 	}
 	// wait until there are no in-progress job statuses in all jobsdbs for the source partitions
-	return m.waitForNoInProgressJobs(ctx, sourcePartitions)
+	m.logger.Infon("Waiting for in-progress jobs to settle",
+		logger.NewStringField("partitions", misc.TruncatedList(sourcePartitions, 10)),
+	)
+	err := m.waitForNoInProgressJobs(ctx, sourcePartitions)
+	if err == nil {
+		m.logger.Infon("Done waiting for in-progress jobs to settle",
+			logger.NewStringField("partitions", misc.TruncatedList(sourcePartitions, 10)),
+		)
+	}
+	return err
 }
 
 // addReadExcludedPartitions marks the given partitions as excluded from reading in all jobsdbs
@@ -120,13 +133,14 @@ func (m *migrator) removeReadExcludedPartitions(ctx context.Context, sourceParti
 // waitForNoInProgressJobs waits until there are no in-progress job statuses in all jobsdbs for the given source partitions.
 func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions []string) error {
 	defer m.stats.NewTaggedStat("partition_mig_src_wait_inprogress", stats.TimerType, m.statsTags()).RecordDuration()()
-	pollTimeoutCtx, cancel := context.WithTimeout(ctx, m.c.waitForInProgressTimeout.Load())
+	pollGroup, pollCtx := errgroup.WithContext(ctx)
+	pollTimeoutCtx, cancel := context.WithTimeout(pollCtx, m.c.waitForInProgressTimeout.Load())
 	defer cancel()
-	pollGroup, pollCtx := errgroup.WithContext(pollTimeoutCtx)
 
 	getInProgressJobs := func(ctx context.Context, readerJobsDB jobsdb.JobsDB) (bool, error) {
+		start := time.Now()
 		for {
-			r, err := readerJobsDB.GetJobs(
+			r, err := readerJobsDB.GetPendingConsumerJobs(
 				ctx,
 				[]string{jobsdb.Executing.State, jobsdb.Importing.State},
 				jobsdb.GetQueryParams{
@@ -135,6 +149,14 @@ func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions
 				},
 			)
 			if err != nil {
+				// this can happen only on the second and subsequent queries
+				if pollCtx.Err() == nil && pollTimeoutCtx.Err() == context.DeadlineExceeded {
+					m.logger.Errorn("Timeout reached before in-progress jobs query loop was done. Consider increasing PartitionMigration.Processor.SourceNode.waitForInProgressTimeout",
+						logger.NewStringField("jobsdb", readerJobsDB.Identifier()),
+						logger.NewStringField("partitions", misc.TruncatedList(sourcePartitions, 10)),
+						logger.NewDurationField("elapsed", time.Since(start)),
+					)
+				}
 				return false, fmt.Errorf("getting in-progress jobs from %q jobsdb: %w", readerJobsDB.Identifier(), err)
 			}
 			if len(r.Jobs) > 0 { // found in-progress jobs
@@ -148,14 +170,18 @@ func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions
 	for _, readerJobsDB := range m.readerJobsDBs {
 		pollGroup.Go(func() error {
 			start := time.Now()
+			// the first query is not subject to the timeout (only to errgroup/parent cancellation), so a slow
+			// initial query does not count against the timeout; every subsequent query is bounded by the timeout.
+			queryCtx := pollCtx
 			hasInProgressJobs := true
 			for hasInProgressJobs {
 				select {
-				case <-pollCtx.Done():
-					return pollCtx.Err()
+				case <-pollTimeoutCtx.Done():
+					return pollTimeoutCtx.Err()
 				default:
 					var err error
-					hasInProgressJobs, err = getInProgressJobs(pollCtx, readerJobsDB)
+					hasInProgressJobs, err = getInProgressJobs(queryCtx, readerJobsDB)
+					queryCtx = pollTimeoutCtx
 					if err != nil {
 						return err
 					}
@@ -166,7 +192,7 @@ func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions
 							logger.NewDurationField("elapsed", time.Since(start)),
 						)
 						// sleep for a short duration before checking again
-						if err := misc.SleepCtx(pollCtx, m.c.inProgressPollSleep.Load()); err != nil {
+						if err := misc.SleepCtx(pollTimeoutCtx, m.c.inProgressPollSleep.Load()); err != nil {
 							return fmt.Errorf("sleeping while waiting for no in-progress jobs in %q jobsdb: %w", readerJobsDB.Identifier(), err)
 						}
 					}
@@ -187,7 +213,6 @@ func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions
 // Run watches for new migration jobs assigned to this source node and handles them asynchronously.
 // All go routines are added to the provided errgroup.Group. It returns an error if the watcher cannot be created.
 func (m *migrator) Run(ctx context.Context, wg *errgroup.Group) error {
-	ctx = jobsdb.WithPriorityPool(ctx)                 // use priority pool for migration job handling
 	m.pendingMigrationJobs = make(map[string]struct{}) // reset pending migration jobs map
 
 	// create a watcher for partition migration jobs
@@ -292,7 +317,7 @@ func (m *migrator) onNewJob(ctx context.Context, key string, job *etcdtypes.Part
 					return client.NewMigrationJobExecutor(
 						job.JobID, m.nodeIndex, job.Partitions, db, target,
 						client.WithConfig(m.config),
-						client.WithLogger(m.logger),
+						client.WithLogger(log),
 						client.WithStats(m.stats),
 					).Run(jobCtx)
 				})

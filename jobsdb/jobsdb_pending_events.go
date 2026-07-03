@@ -3,7 +3,7 @@ package jobsdb
 import (
 	"context"
 
-	"github.com/tidwall/gjson"
+	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 )
 
 type PendingEventsRegistry interface {
@@ -11,17 +11,70 @@ type PendingEventsRegistry interface {
 	DecreasePendingEvents(tablePrefix, workspaceID, destType, destinationID string, value float64)
 }
 
-// NewPendingEventsJobsDB wraps a JobsDB with pending events metrics collection
-func NewPendingEventsJobsDB(jobsDB JobsDB, registry PendingEventsRegistry) JobsDB {
-	return &pendingEventsJobsDB{
-		JobsDB:   jobsDB,
-		registry: registry,
+// PendingEventsOpt configures a pendingEventsJobsDB.
+type PendingEventsOpt func(*pendingEventsJobsDB)
+
+// WithConsumerAsDestinationID makes pending-events accounting derive the destination ID from a
+// job's consumers (resp. a status's consumer) instead of `parameters->>'destination_id'`. Intended
+// for multi-consumer handles where a consumer IS a destination ID: a single job pending for N
+// consumers contributes one pending event per consumer, and a per-consumer terminal status decrements
+// exactly that destination.
+func WithConsumerAsDestinationID() PendingEventsOpt {
+	return func(pejdb *pendingEventsJobsDB) {
+		pejdb.storeDestinationIDs = consumerStoreDestinationIDs
+		pejdb.statusDestinationID = consumerStatusDestinationID
 	}
+}
+
+// NewPendingEventsJobsDB wraps a JobsDB with pending events metrics collection. By default the
+// destination ID is read from `parameters->>'destination_id'`; pass WithConsumerAsDestinationID to
+// treat consumers as destination IDs (multi-consumer handles).
+func NewPendingEventsJobsDB(jobsDB JobsDB, registry PendingEventsRegistry, opts ...PendingEventsOpt) JobsDB {
+	pejdb := &pendingEventsJobsDB{
+		JobsDB:              jobsDB,
+		registry:            registry,
+		storeDestinationIDs: parametersStoreDestinationIDs,
+		statusDestinationID: parametersStatusDestinationID,
+	}
+	for _, opt := range opts {
+		opt(pejdb)
+	}
+	return pejdb
 }
 
 type pendingEventsJobsDB struct {
 	JobsDB
 	registry PendingEventsRegistry
+	// storeDestinationIDs returns the destination ID(s) a stored job is pending for.
+	storeDestinationIDs func(job *JobT) []string
+	// statusDestinationID returns the destination ID a status row belongs to.
+	statusDestinationID func(status *JobStatusT) string
+}
+
+// parametersStoreDestinationIDs reads the single destination ID from the job's parameters.
+func parametersStoreDestinationIDs(job *JobT) []string {
+	return []string{jsonparser.GetStringOrEmpty(job.Parameters, "destination_id")}
+}
+
+// parametersStatusDestinationID reads the destination ID from the status's job parameters.
+func parametersStatusDestinationID(status *JobStatusT) string {
+	if status.JobParameters == nil {
+		return ""
+	}
+	return jsonparser.GetStringOrEmpty(status.JobParameters, "destination_id")
+}
+
+// consumerStoreDestinationIDs treats the job's consumers as its destination IDs.
+func consumerStoreDestinationIDs(job *JobT) []string {
+	if len(job.Consumers) == 0 {
+		return []string{""}
+	}
+	return job.Consumers
+}
+
+// consumerStatusDestinationID treats the status's consumer as its destination ID.
+func consumerStatusDestinationID(status *JobStatusT) string {
+	return status.Consumer
 }
 
 func (pejdb *pendingEventsJobsDB) Store(ctx context.Context, jobList []*JobT) error {
@@ -36,14 +89,15 @@ func (pejdb *pendingEventsJobsDB) StoreInTx(ctx context.Context, tx StoreSafeTx,
 		for _, job := range jobList {
 			workspaceID := job.WorkspaceId
 			destType := job.CustomVal
-			destinationID := gjson.GetBytes(job.Parameters, "destination_id").String()
-			if _, ok := counters[workspaceID]; !ok {
-				counters[workspaceID] = make(map[string]map[string]float64)
+			for _, destinationID := range pejdb.storeDestinationIDs(job) {
+				if _, ok := counters[workspaceID]; !ok {
+					counters[workspaceID] = make(map[string]map[string]float64)
+				}
+				if _, ok := counters[workspaceID][destType]; !ok {
+					counters[workspaceID][destType] = make(map[string]float64)
+				}
+				counters[workspaceID][destType][destinationID]++
 			}
-			if _, ok := counters[workspaceID][destType]; !ok {
-				counters[workspaceID][destType] = make(map[string]float64)
-			}
-			counters[workspaceID][destType][destinationID]++
 		}
 		for workspaceID, destTypeMap := range counters {
 			for destType, destinationIDMap := range destTypeMap {
@@ -71,10 +125,7 @@ func (pejdb *pendingEventsJobsDB) UpdateJobStatusInTx(ctx context.Context, tx Up
 			}
 			workspaceID := status.WorkspaceId
 			destType := status.CustomVal
-			var destinationID string
-			if status.JobParameters != nil {
-				destinationID = gjson.GetBytes(status.JobParameters, "destination_id").String()
-			}
+			destinationID := pejdb.statusDestinationID(status)
 			if _, ok := counters[workspaceID]; !ok {
 				counters[workspaceID] = make(map[string]map[string]float64)
 			}

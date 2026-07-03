@@ -4,12 +4,18 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
+
+// defaultConsumers is the shared, immutable single-element slice holding the legacy ” consumer.
+// It is the consumers value stored for single-consumer handles and the fallback for multi-consumer
+// jobs with no explicit consumers. Reused (never mutated) to avoid per-job allocations on hot paths.
+var defaultConsumers = []string{""}
 
 // applyMultiConsumerFlip handles both directions of the multi-consumer transition.
 //
@@ -91,4 +97,36 @@ func (jd *Handle) registerConsumers(ctx context.Context, tx *Tx, ds dataSetT, jo
 		pq.Array(sorted),
 	)
 	return err
+}
+
+// consumersByDataset returns the exact consumer count for each multi-consumer dataset in dsList,
+// keyed by dataset index. Non-multi-consumer datasets are not included; callers treat a missing
+// entry as a count of 1. Registry tables are tiny (PK-only), so exact counts are cheap.
+func (jd *Handle) consumersByDataset(ctx context.Context, dsList []dataSetT) (map[string]int64, error) {
+	mcDS := lo.Filter(dsList, func(ds dataSetT, _ int) bool { return ds.ConsumersTable != "" })
+	if len(mcDS) == 0 {
+		return nil, nil // nolint:nilnil
+	}
+	parts := make([]string, len(mcDS))
+	for i, ds := range mcDS {
+		parts[i] = fmt.Sprintf(`SELECT '%s' AS ds_index, count(*) AS cnt FROM %q`,
+			ds.Index, ds.ConsumersTable)
+	}
+	rows, err := jd.maintenanceDB().QueryContext(ctx, strings.Join(parts, " UNION ALL "))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	result := make(map[string]int64, len(mcDS))
+	for rows.Next() {
+		var index string
+		var cnt int64
+		if err := rows.Scan(&index, &cnt); err != nil {
+			return nil, err
+		}
+		if cnt > 1 {
+			result[index] = cnt
+		}
+	}
+	return result, rows.Err()
 }
