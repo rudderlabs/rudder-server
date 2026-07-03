@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/rudderlabs/rudder-server/processor/internal/pytscaler"
 	proto "github.com/rudderlabs/rudder-server/proto/processor"
@@ -84,8 +85,10 @@ func TestForwardOverConnection(t *testing.T) {
 	conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
 	conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", pyt.URL)
 
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
 	svc := NewService(conf, logger.NOP, stats.NOP, WithScaler(pytscaler.NewNoop(logger.NOP)))
-	c, err := NewConnector(conf, logger.NOP, nil, svc)
+	c, err := NewConnector(conf, logger.NOP, statsStore, nil, svc)
 	require.NoError(t, err)
 	require.Equal(t, ServiceName, c.cm.AuthInfo.Service)
 	t.Cleanup(func() { c.cm.Apply(cpRouter.addr, false) }) // stop the reconnect loop
@@ -106,6 +109,13 @@ func TestForwardOverConnection(t *testing.T) {
 	require.JSONEq(t, `{"ok":true}`, string(resp.Body))
 	require.Equal(t, "/testRun", gotPath)
 	require.JSONEq(t, `{"code":"x"}`, string(gotBody))
+
+	metrics := statsStore.GetByName("processor_grpc_response_time")
+	require.Len(t, metrics, 1, "the RPC should emit a response-time metric")
+	require.Equal(t, stats.Tags{
+		"reqType": proto.ProcessorService_Forward_FullMethodName,
+		"code":    "200",
+	}, metrics[0].Tags)
 }
 
 // mockCPRouter is a stand-in for cp-router: it accepts the dataplane-initiated

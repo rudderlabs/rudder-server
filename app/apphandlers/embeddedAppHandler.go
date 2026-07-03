@@ -498,7 +498,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	// the flag-off case skip the bootstrap entirely.
 	if cpservice.ShouldConnect(config) {
 		service := cpservice.NewService(config, a.log, statsFactory)
-		cpConnector, err := cpservice.NewConnector(config, a.log, backendconfig.DefaultBackendConfig, service)
+		cpConnector, err := cpservice.NewConnector(config, a.log, statsFactory, backendconfig.DefaultBackendConfig, service)
 		if err != nil {
 			return fmt.Errorf("setting up cp-router connection: %w", err)
 		}
