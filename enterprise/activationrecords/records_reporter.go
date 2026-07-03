@@ -97,7 +97,7 @@ func NewUniqueActivationRecordsReporter(log logger.Logger, conf *config.Config, 
 	return &UniqueActivationRecordsReporter{
 		log:         log,
 		hllSettings: hllSettings,
-		instanceID:  config.GetStringVar("1", "INSTANCE_ID"),
+		instanceID:  conf.GetStringVar("1", "INSTANCE_ID"),
 		stats:       stats,
 		now: func() time.Time {
 			return timeutil.Now()
