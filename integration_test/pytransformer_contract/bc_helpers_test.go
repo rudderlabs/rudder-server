@@ -36,21 +36,42 @@ import (
 
 // containerConfig holds platform-specific Docker container configuration.
 // On Linux, containers use host networking (sharing the host's network namespace).
-// On macOS, containers use bridge networking with port bindings and host.docker.internal.
+// On macOS — or when bridge networking is forced via withBridgeNetworking —
+// containers use bridge networking with port bindings and host.docker.internal.
 type containerConfig struct {
-	hostPort     int // allocated host port (Linux only)
+	bridge       bool // bridge networking (vs host networking)
+	hostPort     int  // allocated host port (host networking only)
 	ExtraHosts   []string
 	PortBindings map[docker.Port][]docker.PortBinding
 	hostConfigFn func(*docker.HostConfig)
 }
 
+type containerConfigOpts struct {
+	forceBridge bool
+}
+
+type containerConfigOpt func(*containerConfigOpts)
+
+// withBridgeNetworking forces bridge networking even where host networking is
+// the default (Linux). For containers that must not share the host's network
+// namespace — e.g. openfaas-flask function containers, whose of-watchdog binds
+// a hard-coded metrics port that collides when two of them share a namespace.
+func withBridgeNetworking() containerConfigOpt {
+	return func(o *containerConfigOpts) { o.forceBridge = true }
+}
+
 // newContainerConfig returns the appropriate Docker configuration for the current platform.
 // Default is host networking (Linux, CI, production). On macOS, Docker Desktop does not
 // support host networking so we fall back to bridge networking with port bindings.
-func newContainerConfig(t *testing.T, containerPort string) containerConfig {
+func newContainerConfig(t *testing.T, containerPort string, opts ...containerConfigOpt) containerConfig {
 	t.Helper()
-	if runtime.GOOS == "darwin" {
+	var o containerConfigOpts
+	for _, opt := range opts {
+		opt(&o)
+	}
+	if runtime.GOOS == "darwin" || o.forceBridge {
 		return containerConfig{
+			bridge:     true,
 			ExtraHosts: []string{"host.docker.internal:host-gateway"},
 			PortBindings: map[docker.Port][]docker.PortBinding{
 				docker.Port(containerPort + "/tcp"): {{HostIP: "127.0.0.1", HostPort: "0"}},
@@ -70,7 +91,7 @@ func newContainerConfig(t *testing.T, containerPort string) containerConfig {
 
 // portStr returns the port to pass as a container environment variable.
 func (c containerConfig) portStr(containerPort string) string {
-	if runtime.GOOS == "darwin" {
+	if c.bridge {
 		return containerPort
 	}
 	return strconv.Itoa(c.hostPort)
@@ -78,7 +99,7 @@ func (c containerConfig) portStr(containerPort string) string {
 
 // url returns the URL to reach the container from the host test process.
 func (c containerConfig) url(container *dockertest.Resource, containerPort string) string {
-	if runtime.GOOS == "darwin" {
+	if c.bridge {
 		return fmt.Sprintf("http://%s:%s",
 			container.GetBoundIP(containerPort+"/tcp"),
 			container.GetPort(containerPort+"/tcp"),
