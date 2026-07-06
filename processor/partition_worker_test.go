@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
+	"github.com/rudderlabs/rudder-server/enterprise/activationrecords"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -35,6 +36,7 @@ func TestWorkerPool(t *testing.T) {
 				stored               int
 				subBatches           int
 				trackedUsers         int
+				activationRecords    int
 				sourceHydration      int
 			}{},
 			limitsReached:                limitsReached,
@@ -128,6 +130,7 @@ func TestWorkerPoolIdle(t *testing.T) {
 			stored               int
 			subBatches           int
 			trackedUsers         int
+			activationRecords    int
 			sourceHydration      int
 		}{},
 	}
@@ -169,6 +172,7 @@ type mockWorkerHandle struct {
 		stored               int
 		subBatches           int
 		trackedUsers         int
+		activationRecords    int
 		sourceHydration      int
 	}
 
@@ -194,6 +198,7 @@ func (m *mockWorkerHandle) validate(t *testing.T) {
 		require.Equalf(t, s.processed, s.userTransform, "Partition %s: Processed %d, User Transform %d", partition, s.queried, s.marked)
 		require.Equalf(t, s.userTransform, s.destinationTransform, "Partition %s: User Transform %d, Destination Transform %d", partition, s.queried, s.marked)
 		require.Equalf(t, s.subBatches, s.trackedUsers, "Partition %s: Tracked Users %d, Subjobs %d", partition, s.trackedUsers, s.subBatches)
+		require.Equalf(t, s.subBatches, s.activationRecords, "Partition %s: Activation Records %d, Subjobs %d", partition, s.activationRecords, s.subBatches)
 		require.Equalf(t, s.processed, s.sourceHydration, "Partition %s: processed %d, Source Hydration %d", partition, s.trackedUsers, s.sourceHydration)
 	}
 }
@@ -392,6 +397,9 @@ func (m *mockWorkerHandle) pretransformStage(_ string, in *preTransformationMess
 		trackedUsersReports: []*trackedusers.UsersReport{
 			{WorkspaceID: sampleWorkspaceID},
 		},
+		activationRecordsReports: []*activationrecords.ActivationRecord{
+			{WorkspaceID: sampleWorkspaceID},
+		},
 	}, nil
 }
 
@@ -416,10 +424,11 @@ func (m *mockWorkerHandle) userTransformStage(partition string, in *transformati
 		logger.NewIntField("trackedUsers", int64(s.trackedUsers)))
 
 	return &userTransformData{
-		ctx:                 in.ctx,
-		totalEvents:         in.totalEvents,
-		hasMore:             in.hasMore,
-		trackedUsersReports: in.trackedUsersReports,
+		ctx:                      in.ctx,
+		totalEvents:              in.totalEvents,
+		hasMore:                  in.hasMore,
+		trackedUsersReports:      in.trackedUsersReports,
+		activationRecordsReports: in.activationRecordsReports,
 	}
 }
 
@@ -444,10 +453,11 @@ func (m *mockWorkerHandle) destinationTransformStage(partition string, in *userT
 		logger.NewIntField("trackedUsers", int64(s.trackedUsers)))
 
 	return &storeMessage{
-		ctx:                 context.Background(),
-		totalEvents:         in.totalEvents,
-		hasMore:             in.hasMore,
-		trackedUsersReports: in.trackedUsersReports,
+		ctx:                      context.Background(),
+		totalEvents:              in.totalEvents,
+		hasMore:                  in.hasMore,
+		trackedUsersReports:      in.trackedUsersReports,
+		activationRecordsReports: in.activationRecordsReports,
 	}
 }
 
@@ -460,6 +470,7 @@ func (m *mockWorkerHandle) storeStage(partition string, _ int, in *storeMessage)
 	s := m.partitionStats[partition]
 	s.stored += in.totalEvents
 	s.trackedUsers += len(in.trackedUsersReports)
+	s.activationRecords += len(in.activationRecordsReports)
 	m.partitionStats[partition] = s
 	m.log.Infon("Store partition",
 		logger.NewStringField("partition", partition),

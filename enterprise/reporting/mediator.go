@@ -18,7 +18,8 @@ import (
 )
 
 const (
-	TrackedUsersReportsTable = "tracked_users_reports"
+	TrackedUsersReportsTable      = "tracked_users_reports"
+	ActivationRecordsReportsTable = "activation_records_reports"
 )
 
 type Mediator struct {
@@ -102,6 +103,13 @@ func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 			panic(err) //  TODO: Should we panic here?
 		}
 		rm.cronRunners = append(rm.cronRunners, trackedUsersFlusher)
+
+		activationRecordsFlusher, err := flusher.CreateRunner(rm.ctx, ActivationRecordsReportsTable, rm.log, rm.stats, config.Default, c.Label)
+		if err != nil {
+			rm.log.Errorn("error creating activation records flusher", obskit.Error(err))
+			panic(err)
+		}
+		rm.cronRunners = append(rm.cronRunners, activationRecordsFlusher)
 	}
 
 	return func() {

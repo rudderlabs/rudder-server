@@ -34,6 +34,17 @@ import (
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
+const (
+	coldStartErrorsMetric = "processor_user_transformer_cold_start_errors_total"
+	languagePython        = "python"
+)
+
+// ErrPerWorkspacePyTNotEnabled is returned by the test-forwarding methods
+// ([Client.Test] et al.) when the per-workspace PyT feature is off (or the
+// client is a mirroring one), so callers can reject the request explicitly
+// instead of it being forwarded to a URL that isn't a pyt deployment.
+var ErrPerWorkspacePyTNotEnabled = errors.New("per-workspace PyT is not enabled")
+
 type Opt func(*Client)
 
 func WithClient(client transformerclient.Client) Opt {
@@ -42,6 +53,20 @@ func WithClient(client transformerclient.Client) Opt {
 
 func ForMirroring() Opt {
 	return func(s *Client) { s.config.forMirroring = true }
+}
+
+// WithMaxRetryBackoffInterval overrides the max backoff interval for this client
+// instance, letting the test-forward path retry a cold pyt with a short backoff
+// instead of the event path's large default interval.
+func WithMaxRetryBackoffInterval(d config.ValueLoader[time.Duration]) Opt {
+	return func(s *Client) { s.config.maxRetryBackoffInterval = d }
+}
+
+// WithMaxRetry overrides the retry budget for this client instance, sizing how
+// many times the test-forward path retries a cold pyt before giving up (also
+// bounded by the caller's deadline).
+func WithMaxRetry(maxRetry config.ValueLoader[int]) Opt {
+	return func(s *Client) { s.config.maxRetry = maxRetry }
 }
 
 func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) *Client {
@@ -252,7 +277,8 @@ func (u *Client) sendBatch(
 				transformationVersionID = clientEvents[0].Destination.Transformations[0].VersionID
 			}
 			u.stat.NewStat("processor_user_transformer_cp_down_retries", stats.CountType).Increment()
-			u.log.Errorn("User transformation HTTP connection error",
+			u.log.Errorn(
+				"User transformation HTTP connection error",
 				obskit.Error(err),
 				obskit.SourceID(clientEvents[0].Metadata.SourceID),
 				obskit.WorkspaceID(clientEvents[0].Metadata.WorkspaceID),
@@ -349,7 +375,8 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = u.config.maxRetryBackoffInterval.Load()
 
-	err := backoffvoid.Retry(ctx,
+	err := backoffvoid.Retry(
+		ctx,
 		transformerutils.WithProcTransformReqTimeStat(func() error {
 			var reqErr error
 			requestStartTime := time.Now()
@@ -376,11 +403,11 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			// This metric is to track cold start errors for PyT, which are expected to be higher than usual due to the nature of PyT scaling.
 			if u.shouldThrowPythonColdStartErr(labels, reqErr, resp) {
 				u.stat.NewTaggedStat(
-					"processor_user_transformer_cold_start_errors_total",
+					coldStartErrorsMetric,
 					stats.CountType,
 					stats.Tags{
 						"workspaceID": labels.WorkspaceID,
-						"language":    "python",
+						"language":    languagePython,
 					},
 				).Increment()
 				u.log.Warnn("cold start error when connecting to workspace transformer", labels.ToLoggerFields()...)
@@ -461,6 +488,108 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	return respData, resp.StatusCode, nil
 }
 
+// Test forwards a control-plane "test" request to the workspace's pyt transformer
+// (POST /test) and returns its HTTP status and body unchanged.
+//
+// NOTE: the four Test/ TestRun/ TestLibrary/ ExtractLibs methods exist only for the Python
+// transformation-test flow, which routes through the per-workspace pyt
+// deployment. JavaScript tests still run on rudder-transformer and never reach
+// here; if JS is ever moved onto this path it will need separate handling for the test endpoints.
+// we will have to identify from the request which language is being tested and route accordingly.
+func (u *Client) Test(ctx context.Context, workspaceID string, payload []byte) (int, []byte, error) {
+	return u.forwardTest(ctx, workspaceID, "/test", payload)
+}
+
+// TestRun forwards a control-plane "testRun" request to the workspace's pyt
+// transformer (POST /testRun) and returns its HTTP status and body unchanged.
+func (u *Client) TestRun(ctx context.Context, workspaceID string, payload []byte) (int, []byte, error) {
+	return u.forwardTest(ctx, workspaceID, "/testRun", payload)
+}
+
+// TestLibrary forwards a control-plane "testLibrary" request to the workspace's
+// pyt transformer (POST /test-library) and returns its HTTP status and body unchanged.
+func (u *Client) TestLibrary(ctx context.Context, workspaceID string, payload []byte) (int, []byte, error) {
+	return u.forwardTest(ctx, workspaceID, "/test-library", payload)
+}
+
+// ExtractLibs forwards a control-plane "extractLibs" request to the workspace's
+// pyt transformer (POST /extract-libs) and returns its HTTP status and body unchanged.
+func (u *Client) ExtractLibs(ctx context.Context, workspaceID string, payload []byte) (int, []byte, error) {
+	return u.forwardTest(ctx, workspaceID, "/extract-libs", payload)
+}
+
+// forwardTest is the shared machinery behind the per-endpoint test methods: it
+// POSTs payload to the workspace's per-workspace pyt transformer at path and
+// returns the pyt HTTP status code and response body unchanged.
+//
+// It is the cp-router test path's counterpart to the event-processing path
+// ([Client.doPost]): both target the pyt-{workspaceID} deployment and share the
+// client's maxRetry/maxRetryBackoffInterval settings, but this call is time-boxed
+// by ctx (cp-router's ~60s test deadline). Callers that need a quicker cold-start
+// recovery build the client with [WithMaxRetryBackoffInterval]/[WithMaxRetry] to
+// shrink the backoff and size the retry budget. It retries only on cold-start
+// signals (connection refused, DNS failure, 502/503);
+// any other response is returned as-is for the caller to pass through.
+func (u *Client) forwardTest(ctx context.Context, workspaceID, path string, payload []byte) (int, []byte, error) {
+	// perWorkspacePyTEnabled is reloadable, so check it per call: a request
+	// arriving while the feature is off must be rejected rather than silently
+	// forwarded to the shared transformer URL the base-URL fallback would yield.
+	if !u.config.perWorkspacePyTEnabled.Load() || u.config.forMirroring {
+		return 0, nil, ErrPerWorkspacePyTNotEnabled
+	}
+	url := u.userTransformBaseURL("python", "", workspaceID) + path
+
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxInterval = u.config.maxRetryBackoffInterval.Load()
+	// MaxInterval only caps growth: the first wait would still be the default
+	// InitialInterval (500ms), overshooting a smaller configured cap.
+	bo.InitialInterval = min(bo.InitialInterval, bo.MaxInterval)
+
+	var (
+		statusCode int
+		body       []byte
+	)
+	err := backoffvoid.Retry(
+		ctx,
+		func() error {
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+			if err != nil {
+				return backoff.Permanent(err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := u.client.Do(req)
+			if isColdStartError(err, resp) {
+				httputil.CloseResponse(resp)
+				u.stat.NewTaggedStat(coldStartErrorsMetric, stats.CountType,
+					stats.Tags{"workspaceID": workspaceID, "language": languagePython}).Increment()
+				if err != nil {
+					return err
+				}
+				return fmt.Errorf("pyt cold start: status %d", resp.StatusCode)
+			}
+			if err != nil {
+				return backoff.Permanent(err)
+			}
+			defer func() { httputil.CloseResponse(resp) }()
+
+			body, err = io.ReadAll(resp.Body)
+			if err != nil {
+				return backoff.Permanent(err)
+			}
+			statusCode = resp.StatusCode
+			return nil
+		},
+		backoff.WithBackOff(bo),
+		backoff.WithMaxTries(uint(u.config.maxRetry.Load()+1)), //nolint:gosec // maxRetry is a small, bounded value
+		// Also bounded by ctx (the caller's ~60s deadline), whichever comes first.
+	)
+	if err != nil {
+		return 0, nil, err
+	}
+	return statusCode, body, nil
+}
+
 // isPerWorkspacePyTPath returns true when the request is targeting the
 // per-workspace PyT URL. Single source of truth shared by URL resolution and
 // the cold-start error / counter path so the two can't drift.
@@ -501,8 +630,12 @@ func isPythonTransformation(language string) bool {
 }
 
 func (u *Client) userTransformURL(language, versionID, workspaceID string) string {
+	return u.userTransformBaseURL(language, versionID, workspaceID) + "/customTransform"
+}
+
+func (u *Client) userTransformBaseURL(language, versionID, workspaceID string) string {
 	if !isPythonTransformation(language) {
-		return u.config.userTransformationURL + "/customTransform"
+		return u.config.userTransformationURL
 	}
 	// Per-workspace PyT: a global version allowlist doesn't apply — each
 	// workspace runs its own pod with its own version.
@@ -512,11 +645,11 @@ func (u *Client) userTransformURL(language, versionID, workspaceID string) strin
 			panic("per-workspace PyT enabled but workspaceID is empty")
 		}
 		base := strings.ReplaceAll(u.config.perWorkspacePyTURLTemplate, "{workspaceID}", strings.ToLower(workspaceID))
-		return base + "/customTransform"
+		return base
 	}
 	// Legacy shared-PyT path: the version allowlist is a rollout gate for the shared service.
 	if u.config.pythonTransformationURL != "" && u.config.pythonTransformConfig.IsVersionAllowed(versionID) {
-		return u.config.pythonTransformationURL + "/customTransform"
+		return u.config.pythonTransformationURL
 	}
-	return u.config.userTransformationURL + "/customTransform"
+	return u.config.userTransformationURL
 }
