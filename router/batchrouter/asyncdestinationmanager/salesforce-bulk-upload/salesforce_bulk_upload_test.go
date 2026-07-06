@@ -139,6 +139,45 @@ func TestSalesforceBulk_Transform(t *testing.T) {
 	}
 }
 
+func TestSalesforceBulk_Transform_NullTraitsBecomeNASentinel(t *testing.T) {
+	t.Parallel()
+
+	uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, nil, &backendconfig.DestinationT{})
+	result, err := uploader.Transform(&jobsdb.JobT{
+		JobID: 125,
+		EventPayload: []byte(`{
+			"channel": "sources",
+			"context": {
+				"externalId": [
+					{
+						"id": "evelyn.gonzalez@example.com",
+						"identifierType": "Email",
+						"type": "SALESFORCE_BULK_UPLOAD-Lead"
+					}
+				],
+				"mappedToDestination": "true"
+			},
+			"traits": {
+				"FirstName": "Evelyn",
+				"LastName": null,
+				"Phone": null
+			},
+			"type": "identify",
+			"userId": "evelyn.gonzalez@example.com"
+		}`),
+	})
+	require.NoError(t, err)
+
+	var parsed common.AsyncJob
+	require.NoError(t, jsonrs.Unmarshal([]byte(result), &parsed))
+	// Salesforce Bulk API ignores empty CSV cells, so explicit nulls must be
+	// encoded as the #N/A sentinel for the field to actually be cleared.
+	require.Equal(t, "#N/A", parsed.Message["LastName"])
+	require.Equal(t, "#N/A", parsed.Message["Phone"])
+	require.Equal(t, "Evelyn", parsed.Message["FirstName"])
+	require.Equal(t, "evelyn.gonzalez@example.com", parsed.Message["Email"])
+}
+
 func TestSalesforceBulk_Upload(t *testing.T) {
 	tempFile, err := os.CreateTemp("", "test_upload_*.json")
 	require.NoError(t, err)

@@ -120,6 +120,12 @@ type importingMetadata struct {
 const (
 	destName = "SALESFORCE_BULK_UPLOAD"
 
+	// salesforceNullSentinel is Salesforce Bulk API's documented value for
+	// clearing a field: an empty CSV cell means "leave the field unchanged",
+	// while #N/A sets the field to null.
+	// https://developer.salesforce.com/docs/atlas.en-us.api_asynch.meta/api_asynch/datafiles_prepare_csv.htm
+	salesforceNullSentinel = "#N/A"
+
 	// noCorrelationMetadataReason aborts jobs when no externalId metadata is
 	// present on the importing job statuses, so none of the Salesforce results
 	// can be correlated back (e.g. pre-change in-flight jobs, or a bug). This is
