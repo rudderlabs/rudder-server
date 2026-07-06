@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.80.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.79.0...v1.80.0-rc.1) (2026-07-06)
+
+
+### Features
+
+* add control-plane connection management for processor ([#7126](https://github.com/rudderlabs/rudder-server/issues/7126)) ([ea6ca00](https://github.com/rudderlabs/rudder-server/commit/ea6ca006ddc9709978ea1391677e0bfd1f12c225))
+* carry integration version on DestinationT to the transformer ([#7125](https://github.com/rudderlabs/rudder-server/issues/7125)) ([421c613](https://github.com/rudderlabs/rudder-server/commit/421c6132f2c6098d9d63c25c6f23c8c62325252e))
+* implement Forward RPC for control-plane requests to workspace pyt transformers ([#7143](https://github.com/rudderlabs/rudder-server/issues/7143)) ([8a704cf](https://github.com/rudderlabs/rudder-server/commit/8a704cf6c5e038a6a66e3858916fbba815805933))
+* implement Kubernetes deployment scaler for workspace replica management ([#7123](https://github.com/rudderlabs/rudder-server/issues/7123)) ([84fc747](https://github.com/rudderlabs/rudder-server/commit/84fc747b56f8d25b11cb3966db2650fd547f4dcd))
+* monthly active records (MAR) metering pipeline ([#7119](https://github.com/rudderlabs/rudder-server/issues/7119)) ([d1df486](https://github.com/rudderlabs/rudder-server/commit/d1df4864058152bd669f025ff66b3ad16ce26582))
+
+
+### Bug Fixes
+
+* **router:** transformer returning response with empty metadata array causes server to panic ([#7144](https://github.com/rudderlabs/rudder-server/issues/7144)) ([d6a4dbc](https://github.com/rudderlabs/rudder-server/commit/d6a4dbc7b24b63c52ec41126525b08513b29a813))
+
+
+### Miscellaneous
+
+* enable compression for google pubsub ([#7137](https://github.com/rudderlabs/rudder-server/issues/7137)) ([11c9ab8](https://github.com/rudderlabs/rudder-server/commit/11c9ab8b50de16840031ef349f87090a0401eba3))
+
 ## [1.79.2](https://github.com/rudderlabs/rudder-server/compare/v1.79.1...v1.79.2) (2026-07-01)
 
 
