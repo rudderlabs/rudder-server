@@ -3,6 +3,7 @@ package cpservice
 import (
 	"context"
 	"errors"
+	"regexp"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,6 +18,14 @@ import (
 // endpointForward is a Forwarder method bound to a single pyt endpoint.
 type endpointForward func(ctx context.Context, workspaceID string, payload []byte) (int, []byte, error)
 
+// validWorkspaceID gates what Forward substitutes into the pyt URL template and
+// the pyt Deployment name. Anything beyond alphanumerics and hyphens must be
+// rejected here: URL-significant characters (@, #, ?, /, :) surviving into the
+// template would let a request redirect the forward to an arbitrary host
+// (SSRF). 59 keeps "pyt-" + the lowercased ID within the 63-char DNS label
+// limit the Deployment name is subject to anyway.
+var validWorkspaceID = regexp.MustCompile(`^[a-zA-Z0-9-]{1,59}$`)
+
 // Forward is the processor's only CP-facing RPC. It maps req.Op to the matching
 // pyt endpoint, ensures the workspace's pyt Deployment is scaled up, and forwards
 // req.Payload to it, returning the pyt response status and body unchanged.
@@ -28,8 +37,8 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 	if !ok {
 		return nil, status.Errorf(codes.InvalidArgument, "unknown op %v", req.Op)
 	}
-	if req.WorkspaceId == "" {
-		return nil, status.Error(codes.InvalidArgument, "workspaceId is required")
+	if !validWorkspaceID.MatchString(req.WorkspaceId) {
+		return nil, status.Error(codes.InvalidArgument, "workspaceId must be 1-59 alphanumeric or hyphen characters")
 	}
 
 	if err := s.ensureScaled(ctx, req.WorkspaceId); err != nil {

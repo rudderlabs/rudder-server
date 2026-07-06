@@ -3,6 +3,7 @@ package cpservice
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -116,10 +117,41 @@ func TestForward(t *testing.T) {
 		}
 	})
 
-	t.Run("rejects an empty workspaceId with InvalidArgument", func(t *testing.T) {
-		svc := newService(t, nil, pytscaler.NewNoop(logger.NOP), &fakeForwarder{})
-		_, err := svc.Forward(context.Background(), &proto.ForwardRequest{Op: proto.Op_OP_TEST})
-		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	t.Run("rejects workspaceIds that could escape the pyt URL template", func(t *testing.T) {
+		cases := []struct {
+			name        string
+			workspaceID string
+		}{
+			{"empty", ""},
+			{"userinfo and fragment (SSRF)", "a@evil.com#"},
+			{"path separator", "a/b"},
+			{"port separator", "a:8080"},
+			{"query separator", "a?x=1"},
+			{"path traversal", "../etc"},
+			{"whitespace", "ws 1"},
+			{"longer than a DNS label allows", strings.Repeat("a", 60)},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				fwd := &fakeForwarder{statusCode: 200}
+				svc := newService(t, nil, pytscaler.NewNoop(logger.NOP), fwd)
+				_, err := svc.Forward(context.Background(),
+					&proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: tc.workspaceID})
+				require.Equal(t, codes.InvalidArgument, status.Code(err))
+				require.Empty(t, fwd.gotEndpoint, "an invalid workspaceId must never reach the forwarder")
+			})
+		}
+	})
+
+	t.Run("accepts well-formed workspaceIds", func(t *testing.T) {
+		for _, id := range []string{"ws-1", "2CJhY0aBcDeFgHiJkLmNoPqRsTu", strings.Repeat("a", 59)} {
+			fwd := &fakeForwarder{statusCode: 200}
+			svc := newService(t, nil, pytscaler.NewNoop(logger.NOP), fwd)
+			_, err := svc.Forward(context.Background(),
+				&proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: id})
+			require.NoErrorf(t, err, "workspaceId %q", id)
+			require.Equal(t, id, fwd.gotWorkspaceID)
+		}
 	})
 
 	t.Run("scales up to the configured target when the deployment is at zero", func(t *testing.T) {
