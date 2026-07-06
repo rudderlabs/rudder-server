@@ -18,67 +18,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/processor/internal/pytscaler"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/user_transformer"
 	proto "github.com/rudderlabs/rudder-server/proto/processor"
 )
-
-// fakeForwarder records which endpoint method was called and returns a canned
-// response, so tests can assert Forward dispatches each op to the right method.
-type fakeForwarder struct {
-	gotEndpoint    string
-	gotWorkspaceID string
-	gotPayload     []byte
-
-	statusCode int
-	body       []byte
-	err        error
-}
-
-func (f *fakeForwarder) record(endpoint, workspaceID string, payload []byte) (int, []byte, error) {
-	f.gotEndpoint, f.gotWorkspaceID, f.gotPayload = endpoint, workspaceID, payload
-	return f.statusCode, f.body, f.err
-}
-
-func (f *fakeForwarder) Test(_ context.Context, workspaceID string, payload []byte) (int, []byte, error) {
-	return f.record("test", workspaceID, payload)
-}
-
-func (f *fakeForwarder) TestRun(_ context.Context, workspaceID string, payload []byte) (int, []byte, error) {
-	return f.record("testRun", workspaceID, payload)
-}
-
-func (f *fakeForwarder) TestLibrary(_ context.Context, workspaceID string, payload []byte) (int, []byte, error) {
-	return f.record("testLibrary", workspaceID, payload)
-}
-
-func (f *fakeForwarder) ExtractLibs(_ context.Context, workspaceID string, payload []byte) (int, []byte, error) {
-	return f.record("extractLibs", workspaceID, payload)
-}
-
-// fakeScaler records scaler calls; getReplicas is the count GetReplicaCount reports.
-type fakeScaler struct {
-	getReplicas int
-	getErr      error
-
-	setCalled bool
-	setCount  int
-}
-
-func (s *fakeScaler) GetReplicaCount(context.Context, string) (int, error) {
-	return s.getReplicas, s.getErr
-}
-
-func (s *fakeScaler) SetReplicaCount(_ context.Context, _ string, count int) error {
-	s.setCalled, s.setCount = true, count
-	return nil
-}
-
-func newService(t *testing.T, conf *config.Config, scaler pytscaler.Scaler, fwd Forwarder) *Service {
-	t.Helper()
-	if conf == nil {
-		conf = config.New()
-	}
-	return NewService(conf, logger.NOP, nil, WithScaler(scaler), WithForwarder(fwd))
-}
 
 func TestForward(t *testing.T) {
 	t.Run("dispatches each op to its endpoint method and passes status/body through", func(t *testing.T) {
@@ -154,31 +96,41 @@ func TestForward(t *testing.T) {
 		}
 	})
 
-	t.Run("scales up to the configured target when the deployment is at zero", func(t *testing.T) {
+	t.Run("asks the scaler for the configured replica target", func(t *testing.T) {
 		conf := config.New()
 		conf.Set("Processor.UserTransformer.pytTestScaleReplicas", 3)
-		scaler := &fakeScaler{getReplicas: 0}
+		scaler := &fakeScaler{}
 		svc := newService(t, conf, scaler, &fakeForwarder{statusCode: 200})
 
 		_, err := svc.Forward(context.Background(), &proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: "ws-1"})
 		require.NoError(t, err)
-		require.True(t, scaler.setCalled)
-		require.Equal(t, 3, scaler.setCount)
-	})
-
-	t.Run("does not scale when the deployment is already running", func(t *testing.T) {
-		scaler := &fakeScaler{getReplicas: 1}
-		svc := newService(t, nil, scaler, &fakeForwarder{statusCode: 200})
-
-		_, err := svc.Forward(context.Background(), &proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: "ws-1"})
-		require.NoError(t, err)
-		require.False(t, scaler.setCalled)
+		require.True(t, scaler.called)
+		require.Equal(t, 3, scaler.count)
 	})
 
 	t.Run("returns FailedPrecondition when the pyt deployment is missing", func(t *testing.T) {
-		scaler := &fakeScaler{getErr: pytscaler.ErrDeploymentNotFound}
-		svc := newService(t, nil, scaler, &fakeForwarder{})
+		scaler := &fakeScaler{err: pytscaler.ErrDeploymentNotFound}
+		fwd := &fakeForwarder{}
+		svc := newService(t, nil, scaler, fwd)
 
+		_, err := svc.Forward(context.Background(), &proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: "ws-1"})
+		require.Equal(t, codes.FailedPrecondition, status.Code(err))
+		require.Empty(t, fwd.gotEndpoint, "a failed scale must not be forwarded")
+	})
+
+	t.Run("returns Internal when scaling fails", func(t *testing.T) {
+		scaler := &fakeScaler{err: errors.New("k8s api unavailable")}
+		fwd := &fakeForwarder{}
+		svc := newService(t, nil, scaler, fwd)
+
+		_, err := svc.Forward(context.Background(), &proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: "ws-1"})
+		require.Equal(t, codes.Internal, status.Code(err))
+		require.Empty(t, fwd.gotEndpoint, "a failed scale must not be forwarded")
+	})
+
+	t.Run("returns FailedPrecondition when per-workspace PyT is not enabled", func(t *testing.T) {
+		svc := newService(t, nil, pytscaler.NewNoop(logger.NOP),
+			&fakeForwarder{err: user_transformer.ErrPerWorkspacePyTNotEnabled})
 		_, err := svc.Forward(context.Background(), &proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: "ws-1"})
 		require.Equal(t, codes.FailedPrecondition, status.Code(err))
 	})
@@ -190,11 +142,12 @@ func TestForward(t *testing.T) {
 	})
 
 	// Run with -race to catch unsynchronised access to Service state under
-	// concurrent Forwards. singleflight serializes same-workspace scale checks, so
-	// combined with get-before-set on the (now non-zero) replicas only the first
-	// execution scales: a burst scales the workspace up exactly once. The first
-	// GetReplicaCount is held open so, without singleflight, every request would
-	// read zero and scale — making this a real regression test for the collapse.
+	// concurrent Forwards. singleflight collapses same-workspace calls onto the
+	// in-flight EnsureScaled, whose first execution scales and leaves the replicas
+	// non-zero, so a burst scales the workspace up exactly once. The first
+	// EnsureScaled is held open so, without singleflight, every request would
+	// see zero replicas and scale — making this a real regression test for the
+	// collapse.
 	t.Run("scales a workspace up exactly once under a concurrent burst", func(t *testing.T) {
 		scaler := &countingScaler{block: make(chan struct{})}
 		svc := newService(t, nil, scaler, stubForwarder{statusCode: 200})
@@ -213,8 +166,61 @@ func TestForward(t *testing.T) {
 		close(scaler.block)
 		wg.Wait()
 
-		require.Equal(t, int32(1), scaler.sets.Load(), "a concurrent burst must scale the workspace up exactly once")
+		require.Equal(t, int32(1), scaler.scales.Load(), "a concurrent burst must scale the workspace up exactly once")
 	})
+}
+
+// fakeForwarder records which endpoint method was called and returns a canned
+// response, so tests can assert Forward dispatches each op to the right method.
+type fakeForwarder struct {
+	gotEndpoint    string
+	gotWorkspaceID string
+	gotPayload     []byte
+
+	statusCode int
+	body       []byte
+	err        error
+}
+
+func (f *fakeForwarder) record(endpoint, workspaceID string, payload []byte) (int, []byte, error) {
+	f.gotEndpoint, f.gotWorkspaceID, f.gotPayload = endpoint, workspaceID, payload
+	return f.statusCode, f.body, f.err
+}
+
+func (f *fakeForwarder) Test(_ context.Context, workspaceID string, payload []byte) (int, []byte, error) {
+	return f.record("test", workspaceID, payload)
+}
+
+func (f *fakeForwarder) TestRun(_ context.Context, workspaceID string, payload []byte) (int, []byte, error) {
+	return f.record("testRun", workspaceID, payload)
+}
+
+func (f *fakeForwarder) TestLibrary(_ context.Context, workspaceID string, payload []byte) (int, []byte, error) {
+	return f.record("testLibrary", workspaceID, payload)
+}
+
+func (f *fakeForwarder) ExtractLibs(_ context.Context, workspaceID string, payload []byte) (int, []byte, error) {
+	return f.record("extractLibs", workspaceID, payload)
+}
+
+// fakeScaler records the EnsureScaled call and returns err.
+type fakeScaler struct {
+	called bool
+	count  int
+	err    error
+}
+
+func (s *fakeScaler) EnsureScaled(_ context.Context, _ string, count int) error {
+	s.called, s.count = true, count
+	return s.err
+}
+
+func newService(t *testing.T, conf *config.Config, scaler pytscaler.Scaler, fwd Forwarder) *Service {
+	t.Helper()
+	if conf == nil {
+		conf = config.New()
+	}
+	return NewService(conf, logger.NOP, nil, WithScaler(scaler), WithForwarder(fwd))
 }
 
 // stubForwarder is a stateless, concurrency-safe forwarder returning a canned
@@ -241,28 +247,27 @@ func (f stubForwarder) ExtractLibs(context.Context, string, []byte) (int, []byte
 	return f.forward()
 }
 
-// countingScaler counts scaler calls (atomically, for -race) and blocks the first
-// GetReplicaCount on block so concurrent callers coalesce onto it via singleflight.
-// SetReplicaCount records the new count so later checks see the workspace as
-// already scaled — mirroring real scaling and making the scale-up idempotent.
+// countingScaler counts scale-ups (atomically, for -race) and blocks the first
+// EnsureScaled on block so concurrent callers coalesce onto it via singleflight.
+// Like the real scaler it tracks replicas and scales only from zero, so later
+// executions see the workspace as already scaled — mirroring real scaling and
+// keeping EnsureScaled idempotent.
 type countingScaler struct {
 	replicas atomic.Int32
 	block    chan struct{}
 	waiting  atomic.Int32
-	sets     atomic.Int32
+	scales   atomic.Int32
 	released atomic.Bool
 }
 
-func (s *countingScaler) GetReplicaCount(context.Context, string) (int, error) {
+func (s *countingScaler) EnsureScaled(_ context.Context, _ string, count int) error {
 	if s.released.CompareAndSwap(false, true) {
 		s.waiting.Add(1)
-		<-s.block // hold the first check open so a burst can coalesce onto it
+		<-s.block // hold the first call open so a burst can coalesce onto it
 	}
-	return int(s.replicas.Load()), nil
-}
-
-func (s *countingScaler) SetReplicaCount(_ context.Context, _ string, count int) error {
-	s.sets.Add(1)
-	s.replicas.Store(int32(count))
+	if s.replicas.Load() == 0 {
+		s.scales.Add(1)
+		s.replicas.Store(int32(count))
+	}
 	return nil
 }

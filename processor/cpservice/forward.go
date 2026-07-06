@@ -12,6 +12,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/processor/internal/pytscaler"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/user_transformer"
 	proto "github.com/rudderlabs/rudder-server/proto/processor"
 )
 
@@ -52,6 +53,9 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 
 	statusCode, body, err := forward(ctx, req.WorkspaceId, req.Payload)
 	if err != nil {
+		if errors.Is(err, user_transformer.ErrPerWorkspacePyTNotEnabled) {
+			return nil, status.Error(codes.FailedPrecondition, "per-workspace PyT is not enabled")
+		}
 		s.log.Warnn("forwarding to pyt",
 			obskit.WorkspaceID(req.WorkspaceId), logger.NewStringField("op", req.Op.String()), obskit.Error(err))
 		return nil, status.Errorf(codes.Unavailable, "forwarding to pyt: %v", err)
@@ -63,8 +67,8 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 }
 
 // ensureScaled scales the workspace's pyt Deployment up to the configured target
-// only when it is currently at zero replicas (get-before-set), keeping the call
-// idempotent and a no-op when the deployment is already running.
+// when it is currently at zero replicas; the scaler's EnsureScaled is idempotent
+// and a no-op when the deployment is already running.
 //
 // Concurrent Forwards for the same workspace are collapsed by singleflight so a
 // burst of test requests triggers a single scale check — not one per request —
@@ -74,15 +78,7 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 // negligible, and on error the caller retries the whole RPC.)
 func (s *Service) ensureScaled(ctx context.Context, workspaceID string) error {
 	_, err, _ := s.scaleGroup.Do(workspaceID, func() (any, error) {
-		count, err := s.scaler.GetReplicaCount(ctx, workspaceID)
-		if err != nil {
-			return nil, err
-		}
-		if count > 0 {
-			// Already scaled; no-op.
-			return struct{}{}, nil
-		}
-		return nil, s.scaler.SetReplicaCount(ctx, workspaceID, s.scaleTo.Load())
+		return nil, s.scaler.EnsureScaled(ctx, workspaceID, s.scaleTo.Load())
 	})
 	return err
 }

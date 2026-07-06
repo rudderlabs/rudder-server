@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -41,6 +42,7 @@ import (
 )
 
 type fakeTransformer struct {
+	mu       sync.Mutex
 	requests [][]types.TransformerEvent
 	t        testing.TB
 }
@@ -55,7 +57,9 @@ func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		require.NoError(t.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
 	}
 
+	t.mu.Lock()
 	t.requests = append(t.requests, reqBody)
+	t.mu.Unlock()
 
 	responses := make([]types.TransformerResponse, len(reqBody))
 
@@ -1969,7 +1973,9 @@ func TestForwardTest(t *testing.T) {
 	})
 
 	t.Run("stops retrying when the deadline is exceeded", func(t *testing.T) {
+		var attempts atomic.Int32
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attempts.Add(1)
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}))
 		defer srv.Close()
@@ -1983,6 +1989,24 @@ func TestForwardTest(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
 		_, _, err := client.Test(ctx, "ws-1", []byte(`{}`))
-		require.Error(t, err)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.Greater(t, attempts.Load(), int32(1), "the 503 should have been retried until the deadline")
+	})
+
+	t.Run("returns ErrPerWorkspacePyTNotEnabled without dialing when the feature is off", func(t *testing.T) {
+		var calls atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+		}))
+		defer srv.Close()
+
+		conf := config.New()
+		// perWorkspacePyTEnabled left at its default (false).
+		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
+		client := user_transformer.New(conf, logger.NOP, stats.NOP)
+
+		_, _, err := client.Test(context.Background(), "ws-1", []byte(`{}`))
+		require.ErrorIs(t, err, user_transformer.ErrPerWorkspacePyTNotEnabled)
+		require.Zero(t, calls.Load(), "nothing must be dialed when the feature is off")
 	})
 }

@@ -39,6 +39,12 @@ const (
 	languagePython        = "python"
 )
 
+// ErrPerWorkspacePyTNotEnabled is returned by the test-forwarding methods
+// ([Client.Test] et al.) when the per-workspace PyT feature is off (or the
+// client is a mirroring one), so callers can reject the request explicitly
+// instead of it being forwarded to a URL that isn't a pyt deployment.
+var ErrPerWorkspacePyTNotEnabled = errors.New("per-workspace PyT is not enabled")
+
 type Opt func(*Client)
 
 func WithClient(client transformerclient.Client) Opt {
@@ -525,10 +531,19 @@ func (u *Client) ExtractLibs(ctx context.Context, workspaceID string, payload []
 // signals (connection refused, DNS failure, 502/503);
 // any other response is returned as-is for the caller to pass through.
 func (u *Client) forwardTest(ctx context.Context, workspaceID, path string, payload []byte) (int, []byte, error) {
+	// perWorkspacePyTEnabled is reloadable, so check it per call: a request
+	// arriving while the feature is off must be rejected rather than silently
+	// forwarded to the shared transformer URL the base-URL fallback would yield.
+	if !u.config.perWorkspacePyTEnabled.Load() || u.config.forMirroring {
+		return 0, nil, ErrPerWorkspacePyTNotEnabled
+	}
 	url := u.userTransformBaseURL("python", "", workspaceID) + path
 
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = u.config.maxRetryBackoffInterval.Load()
+	// MaxInterval only caps growth: the first wait would still be the default
+	// InitialInterval (500ms), overshooting a smaller configured cap.
+	bo.InitialInterval = min(bo.InitialInterval, bo.MaxInterval)
 
 	var (
 		statusCode int
