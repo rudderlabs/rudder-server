@@ -3,12 +3,17 @@ package cpservice
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/controlplane"
@@ -54,6 +59,7 @@ type Connector struct {
 func NewConnector(
 	conf *config.Config,
 	log logger.Logger,
+	stat stats.Stats,
 	backendConfig backendconfig.BackendConfig,
 	handler proto.ProcessorServiceServer,
 ) (*Connector, error) {
@@ -76,9 +82,12 @@ func NewConnector(
 			TokenType:       tokenType,
 			Labels:          labels,
 		},
-		RetryInterval:   conf.GetDurationVar(0, time.Second, "Processor.cpRouterConnection.retryInterval"),
-		UseTLS:          conf.GetBoolVar(true, "CP_ROUTER_USE_TLS"),
-		Logger:          log,
+		RetryInterval: conf.GetDurationVar(0, time.Second, "Processor.cpRouterConnection.retryInterval"),
+		UseTLS:        conf.GetBoolVar(true, "CP_ROUTER_USE_TLS"),
+		Logger:        log,
+		Options: []grpc.ServerOption{
+			grpc.UnaryInterceptor(statsInterceptor(stat)),
+		},
 		RegisterService: func(srv *grpc.Server) { proto.RegisterProcessorServiceServer(srv, handler) },
 	}
 	c := &Connector{log: log, backendConfig: backendConfig, cm: cm}
@@ -124,5 +133,23 @@ func (c *Connector) apply(configData map[string]backendconfig.ConfigT) {
 func (c *Connector) stop() {
 	if c.lastURL != "" {
 		c.applyConn(c.lastURL, false)
+	}
+}
+
+// statsInterceptor emits a response-time timer per RPC, tagged with the method
+// and the HTTP status code mapped from the gRPC status
+func statsInterceptor(stat stats.Stats) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		start := time.Now()
+		res, err := handler(ctx, req)
+		statusCode := codes.Unknown
+		if s, ok := status.FromError(err); ok {
+			statusCode = s.Code()
+		}
+		stat.NewTaggedStat("processor_grpc_response_time", stats.TimerType, stats.Tags{
+			"reqType": info.FullMethod,
+			"code":    strconv.Itoa(runtime.HTTPStatusFromCode(statusCode)),
+		}).Since(start)
+		return res, err
 	}
 }

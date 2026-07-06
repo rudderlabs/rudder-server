@@ -1,21 +1,16 @@
-// Package pytscaler reads and sets the replica count of a workspace's
-// per-workspace rudder-pytransformer (pyt-{workspaceID}) Deployment, so the
-// transformation test flow can scale it up from zero before forwarding a request
-// to it.
+// Package pytscaler scales a workspace's per-workspace rudder-pytransformer
+// (pyt-{workspaceID}) Deployment up from zero, so the transformation test flow
+// can wake it before forwarding a request to it.
 //
 // The pyt Deployments default to 0 replicas (Keda scales them back to 0 when
 // idle) and live in one of several pyt namespaces — not a single fixed one and
 // not the processor's own namespace. Because the Kubernetes scale subresource is
-// namespace-scoped, the scaler first locates the Deployment by name across all
-// namespaces (a cluster-wide List by metadata.name) and then operates in the
-// namespace it was found in. It only ever touches the replica count via the scale
-// subresource, never the pod spec, so the deployment's Kata RuntimeClass is
-// preserved.
-//
-// The [Scaler] interface deliberately exposes just two thin primitives over the
-// scale subresource — [Scaler.GetReplicaCount] and [Scaler.SetReplicaCount].
-// Deciding whether a scale-up is actually needed (e.g. "set to N only when the
-// current count is 0") is the caller's responsibility, not this layer's.
+// namespace-scoped, the scaler locates the Deployment by name across all
+// namespaces (a cluster-wide List by metadata.name); that same List already
+// carries the current replica count, so [Scaler.EnsureScaled] decides and scales
+// off a single List — no separate read. It only ever touches the replica count
+// via the scale subresource, never the pod spec, so the deployment's Kata
+// RuntimeClass is preserved.
 //
 // The Kubernetes dependency is hidden behind the [Scaler] interface. [New] builds
 // the real k8s-backed implementation; [NewNoop] returns a do-nothing
@@ -38,19 +33,17 @@ import (
 // Deployment exists for the given workspace in any namespace.
 var ErrDeploymentNotFound = errors.New("pyt deployment not found")
 
-// Scaler reads and sets the replica count of a workspace's pyt Deployment. It is
-// a thin wrapper over the Kubernetes scale subresource; the get-before-set
-// idempotency decision is left to the caller.
+// Scaler wakes a workspace's pyt Deployment via the Kubernetes scale
+// subresource.
 type Scaler interface {
-	// GetReplicaCount returns the current replica count of the workspace's
-	// pyt-{workspaceID} Deployment, locating it by name across all namespaces.
-	// It returns ErrDeploymentNotFound if no such Deployment exists.
-	GetReplicaCount(ctx context.Context, workspaceID string) (int, error)
-	// SetReplicaCount sets the replica count of the workspace's pyt-{workspaceID}
-	// Deployment via the scale subresource. It always writes the given count
-	// unconditionally — ensuring it is only called when a change is needed (e.g.
-	// the current count is 0) is the caller's responsibility.
-	SetReplicaCount(ctx context.Context, workspaceID string, count int) error
+	// EnsureScaled scales the workspace's pyt-{workspaceID} Deployment up to count
+	// replicas when it is currently at zero, and no-ops when it is already
+	// running. It locates the Deployment by name across all namespaces and reads
+	// the current replica count from that same List, so a call costs one List
+	// plus, only when scaling is needed, one UpdateScale. It returns
+	// ErrDeploymentNotFound if no such Deployment exists. Idempotent: safe to call
+	// on every request.
+	EnsureScaled(ctx context.Context, workspaceID string, count int) error
 }
 
 // Opt configures the k8s-backed Scaler built by [New].
@@ -94,15 +87,7 @@ type noopScaler struct {
 	log logger.Logger
 }
 
-// GetReplicaCount reports the deployment as already scaled (1) so callers using
-// the get-before-set pattern skip scaling when k8s is unavailable.
-func (n *noopScaler) GetReplicaCount(_ context.Context, workspaceID string) (int, error) {
-	n.log.Debugn("pyt scaler disabled; reporting deployment as already scaled",
-		logger.NewStringField("workspaceID", workspaceID))
-	return 1, nil
-}
-
-func (n *noopScaler) SetReplicaCount(_ context.Context, workspaceID string, count int) error {
+func (n *noopScaler) EnsureScaled(_ context.Context, workspaceID string, count int) error {
 	n.log.Debugn("pyt scaler disabled; skipping scale",
 		logger.NewStringField("workspaceID", workspaceID),
 		logger.NewIntField("count", int64(count)))

@@ -25,35 +25,60 @@ const (
 	deployName  = "pyt-2abcdef"
 )
 
-func TestGetReplicaCount(t *testing.T) {
-	t.Run("returns the current replica count", func(t *testing.T) {
+func TestEnsureScaled(t *testing.T) {
+	t.Run("scales up to the given count when the deployment is at zero", func(t *testing.T) {
+		cs := newFakeClient(t, deployment(deployName, "pyt-tenant-a", 0))
+		s := newScaler(t, cs, config.New())
+
+		require.NoError(t, s.EnsureScaled(context.Background(), workspaceID, 2))
+
+		require.EqualValues(t, 2, currentReplicas(t, cs, "pyt-tenant-a", deployName))
+		require.True(t, scaleUpdated(cs), "UpdateScale should have been called")
+		require.Equal(t, 1, listActions(cs), "the replica count must come from the locate List, not a second call")
+	})
+
+	t.Run("no-ops when the deployment is already running", func(t *testing.T) {
 		cs := newFakeClient(t, deployment(deployName, "pyt-tenant-a", 3))
 		s := newScaler(t, cs, config.New())
 
-		count, err := s.GetReplicaCount(context.Background(), workspaceID)
-		require.NoError(t, err)
-		require.Equal(t, 3, count)
+		require.NoError(t, s.EnsureScaled(context.Background(), workspaceID, 2))
+
+		require.EqualValues(t, 3, currentReplicas(t, cs, "pyt-tenant-a", deployName),
+			"an already-running deployment must be left untouched")
+		require.False(t, scaleUpdated(cs), "UpdateScale must not be called when already scaled")
+	})
+
+	t.Run("treats a nil spec.replicas as already running", func(t *testing.T) {
+		// A Deployment with spec.replicas unset defaults to 1 replica in k8s.
+		d := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: deployName, Namespace: "pyt-tenant-a"}}
+		cs := newFakeClient(t, d)
+		s := newScaler(t, cs, config.New())
+
+		require.NoError(t, s.EnsureScaled(context.Background(), workspaceID, 2))
+		require.False(t, scaleUpdated(cs))
 	})
 
 	t.Run("locates the deployment by name across namespaces, ignoring others", func(t *testing.T) {
 		cs := newFakeClient(
 			t,
-			deployment("pyt-other", "pyt-tenant-a", 5),       // different name
-			deployment(deployName, "pyt-tenant-b", 2),        // the one we want
+			deployment("pyt-other", "pyt-tenant-a", 0),       // different name
+			deployment(deployName, "pyt-tenant-b", 0),        // the one we want
 			deployment("some-deployment", "pyt-tenant-b", 7), // unrelated
 		)
 		s := newScaler(t, cs, config.New())
 
-		count, err := s.GetReplicaCount(context.Background(), workspaceID)
-		require.NoError(t, err)
-		require.Equal(t, 2, count)
+		require.NoError(t, s.EnsureScaled(context.Background(), workspaceID, 1))
+
+		require.EqualValues(t, 1, currentReplicas(t, cs, "pyt-tenant-b", deployName))
+		require.EqualValues(t, 0, currentReplicas(t, cs, "pyt-tenant-a", "pyt-other"),
+			"deployments with other names must be left untouched")
 	})
 
 	t.Run("returns ErrDeploymentNotFound when no deployment matches", func(t *testing.T) {
 		cs := newFakeClient(t, deployment("pyt-someoneelse", "pyt-tenant-a", 0))
 		s := newScaler(t, cs, config.New())
 
-		_, err := s.GetReplicaCount(context.Background(), workspaceID)
+		err := s.EnsureScaled(context.Background(), workspaceID, 1)
 		require.ErrorIs(t, err, ErrDeploymentNotFound)
 	})
 
@@ -65,30 +90,26 @@ func TestGetReplicaCount(t *testing.T) {
 		)
 		s := newScaler(t, cs, config.New())
 
-		_, err := s.GetReplicaCount(context.Background(), workspaceID)
+		err := s.EnsureScaled(context.Background(), workspaceID, 1)
 		require.Error(t, err)
 		require.NotErrorIs(t, err, ErrDeploymentNotFound)
 	})
 
 	t.Run("errors on an empty workspaceID", func(t *testing.T) {
 		s := newScaler(t, newFakeClient(t), config.New())
-		_, err := s.GetReplicaCount(context.Background(), "")
-		require.Error(t, err)
+		require.Error(t, s.EnsureScaled(context.Background(), "", 1))
 	})
 
 	t.Run("retries transient k8s errors then succeeds", func(t *testing.T) {
-		cs := newFakeClient(t, deployment(deployName, "pyt-tenant-a", 1))
-		// Fail the first two GetScale calls with a transient error, then let it through.
+		cs := newFakeClient(t, deployment(deployName, "pyt-tenant-a", 0))
+		// Fail the first two Lists with a transient error, then let them through.
 		var attempts int
-		cs.PrependReactor("get", "deployments", func(action ktesting.Action) (bool, runtime.Object, error) {
-			if action.(ktesting.GetActionImpl).GetSubresource() != "scale" {
-				return false, nil, nil
-			}
+		cs.PrependReactor("list", "deployments", func(ktesting.Action) (bool, runtime.Object, error) {
 			attempts++
 			if attempts <= 2 {
 				return true, nil, apierrors.NewTooManyRequests("slow down", 1)
 			}
-			return false, nil, nil // fall through to the scale reactor
+			return false, nil, nil // fall through to the field-selector reactor
 		})
 
 		conf := config.New()
@@ -96,70 +117,15 @@ func TestGetReplicaCount(t *testing.T) {
 		conf.Set("Processor.UserTransformer.pytScaler.retry.maxElapsedTime", "5s")
 		s := newScaler(t, cs, conf)
 
-		count, err := s.GetReplicaCount(context.Background(), workspaceID)
-		require.NoError(t, err)
-		require.Equal(t, 1, count)
-		require.GreaterOrEqual(t, attempts, 3, "GetScale should have been retried")
-	})
-}
-
-func TestSetReplicaCount(t *testing.T) {
-	t.Run("sets the replica count via the scale subresource", func(t *testing.T) {
-		cs := newFakeClient(t, deployment(deployName, "pyt-tenant-a", 0))
-		s := newScaler(t, cs, config.New())
-
-		require.NoError(t, s.SetReplicaCount(context.Background(), workspaceID, 1))
-
+		require.NoError(t, s.EnsureScaled(context.Background(), workspaceID, 1))
 		require.EqualValues(t, 1, currentReplicas(t, cs, "pyt-tenant-a", deployName))
-		require.True(t, scaleUpdated(cs), "UpdateScale should have been called")
-	})
-
-	t.Run("writes the count unconditionally, even when already scaled up", func(t *testing.T) {
-		// The layer has no idempotency of its own — that is the caller's duty.
-		cs := newFakeClient(t, deployment(deployName, "pyt-tenant-a", 2))
-		s := newScaler(t, cs, config.New())
-
-		require.NoError(t, s.SetReplicaCount(context.Background(), workspaceID, 5))
-
-		require.EqualValues(t, 5, currentReplicas(t, cs, "pyt-tenant-a", deployName))
-	})
-
-	t.Run("locates the deployment by name across namespaces", func(t *testing.T) {
-		cs := newFakeClient(
-			t,
-			deployment("pyt-other", "pyt-tenant-a", 0),
-			deployment(deployName, "pyt-tenant-b", 0),
-		)
-		s := newScaler(t, cs, config.New())
-
-		require.NoError(t, s.SetReplicaCount(context.Background(), workspaceID, 1))
-
-		require.EqualValues(t, 1, currentReplicas(t, cs, "pyt-tenant-b", deployName))
-		require.EqualValues(t, 0, currentReplicas(t, cs, "pyt-tenant-a", "pyt-other"),
-			"deployments with other names must be left untouched")
-	})
-
-	t.Run("returns ErrDeploymentNotFound when no deployment matches", func(t *testing.T) {
-		cs := newFakeClient(t, deployment("pyt-someoneelse", "pyt-tenant-a", 0))
-		s := newScaler(t, cs, config.New())
-
-		err := s.SetReplicaCount(context.Background(), workspaceID, 1)
-		require.ErrorIs(t, err, ErrDeploymentNotFound)
-	})
-
-	t.Run("errors on an empty workspaceID", func(t *testing.T) {
-		s := newScaler(t, newFakeClient(t), config.New())
-		require.Error(t, s.SetReplicaCount(context.Background(), "", 1))
+		require.GreaterOrEqual(t, attempts, 3, "the List should have been retried")
 	})
 }
 
 func TestNoopScaler(t *testing.T) {
 	s := NewNoop(logger.NOP)
-	// Reports as already scaled so the get-before-set caller skips scaling.
-	count, err := s.GetReplicaCount(context.Background(), "anyWorkspace")
-	require.NoError(t, err)
-	require.Equal(t, 1, count)
-	require.NoError(t, s.SetReplicaCount(context.Background(), "anyWorkspace", 1))
+	require.NoError(t, s.EnsureScaled(context.Background(), "anyWorkspace", 1))
 }
 
 // newScaler builds a k8sScaler over an injected (fake) clientset.
@@ -179,12 +145,12 @@ func deployment(name, namespace string, replicas int32) *appsv1.Deployment {
 
 // newFakeClient returns a fake clientset that emulates real cluster behaviour for
 // the two things the default fake does NOT do and which this scaler relies on:
-//  1. the scale subresource (GetScale/UpdateScale) backed by the deployment's
-//     replica count — the default fake would panic type-asserting the deployment
-//     to a *Scale;
-//  2. metadata.name field-selector filtering on List — the default fake honours
+//  1. metadata.name field-selector filtering on List — the default fake honours
 //     only label selectors, so a cluster-wide List would otherwise return every
-//     deployment regardless of name.
+//     deployment regardless of name;
+//  2. the scale subresource (UpdateScale) backed by the deployment's replica
+//     count — the default fake would panic type-asserting the deployment to a
+//     *Scale.
 func newFakeClient(t *testing.T, deployments ...*appsv1.Deployment) *fake.Clientset {
 	t.Helper()
 	objs := make([]runtime.Object, len(deployments))
@@ -213,18 +179,6 @@ func newFakeClient(t *testing.T, deployments ...*appsv1.Deployment) *fake.Client
 			}
 		}
 		return true, filtered, nil
-	})
-
-	cs.PrependReactor("get", "deployments", func(action ktesting.Action) (bool, runtime.Object, error) {
-		ga := action.(ktesting.GetActionImpl)
-		if ga.GetSubresource() != "scale" {
-			return false, nil, nil
-		}
-		d, err := getDeployment(cs, ga.GetNamespace(), ga.GetName())
-		if err != nil {
-			return true, nil, err
-		}
-		return true, scaleOf(d), nil
 	})
 
 	cs.PrependReactor("update", "deployments", func(action ktesting.Action) (bool, runtime.Object, error) {
@@ -257,17 +211,6 @@ func getDeployment(cs *fake.Clientset, namespace, name string) (*appsv1.Deployme
 	return obj.(*appsv1.Deployment), nil
 }
 
-func scaleOf(d *appsv1.Deployment) *autoscalingv1.Scale {
-	var replicas int32
-	if d.Spec.Replicas != nil {
-		replicas = *d.Spec.Replicas
-	}
-	return &autoscalingv1.Scale{
-		ObjectMeta: metav1.ObjectMeta{Name: d.Name, Namespace: d.Namespace},
-		Spec:       autoscalingv1.ScaleSpec{Replicas: replicas},
-	}
-}
-
 func currentReplicas(t *testing.T, cs *fake.Clientset, namespace, name string) int32 {
 	t.Helper()
 	d, err := getDeployment(cs, namespace, name)
@@ -283,4 +226,14 @@ func scaleUpdated(cs *fake.Clientset) bool {
 		}
 	}
 	return false
+}
+
+func listActions(cs *fake.Clientset) int {
+	n := 0
+	for _, a := range cs.Actions() {
+		if a.GetVerb() == "list" {
+			n++
+		}
+	}
+	return n
 }

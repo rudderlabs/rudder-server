@@ -304,7 +304,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 	}
 
 	// setup partition migrator
-	ppmSetup, err := setupProcessorPartitionMigrator(ctx, shutdownFn, jobsdbPool, priorityPool, maintenancePool,
+	ppmSetup, err := setupProcessorPartitionMigrator(
+		ctx, shutdownFn, jobsdbPool, priorityPool, maintenancePool,
 		config, statsFactory,
 		gwRODB, nil,
 		rtRWDB, brtRWDB, procRWDB,
@@ -449,7 +450,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 	// extension, owns any privileged work served over it). Every other pod and
 	// the flag-off case skip the bootstrap entirely.
 	if cpservice.ShouldConnect(config) {
-		cpConnector, err := cpservice.NewConnector(config, a.log, backendconfig.DefaultBackendConfig, cpservice.NewService(a.log))
+		service := cpservice.NewService(config, a.log, statsFactory)
+		cpConnector, err := cpservice.NewConnector(config, a.log, statsFactory, backendconfig.DefaultBackendConfig, service)
 		if err != nil {
 			return fmt.Errorf("setting up cp-router connection: %w", err)
 		}

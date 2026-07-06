@@ -21,84 +21,78 @@ type k8sScaler struct {
 	retry  retrySettings
 }
 
-func (s *k8sScaler) GetReplicaCount(ctx context.Context, workspaceID string) (int, error) {
-	if workspaceID == "" {
-		return 0, fmt.Errorf("workspaceID is empty")
-	}
-	name := deploymentName(workspaceID)
-	namespace, err := s.resolveNamespace(ctx, name)
-	if err != nil {
-		return 0, err
-	}
-	scale, err := withRetry(ctx, s.retry, func() (*autoscalingv1.Scale, error) {
-		return s.client.AppsV1().Deployments(namespace).GetScale(ctx, name, metav1.GetOptions{})
-	})
-	if err != nil {
-		return 0, fmt.Errorf("getting scale for deployment %s/%s: %w", namespace, name, err)
-	}
-	return int(scale.Spec.Replicas), nil
-}
-
-func (s *k8sScaler) SetReplicaCount(ctx context.Context, workspaceID string, count int) error {
+func (s *k8sScaler) EnsureScaled(ctx context.Context, workspaceID string, count int) error {
 	if workspaceID == "" {
 		return fmt.Errorf("workspaceID is empty")
 	}
 	name := deploymentName(workspaceID)
-	namespace, err := s.resolveNamespace(ctx, name)
+	found, err := s.findDeployment(ctx, name)
 	if err != nil {
 		return err
 	}
+	if found.replicas > 0 {
+		// Already running; no-op.
+		return nil
+	}
 	scale := &autoscalingv1.Scale{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: found.namespace},
 		Spec:       autoscalingv1.ScaleSpec{Replicas: int32(count)}, //nolint:gosec // replica count is a small, bounded value
 	}
 	if _, err := withRetry(ctx, s.retry, func() (*autoscalingv1.Scale, error) {
-		return s.client.AppsV1().Deployments(namespace).UpdateScale(ctx, name, scale, metav1.UpdateOptions{})
+		return s.client.AppsV1().Deployments(found.namespace).UpdateScale(ctx, name, scale, metav1.UpdateOptions{})
 	}); err != nil {
-		return fmt.Errorf("scaling deployment %s/%s to %d replicas: %w", namespace, name, count, err)
+		return fmt.Errorf("scaling deployment %s/%s to %d replicas: %w", found.namespace, name, count, err)
 	}
 	s.log.Infon("scaled pyt deployment",
-		logger.NewStringField("namespace", namespace),
+		logger.NewStringField("namespace", found.namespace),
 		logger.NewStringField("deployment", name),
 		logger.NewIntField("replicas", int64(count)))
 	return nil
 }
 
-// resolveNamespace finds the single Deployment named name across all namespaces
-// and returns its namespace. metadata.name is a universally-supported field
-// selector, so this needs no namespace config or ExternalName parsing.
-func (s *k8sScaler) resolveNamespace(ctx context.Context, name string) (string, error) {
-	deployments, err := withRetry(ctx, s.retry, func() (*deploymentNames, error) {
+// findDeployment finds the single Deployment named name across all namespaces
+// and returns its namespace and current replica count. metadata.name is a
+// universally-supported field selector, so this needs no namespace config or
+// ExternalName parsing — and the List response already carries spec.replicas,
+// so no separate GetScale read is needed.
+func (s *k8sScaler) findDeployment(ctx context.Context, name string) (deploymentRef, error) {
+	found, err := withRetry(ctx, s.retry, func() ([]deploymentRef, error) {
 		list, err := s.client.AppsV1().Deployments(metav1.NamespaceAll).List(ctx, metav1.ListOptions{
 			FieldSelector: fields.OneTermEqualSelector("metadata.name", name).String(),
 		})
 		if err != nil {
 			return nil, err
 		}
-		out := &deploymentNames{}
+		out := make([]deploymentRef, 0, len(list.Items))
 		for _, d := range list.Items {
-			out.namespaces = append(out.namespaces, d.Namespace)
+			ref := deploymentRef{namespace: d.Namespace, replicas: 1} // nil spec.replicas defaults to 1
+			if d.Spec.Replicas != nil {
+				ref.replicas = *d.Spec.Replicas
+			}
+			out = append(out, ref)
 		}
 		return out, nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("listing deployments named %s: %w", name, err)
+		return deploymentRef{}, fmt.Errorf("listing deployments named %s: %w", name, err)
 	}
-	switch len(deployments.namespaces) {
+	switch len(found) {
 	case 0:
-		return "", fmt.Errorf("%w: %s", ErrDeploymentNotFound, name)
+		return deploymentRef{}, fmt.Errorf("%w: %s", ErrDeploymentNotFound, name)
 	case 1:
-		return deployments.namespaces[0], nil
+		return found[0], nil
 	default:
-		return "", fmt.Errorf("found %d deployments named %s across namespaces; expected exactly one",
-			len(deployments.namespaces), name)
+		return deploymentRef{}, fmt.Errorf("found %d deployments named %s across namespaces; expected exactly one",
+			len(found), name)
 	}
 }
 
-// deploymentNames carries the namespaces of the Deployments matched by name. It
-// exists so withRetry returns a small value rather than a full DeploymentList.
-type deploymentNames struct {
-	namespaces []string
+// deploymentRef carries the namespace and current replica count of a Deployment
+// matched by name. It exists so withRetry returns a small value rather than a
+// full DeploymentList.
+type deploymentRef struct {
+	namespace string
+	replicas  int32
 }
 
 func newInClusterClientset(conf *config.Config) (kubernetes.Interface, error) {
