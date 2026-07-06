@@ -355,6 +355,41 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			compareTestFlowBodies(t, oldBody, newBody)
 		})
 
+		// Test-case metadata is user-authored JSON: neither engine validates its
+		// field types (an int rudderId must not 400) and unknown keys round-trip.
+		t.Run("should not validate user-authored metadata types or keys", func(t *testing.T) {
+			payload := map[string]any{
+				"codeRevision": map[string]any{
+					"code":        "def transformEvent(event, metadata):\n    return event",
+					"language":    "pythonfaas",
+					"codeVersion": "1",
+				},
+				"input": []map[string]any{
+					{
+						"message": map[string]any{"messageId": "m1"},
+						"metadata": map[string]any{
+							"messageId": "m1",
+							"rudderId":  123,
+							"jobId":     "not-an-int",
+							"customKey": map[string]any{"nested": true},
+						},
+					},
+				},
+			}
+			oldStatus, oldBody := env.callOld(t, "/transformation/testRun", payload)
+			newStatus, newBody := env.callNew(t, env.client.TestRun, payload)
+
+			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
+			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
+			resp := decodeFlow(t, newBody)
+			require.Len(t, resp.TransformedEvents, 1)
+			meta, ok := resp.TransformedEvents[0]["metadata"].(map[string]any)
+			require.True(t, ok)
+			require.EqualValues(t, 123, meta["rudderId"], "int rudderId is echoed back, not rejected")
+			require.Contains(t, meta, "customKey", "unknown metadata keys are echoed back, not dropped")
+			compareTestFlowBodies(t, oldBody, newBody)
+		})
+
 		t.Run("should resolve dependencies libraries and credentials", func(t *testing.T) {
 			payload := map[string]any{
 				"codeRevision": map[string]any{
