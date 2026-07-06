@@ -194,7 +194,7 @@ func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
 			Message: map[string]any{
 				"Email":     "clear@example.com",
 				"FirstName": "Mid",
-				"LastName":  salesforceNullSentinel,
+				"LastName":  "#N/A",
 				"Phone":     "555-0001",
 			},
 			Metadata: SalesforceJobMetadata{JobID: 1},
