@@ -16,11 +16,13 @@ import (
 )
 
 func TestUniqueActivationRecordsReporter(t *testing.T) {
-	// prepareJob builds a job with the standard activation payload shape. rETL jobs
-	// carry source_category=warehouse, the grain MAR meters.
+	// prepareJob builds a job with the standard activation payload shape. The Parameters
+	// intentionally omit source_category: on the internal-batch ingestion path it is empty,
+	// and the reporter classifies reverse-ETL sources from the config map (sourceCategories
+	// below), not the param.
 	prepareJob := func(sourceID, destinationID, fingerprint, origin, workspaceID string) *jobsdb.JobT {
 		return &jobsdb.JobT{
-			Parameters:   fmt.Appendf(nil, `{"source_id":%q,"destination_id":%q,"source_category":"warehouse"}`, sourceID, destinationID),
+			Parameters:   fmt.Appendf(nil, `{"source_id":%q,"destination_id":%q}`, sourceID, destinationID),
 			EventPayload: fmt.Appendf(nil, `{"batch":[{"context":{"activation":{"fingerprint":%q,"origin":%q}}}]}`, fingerprint, origin),
 			UserID:       uuid.NewString(),
 			UUID:         uuid.New(),
@@ -32,7 +34,7 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 	// prepareJobNoDstID builds a job whose Parameters JSON omits the destination_id key entirely.
 	prepareJobNoDstID := func(sourceID, fingerprint, origin, workspaceID string) *jobsdb.JobT {
 		return &jobsdb.JobT{
-			Parameters:   fmt.Appendf(nil, `{"source_id":%q,"source_category":"warehouse"}`, sourceID),
+			Parameters:   fmt.Appendf(nil, `{"source_id":%q}`, sourceID),
 			EventPayload: fmt.Appendf(nil, `{"batch":[{"context":{"activation":{"fingerprint":%q,"origin":%q}}}]}`, fingerprint, origin),
 			UserID:       uuid.NewString(),
 			UUID:         uuid.New(),
@@ -40,6 +42,16 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 			WorkspaceId:  workspaceID,
 		}
 	}
+
+	// sourceCategories resolves a source_id -> SourceDefinition.Category, mirroring the
+	// lookup the processor passes from the backend config. "src1" is a reverse-ETL
+	// (warehouse) source; "src-eventstream" is not. Unknown source_ids resolve to "" and
+	// are treated as non-rETL.
+	categoriesByID := map[string]string{
+		"src1":            "warehouse",
+		"src-eventstream": "eventStream",
+	}
+	sourceCategories := func(sourceID string) string { return categoriesByID[sourceID] }
 
 	t.Run("constructor validates HLL settings", func(t *testing.T) {
 		// Default settings are valid.
@@ -108,13 +120,50 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 				},
 			},
 			{
-				name: "non-rETL source category - skip even with fingerprint",
+				name: "non-rETL source - skip even with fingerprint",
 				jobs: []*jobsdb.JobT{
 					{
-						// An event-stream source whose payload carries a (client-stamped)
-						// fingerprint must NOT be metered: MAR meters warehouse sources only.
-						Parameters:   fmt.Appendf(nil, `{"source_id":%q,"destination_id":%q,"source_category":"eventStream"}`, "src1", "dst1"),
+						// An event-stream source (per the config map) whose payload carries a
+						// client-stamped fingerprint must NOT be metered: MAR meters warehouse
+						// sources only, classified from config.
+						Parameters:   fmt.Appendf(nil, `{"source_id":%q,"destination_id":%q}`, "src-eventstream", "dst1"),
 						EventPayload: []byte(`{"batch":[{"context":{"activation":{"fingerprint":"fp-injected","origin":"org1"}}}]}`),
+						UserID:       uuid.NewString(),
+						UUID:         uuid.New(),
+						CustomVal:    "GW",
+						WorkspaceId:  "ws1",
+					},
+				},
+				verify: func(t *testing.T, reports []*ActivationRecord) {
+					require.Empty(t, reports)
+				},
+			},
+			{
+				name: "config category is authoritative over a spoofed source_category param - skip",
+				jobs: []*jobsdb.JobT{
+					{
+						// The job param claims warehouse, but the source is event-stream in the
+						// config map; the param is not trusted, so the record is not metered.
+						Parameters:   fmt.Appendf(nil, `{"source_id":%q,"destination_id":%q,"source_category":"warehouse"}`, "src-eventstream", "dst1"),
+						EventPayload: []byte(`{"batch":[{"context":{"activation":{"fingerprint":"fp-spoof","origin":"org1"}}}]}`),
+						UserID:       uuid.NewString(),
+						UUID:         uuid.New(),
+						CustomVal:    "GW",
+						WorkspaceId:  "ws1",
+					},
+				},
+				verify: func(t *testing.T, reports []*ActivationRecord) {
+					require.Empty(t, reports)
+				},
+			},
+			{
+				name: "unknown source not in config - skip fail-closed",
+				jobs: []*jobsdb.JobT{
+					{
+						// A source_id absent from the config lookup resolves to "" and is
+						// skipped, even with a valid fingerprint.
+						Parameters:   fmt.Appendf(nil, `{"source_id":%q,"destination_id":%q}`, "src-unknown", "dst1"),
+						EventPayload: []byte(`{"batch":[{"context":{"activation":{"fingerprint":"fp-unknown","origin":"org1"}}}]}`),
 						UserID:       uuid.NewString(),
 						UUID:         uuid.New(),
 						CustomVal:    "GW",
@@ -156,7 +205,7 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				reports := reporter.GenerateReportsFromJobs(tc.jobs)
+				reports := reporter.GenerateReportsFromJobs(tc.jobs, sourceCategories)
 				tc.verify(t, reports)
 			})
 		}
@@ -169,7 +218,7 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 		// prepareTwoEventJob builds a job whose batch has TWO events with distinct fingerprints.
 		prepareTwoEventJob := func(sourceID, destinationID, fp1, fp2, origin, workspaceID string) *jobsdb.JobT {
 			return &jobsdb.JobT{
-				Parameters: fmt.Appendf(nil, `{"source_id":%q,"destination_id":%q,"source_category":"warehouse"}`, sourceID, destinationID),
+				Parameters: fmt.Appendf(nil, `{"source_id":%q,"destination_id":%q}`, sourceID, destinationID),
 				EventPayload: fmt.Appendf(nil,
 					`{"batch":[{"context":{"activation":{"fingerprint":%q,"origin":%q}}},{"context":{"activation":{"fingerprint":%q,"origin":%q}}}]}`,
 					fp1, origin, fp2, origin,
@@ -183,7 +232,7 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 
 		t.Run("two distinct fingerprints in same batch => cardinality 2", func(t *testing.T) {
 			job := prepareTwoEventJob("src1", "dst1", "fp-1", "fp-2", "org1", "ws1")
-			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job})
+			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, sourceCategories)
 			require.Len(t, reports, 1)
 			require.Equal(t, "org1", reports[0].Origin)
 			require.NotNil(t, reports[0].FingerprintHll)
@@ -193,14 +242,14 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 		t.Run("batch with one valid and one invalid element - valid element still metered", func(t *testing.T) {
 			// batch[0] has no fingerprint; batch[1] is valid.
 			job := &jobsdb.JobT{
-				Parameters:   fmt.Appendf(nil, `{"source_id":%q,"destination_id":%q,"source_category":"warehouse"}`, "src1", "dst1"),
+				Parameters:   fmt.Appendf(nil, `{"source_id":%q,"destination_id":%q}`, "src1", "dst1"),
 				EventPayload: []byte(`{"batch":[{"context":{"activation":{"origin":"org1"}}},{"context":{"activation":{"fingerprint":"fp-valid","origin":"org1"}}}]}`),
 				UserID:       uuid.NewString(),
 				UUID:         uuid.New(),
 				CustomVal:    "GW",
 				WorkspaceId:  "ws1",
 			}
-			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job})
+			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, sourceCategories)
 			require.Len(t, reports, 1)
 			require.Equal(t, uint64(1), reports[0].FingerprintHll.Cardinality())
 		})
@@ -223,11 +272,11 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 
 		job := prepareJob("src1", "dst1", "fp1", "org1", "ws1")
 
-		first := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job})
+		first := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, sourceCategories)
 		require.Len(t, first, 1)
 		require.Equal(t, uint64(1), first[0].FingerprintHll.Cardinality())
 
-		second := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job})
+		second := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, sourceCategories)
 		require.Len(t, second, 1)
 		require.Equal(t, uint64(1), second[0].FingerprintHll.Cardinality())
 
