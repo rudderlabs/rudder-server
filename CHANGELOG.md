@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.81.0](https://github.com/rudderlabs/rudder-server/compare/v1.80.0...v1.81.0) (2026-07-07)
+
+
+### Features
+
+* enhance error handling for connection issues in user transformer ([c223201](https://github.com/rudderlabs/rudder-server/commit/c2232019b45cecb2e3645ac33e783f8708fac6b7))
+* rely on cold-start retries instead of k8s scaling for pyt test forwards ([ccb9ac0](https://github.com/rudderlabs/rudder-server/commit/ccb9ac0567caaa287740fe6f62d09d0edc505d1c))
+
 ## [1.80.0](https://github.com/rudderlabs/rudder-server/compare/v1.79.0...v1.80.0) (2026-07-06)
 
 
