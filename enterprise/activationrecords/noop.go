@@ -17,7 +17,7 @@ func NewNoopActivationRecordsReporter() *NoopActivationRecordsReporter {
 	return &NoopActivationRecordsReporter{}
 }
 
-func (n *NoopActivationRecordsReporter) GenerateReportsFromJobs([]*jobsdb.JobT) []*ActivationRecord {
+func (n *NoopActivationRecordsReporter) GenerateReportsFromJobs([]*jobsdb.JobT, func(sourceID string) string) []*ActivationRecord {
 	return nil
 }
 

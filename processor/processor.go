@@ -106,7 +106,7 @@ type trackedUsersReporter interface {
 }
 
 type activationRecordsReporter interface {
-	GenerateReportsFromJobs(jobs []*jobsdb.JobT) []*activationrecords.ActivationRecord
+	GenerateReportsFromJobs(jobs []*jobsdb.JobT, getSourceCategoryBySourceID func(sourceID string) string) []*activationrecords.ActivationRecord
 	ReportActivationRecords(ctx context.Context, reports []*activationrecords.ActivationRecord, tx *Tx) error
 }
 
@@ -937,6 +937,21 @@ func (proc *Handle) getNonEventStreamSources() map[string]bool {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 	return proc.config.nonEventStreamSources
+}
+
+// getSourceCategoriesBySourceID returns a source_id -> SourceDefinition.Category snapshot
+// from the backend config. Activation-records (MAR) metering uses it to classify reverse-ETL
+// sources without depending on the source_category job param (which is not populated on
+// every ingestion path). Taken once per batch: unlike getSourceBySourceID it copies only the
+// category strings (not the full SourceT) and does not log on unknown sources.
+func (proc *Handle) getSourceCategoriesBySourceID() map[string]string {
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+	categories := make(map[string]string, len(proc.config.sourceIdSourceMap))
+	for id, source := range proc.config.sourceIdSourceMap {
+		categories[id] = source.SourceDefinition.Category
+	}
+	return categories
 }
 
 func (proc *Handle) getEnabledDestinations(sourceId, destinationName string) []backendconfig.DestinationT {
@@ -2407,7 +2422,12 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	// GenerateReportsFromJobs reads context.activation from the raw job payloads
 	// (left intact here so metering still works); the destination-bound copies are
 	// already stripped per-event in preprocessStage.
-	activationRecordsReports := proc.activationRecordsReporter.GenerateReportsFromJobs(preTrans.jobList)
+	// Snapshot source_id -> category once per batch (single lock, no per-job SourceT copy,
+	// no error log on unknown sources); the reporter classifies reverse-ETL sources off it.
+	sourceCategoriesBySourceID := proc.getSourceCategoriesBySourceID()
+	activationRecordsReports := proc.activationRecordsReporter.GenerateReportsFromJobs(preTrans.jobList, func(sourceID string) string {
+		return sourceCategoriesBySourceID[sourceID]
+	})
 
 	return &transformationMessage{
 		preTrans.subJobs.ctx,
