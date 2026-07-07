@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -37,6 +38,14 @@ var validWorkspaceID = regexp.MustCompile(`^[a-zA-Z0-9-]{1,59}$`)
 // It does not poll for pyt readiness: the forward itself retries the cold-start
 // window within the caller's deadline (see [user_transformer.Client.Test] et al).
 func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*proto.ForwardResponse, error) {
+	start := time.Now()
+	defer func() {
+		s.log.Infon("time to forward to pyt",
+			obskit.WorkspaceID(req.WorkspaceId),
+			logger.NewStringField("op", req.Op.String()),
+			logger.NewDurationField("duration", time.Since(start)),
+		)
+	}()
 	forward, ok := s.forwardForOp(req.Op)
 	if !ok {
 		return nil, status.Errorf(codes.InvalidArgument, "unknown op %v", req.Op)
