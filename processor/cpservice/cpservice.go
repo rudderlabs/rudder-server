@@ -48,8 +48,8 @@ type Forwarder interface {
 }
 
 // Service implements the ProcessorService gRPC server — the processor's single
-// CP-facing entrypoint. Its sole RPC, Forward, scales up the workspace's pyt
-// Deployment and forwards the request to it over HTTP (see [Service.Forward]).
+// CP-facing entrypoint. Its sole RPC, Forward, forwards the request to the
+// workspace's pyt Deployment over HTTP, optionally scaling it up first (see [Service.Forward]).
 type Service struct {
 	proto.UnimplementedProcessorServiceServer
 
@@ -76,11 +76,13 @@ func WithForwarder(forwarder Forwarder) ServiceOpt {
 	return func(s *Service) { s.forwarder = forwarder }
 }
 
-// NewService builds the ProcessorService gRPC handler. By default it builds a
-// k8s-backed pyt scaler — falling back to a no-op scaler (forward without
-// scaling) when the k8s client can't be built — and a forwarder over the
-// processor's user_transformer HTTP client. Tests override these via
-// [WithScaler]/[WithForwarder].
+// NewService builds the ProcessorService gRPC handler and a forwarder over the
+// processor's user_transformer HTTP client. Explicit k8s scaling of the pyt
+// Deployment is off by default — the forward path instead rides the cold-start
+// window via retries, letting the pyt's own traffic-based autoscaling wake it —
+// and can be turned on with Processor.UserTransformer.pytTestScalingEnabled
+// (falling back to a no-op scaler when the k8s client can't be built). Tests
+// override the dependencies via [WithScaler]/[WithForwarder].
 func NewService(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...ServiceOpt) *Service {
 	s := &Service{
 		log:     log.Child("cpservice"),
@@ -90,21 +92,26 @@ func NewService(conf *config.Config, log logger.Logger, stat stats.Stats, opts .
 		opt(s)
 	}
 	if s.scaler == nil {
-		scaler, err := pytscaler.New(conf, log)
-		if err != nil {
-			log.Warnn("pyt scaler unavailable, forwarding without scaling", obskit.Error(err))
-			scaler = pytscaler.NewNoop(log)
+		s.scaler = pytscaler.NewNoop(log)
+		if conf.GetBoolVar(false, "Processor.UserTransformer.pytTestScalingEnabled") {
+			scaler, err := pytscaler.New(conf, log)
+			if err != nil {
+				log.Warnn("pyt scaler unavailable, forwarding without scaling", obskit.Error(err))
+			} else {
+				s.scaler = scaler
+			}
 		}
-		s.scaler = scaler
 	}
 	if s.forwarder == nil {
-		// The forward path is time-boxed by cp-router's ~60s test deadline, so
-		// override the event path's large default retry backoff with a short one,
-		// and cap the retries, to recover from a pyt cold start quickly within that
-		// window (the ctx deadline remains the hard bound).
+		// The forward path is time-boxed by cp-router's test deadline (the ctx),
+		// so override the event path's large default retry backoff with a short
+		// one. The retry budget is sized to out-last any realistic deadline —
+		// with no explicit scale-up, the whole cold-start window is carried by
+		// these retries, so the ctx deadline must be the bound that ends them,
+		// not the retry count.
 		s.forwarder = user_transformer.New(conf, log, stat,
-			user_transformer.WithMaxRetryBackoffInterval(conf.GetReloadableDurationVar(1, time.Second, "Processor.UserTransformer.pytTestMaxRetryBackoffInterval")),
-			user_transformer.WithMaxRetry(conf.GetReloadableIntVar(60, 1, "Processor.UserTransformer.pytTestMaxRetry")))
+			user_transformer.WithMaxRetryBackoffInterval(conf.GetReloadableDurationVar(500, time.Millisecond, "Processor.UserTransformer.pytTestMaxRetryBackoffInterval")),
+			user_transformer.WithMaxRetry(conf.GetReloadableIntVar(100, 1, "Processor.UserTransformer.pytTestMaxRetry")))
 	}
 	return s
 }

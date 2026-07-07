@@ -96,6 +96,15 @@ func TestForward(t *testing.T) {
 		}
 	})
 
+	t.Run("forwards without k8s when scaling is disabled (the default)", func(t *testing.T) {
+		// No WithScaler override: with pytTestScalingEnabled at its default
+		// (false), NewService must wire the no-op scaler, so Forward works with
+		// no k8s available at all.
+		svc := NewService(config.New(), logger.NOP, nil, WithForwarder(&fakeForwarder{statusCode: 200}))
+		_, err := svc.Forward(context.Background(), &proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: "ws-1"})
+		require.NoError(t, err)
+	})
+
 	t.Run("asks the scaler for the configured replica target", func(t *testing.T) {
 		conf := config.New()
 		conf.Set("Processor.UserTransformer.pytTestScaleReplicas", 3)

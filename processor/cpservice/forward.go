@@ -28,8 +28,11 @@ type endpointForward func(ctx context.Context, workspaceID string, payload []byt
 var validWorkspaceID = regexp.MustCompile(`^[a-zA-Z0-9-]{1,59}$`)
 
 // Forward is the processor's only CP-facing RPC. It maps req.Op to the matching
-// pyt endpoint, ensures the workspace's pyt Deployment is scaled up, and forwards
-// req.Payload to it, returning the pyt response status and body unchanged.
+// pyt endpoint and forwards req.Payload to it, returning the pyt response status
+// and body unchanged. When explicit scaling is enabled (pytTestScalingEnabled)
+// it first ensures the workspace's pyt Deployment is scaled up; by default the
+// scaler is a no-op and waking the pyt is left to its own traffic-based
+// autoscaling.
 //
 // It does not poll for pyt readiness: the forward itself retries the cold-start
 // window within the caller's deadline (see [user_transformer.Client.Test] et al).
