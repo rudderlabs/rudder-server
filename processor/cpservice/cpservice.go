@@ -111,7 +111,7 @@ func NewService(conf *config.Config, log logger.Logger, stat stats.Stats, opts .
 		// not the retry count.
 		s.forwarder = user_transformer.New(conf, log, stat,
 			user_transformer.WithMaxRetryBackoffInterval(conf.GetReloadableDurationVar(500, time.Millisecond, "Processor.UserTransformer.pytTestMaxRetryBackoffInterval")),
-			user_transformer.WithMaxRetry(conf.GetReloadableIntVar(100, 1, "Processor.UserTransformer.pytTestMaxRetry")))
+			user_transformer.WithMaxRetry(conf.GetReloadableIntVar(120, 1, "Processor.UserTransformer.pytTestMaxRetry")))
 	}
 	return s
 }
