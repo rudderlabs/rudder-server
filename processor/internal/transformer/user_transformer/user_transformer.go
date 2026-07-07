@@ -527,9 +527,9 @@ func (u *Client) ExtractLibs(ctx context.Context, workspaceID string, payload []
 // client's maxRetry/maxRetryBackoffInterval settings, but this call is time-boxed
 // by ctx (cp-router's ~60s test deadline). Callers that need a quicker cold-start
 // recovery build the client with [WithMaxRetryBackoffInterval]/[WithMaxRetry] to
-// shrink the backoff and size the retry budget. It retries only on cold-start
-// signals (connection refused, DNS failure, 502/503);
-// any other response is returned as-is for the caller to pass through.
+// shrink the backoff and size the retry budget. Like [Client.doPost], it retries
+// any transport error plus cold-start 502/503 responses, counting the cold-start
+// signals; any other response is returned as-is for the caller to pass through.
 func (u *Client) forwardTest(ctx context.Context, workspaceID, path string, payload []byte) (int, []byte, error) {
 	// perWorkspacePyTEnabled is reloadable, so check it per call: a request
 	// arriving while the feature is off must be rejected rather than silently
@@ -559,23 +559,30 @@ func (u *Client) forwardTest(ctx context.Context, workspaceID, path string, payl
 			req.Header.Set("Content-Type", "application/json")
 
 			resp, err := u.client.Do(req)
-			if isColdStartError(err, resp) {
+			if err != nil {
+				// No response at all — retry. Transient network
+				// conditions dominate here, and the loop is bounded by maxRetry
+				// and the caller's deadline either way. Cold-start signals are
+				// additionally counted; retryability doesn't depend on them.
+				if isColdStartError(err, nil) {
+					u.stat.NewTaggedStat(coldStartErrorsMetric, stats.CountType,
+						stats.Tags{"workspaceID": workspaceID, "language": languagePython}).Increment()
+				}
+				return err
+			}
+			if isColdStartError(nil, resp) {
 				httputil.CloseResponse(resp)
 				u.stat.NewTaggedStat(coldStartErrorsMetric, stats.CountType,
 					stats.Tags{"workspaceID": workspaceID, "language": languagePython}).Increment()
-				if err != nil {
-					return err
-				}
 				return fmt.Errorf("pyt cold start: status %d", resp.StatusCode)
-			}
-			if err != nil {
-				return backoff.Permanent(err)
 			}
 			defer func() { httputil.CloseResponse(resp) }()
 
 			body, err = io.ReadAll(resp.Body)
 			if err != nil {
-				return backoff.Permanent(err)
+				// Connection broke mid-response — as transient as a failed
+				// request; retry.
+				return err
 			}
 			statusCode = resp.StatusCode
 			return nil
@@ -613,6 +620,17 @@ func isColdStartError(err error, resp *http.Response) bool {
 		// EHOSTUNREACH ("no route to host"): stale iptables / EndpointSlice
 		// after a pod replacement or scale-down — same transient signal.
 		if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.EHOSTUNREACH) {
+			return true
+		}
+		// Dial timeout ("dial tcp ...: i/o timeout"): the SYN went unanswered —
+		// the pod behind the headless-service DNS record is either still coming
+		// up (IP published before the VM boots) or on its way down (terminating
+		// pod whose record hasn't been withdrawn yet). The two are
+		// indistinguishable from the dialer, and retrying is right for both:
+		// each retry re-resolves DNS, and the pod's replacement (the forward path
+		// scales the deployment up before dialing) answers a later attempt.
+		var opErr *net.OpError
+		if errors.As(err, &opErr) && opErr.Op == "dial" && opErr.Timeout() {
 			return true
 		}
 		var dnsErr *net.DNSError

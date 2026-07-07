@@ -1672,6 +1672,16 @@ func TestColdStartCounter(t *testing.T) {
 		Net: "tcp",
 		Err: &os.SyscallError{Syscall: "connect", Err: syscall.EHOSTUNREACH},
 	}
+	dialTimeout := &net.OpError{
+		Op:  "dial",
+		Net: "tcp",
+		Err: os.ErrDeadlineExceeded,
+	}
+	readTimeout := &net.OpError{
+		Op:  "read",
+		Net: "tcp",
+		Err: os.ErrDeadlineExceeded,
+	}
 	dnsErr := &net.DNSError{Err: "no such host", Name: "pyt-ws-A1", IsNotFound: true}
 
 	// Marshaled success response — what a warm PyT pod would return.
@@ -1723,6 +1733,16 @@ func TestColdStartCounter(t *testing.T) {
 			// replacement or scale-down. Same transient signal as ECONNREFUSED.
 			name:             "EHOSTUNREACH twice → counted twice, then warm",
 			failErr:          noRouteToHost,
+			failures:         2,
+			expectCounter:    2,
+			expectEventCount: 1,
+		},
+		{
+			// dial i/o timeout — unanswered SYN: the headless-service DNS record
+			// points at a pod that is still booting or terminating. Same scale-
+			// churn window as ECONNREFUSED, just a different failure mode.
+			name:             "dial timeout twice → counted twice, then warm",
+			failErr:          dialTimeout,
 			failures:         2,
 			expectCounter:    2,
 			expectEventCount: 1,
@@ -1795,6 +1815,16 @@ func TestColdStartCounter(t *testing.T) {
 			name:             "guard: JS language → cold-start error not counted",
 			language:         "javascript",
 			failErr:          connRefused,
+			failures:         2,
+			expectCounter:    0,
+			expectEventCount: 1,
+		},
+		{
+			// A timeout after the connection is established means the pod is up
+			// but slow — not a cold start. Still retried by doPost's generic
+			// budget, so the transport warms and the request succeeds.
+			name:             "guard: post-connect read timeout → not counted",
+			failErr:          readTimeout,
 			failures:         2,
 			expectCounter:    0,
 			expectEventCount: 1,
@@ -1970,6 +2000,39 @@ func TestForwardTest(t *testing.T) {
 			total += int(m.Value)
 		}
 		require.Equal(t, 2, total, "each cold-start retry should increment the counter")
+	})
+
+	t.Run("retries other transport errors without counting them as cold starts", func(t *testing.T) {
+		var attempts atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if attempts.Add(1) < 3 {
+				// Abrupt close → the client sees EOF: a transport error that is
+				// not a cold-start signal, yet must still be retried (doPost parity).
+				conn, _, err := w.(http.Hijacker).Hijack()
+				require.NoError(t, err)
+				_ = conn.Close()
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`done`))
+		}))
+		defer srv.Close()
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		conf := config.New()
+		conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
+		client := user_transformer.New(conf, logger.NOP, statsStore,
+			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
+
+		status, body, err := client.Test(context.Background(), "ws-1", []byte(`{}`))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, status)
+		require.Equal(t, "done", string(body))
+		require.EqualValues(t, 3, attempts.Load())
+		require.Empty(t, statsStore.GetByName("processor_user_transformer_cold_start_errors_total"),
+			"a non-cold-start transport error must not tick the cold-start counter")
 	})
 
 	t.Run("stops retrying when the deadline is exceeded", func(t *testing.T) {
