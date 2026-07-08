@@ -2,6 +2,7 @@ package salesforcebulkupload_test
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"os"
 	"testing"
@@ -139,43 +140,102 @@ func TestSalesforceBulk_Transform(t *testing.T) {
 	}
 }
 
-func TestSalesforceBulk_Transform_NullTraitsBecomeNASentinel(t *testing.T) {
+func TestSalesforceBulk_Upload_NullTraitsBecomeNASentinelInCSV(t *testing.T) {
 	t.Parallel()
 
-	uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, nil, &backendconfig.DestinationT{})
-	result, err := uploader.Transform(&jobsdb.JobT{
-		JobID: 125,
-		EventPayload: []byte(`{
-			"channel": "sources",
-			"context": {
-				"externalId": [
-					{
-						"id": "evelyn.gonzalez@example.com",
-						"identifierType": "Email",
-						"type": "SALESFORCE_BULK_UPLOAD-Lead"
-					}
-				],
-				"mappedToDestination": "true"
-			},
-			"traits": {
-				"FirstName": "Evelyn",
-				"LastName": null,
-				"Phone": null
-			},
-			"type": "identify",
-			"userId": "evelyn.gonzalez@example.com"
-		}`),
-	})
-	require.NoError(t, err)
+	ctrl := gomock.NewController(t)
+	mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
+	uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
 
-	var parsed common.AsyncJob
-	require.NoError(t, jsonrs.Unmarshal([]byte(result), &parsed))
-	// Salesforce Bulk API ignores empty CSV cells, so explicit nulls must be
-	// encoded as the #N/A sentinel for the field to actually be cleared.
-	require.Equal(t, "#N/A", parsed.Message["LastName"])
-	require.Equal(t, "#N/A", parsed.Message["Phone"])
-	require.Equal(t, "Evelyn", parsed.Message["FirstName"])
-	require.Equal(t, "evelyn.gonzalez@example.com", parsed.Message["Email"])
+	// Run real events through Transform and stage them the way the batch
+	// router does, so the CSV assertion covers the whole pipeline: a null
+	// trait in the event must surface as #N/A in the file uploaded to
+	// Salesforce, while a field absent from the event stays an empty cell.
+	events := []*jobsdb.JobT{
+		{
+			JobID: 125,
+			EventPayload: []byte(`{
+				"channel": "sources",
+				"context": {
+					"externalId": [
+						{
+							"id": "evelyn.gonzalez@example.com",
+							"identifierType": "Email",
+							"type": "SALESFORCE_BULK_UPLOAD-Lead"
+						}
+					],
+					"mappedToDestination": "true"
+				},
+				"traits": {
+					"FirstName": "Evelyn",
+					"LastName": null,
+					"Phone": null
+				},
+				"type": "identify",
+				"userId": "evelyn.gonzalez@example.com"
+			}`),
+		},
+		{
+			JobID: 126,
+			EventPayload: []byte(`{
+				"channel": "sources",
+				"context": {
+					"externalId": [
+						{
+							"id": "john.doe@example.com",
+							"identifierType": "Email",
+							"type": "SALESFORCE_BULK_UPLOAD-Lead"
+						}
+					],
+					"mappedToDestination": "true"
+				},
+				"traits": {
+					"FirstName": "John"
+				},
+				"type": "identify",
+				"userId": "john.doe@example.com"
+			}`),
+		},
+	}
+
+	tempFile, err := os.CreateTemp(t.TempDir(), "test_upload_*.json")
+	require.NoError(t, err)
+	for _, event := range events {
+		line, err := uploader.Transform(event)
+		require.NoError(t, err)
+		_, err = tempFile.WriteString(line + "\n")
+		require.NoError(t, err)
+	}
+	require.NoError(t, tempFile.Close())
+
+	mockAPI.EXPECT().CreateJob("Lead", "upsert", "Email").Return("sf-job-null", nil)
+	// Upload removes the CSV file once it returns, so the file must be
+	// inspected at UploadData call time — this is the exact artifact sent
+	// to Salesforce.
+	mockAPI.EXPECT().UploadData("sf-job-null", gomock.Any()).DoAndReturn(func(_, csvFilePath string) *salesforcebulkupload.APIError {
+		file, err := os.Open(csvFilePath)
+		require.NoError(t, err)
+		defer file.Close()
+
+		records, err := csv.NewReader(file).ReadAll()
+		require.NoError(t, err)
+		require.Equal(t, [][]string{
+			{"Email", "FirstName", "LastName", "Phone"},
+			{"evelyn.gonzalez@example.com", "Evelyn", "#N/A", "#N/A"},
+			{"john.doe@example.com", "John", "", ""},
+		}, records)
+		return nil
+	})
+	mockAPI.EXPECT().CloseJob("sf-job-null").Return(nil)
+
+	result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
+		Destination:     &backendconfig.DestinationT{ID: "test-dest-null-e2e"},
+		FileName:        tempFile.Name(),
+		ImportingJobIDs: []int64{125, 126},
+	})
+
+	require.Equal(t, 2, result.ImportingCount)
+	require.Equal(t, 0, result.FailedCount)
 }
 
 func TestSalesforceBulk_Upload(t *testing.T) {
