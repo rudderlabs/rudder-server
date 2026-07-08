@@ -189,6 +189,7 @@ type Handle struct {
 		eventAuditEnabled                         map[string]bool
 		credentialsMap                            map[string][]types.Credential
 		nonEventStreamSources                     map[string]bool
+		sourceIdCategoryMap                       map[string]string
 		enableConcurrentStore                     config.ValueLoader[bool]
 		userTransformationMirroringSanitySampling config.ValueLoader[float64]
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
@@ -851,6 +852,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			eventAuditEnabled            = make(map[string]bool)
 			credentialsMap               = make(map[string][]types.Credential)
 			nonEventStreamSources        = make(map[string]bool)
+			sourceIdCategoryMap          = make(map[string]string)
 			connectionConfigMap          = make(map[connection]backendconfig.Connection)
 		)
 		for workspaceID, wConfig := range config {
@@ -860,6 +862,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
 				sourceIdSourceMap[source.ID] = *source
+				sourceIdCategoryMap[source.ID] = source.SourceDefinition.Category
 				if source.Enabled {
 					sourceIdDestinationMap[source.ID] = source.Destinations
 					genericConsentManagementMap[SourceID(source.ID)] = make(DestConsentMap)
@@ -901,6 +904,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.eventAuditEnabled = eventAuditEnabled
 		proc.config.credentialsMap = credentialsMap
 		proc.config.nonEventStreamSources = nonEventStreamSources
+		proc.config.sourceIdCategoryMap = sourceIdCategoryMap
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
 			initDone = true
@@ -939,19 +943,15 @@ func (proc *Handle) getNonEventStreamSources() map[string]bool {
 	return proc.config.nonEventStreamSources
 }
 
-// getSourceCategoriesBySourceID returns a source_id -> SourceDefinition.Category snapshot
-// from the backend config. Activation-records (MAR) metering uses it to classify reverse-ETL
-// sources without depending on the source_category job param (which is not populated on
-// every ingestion path). Taken once per batch: unlike getSourceBySourceID it copies only the
-// category strings (not the full SourceT) and does not log on unknown sources.
+// getSourceCategoriesBySourceID returns the shared source_id -> SourceDefinition.Category
+// map, which the config subscriber rebuilds and swaps on each backend-config change (hence
+// the read lock). Activation-records (MAR) metering uses it to classify reverse-ETL sources
+// without depending on the source_category job param (which is not populated on every
+// ingestion path). The returned map is shared and must not be mutated.
 func (proc *Handle) getSourceCategoriesBySourceID() map[string]string {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
-	categories := make(map[string]string, len(proc.config.sourceIdSourceMap))
-	for id, source := range proc.config.sourceIdSourceMap {
-		categories[id] = source.SourceDefinition.Category
-	}
-	return categories
+	return proc.config.sourceIdCategoryMap
 }
 
 func (proc *Handle) getEnabledDestinations(sourceId, destinationName string) []backendconfig.DestinationT {
