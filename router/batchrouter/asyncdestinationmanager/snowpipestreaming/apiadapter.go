@@ -15,6 +15,7 @@ const (
 	createChannelAPI = "create_channel"
 	deleteChannelAPI = "delete_channel"
 	insertAPI        = "insert"
+	statusAPI        = "status"
 	bulkStatusAPI    = "bulk_status"
 )
 
@@ -110,6 +111,23 @@ func (a *apiAdapter) Insert(ctx context.Context, channelID string, insertRequest
 	}
 	tags["success"] = strconv.FormatBool(resp.Success)
 	tags["code"] = resp.Code
+	return resp, nil
+}
+
+func (a *apiAdapter) GetStatus(ctx context.Context, channelID string) (*model.StatusResponse, error) {
+	a.logger.Debugn("Getting status",
+		logger.NewStringField("channelId", channelID),
+	)
+
+	tags := a.defaultTags(statusAPI)
+	defer a.recordDuration(tags)()
+
+	resp, err := a.api.GetStatus(ctx, channelID)
+	if err != nil {
+		tags["success"] = "false"
+		return nil, err
+	}
+	tags["success"] = strconv.FormatBool(resp.Success)
 	return resp, nil
 }
 
