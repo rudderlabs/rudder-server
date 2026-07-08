@@ -106,7 +106,7 @@ type trackedUsersReporter interface {
 }
 
 type activationRecordsReporter interface {
-	GenerateReportsFromJobs(jobs []*jobsdb.JobT, getSourceCategoryBySourceID func(sourceID string) string) []*activationrecords.ActivationRecord
+	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceCategoriesBySourceID map[string]string) []*activationrecords.ActivationRecord
 	ReportActivationRecords(ctx context.Context, reports []*activationrecords.ActivationRecord, tx *Tx) error
 }
 
@@ -2421,13 +2421,12 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 
 	// GenerateReportsFromJobs reads context.activation from the raw job payloads
 	// (left intact here so metering still works); the destination-bound copies are
-	// already stripped per-event in preprocessStage.
-	// Snapshot source_id -> category once per batch (single lock, no per-job SourceT copy,
-	// no error log on unknown sources); the reporter classifies reverse-ETL sources off it.
+	// already stripped per-event in preprocessStage. Fetch the config subscriber's
+	// current source_id -> category map once here (single lock; the map is swapped
+	// atomically on config change), then pass it to the reporter, which indexes it
+	// per job to classify reverse-ETL sources.
 	sourceCategoriesBySourceID := proc.getSourceCategoriesBySourceID()
-	activationRecordsReports := proc.activationRecordsReporter.GenerateReportsFromJobs(preTrans.jobList, func(sourceID string) string {
-		return sourceCategoriesBySourceID[sourceID]
-	})
+	activationRecordsReports := proc.activationRecordsReporter.GenerateReportsFromJobs(preTrans.jobList, sourceCategoriesBySourceID)
 
 	return &transformationMessage{
 		preTrans.subJobs.ctx,

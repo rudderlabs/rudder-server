@@ -35,8 +35,8 @@ const (
 
 	// retlSourceCategory is the SourceDefinition.Category of reverse-ETL ("warehouse
 	// actions") sources. MAR meters activation records from these sources only; the
-	// classification is resolved from the source's config category (via the lookup passed
-	// to GenerateReportsFromJobs), not from the job's source_category param.
+	// classification is resolved from the source's config category (via the source_id ->
+	// category map passed to GenerateReportsFromJobs), not from the job's source_category param.
 	retlSourceCategory = "warehouse"
 )
 
@@ -67,7 +67,7 @@ type ActivationRecord struct {
 
 // ActivationRecordsReporter is the interface to report monthly active records (MAR).
 type ActivationRecordsReporter interface {
-	GenerateReportsFromJobs(jobs []*jobsdb.JobT, getSourceCategoryBySourceID func(sourceID string) string) []*ActivationRecord
+	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceCategoriesBySourceID map[string]string) []*ActivationRecord
 	ReportActivationRecords(ctx context.Context, reports []*ActivationRecord, tx *txn.Tx) error
 	MigrateDatabase(dbConn string, conf *config.Config) error
 }
@@ -131,10 +131,10 @@ func (u *UniqueActivationRecordsReporter) MigrateDatabase(dbConn string, conf *c
 
 // GenerateReportsFromJobs aggregates activation records from a batch of jobs.
 // It is FAIL-CLOSED: jobs missing fingerprint or origin are skipped (counted via stats).
-// getSourceCategoryBySourceID resolves a source_id to its SourceDefinition.Category (from
-// the backend config); reverse-ETL classification is done via this lookup rather than the
-// job's source_category param, which is not populated on every ingestion path.
-func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, getSourceCategoryBySourceID func(sourceID string) string) []*ActivationRecord {
+// sourceCategoriesBySourceID maps a source_id to its SourceDefinition.Category (from the
+// backend config); reverse-ETL classification is done via this map rather than the job's
+// source_category param, which is not populated on every ingestion path.
+func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceCategoriesBySourceID map[string]string) []*ActivationRecord {
 	if len(jobs) == 0 {
 		return nil
 	}
@@ -157,7 +157,7 @@ func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb
 		// being metered by stamping context.activation.fingerprint on a non-rETL source.
 		// A missing or unknown source_id resolves to "" here and is skipped. Non-rETL is
 		// the expected majority of traffic, so skip it silently — no per-job skip stat.
-		if !strings.EqualFold(getSourceCategoryBySourceID(sourceID), retlSourceCategory) {
+		if !strings.EqualFold(sourceCategoriesBySourceID[sourceID], retlSourceCategory) {
 			continue
 		}
 

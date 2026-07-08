@@ -18,7 +18,7 @@ import (
 func TestUniqueActivationRecordsReporter(t *testing.T) {
 	// prepareJob builds a job with the standard activation payload shape. The Parameters
 	// intentionally omit source_category: on the internal-batch ingestion path it is empty,
-	// and the reporter classifies reverse-ETL sources from the config map (sourceCategories
+	// and the reporter classifies reverse-ETL sources from the config map (categoriesByID
 	// below), not the param.
 	prepareJob := func(sourceID, destinationID, fingerprint, origin, workspaceID string) *jobsdb.JobT {
 		return &jobsdb.JobT{
@@ -43,15 +43,14 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 		}
 	}
 
-	// sourceCategories resolves a source_id -> SourceDefinition.Category, mirroring the
-	// lookup the processor passes from the backend config. "src1" is a reverse-ETL
-	// (warehouse) source; "src-eventstream" is not. Unknown source_ids resolve to "" and
-	// are treated as non-rETL.
+	// categoriesByID maps source_id -> SourceDefinition.Category, mirroring the map the
+	// processor passes from the backend config. "src1" is a reverse-ETL (warehouse)
+	// source; "src-eventstream" is not. Unknown source_ids resolve to "" and are treated
+	// as non-rETL.
 	categoriesByID := map[string]string{
 		"src1":            "warehouse",
 		"src-eventstream": "eventStream",
 	}
-	sourceCategories := func(sourceID string) string { return categoriesByID[sourceID] }
 
 	t.Run("constructor validates HLL settings", func(t *testing.T) {
 		// Default settings are valid.
@@ -205,7 +204,7 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				reports := reporter.GenerateReportsFromJobs(tc.jobs, sourceCategories)
+				reports := reporter.GenerateReportsFromJobs(tc.jobs, categoriesByID)
 				tc.verify(t, reports)
 			})
 		}
@@ -232,7 +231,7 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 
 		t.Run("two distinct fingerprints in same batch => cardinality 2", func(t *testing.T) {
 			job := prepareTwoEventJob("src1", "dst1", "fp-1", "fp-2", "org1", "ws1")
-			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, sourceCategories)
+			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, categoriesByID)
 			require.Len(t, reports, 1)
 			require.Equal(t, "org1", reports[0].Origin)
 			require.NotNil(t, reports[0].FingerprintHll)
@@ -249,7 +248,7 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 				CustomVal:    "GW",
 				WorkspaceId:  "ws1",
 			}
-			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, sourceCategories)
+			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, categoriesByID)
 			require.Len(t, reports, 1)
 			require.Equal(t, uint64(1), reports[0].FingerprintHll.Cardinality())
 		})
@@ -272,11 +271,11 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 
 		job := prepareJob("src1", "dst1", "fp1", "org1", "ws1")
 
-		first := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, sourceCategories)
+		first := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, categoriesByID)
 		require.Len(t, first, 1)
 		require.Equal(t, uint64(1), first[0].FingerprintHll.Cardinality())
 
-		second := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, sourceCategories)
+		second := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, categoriesByID)
 		require.Len(t, second, 1)
 		require.Equal(t, uint64(1), second[0].FingerprintHll.Cardinality())
 
