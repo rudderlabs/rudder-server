@@ -225,7 +225,28 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		webhook.Register(sourceDefName)
 	}
 	webhook.requestQMu.RLock()
-	requestQ := webhook.requestQ[sourceDefName]
+	requestQ, ok := webhook.requestQ[sourceDefName]
+	if !ok {
+		// The source type was not registered — either because
+		// `webhookV2HandlerEnabled` is false and the lazy registration in
+		// `processBackendConfig` has not yet run for this source, or because
+		// the source type is not one this instance handles. Sending on the
+		// nil channel returned by the map lookup would block this HTTP handler
+		// goroutine forever, leaving the client hanging and leaking a
+		// goroutine per unregistered request. Fail fast with 404 instead.
+		webhook.requestQMu.RUnlock()
+		stat := webhook.statReporterCreator(arctx, reqType)
+		stat.RequestFailed("invalidWebhookSource")
+		stat.Report(webhook.stats)
+		webhook.failRequest(
+			w,
+			r,
+			response.GetStatus(response.InvalidWebhookSource),
+			response.GetErrorStatusCode(response.InvalidWebhookSource),
+		)
+		webhook.ackCount.Add(1)
+		return
+	}
 	requestQ <- &req
 	webhook.requestQMu.RUnlock()
 
