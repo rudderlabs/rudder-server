@@ -1061,8 +1061,8 @@ func TestSnowpipeStreaming(t *testing.T) {
 			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
 				"PRODUCTS": func() (*model.ChannelResponse, error) {
 					return &model.ChannelResponse{
-						Success:              false,
-						SnowflakeAPIMessage:  "Unknown error occurred",
+						Success:                false,
+						SnowflakeAPIMessage:    "Unknown error occurred",
 						SnowflakeAPIStatusCode: internalapi.ApiStatusUnsupportedColumn,
 					}, nil
 				},
