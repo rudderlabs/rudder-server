@@ -77,6 +77,7 @@ func Test_Namespace_Get(t *testing.T) {
 	for workspace := range c {
 		require.Equal(t, cpRouterURL, c[workspace].ConnectionFlags.URL)
 		require.True(t, c[workspace].ConnectionFlags.Services["warehouse"])
+		require.True(t, c[workspace].ConnectionFlags.Services["rudderstack-processor"])
 	}
 
 	t.Run("Invalid credentials", func(t *testing.T) {

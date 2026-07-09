@@ -60,10 +60,6 @@ func (jd *Handle) inStoreSafeCtx(ctx context.Context, f func(lastDS dataSetT) er
 			return fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 		}
 		lastDS = jd.getLastDS()
-		if jd.conf.holdDSListLockDuringStore.Load() {
-			defer jd.dsListLock.RUnlock()
-			return f(lastDS)
-		}
 		jd.dsListLock.RUnlock()
 		return f(lastDS)
 	}
@@ -126,7 +122,7 @@ func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 		if jd.conf.multiConsumer {
 			consumers := job.Consumers
 			if len(consumers) == 0 {
-				consumers = []string{""}
+				consumers = defaultConsumers
 			}
 			for _, c := range consumers {
 				params = append(params, consumerParamName+":"+c)
@@ -161,9 +157,13 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 			if job.PartitionID == "" && jd.conf.numPartitions > 0 {
 				job.PartitionID = jd.conf.partitionFunction(job)
 			}
-			consumers := job.Consumers
-			if len(consumers) == 0 {
-				consumers = []string{""}
+			// Single-consumer handles always store the legacy '' consumer, regardless of what a
+			// caller may have set on job.Consumers — named consumers are only meaningful on MC handles.
+			// defaultConsumers is a shared immutable sentinel (read-only via pq.Array) to avoid a
+			// per-job allocation on the store hot path.
+			consumers := defaultConsumers
+			if jd.conf.multiConsumer && len(job.Consumers) > 0 {
+				consumers = job.Consumers
 			}
 			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId, job.PartitionID, pq.Array(consumers)); err != nil {
 				return err

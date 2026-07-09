@@ -2,6 +2,7 @@ package client_test
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"flag"
@@ -327,6 +328,68 @@ func TestClientSendErrorMetric(t *testing.T) {
 	metrics = statsStore.GetByName(client.StatHttpRequest)
 	require.Len(t, metrics, 1, "should have exactly one http request metric")
 	require.Equal(t, expectedHttpTags, metrics[0].Tags, "http request metric should have correct tags")
+}
+
+func TestClientSendCompressed(t *testing.T) {
+	var capturedRequest *http.Request
+	payloadChan := make(chan []byte, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedRequest = r
+
+		var reader io.Reader = r.Body
+		if r.Header.Get("Content-Encoding") == "gzip" {
+			gr, err := gzip.NewReader(r.Body)
+			require.NoError(t, err)
+			defer func() { _ = gr.Close() }()
+			reader = gr
+		}
+		body, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		payloadChan <- body
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+
+	conf := config.New()
+	conf.Set("INSTANCE_ID", "test-instance")
+	conf.Set("clientName", "test-client")
+	conf.Set("REPORTING_URL", server.URL)
+	conf.Set("REPORTING_USERNAME", "test_user")
+	conf.Set("REPORTING_PASSWORD", "test_pass")
+	conf.Set("Reporting.httpClient.compression.enabled", true)
+
+	c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
+
+	metric := &types.Metric{
+		InstanceDetails: types.InstanceDetails{
+			WorkspaceID: "test-workspace",
+			InstanceID:  "test-instance",
+		},
+		StatusDetails: []*types.StatusDetail{
+			{Status: "success", Count: 100, StatusCode: 200},
+		},
+	}
+
+	err = c.Send(context.Background(), metric)
+	require.NoError(t, err)
+
+	// The server must have received a gzip-encoded request that decodes to valid JSON.
+	require.Equal(t, "gzip", capturedRequest.Header.Get("Content-Encoding"))
+	decoded := <-payloadChan
+	var decodedJSON any
+	require.NoError(t, jsonrs.Unmarshal(decoded, &decodedJSON), "decompressed payload should be valid JSON")
+
+	// Both uncompressed and compressed byte stats should be recorded, and compression
+	// should have reduced the size.
+	uncompressed := statsStore.GetByName(client.StatRequestTotalBytes)
+	require.Len(t, uncompressed, 1)
+	compressed := statsStore.GetByName(client.StatRequestCompressedBytes)
+	require.Len(t, compressed, 1)
+	require.Less(t, compressed[0].Value, uncompressed[0].Value, "compressed bytes should be smaller than uncompressed")
 }
 
 func TestClient5xx(t *testing.T) {

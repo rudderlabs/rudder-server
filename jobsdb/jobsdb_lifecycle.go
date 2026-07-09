@@ -59,7 +59,6 @@ func (jd *Handle) init() {
 		jd.stats = stats.Default
 	}
 	jd.dsListLock = lock.NewLocker("dsListLock", jd.tablePrefix, jd.stats)
-	jd.dsCompactionLock = lock.NewLocker("dsCompactionLock", jd.tablePrefix, jd.stats)
 
 	jd.loadConfig()
 
@@ -409,21 +408,19 @@ func (jd *Handle) dropDSLoop(ctx context.Context) error {
 }
 
 /*
-JobsDB uses separate locks for dataset-list publication and compaction.
+JobsDB uses dsListLock for dataset-list publication.
 
 Store only needs a snapshot of the latest dataset, so it reads dsListLock and
 then writes to that dataset. If the snapshot is stale because another worker
 rolled the dataset over, the store path retries after refreshing the list.
 
 Reads and status updates need a dataset snapshot that stays valid while they
-query or route statuses. They take the compaction read lock and acquire a
-versioned dataset-list snapshot. Dataset drops wait for older snapshot versions
-to drain before physically dropping tables.
+query or route statuses. They acquire a versioned dataset-list snapshot. Dataset
+drops wait for older snapshot versions to drain before physically dropping tables.
 
-Legacy compaction takes the compaction write lock while moving jobs. The
-non-blocking compaction path avoids that write lock, fences source status
-tables with read-only triggers, publishes the refreshed dataset list near commit,
-and queues old datasets for asynchronous drop.
+The non-blocking compaction path takes no compaction lock: it fences source
+status tables with read-only triggers, publishes the refreshed dataset list near
+commit, and queues old datasets for asynchronous drop.
 */
 func (jd *Handle) addNewDSLoop(ctx context.Context) {
 	for {

@@ -34,6 +34,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/activationrecords"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -83,6 +84,10 @@ const (
 	DestTransformation    = "DEST_TRANSFORMATION"
 	EventFilter           = "EVENT_FILTER"
 	sourceCategoryWebhook = "webhook"
+	// sourceCategoryWarehouse is the SourceDefinition.Category of reverse-ETL
+	// ("warehouse actions") sources — the only sources on which we stamp
+	// context.activation.fingerprint for MAR metering.
+	sourceCategoryWarehouse = "warehouse"
 )
 
 func NewHandle(c *config.Config, transformerClients transformer.TransformerClients) *Handle {
@@ -98,6 +103,11 @@ type sourceObserver interface {
 type trackedUsersReporter interface {
 	ReportUsers(ctx context.Context, reports []*trackedusers.UsersReport, tx *Tx) error
 	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceIdFilter map[string]bool) []*trackedusers.UsersReport
+}
+
+type activationRecordsReporter interface {
+	GenerateReportsFromJobs(jobs []*jobsdb.JobT) []*activationrecords.ActivationRecord
+	ReportActivationRecords(ctx context.Context, reports []*activationrecords.ActivationRecord, tx *Tx) error
 }
 
 // Handle is a handle to the processor module
@@ -203,6 +213,8 @@ type Handle struct {
 
 	sourceObservers      []sourceObserver
 	trackedUsersReporter trackedUsersReporter
+
+	activationRecordsReporter activationRecordsReporter
 }
 type processorStats struct {
 	statGatewayDBR                func(partition string) stats.Measurement
@@ -418,6 +430,7 @@ func (proc *Handle) Setup(
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
 	trackedUsersReporter trackedusers.UsersReporter,
+	activationRecordsReporter activationrecords.ActivationRecordsReporter,
 	pendingEventsRegistry rmetrics.PendingEventsRegistry,
 ) error {
 	proc.reporting = reporting
@@ -473,6 +486,7 @@ func (proc *Handle) Setup(
 	proc.instanceID = misc.GetInstanceID()
 
 	proc.trackedUsersReporter = trackedUsersReporter
+	proc.activationRecordsReporter = activationRecordsReporter
 	proc.tracer = tracing.New(proc.statsFactory.NewTracer("processor"), tracing.WithNamePrefix("proc"))
 	proc.stats.statGatewayDBR = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_gateway_db_read", stats.CountType, stats.Tags{
@@ -949,6 +963,29 @@ func (proc *Handle) getBackendEnabledDestinationTypes(sourceId string) map[strin
 		}
 	}
 	return enabledDestinationTypes
+}
+
+// stripActivationMetadata removes the context.activation fields that MAR metering
+// stamps on reverse-ETL events (fingerprint and origin), so these internal metering
+// values never leak to a destination. If that leaves context.activation empty, the
+// namespace is removed too. Callers must gate this on reverse-ETL sources — we never
+// stamp elsewhere, so any context.activation on other source types is customer-owned
+// data that must be preserved untouched. Other keys under context.activation are left
+// in place, since they can only be customer-set.
+func stripActivationMetadata(event types.SingularEventT) {
+	ctxMap, ok := event["context"].(map[string]any)
+	if !ok {
+		return
+	}
+	activation, ok := ctxMap["activation"].(map[string]any)
+	if !ok {
+		return
+	}
+	delete(activation, "fingerprint")
+	delete(activation, "origin")
+	if len(activation) == 0 {
+		delete(ctxMap, "activation")
+	}
 }
 
 func getTimestampFromEvent(event types.SingularEventT, field string, defaultTimestamp time.Time) time.Time {
@@ -1846,7 +1883,18 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			}
 		}
 
+		// context.activation (fingerprint + origin) is stamped only on reverse-ETL
+		// (warehouse) sources for MAR metering. Strip it before delivery so these internal
+		// metering values never leak downstream — gated on source category so we never
+		// touch a customer-set context.activation on other source types. Metering reads
+		// these from the raw job payloads (see GenerateReportsFromJobs), which are left
+		// intact, so stripping these destination-bound copies is safe.
+		isReverseETLSource := strings.EqualFold(source.SourceDefinition.Category, sourceCategoryWarehouse)
+
 		for _, singularEvent := range gatewayBatchEvent.Batch {
+			if isReverseETLSource {
+				stripActivationMetadata(singularEvent)
+			}
 			messageId := stringify.Any(singularEvent["messageId"])
 			payloadFunc := ro.Memoize(func() json.RawMessage {
 				payloadBytes, err := jsonrs.Marshal(singularEvent)
@@ -2356,6 +2404,11 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	trackedUsersReports := proc.trackedUsersReporter.GenerateReportsFromJobs(preTrans.jobList, proc.getNonEventStreamSources())
 	proc.stats.trackedUsersReportGeneration(preTrans.partition).SendTiming(time.Since(trackedUsersReportGenStart))
 
+	// GenerateReportsFromJobs reads context.activation from the raw job payloads
+	// (left intact here so metering still works); the destination-bound copies are
+	// already stripped per-event in preprocessStage.
+	activationRecordsReports := proc.activationRecordsReporter.GenerateReportsFromJobs(preTrans.jobList)
+
 	return &transformationMessage{
 		preTrans.subJobs.ctx,
 		groupedEvents,
@@ -2372,6 +2425,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		preTrans.subJobs.hasMore,
 		preTrans.subJobs.rsourcesStats,
 		trackedUsersReports,
+		activationRecordsReports,
 	}, nil
 }
 
@@ -2444,6 +2498,8 @@ type transformationMessage struct {
 	hasMore             bool
 	rsourcesStats       rsources.StatsCollector
 	trackedUsersReports []*trackedusers.UsersReport
+
+	activationRecordsReports []*activationrecords.ActivationRecord
 }
 
 type userTransformData struct {
@@ -2454,6 +2510,7 @@ type userTransformData struct {
 	sourceDupStats                map[dupStatKey]int
 	dedupKeys                     map[string]struct{}
 	trackedUsersReports           []*trackedusers.UsersReport
+	activationRecordsReports      []*activationrecords.ActivationRecord
 
 	totalEvents int
 	start       time.Time
@@ -2547,6 +2604,7 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 		hasMore:                       in.hasMore,
 		rsourcesStats:                 in.rsourcesStats,
 		trackedUsersReports:           in.trackedUsersReports,
+		activationRecordsReports:      in.activationRecordsReports,
 		traces:                        traces,
 	}
 }
@@ -2615,6 +2673,7 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 	return &storeMessage{
 		in.ctx,
 		in.trackedUsersReports,
+		in.activationRecordsReports,
 		in.statusList,
 		destJobs,
 		batchDestJobs,
@@ -2637,10 +2696,12 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 type storeMessage struct {
 	ctx                 context.Context
 	trackedUsersReports []*trackedusers.UsersReport
-	statusList          []*jobsdb.JobStatusT
-	destJobs            []*jobsdb.JobT
-	batchDestJobs       []*jobsdb.JobT
-	droppedJobs         []*jobsdb.JobT
+
+	activationRecordsReports []*activationrecords.ActivationRecord
+	statusList               []*jobsdb.JobStatusT
+	destJobs                 []*jobsdb.JobT
+	batchDestJobs            []*jobsdb.JobT
+	droppedJobs              []*jobsdb.JobT
 
 	procErrorJobsByDestID map[string][]procErrorJob
 	routerDestIDs         []string
@@ -2676,6 +2737,7 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 	sm.totalEvents += subJob.totalEvents
 
 	sm.trackedUsersReports = append(sm.trackedUsersReports, subJob.trackedUsersReports...)
+	sm.activationRecordsReports = append(sm.activationRecordsReports, subJob.activationRecordsReports...)
 }
 
 func (proc *Handle) sendRetryStoreStats(attempt int) {
@@ -2881,6 +2943,11 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 			err = proc.trackedUsersReporter.ReportUsers(ctx, in.trackedUsersReports, tx.Tx())
 			if err != nil {
 				return fmt.Errorf("storing tracked users: %w", err)
+			}
+
+			err = proc.activationRecordsReporter.ReportActivationRecords(ctx, in.activationRecordsReports, tx.Tx())
+			if err != nil {
+				return fmt.Errorf("storing activation records: %w", err)
 			}
 
 			// this will publish stats for all sources involved in this batch

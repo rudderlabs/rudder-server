@@ -2,6 +2,7 @@ package jobsdb
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 )
 
 func TestJobsdbPileupCount(t *testing.T) {
@@ -200,4 +202,58 @@ func TestJobsdbPileupCount(t *testing.T) {
 	require.NoError(t, g2.Wait(), "goroutines 3 and 4 should not return an error")
 	require.EqualValues(t, 0, pileupCount.Load())
 	t.Logf("Queries: %d, Migrations: %d", queries, migrations)
+}
+
+// TestJobsdbPileupCountMultiConsumer verifies that GetPileUpCounts on a multi-consumer handle
+// reports pending events per consumer (consumer = destination_id): a job pending for N consumers
+// contributes N pending events, and a per-consumer terminal status drops exactly that consumer.
+func TestJobsdbPileupCountMultiConsumer(t *testing.T) {
+	_ = startPostgres(t)
+
+	const (
+		customVal   = "MCPILE"
+		workspaceID = "ws"
+	)
+
+	c := config.New()
+	c.Set("JobsDB.maxDSSize", 100)
+
+	jdb := Handle{config: c}
+	jdb.conf.multiConsumer = true
+	require.NoError(t, jdb.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
+	defer jdb.TearDown()
+
+	// job0 pending for A and B; job1 pending for A only
+	jobs := []*JobT{
+		{UUID: uuid.New(), UserID: "u", CustomVal: customVal, Parameters: []byte(`{}`), EventPayload: []byte(`{}`), EventCount: 1, WorkspaceId: workspaceID, Consumers: []string{"A", "B"}},
+		{UUID: uuid.New(), UserID: "u", CustomVal: customVal, Parameters: []byte(`{}`), EventPayload: []byte(`{}`), EventCount: 1, WorkspaceId: workspaceID, Consumers: []string{"A"}},
+	}
+	require.NoError(t, jdb.Store(context.Background(), jobs))
+
+	pileup := func() map[string]int {
+		counts := map[string]int{}
+		require.NoError(t, jdb.GetPileUpCounts(context.Background(), time.Now(), func(tablePrefix, ws, destType, destinationID string, value float64) {
+			require.Equal(t, customVal, destType)
+			require.Equal(t, workspaceID, ws)
+			counts[destinationID] += int(value)
+		}))
+		return counts
+	}
+
+	// Both jobs pending for A, one for B.
+	require.Equal(t, map[string]int{"A": 2, "B": 1}, pileup())
+
+	// Store is COPY-based and does not populate JobID; consumer "B" uniquely identifies job0.
+	job0, err := jdb.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10, Consumer: "B"})
+	require.NoError(t, err)
+	require.Len(t, job0.Jobs, 1)
+
+	// Consumer A finishes job0 → A drops to 1, B unchanged.
+	require.NoError(t, jdb.UpdateJobStatus(context.Background(), []*JobStatusT{{
+		JobID: job0.Jobs[0].JobID, JobState: Succeeded.State, AttemptNum: 1,
+		ExecTime: time.Now(), RetryTime: time.Now(), ErrorCode: "200",
+		ErrorResponse: []byte(`{}`), Parameters: []byte(`{}`),
+		WorkspaceId: workspaceID, CustomVal: customVal, Consumer: "A",
+	}}))
+	require.Equal(t, map[string]int{"A": 1, "B": 1}, pileup())
 }

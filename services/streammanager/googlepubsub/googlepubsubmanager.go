@@ -101,6 +101,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	for _, s := range pubsubConfig.EventToTopicMap {
 		topic := client.Publisher(s["to"])
 		topic.PublishSettings.NumGoroutines = config.GetIntVar(25, 1, "Router.GOOGLEPUBSUB.Client.NumGoroutines")
+		topic.PublishSettings.EnableCompression = config.GetBoolVar(false, "Router.GOOGLEPUBSUB.Client.EnableCompression")
 		topic.PublishSettings.DelayThreshold = config.GetDurationVar(10, time.Millisecond, "Router.GOOGLEPUBSUB.Client.DelayThreshold")
 		topic.PublishSettings.CountThreshold = config.GetIntVar(64, 1, "Router.GOOGLEPUBSUB.Client.CountThreshold", "Router.GOOGLEPUBSUB.noOfWorkers", "Router.noOfWorkers")
 		topic.PublishSettings.ByteThreshold = config.GetIntVar(int(10*bytesize.MB), 1, "Router.GOOGLEPUBSUB.Client.ByteThreshold")

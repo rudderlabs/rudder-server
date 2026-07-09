@@ -50,4 +50,5 @@ message Job {
   bytes parameters = 9;
   string workspaceId = 10;
   string partitionId = 11;
+  repeated string consumers = 12;
 }

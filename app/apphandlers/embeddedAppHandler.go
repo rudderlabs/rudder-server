@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/bench"
 	"github.com/rudderlabs/rudder-server/processor"
+	"github.com/rudderlabs/rudder-server/processor/cpservice"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routerManager "github.com/rudderlabs/rudder-server/router/manager"
@@ -102,6 +103,15 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	err = trackedUsersReporter.MigrateDatabase(misc.GetConnectionString(config, "tracked_users"), config)
 	if err != nil {
 		return fmt.Errorf("could not run tracked users database migration: %w", err)
+	}
+
+	activationRecordsReporter, err := a.app.Features().ActivationRecords.Setup(config)
+	if err != nil {
+		return fmt.Errorf("could not setup activation records: %w", err)
+	}
+	err = activationRecordsReporter.MigrateDatabase(misc.GetConnectionString(config, "activation_records"), config)
+	if err != nil {
+		return fmt.Errorf("could not run activation records database migration: %w", err)
 	}
 	reporting := a.app.Features().Reporting.Setup(ctx, config, backendconfig.DefaultBackendConfig)
 	defer reporting.Stop()
@@ -356,6 +366,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		transformationhandle,
 		enrichers,
 		trackedUsersReporter,
+		activationRecordsReporter,
 		pendingEventsRegistry,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 		processor.WithProcDB(procRWDB),
@@ -481,5 +492,20 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 			return b.Run(ctx)
 		})
 	}
+
+	// Only the node-0 pod opens the cp-router dataplane connection (and, by
+	// extension, owns any privileged work served over it). Every other pod and
+	// the flag-off case skip the bootstrap entirely.
+	if cpservice.ShouldConnect(config) {
+		service := cpservice.NewService(config, a.log, statsFactory)
+		cpConnector, err := cpservice.NewConnector(config, a.log, statsFactory, backendconfig.DefaultBackendConfig, service)
+		if err != nil {
+			return fmt.Errorf("setting up cp-router connection: %w", err)
+		}
+		g.Go(crash.Wrapper(func() error {
+			return cpConnector.Run(ctx)
+		}))
+	}
+
 	return g.Wait()
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-server/cluster/migrator/processor/sourcenode"
 	"github.com/rudderlabs/rudder-server/cluster/migrator/processor/targetnode"
 	"github.com/rudderlabs/rudder-server/cluster/migrator/retry"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
 // PartitionMigrator handles partition migrations for a processor node
@@ -63,7 +64,7 @@ func (ppm *processorPartitionMigrator) Start() error {
 	wg, ctx := errgroup.WithContext(ppm.lifecycleCtx)
 	ppm.wg = wg
 	ppm.pendingMigrations = make(map[string]struct{})
-
+	ctx = jobsdb.WithPriorityPool(ctx) // use priority pool for migration job handling
 	// start watching for new partition migrations
 	wg.Go(func() error {
 		ppm.watchNewMigrations(ctx)

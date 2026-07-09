@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/activationrecords"
 	configenv "github.com/rudderlabs/rudder-server/enterprise/config-env"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
@@ -90,6 +91,9 @@ func (a *app) initFeatures() {
 		},
 		TrackedUsers: &trackedusers.Factory{
 			Log: enterpriseLogger.Child("tracked-users"),
+		},
+		ActivationRecords: &activationrecords.Factory{
+			Log: enterpriseLogger.Child("activation-records"),
 		},
 	}
 }
