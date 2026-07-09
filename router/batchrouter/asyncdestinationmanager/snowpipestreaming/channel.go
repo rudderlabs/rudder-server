@@ -123,7 +123,7 @@ func (m *Manager) createChannel(
 	case internalapi.ErrValidationError, internalapi.ErrAuthenticationFailed, internalapi.ErrRoleDoesNotExistOrNotAuthorized, internalapi.ErrDatabaseDoesNotExistOrNotAuthorized:
 		return nil, fmt.Errorf("%w: validation or authorization error", errAbort)
 	default:
-		if resp.SnowflakeAPIHttpCode == internalapi.ApiStatusUnsupportedColumn {
+		if resp.SnowflakeAPIStatusCode == internalapi.ApiStatusUnsupportedColumn {
 			return nil, fmt.Errorf("%w: creating channel with code %s, message: %s and error: %s", errAbort, resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 		}
 		return nil, fmt.Errorf("creating channel with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)

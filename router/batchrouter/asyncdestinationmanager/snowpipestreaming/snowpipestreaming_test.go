@@ -1063,7 +1063,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.ChannelResponse{
 						Success:              false,
 						SnowflakeAPIMessage:  "Unknown error occurred",
-						SnowflakeAPIHttpCode: internalapi.ApiStatusUnsupportedColumn,
+						SnowflakeAPIStatusCode: internalapi.ApiStatusUnsupportedColumn,
 					}, nil
 				},
 			},
