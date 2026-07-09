@@ -525,31 +525,49 @@ func TestGetObjectFolder(t *testing.T) {
 
 func TestGetObjectFolderForDeltalake(t *testing.T) {
 	inputs := []struct {
-		provider     string
-		location     string
-		objectFolder string
+		name                        string
+		provider                    string
+		location                    string
+		enableHierarchicalNamespace bool
+		objectFolder                string
 	}{
 		{
+			name:         "S3",
 			provider:     "S3",
 			location:     "https://test-bucket.s3.amazonaws.com/myfolder/test-object.csv",
 			objectFolder: "s3://test-bucket/myfolder",
 		},
 		{
+			name:         "S3 without object name",
+			provider:     "S3",
+			location:     "https://test-bucket.s3.amazonaws.com/myfolder",
+			objectFolder: "s3://test-bucket",
+		},
+		{
+			name:         "GCS",
 			provider:     "GCS",
 			location:     "https://storage.googleapis.com/test-bucket/test-object.csv",
 			objectFolder: "gs://test-bucket",
 		},
 		{
+			name:         "Azure Blob",
 			provider:     "AZURE_BLOB",
 			location:     "https://myproject.blob.core.windows.net/test-bucket/myfolder/test-object.csv",
 			objectFolder: "wasbs://test-bucket@myproject.blob.core.windows.net/myfolder",
 		},
+		{
+			name:                        "Azure Blob with hierarchical namespace",
+			provider:                    "AZURE_BLOB",
+			location:                    "https://myproject.blob.core.windows.net/test-bucket/myfolder/test-object.csv",
+			enableHierarchicalNamespace: true,
+			objectFolder:                "abfss://test-bucket@myproject.dfs.core.windows.net/myfolder",
+		},
 	}
 
 	for _, input := range inputs {
-		t.Run(input.provider, func(t *testing.T) {
-			objectFolder := GetObjectFolderForDeltalake(input.provider, input.location)
-			require.Equal(t, objectFolder, input.objectFolder)
+		t.Run(input.name, func(t *testing.T) {
+			objectFolder := GetObjectFolderForDeltalake(input.provider, input.location, input.enableHierarchicalNamespace)
+			require.Equal(t, input.objectFolder, objectFolder)
 		})
 	}
 }

@@ -29,6 +29,16 @@ type KlaviyoBulkUploader struct {
 	MaxAllowedProfileSize int // Override MAXALLOWEDPROFILESIZE for testing (0 = use default)
 }
 
+// chunkUploadResult is the outcome of uploading a single chunk, after at most one
+// strip-and-retry.
+type chunkUploadResult struct {
+	importID    string  // non-empty when a job was created for the surviving valid profiles
+	abortedJobs []int64 // jobs rejected by Klaviyo's synchronous validation
+	failedJobs  []int64 // jobs that hit a retryable failure (5xx/429/transport)
+	abortReason string
+	failReason  string
+}
+
 type ErrorDetail struct {
 	ID     string      `json:"id"`
 	Code   string      `json:"code"`
@@ -57,7 +67,8 @@ type UploadResp struct {
 	Data struct {
 		Id string `json:"id"`
 	} `json:"data"`
-	Errors ErrorDetailList `json:"errors"`
+	Errors     ErrorDetailList `json:"errors"`
+	StatusCode int             `json:"-"`
 }
 
 type PollResp struct {

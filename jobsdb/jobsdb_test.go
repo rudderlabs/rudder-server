@@ -389,7 +389,7 @@ func TestRefreshDSList(t *testing.T) {
 	versionBeforeDrop := jobsDB.dsList.currentVersion()
 	dsToDrop := jobsDB.getDSListSnapshot()[0]
 	jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
-		_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, dsToDrop)
+		err := jobsDB.addCompletedDSToDropList(context.Background(), l, dsToDrop)
 		require.NoError(t, err)
 		jobsDB.dropDSListLock.RLock()
 		require.Len(t, jobsDB.dropDSList, 1)
@@ -438,7 +438,7 @@ func TestPreDropMarker(t *testing.T) {
 	jobsDB.Stop()
 
 	require.NoError(t, jobsDB.dsListLock.WithLockInCtx(context.Background(), func(l lock.LockToken) error {
-		_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1)
+		err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1)
 		return err
 	}))
 
@@ -658,9 +658,9 @@ func TestDropDSLoop(t *testing.T) {
 		statStore, err := memstats.New()
 		require.NoError(t, err)
 		jobsDB := &Handle{
-			TriggerAddNewDS:  func() <-chan time.Time { return make(chan time.Time) },
-			TriggerMigrateDS: func() <-chan time.Time { return make(chan time.Time) },
-			stats:            statStore,
+			TriggerAddNewDS:   func() <-chan time.Time { return make(chan time.Time) },
+			TriggerCompaction: func() <-chan time.Time { return make(chan time.Time) },
+			stats:             statStore,
 		}
 		prefix := strings.ToLower(rsRand.String(5))
 		require.NoError(t, jobsDB.Setup(ReadWrite, false, prefix))
@@ -700,7 +700,7 @@ func TestDropDSLoop(t *testing.T) {
 		require.Equal(t, dsToDrop.Index, dsList[0].Index)
 
 		jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
-			_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, dsToDrop)
+			err := jobsDB.addCompletedDSToDropList(context.Background(), l, dsToDrop)
 			require.NoError(t, err)
 		})
 		require.Len(t, jobsDB.getDSListSnapshot(), 1)
@@ -724,7 +724,7 @@ func TestDropDSLoop(t *testing.T) {
 		ds1, ds2 := snapshot[0], snapshot[1]
 
 		jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
-			_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1, ds2)
+			err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1, ds2)
 			require.NoError(t, err)
 		})
 
@@ -749,7 +749,7 @@ func TestDropDSLoop(t *testing.T) {
 		versionBefore := jobsDB.dsList.currentVersion()
 
 		jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
-			_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1)
+			err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1)
 			require.NoError(t, err)
 		})
 		jobsDB.dropDSListLock.RLock()
@@ -758,7 +758,7 @@ func TestDropDSLoop(t *testing.T) {
 		require.Equal(t, versionBefore+1, jobsDB.dsList.currentVersion(), "first add should bump the dsList version once")
 
 		jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
-			_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1)
+			err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1)
 			require.NoError(t, err)
 		})
 		jobsDB.dropDSListLock.RLock()
@@ -767,7 +767,7 @@ func TestDropDSLoop(t *testing.T) {
 		require.Equal(t, versionBefore+1, jobsDB.dsList.currentVersion(), "duplicate add must NOT bump the dsList version")
 
 		jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
-			_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1, ds2)
+			err := jobsDB.addCompletedDSToDropList(context.Background(), l, ds1, ds2)
 			require.NoError(t, err)
 		})
 		jobsDB.dropDSListLock.RLock()
@@ -789,7 +789,7 @@ func TestDropDSLoop(t *testing.T) {
 		defer release()
 
 		jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
-			_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, dsToDrop)
+			err := jobsDB.addCompletedDSToDropList(context.Background(), l, dsToDrop)
 			require.NoError(t, err)
 		})
 		require.Never(t, func() bool { return !tableExists(t, jobsDB, dsToDrop) }, 200*time.Millisecond, 20*time.Millisecond)
@@ -824,7 +824,7 @@ func TestDropDSLoop(t *testing.T) {
 		require.True(t, present, "dsRangeFuncMap must contain an entry for non-last datasets after refresh")
 
 		jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
-			_, err := jobsDB.addCompletedDSToDropList(context.Background(), l, dsToDrop)
+			err := jobsDB.addCompletedDSToDropList(context.Background(), l, dsToDrop)
 			require.NoError(t, err)
 		})
 
@@ -1190,8 +1190,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		require.Equal(t, 2, len(jobsDB2.getDSListSnapshot()), "expected jobsDB2 to have refreshed its ds list")
 
 		require.Equal(t, 1, len(jobsDB3.getDSListSnapshot()), "expected jobsDB3 to still have a list length of 1")
-		errorsMap := jobsDB3.StoreEachBatchRetry(context.Background(), [][]*JobT{generateJobs(2)})
-		require.Equal(t, 0, len(errorsMap))
+		require.NoError(t, jobsDB3.Store(context.Background(), generateJobs(2)))
 
 		require.Equal(t, 2, len(jobsDB3.getDSListSnapshot()), "expected jobsDB3 to have refreshed its ds list")
 
@@ -1286,7 +1285,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		c.Set("JobsDB.maxDSSize", 1)
 
 		triggerAddNewDS := make(chan time.Time)
-		triggerMigrateDS := make(chan time.Time)
+		triggerCompaction := make(chan time.Time)
 		blockTrigger := make(chan time.Time) // never fires
 
 		statStore, err := memstats.New()
@@ -1296,21 +1295,21 @@ func TestThreadSafeJobStorage(t *testing.T) {
 
 		// jobsDB1 has all loop triggers blocked so its in-memory DS list stays stale.
 		jobsDB1 := &Handle{
-			TriggerAddNewDS:  func() <-chan time.Time { return blockTrigger },
-			TriggerMigrateDS: func() <-chan time.Time { return blockTrigger },
-			TriggerRefreshDS: func() <-chan time.Time { return blockTrigger },
-			config:           c,
-			stats:            statStore,
+			TriggerAddNewDS:   func() <-chan time.Time { return blockTrigger },
+			TriggerCompaction: func() <-chan time.Time { return blockTrigger },
+			TriggerRefreshDS:  func() <-chan time.Time { return blockTrigger },
+			config:            c,
+			stats:             statStore,
 		}
 		require.NoError(t, jobsDB1.Setup(ReadWrite, true, prefix))
 		defer jobsDB1.TearDown()
 
-		// jobsDB2 controls the addNewDS and migrateDS loops.
+		// jobsDB2 controls the addNewDS and compaction loops.
 		jobsDB2 := &Handle{
-			TriggerAddNewDS:  func() <-chan time.Time { return triggerAddNewDS },
-			TriggerMigrateDS: func() <-chan time.Time { return triggerMigrateDS },
-			config:           c,
-			stats:            statStore,
+			TriggerAddNewDS:   func() <-chan time.Time { return triggerAddNewDS },
+			TriggerCompaction: func() <-chan time.Time { return triggerCompaction },
+			config:            c,
+			stats:             statStore,
 		}
 		require.NoError(t, jobsDB2.Setup(ReadWrite, false, prefix))
 		defer jobsDB2.TearDown()
@@ -1348,8 +1347,8 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			CustomVal:  res.Jobs[0].CustomVal,
 		}}))
 
-		// Trigger migration via jobsDB2: DS1 has no pending jobs, so it is dropped.
-		triggerMigrateDS <- time.Now()
+		// Trigger compaction via jobsDB2: DS1 has no pending jobs, so it is dropped.
+		triggerCompaction <- time.Now()
 
 		// Wait for DS1's job table to be physically dropped from the database.
 		require.Eventually(t, func() bool {
@@ -2087,13 +2086,13 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	statStore, err := memstats.New()
 	require.NoError(t, err)
 	triggerAddNewDS := make(chan time.Time)
-	triggerMigrateDS := make(chan time.Time)
+	triggerCompaction := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
-		TriggerMigrateDS: func() <-chan time.Time {
-			return triggerMigrateDS
+		TriggerCompaction: func() <-chan time.Time {
+			return triggerCompaction
 		},
 		config: c,
 		stats:  statStore,
@@ -2182,8 +2181,8 @@ func TestGetDistinctParameterValues(t *testing.T) {
 		}
 	})
 	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses))
-	triggerMigrateDS <- time.Now()
-	triggerMigrateDS <- time.Now()
+	triggerCompaction <- time.Now()
+	triggerCompaction <- time.Now()
 
 	parameterValues, err = jobsDB.GetDistinctParameterValues(context.Background(), SourceID, "")
 	require.NoError(t, err)
@@ -2363,65 +2362,6 @@ func TestGetJobsLimitsReached(t *testing.T) {
 	}
 }
 
-func TestGetJobsLateralJoinToggle(t *testing.T) {
-	pgContainer := startPostgres(t)
-	customVal := strings.ToUpper(rsRand.String(8))
-	prefix := strings.ToLower(rsRand.String(5))
-
-	c := config.New()
-	db := NewForReadWrite(prefix, WithDBHandle(pgContainer.DB), WithConfig(c))
-	require.NoError(t, db.Start())
-	defer db.TearDown()
-
-	jobs := make([]*JobT, 5)
-	for i := range jobs {
-		jobs[i] = &JobT{
-			Parameters:   []byte(`{}`),
-			EventPayload: []byte(`{"k":"v"}`),
-			UserID:       "u",
-			UUID:         uuid.New(),
-			CustomVal:    customVal,
-			EventCount:   1,
-			WorkspaceId:  "ws",
-		}
-	}
-	require.NoError(t, db.Store(context.Background(), jobs))
-
-	all, err := db.GetUnprocessed(context.Background(), GetQueryParams{
-		CustomValFilters: []string{customVal},
-		JobsLimit:        100,
-	})
-	require.NoError(t, err)
-	require.Len(t, all.Jobs, 5)
-
-	// Mark jobs[2,3] failed, job[4] waiting; leave jobs[0,1] unprocessed.
-	statuses := []*JobStatusT{
-		{JobID: all.Jobs[2].JobID, JobState: Failed.State, AttemptNum: 1, ExecTime: time.Now(), RetryTime: time.Now(), ErrorCode: "500", ErrorResponse: []byte(`{}`), Parameters: []byte(`{}`), WorkspaceId: "ws", CustomVal: customVal},
-		{JobID: all.Jobs[3].JobID, JobState: Failed.State, AttemptNum: 1, ExecTime: time.Now(), RetryTime: time.Now(), ErrorCode: "500", ErrorResponse: []byte(`{}`), Parameters: []byte(`{}`), WorkspaceId: "ws", CustomVal: customVal},
-		{JobID: all.Jobs[4].JobID, JobState: Waiting.State, AttemptNum: 1, ExecTime: time.Now(), RetryTime: time.Now(), ErrorCode: "", ErrorResponse: []byte(`{}`), Parameters: []byte(`{}`), WorkspaceId: "ws", CustomVal: customVal},
-	}
-	require.NoError(t, db.UpdateJobStatus(context.Background(), statuses))
-
-	params := GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100}
-
-	// lateral path
-	c.Set("JobsDB.getJobsUseLateralJoin", true)
-	lateralResult, err := db.GetToProcess(context.Background(), params, nil)
-	require.NoError(t, err)
-	require.Len(t, lateralResult.Jobs, 5, "lateral join should return all 5 jobs")
-
-	// flip to v_last path
-	c.Set("JobsDB.getJobsUseLateralJoin", false)
-
-	vLastResult, err := db.GetToProcess(context.Background(), params, nil)
-	require.NoError(t, err)
-	require.Len(t, vLastResult.Jobs, 5, "v_last join should return all 5 jobs")
-
-	lateralIDs := lo.Map(lateralResult.Jobs, func(j *JobT, _ int) int64 { return j.JobID })
-	vLastIDs := lo.Map(vLastResult.Jobs, func(j *JobT, _ int) int64 { return j.JobID })
-	require.Equal(t, lateralIDs, vLastIDs, "v_last and lateral join should return the same job IDs in the same order")
-}
-
 func TestUpdateJobStatus(t *testing.T) {
 	_ = startPostgres(t)
 	c := config.New()
@@ -2429,13 +2369,13 @@ func TestUpdateJobStatus(t *testing.T) {
 	statStore, err := memstats.New()
 	require.NoError(t, err)
 	triggerAddNewDS := make(chan time.Time)
-	triggerMigrateDS := make(chan time.Time)
+	triggerCompaction := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
-		TriggerMigrateDS: func() <-chan time.Time {
-			return triggerMigrateDS
+		TriggerCompaction: func() <-chan time.Time {
+			return triggerCompaction
 		},
 		config: c,
 		stats:  statStore,

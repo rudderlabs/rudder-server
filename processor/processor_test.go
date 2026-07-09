@@ -22,6 +22,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/activationrecords"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -260,6 +262,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "B",
 					Enabled:            true,
 					IsProcessorEnabled: true,
+					Version:            1,
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						ID:          "enabled-destination-b-definition-id",
 						Name:        "MINIO",
@@ -346,6 +349,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "B",
 					Enabled:            true,
 					IsProcessorEnabled: true,
+					Version:            1,
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						ID:          "enabled-destination-b-definition-id",
 						Name:        "MINIO",
@@ -859,6 +863,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "B",
 					Enabled:            true,
 					IsProcessorEnabled: true,
+					Version:            1,
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						ID:          "enabled-destination-b-definition-id",
 						Name:        "MINIO",
@@ -1933,38 +1938,65 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 				},
 			}
 
+			// The source for these jobs (SourceIDEnabledNoUT) is an event-stream (webhook)
+			// source, not reverse-ETL. MAR only stamps/strips context.activation.fingerprint
+			// on reverse-ETL sources, so here the strip is gated OFF: whatever a non-rETL event
+			// carries under context.activation — including a value shaped like our metering
+			// fingerprint — must reach the destination untouched. Inject into batch.0
+			// (message-3) and batch.1 (message-4), the two messages routed to destination A, to
+			// assert this across a multi-event batch.
+			unprocessedJobsList[4].EventPayload, _ = sjson.SetBytes(
+				unprocessedJobsList[4].EventPayload,
+				"batch.0.context.activation",
+				map[string]string{"fingerprint": "fp-1"},
+			)
+			unprocessedJobsList[4].EventPayload, _ = sjson.SetBytes(
+				unprocessedJobsList[4].EventPayload,
+				"batch.1.context.activation",
+				map[string]string{"fingerprint": "fp-2", "custom": "keep-me"},
+			)
+			Expect(len(jsonparser.GetValueOrEmpty(unprocessedJobsList[4].EventPayload, "batch", "[0]", "context", "activation"))).To(BeNumerically(">", 0))
+			Expect(len(jsonparser.GetValueOrEmpty(unprocessedJobsList[4].EventPayload, "batch", "[1]", "context", "activation"))).To(BeNumerically(">", 0))
+
 			mockTransformerClients := transformer.NewSimpleClients()
 			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
+			processor.activationRecordsReporter = activationrecords.NewNoopActivationRecordsReporter()
 
-			mockTransformerClients.SetDestinationTransformOutput(
-				// Return a fixed response that matches our expectations for store calls
-				types.Response{
-					Events: []types.TransformerResponse{
-						{
-							Output: map[string]any{
-								"int-value":    0,
-								"string-value": fmt.Sprintf("value-%s", DestinationIDEnabledA),
-							},
-							Metadata: types.Metadata{
-								SourceID:      "source-from-transformer", // transformer should replay source id
-								SourceName:    "source-from-transformer-name",
-								DestinationID: "destination-from-transformer", // transformer should replay destination id
-							},
+			// Return a fixed response that matches our expectations for store calls.
+			destinationTransformOutput := types.Response{
+				Events: []types.TransformerResponse{
+					{
+						Output: map[string]any{
+							"int-value":    0,
+							"string-value": fmt.Sprintf("value-%s", DestinationIDEnabledA),
 						},
-						{
-							Output: map[string]any{
-								"int-value":    1,
-								"string-value": fmt.Sprintf("value-%s", DestinationIDEnabledA),
-							},
-							Metadata: types.Metadata{
-								SourceID:      "source-from-transformer", // transformer should replay source id
-								SourceName:    "source-from-transformer-name",
-								DestinationID: "destination-from-transformer", // transformer should replay destination id
-							},
+						Metadata: types.Metadata{
+							SourceID:      "source-from-transformer", // transformer should replay source id
+							SourceName:    "source-from-transformer-name",
+							DestinationID: "destination-from-transformer", // transformer should replay destination id
 						},
 					},
-				})
+					{
+						Output: map[string]any{
+							"int-value":    1,
+							"string-value": fmt.Sprintf("value-%s", DestinationIDEnabledA),
+						},
+						Metadata: types.Metadata{
+							SourceID:      "source-from-transformer", // transformer should replay source id
+							SourceName:    "source-from-transformer-name",
+							DestinationID: "destination-from-transformer", // transformer should replay destination id
+						},
+					},
+				},
+			}
+			// Capture the destination-bound transformer input so we can assert that
+			// context.activation never reaches the destination.
+			var capturedDestinationEvents []types.TransformerEvent
+			mockTransformerClients.WithDynamicDestinationTransform(func(_ context.Context, events []types.TransformerEvent) types.Response {
+				capturedDestinationEvents = append(capturedDestinationEvents, events...)
+				return destinationTransformOutput
+			})
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
@@ -2086,6 +2118,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 			}
 			Setup(processor, c, false, false)
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
+			processor.activationRecordsReporter = activationrecords.NewNoopActivationRecordsReporter()
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -2095,6 +2128,33 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 			Expect(c.mockTrackedUsersReporter.generateCalls[0].jobs).Should(Equal(unprocessedJobsList))
 			Expect(c.mockTrackedUsersReporter.reportCalls).To(HaveLen(1))
 			Expect(c.mockTrackedUsersReporter.reportCalls[0].reportedReports).Should(Equal(trackerUsersReports))
+			// The strip is gated on source category: for this non-rETL (webhook) source
+			// preprocessStage must NOT touch context.activation, so every destination-bound
+			// event keeps exactly what it carried. The captured slice holds every event routed
+			// to destination A (across the whole batch), not just the two we injected.
+			Expect(capturedDestinationEvents).ToNot(BeEmpty())
+			seenInjectedMessages := map[string]bool{}
+			for _, event := range capturedDestinationEvents {
+				ctxMap, _ := event.Message["context"].(map[string]any)
+				msgID, _ := event.Message["messageId"].(string)
+				switch msgID {
+				case "message-3":
+					// non-rETL source: fingerprint-shaped value is preserved untouched
+					Expect(ctxMap).To(HaveKey("activation"))
+					Expect(ctxMap["activation"]).To(Equal(map[string]any{"fingerprint": "fp-1"}))
+				case "message-4":
+					// non-rETL source: full context.activation preserved untouched
+					Expect(ctxMap).To(HaveKey("activation"))
+					Expect(ctxMap["activation"]).To(Equal(map[string]any{"fingerprint": "fp-2", "custom": "keep-me"}))
+				}
+				if msgID != "" {
+					seenInjectedMessages[msgID] = true
+				}
+			}
+			// Both messages we injected context.activation into (batch.0/message-3 and
+			// batch.1/message-4) must have reached the destination transformer (preserved).
+			Expect(seenInjectedMessages).To(HaveKey("message-3"))
+			Expect(seenInjectedMessages).To(HaveKey("message-4"))
 		})
 	})
 })
@@ -2137,6 +2197,7 @@ var _ = Describe("Processor", Ordered, func() {
 				nil,
 				nil,
 				nil,
+				nil,
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
@@ -2145,6 +2206,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
+				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
 			Expect(err).To(BeNil())
@@ -2168,6 +2230,7 @@ var _ = Describe("Processor", Ordered, func() {
 				nil,
 				nil,
 				nil,
+				nil,
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
@@ -2176,6 +2239,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
+				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
 			Expect(err).To(BeNil())
@@ -2203,6 +2267,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.mockBatchRouterJobsDB,
 				nil,
 				nil,
+				nil,
 				c.MockReportingI,
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
@@ -2212,6 +2277,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
+				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
 			Expect(err).To(BeNil())
@@ -3210,6 +3276,7 @@ var _ = Describe("Processor", Ordered, func() {
 				nil,
 				nil,
 				nil,
+				nil,
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
@@ -3218,6 +3285,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
+				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
 			Expect(err).To(BeNil())
@@ -3263,6 +3331,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.mockBatchRouterJobsDB,
 				nil,
 				nil,
+				nil,
 				c.MockReportingI,
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
@@ -3272,6 +3341,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
+				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
 			Expect(err).To(BeNil())
@@ -5281,6 +5351,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool,
 		c.mockBatchRouterJobsDB,
 		c.mockEventSchemasDB,
 		c.mockArchivalDB,
+		nil,
 		c.MockReportingI,
 		transientsource.NewStaticService([]string{SourceIDTransient}),
 		fileuploader.NewDefaultProvider(),
@@ -5290,6 +5361,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool,
 		transformationdebugger.NewNoOpService(),
 		[]enricher.PipelineEnricher{},
 		trackedusers.NewNoopDataCollector(),
+		activationrecords.NewNoopActivationRecordsReporter(),
 		rmetrics.NewPendingEventsRegistry(),
 	)
 	if len(t) == 0 {

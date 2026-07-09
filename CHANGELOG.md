@@ -1,5 +1,178 @@
 # Changelog
 
+## [1.80.0](https://github.com/rudderlabs/rudder-server/compare/v1.79.0...v1.80.0) (2026-07-06)
+
+
+### Features
+
+* add control-plane connection management for processor ([#7126](https://github.com/rudderlabs/rudder-server/issues/7126)) ([ea6ca00](https://github.com/rudderlabs/rudder-server/commit/ea6ca006ddc9709978ea1391677e0bfd1f12c225))
+* carry integration version on DestinationT to the transformer ([#7125](https://github.com/rudderlabs/rudder-server/issues/7125)) ([421c613](https://github.com/rudderlabs/rudder-server/commit/421c6132f2c6098d9d63c25c6f23c8c62325252e))
+* implement Forward RPC for control-plane requests to workspace pyt transformers ([#7143](https://github.com/rudderlabs/rudder-server/issues/7143)) ([8a704cf](https://github.com/rudderlabs/rudder-server/commit/8a704cf6c5e038a6a66e3858916fbba815805933))
+* implement Kubernetes deployment scaler for workspace replica management ([#7123](https://github.com/rudderlabs/rudder-server/issues/7123)) ([84fc747](https://github.com/rudderlabs/rudder-server/commit/84fc747b56f8d25b11cb3966db2650fd547f4dcd))
+* monthly active records (MAR) metering pipeline ([#7119](https://github.com/rudderlabs/rudder-server/issues/7119)) ([d1df486](https://github.com/rudderlabs/rudder-server/commit/d1df4864058152bd669f025ff66b3ad16ce26582))
+
+
+### Bug Fixes
+
+* **router:** transformer returning response with empty metadata array causes server to panic ([#7144](https://github.com/rudderlabs/rudder-server/issues/7144)) ([d6a4dbc](https://github.com/rudderlabs/rudder-server/commit/d6a4dbc7b24b63c52ec41126525b08513b29a813))
+
+
+### Miscellaneous
+
+* enable compression for google pubsub ([#7137](https://github.com/rudderlabs/rudder-server/issues/7137)) ([11c9ab8](https://github.com/rudderlabs/rudder-server/commit/11c9ab8b50de16840031ef349f87090a0401eba3))
+
+## [1.79.2](https://github.com/rudderlabs/rudder-server/compare/v1.79.1...v1.79.2) (2026-07-01)
+
+
+### Bug Fixes
+
+* **router:** transformer returning response with empty metadata array causes server to panic ([#7144](https://github.com/rudderlabs/rudder-server/issues/7144)) ([47573b3](https://github.com/rudderlabs/rudder-server/commit/47573b3c1e090b1ef949856d3a228ec8afdcfbcf))
+
+## [1.79.1](https://github.com/rudderlabs/rudder-server/compare/v1.79.0...v1.79.1) (2026-06-30)
+
+
+### Miscellaneous
+
+* enable compression for google pubsub ([#7137](https://github.com/rudderlabs/rudder-server/issues/7137)) ([f48a5d3](https://github.com/rudderlabs/rudder-server/commit/f48a5d3d7f5312602a4acdaf2fd9e086638a6b41))
+
+## [1.79.0](https://github.com/rudderlabs/rudder-server/compare/v1.78.0...v1.79.0) (2026-06-29)
+
+
+### Features
+
+* support compressing payloads in reporting client ([#7124](https://github.com/rudderlabs/rudder-server/issues/7124)) ([365b530](https://github.com/rudderlabs/rudder-server/commit/365b530b559f0e4549b9a16885a48873ad795d53))
+* support deltalake azure hierarchical namespace folders ([#7089](https://github.com/rudderlabs/rudder-server/issues/7089)) ([61b41e4](https://github.com/rudderlabs/rudder-server/commit/61b41e42438a75fe71f18ac1217cc725ebb3ac81))
+
+
+### Bug Fixes
+
+* **jobsdb:** compaction panics with pq error column js.consumer does not exist at position ([#7133](https://github.com/rudderlabs/rudder-server/issues/7133)) ([f392a53](https://github.com/rudderlabs/rudder-server/commit/f392a5370bf06903bb0afcec122b319048c5bfad))
+* panic in user transformer client due to timeout doesn't get recorded by alerts ([#7116](https://github.com/rudderlabs/rudder-server/issues/7116)) ([61b41e4](https://github.com/rudderlabs/rudder-server/commit/61b41e42438a75fe71f18ac1217cc725ebb3ac81))
+* partition migration restarts server on slow in-progress wait ([#7129](https://github.com/rudderlabs/rudder-server/issues/7129)) ([d63d597](https://github.com/rudderlabs/rudder-server/commit/d63d59747077dfa17181a5bcdb2c22c893824c9c))
+
+
+### Miscellaneous
+
+* **jobsdb:** capturing multi-consumer pending events ([#7121](https://github.com/rudderlabs/rudder-server/issues/7121)) ([dc382f7](https://github.com/rudderlabs/rudder-server/commit/dc382f72b55efee948813850419da8cf14a15e5c))
+* **jobsdb:** cleanup legacy configuration flags ([#7122](https://github.com/rudderlabs/rudder-server/issues/7122)) ([58778d5](https://github.com/rudderlabs/rudder-server/commit/58778d544bb91e0d87c04644648e6454d3e98332))
+* **jobsdb:** multi-consumer compaction ([#7096](https://github.com/rudderlabs/rudder-server/issues/7096)) ([57f1ef5](https://github.com/rudderlabs/rudder-server/commit/57f1ef53329eceb55f62b26a08f40f0434695f35))
+* **jobsdb:** multi-consumer get and noresults cache handling ([#7095](https://github.com/rudderlabs/rudder-server/issues/7095)) ([9d5c58a](https://github.com/rudderlabs/rudder-server/commit/9d5c58af6e8fd4302a99287a32f15df8e3b36842))
+* **jobsdb:** multi-consumer get distinct consumers ([#7097](https://github.com/rudderlabs/rudder-server/issues/7097)) ([f68a56d](https://github.com/rudderlabs/rudder-server/commit/f68a56d77c3ad52bde28c400177784a1be9df10b))
+* **jobsdb:** multi-consumer partition migration ([#7098](https://github.com/rudderlabs/rudder-server/issues/7098)) ([9cda68d](https://github.com/rudderlabs/rudder-server/commit/9cda68d47ab59d20e57b53c4168062d21d79d52c))
+* **jobsdb:** multi-consumer-specific indexes and views ([#7093](https://github.com/rudderlabs/rudder-server/issues/7093)) ([61b41e4](https://github.com/rudderlabs/rudder-server/commit/61b41e42438a75fe71f18ac1217cc725ebb3ac81))
+* **jobsdb:** multiconsumer flip, registry table and unionjobsdb ([#7094](https://github.com/rudderlabs/rudder-server/issues/7094)) ([9eff2e9](https://github.com/rudderlabs/rudder-server/commit/9eff2e90346a52e9eead5b8bafcec13adc79570a))
+* **jobsdb:** new columns for multi-consumer jobsdb ([#7082](https://github.com/rudderlabs/rudder-server/issues/7082)) ([61b41e4](https://github.com/rudderlabs/rudder-server/commit/61b41e42438a75fe71f18ac1217cc725ebb3ac81))
+* recreate stale rsources subscription on shared db ([#7108](https://github.com/rudderlabs/rudder-server/issues/7108)) ([c59e9e5](https://github.com/rudderlabs/rudder-server/commit/c59e9e55a673f200e413586d3dfefee39829712b))
+* use priority pool at migration start while polling for pending jobs ([#7128](https://github.com/rudderlabs/rudder-server/issues/7128)) ([254ae15](https://github.com/rudderlabs/rudder-server/commit/254ae153e48943fed7e82ebda7d75388146b3965))
+
+## [1.78.0](https://github.com/rudderlabs/rudder-server/compare/v1.77.0...v1.78.0) (2026-06-22)
+
+
+### Features
+
+* add and register bq stream v2 async destination manager ([#7057](https://github.com/rudderlabs/rudder-server/issues/7057)) ([787b7ac](https://github.com/rudderlabs/rudder-server/commit/787b7acb7f5bbca71688bb951d97f28c511f1ed9))
+* add BQSTREAM_V2 destination type and bqstreamv2 building blocks ([#7056](https://github.com/rudderlabs/rudder-server/issues/7056)) ([02e84e5](https://github.com/rudderlabs/rudder-server/commit/02e84e59bfc1d2318a8513e126d7619ae3b1ce1f))
+* **batchrouter:** raise getImportingJobs max iterations and remove payload size limit ([#7076](https://github.com/rudderlabs/rudder-server/issues/7076)) ([15707f6](https://github.com/rudderlabs/rudder-server/commit/15707f6e601c06b025cd192b730e723e30867895))
+* **gateway:** throttling support for internal batch endpoint ([#7055](https://github.com/rudderlabs/rudder-server/issues/7055)) ([6b6ba65](https://github.com/rudderlabs/rudder-server/commit/6b6ba657da5e30e061a3c8cf6b38876fadf2a256))
+* **jobsdb:** introduce compaction min ds age ([#7077](https://github.com/rudderlabs/rudder-server/issues/7077)) ([4d6d97a](https://github.com/rudderlabs/rudder-server/commit/4d6d97a7dec0e04c980ee1c8a51c623364b18659))
+* **processor:** new intermediate jobsdb ([#7048](https://github.com/rudderlabs/rudder-server/issues/7048)) ([dfef1f1](https://github.com/rudderlabs/rudder-server/commit/dfef1f136879cd95250d3878b506aa4d82e99f52))
+
+
+### Bug Fixes
+
+* abort non-retryable Klaviyo upload errors instead of retrying ([#7085](https://github.com/rudderlabs/rudder-server/issues/7085)) ([4c3e4f1](https://github.com/rudderlabs/rudder-server/commit/4c3e4f1b57d0f1911129f7820e56f7ea9fe2b24b))
+* **batchrouter:** correlate poll results by externalId instead of whole-row hash ([09326d2](https://github.com/rudderlabs/rudder-server/commit/09326d258568479ab5ba2c4fbeaea807ac934c14))
+* **batchrouter:** report real status code and sample event for drained jobs ([#7104](https://github.com/rudderlabs/rudder-server/issues/7104)) ([d3fab82](https://github.com/rudderlabs/rudder-server/commit/d3fab820afabc285f091847197f836e804fbf1e5))
+* internal endpoints enabled in open source version of rudder-server ([#7075](https://github.com/rudderlabs/rudder-server/issues/7075)) ([dc071cd](https://github.com/rudderlabs/rudder-server/commit/dc071cd0c2c911be63d98431e3ddf698238863de))
+* **jobsdb:** get jobs lateral join against the v_last view ([#7105](https://github.com/rudderlabs/rudder-server/issues/7105)) ([853d14c](https://github.com/rudderlabs/rudder-server/commit/853d14c5196a3c757bdc68ca4ac8d03f101712df))
+* klaviyo upload partial failures ([#7107](https://github.com/rudderlabs/rudder-server/issues/7107)) ([37e79e9](https://github.com/rudderlabs/rudder-server/commit/37e79e92b70773acb0edb8ba9739c415108ca981))
+* **router:** shared barrier causing illegal job sequence errors ([#7101](https://github.com/rudderlabs/rudder-server/issues/7101)) ([b5435ba](https://github.com/rudderlabs/rudder-server/commit/b5435bac3c5efae39a4e2ed8739d0b1c52fa3e1f))
+
+
+### Miscellaneous
+
+* add BQSTREAM_V2 integration tests ([#7058](https://github.com/rudderlabs/rudder-server/issues/7058)) ([478e217](https://github.com/rudderlabs/rudder-server/commit/478e217f8c75ac6fe4ba5fa28a5478f2fb44ad5f))
+* add rudderai announcement ([#7046](https://github.com/rudderlabs/rudder-server/issues/7046)) ([ff02fe8](https://github.com/rudderlabs/rudder-server/commit/ff02fe87d84a656b96ad9b5567d0aab2dcf67dee))
+* bump codecov-action to 7.0.0 ([#7070](https://github.com/rudderlabs/rudder-server/issues/7070)) ([31f0623](https://github.com/rudderlabs/rudder-server/commit/31f06234305b963e53f1921cce438cba43e36093))
+* cleanup embedded warehouse transformations ([#7072](https://github.com/rudderlabs/rudder-server/issues/7072)) ([31f0623](https://github.com/rudderlabs/rudder-server/commit/31f06234305b963e53f1921cce438cba43e36093))
+* **deps:** bump actions/checkout from 6.0.2 to 6.0.3 ([#7084](https://github.com/rudderlabs/rudder-server/issues/7084)) ([745d5ab](https://github.com/rudderlabs/rudder-server/commit/745d5aba9c202f7f8e4d7299dc35cc26d1f2389a))
+* **deps:** bump aws-actions/configure-aws-credentials from 6.1.2 to 6.2.0 ([#7081](https://github.com/rudderlabs/rudder-server/issues/7081)) ([19251cd](https://github.com/rudderlabs/rudder-server/commit/19251cd63c45fec87d5f3e0b481d9eb967f41cde))
+* **jobsdb:** refactoring and cleanup ([#7043](https://github.com/rudderlabs/rudder-server/issues/7043)) ([2e4ea92](https://github.com/rudderlabs/rudder-server/commit/2e4ea9277e22664162b837c95f81f16d47a84c68))
+* remove legacy warehouse endpoints ([#7090](https://github.com/rudderlabs/rudder-server/issues/7090)) ([6f85153](https://github.com/rudderlabs/rudder-server/commit/6f85153f2b4161c0dc8ee7eb1245aa512d35670a))
+* rename bqstream all events ([#7088](https://github.com/rudderlabs/rudder-server/issues/7088)) ([4d9ad19](https://github.com/rudderlabs/rudder-server/commit/4d9ad19259465d1d097a0f2948c8975d0d08af22))
+* **router:** rename experimental buffer size calculator to dynamic ([#7103](https://github.com/rudderlabs/rudder-server/issues/7103)) ([52896cd](https://github.com/rudderlabs/rudder-server/commit/52896cd5b6dae7751dcff3a5b205d528ad717d15))
+* support using the full event schema key as pulsar ordering key ([#7086](https://github.com/rudderlabs/rudder-server/issues/7086)) ([ff50611](https://github.com/rudderlabs/rudder-server/commit/ff506112cde7c5e09ba5b36521102e0233ccbab6))
+
+## [1.77.4](https://github.com/rudderlabs/rudder-server/compare/v1.77.3...v1.77.4) (2026-06-22)
+
+
+### Bug Fixes
+
+* klaviyo upload partial failures ([#7107](https://github.com/rudderlabs/rudder-server/issues/7107)) ([621a070](https://github.com/rudderlabs/rudder-server/commit/621a07018fde61be36fdd2d97f5dce05a8f26831))
+
+## [1.77.3](https://github.com/rudderlabs/rudder-server/compare/v1.77.2...v1.77.3) (2026-06-17)
+
+
+### Bug Fixes
+
+* **batchrouter:** correlate poll results by externalId instead of whole-row hash ([ea126d3](https://github.com/rudderlabs/rudder-server/commit/ea126d39bb8a6263e92eb01ee0b795c71165c039))
+
+## [1.77.2](https://github.com/rudderlabs/rudder-server/compare/v1.77.1...v1.77.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* abort non-retryable Klaviyo upload errors instead of retrying ([#7085](https://github.com/rudderlabs/rudder-server/issues/7085)) ([a31d6e5](https://github.com/rudderlabs/rudder-server/commit/a31d6e581cfb4b64c50274e95d90a5155b2a125c))
+
+## [1.77.1](https://github.com/rudderlabs/rudder-server/compare/v1.77.0...v1.77.1) (2026-06-10)
+
+
+### Bug Fixes
+
+* internal endpoints enabled in open source version of rudder-server ([#7075](https://github.com/rudderlabs/rudder-server/issues/7075)) ([b4f62a1](https://github.com/rudderlabs/rudder-server/commit/b4f62a149aeba975fd67775209360ebbb02bc8f4))
+
+## [1.77.0](https://github.com/rudderlabs/rudder-server/compare/v1.76.0...v1.77.0) (2026-06-08)
+
+
+### Features
+
+* **jobsdb:** deferred status table lock during compaction ([#7020](https://github.com/rudderlabs/rudder-server/issues/7020)) ([d156057](https://github.com/rudderlabs/rudder-server/commit/d156057e5c1b66896c0616e7172074dd9cde5bfa))
+* **jobsdb:** non-blocking dataset compaction ([#6967](https://github.com/rudderlabs/rudder-server/issues/6967)) ([e0838dc](https://github.com/rudderlabs/rudder-server/commit/e0838dcf70ce97290ba0c3320757650aca6fa514))
+* **jobsdb:** versioned dataset list and non-blocking drop for completed datasets ([#6962](https://github.com/rudderlabs/rudder-server/issues/6962)) ([d7fe1ae](https://github.com/rudderlabs/rudder-server/commit/d7fe1ae941edc7a5299a6bb1a54744f78cd6bebb))
+
+
+### Bug Fixes
+
+* flaky cluster test ([#7003](https://github.com/rudderlabs/rudder-server/issues/7003)) ([d7fe1ae](https://github.com/rudderlabs/rudder-server/commit/d7fe1ae941edc7a5299a6bb1a54744f78cd6bebb))
+* **jobsdb:** jobsdb_lock_total_time for dsMigrationLock missing ([#7066](https://github.com/rudderlabs/rudder-server/issues/7066)) ([7e00370](https://github.com/rudderlabs/rudder-server/commit/7e0037038c7bbd1cc7f079c3dd7f5124e40994bb))
+* **jobsdb:** pq 42P01 error when trying to store to a dataset that has been dropped ([#7041](https://github.com/rudderlabs/rudder-server/issues/7041)) ([9db406d](https://github.com/rudderlabs/rudder-server/commit/9db406d286071cee3b366bdff512d5b848373db3))
+* **jobsdb:** stale table count gauge after dropping dataset async ([#7063](https://github.com/rudderlabs/rudder-server/issues/7063)) ([4abb293](https://github.com/rudderlabs/rudder-server/commit/4abb293303dc4a44c78f91de9aade7241eb3bc14))
+* server panics with sql database is closed in case of an etcd error ([#7023](https://github.com/rudderlabs/rudder-server/issues/7023)) ([15dc39a](https://github.com/rudderlabs/rudder-server/commit/15dc39a76a347967a888072ba5b45c3eaf468329))
+* support scoped batchrouter datePrefixOverride ([#7037](https://github.com/rudderlabs/rudder-server/issues/7037)) ([9e8a0a8](https://github.com/rudderlabs/rudder-server/commit/9e8a0a87e58cef8e0479d012900255f5c0cc853a))
+
+
+### Miscellaneous
+
+* capture scheduler lag in stats ([#7017](https://github.com/rudderlabs/rudder-server/issues/7017)) ([0dcf2b4](https://github.com/rudderlabs/rudder-server/commit/0dcf2b45982779b39caa4b17789d5c6a8388fd28))
+* **deps:** bump actions/create-github-app-token from 3.0.0 to 3.1.1 ([#6969](https://github.com/rudderlabs/rudder-server/issues/6969)) ([ee7f735](https://github.com/rudderlabs/rudder-server/commit/ee7f7355d8b347dae257d8eb44fdb929c6f6f64d))
+* **deps:** bump actions/create-github-app-token from 3.1.1 to 3.2.0 ([#7013](https://github.com/rudderlabs/rudder-server/issues/7013)) ([ac5681b](https://github.com/rudderlabs/rudder-server/commit/ac5681b49f46d775d1a3c40b5934cce19de5eb95))
+* **deps:** bump actions/labeler from 5.0.0 to 6.1.0 ([#6970](https://github.com/rudderlabs/rudder-server/issues/6970)) ([e748b86](https://github.com/rudderlabs/rudder-server/commit/e748b86168f0ef8f1fc71cc83e5821a4858c2d20))
+* **deps:** bump actions/stale from 10.2.0 to 10.3.0 ([#7031](https://github.com/rudderlabs/rudder-server/issues/7031)) ([6cf6804](https://github.com/rudderlabs/rudder-server/commit/6cf6804bce9f1d986be775efba2b4481976761e0))
+* **deps:** bump aws-actions/amazon-ecr-login from 2.1.4 to 2.1.5 ([#6972](https://github.com/rudderlabs/rudder-server/issues/6972)) ([e38a99d](https://github.com/rudderlabs/rudder-server/commit/e38a99d83f1d246765bdd550de18129f2d811f74))
+* **deps:** bump aws-actions/configure-aws-credentials from 5.0.0 to 6.1.1 ([#6971](https://github.com/rudderlabs/rudder-server/issues/6971)) ([1114b7f](https://github.com/rudderlabs/rudder-server/commit/1114b7f2e40ff385cd4dcde9ffdb249dc283a895))
+* **deps:** bump aws-actions/configure-aws-credentials from 6.1.1 to 6.1.2 ([#7049](https://github.com/rudderlabs/rudder-server/issues/7049)) ([e210e68](https://github.com/rudderlabs/rudder-server/commit/e210e6832da3246c05ba0b8028cfb656f923ff71))
+* **deps:** bump codecov/codecov-action from 6.0.0 to 6.0.1 ([#7016](https://github.com/rudderlabs/rudder-server/issues/7016)) ([3d639f5](https://github.com/rudderlabs/rudder-server/commit/3d639f539d46a7a041fab17946a3acfc1cee5430))
+* **deps:** bump docker/login-action from 4.1.0 to 4.2.0 ([#7035](https://github.com/rudderlabs/rudder-server/issues/7035)) ([b39183b](https://github.com/rudderlabs/rudder-server/commit/b39183b2fbf53c5c600b1d51d24705454aedb9ee))
+* **deps:** bump docker/metadata-action from 6.0.0 to 6.1.0 ([#7032](https://github.com/rudderlabs/rudder-server/issues/7032)) ([574f7c8](https://github.com/rudderlabs/rudder-server/commit/574f7c8e7d12d8acd417113db77209baa4d06610))
+* **deps:** bump docker/setup-buildx-action from 4.0.0 to 4.1.0 ([#7034](https://github.com/rudderlabs/rudder-server/issues/7034)) ([ff49009](https://github.com/rudderlabs/rudder-server/commit/ff49009499895262c14fd27c5cf9ba5be7a270a7))
+* **deps:** bump golangci/golangci-lint-action from 8.0.0 to 9.2.1 ([#7044](https://github.com/rudderlabs/rudder-server/issues/7044)) ([56070dc](https://github.com/rudderlabs/rudder-server/commit/56070dc5e5364dbccf11b284bbe251cdf5de7f69))
+* **deps:** bump slackapi/slack-github-action from 3.0.1 to 3.0.3 ([#6968](https://github.com/rudderlabs/rudder-server/issues/6968)) ([fd70e60](https://github.com/rudderlabs/rudder-server/commit/fd70e6047a3b0c5e1519fc6fee42955a1c368435))
+* **deps:** bump step-security/harden-runner from 2.19.1 to 2.19.3 ([#7012](https://github.com/rudderlabs/rudder-server/issues/7012)) ([b4dc9b2](https://github.com/rudderlabs/rudder-server/commit/b4dc9b2d24b0c0df0e150921a251197f7cf71f31))
+* **deps:** bump step-security/harden-runner from 2.19.3 to 2.19.4 ([#7033](https://github.com/rudderlabs/rudder-server/issues/7033)) ([ba82100](https://github.com/rudderlabs/rudder-server/commit/ba821008f151f5e00e2ba80f97e00291f2272fa2))
+* **jobsdb:** avoid refreshing ds list from database in case of a stale ds error while updating job statuses ([#7024](https://github.com/rudderlabs/rudder-server/issues/7024)) ([de98ede](https://github.com/rudderlabs/rudder-server/commit/de98ede8cab8f70be592ab3a163635ea5a7ddd4a))
+* **jobsdb:** lateral join for getting jobs ([#7007](https://github.com/rudderlabs/rudder-server/issues/7007)) ([7148a30](https://github.com/rudderlabs/rudder-server/commit/7148a30aa5b8234e3377d133c416a2b5b44154df))
+* remove deprecated bulkStatusEnabled flag for snowpipe streaming ([#6992](https://github.com/rudderlabs/rudder-server/issues/6992)) ([d7fe1ae](https://github.com/rudderlabs/rudder-server/commit/d7fe1ae941edc7a5299a6bb1a54744f78cd6bebb))
+
 ## [1.76.1](https://github.com/rudderlabs/rudder-server/compare/v1.76.0...v1.76.1) (2026-06-02)
 
 

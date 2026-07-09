@@ -214,7 +214,7 @@ func Test_Job_Fail_then_Abort(t *testing.T) {
 }
 
 func Test_Panic_Scenarios(t *testing.T) {
-	barrier := NewBarrier()
+	barrier := NewBarrier(WithPanicOnIllegalJobSequence(config.SingleValueLoader(true)))
 
 	enter, _ := barrier.Enter(BarrierKey{UserID: "user1"}, 2)
 	require.True(t, enter, "job 2 for user1 should be accepted since no barrier exists")
@@ -238,6 +238,39 @@ func Test_Panic_Scenarios(t *testing.T) {
 		}()
 		_ = barrier.StateChanged(BarrierKey{UserID: "user1"}, 1, jobsdb.Failed.State)
 	}()
+}
+
+func Test_IllegalSequenceCallback(t *testing.T) {
+	var callbackLocations []string
+	barrier := NewBarrier(
+		WithIllegalJobSequenceCallback(func(location string) {
+			callbackLocations = append(callbackLocations, location)
+		}),
+	)
+
+	enter, _ := barrier.Enter(BarrierKey{UserID: "user1"}, 2)
+	require.True(t, enter)
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 2, jobsdb.Failed.State))
+
+	// illegal sequence during wait: no panic, callback invoked
+	require.NotPanics(t, func() {
+		_, _ = barrier.Wait(BarrierKey{UserID: "user1"}, 1)
+	})
+	require.Equal(t, []string{"wait"}, callbackLocations)
+
+	// illegal sequence during enter: no panic, callback invoked
+	callbackLocations = nil
+	require.NotPanics(t, func() {
+		_, _ = barrier.Enter(BarrierKey{UserID: "user1"}, 1)
+	})
+	require.Equal(t, []string{"enter"}, callbackLocations)
+
+	// illegal sequence during job_failed: no panic, callback invoked
+	callbackLocations = nil
+	require.NotPanics(t, func() {
+		require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 1, jobsdb.Failed.State))
+	})
+	require.Equal(t, []string{"job_failed"}, callbackLocations)
 }
 
 func TestBarrier_Leave(t *testing.T) {
@@ -272,7 +305,8 @@ func TestEventOrderKeyThreshold(t *testing.T) {
 	barrier := NewBarrier(
 		WithEventOrderKeyThreshold(config.SingleValueLoader(2)),
 		WithDisabledStateDuration(config.SingleValueLoader(disabledStateDuration)),
-		WithHalfEnabledStateDuration(config.SingleValueLoader(halfEnabledStateDuration)))
+		WithHalfEnabledStateDuration(config.SingleValueLoader(halfEnabledStateDuration)),
+		WithPanicOnIllegalJobSequence(config.SingleValueLoader(true)))
 
 	enter, previous := barrier.Enter(orderKey, 1)
 	require.True(t, enter, "job 1 for %s should be accepted since no barrier exists and concurrency limiter should be 1", orderKey)

@@ -149,6 +149,7 @@ func testGatewayByAppType(t *testing.T, appType, rsBinaryPath string) {
 		fmt.Sprintf("RUDDER_TMPDIR=%s", rudderTmpDir),
 		fmt.Sprintf("DEST_TRANSFORM_URL=%s", transformerContainer.TransformerURL),
 		fmt.Sprintf("WORKSPACE_TOKEN=%s", workspaceToken),
+		fmt.Sprintf("ENTERPRISE_TOKEN=%s", "token"),
 	}
 	if testing.Verbose() {
 		envArr = append(envArr, "LOG_LEVEL=debug")

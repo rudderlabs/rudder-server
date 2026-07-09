@@ -635,7 +635,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
 	jobStateCounts := make(map[string]int)
-	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
+	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionID)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 
@@ -679,7 +679,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			failedMessage = &types.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()}
 		}
 		attemptNum := job.LastJobStatus.AttemptNum + 1
-		jobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
+		jobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionID{
 			SourceID:      parameters.SourceID,
 			DestinationID: parameters.DestinationID,
 		}
@@ -703,7 +703,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		// REPORTING - START
 		if brt.reporting != nil && brt.reportingEnabled {
 			// Update metrics maps
-			errorCode := getBRTErrorCode(jobState)
+			errorCode := getBRTErrorCode(jobState, status.ErrorCode)
 			var cd *types.ConnectionDetails
 			key := parameters.SourceID + ":" + parameters.DestinationID + ":" + parameters.SourceJobRunID + ":" + jobState + ":" + strconv.Itoa(errorCode) + ":" + parameters.EventName + ":" + parameters.EventType
 			if _, ok := connectionDetailsMap[key]; !ok {

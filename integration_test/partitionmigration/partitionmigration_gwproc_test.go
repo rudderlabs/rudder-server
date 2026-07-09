@@ -204,23 +204,21 @@ func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspa
 		"RUDDER_TMPDIR":         t.TempDir(),
 		"DEPLOYMENT_TYPE":       string(deployment.MultiTenantType), // we need etcd
 
-		"AdminServer.enabled":                 "false", // disable admin server for simplicity
-		"Profiler.Enabled":                    "false", // we don't need to specify a port if disabled
-		"Gateway.allowPartialWriteWithErrors": "false", // not going through the lecacy gateway path
-
+		"AdminServer.enabled": "false", // disable admin server for simplicity
+		"Profiler.Enabled":    "false", // we don't need to specify a port if disabled
 		// we want to create multiple datasets during the test and ensure that migration works correctly with ds limits as well
 		"JobsDB.maxDSSize":                      "500",
 		"JobsDB.addNewDSLoopSleepDuration":      "2s",
 		"JobsDB.dsLimit":                        "3",
 		"JobsDB.refreshDSListLoopSleepDuration": "5s",
-		"JobsDB.nonBlockingCompletedDSDrop":     "true",
 		"JobsDB.partitionCount":                 strconv.Itoa(numPartitions),
 	}
 
 	procCommonEnv := map[string]string{
-		"LOG_LEVEL":                   "WARN",
-		"APP_TYPE":                    "processor",
-		"PROCESSOR_NODE_HOST_PATTERN": "proc-node-{index}.localhost",
+		"LOG_LEVEL":                              "WARN",
+		"APP_TYPE":                               "processor",
+		"PROCESSOR_NODE_HOST_PATTERN":            "proc-node-{index}.localhost",
+		"Processor.DestinationIsolation.enabled": "true", // migrate proc jobs too
 
 		"PartitionMigration.enabled":                               "true",
 		"PartitionMigration.failOnInvalidNodeHostPattern":          "false",
@@ -257,7 +255,6 @@ func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspa
 		"JobsDB.addNewDSLoopSleepDuration":      "2s",
 		"JobsDB.dsLimit":                        "3",
 		"JobsDB.refreshDSListLoopSleepDuration": "5s",
-		"JobsDB.nonBlockingCompletedDSDrop":     "true",
 		"JobsDB.partitionCount":                 strconv.Itoa(numPartitions),
 
 		"Processor.pingerSleep":   "1s",

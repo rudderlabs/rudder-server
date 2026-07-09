@@ -35,6 +35,18 @@ var ErrInvalidPaginationToken = errors.New("rsources: invalid pagination token")
 // In postgres, the replication slot name can contain lower-case letters, underscore characters, and numbers.
 var replSlotDisallowedChars *regexp.Regexp = regexp.MustCompile(`[^a-z0-9_]`)
 
+// maxIdentifierLength is the maximum length of a postgres identifier (NAMEDATALEN-1). Longer
+// identifiers are silently truncated to this many bytes by the server.
+const maxIdentifierLength = 63
+
+// truncateIdentifier truncates an ASCII identifier to the length postgres would store it as.
+func truncateIdentifier(name string) string {
+	if len(name) > maxIdentifierLength {
+		return name[:maxIdentifierLength]
+	}
+	return name
+}
+
 type sourcesHandler struct {
 	log                  logger.Logger
 	config               JobServiceConfig
@@ -260,132 +272,6 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 		}
 	}
 	return JobFailedRecordsV2(res), nil
-}
-
-func (sh *sourcesHandler) GetFailedRecordsV1(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecordsV1, error) {
-	if sh.config.SkipFailedRecordsCollection {
-		return JobFailedRecordsV1{ID: jobRunId}, ErrOperationNotSupported
-	}
-	var nextPageToken NextPageToken
-	var err error
-	if paging.Size > 0 {
-		if nextPageToken, err = NextPageTokenFromString(paging.NextPageToken); err != nil {
-			return JobFailedRecordsV1{ID: jobRunId}, ErrInvalidPaginationToken
-		}
-	}
-
-	// first find the list of ids (postgres query planner uses an inefficient plan if there is one id with millions of records and a few ids with a few records)
-	ids, err := func() ([]string, error) {
-		var ids []string
-		filters, params := sqlFilters(jobRunId, filter)
-		rows, err := sh.readDB().QueryContext(ctx, `SELECT id FROM "rsources_failed_keys_v2" `+filters, params...)
-		if err != nil {
-			return nil, err
-		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				return nil, err
-			}
-			ids = append(ids, id)
-		}
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
-		return ids, nil
-	}()
-	if err != nil {
-		return JobFailedRecordsV1{ID: jobRunId}, fmt.Errorf("failed to get failed record ids: %w", err)
-	}
-
-	filters := "WHERE r.id = ANY($1)"
-	params := []any{pq.Array(ids)}
-	var limit string
-	if paging.Size > 0 {
-		filters = filters + fmt.Sprintf(` AND r.id >= $%[1]d AND r.record_id > $%[2]d`, len(params)+1, len(params)+2)
-		params = append(params, nextPageToken.ID, nextPageToken.RecordID)
-		limit = fmt.Sprintf(`LIMIT %d`, paging.Size)
-	}
-	sqlStatement := fmt.Sprintf(
-		`SELECT
-			k.task_run_id,
-			k.source_id,
-			k.destination_id,
-			r.id,
-			r.record_id
-		FROM "rsources_failed_keys_v2_records" r
-		JOIN "rsources_failed_keys_v2" k ON r.id = k.id %[1]s
-		ORDER BY r.id, r.record_id ASC %[2]s`,
-		filters, limit)
-
-	failedRecordsMap := map[JobTargetKey][]json.RawMessage{}
-	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, params...)
-	if err != nil {
-		return JobFailedRecordsV1{ID: jobRunId}, err
-	}
-	defer func() { _ = rows.Close() }()
-	var queryResultSize int
-	for rows.Next() {
-		var key JobTargetKey
-		err := rows.Scan(
-			&key.TaskRunID,
-			&key.SourceID,
-			&key.DestinationID,
-			&nextPageToken.ID,
-			&nextPageToken.RecordID,
-		)
-		if err != nil {
-			return JobFailedRecordsV1{ID: jobRunId}, err
-		}
-		failedRecordsMap[key] = append(failedRecordsMap[key], json.RawMessage(nextPageToken.RecordID))
-		queryResultSize++
-	}
-	if err := rows.Err(); err != nil {
-		return JobFailedRecordsV1{ID: jobRunId}, err
-	}
-
-	res := failedRecordsFromQueryResult(jobRunId, failedRecordsMap)
-	if limit != "" && queryResultSize == paging.Size {
-		res.Paging = &PagingInfo{
-			Size:          paging.Size,
-			NextPageToken: nextPageToken.String(),
-		}
-	}
-	return JobFailedRecordsV1(res), nil
-}
-
-func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter JobFilter) error {
-	jobStatus, err := sh.getStatusInternal(ctx, sh.localDB, jobRunId, filter)
-	if err != nil {
-		return err
-	}
-	for _, target := range jobStatus.TasksStatus {
-		for _, source := range target.SourcesStatus {
-			if !source.Completed {
-				return ErrSourceNotCompleted
-			}
-		}
-	}
-	tx, err := sh.localDB.Begin()
-	if err != nil {
-		return err
-	}
-
-	filters, filterParams := sqlFilters(jobRunId, filter)
-
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`delete from "rsources_stats" %s`, filters), filterParams...); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`WITH deleted AS (
-		DELETE FROM "rsources_failed_keys_v2" %s  RETURNING id)
-		DELETE FROM "rsources_failed_keys_v2_records" WHERE id IN (SELECT id FROM deleted)`, filters), filterParams...); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	return tx.Commit()
 }
 
 func (sh *sourcesHandler) DeleteFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) error {
@@ -696,7 +582,17 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	}
 
 	normalizedHostname := replSlotDisallowedChars.ReplaceAllString(strings.ToLower(sh.config.LocalHostname), "_")
-	subscriptionName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostname)
+	// Postgres truncates identifiers to NAMEDATALEN-1 (63) bytes, so truncate the name ourselves
+	// to match what is actually stored in the catalog. The name is ASCII-only after normalization,
+	// so a byte slice is a safe truncation.
+	subscriptionName := truncateIdentifier(fmt.Sprintf("%s_rsources_stats_sub", normalizedHostname))
+
+	// Drop the subscription if its replication slot no longer exists on the publisher,
+	// so that it can be recreated below along with a fresh slot.
+	if err := sh.dropStaleSubscription(ctx, subscriptionName); err != nil {
+		return err
+	}
+
 	// Create subscription for the above publication (ignore already exists error)
 	subscriptionConn := sh.config.SubscriptionTargetConn
 	if subscriptionConn == "" {
@@ -712,6 +608,51 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 		return fmt.Errorf("failed to refresh subscription on shared database: %w", err)
 	}
 
+	return nil
+}
+
+// dropStaleSubscription drops the named subscription from the shared (subscriber) database if
+// its replication slot no longer exists on the local (publisher) database, allowing it to be
+// recreated together with a fresh slot. A subscription is considered stale when it has no
+// associated slot name, or the slot it references is absent on the publisher (e.g. the local
+// database was recreated, or the slot was dropped or invalidated due to WAL retention limits).
+//
+// It is a no-op when the subscription does not exist or its slot is healthy.
+func (sh *sourcesHandler) dropStaleSubscription(ctx context.Context, subscriptionName string) error {
+	var slotName sql.NullString
+	err := sh.sharedDB.QueryRowContext(ctx,
+		`SELECT subslotname FROM pg_subscription WHERE subname = $1`, subscriptionName).Scan(&slotName)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil // no subscription yet, nothing to reconcile
+	case err != nil:
+		return fmt.Errorf("failed to look up subscription %q on shared database: %w", subscriptionName, err)
+	}
+
+	if slotName.Valid {
+		var slotExists bool
+		if err := sh.localDB.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = $1)`,
+			slotName.String).Scan(&slotExists); err != nil {
+			return fmt.Errorf("failed to check replication slot %q on local database: %w", slotName.String, err)
+		}
+		if slotExists {
+			return nil // slot is healthy, nothing to do
+		}
+	}
+
+	sh.log.Warnn("dropping stale rsources subscription with missing replication slot",
+		logger.NewStringField("subscription", subscriptionName),
+		logger.NewStringField("slot", slotName.String))
+	// Detach the (missing) slot before dropping so that DROP SUBSCRIPTION doesn't attempt to
+	// contact the publisher to drop it. The statements run in a single round trip; lib/pq uses
+	// the simple query protocol since there are no bind parameters.
+	if _, err := sh.sharedDB.ExecContext(ctx, fmt.Sprintf(`
+		ALTER SUBSCRIPTION %[1]q DISABLE;
+		ALTER SUBSCRIPTION %[1]q SET (slot_name = NONE);
+		DROP SUBSCRIPTION %[1]q;`, subscriptionName)); err != nil {
+		return fmt.Errorf("failed to drop stale subscription %q on shared database: %w", subscriptionName, err)
+	}
 	return nil
 }
 

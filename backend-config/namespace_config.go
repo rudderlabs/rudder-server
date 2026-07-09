@@ -178,9 +178,9 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 			// Process dynamic config with the instance cache
 			ProcessDestinationsInSources(workspace.Sources, nc.dynamicConfigCache)
 		}
-		// always set connection flags to true for hosted and multi-tenant warehouse service
+		// always set connection flags to true for hosted and multi-tenant warehouse and processor services
 		workspace.ConnectionFlags.URL = nc.cpRouterURL
-		workspace.ConnectionFlags.Services = map[string]bool{"warehouse": true}
+		workspace.ConnectionFlags.Services = map[string]bool{"warehouse": true, "rudderstack-processor": true}
 		workspacesConfig[workspaceID] = *workspace
 		if nc.incrementalConfigUpdates && workspace.UpdatedAt.After(nc.lastUpdatedAt) {
 			nc.lastUpdatedAt = workspace.UpdatedAt

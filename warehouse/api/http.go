@@ -83,11 +83,12 @@ type Api struct {
 	triggerStore  *sync.Map
 
 	config struct {
-		healthTimeout       time.Duration
-		readerHeaderTimeout time.Duration
-		runningMode         string
-		webPort             int
-		mode                string
+		healthTimeout            time.Duration
+		readerHeaderTimeout      time.Duration
+		runningMode              string
+		webPort                  int
+		mode                     string
+		internalEndpointsEnabled bool
 	}
 }
 
@@ -103,6 +104,7 @@ func NewApi(
 	bcManager *bcm.BackendConfigManager,
 	sourceManager *source.Manager,
 	triggerStore *sync.Map,
+	enterprise bool,
 ) *Api {
 	a := &Api{
 		mode:          mode,
@@ -124,6 +126,7 @@ func NewApi(
 	a.config.readerHeaderTimeout = conf.GetDurationVar(3, time.Second, "Warehouse.readerHeaderTimeout")
 	a.config.runningMode = conf.GetStringVar("", "Warehouse.runningMode")
 	a.config.webPort = conf.GetIntVar(8082, 1, "Warehouse.webPort")
+	a.config.internalEndpointsEnabled = conf.GetBoolVar(enterprise, "Warehouse.internalEndpointsEnabled")
 	return a
 }
 
@@ -184,22 +187,19 @@ func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
 		SchemaSnapshotHandler: schemaSnapshotHandler,
 	}).Handler())
 
-	r.Route("/v1", func(r chi.Router) {
-		r.Route("/warehouse", func(r chi.Router) {
-			r.Post("/pending-events", a.logMiddleware(a.pendingEventsHandler))
-			r.Post("/trigger-upload", a.logMiddleware(a.triggerUploadHandler))
-
-			r.Post("/jobs", a.logMiddleware(a.sourceManager.InsertJobHandler))       // TODO: add degraded mode
-			r.Get("/jobs/status", a.logMiddleware(a.sourceManager.StatusJobHandler)) // TODO: add degraded mode
-		})
-	})
-	r.Route("/internal", func(r chi.Router) {
-		r.Route("/v1", func(r chi.Router) {
-			r.Route("/warehouse", func(r chi.Router) {
-				r.Get("/fetch-tables", a.logMiddleware(a.fetchTablesHandler))
+	if a.config.internalEndpointsEnabled {
+		r.Route("/internal", func(r chi.Router) {
+			r.Route("/v1", func(r chi.Router) {
+				r.Route("/warehouse", func(r chi.Router) {
+					r.Get("/fetch-tables", a.logMiddleware(a.fetchTablesHandler))
+					r.Post("/pending-events", a.logMiddleware(a.pendingEventsHandler))
+					r.Post("/trigger-upload", a.logMiddleware(a.triggerUploadHandler))
+					r.Post("/jobs", a.logMiddleware(a.sourceManager.InsertJobHandler))
+					r.Get("/jobs/status", a.logMiddleware(a.sourceManager.StatusJobHandler))
+				})
 			})
 		})
-	})
+	}
 }
 
 func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {

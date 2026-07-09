@@ -1042,6 +1042,41 @@ var _ = Describe("Using sources handler", func() {
 			createService(configB)
 		})
 
+		It("should recreate a subscription whose replication slot was deleted on the publisher", func() {
+			ctx := context.Background()
+			subscriptionName := truncateIdentifier(
+				replSlotDisallowedChars.ReplaceAllString(strings.ToLower(configA.LocalHostname), "_") + "_rsources_stats_sub",
+			)
+
+			// Sanity: the slot exists on the publisher (pgA) after the initial setup.
+			Expect(replicationSlotExists(ctx, pgA.db, subscriptionName)).To(BeTrue(), "slot should exist after initial setup")
+
+			// Simulate slot loss on the publisher while the subscription survives on the shared db:
+			// disable the subscription so the walsender releases the slot, then drop the slot.
+			_, err := pgC.db.ExecContext(ctx, fmt.Sprintf(`ALTER SUBSCRIPTION %q DISABLE`, subscriptionName))
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func() error {
+				_, err := pgA.db.ExecContext(ctx, `SELECT pg_drop_replication_slot($1)`, subscriptionName)
+				return err
+			}, "30s", "100ms").Should(Succeed(), "should be able to drop the slot once it becomes inactive")
+			Expect(replicationSlotExists(ctx, pgA.db, subscriptionName)).To(BeFalse())
+
+			// Re-running setup must detect the stale subscription, drop it and recreate it with a fresh slot.
+			serviceA = createService(configA)
+			Expect(replicationSlotExists(ctx, pgA.db, subscriptionName)).To(BeTrue(), "slot should be recreated")
+
+			// Replication should resume end-to-end: a stat written to the local db must reach the shared db.
+			jobRunId := newJobRunId()
+			increment(pgA.db, jobRunId, defaultJobTargetKey, Stats{In: 5, Out: 4, Failed: 1}, serviceA, nil)
+			Eventually(func() bool {
+				status, err := serviceA.GetStatus(ctx, jobRunId, JobFilter{
+					SourceID:  []string{"source_id"},
+					TaskRunID: []string{"task_run_id"},
+				})
+				return err == nil && len(status.TasksStatus) == 1
+			}, "30s", "100ms").Should(BeTrue(), "replication should resume after slot recreation")
+		})
+
 		It("should cleanup orphaned rows in the shared db older than the shared retention", func() {
 			ctx := context.Background()
 			jobRunId := newJobRunId()
@@ -1284,6 +1319,13 @@ func countSharedRows(ctx context.Context, db *sql.DB, jobRunId string) sharedRow
 	Expect(db.QueryRowContext(ctx, `SELECT count(*) FROM rsources_failed_keys_v2_records r
 		JOIN rsources_failed_keys_v2 k ON k.id = r.id WHERE k.job_run_id = $1`, jobRunId).Scan(&c.records)).To(Succeed())
 	return c
+}
+
+func replicationSlotExists(ctx context.Context, db *sql.DB, slotName string) bool {
+	var exists bool
+	Expect(db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = $1)`, slotName).Scan(&exists)).To(Succeed())
+	return exists
 }
 
 func increment(db *sql.DB, jobRunId string, key JobTargetKey, stat Stats, sh JobService, wg *sync.WaitGroup) {

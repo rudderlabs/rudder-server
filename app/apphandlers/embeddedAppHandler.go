@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/bench"
 	"github.com/rudderlabs/rudder-server/processor"
+	"github.com/rudderlabs/rudder-server/processor/cpservice"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routerManager "github.com/rudderlabs/rudder-server/router/manager"
@@ -54,6 +55,7 @@ type embeddedApp struct {
 	config         struct {
 		eschDSLimit    config.ValueLoader[int]
 		arcDSLimit     config.ValueLoader[int]
+		procDSLimit    config.ValueLoader[int]
 		rtDSLimit      config.ValueLoader[int]
 		batchrtDSLimit config.ValueLoader[int]
 		gwDSLimit      config.ValueLoader[int]
@@ -66,6 +68,7 @@ func (a *embeddedApp) Setup() error {
 	a.config.batchrtDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.batch_rt.dsLimit", "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.eschDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.esch.dsLimit", "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.arcDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.arc.dsLimit", "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
+	a.config.procDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.proc.dsLimit", "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	if err := rudderCoreDBValidator(); err != nil {
 		return err
 	}
@@ -100,6 +103,15 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	err = trackedUsersReporter.MigrateDatabase(misc.GetConnectionString(config, "tracked_users"), config)
 	if err != nil {
 		return fmt.Errorf("could not run tracked users database migration: %w", err)
+	}
+
+	activationRecordsReporter, err := a.app.Features().ActivationRecords.Setup(config)
+	if err != nil {
+		return fmt.Errorf("could not setup activation records: %w", err)
+	}
+	err = activationRecordsReporter.MigrateDatabase(misc.GetConnectionString(config, "activation_records"), config)
+	if err != nil {
+		return fmt.Errorf("could not run activation records database migration: %w", err)
 	}
 	reporting := a.app.Features().Reporting.Setup(ctx, config, backendconfig.DefaultBackendConfig)
 	defer reporting.Stop()
@@ -273,6 +285,23 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	)
 	defer arcRWDB.Close()
 
+	var procRWDB jobsdb.JobsDB
+	if config.GetBoolVar(false, "Processor.DestinationIsolation.enabled") {
+		procRWHandle := jobsdb.NewForReadWrite(
+			"proc",
+			jobsdb.WithClearDB(options.ClearDB),
+			jobsdb.WithDSLimit(a.config.procDSLimit),
+			jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(false, "Processor.jobsDB.skipMaintenanceError")),
+			jobsdb.WithStats(statsFactory),
+			jobsdb.WithDBHandle(jobsdbPool),
+			jobsdb.WithPriorityPoolDB(priorityPool),
+			jobsdb.WithMaintenancePoolDB(maintenancePool),
+			jobsdb.WithNumPartitions(partitionCount),
+		)
+		defer procRWHandle.Close()
+		procRWDB = jobsdb.NewPendingEventsJobsDB(procRWHandle, pendingEventsRegistry)
+	}
+
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBoolVar(false, "EventSchemas2.enabled") {
 		client, err := pulsar.NewClient(config)
@@ -294,7 +323,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	ppmSetup, err := setupProcessorPartitionMigrator(ctx, shutdownFn, jobsdbPool, priorityPool, maintenancePool,
 		config, statsFactory,
 		gwRODB, gwWODB,
-		rtRWDB, brtRWDB,
+		rtRWDB, brtRWDB, procRWDB,
 		modeProvider.EtcdClient,
 	)
 	defer ppmSetup.Finally() // always run finally to clean up resources regardless of error
@@ -305,6 +334,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	gwWODB = ppmSetup.GwDB
 	rtRWDB = ppmSetup.RtDB
 	brtRWDB = ppmSetup.BrtDB
+	procRWDB = ppmSetup.ProcDB
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
@@ -336,8 +366,10 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		transformationhandle,
 		enrichers,
 		trackedUsersReporter,
+		activationRecordsReporter,
 		pendingEventsRegistry,
 		processor.WithAdaptiveLimit(adaptiveLimit),
+		processor.WithProcDB(procRWDB),
 	)
 	routerLogger := logger.NewLogger().Child("router")
 	throttlerFactory, err := rtThrottler.NewFactory(config, statsFactory, routerLogger.Child("throttler"))
@@ -378,6 +410,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		GatewayDB:         gwRODB,
 		RouterDB:          rtRWDB,
 		BatchRouterDB:     brtRWDB,
+		ProcessorDB:       procRWDB,
 		EventSchemaDB:     eschRWDB,
 		ArchivalDB:        arcRWDB,
 		PartitionMigrator: partitionMigrator,
@@ -412,11 +445,13 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	gw := gateway.Handle{}
 	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), statsFactory, a.app, backendconfig.DefaultBackendConfig,
 		gwWODB, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
-		streamMsgValidator, gateway.WithInternalHttpHandlers(
+		streamMsgValidator,
+		gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
 				"/drain": drainConfigManager.DrainConfigHttpHandler(),
 			},
-		))
+		),
+		gateway.WithInternalEndpointsEnabled(config.GetBoolVar(options.EnterpriseToken != "", "Gateway.internalEndpointsEnabled")))
 	if err != nil {
 		return fmt.Errorf("could not setup gateway: %w", err)
 	}
@@ -457,5 +492,20 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 			return b.Run(ctx)
 		})
 	}
+
+	// Only the node-0 pod opens the cp-router dataplane connection (and, by
+	// extension, owns any privileged work served over it). Every other pod and
+	// the flag-off case skip the bootstrap entirely.
+	if cpservice.ShouldConnect(config) {
+		service := cpservice.NewService(config, a.log, statsFactory)
+		cpConnector, err := cpservice.NewConnector(config, a.log, statsFactory, backendconfig.DefaultBackendConfig, service)
+		if err != nil {
+			return fmt.Errorf("setting up cp-router connection: %w", err)
+		}
+		g.Go(crash.Wrapper(func() error {
+			return cpConnector.Run(ctx)
+		}))
+	}
+
 	return g.Wait()
 }

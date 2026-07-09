@@ -8,9 +8,10 @@ import (
 
 // A batch of jobs that share the same schema.
 type EventSchemaMessageBatch struct {
-	Index   int
-	Message *proto.EventSchemaMessage
-	Jobs    []*jobsdb.JobT
+	Index    int
+	Message  *proto.EventSchemaMessage
+	SourceID string
+	Jobs     []*jobsdb.JobT
 }
 
 // NewEventSchemaMessageBatcher creates a new batcher.
@@ -32,7 +33,7 @@ type EventSchemaMessageBatcher struct {
 // Add adds a job to the batcher after transforming it to an [EventSchemaMessage].
 // If the message is already in the batcher, the two messages will be merged to one.
 func (sb *EventSchemaMessageBatcher) Add(job *jobsdb.JobT) error {
-	msg, err := sb.transformer.Transform(job)
+	msg, sourceID, err := sb.transformer.Transform(job)
 	if err != nil {
 		return err
 	}
@@ -45,8 +46,9 @@ func (sb *EventSchemaMessageBatcher) Add(job *jobsdb.JobT) error {
 	if _, ok := sb.batchIndex[key]; !ok {
 		sb.batchOrder = append(sb.batchOrder, key)
 		sb.batchIndex[key] = &EventSchemaMessageBatch{
-			Message: msg,
-			Jobs:    []*jobsdb.JobT{job},
+			Message:  msg,
+			SourceID: sourceID,
+			Jobs:     []*jobsdb.JobT{job},
 		}
 	} else {
 		sb.batchIndex[key].Jobs = append(sb.batchIndex[key].Jobs, job)

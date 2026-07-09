@@ -110,7 +110,7 @@ func TestGetStatus(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	service := rsources.NewMockJobService(mockCtrl)
-	handler := rsources_http.NewV1Handler(service, mock_logger.NewMockLogger(mockCtrl))
+	handler := rsources_http.NewV2Handler(service, mock_logger.NewMockLogger(mockCtrl))
 
 	tests := []struct {
 		name                 string

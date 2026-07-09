@@ -158,6 +158,7 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 		"JobsDB.partitionCount":                           strconv.Itoa(numPartitions),
 		"PROCESSOR_NODE_HOST_PATTERN":                     "proc-node-{index}.localhost",
 		"PartitionMigration.failOnInvalidNodeHostPattern": "false",
+		"Processor.DestinationIsolation.enabled":          "true", // migrate proc jobs too
 
 		// let migrations do multiple small batches
 		"PartitionMigration.Executor.BatchSize":         "100",
@@ -193,16 +194,14 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 		"Router.noOfWorkers":                                       strconv.Itoa(numPartitions),
 		"Router.Network.IncludeInstanceIdInHeader":                 "true", // for debugging in case of receiving out-of-order events
 		"Router.jobIterator.maxQueries":                            "1",
-		"Gateway.allowPartialWriteWithErrors":                      "false", // not going through the lecacy gateway path
-		"PartitionMigration.Processor.SourceNode.readExcludeSleep": "15s",   // sleep a bit less than the default one to speed up the test
-		"PartitionMigration.SourceNode.inProgressPollSleep":        "1s",    // poll faster for test speed
+		"PartitionMigration.Processor.SourceNode.readExcludeSleep": "15s", // sleep a bit less than the default one to speed up the test
+		"PartitionMigration.SourceNode.inProgressPollSleep":        "1s",  // poll faster for test speed
 
 		// we want to create multiple datasets during the test and ensure that migration works correctly with ds limits as well
 		"JobsDB.maxDSSize":                      "200",
 		"JobsDB.addNewDSLoopSleepDuration":      "1s",
 		"JobsDB.dsLimit":                        "2",
 		"JobsDB.refreshDSListLoopSleepDuration": "5s",
-		"JobsDB.nonBlockingCompletedDSDrop":     "true",
 	}
 	rsBinaryPath := filepath.Join(t.TempDir(), "rudder-server-binary")
 	rudderserver.BuildRudderServerBinary(t, "../../main.go", rsBinaryPath)

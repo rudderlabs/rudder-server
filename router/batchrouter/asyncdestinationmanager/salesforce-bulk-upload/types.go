@@ -20,13 +20,15 @@ const (
 )
 
 type Uploader struct {
-	destName        string
-	logger          logger.Logger
-	statsFactory    stats.Stats
-	apiService      APIServiceInterface
-	dataHashToJobID map[string][]int64
-	destination     *backendconfig.DestinationT
-	config          struct {
+	destName            string
+	logger              logger.Logger
+	statsFactory        stats.Stats
+	apiService          APIServiceInterface
+	destination         *backendconfig.DestinationT
+	payloadSizeStat     stats.Histogram
+	eventsPerFileStat   stats.Histogram
+	asyncUploadTimeStat stats.Timer
+	config              struct {
 		maxBufferCapacity config.ValueLoader[int64]
 	}
 }
@@ -48,8 +50,12 @@ type apiService struct {
 }
 
 type SalesforceJobInfo struct {
-	ID      string   `json:"id"`
-	Headers []string `json:"headers"`
+	ID string `json:"id"`
+	// ExternalIDField is the upsert key field name. Job statuses are correlated
+	// after polling on this field's value (not the whole row), so that
+	// Salesforce's value coercion on other columns (e.g. datetime millisecond
+	// truncation, number scale) does not break the match.
+	ExternalIDField string `json:"externalIdField"`
 }
 
 type JobResponse struct {
@@ -79,6 +85,53 @@ type ObjectInfo struct {
 	ExternalIDValue string
 }
 
+// SalesforceExternalID is a single VDM externalId entry (the upsert key spec).
+type SalesforceExternalID struct {
+	ID             string `json:"id"`
+	IdentifierType string `json:"identifierType"`
+	Type           string `json:"type"`
+}
+
+// SalesforceJobMetadata is the metadata this connector's Transform writes for
+// each event and reads back during Upload.
+type SalesforceJobMetadata struct {
+	JobID           int64                  `json:"job_id"`
+	RudderOperation string                 `json:"rudderOperation"`
+	ExternalIDs     []SalesforceExternalID `json:"externalId"`
+}
+
+// SalesforceAsyncJob is the typed representation of a transformed event line.
+// Message holds the arbitrary traits plus the externalId field/value.
+type SalesforceAsyncJob struct {
+	Message  map[string]any        `json:"message"`
+	Metadata SalesforceJobMetadata `json:"metadata"`
+}
+
+// importingMetadata is the per-job metadata persisted on the importing job
+// status params (JobImportingParameters). It lets us rebuild the externalId →
+// jobID correlation at poll time from the DB, without any in-memory state or
+// reading the job payload. We store the SHA-256 hash (not the raw externalId)
+// because the externalId is often PII (e.g. an email); correlation re-hashes the
+// Salesforce-returned externalId to match.
+type importingMetadata struct {
+	ExternalIDHash string `json:"externalIdHash"`
+}
+
 const (
 	destName = "SALESFORCE_BULK_UPLOAD"
+
+	// salesforceNullSentinel is Salesforce Bulk API's documented value for
+	// clearing a field: an empty CSV cell means "leave the field unchanged",
+	// while #N/A sets the field to null.
+	// https://developer.salesforce.com/docs/atlas.en-us.api_asynch.meta/api_asynch/datafiles_prepare_csv.htm
+	salesforceNullSentinel = "#N/A"
+
+	// noCorrelationMetadataReason aborts jobs when no externalId metadata is
+	// present on the importing job statuses, so none of the Salesforce results
+	// can be correlated back (e.g. pre-change in-flight jobs, or a bug). This is
+	// logged at error level so it can be alerted on.
+	noCorrelationMetadataReason = "no externalId correlation metadata found on the importing job; cannot correlate Salesforce result"
+	// resultCorrelationFailedReason aborts jobs whose externalId did not come
+	// back in the Salesforce success/failed records (e.g. reformatted on store).
+	resultCorrelationFailedReason = "could not correlate Salesforce result back to the job: externalId not found in success/failed records (possibly reformatted by Salesforce on store)"
 )

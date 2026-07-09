@@ -44,6 +44,7 @@ const (
 	BQ                = "BQ"
 	SNOWFLAKE         = "SNOWFLAKE"
 	SnowpipeStreaming = "SNOWPIPE_STREAMING"
+	BQStreamAllEvents = "BQSTREAM_ALL_EVENTS"
 	POSTGRES          = "POSTGRES"
 	CLICKHOUSE        = "CLICKHOUSE"
 	MSSQL             = "MSSQL"
@@ -128,6 +129,7 @@ var (
 	awsCredsExpiryInS      config.ValueLoader[int64]
 
 	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}
+	StreamDestinations        = []string{SnowpipeStreaming, BQStreamAllEvents}
 	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
 	S3PathStyleRegex          = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
 	S3VirtualHostedRegex      = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
@@ -136,7 +138,7 @@ var (
 )
 
 func pseudoWarehouseDestinations() map[string]struct{} {
-	all := append(slices.Clone(WarehouseDestinations), SnowpipeStreaming)
+	all := append(slices.Clone(WarehouseDestinations), StreamDestinations...)
 	return lo.SliceToMap(all, func(destination string) (string, struct{}) {
 		return destination, struct{}{}
 	})
@@ -234,6 +236,7 @@ type LoadFile struct {
 type (
 	ModelWarehouse   = model.Warehouse
 	ModelTableSchema = model.TableSchema
+	ModelSchema      = model.Schema
 )
 
 func IDResolutionEnabled() bool {
@@ -291,20 +294,28 @@ func GetObjectFolder(provider, location string) (folder string) {
 // eg. For provider as S3: https://<bucket-name>.s3.amazonaws.com/<directory-name> --> s3://<bucket-name>/<directory-name>
 // eg. For provider as GCS: https://storage.cloud.google.com/<bucket-name>/<directory-name> --> gs://<bucket-name>/<directory-name>
 // eg. For provider as AZURE_BLOB: https://<storage-account-name>.blob.core.windows.net/<container-name>/<directory-name> --> wasbs://<container-name>@<storage-account-name>.blob.core.windows.net/<directory-name>
-func GetObjectFolderForDeltalake(provider, location string) (folder string) {
+// eg. For provider as AZURE_BLOB with hierarchical namespace: https://<storage-account-name>.blob.core.windows.net/<container-name>/<directory-name> --> abfss://<container-name>@<storage-account-name>.dfs.core.windows.net/<directory-name>
+func GetObjectFolderForDeltalake(provider, location string, enableHierarchicalNamespace bool) (folder string) {
 	switch provider {
 	case S3:
 		folder = GetS3LocationFolder(location)
 	case GCS:
 		folder = GetGCSLocationFolder(location, GCSLocationOptions{TLDFormat: "gs"})
 	case AzureBlob:
-		blobUrl, _ := url.Parse(location)
-		blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
-		accountName := strings.Replace(blobUrlParts.Host, ".blob.core.windows.net", "", 1)
-		blobLocation := fmt.Sprintf("wasbs://%s@%s.blob.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
-		folder = GetLocationFolder(blobLocation)
+		folder = GetLocationFolder(getAzureBlobLocation(location, enableHierarchicalNamespace))
 	}
 	return folder
+}
+
+func getAzureBlobLocation(location string, enableHierarchicalNamespace bool) string {
+	blobUrl, _ := url.Parse(location)
+	blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
+	accountName := strings.Replace(blobUrlParts.Host, ".blob.core.windows.net", "", 1)
+
+	if enableHierarchicalNamespace {
+		return fmt.Sprintf("abfss://%s@%s.dfs.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
+	}
+	return fmt.Sprintf("wasbs://%s@%s.blob.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
 }
 
 func GetColumnsFromTableSchema(schema model.TableSchema) []string {

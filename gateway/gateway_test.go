@@ -264,7 +264,6 @@ var _ = Describe("Gateway Enterprise", func() {
 		conf = config.New()
 		conf.Set("Gateway.enableRateLimit", false)
 		conf.Set("Gateway.enableSuppressUserFeature", true)
-		conf.Set("Gateway.enableEventSchemasFeature", false)
 	})
 
 	AfterEach(func() {
@@ -340,11 +339,11 @@ var _ = Describe("Gateway Enterprise", func() {
 			).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			mockCall := c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(
+			mockCall := c.mockJobsDB.EXPECT().StoreInTx(
 				gomock.Any(),
 				gomock.Any(),
 				gomock.Any(),
-			).DoAndReturn(jobsToEmptyErrors).Times(1)
+			).Return(nil).Times(1)
 			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job")
 			mockCall.Do(func(context.Context, any, any) { tFunc() })
 
@@ -402,7 +401,6 @@ var _ = Describe("Gateway", func() {
 	BeforeEach(func() {
 		conf = config.New()
 		conf.Set("Gateway.enableRateLimit", false)
-		conf.Set("Gateway.enableEventSchemasFeature", false)
 		c = &testContext{}
 		c.Setup()
 	})
@@ -415,7 +413,7 @@ var _ = Describe("Gateway", func() {
 		It("should wait for backend config", func() {
 			c.initializeAppFeatures()
 			gateway := &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			err = gateway.Shutdown()
@@ -448,7 +446,7 @@ var _ = Describe("Gateway", func() {
 			GinkgoT().Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
 
 			gateway = &Handle{}
-			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			gateway.irh = mockRequestHandler{}
@@ -495,7 +493,7 @@ var _ = Describe("Gateway", func() {
 				}
 				resp, err := client.Do(req)
 				Expect(err).To(BeNil())
-				Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusOK), Equal(http.StatusNoContent)), "endpoint: "+ep)
+				Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusOK), Equal(http.StatusNoContent)), "endpoint: "+ep, "method: "+method)
 
 			}
 		}
@@ -543,7 +541,7 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -626,7 +624,7 @@ var _ = Describe("Gateway", func() {
 						_ = f(jobsdb.EmptyStoreSafeTx())
 					}).Return(nil)
 					c.mockJobsDB.
-						EXPECT().StoreEachBatchRetryInTx(
+						EXPECT().StoreInTx(
 						gomock.Any(),
 						gomock.Any(),
 						gomock.Any(),
@@ -635,26 +633,23 @@ var _ = Describe("Gateway", func() {
 							func(
 								ctx context.Context,
 								tx jobsdb.StoreSafeTx,
-								jobBatches [][]*jobsdb.JobT,
-							) (map[uuid.UUID]string, error) {
-								for _, batch := range jobBatches {
-									for _, job := range batch {
-										// each call should be included in a separate batch, with a separate batch_id
-										assertJobMetadata(job)
+								jobs []*jobsdb.JobT,
+							) error {
+								for _, job := range jobs {
+									assertJobMetadata(job)
 
-										responseData := []byte(job.EventPayload)
-										payload := gjson.GetBytes(responseData, "batch.0")
+									responseData := []byte(job.EventPayload)
+									payload := gjson.GetBytes(responseData, "batch.0")
 
-										assertJobBatchItem(payload)
+									assertJobBatchItem(payload)
 
-										messageType := payload.Get("type")
-										Expect(messageType.String()).To(Equal(handlerType))
-										Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
-									}
+									messageType := payload.Get("type")
+									Expect(messageType.String()).To(Equal(handlerType))
+									Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
 								}
 								c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
 
-								return jobsToEmptyErrors(ctx, tx, jobBatches)
+								return nil
 							}).
 						Times(1)
 
@@ -704,7 +699,7 @@ var _ = Describe("Gateway", func() {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 			c.mockJobsDB.
-				EXPECT().StoreEachBatchRetryInTx(
+				EXPECT().StoreInTx(
 				gomock.Any(),
 				gomock.Any(),
 				gomock.Any(),
@@ -713,10 +708,10 @@ var _ = Describe("Gateway", func() {
 					func(
 						ctx context.Context,
 						tx jobsdb.StoreSafeTx,
-						jobBatches [][]*jobsdb.JobT,
-					) (map[uuid.UUID]string, error) {
+						jobs []*jobsdb.JobT,
+					) error {
 						c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
-						return jobsToEmptyErrors(ctx, tx, jobBatches)
+						return nil
 					}).
 				Times(1)
 
@@ -767,11 +762,11 @@ var _ = Describe("Gateway", func() {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 			c.mockJobsDB.
-				EXPECT().StoreEachBatchRetryInTx(
+				EXPECT().StoreInTx(
 				gomock.Any(),
 				gomock.Any(),
 				gomock.Any(),
-			).AnyTimes()
+			).Return(nil).AnyTimes()
 
 			// With userId
 			expectHandlerResponse(
@@ -845,7 +840,7 @@ var _ = Describe("Gateway", func() {
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(3)
+			c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
 
 			for handlerType, handler := range extractHandlers {
 				var body string
@@ -897,7 +892,7 @@ var _ = Describe("Gateway", func() {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 
-			mockCall := c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
+			mockCall := c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
 			mockCall.Do(func(context.Context, any, any) {
 				c.asyncHelper.ExpectAndNotifyCallbackWithName("")()
 			})
@@ -1006,7 +1001,7 @@ var _ = Describe("Gateway", func() {
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			mockCall := c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
+			mockCall := c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
 			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("")
 			mockCall.Do(func(context.Context, any, any) { tFunc() })
 
@@ -1327,12 +1322,12 @@ var _ = Describe("Gateway", func() {
 				if handlerType != "batch" && handlerType != "import" {
 					validBody := createJSONBody("custom-property", "custom-value")
 
-					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
-						_ = f(jobsdb.EmptyStoreSafeTx())
-					}).Return(nil)
+					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) error {
+						return f(jobsdb.EmptyStoreSafeTx())
+					})
 					c.mockJobsDB.
-						EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-						DoAndReturn(jobsToJobsdbErrors).
+						EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+						Return(errors.New("tx error")).
 						Times(1)
 
 					expectHandlerResponse(
@@ -1783,7 +1778,6 @@ var _ = Describe("Gateway", func() {
 			conf = config.New()
 			conf.Set("Gateway.enableRateLimit", false)
 			conf.Set("Gateway.enableSuppressUserFeature", true)
-			conf.Set("Gateway.enableEventSchemasFeature", false)
 
 			serverPort, err := kithelper.GetFreePort()
 			Expect(err).To(BeNil())
@@ -1799,7 +1793,7 @@ var _ = Describe("Gateway", func() {
 
 			gateway = &Handle{}
 			srcDebugger = mocksrcdebugger.NewMockSourceDebugger(c.mockCtrl)
-			err = gateway.Setup(context.Background(), conf, logger.NOP, statStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil)
+			err = gateway.Setup(context.Background(), conf, logger.NOP, statStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil, WithInternalEndpointsEnabled(true))
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
@@ -2138,7 +2132,7 @@ var _ = Describe("Gateway", func() {
 		BeforeEach(func() {
 			c.initializeAppFeatures()
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -2410,12 +2404,10 @@ func endpointsToVerify() ([]string, []string, []string) {
 		"/pixel/v1/track",
 		"/pixel/v1/page",
 		"/v1/webhook",
-		"/v1/job-status/123",
-		"/v1/job-status/123/failed-records",
-		"/v1/warehouse/jobs/status",
+		"/internal/v1/warehouse/jobs/status",
 		"/internal/v1/warehouse/fetch-tables",
-		"/internal/v1/job-status/123",
-		"/internal/v1/job-status/123/failed-records",
+		"/internal/v2/job-status/123",
+		"/internal/v2/job-status/123/failed-records",
 	}
 
 	postEndpoints := []string{
@@ -2435,14 +2427,14 @@ func endpointsToVerify() ([]string, []string, []string) {
 		"/internal/v1/retl",
 		"/internal/v1/replay",
 		"/internal/v1/audiencelist",
-		"/v1/warehouse/pending-events",
-		"/v1/warehouse/trigger-upload",
-		"/v1/warehouse/jobs",
-		// "/internal/v1/batch", will be tested in new unit test
+		"/internal/v1/warehouse/pending-events",
+		"/internal/v1/warehouse/trigger-upload",
+		"/internal/v1/warehouse/jobs",
 	}
 
 	deleteEndpoints := []string{
-		"/v1/job-status/1234",
+		"/internal/v2/job-status/1234",
+		"/internal/v2/job-status/123/failed-records",
 	}
 	return getEndpoints, postEndpoints, deleteEndpoints
 }
@@ -2460,21 +2452,6 @@ func allHandlers(gw *Handle) map[string]http.HandlerFunc {
 		"audiencelist": gw.webAudienceListHandler(),
 		"extract":      gw.webExtractHandler(),
 	}
-}
-
-// converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
-func jobsToEmptyErrors(_ context.Context, _ jobsdb.StoreSafeTx, _ [][]*jobsdb.JobT) (map[uuid.UUID]string, error) {
-	return make(map[uuid.UUID]string), nil
-}
-
-// converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
-func jobsToJobsdbErrors(_ context.Context, _ jobsdb.StoreSafeTx, jobs [][]*jobsdb.JobT) (map[uuid.UUID]string, error) {
-	errorsMap := make(map[uuid.UUID]string, len(jobs))
-	for _, batch := range jobs {
-		errorsMap[batch[0].UUID] = "tx error"
-	}
-
-	return errorsMap, nil
 }
 
 func TestContentTypeFunction(t *testing.T) {
@@ -2622,7 +2599,7 @@ func createTestGatewayWithLeakyUploader(t *testing.T, endpoint, accessKeyID, sec
 	conf.Set("Gateway.leakyUploader.Storage.DisableSsl", true)
 	conf.Set("Gateway.leakyUploader.Storage.UseGlue", true)
 	conf.Set("Gateway.leakyUploader.Storage.S3ForcePathStyle", true)
-	err := gw.Setup(context.Background(), conf, logger.NewLogger().Withn(logger.NewStringField("component", "test")), stats.NOP, mockApp, mockBackendConfig, mockJobsDB, mockRateLimiter, mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+	err := gw.Setup(context.Background(), conf, logger.NewLogger().Withn(logger.NewStringField("component", "test")), stats.NOP, mockApp, mockBackendConfig, mockJobsDB, mockRateLimiter, mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		select {

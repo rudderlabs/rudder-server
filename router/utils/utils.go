@@ -179,7 +179,7 @@ func (d *drainer) getRetentionTimeForDestination(destID string) time.Duration {
 	return c.Load()
 }
 
-func UpdateProcessedEventsMetrics(statsHandle stats.Stats, module, destType string, statusList []*jobsdb.JobStatusT, jobIDConnectionDetailsMap map[int64]jobsdb.ConnectionDetails) {
+func UpdateProcessedEventsMetrics(statsHandle stats.Stats, module, destType string, statusList []*jobsdb.JobStatusT, jobIDConnectionDetailsMap map[int64]jobsdb.ConnectionID) {
 	eventsPerConnectionInfoAndStateAndCode := map[string]map[string]map[string]int{}
 	for i := range statusList {
 		sourceID := jobIDConnectionDetailsMap[statusList[i].JobID].SourceID

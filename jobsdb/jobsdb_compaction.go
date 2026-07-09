@@ -1,0 +1,936 @@
+package jobsdb
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/lib/pq"
+	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
+	"github.com/rudderlabs/rudder-server/utils/crash"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
+)
+
+// startCompactionLoop starts the background compaction worker.
+// Compaction copies unfinished jobs from eligible source datasets to a destination
+// dataset, copies the latest status for moved jobs, and then drops or queues the
+// source datasets for asynchronous drop.
+func (jd *Handle) startCompactionLoop(ctx context.Context) {
+	jd.backgroundGroup.Go(crash.Wrapper(func() error {
+		jd.compactionLoop(ctx)
+		return nil
+	}))
+}
+
+func (jd *Handle) compactionLoop(ctx context.Context) {
+	for {
+		select {
+		case <-jd.TriggerCompaction():
+			if jd.compactionPaused.Load() {
+				jd.logger.Debugn("compaction loop paused")
+				continue
+			}
+		case <-ctx.Done():
+			return
+		}
+		compact := func() error {
+			start := time.Now()
+			jd.logger.Debugn("Start", logger.NewStringField("operation", "compactionLoop"))
+			timeoutCtx, cancel := context.WithTimeout(ctx, jd.conf.compaction.compactionTimeout.Load())
+			defer cancel()
+			err := jd.doCompaction(timeoutCtx)
+			jd.stats.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
+			if err != nil {
+				return fmt.Errorf("compact ds: %w", err)
+			}
+			return nil
+		}
+		if err := compact(); err != nil && ctx.Err() == nil {
+			if !jd.conf.skipMaintenanceError {
+				panic(err)
+			}
+			jd.logger.Errorn("compactionLoop error", obskit.Error(err))
+		}
+	}
+}
+
+type dsWithPendingJobCount struct {
+	ds             dataSetT
+	numJobsPending int
+}
+
+// compactionListResult holds the output of getCompactionList
+type compactionListResult struct {
+	// compactFrom is the list of datasets eligible for compaction,
+	// along with the number of pending (non-terminal) jobs in each.
+	compactFrom []dsWithPendingJobCount
+	// pendingJobsCount is the total number of unfinished jobs across all
+	// datasets in compactFrom. When > 0, these jobs need to be copied
+	// to a new destination dataset.
+	pendingJobsCount int
+	// insertBeforeDS is the dataset before which the new (compacted)
+	// destination dataset should be created.
+	insertBeforeDS dataSetT
+	// firstEligible is the parsed dsindex of the first dataset found eligible
+	// for compaction. nil if no eligible datasets were found.
+	firstEligible *dsindex.Index
+	// lastProbed is the parsed dsindex of the last dataset that was checked
+	// (had checkIfCompactDS called on it). Used for cross-invocation resumption
+	// so the next compaction loop iteration can skip already-probed datasets.
+	// nil if no datasets were probed.
+	lastProbed *dsindex.Index
+	// probeLimitReached is true when the loop stopped because compactDSProbeCount
+	// exceeded maxCompactDSProbe. Only when this is true should lastProbed be used
+	// as a cross-invocation resume point, since other exit conditions (idxCheck,
+	// found eligible datasets, etc.) don't guarantee that skipped datasets won't
+	// become eligible before the next iteration.
+	probeLimitReached bool
+}
+
+// based on size of given DSs, gives a list of DSs for us to vacuum full status tables
+func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT, dsConsumerCounts map[string]int64) ([]string, error) {
+	// get name and it's size of all tables
+	var rows *sql.Rows
+	rows, err := jd.maintenanceDB().QueryContext(
+		ctx,
+		`SELECT pg_catalog.pg_table_size(c.oid) AS size, c.relname
+		FROM pg_catalog.pg_class c
+		JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+		LEFT JOIN pg_catalog.pg_description d ON d.objoid = c.oid AND d.objsubid = 0
+		WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+			AND c.relkind = 'r'
+			AND c.relname LIKE $1
+			AND (d.description IS NULL OR d.description NOT LIKE 'rudder:pre_drop:%')
+		ORDER BY c.relname;`,
+		jd.tablePrefix+"_job_status%",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	tableSizes := map[string]int64{}
+	for rows.Next() {
+		var (
+			tableSize sql.NullInt64
+			tableName string
+		)
+		err = rows.Scan(&tableSize, &tableName)
+		if err != nil {
+			return nil, err
+		}
+		if tableSize.Valid {
+			tableSizes[tableName] = tableSize.Int64
+		}
+	}
+	err = rows.Err()
+	if err != nil {
+		return nil, err
+	}
+
+	toVacuumFull := []string{}
+	threshold := jd.conf.compaction.vacuumFullStatusTableThreshold.Load()
+	for _, ds := range dsList {
+		scaledThreshold := threshold * max(dsConsumerCounts[ds.Index], 1)
+		if tableSizes[ds.JobStatusTable] > scaledThreshold {
+			toVacuumFull = append(toVacuumFull, ds.JobStatusTable)
+		}
+	}
+	return toVacuumFull, nil
+}
+
+// based on an estimate of the rows in DSs, gives a list of DSs for us to cleanup status tables
+func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT, dsConsumerCounts map[string]int64) ([]dataSetT, error) {
+	// get analyzer estimates for the number of rows(jobs, statuses) in each DS
+	var rows *sql.Rows
+	rows, err := jd.maintenanceDB().QueryContext(
+		ctx,
+		`SELECT c.reltuples AS estimate, c.relname
+		FROM pg_catalog.pg_class c
+		JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+		LEFT JOIN pg_catalog.pg_description d ON d.objoid = c.oid AND d.objsubid = 0
+		WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+			AND c.relkind = 'r'
+			AND c.relname LIKE $1
+			AND (d.description IS NULL OR d.description NOT LIKE 'rudder:pre_drop:%')`,
+		jd.tablePrefix+"_job%",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	estimates := map[string]float64{}
+	for rows.Next() {
+		var (
+			estimate  float64
+			tableName string
+		)
+		if err = rows.Scan(&estimate, &tableName); err != nil {
+			return nil, err
+		}
+		estimates[tableName] = estimate
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	datasets := lo.Filter(dsList,
+		func(ds dataSetT, idx int) bool {
+			statuses := estimates[ds.JobStatusTable]
+			jobs := estimates[ds.JobTable]
+			if jobs == 0 { // using max ds size if we have no stats for the number of jobs
+				jobs = float64(jd.conf.MaxDSSize.Load())
+			}
+			// For multi-consumer datasets, one status row per (job, consumer) is the healthy baseline,
+			// so scale the denominator by the consumer count to preserve threshold semantics.
+			multiplier := float64(max(dsConsumerCounts[ds.Index], 1))
+			return statuses/(jobs*multiplier) > jd.conf.compaction.jobStatusCompactionThres.Load()
+		})
+
+	return lo.Slice(datasets, 0, jd.conf.compaction.maxCompactDSProbe.Load()), nil
+}
+
+// based on an estimate cleans up the status tables
+func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) error {
+	if jd.conf.compaction.skipStatusCompaction.Load() {
+		return nil
+	}
+	var (
+		toVacuum         []string
+		dsConsumerCounts map[string]int64
+	)
+	if jd.conf.multiConsumer {
+		var err error
+		if dsConsumerCounts, err = jd.consumersByDataset(ctx, dsList); err != nil {
+			return err
+		}
+	}
+	toVacuumFull, err := jd.getVacuumFullCandidates(ctx, dsList, dsConsumerCounts)
+	if err != nil {
+		return err
+	}
+	toVacuumFullMap := lo.Associate(toVacuumFull, func(k string) (string, struct{}) {
+		return k, struct{}{}
+	})
+	toCompact, err := jd.getCleanUpCandidates(ctx, dsList, dsConsumerCounts)
+	if err != nil {
+		return err
+	}
+	start := time.Now()
+	defer jd.stats.NewTaggedStat(
+		"jobsdb_compact_status_tables",
+		stats.TimerType,
+		stats.Tags{"customVal": jd.tablePrefix},
+	).Since(start)
+
+	if err := jd.withMaintenanceTx(ctx, func(tx *Tx) error {
+		for _, statusTable := range toCompact {
+			table := statusTable.JobStatusTable
+			// clean up and vacuum if not present in toVacuumFullMap
+			_, ok := toVacuumFullMap[table]
+			vacuum, err := jd.cleanStatusTable(ctx, tx, table, !ok)
+			if err != nil {
+				return err
+			}
+			if vacuum {
+				toVacuum = append(toVacuum, table)
+			}
+		}
+
+		return nil
+	}); err != nil {
+		return err
+	}
+	// vacuum full
+	for _, table := range toVacuumFull {
+		jd.logger.Infon("vacuuming full", logger.NewStringField("table", table))
+		if _, err := jd.maintenanceDB().ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
+			return err
+		}
+	}
+	// vacuum analyze
+	for _, table := range toVacuum {
+		jd.logger.Infon("vacuuming", logger.NewStringField("table", table))
+		if _, err := jd.maintenanceDB().ExecContext(ctx, fmt.Sprintf(`VACUUM ANALYZE %[1]q`, table)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cleanStatusTable deletes all rows except for the latest status for each job (or job+consumer for multi-consumer).
+func (jd *Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, canBeVacuumed bool) (vacuum bool, err error) {
+	var deleteSQL string
+	if jd.conf.multiConsumer {
+		deleteSQL = fmt.Sprintf(`DELETE FROM %[1]q WHERE NOT id = ANY(SELECT DISTINCT ON (job_id, consumer) id FROM %[1]q ORDER BY job_id ASC, consumer, id DESC)`, table)
+	} else {
+		deleteSQL = fmt.Sprintf(`DELETE FROM %[1]q WHERE NOT id = ANY(SELECT DISTINCT ON (job_id) id FROM %[1]q ORDER BY job_id ASC, id DESC)`, table)
+	}
+	result, err := tx.ExecContext(ctx, deleteSQL)
+	if err != nil {
+		return false, err
+	}
+
+	numJobStatusDeleted, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+
+	if numJobStatusDeleted > jd.conf.compaction.vacuumAnalyzeStatusTableThreshold.Load() && canBeVacuumed {
+		vacuum = true
+	} else {
+		_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, table))
+	}
+
+	return vacuum, err
+}
+
+// getCompactionList returns the list of datasets to compact from,
+// the number of unfinished jobs contained in these datasets
+// and the dataset before which the new (compacted) dataset that will hold these jobs needs to be created.
+//
+// If skipBefore is non-nil, datasets whose parsed index is Less than skipBefore
+// are skipped (not checked). This avoids redundant checkIfCompactDS calls for
+// datasets already known to be ineligible.
+func (jd *Handle) getCompactionList(dsList []dataSetT, skipBefore *dsindex.Index, db sqlDbOrTx) (result compactionListResult, err error) {
+	var (
+		liveDSCount, compactDSProbeCount int
+		// we don't want `maxDSSize` value to change, during dsList loop
+		maxDSSize = jd.conf.MaxDSSize.Load()
+		waiting   *dsWithPendingJobCount
+	)
+
+	if jd.logger.IsDebugLevel() {
+		list := make([]string, len(dsList))
+		for i, ds := range dsList {
+			list[i] = ds.String()
+		}
+		jd.logger.Debugn("[[ compactionLoop ]]: DS list", logger.NewStringField("dsList", strings.Join(list, ",")))
+	}
+
+	for idx, ds := range dsList {
+		if skipBefore != nil {
+			parsed, parseErr := dsindex.Parse(ds.Index)
+			if parseErr != nil {
+				return result, fmt.Errorf("parse dsindex %q: %w", ds.Index, parseErr)
+			}
+			if parsed.Less(skipBefore) {
+				continue
+			}
+		}
+
+		// exempting the last dataset from compaction since it is the one being currently written to.
+		idxCheck := idx == len(dsList)-1
+
+		if liveDSCount >= jd.conf.compaction.maxCompactOnce.Load() || result.pendingJobsCount >= maxDSSize || idxCheck {
+			break
+		}
+
+		compact, needsPair, recordsLeft, checkErr := jd.checkIfCompactDS(ds, db)
+		if checkErr != nil {
+			return result, checkErr
+		}
+		result.lastProbed = dsindex.MustParse(ds.Index)
+		jd.logger.Debugn(
+			"[[ compactionLoop ]]: Compaction check",
+			logger.NewBoolField("compact", compact),
+			logger.NewBoolField("needsPair", needsPair),
+			logger.NewIntField("recordsLeft", int64(recordsLeft)),
+			logger.NewStringField("ds", ds.Index),
+		)
+
+		if compact {
+			if !needsPair {
+				result.compactFrom = append(result.compactFrom, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
+				result.insertBeforeDS = dsList[idx+1]
+				result.pendingJobsCount += recordsLeft
+				liveDSCount++
+			} else {
+				if waiting != nil { // have another dataset waiting for a pair
+					if waiting.numJobsPending+recordsLeft > maxDSSize {
+						waiting = nil
+					} else {
+						result.compactFrom = append(result.compactFrom, *waiting, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
+						result.insertBeforeDS = dsList[idx+1]
+						result.pendingJobsCount += waiting.numJobsPending + recordsLeft
+						liveDSCount += 2
+						waiting = nil
+					}
+				} else if result.pendingJobsCount > 0 { // we already know that we'll be compacting another dataset with pending jobs, so can add this one too
+					if result.pendingJobsCount+recordsLeft > maxDSSize {
+						break // adding this dataset would exceed maxDSSize, leave it for the next compaction cycle
+					}
+					result.compactFrom = append(result.compactFrom, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
+					result.insertBeforeDS = dsList[idx+1]
+					result.pendingJobsCount += recordsLeft
+					liveDSCount++
+					waiting = nil
+				} else { // add the current DS as waiting for the next iteration to pickup
+					waiting = &dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft}
+				}
+			}
+		} else {
+			waiting = nil // if there was a DS waiting, we should remove it since its next dataset is not eligible for compaction
+			if liveDSCount > 0 {
+				break
+			}
+			if compactDSProbeCount > jd.conf.compaction.maxCompactDSProbe.Load() {
+				result.probeLimitReached = true
+				break
+			}
+		}
+		compactDSProbeCount++
+	}
+	if len(result.compactFrom) > 0 {
+		// sort compactFrom, since needsPair & maxDSRetentionPeriod logic may have added datasets out of order
+		slices.SortFunc(result.compactFrom, func(a, b dsWithPendingJobCount) int {
+			return dsindex.MustParse(a.ds.Index).Compare(dsindex.MustParse(b.ds.Index))
+		})
+		result.firstEligible = dsindex.MustParse(result.compactFrom[0].ds.Index)
+	}
+	return result, nil
+}
+
+func getColumnConversion(srcType, destType string) (string, error) {
+	if srcType == destType {
+		return "j.event_payload", nil
+	}
+
+	conversions := map[string]map[string]string{
+		"jsonb": {
+			"text":  "j.event_payload::TEXT",
+			"bytea": "convert_to(j.event_payload::TEXT, 'UTF8')",
+		},
+		"bytea": {
+			"text":  "convert_from(j.event_payload, 'UTF8')",
+			"jsonb": "convert_from(j.event_payload, 'UTF8')::jsonb",
+		},
+		"text": {
+			"jsonb": "j.event_payload::jsonb",
+			"bytea": "convert_to(j.event_payload, 'UTF8')",
+		},
+	}
+	var result string
+	if destMap, ok := conversions[srcType]; ok {
+		if result, ok = destMap[destType]; !ok {
+			return "", fmt.Errorf("unsupported payload column types: src-%s, dest-%s", srcType, destType)
+		}
+	}
+	return result, nil
+}
+
+// resolvePayloadConversion inspects the event_payload column types of the source
+// and destination jobs tables and returns the SQL expression used to convert a
+// source payload to the destination column type (see getColumnConversion).
+func (jd *Handle) resolvePayloadConversion(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) (string, error) {
+	columnTypeMap := map[string]string{srcDS.JobTable: string(JSONB), destDS.JobTable: string(JSONB)}
+	// find column types first - to differentiate between `text`, `bytea` and `jsonb`
+	rows, err := tx.QueryContext(
+		ctx,
+		`select table_name, data_type
+		from information_schema.columns
+		where table_name IN ($1, $2) and column_name='event_payload';`,
+		srcDS.JobTable, destDS.JobTable,
+	)
+	if err != nil {
+		return "", fmt.Errorf("get column types: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var jobsTable, columnType string
+	for rows.Next() {
+		if err = rows.Scan(&jobsTable, &columnType); err != nil {
+			return "", fmt.Errorf("scan column types: %w", err)
+		}
+		if columnType != string(BYTEA) && columnType != string(JSONB) && columnType != string(TEXT) {
+			return "", fmt.Errorf("unsupported column type %s", columnType)
+		}
+		columnTypeMap[jobsTable] = columnType
+	}
+	if err = rows.Err(); err != nil {
+		return "", fmt.Errorf("rows.Err() on column types: %w", err)
+	}
+	return getColumnConversion(columnTypeMap[srcDS.JobTable], columnTypeMap[destDS.JobTable])
+}
+
+// copyJobsInTx copies the still-pending jobs (and jobs that were never picked up) from the source jobs
+// table to the destination. It returns the number of jobs copied.
+func (jd *Handle) copyJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) (int, error) {
+	defer jd.getTimerStat(
+		"migration_jobs",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	).RecordDuration()()
+
+	payloadLiteral, err := jd.resolvePayloadConversion(ctx, tx, srcDS, destDS)
+	if err != nil {
+		return 0, err
+	}
+
+	if jd.conf.multiConsumer {
+		// multi-consumer: compute terminal consumers per job once, then trim them from the
+		// stored consumers array so the destination only carries pending work. Registry is
+		// seeded from the trimmed array returned by the INSERT.
+		var count int
+		err = tx.QueryRowContext(ctx, fmt.Sprintf(
+			`WITH terminal_by_job AS (
+				SELECT ls.job_id, array_agg(ls.consumer) AS done
+				FROM %[4]q ls
+				WHERE ls.job_state = ANY('{%[5]s}')
+				GROUP BY ls.job_id
+			),
+			inserted_jobs AS (
+				INSERT INTO %[1]q (job_id, workspace_id, uuid, user_id, partition_id, custom_val, parameters, event_payload, event_count, created_at, expire_at, consumers)
+				(SELECT j.job_id, j.workspace_id, j.uuid, j.user_id, j.partition_id, j.custom_val, j.parameters, %[2]s, j.event_count, j.created_at, j.expire_at,
+				        CASE WHEN t.done IS NULL THEN j.consumers
+				             ELSE array(SELECT c FROM unnest(j.consumers) c WHERE NOT c = ANY(t.done))
+				        END
+				 FROM %[3]q j
+				 LEFT JOIN terminal_by_job t ON t.job_id = j.job_id
+				 WHERE t.done IS NULL OR NOT (j.consumers <@ t.done)
+				 ORDER BY j.job_id) RETURNING consumers
+			),
+			seeded AS (
+				INSERT INTO %[6]q (consumer)
+				SELECT DISTINCT unnest(consumers) FROM inserted_jobs
+				ON CONFLICT DO NOTHING
+			)
+			SELECT count(*) FROM inserted_jobs`,
+			destDS.JobTable, payloadLiteral, srcDS.JobTable,
+			"v_last_c_"+srcDS.JobStatusTable, strings.Join(validTerminalStates, ","),
+			destDS.consumersRegistryTable(),
+		)).Scan(&count)
+		return count, err
+	}
+
+	// Single-consumer: classic left-join pattern, simple INSERT.
+	pendingFilter := fmt.Sprintf(
+		`LEFT JOIN "v_last_%s" js ON js.job_id = j.job_id WHERE js.job_id IS NULL OR js.job_state = ANY('{%s}')`,
+		srcDS.JobStatusTable, strings.Join(validNonTerminalStates, ","),
+	)
+	res, err := tx.ExecContext(ctx, fmt.Sprintf(
+		`INSERT INTO %[1]q (job_id, workspace_id, uuid, user_id, partition_id, custom_val, parameters, event_payload, event_count, created_at, expire_at, consumers)
+		(SELECT j.job_id, j.workspace_id, j.uuid, j.user_id, j.partition_id, j.custom_val, j.parameters, %[2]s, j.event_count, j.created_at, j.expire_at, j.consumers
+		 FROM %[3]q j %[4]s ORDER BY j.job_id)`,
+		destDS.JobTable, payloadLiteral, srcDS.JobTable, pendingFilter,
+	))
+	if err != nil {
+		return 0, err
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
+// copyJobStatusesInTx copies the LATEST status of every job in the destDS (terminal or not) from the srcDS status table to the destDS status table.
+// For multi-consumer datasets, it uses v_last_c_ which has one row per (job_id, consumer), and only carries statuses for the consumers
+// still present in the destination job's (trimmed) consumers array.
+func (jd *Handle) copyJobStatusesInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) error {
+	var copyQuery string
+	if jd.conf.multiConsumer {
+		// JOIN on consumer membership in the destination's trimmed consumers array:
+		// terminal consumers were stripped during copyJobsInTx, so this naturally
+		// excludes their statuses without any extra filtering logic.
+		copyQuery = fmt.Sprintf(
+			`INSERT INTO %[1]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters, consumer)
+			(SELECT ls.job_id, ls.job_state, ls.attempt, ls.exec_time, ls.retry_time, ls.error_code, ls.error_response, ls.parameters, ls.consumer
+			 FROM %[2]q ls
+			 JOIN %[3]q dj ON dj.job_id = ls.job_id AND ls.consumer = ANY(dj.consumers))`,
+			destDS.JobStatusTable, "v_last_c_"+srcDS.JobStatusTable, destDS.JobTable,
+		)
+	} else {
+		copyQuery = fmt.Sprintf(
+			`INSERT INTO %[1]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters, consumer)
+			(SELECT js.job_id, js.job_state, js.attempt, js.exec_time, js.retry_time, js.error_code, js.error_response, js.parameters, js.consumer
+			 FROM %[2]q js WHERE EXISTS (SELECT 1 FROM %[3]q dj WHERE dj.job_id = js.job_id))`,
+			destDS.JobStatusTable, "v_last_"+srcDS.JobStatusTable, destDS.JobTable,
+		)
+	}
+	if _, err := tx.ExecContext(ctx, copyQuery); err != nil {
+		return err
+	}
+	return nil
+}
+
+// lockAndFenceStatusTable takes an EXCLUSIVE lock on the status table and
+// plants the readonly trigger which raises RS001 whenever any subsequent insert is attempted on the status table.
+func (jd *Handle) lockAndFenceStatusTable(ctx context.Context, tx *Tx, statusTable string) error {
+	// EXCLUSIVE (not ACCESS EXCLUSIVE): blocks INSERT/UPDATE/DELETE on the
+	// status table but allows reads (e.g. v_last_*).
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE`, statusTable)); err != nil {
+		return fmt.Errorf("exclusive lock status table %s: %w", statusTable, err)
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(
+		`CREATE TRIGGER readonlyTableTrg
+		BEFORE INSERT
+		ON %q
+		FOR EACH STATEMENT
+		EXECUTE PROCEDURE %s;`, statusTable, pgReadonlyTableExceptionFuncName)); err != nil {
+		return fmt.Errorf("create readonly trigger on %s: %w", statusTable, err)
+	}
+	return nil
+}
+
+// doCompaction is the non-blocking compaction flow.
+//
+// Lock semantics:
+//   - dsListLock is taken exactly once, asynchronously, right before COMMIT — only
+//     the swap (in-memory) + COMMIT + enqueue + publish happen inside the lock window.
+//   - Source status tables are fenced with LOCK TABLE … IN EXCLUSIVE MODE and a
+//     post-commit readonly trigger; the trigger raises RS001 on subsequent inserts,
+//     which the UpdateJobStatus path treats as ErrStaleDsList and retries.
+//   - The source status lock is deferred: pending jobs are copied first with no lock
+//     held, then each source status table is locked one after another only to copy the
+//     latest statuses of the moved jobs.
+func (jd *Handle) doCompaction(ctx context.Context) error {
+	dsList, _, release, err := jd.acquireDSListForRead(ctx)
+	if err != nil {
+		return fmt.Errorf("could not acquire a dslist read lock: %w", err)
+	}
+	if err := jd.cleanupStatusTables(ctx, dsList); err != nil {
+		release()
+		return err
+	}
+	release()
+
+	compactionList, err := jd.getCompactionList(dsList, jd.lastCompactionProbeIndex, jd.maintenanceDB())
+	jd.lastCompactionProbeIndex = nil
+	if err != nil {
+		return fmt.Errorf("could not get compaction list: %w", err)
+	}
+	if len(compactionList.compactFrom) == 0 {
+		if compactionList.probeLimitReached {
+			jd.lastCompactionProbeIndex = compactionList.lastProbed
+		}
+		return nil
+	}
+
+	compactFromDatasets := lo.Map(compactionList.compactFrom, func(d dsWithPendingJobCount, _ int) dataSetT {
+		return d.ds
+	})
+
+	// If all source datasets are completed (no pending jobs), short-circuit through
+	// the async-drop path — no copy, no destination, no in-TX work needed.
+	if compactionList.pendingJobsCount == 0 {
+		if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
+			return jd.addCompletedDSToDropList(ctx, l, compactFromDatasets...)
+		}); err != nil {
+			return fmt.Errorf("enqueue completed datasets for async drop: %w", err)
+		}
+		return nil
+	}
+
+	// Pure-Go destination index computation from the optimistic snapshot — no DB read.
+	// addNewDSLoop only appends, so the optimistic insertBeforeDS still exists in the
+	// current published list at swap time; the computed index will not collide with
+	// any concurrently-added dataset.
+	candidateIdx, err := computeInsertIdxFromList(dsList, compactionList.insertBeforeDS)
+	if err != nil {
+		return fmt.Errorf("compute candidate dest index: %w", err)
+	}
+	destination := newDataSet(jd.tablePrefix, candidateIdx)
+	jd.logger.Infon(
+		"[[ doCompaction ]]",
+		logger.NewIntField("pendingJobsCount", int64(compactionList.pendingJobsCount)),
+		logger.NewIntField("compactFrom", int64(len(compactFromDatasets))),
+		logger.NewStringField("from", strings.Join(lo.Map(compactFromDatasets, func(d dataSetT, _ int) string { return d.Index }), ",")),
+		logger.NewStringField("to", destination.Index),
+		logger.NewStringField("insert before", compactionList.insertBeforeDS.Index),
+	)
+
+	var (
+		l           lock.LockToken
+		lockChan    chan<- lock.LockToken
+		totalCopied int
+	)
+	var lockStart time.Time
+
+	err = jd.withMaintenanceTx(ctx, func(tx *Tx) error {
+		return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error {
+			opPayload, err := jsonrs.Marshal(&journalOpPayloadT{From: compactFromDatasets, To: destination})
+			if err != nil {
+				return fmt.Errorf("marshal journal payload: %w", err)
+			}
+			opID, err := jd.JournalMarkStartInTx(tx, compactionCopyOperation, opPayload)
+			if err != nil {
+				return fmt.Errorf("mark journal start: %w", err)
+			}
+
+			// Create destination tables BEFORE any source-table lock so the
+			// CREATE TABLE doesn't sit behind concurrent waiters on the source.
+			if err := jd.createDSTablesInTx(ctx, tx, destination); err != nil {
+				return fmt.Errorf("create dataset tables: %w", err)
+			}
+
+			var copyStart time.Time
+			// Phase 1: copy the pending jobs from every source WITHOUT locking any
+			// status table — this is the slow, payload-heavy work, and it must not sit
+			// inside the lock window.
+			for i, source := range compactionList.compactFrom {
+				if source.numJobsPending == 0 {
+					jd.logger.Infon(
+						"[[ doCompaction ]]: No jobs to compact",
+						logger.NewStringField("from", source.ds.Index),
+						logger.NewStringField("to", destination.Index),
+					)
+					continue
+				}
+				if copyStart.IsZero() {
+					copyStart = time.Now()
+				}
+				count, err := jd.copyJobsInTx(ctx, tx, source.ds, destination)
+				if err != nil {
+					return fmt.Errorf("copying jobs from %s: %w", source.ds.Index, err)
+				}
+				totalCopied += count
+				// numJobsPending now reflects what phase 1 actually copied, so
+				// phase 2 below only locks sources that contributed jobs.
+				compactionList.compactFrom[i].numJobsPending = count
+			}
+			// Build the jobs-table indices before taking any status lock.
+			if totalCopied > 0 {
+				if err := jd.createDSJobIndicesInTx(ctx, tx, destination); err != nil {
+					return fmt.Errorf("creating %v jobs indices: %w", destination, err)
+				}
+			}
+			// Phase 2: lock each source status table one after another and copy the
+			// latest status of the moved jobs. This is the only work under the lock,
+			// and the status rows carry no payload, so the lock window is minimal.
+			for _, source := range compactionList.compactFrom {
+				if source.numJobsPending == 0 {
+					continue
+				}
+				if lockStart.IsZero() {
+					lockStart = time.Now()
+				}
+				if err := jd.lockAndFenceStatusTable(ctx, tx, source.ds.JobStatusTable); err != nil {
+					return err
+				}
+				jd.logger.Infon(
+					"[[ doCompaction ]]: Move statuses",
+					logger.NewStringField("from", source.ds.Index),
+					logger.NewStringField("to", destination.Index),
+				)
+				if err := jd.copyJobStatusesInTx(ctx, tx, source.ds, destination); err != nil {
+					return fmt.Errorf("copying statuses from %s: %w", source.ds.Index, err)
+				}
+			}
+			if totalCopied > 0 {
+				if err := jd.createDSStatusIndicesInTx(ctx, tx, destination); err != nil {
+					return fmt.Errorf("creating %v status indices: %w", destination, err)
+				}
+				if _, err := tx.Exec(fmt.Sprintf(`ANALYZE %q, %q`, destination.JobTable, destination.JobStatusTable)); err != nil {
+					return fmt.Errorf("analyzing %v: %w", destination, err)
+				}
+			}
+			if !copyStart.IsZero() {
+				jd.getTimerStat("jobsdb_migration_copy_time", &statTags{CustomValFilters: []string{jd.tablePrefix}}).Since(copyStart)
+			}
+
+			// Mark the source datasets with the pre-drop comment in the same TX as
+			// the swap, so that on a crash before the async drop runs, the next
+			// startup's cleanupPreDropTables drops the leftovers and getAllTableNames
+			// keeps them hidden in the meantime.
+			for _, source := range compactFromDatasets {
+				if err := jd.markPreDropDSInTx(ctx, tx, source); err != nil {
+					return fmt.Errorf("marking pre-drop %s: %w", source.Index, err)
+				}
+			}
+
+			if err := jd.journalMarkDoneInTx(tx, opID); err != nil {
+				return fmt.Errorf("marking journal done: %w", err)
+			}
+			jd.logger.Infon("[[ doCompaction ]]: Jobs compacted", logger.NewIntField("count", int64(totalCopied)))
+
+			// if nothing was copied, then we don't need the destination dataset at all...
+			if totalCopied == 0 {
+				if err := jd.dropDSInTx(tx, destination); err != nil {
+					return fmt.Errorf("dropping empty destination dataset: %w", err)
+				}
+			}
+
+			if lockStart.IsZero() { // no pending jobs were copied
+				lockStart = time.Now()
+			}
+			// Acquire dsListLock right before COMMIT. The lock window contains no DB
+			// I/O — only COMMIT plus an in-memory swap (no SQL, no lookups).
+			l, lockChan, err = jd.dsListLock.AsyncLockWithCtx(ctx)
+			if err != nil {
+				return fmt.Errorf("acquire dsListLock: %w", err)
+			}
+			return nil
+		})
+	})
+	if l == nil {
+		// The TX failed before we acquired dsListLock; nothing to publish.
+		return err
+	}
+	defer func() {
+		lockChan <- l
+		jd.stats.NewTaggedStat("migration_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(lockStart)
+		jd.logger.Infon("[[ compactionLoop ]]: Lock duration", logger.NewDurationField("duration", time.Since(lockStart)))
+	}()
+	if err != nil {
+		return err
+	}
+
+	// Capture the version *before* refreshing — drop entries must record the
+	// pre-swap version so dropDSLoop's wait(through) passes the
+	// `through < currentVersion` check once doRefreshDSRangeList republishes.
+	preSwapVersion := jd.dsList.currentVersion()
+
+	// Update ds list
+	if err := jd.doRefreshDSRangeList(l); err != nil {
+		return fmt.Errorf("refresh ds range list: %w", err)
+	}
+
+	// Enqueue the sources for async drop with the PRE-SWAP version. dropDSLoop
+	// waits for readers at this version to drain before physically dropping.
+	jd.dropDSListLock.Lock()
+	existing := make(map[string]struct{}, len(jd.dropDSList))
+	for _, entry := range jd.dropDSList {
+		existing[entry.ds.Index] = struct{}{}
+	}
+	for _, src := range compactionList.compactFrom {
+		if _, ok := existing[src.ds.Index]; ok {
+			continue
+		}
+		jd.dropDSList = append(jd.dropDSList, dropDSEntry{ds: src.ds, compacted: src.numJobsPending > 0, version: preSwapVersion})
+	}
+	jd.dropDSListLock.Unlock()
+	jd.dropNotifyPing()
+
+	return nil
+}
+
+// computeInsertIdxFromList computes the destination dataset index for an intra-node
+// compaction using a provided dataset list. It does not require a dsListLock token
+// because it operates on the caller-supplied snapshot rather than re-reading the list from PG.
+func computeInsertIdxFromList(dList []dataSetT, insertBeforeDS dataSetT) (string, error) {
+	if len(dList) == 0 {
+		return "", fmt.Errorf("empty ds list")
+	}
+	for idx, ds := range dList {
+		if ds.Index == insertBeforeDS.Index {
+			if idx == 0 {
+				return "", fmt.Errorf("cannot insert before first dataset %q", insertBeforeDS.Index)
+			}
+			return computeInsertIdx(dList[idx-1].Index, insertBeforeDS.Index)
+		}
+	}
+	return "", fmt.Errorf("insertBeforeDS %q not found in list", insertBeforeDS.Index)
+}
+
+func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
+	before, err := dsindex.Parse(beforeIndex)
+	if err != nil {
+		return "", fmt.Errorf("could not parse before index: %w", err)
+	}
+	after, err := dsindex.Parse(afterIndex)
+	if err != nil {
+		return "", fmt.Errorf("could not parse after index: %w", err)
+	}
+	result, err := before.Bump(after)
+	if err != nil {
+		return "", fmt.Errorf("could not compute insert index: %w", err)
+	}
+	if result.Length() > 2 {
+		return "", fmt.Errorf("unsupported resulting index %s level (3) between %s and %s", result, beforeIndex, afterIndex)
+	}
+	return result.String(), nil
+}
+
+// checkIfCompactDS checks when DB is full or DB needs to be compacted.
+// We compact the DB ONCE most of the jobs have been processed (succeeded/aborted)
+// Or when the job_status table gets too big because of lots of retries/failures.
+// Partially-processed datasets that would need pairing are not eligible until
+// they are at least compactionMinDSAge old, so that freshly-created compaction
+// destinations are not compacted again right away.
+func (jd *Handle) checkIfCompactDS(ds dataSetT, db sqlDbOrTx) (
+	compact, needsPair bool, recordsLeft int, err error,
+) {
+	defer jd.getTimerStat(
+		"migration_ds_check",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	).RecordDuration()()
+
+	var delCount, totalCount int
+	var oldTerminalJobsExist bool
+	var maxCreatedAt time.Time
+	var tableComment sql.NullString
+
+	// For multi-consumer datasets, a job is terminal only when every consumer has a terminal
+	// latest status. For single-consumer datasets, there is at most one status row per job.
+	var terminalJobCountExpr string
+	if jd.conf.multiConsumer {
+		terminalJobCountExpr = fmt.Sprintf(
+			`(select count(*) from %[1]q j
+			  where (select count(*) from "v_last_c_%[2]s" ls
+			         where ls.job_id = j.job_id and ls.job_state = any($1)) = array_length(j.consumers, 1)
+			 ) as terminalJobCount`,
+			ds.JobTable, ds.JobStatusTable,
+		)
+	} else {
+		terminalJobCountExpr = fmt.Sprintf(`(select count(*) from "v_last_%s" where job_state = ANY($1)) as terminalJobCount`, ds.JobStatusTable)
+	}
+
+	query := fmt.Sprintf(
+		`with combinedResult as (
+			select
+			(select count(*) from %[1]q) as totalJobCount,
+			%[3]s,
+			(select created_at from %[1]q order by job_id desc limit 1) as maxCreatedAt,
+			COALESCE((select exec_time < $2 from %[2]q where job_state = ANY($1) order by id asc limit 1), false) as retentionExpired,
+			obj_description('%[1]s'::regclass, 'pg_class') as tableComment
+		)
+		select totalJobCount, terminalJobCount, maxCreatedAt, retentionExpired, tableComment from combinedResult`,
+		ds.JobTable, ds.JobStatusTable, terminalJobCountExpr)
+
+	if err := db.QueryRow(
+		query,
+		pq.Array(validTerminalStates),
+		time.Now().Add(-1*jd.conf.maxDSRetentionPeriod.Load()),
+	).Scan(&totalCount, &delCount, &maxCreatedAt, &oldTerminalJobsExist, &tableComment); err != nil {
+		return false, false, 0, fmt.Errorf("error running check query in %s: %w", ds.JobStatusTable, err)
+	}
+
+	recordsLeft = totalCount - delCount
+
+	if jd.conf.minDSRetentionPeriod.Load() > 0 && time.Since(maxCreatedAt) < jd.conf.minDSRetentionPeriod.Load() {
+		return false, false, recordsLeft, nil
+	}
+
+	if jd.conf.maxDSRetentionPeriod.Load() > 0 && oldTerminalJobsExist {
+		return true, false, recordsLeft, nil
+	}
+
+	needsPair = recordsLeft > 0 && float64(recordsLeft) < jd.conf.compaction.jobMinRowsLeftCompactionThreshold.Load()*float64(jd.conf.MaxDSSize.Load())
+
+	// A dataset that needs pairing is skipped while it is younger than
+	// compactionMinDSAge: it is usually a freshly-written compaction destination,
+	// and compacting it again right away would just churn its rows through yet
+	// another dataset. Datasets without a recorded creation time (created before
+	// creation times were introduced) yield a zero time and are never skipped.
+	if needsPair && time.Since(dsCreatedAt(tableComment.String)) < jd.conf.compaction.compactionMinDSAge.Load() {
+		return false, false, recordsLeft, nil
+	}
+
+	if needsPair || recordsLeft == 0 {
+		return true, needsPair, recordsLeft, nil
+	}
+
+	return false, false, recordsLeft, nil
+}

@@ -38,6 +38,7 @@ type Dynamic struct {
 	GatewayDB     lifecycle
 	RouterDB      lifecycle
 	BatchRouterDB lifecycle
+	ProcessorDB   lifecycle
 	EventSchemaDB lifecycle
 	ArchivalDB    lifecycle
 
@@ -154,6 +155,13 @@ func (d *Dynamic) start() error {
 		return fmt.Errorf("archival db start: %w", err)
 	}
 	started = append(started, d.ArchivalDB)
+	if d.ProcessorDB != nil {
+		if err := d.ProcessorDB.Start(); err != nil {
+			rollback()
+			return fmt.Errorf("processor db start: %w", err)
+		}
+		started = append(started, d.ProcessorDB)
+	}
 	if err := d.RouterDB.Start(); err != nil {
 		rollback()
 		return fmt.Errorf("router db start: %w", err)
@@ -216,6 +224,10 @@ func (d *Dynamic) stop() {
 	d.logger.Debugn("BatchRouterDB stopped")
 	d.RouterDB.Stop()
 	d.logger.Debugn("RouterDB stopped")
+	if d.ProcessorDB != nil {
+		d.ProcessorDB.Stop()
+		d.logger.Debugn("ProcessorDB stopped")
+	}
 	d.EventSchemaDB.Stop()
 	d.logger.Debugn("EventSchemasDB stopped")
 	d.ArchivalDB.Stop()
