@@ -107,7 +107,7 @@ func (m *Manager) createChannel(
 			return nil, fmt.Errorf("creating channel for schema error: %w", err)
 		}
 		if !resp.Success {
-			return nil, fmt.Errorf("creating channel for schema error: %w", createChannelResponseError(resp))
+			return nil, fmt.Errorf("creating channel for schema error with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 		}
 		m.channelCache.Store(tableName, resp)
 		return resp, nil
@@ -117,23 +117,18 @@ func (m *Manager) createChannel(
 			return nil, fmt.Errorf("creating channel for table error: %w", err)
 		}
 		if !resp.Success {
-			return nil, fmt.Errorf("creating channel for table error: %w", createChannelResponseError(resp))
+			return nil, fmt.Errorf("creating channel for table error with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 		}
 		m.channelCache.Store(tableName, resp)
 		return resp, nil
 	case internalapi.ErrValidationError, internalapi.ErrAuthenticationFailed, internalapi.ErrRoleDoesNotExistOrNotAuthorized, internalapi.ErrDatabaseDoesNotExistOrNotAuthorized:
 		return nil, fmt.Errorf("%w: validation or authorization error", errAbort)
 	default:
-		return nil, createChannelResponseError(resp)
+		if resp.SnowflakeAPIHttpCode == http.StatusBadRequest {
+			return nil, fmt.Errorf("%w: creating channel with code %s, message: %s and error: %s", errAbort, resp.Code, resp.SnowflakeAPIMessage, resp.Error)
+		}
+		return nil, fmt.Errorf("creating channel with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 	}
-}
-
-func createChannelResponseError(resp *model.ChannelResponse) error {
-	err := fmt.Errorf("creating channel with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)
-	if resp.SnowflakeAPIHttpCode == http.StatusBadRequest {
-		return fmt.Errorf("%w: %w", errAbort, err)
-	}
-	return err
 }
 
 // handleSchemaError handles errors related to missing schemas.
