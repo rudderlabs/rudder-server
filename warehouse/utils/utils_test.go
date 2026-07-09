@@ -1048,8 +1048,6 @@ func TestGetWarehouseIdentifier(t *testing.T) {
 }
 
 func TestCreateAWSSessionConfig(t *testing.T) {
-	rudderAccessKeyID := "rudderAccessKeyID"
-	rudderAccessKey := "rudderAccessKey"
 	rudderRegion := "us-east-1"
 
 	someAccessKeyID := "someAccessKeyID"
@@ -1057,8 +1055,6 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 	someIAMRoleARN := "someIAMRoleARN"
 	someWorkspaceID := "someWorkspaceID"
 
-	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", rudderAccessKeyID)
-	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", rudderAccessKey)
 	t.Setenv("AWS_S3_REGION_HINT", rudderRegion)
 
 	testCases := []struct {
@@ -1066,6 +1062,7 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 		destination    *backendconfig.DestinationT
 		service        string
 		expectedConfig *awsutil.SessionConfig
+		expectedErr    error
 	}{
 		{
 			name: "with useRudderStorage true",
@@ -1076,10 +1073,8 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 			},
 			service: "s3",
 			expectedConfig: &awsutil.SessionConfig{
-				AccessKeyID: rudderAccessKeyID,
-				AccessKey:   rudderAccessKey,
-				Service:     "s3",
-				Region:      "us-east-1",
+				Service: "s3",
+				Region:  "us-east-1",
 			},
 		},
 		{
@@ -1114,25 +1109,24 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "with no config",
+			name: "with no config is rejected",
 			destination: &backendconfig.DestinationT{
 				Config:      map[string]any{},
 				WorkspaceID: someWorkspaceID,
 			},
-			service: "redshift",
-			expectedConfig: &awsutil.SessionConfig{
-				AccessKeyID: rudderAccessKeyID,
-				AccessKey:   rudderAccessKey,
-				Service:     "redshift",
-				Region:      "us-east-1",
-			},
+			service:     "redshift",
+			expectedErr: misc.ErrS3MissingCredentials,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			sessionConfig, err := CreateAWSSessionConfig(tc.destination, tc.service)
+			if tc.expectedErr != nil {
+				require.ErrorIs(t, err, tc.expectedErr)
+				return
+			}
 			require.Nil(t, err)
-			require.Equal(t, sessionConfig, tc.expectedConfig)
+			require.Equal(t, tc.expectedConfig, sessionConfig)
 		})
 	}
 }

@@ -457,14 +457,18 @@ func (idr *Identity) uploadFile(ctx context.Context, filePath string, txn *sqlmi
 		panic(err)
 	}
 	storageProvider := warehouseutils.ObjectStorageType(idr.warehouse.Destination.DestinationDefinition.Name, idr.warehouse.Destination.Config, idr.uploader.UseRudderStorage())
+	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+		Provider:         storageProvider,
+		Config:           idr.warehouse.Destination.Config,
+		UseRudderStorage: idr.uploader.UseRudderStorage(),
+	})
+	if err != nil {
+		return fmt.Errorf("getting object storage config: %w", err)
+	}
 	uploader, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
-		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         storageProvider,
-			Config:           idr.warehouse.Destination.Config,
-			UseRudderStorage: idr.uploader.UseRudderStorage(),
-		}),
-		Conf: config.Default,
+		Config:   storageConfig,
+		Conf:     config.Default,
 	})
 	if err != nil {
 		pkgLogger.Errorn("IDR: Error in creating a file manager",

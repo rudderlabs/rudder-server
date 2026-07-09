@@ -48,6 +48,12 @@ var (
 	regexGwNonHaOrProcessor = regexp.MustCompile(`^.*-\d+$`)
 )
 
+// ErrS3MissingCredentials is returned when a user-configured (non-rudder-storage)
+// S3 location is configured with neither an IAM role ARN nor access keys. This
+// applies to S3 destinations as well as S3 used for warehouse staging/COPY; such
+// locations must not fall back to any RudderStack-owned credentials.
+var ErrS3MissingCredentials = errors.New("S3 access requires an IAM role ARN or access keys")
+
 const (
 	// RFC3339Milli with milli sec precision
 	RFC3339Milli          = "2006-01-02T15:04:05.000Z07:00"
@@ -644,10 +650,6 @@ func HasAWSRegionInConfig(config any) bool {
 	return true
 }
 
-func GetRudderObjectStorageAccessKeys() (accessKeyID, accessKey string) {
-	return config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID"), config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY")
-}
-
 func GetRudderObjectStoragePrefix() (prefix string) {
 	return config.GetStringVar(config.GetNamespaceIdentifier(), "RUDDER_WAREHOUSE_BUCKET_PREFIX")
 }
@@ -657,12 +659,10 @@ func GetRegionHint() string {
 }
 
 func GetRudderObjectStorageConfig(prefixOverride string) (storageConfig map[string]any) {
-	// TODO: add error log if s3 keys are not available
 	storageConfig = make(map[string]any)
 	storageConfig["bucketName"] = config.GetStringVar("rudder-warehouse-storage", "RUDDER_WAREHOUSE_BUCKET")
-	storageConfig["accessKeyID"] = config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID")
-	storageConfig["accessKey"] = config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY")
 	storageConfig["enableSSE"] = config.GetBoolVar(true, "RUDDER_WAREHOUSE_BUCKET_SSE")
+	// Credentials resolve via the AWS SDK default chain (pod identity / IRSA).
 	// set prefix from override for shared slave type nodes
 	if prefixOverride != "" {
 		storageConfig["prefix"] = prefixOverride
@@ -689,23 +689,22 @@ type ObjectStorageOptsT struct {
 	WorkspaceID                 string
 }
 
-func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
+func GetObjectStorageConfig(opts ObjectStorageOptsT) (map[string]any, error) {
 	objectStorageConfigMap := opts.Config.(map[string]any)
 	if opts.UseRudderStorage {
-		return GetRudderObjectStorageConfig(opts.RudderStoragePrefixOverride)
+		return GetRudderObjectStorageConfig(opts.RudderStoragePrefixOverride), nil
 	}
 	if opts.Provider == "S3" {
+		if !HasAWSRoleARNInConfig(objectStorageConfigMap) &&
+			!HasAWSKeysInConfig(objectStorageConfigMap) {
+			return nil, ErrS3MissingCredentials
+		}
 		clonedObjectStorageConfig := make(map[string]any)
 		maps.Copy(clonedObjectStorageConfig, objectStorageConfigMap)
 		clonedObjectStorageConfig["externalID"] = opts.WorkspaceID
-		if !HasAWSRoleARNInConfig(objectStorageConfigMap) &&
-			!HasAWSKeysInConfig(objectStorageConfigMap) {
-			clonedObjectStorageConfig["accessKeyID"] = config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID")
-			clonedObjectStorageConfig["accessKey"] = config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY")
-		}
 		objectStorageConfigMap = clonedObjectStorageConfig
 	}
-	return objectStorageConfigMap
+	return objectStorageConfigMap, nil
 }
 
 // GetParsedTimestamp returns the parsed timestamp

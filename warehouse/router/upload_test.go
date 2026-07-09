@@ -892,6 +892,8 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 		return map[string]any{
 			model.CleanupObjectStorageFilesSetting.String(): cleanupEnabled,
 			"bucketProvider": bucketProvider,
+			"accessKeyID":    "test-access-key-id",
+			"accessKey":      "test-access-key",
 		}
 	}
 	setupMocks := func() (*gomock.Controller, *mock_filemanager.MockFileManager, *mockupload.MockloadFilesRepo) {

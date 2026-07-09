@@ -232,19 +232,21 @@ func ArchivalScenario(
 	t.Log("verifying archives...")
 
 	verify := func(sourceID string) {
+		storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider: "MINIO",
+			Config: map[string]any{
+				"bucketName":      minioResource.BucketName,
+				"prefix":          "",
+				"endPoint":        minioResource.Endpoint,
+				"accessKeyID":     minioResource.AccessKeyID,
+				"secretAccessKey": minioResource.AccessKeySecret,
+			},
+		})
+		require.NoError(t, err)
 		fm, err := filemanager.New(&filemanager.Settings{
 			Provider: "MINIO",
-			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-				Provider: "MINIO",
-				Config: map[string]any{
-					"bucketName":      minioResource.BucketName,
-					"prefix":          "",
-					"endPoint":        minioResource.Endpoint,
-					"accessKeyID":     minioResource.AccessKeyID,
-					"secretAccessKey": minioResource.AccessKeySecret,
-				},
-			}),
-			Conf: config.Default,
+			Config:   storageConfig,
+			Conf:     config.Default,
 		})
 		require.NoError(t, err, "it should be able to create a file manager")
 		fileObjects, err := fm.ListFilesWithPrefix(

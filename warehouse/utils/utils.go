@@ -633,17 +633,18 @@ func JoinWithFormatting(keys []string, format func(idx int, str string) string, 
 }
 
 func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName string) (*awsutil.SessionConfig, error) {
-	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) &&
-		(misc.HasAWSRoleARNInConfig(destination.Config) || misc.HasAWSKeysInConfig(destination.Config)) {
+	if misc.IsConfiguredToUseRudderObjectStorage(destination.Config) {
+		// rudder-warehouse-storage: authenticate via the AWS SDK default
+		// credential chain (pod identity / IRSA). No static credentials.
+		return &awsutil.SessionConfig{
+			Service: serviceName,
+			Region:  misc.GetRegionHint(),
+		}, nil
+	}
+	if misc.HasAWSRoleARNInConfig(destination.Config) || misc.HasAWSKeysInConfig(destination.Config) {
 		return awsutils.NewSimpleSessionConfigForDestination(destination, serviceName)
 	}
-	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
-	return &awsutil.SessionConfig{
-		AccessKeyID: accessKeyID,
-		AccessKey:   accessKey,
-		Service:     serviceName,
-		Region:      misc.GetRegionHint(),
-	}, nil
+	return nil, misc.ErrS3MissingCredentials
 }
 
 func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string, string, error) {
@@ -674,10 +675,13 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 		return "", "", "", err
 	}
 
-	if sessionConfig.RoleBasedAuth {
+	// Role-based auth and the default credential chain (pod identity) already
+	// yield temporary credentials that include a session token — retrieve them
+	// directly. Only long-term static keys need an explicit GetSessionToken.
+	if sessionConfig.RoleBasedAuth || sessionConfig.AccessKeyID == "" {
 		creds, err := awsConfig.Credentials.Retrieve(context.Background())
 		if err != nil {
-			return "", "", "", err
+			return "", "", "", fmt.Errorf("retrieving temporary credentials: %w", err)
 		}
 		return creds.AccessKeyID, creds.SecretAccessKey, creds.SessionToken, nil
 	}

@@ -67,7 +67,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			ID:           SourceIDEnabled,
 			WriteKey:     WriteKeyEnabled,
 			Enabled:      true,
-			Destinations: []backendconfig.DestinationT{{ID: S3DestinationID, Name: "s3 dest", DestinationDefinition: s3DestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
+			Destinations: []backendconfig.DestinationT{{ID: S3DestinationID, Name: "s3 dest", DestinationDefinition: s3DestinationDefinition, Enabled: true, IsProcessorEnabled: true, Config: map[string]any{"accessKeyID": "test-access-key-id", "accessKey": "test-access-key"}}},
 		},
 	},
 }

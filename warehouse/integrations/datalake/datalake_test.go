@@ -404,15 +404,17 @@ func TestIntegration(t *testing.T) {
 				ts2.VerifyEvents(t)
 
 				storageProvider := whutils.ObjectStorageType(tc.destType, tc.conf, false)
+				storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+					Provider:         storageProvider,
+					Config:           tc.conf,
+					UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(tc.conf),
+					WorkspaceID:      workspaceID,
+				})
+				require.NoError(t, err)
 				fm, err := filemanager.New(&filemanager.Settings{
 					Provider: storageProvider,
-					Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-						Provider:         storageProvider,
-						Config:           tc.conf,
-						UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(tc.conf),
-						WorkspaceID:      workspaceID,
-					}),
-					Conf: config.Default,
+					Config:   storageConfig,
+					Conf:     config.Default,
 				})
 				require.NoError(t, err)
 

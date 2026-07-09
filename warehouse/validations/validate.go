@@ -484,15 +484,19 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 		provider = warehouseutils.ObjectStorageType(destType, conf, misc.IsConfiguredToUseRudderObjectStorage(conf))
 	)
 
+	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+		Provider:         provider,
+		Config:           conf,
+		UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(conf),
+		WorkspaceID:      dest.WorkspaceID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting object storage config: %w", err)
+	}
 	fileManager, err := fileManagerFactory(&filemanager.Settings{
 		Provider: provider,
-		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         provider,
-			Config:           conf,
-			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(conf),
-			WorkspaceID:      dest.WorkspaceID,
-		}),
-		Conf: config.Default,
+		Config:   storageConfig,
+		Conf:     config.Default,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating file manager: %w", err)
