@@ -3,8 +3,6 @@ package sqlquerywrapper
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -420,10 +418,10 @@ func TestQueryWrapper(t *testing.T) {
 		row := tx.QueryRowContext(ctx, "SELECT 1;")
 		var i int
 		err = row.Scan(&i)
-		requireTransactionTimeoutError(t, err)
+		require.ErrorIs(t, err, sql.ErrTxDone)
 
 		err = tx.Commit()
-		requireTransactionTimeoutError(t, err)
+		require.ErrorIs(t, err, sql.ErrTxDone)
 	})
 
 	t.Run("wrapper without transaction timeout", func(t *testing.T) {
@@ -447,19 +445,6 @@ func TestQueryWrapper(t *testing.T) {
 		err = tx.Commit()
 		require.NoError(t, err)
 	})
-}
-
-func requireTransactionTimeoutError(t testing.TB, err error) {
-	t.Helper()
-
-	require.Error(t, err)
-	require.Truef(t,
-		errors.Is(err, sql.ErrTxDone) ||
-			errors.Is(err, context.DeadlineExceeded) ||
-			errors.Is(err, context.Canceled) ||
-			errors.Is(err, driver.ErrBadConn),
-		"expected transaction timeout error, got %v", err,
-	)
 }
 
 func TestWithStats(t *testing.T) {
