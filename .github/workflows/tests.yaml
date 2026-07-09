@@ -57,7 +57,14 @@ jobs:
           go-version-file: 'go.mod'
           cache: false
       - run: go version
-      - run: go mod download # Not required, used to segregate module download vs test times
+      - name: Download Go modules
+        run: |
+          for attempt in 1 2 3; do
+            go mod download && break
+            if [ "$attempt" = "3" ]; then exit 1; fi
+            echo "go mod download failed; retrying attempt $((attempt + 1)) of 3" >&2
+            sleep $((attempt * 5))
+          done
 
       - name: enterprise
         if: matrix.FEATURES == 'enterprise'
@@ -144,7 +151,14 @@ jobs:
           go-version-file: 'go.mod'
           cache: false
       - run: go version
-      - run: go mod download # Not required, used to segregate module download vs test times
+      - name: Download Go modules
+        run: |
+          for attempt in 1 2 3; do
+            go mod download && break
+            if [ "$attempt" = "3" ]; then exit 1; fi
+            echo "go mod download failed; retrying attempt $((attempt + 1)) of 3" >&2
+            sleep $((attempt * 5))
+          done
       - name: Set Redshift Ginkgo AWS Credentials
         if: matrix.destination == 'redshift'
         run: |
@@ -212,7 +226,14 @@ jobs:
           go-version-file: 'go.mod'
           cache: false
       - run: go version
-      - run: go mod download # Not required, used to segregate module download vs test times
+      - name: Download Go modules
+        run: |
+          for attempt in 1 2 3; do
+            go mod download && break
+            if [ "$attempt" = "3" ]; then exit 1; fi
+            echo "go mod download failed; retrying attempt $((attempt + 1)) of 3" >&2
+            sleep $((attempt * 5))
+          done
       - name: tests
         run: make test exclude="/rudder-server/(cluster|jobsdb|integration_test|processor|regulation-worker|router|services|suppression-backup-service|warehouse)"
         env:
@@ -301,7 +322,14 @@ jobs:
           go-version-file: 'go.mod'
           cache: false
       - run: go version
-      - run: go mod download
+      - name: Download Go modules
+        run: |
+          for attempt in 1 2 3; do
+            go mod download && break
+            if [ "$attempt" = "3" ]; then exit 1; fi
+            echo "go mod download failed; retrying attempt $((attempt + 1)) of 3" >&2
+            sleep $((attempt * 5))
+          done
       - name: Package Unit [ ${{ matrix.package }} ]
         env:
           TEST_KAFKA_CONFLUENT_CLOUD_HOST: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_HOST }}
