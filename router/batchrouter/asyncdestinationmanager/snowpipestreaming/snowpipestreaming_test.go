@@ -282,6 +282,37 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}, mockApi.channelReq)
 	})
 
+	t.Run("Upload aborts all jobs when discards channel creation reports bad request", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"RUDDER_DISCARDS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{
+						Success:              false,
+						Code:                 internalapi.ErrUnknownError,
+						SnowflakeAPIMessage:  "bad request",
+						SnowflakeAPIHttpCode: http.StatusBadRequest,
+					}, nil
+				},
+			},
+		}
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			ImportingJobIDs: []int64{1},
+			Destination:     destination,
+			FileName:        "testdata/successful_records.txt",
+		})
+		require.Equal(t, []int64{1}, output.AbortJobIDs)
+		require.Equal(t, 1, output.AbortCount)
+		require.Contains(t, output.AbortReason, "abort error")
+		require.Contains(t, output.AbortReason, "bad request")
+		require.Empty(t, output.FailedJobIDs)
+		require.Zero(t, output.FailedCount)
+		require.Equal(t, "test-destination", output.DestinationID)
+	})
+
 	t.Run("Upload not able to create event channel", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)

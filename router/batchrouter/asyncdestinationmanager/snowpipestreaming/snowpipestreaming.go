@@ -198,7 +198,7 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 		)
 
 		if errors.Is(err, errAbort) {
-			return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", errAbort).Error())
+			return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
 		}
 		return m.failedJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
 	}
