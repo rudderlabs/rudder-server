@@ -2,6 +2,7 @@ package snowpipestreaming
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -35,6 +36,7 @@ type mockAPI struct {
 	createChannelOutputMap map[string]func() (*model.ChannelResponse, error)
 	deleteChannelOutputMap map[string]func() error
 	insertOutputMap        map[string]func() (*model.InsertResponse, error)
+	getStatusOutputMap     map[string]func() (*model.StatusResponse, error)
 	getBulkStatusOutputMap map[string]func() (*model.BulkStatusResponse, error)
 }
 
@@ -49,6 +51,10 @@ func (m *mockAPI) DeleteChannel(_ context.Context, channelID string, _ bool) err
 
 func (m *mockAPI) Insert(_ context.Context, channelID string, _ *model.InsertRequest) (*model.InsertResponse, error) {
 	return m.insertOutputMap[channelID]()
+}
+
+func (m *mockAPI) GetStatus(_ context.Context, channelID string) (*model.StatusResponse, error) {
+	return m.getStatusOutputMap[channelID]()
 }
 
 func (m *mockAPI) GetBulkStatus(_ context.Context, channelIDs []string) (*model.BulkStatusResponse, error) {
@@ -2650,6 +2656,106 @@ func TestSnowpipeStreaming(t *testing.T) {
 							"test-products-channel": {Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"},
 						},
 					}, nil
+				},
+			},
+			// At the threshold the channel is re-checked via single-channel status.
+			// It reports valid, so the channel is treated as genuinely stuck.
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+		}
+
+		now := time.Now().UTC()
+		sm.now = func() time.Time { return now }
+
+		first := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
+		require.True(t, first.InProgress)
+
+		now = now.Add(1 * time.Hour)
+		second := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
+		require.False(t, second.InProgress)
+		require.True(t, second.Complete)
+		require.Equal(t, http.StatusOK, second.StatusCode)
+		require.True(t, second.HasFailed)
+		require.JSONEq(t, second.FailedJobParameters, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"events still in progress after threshold: 1h0m0s > 15m0s","count":2}]`)
+	})
+
+	t.Run("Poll recovers invalid channel at threshold without stuck-pipeline alert", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			// Bulk status silently reports the broken channel as valid (snowflake-ingest-java#1154).
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"},
+						},
+					}, nil
+				},
+			},
+			// Single-channel status surfaces the real state: the channel is invalid.
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: false, Success: false}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+		}
+
+		now := time.Now().UTC()
+		sm.now = func() time.Time { return now }
+
+		first := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
+		require.True(t, first.InProgress)
+
+		now = now.Add(1 * time.Hour)
+		second := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
+		require.False(t, second.InProgress)
+		require.True(t, second.Complete)
+		require.Equal(t, http.StatusOK, second.StatusCode)
+		require.True(t, second.HasFailed)
+		// Failed via the per-channel invalid path, not the stuck-pipeline path.
+		require.JSONEq(t, second.FailedJobParameters, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"channel reported invalid by per-channel status check after threshold","count":2}]`)
+	})
+
+	t.Run("Poll treats inconclusive single-channel check at threshold as stuck", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"},
+						},
+					}, nil
+				},
+			},
+			// Single-channel status check errors out: we cannot confirm invalidity,
+			// so the channel is treated as genuinely stuck (fail-safe).
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, errors.New("service unavailable")
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
