@@ -282,6 +282,30 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}, mockApi.channelReq)
 	})
 
+	t.Run("Upload aborts discards channel on auth error with meaningful reason", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"RUDDER_DISCARDS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: false, Code: internalapi.ErrAuthenticationFailed}, nil
+				},
+			},
+		}
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			ImportingJobIDs: []int64{1},
+			Destination:     destination,
+			FileName:        "testdata/successful_records.txt",
+		})
+		require.Equal(t, []int64{1}, output.AbortJobIDs)
+		require.Equal(t, 1, output.AbortCount)
+		// The abort reason must carry the underlying auth cause, not just the generic "abort error".
+		require.Contains(t, output.AbortReason, "validation or authorization error")
+		require.Empty(t, output.FailedJobIDs)
+	})
+
 	t.Run("Upload not able to create event channel", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -3418,6 +3442,52 @@ func TestSnowpipeStreaming(t *testing.T) {
 				}
 			})
 		}
+	})
+
+	t.Run("provideInProgressImportInfos - channel recreation auth error fast-fails as abort", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+
+		sm.api = &mockAPI{
+			// Bulk status reports the channel invalid, forcing the recovery/recreation path.
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-channel-1": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-channel-1": {Valid: false, Success: true, Offset: "100"},
+						},
+					}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-channel-1": func() error { return nil },
+			},
+			// Recreation fails with an auth error (e.g. a rotated RSA key).
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"USERS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: false, Code: internalapi.ErrAuthenticationFailed}, nil
+				},
+			},
+		}
+
+		info := &importInfo{ChannelID: "test-channel-1", Offset: "100", Table: "USERS", Count: 5}
+		inProgress := sm.provideInProgressImportInfos(context.Background(), []*importInfo{info})
+
+		// Fast-fail: not left in progress, so it never reaches the stuck-pipeline threshold.
+		require.Empty(t, inProgress)
+
+		failed, ok := sm.polledImportInfoMap["test-channel-1"]
+		require.True(t, ok)
+		require.True(t, failed.Failed)
+		// Reason carries the auth cause, not the misleading generic/stuck message.
+		require.Contains(t, failed.Reason, "validation or authorization error")
+		require.NotContains(t, failed.Reason, "events still in progress after threshold")
+
+		// The invalid recreated channel must not be cached.
+		_, cached := sm.channelCache.Load("USERS")
+		require.False(t, cached)
 	})
 
 	t.Run("provideInProgressImportInfos with bulk status enabled", func(t *testing.T) {

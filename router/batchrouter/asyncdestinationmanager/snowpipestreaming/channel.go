@@ -120,13 +120,25 @@ func (m *Manager) createChannel(
 		}
 		m.channelCache.Store(tableName, resp)
 		return resp, nil
+	default:
+		return nil, classifyFailedChannelResponse(resp)
+	}
+}
+
+// classifyFailedChannelResponse maps a non-success CreateChannel response to an error.
+// Validation/authorization failures and unsupported-column failures are wrapped with errAbort
+// (terminal, non-retryable); all other codes yield a generic (retryable) error.
+// It is shared by the upload path (createChannel) and the poll recovery path
+// (handleChannelRecoveryPostBulkStatus) so both classify auth errors identically.
+func classifyFailedChannelResponse(resp *model.ChannelResponse) error {
+	switch resp.Code {
 	case internalapi.ErrValidationError, internalapi.ErrAuthenticationFailed, internalapi.ErrRoleDoesNotExistOrNotAuthorized, internalapi.ErrDatabaseDoesNotExistOrNotAuthorized:
-		return nil, fmt.Errorf("%w: validation or authorization error", errAbort)
+		return fmt.Errorf("%w: validation or authorization error", errAbort)
 	default:
 		if resp.SnowflakeAPIHttpCode == internalapi.ApiStatusUnsupportedColumn {
-			return nil, fmt.Errorf("%w: creating channel with code %s, message: %s and error: %s", errAbort, resp.Code, resp.SnowflakeAPIMessage, resp.Error)
+			return fmt.Errorf("%w: creating channel with code %s, message: %s and error: %s", errAbort, resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 		}
-		return nil, fmt.Errorf("creating channel with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)
+		return fmt.Errorf("creating channel with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 	}
 }
 

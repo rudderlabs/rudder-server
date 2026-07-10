@@ -198,7 +198,7 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 		)
 
 		if errors.Is(err, errAbort) {
-			return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", errAbort).Error())
+			return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
 		}
 		return m.failedJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
 	}
@@ -964,6 +964,14 @@ func (m *Manager) handleChannelRecoveryPostBulkStatus(ctx context.Context, info 
 	recreatedChannel, recreateErr := m.api.CreateChannel(ctx, req)
 	if recreateErr != nil {
 		return nil, fmt.Errorf("recreating channel: %w", recreateErr)
+	}
+	// A non-transport failure (e.g. ERR_AUTHENTICATION_FAILED after a credential change) is
+	// surfaced here with success=false and an empty channel id. Classify it before caching or
+	// polling status: auth/authorization failures become errAbort so the import fails fast with
+	// a meaningful reason instead of caching an invalid channel and getting stuck until the
+	// stuck-pipeline threshold.
+	if !recreatedChannel.Success {
+		return nil, fmt.Errorf("recreating channel: %w", classifyFailedChannelResponse(recreatedChannel))
 	}
 	m.channelCache.Store(info.Table, recreatedChannel)
 
