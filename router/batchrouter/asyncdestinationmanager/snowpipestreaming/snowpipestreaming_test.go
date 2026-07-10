@@ -282,6 +282,37 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}, mockApi.channelReq)
 	})
 
+	t.Run("Upload aborts all jobs when discards channel creation reports bad request", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"RUDDER_DISCARDS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{
+						Success:              false,
+						Code:                 internalapi.ErrUnknownError,
+						SnowflakeAPIMessage:  "bad request",
+						SnowflakeAPIHttpCode: http.StatusBadRequest,
+					}, nil
+				},
+			},
+		}
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			ImportingJobIDs: []int64{1},
+			Destination:     destination,
+			FileName:        "testdata/successful_records.txt",
+		})
+		require.Equal(t, []int64{1}, output.AbortJobIDs)
+		require.Equal(t, 1, output.AbortCount)
+		require.Contains(t, output.AbortReason, "abort error")
+		require.Contains(t, output.AbortReason, "bad request")
+		require.Empty(t, output.FailedJobIDs)
+		require.Zero(t, output.FailedCount)
+		require.Equal(t, "test-destination", output.DestinationID)
+	})
+
 	t.Run("Upload not able to create event channel", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -337,6 +368,83 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "importing",
 		}).LastValue())
 		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+	})
+
+	t.Run("Upload aborts event channel jobs when channel creation response reports bad request", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.channelCache.Store("PRODUCTS", productsChannelResponse)
+
+		sm.api = &mockAPI{
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"USERS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{
+						Success:              false,
+						Code:                 internalapi.ErrUnknownError,
+						SnowflakeAPIMessage:  "bad request",
+						SnowflakeAPIHttpCode: http.StatusBadRequest,
+					}, nil
+				},
+			},
+			insertOutputMap: map[string]func() (*model.InsertResponse, error){
+				"test-products-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel"},
+					}, nil
+				},
+			},
+		}
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    "testdata/successful_records.txt",
+		})
+		require.Equal(t, []int64{1002, 1004}, output.ImportingJobIDs)
+		require.Equal(t, 2, output.ImportingCount)
+		require.Equal(t, []int64{1001, 1003}, output.AbortJobIDs)
+		require.Equal(t, 2, output.AbortCount)
+		require.Contains(t, output.AbortReason, "bad request")
+		require.Empty(t, output.FailedJobIDs)
+		require.Zero(t, output.FailedCount)
+		require.Empty(t, output.FailedReason)
+		require.Equal(t, "test-destination", output.DestinationID)
+		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "importing",
+		}).LastValue())
+		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "aborted",
+		}).LastValue())
+		require.EqualValues(t, 0, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
 			"destType":      "SNOWPIPE_STREAMING",
@@ -1063,7 +1171,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.ChannelResponse{
 						Success:              false,
 						SnowflakeAPIMessage:  "Unknown error occurred",
-						SnowflakeAPIHttpCode: internalapi.ApiStatusUnsupportedColumn,
+						SnowflakeAPIHttpCode: http.StatusBadRequest,
 					}, nil
 				},
 			},

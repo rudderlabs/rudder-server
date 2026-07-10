@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
@@ -123,7 +124,7 @@ func (m *Manager) createChannel(
 	case internalapi.ErrValidationError, internalapi.ErrAuthenticationFailed, internalapi.ErrRoleDoesNotExistOrNotAuthorized, internalapi.ErrDatabaseDoesNotExistOrNotAuthorized:
 		return nil, fmt.Errorf("%w: validation or authorization error", errAbort)
 	default:
-		if resp.SnowflakeAPIHttpCode == internalapi.ApiStatusUnsupportedColumn {
+		if resp.SnowflakeAPIHttpCode == http.StatusBadRequest {
 			return nil, fmt.Errorf("%w: creating channel with code %s, message: %s and error: %s", errAbort, resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 		}
 		return nil, fmt.Errorf("creating channel with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)
