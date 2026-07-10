@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.80.1](https://github.com/rudderlabs/rudder-server/compare/v1.80.0...v1.80.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* classify reverse-ETL sources from config for MAR metering ([#7159](https://github.com/rudderlabs/rudder-server/issues/7159)) ([8e026e3](https://github.com/rudderlabs/rudder-server/commit/8e026e3a3441db07368d8074d0d58e7a7bab21af))
+
 ## [1.80.0](https://github.com/rudderlabs/rudder-server/compare/v1.79.0...v1.80.0) (2026-07-06)
 
 
