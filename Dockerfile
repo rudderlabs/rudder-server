@@ -22,12 +22,7 @@ WORKDIR /rudder-server
 COPY go.mod .
 COPY go.sum .
 
-RUN for attempt in 1 2 3; do \
-        go mod download && break; \
-        if [ "$attempt" = "3" ]; then exit 1; fi; \
-        echo "go mod download failed; retrying attempt $((attempt + 1)) of 3" >&2; \
-        sleep $((attempt * 5)); \
-    done
+RUN go mod download
 
 COPY . .
 
