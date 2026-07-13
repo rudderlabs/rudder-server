@@ -34,8 +34,9 @@ const (
 	activationRecordsTable = "activation_records_reports"
 
 	// retlSourceCategory is the SourceDefinition.Category of reverse-ETL ("warehouse
-	// actions") sources, stamped by the gateway into a job's source_category param.
-	// MAR meters activation records from these sources only.
+	// actions") sources. MAR meters activation records from these sources only; the
+	// classification is resolved from the source's config category (via the source_id ->
+	// category map passed to GenerateReportsFromJobs), not from the job's source_category param.
 	retlSourceCategory = "warehouse"
 )
 
@@ -66,7 +67,7 @@ type ActivationRecord struct {
 
 // ActivationRecordsReporter is the interface to report monthly active records (MAR).
 type ActivationRecordsReporter interface {
-	GenerateReportsFromJobs(jobs []*jobsdb.JobT) []*ActivationRecord
+	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceCategoriesBySourceID map[string]string) []*ActivationRecord
 	ReportActivationRecords(ctx context.Context, reports []*ActivationRecord, tx *txn.Tx) error
 	MigrateDatabase(dbConn string, conf *config.Config) error
 }
@@ -130,7 +131,10 @@ func (u *UniqueActivationRecordsReporter) MigrateDatabase(dbConn string, conf *c
 
 // GenerateReportsFromJobs aggregates activation records from a batch of jobs.
 // It is FAIL-CLOSED: jobs missing fingerprint or origin are skipped (counted via stats).
-func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT) []*ActivationRecord {
+// sourceCategoriesBySourceID maps a source_id to its SourceDefinition.Category (from the
+// backend config); reverse-ETL classification is done via this map rather than the job's
+// source_category param, which is not populated on every ingestion path.
+func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceCategoriesBySourceID map[string]string) []*ActivationRecord {
 	if len(jobs) == 0 {
 		return nil
 	}
@@ -144,24 +148,16 @@ func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb
 			continue
 		}
 
-		// MAR meters reverse-ETL (warehouse) sources only. Classify by the source
-		// category the gateway stamps from SourceDefinition.Category, rather than
-		// relying solely on the fingerprint gate below: this prevents a client from
-		// being metered by stamping context.activation.fingerprint on a non-rETL
-		// (e.g. event-stream) source. Non-rETL is the expected majority of traffic,
-		// so skip it silently — no per-job skip stat on the hot path. Gated before
-		// resolving source_id so event-stream jobs bail out without the extra parse.
-		sourceCategory := jsonparser.GetStringOrEmpty(job.Parameters, "source_category")
-		if !strings.EqualFold(sourceCategory, retlSourceCategory) {
-			continue
-		}
-
 		sourceID := jsonparser.GetStringOrEmpty(job.Parameters, "source_id")
-		if sourceID == "" {
-			u.log.Warnn("source_id not found in job parameters",
-				obskit.WorkspaceID(job.WorkspaceId),
-				logger.NewIntField("jobId", job.JobID))
-			u.recordSkip("missing_source")
+
+		// MAR meters reverse-ETL (warehouse) sources only. Classify by the source's
+		// SourceDefinition.Category from the backend config (looked up by source_id), NOT
+		// the job's source_category param: the internal-batch ingestion path leaves that
+		// param empty, so trusting it would under-count. This also prevents a client from
+		// being metered by stamping context.activation.fingerprint on a non-rETL source.
+		// A missing or unknown source_id resolves to "" here and is skipped. Non-rETL is
+		// the expected majority of traffic, so skip it silently — no per-job skip stat.
+		if !strings.EqualFold(sourceCategoriesBySourceID[sourceID], retlSourceCategory) {
 			continue
 		}
 

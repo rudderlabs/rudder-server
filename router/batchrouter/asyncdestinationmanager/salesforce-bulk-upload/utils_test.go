@@ -186,22 +186,23 @@ func TestSalesforceBulk_createCSVFile_NumericNoScientificNotation(t *testing.T) 
 }
 
 func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
+	// Transform encodes explicit nulls as the #N/A sentinel, which must reach
+	// the CSV cell unchanged so Salesforce clears the field. An absent field
+	// renders as an empty cell, which Salesforce ignores (leaves unchanged).
 	jobs := []SalesforceAsyncJob{
 		{
 			Message: map[string]any{
-				"Email":     "middle@example.com",
+				"Email":     "clear@example.com",
 				"FirstName": "Mid",
-				"LastName":  nil,
+				"LastName":  "#N/A",
 				"Phone":     "555-0001",
 			},
 			Metadata: SalesforceJobMetadata{JobID: 1},
 		},
 		{
 			Message: map[string]any{
-				"Email":     "trailing@example.com",
-				"FirstName": "End",
-				"LastName":  "User",
-				"Phone":     nil,
+				"Email":    "absent-fields@example.com",
+				"LastName": "Only",
 			},
 			Metadata: SalesforceJobMetadata{JobID: 2},
 		},
@@ -219,8 +220,8 @@ func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, records, 3)
 	require.Equal(t, []string{"Email", "FirstName", "LastName", "Phone"}, records[0])
-	require.Equal(t, []string{"middle@example.com", "Mid", "", "555-0001"}, records[1])
-	require.Equal(t, []string{"trailing@example.com", "End", "User", ""}, records[2])
+	require.Equal(t, []string{"clear@example.com", "Mid", "#N/A", "555-0001"}, records[1])
+	require.Equal(t, []string{"absent-fields@example.com", "", "Only", ""}, records[2])
 }
 
 func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {

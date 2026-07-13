@@ -198,7 +198,7 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 		)
 
 		if errors.Is(err, errAbort) {
-			return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", errAbort).Error())
+			return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
 		}
 		return m.failedJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
 	}
@@ -701,15 +701,39 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 			return common.PollStatusResponse{InProgress: true}
 		}
 
-		m.logger.Warnn("Stuck snowpipe pipeline detected",
-			logger.NewDurationField("duration", duration),
-			logger.NewDurationField("threshold", threshold),
-			logger.NewStringField("importID", pollInput.ImportId),
-		)
+		// The bulk-status endpoint can silently report a server-side broken channel as valid=true
+		// (snowflake-ingest-java#1154), so a channel that looks in-progress here may actually be invalid.
+		// Re-check each in-progress channel via the single-channel status endpoint, which surfaces the
+		// failure. Channels confirmed invalid are recovered through the normal failed-import path without
+		// raising the stuck-pipeline alert; genuinely stuck (or inconclusive) channels keep the alert.
+		var stuckInfos []*importInfo
 		for _, info := range inProgressInfos {
-			info.Failed = true
-			info.Reason = fmt.Sprintf("events still in progress after threshold: %s > %s", duration, threshold)
-			m.polledImportInfoMap[info.ChannelID] = info
+			if invalid := m.isChannelInvalidViaSingleStatus(ctx, info.ChannelID); invalid {
+				m.logger.Warnn("Channel reported invalid at stuck threshold; recovering without stuck-pipeline alert",
+					logger.NewStringField("channelId", info.ChannelID),
+					logger.NewStringField("table", info.Table),
+					logger.NewDurationField("duration", duration),
+					logger.NewDurationField("threshold", threshold),
+				)
+				info.Failed = true
+				info.Reason = "channel reported invalid by per-channel status check after threshold"
+				m.polledImportInfoMap[info.ChannelID] = info
+				continue
+			}
+			stuckInfos = append(stuckInfos, info)
+		}
+
+		if len(stuckInfos) > 0 {
+			m.logger.Warnn("Stuck snowpipe pipeline detected",
+				logger.NewDurationField("duration", duration),
+				logger.NewDurationField("threshold", threshold),
+				logger.NewStringField("importID", pollInput.ImportId),
+			)
+			for _, info := range stuckInfos {
+				info.Failed = true
+				info.Reason = fmt.Sprintf("events still in progress after threshold: %s > %s", duration, threshold)
+				m.polledImportInfoMap[info.ChannelID] = info
+			}
 		}
 	}
 
@@ -797,6 +821,22 @@ func (m *Manager) getBulkStatusForChannel(ctx context.Context, channelID string)
 		return nil, fmt.Errorf("channel status not found in bulk status response for channel: %s", channelID)
 	}
 	return statusRes, nil
+}
+
+// isChannelInvalidViaSingleStatus re-checks a single channel through the per-channel status endpoint,
+// which (unlike bulk status) surfaces server-side channel failures. It returns true only when the
+// channel is positively confirmed invalid. On an inconclusive result (request error) it returns false
+// so the caller falls back to stuck-pipeline handling (fail-safe: never suppress a genuine alert).
+func (m *Manager) isChannelInvalidViaSingleStatus(ctx context.Context, channelID string) bool {
+	statusRes, err := m.api.GetStatus(ctx, channelID)
+	if err != nil {
+		m.logger.Warnn("Failed to get single-channel status at stuck threshold; treating as stuck",
+			logger.NewStringField("channelId", channelID),
+			obskit.Error(err),
+		)
+		return false
+	}
+	return !statusRes.Valid || !statusRes.Success
 }
 
 func (m *Manager) getBulkStatus(ctx context.Context, channelIDs []string) (map[string]*model.StatusResponse, []string, error) {

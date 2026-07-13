@@ -149,11 +149,13 @@ func TestAPI(t *testing.T) {
 			manager := api.New(config.New(), stats.NOP, successSnowpipeServer.URL, &mockRequestDoer{
 				response: &http.Response{
 					StatusCode: http.StatusBadRequest,
-					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{}`))},
+					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{"message":"bad request"}`))},
 				},
 			})
 			res, err := manager.CreateChannel(ctx, ccr)
 			require.Error(t, err)
+			require.Contains(t, err.Error(), `{"message":"bad request"}`)
+			require.Contains(t, err.Error(), "invalid status code for create channel: 400")
 			require.Nil(t, res)
 		})
 		t.Run("Request failure (invalid response)", func(t *testing.T) {
