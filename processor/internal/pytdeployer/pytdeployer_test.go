@@ -43,7 +43,7 @@ func TestRunOnEphemeral(t *testing.T) {
 		require.Equal(t, LabelPurposeValue, created.Labels[LabelPurpose])
 		require.Equal(t, "ws-1", created.Labels[LabelWorkspaceID], "the workspace label must be lowercased")
 		require.Equal(t, "pytransformer/pyt:latest", created.Spec.Template.Spec.Containers[0].Image)
-		require.Equal(t, "kata", *created.Spec.Template.Spec.RuntimeClassName)
+		require.Equal(t, "kata-fc", *created.Spec.Template.Spec.RuntimeClassName)
 		require.EqualValues(t, 1, *created.Spec.Replicas)
 		require.Equal(t, int32(pytContainerPort), created.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort)
 
@@ -67,7 +67,74 @@ func TestRunOnEphemeral(t *testing.T) {
 		require.Equal(t, []corev1.EnvVar{
 			{Name: "CONFIG_BACKEND_URL", Value: "http://cb:5000"},
 			{Name: "LOG_LEVEL", Value: "info"},
+			{Name: "WORKSPACE_ID", Value: "ws-1"},
 		}, created.Spec.Template.Spec.Containers[0].Env)
+	})
+
+	t.Run("injects WORKSPACE_ID per run, overriding any config-provided value", func(t *testing.T) {
+		conf := baseConfig()
+		conf.Set("Processor.pytDeployer.pytTestEnv", map[string]any{"WORKSPACE_ID": "from-config"})
+		cs := newAutoReadyClient()
+		dep := newDeployer(t, cs, conf)
+
+		_, _, err := dep.RunOnEphemeral(context.Background(), "WS-Original-Case",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.NoError(t, err)
+
+		require.Equal(t, []corev1.EnvVar{{Name: "WORKSPACE_ID", Value: "WS-Original-Case"}},
+			findCreatedDeployment(t, cs).Spec.Template.Spec.Containers[0].Env,
+			"exactly one WORKSPACE_ID, the per-run one, original case (matching prod)")
+	})
+
+	t.Run("matches the production pod spec: kata scheduling, hardening, probes, resources, /tmp", func(t *testing.T) {
+		cs := newAutoReadyClient()
+		dep := newDeployer(t, cs, baseConfig())
+
+		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.NoError(t, err)
+
+		spec := findCreatedDeployment(t, cs).Spec.Template.Spec
+		require.Equal(t, "kata", spec.NodeSelector["karpenter.sh/nodepool"], "must land on the Kata nodepool")
+		require.Contains(t, spec.Tolerations, corev1.Toleration{
+			Key: "dedicated", Operator: corev1.TolerationOpEqual, Value: "kata", Effect: corev1.TaintEffectNoSchedule,
+		}, "the Kata nodepool is tainted; without the toleration the pod stays Pending forever")
+		require.Equal(t, []corev1.LocalObjectReference{{Name: "regcred"}}, spec.ImagePullSecrets)
+		require.False(t, *spec.EnableServiceLinks, "other tenants' Services must not be injected into the untrusted pod's env")
+
+		container := spec.Containers[0]
+		sc := container.SecurityContext
+		require.True(t, *sc.RunAsNonRoot)
+		require.EqualValues(t, 1000, *sc.RunAsUser)
+		require.True(t, *sc.ReadOnlyRootFilesystem, "read-only root fs is one of the sandbox layers")
+		require.False(t, *sc.AllowPrivilegeEscalation)
+
+		require.Equal(t, "/health/ready", container.ReadinessProbe.HTTPGet.Path,
+			"without a readinessProbe, waitReady would resolve before the app serves")
+		require.Equal(t, "/health/live", container.LivenessProbe.HTTPGet.Path)
+
+		require.Equal(t, "250m", container.Resources.Requests.Cpu().String())
+		require.Equal(t, "500Mi", container.Resources.Requests.Memory().String())
+
+		require.Contains(t, container.VolumeMounts, corev1.VolumeMount{Name: "tmp", MountPath: "/tmp"},
+			"read-only root fs needs a writable /tmp")
+		require.Len(t, spec.Volumes, 1)
+		require.NotNil(t, spec.Volumes[0].EmptyDir)
+
+		require.EqualValues(t, pytMetricsPort, container.Ports[1].ContainerPort, "prom metrics port for scraping")
+	})
+
+	t.Run("applies config-provided pod annotations", func(t *testing.T) {
+		conf := baseConfig()
+		conf.Set("Processor.pytDeployer.pytTestPodAnnotations", map[string]any{"egress.rudderstack.com/policy": "restricted"})
+		cs := newAutoReadyClient()
+		dep := newDeployer(t, cs, conf)
+
+		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.NoError(t, err)
+		require.Equal(t, "restricted",
+			findCreatedDeployment(t, cs).Spec.Template.Annotations["egress.rudderstack.com/policy"])
 	})
 
 	t.Run("applies config-provided labels to the Deployment, pod template, and Service", func(t *testing.T) {
@@ -122,6 +189,8 @@ func TestRunOnEphemeral(t *testing.T) {
 
 		created := findCreatedDeployment(t, cs)
 		require.Equal(t, "us-east-1a", created.Spec.Template.Spec.NodeSelector["topology.kubernetes.io/zone"])
+		require.Equal(t, "kata", created.Spec.Template.Spec.NodeSelector["karpenter.sh/nodepool"],
+			"the zone entry must merge with, not replace, the base nodeSelector")
 		require.Equal(t, "us-east-1a", created.Spec.Template.Labels["zone"],
 			"the pod must carry the zone label the Service selector matches on")
 
@@ -131,16 +200,16 @@ func TestRunOnEphemeral(t *testing.T) {
 			"every Service selector entry must be present on the pod labels or the Service selects nothing")
 	})
 
-	t.Run("no zone configured: no nodeSelector and no zone in the Service selector", func(t *testing.T) {
+	t.Run("no zone configured: no zone nodeSelector entry and no zone in the Service selector", func(t *testing.T) {
 		cs := newAutoReadyClient()
-		dep := newDeployer(t, cs, baseConfig()) // baseConfig sets no ZONE/REGION
+		dep := newDeployer(t, cs, baseConfig()) // baseConfig sets no AVAILABILITY_ZONE
 
 		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
 			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
 		require.NoError(t, err)
 
 		created := findCreatedDeployment(t, cs)
-		require.Empty(t, created.Spec.Template.Spec.NodeSelector,
+		require.NotContains(t, created.Spec.Template.Spec.NodeSelector, "topology.kubernetes.io/zone",
 			"an empty-valued zone nodeSelector would match no nodes at all")
 		require.NotContains(t, findCreatedService(t, cs).Spec.Selector, "zone")
 	})

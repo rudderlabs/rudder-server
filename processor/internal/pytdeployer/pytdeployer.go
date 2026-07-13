@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -97,28 +98,64 @@ func New(conf *config.Config, log logger.Logger, opts ...Opt) (Deployer, error) 
 // deployerConfig holds the settings loaded once at construction time (per the
 // house rule: reloadable values go through config.ValueLoader, registered
 // once in loadConfig and Load()ed where used, never re-registered per
-// request). readinessTimeout, env, and labels are reloadable so they can
-// change without a restart.
+// request). readinessTimeout, env, labels, and podAnnotations are reloadable
+// so they can change without a restart.
+//
+// The defaults mirror the production per-workspace pytransformer chart
+// (rudderstack-operator helm-charts/rudderstack-aux/charts/pytransformer), so
+// an ephemeral test pod schedules and runs the same way a prod pyt pod does
+// unless a key is deliberately overridden.
 type deployerConfig struct {
 	namespace        string
 	image            string
+	imagePullSecret  string
 	runtimeClass     string
 	zone             string
+	nodeSelector     map[string]string
+	cpuRequest       resource.Quantity
+	memoryRequest    resource.Quantity
 	readinessTimeout config.ValueLoader[time.Duration]
 	env              config.ValueLoader[map[string]any]
 	labels           config.ValueLoader[map[string]any]
+	podAnnotations   config.ValueLoader[map[string]any]
 	retry            retrySettings
 }
 
 func loadConfig(conf *config.Config) deployerConfig {
 	return deployerConfig{
-		namespace:        conf.GetStringVar("", "Processor.pytDeployer.pytTestNamespace"),
-		image:            conf.GetStringVar("", "Processor.pytDeployer.pytTestImage"),
-		runtimeClass:     conf.GetStringVar("kata", "Processor.pytDeployer.pytTestRuntimeClass"),
-		zone:             conf.GetStringVar("", "AVAILABILITY_ZONE"),
+		namespace:       conf.GetStringVar("test-pytransformer", "Processor.pytDeployer.pytTestNamespace"),
+		image:           conf.GetStringVar("", "Processor.pytDeployer.pytTestImage"),
+		imagePullSecret: conf.GetStringVar("regcred", "Processor.pytDeployer.pytTestImagePullSecret"),
+		runtimeClass:    conf.GetStringVar("kata-fc", "Processor.pytDeployer.pytTestRuntimeClass"),
+		zone:            conf.GetStringVar("", "AVAILABILITY_ZONE"),
+		nodeSelector: toStringMap(conf.GetStringMapVar(
+			map[string]any{"karpenter.sh/nodepool": "kata"}, "Processor.pytDeployer.pytTestNodeSelector")),
+		cpuRequest:       parseQuantity(conf.GetStringVar("250m", "Processor.pytDeployer.pytTestCPURequest"), "250m"),
+		memoryRequest:    parseQuantity(conf.GetStringVar("500Mi", "Processor.pytDeployer.pytTestMemoryRequest"), "500Mi"),
 		readinessTimeout: conf.GetReloadableDurationVar(60, time.Second, "Processor.pytDeployer.pytTestReadinessTimeout"),
 		env:              conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestEnv"),
 		labels:           conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestLabels"),
+		podAnnotations:   conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestPodAnnotations"),
 		retry:            newRetrySettings(conf),
 	}
+}
+
+// toStringMap flattens a config map (map[string]any) into map[string]string.
+func toStringMap(m map[string]any) map[string]string {
+	out := make(map[string]string, len(m))
+	for name, value := range m {
+		out[name] = fmt.Sprint(value)
+	}
+	return out
+}
+
+// parseQuantity parses an operator-supplied resource quantity, falling back to
+// the built-in default (a literal we control, so MustParse is safe) rather
+// than blocking the processor from starting on a malformed value.
+func parseQuantity(value, fallback string) resource.Quantity {
+	q, err := resource.ParseQuantity(value)
+	if err != nil {
+		return resource.MustParse(fallback)
+	}
+	return q
 }

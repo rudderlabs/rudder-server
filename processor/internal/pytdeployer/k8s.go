@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -26,6 +27,7 @@ import (
 
 const (
 	pytContainerPort      = 8080
+	pytMetricsPort        = 9091
 	runIDLength           = 8
 	readinessPollInterval = 250 * time.Millisecond
 	// deleteTimeout bounds the best-effort cleanup so it can't hang the
@@ -103,15 +105,80 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 	labels[LabelPurpose] = LabelPurposeValue
 	labels[LabelWorkspaceID] = strings.ToLower(workspaceID)
 
+	// WORKSPACE_ID is per-run, so it is injected programmatically on top of the
+	// config-provided env (prod injects it per workspace the same way). The
+	// config layer lowercases map keys and envVars uppercases them back, so
+	// delete the only collision form before setting ours.
+	env := maps.Clone(d.config.env.Load())
+	if env == nil {
+		env = map[string]any{}
+	}
+	delete(env, "workspace_id")
+	env["WORKSPACE_ID"] = workspaceID
+
+	// the test pod runs the untrusted code, so it must schedule the same way (Kata nodepool selector +
+	// toleration) and carry the same sandbox hardening (non-root, read-only
+	// root filesystem with a writable /tmp emptyDir, no privilege escalation).
+	// The readinessProbe is what makes waitReady meaningful — without it a
+	// container is Ready the moment it starts, before uvicorn serves.
 	podSpec := corev1.PodSpec{
-		RestartPolicy:    corev1.RestartPolicyAlways,
-		RuntimeClassName: &d.config.runtimeClass,
+		RestartPolicy: corev1.RestartPolicyAlways,
+		// Service links would inject every Service in the shared test
+		// namespace (other tenants' concurrent test runs included) into the
+		// untrusted pod's env.
+		EnableServiceLinks: lo.ToPtr(false),
+		NodeSelector:       maps.Clone(d.config.nodeSelector),
+		ImagePullSecrets:   []corev1.LocalObjectReference{{Name: d.config.imagePullSecret}},
 		Containers: []corev1.Container{{
 			Name:  "pytransformer",
 			Image: d.config.image,
-			Ports: []corev1.ContainerPort{{ContainerPort: pytContainerPort}},
-			Env:   envVars(d.config.env.Load()),
+			SecurityContext: &corev1.SecurityContext{
+				RunAsNonRoot:             lo.ToPtr(true),
+				RunAsUser:                lo.ToPtr(int64(1000)),
+				RunAsGroup:               lo.ToPtr(int64(1000)),
+				ReadOnlyRootFilesystem:   lo.ToPtr(true),
+				AllowPrivilegeEscalation: lo.ToPtr(false),
+			},
+			Ports: []corev1.ContainerPort{
+				{Name: "http", ContainerPort: pytContainerPort, Protocol: corev1.ProtocolTCP},
+				{Name: "prom", ContainerPort: pytMetricsPort, Protocol: corev1.ProtocolTCP},
+			},
+			LivenessProbe: &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{Path: "/health/live", Port: intstr.FromInt32(pytContainerPort)},
+				},
+				InitialDelaySeconds: 10, PeriodSeconds: 30, TimeoutSeconds: 10, FailureThreshold: 3,
+			},
+			ReadinessProbe: &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{Path: "/health/ready", Port: intstr.FromInt32(pytContainerPort)},
+				},
+				InitialDelaySeconds: 5, PeriodSeconds: 10, TimeoutSeconds: 5, FailureThreshold: 3,
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    d.config.cpuRequest,
+					corev1.ResourceMemory: d.config.memoryRequest,
+				},
+			},
+			Env:          envVars(env),
+			VolumeMounts: []corev1.VolumeMount{{Name: "tmp", MountPath: "/tmp"}},
 		}},
+		Volumes: []corev1.Volume{{
+			Name:         "tmp",
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		}},
+	}
+	if d.config.runtimeClass != "" {
+		podSpec.RuntimeClassName = &d.config.runtimeClass
+		// The Kata nodepool is tainted; without this toleration (mirroring the
+		// chart's kata.tolerations) the pod stays Pending forever.
+		podSpec.Tolerations = []corev1.Toleration{{
+			Key:      "dedicated",
+			Operator: corev1.TolerationOpEqual,
+			Value:    "kata",
+			Effect:   corev1.TaintEffectNoSchedule,
+		}}
 	}
 
 	// Zone pinning: schedule the pod onto the configured zone and scope the
@@ -124,9 +191,14 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 	podLabels := maps.Clone(labels)
 	svcSelector := maps.Clone(labels)
 	if d.config.zone != "" {
-		podSpec.NodeSelector = map[string]string{"topology.kubernetes.io/zone": d.config.zone}
+		podSpec.NodeSelector["topology.kubernetes.io/zone"] = d.config.zone
 		podLabels["zone"] = d.config.zone
 		svcSelector["zone"] = d.config.zone
+	}
+
+	var podAnnotations map[string]string
+	if annotations := d.config.podAnnotations.Load(); len(annotations) > 0 {
+		podAnnotations = toStringMap(annotations)
 	}
 
 	replicas := int32(1)
@@ -136,7 +208,7 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
+				ObjectMeta: metav1.ObjectMeta{Labels: podLabels, Annotations: podAnnotations},
 				Spec:       podSpec,
 			},
 		},
@@ -146,8 +218,10 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 		Spec: corev1.ServiceSpec{
 			Selector: svcSelector,
 			Ports: []corev1.ServicePort{{
+				Name:       "http",
 				Port:       pytContainerPort,
 				TargetPort: intstr.FromInt32(pytContainerPort),
+				Protocol:   corev1.ProtocolTCP,
 			}},
 		},
 	}
@@ -164,10 +238,14 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 // pytransformer's env is uppercase snake-case throughout, so uppercasing
 // restores the intended names regardless of the case the operator wrote.
 func envVars(env map[string]any) []corev1.EnvVar {
-	names := slices.Sorted(maps.Keys(env))
+	upper := make(map[string]string, len(env))
+	for name, value := range env {
+		upper[strings.ToUpper(name)] = fmt.Sprint(value)
+	}
+	names := slices.Sorted(maps.Keys(upper))
 	vars := make([]corev1.EnvVar, 0, len(names))
 	for _, name := range names {
-		vars = append(vars, corev1.EnvVar{Name: strings.ToUpper(name), Value: fmt.Sprint(env[name])})
+		vars = append(vars, corev1.EnvVar{Name: name, Value: upper[name]})
 	}
 	return vars
 }
