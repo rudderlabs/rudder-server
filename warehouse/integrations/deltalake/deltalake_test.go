@@ -92,7 +92,7 @@ func mintTemporaryS3Credentials(t *testing.T, accessKeyID, accessKey string) (id
 	awsConfig, err := awsutil.CreateAWSConfig(ctx, &awsutil.SessionConfig{
 		AccessKeyID: accessKeyID,
 		AccessKey:   accessKey,
-		Region:      "us-east-1",
+		Region:      misc.GetRegionHint(),
 		Service:     "s3",
 	})
 	require.NoError(t, err)
