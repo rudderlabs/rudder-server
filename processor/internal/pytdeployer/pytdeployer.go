@@ -103,6 +103,7 @@ type deployerConfig struct {
 	namespace        string
 	image            string
 	runtimeClass     string
+	zone             string
 	readinessTimeout config.ValueLoader[time.Duration]
 	env              config.ValueLoader[map[string]any]
 	retry            retrySettings
@@ -113,6 +114,7 @@ func loadConfig(conf *config.Config) deployerConfig {
 		namespace:        conf.GetStringVar("", "Processor.pytDeployer.pytTestNamespace"),
 		image:            conf.GetStringVar("", "Processor.pytDeployer.pytTestImage"),
 		runtimeClass:     conf.GetStringVar("kata", "Processor.pytDeployer.pytTestRuntimeClass"),
+		zone:             conf.GetStringVar("", "AVAILABILITY_ZONE"),
 		readinessTimeout: conf.GetReloadableDurationVar(60, time.Second, "Processor.pytDeployer.pytTestReadinessTimeout"),
 		env:              conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestEnv"),
 		retry:            newRetrySettings(conf),

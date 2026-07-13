@@ -70,6 +70,41 @@ func TestRunOnEphemeral(t *testing.T) {
 		}, created.Spec.Template.Spec.Containers[0].Env)
 	})
 
+	t.Run("pins the pod to the configured zone and scopes the Service selector to it", func(t *testing.T) {
+		conf := baseConfig()
+		conf.Set("AVAILABILITY_ZONE", "us-east-1a")
+		cs := newAutoReadyClient()
+		dep := newDeployer(t, cs, conf)
+
+		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.NoError(t, err)
+
+		created := findCreatedDeployment(t, cs)
+		require.Equal(t, "us-east-1a", created.Spec.Template.Spec.NodeSelector["topology.kubernetes.io/zone"])
+		require.Equal(t, "us-east-1a", created.Spec.Template.Labels["zone"],
+			"the pod must carry the zone label the Service selector matches on")
+
+		createdSvc := findCreatedService(t, cs)
+		require.Equal(t, "us-east-1a", createdSvc.Spec.Selector["zone"])
+		require.Subset(t, created.Spec.Template.Labels, createdSvc.Spec.Selector,
+			"every Service selector entry must be present on the pod labels or the Service selects nothing")
+	})
+
+	t.Run("no zone configured: no nodeSelector and no zone in the Service selector", func(t *testing.T) {
+		cs := newAutoReadyClient()
+		dep := newDeployer(t, cs, baseConfig()) // baseConfig sets no ZONE/REGION
+
+		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.NoError(t, err)
+
+		created := findCreatedDeployment(t, cs)
+		require.Empty(t, created.Spec.Template.Spec.NodeSelector,
+			"an empty-valued zone nodeSelector would match no nodes at all")
+		require.NotContains(t, findCreatedService(t, cs).Spec.Selector, "zone")
+	})
+
 	t.Run("uses a unique name per run so two concurrent runs create distinct objects", func(t *testing.T) {
 		cs := newAutoReadyClient()
 		dep := newDeployer(t, cs, baseConfig())

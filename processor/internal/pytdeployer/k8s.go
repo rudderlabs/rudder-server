@@ -108,6 +108,21 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 		}},
 	}
 
+	// Zone pinning: schedule the pod onto the configured zone and scope the
+	// Service to zone-labeled pods. The zone label must go on the pod
+	// template whenever it is in the Service selector — a selector entry with
+	// no matching pod label would select nothing and every forward would
+	// fail. Skipped entirely when no zone is configured (e.g. single-zone
+	// clusters, local dev): an empty-valued nodeSelector would only match
+	// nodes labeled with an empty zone, i.e. nothing.
+	podLabels := maps.Clone(labels)
+	svcSelector := maps.Clone(labels)
+	if d.config.zone != "" {
+		podSpec.NodeSelector = map[string]string{"topology.kubernetes.io/zone": d.config.zone}
+		podLabels["zone"] = d.config.zone
+		svcSelector["zone"] = d.config.zone
+	}
+
 	replicas := int32(1)
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: d.config.namespace, Labels: labels},
@@ -115,7 +130,7 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 				Spec:       podSpec,
 			},
 		},
@@ -123,7 +138,7 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: d.config.namespace, Labels: labels},
 		Spec: corev1.ServiceSpec{
-			Selector: labels,
+			Selector: svcSelector,
 			Ports: []corev1.ServicePort{{
 				Port:       pytContainerPort,
 				TargetPort: intstr.FromInt32(pytContainerPort),
