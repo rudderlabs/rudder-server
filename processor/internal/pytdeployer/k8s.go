@@ -91,11 +91,17 @@ func (d *k8sDeployer) RunOnEphemeral(
 // egress IPs, ...) are routed to their production pyt deployment by cpservice
 // instead — they never reach this builder.
 func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployment, *corev1.Service) {
-	labels := map[string]string{
-		LabelManagedBy:   LabelManagedByValue,
-		LabelPurpose:     LabelPurposeValue,
-		LabelWorkspaceID: strings.ToLower(workspaceID),
+	// Config-provided labels are seeded first, and the contract labels are
+	// stamped after them, so config can never override what the reaper and the
+	// RBAC key on. (Note: the config layer lowercases map keys — fine for
+	// labels, whose keys are conventionally lowercase.)
+	labels := make(map[string]string)
+	for name, value := range d.config.labels.Load() {
+		labels[name] = fmt.Sprint(value)
 	}
+	labels[LabelManagedBy] = LabelManagedByValue
+	labels[LabelPurpose] = LabelPurposeValue
+	labels[LabelWorkspaceID] = strings.ToLower(workspaceID)
 
 	podSpec := corev1.PodSpec{
 		RestartPolicy:    corev1.RestartPolicyAlways,

@@ -70,6 +70,46 @@ func TestRunOnEphemeral(t *testing.T) {
 		}, created.Spec.Template.Spec.Containers[0].Env)
 	})
 
+	t.Run("applies config-provided labels to the Deployment, pod template, and Service", func(t *testing.T) {
+		conf := baseConfig()
+		conf.Set("Processor.pytDeployer.pytTestLabels", map[string]any{"team": "data-platform", "app.kubernetes.io/part-of": "transformations"})
+		cs := newAutoReadyClient()
+		dep := newDeployer(t, cs, conf)
+
+		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.NoError(t, err)
+
+		created := findCreatedDeployment(t, cs)
+		require.Equal(t, "data-platform", created.Labels["team"])
+		require.Equal(t, "transformations", created.Labels["app.kubernetes.io/part-of"])
+		require.Equal(t, "data-platform", created.Spec.Template.Labels["team"])
+
+		createdSvc := findCreatedService(t, cs)
+		require.Equal(t, "data-platform", createdSvc.Labels["team"])
+		require.Subset(t, created.Spec.Template.Labels, createdSvc.Spec.Selector,
+			"every Service selector entry must be present on the pod labels or the Service selects nothing")
+	})
+
+	t.Run("config labels can never override the reaper's label contract", func(t *testing.T) {
+		conf := baseConfig()
+		conf.Set("Processor.pytDeployer.pytTestLabels", map[string]any{
+			LabelPurpose:   "not-a-test",
+			LabelManagedBy: "someone-else",
+		})
+		cs := newAutoReadyClient()
+		dep := newDeployer(t, cs, conf)
+
+		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.NoError(t, err)
+
+		created := findCreatedDeployment(t, cs)
+		require.Equal(t, LabelPurposeValue, created.Labels[LabelPurpose],
+			"the contract labels are stamped after config labels, so config must lose")
+		require.Equal(t, LabelManagedByValue, created.Labels[LabelManagedBy])
+	})
+
 	t.Run("pins the pod to the configured zone and scopes the Service selector to it", func(t *testing.T) {
 		conf := baseConfig()
 		conf.Set("AVAILABILITY_ZONE", "us-east-1a")

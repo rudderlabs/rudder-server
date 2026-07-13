@@ -97,8 +97,8 @@ func New(conf *config.Config, log logger.Logger, opts ...Opt) (Deployer, error) 
 // deployerConfig holds the settings loaded once at construction time (per the
 // house rule: reloadable values go through config.ValueLoader, registered
 // once in loadConfig and Load()ed where used, never re-registered per
-// request). readinessTimeout and env are reloadable so they can change
-// without a restart.
+// request). readinessTimeout, env, and labels are reloadable so they can
+// change without a restart.
 type deployerConfig struct {
 	namespace        string
 	image            string
@@ -106,6 +106,7 @@ type deployerConfig struct {
 	zone             string
 	readinessTimeout config.ValueLoader[time.Duration]
 	env              config.ValueLoader[map[string]any]
+	labels           config.ValueLoader[map[string]any]
 	retry            retrySettings
 }
 
@@ -117,6 +118,7 @@ func loadConfig(conf *config.Config) deployerConfig {
 		zone:             conf.GetStringVar("", "AVAILABILITY_ZONE"),
 		readinessTimeout: conf.GetReloadableDurationVar(60, time.Second, "Processor.pytDeployer.pytTestReadinessTimeout"),
 		env:              conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestEnv"),
+		labels:           conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestLabels"),
 		retry:            newRetrySettings(conf),
 	}
 }
