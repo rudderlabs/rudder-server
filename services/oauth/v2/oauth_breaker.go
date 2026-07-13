@@ -10,6 +10,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
 
 // OAuthBreakerOptions contains configuration options for the OAuth breaker.
@@ -177,12 +179,16 @@ func (b *accountBreaker) withErrBreaker(fn func() (json.RawMessage, StatusCodeEr
 	if _, ebErr := b.errorBreaker.Execute(func() (any, error) {
 		// nested success breaker
 		result, err = fn()
-		if err != nil {
+		// invalid_grant is a permanent user error (token revoked), not a
+		// control-plane health signal — the control plane responded correctly.
+		// Don't let it trip the error breaker, but still propagate it to the caller.
+		if err != nil && !errors.Is(err, common.ErrInvalidGrant) {
 			b.mu.Lock()
 			b.lastError = err
 			b.mu.Unlock()
+			return nil, err
 		}
-		return nil, err
+		return nil, nil
 	}); ebErr != nil && // need to return the last error if the breaker is open
 		(errors.Is(ebErr, gobreaker.ErrOpenState) || errors.Is(ebErr, gobreaker.ErrTooManyRequests)) {
 		b.mu.RLock()
