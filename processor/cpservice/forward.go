@@ -3,6 +3,7 @@ package cpservice
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"time"
 
@@ -12,13 +13,15 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
-	"github.com/rudderlabs/rudder-server/processor/internal/pytscaler"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/user_transformer"
 	proto "github.com/rudderlabs/rudder-server/proto/processor"
 )
 
-// endpointForward is a Forwarder method bound to a single pyt endpoint.
-type endpointForward func(ctx context.Context, workspaceID string, payload []byte) (int, []byte, error)
+// endpointForward is a Forwarder method bound to a single pyt endpoint,
+// parameterized over the target baseURL so the same function value can be
+// pointed at either a freshly created ephemeral pyt Service or the shared
+// static AST deployment.
+type endpointForward func(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error)
 
 // validWorkspaceID gates what Forward substitutes into the pyt URL template and
 // the pyt Deployment name. Anything beyond alphanumerics and hyphens must be
@@ -30,13 +33,17 @@ var validWorkspaceID = regexp.MustCompile(`^[a-zA-Z0-9-]{1,59}$`)
 
 // Forward is the processor's only CP-facing RPC. It maps req.Op to the matching
 // pyt endpoint and forwards req.Payload to it, returning the pyt response status
-// and body unchanged. When explicit scaling is enabled (pytTestScalingEnabled)
-// it first ensures the workspace's pyt Deployment is scaled up; by default the
-// scaler is a no-op and waking the pyt is left to its own traffic-based
-// autoscaling.
+// and body unchanged.
 //
-// It does not poll for pyt readiness: the forward itself retries the cold-start
-// window within the caller's deadline (see [user_transformer.Client.Test] et al).
+// Execution ops (test, testRun) run arbitrary customer Python, so each request
+// gets its own fresh ephemeral pyt Deployment + Service via s.deployer,
+// created just for this call and deleted best-effort afterwards — see
+// [pytdeployer.Deployer.RunOnEphemeral]. Workspaces flagged via
+// Processor.pytTestOverrides.<workspaceID>.routeToProduction are the
+// exception: their tests forward to the workspace's production pyt deployment
+// instead (see [Service.isProdRouted]).
+// AST ops (testLibrary, extractLibs) never execute user code; they go straight
+// to the shared static AST deployment with no k8s API involvement.
 func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*proto.ForwardResponse, error) {
 	start := time.Now()
 	defer func() {
@@ -46,7 +53,7 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 			logger.NewDurationField("duration", time.Since(start)),
 		)
 	}()
-	forward, ok := s.forwardForOp(req.Op)
+	forward, isExecutionOp, ok := s.forwardForOp(req.Op)
 	if !ok {
 		return nil, status.Errorf(codes.InvalidArgument, "unknown op %v", req.Op)
 	}
@@ -54,22 +61,35 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 		return nil, status.Error(codes.InvalidArgument, "workspaceId must be 1-59 alphanumeric or hyphen characters")
 	}
 
-	if err := s.ensureScaled(ctx, req.WorkspaceId); err != nil {
-		s.log.Errorn("scaling pyt deployment",
-			obskit.WorkspaceID(req.WorkspaceId), obskit.Error(err))
-		if errors.Is(err, pytscaler.ErrDeploymentNotFound) {
-			return nil, status.Errorf(codes.FailedPrecondition, "no pyt deployment for workspace %s", req.WorkspaceId)
-		}
-		return nil, status.Errorf(codes.Internal, "scaling pyt deployment: %v", err)
+	var statusCode int
+	var body []byte
+	var err error
+	switch {
+	case isExecutionOp && s.isProdRouted(req.WorkspaceId):
+		// Config-flagged workspace: its tests must run with prod-only config
+		// (custom DNS, pinned egress IPs, ...) the generic ephemeral spec can't
+		// reproduce, so forward straight to the workspace's production pyt
+		// deployment. No readiness wait — the forwarder's cold-start retries
+		// ride out the prod deployment's scale-from-zero window.
+		statusCode, body, err = forward(ctx,
+			user_transformer.PerWorkspacePyTBaseURL(s.prodURLTemplate, req.WorkspaceId),
+			req.WorkspaceId, req.Payload)
+	case isExecutionOp:
+		statusCode, body, err = s.deployer.RunOnEphemeral(ctx, req.WorkspaceId,
+			func(ctx context.Context, baseURL string) (int, []byte, error) {
+				return forward(ctx, baseURL, req.WorkspaceId, req.Payload)
+			})
+	default:
+		statusCode, body, err = forward(ctx, s.staticASTURL, req.WorkspaceId, req.Payload)
 	}
-
-	statusCode, body, err := forward(ctx, req.WorkspaceId, req.Payload)
 	if err != nil {
-		if errors.Is(err, user_transformer.ErrPerWorkspacePyTNotEnabled) {
-			return nil, status.Error(codes.FailedPrecondition, "per-workspace PyT is not enabled")
-		}
 		s.log.Warnn("forwarding to pyt",
 			obskit.WorkspaceID(req.WorkspaceId), logger.NewStringField("op", req.Op.String()), obskit.Error(err))
+		// Misconfiguration (no deployer, no static AST URL) is a precondition
+		// failure, not a transient outage — callers must not retry it away.
+		if errors.Is(err, errDeployerUnavailable) || errors.Is(err, user_transformer.ErrEmptyForwardBaseURL) {
+			return nil, status.Errorf(codes.FailedPrecondition, "forwarding to pyt: %v", err)
+		}
 		return nil, status.Errorf(codes.Unavailable, "forwarding to pyt: %v", err)
 	}
 	return &proto.ForwardResponse{
@@ -78,36 +98,37 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 	}, nil
 }
 
-// ensureScaled scales the workspace's pyt Deployment up to the configured target
-// when it is currently at zero replicas; the scaler's EnsureScaled is idempotent
-// and a no-op when the deployment is already running.
-//
-// Concurrent Forwards for the same workspace are collapsed by singleflight so a
-// burst of test requests triggers a single scale check — not one per request —
-// avoiding redundant cluster-wide List calls against the k8s API. Requests for
-// different workspaces key on distinct IDs and run independently. (The shared
-// call runs on the first caller's ctx; a fast scale makes that window
-// negligible, and on error the caller retries the whole RPC.)
-func (s *Service) ensureScaled(ctx context.Context, workspaceID string) error {
-	_, err, _ := s.scaleGroup.Do(workspaceID, func() (any, error) {
-		return nil, s.scaler.EnsureScaled(ctx, workspaceID, s.scaleTo.Load())
-	})
-	return err
+// isProdRouted reports whether the workspace's test traffic is config-flagged
+// to run on its production pyt deployment instead of an ephemeral one. The
+// flag is a per-workspace reloadable bool —
+// Processor.pytTestOverrides.<workspaceID>.routeToProduction, falling back to
+// the global Processor.pytTestOverrides.routeToProduction — so a workspace
+// (or all of them) can be flagged without a restart. Config keys are matched
+// case-insensitively, mirroring the lowercased deployment-name convention.
+// workspaceID has already passed validWorkspaceID in Forward, so it is safe
+// to interpolate into the key.
+func (s *Service) isProdRouted(workspaceID string) bool {
+	return s.conf.GetReloadableBoolVar(false,
+		fmt.Sprintf("Processor.pytTestOverrides.%s.routeToProduction", workspaceID),
+		"Processor.pytTestOverrides.routeToProduction").Load()
 }
 
-// forwardForOp resolves a control-plane op to the Forwarder method that serves it,
-// reporting false for an unspecified or unknown op.
-func (s *Service) forwardForOp(op proto.Op) (endpointForward, bool) {
+// forwardForOp resolves a control-plane op to the Forwarder method that serves
+// it and whether that op is an execution op (runs user code: on a fresh
+// ephemeral deployment, or on the workspace's production pyt deployment when
+// config-flagged) versus an AST-only op (forwarded straight to the static AST
+// deployment). Reports ok=false for an unspecified or unknown op.
+func (s *Service) forwardForOp(op proto.Op) (fn endpointForward, isExecutionOp, ok bool) {
 	switch op {
 	case proto.Op_OP_TEST:
-		return s.forwarder.Test, true
+		return s.forwarder.Test, true, true
 	case proto.Op_OP_TEST_RUN:
-		return s.forwarder.TestRun, true
+		return s.forwarder.TestRun, true, true
 	case proto.Op_OP_TEST_LIBRARY:
-		return s.forwarder.TestLibrary, true
+		return s.forwarder.TestLibrary, false, true
 	case proto.Op_OP_EXTRACT_LIBS:
-		return s.forwarder.ExtractLibs, true
+		return s.forwarder.ExtractLibs, false, true
 	default:
-		return nil, false
+		return nil, false, false
 	}
 }

@@ -1930,7 +1930,7 @@ func TestColdStartCounter(t *testing.T) {
 }
 
 func TestForwardTest(t *testing.T) {
-	t.Run("each endpoint method posts to its pyt path and returns status/body", func(t *testing.T) {
+	t.Run("each endpoint method posts to baseURL+path and returns status/body", func(t *testing.T) {
 		var gotPath, gotContentType string
 		var gotBody []byte
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1942,13 +1942,10 @@ func TestForwardTest(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		conf := config.New()
-		conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
-		client := user_transformer.New(conf, logger.NOP, stats.NOP)
+		client := user_transformer.New(config.New(), logger.NOP, stats.NOP)
 
 		cases := map[string]struct {
-			call     func(context.Context, string, []byte) (int, []byte, error)
+			call     func(context.Context, string, string, []byte) (int, []byte, error)
 			wantPath string
 		}{
 			"Test":        {client.Test, "/test"},
@@ -1958,7 +1955,7 @@ func TestForwardTest(t *testing.T) {
 		}
 		for name, tc := range cases {
 			t.Run(name, func(t *testing.T) {
-				status, body, err := tc.call(context.Background(), "WS-1", []byte(`{"code":"x"}`))
+				status, body, err := tc.call(context.Background(), srv.URL, "WS-1", []byte(`{"code":"x"}`))
 				require.NoError(t, err)
 				require.Equal(t, http.StatusCreated, status)
 				require.JSONEq(t, `{"ok":true}`, string(body))
@@ -1983,13 +1980,10 @@ func TestForwardTest(t *testing.T) {
 
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
-		conf := config.New()
-		conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
-		client := user_transformer.New(conf, logger.NOP, statsStore,
+		client := user_transformer.New(config.New(), logger.NOP, statsStore,
 			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
 
-		status, body, err := client.Test(context.Background(), "ws-1", []byte(`{}`))
+		status, body, err := client.Test(context.Background(), srv.URL, "ws-1", []byte(`{}`))
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, status)
 		require.Equal(t, "done", string(body))
@@ -2020,13 +2014,10 @@ func TestForwardTest(t *testing.T) {
 
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
-		conf := config.New()
-		conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
-		client := user_transformer.New(conf, logger.NOP, statsStore,
+		client := user_transformer.New(config.New(), logger.NOP, statsStore,
 			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
 
-		status, body, err := client.Test(context.Background(), "ws-1", []byte(`{}`))
+		status, body, err := client.Test(context.Background(), srv.URL, "ws-1", []byte(`{}`))
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, status)
 		require.Equal(t, "done", string(body))
@@ -2043,33 +2034,20 @@ func TestForwardTest(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		conf := config.New()
-		conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
-		client := user_transformer.New(conf, logger.NOP, stats.NOP,
+		client := user_transformer.New(config.New(), logger.NOP, stats.NOP,
 			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
 
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
-		_, _, err := client.Test(ctx, "ws-1", []byte(`{}`))
+		_, _, err := client.Test(ctx, srv.URL, "ws-1", []byte(`{}`))
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 		require.Greater(t, attempts.Load(), int32(1), "the 503 should have been retried until the deadline")
 	})
 
-	t.Run("returns ErrPerWorkspacePyTNotEnabled without dialing when the feature is off", func(t *testing.T) {
-		var calls atomic.Int32
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls.Add(1)
-		}))
-		defer srv.Close()
+	t.Run("returns ErrEmptyForwardBaseURL without dialing when baseURL is empty", func(t *testing.T) {
+		client := user_transformer.New(config.New(), logger.NOP, stats.NOP)
 
-		conf := config.New()
-		// perWorkspacePyTEnabled left at its default (false).
-		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
-		client := user_transformer.New(conf, logger.NOP, stats.NOP)
-
-		_, _, err := client.Test(context.Background(), "ws-1", []byte(`{}`))
-		require.ErrorIs(t, err, user_transformer.ErrPerWorkspacePyTNotEnabled)
-		require.Zero(t, calls.Load(), "nothing must be dialed when the feature is off")
+		_, _, err := client.Test(context.Background(), "", "ws-1", []byte(`{}`))
+		require.ErrorIs(t, err, user_transformer.ErrEmptyForwardBaseURL)
 	})
 }

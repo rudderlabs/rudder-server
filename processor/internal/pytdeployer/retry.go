@@ -1,4 +1,4 @@
-package pytscaler
+package pytdeployer
 
 import (
 	"context"
@@ -22,11 +22,11 @@ type retrySettings struct {
 
 func newRetrySettings(conf *config.Config) retrySettings {
 	return retrySettings{
-		initialInterval:     conf.GetDurationVar(200, time.Millisecond, "Processor.UserTransformer.pytScaler.retry.initialInterval"),
-		maxInterval:         conf.GetDurationVar(3, time.Second, "Processor.UserTransformer.pytScaler.retry.maxInterval"),
-		maxElapsedTime:      conf.GetDurationVar(30, time.Second, "Processor.UserTransformer.pytScaler.retry.maxElapsedTime"),
-		multiplier:          conf.GetFloat64Var(1.5, "Processor.UserTransformer.pytScaler.retry.multiplier"),
-		randomizationFactor: conf.GetFloat64Var(0.5, "Processor.UserTransformer.pytScaler.retry.randomizationFactor"),
+		initialInterval:     conf.GetDurationVar(200, time.Millisecond, "Processor.pytDeployer.retry.initialInterval"),
+		maxInterval:         conf.GetDurationVar(3, time.Second, "Processor.pytDeployer.retry.maxInterval"),
+		maxElapsedTime:      conf.GetDurationVar(30, time.Second, "Processor.pytDeployer.retry.maxElapsedTime"),
+		multiplier:          conf.GetFloat64Var(1.5, "Processor.pytDeployer.retry.multiplier"),
+		randomizationFactor: conf.GetFloat64Var(0.5, "Processor.pytDeployer.retry.randomizationFactor"),
 	}
 }
 

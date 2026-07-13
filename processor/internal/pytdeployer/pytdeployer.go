@@ -1,0 +1,120 @@
+// Package pytdeployer runs a single Python-transformation-test request on a
+// fresh, ephemeral rudder-pytransformer Deployment + Service, then tears both
+// down.
+//
+// The test flow's execution ops (test, testRun) run arbitrary, untrusted
+// customer Python. Rather than reusing a workspace's shared production pyt
+// Deployment (the superseded pytscaler design), every execution request gets
+// its own pod, created just for that request and destroyed after it — one
+// customer per pod. [Deployer.RunOnEphemeral] owns the full lifecycle: create,
+// wait for readiness, forward, delete (best-effort).
+//
+// A separate reaper CronJob (INFRA-2) cleans up anything this package fails to
+// delete. It, and the RBAC that scopes what the processor's service account
+// may touch (INFRA-1), key off the labels [New] stamps on every object this
+// package creates — see [LabelManagedBy] and [LabelPurpose]. Their values are
+// a cross-component contract: do not change them.
+//
+// The Kubernetes dependency is hidden behind the [Deployer] interface so
+// callers can inject a fake clientset in tests. Unlike pytscaler, there is no
+// no-op implementation: execution ops run untrusted code, so a caller that
+// cannot build a real deployer has no safe fallback target and must fail the
+// request instead.
+package pytdeployer
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"k8s.io/client-go/kubernetes"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+)
+
+// Cross-component label contract. The reaper CronJob (INFRA-2) and the RBAC
+// scoping the processor's service account (INFRA-1) both key off these exact
+// keys/values — do not change them without updating those components too.
+const (
+	// LabelManagedBy identifies objects created by the processor.
+	LabelManagedBy = "app.kubernetes.io/managed-by"
+	// LabelManagedByValue is the value the processor stamps for LabelManagedBy.
+	LabelManagedByValue = "rudderstack-processor"
+	// LabelPurpose identifies why the processor created the object.
+	LabelPurpose = "rudderstack.com/purpose"
+	// LabelPurposeValue is the value the processor stamps for LabelPurpose on
+	// every ephemeral test Deployment/Service.
+	LabelPurposeValue = "pyt-test"
+	// LabelWorkspaceID carries the (lowercased) workspace ID for traceability.
+	LabelWorkspaceID = "rudderstack.com/workspace-id"
+)
+
+// Deployer runs a single test request on a fresh ephemeral pyt deployment.
+type Deployer interface {
+	// RunOnEphemeral creates a Deployment + Service in the configured test
+	// namespace, waits for the Deployment to report at least one ready
+	// replica, invokes forward against the ephemeral Service's base URL, then
+	// deletes both best-effort. forward's result (status/body/err) is
+	// returned even when the best-effort delete itself fails; a delete
+	// failure is logged, never surfaced to the caller — the reaper CronJob
+	// covers anything left behind.
+	RunOnEphemeral(ctx context.Context, workspaceID string, forward func(ctx context.Context, baseURL string) (int, []byte, error)) (int, []byte, error)
+}
+
+// Opt configures the k8s-backed Deployer built by [New].
+type Opt func(*k8sDeployer)
+
+// WithClientset injects a Kubernetes clientset instead of building an
+// in-cluster one. Used in tests with a fake clientset.
+func WithClientset(client kubernetes.Interface) Opt {
+	return func(d *k8sDeployer) { d.client = client }
+}
+
+// New builds a Kubernetes-backed [Deployer]. Unless a clientset is injected
+// via [WithClientset], it builds an in-cluster client (falling back to a
+// kubeconfig file when not running in-cluster) and returns an error if that
+// fails. Callers must not fall back to forwarding execution ops elsewhere on
+// error — there is no safe target for untrusted code without a real deployer.
+func New(conf *config.Config, log logger.Logger, opts ...Opt) (Deployer, error) {
+	d := &k8sDeployer{
+		log:    log.Child("pytdeployer"),
+		config: loadConfig(conf),
+	}
+	for _, opt := range opts {
+		opt(d)
+	}
+	if d.client == nil {
+		client, err := newInClusterClientset(conf)
+		if err != nil {
+			return nil, fmt.Errorf("building kubernetes client for ephemeral pyt deployments: %w", err)
+		}
+		d.client = client
+	}
+	return d, nil
+}
+
+// deployerConfig holds the settings loaded once at construction time (per the
+// house rule: reloadable values go through config.ValueLoader, registered
+// once in loadConfig and Load()ed where used, never re-registered per
+// request). readinessTimeout and env are reloadable so they can change
+// without a restart.
+type deployerConfig struct {
+	namespace        string
+	image            string
+	runtimeClass     string
+	readinessTimeout config.ValueLoader[time.Duration]
+	env              config.ValueLoader[map[string]any]
+	retry            retrySettings
+}
+
+func loadConfig(conf *config.Config) deployerConfig {
+	return deployerConfig{
+		namespace:        conf.GetStringVar("", "Processor.pytDeployer.pytTestNamespace"),
+		image:            conf.GetStringVar("", "Processor.pytDeployer.pytTestImage"),
+		runtimeClass:     conf.GetStringVar("kata", "Processor.pytDeployer.pytTestRuntimeClass"),
+		readinessTimeout: conf.GetReloadableDurationVar(60, time.Second, "Processor.pytDeployer.pytTestReadinessTimeout"),
+		env:              conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestEnv"),
+		retry:            newRetrySettings(conf),
+	}
+}

@@ -1,0 +1,245 @@
+package pytdeployer
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+)
+
+const (
+	pytContainerPort      = 8080
+	runIDLength           = 8
+	readinessPollInterval = 250 * time.Millisecond
+	// deleteTimeout bounds the best-effort cleanup so it can't hang the
+	// request past its own deadline even when ctx is already cancelled.
+	deleteTimeout = 15 * time.Second
+)
+
+type k8sDeployer struct {
+	client kubernetes.Interface
+	log    logger.Logger
+	config deployerConfig
+}
+
+// RunOnEphemeral implements [Deployer].
+func (d *k8sDeployer) RunOnEphemeral(
+	ctx context.Context,
+	workspaceID string,
+	forward func(ctx context.Context, baseURL string) (int, []byte, error),
+) (int, []byte, error) {
+	if d.config.namespace == "" {
+		return 0, nil, errors.New("pyt test namespace is not configured")
+	}
+	name := "pyt-test-" + rand.String(runIDLength)
+	dep, svc := d.buildResources(name, workspaceID)
+
+	if _, err := withRetry(ctx, d.config.retry, func() (*appsv1.Deployment, error) {
+		created, err := d.client.AppsV1().Deployments(d.config.namespace).Create(ctx, dep, metav1.CreateOptions{})
+		// The name is unique per run, so AlreadyExists can only mean our own
+		// previous attempt landed despite a transient error — treat as success.
+		if apierrors.IsAlreadyExists(err) {
+			return created, nil
+		}
+		return created, err
+	}); err != nil {
+		return 0, nil, fmt.Errorf("creating ephemeral pyt deployment %s/%s: %w", d.config.namespace, name, err)
+	}
+	if _, err := withRetry(ctx, d.config.retry, func() (*corev1.Service, error) {
+		created, err := d.client.CoreV1().Services(d.config.namespace).Create(ctx, svc, metav1.CreateOptions{})
+		if apierrors.IsAlreadyExists(err) {
+			return created, nil
+		}
+		return created, err
+	}); err != nil {
+		d.delete(ctx, name)
+		return 0, nil, fmt.Errorf("creating ephemeral pyt service %s/%s: %w", d.config.namespace, name, err)
+	}
+	// Delete runs regardless of what happens below — on a readiness timeout,
+	// a forward error, or success alike. It never changes the response
+	// returned to the caller; a failed delete is only logged.
+	defer d.delete(ctx, name)
+
+	if err := d.waitReady(ctx, name); err != nil {
+		return 0, nil, err
+	}
+
+	baseURL := fmt.Sprintf("http://%s.%s.svc:%d", name, d.config.namespace, pytContainerPort)
+	return forward(ctx, baseURL)
+}
+
+// buildResources builds the Deployment + Service for a single ephemeral run
+// from the generic spec (pytTestImage / pytTestEnv / pytTestRuntimeClass).
+// Workspaces whose tests can't run on the generic spec (custom DNS, pinned
+// egress IPs, ...) are routed to their production pyt deployment by cpservice
+// instead — they never reach this builder.
+func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployment, *corev1.Service) {
+	labels := map[string]string{
+		LabelManagedBy:   LabelManagedByValue,
+		LabelPurpose:     LabelPurposeValue,
+		LabelWorkspaceID: strings.ToLower(workspaceID),
+	}
+
+	podSpec := corev1.PodSpec{
+		RestartPolicy:    corev1.RestartPolicyAlways,
+		RuntimeClassName: &d.config.runtimeClass,
+		Containers: []corev1.Container{{
+			Name:  "pytransformer",
+			Image: d.config.image,
+			Ports: []corev1.ContainerPort{{ContainerPort: pytContainerPort}},
+			Env:   envVars(d.config.env.Load()),
+		}},
+	}
+
+	replicas := int32(1)
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: d.config.namespace, Labels: labels},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec:       podSpec,
+			},
+		},
+	}
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: d.config.namespace, Labels: labels},
+		Spec: corev1.ServiceSpec{
+			Selector: labels,
+			Ports: []corev1.ServicePort{{
+				Port:       pytContainerPort,
+				TargetPort: intstr.FromInt32(pytContainerPort),
+			}},
+		},
+	}
+	return dep, svc
+}
+
+// envVars converts the generic env map (map[string]any, as the config layer's
+// GetReloadableStringMapVar returns it) into a deterministically ordered
+// (sorted by name) slice so the generated PodSpec is stable across calls —
+// useful for tests asserting on the built object.
+//
+// Names are uppercased: the config layer (viper) lowercases map keys, which
+// would silently mangle env names ("LOG_LEVEL" arrives as "log_level").
+// pytransformer's env is uppercase snake-case throughout, so uppercasing
+// restores the intended names regardless of the case the operator wrote.
+func envVars(env map[string]any) []corev1.EnvVar {
+	names := slices.Sorted(maps.Keys(env))
+	vars := make([]corev1.EnvVar, 0, len(names))
+	for _, name := range names {
+		vars = append(vars, corev1.EnvVar{Name: strings.ToUpper(name), Value: fmt.Sprint(env[name])})
+	}
+	return vars
+}
+
+// waitReady polls the Deployment until it reports at least one ready
+// replica, bounded by min(ctx's deadline, the configured readiness timeout).
+func (d *k8sDeployer) waitReady(ctx context.Context, name string) error {
+	ctx, cancel := context.WithTimeout(ctx, d.config.readinessTimeout.Load())
+	defer cancel()
+
+	ticker := time.NewTicker(readinessPollInterval)
+	defer ticker.Stop()
+	var lastErr error
+	for {
+		dep, err := d.client.AppsV1().Deployments(d.config.namespace).Get(ctx, name, metav1.GetOptions{})
+		if err == nil && dep.Status.ReadyReplicas >= 1 {
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+		select {
+		case <-ctx.Done():
+			// lastErr distinguishes "pod just wasn't ready in time" from a
+			// persistent Get failure (RBAC, API outage) hiding behind the timeout.
+			return fmt.Errorf("waiting for ephemeral pyt deployment %s/%s to become ready: %w",
+				d.config.namespace, name, errors.Join(ctx.Err(), lastErr))
+		case <-ticker.C:
+		}
+	}
+}
+
+// delete removes the Deployment + Service best-effort: failures are logged,
+// never returned, so a cleanup problem never changes the response the caller
+// already has. It runs on its own bounded timeout, detached from ctx's
+// cancellation, so cleanup still gets a chance to run when ctx is already
+// done (deadline exceeded, caller gone).
+func (d *k8sDeployer) delete(ctx context.Context, name string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deleteTimeout)
+	defer cancel()
+
+	var errs []error
+	if _, err := withRetry(ctx, d.config.retry, func() (struct{}, error) {
+		return struct{}{}, d.client.AppsV1().Deployments(d.config.namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	}); err != nil && !apierrors.IsNotFound(err) {
+		errs = append(errs, fmt.Errorf("deleting deployment %s/%s: %w", d.config.namespace, name, err))
+	}
+	if _, err := withRetry(ctx, d.config.retry, func() (struct{}, error) {
+		return struct{}{}, d.client.CoreV1().Services(d.config.namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	}); err != nil && !apierrors.IsNotFound(err) {
+		errs = append(errs, fmt.Errorf("deleting service %s/%s: %w", d.config.namespace, name, err))
+	}
+	if len(errs) > 0 {
+		d.log.Errorn("cleaning up ephemeral pyt deployment; the reaper will collect any orphan",
+			logger.NewStringField("namespace", d.config.namespace),
+			logger.NewStringField("name", name),
+			obskit.Error(errors.Join(errs...)))
+	}
+}
+
+// newInClusterClientset builds a real Kubernetes clientset: in-cluster
+// config by default, falling back to a kubeconfig file for local dev. Moved
+// here from the superseded pytscaler package, which this package replaces.
+func newInClusterClientset(conf *config.Config) (kubernetes.Interface, error) {
+	cfg, err := restConfig(conf)
+	if err != nil {
+		return nil, err
+	}
+	client, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating kubernetes clientset: %w", err)
+	}
+	return client, nil
+}
+
+func restConfig(conf *config.Config) (*rest.Config, error) {
+	if conf.GetBoolVar(true, "Processor.pytDeployer.inCluster", "K8S_IN_CLUSTER") {
+		cfg, err := rest.InClusterConfig()
+		if err != nil {
+			return nil, fmt.Errorf("creating in-cluster kubernetes config: %w", err)
+		}
+		return cfg, nil
+	}
+	kubeConfigPath := conf.GetStringVar("", "Processor.pytDeployer.kubeConfigPath", "KUBECONFIG")
+	if kubeConfigPath == "" {
+		kubeConfigPath = clientcmd.RecommendedHomeFile
+	}
+	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeConfigPath},
+		&clientcmd.ConfigOverrides{},
+	).ClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("creating kubernetes config from %s: %w", kubeConfigPath, err)
+	}
+	return cfg, nil
+}
