@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	stsv2 "github.com/aws/aws-sdk-go-v2/service/sts"
 	dbsql "github.com/databricks/databricks-sql-go"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -20,6 +22,7 @@ import (
 
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
+	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -73,6 +76,33 @@ func deltaLakeTestCredentials(key string) (*testCredentials, error) {
 	return &credentials, nil
 }
 
+// mintTemporaryS3Credentials exchanges long-term static keys for temporary
+// (session-token-bearing) credentials via STS GetSessionToken.
+//
+// Deltalake performs the S3 COPY on Databricks using the S3A
+// TemporaryAWSCredentialsProvider, which requires a non-empty session token. In
+// production the useRudderStorage path resolves such temporary credentials from
+// the AWS SDK default chain (IRSA / pod identity). We mirror that here: mint a
+// session token from the static test keys and export it via the standard AWS_*
+// envs so the SDK default chain picks it up — instead of reintroducing any
+// application-specific credential env.
+func mintTemporaryS3Credentials(t *testing.T, accessKeyID, accessKey string) (id, secret, token string) {
+	t.Helper()
+	ctx := context.Background()
+	awsConfig, err := awsutil.CreateAWSConfig(ctx, &awsutil.SessionConfig{
+		AccessKeyID: accessKeyID,
+		AccessKey:   accessKey,
+		Region:      "us-east-1",
+		Service:     "s3",
+	})
+	require.NoError(t, err)
+	output, err := stsv2.NewFromConfig(awsConfig).GetSessionToken(ctx, &stsv2.GetSessionTokenInput{
+		DurationSeconds: aws.Int32(3600),
+	})
+	require.NoError(t, err)
+	return *output.Credentials.AccessKeyId, *output.Credentials.SecretAccessKey, *output.Credentials.SessionToken
+}
+
 func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
@@ -113,6 +143,12 @@ func TestIntegration(t *testing.T) {
 		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
+
+		// Temporary S3 credentials for the "use rudder storage" case, minted from
+		// the static test keys. Exported via the standard AWS_* envs so the AWS SDK
+		// default credential chain resolves them — mirroring the production
+		// IRSA/pod-identity path that also yields temporary, session-token creds.
+		rudderStorageAccessKeyID, rudderStorageSecretAccessKey, rudderStorageSessionToken := mintTemporaryS3Credentials(t, credentials.AccessKeyID, credentials.AccessKey)
 
 		expectedSchema := model.Schema{
 			"screens":       {"context_source_id": "string", "event_date": "date", "user_id": "string", "sent_at": "timestamp", "context_request_ip": "string", "original_timestamp": "timestamp", "url": "string", "context_source_type": "string", "_between": "string", "timestamp": "timestamp", "context_ip": "string", "context_destination_type": "string", "received_at": "timestamp", "title": "string", "uuid_ts": "timestamp", "context_destination_id": "string", "name": "string", "id": "string", "_as": "string"},
@@ -194,6 +230,51 @@ func TestIntegration(t *testing.T) {
 				configOverride: map[string]any{
 					"preferAppend":                false,
 					"enableHierarchicalNamespace": true,
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersMergeRecord(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "product_track"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "pages"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "screens"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "aliases"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "groups"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsMergeRecords(userIDFormat, sourceID, destinationID, destType))
+				},
+			},
+			{
+				name:           "Merge Mode with use rudder storage",
+				credentials:    credentials,
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-1.json",
+				useSameUserID:  true,
+				configOverride: map[string]any{
+					"useRudderStorage": true,
+					"useSTSTokens":     true,
+					"bucketName":       "",
+					"accessKeyID":      "",
+					"accessKey":        "",
+					"accountName":      "",
+					"accountKey":       "",
+					"containerName":    "",
+					"bucketProvider":   "S3",
+				},
+				additionalEnvs: func(destinationID string) map[string]string {
+					return map[string]string{
+						"AWS_ACCESS_KEY_ID":       rudderStorageAccessKeyID,
+						"AWS_SECRET_ACCESS_KEY":   rudderStorageSecretAccessKey,
+						"AWS_SESSION_TOKEN":       rudderStorageSessionToken,
+						"RUDDER_WAREHOUSE_BUCKET": credentials.BucketName,
+					}
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
 					t.Helper()
