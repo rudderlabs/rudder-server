@@ -275,13 +275,13 @@ func (pg *Postgres) DeleteBy(ctx context.Context, tableNames []string, params wa
 		logger.NewStringField("params", params.String()),
 	)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
+		sqlStatement := fmt.Sprintf(`DELETE FROM %[1]s.%[2]s WHERE
 		context_sources_job_run_id <> $1 AND
 		context_sources_task_run_id <> $2 AND
 		context_source_id = $3 AND
 		received_at < $4`,
-			pg.Namespace,
-			tb,
+			pq.QuoteIdentifier(pg.Namespace),
+			pq.QuoteIdentifier(tb),
 		)
 		pg.logger.Infon("PG: Deleting rows in table in postgres for PG",
 			logger.NewStringField(logfield.DestinationID, pg.Warehouse.Destination.ID),
