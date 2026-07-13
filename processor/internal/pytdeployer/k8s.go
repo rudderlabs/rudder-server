@@ -128,7 +128,11 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 		// untrusted pod's env.
 		EnableServiceLinks: lo.ToPtr(false),
 		NodeSelector:       maps.Clone(d.config.nodeSelector),
-		ImagePullSecrets:   []corev1.LocalObjectReference{{Name: d.config.imagePullSecret}},
+		// Tolerations come from config (default: the prod chart's kata
+		// toleration). They only permit scheduling, never force it, so they are
+		// applied regardless of whether the Kata RuntimeClass is enabled.
+		Tolerations:      slices.Clone(d.config.tolerations),
+		ImagePullSecrets: []corev1.LocalObjectReference{{Name: d.config.imagePullSecret}},
 		Containers: []corev1.Container{{
 			Name:  "pytransformer",
 			Image: d.config.image,
@@ -171,14 +175,6 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 	}
 	if d.config.runtimeClass != "" {
 		podSpec.RuntimeClassName = &d.config.runtimeClass
-		// The Kata nodepool is tainted; without this toleration (mirroring the
-		// chart's kata.tolerations) the pod stays Pending forever.
-		podSpec.Tolerations = []corev1.Toleration{{
-			Key:      "dedicated",
-			Operator: corev1.TolerationOpEqual,
-			Value:    "kata",
-			Effect:   corev1.TaintEffectNoSchedule,
-		}}
 	}
 
 	// Zone pinning: schedule the pod onto the configured zone and scope the

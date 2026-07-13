@@ -27,10 +27,12 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
@@ -49,6 +51,11 @@ const (
 	LabelPurposeValue = "pyt-test"
 	// LabelWorkspaceID carries the (lowercased) workspace ID for traceability.
 	LabelWorkspaceID = "rudderstack.com/workspace-id"
+
+	// defaultTolerationsJSON mirrors the prod pyt chart's kata.tolerations: the
+	// Kata nodepool is tainted, and without this toleration the pod stays Pending
+	// forever.
+	defaultTolerationsJSON = `[{"key":"dedicated","operator":"Equal","value":"kata","effect":"NoSchedule"}]`
 )
 
 // Deployer runs a single test request on a fresh ephemeral pyt deployment.
@@ -112,6 +119,7 @@ type deployerConfig struct {
 	runtimeClass     string
 	zone             string
 	nodeSelector     map[string]string
+	tolerations      []corev1.Toleration
 	cpuRequest       resource.Quantity
 	memoryRequest    resource.Quantity
 	readinessTimeout config.ValueLoader[time.Duration]
@@ -130,7 +138,8 @@ func loadConfig(conf *config.Config) deployerConfig {
 		zone:            conf.GetStringVar("", "AVAILABILITY_ZONE"),
 		nodeSelector: toStringMap(conf.GetStringMapVar(
 			map[string]any{"karpenter.sh/nodepool": "kata"}, "Processor.pytDeployer.pytTestNodeSelector")),
-		cpuRequest:       parseQuantity(conf.GetStringVar("250m", "Processor.pytDeployer.pytTestCPURequest"), "250m"),
+		tolerations:      loadTolerations(conf),
+		cpuRequest:       parseQuantity(conf.GetStringVar("200m", "Processor.pytDeployer.pytTestCPURequest"), "200m"),
 		memoryRequest:    parseQuantity(conf.GetStringVar("500Mi", "Processor.pytDeployer.pytTestMemoryRequest"), "500Mi"),
 		readinessTimeout: conf.GetReloadableDurationVar(60, time.Second, "Processor.pytDeployer.pytTestReadinessTimeout"),
 		env:              conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestEnv"),
@@ -158,4 +167,19 @@ func parseQuantity(value, fallback string) resource.Quantity {
 		return resource.MustParse(fallback)
 	}
 	return q
+}
+
+// loadTolerations parses Processor.pytDeployer.pytTestTolerations — a JSON
+// array of k8s tolerations, e.g.
+// [{"key":"dedicated","operator":"Equal","value":"kata","effect":"NoSchedule"}]
+// — falling back to the built-in default on a malformed value rather than
+// blocking the processor from starting. An explicit empty array ([]) is
+// honoured: it removes all tolerations.
+func loadTolerations(conf *config.Config) []corev1.Toleration {
+	raw := conf.GetStringVar(defaultTolerationsJSON, "Processor.pytDeployer.pytTestTolerations")
+	var tolerations []corev1.Toleration
+	if err := jsonrs.Unmarshal([]byte(raw), &tolerations); err != nil {
+		_ = jsonrs.Unmarshal([]byte(defaultTolerationsJSON), &tolerations)
+	}
+	return tolerations
 }

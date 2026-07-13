@@ -124,6 +124,37 @@ func TestRunOnEphemeral(t *testing.T) {
 		require.EqualValues(t, pytMetricsPort, container.Ports[1].ContainerPort, "prom metrics port for scraping")
 	})
 
+	t.Run("config-provided tolerations replace the default kata toleration", func(t *testing.T) {
+		conf := baseConfig()
+		conf.Set("Processor.pytDeployer.pytTestTolerations",
+			`[{"key":"dedicated","operator":"Equal","value":"pyt-test","effect":"NoSchedule"}]`)
+		cs := newAutoReadyClient()
+		dep := newDeployer(t, cs, conf)
+
+		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.NoError(t, err)
+
+		require.Equal(t, []corev1.Toleration{{
+			Key: "dedicated", Operator: corev1.TolerationOpEqual, Value: "pyt-test", Effect: corev1.TaintEffectNoSchedule,
+		}}, findCreatedDeployment(t, cs).Spec.Template.Spec.Tolerations)
+	})
+
+	t.Run("malformed tolerations config falls back to the default kata toleration", func(t *testing.T) {
+		conf := baseConfig()
+		conf.Set("Processor.pytDeployer.pytTestTolerations", `not-json`)
+		cs := newAutoReadyClient()
+		dep := newDeployer(t, cs, conf)
+
+		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.NoError(t, err)
+
+		require.Contains(t, findCreatedDeployment(t, cs).Spec.Template.Spec.Tolerations, corev1.Toleration{
+			Key: "dedicated", Operator: corev1.TolerationOpEqual, Value: "kata", Effect: corev1.TaintEffectNoSchedule,
+		}, "a bad config value must not silently drop the toleration that lets pods schedule at all")
+	})
+
 	t.Run("applies config-provided pod annotations", func(t *testing.T) {
 		conf := baseConfig()
 		conf.Set("Processor.pytDeployer.pytTestPodAnnotations", map[string]any{"egress.rudderstack.com/policy": "restricted"})
@@ -390,9 +421,11 @@ func TestRunOnEphemeral(t *testing.T) {
 		require.True(t, hasAction(cs, "delete", "deployments"), "the Deployment created before the Service failure must be cleaned up")
 	})
 
-	t.Run("errors immediately when the test namespace is not configured", func(t *testing.T) {
+	t.Run("errors immediately when the test namespace is explicitly emptied", func(t *testing.T) {
 		cs := newAutoReadyClient()
-		dep := newDeployer(t, cs, config.New()) // no pytTestNamespace set
+		conf := config.New()
+		conf.Set("Processor.pytDeployer.pytTestNamespace", "") // override the non-empty default
+		dep := newDeployer(t, cs, conf)
 
 		var forwarded bool
 		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
