@@ -377,6 +377,19 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		if resp.StatusCode == http.StatusNotFound {
 			statusCode = 404
 		}
+		errBody := string(respData)
+		// When the OAuth interceptor propagates a terminal (non-retryable) status
+		// — e.g. a proactive token fetch that failed with invalid_grant (400) —
+		// honor it so the job aborts instead of being retried as a generic 500.
+		// Interceptor-propagated 500s are left on the default path: they are
+		// already retryable and honoring them would only alter the error message
+		// of unrelated (non-invalid_grant) failures.
+		if transResp.InterceptorResponse.StatusCode > 0 && transResp.InterceptorResponse.StatusCode < http.StatusInternalServerError {
+			statusCode = transResp.InterceptorResponse.StatusCode
+			if transResp.InterceptorResponse.Response != "" {
+				errBody = transResp.InterceptorResponse.Response
+			}
+		}
 		for i := range transformMessage.Data {
 			routerJob := &transformMessage.Data[i]
 			resp := types.DestinationJobT{
@@ -385,7 +398,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 				Destination:      routerJob.Destination,
 				Connection:       routerJob.Connection,
 				StatusCode:       statusCode,
-				Error:            string(respData),
+				Error:            errBody,
 			}
 			destinationJobs = append(destinationJobs, resp)
 		}
