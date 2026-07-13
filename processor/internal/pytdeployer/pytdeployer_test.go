@@ -113,7 +113,7 @@ func TestRunOnEphemeral(t *testing.T) {
 			"without a readinessProbe, waitReady would resolve before the app serves")
 		require.Equal(t, "/health/live", container.LivenessProbe.HTTPGet.Path)
 
-		require.Equal(t, "250m", container.Resources.Requests.Cpu().String())
+		require.Equal(t, "200m", container.Resources.Requests.Cpu().String())
 		require.Equal(t, "500Mi", container.Resources.Requests.Memory().String())
 
 		require.Contains(t, container.VolumeMounts, corev1.VolumeMount{Name: "tmp", MountPath: "/tmp"},
@@ -299,8 +299,8 @@ func TestRunOnEphemeral(t *testing.T) {
 			func(context.Context, string) (int, []byte, error) { forwarded = true; return 200, nil, nil })
 		require.Error(t, err)
 		require.False(t, forwarded, "forward must never run when readiness times out")
-		require.True(t, hasAction(cs, "delete", "deployments"), "the timed-out deployment must still be deleted best-effort")
-		require.True(t, hasAction(cs, "delete", "services"), "the timed-out service must still be deleted best-effort")
+		require.True(t, hasAction(cs, "deployments"), "the timed-out deployment must still be deleted best-effort")
+		require.True(t, hasAction(cs, "services"), "the timed-out service must still be deleted best-effort")
 	})
 
 	t.Run("deletes the Deployment+Service after a successful forward", func(t *testing.T) {
@@ -310,8 +310,8 @@ func TestRunOnEphemeral(t *testing.T) {
 		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
 			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
 		require.NoError(t, err)
-		require.True(t, hasAction(cs, "delete", "deployments"))
-		require.True(t, hasAction(cs, "delete", "services"))
+		require.True(t, hasAction(cs, "deployments"))
+		require.True(t, hasAction(cs, "services"))
 	})
 
 	t.Run("deletes the Deployment+Service after a forward error, and returns the forward error unchanged", func(t *testing.T) {
@@ -322,8 +322,8 @@ func TestRunOnEphemeral(t *testing.T) {
 		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
 			func(context.Context, string) (int, []byte, error) { return 0, nil, forwardErr })
 		require.ErrorIs(t, err, forwardErr)
-		require.True(t, hasAction(cs, "delete", "deployments"))
-		require.True(t, hasAction(cs, "delete", "services"))
+		require.True(t, hasAction(cs, "deployments"))
+		require.True(t, hasAction(cs, "services"))
 	})
 
 	t.Run("a delete failure is swallowed: it is not returned and does not change the forward result", func(t *testing.T) {
@@ -341,7 +341,7 @@ func TestRunOnEphemeral(t *testing.T) {
 		require.NoError(t, err, "a failed best-effort delete must not surface as the call's error")
 		require.Equal(t, 201, status)
 		require.Equal(t, []byte("ok"), body)
-		require.True(t, hasAction(cs, "delete", "deployments"), "delete must still have been attempted")
+		require.True(t, hasAction(cs, "deployments"), "delete must still have been attempted")
 	})
 
 	t.Run("errors without calling forward when creating the Deployment fails", func(t *testing.T) {
@@ -418,7 +418,7 @@ func TestRunOnEphemeral(t *testing.T) {
 			func(context.Context, string) (int, []byte, error) { forwarded = true; return 200, nil, nil })
 		require.Error(t, err)
 		require.False(t, forwarded)
-		require.True(t, hasAction(cs, "delete", "deployments"), "the Deployment created before the Service failure must be cleaned up")
+		require.True(t, hasAction(cs, "deployments"), "the Deployment created before the Service failure must be cleaned up")
 	})
 
 	t.Run("errors immediately when the test namespace is explicitly emptied", func(t *testing.T) {
@@ -547,9 +547,9 @@ func findCreatedService(t *testing.T, cs *fake.Clientset) *corev1.Service {
 	return nil
 }
 
-func hasAction(cs *fake.Clientset, verb, resource string) bool {
+func hasAction(cs *fake.Clientset, resource string) bool {
 	for _, a := range cs.Actions() {
-		if a.GetVerb() == verb && a.GetResource().Resource == resource {
+		if a.GetVerb() == "delete" && a.GetResource().Resource == resource {
 			return true
 		}
 	}

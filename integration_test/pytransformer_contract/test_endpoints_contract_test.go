@@ -782,8 +782,9 @@ const (
 // the old architecture reachable over plain HTTP (transformerURL) and the new
 // one through the production client.
 type testEndpointsEnv struct {
-	transformerURL string
-	client         *usertransformer.Client
+	transformerURL   string
+	pyTransformerURL string
+	client           *usertransformer.Client
 }
 
 // newTestEndpointsEnv brings up both architectures against a shared mock config
@@ -875,15 +876,14 @@ func newTestEndpointsEnv(t *testing.T) *testEndpointsEnv {
 	})
 	wg.Wait()
 
-	// The per-workspace PyT config mirrors production: cpservice.Forward builds
-	// the client with the feature enabled and a pyt-{workspaceID} URL template
-	// (here the single pyt container serves every workspace, so no placeholder).
-	conf := config.New()
-	conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-	conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", pyTransformerURL)
+	// This mirrors production: cpservice.Forward resolves the target base URL
+	// (an ephemeral deployment, the prod pyt, or the static AST deployment) and
+	// passes it to the client per call — the client itself needs no pyt config.
+	// Here the single pyt container serves as the target for every call.
 	return &testEndpointsEnv{
-		transformerURL: transformerURL,
-		client:         usertransformer.New(conf, logger.NOP, stats.NOP),
+		transformerURL:   transformerURL,
+		pyTransformerURL: pyTransformerURL,
+		client:           usertransformer.New(config.New(), logger.NOP, stats.NOP),
 	}
 }
 
@@ -902,17 +902,18 @@ func (env *testEndpointsEnv) callOld(t *testing.T, path string, payload map[stri
 	return resp.StatusCode, respBody
 }
 
-// callNew marshals payload and sends it through the given client method,
-// returning the pyt HTTP status code and response body unchanged.
+// callNew marshals payload and sends it through the given client method
+// against the pyt container's base URL (the role cpservice.Forward plays in
+// production), returning the pyt HTTP status code and response body unchanged.
 func (env *testEndpointsEnv) callNew(
 	t *testing.T,
-	method func(context.Context, string, []byte) (int, []byte, error),
+	method func(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error),
 	payload map[string]any,
 ) (int, []byte) {
 	t.Helper()
 	body, err := jsonrs.Marshal(payload)
 	require.NoError(t, err)
-	statusCode, respBody, err := method(context.Background(), workspaceID, body)
+	statusCode, respBody, err := method(context.Background(), env.pyTransformerURL, workspaceID, body)
 	require.NoError(t, err)
 	return statusCode, respBody
 }

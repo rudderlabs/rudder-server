@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -126,7 +125,7 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 		// Service links would inject every Service in the shared test
 		// namespace (other tenants' concurrent test runs included) into the
 		// untrusted pod's env.
-		EnableServiceLinks: lo.ToPtr(false),
+		EnableServiceLinks: new(false),
 		NodeSelector:       maps.Clone(d.config.nodeSelector),
 		// Tolerations come from config (default: the prod chart's kata
 		// toleration). They only permit scheduling, never force it, so they are
@@ -137,11 +136,11 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 			Name:  "pytransformer",
 			Image: d.config.image,
 			SecurityContext: &corev1.SecurityContext{
-				RunAsNonRoot:             lo.ToPtr(true),
-				RunAsUser:                lo.ToPtr(int64(1000)),
-				RunAsGroup:               lo.ToPtr(int64(1000)),
-				ReadOnlyRootFilesystem:   lo.ToPtr(true),
-				AllowPrivilegeEscalation: lo.ToPtr(false),
+				RunAsNonRoot:             new(true),
+				RunAsUser:                new(int64(1000)),
+				RunAsGroup:               new(int64(1000)),
+				ReadOnlyRootFilesystem:   new(true),
+				AllowPrivilegeEscalation: new(false),
 			},
 			Ports: []corev1.ContainerPort{
 				{Name: "http", ContainerPort: pytContainerPort, Protocol: corev1.ProtocolTCP},
