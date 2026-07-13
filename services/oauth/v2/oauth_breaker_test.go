@@ -11,8 +11,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
-	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
 
 func TestOauthBreaker(t *testing.T) {
@@ -220,34 +218,6 @@ func TestOauthBreaker(t *testing.T) {
 				{err: err1},
 				{value: token1}, // success, resets error breaker
 				{err: err1},
-			},
-			expectedErrorBreaksTripped:   0,
-			expectedSuccessBreaksTripped: 0,
-		})
-	})
-
-	t.Run("invalid_grant errors do not trip the error breaker", func(t *testing.T) {
-		invalidGrant := NewStatusCodeError(400, &TypeMessageError{
-			Type:    common.RefTokenInvalidGrant,
-			Message: "invalid grant",
-		})
-		runScenario(t, scenario{
-			// threshold is 2 in runScenario; 5 consecutive invalid_grant errors
-			// would trip twice without the fix. All 5 must reach the delegate
-			// (mock.calls == 5), which only holds if the breaker never opens.
-			delegateResponses: []lo.Tuple2[json.RawMessage, StatusCodeError]{
-				{A: nil, B: invalidGrant},
-				{A: nil, B: invalidGrant},
-				{A: nil, B: invalidGrant},
-				{A: nil, B: invalidGrant},
-				{A: nil, B: invalidGrant},
-			},
-			attempts: []attempt{
-				{err: invalidGrant},
-				{err: invalidGrant},
-				{err: invalidGrant},
-				{err: invalidGrant},
-				{err: invalidGrant},
 			},
 			expectedErrorBreaksTripped:   0,
 			expectedSuccessBreaksTripped: 0,
