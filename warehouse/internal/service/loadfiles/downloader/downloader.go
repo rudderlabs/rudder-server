@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -115,7 +114,7 @@ func (l *downloaderImpl) downloadSingleObject(ctx context.Context, fileManager f
 		return "", fmt.Errorf("creating tmp dir: %w", err)
 	}
 
-	ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, l.warehouse.Destination.DestinationDefinition.Name, l.warehouse.Destination.ID, time.Now().Unix()) + objectName
+	ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%s/`, l.warehouse.Destination.DestinationDefinition.Name, l.warehouse.Destination.ID, misc.FastUUID().String()) + objectName
 	if err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm); err != nil {
 		return "", fmt.Errorf("making tmp dir: %w", err)
 	}

@@ -856,3 +856,43 @@ func TestTransformColumnName(t *testing.T) {
 		})
 	}
 }
+
+func TestBlendoColumnNameRemovesSQLBreakoutCharacters(t *testing.T) {
+	testCases := []struct {
+		destType string
+		expected string
+	}{
+		{destType: whutils.RS, expected: "x__text__copy__select_____to_program__id__tmp_rce____"},
+		{destType: whutils.BQ, expected: "x__text__copy__select_____to_program__id__tmp_rce____"},
+		{destType: whutils.SNOWFLAKE, expected: "X__TEXT__COPY__SELECT_____TO_PROGRAM__ID__TMP_RCE____"},
+		{destType: whutils.POSTGRES, expected: "x__text__copy__select_____to_program__id__tmp_rce____"},
+		{destType: whutils.CLICKHOUSE, expected: "x__text__copy__select_____to_program__id__tmp_rce____"},
+		{destType: whutils.MSSQL, expected: "x__text__copy__select_____to_program__id__tmp_rce____"},
+		{destType: whutils.AzureSynapse, expected: "x__text__copy__select_____to_program__id__tmp_rce____"},
+		{destType: whutils.S3Datalake, expected: "x__text__copy__select_____to_program__id__tmp_rce____"},
+		{destType: whutils.GCSDatalake, expected: "x__text__copy__select_____to_program__id__tmp_rce____"},
+		{destType: whutils.AzureDatalake, expected: "x__text__copy__select_____to_program__id__tmp_rce____"},
+		{destType: whutils.DELTALAKE, expected: "x__text__copy__select_____to_program__id__tmp_rce____"},
+		{destType: whutils.SnowpipeStreaming, expected: "X__TEXT__COPY__SELECT_____TO_PROGRAM__ID__TMP_RCE____"},
+		{destType: whutils.BQStreamAllEvents, expected: "x__text__copy__select_____to_program__id__tmp_rce____"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.destType, func(t *testing.T) {
+			intrOpts := intrOptions{useBlendoCasing: true}
+			destOpts := destOptions{}
+			maliciousKey := `x" text);copy (select '') to program 'id>/tmp/rce';--`
+
+			transformed := transformColumnName(tc.destType, &intrOpts, &destOpts, maliciousKey)
+			safeName, err := safeColumnName(tc.destType, &intrOpts, transformed)
+
+			require.NoError(t, err)
+			require.NotContains(t, safeName, `"`)
+			require.NotContains(t, safeName, ";")
+			require.NotContains(t, safeName, "--")
+			require.NotContains(t, safeName, "/*")
+			require.NotContains(t, safeName, "*/")
+			require.Equal(t, tc.expected, safeName)
+		})
+	}
+}
