@@ -10,6 +10,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/activationrecords"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -47,6 +48,7 @@ type LifecycleManager struct {
 	transDebugger              transformationdebugger.TransformationDebugger
 	enrichers                  []enricher.PipelineEnricher
 	trackedUsersReporter       trackedusers.UsersReporter
+	activationRecordsReporter  activationrecords.ActivationRecordsReporter
 	pendingEventsRegistry      rmetrics.PendingEventsRegistry
 }
 
@@ -76,6 +78,7 @@ func (proc *LifecycleManager) Start() error {
 		proc.transDebugger,
 		proc.enrichers,
 		proc.trackedUsersReporter,
+		proc.activationRecordsReporter,
 		proc.pendingEventsRegistry,
 	); err != nil {
 		cancel()
@@ -121,6 +124,7 @@ func New(
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
 	trackedUsersReporter trackedusers.UsersReporter,
+	activationRecordsReporter activationrecords.ActivationRecordsReporter,
 	pendingEventsRegistry rmetrics.PendingEventsRegistry,
 	opts ...Opts,
 ) *LifecycleManager {
@@ -151,6 +155,7 @@ func New(
 		transDebugger:              transDebugger,
 		enrichers:                  enrichers,
 		trackedUsersReporter:       trackedUsersReporter,
+		activationRecordsReporter:  activationRecordsReporter,
 		pendingEventsRegistry:      pendingEventsRegistry,
 	}
 	for _, opt := range opts {

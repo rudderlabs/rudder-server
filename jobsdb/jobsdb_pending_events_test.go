@@ -289,6 +289,48 @@ func TestPendingEventsJobsDB(t *testing.T) {
 		require.Equal(t, 3, registry.increaseCallCount)
 		require.Equal(t, float64(4), registry.totalIncreased)
 	})
+
+	t.Run("consumer-as-destination-id: store fans out per consumer, status decrements one consumer", func(t *testing.T) {
+		_ = startPostgres(t)
+		c := config.New()
+		c.Set("jobsdb.maxDSSize", 100)
+
+		jobDB := Handle{config: c}
+		jobDB.conf.multiConsumer = true
+		tablePrefix := strings.ToLower(rand.String(5))
+		require.NoError(t, jobDB.Setup(ReadWrite, true, tablePrefix))
+		defer jobDB.TearDown()
+
+		registry := &mockPendingEventsRegistry{}
+		decoratedDB := NewPendingEventsJobsDB(&jobDB, registry, WithConsumerAsDestinationID())
+
+		// one job pending for destinations A and B, one job pending for A only
+		jobs := []*JobT{
+			{UUID: uuid.New(), UserID: "u", CustomVal: customVal, Parameters: []byte(`{}`), EventPayload: []byte(`{}`), EventCount: 1, WorkspaceId: workspaceID, Consumers: []string{"A", "B"}},
+			{UUID: uuid.New(), UserID: "u", CustomVal: customVal, Parameters: []byte(`{}`), EventPayload: []byte(`{}`), EventCount: 1, WorkspaceId: workspaceID, Consumers: []string{"A"}},
+		}
+		require.NoError(t, decoratedDB.Store(context.Background(), jobs))
+
+		// destination A got two pending events (both jobs), destination B got one
+		require.Equal(t, float64(3), registry.totalIncreased)
+		require.Equal(t, float64(2), registry.increasedByDest["A"])
+		require.Equal(t, float64(1), registry.increasedByDest["B"])
+
+		// Store is COPY-based and does not populate JobID; consumer "B" uniquely identifies the first job.
+		job0, err := jobDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10, Consumer: "B"})
+		require.NoError(t, err)
+		require.Len(t, job0.Jobs, 1)
+
+		// consumer A finishes the first job → decrement destination A by one
+		require.NoError(t, decoratedDB.UpdateJobStatus(context.Background(), []*JobStatusT{{
+			JobID: job0.Jobs[0].JobID, JobState: Succeeded.State, AttemptNum: 1,
+			ErrorCode: "200", ErrorResponse: []byte(`{}`), Parameters: []byte(`{}`),
+			WorkspaceId: workspaceID, CustomVal: customVal, Consumer: "A",
+		}}))
+		require.Equal(t, float64(1), registry.totalDecreased)
+		require.Equal(t, float64(1), registry.decreasedByDest["A"])
+		require.Equal(t, float64(0), registry.decreasedByDest["B"])
+	})
 }
 
 // mockPendingEventsRegistry tracks calls to the pending events registry
@@ -301,6 +343,8 @@ type mockPendingEventsRegistry struct {
 	lastWorkspaceID   string
 	lastDestType      string
 	lastDestinationID string
+	increasedByDest   map[string]float64
+	decreasedByDest   map[string]float64
 }
 
 func (m *mockPendingEventsRegistry) IncreasePendingEvents(tablePrefix, workspaceID, destType, destinationID string, value float64) {
@@ -310,6 +354,10 @@ func (m *mockPendingEventsRegistry) IncreasePendingEvents(tablePrefix, workspace
 	m.lastWorkspaceID = workspaceID
 	m.lastDestType = destType
 	m.lastDestinationID = destinationID
+	if m.increasedByDest == nil {
+		m.increasedByDest = map[string]float64{}
+	}
+	m.increasedByDest[destinationID] += value
 }
 
 func (m *mockPendingEventsRegistry) DecreasePendingEvents(tablePrefix, workspaceID, destType, destinationID string, value float64) {
@@ -319,4 +367,8 @@ func (m *mockPendingEventsRegistry) DecreasePendingEvents(tablePrefix, workspace
 	m.lastWorkspaceID = workspaceID
 	m.lastDestType = destType
 	m.lastDestinationID = destinationID
+	if m.decreasedByDest == nil {
+		m.decreasedByDest = map[string]float64{}
+	}
+	m.decreasedByDest[destinationID] += value
 }

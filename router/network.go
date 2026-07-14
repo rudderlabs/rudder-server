@@ -104,7 +104,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 			if !ok {
 				stats.Default.NewTaggedStat("router_invalid_payload", stats.CountType, stats.Tags{
 					"destType": network.destType,
-				})
+				}).Increment()
 				return &utils.SendPostResponse{
 					StatusCode:   500,
 					ResponseBody: []byte("500 Invalid Router Payload: body value must be a map"),
@@ -190,7 +190,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 			default:
 				stats.Default.NewTaggedStat("router_invalid_payload", stats.CountType, stats.Tags{
 					"destType": network.destType,
-				})
+				}).Increment()
 				return &utils.SendPostResponse{
 					StatusCode:   500,
 					ResponseBody: fmt.Appendf(nil, "500 Invalid Router Payload: body format must be a map found format %s", bodyFormat),

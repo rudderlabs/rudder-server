@@ -87,8 +87,9 @@ type ProxyRequestMetadata struct {
 
 type ProxyRequestPayload struct {
 	integrations.PostParametersT
-	Metadata          []ProxyRequestMetadata `json:"metadata"`
-	DestinationConfig map[string]any         `json:"destinationConfig"`
+	Metadata           []ProxyRequestMetadata `json:"metadata"`
+	DestinationConfig  map[string]any         `json:"destinationConfig"`
+	DestinationVersion int                    `json:"destinationVersion,omitempty"`
 }
 
 type ProxyRequestParams struct {
@@ -310,6 +311,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		in := transformMessage.JobIDs()
 		var out []int64
 		invalid := make(map[int64]struct{}) // invalid jobIDs are the ones that are in the response but were not included in the request
+		emptyMetadataCount := 0
 		for i := range destinationJobs {
 			if oauthv2.IsValidAuthErrorCategory(destinationJobs[i].AuthErrorCategory) {
 				if transResp.InterceptorResponse.StatusCode > 0 {
@@ -318,6 +320,9 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 				if transResp.InterceptorResponse.Response != "" {
 					destinationJobs[i].Error = transResp.InterceptorResponse.Response
 				}
+			}
+			if len(destinationJobs[i].JobMetadataArray) == 0 {
+				emptyMetadataCount++
 			}
 			for k, v := range destinationJobs[i].JobIDs() {
 				out = append(out, k)
@@ -333,6 +338,9 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		} else if len(in) != len(out) {
 			invalidResponseReason = "in out mismatch"
 			invalidResponseError = fmt.Sprintf("Transformer returned invalid output size: %d for input size: %d", len(out), len(in))
+		} else if emptyMetadataCount > 0 {
+			invalidResponseReason = "empty metadata array"
+			invalidResponseError = fmt.Sprintf("Transformer returned %d destination job(s) with an empty metadata array for input: %s", emptyMetadataCount, string(rawJSON))
 		} else if len(invalid) > 0 {
 			var invalidSlice []int64
 			for k := range invalid {

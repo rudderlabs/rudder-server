@@ -138,7 +138,6 @@ func TestBench(t *testing.T) {
 		c.Set("JobsDB.maxReaders", 6)
 
 		// Common jobsdb configuration under test
-		c.Set("JobsDB.noResultsCacheStateOptimization", true)
 		c.Set("JobsDB.logCacheBranchInvalidation", true)
 		c.Set("JobsDB.warnOnStatusMissingPartitionID", true)
 		c.Set("JobsDB.cacheExpiration", 2*time.Hour)

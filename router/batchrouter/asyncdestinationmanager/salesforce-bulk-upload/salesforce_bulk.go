@@ -103,6 +103,13 @@ func (s *Uploader) Transform(job *jobsdb.JobT) (string, error) {
 	// Add all traits to message
 	if traits.Exists() && traits.IsObject() {
 		traits.ForEach(func(key, value gjson.Result) bool {
+			// Salesforce Bulk API ignores empty CSV cells (leaves the field
+			// unchanged), so explicit nulls must be encoded as the #N/A
+			// sentinel for the field to actually be cleared.
+			if value.Type == gjson.Null {
+				message[key.String()] = salesforceNullSentinel
+				return true
+			}
 			message[key.String()] = value.Value()
 			return true
 		})

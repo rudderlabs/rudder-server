@@ -1144,6 +1144,79 @@ func TestIntegration(t *testing.T) {
 			)
 			require.Equal(t, records, whth.DiscardTestRecords())
 		})
+
+		t.Run("quotes identifiers in column definitions", func(t *testing.T) {
+			columnName := `x" text);copy (select '') to program 'id>/tmp/rce';--`
+
+			fragment := postgres.ColumnsWithDataTypes(model.TableSchema{
+				columnName: model.StringDataType,
+			}, "")
+
+			require.Equal(t, `"x"" text);copy (select '') to program 'id>/tmp/rce';--" text`, fragment)
+			require.NotContains(t, fragment, `x" text);`)
+		})
+
+		t.Run("quotes identifiers in create table", func(t *testing.T) {
+			ctx := context.Background()
+			tableName := `events");copy (select '') to program 'id>/tmp/rce';--`
+			columnName := `x" text);copy (select '') to program 'id>/tmp/rce';--`
+			maliciousNamespace := `schema";drop schema public;--`
+			maliciousSchema := model.TableSchema{
+				columnName: "string",
+				"id":       "string",
+			}
+
+			maliciousWarehouse := th.Clone(t, warehouse)
+			maliciousWarehouse.Namespace = maliciousNamespace
+
+			loadFiles := []whutils.LoadFile{}
+			mockUploader := mockUploader(t, loadFiles, tableName, maliciousSchema, maliciousSchema)
+
+			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
+			require.NoError(t, pg.Setup(ctx, maliciousWarehouse, mockUploader))
+			require.NoError(t, pg.CreateSchema(ctx))
+			require.NoError(t, pg.CreateTable(ctx, tableName, maliciousSchema))
+
+			var publicSchemaExists bool
+			err := pg.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'public')`).Scan(&publicSchemaExists)
+			require.NoError(t, err)
+			require.True(t, publicSchemaExists)
+
+			var maliciousSchemaExists bool
+			err = pg.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = $1)`, maliciousNamespace).Scan(&maliciousSchemaExists)
+			require.NoError(t, err)
+			require.True(t, maliciousSchemaExists)
+
+			var tableExists bool
+			err = pg.DB.QueryRowContext(ctx, `
+				SELECT EXISTS (
+				  SELECT 1
+				  FROM information_schema.tables
+				  WHERE table_schema = $1
+				    AND table_name = $2
+				)`,
+				maliciousNamespace,
+				tableName,
+			).Scan(&tableExists)
+			require.NoError(t, err)
+			require.True(t, tableExists)
+
+			var columnExists bool
+			err = pg.DB.QueryRowContext(ctx, `
+				SELECT EXISTS (
+				  SELECT 1
+				  FROM information_schema.columns
+				  WHERE table_schema = $1
+				    AND table_name = $2
+				    AND column_name = $3
+				)`,
+				maliciousNamespace,
+				tableName,
+				columnName,
+			).Scan(&columnExists)
+			require.NoError(t, err)
+			require.True(t, columnExists)
+		})
 	})
 
 	t.Run("Logical Replication", func(t *testing.T) {
