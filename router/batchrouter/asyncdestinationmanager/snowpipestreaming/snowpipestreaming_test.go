@@ -2,6 +2,7 @@ package snowpipestreaming
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -35,6 +36,7 @@ type mockAPI struct {
 	createChannelOutputMap map[string]func() (*model.ChannelResponse, error)
 	deleteChannelOutputMap map[string]func() error
 	insertOutputMap        map[string]func() (*model.InsertResponse, error)
+	getStatusOutputMap     map[string]func() (*model.StatusResponse, error)
 	getBulkStatusOutputMap map[string]func() (*model.BulkStatusResponse, error)
 }
 
@@ -49,6 +51,10 @@ func (m *mockAPI) DeleteChannel(_ context.Context, channelID string, _ bool) err
 
 func (m *mockAPI) Insert(_ context.Context, channelID string, _ *model.InsertRequest) (*model.InsertResponse, error) {
 	return m.insertOutputMap[channelID]()
+}
+
+func (m *mockAPI) GetStatus(_ context.Context, channelID string) (*model.StatusResponse, error) {
+	return m.getStatusOutputMap[channelID]()
 }
 
 func (m *mockAPI) GetBulkStatus(_ context.Context, channelIDs []string) (*model.BulkStatusResponse, error) {
@@ -276,6 +282,37 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}, mockApi.channelReq)
 	})
 
+	t.Run("Upload aborts all jobs when discards channel creation reports bad request", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"RUDDER_DISCARDS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{
+						Success:              false,
+						Code:                 internalapi.ErrUnknownError,
+						SnowflakeAPIMessage:  "bad request",
+						SnowflakeAPIHttpCode: http.StatusBadRequest,
+					}, nil
+				},
+			},
+		}
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			ImportingJobIDs: []int64{1},
+			Destination:     destination,
+			FileName:        "testdata/successful_records.txt",
+		})
+		require.Equal(t, []int64{1}, output.AbortJobIDs)
+		require.Equal(t, 1, output.AbortCount)
+		require.Contains(t, output.AbortReason, "abort error")
+		require.Contains(t, output.AbortReason, "bad request")
+		require.Empty(t, output.FailedJobIDs)
+		require.Zero(t, output.FailedCount)
+		require.Equal(t, "test-destination", output.DestinationID)
+	})
+
 	t.Run("Upload not able to create event channel", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -331,6 +368,83 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "importing",
 		}).LastValue())
 		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+	})
+
+	t.Run("Upload aborts event channel jobs when channel creation response reports bad request", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.channelCache.Store("PRODUCTS", productsChannelResponse)
+
+		sm.api = &mockAPI{
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"USERS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{
+						Success:              false,
+						Code:                 internalapi.ErrUnknownError,
+						SnowflakeAPIMessage:  "bad request",
+						SnowflakeAPIHttpCode: http.StatusBadRequest,
+					}, nil
+				},
+			},
+			insertOutputMap: map[string]func() (*model.InsertResponse, error){
+				"test-products-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-products-channel"},
+					}, nil
+				},
+			},
+		}
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    "testdata/successful_records.txt",
+		})
+		require.Equal(t, []int64{1002, 1004}, output.ImportingJobIDs)
+		require.Equal(t, 2, output.ImportingCount)
+		require.Equal(t, []int64{1001, 1003}, output.AbortJobIDs)
+		require.Equal(t, 2, output.AbortCount)
+		require.Contains(t, output.AbortReason, "bad request")
+		require.Empty(t, output.FailedJobIDs)
+		require.Zero(t, output.FailedCount)
+		require.Empty(t, output.FailedReason)
+		require.Equal(t, "test-destination", output.DestinationID)
+		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "importing",
+		}).LastValue())
+		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "aborted",
+		}).LastValue())
+		require.EqualValues(t, 0, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
 			"destType":      "SNOWPIPE_STREAMING",
@@ -1057,7 +1171,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.ChannelResponse{
 						Success:              false,
 						SnowflakeAPIMessage:  "Unknown error occurred",
-						SnowflakeAPIHttpCode: internalapi.ApiStatusUnsupportedColumn,
+						SnowflakeAPIHttpCode: http.StatusBadRequest,
 					}, nil
 				},
 			},
@@ -2573,6 +2687,106 @@ func TestSnowpipeStreaming(t *testing.T) {
 							"test-products-channel": {Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"},
 						},
 					}, nil
+				},
+			},
+			// At the threshold the channel is re-checked via single-channel status.
+			// It reports valid, so the channel is treated as genuinely stuck.
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+		}
+
+		now := time.Now().UTC()
+		sm.now = func() time.Time { return now }
+
+		first := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
+		require.True(t, first.InProgress)
+
+		now = now.Add(1 * time.Hour)
+		second := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
+		require.False(t, second.InProgress)
+		require.True(t, second.Complete)
+		require.Equal(t, http.StatusOK, second.StatusCode)
+		require.True(t, second.HasFailed)
+		require.JSONEq(t, second.FailedJobParameters, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"events still in progress after threshold: 1h0m0s > 15m0s","count":2}]`)
+	})
+
+	t.Run("Poll recovers invalid channel at threshold without stuck-pipeline alert", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			// Bulk status silently reports the broken channel as valid (snowflake-ingest-java#1154).
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"},
+						},
+					}, nil
+				},
+			},
+			// Single-channel status surfaces the real state: the channel is invalid.
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: false, Success: false}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+		}
+
+		now := time.Now().UTC()
+		sm.now = func() time.Time { return now }
+
+		first := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
+		require.True(t, first.InProgress)
+
+		now = now.Add(1 * time.Hour)
+		second := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
+		require.False(t, second.InProgress)
+		require.True(t, second.Complete)
+		require.Equal(t, http.StatusOK, second.StatusCode)
+		require.True(t, second.HasFailed)
+		// Failed via the per-channel invalid path, not the stuck-pipeline path.
+		require.JSONEq(t, second.FailedJobParameters, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"channel reported invalid by per-channel status check after threshold","count":2}]`)
+	})
+
+	t.Run("Poll treats inconclusive single-channel check at threshold as stuck", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"},
+						},
+					}, nil
+				},
+			},
+			// Single-channel status check errors out: we cannot confirm invalidity,
+			// so the channel is treated as genuinely stuck (fail-safe).
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, errors.New("service unavailable")
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{

@@ -138,6 +138,7 @@ type (
 		CreateChannel(ctx context.Context, channelReq *model.CreateChannelRequest) (*model.ChannelResponse, error)
 		DeleteChannel(ctx context.Context, channelID string, sync bool) error
 		Insert(ctx context.Context, channelID string, insertRequest *model.InsertRequest) (*model.InsertResponse, error)
+		GetStatus(ctx context.Context, channelID string) (*model.StatusResponse, error)
 		GetBulkStatus(ctx context.Context, channelIDs []string) (*model.BulkStatusResponse, error)
 	}
 
