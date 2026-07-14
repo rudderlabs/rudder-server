@@ -24,6 +24,7 @@ package pytdeployer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -84,6 +85,12 @@ func WithClientset(client kubernetes.Interface) Opt {
 // kubeconfig file when not running in-cluster) and returns an error if that
 // fails. Callers must not fall back to forwarding execution ops elsewhere on
 // error — there is no safe target for untrusted code without a real deployer.
+//
+// pytTestImage and pytTestImagePullSecret have no defaults and must be set:
+// there is no image we could sensibly bake in, and a wrong guess would only
+// surface as pods stuck in ImagePullBackOff at request time. Failing here
+// instead makes the misconfiguration visible at startup, and cpservice maps
+// it to FailedPrecondition for execution ops.
 func New(conf *config.Config, log logger.Logger, opts ...Opt) (Deployer, error) {
 	d := &k8sDeployer{
 		log:    log.Child("pytdeployer"),
@@ -91,6 +98,12 @@ func New(conf *config.Config, log logger.Logger, opts ...Opt) (Deployer, error) 
 	}
 	for _, opt := range opts {
 		opt(d)
+	}
+	if d.config.image == "" {
+		return nil, errors.New("missing required config Processor.pytDeployer.pytTestImage")
+	}
+	if d.config.imagePullSecret == "" {
+		return nil, errors.New("missing required config Processor.pytDeployer.pytTestImagePullSecret")
 	}
 	if d.client == nil {
 		client, err := newInClusterClientset(conf)
@@ -122,6 +135,8 @@ type deployerConfig struct {
 	tolerations      []corev1.Toleration
 	cpuRequest       resource.Quantity
 	memoryRequest    resource.Quantity
+	cpuLimit         resource.Quantity
+	memoryLimit      resource.Quantity
 	readinessTimeout config.ValueLoader[time.Duration]
 	env              config.ValueLoader[map[string]any]
 	labels           config.ValueLoader[map[string]any]
@@ -131,16 +146,22 @@ type deployerConfig struct {
 
 func loadConfig(conf *config.Config) deployerConfig {
 	return deployerConfig{
-		namespace:       conf.GetStringVar("test-pytransformer", "Processor.pytDeployer.pytTestNamespace"),
+		namespace: conf.GetStringVar("test-pytransformer", "Processor.pytDeployer.pytTestNamespace"),
+		// image and imagePullSecret deliberately have no default — [New]
+		// rejects an empty value rather than guessing (a stale or leaked
+		// default would be worse than failing fast).
 		image:           conf.GetStringVar("", "Processor.pytDeployer.pytTestImage"),
-		imagePullSecret: conf.GetStringVar("regcred", "Processor.pytDeployer.pytTestImagePullSecret"),
+		imagePullSecret: conf.GetStringVar("", "Processor.pytDeployer.pytTestImagePullSecret"),
 		runtimeClass:    conf.GetStringVar("kata-fc", "Processor.pytDeployer.pytTestRuntimeClass"),
 		zone:            conf.GetStringVar("", "AVAILABILITY_ZONE"),
 		nodeSelector: toStringMap(conf.GetStringMapVar(
-			map[string]any{"karpenter.sh/nodepool": "kata"}, "Processor.pytDeployer.pytTestNodeSelector")),
+			map[string]any{"karpenter.sh/nodepool": "kata"}, "Processor.pytDeployer.pytTestNodeSelector",
+		)),
 		tolerations:      loadTolerations(conf),
 		cpuRequest:       parseQuantity(conf.GetStringVar("200m", "Processor.pytDeployer.pytTestCPURequest"), "200m"),
 		memoryRequest:    parseQuantity(conf.GetStringVar("500Mi", "Processor.pytDeployer.pytTestMemoryRequest"), "500Mi"),
+		cpuLimit:         parseQuantity(conf.GetStringVar("400m", "Processor.pytDeployer.pytTestCPULimit"), "400m"),
+		memoryLimit:      parseQuantity(conf.GetStringVar("700Mi", "Processor.pytDeployer.pytTestMemoryLimit"), "700Mi"),
 		readinessTimeout: conf.GetReloadableDurationVar(60, time.Second, "Processor.pytDeployer.pytTestReadinessTimeout"),
 		env:              conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestEnv"),
 		labels:           conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestLabels"),

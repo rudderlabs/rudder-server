@@ -35,8 +35,9 @@ import (
 )
 
 const (
-	coldStartErrorsMetric = "processor_user_transformer_cold_start_errors_total"
-	languagePython        = "python"
+	coldStartErrorsMetric    = "processor_user_transformer_cold_start_errors_total"
+	testForwardRetriesMetric = "processor_user_transformer_test_forward_retries_total"
+	languagePython           = "python"
 )
 
 // ErrEmptyForwardBaseURL is returned by the test-forwarding methods ([Client.Test]
@@ -589,18 +590,20 @@ func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path str
 				}
 				return err
 			}
+			defer func() { httputil.CloseResponse(resp) }()
 			if isColdStartError(nil, resp) {
-				httputil.CloseResponse(resp)
 				u.stat.NewTaggedStat(coldStartErrorsMetric, stats.CountType,
 					stats.Tags{"workspaceID": workspaceID, "language": languagePython}).Increment()
 				return fmt.Errorf("pyt cold start: status %d", resp.StatusCode)
 			}
-			defer func() { httputil.CloseResponse(resp) }()
 
 			body, err = io.ReadAll(resp.Body)
 			if err != nil {
-				// Connection broke mid-response — as transient as a failed
-				// request; retry.
+				// Reading the body can fail for several transport-level reasons
+				// (connection reset mid-response, idle timeout, ...). Like the
+				// event path, treat any of them as retryable — bounded by
+				// maxRetry and ctx — with each attempt made visible by the
+				// retry notify below.
 				return err
 			}
 			statusCode = resp.StatusCode
@@ -609,6 +612,17 @@ func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path str
 		backoff.WithBackOff(bo),
 		backoff.WithMaxTries(uint(u.config.maxRetry.Load()+1)), //nolint:gosec // maxRetry is a small, bounded value
 		// Also bounded by ctx (the caller's ~60s deadline), whichever comes first.
+		// Every retried attempt is counted and logged with its error: retries
+		// otherwise mask what went wrong until the whole budget is exhausted.
+		backoff.WithNotify(func(err error, delay time.Duration) {
+			u.stat.NewTaggedStat(testForwardRetriesMetric, stats.CountType,
+				stats.Tags{"workspaceID": workspaceID, "language": languagePython}).Increment()
+			u.log.Warnn("retrying pyt test forward",
+				obskit.WorkspaceID(workspaceID),
+				logger.NewStringField("path", path),
+				logger.NewDurationField("retryDelay", delay),
+				obskit.Error(err))
+		}),
 	)
 	if err != nil {
 		return 0, nil, err
@@ -648,12 +662,11 @@ func isColdStartError(err error, resp *http.Response) bool {
 		// indistinguishable from the dialer, and retrying is right for both:
 		// each retry re-resolves DNS, and the pod's replacement (the forward path
 		// scales the deployment up before dialing) answers a later attempt.
-		var opErr *net.OpError
-		if errors.As(err, &opErr) && opErr.Op == "dial" && opErr.Timeout() {
+		if opErr, ok := errors.AsType[*net.OpError](err); ok && opErr.Op == "dial" && opErr.Timeout() {
 			return true
 		}
-		var dnsErr *net.DNSError
-		return errors.As(err, &dnsErr)
+		_, isDNSErr := errors.AsType[*net.DNSError](err)
+		return isDNSErr
 	}
 	if resp != nil && (resp.StatusCode == http.StatusServiceUnavailable ||
 		resp.StatusCode == http.StatusBadGateway) {

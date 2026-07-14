@@ -115,6 +115,10 @@ func TestRunOnEphemeral(t *testing.T) {
 
 		require.Equal(t, "200m", container.Resources.Requests.Cpu().String())
 		require.Equal(t, "500Mi", container.Resources.Requests.Memory().String())
+		require.Equal(t, "400m", container.Resources.Limits.Cpu().String(),
+			"untrusted code must not consume unbounded node CPU")
+		require.Equal(t, "700Mi", container.Resources.Limits.Memory().String(),
+			"untrusted code must not consume unbounded node memory")
 
 		require.Contains(t, container.VolumeMounts, corev1.VolumeMount{Name: "tmp", MountPath: "/tmp"},
 			"read-only root fs needs a writable /tmp")
@@ -423,7 +427,7 @@ func TestRunOnEphemeral(t *testing.T) {
 
 	t.Run("errors immediately when the test namespace is explicitly emptied", func(t *testing.T) {
 		cs := newAutoReadyClient()
-		conf := config.New()
+		conf := baseConfig()
 		conf.Set("Processor.pytDeployer.pytTestNamespace", "") // override the non-empty default
 		dep := newDeployer(t, cs, conf)
 
@@ -438,7 +442,7 @@ func TestRunOnEphemeral(t *testing.T) {
 
 func TestNew(t *testing.T) {
 	t.Run("returns an error when no clientset is injected and no in-cluster/kubeconfig is available", func(t *testing.T) {
-		conf := config.New()
+		conf := baseConfig()
 		conf.Set("Processor.pytDeployer.inCluster", false)
 		conf.Set("Processor.pytDeployer.kubeConfigPath", "/nonexistent/kubeconfig")
 
@@ -446,8 +450,24 @@ func TestNew(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("returns an error when pytTestImage is not configured", func(t *testing.T) {
+		conf := baseConfig()
+		conf.Set("Processor.pytDeployer.pytTestImage", "")
+
+		_, err := New(conf, logger.NOP, WithClientset(fake.NewClientset()))
+		require.ErrorContains(t, err, "pytTestImage")
+	})
+
+	t.Run("returns an error when pytTestImagePullSecret is not configured", func(t *testing.T) {
+		conf := baseConfig()
+		conf.Set("Processor.pytDeployer.pytTestImagePullSecret", "")
+
+		_, err := New(conf, logger.NOP, WithClientset(fake.NewClientset()))
+		require.ErrorContains(t, err, "pytTestImagePullSecret")
+	})
+
 	t.Run("succeeds with an injected clientset", func(t *testing.T) {
-		d, err := New(config.New(), logger.NOP, WithClientset(fake.NewClientset()))
+		d, err := New(baseConfig(), logger.NOP, WithClientset(fake.NewClientset()))
 		require.NoError(t, err)
 		require.NotNil(t, d)
 	})
@@ -459,6 +479,7 @@ func baseConfig() *config.Config {
 	conf := config.New()
 	conf.Set("Processor.pytDeployer.pytTestNamespace", testNamespace)
 	conf.Set("Processor.pytDeployer.pytTestImage", "pytransformer/pyt:latest")
+	conf.Set("Processor.pytDeployer.pytTestImagePullSecret", "regcred")
 	conf.Set("Processor.pytDeployer.pytTestReadinessTimeout", "5s")
 	return conf
 }

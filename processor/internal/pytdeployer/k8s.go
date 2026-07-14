@@ -158,10 +158,17 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 				},
 				InitialDelaySeconds: 5, PeriodSeconds: 10, TimeoutSeconds: 5, FailureThreshold: 3,
 			},
+			// Limits are mandatory here, not an optimization: the container
+			// runs untrusted, non-production-grade code, so it must not be
+			// able to consume unbounded node CPU/memory.
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceCPU:    d.config.cpuRequest,
 					corev1.ResourceMemory: d.config.memoryRequest,
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    d.config.cpuLimit,
+					corev1.ResourceMemory: d.config.memoryLimit,
 				},
 			},
 			Env:          envVars(env),
