@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.80.2](https://github.com/rudderlabs/rudder-server/compare/v1.80.1...v1.80.2) (2026-07-15)
+
+
+### Bug Fixes
+
+* preserve order when overflowing snowpipe insert batches ([#7178](https://github.com/rudderlabs/rudder-server/issues/7178)) ([ec8fd1f](https://github.com/rudderlabs/rudder-server/commit/ec8fd1fcab5c5a9efa5722c1c1687dc74e7200a5))
+
 ## [1.80.1](https://github.com/rudderlabs/rudder-server/compare/v1.80.0...v1.80.1) (2026-07-08)
 
 
