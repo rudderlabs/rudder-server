@@ -16,10 +16,35 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/netutil"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 )
+
+func replaceDefaultStatsWithMemStats(t *testing.T) *memstats.Store {
+	t.Helper()
+
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+
+	originalStats := stats.Default
+	stats.Default = statsStore
+	t.Cleanup(func() {
+		stats.Default = originalStats
+	})
+
+	return statsStore
+}
+
+func requireInvalidPayloadMetric(t *testing.T, statsStore *memstats.Store, destType string) {
+	t.Helper()
+
+	metric := statsStore.Get("router_invalid_payload", stats.Tags{"destType": destType})
+	require.NotNil(t, metric)
+	require.Equal(t, 1.0, metric.LastValue())
+}
 
 func TestSendPostWithGzipData(t *testing.T) {
 	t.Run("should send Gzip data when payload is valid", func(r *testing.T) {
@@ -87,8 +112,11 @@ func TestSendPostWithGzipData(t *testing.T) {
 	})
 
 	t.Run("should send error with invalid body", func(r *testing.T) {
+		const destType = "TEST"
+		statsStore := replaceDefaultStatsWithMemStats(r)
 		network := &netHandle{
 			blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
+			destType:             destType,
 		}
 		network.logger = logger.NewLogger().Child("network")
 		network.httpClient = http.DefaultClient
@@ -103,11 +131,15 @@ func TestSendPostWithGzipData(t *testing.T) {
 		resp := network.SendPost(context.Background(), structData)
 		require.Equal(r, resp.StatusCode, http.StatusInternalServerError)
 		require.Equal(r, resp.ResponseBody, []byte("500 Invalid Router Payload: body value must be a map"))
+		requireInvalidPayloadMetric(r, statsStore, destType)
 	})
 
 	t.Run("should error with invalid body format", func(r *testing.T) {
+		const destType = "TEST"
+		statsStore := replaceDefaultStatsWithMemStats(r)
 		network := &netHandle{
 			blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
+			destType:             destType,
 		}
 		network.logger = logger.NewLogger().Child("network")
 		network.httpClient = http.DefaultClient
@@ -123,6 +155,7 @@ func TestSendPostWithGzipData(t *testing.T) {
 		resp := network.SendPost(context.Background(), structData)
 		require.Equal(r, resp.StatusCode, http.StatusInternalServerError)
 		require.Equal(r, resp.ResponseBody, []byte("500 Invalid Router Payload: body format must be a map found format INVALID"))
+		requireInvalidPayloadMetric(r, statsStore, destType)
 	})
 
 	t.Run("should not error with valid body", func(r *testing.T) {

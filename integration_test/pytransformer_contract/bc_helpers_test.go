@@ -36,21 +36,42 @@ import (
 
 // containerConfig holds platform-specific Docker container configuration.
 // On Linux, containers use host networking (sharing the host's network namespace).
-// On macOS, containers use bridge networking with port bindings and host.docker.internal.
+// On macOS — or when bridge networking is forced via withBridgeNetworking —
+// containers use bridge networking with port bindings and host.docker.internal.
 type containerConfig struct {
-	hostPort     int // allocated host port (Linux only)
+	bridge       bool // bridge networking (vs host networking)
+	hostPort     int  // allocated host port (host networking only)
 	ExtraHosts   []string
 	PortBindings map[docker.Port][]docker.PortBinding
 	hostConfigFn func(*docker.HostConfig)
 }
 
+type containerConfigOpts struct {
+	forceBridge bool
+}
+
+type containerConfigOpt func(*containerConfigOpts)
+
+// withBridgeNetworking forces bridge networking even where host networking is
+// the default (Linux). For containers that must not share the host's network
+// namespace — e.g. openfaas-flask function containers, whose of-watchdog binds
+// a hard-coded metrics port that collides when two of them share a namespace.
+func withBridgeNetworking() containerConfigOpt {
+	return func(o *containerConfigOpts) { o.forceBridge = true }
+}
+
 // newContainerConfig returns the appropriate Docker configuration for the current platform.
 // Default is host networking (Linux, CI, production). On macOS, Docker Desktop does not
 // support host networking so we fall back to bridge networking with port bindings.
-func newContainerConfig(t *testing.T, containerPort string) containerConfig {
+func newContainerConfig(t *testing.T, containerPort string, opts ...containerConfigOpt) containerConfig {
 	t.Helper()
-	if runtime.GOOS == "darwin" {
+	var o containerConfigOpts
+	for _, opt := range opts {
+		opt(&o)
+	}
+	if runtime.GOOS == "darwin" || o.forceBridge {
 		return containerConfig{
+			bridge:     true,
 			ExtraHosts: []string{"host.docker.internal:host-gateway"},
 			PortBindings: map[docker.Port][]docker.PortBinding{
 				docker.Port(containerPort + "/tcp"): {{HostIP: "127.0.0.1", HostPort: "0"}},
@@ -70,7 +91,7 @@ func newContainerConfig(t *testing.T, containerPort string) containerConfig {
 
 // portStr returns the port to pass as a container environment variable.
 func (c containerConfig) portStr(containerPort string) string {
-	if runtime.GOOS == "darwin" {
+	if c.bridge {
 		return containerPort
 	}
 	return strconv.Itoa(c.hostPort)
@@ -78,7 +99,7 @@ func (c containerConfig) portStr(containerPort string) string {
 
 // url returns the URL to reach the container from the host test process.
 func (c containerConfig) url(container *dockertest.Resource, containerPort string) string {
-	if runtime.GOOS == "darwin" {
+	if c.bridge {
 		return fmt.Sprintf("http://%s:%s",
 			container.GetBoundIP(containerPort+"/tcp"),
 			container.GetPort(containerPort+"/tcp"),
@@ -444,24 +465,28 @@ func startOpenFaasFlask(
 }
 
 // startRudderTransformer starts a rudder-transformer container configured to use
-// the mock config backend and mock OpenFaaS gateway.
+// the mock config backend and mock OpenFaaS gateway. Optional extra environment
+// variables can be passed (e.g. "TRANSFORMER_TEST_MODE=true").
 // Returns the container resource and the URL to reach it from the host.
 func startRudderTransformer(
 	t *testing.T, pool *dockertest.Pool,
 	configBackendURL, openfaasGatewayURL string,
+	extraEnv ...string,
 ) string {
 	t.Helper()
 	const containerPort = "9090"
 	cfg := newContainerConfig(t, containerPort)
+	env := []string{
+		"CONFIG_BACKEND_URL=" + toContainerURL(configBackendURL),
+		"OPENFAAS_GATEWAY_URL=" + toContainerURL(openfaasGatewayURL),
+		"PORT=" + cfg.portStr(containerPort),
+		"NODE_OPTIONS=--no-node-snapshot",
+	}
+	env = append(env, extraEnv...)
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "rudderstack/rudder-transformer",
-		Tag:        "latest",
-		Env: []string{
-			"CONFIG_BACKEND_URL=" + toContainerURL(configBackendURL),
-			"OPENFAAS_GATEWAY_URL=" + toContainerURL(openfaasGatewayURL),
-			"PORT=" + cfg.portStr(containerPort),
-			"NODE_OPTIONS=--no-node-snapshot",
-		},
+		Repository:   "rudderstack/rudder-transformer",
+		Tag:          "latest",
+		Env:          env,
 		ExtraHosts:   cfg.ExtraHosts,
 		PortBindings: cfg.PortBindings,
 	}, cfg.hostConfigFn)
@@ -509,7 +534,7 @@ func startRudderPytransformer(
 
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
-		Tag:          "main", // todo: use latest after merging https://github.com/rudderlabs/rudder-pytransformer/pull/76
+		Tag:          "main",
 		Auth:         registry.AuthConfiguration(),
 		Env:          env,
 		ExtraHosts:   cfg.ExtraHosts,
@@ -584,12 +609,13 @@ func dumpContainerLogs(t *testing.T, pool *dockertest.Pool, container *dockertes
 	t.Logf("=== %s container logs ===\n%s=== end %s logs ===", name, buf.String(), name)
 }
 
-// waitForOpenFaasFlask polls the openfaas-flask-base fwatchdog health endpoint.
-// fwatchdog responds to GET / with X-REQUEST-TYPE: HEALTH-CHECK header.
-func waitForOpenFaasFlask(t *testing.T, pool *dockertest.Pool, baseURL string) {
-	t.Helper()
-	t.Logf("Waiting for openfaas-flask-base at %s to be healthy...", baseURL)
-	err := pool.Retry(func() error {
+// pollOpenFaasFlaskHealthy polls the openfaas-flask-base fwatchdog health
+// endpoint until it returns 200. fwatchdog responds to GET / with the
+// X-REQUEST-TYPE: HEALTH-CHECK header. It returns an error instead of failing
+// the test so it is safe to call from a non-test goroutine (e.g. the dynamic
+// gateway's HTTP handler).
+func pollOpenFaasFlaskHealthy(pool *dockertest.Pool, baseURL string) error {
+	return pool.Retry(func() error {
 		req, err := http.NewRequest(http.MethodGet, baseURL+"/", nil)
 		if err != nil {
 			return err
@@ -606,7 +632,14 @@ func waitForOpenFaasFlask(t *testing.T, pool *dockertest.Pool, baseURL string) {
 		}
 		return nil
 	})
-	require.NoError(t, err, "openfaas-flask-base failed to become healthy")
+}
+
+// waitForOpenFaasFlask polls the openfaas-flask-base fwatchdog health endpoint.
+// fwatchdog responds to GET / with X-REQUEST-TYPE: HEALTH-CHECK header.
+func waitForOpenFaasFlask(t *testing.T, pool *dockertest.Pool, baseURL string) {
+	t.Helper()
+	t.Logf("Waiting for openfaas-flask-base at %s to be healthy...", baseURL)
+	require.NoError(t, pollOpenFaasFlaskHealthy(pool, baseURL), "openfaas-flask-base failed to become healthy")
 	t.Logf("openfaas-flask-base is healthy at %s", baseURL)
 }
 

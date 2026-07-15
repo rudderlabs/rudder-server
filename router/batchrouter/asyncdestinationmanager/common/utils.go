@@ -32,11 +32,12 @@ func IsAsyncDestination(destination string) bool {
 }
 
 // FormatCSVValue stringifies a JSON-derived value for a CSV cell.
-// Top-level nil renders as an empty cell so destinations that treat empty
-// cells as null (e.g. Salesforce Bulk) get the expected semantics. Floats
-// are rendered without scientific notation, and arrays/maps are emitted
-// as JSON so nested numbers stay plain and nested nulls become `null`.
-// Returns an error when JSON marshalling of a composite value fails.
+// Top-level nil renders as an empty cell; destinations where an empty cell
+// does not mean null (e.g. Salesforce Bulk ignores empty cells and requires
+// the #N/A sentinel to clear a field) must encode their sentinel before this
+// point. Floats are rendered without scientific notation, and arrays/maps
+// are emitted as JSON so nested numbers stay plain and nested nulls become
+// `null`. Returns an error when JSON marshalling of a composite value fails.
 func FormatCSVValue(value any) (string, error) {
 	if value == nil {
 		return "", nil
