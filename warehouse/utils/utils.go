@@ -685,10 +685,11 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 		return "", "", "", err
 	}
 
-	// Role-based auth and the default credential chain (pod identity) already
-	// yield temporary credentials that include a session token — retrieve them
-	// directly. Only long-term static keys need an explicit GetSessionToken.
-	if sessionConfig.RoleBasedAuth || sessionConfig.AccessKeyID == "" {
+	// Role-based auth and the rudder-storage flow (which authenticates via the
+	// AWS SDK default credential chain / pod identity) already yield temporary
+	// credentials that include a session token — retrieve them directly. Only
+	// long-term static keys need an explicit GetSessionToken.
+	if sessionConfig.RoleBasedAuth || misc.IsConfiguredToUseRudderObjectStorage(destination.Config) {
 		creds, err := awsConfig.Credentials.Retrieve(context.Background())
 		if err != nil {
 			return "", "", "", fmt.Errorf("retrieving temporary credentials: %w", err)
