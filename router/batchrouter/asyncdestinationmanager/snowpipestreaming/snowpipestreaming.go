@@ -388,14 +388,14 @@ func splitEventsExceedingMaxInsertRequestSize(groupedEvents map[string][]*event,
 		// rows JSON = '[' + row1 + ',' + row2 + ... + ']'
 		eventsSize := int64(2) // '[' + ']'
 		kept := make([]*event, 0, len(tableEvents))
-		for _, event := range tableEvents {
+		for i, event := range tableEvents {
 			eventSize := event.MessageDataByteSize
 			if len(kept) > 0 {
 				eventSize++ // ',' between rows
 			}
 			if eventsSize+eventSize > maxInsertRequestSizeBytes {
-				overflowedEvents = append(overflowedEvents, event)
-				continue
+				overflowedEvents = append(overflowedEvents, tableEvents[i:]...)
+				break
 			}
 			eventsSize += eventSize
 			kept = append(kept, event)

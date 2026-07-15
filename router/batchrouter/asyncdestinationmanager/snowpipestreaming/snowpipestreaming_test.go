@@ -194,7 +194,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		t.Cleanup(func() { _ = f.Close() })
 
 		// Fill the insert rows payload close to 16MB, make the next row overflow,
-		// then ensure a later small row can still fit.
+		// then ensure a later small row from the same table overflows too.
 		// MessageDataByteSize is computed from the marshalled insert row.
 		baseTS := "2023-05-12T04:36:50.199Z"
 		largeName := strings.Repeat("a", int(maxInsertRequestSizeBytes-int64(20000)))
@@ -223,10 +223,10 @@ func TestSnowpipeStreaming(t *testing.T) {
 			Count:       3,
 		})
 
-		require.Equal(t, []int64{1001, 1003}, output.ImportingJobIDs)
-		require.Equal(t, 2, output.ImportingCount)
-		require.Equal(t, []int64{1002}, output.FailedJobIDs)
-		require.Equal(t, 1, output.FailedCount)
+		require.Equal(t, []int64{1001}, output.ImportingJobIDs)
+		require.Equal(t, 1, output.ImportingCount)
+		require.Equal(t, []int64{1002, 1003}, output.FailedJobIDs)
+		require.Equal(t, 2, output.FailedCount)
 		require.Equal(t, fmt.Sprintf("some events were not uploaded because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes), output.FailedReason)
 	})
 
@@ -3478,6 +3478,58 @@ func TestSnowpipeStreaming(t *testing.T) {
 			require.False(t, sm.polledImportInfoMap["test-channel-2"].Failed)
 			require.Equal(t, 2, bulkCallCount)
 		})
+	})
+}
+
+func TestSplitEventsExceedingMaxInsertRequestSize(t *testing.T) {
+	newEvent := func(jobID, size int64) *event {
+		e := &event{MessageDataByteSize: size}
+		e.Metadata.JobID = jobID
+		e.Message.Metadata.Table = "USERS"
+		return e
+	}
+	jobIDs := func(events []*event) []int64 {
+		ids := make([]int64, 0, len(events))
+		for _, e := range events {
+			ids = append(ids, e.Metadata.JobID)
+		}
+		return ids
+	}
+
+	t.Run("overflows current and later events after first overflow", func(t *testing.T) {
+		included, overflowed := splitEventsExceedingMaxInsertRequestSize(map[string][]*event{
+			"USERS": {
+				newEvent(1, 3), // rows payload: [] + row = 5 bytes
+				newEvent(2, 6), // would exceed max with comma separator
+				newEvent(3, 4), // would fit if considered after skipping event 2, but must overflow to preserve order
+			},
+		}, 10)
+
+		require.Equal(t, []int64{1}, jobIDs(included["USERS"]))
+		require.Equal(t, []int64{2, 3}, jobIDs(overflowed))
+	})
+
+	t.Run("overflows single oversized event before keeping any event", func(t *testing.T) {
+		included, overflowed := splitEventsExceedingMaxInsertRequestSize(map[string][]*event{
+			"USERS": {
+				newEvent(1, 9), // [] + row exceeds max
+			},
+		}, 10)
+
+		require.Empty(t, included)
+		require.Equal(t, []int64{1}, jobIDs(overflowed))
+	})
+
+	t.Run("keeps events that fit exactly at boundary", func(t *testing.T) {
+		included, overflowed := splitEventsExceedingMaxInsertRequestSize(map[string][]*event{
+			"USERS": {
+				newEvent(1, 3), // [] + row = 5 bytes
+				newEvent(2, 4), // comma + row reaches exactly 10 bytes
+			},
+		}, 10)
+
+		require.Equal(t, []int64{1, 2}, jobIDs(included["USERS"]))
+		require.Empty(t, overflowed)
 	})
 }
 
