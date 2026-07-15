@@ -99,20 +99,16 @@ func (p *basePayload) fileManager(config any, useRudderStorage bool) (filemanage
 	clonedConfig["uploadIfNotExist"] = true
 
 	storageProvider := warehouseutils.ObjectStorageType(p.DestinationType, config, useRudderStorage)
-	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-		Provider:                    storageProvider,
-		Config:                      clonedConfig,
-		UseRudderStorage:            useRudderStorage,
-		RudderStoragePrefixOverride: p.RudderStoragePrefix,
-		WorkspaceID:                 p.WorkspaceID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("getting object storage config: %w", err)
-	}
 	fileManager, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
-		Config:   storageConfig,
-		Conf:     appConfig.Default,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:                    storageProvider,
+			Config:                      clonedConfig,
+			UseRudderStorage:            useRudderStorage,
+			RudderStoragePrefixOverride: p.RudderStoragePrefix,
+			WorkspaceID:                 p.WorkspaceID,
+		}),
+		Conf: appConfig.Default,
 	})
 	return fileManager, err
 }

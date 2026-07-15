@@ -165,17 +165,15 @@ func uploadStagingFile(t testing.TB, testConfig *TestConfig, stagingFile string)
 
 	storageProvider := warehouseutils.ObjectStorageType(testConfig.DestinationType, testConfig.Config, false)
 
-	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-		Provider:         storageProvider,
-		Config:           testConfig.Config,
-		UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(testConfig.Config),
-		WorkspaceID:      testConfig.WorkspaceID,
-	})
-	require.NoError(t, err)
 	fm, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
-		Config:   storageConfig,
-		Conf:     config.Default,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         storageProvider,
+			Config:           testConfig.Config,
+			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(testConfig.Config),
+			WorkspaceID:      testConfig.WorkspaceID,
+		}),
+		Conf: config.Default,
 	})
 	require.NoError(t, err)
 

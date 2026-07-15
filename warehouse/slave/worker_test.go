@@ -274,15 +274,13 @@ func TestSlaveWorker(t *testing.T) {
 				require.Equal(t, output.DestinationRevisionID, p.DestinationRevisionID)
 				require.Equal(t, output.UseRudderStorage, p.StagingUseRudderStorage)
 
-				storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-					Provider: "MINIO",
-					Config:   destConf,
-				})
-				require.NoError(t, err)
 				fm, err := filemanager.New(&filemanager.Settings{
 					Provider: "MINIO",
-					Config:   storageConfig,
-					Conf:     config.Default,
+					Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+						Provider: "MINIO",
+						Config:   destConf,
+					}),
+					Conf: config.Default,
 				})
 				require.NoError(t, err)
 
@@ -706,15 +704,13 @@ func TestSlaveWorker(t *testing.T) {
 				require.Equal(t, output.DestinationRevisionID, p.DestinationRevisionID)
 				require.Equal(t, output.UseRudderStorage, p.StagingUseRudderStorage)
 
-				storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-					Provider: "MINIO",
-					Config:   destConf,
-				})
-				require.NoError(t, err)
 				fm, err := filemanager.New(&filemanager.Settings{
 					Provider: "MINIO",
-					Config:   storageConfig,
-					Conf:     config.Default,
+					Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+						Provider: "MINIO",
+						Config:   destConf,
+					}),
+					Conf: config.Default,
 				})
 				require.NoError(t, err)
 

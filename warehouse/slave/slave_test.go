@@ -208,15 +208,13 @@ func uploadFile(t testing.TB, ctx context.Context, destConf map[string]any, file
 		require.NoError(t, f.Close())
 	}()
 
-	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-		Provider: "MINIO",
-		Config:   destConf,
-	})
-	require.NoError(t, err)
 	fm, err := filemanager.New(&filemanager.Settings{
 		Provider: "MINIO",
-		Config:   storageConfig,
-		Conf:     config.Default,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider: "MINIO",
+			Config:   destConf,
+		}),
+		Conf: config.Default,
 	})
 	require.NoError(t, err)
 

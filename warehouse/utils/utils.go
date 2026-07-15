@@ -644,7 +644,17 @@ func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName
 	if misc.HasAWSRoleARNInConfig(destination.Config) || misc.HasAWSKeysInConfig(destination.Config) {
 		return awsutils.NewSimpleSessionConfigForDestination(destination, serviceName)
 	}
-	return nil, misc.ErrS3MissingCredentials
+	// Non-rudder-storage destination without an IAM role ARN or access keys: fall
+	// back to the shared RudderStack S3 copy-user credentials. Customers grant
+	// this user write access to their bucket so RudderStack can deliver data when
+	// they don't supply their own credentials.
+	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
+	return &awsutil.SessionConfig{
+		AccessKeyID: accessKeyID,
+		AccessKey:   accessKey,
+		Service:     serviceName,
+		Region:      misc.GetRegionHint(),
+	}, nil
 }
 
 func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string, string, error) {

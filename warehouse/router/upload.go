@@ -503,19 +503,15 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	log := job.logger.Withn(logger.NewStringField("storageProvider", storageProvider))
 	log.Infon("Starting object storage cleanup")
 
-	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-		Provider:         storageProvider,
-		Config:           destination.Config,
-		UseRudderStorage: job.upload.UseRudderStorage,
-		WorkspaceID:      job.upload.WorkspaceID,
-	})
-	if err != nil {
-		return fmt.Errorf("getting object storage config: %w", err)
-	}
 	fm, err := job.fileManagerFactory(&filemanager.Settings{
 		Provider: storageProvider,
-		Config:   storageConfig,
-		Conf:     job.conf,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         storageProvider,
+			Config:           destination.Config,
+			UseRudderStorage: job.upload.UseRudderStorage,
+			WorkspaceID:      job.upload.WorkspaceID,
+		}),
+		Conf: job.conf,
 	})
 	if err != nil {
 		return fmt.Errorf("creating file manager: %w", err)

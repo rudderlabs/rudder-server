@@ -48,12 +48,6 @@ var (
 	regexGwNonHaOrProcessor = regexp.MustCompile(`^.*-\d+$`)
 )
 
-// ErrS3MissingCredentials is returned when a user-configured (non-rudder-storage)
-// S3 location is configured with neither an IAM role ARN nor access keys. This
-// applies to S3 destinations as well as S3 used for warehouse staging/COPY; such
-// locations must not fall back to any RudderStack-owned credentials.
-var ErrS3MissingCredentials = errors.New("S3 access requires an IAM role ARN or access keys")
-
 const (
 	// RFC3339Milli with milli sec precision
 	RFC3339Milli          = "2006-01-02T15:04:05.000Z07:00"
@@ -650,6 +644,17 @@ func HasAWSRegionInConfig(config any) bool {
 	return true
 }
 
+// GetRudderObjectStorageAccessKeys returns the credentials of the shared
+// RudderStack-owned S3 "copy user". These are used only as a fallback for
+// customer-configured (non-rudder-storage) S3 locations that provide neither an
+// IAM role ARN nor access keys: customers grant this user write access so
+// RudderStack can deliver data to their bucket. The rudder-storage flow no
+// longer uses these keys — it authenticates via the AWS SDK default credential
+// chain (pod identity / IRSA).
+func GetRudderObjectStorageAccessKeys() (accessKeyID, accessKey string) {
+	return config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID"), config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY")
+}
+
 func GetRudderObjectStoragePrefix() (prefix string) {
 	return config.GetStringVar(config.GetNamespaceIdentifier(), "RUDDER_WAREHOUSE_BUCKET_PREFIX")
 }
@@ -689,22 +694,26 @@ type ObjectStorageOptsT struct {
 	WorkspaceID                 string
 }
 
-func GetObjectStorageConfig(opts ObjectStorageOptsT) (map[string]any, error) {
+func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
 	objectStorageConfigMap := opts.Config.(map[string]any)
 	if opts.UseRudderStorage {
-		return GetRudderObjectStorageConfig(opts.RudderStoragePrefixOverride), nil
+		return GetRudderObjectStorageConfig(opts.RudderStoragePrefixOverride)
 	}
 	if opts.Provider == "S3" {
-		if !HasAWSRoleARNInConfig(objectStorageConfigMap) &&
-			!HasAWSKeysInConfig(objectStorageConfigMap) {
-			return nil, ErrS3MissingCredentials
-		}
 		clonedObjectStorageConfig := make(map[string]any)
 		maps.Copy(clonedObjectStorageConfig, objectStorageConfigMap)
 		clonedObjectStorageConfig["externalID"] = opts.WorkspaceID
+		if !HasAWSRoleARNInConfig(objectStorageConfigMap) &&
+			!HasAWSKeysInConfig(objectStorageConfigMap) {
+			// Non-rudder-storage S3 destination without an IAM role ARN or access
+			// keys: fall back to the shared RudderStack S3 copy-user credentials.
+			// Customers grant this user write access to their bucket so RudderStack
+			// can deliver data when they don't supply their own credentials.
+			clonedObjectStorageConfig["accessKeyID"], clonedObjectStorageConfig["accessKey"] = GetRudderObjectStorageAccessKeys()
+		}
 		objectStorageConfigMap = clonedObjectStorageConfig
 	}
-	return objectStorageConfigMap, nil
+	return objectStorageConfigMap
 }
 
 // GetParsedTimestamp returns the parsed timestamp

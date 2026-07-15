@@ -571,10 +571,6 @@ func TestBytesPerTable(t *testing.T) {
 					},
 					Destination: backendconfig.DestinationT{
 						ID: "test-destination",
-						Config: map[string]any{
-							"accessKeyID": "test-access-key-id",
-							"accessKey":   "test-access-key",
-						},
 					},
 				},
 			}
@@ -703,10 +699,6 @@ func TestUploadDatePrefixOverridePrecedence(t *testing.T) {
 					Destination: backendconfig.DestinationT{
 						ID:          tc.destinationID,
 						WorkspaceID: tc.workspaceID,
-						Config: map[string]any{
-							"accessKeyID": "test-access-key-id",
-							"accessKey":   "test-access-key",
-						},
 					},
 				},
 			}, false)

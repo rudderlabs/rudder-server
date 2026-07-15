@@ -422,19 +422,15 @@ func (rs *Redshift) generateManifest(ctx context.Context, tableName string) (str
 	}
 	defer func() { _ = file.Close() }()
 
-	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-		Provider:         warehouseutils.S3,
-		Config:           rs.Warehouse.Destination.Config,
-		UseRudderStorage: rs.Uploader.UseRudderStorage(),
-		WorkspaceID:      rs.Warehouse.Destination.WorkspaceID,
-	})
-	if err != nil {
-		return "", fmt.Errorf("getting object storage config: %w", err)
-	}
 	uploader, err := filemanager.New(&filemanager.Settings{
 		Provider: warehouseutils.S3,
-		Config:   storageConfig,
-		Conf:     rs.conf,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         warehouseutils.S3,
+			Config:           rs.Warehouse.Destination.Config,
+			UseRudderStorage: rs.Uploader.UseRudderStorage(),
+			WorkspaceID:      rs.Warehouse.Destination.WorkspaceID,
+		}),
+		Conf: rs.conf,
 	})
 	if err != nil {
 		return "", fmt.Errorf("creating uploader: %w", err)

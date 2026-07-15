@@ -179,15 +179,13 @@ func TestSlaveJob(t *testing.T) {
 			"bucketProvider":   provider,
 		}
 
-		storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider: "MINIO",
-			Config:   conf,
-		})
-		require.NoError(t, err)
 		fm, err := filemanager.New(&filemanager.Settings{
 			Provider: "MINIO",
-			Config:   storageConfig,
-			Conf:     config.Default,
+			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+				Provider: "MINIO",
+				Config:   conf,
+			}),
+			Conf: config.Default,
 		})
 		require.NoError(t, err)
 

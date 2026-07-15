@@ -364,22 +364,15 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 
 	brt.logger.Debugn("BRT: Logged to local file", logger.NewStringField("gzipFilePath", gzipFilePath))
 	useRudderStorage := isWarehouse && misc.IsConfiguredToUseRudderObjectStorage(batchJobs.Connection.Destination.Config)
-	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-		Provider:         provider,
-		Config:           batchJobs.Connection.Destination.Config,
-		UseRudderStorage: useRudderStorage,
-		WorkspaceID:      batchJobs.Connection.Destination.WorkspaceID,
-	})
-	if err != nil {
-		return UploadResult{
-			Error:          err,
-			LocalFilePaths: []string{gzipFilePath},
-		}
-	}
 	uploader, err := brt.fileManagerFactory(&filemanager.Settings{
 		Provider: provider,
-		Config:   storageConfig,
-		Conf:     brt.conf,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         provider,
+			Config:           batchJobs.Connection.Destination.Config,
+			UseRudderStorage: useRudderStorage,
+			WorkspaceID:      batchJobs.Connection.Destination.WorkspaceID,
+		}),
+		Conf: brt.conf,
 	})
 	if err != nil {
 		return UploadResult{

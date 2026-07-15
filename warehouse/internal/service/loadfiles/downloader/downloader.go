@@ -56,19 +56,15 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 		l.uploader.UseRudderStorage(),
 	)
 
-	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-		Provider:         storageProvider,
-		Config:           l.warehouse.Destination.Config,
-		UseRudderStorage: l.uploader.UseRudderStorage(),
-		WorkspaceID:      l.warehouse.Destination.WorkspaceID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("getting object storage config: %w", err)
-	}
 	fileManager, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
-		Config:   storageConfig,
-		Conf:     config.Default,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         storageProvider,
+			Config:           l.warehouse.Destination.Config,
+			UseRudderStorage: l.uploader.UseRudderStorage(),
+			WorkspaceID:      l.warehouse.Destination.WorkspaceID,
+		}),
+		Conf: config.Default,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating filemanager for destination: %w", err)
