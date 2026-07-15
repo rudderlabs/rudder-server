@@ -760,9 +760,13 @@ func (proc *Handle) Start(ctx context.Context) error {
 func (proc *Handle) activePartitions(ctx context.Context) []string {
 	defer proc.statsFactory.NewStat("proc_active_partitions_time", stats.TimerType).RecordDuration()()
 	keys, err := proc.isolationStrategy.ActivePartitions(ctx, proc.gatewayDB)
-	if err != nil && ctx.Err() == nil {
-		// TODO: retry?
-		panic(err)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
+		proc.logger.Errorn("failed to get active partitions", obskit.Error(err))
+		proc.statsFactory.NewStat("proc_active_partitions_error", stats.CountType).Increment()
+		return nil
 	}
 	proc.statsFactory.NewStat("proc_active_partitions", stats.GaugeType).Gauge(len(keys))
 	return keys
