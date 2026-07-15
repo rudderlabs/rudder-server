@@ -74,7 +74,7 @@ func New(
 	m.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "SnowpipeStreaming.maxBufferCapacity")
 	m.config.stuckPipelineThreshold = conf.GetReloadableDurationVar(15, time.Minute, "SnowpipeStreaming.stuckPipelineThresholdInMinutes")
 	m.config.bulkStatusBatchSize = conf.GetReloadableIntVar(100, 1, "SnowpipeStreaming.bulkStatusBatchSize")
-	m.config.maxInsertRequestSizeBytes = conf.GetReloadableInt64Var(16*bytesize.MB, bytesize.B, "SnowpipeStreaming.maxInsertRequestSizeBytes")
+	m.config.maxInsertRequestSizeBytes = conf.GetReloadableInt64Var(24*bytesize.MB, bytesize.B, "SnowpipeStreaming.maxInsertRequestSizeBytes")
 
 	tags := stats.Tags{
 		"module":        "batch_router",
@@ -209,7 +209,7 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 	})
 
 	maxInsertRequestSizeBytes := m.config.maxInsertRequestSizeBytes.Load()
-	includedGroupedEvents, overflowedEvents := splitEventsExceedingMaxInsertRequestSize(groupedEvents, maxInsertRequestSizeBytes)
+	includedGroupedEvents, overflowedEvents, oversizedEvents := splitEventsExceedingMaxInsertRequestSize(groupedEvents, maxInsertRequestSizeBytes)
 
 	uploadInfos := lo.MapToSlice(includedGroupedEvents, func(tableName string, tableEvents []*event) *uploadInfo {
 		jobIDs := lo.Map(tableEvents, func(event *event, _ int) int64 {
@@ -306,6 +306,14 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 			failedReason = fmt.Sprintf("some events were not uploaded because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes)
 		}
 	}
+	if len(oversizedEvents) > 0 {
+		abortedJobIDs = append(abortedJobIDs, lo.Map(oversizedEvents, func(event *event, _ int) int64 {
+			return event.Metadata.JobID
+		})...)
+		if abortReason == "" {
+			abortReason = fmt.Sprintf("some events were aborted because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes)
+		}
+	}
 
 	var importParameters json.RawMessage
 	if len(importInfos) > 0 {
@@ -378,11 +386,15 @@ func (m *Manager) eventsFromFile(fileName string, eventsCount int) ([]*event, er
 	return events, nil
 }
 
-// splitEventsExceedingMaxInsertRequestSize splits grouped events into included and overflowed events
+// splitEventsExceedingMaxInsertRequestSize splits grouped events into included, overflowed, and oversized events
 // based on the configured max insert request size.
-func splitEventsExceedingMaxInsertRequestSize(groupedEvents map[string][]*event, maxInsertRequestSizeBytes int64) (map[string][]*event, []*event) {
+// Events whose individual size exceeds the max are returned as oversized and skipped so processing can continue.
+// Once the cumulative batch size would exceed the max, the current and all later non-oversized events for that table
+// are overflowed to preserve job order on retry.
+func splitEventsExceedingMaxInsertRequestSize(groupedEvents map[string][]*event, maxInsertRequestSizeBytes int64) (map[string][]*event, []*event, []*event) {
 	includedGroupedEvents := make(map[string][]*event, len(groupedEvents))
 	overflowedEvents := make([]*event, 0)
+	oversizedEvents := make([]*event, 0)
 	for tableName, tableEvents := range groupedEvents {
 		// Only account for the insert rows payload size:
 		// rows JSON = '[' + row1 + ',' + row2 + ... + ']'
@@ -390,11 +402,21 @@ func splitEventsExceedingMaxInsertRequestSize(groupedEvents map[string][]*event,
 		kept := make([]*event, 0, len(tableEvents))
 		for i, event := range tableEvents {
 			eventSize := event.MessageDataByteSize
+			if eventSize > maxInsertRequestSizeBytes {
+				oversizedEvents = append(oversizedEvents, event)
+				continue
+			}
 			if len(kept) > 0 {
 				eventSize++ // ',' between rows
 			}
 			if eventsSize+eventSize > maxInsertRequestSizeBytes {
-				overflowedEvents = append(overflowedEvents, tableEvents[i:]...)
+				for _, remaining := range tableEvents[i:] {
+					if remaining.MessageDataByteSize > maxInsertRequestSizeBytes {
+						oversizedEvents = append(oversizedEvents, remaining)
+						continue
+					}
+					overflowedEvents = append(overflowedEvents, remaining)
+				}
 				break
 			}
 			eventsSize += eventSize
@@ -404,7 +426,7 @@ func splitEventsExceedingMaxInsertRequestSize(groupedEvents map[string][]*event,
 			includedGroupedEvents[tableName] = kept
 		}
 	}
-	return includedGroupedEvents, overflowedEvents
+	return includedGroupedEvents, overflowedEvents, oversizedEvents
 }
 
 // sendEventsToSnowpipe sends events to Snowpipe for the given table.
