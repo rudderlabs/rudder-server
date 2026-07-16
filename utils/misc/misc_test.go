@@ -580,7 +580,8 @@ func TestGetObjectStorageConfig(t *testing.T) {
 	sampleAccessKey := "someAccessKey"
 	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", sampleAccessKeyID)
 	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", sampleAccessKey)
-	t.Run("S3 without AccessKeys", func(t *testing.T) {
+
+	t.Run("S3 without role or keys falls back to the copy-user credentials", func(t *testing.T) {
 		config := GetObjectStorageConfig(ObjectStorageOptsT{
 			Provider:    "S3",
 			Config:      map[string]any{},
@@ -592,7 +593,7 @@ func TestGetObjectStorageConfig(t *testing.T) {
 		require.Equal(t, sampleAccessKey, config["accessKey"])
 	})
 
-	t.Run("S3 with AccessKeys", func(t *testing.T) {
+	t.Run("S3 with AccessKeys keeps user keys, no copy-user injection", func(t *testing.T) {
 		config := GetObjectStorageConfig(ObjectStorageOptsT{
 			Provider: "S3",
 			Config: map[string]any{
@@ -606,6 +607,38 @@ func TestGetObjectStorageConfig(t *testing.T) {
 		require.Equal(t, "someOtherAccessKeyID", config["accessKeyID"])
 		require.Equal(t, "someOtherAccessKey", config["accessKey"])
 	})
+
+	t.Run("S3 with iamRoleARN keeps role, no copy-user injection", func(t *testing.T) {
+		config := GetObjectStorageConfig(ObjectStorageOptsT{
+			Provider:    "S3",
+			Config:      map[string]any{"iamRoleARN": "arn:aws:iam::123:role/x"},
+			WorkspaceID: sampleWorkspaceID,
+		})
+		require.NotNil(t, config)
+		require.Equal(t, sampleWorkspaceID, config["externalID"])
+		require.NotContains(t, config, "accessKeyID")
+		require.NotContains(t, config, "accessKey")
+	})
+
+	t.Run("UseRudderStorage returns rudder config without static creds", func(t *testing.T) {
+		config := GetObjectStorageConfig(ObjectStorageOptsT{
+			Provider:         "S3",
+			Config:           map[string]any{},
+			UseRudderStorage: true,
+		})
+		require.NotNil(t, config)
+		require.NotContains(t, config, "accessKeyID")
+		require.NotContains(t, config, "accessKey")
+	})
+}
+
+func TestGetRudderObjectStorageConfig(t *testing.T) {
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "shouldNotBeUsed")
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "shouldNotBeUsed")
+	config := GetRudderObjectStorageConfig("")
+	require.NotEmpty(t, config["bucketName"])
+	require.NotContains(t, config, "accessKeyID")
+	require.NotContains(t, config, "accessKey")
 }
 
 // FolderExists Check if folder exists at particular path

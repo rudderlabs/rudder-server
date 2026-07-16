@@ -213,9 +213,9 @@ func TestIntegration(t *testing.T) {
 				},
 				additionalEnvs: func(destinationID string) map[string]string {
 					return map[string]string{
-						"RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID": credentials.AccessKeyID,
-						"RUDDER_AWS_S3_COPY_USER_ACCESS_KEY":    credentials.AccessKey,
-						"RUDDER_WAREHOUSE_BUCKET":               credentials.BucketName,
+						"AWS_ACCESS_KEY_ID":       credentials.AccessKeyID,
+						"AWS_SECRET_ACCESS_KEY":   credentials.AccessKey,
+						"RUDDER_WAREHOUSE_BUCKET": credentials.BucketName,
 					}
 				},
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
