@@ -121,7 +121,7 @@ func TestForward(t *testing.T) {
 
 	t.Run("routes a config-flagged workspace's execution ops to its production pyt deployment, bypassing the deployer", func(t *testing.T) {
 		conf := config.New()
-		conf.Set("Processor.pytTestOverrides.WS-Prod-Routed.routeToProduction", true)
+		conf.Set("Processor.pytTestOverrides.routeToProduction", map[string]any{"WS-Prod-Routed": true})
 		deployer := &fakeDeployer{err: errors.New("must never be called")}
 		fwd := &fakeForwarder{statusCode: 200}
 		svc := newService(t, conf, deployer, fwd)
@@ -143,7 +143,7 @@ func TestForward(t *testing.T) {
 
 	t.Run("an unflagged workspace still runs on the ephemeral deployer", func(t *testing.T) {
 		conf := config.New()
-		conf.Set("Processor.pytTestOverrides.ws-other.routeToProduction", true)
+		conf.Set("Processor.pytTestOverrides.routeToProduction", map[string]any{"ws-other": true})
 		deployer := &fakeDeployer{baseURL: "http://pyt-test-abc.ns.svc:8080"}
 		fwd := &fakeForwarder{statusCode: 200}
 		svc := newService(t, conf, deployer, fwd)
@@ -154,9 +154,9 @@ func TestForward(t *testing.T) {
 		require.Equal(t, deployer.baseURL, fwd.gotBaseURL)
 	})
 
-	t.Run("the global routeToProduction fallback flags every workspace at once", func(t *testing.T) {
+	t.Run("the \"*\" routeToProduction entry flags every workspace at once", func(t *testing.T) {
 		conf := config.New()
-		conf.Set("Processor.pytTestOverrides.routeToProduction", true)
+		conf.Set("Processor.pytTestOverrides.routeToProduction", map[string]any{"*": true})
 		deployer := &fakeDeployer{err: errors.New("must never be called")}
 		fwd := &fakeForwarder{statusCode: 200}
 		svc := newService(t, conf, deployer, fwd)
@@ -165,6 +165,19 @@ func TestForward(t *testing.T) {
 		require.NoError(t, err)
 		require.Zero(t, deployer.calls.Load())
 		require.Equal(t, "http://pyt-any-ws:8080", fwd.gotBaseURL)
+	})
+
+	t.Run("a workspace's own false entry wins over the \"*\" entry", func(t *testing.T) {
+		conf := config.New()
+		conf.Set("Processor.pytTestOverrides.routeToProduction", map[string]any{"*": true, "ws-exempt": false})
+		deployer := &fakeDeployer{baseURL: "http://pyt-test-abc.ns.svc:8080"}
+		fwd := &fakeForwarder{statusCode: 200}
+		svc := newService(t, conf, deployer, fwd)
+
+		_, err := svc.Forward(context.Background(), &proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: "ws-exempt"})
+		require.NoError(t, err)
+		require.Equal(t, int32(1), deployer.calls.Load(), "the exempted workspace must stay on the ephemeral deployer")
+		require.Equal(t, deployer.baseURL, fwd.gotBaseURL)
 	})
 
 	t.Run("returns Unavailable when the ephemeral deployer fails", func(t *testing.T) {

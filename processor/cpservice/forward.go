@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -38,16 +40,17 @@ var validWorkspaceID = regexp.MustCompile(`^[a-zA-Z0-9-]{1,59}$`)
 // Execution ops (test, testRun) run arbitrary customer Python, so each request
 // gets its own fresh ephemeral pyt Deployment + Service via s.deployer,
 // created just for this call and deleted best-effort afterwards — see
-// [pytdeployer.Deployer.RunOnEphemeral]. Workspaces flagged via
-// Processor.pytTestOverrides.<workspaceID>.routeToProduction are the
-// exception: their tests forward to the workspace's production pyt deployment
-// instead (see [Service.isProdRouted]).
+// [pytdeployer.Deployer.RunOnEphemeral]. Workspaces flagged in the
+// Processor.pytTestOverrides.routeToProduction map are the exception: their
+// tests forward to the workspace's production pyt deployment instead (see
+// [Service.isProdRouted]).
 // AST ops (testLibrary, extractLibs) never execute user code; they go straight
 // to the shared static AST deployment with no k8s API involvement.
 func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*proto.ForwardResponse, error) {
 	start := time.Now()
 	defer func() {
-		s.log.Infon("time to forward to pyt",
+		s.log.Debugn(
+			"time to forward to pyt",
 			obskit.WorkspaceID(req.WorkspaceId),
 			logger.NewStringField("op", req.Op.String()),
 			logger.NewDurationField("duration", time.Since(start)),
@@ -100,17 +103,27 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 
 // isProdRouted reports whether the workspace's test traffic is config-flagged
 // to run on its production pyt deployment instead of an ephemeral one. The
-// flag is a per-workspace reloadable bool —
-// Processor.pytTestOverrides.<workspaceID>.routeToProduction, falling back to
-// the global Processor.pytTestOverrides.routeToProduction — so a workspace
-// (or all of them) can be flagged without a restart. Config keys are matched
-// case-insensitively, mirroring the lowercased deployment-name convention.
-// workspaceID has already passed validWorkspaceID in Forward, so it is safe
-// to interpolate into the key.
+// flags live in a single reloadable map — registered once in [NewService], so
+// no per-workspace vars accumulate in the config registry —
+// Processor.pytTestOverrides.routeToProduction, keyed by workspace ID with
+// "*" flagging every workspace at once; a workspace's own entry wins over
+// "*", so `{"*": true, "ws-1": false}` exempts ws-1. The config layer
+// lowercases map keys, so the lookup is case-insensitive, mirroring the
+// lowercased deployment-name convention.
 func (s *Service) isProdRouted(workspaceID string) bool {
-	return s.conf.GetReloadableBoolVar(false,
-		fmt.Sprintf("Processor.pytTestOverrides.%s.routeToProduction", workspaceID),
-		"Processor.pytTestOverrides.routeToProduction").Load()
+	flags := s.prodRouted.Load()
+	if v, ok := flags[strings.ToLower(workspaceID)]; ok {
+		return flagValue(v)
+	}
+	v, ok := flags["*"]
+	return ok && flagValue(v)
+}
+
+// flagValue interprets a routeToProduction map entry as a bool, whichever form
+// the config source delivered it in (bool from YAML, string from env).
+func flagValue(v any) bool {
+	b, err := strconv.ParseBool(fmt.Sprint(v))
+	return err == nil && b
 }
 
 // forwardForOp resolves a control-plane op to the Forwarder method that serves

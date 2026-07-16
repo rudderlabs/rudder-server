@@ -61,12 +61,17 @@ type Forwarder interface {
 type Service struct {
 	proto.UnimplementedProcessorServiceServer
 
-	conf            *config.Config
 	log             logger.Logger
 	deployer        pytdeployer.Deployer
 	forwarder       Forwarder
 	staticASTURL    string
 	prodURLTemplate string
+	// prodRouted holds Processor.pytTestOverrides.routeToProduction — a
+	// reloadable map of lowercased workspace ID → bool ("*" flags every
+	// workspace) — registered once here: registering a per-workspace var on
+	// every Forward would grow the config registry without bound, since
+	// registered vars are never freed.
+	prodRouted config.ValueLoader[map[string]any]
 }
 
 // ServiceOpt overrides a Service dependency, used by tests to inject fakes in
@@ -112,9 +117,9 @@ func (u *unavailableDeployer) RunOnEphemeral(
 func NewService(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...ServiceOpt) *Service {
 	s := &Service{
 		log:             log.Child("cpservice"),
-		conf:            conf,
 		staticASTURL:    conf.GetStringVar("", "Processor.pytTestStaticASTURL"),
 		prodURLTemplate: conf.GetStringVar(user_transformer.DefaultPerWorkspacePyTURLTemplate, "Processor.UserTransformer.perWorkspacePyTURLTemplate"),
+		prodRouted:      conf.GetReloadableStringMapVar(nil, "Processor.pytTestOverrides.routeToProduction"),
 	}
 	for _, opt := range opts {
 		opt(s)
