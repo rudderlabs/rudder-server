@@ -238,6 +238,24 @@ func TestRunOnEphemeral(t *testing.T) {
 			"every Service selector entry must be present on the pod labels or the Service selects nothing")
 	})
 
+	t.Run("a config-provided \"zone\" label loses to the configured zone, consistently everywhere", func(t *testing.T) {
+		conf := baseConfig()
+		conf.Set("AVAILABILITY_ZONE", "us-east-1a")
+		conf.Set("Processor.pytDeployer.pytTestLabels", map[string]any{"zone": "from-config"})
+		cs := newAutoReadyClient()
+		dep := newDeployer(t, cs, conf)
+
+		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.NoError(t, err)
+
+		created := findCreatedDeployment(t, cs)
+		require.Equal(t, "us-east-1a", created.Spec.Template.Labels["zone"])
+		require.Equal(t, "us-east-1a", findCreatedService(t, cs).Spec.Selector["zone"])
+		require.Equal(t, created.Spec.Template.Labels, created.Spec.Selector.MatchLabels,
+			"a diverging zone value between selector and template would be rejected by the apiserver")
+	})
+
 	t.Run("no zone configured: no zone nodeSelector entry and no zone in the Service selector", func(t *testing.T) {
 		cs := newAutoReadyClient()
 		dep := newDeployer(t, cs, baseConfig()) // baseConfig sets no AVAILABILITY_ZONE

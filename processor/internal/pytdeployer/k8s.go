@@ -184,19 +184,21 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 	}
 
 	// Zone pinning: schedule the pod onto the configured zone and scope the
-	// Service to zone-labeled pods. The zone label must go on the pod
-	// template whenever it is in the Service selector — a selector entry with
-	// no matching pod label would select nothing and every forward would
-	// fail. Skipped entirely when no zone is configured (e.g. single-zone
-	// clusters, local dev): an empty-valued nodeSelector would only match
-	// nodes labeled with an empty zone, i.e. nothing.
-	podLabels := maps.Clone(labels)
-	svcSelector := maps.Clone(labels)
+	// Service to zone-labeled pods. The zone label is stamped into labels
+	// BEFORE the pod/selector clones below so the Deployment selector, pod
+	// template labels, and Service selector all agree on it — a
+	// config-provided "zone" label surviving in one of them but not the
+	// others would make the Deployment selector mismatch its own template
+	// (rejected by the apiserver) or the Service select nothing. Skipped
+	// entirely when no zone is configured (e.g. single-zone clusters, local
+	// dev): an empty-valued nodeSelector would only match nodes labeled with
+	// an empty zone, i.e. nothing.
 	if d.config.zone != "" {
 		podSpec.NodeSelector["topology.kubernetes.io/zone"] = d.config.zone
-		podLabels["zone"] = d.config.zone
-		svcSelector["zone"] = d.config.zone
+		labels["zone"] = d.config.zone
 	}
+	podLabels := maps.Clone(labels)
+	svcSelector := maps.Clone(labels)
 
 	var podAnnotations map[string]string
 	if annotations := d.config.podAnnotations.Load(); len(annotations) > 0 {
