@@ -3,8 +3,11 @@ package pytdeployer
 import (
 	"context"
 	"errors"
+	"io"
+	"net"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -472,6 +475,37 @@ func TestNew(t *testing.T) {
 		require.NotNil(t, d)
 	})
 }
+
+func TestIsTransient(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"API 429 is transient", apierrors.NewTooManyRequests("throttled", 1), true},
+		{"API timeout is transient", apierrors.NewTimeoutError("request timed out", 1), true},
+		{"connection reset is transient", syscall.ECONNRESET, true},
+		{"connection refused is transient", syscall.ECONNREFUSED, true},
+		{"unexpected EOF is transient", io.ErrUnexpectedEOF, true},
+		{"net timeout is transient", &net.OpError{Op: "dial", Err: timeoutError{}}, true},
+		{"API NotFound is permanent", apierrors.NewNotFound(schema.GroupResource{Group: "apps", Resource: "deployments"}, "x"), false},
+		{"API BadRequest is permanent", apierrors.NewBadRequest("bad"), false},
+		{"generic error is permanent", errors.New("boom"), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, isTransient(tc.err))
+		})
+	}
+}
+
+// timeoutError satisfies net.Error with Timeout() == true, standing in for a
+// dial/read deadline error from a real connection.
+type timeoutError struct{}
+
+func (timeoutError) Error() string   { return "i/o timeout" }
+func (timeoutError) Timeout() bool   { return true }
+func (timeoutError) Temporary() bool { return true }
 
 // --- test helpers ---
 

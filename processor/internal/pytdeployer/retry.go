@@ -2,10 +2,13 @@ package pytdeployer
 
 import (
 	"context"
+	"errors"
+	"net"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	utilnet "k8s.io/apimachinery/pkg/util/net"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 )
@@ -30,9 +33,10 @@ func newRetrySettings(conf *config.Config) retrySettings {
 	}
 }
 
-// withRetry runs fn with exponential backoff, retrying only transient Kubernetes
-// API errors (429, timeouts, internal/unavailable). Any other error is permanent
-// and returned immediately.
+// withRetry runs fn with exponential backoff, retrying only transient errors —
+// Kubernetes API statuses (429, timeouts, internal/unavailable) and
+// transport-level failures (connection reset/refused, probable EOF, net
+// timeouts). Any other error is permanent and returned immediately.
 func withRetry[T any](ctx context.Context, rs retrySettings, fn func() (T, error)) (T, error) {
 	return backoff.Retry(
 		ctx,
@@ -54,9 +58,22 @@ func withRetry[T any](ctx context.Context, rs retrySettings, fn func() (T, error
 }
 
 func isTransient(err error) bool {
-	return apierrors.IsTooManyRequests(err) ||
+	if apierrors.IsTooManyRequests(err) ||
 		apierrors.IsTimeout(err) ||
 		apierrors.IsServerTimeout(err) ||
 		apierrors.IsInternalError(err) ||
-		apierrors.IsServiceUnavailable(err)
+		apierrors.IsServiceUnavailable(err) {
+		return true
+	}
+	// The apierrors checks only cover errors that arrive as API Status
+	// responses; a request that never got a response (apiserver restart, LB
+	// hiccup, dropped connection) surfaces as a transport error instead and is
+	// just as retryable.
+	if utilnet.IsConnectionReset(err) ||
+		utilnet.IsConnectionRefused(err) ||
+		utilnet.IsProbableEOF(err) {
+		return true
+	}
+	netErr, ok := errors.AsType[net.Error](err)
+	return ok && netErr.Timeout()
 }
