@@ -105,6 +105,17 @@ func New(conf *config.Config, log logger.Logger, opts ...Opt) (Deployer, error) 
 	if d.config.imagePullSecret == "" {
 		return nil, errors.New("missing required config Processor.pytDeployer.pytTestImagePullSecret")
 	}
+	// The apiserver rejects a pod whose limits are below its requests — a
+	// non-transient Create failure the retry loop would never recover from —
+	// so catch the misconfiguration at startup instead of per request.
+	if d.config.cpuLimit.Cmp(d.config.cpuRequest) < 0 {
+		return nil, fmt.Errorf("Processor.pytDeployer.pytTestCPULimit (%s) must be >= pytTestCPURequest (%s)",
+			d.config.cpuLimit.String(), d.config.cpuRequest.String())
+	}
+	if d.config.memoryLimit.Cmp(d.config.memoryRequest) < 0 {
+		return nil, fmt.Errorf("Processor.pytDeployer.pytTestMemoryLimit (%s) must be >= pytTestMemoryRequest (%s)",
+			d.config.memoryLimit.String(), d.config.memoryRequest.String())
+	}
 	if d.client == nil {
 		client, err := newInClusterClientset(conf)
 		if err != nil {

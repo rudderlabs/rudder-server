@@ -135,12 +135,19 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 		Containers: []corev1.Container{{
 			Name:  "pytransformer",
 			Image: d.config.image,
+			// The full PSS "restricted" set: non-root, no privilege escalation,
+			// read-only root fs, all capabilities dropped, runtime-default
+			// seccomp. Kata is the primary sandbox boundary; this is
+			// defense-in-depth inside it, and the app needs none of it —
+			// uvicorn binds an unprivileged port as an unprivileged user.
 			SecurityContext: &corev1.SecurityContext{
 				RunAsNonRoot:             new(true),
 				RunAsUser:                new(int64(1000)),
 				RunAsGroup:               new(int64(1000)),
 				ReadOnlyRootFilesystem:   new(true),
 				AllowPrivilegeEscalation: new(false),
+				Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+				SeccompProfile:           &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 			},
 			Ports: []corev1.ContainerPort{
 				{Name: "http", ContainerPort: pytContainerPort, Protocol: corev1.ProtocolTCP},
@@ -268,9 +275,11 @@ func (d *k8sDeployer) waitReady(ctx context.Context, name string) error {
 		if err == nil && dep.Status.ReadyReplicas >= 1 {
 			return nil
 		}
-		if err != nil {
-			lastErr = err
-		}
+		// Overwritten every attempt — a successful-but-not-ready Get resets it
+		// to nil, so only a failure on the FINAL poll survives into the timeout
+		// error. An early transient failure followed by healthy polls must not
+		// masquerade as a persistent Get problem.
+		lastErr = err
 		select {
 		case <-ctx.Done():
 			// lastErr distinguishes "pod just wasn't ready in time" from a

@@ -111,6 +111,10 @@ func TestRunOnEphemeral(t *testing.T) {
 		require.EqualValues(t, 1000, *sc.RunAsUser)
 		require.True(t, *sc.ReadOnlyRootFilesystem, "read-only root fs is one of the sandbox layers")
 		require.False(t, *sc.AllowPrivilegeEscalation)
+		require.Equal(t, []corev1.Capability{"ALL"}, sc.Capabilities.Drop,
+			"untrusted code must run with no capabilities (PSS restricted)")
+		require.Equal(t, corev1.SeccompProfileTypeRuntimeDefault, sc.SeccompProfile.Type,
+			"untrusted code must run under the runtime-default seccomp profile (PSS restricted)")
 
 		require.Equal(t, "/health/ready", container.ReadinessProbe.HTTPGet.Path,
 			"without a readinessProbe, waitReady would resolve before the app serves")
@@ -328,6 +332,29 @@ func TestRunOnEphemeral(t *testing.T) {
 		require.True(t, hasAction(cs, "services"), "the timed-out service must still be deleted best-effort")
 	})
 
+	t.Run("a readiness timeout after an early transient Get failure doesn't report the stale error", func(t *testing.T) {
+		cs := newFakeClient() // never becomes ready
+		var gets atomic.Int32
+		// Fail only the FIRST readiness Get; every later poll succeeds but the
+		// deployment stays not-ready until the timeout.
+		cs.PrependReactor("get", "deployments", func(ktesting.Action) (bool, runtime.Object, error) {
+			if gets.Add(1) == 1 {
+				return true, nil, apierrors.NewTooManyRequests("throttled", 1)
+			}
+			return false, nil, nil
+		})
+		conf := baseConfig()
+		conf.Set("Processor.pytDeployer.pytTestReadinessTimeout", "600ms")
+		dep := newDeployer(t, cs, conf)
+
+		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.Error(t, err)
+		require.GreaterOrEqual(t, gets.Load(), int32(2), "the poll loop must have recovered past the failed Get")
+		require.NotContains(t, err.Error(), "throttled",
+			"an early Get failure followed by healthy polls must not masquerade as a persistent API problem")
+	})
+
 	t.Run("deletes the Deployment+Service after a successful forward", func(t *testing.T) {
 		cs := newAutoReadyClient()
 		dep := newDeployer(t, cs, baseConfig())
@@ -485,6 +512,25 @@ func TestNew(t *testing.T) {
 
 		_, err := New(conf, logger.NOP, WithClientset(fake.NewClientset()))
 		require.ErrorContains(t, err, "pytTestImagePullSecret")
+	})
+
+	t.Run("returns an error when the CPU limit is below the CPU request", func(t *testing.T) {
+		conf := baseConfig()
+		conf.Set("Processor.pytDeployer.pytTestCPURequest", "500m")
+		conf.Set("Processor.pytDeployer.pytTestCPULimit", "200m")
+
+		_, err := New(conf, logger.NOP, WithClientset(fake.NewClientset()))
+		require.ErrorContains(t, err, "pytTestCPULimit",
+			"limits below requests are rejected by the apiserver, so they must fail at startup")
+	})
+
+	t.Run("returns an error when the memory limit is below the memory request", func(t *testing.T) {
+		conf := baseConfig()
+		conf.Set("Processor.pytDeployer.pytTestMemoryRequest", "1Gi")
+		conf.Set("Processor.pytDeployer.pytTestMemoryLimit", "500Mi")
+
+		_, err := New(conf, logger.NOP, WithClientset(fake.NewClientset()))
+		require.ErrorContains(t, err, "pytTestMemoryLimit")
 	})
 
 	t.Run("succeeds with an injected clientset", func(t *testing.T) {
