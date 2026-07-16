@@ -29,9 +29,12 @@ type endpointForward func(ctx context.Context, baseURL, workspaceID string, payl
 // the pyt Deployment name. Anything beyond alphanumerics and hyphens must be
 // rejected here: URL-significant characters (@, #, ?, /, :) surviving into the
 // template would let a request redirect the forward to an arbitrary host
-// (SSRF). 59 keeps "pyt-" + the lowercased ID within the 63-char DNS label
-// limit the Deployment name is subject to anyway.
-var validWorkspaceID = regexp.MustCompile(`^[a-zA-Z0-9-]{1,59}$`)
+// (SSRF). The first and last characters must be alphanumeric: the ID becomes a
+// k8s label value (and part of a DNS-1123 name), where a leading/trailing
+// hyphen is rejected by the apiserver as a non-transient Create failure. 59
+// keeps "pyt-" + the lowercased ID within the 63-char DNS label limit the
+// Deployment name is subject to anyway.
+var validWorkspaceID = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,57}[a-zA-Z0-9])?$`)
 
 // Forward is the processor's only CP-facing RPC. It maps req.Op to the matching
 // pyt endpoint and forwards req.Payload to it, returning the pyt response status
@@ -61,7 +64,7 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 		return nil, status.Errorf(codes.InvalidArgument, "unknown op %v", req.Op)
 	}
 	if !validWorkspaceID.MatchString(req.WorkspaceId) {
-		return nil, status.Error(codes.InvalidArgument, "workspaceId must be 1-59 alphanumeric or hyphen characters")
+		return nil, status.Error(codes.InvalidArgument, "workspaceId must be 1-59 alphanumeric or hyphen characters, starting and ending with an alphanumeric")
 	}
 
 	var statusCode int

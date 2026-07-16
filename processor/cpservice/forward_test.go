@@ -80,6 +80,9 @@ func TestForward(t *testing.T) {
 			{"path traversal", "../etc"},
 			{"whitespace", "ws 1"},
 			{"longer than a DNS label allows", strings.Repeat("a", 60)},
+			{"leading hyphen (invalid k8s label value)", "-ws-1"},
+			{"trailing hyphen (invalid k8s label value)", "ws-1-"},
+			{"a lone hyphen", "-"},
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
@@ -96,7 +99,7 @@ func TestForward(t *testing.T) {
 	})
 
 	t.Run("accepts well-formed workspaceIds", func(t *testing.T) {
-		for _, id := range []string{"ws-1", "2CJhY0aBcDeFgHiJkLmNoPqRsTu", strings.Repeat("a", 59)} {
+		for _, id := range []string{"ws-1", "2CJhY0aBcDeFgHiJkLmNoPqRsTu", "a", strings.Repeat("a", 59)} {
 			fwd := &fakeForwarder{statusCode: 200}
 			deployer := &fakeDeployer{baseURL: "http://pyt-test-abc.ns.svc:8080"}
 			svc := newService(t, nil, deployer, fwd)
