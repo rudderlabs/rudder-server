@@ -200,7 +200,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		t.Cleanup(func() { _ = f.Close() })
 
 		// Fill the insert rows payload close to 16MB, make the next row overflow,
-		// then ensure a later small row can still fit.
+		// then ensure a later small row from the same table overflows too.
 		// MessageDataByteSize is computed from the marshalled insert row.
 		baseTS := "2023-05-12T04:36:50.199Z"
 		largeName := strings.Repeat("a", int(maxInsertRequestSizeBytes-int64(20000)))
@@ -229,11 +229,425 @@ func TestSnowpipeStreaming(t *testing.T) {
 			Count:       3,
 		})
 
+		require.Equal(t, []int64{1001}, output.ImportingJobIDs)
+		require.Equal(t, 1, output.ImportingCount)
+		require.Equal(t, []int64{1002, 1003}, output.FailedJobIDs)
+		require.Equal(t, 2, output.FailedCount)
+		require.Equal(t, fmt.Sprintf("some events were not uploaded because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes), output.FailedReason)
+	})
+
+	t.Run("Upload aborts events larger than max insert request size and continues", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		maxInsertRequestSizeBytes := 16 * bytesize.MB
+
+		conf := config.New()
+		conf.Set("SnowpipeStreaming.maxBufferCapacity", int64(64*1024*1024))
+		conf.Set("SnowpipeStreaming.maxInsertRequestSizeBytes", maxInsertRequestSizeBytes)
+
+		sm := New(conf, logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.channelCache.Store("USERS", usersChannelResponse)
+
+		mockApi := &mockAPI{
+			insertOutputMap: map[string]func() (*model.InsertResponse, error){
+				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-users-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-rudder-discards-channel": func() error { return nil },
+				"test-users-channel":           func() error { return nil },
+			},
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel"},
+					}, nil
+				},
+				"test-rudder-discards-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-rudder-discards-channel"},
+					}, nil
+				},
+			},
+		}
+		sm.api = mockApi
+
+		f, err := os.CreateTemp("", "snowpipe-streaming-abort-*.txt")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = os.Remove(f.Name()) })
+		t.Cleanup(func() { _ = f.Close() })
+
+		baseTS := "2023-05-12T04:36:50.199Z"
+		oversizedName := strings.Repeat("a", int(maxInsertRequestSizeBytes+1024))
+
+		_, err = fmt.Fprintf(f,
+			`{"message":{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":1,"NAME":"small","AGE":30,"RECEIVED_AT":"%s"}},"metadata":{"job_id":1001}}`+"\n",
+			baseTS,
+		)
+		require.NoError(t, err)
+		_, err = fmt.Fprintf(f,
+			`{"message":{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":2,"NAME":"%s","AGE":30,"RECEIVED_AT":"%s"}},"metadata":{"job_id":1002}}`+"\n",
+			oversizedName, baseTS,
+		)
+		require.NoError(t, err)
+		_, err = fmt.Fprintf(f,
+			`{"message":{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":3,"NAME":"small","AGE":30,"RECEIVED_AT":"%s"}},"metadata":{"job_id":1003}}`+"\n",
+			baseTS,
+		)
+		require.NoError(t, err)
+		require.NoError(t, f.Sync())
+
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    f.Name(),
+			Count:       3,
+		})
+
 		require.Equal(t, []int64{1001, 1003}, output.ImportingJobIDs)
 		require.Equal(t, 2, output.ImportingCount)
+		require.Empty(t, output.FailedJobIDs)
+		require.Equal(t, 0, output.FailedCount)
+		require.Equal(t, []int64{1002}, output.AbortJobIDs)
+		require.Equal(t, 1, output.AbortCount)
+		require.Equal(t, fmt.Sprintf("some events were aborted because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes), output.AbortReason)
+		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "importing",
+		}).LastValue())
+		require.EqualValues(t, 1, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "aborted",
+		}).LastValue())
+	})
+
+	t.Run("Upload aborts when all events exceed max insert request size", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		maxInsertRequestSizeBytes := 16 * bytesize.MB
+
+		conf := config.New()
+		conf.Set("SnowpipeStreaming.maxBufferCapacity", int64(64*1024*1024))
+		conf.Set("SnowpipeStreaming.maxInsertRequestSizeBytes", maxInsertRequestSizeBytes)
+
+		sm := New(conf, logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.channelCache.Store("USERS", usersChannelResponse)
+
+		mockApi := &mockAPI{
+			insertOutputMap: map[string]func() (*model.InsertResponse, error){
+				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-users-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-rudder-discards-channel": func() error { return nil },
+				"test-users-channel":           func() error { return nil },
+			},
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel"},
+					}, nil
+				},
+				"test-rudder-discards-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-rudder-discards-channel"},
+					}, nil
+				},
+			},
+		}
+		sm.api = mockApi
+
+		f, err := os.CreateTemp("", "snowpipe-streaming-all-abort-*.txt")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = os.Remove(f.Name()) })
+		t.Cleanup(func() { _ = f.Close() })
+
+		baseTS := "2023-05-12T04:36:50.199Z"
+		oversizedName := strings.Repeat("a", int(maxInsertRequestSizeBytes+1024))
+
+		_, err = fmt.Fprintf(f,
+			`{"message":{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":1,"NAME":"%s","AGE":30,"RECEIVED_AT":"%s"}},"metadata":{"job_id":1001}}`+"\n",
+			oversizedName, baseTS,
+		)
+		require.NoError(t, err)
+		_, err = fmt.Fprintf(f,
+			`{"message":{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":2,"NAME":"%s","AGE":30,"RECEIVED_AT":"%s"}},"metadata":{"job_id":1002}}`+"\n",
+			oversizedName, baseTS,
+		)
+		require.NoError(t, err)
+		require.NoError(t, f.Sync())
+
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    f.Name(),
+			Count:       2,
+		})
+
+		require.Empty(t, output.ImportingJobIDs)
+		require.Equal(t, 0, output.ImportingCount)
+		require.Empty(t, output.FailedJobIDs)
+		require.Equal(t, 0, output.FailedCount)
+		require.Equal(t, []int64{1001, 1002}, output.AbortJobIDs)
+		require.Equal(t, 2, output.AbortCount)
+		require.Equal(t, fmt.Sprintf("some events were aborted because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes), output.AbortReason)
+		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "aborted",
+		}).LastValue())
+	})
+
+	t.Run("Upload fails overflowed events and aborts oversized events in the same batch", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		maxInsertRequestSizeBytes := 16 * bytesize.MB
+
+		conf := config.New()
+		conf.Set("SnowpipeStreaming.maxBufferCapacity", int64(64*1024*1024))
+		conf.Set("SnowpipeStreaming.maxInsertRequestSizeBytes", maxInsertRequestSizeBytes)
+
+		sm := New(conf, logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.channelCache.Store("USERS", usersChannelResponse)
+
+		mockApi := &mockAPI{
+			insertOutputMap: map[string]func() (*model.InsertResponse, error){
+				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-users-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-rudder-discards-channel": func() error { return nil },
+				"test-users-channel":           func() error { return nil },
+			},
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel"},
+					}, nil
+				},
+				"test-rudder-discards-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-rudder-discards-channel"},
+					}, nil
+				},
+			},
+		}
+		sm.api = mockApi
+
+		f, err := os.CreateTemp("", "snowpipe-streaming-mixed-*.txt")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = os.Remove(f.Name()) })
+		t.Cleanup(func() { _ = f.Close() })
+
+		baseTS := "2023-05-12T04:36:50.199Z"
+		largeName := strings.Repeat("a", int(maxInsertRequestSizeBytes-int64(20000)))
+		overflowName := strings.Repeat("b", 30000)
+		oversizedName := strings.Repeat("c", int(maxInsertRequestSizeBytes+1024))
+
+		_, err = fmt.Fprintf(f,
+			`{"message":{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":1,"NAME":"%s","AGE":30,"RECEIVED_AT":"%s"}},"metadata":{"job_id":1001}}`+"\n",
+			largeName, baseTS,
+		)
+		require.NoError(t, err)
+		_, err = fmt.Fprintf(f,
+			`{"message":{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":2,"NAME":"%s","AGE":30,"RECEIVED_AT":"%s"}},"metadata":{"job_id":1002}}`+"\n",
+			overflowName, baseTS,
+		)
+		require.NoError(t, err)
+		_, err = fmt.Fprintf(f,
+			`{"message":{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":3,"NAME":"%s","AGE":30,"RECEIVED_AT":"%s"}},"metadata":{"job_id":1003}}`+"\n",
+			oversizedName, baseTS,
+		)
+		require.NoError(t, err)
+		require.NoError(t, f.Sync())
+
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    f.Name(),
+			Count:       3,
+		})
+
+		require.Equal(t, []int64{1001}, output.ImportingJobIDs)
+		require.Equal(t, 1, output.ImportingCount)
 		require.Equal(t, []int64{1002}, output.FailedJobIDs)
 		require.Equal(t, 1, output.FailedCount)
 		require.Equal(t, fmt.Sprintf("some events were not uploaded because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes), output.FailedReason)
+		require.Equal(t, []int64{1003}, output.AbortJobIDs)
+		require.Equal(t, 1, output.AbortCount)
+		require.Equal(t, fmt.Sprintf("some events were aborted because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes), output.AbortReason)
+		require.EqualValues(t, 1, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "importing",
+		}).LastValue())
+		require.EqualValues(t, 1, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+		require.EqualValues(t, 1, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "aborted",
+		}).LastValue())
+	})
+
+	t.Run("Upload handles mixed safe, oversized, and overflow events in order", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		// Keep the limit small so we can craft an exact sequence without multi-MB payloads.
+		maxInsertRequestSizeBytes := int64(400)
+
+		conf := config.New()
+		conf.Set("SnowpipeStreaming.maxBufferCapacity", int64(64*1024*1024))
+		conf.Set("SnowpipeStreaming.maxInsertRequestSizeBytes", maxInsertRequestSizeBytes)
+
+		sm := New(conf, logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.channelCache.Store("USERS", usersChannelResponse)
+
+		mockApi := &mockAPI{
+			insertOutputMap: map[string]func() (*model.InsertResponse, error){
+				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-users-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-rudder-discards-channel": func() error { return nil },
+				"test-users-channel":           func() error { return nil },
+			},
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-users-channel"},
+					}, nil
+				},
+				"test-rudder-discards-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success:  true,
+						NotFound: []string{"test-rudder-discards-channel"},
+					}, nil
+				},
+			},
+		}
+		sm.api = mockApi
+
+		f, err := os.CreateTemp("", "snowpipe-streaming-mixed-sequence-*.txt")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = os.Remove(f.Name()) })
+		t.Cleanup(func() { _ = f.Close() })
+
+		baseTS := "2023-05-12T04:36:50.199Z"
+		dataSize := func(jobID int64, name string) int {
+			return len(fmt.Sprintf(`{"ID":%d,"NAME":"%s","AGE":30,"RECEIVED_AT":"%s"}`, jobID, name, baseTS))
+		}
+		nameForSize := func(jobID int64, targetSize int) string {
+			base := dataSize(jobID, "")
+			require.GreaterOrEqual(t, targetSize, base)
+			return strings.Repeat("x", targetSize-base)
+		}
+		writeEvent := func(jobID int64, targetDataSize int) {
+			_, err := fmt.Fprintf(f,
+				`{"message":{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":%d,"NAME":"%s","AGE":30,"RECEIVED_AT":"%s"}},"metadata":{"job_id":%d}}`+"\n",
+				jobID, nameForSize(jobID, targetDataSize), baseTS, jobID,
+			)
+			require.NoError(t, err)
+		}
+
+		// Sequence: safe, safe, oversized, safe, safe, overflow, oversized, overflow
+		// Accumulated kept payload with max=400:
+		//   [] + 80 = 82
+		//   + ,80 = 163
+		//   oversized(401) aborted and skipped
+		//   + ,80 = 244
+		//   + ,80 = 325
+		//   next 80 would be 406 > 400 → overflow remainder
+		writeEvent(1001, 80)  // safe
+		writeEvent(1002, 80)  // safe
+		writeEvent(1003, 401) // oversized → aborted
+		writeEvent(1004, 80)  // safe
+		writeEvent(1005, 80)  // safe
+		writeEvent(1006, 80)  // overflow → failed
+		writeEvent(1007, 401) // oversized in remainder → aborted
+		writeEvent(1008, 80)  // overflow → failed
+		require.NoError(t, f.Sync())
+
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    f.Name(),
+			Count:       8,
+		})
+
+		require.Equal(t, []int64{1001, 1002, 1004, 1005}, output.ImportingJobIDs)
+		require.Equal(t, 4, output.ImportingCount)
+		require.Equal(t, []int64{1006, 1008}, output.FailedJobIDs)
+		require.Equal(t, 2, output.FailedCount)
+		require.Equal(t, fmt.Sprintf("some events were not uploaded because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes), output.FailedReason)
+		require.Equal(t, []int64{1003, 1007}, output.AbortJobIDs)
+		require.Equal(t, 2, output.AbortCount)
+		require.Equal(t, fmt.Sprintf("some events were aborted because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes), output.AbortReason)
+		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "importing",
+		}).LastValue())
+		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "aborted",
+		}).LastValue())
 	})
 
 	t.Run("Upload not able to create discards channel", func(t *testing.T) {
@@ -3692,6 +4106,109 @@ func TestSnowpipeStreaming(t *testing.T) {
 			require.False(t, sm.polledImportInfoMap["test-channel-2"].Failed)
 			require.Equal(t, 2, bulkCallCount)
 		})
+	})
+}
+
+func TestSplitEventsExceedingMaxInsertRequestSize(t *testing.T) {
+	newEvent := func(jobID, size int64) *event {
+		e := &event{MessageDataByteSize: size}
+		e.Metadata.JobID = jobID
+		e.Message.Metadata.Table = "USERS"
+		return e
+	}
+	jobIDs := func(events []*event) []int64 {
+		ids := make([]int64, 0, len(events))
+		for _, e := range events {
+			ids = append(ids, e.Metadata.JobID)
+		}
+		return ids
+	}
+
+	t.Run("overflows current and later events after first overflow", func(t *testing.T) {
+		included, overflowed, oversized := splitEventsExceedingMaxInsertRequestSize(map[string][]*event{
+			"USERS": {
+				newEvent(1, 3), // rows payload: [] + row = 5 bytes
+				newEvent(2, 6), // would exceed max with comma separator
+				newEvent(3, 4), // would fit if considered after skipping event 2, but must overflow to preserve order
+			},
+		}, 10)
+
+		require.Equal(t, []int64{1}, jobIDs(included["USERS"]))
+		require.Equal(t, []int64{2, 3}, jobIDs(overflowed))
+		require.Empty(t, oversized)
+	})
+
+	t.Run("overflows single oversized event before keeping any event", func(t *testing.T) {
+		included, overflowed, oversized := splitEventsExceedingMaxInsertRequestSize(map[string][]*event{
+			"USERS": {
+				newEvent(1, 9), // [] + row exceeds max
+			},
+		}, 10)
+
+		require.Empty(t, included)
+		require.Equal(t, []int64{1}, jobIDs(overflowed))
+		require.Empty(t, oversized)
+	})
+
+	t.Run("keeps events that fit exactly at boundary", func(t *testing.T) {
+		included, overflowed, oversized := splitEventsExceedingMaxInsertRequestSize(map[string][]*event{
+			"USERS": {
+				newEvent(1, 3), // [] + row = 5 bytes
+				newEvent(2, 4), // comma + row reaches exactly 10 bytes
+			},
+		}, 10)
+
+		require.Equal(t, []int64{1, 2}, jobIDs(included["USERS"]))
+		require.Empty(t, overflowed)
+		require.Empty(t, oversized)
+	})
+
+	t.Run("aborts individually oversized events and continues", func(t *testing.T) {
+		included, overflowed, oversized := splitEventsExceedingMaxInsertRequestSize(map[string][]*event{
+			"USERS": {
+				newEvent(1, 3),  // [] + row = 5 bytes
+				newEvent(2, 11), // individually exceeds max, aborted
+				newEvent(3, 4),  // comma + row reaches exactly 10 bytes
+			},
+		}, 10)
+
+		require.Equal(t, []int64{1, 3}, jobIDs(included["USERS"]))
+		require.Empty(t, overflowed)
+		require.Equal(t, []int64{2}, jobIDs(oversized))
+	})
+
+	t.Run("aborts individually oversized events found in overflow remainder", func(t *testing.T) {
+		included, overflowed, oversized := splitEventsExceedingMaxInsertRequestSize(map[string][]*event{
+			"USERS": {
+				newEvent(1, 3),  // [] + row = 5 bytes
+				newEvent(2, 6),  // exceeds remaining capacity, starts overflow
+				newEvent(3, 11), // individually exceeds max, aborted instead of overflowed
+			},
+		}, 10)
+
+		require.Equal(t, []int64{1}, jobIDs(included["USERS"]))
+		require.Equal(t, []int64{2}, jobIDs(overflowed))
+		require.Equal(t, []int64{3}, jobIDs(oversized))
+	})
+
+	t.Run("handles mixed safe, oversized, and overflow sequence", func(t *testing.T) {
+		// Sequence: safe, safe, oversized, safe, safe, overflow, oversized, overflow
+		included, overflowed, oversized := splitEventsExceedingMaxInsertRequestSize(map[string][]*event{
+			"USERS": {
+				newEvent(1, 20),  // safe: [] + 20 = 22
+				newEvent(2, 20),  // safe: + ,20 = 43
+				newEvent(3, 101), // oversized → aborted and skipped
+				newEvent(4, 20),  // safe: + ,20 = 64
+				newEvent(5, 20),  // safe: + ,20 = 85
+				newEvent(6, 20),  // overflow: + ,20 = 106 > 100
+				newEvent(7, 101), // oversized in remainder → aborted
+				newEvent(8, 20),  // overflow remainder → failed
+			},
+		}, 100)
+
+		require.Equal(t, []int64{1, 2, 4, 5}, jobIDs(included["USERS"]))
+		require.Equal(t, []int64{6, 8}, jobIDs(overflowed))
+		require.Equal(t, []int64{3, 7}, jobIDs(oversized))
 	})
 }
 
