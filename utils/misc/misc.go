@@ -644,6 +644,13 @@ func HasAWSRegionInConfig(config any) bool {
 	return true
 }
 
+// GetRudderObjectStorageAccessKeys returns the credentials of the shared
+// RudderStack-owned S3 "copy user". These are used only as a fallback for
+// customer-configured (non-rudder-storage) S3 locations that provide neither an
+// IAM role ARN nor access keys: customers grant this user write access so
+// RudderStack can deliver data to their bucket. The rudder-storage flow no
+// longer uses these keys — it authenticates via the AWS SDK default credential
+// chain (pod identity / IRSA).
 func GetRudderObjectStorageAccessKeys() (accessKeyID, accessKey string) {
 	return config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID"), config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY")
 }
@@ -657,12 +664,10 @@ func GetRegionHint() string {
 }
 
 func GetRudderObjectStorageConfig(prefixOverride string) (storageConfig map[string]any) {
-	// TODO: add error log if s3 keys are not available
 	storageConfig = make(map[string]any)
 	storageConfig["bucketName"] = config.GetStringVar("rudder-warehouse-storage", "RUDDER_WAREHOUSE_BUCKET")
-	storageConfig["accessKeyID"] = config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID")
-	storageConfig["accessKey"] = config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY")
 	storageConfig["enableSSE"] = config.GetBoolVar(true, "RUDDER_WAREHOUSE_BUCKET_SSE")
+	// Credentials resolve via the AWS SDK default chain (pod identity / IRSA).
 	// set prefix from override for shared slave type nodes
 	if prefixOverride != "" {
 		storageConfig["prefix"] = prefixOverride
@@ -700,8 +705,11 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
 		clonedObjectStorageConfig["externalID"] = opts.WorkspaceID
 		if !HasAWSRoleARNInConfig(objectStorageConfigMap) &&
 			!HasAWSKeysInConfig(objectStorageConfigMap) {
-			clonedObjectStorageConfig["accessKeyID"] = config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID")
-			clonedObjectStorageConfig["accessKey"] = config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY")
+			// Non-rudder-storage S3 destination without an IAM role ARN or access
+			// keys: fall back to the shared RudderStack S3 copy-user credentials.
+			// Customers grant this user write access to their bucket so RudderStack
+			// can deliver data when they don't supply their own credentials.
+			clonedObjectStorageConfig["accessKeyID"], clonedObjectStorageConfig["accessKey"] = GetRudderObjectStorageAccessKeys()
 		}
 		objectStorageConfigMap = clonedObjectStorageConfig
 	}

@@ -1057,6 +1057,8 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 	someIAMRoleARN := "someIAMRoleARN"
 	someWorkspaceID := "someWorkspaceID"
 
+	// The shared copy-user credentials used as the fallback for non-rudder-storage
+	// destinations that provide neither an IAM role ARN nor access keys.
 	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", rudderAccessKeyID)
 	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", rudderAccessKey)
 	t.Setenv("AWS_S3_REGION_HINT", rudderRegion)
@@ -1076,10 +1078,8 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 			},
 			service: "s3",
 			expectedConfig: &awsutil.SessionConfig{
-				AccessKeyID: rudderAccessKeyID,
-				AccessKey:   rudderAccessKey,
-				Service:     "s3",
-				Region:      "us-east-1",
+				Service: "s3",
+				Region:  "us-east-1",
 			},
 		},
 		{
@@ -1114,7 +1114,7 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "with no config",
+			name: "with no config falls back to copy-user credentials",
 			destination: &backendconfig.DestinationT{
 				Config:      map[string]any{},
 				WorkspaceID: someWorkspaceID,
@@ -1132,7 +1132,7 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			sessionConfig, err := CreateAWSSessionConfig(tc.destination, tc.service)
 			require.Nil(t, err)
-			require.Equal(t, sessionConfig, tc.expectedConfig)
+			require.Equal(t, tc.expectedConfig, sessionConfig)
 		})
 	}
 }

@@ -633,10 +633,21 @@ func JoinWithFormatting(keys []string, format func(idx int, str string) string, 
 }
 
 func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName string) (*awsutil.SessionConfig, error) {
-	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) &&
-		(misc.HasAWSRoleARNInConfig(destination.Config) || misc.HasAWSKeysInConfig(destination.Config)) {
+	if misc.IsConfiguredToUseRudderObjectStorage(destination.Config) {
+		// rudder-warehouse-storage: authenticate via the AWS SDK default
+		// credential chain (pod identity / IRSA). No static credentials.
+		return &awsutil.SessionConfig{
+			Service: serviceName,
+			Region:  misc.GetRegionHint(),
+		}, nil
+	}
+	if misc.HasAWSRoleARNInConfig(destination.Config) || misc.HasAWSKeysInConfig(destination.Config) {
 		return awsutils.NewSimpleSessionConfigForDestination(destination, serviceName)
 	}
+	// Non-rudder-storage destination without an IAM role ARN or access keys: fall
+	// back to the shared RudderStack S3 copy-user credentials. Customers grant
+	// this user write access to their bucket so RudderStack can deliver data when
+	// they don't supply their own credentials.
 	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
 	return &awsutil.SessionConfig{
 		AccessKeyID: accessKeyID,
@@ -674,10 +685,14 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 		return "", "", "", err
 	}
 
-	if sessionConfig.RoleBasedAuth {
+	// Role-based auth and the rudder-storage flow (which authenticates via the
+	// AWS SDK default credential chain / pod identity) already yield temporary
+	// credentials that include a session token — retrieve them directly. Only
+	// long-term static keys need an explicit GetSessionToken.
+	if sessionConfig.RoleBasedAuth || misc.IsConfiguredToUseRudderObjectStorage(destination.Config) {
 		creds, err := awsConfig.Credentials.Retrieve(context.Background())
 		if err != nil {
-			return "", "", "", err
+			return "", "", "", fmt.Errorf("retrieving temporary credentials: %w", err)
 		}
 		return creds.AccessKeyID, creds.SecretAccessKey, creds.SessionToken, nil
 	}
