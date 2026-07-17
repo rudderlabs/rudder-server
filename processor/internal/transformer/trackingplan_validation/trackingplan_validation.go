@@ -216,7 +216,6 @@ func (t *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 	var transformerResponses []types.TransformerResponse
 	switch statusCode {
 	case http.StatusOK:
-		integrations.CollectIntgTransformErrorStats(respData)
 		err = jsonrs.Unmarshal(respData, &transformerResponses)
 		// This is returned by our JS engine so should  be parsable
 		// Panic the processor to avoid replays
@@ -224,6 +223,9 @@ func (t *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 			t.log.Errorn("Data sent to transformer", logger.NewStringField("payload", string(rawJSON)))
 			t.log.Errorn("Transformer returned", logger.NewStringField("payload", string(respData)))
 			panic(err)
+		}
+		for _, transformerResponse := range transformerResponses {
+			integrations.CollectIntegrationFailureDetailedStats(transformerResponse.StatTags)
 		}
 	default:
 		for i := range data {

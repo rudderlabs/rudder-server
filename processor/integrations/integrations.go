@@ -30,22 +30,15 @@ func CollectDestErrorStats(input []byte) {
 	var integrationStat TransStatsT
 	err := jsonrs.Unmarshal(input, &integrationStat)
 	if err == nil {
-		if len(integrationStat.StatTags) > 0 {
-			stats.Default.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
-		}
+		CollectIntegrationFailureDetailedStats(integrationStat.StatTags)
 	}
 }
 
-func CollectIntgTransformErrorStats(input []byte) {
-	var integrationStats []TransStatsT
-	err := jsonrs.Unmarshal(input, &integrationStats)
-	if err == nil {
-		for _, integrationStat := range integrationStats {
-			if len(integrationStat.StatTags) > 0 {
-				stats.Default.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
-			}
-		}
+func CollectIntegrationFailureDetailedStats(statTags map[string]string) {
+	if len(statTags) == 0 {
+		return
 	}
+	stats.Default.NewTaggedStat("integration.failure_detailed", stats.CountType, statTags).Increment()
 }
 
 // FilterClientIntegrations parses the destination names from the

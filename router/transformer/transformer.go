@@ -299,12 +299,15 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 
 		switch transformType {
 		case BATCH:
-			integrations.CollectIntgTransformErrorStats(respData)
 			err = jsonrs.Unmarshal(respData, &destinationJobs)
 		case ROUTER_TRANSFORM:
 			rawResp := []byte(gjson.GetBytes(respData, "output").Raw)
-			integrations.CollectIntgTransformErrorStats(rawResp)
 			err = jsonrs.Unmarshal(rawResp, &destinationJobs)
+		}
+		if err == nil {
+			for _, destinationJob := range destinationJobs {
+				integrations.CollectIntegrationFailureDetailedStats(destinationJob.StatTags)
+			}
 		}
 
 		// Validate the response received from the transformer
@@ -514,6 +517,8 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		}
 	**/
 	respData = []byte(gjson.GetBytes(respData, "output").Raw)
+	// Proxy adapters parse response bodies into TransResponse values that do not expose top-level statTags,
+	// so keep this single-object raw-byte extraction here instead of adding another adapter-level parse.
 	integrations.CollectDestErrorStats(respData)
 
 	transResp, err := proxyReqParams.Adapter.getResponse(respData, respCode, proxyReqParams.ResponseData.Metadata)

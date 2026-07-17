@@ -339,7 +339,6 @@ func (u *Client) sendBatch(
 	var transformerResponses []types.TransformerResponse
 	switch statusCode {
 	case http.StatusOK:
-		integrations.CollectIntgTransformErrorStats(respData)
 		err = jsonrs.Unmarshal(respData, &transformerResponses)
 		// This is returned by our JS engine so should be parseable
 		// Panic the processor to avoid replays
@@ -347,6 +346,9 @@ func (u *Client) sendBatch(
 			u.log.Errorn("Data sent to transformer", logger.NewStringField("payload", string(rawJSON)))
 			u.log.Errorn("Transformer returned", logger.NewStringField("payload", string(respData)))
 			panic(err)
+		}
+		for _, transformerResponse := range transformerResponses {
+			integrations.CollectIntegrationFailureDetailedStats(transformerResponse.StatTags)
 		}
 	case transformerutils.StatusMirrorFiltered:
 		if !u.config.forMirroring {
