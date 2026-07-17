@@ -348,7 +348,7 @@ func (u *Client) sendBatch(
 			panic(err)
 		}
 		for _, transformerResponse := range transformerResponses {
-			integrations.CollectIntegrationFailureDetailedStats(transformerResponse.StatTags)
+			integrations.CollectIntegrationFailureDetailedStats(u.stat, transformerResponse.StatTags)
 		}
 	case transformerutils.StatusMirrorFiltered:
 		if !u.config.forMirroring {

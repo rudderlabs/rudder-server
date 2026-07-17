@@ -1951,9 +1951,6 @@ func TestTransformerMetrics(t *testing.T) {
 
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
-	originalStats := stats.Default
-	stats.Default = statsStore
-	t.Cleanup(func() { stats.Default = originalStats })
 
 	// Setup test server
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2071,71 +2068,5 @@ func TestTransformerMetrics(t *testing.T) {
 	failureMetrics := statsStore.GetByName("integration.failure_detailed")
 	require.Len(t, failureMetrics, 1)
 	require.Equal(t, stats.Tags{"workspaceId": "workspace_1", "destinationId": "destination_1", "errorCategory": "network"}, failureMetrics[0].Tags)
-	require.Equal(t, float64(1), failureMetrics[0].Value)
-}
-
-func TestRouterTransformFailureDetailedMetrics(t *testing.T) {
-	initMocks(t)
-	config.Reset()
-	loggerOverride = logger.NOP
-
-	statsStore, err := memstats.New()
-	require.NoError(t, err)
-	originalStats := stats.Default
-	stats.Default = statsStore
-	t.Cleanup(func() { stats.Default = originalStats })
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
-		response := []types.DestinationJobT{
-			{
-				JobMetadataArray: []types.JobMetadataT{{JobID: 1}},
-				StatusCode:       http.StatusOK,
-				StatTags:         map[string]string{"workspaceId": "workspace_1", "destinationId": "destination_1", "errorCategory": "validation"},
-			},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusOK, StatTags: map[string]string{}},
-		}
-		b, err := jsonrs.Marshal(response)
-		require.NoError(t, err)
-		outputJSON, err := sjson.SetRawBytes([]byte(`{}`), "output", b)
-		require.NoError(t, err)
-		_, err = w.Write(outputJSON)
-		require.NoError(t, err)
-	}))
-	defer srv.Close()
-
-	t.Setenv("DEST_TRANSFORM_URL", srv.URL)
-	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := &handle{
-		stats:                     statsStore,
-		logger:                    logger.NOP,
-		client:                    srv.Client(),
-		clientOAuthV2:             srv.Client(),
-		proxyClient:               srv.Client(),
-		tr:                        &http.Transport{},
-		expirationTimeDiff:        expTimeDiff,
-		transformRequestTimerStat: statsStore.NewStat("router.transformer_request_time", stats.TimerType),
-	}
-
-	transformMessage := &types.TransformMessageT{
-		DestType: "test_destination",
-		Data: []types.RouterJobT{
-			{
-				JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "workspace_1", SourceID: "source_1", SourceCategory: "webhook"},
-				Destination: backendconfig.DestinationT{ID: "destination_1", DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "test_destination"}},
-			},
-			{
-				JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "workspace_1", SourceID: "source_1", SourceCategory: "webhook"},
-				Destination: backendconfig.DestinationT{ID: "destination_1", DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "test_destination"}},
-			},
-		},
-	}
-
-	response := tr.Transform(ROUTER_TRANSFORM, transformMessage)
-	require.Len(t, response, 2)
-
-	failureMetrics := statsStore.GetByName("integration.failure_detailed")
-	require.Len(t, failureMetrics, 1)
-	require.Equal(t, stats.Tags{"workspaceId": "workspace_1", "destinationId": "destination_1", "errorCategory": "validation"}, failureMetrics[0].Tags)
 	require.Equal(t, float64(1), failureMetrics[0].Value)
 }

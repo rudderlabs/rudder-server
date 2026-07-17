@@ -258,7 +258,7 @@ func (d *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 			return nil, err
 		}
 		for _, transformerResponse := range transformerResponses {
-			integrations.CollectIntegrationFailureDetailedStats(transformerResponse.StatTags)
+			integrations.CollectIntegrationFailureDetailedStats(d.stat, transformerResponse.StatTags)
 		}
 	default:
 		for i := range data {

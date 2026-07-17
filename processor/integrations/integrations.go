@@ -21,11 +21,11 @@ type PostParametersT struct {
 	Files       map[string]any    `json:"files"`
 }
 
-func CollectIntegrationFailureDetailedStats(statTags map[string]string) {
+func CollectIntegrationFailureDetailedStats(statsStore stats.Stats, statTags map[string]string) {
 	if len(statTags) == 0 {
 		return
 	}
-	stats.Default.NewTaggedStat("integration.failure_detailed", stats.CountType, statTags).Increment()
+	statsStore.NewTaggedStat("integration.failure_detailed", stats.CountType, statTags).Increment()
 }
 
 // FilterClientIntegrations parses the destination names from the

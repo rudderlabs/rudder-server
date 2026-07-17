@@ -304,10 +304,8 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			rawResp := []byte(gjson.GetBytes(respData, "output").Raw)
 			err = jsonrs.Unmarshal(rawResp, &destinationJobs)
 		}
-		if err == nil {
-			for _, destinationJob := range destinationJobs {
-				integrations.CollectIntegrationFailureDetailedStats(destinationJob.StatTags)
-			}
+		for _, destinationJob := range destinationJobs {
+			integrations.CollectIntegrationFailureDetailedStats(trans.stats, destinationJob.StatTags)
 		}
 
 		// Validate the response received from the transformer
@@ -529,7 +527,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			DontBatchDirectives:      routerJobDontBatchDirectives,
 		}
 	}
-	integrations.CollectIntegrationFailureDetailedStats(transResp.statTags)
+	integrations.CollectIntegrationFailureDetailedStats(trans.stats, transResp.statTags)
 
 	for _, metadata := range proxyReqParams.ResponseData.Metadata {
 		// Conditions for which InterceptorResponse.StatusCode/Response will not be empty
