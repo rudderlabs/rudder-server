@@ -168,6 +168,7 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			"destinationId": metadata[0].DestinationID,
 		}).Increment()
 		v1.logger.Warnn("[TransformerProxy] JobIDs in out mismatch",
+			logger.NewStringField("destinationId", metadata[0].DestinationID),
 			logger.NewIntSliceField("jobIDsInMetadata", jobIDsInMetadata),
 			logger.NewIntSliceField("jobIDsInResponse", jobIDsInResponse))
 	}

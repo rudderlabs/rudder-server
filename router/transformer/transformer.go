@@ -500,6 +500,11 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			"workspaceId":   proxyReqParams.ResponseData.Metadata[0].WorkspaceID,
 			"destinationId": proxyReqParams.ResponseData.Metadata[0].DestinationID,
 		}).Increment()
+		trans.logger.Warnn("[TransformerProxy] proxy response unmarshal failed",
+			obskit.DestinationID(proxyReqParams.ResponseData.Metadata[0].DestinationID),
+			logger.NewIntSliceField("jobIDs", lo.Map(proxyReqParams.ResponseData.Metadata, func(m ProxyRequestMetadata, _ int) int64 {
+				return m.JobID
+			})))
 	}
 	if transportResponse.OriginalResponse != "" {
 		respData = []byte(transportResponse.OriginalResponse)
@@ -529,6 +534,11 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			"workspaceId":   proxyReqParams.ResponseData.Metadata[0].WorkspaceID,
 			"destinationId": proxyReqParams.ResponseData.Metadata[0].DestinationID,
 		}).Increment()
+		trans.logger.Warnn("[TransformerProxy] proxy response missing output",
+			obskit.DestinationID(proxyReqParams.ResponseData.Metadata[0].DestinationID),
+			logger.NewIntSliceField("jobIDs", lo.Map(proxyReqParams.ResponseData.Metadata, func(m ProxyRequestMetadata, _ int) int64 {
+				return m.JobID
+			})))
 	}
 	respData = []byte(output.Raw)
 
