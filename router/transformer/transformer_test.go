@@ -1956,7 +1956,11 @@ func TestTransformerMetrics(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
 		response := []types.DestinationJobT{
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusOK},
+			{
+				JobMetadataArray: []types.JobMetadataT{{JobID: 1}},
+				StatusCode:       http.StatusOK,
+				StatTags:         map[string]string{"workspaceId": "workspace_1", "destinationId": "destination_1", "errorCategory": "network"},
+			},
 			{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusOK},
 		}
 		b, err := jsonrs.Marshal(response)
@@ -2060,4 +2064,9 @@ func TestTransformerMetrics(t *testing.T) {
 				"metric %s should have count of 2 events", metricName)
 		}
 	}
+
+	failureMetrics := statsStore.GetByName("integration.failure_detailed")
+	require.Len(t, failureMetrics, 1)
+	require.Equal(t, stats.Tags{"workspaceId": "workspace_1", "destinationId": "destination_1", "errorCategory": "network"}, failureMetrics[0].Tags)
+	require.Equal(t, float64(1), failureMetrics[0].Value)
 }
