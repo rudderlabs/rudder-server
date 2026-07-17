@@ -491,9 +491,15 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		respData will be in ProxyResponseV0 or ProxyResponseV1
 	*/
 	var transportResponse oauthv2.TransportResponse // response that we get from oauth-interceptor in postRoundTrip
-	_ = jsonrs.Unmarshal(respData, &transportResponse)
 	// unmarshal unsuccessful scenarios
-	// if respData is not a valid json
+	// if respData is not a valid json, surface it instead of discarding the error
+	if err := jsonrs.Unmarshal(respData, &transportResponse); err != nil {
+		trans.stats.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
+			"reason":      "unmarshal error",
+			"destType":    proxyReqParams.DestName,
+			"workspaceId": proxyReqParams.ResponseData.Metadata[0].WorkspaceID,
+		}).Increment()
+	}
 	if transportResponse.OriginalResponse != "" {
 		respData = []byte(transportResponse.OriginalResponse)
 	}
@@ -514,9 +520,17 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			}
 		}
 	**/
-	respData = []byte(gjson.GetBytes(respData, "output").Raw)
+	output := gjson.GetBytes(respData, "output")
+	if !output.Exists() {
+		trans.stats.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
+			"reason":      "missing output",
+			"destType":    proxyReqParams.DestName,
+			"workspaceId": proxyReqParams.ResponseData.Metadata[0].WorkspaceID,
+		}).Increment()
+	}
+	respData = []byte(output.Raw)
 
-	transResp, err := proxyReqParams.Adapter.getResponse(respData, respCode, proxyReqParams.ResponseData.Metadata)
+	transResp, err := proxyReqParams.Adapter.getResponse(respData, respCode, proxyReqParams.ResponseData.Metadata, proxyReqParams.DestName)
 	if err != nil {
 		return ProxyRequestResponse{
 			ProxyRequestStatusCode:   respCode,

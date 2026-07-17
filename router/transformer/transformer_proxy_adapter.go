@@ -22,7 +22,7 @@ import (
 type transformerProxyAdapter interface {
 	getPayload(proxyReqParams *ProxyRequestParams) ([]byte, error)
 	getProxyURL(destType string) (string, error)
-	getResponse(response []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponse, error)
+	getResponse(response []byte, respCode int, metadata []ProxyRequestMetadata, destType string) (TransResponse, error)
 }
 
 type ProxyRequestPayloadV0 struct {
@@ -84,7 +84,7 @@ func (v0 *v0Adapter) getProxyURL(destType string) (string, error) {
 	return getTransformerProxyURL("v0", destType)
 }
 
-func (v0 *v0Adapter) getResponse(respData []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponse, error) {
+func (v0 *v0Adapter) getResponse(respData []byte, respCode int, metadata []ProxyRequestMetadata, _ string) (TransResponse, error) {
 	routerJobResponseCodes := make(map[int64]int)
 	routerJobResponseBodys := make(map[int64]string)
 	routerJobDontBatchDirectives := make(map[int64]bool)
@@ -129,7 +129,7 @@ func (v1 *v1Adapter) getProxyURL(destType string) (string, error) {
 	return getTransformerProxyURL("v1", destType)
 }
 
-func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponse, error) {
+func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []ProxyRequestMetadata, destType string) (TransResponse, error) {
 	routerJobResponseCodes := make(map[int64]int)
 	routerJobResponseBodys := make(map[int64]string)
 	routerJobDontBatchDirectives := make(map[int64]bool)
@@ -162,7 +162,9 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 
 	if !reflect.DeepEqual(jobIDsInMetadata, jobIDsInResponse) {
 		stats.Default.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
-			"reason": "in out mismatch",
+			"reason":      "in out mismatch",
+			"destType":    destType,
+			"workspaceId": metadata[0].WorkspaceID,
 		}).Increment()
 		v1.logger.Warnn("[TransformerProxy] JobIDs in out mismatch",
 			logger.NewIntSliceField("jobIDsInMetadata", jobIDsInMetadata),

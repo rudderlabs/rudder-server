@@ -80,7 +80,7 @@ func TestV0Adapter(t *testing.T) {
 		r, err := jsonrs.Marshal(resp)
 		require.Nil(t, err)
 
-		response, err := v0Adapter.getResponse(r, 200, metadata)
+		response, err := v0Adapter.getResponse(r, 200, metadata, "testDestType")
 		require.Nil(t, err)
 		require.Equal(t, 2, len(response.routerJobResponseCodes))
 		require.Equal(t, 2, len(response.routerJobResponseBodys))
@@ -110,7 +110,7 @@ func TestV0Adapter(t *testing.T) {
 			},
 		}
 
-		response, err := v0Adapter.getResponse([]byte(`abc`), 200, metadata)
+		response, err := v0Adapter.getResponse([]byte(`abc`), 200, metadata, "testDestType")
 		require.NotNil(t, err)
 
 		require.Equal(t, 0, len(response.routerJobResponseCodes))
@@ -212,7 +212,7 @@ func TestV1Adapter(t *testing.T) {
 		r, err := jsonrs.Marshal(resp)
 		require.Nil(t, err)
 
-		response, err := v1Adapter.getResponse(r, 200, metadata)
+		response, err := v1Adapter.getResponse(r, 200, metadata, "testDestType")
 		require.Nil(t, err)
 		require.Equal(t, 2, len(response.routerJobResponseCodes))
 		require.Equal(t, 2, len(response.routerJobResponseBodys))
@@ -276,7 +276,7 @@ func TestV1Adapter(t *testing.T) {
 
 		mockLogger.EXPECT().Warnn(gomock.Any(), gomock.Any()).Times(1)
 
-		response, err := v1Adapter.getResponse(r, 200, metadata)
+		response, err := v1Adapter.getResponse(r, 200, metadata, "testDestType")
 		require.Nil(t, err)
 		require.Equal(t, 3, len(response.routerJobResponseCodes))
 		require.Equal(t, 3, len(response.routerJobResponseBodys))
@@ -309,7 +309,7 @@ func TestV1Adapter(t *testing.T) {
 			},
 		}
 
-		response, err := v1Adapter.getResponse([]byte(`abc`), 200, metadata)
+		response, err := v1Adapter.getResponse([]byte(`abc`), 200, metadata, "testDestType")
 		require.NotNil(t, err)
 
 		require.Equal(t, 0, len(response.routerJobResponseCodes))
