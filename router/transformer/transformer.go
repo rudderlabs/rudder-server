@@ -495,9 +495,10 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	// if respData is not a valid json, surface it instead of discarding the error
 	if err := jsonrs.Unmarshal(respData, &transportResponse); err != nil {
 		trans.stats.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
-			"reason":      "unmarshal error",
-			"destType":    proxyReqParams.DestName,
-			"workspaceId": proxyReqParams.ResponseData.Metadata[0].WorkspaceID,
+			"reason":        "unmarshal error",
+			"destType":      proxyReqParams.DestName,
+			"workspaceId":   proxyReqParams.ResponseData.Metadata[0].WorkspaceID,
+			"destinationId": proxyReqParams.ResponseData.Metadata[0].DestinationID,
 		}).Increment()
 	}
 	if transportResponse.OriginalResponse != "" {
@@ -523,9 +524,10 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	output := gjson.GetBytes(respData, "output")
 	if !output.Exists() {
 		trans.stats.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
-			"reason":      "missing output",
-			"destType":    proxyReqParams.DestName,
-			"workspaceId": proxyReqParams.ResponseData.Metadata[0].WorkspaceID,
+			"reason":        "missing output",
+			"destType":      proxyReqParams.DestName,
+			"workspaceId":   proxyReqParams.ResponseData.Metadata[0].WorkspaceID,
+			"destinationId": proxyReqParams.ResponseData.Metadata[0].DestinationID,
 		}).Increment()
 	}
 	respData = []byte(output.Raw)

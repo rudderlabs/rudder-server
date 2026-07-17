@@ -162,9 +162,10 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 
 	if !reflect.DeepEqual(jobIDsInMetadata, jobIDsInResponse) {
 		stats.Default.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
-			"reason":      "in out mismatch",
-			"destType":    destType,
-			"workspaceId": metadata[0].WorkspaceID,
+			"reason":        "in out mismatch",
+			"destType":      destType,
+			"workspaceId":   metadata[0].WorkspaceID,
+			"destinationId": metadata[0].DestinationID,
 		}).Increment()
 		v1.logger.Warnn("[TransformerProxy] JobIDs in out mismatch",
 			logger.NewIntSliceField("jobIDsInMetadata", jobIDsInMetadata),
