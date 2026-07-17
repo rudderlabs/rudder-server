@@ -33,15 +33,17 @@ type ProxyRequestPayloadV0 struct {
 }
 
 type ProxyResponseV0 struct {
-	Message             string `json:"message"`
-	DestinationResponse any    `json:"destinationResponse"`
-	AuthErrorCategory   string `json:"authErrorCategory"`
+	Message             string            `json:"message"`
+	DestinationResponse any               `json:"destinationResponse"`
+	AuthErrorCategory   string            `json:"authErrorCategory"`
+	StatTags            map[string]string `json:"statTags"`
 }
 
 type ProxyResponseV1 struct {
-	Message           string           `json:"message"`
-	Response          []TPDestResponse `json:"response"`
-	AuthErrorCategory string           `json:"authErrorCategory"`
+	Message           string            `json:"message"`
+	Response          []TPDestResponse  `json:"response"`
+	AuthErrorCategory string            `json:"authErrorCategory"`
+	StatTags          map[string]string `json:"statTags"`
 }
 
 type TransResponse struct {
@@ -49,6 +51,7 @@ type TransResponse struct {
 	routerJobResponseBodys       map[int64]string
 	routerJobDontBatchDirectives map[int64]bool
 	authErrorCategory            string
+	statTags                     map[string]string
 }
 
 type TPDestResponse struct {
@@ -113,6 +116,7 @@ func (v0 *v0Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			routerJobResponseBodys:       routerJobResponseBodys,
 			routerJobDontBatchDirectives: routerJobDontBatchDirectives,
 			authErrorCategory:            transformerResponse.AuthErrorCategory,
+			statTags:                     transformerResponse.StatTags,
 		},
 		nil
 }
@@ -176,6 +180,7 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			routerJobResponseBodys:       routerJobResponseBodys,
 			routerJobDontBatchDirectives: routerJobDontBatchDirectives,
 			authErrorCategory:            transformerResponse.AuthErrorCategory,
+			statTags:                     transformerResponse.StatTags,
 		},
 		nil
 }

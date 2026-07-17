@@ -517,9 +517,6 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		}
 	**/
 	respData = []byte(gjson.GetBytes(respData, "output").Raw)
-	// Proxy adapters parse response bodies into TransResponse values that do not expose top-level statTags,
-	// so keep this single-object raw-byte extraction here instead of adding another adapter-level parse.
-	integrations.CollectDestErrorStats(respData)
 
 	transResp, err := proxyReqParams.Adapter.getResponse(respData, respCode, proxyReqParams.ResponseData.Metadata)
 	if err != nil {
@@ -532,6 +529,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			DontBatchDirectives:      routerJobDontBatchDirectives,
 		}
 	}
+	integrations.CollectIntegrationFailureDetailedStats(transResp.statTags)
 
 	for _, metadata := range proxyReqParams.ResponseData.Metadata {
 		// Conditions for which InterceptorResponse.StatusCode/Response will not be empty

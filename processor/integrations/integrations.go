@@ -1,7 +1,6 @@
 package integrations
 
 import (
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -20,18 +19,6 @@ type PostParametersT struct {
 	QueryParams map[string]any    `json:"params"`
 	Body        map[string]any    `json:"body"`
 	Files       map[string]any    `json:"files"`
-}
-
-type TransStatsT struct {
-	StatTags map[string]string `json:"statTags"`
-}
-
-func CollectDestErrorStats(input []byte) {
-	var integrationStat TransStatsT
-	err := jsonrs.Unmarshal(input, &integrationStat)
-	if err == nil {
-		CollectIntegrationFailureDetailedStats(integrationStat.StatTags)
-	}
 }
 
 func CollectIntegrationFailureDetailedStats(statTags map[string]string) {
