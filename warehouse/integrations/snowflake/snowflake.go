@@ -894,8 +894,8 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	if !sf.ShouldMerge(identifiesTable) {
 		tmpIdentifiesStagingTable := whutils.StagingTableName(provider, identifiesTable, tableNameLimit)
 		sqlStatement := fmt.Sprintf(
-			`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]s;`,
-			schemaIdentifier, tmpIdentifiesStagingTable, resp.stagingTable,
+			`CREATE TEMPORARY TABLE %[1]s.%[2]s LIKE %[1]s.%[3]s;`,
+			schemaIdentifier, whutils.DoubleQuoteIdentifier(tmpIdentifiesStagingTable), whutils.DoubleQuoteIdentifier(resp.stagingTable),
 		)
 		if _, err = resp.db.ExecContext(ctx, sqlStatement); err != nil {
 			return map[string]error{
@@ -1008,14 +1008,14 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	}
 
 	sqlStatement = fmt.Sprintf(`
-		MERGE INTO %[7]s.%[1]s AS original USING (
-			SELECT %[3]s
-			FROM %[7]s.%[2]s
+			MERGE INTO %[7]s.%[1]s AS original USING (
+				SELECT %[3]s
+				FROM %[7]s.%[2]s
 		) AS staging ON (original.%[4]s = staging.%[4]s)
-		WHEN NOT MATCHED THEN INSERT (%[3]s) VALUES (%[6]s)
-		WHEN MATCHED THEN UPDATE SET %[5]s;`,
-		usersTable,
-		stagingTableName,
+			WHEN NOT MATCHED THEN INSERT (%[3]s) VALUES (%[6]s)
+			WHEN MATCHED THEN UPDATE SET %[5]s;`,
+		whutils.DoubleQuoteIdentifier(usersTable),
+		whutils.DoubleQuoteIdentifier(stagingTableName),
 		columnNamesStr,
 		primaryKey,
 		columnsWithValues.String(),
