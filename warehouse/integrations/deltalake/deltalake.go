@@ -273,7 +273,7 @@ func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) error {
 
 // fetchTables fetches tables from the database
 func (d *Deltalake) fetchTables(ctx context.Context, regex string) ([]string, error) {
-	query := fmt.Sprintf(`SHOW tables FROM %s LIKE '%s';`, d.Namespace, regex)
+	query := fmt.Sprintf(`SHOW tables FROM %s LIKE %s;`, warehouseutils.BacktickQuoteIdentifier(d.Namespace), warehouseutils.SQLStringLiteral(regex))
 
 	rows, err := d.DB.QueryContext(ctx, query)
 	if err != nil {
@@ -327,7 +327,7 @@ func (d *Deltalake) dropStagingTables(ctx context.Context, stagingTables []strin
 
 // DropTable drops a table from the warehouse
 func (d *Deltalake) dropTable(ctx context.Context, table string) error {
-	query := fmt.Sprintf(`DROP TABLE %s.%s;`, d.Namespace, table)
+	query := fmt.Sprintf(`DROP TABLE %s;`, warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, table))
 
 	_, err := d.DB.ExecContext(ctx, query)
 	if err != nil {
@@ -402,7 +402,7 @@ func (d *Deltalake) sendStatForMissingDatatype(missingDatatype string) {
 
 // fetchTableAttributes fetches the attributes of a table
 func (d *Deltalake) fetchTableAttributes(ctx context.Context, tableName string) (model.TableSchema, error) {
-	query := fmt.Sprintf(`DESCRIBE QUERY TABLE %s.%s;`, d.Namespace, tableName)
+	query := fmt.Sprintf(`DESCRIBE QUERY TABLE %s;`, warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName))
 
 	rows, err := d.DB.QueryContext(ctx, query)
 	if err != nil {
@@ -476,7 +476,7 @@ func (d *Deltalake) CreateSchema(ctx context.Context) error {
 
 // schemaExists checks if a schema exists in the warehouse.
 func (d *Deltalake) schemaExists(ctx context.Context) (bool, error) {
-	query := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, d.Namespace)
+	query := fmt.Sprintf(`SHOW SCHEMAS LIKE %s;`, warehouseutils.SQLStringLiteral(d.Namespace))
 
 	var schema string
 	err := d.DB.QueryRowContext(ctx, query).Scan(&schema)
@@ -492,7 +492,7 @@ func (d *Deltalake) schemaExists(ctx context.Context) (bool, error) {
 
 // createSchema creates a schema in the warehouse.
 func (d *Deltalake) createSchema(ctx context.Context) error {
-	query := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, d.Namespace)
+	query := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, warehouseutils.BacktickQuoteIdentifier(d.Namespace))
 
 	_, err := d.DB.ExecContext(ctx, query)
 	if err != nil {
@@ -508,7 +508,7 @@ func (d *Deltalake) CreateTable(ctx context.Context, tableName string, columns m
 
 	tableLocationSql = d.tableLocationQuery(tableName)
 	if _, ok := columns["received_at"]; ok {
-		partitionedSql = `PARTITIONED BY(event_date)`
+		partitionedSql = fmt.Sprintf(`PARTITIONED BY(%s)`, warehouseutils.BacktickQuoteIdentifier("event_date"))
 	}
 
 	createTableClauseSql := "CREATE TABLE IF NOT EXISTS"
@@ -517,11 +517,10 @@ func (d *Deltalake) CreateTable(ctx context.Context, tableName string, columns m
 	}
 
 	query := fmt.Sprintf(`
-		%s %s.%s ( %s ) USING DELTA %s %s;
+		%s %s ( %s ) USING DELTA %s %s;
 `,
 		createTableClauseSql,
-		d.Namespace,
-		tableName,
+		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
 		columnsWithDataTypes(columns, ""),
 		tableLocationSql,
 		partitionedSql,
@@ -552,10 +551,10 @@ func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
 			return ""
 		}
 		if name == "received_at" {
-			generatedColumnSQL := "DATE GENERATED ALWAYS AS ( CAST(received_at AS DATE) )"
-			return fmt.Sprintf(`%s%s %s, %s%s %s`, prefix, name, dataTypesMap[columns[name]], prefix, "event_date", generatedColumnSQL)
+			generatedColumnSQL := fmt.Sprintf("DATE GENERATED ALWAYS AS ( CAST(%s AS DATE) )", warehouseutils.BacktickQuoteIdentifier("received_at"))
+			return fmt.Sprintf(`%s %s, %s %s`, warehouseutils.BacktickQuoteIdentifier(prefix+name), dataTypesMap[columns[name]], warehouseutils.BacktickQuoteIdentifier(prefix+"event_date"), generatedColumnSQL)
 		}
-		return fmt.Sprintf(`%s%s %s`, prefix, name, dataTypesMap[columns[name]])
+		return fmt.Sprintf(`%s %s`, warehouseutils.BacktickQuoteIdentifier(prefix+name), dataTypesMap[columns[name]])
 	}
 	return warehouseutils.JoinWithFormatting(keys, format, ",")
 }
@@ -590,14 +589,13 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 
 	queryBuilder.WriteString(fmt.Sprintf(`
 		ALTER TABLE
-		  %s.%s
+		  %s
 		ADD COLUMNS(`,
-		d.Namespace,
-		tableName,
+		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
 	))
 
 	for _, columnInfo := range columnsToAddInfo {
-		queryBuilder.WriteString(fmt.Sprintf(` %s %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type]))
+		queryBuilder.WriteString(fmt.Sprintf(` %s %s,`, warehouseutils.BacktickQuoteIdentifier(columnInfo.Name), dataTypesMap[columnInfo.Type]))
 	}
 
 	query := strings.TrimSuffix(queryBuilder.String(), ",")
@@ -742,7 +740,7 @@ func (d *Deltalake) copyIntoLoadTable(
 			PATTERN = '*.parquet'
 			COPY_OPTIONS ('force' = 'true')
 			%s;`,
-			fmt.Sprintf(`%s.%s`, d.Namespace, stagingTableName),
+			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
 			sortedColumnNames,
 			loadFolder,
 			auth,
@@ -768,7 +766,7 @@ func (d *Deltalake) copyIntoLoadTable(
 			COPY_OPTIONS ('force' = 'true')
 			%s;
 `,
-			fmt.Sprintf(`%s.%s`, d.Namespace, stagingTableName),
+			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
 			sortedColumnNames,
 			loadFolder,
 			auth,
@@ -788,34 +786,34 @@ func (d *Deltalake) insertIntoLoadTable(
 	tableSchemaAfterUpload model.TableSchema,
 ) (*types.LoadTableStats, error) {
 	insertStmt := fmt.Sprintf(`
-			INSERT INTO %[1]s.%[2]s (%[4]s)
-			SELECT
-			  %[4]s
-			FROM
-			  (
+				INSERT INTO %[1]s (%[3]s)
 				SELECT
-				  *
+				  %[3]s
 				FROM
 				  (
 					SELECT
-					  *,
-					  row_number() OVER (
-						PARTITION BY %[5]s
-						ORDER BY
-						  RECEIVED_AT DESC
-					  ) AS _rudder_staging_row_number
+					  *
 					FROM
-					  %[1]s.%[3]s
-				  ) AS q
-				WHERE
-				  _rudder_staging_row_number = 1
-			  );
-		`,
-		d.Namespace,
-		tableName,
-		stagingTableName,
+					  (
+						SELECT
+						  *,
+						  row_number() OVER (
+							PARTITION BY %[4]s
+							ORDER BY
+							  %[5]s DESC
+						  ) AS _rudder_staging_row_number
+						FROM
+						  %[2]s
+					  ) AS q
+					WHERE
+					  _rudder_staging_row_number = 1
+				  );
+			`,
+		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
+		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
 		columnNames(warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload)),
-		primaryKey(tableName),
+		warehouseutils.BacktickQuoteIdentifier(primaryKey(tableName)),
+		warehouseutils.BacktickQuoteIdentifier("received_at"),
 	)
 
 	var rowsAffected, rowsInserted int64
@@ -844,41 +842,41 @@ func (d *Deltalake) mergeIntoLoadTable(
 	pk := primaryKey(tableName)
 
 	mergeStmt := fmt.Sprintf(`
-			MERGE INTO %[1]s.%[2]s AS MAIN USING (
-			  SELECT
-				*
-			  FROM
-				(
+				MERGE INTO %[1]s AS MAIN USING (
 				  SELECT
-					*,
-					row_number() OVER (
-					  PARTITION BY %[4]s
-					  ORDER BY
-						RECEIVED_AT DESC
-					) AS _rudder_staging_row_number
+					*
 				  FROM
-					%[1]s.%[3]s
-				) AS q
-			  WHERE
-				_rudder_staging_row_number = 1
-			)
-			AS STAGING ON MAIN.%[4]s = STAGING.%[4]s
-			WHEN MATCHED THEN
-			UPDATE
-			SET
-			  %[5]s
-			WHEN NOT MATCHED THEN
-			INSERT (%[6]s)
-			VALUES
-			  (%[7]s);
-		`,
-		d.Namespace,
-		tableName,
-		stagingTableName,
-		pk,
+					(
+					  SELECT
+						*,
+						row_number() OVER (
+						  PARTITION BY %[3]s
+						  ORDER BY
+							%[7]s DESC
+						) AS _rudder_staging_row_number
+					  FROM
+						%[2]s
+					) AS q
+				  WHERE
+					_rudder_staging_row_number = 1
+				)
+				AS STAGING ON MAIN.%[3]s = STAGING.%[3]s
+				WHEN MATCHED THEN
+				UPDATE
+				SET
+				  %[4]s
+				WHEN NOT MATCHED THEN
+				INSERT (%[5]s)
+				VALUES
+				  (%[6]s);
+			`,
+		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
+		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
+		warehouseutils.BacktickQuoteIdentifier(pk),
 		columnsWithValues(sortedColumnKeys),
 		columnNames(sortedColumnKeys),
 		stagingColumnNames(sortedColumnKeys),
+		warehouseutils.BacktickQuoteIdentifier("received_at"),
 	)
 
 	var rowsAffected, rowsUpdated, rowsDeleted, rowsInserted int64
@@ -912,19 +910,19 @@ func tableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload model.TableSche
 }
 
 func columnNames(columns []string) string {
-	return strings.Join(columns, ",")
+	return warehouseutils.BacktickQuoteAndJoinByComma(columns)
 }
 
 func stagingColumnNames(columns []string) string {
 	format := func(_ int, str string) string {
-		return fmt.Sprintf(`STAGING.%s`, str)
+		return fmt.Sprintf(`STAGING.%s`, warehouseutils.BacktickQuoteIdentifier(str))
 	}
 	return warehouseutils.JoinWithFormatting(columns, format, ",")
 }
 
 func columnsWithValues(columns []string) string {
 	format := func(_ int, str string) string {
-		return fmt.Sprintf(`MAIN.%[1]s = STAGING.%[1]s`, str)
+		return fmt.Sprintf(`MAIN.%[1]s = STAGING.%[1]s`, warehouseutils.BacktickQuoteIdentifier(str))
 	}
 	return warehouseutils.JoinWithFormatting(columns, format, ",")
 }
@@ -943,7 +941,7 @@ func (d *Deltalake) sortedColumnNames(tableSchemaInUpload model.TableSchema, sor
 		return warehouseutils.JoinWithFormatting(sortedColumnKeys, func(_ int, value string) string {
 			columnName := value
 			columnType := dataTypesMap[tableSchemaInUpload[columnName]]
-			return fmt.Sprintf(`%s::%s`, columnName, columnType)
+			return fmt.Sprintf(`%s::%s`, warehouseutils.BacktickQuoteIdentifier(columnName), columnType)
 		}, ",")
 	}
 
@@ -951,7 +949,7 @@ func (d *Deltalake) sortedColumnNames(tableSchemaInUpload model.TableSchema, sor
 		csvColumnIndex := fmt.Sprintf(`%s%d`, "_c", index)
 		columnName := value
 		columnType := dataTypesMap[tableSchemaInUpload[columnName]]
-		return fmt.Sprintf(`CAST ( %s AS %s ) AS %s`, csvColumnIndex, columnType, columnName)
+		return fmt.Sprintf(`CAST ( %s AS %s ) AS %s`, csvColumnIndex, columnType, warehouseutils.BacktickQuoteIdentifier(columnName))
 	}
 	formatString := warehouseutils.JoinWithFormatting(sortedColumnKeys, format, ",")
 
@@ -962,7 +960,7 @@ func (d *Deltalake) sortedColumnNames(tableSchemaInUpload model.TableSchema, sor
 		}
 
 		diffFormat := func(_ int, value string) string {
-			return fmt.Sprintf(`NULL AS %s`, value)
+			return fmt.Sprintf(`NULL AS %s`, warehouseutils.BacktickQuoteIdentifier(value))
 		}
 		diffString := warehouseutils.JoinWithFormatting(diffCols, diffFormat, ",")
 
@@ -1079,55 +1077,55 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 	tableLocationSql := d.tableLocationQuery(stagingTableName)
 
 	query := fmt.Sprintf(`
-		CREATE TABLE %[1]s.%[2]s USING DELTA %[7]s AS (
+		CREATE TABLE %[1]s USING DELTA %[6]s AS (
 		  SELECT
 			DISTINCT *
 		  FROM
 			(
 			  SELECT
-				id,
-				%[3]s
+				%[7]s,
+				%[2]s
 			  FROM
 				(
 				  (
 					SELECT
-					  id,
-					  %[6]s
+					  %[7]s,
+					  %[5]s
 					FROM
-					  %[1]s.%[4]s
+					  %[3]s
 					WHERE
-					  id IN (
+					  %[7]s IN (
 						SELECT
-						  DISTINCT(user_id)
+						  DISTINCT(%[8]s)
 						FROM
-						  %[1]s.%[5]s
+						  %[4]s
 						WHERE
-						  user_id IS NOT NULL
+						  %[8]s IS NOT NULL
 					  )
 				  )
 				  UNION
 					(
 					  SELECT
-						user_id,
-						%[6]s
+						%[8]s,
+						%[5]s
 					  FROM
-						%[1]s.%[5]s
+						%[4]s
 					  WHERE
-						user_id IS NOT NULL
+						%[8]s IS NOT NULL
 					)
 				)
 			)
 		);
 `,
-		d.Namespace,
-		stagingTableName,
+		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
 		strings.Join(firstValProps, ","),
-		warehouseutils.UsersTable,
-		identifyStagingTable,
+		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, warehouseutils.UsersTable),
+		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, identifyStagingTable),
 		columnNames(userColNames),
 		tableLocationSql,
+		warehouseutils.BacktickQuoteIdentifier("id"),
+		warehouseutils.BacktickQuoteIdentifier("user_id"),
 	)
-
 	_, err = d.DB.ExecContext(ctx, query)
 	if err != nil {
 		return map[string]error{
@@ -1156,43 +1154,41 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 
 	if !d.ShouldMerge() {
 		query = fmt.Sprintf(`
-			INSERT INTO %[1]s.%[2]s (%[4]s)
+			INSERT INTO %[1]s (%[3]s)
 			SELECT
-			  %[4]s
+			  %[3]s
 			FROM
 			  (
 				SELECT
-				  %[4]s
+				  %[3]s
 				FROM
-				  %[1]s.%[3]s
+				  %[2]s
 			  );
 		`,
-			d.Namespace,
-			warehouseutils.UsersTable,
-			stagingTableName,
+			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, warehouseutils.UsersTable),
+			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
 			columnNames(columnKeys),
 		)
 	} else {
 		pk := primaryKey(warehouseutils.UsersTable)
 
 		query = fmt.Sprintf(`
-			MERGE INTO %[1]s.%[2]s AS MAIN USING (
+			MERGE INTO %[1]s AS MAIN USING (
 			  SELECT
-				%[6]s
+				%[5]s
 			  FROM
-				%[1]s.%[3]s
-			) AS STAGING ON MAIN.%[4]s = STAGING.%[4]s
+				%[2]s
+			) AS STAGING ON MAIN.%[3]s = STAGING.%[3]s
 			WHEN MATCHED THEN
 			UPDATE
 			SET
-			  %[5]s WHEN NOT MATCHED
-			THEN INSERT (%[6]s)
+			  %[4]s WHEN NOT MATCHED
+			THEN INSERT (%[5]s)
 			VALUES
-			  (%[7]s);`,
-			d.Namespace,
-			warehouseutils.UsersTable,
-			stagingTableName,
-			pk,
+			  (%[6]s);`,
+			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, warehouseutils.UsersTable),
+			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
+			warehouseutils.BacktickQuoteIdentifier(pk),
 			columnsWithValues(columnKeys),
 			columnNames(columnKeys),
 			stagingColumnNames(columnKeys),
@@ -1271,7 +1267,7 @@ func getColumnProperties(usersSchemaInWarehouse model.TableSchema) ([]string, []
 		}
 
 		userColNames = append(userColNames, colName)
-		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s, TRUE) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
+		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s, TRUE) OVER (PARTITION BY %[2]s ORDER BY %[3]s DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, warehouseutils.BacktickQuoteIdentifier(colName), warehouseutils.BacktickQuoteIdentifier("id"), warehouseutils.BacktickQuoteIdentifier("received_at")))
 	}
 
 	return userColNames, firstValProps
