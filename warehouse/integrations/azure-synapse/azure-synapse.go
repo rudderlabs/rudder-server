@@ -202,7 +202,7 @@ func (as *AzureSynapse) connectionCredentials() *credentials {
 
 func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	formattedColumns := lo.MapToSlice(columns, func(name, dataType string) string {
-		return fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToAzureSynapse[dataType])
+		return fmt.Sprintf(`%s %s`, warehouseutils.BracketQuoteIdentifier(prefix+name), rudderDataTypesMapToAzureSynapse[dataType])
 	})
 	return strings.Join(formattedColumns, ",")
 }
@@ -253,12 +253,11 @@ func (as *AzureSynapse) loadTable(
 	log.Debugn("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`
 		SELECT
-		  TOP 0 * INTO %[1]s.%[2]s
+		  TOP 0 * INTO %[1]s
 		FROM
-		  %[1]s.%[3]s;`,
-		as.namespace,
-		stagingTableName,
-		tableName,
+		  %[2]s;`,
+		warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, stagingTableName),
+		warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, tableName),
 	)
 	if _, err = as.db.ExecContext(ctx, createStagingTableStmt); err != nil {
 		return nil, "", fmt.Errorf("creating temporary table: %w", err)
@@ -293,7 +292,7 @@ func (as *AzureSynapse) loadTable(
 	})
 
 	log.Debugn("creating prepared stmt for loading data")
-	copyInStmt := mssql.CopyIn(as.namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false},
+	copyInStmt := mssql.CopyIn(warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, stagingTableName), mssql.BulkOptions{CheckConstraints: false},
 		append(sortedColumnKeys, extraColumns...)...,
 	)
 	stmt, err := txn.PrepareContext(ctx, copyInStmt)
@@ -555,32 +554,29 @@ func (as *AzureSynapse) deleteFromLoadTable(
 		primaryKey = column
 	}
 
-	var additionalJoinClause string
+	var additionalDeleteStmtClause string
 	if tableName == warehouseutils.DiscardsTable {
-		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = %[1]q.%[2]q.%[3]q AND _source.%[4]s = %[1]q.%[2]q.%[4]q`,
-			as.namespace,
-			tableName,
-			"table_name",
-			"column_name",
+		additionalDeleteStmtClause = fmt.Sprintf(`AND _source.%[2]s = %[1]s.%[2]s AND _source.%[3]s = %[1]s.%[3]s`,
+			warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, tableName),
+			warehouseutils.BracketQuoteIdentifier("table_name"),
+			warehouseutils.BracketQuoteIdentifier("column_name"),
 		)
 	}
 
 	deleteStmt := fmt.Sprintf(`
-		DELETE FROM
-		  %[1]q.%[2]q
-		FROM
-		  %[1]q.%[3]q AS _source
-		WHERE
-		  (
-			_source.%[4]s = %[1]q.%[2]q.%[4]q %[5]s
-		  );`,
-		as.namespace,
-		tableName,
-		stagingTableName,
-		primaryKey,
-		additionalJoinClause,
+			DELETE FROM
+			  %[1]s
+			FROM
+			  %[2]s AS _source
+			WHERE
+			  (
+				_source.%[3]s = %[1]s.%[3]s %[4]s
+			  );`,
+		warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, tableName),
+		warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, stagingTableName),
+		warehouseutils.BracketQuoteIdentifier(primaryKey),
+		additionalDeleteStmtClause,
 	)
-
 	r, err := txn.ExecContext(ctx, deleteStmt)
 	if err != nil {
 		return 0, fmt.Errorf("deleting from main table: %w", err)
@@ -600,35 +596,34 @@ func (as *AzureSynapse) insertIntoLoadTable(
 		partitionKey = column
 	}
 
-	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(
+	quotedColumnNames := warehouseutils.BracketQuoteAndJoinByComma(
 		sortedColumnKeys,
 	)
 
 	insertStmt := fmt.Sprintf(`
-		INSERT INTO %[1]q.%[2]q (%[3]s)
-		SELECT
-		  %[3]s
-		FROM
-		  (
+			INSERT INTO %[1]s (%[3]s)
 			SELECT
-			  *,
-			  ROW_NUMBER() OVER (
-				PARTITION BY %[5]s
-				ORDER BY
-				  received_at DESC
-			  ) AS _rudder_staging_row_number
+			  %[3]s
 			FROM
-			  %[1]q.%[4]q
-		  ) AS _
-		WHERE
-		  _rudder_staging_row_number = 1;`,
-		as.namespace,
-		tableName,
+			  (
+				SELECT
+				  *,
+				  ROW_NUMBER() OVER (
+					PARTITION BY %[4]s
+					ORDER BY
+					  %[5]s DESC
+				  ) AS _rudder_staging_row_number
+				FROM
+				  %[2]s
+			  ) AS _
+			WHERE
+			  _rudder_staging_row_number = 1;`,
+		warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, tableName),
+		warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, stagingTableName),
 		quotedColumnNames,
-		stagingTableName,
-		partitionKey,
+		warehouseutils.QuoteCommaSeparatedIdentifiers(partitionKey, warehouseutils.BracketQuoteIdentifier),
+		warehouseutils.BracketQuoteIdentifier("received_at"),
 	)
-
 	r, err := txn.ExecContext(ctx, insertStmt)
 	if err != nil {
 		return 0, fmt.Errorf("inserting intomain table: %w", err)
@@ -682,15 +677,15 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 		if colName == "id" {
 			continue
 		}
-		userColNames = append(userColNames, fmt.Sprintf(`%q`, colName))
+		userColNames = append(userColNames, warehouseutils.BracketQuoteIdentifier(colName))
 		caseSubQuery := fmt.Sprintf(`case
 						  when (exists(select 1)) then (
-						  	select top 1 %[1]q from %[2]s
-						  	where x.id = %[2]s.id
-							  and %[1]q is not null
+								select top 1 %[1]s from %[2]s
+								where x.[id] = %[2]s.[id]
+							  and %[1]s is not null
 							order by received_at desc
 							)
-						  end as %[1]q`, colName, as.namespace+"."+unionStagingTableName)
+						  end as %[1]s`, warehouseutils.BracketQuoteIdentifier(colName), warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, unionStagingTableName))
 		// IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortened to below
 		// https://docs.microsoft.com/en-us/sql/t-sql/functions/first-value-transact-sql?view=sql-server-ver15
 		// caseSubQuery := fmt.Sprintf(`FIRST_VALUE(%[1]s) IGNORE NULLS OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName)
@@ -700,12 +695,12 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	// TODO: skipped top level temporary table for now
 	sqlStatement := fmt.Sprintf(`SELECT * into %[5]s FROM
 												((
-													SELECT id, %[4]s FROM %[2]s WHERE id in (SELECT user_id FROM %[3]s WHERE user_id IS NOT NULL)
+													SELECT [id], %[4]s FROM %[2]s WHERE [id] in (SELECT [user_id] FROM %[3]s WHERE [user_id] IS NOT NULL)
 												) UNION
 												(
-													SELECT user_id, %[4]s FROM %[3]s  WHERE user_id IS NOT NULL
+													SELECT [user_id], %[4]s FROM %[3]s  WHERE [user_id] IS NOT NULL
 												)) a
-											`, as.namespace, as.namespace+"."+warehouseutils.UsersTable, as.namespace+"."+identifyStagingTable, strings.Join(userColNames, ","), as.namespace+"."+unionStagingTableName)
+											`, as.namespace, warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, warehouseutils.UsersTable), warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, identifyStagingTable), strings.Join(userColNames, ","), warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, unionStagingTableName))
 
 	as.logger.Debugn("AZ: Creating staging table for union of users table with identify staging table",
 		logger.NewStringField(logfield.Query, sqlStatement),
@@ -719,13 +714,13 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	sqlStatement = fmt.Sprintf(`SELECT * INTO %[1]s FROM (SELECT DISTINCT * FROM
 										(
 											SELECT
-											x.id, %[2]s
+											x.[id], %[2]s
 											FROM %[3]s as x
 										) as xyz
 									) a`,
-		as.namespace+"."+stagingTableName,
+		warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, stagingTableName),
 		strings.Join(firstValProps, ","),
-		as.namespace+"."+unionStagingTableName,
+		warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, unionStagingTableName),
 	)
 
 	as.logger.Debugn("AZ: Creating staging table for users",
@@ -749,7 +744,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	}
 
 	primaryKey := "id"
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" FROM %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, as.namespace, warehouseutils.UsersTable, as.namespace+"."+stagingTableName, primaryKey)
+	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s FROM %[2]s _source where (_source.%[3]s = %[1]s.%[3]s)`, warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, warehouseutils.UsersTable), warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, stagingTableName), warehouseutils.BracketQuoteIdentifier(primaryKey))
 	as.logger.Infon("AZ: Dedup records for table using staging table",
 		logger.NewStringField(logfield.TableName, warehouseutils.UsersTable),
 		logger.NewStringField(logfield.Query, sqlStatement),
@@ -764,7 +759,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 		return errorMap
 	}
 
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, as.namespace, warehouseutils.UsersTable, as.namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
+	sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s (%[3]s) SELECT %[3]s FROM %[2]s`, warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, warehouseutils.UsersTable), warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, stagingTableName), strings.Join(append([]string{warehouseutils.BracketQuoteIdentifier("id")}, userColNames...), ","))
 	as.logger.Infon("AZ: Inserting records for table using staging table",
 		logger.NewStringField(logfield.TableName, warehouseutils.UsersTable),
 		logger.NewStringField(logfield.Query, sqlStatement),
@@ -796,12 +791,12 @@ func (*AzureSynapse) DeleteBy(context.Context, []string, warehouseutils.DeleteBy
 }
 
 func (as *AzureSynapse) CreateSchema(ctx context.Context) (err error) {
-	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
-    EXEC('CREATE SCHEMA [%s]');`, as.namespace, as.namespace)
+	createSchemaStatement := fmt.Sprintf(`CREATE SCHEMA %s`, warehouseutils.BracketQuoteIdentifier(as.namespace))
+	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT * FROM sys.schemas WHERE name = N%s )
+	    EXEC(%s);`, warehouseutils.SQLStringLiteral(as.namespace), warehouseutils.SQLStringLiteral(createSchemaStatement))
 	as.logger.Infon("SYNAPSE: Creating schema name in synapse for AZ",
 		logger.NewStringField(logfield.DestinationID, as.warehouse.Destination.ID),
-		logger.NewStringField(logfield.Query, sqlStatement),
-	)
+		logger.NewStringField(logfield.Query, sqlStatement))
 	_, err = as.db.ExecContext(ctx, sqlStatement)
 	if errors.Is(err, io.EOF) {
 		return nil
@@ -813,40 +808,40 @@ func (as *AzureSynapse) dropStagingTable(ctx context.Context, stagingTableName s
 	as.logger.Infon("AZ: dropping table",
 		logger.NewStringField(logfield.TableName, stagingTableName),
 	)
-	_, err := as.db.ExecContext(ctx, fmt.Sprintf(`IF OBJECT_ID ('%[1]s','U') IS NOT NULL DROP TABLE %[1]s;`, as.namespace+"."+stagingTableName))
+	_, err := as.db.ExecContext(ctx, fmt.Sprintf(`IF OBJECT_ID (%s,'U') IS NOT NULL DROP TABLE %s;`, warehouseutils.SQLStringLiteral(as.namespace+"."+stagingTableName), warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, stagingTableName)))
 	if err != nil {
 		as.logger.Errorn("AZ: Error dropping staging table in synapse",
-			logger.NewStringField(logfield.TableName, as.namespace+"."+stagingTableName),
+			logger.NewStringField(logfield.TableName, warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, stagingTableName)),
 			obskit.Error(err),
 		)
 	}
 }
 
-func (as *AzureSynapse) createTable(ctx context.Context, name string, columns model.TableSchema) (err error) {
-	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
-	CREATE TABLE %[1]s ( %v )`, name, columnsWithDataTypes(columns, ""))
+func (as *AzureSynapse) createTable(ctx context.Context, tableName string, columns model.TableSchema) (err error) {
+	tableIdentifier := warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, tableName)
+	sqlStatement := fmt.Sprintf(`IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N%s) AND type = N'U')
+		CREATE TABLE %s ( %v )`, warehouseutils.SQLStringLiteral(as.namespace+"."+tableName), tableIdentifier, columnsWithDataTypes(columns, ""))
 
 	as.logger.Infon("AZ: Creating table in synapse for AZ",
 		logger.NewStringField(logfield.DestinationID, as.warehouse.Destination.ID),
-		logger.NewStringField(logfield.Query, sqlStatement),
-	)
+		logger.NewStringField(logfield.Query, sqlStatement))
 	_, err = as.db.ExecContext(ctx, sqlStatement)
 	return err
 }
 
 func (as *AzureSynapse) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
 	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
-	err = as.createTable(ctx, as.namespace+"."+tableName, columnMap)
+	err = as.createTable(ctx, tableName, columnMap)
 	return err
 }
 
 func (as *AzureSynapse) DropTable(ctx context.Context, tableName string) (err error) {
-	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
+	sqlStatement := `DROP TABLE %s`
 	as.logger.Infon("AZ: Dropping table in synapse for AZ",
 		logger.NewStringField(logfield.DestinationID, as.warehouse.Destination.ID),
 		logger.NewStringField(logfield.Query, sqlStatement),
 	)
-	_, err = as.db.ExecContext(ctx, fmt.Sprintf(sqlStatement, as.namespace, tableName))
+	_, err = as.db.ExecContext(ctx, fmt.Sprintf(sqlStatement, warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, tableName)))
 	return err
 }
 
@@ -858,31 +853,29 @@ func (as *AzureSynapse) AddColumns(ctx context.Context, tableName string, column
 
 	if len(columnsInfo) == 1 {
 		queryBuilder.WriteString(fmt.Sprintf(`
-			IF NOT EXISTS (
-			  SELECT
-				1
-			  FROM
-				SYS.COLUMNS
-			  WHERE
-				OBJECT_ID = OBJECT_ID(N'%[1]s.%[2]s')
-				AND name = '%[3]s'
-			)`,
-			as.namespace,
-			tableName,
-			columnsInfo[0].Name,
+				IF NOT EXISTS (
+				  SELECT
+					1
+				  FROM
+					SYS.COLUMNS
+				  WHERE
+					OBJECT_ID = OBJECT_ID(N%s)
+					AND name = %s
+				)`,
+			warehouseutils.SQLStringLiteral(as.namespace+"."+tableName),
+			warehouseutils.SQLStringLiteral(columnsInfo[0].Name),
 		))
 	}
 
 	queryBuilder.WriteString(fmt.Sprintf(`
-		ALTER TABLE
-		  %s.%s
-		ADD`,
-		as.namespace,
-		tableName,
+			ALTER TABLE
+			  %s
+			ADD`,
+		warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, tableName),
 	))
 
 	for _, columnInfo := range columnsInfo {
-		queryBuilder.WriteString(fmt.Sprintf(` %q %s,`, columnInfo.Name, rudderDataTypesMapToAzureSynapse[columnInfo.Type]))
+		queryBuilder.WriteString(fmt.Sprintf(` %s %s,`, warehouseutils.BracketQuoteIdentifier(columnInfo.Name), rudderDataTypesMapToAzureSynapse[columnInfo.Type]))
 	}
 
 	query = strings.TrimSuffix(queryBuilder.String(), ",")
@@ -891,8 +884,7 @@ func (as *AzureSynapse) AddColumns(ctx context.Context, tableName string, column
 	as.logger.Infon("AZ: Adding columns",
 		logger.NewStringField(logfield.DestinationID, as.warehouse.Destination.ID),
 		logger.NewStringField(logfield.TableName, tableName),
-		logger.NewStringField(logfield.Query, query),
-	)
+		logger.NewStringField(logfield.Query, query))
 	_, err = as.db.ExecContext(ctx, query)
 	return err
 }
@@ -962,7 +954,7 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) error {
 		logger.NewStringField("table_names", strings.Join(stagingTableNames, ", ")),
 	)
 	for _, stagingTableName := range stagingTableNames {
-		_, err := as.db.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, as.namespace, stagingTableName))
+		_, err := as.db.ExecContext(ctx, fmt.Sprintf(`DROP TABLE %s`, warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, stagingTableName)))
 		if err != nil {
 			return fmt.Errorf("dropping dangling staging table %q.%q: %w", as.namespace, stagingTableName, err)
 		}
@@ -1080,10 +1072,9 @@ func (as *AzureSynapse) Connect(_ context.Context, warehouse model.Warehouse) (c
 }
 
 func (as *AzureSynapse) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]any, _ string) (err error) {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
-		as.namespace,
-		tableName,
-		fmt.Sprintf(`%q, %q`, "id", "val"),
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (%v) VALUES (%s)`,
+		warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, tableName),
+		warehouseutils.BracketQuoteAndJoinByComma([]string{"id", "val"}),
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
 	_, err = as.db.ExecContext(ctx, sqlStatement)
