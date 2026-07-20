@@ -158,16 +158,17 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			fmt.Errorf("[TransformerProxy Unmarshalling]:: respData: %s, err: %w", string(respData), err)
 	}
 
-	// Deduped: a batch can legitimately carry the same JobID more than once (router/worker.go dedupes
-	// the same way before building responses), while the transformer returns one entry per job. Without
-	// this, metadata [11,11,21] against response [11,21] is a spurious mismatch - and now an alerted one.
+	// Compared as sets: a batch can legitimately carry the same JobID more than once (router/worker.go
+	// only dedupes when building the final job responses), and the transformer may either collapse
+	// those duplicates or echo one entry per input item. Both are valid, so deduping only one side
+	// would make the comparison sensitive to which one it does - and this now pages.
 	jobIDsInMetadata := lo.Uniq(lo.Map(metadata, func(m ProxyRequestMetadata, _ int) int64 {
 		return m.JobID
 	}))
 	slices.Sort(jobIDsInMetadata)
-	jobIDsInResponse := lo.Map(transformerResponse.Response, func(resp TPDestResponse, _ int) int64 {
+	jobIDsInResponse := lo.Uniq(lo.Map(transformerResponse.Response, func(resp TPDestResponse, _ int) int64 {
 		return resp.Metadata.JobID
-	})
+	}))
 	slices.Sort(jobIDsInResponse)
 
 	// Report the mismatch rather than recording it here. Emitting from the adapter would write this

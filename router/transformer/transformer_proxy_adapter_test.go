@@ -302,6 +302,41 @@ func TestV1Adapter(t *testing.T) {
 		require.Equal(t, "oauth123", response.authErrorCategory)
 	})
 
+	// A batch can carry the same JobID more than once, and the transformer may either collapse the
+	// duplicates or echo one entry per input item. Neither is a contract breach, so neither may set
+	// jobIDMismatch - this metric pages.
+	for _, tc := range []struct {
+		name             string
+		jobIDsInResponse []int64
+	}{
+		{name: "transformer collapses duplicate jobIDs", jobIDsInResponse: []int64{11, 21}},
+		{name: "transformer echoes duplicate jobIDs", jobIDsInResponse: []int64{11, 11, 21}},
+	} {
+		t.Run("should not report a mismatch when the "+tc.name, func(t *testing.T) {
+			metadata := []ProxyRequestMetadata{
+				{JobID: 11, DontBatch: false},
+				{JobID: 11, DontBatch: false},
+				{JobID: 21, DontBatch: false},
+			}
+			resp := ProxyResponseV1{Message: "test"}
+			for _, jobID := range tc.jobIDsInResponse {
+				resp.Response = append(resp.Response, TPDestResponse{
+					StatusCode: 200,
+					Metadata:   ProxyRequestMetadata{JobID: jobID},
+				})
+			}
+			r, err := jsonrs.Marshal(resp)
+			require.Nil(t, err)
+
+			response, err := v1Adapter.getResponse(r, 200, metadata)
+			require.Nil(t, err)
+
+			require.False(t, response.jobIDMismatch)
+			require.Equal(t, []int64{11, 21}, response.jobIDsInMetadata)
+			require.Equal(t, []int64{11, 21}, response.jobIDsInResponse)
+		})
+	}
+
 	t.Run("should return the unmarshal error", func(t *testing.T) {
 		metadata := []ProxyRequestMetadata{
 			{
