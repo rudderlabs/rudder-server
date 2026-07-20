@@ -54,19 +54,21 @@ func TestPartitionMigrationGatewayProcessorMode(t *testing.T) {
 		name                  string
 		extraStressWorkspaces int           // number of extra workspace migrations to include (0 = normal mode)
 		restartProcessorEvery time.Duration // how often to restart processor nodes while migration is ongoing
+		jobsDBFanoutEnabled   bool          // whether source nodes declare per-jobsdb fan-out on migration acknowledgement
 	}{
-		{name: "normal", extraStressWorkspaces: 0, restartProcessorEvery: 25 * time.Second},
-		{name: "stress_100_workspaces", extraStressWorkspaces: 100, restartProcessorEvery: 30 * time.Second},
-		{name: "stress_1000_workspaces", extraStressWorkspaces: 1000, restartProcessorEvery: 35 * time.Second},
-		{name: "stress_5000_workspaces", extraStressWorkspaces: 5000, restartProcessorEvery: 50 * time.Second},
+		{name: "normal", extraStressWorkspaces: 0, restartProcessorEvery: 25 * time.Second, jobsDBFanoutEnabled: true},
+		{name: "stress_100_workspaces", extraStressWorkspaces: 100, restartProcessorEvery: 30 * time.Second, jobsDBFanoutEnabled: true},
+		{name: "stress_1000_workspaces", extraStressWorkspaces: 1000, restartProcessorEvery: 35 * time.Second, jobsDBFanoutEnabled: true},
+		{name: "stress_5000_workspaces", extraStressWorkspaces: 5000, restartProcessorEvery: 50 * time.Second, jobsDBFanoutEnabled: true},
+		{name: "legacy_no_jobsdb_fanout", extraStressWorkspaces: 0, restartProcessorEvery: 25 * time.Second, jobsDBFanoutEnabled: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			testPartitionMigrationGatewayProcessorMode(t, tc.extraStressWorkspaces, tc.restartProcessorEvery)
+			testPartitionMigrationGatewayProcessorMode(t, tc.extraStressWorkspaces, tc.restartProcessorEvery, tc.jobsDBFanoutEnabled)
 		})
 	}
 }
 
-func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspaces int, restartProcessorEvery time.Duration) {
+func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspaces int, restartProcessorEvery time.Duration, jobsDBFanoutEnabled bool) {
 	const (
 		namespace     = "namespace123"
 		workspaceID   = "workspace123"
@@ -221,6 +223,7 @@ func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspa
 		"Processor.DestinationIsolation.enabled": "true", // migrate proc jobs too
 
 		"PartitionMigration.enabled":                               "true",
+		"PartitionMigration.jobsDBFanoutEnabled":                   strconv.FormatBool(jobsDBFanoutEnabled),
 		"PartitionMigration.failOnInvalidNodeHostPattern":          "false",
 		"PartitionMigration.Processor.SourceNode.readExcludeSleep": strconv.Itoa(int(readExcludeSleep.Milliseconds())) + "ms", // sleep a bit less than the default one to speed up the test
 		"PartitionMigration.SourceNode.inProgressPollSleep":        "1s",                                                      // poll faster for test speed
