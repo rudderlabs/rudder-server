@@ -497,7 +497,6 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		trans.stats.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
 			"reason":        "unmarshal error",
 			"destType":      proxyReqParams.DestName,
-			"workspaceId":   proxyReqParams.ResponseData.Metadata[0].WorkspaceID,
 			"destinationId": proxyReqParams.ResponseData.Metadata[0].DestinationID,
 		}).Increment()
 		trans.logger.Warnn("[TransformerProxy] proxy response unmarshal failed",
@@ -531,7 +530,6 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		trans.stats.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
 			"reason":        "missing output",
 			"destType":      proxyReqParams.DestName,
-			"workspaceId":   proxyReqParams.ResponseData.Metadata[0].WorkspaceID,
 			"destinationId": proxyReqParams.ResponseData.Metadata[0].DestinationID,
 		}).Increment()
 		trans.logger.Warnn("[TransformerProxy] proxy response missing output",
