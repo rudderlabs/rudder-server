@@ -1672,6 +1672,16 @@ func TestColdStartCounter(t *testing.T) {
 		Net: "tcp",
 		Err: &os.SyscallError{Syscall: "connect", Err: syscall.EHOSTUNREACH},
 	}
+	dialTimeout := &net.OpError{
+		Op:  "dial",
+		Net: "tcp",
+		Err: os.ErrDeadlineExceeded,
+	}
+	readTimeout := &net.OpError{
+		Op:  "read",
+		Net: "tcp",
+		Err: os.ErrDeadlineExceeded,
+	}
 	dnsErr := &net.DNSError{Err: "no such host", Name: "pyt-ws-A1", IsNotFound: true}
 
 	// Marshaled success response — what a warm PyT pod would return.
@@ -1723,6 +1733,16 @@ func TestColdStartCounter(t *testing.T) {
 			// replacement or scale-down. Same transient signal as ECONNREFUSED.
 			name:             "EHOSTUNREACH twice → counted twice, then warm",
 			failErr:          noRouteToHost,
+			failures:         2,
+			expectCounter:    2,
+			expectEventCount: 1,
+		},
+		{
+			// dial i/o timeout — unanswered SYN: the headless-service DNS record
+			// points at a pod that is still booting or terminating. Same scale-
+			// churn window as ECONNREFUSED, just a different failure mode.
+			name:             "dial timeout twice → counted twice, then warm",
+			failErr:          dialTimeout,
 			failures:         2,
 			expectCounter:    2,
 			expectEventCount: 1,
@@ -1795,6 +1815,16 @@ func TestColdStartCounter(t *testing.T) {
 			name:             "guard: JS language → cold-start error not counted",
 			language:         "javascript",
 			failErr:          connRefused,
+			failures:         2,
+			expectCounter:    0,
+			expectEventCount: 1,
+		},
+		{
+			// A timeout after the connection is established means the pod is up
+			// but slow — not a cold start. Still retried by doPost's generic
+			// budget, so the transport warms and the request succeeds.
+			name:             "guard: post-connect read timeout → not counted",
+			failErr:          readTimeout,
 			failures:         2,
 			expectCounter:    0,
 			expectEventCount: 1,
@@ -1900,7 +1930,7 @@ func TestColdStartCounter(t *testing.T) {
 }
 
 func TestForwardTest(t *testing.T) {
-	t.Run("each endpoint method posts to its pyt path and returns status/body", func(t *testing.T) {
+	t.Run("each endpoint method posts to baseURL+path and returns status/body", func(t *testing.T) {
 		var gotPath, gotContentType string
 		var gotBody []byte
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1912,13 +1942,10 @@ func TestForwardTest(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		conf := config.New()
-		conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
-		client := user_transformer.New(conf, logger.NOP, stats.NOP)
+		client := user_transformer.New(config.New(), logger.NOP, stats.NOP)
 
 		cases := map[string]struct {
-			call     func(context.Context, string, []byte) (int, []byte, error)
+			call     func(context.Context, string, string, []byte) (int, []byte, error)
 			wantPath string
 		}{
 			"Test":        {client.Test, "/test"},
@@ -1928,7 +1955,7 @@ func TestForwardTest(t *testing.T) {
 		}
 		for name, tc := range cases {
 			t.Run(name, func(t *testing.T) {
-				status, body, err := tc.call(context.Background(), "WS-1", []byte(`{"code":"x"}`))
+				status, body, err := tc.call(context.Background(), srv.URL, "WS-1", []byte(`{"code":"x"}`))
 				require.NoError(t, err)
 				require.Equal(t, http.StatusCreated, status)
 				require.JSONEq(t, `{"ok":true}`, string(body))
@@ -1953,13 +1980,10 @@ func TestForwardTest(t *testing.T) {
 
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
-		conf := config.New()
-		conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
-		client := user_transformer.New(conf, logger.NOP, statsStore,
+		client := user_transformer.New(config.New(), logger.NOP, statsStore,
 			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
 
-		status, body, err := client.Test(context.Background(), "ws-1", []byte(`{}`))
+		status, body, err := client.Test(context.Background(), srv.URL, "ws-1", []byte(`{}`))
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, status)
 		require.Equal(t, "done", string(body))
@@ -1972,6 +1996,36 @@ func TestForwardTest(t *testing.T) {
 		require.Equal(t, 2, total, "each cold-start retry should increment the counter")
 	})
 
+	t.Run("retries other transport errors without counting them as cold starts", func(t *testing.T) {
+		var attempts atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if attempts.Add(1) < 3 {
+				// Abrupt close → the client sees EOF: a transport error that is
+				// not a cold-start signal, yet must still be retried (doPost parity).
+				conn, _, err := w.(http.Hijacker).Hijack()
+				require.NoError(t, err)
+				_ = conn.Close()
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`done`))
+		}))
+		defer srv.Close()
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		client := user_transformer.New(config.New(), logger.NOP, statsStore,
+			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
+
+		status, body, err := client.Test(context.Background(), srv.URL, "ws-1", []byte(`{}`))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, status)
+		require.Equal(t, "done", string(body))
+		require.EqualValues(t, 3, attempts.Load())
+		require.Empty(t, statsStore.GetByName("processor_user_transformer_cold_start_errors_total"),
+			"a non-cold-start transport error must not tick the cold-start counter")
+	})
+
 	t.Run("stops retrying when the deadline is exceeded", func(t *testing.T) {
 		var attempts atomic.Int32
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1980,33 +2034,20 @@ func TestForwardTest(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		conf := config.New()
-		conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
-		client := user_transformer.New(conf, logger.NOP, stats.NOP,
+		client := user_transformer.New(config.New(), logger.NOP, stats.NOP,
 			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
 
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
-		_, _, err := client.Test(ctx, "ws-1", []byte(`{}`))
+		_, _, err := client.Test(ctx, srv.URL, "ws-1", []byte(`{}`))
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 		require.Greater(t, attempts.Load(), int32(1), "the 503 should have been retried until the deadline")
 	})
 
-	t.Run("returns ErrPerWorkspacePyTNotEnabled without dialing when the feature is off", func(t *testing.T) {
-		var calls atomic.Int32
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls.Add(1)
-		}))
-		defer srv.Close()
+	t.Run("returns ErrEmptyForwardBaseURL without dialing when baseURL is empty", func(t *testing.T) {
+		client := user_transformer.New(config.New(), logger.NOP, stats.NOP)
 
-		conf := config.New()
-		// perWorkspacePyTEnabled left at its default (false).
-		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
-		client := user_transformer.New(conf, logger.NOP, stats.NOP)
-
-		_, _, err := client.Test(context.Background(), "ws-1", []byte(`{}`))
-		require.ErrorIs(t, err, user_transformer.ErrPerWorkspacePyTNotEnabled)
-		require.Zero(t, calls.Load(), "nothing must be dialed when the feature is off")
+		_, _, err := client.Test(context.Background(), "", "ws-1", []byte(`{}`))
+		require.ErrorIs(t, err, user_transformer.ErrEmptyForwardBaseURL)
 	})
 }

@@ -20,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
-	"github.com/rudderlabs/rudder-server/processor/internal/pytscaler"
 	proto "github.com/rudderlabs/rudder-server/proto/processor"
 )
 
@@ -50,7 +49,7 @@ func TestShouldConnect(t *testing.T) {
 func TestServiceRegisters(t *testing.T) {
 	srv := grpc.NewServer()
 	proto.RegisterProcessorServiceServer(srv, NewService(config.New(), logger.NOP, stats.NOP,
-		WithScaler(pytscaler.NewNoop(logger.NOP))))
+		WithDeployer(&fakeDeployer{}), WithForwarder(&fakeForwarder{})))
 
 	info := srv.GetServiceInfo()
 	_, ok := info["proto.ProcessorService"]
@@ -60,8 +59,9 @@ func TestServiceRegisters(t *testing.T) {
 // TestForwardOverConnection drives the full path: the processor (dataplane) dials
 // a mock cp-router, registers ProcessorService over the dataplane-initiated
 // yamux/gRPC connection, and the mock — acting as the control-plane gRPC client —
-// calls Forward. The service scales (no-op here) and forwards to an httptest pyt
-// stub, returning its status and body unchanged.
+// calls Forward. Op_OP_TEST_LIBRARY is an AST op, so it never touches the
+// deployer/k8s and goes straight to the configured static AST URL — an
+// httptest pyt stub here — returning its status and body unchanged.
 func TestForwardOverConnection(t *testing.T) {
 	// A dedicated dataplane deployment so deployment.GetConnectionToken resolves.
 	t.Setenv("DEPLOYMENT_TYPE", "DEDICATED")
@@ -82,12 +82,11 @@ func TestForwardOverConnection(t *testing.T) {
 	conf := config.New()
 	conf.Set("CP_ROUTER_USE_TLS", false) // mock cp-router is a plain TCP listener
 	conf.Set("Processor.cpRouterConnection.retryInterval", "10ms")
-	conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-	conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", pyt.URL)
+	conf.Set("Processor.pytTestStaticASTURL", pyt.URL)
 
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
-	svc := NewService(conf, logger.NOP, stats.NOP, WithScaler(pytscaler.NewNoop(logger.NOP)))
+	svc := NewService(conf, logger.NOP, stats.NOP, WithDeployer(&fakeDeployer{}))
 	c, err := NewConnector(conf, logger.NOP, statsStore, nil, svc)
 	require.NoError(t, err)
 	require.Equal(t, ServiceName, c.cm.AuthInfo.Service)
@@ -100,14 +99,14 @@ func TestForwardOverConnection(t *testing.T) {
 	defer cancel()
 
 	resp, err := cpRouter.forward(ctx, &proto.ForwardRequest{
-		Op:          proto.Op_OP_TEST_RUN,
+		Op:          proto.Op_OP_TEST_LIBRARY,
 		WorkspaceId: "ws-1",
 		Payload:     []byte(`{"code":"x"}`),
 	})
 	require.NoError(t, err)
 	require.Equal(t, int32(http.StatusCreated), resp.StatusCode)
 	require.JSONEq(t, `{"ok":true}`, string(resp.Body))
-	require.Equal(t, "/testRun", gotPath)
+	require.Equal(t, "/test-library", gotPath)
 	require.JSONEq(t, `{"code":"x"}`, string(gotBody))
 
 	metrics := statsStore.GetByName("processor_grpc_response_time")
