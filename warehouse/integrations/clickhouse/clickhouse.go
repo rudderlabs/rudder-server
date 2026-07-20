@@ -1201,10 +1201,9 @@ func (ch *Clickhouse) totalCountIntable(ctx context.Context, tableName string) (
 		sqlStatement string
 	)
 	sqlStatement = fmt.Sprintf(`
-		SELECT count(*) FROM "%[1]s"."%[2]s";
+		SELECT count(*) FROM %s;
 	`,
-		ch.Namespace,
-		tableName,
+		warehouseutils.DoubleQuoteQualifiedIdentifier(ch.Namespace, tableName),
 	)
 	err = ch.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
 	return total, err
