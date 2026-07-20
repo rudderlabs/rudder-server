@@ -1,15 +1,20 @@
 package bqstream_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"cloud.google.com/go/bigquery"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/api/option"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -19,6 +24,7 @@ import (
 	mock_bqstream "github.com/rudderlabs/rudder-server/mocks/services/streammanager/bqstream"
 	"github.com/rudderlabs/rudder-server/services/streammanager/bqstream"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	bqhelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 )
 
 type BigQueryCredentials struct {
@@ -36,58 +42,101 @@ func initBQTest() {
 	})
 }
 
-func TestTimeout(t *testing.T) {
+// TestBQStreamIntegration exercises the producer against real BigQuery. It
+// provisions an isolated dataset + table for the run and tears them down
+// afterwards, then covers three scenarios: a timeout, a successful uncompressed
+// insert and a successful gzip-compressed insert.
+func TestBQStreamIntegration(t *testing.T) {
 	initBQTest()
-	cred := os.Getenv("BIGQUERY_INTEGRATION_TEST_USER_CRED")
-	if cred == "" {
-		t.Skip("Skipping bigquery test, since no credentials are available in the environment")
-	}
-	var bqCredentials BigQueryCredentials
-	var err error
-	err = jsonrs.Unmarshal([]byte(cred), &bqCredentials)
-	if err != nil {
-		t.Fatalf("could not unmarshal BIGQUERY_INTEGRATION_TEST_USER_CRED: %s", err)
-	}
-	credentials, _ := jsonrs.Marshal(bqCredentials.Credentials)
-	config := map[string]any{
-		"Credentials": string(credentials),
-		"ProjectId":   bqCredentials.ProjectID,
-	}
-	destination := backendconfig.DestinationT{Config: config}
-	opts := common.Opts{Timeout: 1 * time.Microsecond}
-	producer, err := bqstream.NewProducer(&destination, opts)
-	if err != nil {
-		t.Errorf(" %+v", err)
-		return
-	}
 
-	assert.NotNil(t, producer.Client)
-	assert.Equal(t, opts, producer.Opts)
-
-	payload := `{
-		"datasetId": "timeout_test",
-		"tableId": "rudder",
-		"properties": {
-			"key": "key",
-			"value": "value"
+	if _, exists := os.LookupEnv(bqhelper.TestKey); !exists {
+		if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
+			t.Fatalf("%s environment variable not set", bqhelper.TestKey)
 		}
-	}`
-	statusCode, respStatus, responseMessage := producer.Produce([]byte(payload), nil)
+		t.Skipf("Skipping %s as %s is not set", t.Name(), bqhelper.TestKey)
+	}
+	credentials, err := bqhelper.GetBQTestCredentials()
+	require.NoError(t, err)
 
-	const expectedStatusCode = 504
-	if statusCode != expectedStatusCode {
-		t.Errorf("Expected status code %d, got %d.", expectedStatusCode, statusCode)
+	location := credentials.Location
+	if location == "" {
+		location = "US"
 	}
 
-	const expectedRespStatus = "Failure"
-	if respStatus != expectedRespStatus {
-		t.Errorf("Expected response status %s, got %s.", expectedRespStatus, respStatus)
+	ctx := context.Background()
+
+	// Admin client used only to create and tear down the test fixtures.
+	adminClient, err := bigquery.NewClient(ctx, credentials.ProjectID, option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(credentials.Credentials)))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = adminClient.Close() })
+
+	datasetID := fmt.Sprintf("bqstream_integration_test_%d", time.Now().UnixNano())
+	const tableID = "streaming"
+	require.NoError(t, adminClient.Dataset(datasetID).Create(ctx, &bigquery.DatasetMetadata{Location: location}))
+	t.Cleanup(func() { _ = adminClient.Dataset(datasetID).DeleteWithContents(context.Background()) })
+	require.NoError(t, adminClient.Dataset(datasetID).Table(tableID).Create(ctx, &bigquery.TableMetadata{
+		Schema: bigquery.Schema{
+			{Name: "id", Type: bigquery.StringFieldType},
+			{Name: "name", Type: bigquery.StringFieldType},
+		},
+	}))
+
+	destinationConfig := map[string]any{
+		"Credentials": credentials.Credentials,
+		"ProjectId":   credentials.ProjectID,
+	}
+	payload := fmt.Sprintf(`{"datasetId":%q,"tableId":%q,"properties":{"id":"25","name":"rudder"}}`, datasetID, tableID)
+
+	newProducer := func(t *testing.T, compression bool, timeout time.Duration) *bqstream.BQStreamProducer {
+		t.Helper()
+		config.Set("Router.BQSTREAM.enableCompression", compression)
+		t.Cleanup(func() { config.Set("Router.BQSTREAM.enableCompression", false) })
+
+		destination := backendconfig.DestinationT{Config: destinationConfig}
+		opts := common.Opts{Timeout: timeout}
+		producer, err := bqstream.NewProducer(&destination, opts)
+		require.NoError(t, err)
+		require.NotNil(t, producer.Client)
+		require.Equal(t, opts, producer.Opts)
+		t.Cleanup(func() { _ = producer.Close() })
+		return producer
 	}
 
-	const expectedResponseMessage = "[BQStream] error :: timeout in data insertion:: context deadline exceeded"
-	if responseMessage != expectedResponseMessage {
-		t.Errorf("Expected response message %s, got %s.", expectedResponseMessage, responseMessage)
+	// A freshly created table's streaming buffer can take a moment to warm up, so
+	// retry transient failures before asserting the insert succeeded.
+	produceUntilSuccess := func(t *testing.T, producer *bqstream.BQStreamProducer) {
+		t.Helper()
+		var statusCode int
+		var respStatus, responseMessage string
+		deadline := time.Now().Add(90 * time.Second)
+		for {
+			statusCode, respStatus, responseMessage = producer.Produce([]byte(payload), nil)
+			if statusCode == 200 || time.Now().After(deadline) {
+				break
+			}
+			t.Logf("retrying insert, got %d %s: %s", statusCode, respStatus, responseMessage)
+			time.Sleep(3 * time.Second)
+		}
+		assert.Equal(t, 200, statusCode, responseMessage)
+		assert.Equal(t, "Success", respStatus)
+		assert.NotEmpty(t, responseMessage)
 	}
+
+	t.Run("timeout", func(t *testing.T) {
+		producer := newProducer(t, false, 1*time.Microsecond)
+		statusCode, respStatus, responseMessage := producer.Produce([]byte(payload), nil)
+		assert.Equal(t, 504, statusCode)
+		assert.Equal(t, "Failure", respStatus)
+		assert.Equal(t, "[BQStream] error :: timeout in data insertion:: context deadline exceeded", responseMessage)
+	})
+
+	t.Run("without compression", func(t *testing.T) {
+		produceUntilSuccess(t, newProducer(t, false, 30*time.Second))
+	})
+
+	t.Run("with compression", func(t *testing.T) {
+		produceUntilSuccess(t, newProducer(t, true, 30*time.Second))
+	})
 }
 
 func TestUnsupportedCredentials(t *testing.T) {
