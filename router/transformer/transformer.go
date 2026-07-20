@@ -421,23 +421,28 @@ func emitProxyInvalidResponse(statsHandle stats.Stats, log logger.Logger, reason
 	log.Warnn(msg, append([]logger.Field{obskit.DestinationID(destinationID)}, fields...)...)
 }
 
+// proxyErrorResponse builds the error-path response shared by every early return in ProxyRequest.
+// RespStatusCodes/RespBodys are always empty here by construction: per-job results only exist once
+// the adapter has parsed a response, which has not happened on any path that bails out early.
+func proxyErrorResponse(code int, body string, dontBatch map[int64]bool) ProxyRequestResponse {
+	return ProxyRequestResponse{
+		ProxyRequestStatusCode:   code,
+		ProxyRequestResponseBody: body,
+		RespContentType:          "text/plain; charset=utf-8",
+		RespStatusCodes:          map[int64]int{},
+		RespBodys:                map[int64]string{},
+		DontBatchDirectives:      dontBatch,
+	}
+}
+
 func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) ProxyRequestResponse {
 	start := time.Now()
-	routerJobResponseCodes := make(map[int64]int)
-	routerJobResponseBodys := make(map[int64]string)
 	routerJobDontBatchDirectives := make(map[int64]bool)
 
 	if len(proxyReqParams.ResponseData.Metadata) == 0 {
 		trans.logger.Warnn("[TransformerProxy] Input metadata is empty",
 			logger.NewStringField("destination", proxyReqParams.DestName))
-		return ProxyRequestResponse{
-			ProxyRequestStatusCode:   http.StatusBadRequest,
-			ProxyRequestResponseBody: "Input metadata is empty",
-			RespContentType:          "text/plain; charset=utf-8",
-			RespStatusCodes:          routerJobResponseCodes,
-			RespBodys:                routerJobResponseBodys,
-			DontBatchDirectives:      routerJobDontBatchDirectives,
-		}
+		return proxyErrorResponse(http.StatusBadRequest, "Input metadata is empty", routerJobDontBatchDirectives)
 	}
 
 	for _, m := range proxyReqParams.ResponseData.Metadata {
@@ -449,26 +454,12 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 
 	payload, err := proxyReqParams.Adapter.getPayload(proxyReqParams)
 	if err != nil {
-		return ProxyRequestResponse{
-			ProxyRequestStatusCode:   http.StatusInternalServerError,
-			ProxyRequestResponseBody: "Payload preparation failed",
-			RespContentType:          "text/plain; charset=utf-8",
-			RespStatusCodes:          routerJobResponseCodes,
-			RespBodys:                routerJobResponseBodys,
-			DontBatchDirectives:      routerJobDontBatchDirectives,
-		}
+		return proxyErrorResponse(http.StatusInternalServerError, "Payload preparation failed", routerJobDontBatchDirectives)
 	}
 
 	proxyURL, err := proxyReqParams.Adapter.getProxyURL(proxyReqParams.DestName)
 	if err != nil {
-		return ProxyRequestResponse{
-			ProxyRequestStatusCode:   http.StatusInternalServerError,
-			ProxyRequestResponseBody: "ProxyURL preparation failed",
-			RespContentType:          "text/plain; charset=utf-8",
-			RespStatusCodes:          routerJobResponseCodes,
-			RespBodys:                routerJobResponseBodys,
-			DontBatchDirectives:      routerJobDontBatchDirectives,
-		}
+		return proxyErrorResponse(http.StatusInternalServerError, "ProxyURL preparation failed", routerJobDontBatchDirectives)
 	}
 
 	// Create metric labels
@@ -498,14 +489,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	trans.stats.NewTaggedStat("transformer_proxy_request_result", stats.CountType, labelsWithSuccess).Increment()
 
 	if requestError != nil {
-		return ProxyRequestResponse{
-			ProxyRequestStatusCode:   respCode,
-			ProxyRequestResponseBody: requestError.Error(),
-			RespContentType:          "text/plain; charset=utf-8",
-			RespStatusCodes:          routerJobResponseCodes,
-			RespBodys:                routerJobResponseBodys,
-			DontBatchDirectives:      routerJobDontBatchDirectives,
-		}
+		return proxyErrorResponse(respCode, requestError.Error(), routerJobDontBatchDirectives)
 	}
 
 	/*
@@ -522,14 +506,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		// The payload is not JSON, so nothing downstream can read it: `output` cannot exist, and
 		// continuing would blank respData and fail inside getResponse on an empty body — losing the
 		// very payload that explains the breach. Stop here and return it.
-		return ProxyRequestResponse{
-			ProxyRequestStatusCode:   respCode,
-			ProxyRequestResponseBody: fmt.Sprintf("[TransformerProxy] response is not valid JSON: %s, err: %v", string(respData), err),
-			RespContentType:          "text/plain; charset=utf-8",
-			RespStatusCodes:          routerJobResponseCodes,
-			RespBodys:                routerJobResponseBodys,
-			DontBatchDirectives:      routerJobDontBatchDirectives,
-		}
+		return proxyErrorResponse(respCode, fmt.Sprintf("[TransformerProxy] response is not valid JSON: %s, err: %v", string(respData), err), routerJobDontBatchDirectives)
 	}
 	if transportResponse.OriginalResponse != "" {
 		respData = []byte(transportResponse.OriginalResponse)
@@ -560,27 +537,13 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		// There are no per-job results to apply without `output`. Continuing would set respData to
 		// an empty string and fail inside getResponse, reporting an empty body instead of the one
 		// we actually received. Stop here and return it.
-		return ProxyRequestResponse{
-			ProxyRequestStatusCode:   respCode,
-			ProxyRequestResponseBody: fmt.Sprintf("[TransformerProxy] response has no output field: %s", string(respData)),
-			RespContentType:          "text/plain; charset=utf-8",
-			RespStatusCodes:          routerJobResponseCodes,
-			RespBodys:                routerJobResponseBodys,
-			DontBatchDirectives:      routerJobDontBatchDirectives,
-		}
+		return proxyErrorResponse(respCode, fmt.Sprintf("[TransformerProxy] response has no output field: %s", string(respData)), routerJobDontBatchDirectives)
 	}
 	respData = []byte(output.Raw)
 
 	transResp, err := proxyReqParams.Adapter.getResponse(respData, respCode, proxyReqParams.ResponseData.Metadata)
 	if err != nil {
-		return ProxyRequestResponse{
-			ProxyRequestStatusCode:   respCode,
-			ProxyRequestResponseBody: err.Error(),
-			RespContentType:          "text/plain; charset=utf-8",
-			RespStatusCodes:          routerJobResponseCodes,
-			RespBodys:                routerJobResponseBodys,
-			DontBatchDirectives:      routerJobDontBatchDirectives,
-		}
+		return proxyErrorResponse(respCode, err.Error(), routerJobDontBatchDirectives)
 	}
 	// Non-fatal: the per-job results were still applied, but they may be attached to the wrong jobs.
 	// Recorded here, alongside the other breach reasons, so all three share one stats handle.
