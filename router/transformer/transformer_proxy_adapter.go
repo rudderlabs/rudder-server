@@ -158,9 +158,12 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			fmt.Errorf("[TransformerProxy Unmarshalling]:: respData: %s, err: %w", string(respData), err)
 	}
 
-	jobIDsInMetadata := lo.Map(metadata, func(m ProxyRequestMetadata, _ int) int64 {
+	// Deduped: a batch can legitimately carry the same JobID more than once (router/worker.go dedupes
+	// the same way before building responses), while the transformer returns one entry per job. Without
+	// this, metadata [11,11,21] against response [11,21] is a spurious mismatch - and now an alerted one.
+	jobIDsInMetadata := lo.Uniq(lo.Map(metadata, func(m ProxyRequestMetadata, _ int) int64 {
 		return m.JobID
-	})
+	}))
 	slices.Sort(jobIDsInMetadata)
 	jobIDsInResponse := lo.Map(transformerResponse.Response, func(resp TPDestResponse, _ int) int64 {
 		return resp.Metadata.JobID

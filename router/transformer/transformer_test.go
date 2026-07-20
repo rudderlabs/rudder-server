@@ -701,6 +701,9 @@ type oauthv2ProxyTcs struct {
 	destination backendconfig.DestinationT
 
 	ioReadError bool
+	// expected `reason` tag on router.transformerproxy.invalid.response.
+	// Empty means the metric is not asserted for this case.
+	expectedBreachReason string
 	// load-balancer erroring out
 	lbError bool
 }
@@ -1051,9 +1054,10 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		destination: oauthDests[0],
 	},
 	{
-		description:  "[v1proxy] when transformer response body cannot be read, should have respStatus as 500, respBody should have transformer sent response",
-		proxyVersion: "v1",
-		ioReadError:  true,
+		description:          "[v1proxy] when transformer response body cannot be read, should have respStatus as 500, respBody should have transformer sent response",
+		proxyVersion:         "v1",
+		ioReadError:          true,
+		expectedBreachReason: "transport error",
 		transformerProxyResponseV1: ProxyResponseV1{
 			Message:           "some message that we got from transformer",
 			AuthErrorCategory: common.CategoryRefreshToken,
@@ -1131,10 +1135,11 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		destination: oauthDests[0],
 	},
 	{
-		description:  "[v1proxy] when transformer does not respond properly",
-		proxyVersion: "v1",
-		lbError:      true,
-		destType:     "salesforce_oauth", // some destination
+		description:          "[v1proxy] when transformer does not respond properly",
+		proxyVersion:         "v1",
+		lbError:              true,
+		expectedBreachReason: "missing output",
+		destType:             "salesforce_oauth", // some destination
 		reqPayload: ProxyRequestPayload{
 			PostParametersT: integrations.PostParametersT{
 				Type:          "REST",
@@ -1188,10 +1193,11 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		destination: oauthDests[0],
 	},
 	{
-		description:  "[v0proxy] when transformer does not respond properly",
-		proxyVersion: "v0",
-		lbError:      true,
-		destType:     "salesforce_oauth", // some destination
+		description:          "[v0proxy] when transformer does not respond properly",
+		proxyVersion:         "v0",
+		lbError:              true,
+		expectedBreachReason: "missing output",
+		destType:             "salesforce_oauth", // some destination
 		reqPayload: ProxyRequestPayload{
 			PostParametersT: integrations.PostParametersT{
 				Type:          "REST",
@@ -1692,6 +1698,10 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 
 			tr := NewTransformer("destType", time.Minute, time.Minute, mockBackendConfig, expTimeDiff, nil, config.New())
 
+			statsStore, statsErr := memstats.New()
+			require.NoError(t, statsErr)
+			tr.(*handle).stats = statsStore
+
 			var adapter transformerProxyAdapter
 			adapter = NewTransformerProxyAdapter("v1", loggerOverride)
 			if tc.proxyVersion == "v0" {
@@ -1725,6 +1735,18 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 				require.Equal(t, actualPrxResp, expectedPrxResp)
 			} else {
 				require.Contains(t, proxyResp.ProxyRequestResponseBody, tc.expected.ProxyRequestResponseBody)
+			}
+
+			// One breach must produce exactly one metric under exactly one reason: a body that is not
+			// valid JSON must not also trip "missing output", and a response synthesized by the oauth
+			// transport must not be reported as a transformer contract breach.
+			if tc.expectedBreachReason != "" {
+				breaches := statsStore.GetByName("router.transformerproxy.invalid.response")
+				reasons := make([]string, 0, len(breaches))
+				for _, b := range breaches {
+					reasons = append(reasons, b.Tags["reason"])
+				}
+				require.Equal(t, []string{tc.expectedBreachReason}, reasons)
 			}
 		})
 	}
