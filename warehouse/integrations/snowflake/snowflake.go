@@ -1245,8 +1245,8 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 		for {
 			// TODO: Handle case for missing anonymous_id, user_id columns
 			sqlStatement = fmt.Sprintf(
-				`SELECT DISTINCT %s FROM %s.%q LIMIT %d OFFSET %d`,
-				toSelectFields, schemaIdentifier, tableName, batchSize, offset,
+				`SELECT DISTINCT %s FROM %s.%s LIMIT %d OFFSET %d`,
+				toSelectFields, schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName), batchSize, offset,
 			)
 			sf.logger.Infon("Downloading distinct combinations of anonymous_id, user_id",
 				logger.NewStringField(lf.Query, sqlStatement),
@@ -1519,7 +1519,7 @@ func (sf *Snowflake) getRoles(ctx context.Context) ([]string, error) {
 
 func (sf *Snowflake) getGrantedRoles(ctx context.Context) ([]string, error) {
 	user := sf.Warehouse.GetStringDestinationConfig(sf.conf, model.UserSetting)
-	sqlStatement := fmt.Sprintf("SHOW GRANTS TO USER %q;", user)
+	sqlStatement := fmt.Sprintf("SHOW GRANTS TO USER %s;", whutils.DoubleQuoteIdentifier(user))
 
 	rows, err := sf.DB.QueryContext(ctx, sqlStatement)
 	if err != nil {

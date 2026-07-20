@@ -1368,8 +1368,8 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 			COPY_OPTIONS ('force' = 'true')
 			%s;
 `,
-			fmt.Sprintf(`%s.%s`, d.Namespace, tableName),
-			fmt.Sprintf(`%s, %s`, "id", "val"),
+			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
+			warehouseutils.BacktickQuoteAndJoinByComma([]string{"id", "val"}),
 			loadFolder,
 			auth,
 		)
@@ -1394,7 +1394,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 			COPY_OPTIONS ('force' = 'true')
 			%s;
 `,
-			fmt.Sprintf(`%s.%s`, d.Namespace, tableName),
+			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
 			"CAST ( '_c0' AS BIGINT ) AS id, CAST ( '_c1' AS STRING ) AS val",
 			loadFolder,
 			auth,
