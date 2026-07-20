@@ -65,11 +65,18 @@ type roundTripState struct {
 	req         *http.Request
 }
 
+// TransportErrorHeader marks a response synthesized by this transport rather than received from the
+// upstream service. The body of such a response is a plain-text error string, not the upstream's
+// payload, so callers must not mistake it for a malformed upstream response.
+const TransportErrorHeader = "X-Rudder-Oauth-Transport-Error"
+
 func httpResponseCreator(statusCode int, body []byte) *http.Response {
+	header := http.Header{"apiVersion": []string{"2"}}
+	header.Set(TransportErrorHeader, "true")
 	return &http.Response{
 		StatusCode: statusCode,
 		Body:       io.NopCloser(bytes.NewReader(body)),
-		Header:     http.Header{"apiVersion": []string{"2"}},
+		Header:     header,
 	}
 }
 
