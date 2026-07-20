@@ -46,7 +46,7 @@ func (a *mockAdapter) getProxyURL(destType string) (string, error) {
 	return url.JoinPath(a.url, "v0", "destinations", strings.ToLower(destType), "proxy")
 }
 
-func (a *mockAdapter) getResponse(response []byte, respCode int, metadata []ProxyRequestMetadata, _ string) (TransResponse, error) {
+func (a *mockAdapter) getResponse(response []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponse, error) {
 	return TransResponse{
 		routerJobResponseCodes:       make(map[int64]int),
 		routerJobResponseBodys:       make(map[int64]string),
@@ -1124,7 +1124,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespBodys:                map[int64]string{},
 			RespContentType:          "text/plain; charset=utf-8",
-			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: , err: sonnet: unexpected EOF reading a byte`,
+			ProxyRequestResponseBody: `[TransformerProxy] response is not valid JSON: [postRoundTrip]Error reading response body: unexpected EOF`,
 			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes:          map[int64]int{},
 		},
@@ -1181,7 +1181,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			RespBodys:       map[int64]string{},
 			RespContentType: "text/plain; charset=utf-8",
 			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category post roundTrip: LB cannot send to transformer"
-			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: , err: sonnet: unexpected EOF reading a byte`,
+			ProxyRequestResponseBody: `[TransformerProxy] response has no output field: LB cannot send to transformer`,
 			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes:          map[int64]int{},
 		},
@@ -1232,7 +1232,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			RespBodys:       map[int64]string{},
 			RespContentType: "text/plain; charset=utf-8",
 			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category post roundTrip: LB cannot send to transformer"
-			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: , err: sonnet: unexpected EOF reading a byte`,
+			ProxyRequestResponseBody: `[TransformerProxy] response has no output field: LB cannot send to transformer`,
 			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes:          map[int64]int{},
 		},

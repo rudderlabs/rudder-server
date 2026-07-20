@@ -14,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 )
@@ -22,7 +21,7 @@ import (
 type transformerProxyAdapter interface {
 	getPayload(proxyReqParams *ProxyRequestParams) ([]byte, error)
 	getProxyURL(destType string) (string, error)
-	getResponse(response []byte, respCode int, metadata []ProxyRequestMetadata, destType string) (TransResponse, error)
+	getResponse(response []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponse, error)
 }
 
 type ProxyRequestPayloadV0 struct {
@@ -52,6 +51,14 @@ type TransResponse struct {
 	routerJobDontBatchDirectives map[int64]bool
 	authErrorCategory            string
 	statTags                     map[string]string
+	// jobIDMismatch reports that the transformer returned results for a different set of jobIDs
+	// than were sent, meaning per-job results are attributed to the wrong jobs. The adapter only
+	// reports it; the caller records the metric, so every breach reason goes through one stats
+	// handle. jobIDsInMetadata/jobIDsInResponse are the two sorted sets, and their difference is
+	// what makes the breach diagnosable.
+	jobIDMismatch    bool
+	jobIDsInMetadata []int64
+	jobIDsInResponse []int64
 }
 
 type TPDestResponse struct {
@@ -84,7 +91,7 @@ func (v0 *v0Adapter) getProxyURL(destType string) (string, error) {
 	return getTransformerProxyURL("v0", destType)
 }
 
-func (v0 *v0Adapter) getResponse(respData []byte, respCode int, metadata []ProxyRequestMetadata, _ string) (TransResponse, error) {
+func (v0 *v0Adapter) getResponse(respData []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponse, error) {
 	routerJobResponseCodes := make(map[int64]int)
 	routerJobResponseBodys := make(map[int64]string)
 	routerJobDontBatchDirectives := make(map[int64]bool)
@@ -129,7 +136,7 @@ func (v1 *v1Adapter) getProxyURL(destType string) (string, error) {
 	return getTransformerProxyURL("v1", destType)
 }
 
-func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []ProxyRequestMetadata, destType string) (TransResponse, error) {
+func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponse, error) {
 	routerJobResponseCodes := make(map[int64]int)
 	routerJobResponseBodys := make(map[int64]string)
 	routerJobDontBatchDirectives := make(map[int64]bool)
@@ -160,17 +167,10 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 	})
 	slices.Sort(jobIDsInResponse)
 
-	if !reflect.DeepEqual(jobIDsInMetadata, jobIDsInResponse) {
-		stats.Default.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
-			"reason":        "in out mismatch",
-			"destType":      destType,
-			"destinationId": metadata[0].DestinationID,
-		}).Increment()
-		v1.logger.Warnn("[TransformerProxy] JobIDs in out mismatch",
-			logger.NewStringField("destinationId", metadata[0].DestinationID),
-			logger.NewIntSliceField("jobIDsInMetadata", jobIDsInMetadata),
-			logger.NewIntSliceField("jobIDsInResponse", jobIDsInResponse))
-	}
+	// Report the mismatch rather than recording it here. Emitting from the adapter would write this
+	// metric through the package-global stats handle while the other breach reasons use the
+	// caller's, splitting one metric across two sinks and hiding this reason from an injected mock.
+	jobIDMismatch := !reflect.DeepEqual(jobIDsInMetadata, jobIDsInResponse)
 
 	for _, resp := range transformerResponse.Response {
 		routerJobResponseCodes[resp.Metadata.JobID] = resp.StatusCode
@@ -184,6 +184,9 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			routerJobDontBatchDirectives: routerJobDontBatchDirectives,
 			authErrorCategory:            transformerResponse.AuthErrorCategory,
 			statTags:                     transformerResponse.StatTags,
+			jobIDMismatch:                jobIDMismatch,
+			jobIDsInMetadata:             jobIDsInMetadata,
+			jobIDsInResponse:             jobIDsInResponse,
 		},
 		nil
 }

@@ -400,6 +400,27 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	return destinationJobs
 }
 
+// proxyJobIDs returns the jobIDs in a proxy request batch — what a responder needs to look the
+// affected events up in jobsDB.
+func proxyJobIDs(metadata []ProxyRequestMetadata) []int64 {
+	return lo.Map(metadata, func(m ProxyRequestMetadata, _ int) int64 {
+		return m.JobID
+	})
+}
+
+// emitProxyInvalidResponse records a transformer-proxy contract breach and logs the jobIDs needed
+// to inspect the affected events. Every breach reason goes through here so the metric keeps a single
+// tag set and a single stats handle. The response body is deliberately not logged: these are
+// debugged by reading the events out of jobsDB by jobID.
+func emitProxyInvalidResponse(statsHandle stats.Stats, log logger.Logger, reason, destType, destinationID, msg string, fields ...logger.Field) {
+	statsHandle.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
+		"reason":        reason,
+		"destType":      destType,
+		"destinationId": destinationID,
+	}).Increment()
+	log.Warnn(msg, append([]logger.Field{obskit.DestinationID(destinationID)}, fields...)...)
+}
+
 func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) ProxyRequestResponse {
 	start := time.Now()
 	routerJobResponseCodes := make(map[int64]int)
@@ -494,16 +515,21 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	// unmarshal unsuccessful scenarios
 	// if respData is not a valid json, surface it instead of discarding the error
 	if err := jsonrs.Unmarshal(respData, &transportResponse); err != nil {
-		trans.stats.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
-			"reason":        "unmarshal error",
-			"destType":      proxyReqParams.DestName,
-			"destinationId": proxyReqParams.ResponseData.Metadata[0].DestinationID,
-		}).Increment()
-		trans.logger.Warnn("[TransformerProxy] proxy response unmarshal failed",
-			obskit.DestinationID(proxyReqParams.ResponseData.Metadata[0].DestinationID),
-			logger.NewIntSliceField("jobIDs", lo.Map(proxyReqParams.ResponseData.Metadata, func(m ProxyRequestMetadata, _ int) int64 {
-				return m.JobID
-			})))
+		emitProxyInvalidResponse(trans.stats, trans.logger, "unmarshal error", proxyReqParams.DestName,
+			proxyReqParams.ResponseData.Metadata[0].DestinationID,
+			"[TransformerProxy] proxy response unmarshal failed",
+			logger.NewIntSliceField("jobIDs", proxyJobIDs(proxyReqParams.ResponseData.Metadata)))
+		// The payload is not JSON, so nothing downstream can read it: `output` cannot exist, and
+		// continuing would blank respData and fail inside getResponse on an empty body — losing the
+		// very payload that explains the breach. Stop here and return it.
+		return ProxyRequestResponse{
+			ProxyRequestStatusCode:   respCode,
+			ProxyRequestResponseBody: fmt.Sprintf("[TransformerProxy] response is not valid JSON: %s, err: %v", string(respData), err),
+			RespContentType:          "text/plain; charset=utf-8",
+			RespStatusCodes:          routerJobResponseCodes,
+			RespBodys:                routerJobResponseBodys,
+			DontBatchDirectives:      routerJobDontBatchDirectives,
+		}
 	}
 	if transportResponse.OriginalResponse != "" {
 		respData = []byte(transportResponse.OriginalResponse)
@@ -527,20 +553,25 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	**/
 	output := gjson.GetBytes(respData, "output")
 	if !output.Exists() {
-		trans.stats.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
-			"reason":        "missing output",
-			"destType":      proxyReqParams.DestName,
-			"destinationId": proxyReqParams.ResponseData.Metadata[0].DestinationID,
-		}).Increment()
-		trans.logger.Warnn("[TransformerProxy] proxy response missing output",
-			obskit.DestinationID(proxyReqParams.ResponseData.Metadata[0].DestinationID),
-			logger.NewIntSliceField("jobIDs", lo.Map(proxyReqParams.ResponseData.Metadata, func(m ProxyRequestMetadata, _ int) int64 {
-				return m.JobID
-			})))
+		emitProxyInvalidResponse(trans.stats, trans.logger, "missing output", proxyReqParams.DestName,
+			proxyReqParams.ResponseData.Metadata[0].DestinationID,
+			"[TransformerProxy] proxy response missing output",
+			logger.NewIntSliceField("jobIDs", proxyJobIDs(proxyReqParams.ResponseData.Metadata)))
+		// There are no per-job results to apply without `output`. Continuing would set respData to
+		// an empty string and fail inside getResponse, reporting an empty body instead of the one
+		// we actually received. Stop here and return it.
+		return ProxyRequestResponse{
+			ProxyRequestStatusCode:   respCode,
+			ProxyRequestResponseBody: fmt.Sprintf("[TransformerProxy] response has no output field: %s", string(respData)),
+			RespContentType:          "text/plain; charset=utf-8",
+			RespStatusCodes:          routerJobResponseCodes,
+			RespBodys:                routerJobResponseBodys,
+			DontBatchDirectives:      routerJobDontBatchDirectives,
+		}
 	}
 	respData = []byte(output.Raw)
 
-	transResp, err := proxyReqParams.Adapter.getResponse(respData, respCode, proxyReqParams.ResponseData.Metadata, proxyReqParams.DestName)
+	transResp, err := proxyReqParams.Adapter.getResponse(respData, respCode, proxyReqParams.ResponseData.Metadata)
 	if err != nil {
 		return ProxyRequestResponse{
 			ProxyRequestStatusCode:   respCode,
@@ -550,6 +581,15 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			RespBodys:                routerJobResponseBodys,
 			DontBatchDirectives:      routerJobDontBatchDirectives,
 		}
+	}
+	// Non-fatal: the per-job results were still applied, but they may be attached to the wrong jobs.
+	// Recorded here, alongside the other breach reasons, so all three share one stats handle.
+	if transResp.jobIDMismatch {
+		emitProxyInvalidResponse(trans.stats, trans.logger, "in out mismatch", proxyReqParams.DestName,
+			proxyReqParams.ResponseData.Metadata[0].DestinationID,
+			"[TransformerProxy] JobIDs in out mismatch",
+			logger.NewIntSliceField("jobIDsInMetadata", transResp.jobIDsInMetadata),
+			logger.NewIntSliceField("jobIDsInResponse", transResp.jobIDsInResponse))
 	}
 	integrations.CollectIntegrationFailureDetailedStats(trans.stats, transResp.statTags)
 

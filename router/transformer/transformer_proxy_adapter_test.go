@@ -80,7 +80,7 @@ func TestV0Adapter(t *testing.T) {
 		r, err := jsonrs.Marshal(resp)
 		require.Nil(t, err)
 
-		response, err := v0Adapter.getResponse(r, 200, metadata, "testDestType")
+		response, err := v0Adapter.getResponse(r, 200, metadata)
 		require.Nil(t, err)
 		require.Equal(t, 2, len(response.routerJobResponseCodes))
 		require.Equal(t, 2, len(response.routerJobResponseBodys))
@@ -110,7 +110,7 @@ func TestV0Adapter(t *testing.T) {
 			},
 		}
 
-		response, err := v0Adapter.getResponse([]byte(`abc`), 200, metadata, "testDestType")
+		response, err := v0Adapter.getResponse([]byte(`abc`), 200, metadata)
 		require.NotNil(t, err)
 
 		require.Equal(t, 0, len(response.routerJobResponseCodes))
@@ -212,7 +212,7 @@ func TestV1Adapter(t *testing.T) {
 		r, err := jsonrs.Marshal(resp)
 		require.Nil(t, err)
 
-		response, err := v1Adapter.getResponse(r, 200, metadata, "testDestType")
+		response, err := v1Adapter.getResponse(r, 200, metadata)
 		require.Nil(t, err)
 		require.Equal(t, 2, len(response.routerJobResponseCodes))
 		require.Equal(t, 2, len(response.routerJobResponseBodys))
@@ -230,7 +230,7 @@ func TestV1Adapter(t *testing.T) {
 		require.Equal(t, "oauth123", response.authErrorCategory)
 	})
 
-	t.Run("should produce warning log when in and out jobIDs mismatch", func(t *testing.T) {
+	t.Run("should report a jobID mismatch when in and out jobIDs differ", func(t *testing.T) {
 		metadata := []ProxyRequestMetadata{
 			{
 				JobID:     11,
@@ -274,10 +274,15 @@ func TestV1Adapter(t *testing.T) {
 		r, err := jsonrs.Marshal(resp)
 		require.Nil(t, err)
 
-		mockLogger.EXPECT().Warnn(gomock.Any(), gomock.Any()).Times(1)
-
-		response, err := v1Adapter.getResponse(r, 200, metadata, "testDestType")
+		response, err := v1Adapter.getResponse(r, 200, metadata)
 		require.Nil(t, err)
+
+		// The adapter reports the mismatch; ProxyRequest records the metric and logs it, so all
+		// breach reasons share one stats handle.
+		require.True(t, response.jobIDMismatch)
+		require.Equal(t, []int64{11, 21}, response.jobIDsInMetadata)
+		require.Equal(t, []int64{11, 21, 31}, response.jobIDsInResponse)
+
 		require.Equal(t, 3, len(response.routerJobResponseCodes))
 		require.Equal(t, 3, len(response.routerJobResponseBodys))
 		require.Equal(t, 3, len(response.routerJobDontBatchDirectives))
@@ -309,7 +314,7 @@ func TestV1Adapter(t *testing.T) {
 			},
 		}
 
-		response, err := v1Adapter.getResponse([]byte(`abc`), 200, metadata, "testDestType")
+		response, err := v1Adapter.getResponse([]byte(`abc`), 200, metadata)
 		require.NotNil(t, err)
 
 		require.Equal(t, 0, len(response.routerJobResponseCodes))
