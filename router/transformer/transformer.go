@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -559,13 +560,21 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	if err != nil {
 		return proxyErrorResponse(respCode, err.Error(), routerJobDontBatchDirectives)
 	}
+	// Compared as sets, so the check does not depend on duplicate jobIDs on either side: a batch can
+	// carry the same JobID more than once (router/worker.go only dedupes when building the final job
+	// responses) and the transformer may collapse or echo those. routerJobResponseCodes is keyed by
+	// the jobIDs the transformer answered for, so its keys are the response set.
+	jobIDsInMetadata := lo.Uniq(proxyJobIDs(proxyReqParams.ResponseData.Metadata))
+	slices.Sort(jobIDsInMetadata)
+	jobIDsInResponse := lo.Keys(transResp.routerJobResponseCodes)
+	slices.Sort(jobIDsInResponse)
 	// Non-fatal: the per-job results were still applied, but they may be attached to the wrong jobs.
 	// Recorded here, alongside the other breach reasons, so all three share one stats handle.
-	if transResp.jobIDMismatch {
+	if !slices.Equal(jobIDsInMetadata, jobIDsInResponse) {
 		emitProxyInvalidResponse(trans.stats, trans.logger, proxyReqParams, "in out mismatch",
 			"[TransformerProxy] JobIDs in out mismatch",
-			logger.NewIntSliceField("jobIDsInMetadata", transResp.jobIDsInMetadata),
-			logger.NewIntSliceField("jobIDsInResponse", transResp.jobIDsInResponse))
+			logger.NewIntSliceField("jobIDsInMetadata", jobIDsInMetadata),
+			logger.NewIntSliceField("jobIDsInResponse", jobIDsInResponse))
 	}
 	integrations.CollectIntegrationFailureDetailedStats(trans.stats, transResp.statTags)
 

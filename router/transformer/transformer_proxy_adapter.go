@@ -5,11 +5,7 @@ package transformer
 import (
 	"fmt"
 	"net/url"
-	"reflect"
-	"slices"
 	"strings"
-
-	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -51,14 +47,6 @@ type TransResponse struct {
 	routerJobDontBatchDirectives map[int64]bool
 	authErrorCategory            string
 	statTags                     map[string]string
-	// jobIDMismatch reports that the transformer returned results for a different set of jobIDs
-	// than were sent, meaning per-job results are attributed to the wrong jobs. The adapter only
-	// reports it; the caller records the metric, so every breach reason goes through one stats
-	// handle. jobIDsInMetadata/jobIDsInResponse are the two sorted sets, and their difference is
-	// what makes the breach diagnosable.
-	jobIDMismatch    bool
-	jobIDsInMetadata []int64
-	jobIDsInResponse []int64
 }
 
 type TPDestResponse struct {
@@ -158,24 +146,10 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			fmt.Errorf("[TransformerProxy Unmarshalling]:: respData: %s, err: %w", string(respData), err)
 	}
 
-	// Compared as sets: a batch can legitimately carry the same JobID more than once (router/worker.go
-	// only dedupes when building the final job responses), and the transformer may either collapse
-	// those duplicates or echo one entry per input item. Both are valid, so deduping only one side
-	// would make the comparison sensitive to which one it does - and this now pages.
-	jobIDsInMetadata := lo.Uniq(lo.Map(metadata, func(m ProxyRequestMetadata, _ int) int64 {
-		return m.JobID
-	}))
-	slices.Sort(jobIDsInMetadata)
-	jobIDsInResponse := lo.Uniq(lo.Map(transformerResponse.Response, func(resp TPDestResponse, _ int) int64 {
-		return resp.Metadata.JobID
-	}))
-	slices.Sort(jobIDsInResponse)
-
-	// Report the mismatch rather than recording it here. Emitting from the adapter would write this
-	// metric through the package-global stats handle while the other breach reasons use the
-	// caller's, splitting one metric across two sinks and hiding this reason from an injected mock.
-	jobIDMismatch := !reflect.DeepEqual(jobIDsInMetadata, jobIDsInResponse)
-
+	// routerJobResponseCodes is keyed by the jobIDs the transformer returned results for, so its keys
+	// are the response's jobID set. The caller compares that against the request's jobIDs to detect a
+	// transformer that answered for a different set of jobs than we sent - the "in out mismatch"
+	// breach - keeping all three breach reasons in one place.
 	for _, resp := range transformerResponse.Response {
 		routerJobResponseCodes[resp.Metadata.JobID] = resp.StatusCode
 		routerJobResponseBodys[resp.Metadata.JobID] = resp.Error
@@ -188,9 +162,6 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			routerJobDontBatchDirectives: routerJobDontBatchDirectives,
 			authErrorCategory:            transformerResponse.AuthErrorCategory,
 			statTags:                     transformerResponse.StatTags,
-			jobIDMismatch:                jobIDMismatch,
-			jobIDsInMetadata:             jobIDsInMetadata,
-			jobIDsInResponse:             jobIDsInResponse,
 		},
 		nil
 }

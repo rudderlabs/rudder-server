@@ -1407,6 +1407,71 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 	},
 
 	{
+		description:  "[v1proxy] when the transformer answers for a different set of jobIDs than were sent, should page with reason in out mismatch",
+		proxyVersion: "v1",
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message: "some message that we got from transformer",
+			// Two jobs were sent (see Metadata below) but the transformer only answered for job 1.
+			Response: []TPDestResponse{
+				{
+					StatusCode: http.StatusOK,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         1,
+					},
+					Error: "success",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON":       map[string]any{"key_1": "val_1"},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
+				},
+				Files: map[string]any{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         1,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         2,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{},
+		expected: ProxyRequestResponse{
+			// DontBatchDirectives is seeded from the request metadata, so both jobs appear; the per-job
+			// status maps only carry job 1, the one the transformer actually answered for.
+			DontBatchDirectives: map[int64]bool{
+				1: false,
+				2: false,
+			},
+			RespBodys:                map[int64]string{1: "success"},
+			RespContentType:          "application/json",
+			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","response":[{"statusCode":200,"error":"success","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":1}}]}`,
+			ProxyRequestStatusCode:   http.StatusOK,
+			RespStatusCodes:          map[int64]int{1: http.StatusOK},
+		},
+		destination:          oauthDests[0],
+		expectedBreachReason: "in out mismatch",
+	},
+
+	{
 		description:  "[v1proxy] when there are partial failures & no oauth errors, respective jobs should have their statuses",
 		proxyVersion: "v1",
 		transformerProxyResponseV1: ProxyResponseV1{

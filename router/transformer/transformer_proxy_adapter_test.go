@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -230,7 +231,7 @@ func TestV1Adapter(t *testing.T) {
 		require.Equal(t, "oauth123", response.authErrorCategory)
 	})
 
-	t.Run("should report a jobID mismatch when in and out jobIDs differ", func(t *testing.T) {
+	t.Run("should map every response entry by its jobID, including jobIDs not in the request", func(t *testing.T) {
 		metadata := []ProxyRequestMetadata{
 			{
 				JobID:     11,
@@ -277,11 +278,10 @@ func TestV1Adapter(t *testing.T) {
 		response, err := v1Adapter.getResponse(r, 200, metadata)
 		require.Nil(t, err)
 
-		// The adapter reports the mismatch; ProxyRequest records the metric and logs it, so all
-		// breach reasons share one stats handle.
-		require.True(t, response.jobIDMismatch)
-		require.Equal(t, []int64{11, 21}, response.jobIDsInMetadata)
-		require.Equal(t, []int64{11, 21, 31}, response.jobIDsInResponse)
+		// The keys of routerJobResponseCodes are the response's jobID set - what ProxyRequest compares
+		// against the request's jobIDs to detect an "in out mismatch". jobID 31 is in the response but
+		// not the request, so it is mapped and shows up in that set.
+		require.ElementsMatch(t, []int64{11, 21, 31}, lo.Keys(response.routerJobResponseCodes))
 
 		require.Equal(t, 3, len(response.routerJobResponseCodes))
 		require.Equal(t, 3, len(response.routerJobResponseBodys))
@@ -303,23 +303,24 @@ func TestV1Adapter(t *testing.T) {
 	})
 
 	// A batch can carry the same JobID more than once, and the transformer may either collapse the
-	// duplicates or echo one entry per input item. Neither is a contract breach, so neither may set
-	// jobIDMismatch - this metric pages.
+	// duplicates or echo one entry per input item. Either way the response map is keyed by jobID, so
+	// its keys are the deduped response set - the caller then compares that against the deduped request
+	// jobIDs, so a duplicate batch is never a spurious "in out mismatch" page.
 	for _, tc := range []struct {
-		name             string
-		jobIDsInResponse []int64
+		name          string
+		responseJobID []int64
 	}{
-		{name: "transformer collapses duplicate jobIDs", jobIDsInResponse: []int64{11, 21}},
-		{name: "transformer echoes duplicate jobIDs", jobIDsInResponse: []int64{11, 11, 21}},
+		{name: "transformer collapses duplicate jobIDs", responseJobID: []int64{11, 21}},
+		{name: "transformer echoes duplicate jobIDs", responseJobID: []int64{11, 11, 21}},
 	} {
-		t.Run("should not report a mismatch when the "+tc.name, func(t *testing.T) {
+		t.Run("should key the response map by the deduped set when the "+tc.name, func(t *testing.T) {
 			metadata := []ProxyRequestMetadata{
 				{JobID: 11, DontBatch: false},
 				{JobID: 11, DontBatch: false},
 				{JobID: 21, DontBatch: false},
 			}
 			resp := ProxyResponseV1{Message: "test"}
-			for _, jobID := range tc.jobIDsInResponse {
+			for _, jobID := range tc.responseJobID {
 				resp.Response = append(resp.Response, TPDestResponse{
 					StatusCode: 200,
 					Metadata:   ProxyRequestMetadata{JobID: jobID},
@@ -331,9 +332,7 @@ func TestV1Adapter(t *testing.T) {
 			response, err := v1Adapter.getResponse(r, 200, metadata)
 			require.Nil(t, err)
 
-			require.False(t, response.jobIDMismatch)
-			require.Equal(t, []int64{11, 21}, response.jobIDsInMetadata)
-			require.Equal(t, []int64{11, 21}, response.jobIDsInResponse)
+			require.ElementsMatch(t, []int64{11, 21}, lo.Keys(response.routerJobResponseCodes))
 		})
 	}
 
