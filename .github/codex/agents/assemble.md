@@ -109,3 +109,24 @@ All interactivity lives in the single inline `<script>` block. No external libra
   claims of your own.
 - HTML-escape any user/code content containing `<`, `>`, `&`, or quotes (the inline
   SVGs from `review-work/diagrams/` are trusted markup and are embedded as-is).
+
+## Validity requirements (CI-checked — the build fails on violations)
+
+- **Render fields, never dump objects.** Extract the individual fields of each JSON
+  artifact into semantic HTML. NEVER serialize a JSON object/array into visible page
+  text — if a bullet would read `{'name': ..., 'path': ...}` or `{"file": ...}`, you
+  have skipped the rendering step. For a `components` entry, that means e.g.
+  `<li><strong>{name}</strong> — {summary} <code>{path}</code></li>`, not the object
+  itself. For `flows`, render the steps as a labelled list or rely on the diagram.
+- **Author the HTML directly.** Do not build the page by writing a Python/JS script
+  that string-interpolates the parsed JSON — that is how raw object reprs (`True`,
+  `'key':`) leak into the page. Read the artifacts, then write the final HTML.
+- **The inline `<script>` must be syntactically valid JavaScript** — CI parses it
+  with Node and fails on any syntax error. Escape newlines inside string literals as
+  `'\n'`; never let a raw line break split a string.
+- Diagrams with `"section": "files"` are embedded INSIDE the existing file-walkthrough
+  section (next to the relevant file entry). Never invent an extra section for
+  leftover diagrams; the page has exactly the sections listed above, each at most once.
+- Re-read your final `review-site/index.html` before finishing and confirm: no
+  `{'`-style object dumps in text, every manifest diagram embedded with its
+  `data-diagram` marker, script parses, no duplicated sections.
