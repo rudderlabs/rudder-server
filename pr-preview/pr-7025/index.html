@@ -3,697 +3,165 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PR #7025 Review Dashboard</title>
+  <title>feat: create a web page to explain the pr for prs labeled with `preview` #7025 · PR Review</title>
   <style>
-    :root {
-      --bg: #f8fafc;
-      --panel: #ffffff;
-      --panel-2: #f1f5f9;
-      --text: #0f172a;
-      --muted: #64748b;
-      --line: #dbe2ea;
-      --accent: #0ea5a3;
-      --accent-soft: #ccfbf1;
-      --high: #dc2626;
-      --med: #d97706;
-      --low: #2563eb;
-      --shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
-    }
-
-    * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      color: var(--text);
-      background: linear-gradient(180deg, #f8fafc 0%, #f7fbfb 100%);
-    }
-
-    .layout {
-      display: grid;
-      grid-template-columns: 260px minmax(0, 1fr);
-      gap: 20px;
-      max-width: 1280px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-
-    .toc {
-      position: sticky;
-      top: 12px;
-      align-self: start;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 12px;
-      box-shadow: var(--shadow);
-    }
-
-    .toc h2 {
-      font-size: 13px;
-      margin: 0 0 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--muted);
-    }
-
-    .toc a {
-      display: block;
-      text-decoration: none;
-      color: var(--text);
-      padding: 6px 8px;
-      border-radius: 8px;
-      font-size: 14px;
-    }
-
-    .toc a:hover { background: var(--panel-2); }
-
-    .progress {
-      height: 4px;
-      background: var(--panel-2);
-      border-radius: 999px;
-      margin-bottom: 10px;
-      overflow: hidden;
-    }
-
-    .progress > span {
-      display: block;
-      height: 100%;
-      width: 0%;
-      background: var(--accent);
-      transition: width 120ms linear;
-    }
-
-    main { min-width: 0; }
-
-    section {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 18px;
-      margin-bottom: 16px;
-      box-shadow: var(--shadow);
-    }
-
-    .reveal {
-      opacity: 0;
-      transform: translateY(6px);
-      transition: opacity 260ms ease, transform 260ms ease;
-    }
-    .reveal.in { opacity: 1; transform: translateY(0); }
-
-    h1 { font-size: clamp(20px, 2.2vw, 30px); margin: 0 0 8px; }
-    h2 { margin: 0 0 12px; font-size: 20px; }
-    p { margin: 0; color: #1f2937; line-height: 1.45; }
-
-    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-    .space { justify-content: space-between; }
-
-    .chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      background: var(--panel-2);
-      padding: 4px 10px;
-      font-size: 12px;
-      color: #334155;
-      white-space: nowrap;
-    }
-
-    .chip svg { width: 13px; height: 13px; }
-    .chip.lang-yaml { background: #ecfeff; border-color: #99f6e4; }
-    .chip.lang-md { background: #eff6ff; border-color: #bfdbfe; }
-
-    .avatar {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      border: 1px solid #99f6e4;
-      display: inline-grid;
-      place-items: center;
-      background: var(--accent-soft);
-      color: #0f766e;
-      font-weight: 700;
-    }
-
-    .tldr {
-      border-left: 4px solid var(--accent);
-      background: linear-gradient(90deg, #f0fdfa 0%, #ffffff 55%);
-    }
-
-    .icon-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
-    .icon-list li { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
-    .icon-list svg { width: 16px; height: 16px; flex: 0 0 auto; color: var(--accent); margin-top: 2px; }
-
-    .diagram-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: #fcfefe; }
-    .diagram-wrap svg { display: block; width: 100%; min-width: 640px; max-width: 100%; height: auto; }
-    .caption { font-size: 12px; color: var(--muted); margin-top: 6px; }
-
-    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-
-    .bullet-tight { margin: 10px 0 0; padding-left: 18px; }
-    .bullet-tight li { margin-bottom: 6px; font-size: 14px; }
-
-    .file-tools {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-
-    .search {
-      flex: 1 1 260px;
-      border: 1px solid var(--line);
-      border-radius: 9px;
-      padding: 8px 10px;
-      font-size: 14px;
-      background: #fff;
-    }
-
-    details.file {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      margin-bottom: 10px;
-      background: #fff;
-      overflow: hidden;
-    }
-
-    details.file summary {
-      cursor: pointer;
-      list-style: none;
-      padding: 10px 12px;
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      align-items: center;
-      background: var(--panel-2);
-      font-size: 14px;
-    }
-
-    details.file summary::-webkit-details-marker { display: none; }
-    .file-body { padding: 12px; }
-
-    .snippet {
-      position: relative;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      overflow: hidden;
-      background: #0b1220;
-      color: #dbeafe;
-      margin-top: 8px;
-    }
-
-    .copy-btn {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      border: 1px solid #1e293b;
-      border-radius: 8px;
-      background: #111827;
-      color: #e2e8f0;
-      font-size: 12px;
-      padding: 5px 8px;
-      cursor: pointer;
-    }
-
-    pre {
-      margin: 0;
-      padding: 14px;
-      overflow-x: auto;
-      font-size: 12px;
-      line-height: 1.5;
-    }
-
-    .legend { margin-top: 8px; display: grid; gap: 5px; font-size: 12px; color: #334155; }
-    .n { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; margin-right: 6px; }
-
-    .risk-controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-    .btn {
-      border: 1px solid var(--line);
-      background: #fff;
-      color: #1f2937;
-      padding: 6px 10px;
-      border-radius: 8px;
-      font-size: 13px;
-      cursor: pointer;
-    }
-    .btn.active { background: var(--accent-soft); border-color: #99f6e4; color: #0f766e; }
-
-    .risk-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-    .risk {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 10px;
-      background: #fff;
-    }
-    .sev { font-size: 11px; border-radius: 999px; padding: 2px 8px; border: 1px solid; }
-    .sev.high { color: var(--high); border-color: #fecaca; background: #fef2f2; }
-    .sev.medium { color: var(--med); border-color: #fed7aa; background: #fffbeb; }
-    .sev.low { color: var(--low); border-color: #bfdbfe; background: #eff6ff; }
-
-    .checklist { margin: 0; padding-left: 18px; }
-    .checklist li { margin: 6px 0; font-size: 14px; }
-
-    .testing-chip { font-weight: 600; background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
-
-    @media (max-width: 1020px) {
-      .layout { grid-template-columns: 1fr; }
-      .toc { position: static; }
-      .grid-2, .risk-grid { grid-template-columns: 1fr; }
-      .diagram-wrap svg { min-width: 560px; }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      html { scroll-behavior: auto; }
-      .reveal, .progress > span { transition: none; }
-    }
+    :root{--accent:#3b82f6;--muted:#6b7280;--fg:#111827;--surface:#ffffff;--border:#e5e7eb;--bg:#f8fafc;--ok:#10b981;--warn:#f59e0b;--danger:#ef4444}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--fg)}
+    .layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:24px;max-width:1200px;margin:0 auto;padding:20px}
+    .toc{position:sticky;top:12px;align-self:start;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px}
+    .toc a{color:var(--muted);text-decoration:none;font-size:13px;padding:4px 6px;border-radius:8px}.toc a:hover,.toc a.active{background:#eef2ff;color:var(--accent)}
+    .prog{height:4px;background:#eef2ff;border-radius:999px;overflow:hidden}.prog span{display:block;height:100%;width:0;background:var(--accent)}
+    main{display:flex;flex-direction:column;gap:18px}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+    h1{margin:0 0 8px;font-size:clamp(20px,2.4vw,30px)}h2{margin:0 0 12px;font-size:18px}p{margin:0 0 10px;color:#1f2937}.lead{font-size:16px}
+    .meta-row,.stats-row,.lang-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.stats-row{margin:10px 0}
+    .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--border);border-radius:999px;font-size:12px;color:#374151;background:#fff}
+    .branch .arr{color:var(--accent)} .lang em{font-style:normal;color:var(--muted)}
+    .stat{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:10px;background:#fff}.stat b{font-size:14px}.stat small{color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.05em}
+    .ic{width:16px;height:16px;display:inline-flex}.ic svg{width:16px;height:16px;fill:currentColor}
+    .facts,.compact,.checklist{margin:0;padding:0;list-style:none;display:grid;gap:8px}.facts li{display:flex;gap:8px;align-items:flex-start}
+    .diagram-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));margin-top:8px}.diagram{margin:0;border:1px solid var(--border);border-radius:12px;padding:8px;background:#fff}
+    .diagram svg{display:block;max-width:100%;height:auto}.diagram figcaption{font-size:12px;color:var(--muted);margin-top:6px}
+    .toolbar{margin-bottom:10px}.toolbar input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px}
+    .file-list{display:grid;gap:10px}.file-item{border:1px solid var(--border);border-radius:10px;background:#fff;overflow:hidden}.file-item summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:10px 12px}.file-item .path{font-family:ui-monospace,monospace;font-size:12px}.file-item .sum{color:var(--muted);font-size:12px}
+    .code-wrap{position:relative;padding:0 10px 10px}.copy-btn{position:absolute;right:16px;top:8px;border:1px solid var(--border);background:#fff;border-radius:8px;padding:4px 8px;font-size:12px;cursor:pointer}
+    pre{margin:0;border:1px solid var(--border);border-radius:10px;background:#0b1020;color:#e5e7eb;overflow:auto;padding:12px 10px 10px}
+    .code-line{display:grid;grid-template-columns:52px 1fr auto;gap:10px;white-space:pre}.gutter{color:#7c89b0;text-align:right;user-select:none}.callout{color:#93c5fd}
+    .callouts{margin:8px 0 0;padding-left:18px;color:#374151}
+    .risk-controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.filter.active{border-color:var(--accent);color:var(--accent)}
+    .risk-grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}.risk{border:1px solid var(--border);border-radius:10px;padding:10px;background:#fff}.sev{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;text-transform:uppercase}.sev.high{background:#fef2f2;color:var(--danger)}.sev.medium{background:#fffbeb;color:var(--warn)}.sev.low{background:#ecfdf5;color:var(--ok)}.mit{color:var(--muted);font-size:13px}
+    .test-chip{margin-bottom:8px}
+    [data-reveal]{opacity:0;transform:translateY(10px);transition:opacity .45s ease,transform .45s ease}[data-reveal].show{opacity:1;transform:none}
+    @media (max-width:900px){.layout{grid-template-columns:1fr}.toc{position:static;order:-1}}
+    @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}[data-reveal]{transition:none;opacity:1;transform:none}}
   </style>
 </head>
 <body>
   <div class="layout">
-    <aside class="toc">
-      <div class="progress" aria-hidden="true"><span id="progressBar"></span></div>
-      <h2>On This Page</h2>
-      <a href="#header">Header</a>
-      <a href="#tldr">TL;DR</a>
-      <a href="#why">Why</a>
-      <a href="#glance">What Changed</a>
-      <a href="#flow">Flow</a>
-      <a href="#files">Files</a>
-      <a href="#risks">Risks</a>
-      <a href="#checklist">Checklist</a>
-      <a href="#testing">Testing</a>
-    </aside>
-
+    <nav class="toc" aria-label="Page sections"><div class="prog"><span id="progBar"></span></div><a href="#tldr">TL;DR</a><a href="#why">Why</a><a href="#what-changed">What changed</a><a href="#flow">Flow</a><a href="#files">Files</a><a href="#risks">Risks</a><a href="#checklist">Checklist</a><a href="#testing">Testing</a></nav>
     <main>
-      <section id="header" class="reveal">
-        <div class="row space">
-          <div>
-            <h1>feat: create a web page to explain the pr for prs labeled with <code>preview</code></h1>
-            <div class="row">
-              <span class="chip">#7025</span>
-              <span class="chip">master &larr; mihir/ai-preview</span>
-            </div>
-          </div>
-          <div class="row">
-            <span class="avatar" aria-label="Author initials">M2</span>
-            <div>
-              <div style="font-weight:600;">mihir20</div>
-              <div style="font-size:12px;color:var(--muted);">PR author</div>
-            </div>
-          </div>
-        </div>
-        <div class="row" style="margin-top:12px;">
-          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>2 files changed</span>
-          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>+391 / -0</span>
-          <span class="chip lang-yaml">YAML 267</span>
-          <span class="chip lang-md">Markdown 124</span>
-        </div>
-      </section>
+      
+<section class="header card" id="top" data-reveal>
+  <div>
+    <h1>feat: create a web page to explain the pr for prs labeled with `preview`</h1>
+    <div class="meta-row">
+      <span class="chip">#7025</span>
+      <span class="chip">mihir20</span>
+      <span class="chip branch">master <span class="arr">←</span> mihir/ai-preview</span>
+    </div>
+  </div>
+  <div class="stats-row">
+    <span class="stat"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm7 1v5h5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9 13h6M9 17h6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></span><b>8</b><small>files</small></span>
+    <span class="stat plus"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><b>—</b><small>added</small></span>
+    <span class="stat minus"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><b>292</b><small>removed</small></span>
+  </div>
+  <div class="lang-row"><span class="chip lang" style="--i:0">YAML</span><span class="chip lang" style="--i:1">Markdown</span></div>
+</section>
+      
+<section id="tldr" class="card" data-reveal>
+  <h2>TL;DR</h2>
+  <p class="lead">Adds an opt-in GitHub Actions pipeline that generates a multi-stage AI PR review site and deploys/removes per-PR previews on GitHub Pages.</p>
+  <ul class="facts"><li><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.3L20 9l-4 3.9.9 5.6L12 16l-4.9 2.5.9-5.6L4 9l5.4-.7L12 3z"/></svg></span><span>Introduces a four-stage Codex pipeline using `review-work/` artifacts (`analysis`, `diagrams`, `risks`, `site`).</span></li><li><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.3L20 9l-4 3.9.9 5.6L12 16l-4.9 2.5.9-5.6L4 9l5.4-.7L12 3z"/></svg></span><span>Hardens preview publishing with GitHub App auth, safe metadata collection, orphan gh-pages setup, and symlink rejection.</span></li><li><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.3L20 9l-4 3.9.9 5.6L12 16l-4.9 2.5.9-5.6L4 9l5.4-.7L12 3z"/></svg></span><span>Changes trigger behavior so build/deploy happens on `ai-preview` labeling and teardown happens on PR close only.</span></li></ul>
+</section>
 
-      <section id="tldr" class="tldr reveal">
-        <h2>TL;DR</h2>
-        <p>An opt-in <code>ai-preview</code> workflow now generates, deploys, comments, and tears down PR review sites on close.</p>
-        <ul class="icon-list">
-          <li><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 2 7l10 5 10-5-10-5Zm0 8L2 5v12l10 5 10-5V5l-10 5Z"/></svg><span>Build runs only on <code>labeled</code> (<code>ai-preview</code>) and <code>closed</code> events.</span></li>
-          <li><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V11a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5Zm-3 8V6a3 3 0 0 1 6 0v3H9Z"/></svg><span>Uses GitHub App token with scoped write permissions, not default workflow token.</span></li>
-          <li><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v4H4zM4 10h16v10H4z"/></svg><span>Deploy path is isolated to <code>gh-pages/pr-preview/pr-&lt;N&gt;/</code> with symlink rejection.</span></li>
-        </ul>
-      </section>
+<section id="why" class="card" data-reveal>
+  <h2>Why</h2>
+  <p>Reviewing unfamiliar PRs is slow without context. This workflow creates a visual, structured onboarding page from the diff and repository, then publishes it behind an explicit label with automated cleanup on PR closure.</p>
+  
+</section>
 
-      <section id="why" class="reveal">
-        <h2>Why</h2>
-        <p>Reviewers need fast PR context without reading full diffs. This adds an explicit, label-gated path to generate visual review pages and publish them safely, while cleaning up previews only when the PR closes.</p>
-        <div class="diagram-wrap" style="margin-top:10px;">
-          <svg viewBox="0 0 920 220" role="img" aria-label="Before and after trigger behavior">
-            <rect x="18" y="20" width="420" height="180" rx="12" fill="#f8fafc" stroke="#dbe2ea"/>
-            <text x="40" y="46" font-size="16" font-weight="700" fill="#334155">Before (typical CI-only review)</text>
-            <rect x="40" y="70" width="180" height="38" rx="8" fill="#e2e8f0"/>
-            <text x="54" y="94" font-size="13" fill="#334155">Push / open PR</text>
-            <rect x="250" y="70" width="160" height="38" rx="8" fill="#e2e8f0"/>
-            <text x="265" y="94" font-size="13" fill="#334155">No preview page</text>
-            <line x1="220" y1="89" x2="250" y2="89" stroke="#94a3b8" stroke-width="2"/>
+<section id="what-changed" class="card" data-reveal>
+  <h2>What Changed</h2>
+  <div class="diagram-grid"></div>
+  <ul class="compact"><li>Defines end-to-end trigger, context capture, Codex stages, gh-pages deploy, sticky comment upsert, and close-time teardown behavior.</li><li>Replaces monolithic prompt with strict orchestration that runs four stage-specific prompts and validates each produced artifact.</li><li>Introduces common rules for all stages, including grounding claims in `pr.diff`/repo and restricting file writes to owned outputs.</li><li>Specifies schema-rich `analysis.json` production with repository exploration, architecture components, flows, data shapes, and key hunks.</li><li>Defines deterministic SVG generation and manifesting for components, flows, and before/after visuals tied to analysis artifacts.</li></ul>
+</section>
 
-            <rect x="482" y="20" width="420" height="180" rx="12" fill="#f0fdfa" stroke="#99f6e4"/>
-            <text x="504" y="46" font-size="16" font-weight="700" fill="#0f766e">After (this PR)</text>
-            <rect x="504" y="70" width="170" height="38" rx="8" fill="#ccfbf1" stroke="#0ea5a3"/>
-            <text x="515" y="94" font-size="13" fill="#0f766e">Label: ai-preview</text>
-            <rect x="704" y="70" width="170" height="38" rx="8" fill="#ccfbf1" stroke="#0ea5a3"/>
-            <text x="726" y="94" font-size="13" fill="#0f766e">Build + deploy</text>
-            <line x1="674" y1="89" x2="704" y2="89" stroke="#0ea5a3" stroke-width="2.5"/>
-            <rect x="504" y="128" width="170" height="38" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
-            <text x="524" y="152" font-size="13" fill="#334155">Close PR</text>
-            <rect x="704" y="128" width="170" height="38" rx="8" fill="#ccfbf1" stroke="#0ea5a3"/>
-            <text x="731" y="152" font-size="13" fill="#0f766e">Tear down</text>
-            <line x1="674" y1="147" x2="704" y2="147" stroke="#0ea5a3" stroke-width="2.5"/>
-          </svg>
-        </div>
-        <div class="caption">Preview creation is explicit; cleanup is close-only.</div>
-      </section>
+<section id="flow" class="card" data-reveal>
+  <h2>Flow / Sequence</h2>
+  <div class="diagram-grid"></div>
+  
+</section>
 
-      <section id="glance" class="reveal">
-        <h2>What Changed At A Glance</h2>
-        <div class="grid-2">
-          <div>
-            <div class="diagram-wrap">
-              <svg viewBox="0 0 760 360" role="img" aria-label="Component map">
-                <defs>
-                  <marker id="arrowA" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#94a3b8"/></marker>
-                  <marker id="arrowB" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#0ea5a3"/></marker>
-                </defs>
-                <rect x="22" y="30" width="190" height="70" rx="10" fill="#f8fafc" stroke="#dbe2ea"/>
-                <text x="46" y="56" font-size="14" fill="#334155">PR event</text>
-                <text x="46" y="76" font-size="12" fill="#64748b">labeled / closed</text>
+<section id="files" class="card" data-reveal>
+  <h2>File Walkthrough</h2>
+  <div class="toolbar"><input id="fileSearch" type="search" placeholder="Jump to file…" aria-label="Jump to file"></div>
+  <div id="fileList" class="file-list">
+    <details class="file-item" data-file-name=".github/workflows/ai-preview.yaml"><summary><span class="path">.github/workflows/ai-preview.yaml</span><span class="sum">Converts the preview workflow into a label-gated multi-stage pipeline with hardened publish/teardown semantics and sticky PR comment management.</span></summary><div class="code-wrap"><button class="copy-btn" data-copy-target="code-0">Copy</button><pre id="code-0"><code><span class="code-line"><span class="gutter">1</span><span class="txt">on:</span></span><span class="code-line"><span class="gutter">2</span><span class="txt">  pull_request:</span></span><span class="code-line has-callout"><span class="gutter">3</span><span class="txt">    types: [ labeled, closed ]</span><span class="callout" title="Trigger set to labeled and closed; push-based rebuilds removed.">•</span></span><span class="code-line"><span class="gutter">4</span><span class="txt"></span></span><span class="code-line"><span class="gutter">5</span><span class="txt">...</span></span><span class="code-line"><span class="gutter">6</span><span class="txt"></span></span><span class="code-line"><span class="gutter">7</span><span class="txt">      - name: Analyze PR (Stage 1)</span></span><span class="code-line"><span class="gutter">8</span><span class="txt">        if: github.event.action != &#39;closed&#39; &amp;&amp; github.event.action != &#39;unlabeled&#39;</span></span><span class="code-line"><span class="gutter">9</span><span class="txt">        env:</span></span><span class="code-line"><span class="gutter">10</span><span class="txt">          CODEX_HOME: ${{ github.workspace }}/.codex</span></span><span class="code-line"><span class="gutter">11</span><span class="txt">          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}</span></span><span class="code-line has-callout"><span class="gutter">12</span><span class="txt">        run: |</span><span class="callout" title="Stage 1 starts a strict artifact-producing pipeline under `review-work/`.">•</span></span><span class="code-line"><span class="gutter">13</span><span class="txt">          set -euo pipefail</span></span><span class="code-line"><span class="gutter">14</span><span class="txt">          mkdir -p review-work</span></span><span class="code-line"><span class="gutter">15</span><span class="txt">          codex exec --sandbox workspace-write --cd &quot;$GITHUB_WORKSPACE&quot; \</span></span><span class="code-line"><span class="gutter">16</span><span class="txt">            &quot;$(cat .github/codex/agents/_shared.md)</span></span><span class="code-line"><span class="gutter">17</span><span class="txt"></span></span><span class="code-line"><span class="gutter">18</span><span class="txt">$(cat .github/codex/agents/analyze.md)&quot;</span></span><span class="code-line"><span class="gutter">19</span><span class="txt">          test -f review-work/analysis.json</span></span><span class="code-line"><span class="gutter">20</span><span class="txt"></span></span><span class="code-line"><span class="gutter">21</span><span class="txt">...</span></span><span class="code-line"><span class="gutter">22</span><span class="txt"></span></span><span class="code-line"><span class="gutter">23</span><span class="txt">      - name: Teardown preview from gh-pages (only on close/merge)</span></span><span class="code-line has-callout"><span class="gutter">24</span><span class="txt">        if: github.event.action == &#39;closed&#39;</span><span class="callout" title="Teardown runs only on close and conditionally commits deletion.">•</span></span><span class="code-line"><span class="gutter">25</span><span class="txt">        env:</span></span><span class="code-line"><span class="gutter">26</span><span class="txt">          PR_NUMBER: ${{ github.event.pull_request.number }}</span></span><span class="code-line"><span class="gutter">27</span><span class="txt">        run: |</span></span><span class="code-line"><span class="gutter">28</span><span class="txt">          set -euo pipefail</span></span><span class="code-line"><span class="gutter">29</span><span class="txt">          PREVIEW_DIR=&quot;pr-preview/pr-${PR_NUMBER}&quot;</span></span><span class="code-line"><span class="gutter">30</span><span class="txt">          if [ -d &quot;$PREVIEW_DIR&quot; ]; then</span></span><span class="code-line"><span class="gutter">31</span><span class="txt">            rm -rf &quot;$PREVIEW_DIR&quot;</span></span><span class="code-line"><span class="gutter">32</span><span class="txt">            if ! git diff --quiet -- &quot;$PREVIEW_DIR&quot;; then</span></span><span class="code-line"><span class="gutter">33</span><span class="txt">              git add -A &quot;$PREVIEW_DIR&quot;</span></span><span class="code-line"><span class="gutter">34</span><span class="txt">              git commit -m &quot;chore(pr-preview): remove preview for PR #${PR_NUMBER}&quot;</span></span><span class="code-line"><span class="gutter">35</span><span class="txt">              git push origin gh-pages</span></span><span class="code-line"><span class="gutter">36</span><span class="txt">            fi</span></span><span class="code-line"><span class="gutter">37</span><span class="txt">          fi</span></span></code></pre><ul class="callouts"><li><b>•</b> Trigger set to labeled and closed; push-based rebuilds removed.</li><li><b>•</b> Stage 1 starts a strict artifact-producing pipeline under `review-work/`.</li><li><b>•</b> Teardown runs only on close and conditionally commits deletion.</li></ul></div></details><details class="file-item" data-file-name=".github/codex/review-prompt.md"><summary><span class="path">.github/codex/review-prompt.md</span><span class="sum">Rewrites the top-level prompt from direct page generation to a four-stage handoff protocol with explicit artifact contracts.</span></summary><div class="code-wrap"><button class="copy-btn" data-copy-target="code-1">Copy</button><pre id="code-1"><code><span class="code-line has-callout"><span class="gutter">1</span><span class="txt">Your workflow:</span><span class="callout" title="Defines sequential orchestration instead of single-pass site synthesis.">•</span></span><span class="code-line"><span class="gutter">2</span><span class="txt"></span></span><span class="code-line has-callout"><span class="gutter">3</span><span class="txt">1) Run Stage 1 prompt from `.github/codex/agents/analyze.md` to produce</span><span class="callout" title="Establishes `analysis.json` as the source of truth for downstream stages.">•</span></span><span class="code-line"><span class="gutter">4</span><span class="txt">   `review-work/analysis.json`.</span></span><span class="code-line"><span class="gutter">5</span><span class="txt">2) Run Stage 2 prompt from `.github/codex/agents/diagrams.md` to produce</span></span><span class="code-line"><span class="gutter">6</span><span class="txt">   diagrams + `review-work/diagrams.json`.</span></span><span class="code-line has-callout"><span class="gutter">7</span><span class="txt">3) Run Stage 3 prompt from `.github/codex/agents/risks.md` to produce</span><span class="callout" title="Final output remains `review-site/index.html`, now assembled from staged artifacts.">•</span></span><span class="code-line"><span class="gutter">8</span><span class="txt">   `review-work/risks.json`.</span></span><span class="code-line"><span class="gutter">9</span><span class="txt">4) Run Stage 4 prompt from `.github/codex/agents/assemble.md` to produce</span></span><span class="code-line"><span class="gutter">10</span><span class="txt">   `review-site/index.html`.</span></span></code></pre><ul class="callouts"><li><b>•</b> Defines sequential orchestration instead of single-pass site synthesis.</li><li><b>•</b> Establishes `analysis.json` as the source of truth for downstream stages.</li><li><b>•</b> Final output remains `review-site/index.html`, now assembled from staged artifacts.</li></ul></div></details><details class="file-item" data-file-name=".github/codex/agents/analyze.md"><summary><span class="path">.github/codex/agents/analyze.md</span><span class="sum">Adds Stage 1 instructions and strict JSON schema requiring grounded PR metadata, architecture components, flows, data shapes, and per-file hunks.</span></summary></details><details class="file-item" data-file-name=".github/codex/agents/diagrams.md"><summary><span class="path">.github/codex/agents/diagrams.md</span><span class="sum">Adds Stage 2 instructions to generate deterministic inline SVG diagrams plus a manifest mapped to page sections.</span></summary></details><details class="file-item" data-file-name=".github/codex/agents/risks.md"><summary><span class="path">.github/codex/agents/risks.md</span><span class="sum">Adds Stage 3 instructions that bound risk detection, checklist items, and testing judgment to evidence from analysis artifacts.</span></summary></details><details class="file-item" data-file-name=".github/codex/agents/assemble.md"><summary><span class="path">.github/codex/agents/assemble.md</span><span class="sum">Adds Stage 4 instructions for rendering a visual-first single-file dashboard with required interactions and strict data-only rendering.</span></summary></details><details class="file-item" data-file-name=".github/codex/agents/_shared.md"><summary><span class="path">.github/codex/agents/_shared.md</span><span class="sum">Introduces shared conventions used by every stage, including no-test/no-network limits and strict output-file ownership.</span></summary></details><details class="file-item" data-file-name=".github/codex/review-promt.md"><summary><span class="path">.github/codex/review-promt.md</span><span class="sum">Adds an initial typo-named onboarding prompt file that was later superseded by the staged `review-prompt.md` workflow.</span></summary></details>
+  </div>
+</section>
 
-                <rect x="276" y="30" width="220" height="70" rx="10" fill="#ccfbf1" stroke="#0ea5a3"/>
-                <text x="297" y="56" font-size="14" fill="#0f766e">.github/workflows/ai-preview.yaml</text>
-                <text x="297" y="76" font-size="12" fill="#0f766e">new orchestrator</text>
+<section id="risks" class="card" data-reveal>
+  <h2>Risks</h2>
+  <div class="risk-controls">
+    <button class="chip filter active" data-filter="all">All</button>
+    <button class="chip filter" data-filter="high">High</button>
+    <button class="chip filter" data-filter="medium">Medium</button>
+    <button class="chip filter" data-filter="low">Low</button>
+  </div>
+  <div class="risk-grid">
+    <article class="risk" data-severity="medium"><span class="sev medium">medium</span><p>On `pull_request` `synchronize` events (new commits), the preview is not regenerated because the workflow now only triggers on `labeled` and `closed`, so the published page can become stale while appearing current.</p><p class="mit">Require removing/re-adding the `ai-preview` label after each significant push (or restore `synchronize` trigger if always-fresh previews are required).</p></article><article class="risk" data-severity="medium"><span class="sev medium">medium</span><p>`Collect PR context` falls back to `git diff &quot;origin/${BASE_REF}...HEAD&quot;`, but there is no explicit fetch of `origin/${BASE_REF}` beyond the checked-out head ref, so fallback can fail and break preview generation.</p><p class="mit">Fetch the base ref explicitly before fallback (for example `git fetch origin ${BASE_REF}`) or make `gh pr diff` failure non-fatal with a clearer diagnostic path.</p></article><article class="risk" data-severity="low"><span class="sev low">low</span><p>The same workflow performs both deploy and teardown under `concurrency.cancel-in-progress: true`, so rapid label/close actions can cancel an in-flight job and leave preview/comment state temporarily inconsistent until a later event reruns.</p><p class="mit">Split deploy and teardown into separate jobs/concurrency groups or make cleanup idempotence checks robust enough to tolerate canceled intermediate runs.</p></article>
+  </div>
+</section>
 
-                <rect x="548" y="30" width="190" height="70" rx="10" fill="#f8fafc" stroke="#dbe2ea"/>
-                <text x="566" y="56" font-size="14" fill="#334155">GitHub App token</text>
-                <text x="566" y="76" font-size="12" fill="#64748b">scoped permissions</text>
+<section id="checklist" class="card" data-reveal>
+  <h2>Review Checklist</h2>
+  <ul class="checklist"><li>Check `.github/workflows/ai-preview.yaml` behavior on a PR commit push after labeling and confirm reviewers understand preview is intentionally stale until label reapply.</li><li>Check fallback robustness in `.github/workflows/ai-preview.yaml` by forcing `gh pr diff` failure and verifying whether `origin/${BASE_REF}` exists in the runner before `git diff` runs.</li><li>Check teardown path in `.github/workflows/ai-preview.yaml` removes both `pr-preview/pr-&lt;N&gt;/` and the sticky marker comment on close/merge for previously deployed previews.</li><li>Check `review-work/` stage contracts in `.github/codex/agents/*.md` enforce strict single-file outputs so one stage cannot overwrite artifacts owned by another stage.</li></ul>
+</section>
 
-                <rect x="120" y="150" width="230" height="70" rx="10" fill="#ccfbf1" stroke="#0ea5a3"/>
-                <text x="142" y="176" font-size="14" fill="#0f766e">pr.diff + meta.txt</text>
-                <text x="142" y="196" font-size="12" fill="#0f766e">safe printf metadata build</text>
-
-                <rect x="390" y="150" width="230" height="70" rx="10" fill="#ccfbf1" stroke="#0ea5a3"/>
-                <text x="415" y="176" font-size="14" fill="#0f766e">.github/codex/review-prompt.md</text>
-                <text x="415" y="196" font-size="12" fill="#0f766e">visual output spec</text>
-
-                <rect x="120" y="270" width="230" height="70" rx="10" fill="#f8fafc" stroke="#dbe2ea"/>
-                <text x="160" y="296" font-size="14" fill="#334155">review-site/index.html</text>
-                <text x="173" y="316" font-size="12" fill="#64748b">generated asset</text>
-
-                <rect x="390" y="270" width="230" height="70" rx="10" fill="#f8fafc" stroke="#dbe2ea"/>
-                <text x="426" y="296" font-size="14" fill="#334155">gh-pages/pr-preview/</text>
-                <text x="463" y="316" font-size="12" fill="#64748b">deployed preview</text>
-
-                <line x1="212" y1="65" x2="276" y2="65" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowA)"/>
-                <line x1="496" y1="65" x2="548" y2="65" stroke="#0ea5a3" stroke-width="2.5" marker-end="url(#arrowB)"/>
-                <line x1="386" y1="100" x2="245" y2="150" stroke="#0ea5a3" stroke-width="2.5" marker-end="url(#arrowB)"/>
-                <line x1="386" y1="100" x2="505" y2="150" stroke="#0ea5a3" stroke-width="2.5" marker-end="url(#arrowB)"/>
-                <line x1="235" y1="220" x2="235" y2="270" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowA)"/>
-                <line x1="505" y1="220" x2="505" y2="270" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowA)"/>
-              </svg>
-            </div>
-            <div class="caption">Two new files drive the full preview lifecycle.</div>
-          </div>
-          <div>
-            <ul class="bullet-tight">
-              <li>Workflow trigger narrowed to <code>pull_request: [labeled, closed]</code>.</li>
-              <li>Build path runs only on <code>action == labeled</code> and label exactly <code>ai-preview</code>.</li>
-              <li>Teardown path always runs on <code>closed</code>, independent of labels.</li>
-              <li>Deployment hardening: clean gh-pages init, stray-file cleanup, symlink reject gate.</li>
-              <li>Prompt file defines strict visual-first output contract for generated review pages.</li>
-            </ul>
-            <div class="diagram-wrap" style="margin-top:12px;">
-              <svg viewBox="0 0 500 170" role="img" aria-label="Blast radius grid">
-                <rect x="18" y="16" width="464" height="138" rx="10" fill="#f8fafc" stroke="#dbe2ea"/>
-                <text x="34" y="38" font-size="13" fill="#475569">Blast radius</text>
-                <g font-size="11" fill="#64748b">
-                  <text x="34" y="60">GitHub workflow</text>
-                  <text x="34" y="86">Prompt spec</text>
-                  <text x="34" y="112">Runtime app code</text>
-                  <text x="34" y="138">Tests</text>
-                </g>
-                <g>
-                  <rect x="160" y="48" width="70" height="20" fill="#0ea5a3" opacity="0.90"/>
-                  <rect x="240" y="48" width="70" height="20" fill="#0ea5a3" opacity="0.68"/>
-                  <rect x="320" y="48" width="70" height="20" fill="#0ea5a3" opacity="0.54"/>
-                  <rect x="400" y="48" width="70" height="20" fill="#0ea5a3" opacity="0.40"/>
-
-                  <rect x="160" y="74" width="70" height="20" fill="#0ea5a3" opacity="0.82"/>
-                  <rect x="240" y="74" width="70" height="20" fill="#0ea5a3" opacity="0.57"/>
-                  <rect x="320" y="74" width="70" height="20" fill="#0ea5a3" opacity="0.42"/>
-                  <rect x="400" y="74" width="70" height="20" fill="#0ea5a3" opacity="0.32"/>
-
-                  <rect x="160" y="100" width="70" height="20" fill="#94a3b8" opacity="0.30"/>
-                  <rect x="240" y="100" width="70" height="20" fill="#94a3b8" opacity="0.20"/>
-                  <rect x="320" y="100" width="70" height="20" fill="#94a3b8" opacity="0.14"/>
-                  <rect x="400" y="100" width="70" height="20" fill="#94a3b8" opacity="0.10"/>
-
-                  <rect x="160" y="126" width="70" height="20" fill="#94a3b8" opacity="0.25"/>
-                  <rect x="240" y="126" width="70" height="20" fill="#94a3b8" opacity="0.14"/>
-                  <rect x="320" y="126" width="70" height="20" fill="#94a3b8" opacity="0.10"/>
-                  <rect x="400" y="126" width="70" height="20" fill="#94a3b8" opacity="0.08"/>
-                </g>
-              </svg>
-            </div>
-            <div class="caption">Changes are concentrated in automation and prompt instructions.</div>
-          </div>
-        </div>
-      </section>
-
-      <section id="flow" class="reveal">
-        <h2>Flow / Sequence</h2>
-        <div class="diagram-wrap">
-          <svg viewBox="0 0 980 360" role="img" aria-label="Sequence diagram">
-            <defs>
-              <marker id="arrowSeq" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#0ea5a3"/></marker>
-            </defs>
-            <g font-size="13" fill="#334155" font-weight="600">
-              <text x="54" y="28">GitHub PR</text>
-              <text x="250" y="28">Workflow</text>
-              <text x="450" y="28">Codex CLI</text>
-              <text x="640" y="28">gh-pages</text>
-              <text x="830" y="28">PR Comment</text>
-            </g>
-            <g stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4 4">
-              <line x1="95" y1="40" x2="95" y2="330"/>
-              <line x1="290" y1="40" x2="290" y2="330"/>
-              <line x1="490" y1="40" x2="490" y2="330"/>
-              <line x1="690" y1="40" x2="690" y2="330"/>
-              <line x1="890" y1="40" x2="890" y2="330"/>
-            </g>
-            <g font-size="12">
-              <line x1="95" y1="70" x2="290" y2="70" stroke="#0ea5a3" stroke-width="2.2" marker-end="url(#arrowSeq)"/>
-              <text x="114" y="63" fill="#0f766e">labeled: ai-preview</text>
-
-              <line x1="290" y1="104" x2="490" y2="104" stroke="#0ea5a3" stroke-width="2.2" marker-end="url(#arrowSeq)"/>
-              <text x="308" y="97" fill="#0f766e">pr.diff + meta.txt + prompt</text>
-
-              <line x1="490" y1="138" x2="290" y2="138" stroke="#0ea5a3" stroke-width="2.2" marker-end="url(#arrowSeq)"/>
-              <text x="326" y="131" fill="#0f766e">review-site/index.html</text>
-
-              <line x1="290" y1="172" x2="690" y2="172" stroke="#0ea5a3" stroke-width="2.2" marker-end="url(#arrowSeq)"/>
-              <text x="412" y="165" fill="#0f766e">deploy pr-preview/pr-&lt;N&gt;</text>
-
-              <line x1="290" y1="206" x2="890" y2="206" stroke="#0ea5a3" stroke-width="2.2" marker-end="url(#arrowSeq)"/>
-              <text x="522" y="199" fill="#0f766e">upsert marker comment with URL</text>
-
-              <line x1="95" y1="266" x2="290" y2="266" stroke="#0ea5a3" stroke-width="2.2" marker-end="url(#arrowSeq)"/>
-              <text x="128" y="259" fill="#0f766e">closed</text>
-
-              <line x1="290" y1="300" x2="690" y2="300" stroke="#0ea5a3" stroke-width="2.2" marker-end="url(#arrowSeq)"/>
-              <text x="452" y="293" fill="#0f766e">remove preview directory</text>
-              <line x1="290" y1="320" x2="890" y2="320" stroke="#0ea5a3" stroke-width="2.2" marker-end="url(#arrowSeq)"/>
-              <text x="528" y="313" fill="#0f766e">rewrite comment: removed</text>
-            </g>
-          </svg>
-        </div>
-        <div class="caption">Accent arrows mark the new workflow lifecycle.</div>
-      </section>
-
-      <section id="files" class="reveal">
-        <h2>File Walkthrough</h2>
-        <div class="file-tools">
-          <input id="fileSearch" class="search" type="search" placeholder="Jump to file (type path)..." aria-label="Jump to file" />
-          <span class="chip">2 files</span>
-        </div>
-
-        <details class="file" data-file-path=".github/workflows/ai-preview.yaml" open>
-          <summary>
-            <span><strong>.github/workflows/ai-preview.yaml</strong> <span style="color:var(--muted);">(+267)</span></span>
-            <span class="chip">workflow lifecycle + deploy hardening</span>
-          </summary>
-          <div class="file-body">
-            <p>Introduces a label-gated build/deploy flow, close-only teardown flow, scoped app auth, and gh-pages safety checks.</p>
-            <div class="snippet">
-              <button class="copy-btn" data-copy-target="snip1">Copy</button>
-              <pre id="snip1"><code>on:
-  pull_request:
-    types: [ labeled, closed ]
-
-if: &gt;
-  github.event.pull_request.head.repo.full_name == github.repository &amp;&amp;
-  (
-    (github.event.action == 'labeled' &amp;&amp; github.event.label.name == 'ai-preview') ||
-    github.event.action == 'closed'
-  )
-
-codex exec --dangerously-bypass-approvals-and-sandbox \
-  --cd "$GITHUB_WORKSPACE" \
-  "$(cat .github/codex/review-prompt.md)"
-
-# Reject symlinks before pushing
-if find "$workdir/${UMBRELLA_DIR}/pr-${PR_NUMBER}" -type l | grep -q .; then
-  exit 1
-fi</code></pre>
-            </div>
-            <div class="legend">
-              <div><span class="n">1</span>Event model changed to label-apply and PR-close only.</div>
-              <div><span class="n">2</span>Job-level condition enforces exact label match and non-fork rule.</div>
-              <div><span class="n">3</span>Codex sandbox bypass is explicit for runner compatibility.</div>
-              <div><span class="n">4</span>Symlink gate prevents gh-pages deployment rejection.</div>
-            </div>
-          </div>
-        </details>
-
-        <details class="file" data-file-path=".github/codex/review-prompt.md">
-          <summary>
-            <span><strong>.github/codex/review-prompt.md</strong> <span style="color:var(--muted);">(+124)</span></span>
-            <span class="chip">output contract for Codex</span>
-          </summary>
-          <div class="file-body">
-            <p>Defines strict visual-first output structure, diagram requirements, interactivity requirements, and a prose cap.</p>
-            <div class="snippet">
-              <button class="copy-btn" data-copy-target="snip2">Copy</button>
-              <pre id="snip2"><code>## Guiding principle: show, don't tell
-...
-**Hard text budget: ~600 words of prose total across the entire page.**
-...
-## Diagrams
-- Hand-authored inline SVG only.
-- New / changed elements use the accent color.
-...
-## Interactivity (include all of these)
-- Collapsible file-walkthrough sections.
-- "Copy" button on each code snippet.
-- Severity filter on the Risks grid.
-- Sticky TOC with scroll-progress indicator.
-- "Jump to file" search input...</code></pre>
-            </div>
-            <div class="legend">
-              <div><span class="n">1</span>Prompt now enforces diagram-led output, not prose-led narrative.</div>
-              <div><span class="n">2</span>Adds concrete UI interaction requirements that generated pages must implement.</div>
-            </div>
-          </div>
-        </details>
-      </section>
-
-      <section id="risks" class="reveal">
-        <h2>Risks</h2>
-        <div class="risk-controls" role="toolbar" aria-label="Risk filter">
-          <button class="btn active" data-filter="all">All</button>
-          <button class="btn" data-filter="high">High</button>
-          <button class="btn" data-filter="medium">Medium</button>
-          <button class="btn" data-filter="low">Low</button>
-        </div>
-        <div class="risk-grid" id="riskGrid">
-          <article class="risk" data-severity="high">
-            <div class="row"><span class="sev high">HIGH</span></div>
-            <p style="margin-top:8px;">Codex runs with sandbox bypass inside GitHub-hosted runner.</p>
-            <p style="margin-top:6px;font-size:12px;color:var(--muted);">Mitigation: gated trigger + ephemeral runner + label opt-in.</p>
-          </article>
-          <article class="risk" data-severity="medium">
-            <div class="row"><span class="sev medium">MEDIUM</span></div>
-            <p style="margin-top:8px;">Preview does not auto-refresh on new commits unless label is re-added.</p>
-            <p style="margin-top:6px;font-size:12px;color:var(--muted);">Mitigation: enforce reviewer checklist to re-label before approval.</p>
-          </article>
-          <article class="risk" data-severity="medium">
-            <div class="row"><span class="sev medium">MEDIUM</span></div>
-            <p style="margin-top:8px;">Close event tears down even if prior deploy state is unexpected.</p>
-            <p style="margin-top:6px;font-size:12px;color:var(--muted);">Mitigation: job already short-circuits when preview directory is absent.</p>
-          </article>
-          <article class="risk" data-severity="low">
-            <div class="row"><span class="sev low">LOW</span></div>
-            <p style="margin-top:8px;">Comment upsert relies on marker prefix matching exactly.</p>
-            <p style="margin-top:6px;font-size:12px;color:var(--muted);">Mitigation: marker is static and update path is idempotent.</p>
-          </article>
-        </div>
-      </section>
-
-      <section id="checklist" class="reveal">
-        <h2>Review Checklist</h2>
-        <ol class="checklist">
-          <li>Check that only <code>labeled</code> with <code>ai-preview</code> can trigger build and deploy.</li>
-          <li>Check that <code>closed</code> always triggers teardown, even when label was removed earlier.</li>
-          <li>Check that fork PRs cannot access secrets because of head-repo equality guard.</li>
-          <li>Check that gh-pages cleanup never removes paths outside <code>pr-preview/</code> and <code>.nojekyll</code>.</li>
-          <li>Check that symlink rejection fails deployment before any push.</li>
-          <li>Check that sticky comment updates existing marker comment instead of creating duplicates.</li>
-          <li>Check required config exists: <code>RELEASE_APP_ID</code>, <code>[redacted]</code>, <code>[redacted]</code>, <code>[redacted]</code>.</li>
-        </ol>
-      </section>
-
-      <section id="testing" class="reveal">
-        <h2>Testing</h2>
-        <div class="row">
-          <span class="chip testing-chip">No tests added</span>
-          <span class="chip">Workflow-only change</span>
-        </div>
-        <ul class="bullet-tight">
-          <li>No repository test files changed in <code>origin/master...HEAD</code> diff.</li>
-          <li>Validation is operational: label application, preview URL comment, and close teardown behavior.</li>
-          <li>No CI build/test commands were introduced in this PR for workflow verification.</li>
-        </ul>
-      </section>
+<section id="testing" class="card" data-reveal>
+  <h2>Testing</h2>
+  <span class="chip test-chip">no tests</span>
+  <ul class="compact"><li>No automated tests were added or modified for `.github/workflows/ai-preview.yaml` trigger, deploy, and teardown behavior.</li><li>No simulation coverage is added for `gh pr diff` fallback behavior when base refs are missing locally.</li><li>No validation tests are added for multi-stage artifact contracts under `.github/codex/agents/` prompts.</li></ul>
+</section>
     </main>
   </div>
-
   <script>
-    (function () {
-      const progressBar = document.getElementById('progressBar');
-      const updateProgress = () => {
-        const max = document.documentElement.scrollHeight - window.innerHeight;
-        const pct = max > 0 ? (window.scrollY / max) * 100 : 0;
-        progressBar.style.width = Math.max(0, Math.min(100, pct)) + '%';
-      };
-      window.addEventListener('scroll', updateProgress, { passive: true });
-      updateProgress();
+    (()=>{
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const revealEls = Array.from(document.querySelectorAll('[data-reveal]'));
+      if(!reduced && 'IntersectionObserver' in window){
+        const io = new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('show')}),{threshold:.12});
+        revealEls.forEach(el=>io.observe(el));
+      } else revealEls.forEach(el=>el.classList.add('show'));
 
-      const observer = new IntersectionObserver((entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) entry.target.classList.add('in');
-        });
-      }, { threshold: 0.08 });
-      document.querySelectorAll('.reveal').forEach((el) => observer.observe(el));
-
-      document.querySelectorAll('.copy-btn').forEach((btn) => {
-        btn.addEventListener('click', async () => {
+      document.querySelectorAll('.copy-btn').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
           const id = btn.getAttribute('data-copy-target');
-          const node = document.getElementById(id);
-          if (!node) return;
-          try {
-            await navigator.clipboard.writeText(node.innerText);
-            const old = btn.textContent;
-            btn.textContent = 'Copied';
-            setTimeout(() => { btn.textContent = old; }, 900);
-          } catch (_) {
-            btn.textContent = 'Failed';
-          }
+          const el = id && document.getElementById(id);
+          if(!el) return;
+          try{ await navigator.clipboard.writeText(el.innerText); const t=btn.textContent; btn.textContent='Copied'; setTimeout(()=>btn.textContent=t,900);}catch{}
         });
       });
 
-      const filterButtons = document.querySelectorAll('[data-filter]');
-      const riskCards = document.querySelectorAll('#riskGrid [data-severity]');
-      filterButtons.forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const filter = btn.getAttribute('data-filter');
-          filterButtons.forEach((b) => b.classList.remove('active'));
-          btn.classList.add('active');
-          riskCards.forEach((card) => {
-            const show = filter === 'all' || card.getAttribute('data-severity') === filter;
-            card.style.display = show ? '' : 'none';
-          });
-        });
-      });
+      const filters = document.querySelectorAll('.filter');
+      const riskCards = document.querySelectorAll('.risk[data-severity]');
+      filters.forEach(f=>f.addEventListener('click',()=>{
+        filters.forEach(x=>x.classList.remove('active')); f.classList.add('active');
+        const val = f.getAttribute('data-filter');
+        riskCards.forEach(card=>{card.style.display = (val==='all' || card.getAttribute('data-severity')===val)?'block':'none';});
+      }));
 
       const search = document.getElementById('fileSearch');
-      const files = document.querySelectorAll('details.file[data-file-path]');
-      search.addEventListener('input', () => {
-        const q = search.value.trim().toLowerCase();
-        files.forEach((file) => {
-          const path = file.getAttribute('data-file-path').toLowerCase();
-          const show = path.includes(q);
-          file.style.display = show ? '' : 'none';
-          if (show && q.length > 0) file.open = true;
+      const items = Array.from(document.querySelectorAll('.file-item'));
+      if(search){
+        search.addEventListener('input', ()=>{
+          const q = search.value.trim().toLowerCase();
+          items.forEach(it=>{const n=it.getAttribute('data-file-name')||''; it.style.display = n.includes(q)?'block':'none';});
         });
-      });
+      }
+
+      const links = Array.from(document.querySelectorAll('.toc a'));
+      const prog = document.getElementById('progBar');
+      const tracked = links.map(a=>document.querySelector(a.getAttribute('href'))).filter(Boolean);
+      function onScroll(){
+        const max = document.documentElement.scrollHeight - window.innerHeight;
+        const pct = max>0 ? (window.scrollY/max)*100 : 0;
+        if(prog) prog.style.width = pct + '%';
+        let active = null; const y = window.scrollY + 120;
+        tracked.forEach(sec=>{ if(sec.offsetTop <= y) active = sec.id; });
+        links.forEach(a=>a.classList.toggle('active', a.getAttribute('href') === '#' + active));
+      }
+      window.addEventListener('scroll', onScroll, {passive:true}); onScroll();
     })();
   </script>
 </body>
