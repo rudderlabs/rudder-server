@@ -107,11 +107,8 @@ jobs:
           for stage in analyze diagrams risks assemble; do
             cat .github/codex/agents/_shared.md ".github/codex/agents/${stage}.md" \
               > "${RUNNER_TEMP}/codex-prompts/${stage}.md"
-            # Isolated Codex home per stage: the action appends its proxy
-            # provider block to CODEX_HOME/config.toml on every invocation, so
-            # reusing one home across stages produces duplicate TOML keys.
-            mkdir -p "${RUNNER_TEMP}/codex-home/${stage}"
           done
+          mkdir -p "${RUNNER_TEMP}/codex-home"
 
       # ---- Specialised subagents (sequential pipeline via review-work/) ----
       # Each subagent is one openai/codex-action invocation with a focused,
@@ -120,21 +117,24 @@ jobs:
       # clear step name if the stage produced nothing usable. review-work/
       # never leaves the runner — only review-site/ is deployed.
       #
-      # Why the action instead of raw `codex exec`:
-      #  - the API key is held by the action's local proxy, NOT exported into
-      #    the Codex process env where spawned commands could printenv it;
+      # Why the action for Subagent 1 (and only Subagent 1):
+      #  - the API key is held by the action's local proxy (started via sudo,
+      #    root-owned), NOT exported into the Codex process env where spawned
+      #    commands could printenv it;
       #  - safety-strategy drop-sudo revokes the runner user's sudo before
       #    Codex runs (hosted runners have passwordless sudo otherwise);
-      #  - permission-profile ':workspace' confines writes to the checkout —
-      #    if it ever errors on this runner image, drop the input (key proxy +
-      #    drop-sudo still apply) rather than reverting to raw codex exec.
-      # exec mode never prompts for approvals; there is nothing to approve.
+      #  - permission-profile ':workspace' confines writes to the checkout.
       #
-      # drop-sudo is one-shot and lasts for the rest of the job: the drop itself
-      # needs sudo, so a second drop-sudo invocation fails ("passwordless sudo
-      # not available"). Only Subagent 1 declares drop-sudo; Subagents 2-4
-      # declare 'unsafe', which here means "don't re-drop" — they still run
-      # without sudo because Subagent 1 already revoked it for the whole job.
+      # The action assumes ONE invocation per job: drop-sudo is one-shot (the
+      # drop itself needs sudo), and the root-held proxy is started with sudo
+      # on EVERY invocation — so a second action invocation always fails after
+      # the first dropped sudo. The documented pattern for multi-stage jobs is
+      # what we do here: invoke the action once, then call `codex exec`
+      # directly for later stages — the proxy keeps running and CODEX_HOME's
+      # config (written by the action) already points at it, so later stages
+      # never touch the API key at all. The exec flags mirror the action's own
+      # invocation (visible in its logs). exec mode never prompts for
+      # approvals; there is nothing to approve.
       - name: 'Subagent 1: analyze PR'
         if: github.event.action != 'closed'
         uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1.11
@@ -147,7 +147,7 @@ jobs:
           safety-strategy: drop-sudo
           permission-profile: ':workspace'
           prompt-file: ${{ runner.temp }}/codex-prompts/analyze.md
-          codex-home: ${{ runner.temp }}/codex-home/analyze
+          codex-home: ${{ runner.temp }}/codex-home
 
       - name: Validate analysis artifact
         if: github.event.action != 'closed'
@@ -155,17 +155,16 @@ jobs:
 
       - name: 'Subagent 2: author diagrams'
         if: github.event.action != 'closed'
-        uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1.11
-        with:
-          openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
-          responses-api-endpoint: ${{ env.RESPONSES_API_ENDPOINT }}
-          model: gpt-5.3-codex
-          effort: medium
-          codex-version: 0.144.6
-          safety-strategy: unsafe  # sudo already dropped by Subagent 1
-          permission-profile: ':workspace'
-          prompt-file: ${{ runner.temp }}/codex-prompts/diagrams.md
-          codex-home: ${{ runner.temp }}/codex-home/diagrams
+        env:
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+        run: |
+          set -euo pipefail
+          codex exec --skip-git-repo-check \
+            --cd "$GITHUB_WORKSPACE" \
+            --model gpt-5.3-codex \
+            --config 'model_reasoning_effort="medium"' \
+            --config 'default_permissions=":workspace"' \
+            "$(cat "${RUNNER_TEMP}/codex-prompts/diagrams.md")"
 
       - name: Validate diagram artifacts
         if: github.event.action != 'closed'
@@ -192,17 +191,16 @@ jobs:
 
       - name: 'Subagent 3: review risks'
         if: github.event.action != 'closed'
-        uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1.11
-        with:
-          openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
-          responses-api-endpoint: ${{ env.RESPONSES_API_ENDPOINT }}
-          model: gpt-5.3-codex
-          effort: medium
-          codex-version: 0.144.6
-          safety-strategy: unsafe  # sudo already dropped by Subagent 1
-          permission-profile: ':workspace'
-          prompt-file: ${{ runner.temp }}/codex-prompts/risks.md
-          codex-home: ${{ runner.temp }}/codex-home/risks
+        env:
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+        run: |
+          set -euo pipefail
+          codex exec --skip-git-repo-check \
+            --cd "$GITHUB_WORKSPACE" \
+            --model gpt-5.3-codex \
+            --config 'model_reasoning_effort="medium"' \
+            --config 'default_permissions=":workspace"' \
+            "$(cat "${RUNNER_TEMP}/codex-prompts/risks.md")"
 
       - name: Validate risks artifact
         if: github.event.action != 'closed'
@@ -210,17 +208,16 @@ jobs:
 
       - name: 'Subagent 4: assemble site'
         if: github.event.action != 'closed'
-        uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1.11
-        with:
-          openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
-          responses-api-endpoint: ${{ env.RESPONSES_API_ENDPOINT }}
-          model: gpt-5.3-codex
-          effort: medium
-          codex-version: 0.144.6
-          safety-strategy: unsafe  # sudo already dropped by Subagent 1
-          permission-profile: ':workspace'
-          prompt-file: ${{ runner.temp }}/codex-prompts/assemble.md
-          codex-home: ${{ runner.temp }}/codex-home/assemble
+        env:
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+        run: |
+          set -euo pipefail
+          codex exec --skip-git-repo-check \
+            --cd "$GITHUB_WORKSPACE" \
+            --model gpt-5.3-codex \
+            --config 'model_reasoning_effort="medium"' \
+            --config 'default_permissions=":workspace"' \
+            "$(cat "${RUNNER_TEMP}/codex-prompts/assemble.md")"
 
       - name: Validate assembled site
         if: github.event.action != 'closed'
