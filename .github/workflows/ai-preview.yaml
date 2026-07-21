@@ -14,9 +14,12 @@ concurrency:
   group: pr-review-site-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+# The default GITHUB_TOKEN only needs to read the repo for checkout. All writes
+# (gh-pages push, sticky comment) go through the app token, which carries its own
+# scoped permissions. Keeping this read-only means a leaked/persisted GITHUB_TOKEN
+# cannot write anything
 permissions:
-  contents: write        # push the generated site to the gh-pages branch
-  pull-requests: write   # post/update the sticky preview-link comment
+  contents: read
 
 jobs:
   build-and-deploy:
@@ -48,6 +51,11 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0   # Codex needs the whole repo + history for context
+          # Don't leave GITHUB_TOKEN in .git/config where the unsandboxed Codex
+          # steps could read it. Nothing after checkout needs these credentials:
+          # fetch-depth 0 pulls all history up front, and every push/API call
+          # uses the app token over its own authenticated remote.
+          persist-credentials: false
 
       - name: Collect PR context
         if: github.event.action != 'closed'
@@ -85,7 +93,9 @@ jobs:
 
       - name: Install Codex CLI
         if: github.event.action != 'closed'
-        run: npm install -g @openai/codex
+        # Pinned so CLI behavior/output contracts only change deliberately
+        # (supply-chain hygiene for an unsandboxed tool). Bump intentionally.
+        run: npm install -g @openai/codex@0.144.6
 
       - name: Configure Codex for Azure Foundry
         if: github.event.action != 'closed'
@@ -276,6 +286,8 @@ jobs:
       - name: Checkout for cleanup
         if: github.event.action == 'closed'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false  # teardown pushes via the app-token remote
 
       - name: Remove preview from gh-pages
         if: github.event.action == 'closed'
