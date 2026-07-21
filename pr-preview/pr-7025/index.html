@@ -1,669 +1,417 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PR Review Dashboard - feat: add multi-stage pipeline for visual-first PR review dashboard</title>
+  <title>PR #7025 Review Dashboard</title>
   <style>
     :root {
       --accent: #2563eb;
-      --muted: #6b7280;
-      --fg: #111827;
+      --muted: #64748b;
+      --fg: #0f172a;
       --surface: #ffffff;
-      --border: #e5e7eb;
+      --border: #dbe3ee;
       --bg: #f8fafc;
-      --chip: #eef2ff;
-      --ok: #059669;
-      --warn: #d97706;
-      --danger: #dc2626;
-      --shadow: 0 6px 20px rgba(17, 24, 39, 0.06);
-      --radius: 14px;
+      --chip: #e2e8f0;
+      --ok: #166534;
+      --ok-bg: #dcfce7;
+      --high: #b91c1c;
+      --high-bg: #fee2e2;
+      --medium: #b45309;
+      --medium-bg: #fef3c7;
+      --low: #166534;
+      --low-bg: #dcfce7;
+      --shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
     }
-
-    * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
+    * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       color: var(--fg);
       background: var(--bg);
       line-height: 1.45;
     }
-
     .layout {
       display: grid;
       grid-template-columns: 260px minmax(0, 1fr);
-      gap: 1.25rem;
+      gap: 24px;
       max-width: 1400px;
       margin: 0 auto;
-      padding: 1rem;
+      padding: 20px;
     }
-
     .toc {
       position: sticky;
-      top: 1rem;
+      top: 16px;
       align-self: start;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 0.85rem;
+      border-radius: 14px;
+      padding: 14px;
       box-shadow: var(--shadow);
     }
-
-    .progress-wrap {
-      height: 5px;
-      background: #e2e8f0;
-      border-radius: 999px;
-      overflow: hidden;
-      margin-bottom: 0.8rem;
-    }
-
-    .progress {
-      height: 100%;
-      width: 0%;
-      background: var(--accent);
-      transition: width 180ms ease;
-    }
-
-    .toc h2 { font-size: 0.9rem; margin: 0 0 0.55rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .toc h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
     .toc a {
       display: block;
-      text-decoration: none;
+      font-size: 14px;
       color: var(--fg);
-      font-size: 0.92rem;
-      padding: 0.4rem 0.45rem;
+      text-decoration: none;
+      padding: 6px 0;
       border-radius: 8px;
     }
-    .toc a:hover, .toc a.active { background: #eff6ff; color: var(--accent); }
-
+    .toc a:hover { color: var(--accent); }
+    .progress {
+      height: 4px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      margin-top: 10px;
+      overflow: hidden;
+    }
+    .progress > i {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: var(--accent);
+    }
     main { min-width: 0; }
-    .section {
+    section {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
+      border-radius: 16px;
+      padding: 18px;
+      margin-bottom: 16px;
       box-shadow: var(--shadow);
-      padding: 1.1rem;
-      margin-bottom: 1rem;
-      min-width: 0;
     }
-
-    .reveal { opacity: 0; transform: translateY(10px); }
-    .reveal.is-visible { opacity: 1; transform: translateY(0); transition: opacity 360ms ease, transform 360ms ease; }
-
-    h1 { font-size: 1.3rem; margin: 0; }
-    h2 { font-size: 1.05rem; margin: 0 0 0.75rem; }
-    p { margin: 0.5rem 0 0; color: #1f2937; }
-
-    .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
-    .chips { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.65rem; }
+    h1 { margin: 0 0 6px; font-size: clamp(1.25rem, 2.5vw, 1.8rem); }
+    h2 { margin: 0 0 12px; font-size: 1.1rem; }
+    p { margin: 0; }
+    .meta-row, .stats-row, .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .meta-row { margin-bottom: 10px; }
+    .stats-row { margin-top: 10px; }
     .chip {
       display: inline-flex;
       align-items: center;
-      gap: 0.35rem;
-      border: 1px solid var(--border);
-      background: var(--chip);
-      color: #1e3a8a;
+      gap: 6px;
+      padding: 4px 10px;
       border-radius: 999px;
-      font-size: 0.8rem;
-      padding: 0.25rem 0.55rem;
+      background: var(--chip);
+      color: var(--fg);
+      font-size: 12px;
+      font-weight: 600;
       white-space: nowrap;
     }
-    .chip.lang { background: #f3f4f6; color: #374151; }
-    .chip.high { background: #fee2e2; color: #7f1d1d; border-color: #fecaca; }
-    .chip.medium { background: #fef3c7; color: #78350f; border-color: #fde68a; }
-    .chip.low { background: #dcfce7; color: #14532d; border-color: #bbf7d0; }
-
-    .icon { width: 14px; height: 14px; display: inline-block; }
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 0.55rem;
-      margin-top: 0.75rem;
-    }
-    .stat {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 0.55rem 0.65rem;
-      background: #fcfcfd;
-    }
-    .stat b { display: block; font-size: 1rem; }
-    .stat span { color: var(--muted); font-size: 0.8rem; }
-
-    .keyfacts { list-style: none; padding: 0; margin: 0.75rem 0 0; display: grid; gap: 0.5rem; }
-    .keyfacts li { display: flex; gap: 0.5rem; align-items: flex-start; }
-
-    .diagram-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 0.85rem;
-      min-width: 0;
-    }
-    figure.diagram {
+    .chip svg { width: 14px; height: 14px; }
+    .kfacts { display: grid; gap: 8px; margin-top: 10px; }
+    .kfacts li { list-style: none; display: grid; grid-template-columns: 18px 1fr; gap: 8px; }
+    .kfacts svg { width: 18px; height: 18px; color: var(--accent); }
+    .visual-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
+    .visual-grid > * { grid-column: span 12; }
+    .diagram {
       margin: 0;
       border: 1px solid var(--border);
       border-radius: 12px;
+      padding: 8px;
       background: #fff;
-      padding: 0.5rem;
       overflow: auto;
     }
-    figure.diagram > svg { max-width: 100%; height: auto; display: block; min-width: 280px; }
-    figure.diagram figcaption { font-size: 0.8rem; color: var(--muted); margin-top: 0.45rem; }
-
-    .list { margin: 0.35rem 0 0; padding-left: 1.1rem; }
-    .list li { margin: 0.35rem 0; }
-
-    details.file {
+    .diagram svg { display: block; width: 100%; height: auto; min-width: 320px; }
+    .diagram figcaption { margin-top: 6px; font-size: 12px; color: var(--muted); }
+    .components li { margin: 6px 0; }
+    details {
       border: 1px solid var(--border);
       border-radius: 12px;
-      margin-bottom: 0.65rem;
-      overflow: hidden;
+      padding: 10px;
       background: #fff;
+      margin-bottom: 10px;
     }
-    details.file > summary {
-      cursor: pointer;
-      list-style: none;
-      padding: 0.75rem 0.8rem;
-      display: flex;
-      justify-content: space-between;
-      gap: 0.75rem;
-      align-items: flex-start;
-    }
-    details.file > summary::-webkit-details-marker { display: none; }
-    .file-meta { min-width: 0; }
-    .file-path { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.82rem; color: #1f2937; }
-    .file-summary { color: var(--muted); font-size: 0.86rem; margin-top: 0.18rem; }
-
-    .file-body { border-top: 1px solid var(--border); padding: 0.75rem; display: grid; gap: 0.65rem; }
-    .code-wrap { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-    .code-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.4rem 0.55rem;
-      border-bottom: 1px solid var(--border);
-      background: #f9fafb;
-    }
+    summary { cursor: pointer; font-weight: 600; }
+    .file-summary { color: var(--muted); font-size: 14px; margin: 8px 0 10px; }
+    .code-wrap { position: relative; }
     .copy-btn {
+      position: absolute;
+      right: 8px;
+      top: 8px;
       border: 1px solid var(--border);
-      background: #fff;
+      background: var(--surface);
       border-radius: 8px;
-      font-size: 0.78rem;
-      padding: 0.22rem 0.45rem;
+      font-size: 12px;
+      padding: 4px 8px;
       cursor: pointer;
     }
     pre {
       margin: 0;
-      padding: 0.6rem;
-      font-size: 0.8rem;
+      padding: 30px 10px 10px;
       overflow: auto;
-      background: #fcfcfd;
-      white-space: pre;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: #0b1220;
+      color: #d1e7ff;
+      border-radius: 10px;
+      border: 1px solid #1e293b;
+      font-size: 12px;
+      line-height: 1.4;
     }
-
-    .risk-controls { display: flex; gap: 0.45rem; flex-wrap: wrap; margin-bottom: 0.7rem; }
-    .filter-btn {
+    .callouts { margin: 8px 0 0; padding-left: 18px; font-size: 13px; }
+    .risk-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .risk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+    .risk {
       border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
       background: #fff;
-      border-radius: 999px;
-      padding: 0.28rem 0.58rem;
-      font-size: 0.8rem;
-      cursor: pointer;
     }
-    .filter-btn.active { background: #eff6ff; border-color: #bfdbfe; color: var(--accent); }
-    .risk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.65rem; }
-    .risk-card { border: 1px solid var(--border); border-radius: 10px; padding: 0.7rem; background: #fff; }
-    .risk-card p { margin: 0.45rem 0 0; font-size: 0.9rem; }
-    .risk-card .mit { color: var(--muted); font-size: 0.82rem; }
-
+    .sev { text-transform: uppercase; letter-spacing: .05em; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; display: inline-block; }
+    .sev.high { color: var(--high); background: var(--high-bg); }
+    .sev.medium { color: var(--medium); background: var(--medium-bg); }
+    .sev.low { color: var(--low); background: var(--low-bg); }
+    .checklist li, .testing li { margin: 6px 0; }
     .search {
       width: 100%;
-      max-width: 360px;
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 0.5rem 0.6rem;
-      font: inherit;
-      margin-bottom: 0.7rem;
+      padding: 9px 10px;
+      font-size: 14px;
+      margin-bottom: 10px;
     }
-
-    @media (max-width: 980px) {
+    .reveal { opacity: 0; transform: translateY(8px); transition: opacity .35s ease, transform .35s ease; }
+    .reveal.show { opacity: 1; transform: translateY(0); }
+    @media (min-width: 980px) {
+      .visual-grid .half { grid-column: span 6; }
+    }
+    @media (max-width: 979px) {
       .layout { grid-template-columns: 1fr; }
       .toc { position: static; }
     }
-
     @media (prefers-reduced-motion: reduce) {
       html { scroll-behavior: auto; }
-      .progress, .reveal, .reveal.is-visible { transition: none !important; transform: none !important; opacity: 1 !important; }
+      .reveal, .reveal.show { opacity: 1; transform: none; transition: none; }
     }
   </style>
 </head>
 <body>
   <div class="layout">
-    <nav class="toc" aria-label="Table of contents">
-      <div class="progress-wrap" aria-hidden="true"><div class="progress" id="progress"></div></div>
-      <h2>Review Map</h2>
+    <aside class="toc" aria-label="Table of contents">
+      <h2>On this page</h2>
       <a href="#header">Header</a>
       <a href="#tldr">TL;DR</a>
       <a href="#why">Why</a>
-      <a href="#what-changed">What Changed</a>
+      <a href="#changed">What changed</a>
       <a href="#flow">Flow</a>
       <a href="#files">Files</a>
       <a href="#risks">Risks</a>
       <a href="#checklist">Checklist</a>
       <a href="#testing">Testing</a>
-    </nav>
+      <div class="progress" aria-hidden="true"><i id="progressBar"></i></div>
+    </aside>
 
     <main>
-      <section class="section reveal" id="header">
-        <div class="row" style="justify-content:space-between; gap:0.8rem;">
-          <div>
-            <h1>feat: add multi-stage pipeline for visual-first PR review dashboard</h1>
-            <div class="chips" style="margin-top:0.45rem;">
-              <span class="chip">#0</span>
-              <span class="chip">author: mihir</span>
-              <span class="chip">main &larr; feat/ai-preview-workflow</span>
-            </div>
-          </div>
+      <section id="header" class="reveal">
+        <h1>feat: create a web page to explain the pr for prs labeled with <code>preview</code></h1>
+        <div class="meta-row">
+          <span class="chip">#7025</span>
+          <span class="chip">Author: mihir20</span>
+          <span class="chip">master ← mihir/ai-preview</span>
         </div>
-
-        <div class="stats-grid">
-          <div class="stat"><b>8</b><span>files changed</span></div>
-          <div class="stat"><b>+1052</b><span>additions</span></div>
-          <div class="stat"><b>-294</b><span>deletions</span></div>
-        </div>
-
-        <div class="chips" aria-label="Languages">
-          <span class="chip lang">YAML</span>
-          <span class="chip lang">Markdown</span>
+        <div class="stats-row">
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2"/></svg> 8 files</span>
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2"/></svg> +1131</span>
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14" stroke="currentColor" stroke-width="2"/></svg> -353</span>
+          <span class="chip">Markdown</span>
+          <span class="chip">YAML</span>
         </div>
       </section>
 
-      <section class="section reveal" id="tldr">
+      <section id="tldr" class="reveal">
         <h2>TL;DR</h2>
-        <p>Adds an <code>ai-preview</code> GitHub workflow and multi-stage Codex prompts to generate, publish, and tear down a visual PR review site.</p>
-        <ul class="keyfacts">
-          <li>
-            <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12h16M12 4v16" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/></svg>
-            <span>Introduces <code>.github/workflows/ai-preview.yaml</code> with label-driven preview build/deploy and close-time teardown jobs.</span>
-          </li>
-          <li>
-            <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2" stroke="var(--accent)" stroke-width="2"/><path d="M8 9h8M8 13h5" stroke="var(--accent)" stroke-width="2"/></svg>
-            <span>Replaces single-prompt <code>review-prompt.md</code> flow with four stage prompts under <code>.github/codex/agents/</code> and shared conventions.</span>
-          </li>
-          <li>
-            <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z" stroke="var(--accent)" stroke-width="2"/><path d="M9 12l2 2 4-4" stroke="var(--accent)" stroke-width="2"/></svg>
-            <span>Hardens workflow execution with app-token auth, explicit artifact checks, gh-pages bootstrap, and symlink-safe deployment copy.</span>
-          </li>
+        <p>Adds a label-gated GitHub workflow and multi-stage Codex prompts to build, publish, comment, and clean up PR review preview sites on gh-pages.</p>
+        <ul class="kfacts">
+          <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4L19 6" stroke="currentColor" stroke-width="2"/></svg><span>Introduces <code>.github/workflows/ai-preview.yaml</code> that runs on <code>pull_request</code> <code>labeled</code> and <code>closed</code> events with label gate <code>ai-preview</code>.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" stroke="currentColor" stroke-width="2"/><path d="M8 8h8M8 12h8M8 16h4" stroke="currentColor" stroke-width="2"/></svg><span>Splits review generation into four Codex stages (<code>analyze</code>, <code>diagrams</code>, <code>risks</code>, <code>assemble</code>) coordinated via <code>review-work/*.json</code> artifacts.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z" stroke="currentColor" stroke-width="2"/></svg><span>Hardens workflow security by pinning actions and Codex CLI version, removing persisted checkout credentials, and redacting/normalizing metadata handling.</span></li>
         </ul>
       </section>
 
-      <section class="section reveal" id="why">
+      <section id="why" class="reveal">
         <h2>Why</h2>
-        <p>Reviewing unfamiliar PRs is slow; this PR automates a visual, single-page review briefing so reviewers can understand architecture, risks, and key hunks before reading raw diffs.</p>
+        <p>Reviewing unfamiliar PRs is slow; this PR creates an opt-in, single-page visual review artifact so reviewers can quickly understand architecture, flow, risks, and key hunks before deep diff reading.</p>
+        <div class="chips" style="margin-top:10px;">
+          <span class="chip">Pain: slow onboarding</span>
+          <span class="chip">Fix: visual preview page</span>
+        </div>
       </section>
 
-      <section class="section reveal" id="what-changed">
-        <h2>What Changed at a Glance</h2>
-        <div class="diagram-grid">
+      <section id="changed" class="reveal">
+        <h2>What changed at a glance</h2>
+        <div class="visual-grid">
           <figure class="diagram" data-diagram="01-architecture.svg">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" role="img" aria-label="Architecture of ai-preview multi-stage review pipeline">
-  <rect x="0" y="0" width="1200" height="560" fill="var(--surface, #ffffff)"/>
-
-  <text x="40" y="42" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="22" font-weight="700" fill="var(--fg, #111827)">AI Preview PR Review Architecture</text>
-  <text x="40" y="66" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" fill="var(--muted, #6b7280)">Workflow orchestration and staged artifacts introduced by this PR</text>
-
-  <rect x="40" y="105" width="230" height="80" rx="10" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
-  <text x="55" y="138" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="14" font-weight="600" fill="var(--fg, #111827)">PR Events</text>
-  <text x="55" y="160" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">pull_request_target</text>
-
-  <rect x="320" y="95" width="250" height="100" rx="10" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
-  <text x="336" y="128" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="14" font-weight="600" fill="var(--fg, #111827)">Preflight Job</text>
-  <text x="336" y="150" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">Label + PR state gating</text>
-  <text x="336" y="168" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">Open ⇒ build, Closed ⇒ teardown</text>
-
-  <rect x="620" y="95" width="255" height="100" rx="10" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
-  <text x="636" y="128" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="14" font-weight="600" fill="var(--fg, #111827)">Build &amp; Deploy Job</text>
-  <text x="636" y="150" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">GitHub App token auth</text>
-  <text x="636" y="168" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">Checkout PR head commit</text>
-
-  <rect x="920" y="95" width="240" height="100" rx="10" fill="var(--surface, #ffffff)" stroke="var(--muted, #9ca3af)" stroke-width="1.5"/>
-  <text x="936" y="128" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="14" font-weight="600" fill="var(--fg, #111827)">Teardown Job</text>
-  <text x="936" y="150" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">On PR close remove</text>
-  <text x="936" y="168" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">`previews/pr-&lt;number&gt;/`</text>
-
-  <rect x="80" y="270" width="230" height="80" rx="10" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
-  <text x="98" y="303" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="14" font-weight="600" fill="var(--fg, #111827)">Stage 1: Analyze</text>
-  <text x="98" y="325" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">Writes `analysis.json`</text>
-
-  <rect x="340" y="270" width="230" height="80" rx="10" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
-  <text x="358" y="303" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="14" font-weight="600" fill="var(--fg, #111827)">Stage 2: Diagrams</text>
-  <text x="358" y="325" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">Writes SVG + `diagrams.json`</text>
-
-  <rect x="600" y="270" width="230" height="80" rx="10" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
-  <text x="618" y="303" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="14" font-weight="600" fill="var(--fg, #111827)">Stage 3: Risks</text>
-  <text x="618" y="325" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">Writes `risks.json`</text>
-
-  <rect x="860" y="270" width="260" height="80" rx="10" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
-  <text x="878" y="303" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="14" font-weight="600" fill="var(--fg, #111827)">Stage 4: Assemble</text>
-  <text x="878" y="325" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">Writes `review-site/index.html`</text>
-
-  <rect x="360" y="410" width="460" height="95" rx="12" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
-  <text x="380" y="442" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="14" font-weight="700" fill="var(--fg, #111827)">Published Preview Artifact</text>
-  <text x="380" y="463" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">`gh-pages/previews/pr-&lt;number&gt;/index.html`</text>
-  <text x="380" y="482" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">Single-page visual review dashboard</text>
-
-  <line x1="270" y1="145" x2="320" y2="145" stroke="var(--accent, #2563eb)" stroke-width="2.2" marker-end="url(#arrow)"/>
-  <line x1="570" y1="145" x2="620" y2="145" stroke="var(--accent, #2563eb)" stroke-width="2.2" marker-end="url(#arrow)"/>
-  <line x1="745" y1="195" x2="745" y2="270" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#arrow)"/>
-  <line x1="310" y1="310" x2="340" y2="310" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#arrow)"/>
-  <line x1="570" y1="310" x2="600" y2="310" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#arrow)"/>
-  <line x1="830" y1="310" x2="860" y2="310" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#arrow)"/>
-  <line x1="990" y1="350" x2="780" y2="410" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#arrow)"/>
-  <line x1="1040" y1="195" x2="1040" y2="260" stroke="var(--muted, #9ca3af)" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#arrow-muted)"/>
-
+            <svg viewBox="0 0 960 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Architecture diagram of AI preview workflow and Codex stages">
   <defs>
-    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
-      <path d="M0,0 L10,5 L0,10 Z" fill="var(--accent, #2563eb)"/>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--border, #64748b)"/>
     </marker>
-    <marker id="arrow-muted" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
-      <path d="M0,0 L10,5 L0,10 Z" fill="var(--muted, #9ca3af)"/>
+    <marker id="arrowAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent, #2563eb)"/>
     </marker>
   </defs>
+
+  <rect x="0" y="0" width="960" height="520" fill="var(--surface, #ffffff)"/>
+  <text x="28" y="34" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="18" fill="var(--fg, #0f172a)">PR AI Preview Architecture (New)</text>
+
+  <rect x="28" y="70" width="190" height="76" rx="10" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
+  <text x="42" y="98" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" fill="var(--fg, #0f172a)">GitHub PR Event</text>
+  <text x="42" y="118" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">labeled(ai-preview)</text>
+  <text x="42" y="136" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">or closed</text>
+
+  <rect x="264" y="70" width="260" height="76" rx="10" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
+  <text x="278" y="98" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" fill="var(--fg, #0f172a)">Workflow Gate</text>
+  <text x="278" y="118" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">same-repo PR + label/action checks</text>
+  <text x="278" y="136" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--muted, #64748b)">.github/workflows/ai-preview.yaml</text>
+
+  <rect x="572" y="54" width="360" height="228" rx="12" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
+  <text x="588" y="82" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="var(--fg, #0f172a)">Codex Multi-stage Generation</text>
+
+  <rect x="592" y="96" width="320" height="36" rx="8" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)"/>
+  <text x="604" y="119" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--fg, #0f172a)">Stage 1: analyze → review-work/analysis.json</text>
+
+  <rect x="592" y="138" width="320" height="36" rx="8" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)"/>
+  <text x="604" y="161" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--fg, #0f172a)">Stage 2: diagrams → SVGs + diagrams.json</text>
+
+  <rect x="592" y="180" width="320" height="36" rx="8" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)"/>
+  <text x="604" y="203" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--fg, #0f172a)">Stage 3: risks → review-work/risks.json</text>
+
+  <rect x="592" y="222" width="320" height="36" rx="8" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)"/>
+  <text x="604" y="245" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--fg, #0f172a)">Stage 4: assemble → review-site/index.html</text>
+
+  <rect x="264" y="198" width="260" height="84" rx="10" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
+  <text x="278" y="226" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" fill="var(--fg, #0f172a)">PR Context Collection</text>
+  <text x="278" y="246" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">checkout head + capture pr.diff</text>
+  <text x="278" y="264" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">write meta.txt for prompts</text>
+
+  <rect x="572" y="324" width="172" height="78" rx="10" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
+  <text x="586" y="352" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" fill="var(--fg, #0f172a)">gh-pages Deploy</text>
+  <text x="586" y="372" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">pr-preview/pr-&lt;number&gt;</text>
+
+  <rect x="760" y="324" width="172" height="78" rx="10" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
+  <text x="774" y="352" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" fill="var(--fg, #0f172a)">Sticky Comment</text>
+  <text x="774" y="372" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">preview URL + metadata</text>
+
+  <rect x="28" y="324" width="218" height="78" rx="10" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
+  <text x="42" y="352" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" fill="var(--fg, #0f172a)">PR Closed Cleanup</text>
+  <text x="42" y="372" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">remove preview dir + comment</text>
+
+  <line x1="218" y1="108" x2="264" y2="108" stroke="var(--accent, #2563eb)" stroke-width="2.4" marker-end="url(#arrowAccent)"/>
+  <line x1="524" y1="108" x2="572" y2="108" stroke="var(--accent, #2563eb)" stroke-width="2.4" marker-end="url(#arrowAccent)"/>
+  <line x1="394" y1="146" x2="394" y2="198" stroke="var(--accent, #2563eb)" stroke-width="2.4" marker-end="url(#arrowAccent)"/>
+  <line x1="524" y1="240" x2="572" y2="240" stroke="var(--accent, #2563eb)" stroke-width="2.4" marker-end="url(#arrowAccent)"/>
+  <line x1="744" y1="363" x2="760" y2="363" stroke="var(--accent, #2563eb)" stroke-width="2.4" marker-end="url(#arrowAccent)"/>
+
+  <line x1="138" y1="324" x2="138" y2="146" stroke="var(--accent, #2563eb)" stroke-width="2.2" marker-end="url(#arrowAccent)"/>
+  <line x1="138" y1="146" x2="264" y2="146" stroke="var(--accent, #2563eb)" stroke-width="2.2" marker-end="url(#arrowAccent)"/>
+
+  <text x="28" y="470" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--muted, #64748b)">Changed/new nodes and edges are accented; pipeline is label-gated and includes teardown path.</text>
 </svg>
-            <figcaption>Map of new multi-stage preview workflow components and artifact handoffs.</figcaption>
-          </figure>
-
-          <figure class="diagram" data-diagram="03-data-shape.svg">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" role="img" aria-label="Data shape changes introduced by staged PR review pipeline">
-  <rect x="0" y="0" width="1200" height="560" fill="var(--surface, #ffffff)"/>
-  <text x="40" y="44" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="22" font-weight="700" fill="var(--fg, #111827)">Data Shape Diff: Staged Review Artifacts</text>
-
-  <rect x="40" y="90" width="520" height="420" rx="12" fill="var(--surface, #ffffff)" stroke="var(--muted, #9ca3af)" stroke-width="1.8"/>
-  <text x="62" y="122" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="15" font-weight="700" fill="var(--muted, #6b7280)">Before</text>
-  <text x="62" y="148" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--muted, #6b7280)">Single prompt output, no typed intermediate contracts</text>
-
-  <rect x="62" y="176" width="476" height="120" rx="8" fill="var(--surface, #ffffff)" stroke="var(--muted, #9ca3af)" stroke-dasharray="4 4"/>
-  <text x="84" y="206" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" fill="var(--muted, #6b7280)">`review-prompt.md` guides one-pass generation</text>
-  <text x="84" y="228" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" fill="var(--muted, #6b7280)">No explicit `analysis.json` / `risks.json` schema</text>
-  <text x="84" y="250" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" fill="var(--muted, #6b7280)">No diagram manifest contract</text>
-
-  <rect x="640" y="90" width="520" height="420" rx="12" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/>
-  <text x="662" y="122" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="15" font-weight="700" fill="var(--accent, #2563eb)">After</text>
-  <text x="662" y="148" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">Multi-stage pipeline with explicit handoff files under `review-work/`</text>
-
-  <rect x="662" y="176" width="476" height="68" rx="8" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="1.8"/>
-  <text x="684" y="203" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" font-weight="600" fill="var(--fg, #111827)">`analysis.json` (new)</text>
-  <text x="684" y="223" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">{meta, stats, tldr, key_facts, why, components[], flows[], data_shapes[], files[], tests}</text>
-
-  <rect x="662" y="258" width="476" height="62" rx="8" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="1.8"/>
-  <text x="684" y="284" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" font-weight="600" fill="var(--fg, #111827)">`diagrams.json` (new)</text>
-  <text x="684" y="304" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">[{file, type, caption, section}] manifest for authored SVGs</text>
-
-  <rect x="662" y="334" width="476" height="62" rx="8" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="1.8"/>
-  <text x="684" y="360" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" font-weight="600" fill="var(--fg, #111827)">`risks.json` (new)</text>
-  <text x="684" y="380" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">{summary, top_risks[], checklist, test_plan, unknowns}</text>
-
-  <rect x="662" y="410" width="476" height="78" rx="8" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="1.8"/>
-  <text x="684" y="436" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" font-weight="600" fill="var(--fg, #111827)">`review-site/index.html` (validated output)</text>
-  <text x="684" y="456" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">Must exist, avoid missing assets, and avoid unresolved placeholders</text>
-  <text x="684" y="474" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">Embedded diagrams reference `review-work/diagrams/*.svg`</text>
-
-  <line x1="560" y1="300" x2="640" y2="300" stroke="var(--accent, #2563eb)" stroke-width="3" marker-end="url(#arr2)"/>
-  <defs>
-    <marker id="arr2" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
-      <path d="M0,0 L10,5 L0,10 Z" fill="var(--accent, #2563eb)"/>
-    </marker>
-  </defs>
-  <text x="570" y="286" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="11" fill="var(--accent, #2563eb)">typed stage contracts</text>
-</svg>
-            <figcaption>Before-versus-after artifact contracts introduced for staged review generation.</figcaption>
+            <figcaption>New end-to-end architecture introduced by `.github/workflows/ai-preview.yaml`: labeled/closed PR events gate a Codex multi-stage generation pipeline, deploy preview content to `gh-pages`, post sticky comments, and clean up on close.</figcaption>
           </figure>
         </div>
-
-        <ul class="list">
-          <li><strong>PR preview GitHub Actions orchestration</strong> — Adds and iterates a full preview pipeline: trigger gating, app token setup, Codex multi-stage execution, artifact validation, Pages deploy, and teardown. <code>.github/workflows/ai-preview.yaml</code></li>
-          <li><strong>Shared Codex stage contract</strong> — Defines common inputs, safety rules, and strict file-output boundaries all review stages must follow. <code>.github/codex/agents/_shared.md</code></li>
-          <li><strong>Stage-specific analysis/diagram/risk/assembly prompts</strong> — Introduces four specialized prompts with precise JSON/SVG/HTML schemas replacing monolithic prompt behavior. <code>.github/codex/agents</code></li>
-          <li><strong>Legacy monolithic review prompt</strong> — Deletes the previous single-file prompt in favor of the staged prompt architecture. <code>.github/codex/review-prompt.md</code></li>
-          <li><strong>Initial typoed prompt path</strong> — Temporary misspelled prompt file appears in early commit history before renaming to <code>review-prompt.md</code>. <code>.github/codex/review-promt.md</code></li>
+        <ul class="components">
+          <li><strong>AI preview GitHub Actions pipeline</strong> — Adds full build/deploy/cleanup workflow for label-triggered PR preview site publication to <code>gh-pages</code> with sticky PR commenting. <code>.github/workflows/ai-preview.yaml</code></li>
+          <li><strong>Codex review orchestrator prompt</strong> — Defines top-level multi-stage orchestration, artifact contracts, and non-interactive execution constraints for generating the review site. <code>.github/codex/review-prompt.md</code></li>
+          <li><strong>Stage prompt contracts</strong> — Adds shared and per-stage agent instructions to produce <code>analysis.json</code>, diagrams, risk checklist, and final HTML assembly deterministically. <code>.github/codex/agents</code></li>
+          <li><strong>Prompt file rename compatibility</strong> — Replaces misspelled legacy prompt filename with <code>review-prompt.md</code> and updates workflow invocation accordingly. <code>.github/codex/review-promt.md</code></li>
         </ul>
       </section>
 
-      <section class="section reveal" id="flow">
-        <h2>Flow / Sequence</h2>
-        <div class="diagram-grid">
+      <section id="flow" class="reveal">
+        <h2>Flow / sequence</h2>
+        <div class="visual-grid">
           <figure class="diagram" data-diagram="02-sequence.svg">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 760" role="img" aria-label="Sequence of label-gated preview lifecycle for open and closed pull requests">
-  <rect x="0" y="0" width="1300" height="760" fill="var(--surface, #ffffff)"/>
-  <text x="40" y="42" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="22" font-weight="700" fill="var(--fg, #111827)">Sequence: Label-Gated Preview Lifecycle</text>
-
-  <line x1="120" y1="90" x2="120" y2="720" stroke="var(--muted, #9ca3af)" stroke-width="1.2"/>
-  <line x1="300" y1="90" x2="300" y2="720" stroke="var(--muted, #9ca3af)" stroke-width="1.2"/>
-  <line x1="500" y1="90" x2="500" y2="720" stroke="var(--muted, #9ca3af)" stroke-width="1.2"/>
-  <line x1="700" y1="90" x2="700" y2="720" stroke="var(--muted, #9ca3af)" stroke-width="1.2"/>
-  <line x1="900" y1="90" x2="900" y2="720" stroke="var(--muted, #9ca3af)" stroke-width="1.2"/>
-  <line x1="1120" y1="90" x2="1120" y2="720" stroke="var(--muted, #9ca3af)" stroke-width="1.2"/>
-
-  <text x="80" y="74" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" font-weight="600" fill="var(--fg, #111827)">PR Event</text>
-  <text x="270" y="74" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" font-weight="600" fill="var(--fg, #111827)">Preflight</text>
-  <text x="460" y="74" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" font-weight="600" fill="var(--fg, #111827)">Build Job</text>
-  <text x="662" y="74" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" font-weight="600" fill="var(--fg, #111827)">Codex Stages</text>
-  <text x="868" y="74" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" font-weight="600" fill="var(--fg, #111827)">gh-pages</text>
-  <text x="1080" y="74" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" font-weight="600" fill="var(--fg, #111827)">Deploy/Teardown</text>
-
-  <rect x="50" y="115" width="140" height="42" rx="8" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="1.8"/>
-  <text x="62" y="141" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">PR opened/synced</text>
-
-  <line x1="120" y1="175" x2="300" y2="175" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#a3)"/>
-  <text x="143" y="168" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="11" fill="var(--fg, #111827)">run preflight</text>
-
-  <rect x="230" y="188" width="140" height="60" rx="8" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="1.8"/>
-  <text x="242" y="214" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">check label:</text>
-  <text x="242" y="232" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">`ai-preview`</text>
-
-  <line x1="300" y1="270" x2="500" y2="270" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#a3)"/>
-  <text x="338" y="263" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="11" fill="var(--fg, #111827)">if label present</text>
-
-  <rect x="430" y="285" width="140" height="62" rx="8" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="1.8"/>
-  <text x="441" y="311" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">app token</text>
-  <text x="441" y="329" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">checkout head</text>
-
-  <line x1="500" y1="370" x2="700" y2="370" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#a3)"/>
-  <text x="545" y="363" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="11" fill="var(--fg, #111827)">run 4 stages</text>
-
-  <rect x="620" y="385" width="160" height="112" rx="8" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="1.8"/>
-  <text x="632" y="411" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">1 analyze.json</text>
-  <text x="632" y="431" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">2 diagrams + manifest</text>
-  <text x="632" y="451" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">3 risks.json</text>
-  <text x="632" y="471" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">4 index.html</text>
-
-  <line x1="700" y1="520" x2="900" y2="520" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#a3)"/>
-  <text x="724" y="513" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="11" fill="var(--fg, #111827)">copy preview dir</text>
-
-  <rect x="830" y="535" width="140" height="55" rx="8" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="1.8"/>
-  <text x="842" y="559" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">commit preview</text>
-  <text x="842" y="577" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">to gh-pages</text>
-
-  <line x1="900" y1="610" x2="1120" y2="610" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#a3)"/>
-  <text x="955" y="603" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="11" fill="var(--fg, #111827)">deploy pages</text>
-
-  <rect x="1038" y="625" width="164" height="40" rx="8" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="1.8"/>
-  <text x="1050" y="650" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">preview URL updated</text>
-
-  <rect x="50" y="690" width="140" height="42" rx="8" fill="var(--surface, #ffffff)" stroke="var(--muted, #9ca3af)" stroke-width="1.6"/>
-  <text x="62" y="716" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12" fill="var(--fg, #111827)">PR closed</text>
-
-  <line x1="120" y1="710" x2="300" y2="710" stroke="var(--muted, #9ca3af)" stroke-width="1.8" marker-end="url(#m3)"/>
-  <line x1="300" y1="710" x2="1120" y2="710" stroke="var(--muted, #9ca3af)" stroke-width="1.8" marker-end="url(#m3)"/>
-  <text x="500" y="702" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="11" fill="var(--muted, #6b7280)">teardown path removes `previews/pr-&lt;number&gt;/` and pushes cleanup</text>
-
+            <svg viewBox="0 0 980 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sequence diagram for label-gated preview lifecycle">
   <defs>
-    <marker id="a3" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
-      <path d="M0,0 L10,5 L0,10 Z" fill="var(--accent, #2563eb)"/>
-    </marker>
-    <marker id="m3" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
-      <path d="M0,0 L10,5 L0,10 Z" fill="var(--muted, #9ca3af)"/>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent, #2563eb)"/>
     </marker>
   </defs>
+  <rect x="0" y="0" width="980" height="520" fill="var(--surface, #ffffff)"/>
+  <text x="22" y="34" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="18" fill="var(--fg, #0f172a)">Label-gated Preview Lifecycle (Sequence)</text>
+
+  <text x="72" y="74" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--fg, #0f172a)">PR Event</text>
+  <text x="248" y="74" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--fg, #0f172a)">Workflow Gate</text>
+  <text x="440" y="74" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--fg, #0f172a)">Codex Stages</text>
+  <text x="656" y="74" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--fg, #0f172a)">gh-pages</text>
+  <text x="840" y="74" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--fg, #0f172a)">PR Comment</text>
+
+  <line x1="90" y1="90" x2="90" y2="480" stroke="var(--border, #64748b)" stroke-dasharray="4 4"/>
+  <line x1="290" y1="90" x2="290" y2="480" stroke="var(--border, #64748b)" stroke-dasharray="4 4"/>
+  <line x1="490" y1="90" x2="490" y2="480" stroke="var(--border, #64748b)" stroke-dasharray="4 4"/>
+  <line x1="670" y1="90" x2="670" y2="480" stroke="var(--border, #64748b)" stroke-dasharray="4 4"/>
+  <line x1="850" y1="90" x2="850" y2="480" stroke="var(--border, #64748b)" stroke-dasharray="4 4"/>
+
+  <line x1="90" y1="120" x2="290" y2="120" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="112" y="112" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="var(--accent, #2563eb)">1) labeled(ai-preview)</text>
+
+  <line x1="290" y1="162" x2="490" y2="162" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="320" y="154" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="var(--accent, #2563eb)">2) capture pr.diff + meta</text>
+
+  <line x1="490" y1="204" x2="490" y2="262" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="504" y="236" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="var(--accent, #2563eb)">3) 4-stage generation</text>
+
+  <line x1="490" y1="304" x2="670" y2="304" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="530" y="296" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="var(--accent, #2563eb)">4) deploy pr-preview/pr-&lt;number&gt;</text>
+
+  <line x1="670" y1="346" x2="850" y2="346" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="714" y="338" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="var(--accent, #2563eb)">5) upsert sticky comment</text>
+
+  <line x1="90" y1="388" x2="290" y2="388" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="114" y="380" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="var(--accent, #2563eb)">6) closed event</text>
+
+  <line x1="290" y1="430" x2="670" y2="430" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="356" y="422" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="var(--accent, #2563eb)">7) cleanup preview directory</text>
+
+  <line x1="670" y1="458" x2="850" y2="458" stroke="var(--accent, #2563eb)" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="704" y="450" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="var(--accent, #2563eb)">8) delete sticky comment</text>
 </svg>
-            <figcaption>Open and close PR paths through preflight, stages, deploy, and teardown.</figcaption>
+            <figcaption>Event sequence from PR label to generated preview deployment/commenting and close-triggered teardown, highlighting the newly added gated lifecycle and cleanup path.</figcaption>
           </figure>
         </div>
       </section>
 
-      <section class="section reveal" id="files">
-        <h2>File Walkthrough</h2>
-        <input id="fileSearch" class="search" type="search" placeholder="Jump to file..." aria-label="Jump to file" />
-
-        <details class="file" data-file=".github/workflows/ai-preview.yaml" open>
-          <summary>
-            <div class="file-meta">
-              <div class="file-path">.github/workflows/ai-preview.yaml</div>
-              <div class="file-summary">Introduces label-gated preflight, app-token checkout, four-stage Codex execution, deployment hardening, and PR-close teardown with explicit branch/path safety checks.</div>
-            </div>
-            <span class="chip">modified</span>
-          </summary>
-          <div class="file-body">
-            <div class="code-wrap">
-              <div class="code-head"><strong>Key hunk</strong><button class="copy-btn" data-copy="hunk-1">Copy</button></div>
-              <pre id="hunk-1"><code>1  +      should_run: ${{ steps.eval.outputs.should_run }}
-2  +      should_teardown: ${{ steps.eval.outputs.should_teardown }}
-3  +      preview_path: ${{ steps.eval.outputs.preview_path }}
-4  +          SHOULD_RUN=false
-5  +          SHOULD_TEARDOWN=false
-6  +          PREVIEW_PATH="previews/pr-${PR_NUMBER}"
-7  +          if [ "${ACTION}" = "closed" ]; then
-8  +            SHOULD_TEARDOWN=true
-9  +            echo "PR closed; teardown will run."
-10 +          elif [ "${ACTION}" = "opened" ] || [ "${ACTION}" = "reopened" ] || [ "${ACTION}" = "labeled" ] || [ "${ACTION}" = "synchronize" ]; then</code></pre>
-            </div>
-            <ul class="list">
-              <li>[1] Shares preflight outputs across jobs to centralize control flow.</li>
-              <li>[4] Initializes safe defaults to avoid accidental deploy/teardown behavior.</li>
-              <li>[7] Teardown becomes action-based and unconditional on labels for close events.</li>
-              <li>[10] Build path is constrained to selected pull_request_target actions.</li>
-            </ul>
-          </div>
-        </details>
-
-        <details class="file" data-file=".github/codex/agents/_shared.md">
-          <summary>
-            <div class="file-meta">
-              <div class="file-path">.github/codex/agents/_shared.md</div>
-              <div class="file-summary">Adds strict stage-wide contract for grounded analysis, no secret leakage, no network/build actions, and explicit ownership of output files under review-work/.</div>
-            </div>
-            <span class="chip">added</span>
-          </summary>
-        </details>
-
-        <details class="file" data-file=".github/codex/agents/analyze.md">
-          <summary>
-            <div class="file-meta">
-              <div class="file-path">.github/codex/agents/analyze.md</div>
-              <div class="file-summary">Defines Stage 1 schema-first extraction of PR purpose, architecture, flows, per-file hunk callouts, and changed test status into analysis.json.</div>
-            </div>
-            <span class="chip">added</span>
-          </summary>
-        </details>
-
-        <details class="file" data-file=".github/codex/agents/diagrams.md">
-          <summary>
-            <div class="file-meta">
-              <div class="file-path">.github/codex/agents/diagrams.md</div>
-              <div class="file-summary">Defines Stage 2 deterministic diagram generation rules and manifest contract, including one-meaning-per-diagram and explicit placement metadata.</div>
-            </div>
-            <span class="chip">added</span>
-          </summary>
-        </details>
-
-        <details class="file" data-file=".github/codex/agents/risks.md">
-          <summary>
-            <div class="file-meta">
-              <div class="file-path">.github/codex/agents/risks.md</div>
-              <div class="file-summary">Defines Stage 3 adversarial risk review schema with severity, likelihood, impact, mitigation, and reviewer checklist requirements.</div>
-            </div>
-            <span class="chip">added</span>
-          </summary>
-        </details>
-
-        <details class="file" data-file=".github/codex/agents/assemble.md">
-          <summary>
-            <div class="file-meta">
-              <div class="file-path">.github/codex/agents/assemble.md</div>
-              <div class="file-summary">Defines Stage 4 site assembly requirements: visual-first layout, inline SVG embedding via manifest, low-text budget, and CI-enforced validity constraints.</div>
-            </div>
-            <span class="chip">added</span>
-          </summary>
-        </details>
-
-        <details class="file" data-file=".github/codex/review-prompt.md">
-          <summary>
-            <div class="file-meta">
-              <div class="file-path">.github/codex/review-prompt.md</div>
-              <div class="file-summary">Removes monolithic prompt that previously mixed analysis, rendering, and checklist logic in one instruction set.</div>
-            </div>
-            <span class="chip">removed</span>
-          </summary>
-        </details>
-
-        <details class="file" data-file=".github/codex/review-promt.md">
-          <summary>
-            <div class="file-meta">
-              <div class="file-path">.github/codex/review-promt.md</div>
-              <div class="file-summary">Short-lived typo-named prompt file added in initial migration commit and subsequently superseded by correctly named file.</div>
-            </div>
-            <span class="chip">added</span>
-          </summary>
-        </details>
+      <section id="files" class="reveal">
+        <h2>File walkthrough</h2>
+        <input id="fileSearch" class="search" type="search" placeholder="Jump to file…" aria-label="Jump to file" />
       </section>
 
-      <section class="section reveal" id="risks">
+      <section id="risks" class="reveal">
         <h2>Risks</h2>
-        <div class="risk-controls" role="toolbar" aria-label="Filter risk severity">
-          <button class="filter-btn active" data-filter="all">All</button>
-          <button class="filter-btn" data-filter="high">High</button>
-          <button class="filter-btn" data-filter="medium">Medium</button>
-          <button class="filter-btn" data-filter="low">Low</button>
+        <div class="risk-controls">
+          <button class="chip" data-filter="all">All</button>
+          <button class="chip" data-filter="high">High</button>
+          <button class="chip" data-filter="medium">Medium</button>
+          <button class="chip" data-filter="low">Low</button>
         </div>
-        <div class="risk-grid" id="riskGrid">
-          <article class="risk-card" data-severity="medium">
-            <span class="chip medium">medium</span>
-            <p>Workflow gating is tightly coupled to action/label logic; future trigger expansion may silently skip intended rebuilds if not mirrored in preflight conditions.</p>
-            <p class="mit">Mitigation: Keep trigger list and preflight condition logic co-located and add explicit comments/tests in workflow docs for each supported action path.</p>
-          </article>
-          <article class="risk-card" data-severity="medium">
-            <span class="chip medium">medium</span>
-            <p>Stage contract drift between prompts and workflow checks could produce artifacts that pass one stage but fail assembly or deploy validation.</p>
-            <p class="mit">Mitigation: Version shared schema expectations in one source and add lightweight JSON shape validation immediately after each stage output.</p>
-          </article>
-          <article class="risk-card" data-severity="low">
-            <span class="chip low">low</span>
-            <p>Auto-initializing `gh-pages` with orphan commit may conflict with repositories that already manage branch protections or custom Pages history expectations.</p>
-            <p class="mit">Mitigation: Document branch bootstrap behavior and allow opt-out via workflow variable if organizations require pre-provisioned pages branch policy.</p>
-          </article>
+        <div class="risk-grid">
+          <article class="risk" data-severity="medium"><span class="sev medium">medium</span><p>Workflow still executes shell scripts over PR content and prompt files; malformed content could degrade output quality or expose logs if future edits weaken guards.</p><p><strong>Mitigation:</strong> Keep strict quoting/redaction, pin dependencies, and periodically review shell safety around metadata extraction/comment rendering.</p></article>
+          <article class="risk" data-severity="low"><span class="sev low">low</span><p>Preview deploy path cleanup assumes branch state consistency; manual gh-pages edits could leave stale preview artifacts.</p><p><strong>Mitigation:</strong> Add periodic orphan sweep or scheduled integrity check for <code>pr-preview/</code> directories.</p></article>
+          <article class="risk" data-severity="low"><span class="sev low">low</span><p>Prompt-contract drift between stages can cause partial/empty sections without hard runtime failure.</p><p><strong>Mitigation:</strong> Add schema validation for <code>analysis.json</code>/<code>risks.json</code>/<code>diagrams.json</code> before assemble step.</p></article>
         </div>
       </section>
 
-      <section class="section reveal" id="checklist">
-        <h2>Review Checklist</h2>
-        <ul class="list">
-          <li>Verify preflight outputs (`should_run`, `should_teardown`, `preview_path`) always align with each `pull_request_target` action path.</li>
-          <li>Confirm app-token permissions are minimum required for checkout, push to `gh-pages`, and Pages deployment.</li>
-          <li>Validate stage prompts only write declared files and never perform forbidden operations (tests/network/secrets output).</li>
-          <li>Ensure deploy step blocks unresolved asset references and does not copy symlinks into published preview content.</li>
-          <li>Check teardown job only runs on PR close and reliably removes the exact preview directory for the PR number.</li>
+      <section id="checklist" class="reveal">
+        <h2>Review checklist</h2>
+        <ul class="checklist">
+          <li>Confirm label gate and same-repo conditions prevent runs for forked PRs and unlabeled events.</li>
+          <li>Verify <code>labeled</code> path publishes preview and updates sticky comment idempotently on relabel.</li>
+          <li>Verify <code>closed</code> path removes both deployed directory and sticky comment without touching unrelated content.</li>
+          <li>Check that all action/Codex versions are pinned and checkout uses <code>persist-credentials: false</code>.</li>
+          <li>Validate prompt file rename is fully propagated and no references to removed <code>review-promt.md</code> remain.</li>
+          <li>Inspect metadata handling to ensure no sensitive strings from PR body/comments are emitted unredacted.</li>
         </ul>
       </section>
 
-      <section class="section reveal" id="testing">
+      <section id="testing" class="reveal">
         <h2>Testing</h2>
-        <div class="chips"><span class="chip medium">No runtime tests added or executed</span></div>
-        <ul class="list">
-          <li>This PR changes workflow/prompt orchestration and CI scripts; no application runtime codepaths or unit test suites were modified.</li>
-          <li>Primary validation is structural: workflow YAML logic, stage output contracts, and deploy/teardown shell safeguards.</li>
-          <li>Confidence should come from exercising open/labeled/synchronize/closed PR scenarios in a test repository to confirm lifecycle behavior.</li>
+        <div class="chips" style="margin-bottom:8px;"><span class="chip" style="background:var(--ok-bg);color:var(--ok);">not-run-in-pr</span></div>
+        <ul class="testing">
+          <li>No unit/integration tests were added; validation is workflow-level behavior.</li>
+          <li>Recommend dry-run on a same-repo test PR: label add, relabel, then close to confirm deploy/comment/cleanup lifecycle.</li>
+          <li>Confirm generated <code>index.html</code> passes CI guards for inline diagrams and data-diagram markers.</li>
         </ul>
       </section>
     </main>
@@ -671,76 +419,77 @@
 
   <script>
     (function () {
-      var sections = Array.prototype.slice.call(document.querySelectorAll('main .section'));
-      var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
-      var progress = document.getElementById('progress');
+      const progressBar = document.getElementById('progressBar');
+      const onScroll = function () {
+        const doc = document.documentElement;
+        const total = doc.scrollHeight - doc.clientHeight;
+        const pct = total > 0 ? (window.scrollY / total) * 100 : 0;
+        progressBar.style.width = pct + '%';
+      };
+      window.addEventListener('scroll', onScroll, { passive: true });
+      onScroll();
 
-      function setActiveLink() {
-        var y = window.scrollY + 120;
-        var activeId = sections[0] ? sections[0].id : '';
-        sections.forEach(function (section) {
-          if (section.offsetTop <= y) activeId = section.id;
-        });
-        links.forEach(function (a) {
-          var on = a.getAttribute('href') === '#' + activeId;
-          a.classList.toggle('active', on);
-        });
-      }
-
-      function setProgress() {
-        var doc = document.documentElement;
-        var max = doc.scrollHeight - doc.clientHeight;
-        var pct = max > 0 ? (window.scrollY / max) * 100 : 0;
-        progress.style.width = Math.min(100, Math.max(0, pct)) + '%';
-      }
-
-      var io = new IntersectionObserver(function (entries) {
+      const observer = new IntersectionObserver(function (entries) {
         entries.forEach(function (entry) {
-          if (entry.isIntersecting) entry.target.classList.add('is-visible');
+          if (entry.isIntersecting) {
+            entry.target.classList.add('show');
+          }
         });
-      }, { threshold: 0.08 });
-      sections.forEach(function (s) { io.observe(s); });
+      }, { threshold: 0.12 });
+      document.querySelectorAll('.reveal').forEach(function (el) { observer.observe(el); });
 
-      window.addEventListener('scroll', function () {
-        setActiveLink();
-        setProgress();
-      }, { passive: true });
-      setActiveLink();
-      setProgress();
-
-      Array.prototype.forEach.call(document.querySelectorAll('.copy-btn'), function (btn) {
-        btn.addEventListener('click', function () {
-          var targetId = btn.getAttribute('data-copy');
-          var el = document.getElementById(targetId);
-          if (!el) return;
-          navigator.clipboard.writeText(el.innerText).then(function () {
-            var old = btn.textContent;
-            btn.textContent = 'Copied';
-            setTimeout(function () { btn.textContent = old; }, 1200);
+      document.querySelectorAll('.copy-btn').forEach(function (button) {
+        button.addEventListener('click', function () {
+          const code = button.closest('.code-wrap').querySelector('code');
+          const text = code ? code.innerText : '';
+          navigator.clipboard.writeText(text).then(function () {
+            button.textContent = 'Copied';
+            setTimeout(function () { button.textContent = 'Copy'; }, 1200);
           });
         });
       });
 
-      var filterButtons = Array.prototype.slice.call(document.querySelectorAll('.filter-btn'));
-      var riskCards = Array.prototype.slice.call(document.querySelectorAll('.risk-card'));
-      filterButtons.forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          var filter = btn.getAttribute('data-filter');
-          filterButtons.forEach(function (b) { b.classList.toggle('active', b === btn); });
+      const riskButtons = document.querySelectorAll('[data-filter]');
+      const riskCards = document.querySelectorAll('.risk[data-severity]');
+      riskButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          const wanted = button.getAttribute('data-filter');
           riskCards.forEach(function (card) {
-            var show = filter === 'all' || card.getAttribute('data-severity') === filter;
+            const show = wanted === 'all' || card.getAttribute('data-severity') === wanted;
             card.style.display = show ? '' : 'none';
           });
         });
       });
 
-      var search = document.getElementById('fileSearch');
-      var fileItems = Array.prototype.slice.call(document.querySelectorAll('details.file'));
-      search.addEventListener('input', function () {
-        var q = search.value.toLowerCase().trim();
-        fileItems.forEach(function (item) {
-          var name = (item.getAttribute('data-file') || '').toLowerCase();
-          item.style.display = !q || name.indexOf(q) !== -1 ? '' : 'none';
+      const fileSearch = document.getElementById('fileSearch');
+      fileSearch.addEventListener('input', function () {
+        const q = fileSearch.value.toLowerCase();
+        document.querySelectorAll('details[data-file]').forEach(function (d) {
+          const name = d.getAttribute('data-file').toLowerCase();
+          d.style.display = name.indexOf(q) !== -1 ? '' : 'none';
+        });
+      });
+
+      const filesSection = document.getElementById('files');
+      filesSection.insertAdjacentHTML('beforeend', [
+        '<details data-file=".github/workflows/ai-preview.yaml" open><summary>.github/workflows/ai-preview.yaml</summary><p class="file-summary">Introduces and iteratively hardens the PR preview lifecycle workflow, including gated triggers, Codex execution, gh-pages deploy, sticky comment upsert, and close-event cleanup.</p><div class="code-wrap"><button class="copy-btn" type="button">Copy</button><pre><code>if: github.event.pull_request.head.repo.full_name == github.repository\non: pull_request [labeled, closed]\nif labeled && label==ai-preview -> generate+deploy+comment\nif closed -> cleanup preview path + delete sticky comment</code></pre></div><ol class="callouts"><li>Fork protection and label/action gates bound execution scope.</li><li>Lifecycle split between build/deploy and teardown paths.</li></ol><figure class="diagram" data-diagram="03-data-shape.svg"><svg viewBox="0 0 980 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Data-shape diagram of review-work artifacts introduced by pipeline"><rect x="0" y="0" width="980" height="420" fill="var(--surface, #ffffff)"/><text x="24" y="34" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="18" fill="var(--fg, #0f172a)">New `review-work/*` Artifact Shapes</text><rect x="24" y="68" width="296" height="318" rx="12" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/><text x="40" y="94" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="13" fill="var(--fg, #0f172a)">`analysis.json`</text><text x="40" y="118" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">+ meta, stats, tldr, key_facts</text><text x="40" y="138" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">+ why, components[], flows[]</text><text x="40" y="158" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">+ data_shapes[], files[], tests</text><text x="40" y="188" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--muted, #64748b)">Written by analyzer stage</text><rect x="342" y="68" width="296" height="318" rx="12" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/><text x="358" y="94" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="13" fill="var(--fg, #0f172a)">`diagrams.json`</text><text x="358" y="118" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">+ [{ file, type, caption, section }]</text><text x="358" y="148" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--muted, #64748b)">Pairs with `diagrams/*.svg` files</text><text x="358" y="168" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--muted, #64748b)">Written by diagram stage</text><rect x="660" y="68" width="296" height="318" rx="12" fill="var(--surface, #ffffff)" stroke="var(--accent, #2563eb)" stroke-width="2"/><text x="676" y="94" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="13" fill="var(--fg, #0f172a)">`risks.json`</text><text x="676" y="118" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">+ risks[{ severity, description, mitigation }]</text><text x="676" y="138" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">+ checklist[]</text><text x="676" y="158" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--accent, #2563eb)">+ testing{ chip, bullets[] }</text><text x="676" y="188" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="var(--muted, #64748b)">Consumed by assembler stage</text><line x1="320" y1="226" x2="342" y2="226" stroke="var(--accent, #2563eb)" stroke-width="2"/><polygon points="342,226 334,221 334,231" fill="var(--accent, #2563eb)"/><line x1="638" y1="226" x2="660" y2="226" stroke="var(--accent, #2563eb)" stroke-width="2"/><polygon points="660,226 652,221 652,231" fill="var(--accent, #2563eb)"/><text x="420" y="248" font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="var(--muted, #64748b)">artifact handoff via files only</text></svg><figcaption>New artifact schemas introduced under `review-work/` and how analyzer/diagram/risk outputs are handed off to the assembler.</figcaption></figure></details>',
+        '<details data-file=".github/codex/review-prompt.md"><summary>.github/codex/review-prompt.md</summary><p class="file-summary">Adds the root orchestration instructions defining stage order, contracts, and constraints for non-interactive CI execution.</p></details>',
+        '<details data-file=".github/codex/agents/_shared.md"><summary>.github/codex/agents/_shared.md</summary><p class="file-summary">Defines shared conventions for every stage: available inputs, strict grounding, and output-file boundaries.</p></details>',
+        '<details data-file=".github/codex/agents/analyze.md"><summary>.github/codex/agents/analyze.md</summary><p class="file-summary">Specifies structured extraction into <code>analysis.json</code>, including components, flows, data shapes, and per-file hunks.</p></details>',
+        '<details data-file=".github/codex/agents/diagrams.md"><summary>.github/codex/agents/diagrams.md</summary><p class="file-summary">Constrains diagram generation to deterministic inline SVG assets plus a manifest mapping files to sections/captions.</p></details>',
+        '<details data-file=".github/codex/agents/risks.md"><summary>.github/codex/agents/risks.md</summary><p class="file-summary">Defines adversarial review output format for risk cards, checklist items, and testing assessment.</p></details>',
+        '<details data-file=".github/codex/agents/assemble.md"><summary>.github/codex/agents/assemble.md</summary><p class="file-summary">Defines visual-first assembly requirements, inline-diagram embedding rules, and CI validity checks for final HTML.</p></details>',
+        '<details data-file=".github/codex/review-promt.md"><summary>.github/codex/review-promt.md</summary><p class="file-summary">Removes legacy misspelled prompt path after migration to <code>review-prompt.md</code>.</p></details>'
+      ].join(''));
+
+      document.querySelectorAll('.copy-btn').forEach(function (button) {
+        button.addEventListener('click', function () {
+          const code = button.closest('.code-wrap').querySelector('code');
+          const text = code ? code.innerText : '';
+          navigator.clipboard.writeText(text).then(function () {
+            button.textContent = 'Copied';
+            setTimeout(function () { button.textContent = 'Copy'; }, 1200);
+          });
         });
       });
     })();
