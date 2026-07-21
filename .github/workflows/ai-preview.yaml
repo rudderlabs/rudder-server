@@ -199,8 +199,12 @@ jobs:
             fi
           done < <(jq -r '.[].file' review-work/diagrams.json)
           [ "$missing" -eq 0 ]
-          if grep -q 'review-work/' review-site/index.html; then
-            echo "index.html references review-work/ (not deployed); failing."
+          # Only attribute references (src/href) to review-work/ are a problem —
+          # they would 404 since that dir never deploys. The string may appear
+          # legitimately in prose/snippets when the PR itself touches the pipeline.
+          if grep -Eq '(src|href)="[^"]*review-work/' review-site/index.html; then
+            echo "index.html loads assets from review-work/ (not deployed); failing."
+            grep -Eo '(src|href)="[^"]*review-work/[^"]*"' review-site/index.html
             exit 1
           fi
 
