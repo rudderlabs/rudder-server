@@ -141,6 +141,9 @@ jobs:
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
         run: |
           set -euo pipefail
+          # Self-hosted runners reuse the work dir between jobs; don't let a
+          # previous run's artifacts satisfy this run's validations.
+          rm -rf review-work review-site
           mkdir -p review-work
           codex exec --sandbox workspace-write \
             --cd "$GITHUB_WORKSPACE" \
@@ -363,15 +366,3 @@ jobs:
           if [ -n "$existing_id" ]; then
             gh api -X PATCH "repos/${REPO}/issues/comments/${existing_id}" -f body="$body" >/dev/null
           fi
-
-      # Self-hosted runners keep the work dir between jobs — remove everything
-      # this run produced so nothing stale or sensitive outlives the job:
-      # pipeline artifacts, the PR context files, the Codex home (provider
-      # config + session transcripts), and the gh-pages clones whose .git/config
-      # embeds the app-token-authenticated remote URL. always() covers failed
-      # and cancelled runs too.
-      - name: Clean up run artifacts
-        if: always()
-        run: |
-          rm -rf review-work review-site pr.diff meta.txt "${GITHUB_WORKSPACE}/.codex"
-          rm -rf "${RUNNER_TEMP}/preview-site" "${RUNNER_TEMP}/gh-pages" "${RUNNER_TEMP}/bin"
