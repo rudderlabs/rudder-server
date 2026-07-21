@@ -417,14 +417,14 @@ func proxyJobIDs(metadata []ProxyRequestMetadata) []int64 {
 // Takes proxyReqParams rather than the destType/destinationId strings so the two cannot be
 // transposed at a call site and silently mis-tag the metric. Callers must be past ProxyRequest's
 // empty-metadata guard, which every breach site is.
-func emitProxyInvalidResponse(statsHandle stats.Stats, log logger.Logger, proxyReqParams *ProxyRequestParams, reason, msg string, fields ...logger.Field) {
+func (trans *handle) emitProxyInvalidResponse(proxyReqParams *ProxyRequestParams, reason, msg string, fields ...logger.Field) {
 	destinationID := proxyReqParams.ResponseData.Metadata[0].DestinationID
-	statsHandle.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
+	trans.stats.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
 		"reason":        reason,
 		"destType":      proxyReqParams.DestName,
 		"destinationId": destinationID,
 	}).Increment()
-	log.Warnn(msg, append([]logger.Field{obskit.DestinationID(destinationID)}, fields...)...)
+	trans.logger.Warnn(msg, append([]logger.Field{obskit.DestinationID(destinationID)}, fields...)...)
 }
 
 // proxyErrorResponse builds the error-path response shared by every early return in ProxyRequest.
@@ -498,22 +498,27 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		return proxyErrorResponse(respCode, requestError.Error(), routerJobDontBatchDirectives)
 	}
 
+	// An upstream 5xx (transformer/LB/gateway) or a transport-synthesized response is an
+	// infrastructure failure, not a transformer contract breach. transportError marks the synthesized
+	// responses (including 4xx ones like a failed token fetch); the status marks a real upstream error
+	// that carried a body. Classifying these as breaches would page the contract owner on our own
+	// infra, so they get a reason the alert can exclude.
+	infraFailure := httpPrxResp.transportError || httpPrxResp.statusCode >= http.StatusInternalServerError
+
 	/*
 		respData will be in ProxyResponseV0 or ProxyResponseV1
 	*/
 	var transportResponse oauthv2.TransportResponse // response that we get from oauth-interceptor in postRoundTrip
-	// unmarshal unsuccessful scenarios
-	// if respData is not a valid json, surface it instead of discarding the error
+	// A non-oauth destination hands back the raw upstream body, so a non-JSON body here is either that
+	// infra failure or a genuinely corrupt transformer response; surface the error instead of
+	// discarding it.
 	if err := jsonrs.Unmarshal(respData, &transportResponse); err != nil {
-		// A response synthesized by the oauth transport carries a plain-text error, not the
-		// transformer's payload, so a failed unmarshal there is an infrastructure failure (a short
-		// read, an unreachable transformer) rather than a contract breach. It stays observable under
-		// its own reason so the alert can exclude it without the signal disappearing.
 		reason, msg := "unmarshal error", "[TransformerProxy] proxy response unmarshal failed"
-		if httpPrxResp.transportError {
+		if infraFailure {
 			reason, msg = "transport error", "[TransformerProxy] transport returned a non-transformer response"
 		}
-		emitProxyInvalidResponse(trans.stats, trans.logger, proxyReqParams, reason, msg,
+		trans.emitProxyInvalidResponse(proxyReqParams, reason, msg,
+			logger.NewIntField("statusCode", int64(httpPrxResp.statusCode)),
 			logger.NewIntSliceField("jobIDs", proxyJobIDs(proxyReqParams.ResponseData.Metadata)))
 		// The payload is not JSON, so nothing downstream can read it: `output` cannot exist, and
 		// continuing would blank respData and fail inside getResponse on an empty body — losing the
@@ -526,6 +531,17 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 
 	if transportResponse.InterceptorResponse.StatusCode > 0 {
 		respCode = transportResponse.InterceptorResponse.StatusCode
+	}
+
+	// For an oauth destination the transport wraps the upstream error into a valid envelope, so the
+	// unmarshal above succeeds and the infra failure only surfaces here, after OriginalResponse has
+	// been unwrapped. Classify it before the content checks, which assume a genuine transformer response.
+	if infraFailure {
+		trans.emitProxyInvalidResponse(proxyReqParams, "transport error",
+			"[TransformerProxy] transport returned a non-transformer response",
+			logger.NewIntField("statusCode", int64(httpPrxResp.statusCode)),
+			logger.NewIntSliceField("jobIDs", proxyJobIDs(proxyReqParams.ResponseData.Metadata)))
+		return proxyErrorResponse(respCode, string(respData), routerJobDontBatchDirectives)
 	}
 
 	/**
@@ -546,7 +562,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	// `{"output":null}` slips through, unmarshals into an empty response set, and gets reported as an
 	// "in out mismatch" - sending the runbook down the data-corruption branch instead of this one.
 	if !output.Exists() || output.Type == gjson.Null {
-		emitProxyInvalidResponse(trans.stats, trans.logger, proxyReqParams, "missing output",
+		trans.emitProxyInvalidResponse(proxyReqParams, "missing output",
 			"[TransformerProxy] proxy response missing output",
 			logger.NewIntSliceField("jobIDs", proxyJobIDs(proxyReqParams.ResponseData.Metadata)))
 		// There are no per-job results to apply without `output`. Continuing would set respData to
@@ -558,20 +574,28 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 
 	transResp, err := proxyReqParams.Adapter.getResponse(respData, respCode, proxyReqParams.ResponseData.Metadata)
 	if err != nil {
+		// The status was not an infra failure and `output` was present, so this is a genuine
+		// transformer response whose per-job payload will not parse - a contract breach, not infra.
+		// Same "unmarshal error" reason as the outer envelope; the other breach paths already emit.
+		trans.emitProxyInvalidResponse(proxyReqParams, "unmarshal error",
+			"[TransformerProxy] proxy response output unmarshal failed",
+			logger.NewIntSliceField("jobIDs", proxyJobIDs(proxyReqParams.ResponseData.Metadata)))
 		return proxyErrorResponse(respCode, err.Error(), routerJobDontBatchDirectives)
 	}
 	// Compared as sets, so the check does not depend on duplicate jobIDs on either side: a batch can
 	// carry the same JobID more than once (router/worker.go only dedupes when building the final job
 	// responses) and the transformer may collapse or echo those. routerJobResponseCodes is keyed by
-	// the jobIDs the transformer answered for, so its keys are the response set.
+	// the jobIDs the transformer answered for, so its keys are the response set. This only bites for
+	// v1: v0 keys the map by the request metadata, so the sets are equal by construction and a v0
+	// mismatch is not detectable here (nor was it before).
 	jobIDsInMetadata := lo.Uniq(proxyJobIDs(proxyReqParams.ResponseData.Metadata))
 	slices.Sort(jobIDsInMetadata)
 	jobIDsInResponse := lo.Keys(transResp.routerJobResponseCodes)
 	slices.Sort(jobIDsInResponse)
 	// Non-fatal: the per-job results were still applied, but they may be attached to the wrong jobs.
-	// Recorded here, alongside the other breach reasons, so all three share one stats handle.
+	// Recorded here, alongside the other breach reasons, so all share one stats handle.
 	if !slices.Equal(jobIDsInMetadata, jobIDsInResponse) {
-		emitProxyInvalidResponse(trans.stats, trans.logger, proxyReqParams, "in out mismatch",
+		trans.emitProxyInvalidResponse(proxyReqParams, "in out mismatch",
 			"[TransformerProxy] JobIDs in out mismatch",
 			logger.NewIntSliceField("jobIDsInMetadata", jobIDsInMetadata),
 			logger.NewIntSliceField("jobIDsInResponse", jobIDsInResponse))
