@@ -108,21 +108,72 @@ jobs:
           wire_api = "responses"
           EOF
 
-      - name: Generate review site with Codex (full repo context)
+      # ---- Specialised subagents (sequential pipeline via review-work/) ----
+      # Each subagent is a separate `codex exec` with a focused prompt
+      # (.github/codex/agents/_shared.md + <agent>.md) and hands its output to the
+      # next stage through files under review-work/. Each step validates its
+      # artifact so a stage that produces nothing fails here, with a clear step
+      # name, instead of deploying an empty site. review-work/ never leaves the
+      # runner — only review-site/ is deployed.
+      #
+      # exec = non-interactive. GitHub-hosted runners block bubblewrap's network
+      # namespace setup (RTM_NEWADDR EPERM on loopback), so --sandbox workspace-write
+      # fails immediately. The runner is itself an ephemeral sandbox, so bypassing
+      # Codex's inner sandbox is acceptable here (applies to all subagent steps):
+      # Codex can still only see/write the checked-out workspace.
+      - name: 'Subagent 1: analyze PR'
         if: github.event.action != 'closed'
         env:
           CODEX_HOME: ${{ github.workspace }}/.codex
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
         run: |
           set -euo pipefail
-          # exec = non-interactive. GitHub-hosted runners block bubblewrap's network
-          # namespace setup (RTM_NEWADDR EPERM on loopback), so --sandbox workspace-write
-          # fails immediately. The runner is itself an ephemeral sandbox, so bypassing
-          # Codex's inner sandbox is acceptable here: Codex can still only see/write the
-          # checked-out workspace.
+          mkdir -p review-work
           codex exec --dangerously-bypass-approvals-and-sandbox \
             --cd "$GITHUB_WORKSPACE" \
-            "$(cat .github/codex/review-prompt.md)"
+            "$(cat .github/codex/agents/_shared.md .github/codex/agents/analyze.md)"
+          jq empty review-work/analysis.json  # exists AND is valid JSON
+
+      - name: 'Subagent 2: author diagrams'
+        if: github.event.action != 'closed'
+        env:
+          CODEX_HOME: ${{ github.workspace }}/.codex
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          codex exec --dangerously-bypass-approvals-and-sandbox \
+            --cd "$GITHUB_WORKSPACE" \
+            "$(cat .github/codex/agents/_shared.md .github/codex/agents/diagrams.md)"
+          # Manifest must exist and be valid JSON, and every entry must point to a
+          # real SVG. An empty manifest is allowed — the assembler builds without
+          # diagrams rather than failing the whole pipeline.
+          jq empty review-work/diagrams.json
+          jq -r '.[].file' review-work/diagrams.json | while read -r f; do
+            test -f "review-work/diagrams/$f"
+          done
+
+      - name: 'Subagent 3: review risks'
+        if: github.event.action != 'closed'
+        env:
+          CODEX_HOME: ${{ github.workspace }}/.codex
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          codex exec --dangerously-bypass-approvals-and-sandbox \
+            --cd "$GITHUB_WORKSPACE" \
+            "$(cat .github/codex/agents/_shared.md .github/codex/agents/risks.md)"
+          jq empty review-work/risks.json
+
+      - name: 'Subagent 4: assemble site'
+        if: github.event.action != 'closed'
+        env:
+          CODEX_HOME: ${{ github.workspace }}/.codex
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          codex exec --dangerously-bypass-approvals-and-sandbox \
+            --cd "$GITHUB_WORKSPACE" \
+            "$(cat .github/codex/agents/_shared.md .github/codex/agents/assemble.md)"
           test -f review-site/index.html  # fail the job if Codex produced nothing
 
       # ---- Deploy on label/open/push; tear down on close/merge ----
