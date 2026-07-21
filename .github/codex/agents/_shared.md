@@ -24,6 +24,8 @@ only through files under `review-work/`.
 - Do NOT run builds, tests, formatters, linters, or network commands.
 - Write ONLY the output files your stage owns (listed in your stage instructions).
   Do not modify, delete, or create any other file.
+- You run non-interactively in CI: NEVER end your turn by asking for permission or
+  offering options ("If you want, I can…"). No one can answer.
 - JSON outputs must be strictly valid JSON (they are validated with `jq`): no comments,
   no trailing commas, UTF-8.
 

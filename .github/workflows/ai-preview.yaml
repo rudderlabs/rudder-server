@@ -141,6 +141,7 @@ jobs:
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
         run: |
           set -euo pipefail
+          mkdir -p review-work/diagrams
           codex exec --dangerously-bypass-approvals-and-sandbox \
             --cd "$GITHUB_WORKSPACE" \
             "$(cat .github/codex/agents/_shared.md .github/codex/agents/diagrams.md)"
@@ -182,6 +183,7 @@ jobs:
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
         run: |
           set -euo pipefail
+          mkdir -p review-site
           codex exec --dangerously-bypass-approvals-and-sandbox \
             --cd "$GITHUB_WORKSPACE" \
             "$(cat .github/codex/agents/_shared.md .github/codex/agents/assemble.md)"
