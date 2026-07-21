@@ -706,6 +706,8 @@ type oauthv2ProxyTcs struct {
 	expectedBreachReason string
 	// load-balancer erroring out
 	lbError bool
+	// upstream HTTP status the mock transformer returns; 0 means the default 200.
+	upstreamStatusCode int
 }
 
 var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
@@ -1186,7 +1188,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			RespBodys:       map[int64]string{},
 			RespContentType: "text/plain; charset=utf-8",
 			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category post roundTrip: LB cannot send to transformer"
-			ProxyRequestResponseBody: `LB cannot send to transformer`,
+			ProxyRequestResponseBody: `[TransformerProxy] response has no output field: LB cannot send to transformer`,
 			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes:          map[int64]int{},
 		},
@@ -1238,7 +1240,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			RespBodys:       map[int64]string{},
 			RespContentType: "text/plain; charset=utf-8",
 			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category post roundTrip: LB cannot send to transformer"
-			ProxyRequestResponseBody: `LB cannot send to transformer`,
+			ProxyRequestResponseBody: `[TransformerProxy] response has no output field: LB cannot send to transformer`,
 			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes:          map[int64]int{},
 		},
@@ -1559,6 +1561,64 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 	},
 
 	{
+		description:        "[v1proxy] when the transformer returns a 5xx that still carries a usable output, per-job results are applied and it does not page",
+		proxyVersion:       "v1",
+		upstreamStatusCode: http.StatusBadGateway, // 502, but the body is a real, parseable transformer response
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message: "some message that we got from transformer",
+			Response: []TPDestResponse{
+				{
+					StatusCode: http.StatusOK,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         1,
+					},
+					Error: "success",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON":       map[string]any{"key_1": "val_1"},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
+				},
+				Files: map[string]any{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         1,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{},
+		expected: ProxyRequestResponse{
+			// The output parsed, so the per-job status is applied and the top-level 502 is preserved -
+			// exactly the pre-change behavior. A short-circuit on status would instead drop these and
+			// return empty maps, so this case guards against that regression.
+			DontBatchDirectives:      map[int64]bool{1: false},
+			RespBodys:                map[int64]string{1: "success"},
+			RespContentType:          "application/json",
+			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","response":[{"statusCode":200,"error":"success","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":1}}]}`,
+			ProxyRequestStatusCode:   http.StatusBadGateway,
+			RespStatusCodes:          map[int64]int{1: http.StatusOK},
+		},
+		destination: oauthDests[0],
+		// No breach: a 5xx that carries a usable output is not an infra failure we page on.
+	},
+
+	{
 		description:  "[v1proxy] when there are partial failures & no oauth errors, respective jobs should have their statuses",
 		proxyVersion: "v1",
 		transformerProxyResponseV1: ProxyResponseV1{
@@ -1823,6 +1883,11 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 					b = []byte(tc.transformerResponse)
 				}
 				outputJson, _ := sjson.SetRawBytes([]byte(`{}`), "output", b)
+				// Lets a case set the upstream HTTP status while still returning a real transformer body,
+				// to exercise a 5xx that carries a usable output.
+				if tc.upstreamStatusCode != 0 {
+					w.WriteHeader(tc.upstreamStatusCode)
+				}
 				if tc.ioReadError {
 					w.Header().Add("Content-Length", strconv.Itoa(len(string(outputJson))+10))
 					// return less bytes, which will result in an "unexpected EOF" from ioutil.ReadAll()

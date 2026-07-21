@@ -502,8 +502,9 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	// An upstream 5xx (transformer/LB/gateway) or a transport-synthesized response is an
 	// infrastructure failure, not a transformer contract breach. transportError marks the synthesized
 	// responses (including 4xx ones like a failed token fetch); the status marks a real upstream error
-	// that carried a body. Classifying these as breaches would page the contract owner on our own
-	// infra, so they get a reason the alert can exclude.
+	// that carried a body. It only selects the reason at the points below where the response cannot be
+	// processed - it never short-circuits a response that parses, so a 5xx that still carries a usable
+	// output is applied exactly as before, and only the metric reason changes for the failures.
 	infraFailure := httpPrxResp.transportError || httpPrxResp.statusCode >= http.StatusInternalServerError
 
 	/*
@@ -534,17 +535,6 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		respCode = transportResponse.InterceptorResponse.StatusCode
 	}
 
-	// For an oauth destination the transport wraps the upstream error into a valid envelope, so the
-	// unmarshal above succeeds and the infra failure only surfaces here, after OriginalResponse has
-	// been unwrapped. Classify it before the content checks, which assume a genuine transformer response.
-	if infraFailure {
-		trans.emitProxyInvalidResponse(proxyReqParams, "transport error",
-			"[TransformerProxy] transport returned a non-transformer response",
-			logger.NewIntField("statusCode", int64(httpPrxResp.statusCode)),
-			logger.NewIntSliceField("jobIDs", proxyJobIDs(proxyReqParams.ResponseData.Metadata)))
-		return proxyErrorResponse(respCode, string(respData), routerJobDontBatchDirectives)
-	}
-
 	/**
 
 		Structure of TransformerProxy Response:
@@ -563,8 +553,14 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	// `{"output":null}` slips through, unmarshals into an empty response set, and gets reported as an
 	// "in out mismatch" - sending the runbook down the data-corruption branch instead of this one.
 	if !output.Exists() || output.Type == gjson.Null {
-		trans.emitProxyInvalidResponse(proxyReqParams, "missing output",
-			"[TransformerProxy] proxy response missing output",
+		// A real upstream error (whose body has no output) lands here for oauth destinations - report
+		// it as transport error, not a breach. A 2xx with no output is a genuine missing-output breach.
+		reason, msg := "missing output", "[TransformerProxy] proxy response missing output"
+		if infraFailure {
+			reason, msg = "transport error", "[TransformerProxy] transport returned a non-transformer response"
+		}
+		trans.emitProxyInvalidResponse(proxyReqParams, reason, msg,
+			logger.NewIntField("statusCode", int64(httpPrxResp.statusCode)),
 			logger.NewIntSliceField("jobIDs", proxyJobIDs(proxyReqParams.ResponseData.Metadata)))
 		// There are no per-job results to apply without `output`. Continuing would set respData to
 		// an empty string and fail inside getResponse, reporting an empty body instead of the one
@@ -575,11 +571,15 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 
 	transResp, err := proxyReqParams.Adapter.getResponse(respData, respCode, proxyReqParams.ResponseData.Metadata)
 	if err != nil {
-		// The status was not an infra failure and `output` was present, so this is a genuine
-		// transformer response whose per-job payload will not parse - a contract breach, not infra.
-		// Same "unmarshal error" reason as the outer envelope; the other breach paths already emit.
-		trans.emitProxyInvalidResponse(proxyReqParams, "unmarshal error",
-			"[TransformerProxy] proxy response output unmarshal failed",
+		// output was present but its per-job payload will not parse. On a 2xx this is a genuine
+		// contract breach ("unmarshal error", like the outer envelope); an infra failure that happened
+		// to carry an output-shaped body is still infra.
+		reason, msg := "unmarshal error", "[TransformerProxy] proxy response output unmarshal failed"
+		if infraFailure {
+			reason, msg = "transport error", "[TransformerProxy] transport returned a non-transformer response"
+		}
+		trans.emitProxyInvalidResponse(proxyReqParams, reason, msg,
+			logger.NewIntField("statusCode", int64(httpPrxResp.statusCode)),
 			logger.NewIntSliceField("jobIDs", proxyJobIDs(proxyReqParams.ResponseData.Metadata)))
 		return proxyErrorResponse(respCode, err.Error(), routerJobDontBatchDirectives)
 	}
