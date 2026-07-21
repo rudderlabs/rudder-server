@@ -51,10 +51,11 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0   # Codex needs the whole repo + history for context
-          # Don't leave GITHUB_TOKEN in .git/config where the unsandboxed Codex
-          # steps could read it. Nothing after checkout needs these credentials:
-          # fetch-depth 0 pulls all history up front, and every push/API call
-          # uses the app token over its own authenticated remote.
+          # Don't leave GITHUB_TOKEN in .git/config where Codex-spawned commands
+          # could read it (the workspace permission profile confines writes, not
+          # reads). Nothing after checkout needs these credentials: fetch-depth 0
+          # pulls all history up front, and every push/API call uses the app
+          # token over its own authenticated remote.
           persist-credentials: false
 
       - name: Collect PR context
@@ -91,70 +92,73 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install Codex CLI
-        if: github.event.action != 'closed'
-        # Pinned so CLI behavior/output contracts only change deliberately
-        # (supply-chain hygiene for an unsandboxed tool). Bump intentionally.
-        run: npm install -g @openai/codex@0.144.6
-
-      - name: Configure Codex for Azure Foundry
+      # codex-action takes ONE prompt file per invocation, so pre-assemble each
+      # stage's prompt (_shared.md + <stage>.md) outside the workspace. Also
+      # resolve the Azure Responses endpoint once (via GITHUB_ENV — step outputs
+      # refuse secret-derived values) and pre-create the stage output dirs.
+      - name: Prepare Codex prompts and endpoint
         if: github.event.action != 'closed'
         env:
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
-          CODEX_MODEL: gpt-5.3-codex   # Azure Foundry deployment name (latest Codex)
         run: |
           set -euo pipefail
-          BASE_URL="${AZURE_OPENAI_ENDPOINT%/}/openai/v1"
-          mkdir -p "$GITHUB_WORKSPACE/.codex"
-          cat > "$GITHUB_WORKSPACE/.codex/config.toml" <<EOF
-          model = "${CODEX_MODEL}"
-          model_provider = "azure"
-          model_reasoning_effort = "medium"
-
-          [model_providers.azure]
-          name = "Azure OpenAI"
-          base_url = "${BASE_URL}"
-          env_key = "AZURE_OPENAI_API_KEY"
-          wire_api = "responses"
-          EOF
+          echo "RESPONSES_API_ENDPOINT=${AZURE_OPENAI_ENDPOINT%/}/openai/v1/responses" >> "$GITHUB_ENV"
+          mkdir -p "${RUNNER_TEMP}/codex-prompts" review-work/diagrams review-site
+          for stage in analyze diagrams risks assemble; do
+            cat .github/codex/agents/_shared.md ".github/codex/agents/${stage}.md" \
+              > "${RUNNER_TEMP}/codex-prompts/${stage}.md"
+          done
 
       # ---- Specialised subagents (sequential pipeline via review-work/) ----
-      # Each subagent is a separate `codex exec` with a focused prompt
-      # (.github/codex/agents/_shared.md + <agent>.md) and hands its output to the
-      # next stage through files under review-work/. Each step validates its
-      # artifact so a stage that produces nothing fails here, with a clear step
-      # name, instead of deploying an empty site. review-work/ never leaves the
-      # runner — only review-site/ is deployed.
+      # Each subagent is one openai/codex-action invocation with a focused,
+      # pre-assembled prompt, handing artifacts to the next stage through
+      # review-work/. A validation step after each stage fails the job with a
+      # clear step name if the stage produced nothing usable. review-work/
+      # never leaves the runner — only review-site/ is deployed.
       #
-      # exec = non-interactive. GitHub-hosted runners block bubblewrap's network
-      # namespace setup (RTM_NEWADDR EPERM on loopback), so --sandbox workspace-write
-      # fails immediately. The runner is itself an ephemeral sandbox, so bypassing
-      # Codex's inner sandbox is acceptable here (applies to all subagent steps):
-      # Codex can still only see/write the checked-out workspace.
+      # Why the action instead of raw `codex exec`:
+      #  - the API key is held by the action's local proxy, NOT exported into
+      #    the Codex process env where spawned commands could printenv it;
+      #  - safety-strategy drop-sudo revokes the runner user's sudo before
+      #    Codex runs (hosted runners have passwordless sudo otherwise);
+      #  - permission-profile ':workspace' confines writes to the checkout —
+      #    if it ever errors on this runner image, drop the input (key proxy +
+      #    drop-sudo still apply) rather than reverting to raw codex exec.
+      # exec mode never prompts for approvals; there is nothing to approve.
       - name: 'Subagent 1: analyze PR'
         if: github.event.action != 'closed'
-        env:
-          CODEX_HOME: ${{ github.workspace }}/.codex
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-        run: |
-          set -euo pipefail
-          mkdir -p review-work
-          codex exec --dangerously-bypass-approvals-and-sandbox \
-            --cd "$GITHUB_WORKSPACE" \
-            "$(cat .github/codex/agents/_shared.md .github/codex/agents/analyze.md)"
-          jq empty review-work/analysis.json  # exists AND is valid JSON
+        uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1.11
+        with:
+          openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          responses-api-endpoint: ${{ env.RESPONSES_API_ENDPOINT }}
+          model: gpt-5.3-codex   # Azure Foundry deployment name (latest Codex)
+          effort: medium
+          codex-version: 0.144.6  # pinned; bump intentionally
+          safety-strategy: drop-sudo
+          permission-profile: ':workspace'
+          prompt-file: ${{ runner.temp }}/codex-prompts/analyze.md
+
+      - name: Validate analysis artifact
+        if: github.event.action != 'closed'
+        run: jq empty review-work/analysis.json  # exists AND is valid JSON
 
       - name: 'Subagent 2: author diagrams'
         if: github.event.action != 'closed'
-        env:
-          CODEX_HOME: ${{ github.workspace }}/.codex
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+        uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1.11
+        with:
+          openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          responses-api-endpoint: ${{ env.RESPONSES_API_ENDPOINT }}
+          model: gpt-5.3-codex
+          effort: medium
+          codex-version: 0.144.6
+          safety-strategy: drop-sudo
+          permission-profile: ':workspace'
+          prompt-file: ${{ runner.temp }}/codex-prompts/diagrams.md
+
+      - name: Validate diagram artifacts
+        if: github.event.action != 'closed'
         run: |
           set -euo pipefail
-          mkdir -p review-work/diagrams
-          codex exec --dangerously-bypass-approvals-and-sandbox \
-            --cd "$GITHUB_WORKSPACE" \
-            "$(cat .github/codex/agents/_shared.md .github/codex/agents/diagrams.md)"
           # Manifest must exist, be valid JSON, contain at least one diagram (the
           # prompt mandates 2-4 — an empty manifest means the stage failed), and
           # every entry must point to a real SVG file.
@@ -176,27 +180,38 @@ jobs:
 
       - name: 'Subagent 3: review risks'
         if: github.event.action != 'closed'
-        env:
-          CODEX_HOME: ${{ github.workspace }}/.codex
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-        run: |
-          set -euo pipefail
-          codex exec --dangerously-bypass-approvals-and-sandbox \
-            --cd "$GITHUB_WORKSPACE" \
-            "$(cat .github/codex/agents/_shared.md .github/codex/agents/risks.md)"
-          jq empty review-work/risks.json
+        uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1.11
+        with:
+          openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          responses-api-endpoint: ${{ env.RESPONSES_API_ENDPOINT }}
+          model: gpt-5.3-codex
+          effort: medium
+          codex-version: 0.144.6
+          safety-strategy: drop-sudo
+          permission-profile: ':workspace'
+          prompt-file: ${{ runner.temp }}/codex-prompts/risks.md
+
+      - name: Validate risks artifact
+        if: github.event.action != 'closed'
+        run: jq empty review-work/risks.json
 
       - name: 'Subagent 4: assemble site'
         if: github.event.action != 'closed'
-        env:
-          CODEX_HOME: ${{ github.workspace }}/.codex
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+        uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1.11
+        with:
+          openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          responses-api-endpoint: ${{ env.RESPONSES_API_ENDPOINT }}
+          model: gpt-5.3-codex
+          effort: medium
+          codex-version: 0.144.6
+          safety-strategy: drop-sudo
+          permission-profile: ':workspace'
+          prompt-file: ${{ runner.temp }}/codex-prompts/assemble.md
+
+      - name: Validate assembled site
+        if: github.event.action != 'closed'
         run: |
           set -euo pipefail
-          mkdir -p review-site
-          codex exec --dangerously-bypass-approvals-and-sandbox \
-            --cd "$GITHUB_WORKSPACE" \
-            "$(cat .github/codex/agents/_shared.md .github/codex/agents/assemble.md)"
           test -f review-site/index.html  # fail the job if Codex produced nothing
           # Every diagram in the manifest must be embedded inline: the assembler
           # marks each embedded figure with data-diagram="<file>". A page that
@@ -221,6 +236,28 @@ jobs:
           if grep -Eq '(src|href)="[^"]*review-work/' review-site/index.html; then
             echo "index.html loads assets from review-work/ (not deployed); failing."
             grep -Eo '(src|href)="[^"]*review-work/[^"]*"' review-site/index.html
+            exit 1
+          fi
+          # Inline <script> blocks must be valid JS (a syntax error silently kills
+          # all page interactivity).
+          node -e '
+            const fs = require("fs");
+            const html = fs.readFileSync("review-site/index.html", "utf8");
+            const re = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+            let m, n = 0, bad = 0;
+            while ((m = re.exec(html))) {
+              n++;
+              try { new Function(m[1]); }
+              catch (e) { console.error(`script block ${n}: ${e.message}`); bad = 1; }
+            }
+            if (n === 0) { console.error("no inline <script> found"); bad = 1; }
+            process.exit(bad);
+          '
+          # Un-rendered JSON objects pasted into visible text (e.g. <li>{'name': ...})
+          # mean the assembler dumped artifacts instead of rendering their fields.
+          if grep -Eq "<(li|p|td|span)>\{('|\")" review-site/index.html; then
+            echo "index.html contains raw object dumps instead of rendered fields; failing."
+            grep -Eo "<(li|p|td|span)>\{('|\")[^<]{0,80}" review-site/index.html | head -5
             exit 1
           fi
 
