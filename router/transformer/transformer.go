@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -590,8 +591,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	// mismatch is not detectable here (nor was it before).
 	jobIDsInMetadata := lo.Uniq(proxyJobIDs(proxyReqParams.ResponseData.Metadata))
 	slices.Sort(jobIDsInMetadata)
-	jobIDsInResponse := lo.Keys(transResp.routerJobResponseCodes)
-	slices.Sort(jobIDsInResponse)
+	jobIDsInResponse := slices.Sorted(maps.Keys(transResp.routerJobResponseCodes))
 	// Non-fatal: the per-job results were still applied, but they may be attached to the wrong jobs.
 	// Recorded here, alongside the other breach reasons, so all share one stats handle.
 	if !slices.Equal(jobIDsInMetadata, jobIDsInResponse) {
