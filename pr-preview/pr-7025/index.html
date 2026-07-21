@@ -1,194 +1,206 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>feat: create a web page to explain the pr for prs labeled with `preview`</title><style>
-:root{--accent:#2f6feb;--muted:#6b7280;--fg:#111827;--surface:#ffffff;--border:#e5e7eb;--bg:#f8fafc;--good:#16a34a;--bad:#dc2626}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--fg);background:var(--bg)}
-.container{max-width:1100px;margin:0 auto;padding:20px 16px 80px;display:grid;grid-template-columns:220px 1fr;gap:20px}.toc{position:sticky;top:12px;align-self:start;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px}.toc a{display:block;padding:6px 8px;color:var(--muted);text-decoration:none;border-radius:8px}.toc a:hover{background:#f3f4f6;color:var(--fg)}
-.progress{height:4px;background:#eef2ff;border-radius:99px;overflow:hidden;margin:6px 0 8px}.progress>i{display:block;height:100%;width:0;background:var(--accent)}main>*{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px}
-.top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}h1{margin:0 0 8px;font-size:24px;line-height:1.2}h2{margin:0 0 10px;font-size:18px}.meta-row,.stats-row{display:flex;gap:8px;flex-wrap:wrap}.badge,.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:#fff;color:#374151}
-.plus{color:var(--good)}.minus{color:var(--bad)}.facts{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:6px}.facts li{display:flex;gap:8px}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}.diagram{margin:0;border:1px solid var(--border);border-radius:10px;padding:8px;background:#fff;overflow:auto}.diagram svg{max-width:100%;height:auto;display:block}figcaption{font-size:12px;color:var(--muted);margin-top:6px}
-.compact{margin:8px 0 0;padding-left:18px}.file-item{border:1px solid var(--border);border-radius:10px;padding:8px;margin:10px 0;background:#fff}summary{cursor:pointer;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.file-path{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.file-summary{color:var(--muted)}.tools{display:flex;justify-content:flex-end}input[type=search]{width:280px;max-width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px}
-.code-wrap{position:relative;margin-top:8px}.copy-btn{position:absolute;top:8px;right:8px;border:1px solid var(--border);background:#fff;border-radius:8px;padding:4px 8px;cursor:pointer}pre{margin:0;overflow:auto;background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:10px}.code-line{display:flex;gap:10px;white-space:pre}.gutter{display:inline-block;width:22px;text-align:right;color:var(--muted);flex:0 0 22px}.callout{color:var(--accent);font-size:12px}
-.risk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}.risk{border:1px solid var(--border);border-radius:10px;padding:10px;background:#fff}.sev{padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--border);text-transform:capitalize}.sev.high{color:#b91c1c}.sev.medium{color:#92400e}.sev.low{color:#065f46}.filters{display:flex;gap:8px;margin-bottom:10px}.fbtn{border:1px solid var(--border);background:#fff;border-radius:999px;padding:4px 10px;cursor:pointer}.fbtn.active{border-color:var(--accent);color:var(--accent)}
-.reveal{opacity:0;transform:translateY(8px);transition:opacity .35s ease,transform .35s ease}.reveal.in{opacity:1;transform:none}
-@media (max-width:900px){.container{grid-template-columns:1fr}.toc{position:relative;top:0}.split{grid-template-columns:1fr}}
-@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.reveal{opacity:1;transform:none;transition:none}}
-</style></head><body><div class="container"><nav class="toc" aria-label="Contents"><div class="progress"><i id="prog"></i></div><a href="#top">Top</a><a href="#tldr">TL;DR</a><a href="#why">Why</a><a href="#what">What</a><a href="#flow">Flow</a><a href="#files">Files</a><a href="#risks">Risks</a><a href="#checklist">Checklist</a><a href="#testing">Testing</a></nav><main><header class="top" id="top"><div class="title-wrap"><h1>feat: create a web page to explain the pr for prs labeled with `preview`</h1><div class="meta-row"><span class="badge">#7025</span><span class="badge">mihir20</span><span class="badge">master ← mihir/ai-preview</span></div></div><div class="stats-row"><span class="chip">8 files</span><span class="chip minus">-294</span><span class="chip lang">Markdown </span><span class="chip lang">YAML </span></div></header><section id="tldr" class="card reveal"><h2>TL;DR</h2><p>Adds a label-gated GitHub Actions pipeline that uses four Codex stages to generate, validate, deploy, and tear down a PR review dashboard on GitHub Pages.</p><ul class="facts"><li><span class="fact-icon">💡</span><span>Introduces a four-stage artifact handoff model using `review-work/` between analyze, diagrams, risks, and assemble prompts.</span></li><li><span class="fact-icon">📌</span><span>Adds `.github/workflows/ai-preview.yaml` with label gating, concurrency cancellation, deploy safeguards, and sticky PR preview comments.</span></li><li><span class="fact-icon">🧩</span><span>Hardens pipeline checks by validating diagram manifests, embedding constraints, directory setup, and safe `gh-pages` lifecycle handling.</span></li></ul></section><section id="why" class="reveal"><h2>Why</h2><div class="split"><p>Reviewing unfamiliar PRs is slow and context-heavy; this adds an opt-in, visual-first preview that summarizes architecture, flow, risks, and review steps in one deployed page.</p><div class="diagram-stack"></div></div></section><section id="what" class="reveal"><h2>What changed at a glance</h2><div class="diagram-stack"><figure class="diagram" data-diagram="01-architecture.svg">
-<svg viewBox="0 0 1200 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Architecture of label-gated PR preview pipeline">
-  <rect x="0" y="0" width="1200" height="520" fill="var(--surface, #ffffff)"/>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PR Review Dashboard</title><style>:root{--accent:#2563eb;--muted:#64748b;--fg:#0f172a;--surface:#ffffff;--border:#e2e8f0;--bg:#f8fafc;--chip:#eef2ff;--high:#dc2626;--med:#d97706;--low:#16a34a;}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--fg)}.layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:24px;max-width:1300px;margin:0 auto;padding:20px}.toc{position:sticky;top:12px;align-self:start;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px}.toc a{display:block;color:var(--muted);text-decoration:none;padding:6px 8px;border-radius:8px}.toc a:hover{background:#f1f5f9;color:var(--fg)}.progress{height:4px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin:0 0 10px}.bar{height:100%;background:var(--accent);width:0}.main section{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-bottom:14px}.header{display:grid;gap:10px}.title{font-size:20px;font-weight:700}.meta{display:flex;flex-wrap:wrap;gap:8px}.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:#fff;padding:3px 9px;border-radius:999px;font-size:12px}.chip.lang{background:var(--chip);border-color:#c7d2fe}.stats{display:flex;gap:8px;flex-wrap:wrap}.muted{color:var(--muted)}h2{margin:0 0 10px;font-size:16px}.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}.fact{display:flex;gap:8px;padding:8px;border:1px solid var(--border);border-radius:10px;background:#fcfdff}.fact svg{width:16px;height:16px;fill:var(--accent);flex:0 0 16px;margin-top:2px}.diagram{margin:10px 0;padding:10px;border:1px solid var(--border);border-radius:10px;background:#fff}.diagram svg{max-width:100%;height:auto;display:block;overflow:auto}.diagram figcaption{font-size:12px;color:var(--muted);margin-top:6px}.list{margin:0;padding-left:18px}.list li{margin:5px 0}.files-top{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}.search{padding:7px 10px;border:1px solid var(--border);border-radius:8px;min-width:220px}.file{border:1px solid var(--border);border-radius:10px;padding:0 10px;margin:8px 0;background:#fff}summary{cursor:pointer;padding:10px 0;font-weight:600}.snippet{position:relative;background:#0b1020;color:#e5e7eb;border-radius:10px;padding:10px;overflow:auto}.copy{position:absolute;top:8px;right:8px;border:1px solid #334155;background:#111827;color:#e5e7eb;padding:3px 8px;border-radius:6px;cursor:pointer}.code{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre}.g{color:#94a3b8;display:inline-block;width:2em;user-select:none}.callouts{margin:8px 0 2px;padding-left:18px}.risk-controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.btn{border:1px solid var(--border);background:#fff;padding:5px 10px;border-radius:999px;cursor:pointer}.btn.active{border-color:var(--accent);color:var(--accent)}.risk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}.risk{border:1px solid var(--border);border-radius:10px;padding:10px}.sev{font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:999px;border:1px solid}.sev.high{color:var(--high);border-color:#fecaca;background:#fff1f2}.sev.medium{color:var(--med);border-color:#fed7aa;background:#fffbeb}.sev.low{color:var(--low);border-color:#bbf7d0;background:#f0fdf4}.reveal{opacity:0;transform:translateY(8px);transition:all .35s ease}.reveal.on{opacity:1;transform:none}@media (max-width:960px){.layout{grid-template-columns:1fr}.toc{position:relative;top:auto}}@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.reveal{opacity:1;transform:none;transition:none}}</style></head><body><div class="layout"><aside class="toc"><div class="progress"><div class="bar" id="bar"></div></div><a href="#header">Header</a><a href="#tldr">TL;DR</a><a href="#why">Why</a><a href="#changed">What Changed</a><a href="#flow">Flow</a><a href="#files">Files</a><a href="#risks">Risks</a><a href="#checklist">Checklist</a><a href="#testing">Testing</a></aside><main class="main"><section id="header" class="header reveal"><div class="title">feat: support AI-powered visual PR previews via staged Codex pipeline</div><div class="meta"><span class="chip">#0</span><span class="chip">mihir</span><span class="chip">main ← feature/ai-preview</span></div><div class="stats"><span class="chip">Files 12</span><span class="chip">+1450</span><span class="chip">-31</span><span class="chip lang">YAML</span><span class="chip lang">Markdown</span><span class="chip lang">HTML</span><span class="chip lang">JSON</span></div></section><section id="tldr" class="reveal"><h2>TL;DR</h2><p>Adds a label-gated GitHub workflow that runs four Codex stages to generate and deploy a single-file PR review dashboard to GitHub Pages.</p><div class="facts"><div class="fact"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 16l-5.4 2.8 1-6.1L3.2 8.4l6.1-.9L12 2z"/></svg><div>Introduces `.github/workflows/ai-preview.yaml` to orchestrate generate/validate/deploy/teardown preview lifecycle.</div></div><div class="fact"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 16l-5.4 2.8 1-6.1L3.2 8.4l6.1-.9L12 2z"/></svg><div>Adds stage prompts under `.github/codex/agents/` to enforce a strict analyze→diagrams→risks→assemble pipeline via `review-work/` artifacts.</div></div><div class="fact"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 16l-5.4 2.8 1-6.1L3.2 8.4l6.1-.9L12 2z"/></svg><div>Adds CI checks and docs updates to keep generated HTML self-contained, diagram-backed, and safe for deployment.</div></div></div></section><section id="why" class="reveal"><h2>Why</h2><p>Reviewing unfamiliar PRs is slow; this PR automates a visual onboarding page so reviewers can quickly understand context, flow, risks, and review focus before deep diff analysis.</p></section><section id="changed" class="reveal"><h2>What Changed At A Glance</h2><figure class="diagram" data-diagram="01-architecture.svg"><svg viewBox="0 0 1100 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Architecture of AI preview workflow components">
+  <rect x="0" y="0" width="1100" height="520" fill="var(--surface, #ffffff)"/>
   <style>
-    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; fill: var(--fg, #111827); font-size: 13px; }
-    .title { font-size: 18px; font-weight: 700; }
-    .box { fill: var(--surface, #ffffff); stroke: var(--border, #cbd5e1); stroke-width: 1.5; rx: 10; }
-    .muted { stroke: var(--muted, #94a3b8); fill: color-mix(in srgb, var(--muted, #94a3b8) 10%, white); }
-    .changed { stroke: var(--accent, #2563eb); fill: color-mix(in srgb, var(--accent, #2563eb) 12%, white); }
-    .label { font-size: 12px; }
-    .small { font-size: 11px; fill: var(--muted, #64748b); }
-    .arrow-muted { stroke: var(--muted, #94a3b8); stroke-width: 1.8; fill: none; marker-end: url(#arrowMuted); }
-    .arrow-changed { stroke: var(--accent, #2563eb); stroke-width: 2.2; fill: none; marker-end: url(#arrowAccent); }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: var(--fg, #111827); font-size: 13px; }
+    .title { font-size: 20px; font-weight: 700; }
+    .sub { font-size: 12px; fill: var(--muted, #6b7280); }
+    .box { fill: var(--surface, #ffffff); stroke: var(--border, #d1d5db); stroke-width: 1.5; rx: 10; }
+    .changed { stroke: var(--accent, #2563eb); stroke-width: 2; }
+    .muted-fill { fill: var(--muted, #6b7280); }
+    .line { stroke: var(--muted, #6b7280); stroke-width: 1.8; fill: none; marker-end: url(#arrow-muted); }
+    .line-changed { stroke: var(--accent, #2563eb); stroke-width: 2.2; fill: none; marker-end: url(#arrow-accent); }
+    .badge { fill: var(--accent, #2563eb); opacity: 0.12; stroke: var(--accent, #2563eb); }
   </style>
+
   <defs>
-    <marker id="arrowAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent, #2563eb)"/>
+    <marker id="arrow-muted" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--muted, #6b7280)"/>
     </marker>
-    <marker id="arrowMuted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted, #94a3b8)"/>
+    <marker id="arrow-accent" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--accent, #2563eb)"/>
     </marker>
   </defs>
 
-  <text x="24" y="36" class="title">PR preview architecture (new label-gated pipeline)</text>
+  <text x="40" y="44" class="title">AI Preview Pipeline Architecture (Added in PR)</text>
+  <text x="40" y="66" class="sub">Label-gated workflow orchestrates four Codex stages and publishes GitHub Pages preview</text>
 
-  <rect x="40" y="90" width="240" height="90" class="box muted"/>
-  <text x="60" y="124">Pull request event</text>
-  <text x="60" y="146" class="small">opened/reopened/synchronize/</text>
-  <text x="60" y="163" class="small">labeled/unlabeled/closed</text>
+  <rect x="40" y="100" width="250" height="130" class="box changed"/>
+  <text x="58" y="130" font-weight="700">GitHub PR Event</text>
+  <text x="58" y="154">Trigger source</text>
+  <text x="58" y="178" class="sub">Requires <tspan fill="var(--accent, #2563eb)">ai-preview</tspan> label</text>
+  <rect x="58" y="192" width="130" height="24" class="badge" rx="12"/>
+  <text x="70" y="209" font-size="12">entry gate added</text>
 
-  <rect x="340" y="70" width="280" height="130" class="box changed"/>
-  <text x="360" y="106">Workflow trigger + job gating</text>
-  <text x="360" y="128" class="small">`.github/workflows/ai-preview.yaml`</text>
-  <text x="360" y="148" class="label">Build: label `ai-preview` + not closed</text>
-  <text x="360" y="168" class="label">Teardown: closed or unlabeled</text>
+  <rect x="340" y="100" width="310" height="130" class="box changed"/>
+  <text x="360" y="130" font-weight="700">Workflow Orchestrator</text>
+  <text x="360" y="154">`.github/workflows/ai-preview.yaml`</text>
+  <text x="360" y="178" class="sub">Runs stages, validates artifacts, controls deploy/teardown</text>
 
-  <rect x="690" y="50" width="230" height="170" class="box changed"/>
-  <text x="710" y="86">Codex stages (1→4)</text>
-  <text x="710" y="110" class="small">Analyze → Diagrams → Risks → Assemble</text>
-  <text x="710" y="132" class="small">Shared contract: `review-work/`</text>
-  <text x="710" y="156" class="label">Produces `review-site/index.html`</text>
+  <rect x="700" y="100" width="350" height="130" class="box changed"/>
+  <text x="720" y="130" font-weight="700">Codex Prompt Suite</text>
+  <text x="720" y="154">`.github/codex/agents/*` + review prompt</text>
+  <text x="720" y="178" class="sub">Defines strict staged contracts via `review-work/`</text>
 
-  <rect x="970" y="90" width="190" height="90" class="box changed"/>
-  <text x="990" y="124">`gh-pages` deployment</text>
-  <text x="990" y="146" class="small">`pr-&lt;number&gt;/` path</text>
+  <rect x="120" y="300" width="180" height="90" class="box changed"/>
+  <text x="136" y="332" font-weight="700">Stage 1 Analyze</text>
+  <text x="136" y="356" class="sub">`analysis.json`</text>
 
-  <rect x="370" y="300" width="330" height="140" class="box changed"/>
-  <text x="390" y="334">Preview lifecycle management</text>
-  <text x="390" y="356" class="small">Sticky PR comment with preview URL</text>
-  <text x="390" y="376" class="small">Concurrency cancel-in-progress</text>
-  <text x="390" y="396" class="small">Safe cleanup on unlabeled/closed</text>
+  <rect x="330" y="300" width="180" height="90" class="box changed"/>
+  <text x="346" y="332" font-weight="700">Stage 2 Diagrams</text>
+  <text x="346" y="356" class="sub">SVGs + manifest</text>
 
-  <path d="M280 135 L340 135" class="arrow-changed"/>
-  <path d="M620 135 L690 135" class="arrow-changed"/>
-  <path d="M920 135 L970 135" class="arrow-changed"/>
-  <path d="M1120 180 C1120 250, 830 250, 700 330" class="arrow-changed"/>
-  <path d="M530 300 C530 250, 510 230, 510 200" class="arrow-muted"/>
+  <rect x="540" y="300" width="180" height="90" class="box changed"/>
+  <text x="556" y="332" font-weight="700">Stage 3 Risks</text>
+  <text x="556" y="356" class="sub">`risks.json`</text>
 
-  <text x="42" y="500" class="small">Accent = behavior introduced in this PR; muted = surrounding context.</text>
+  <rect x="750" y="300" width="180" height="90" class="box changed"/>
+  <text x="766" y="332" font-weight="700">Stage 4 Assemble</text>
+  <text x="766" y="356" class="sub">`review-site/index.html`</text>
+
+  <rect x="940" y="420" width="130" height="70" class="box changed"/>
+  <text x="956" y="448" font-weight="700">GitHub Pages</text>
+  <text x="956" y="470" class="sub">PR preview path</text>
+
+  <path d="M290 165 L340 165" class="line-changed"/>
+  <text x="300" y="150" class="sub">trigger build</text>
+
+  <path d="M650 165 L700 165" class="line-changed"/>
+  <text x="658" y="150" class="sub">stage contracts</text>
+
+  <path d="M495 230 L210 300" class="line-changed"/>
+  <path d="M495 230 L420 300" class="line-changed"/>
+  <path d="M495 230 L630 300" class="line-changed"/>
+  <path d="M495 230 L840 300" class="line-changed"/>
+  <text x="478" y="254" class="sub">orchestrates</text>
+
+  <path d="M300 345 L330 345" class="line-changed"/>
+  <path d="M510 345 L540 345" class="line-changed"/>
+  <path d="M720 345 L750 345" class="line-changed"/>
+  <text x="410" y="334" class="sub">`review-work/` handoff</text>
+
+  <path d="M930 345 L1000 420" class="line-changed"/>
+  <text x="942" y="375" class="sub">validated deploy</text>
+
+  <path d="M1005 420 L1005 250 L495 250" class="line"/>
+  <text x="1012" y="260" class="sub">closed/merged → teardown</text>
 </svg>
-<figcaption>How label-gated jobs and stages produce the preview site</figcaption>
-</figure></div><ul class="compact"><li>{'name': 'PR preview workflow orchestration', 'path': '.github/workflows/ai-preview.yaml', 'change_kind': 'added', 'summary': 'Adds end-to-end workflow logic to run Codex stages, validate artifacts, deploy to GitHub Pages, and clean up on label removal or PR close.'}</li><li>{'name': 'Stage contract and shared execution rules', 'path': '.github/codex/agents/_shared.md', 'change_kind': 'added', 'summary': 'Defines common non-interactive rules, input contracts, and strict output/file-write boundaries shared by all stages.'}</li><li>{'name': 'Analyzer stage prompt', 'path': '.github/codex/agents/analyze.md', 'change_kind': 'added', 'summary': 'Specifies a schema-driven repository analysis stage that produces `review-work/analysis.json` as the factual base.'}</li><li>{'name': 'Diagram and risk stage prompts', 'path': '.github/codex/agents/diagrams.md', 'change_kind': 'added', 'summary': 'Defines deterministic SVG diagram generation and manifest output plus a structured adversarial risk assessment stage.'}</li><li>{'name': 'Assembler stage prompt', 'path': '.github/codex/agents/assemble.md', 'change_kind': 'added', 'summary': 'Defines strict artifact-only HTML assembly with inline SVG embedding, interactivity requirements, and CI-sensitive manifest/data-diagram constraints.'}</li></ul></section><section id="flow" class="reveal"><h2>Flow / sequence</h2><div class="diagram-stack"><figure class="diagram" data-diagram="02-sequence.svg">
-<svg viewBox="0 0 1200 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sequence of build/deploy and teardown paths">
-  <rect x="0" y="0" width="1200" height="620" fill="var(--surface, #ffffff)"/>
+<figcaption>New preview workflow components and artifact handoff boundaries</figcaption></figure><ul class="list"><li><strong>GitHub Actions preview orchestrator</strong> — Adds a label-gated workflow to run Codex stages, validate outputs, deploy previews, and tear them down when PR closes. <code>.github/workflows/ai-preview.yaml</code></li><li><strong>Codex multi-stage prompt suite</strong> — Defines shared conventions and four stage-specific prompts with strict input/output contracts. <code>.github/codex/agents</code></li><li><strong>Review site template and validation</strong> — Refines output rules and asset expectations for embedded diagrams and review-work references. <code>review-site/index.html</code></li><li><strong>Contributor documentation</strong> — Documents required secrets/variables, label usage, and stage-by-stage architecture for preview generation. <code>README.md</code></li></ul></section><section id="flow" class="reveal"><h2>Flow / Sequence</h2><figure class="diagram" data-diagram="02-sequence.svg"><svg viewBox="0 0 1200 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sequence of AI preview generation and teardown">
+  <rect x="0" y="0" width="1200" height="540" fill="var(--surface, #ffffff)"/>
   <style>
-    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; fill: var(--fg, #111827); font-size: 12px; }
-    .title { font-size: 18px; font-weight: 700; }
-    .lane { stroke: var(--border, #cbd5e1); stroke-width: 1.2; }
-    .head { fill: color-mix(in srgb, var(--muted, #94a3b8) 10%, white); stroke: var(--muted, #94a3b8); rx: 8; }
-    .step { fill: color-mix(in srgb, var(--accent, #2563eb) 12%, white); stroke: var(--accent, #2563eb); rx: 8; }
-    .ctx { fill: color-mix(in srgb, var(--muted, #94a3b8) 8%, white); stroke: var(--muted, #94a3b8); rx: 8; }
-    .arrow { stroke: var(--accent, #2563eb); stroke-width: 2; fill: none; marker-end: url(#arrow); }
-    .note { font-size: 11px; fill: var(--muted, #64748b); }
-  </style>
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent, #2563eb)"/>
-    </marker>
-  </defs>
-
-  <text x="24" y="34" class="title">Label-gated preview lifecycle sequence</text>
-
-  <rect x="50" y="56" width="160" height="34" class="head"/><text x="88" y="78">PR event</text>
-  <rect x="290" y="56" width="190" height="34" class="head"/><text x="315" y="78">GitHub workflow</text>
-  <rect x="570" y="56" width="210" height="34" class="head"/><text x="607" y="78">Codex stages</text>
-  <rect x="860" y="56" width="130" height="34" class="head"/><text x="885" y="78">gh-pages</text>
-  <rect x="1030" y="56" width="140" height="34" class="head"/><text x="1048" y="78">PR comment</text>
-
-  <line x1="130" y1="90" x2="130" y2="570" class="lane"/>
-  <line x1="385" y1="90" x2="385" y2="570" class="lane"/>
-  <line x1="675" y1="90" x2="675" y2="570" class="lane"/>
-  <line x1="925" y1="90" x2="925" y2="570" class="lane"/>
-  <line x1="1100" y1="90" x2="1100" y2="570" class="lane"/>
-
-  <rect x="70" y="120" width="120" height="34" class="ctx"/><text x="84" y="142">opened/sync/labeled</text>
-  <path d="M190 137 L320 137" class="arrow"/>
-
-  <rect x="310" y="170" width="150" height="42" class="step"/>
-  <text x="322" y="188">Gate condition:</text>
-  <text x="322" y="203">label=`ai-preview` and not closed</text>
-
-  <path d="M460 191 L600 191" class="arrow"/>
-  <rect x="590" y="224" width="170" height="42" class="step"/>
-  <text x="602" y="242">Run Stage 1..4</text>
-  <text x="602" y="257">Artifacts under `review-work/`</text>
-
-  <path d="M760 245 L900 245" class="arrow"/>
-  <rect x="875" y="278" width="100" height="42" class="step"/>
-  <text x="888" y="296">Deploy</text>
-  <text x="882" y="311">`pr-&lt;n&gt;/`</text>
-
-  <path d="M975 299 L1060 299" class="arrow"/>
-  <rect x="1040" y="332" width="120" height="42" class="step"/>
-  <text x="1048" y="350">Upsert sticky</text>
-  <text x="1048" y="365">preview comment</text>
-
-  <rect x="52" y="430" width="156" height="34" class="ctx"/><text x="72" y="452">unlabeled/closed</text>
-  <path d="M208 447 L320 447" class="arrow"/>
-  <rect x="310" y="478" width="150" height="42" class="step"/>
-  <text x="324" y="496">Teardown job</text>
-  <text x="318" y="511">remove preview path</text>
-  <path d="M460 499 L900 499" class="arrow"/>
-  <path d="M975 499 L1060 499" class="arrow"/>
-
-  <text x="24" y="600" class="note">Flow grounded in `.github/workflows/ai-preview.yaml` conditions and jobs.</text>
-</svg>
-<figcaption>Creation and teardown paths across PR events</figcaption>
-</figure></div><ul class="compact"><li>{'name': 'label-gated preview lifecycle', 'kind': 'sequence', 'steps': [{'from': 'pull_request event', 'to': 'workflow trigger', 'label': 'on opened/reopened/synchronize/labeled/unlabeled/closed', 'changed': True}, {'from': 'workflow trigger', 'to': 'build-and-deploy job', 'label': 'runs only when PR has `ai-preview` label and action is not `closed`', 'changed': True}, {'from': 'build-and-deploy job', 'to': 'review-work artifacts', 'label': 'runs sequential Codex stages producing analysis, diagrams, risks, and final HTML', 'changed': True}, {'from': 'review-work artifacts', 'to': 'gh-pages branch', 'label': 'publishes `review-site/` under `pr-&lt;number&gt;/` and posts/updates sticky PR comment', 'changed': True}, {'from': 'pull_request unlabeled/closed', 'to': 'teardown job', 'label': 'removes deployed preview path and updates/removes preview comment', 'changed': True}]}</li><li>{'name': 'multi-stage content pipeline', 'kind': 'dataflow', 'steps': [{'from': '`pr.diff` + `meta.txt` + repository', 'to': 'Stage 1 analyze', 'label': 'creates `review-work/analysis.json`', 'changed': True}, {'from': '`analysis.json`', 'to': 'Stage 2 diagrams', 'label': 'creates `review-work/diagrams/*.svg` and `review-work/diagrams/diagrams.json`', 'changed': True}, {'from': '`analysis.json` + diagrams', 'to': 'Stage 3 risks', 'label': 'creates `review-work/risks.json`', 'changed': True}, {'from': 'analysis + diagrams + risks artifacts', 'to': 'Stage 4 assemble', 'label': 'creates `review-site/index.html` with inline diagrams and interactive sections', 'changed': True}]}</li></ul></section><section id="files" class="reveal"><h2>File walkthrough</h2><div class="tools"><input id="fileFilter" type="search" placeholder="Jump to file" aria-label="Jump to file" /></div><details class="file-item" data-file=".github/workflows/ai-preview.yaml"><summary><span class="file-path">.github/workflows/ai-preview.yaml</span><span class="file-summary">Introduces the full PR preview automation pipeline with label gates, staged Codex execution, artifact validation, deploy/teardown logic, and PR comment management.</span></summary></details><details class="file-item" data-file=".github/codex/agents/_shared.md"><summary><span class="file-path">.github/codex/agents/_shared.md</span><span class="file-summary">Defines shared multi-stage conventions, CI-safe constraints, and strict artifact-based communication across stages.</span></summary></details><details class="file-item" data-file=".github/codex/agents/analyze.md"><summary><span class="file-path">.github/codex/agents/analyze.md</span><span class="file-summary">Adds the Stage 1 analyzer contract and exact JSON schema to produce the foundational PR fact model.</span></summary></details><details class="file-item" data-file=".github/codex/agents/diagrams.md"><summary><span class="file-path">.github/codex/agents/diagrams.md</span><span class="file-summary">Adds Stage 2 instructions for generating deterministic SVG diagrams and a manifest tied to analysis outputs.</span></summary></details><details class="file-item" data-file=".github/codex/agents/risks.md"><summary><span class="file-path">.github/codex/agents/risks.md</span><span class="file-summary">Adds Stage 3 instructions for adversarial risk analysis with severity ranking, evidence, and review checklist output.</span></summary></details><details class="file-item" data-file=".github/codex/agents/assemble.md"><summary><span class="file-path">.github/codex/agents/assemble.md</span><span class="file-summary">Adds Stage 4 rules to assemble a visual-first HTML dashboard from prior artifacts, including inline SVG and UI interaction constraints.</span></summary></details><details class="file-item" data-file=".github/codex/review-prompt.md"><summary><span class="file-path">.github/codex/review-prompt.md</span><span class="file-summary">Transitions from the previous single-prompt onboarding HTML instructions to the new staged-agent workflow documentation and constraints.</span></summary></details><details class="file-item" data-file=".github/codex/review-promt.md"><summary><span class="file-path">.github/codex/review-promt.md</span><span class="file-summary">Adds an initial typo-named prompt file used in early commits before normalization to the corrected prompt path.</span></summary></details></section><section id="risks" class="reveal"><h2>Risks</h2><div class="filters"><button class="fbtn active" data-filter="all">All</button><button class="fbtn" data-filter="high">High</button><button class="fbtn" data-filter="medium">Medium</button><button class="fbtn" data-filter="low">Low</button></div><div class="risk-grid"><article class="risk" data-severity="medium"><div class="risk-head"><span class="sev medium">medium</span></div><p>Preview updates no longer happen on new commits because the workflow now only triggers on labeled/closed events, so deployed review pages can become stale while a PR evolves.</p><p class="mit">Either reintroduce `synchronize`/`reopened` triggers or clearly enforce and document mandatory relabeling after every push.</p></article><article class="risk" data-severity="medium"><div class="risk-head"><span class="sev medium">medium</span></div><p>Each run globally installs the latest `@openai/codex` without version pinning, so behavior and output contracts can change unexpectedly and break artifact validation or HTML assembly.</p><p class="mit">Pin `@openai/codex` to a known version (or lock by checksum) and update intentionally with a compatibility check.</p></article><article class="risk" data-severity="low"><div class="risk-head"><span class="sev low">low</span></div><p>The workflow writes app-token-authenticated remote URLs into `.git/config` in temporary clones and does not scrub them, increasing accidental credential exposure risk if later debug/log steps ever print git config.</p><p class="mit">Prefer `actions/checkout` with token inputs or explicitly reset/remove remotes after push/cleanup steps.</p></article></div></section><section id="checklist" class="reveal"><h2>Review checklist</h2><ul class="compact"><li>Check `.github/workflows/ai-preview.yaml` trigger behavior matches intended lifecycle: relabel-only regeneration is explicitly acceptable for reviewers.</li><li>Check `.github/workflows/ai-preview.yaml` cleanup path reliably deletes `pr-preview/pr-&lt;number&gt;` and updates/removes sticky comments on close events.</li><li>Check `.github/workflows/ai-preview.yaml` label gates are consistent (`ai-preview` in job `if` and comment/deploy logic) so no mismatched label leaves orphaned previews.</li><li>Check `.github/codex/agents/assemble.md` constraints (`data-diagram` ids, missing SVG warnings, required sections) still tolerate real outputs from analyze/diagrams stages.</li><li>Check `review-work` artifact schema compatibility end-to-end: `analysis.json`, `diagrams.json`, and `risks.json` fields consumed by the assembler are all produced by upstream stage prompts.</li></ul></section><section id="testing" class="reveal"><h2>Testing</h2><span class="chip">no tests</span><ul class="compact"><li>No automated tests were added or modified for `.github/workflows/ai-preview.yaml` behavior changes.</li><li>No fixture-based validation tests were added for the multi-stage prompt contract under `.github/codex/agents/*.md`.</li><li>Deployment/teardown safety and stale-preview behavior are untested and depend on runtime GitHub Actions execution paths.</li></ul></section><section class="reveal"><h2>Files</h2><div class="diagram-stack"><figure class="diagram" data-diagram="03-data-shape.svg">
-<svg viewBox="0 0 1200 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Data-shape outputs across multi-stage pipeline">
-  <rect x="0" y="0" width="1200" height="500" fill="var(--surface, #ffffff)"/>
-  <style>
-    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; fill: var(--fg, #111827); font-size: 12px; }
-    .title { font-size: 18px; font-weight: 700; }
-    .card { fill: var(--surface, #ffffff); stroke: var(--border, #cbd5e1); stroke-width: 1.4; rx: 10; }
-    .new { stroke: var(--accent, #2563eb); fill: color-mix(in srgb, var(--accent, #2563eb) 10%, white); }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: var(--fg, #111827); font-size: 12px; }
+    .title { font-size: 20px; font-weight: 700; }
+    .sub { fill: var(--muted, #6b7280); font-size: 12px; }
+    .lane { stroke: var(--border, #d1d5db); stroke-width: 1.2; }
+    .lifeline { stroke: var(--muted, #6b7280); stroke-dasharray: 5 4; }
     .arrow { stroke: var(--accent, #2563eb); stroke-width: 2; fill: none; marker-end: url(#arr); }
-    .muted { fill: var(--muted, #64748b); font-size: 11px; }
+    .note { fill: var(--surface, #ffffff); stroke: var(--border, #d1d5db); rx: 8; }
   </style>
   <defs>
-    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent, #2563eb)"/>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--accent, #2563eb)"/>
     </marker>
   </defs>
 
-  <text x="24" y="34" class="title">Stage artifact data shapes introduced by the PR</text>
+  <text x="36" y="40" class="title">AI Preview Generation + Teardown Sequence</text>
+  <text x="36" y="62" class="sub">Ordered flow from label-gated trigger to publish and cleanup</text>
 
-  <rect x="40" y="90" width="300" height="180" class="card new"/>
-  <text x="58" y="118">`review-work/analysis.json`</text>
-  <text x="58" y="140">- meta, stats, tldr, key_facts, why</text>
-  <text x="58" y="160">- components[], flows[], data_shapes[]</text>
-  <text x="58" y="180">- files[], tests{status,names}</text>
-  <text x="58" y="210" class="muted">Stage 1 factual base for all later stages</text>
+  <line x1="80" y1="90" x2="80" y2="500" class="lifeline"/>
+  <line x1="310" y1="90" x2="310" y2="500" class="lifeline"/>
+  <line x1="540" y1="90" x2="540" y2="500" class="lifeline"/>
+  <line x1="770" y1="90" x2="770" y2="500" class="lifeline"/>
+  <line x1="1000" y1="90" x2="1000" y2="500" class="lifeline"/>
 
-  <rect x="450" y="70" width="320" height="220" class="card new"/>
-  <text x="468" y="98">`review-work/diagrams.json` entries</text>
-  <text x="468" y="120">{file, type, title, caption, section,</text>
-  <text x="468" y="138"> width, height, source}</text>
-  <text x="468" y="168" fill="var(--accent, #2563eb)">New fields highlighted in analysis:</text>
-  <text x="468" y="188" fill="var(--accent, #2563eb)">`section`, `caption`, `source`</text>
-  <text x="468" y="218" class="muted">Referenced by assembler; validated in CI</text>
+  <text x="38" y="85" font-weight="700">PR + Label</text>
+  <text x="240" y="85" font-weight="700">Workflow</text>
+  <text x="492" y="85" font-weight="700">Codex Stages</text>
+  <text x="742" y="85" font-weight="700">Validation</text>
+  <text x="952" y="85" font-weight="700">GitHub Pages</text>
 
-  <rect x="880" y="90" width="280" height="180" class="card new"/>
-  <text x="898" y="118">`review-work/risks.json`</text>
-  <text x="898" y="140">- summary</text>
-  <text x="898" y="160">- risks[{id,title,severity,...}]</text>
-  <text x="898" y="180">- checklist[]</text>
-  <text x="898" y="200">- testing{status,gaps,suggestions}</text>
-  <text x="898" y="228" class="muted">Stage 3 adversarial review output</text>
+  <path d="M90 130 L300 130" class="arrow"/>
+  <text x="120" y="122">PR event with `ai-preview` label</text>
 
-  <path d="M340 170 L450 170" class="arrow"/>
-  <path d="M770 170 L880 170" class="arrow"/>
+  <path d="M320 170 L530 170" class="arrow"/>
+  <text x="346" y="162">Stage 1: produce `analysis.json`</text>
 
-  <rect x="330" y="350" width="540" height="92" class="card"/>
-  <text x="350" y="382">Final assembly uses these artifacts to produce `review-site/index.html`</text>
-  <text x="350" y="404" class="muted">Assembler must inline each manifest SVG and match `data-diagram` to `file`.</text>
+  <path d="M320 210 L530 210" class="arrow"/>
+  <text x="346" y="202">Stage 2: read analysis, write SVGs + `diagrams.json`</text>
+
+  <path d="M320 250 L530 250" class="arrow"/>
+  <text x="346" y="242">Stage 3: write `risks.json`</text>
+
+  <path d="M320 290 L530 290" class="arrow"/>
+  <text x="346" y="282">Stage 4: assemble `review-site/index.html`</text>
+
+  <path d="M550 340 L760 340" class="arrow"/>
+  <text x="574" y="332">Artifact checks and consistency validation</text>
+
+  <path d="M780 380 L990 380" class="arrow"/>
+  <text x="812" y="372">Deploy preview under PR path</text>
+
+  <path d="M90 440 L300 440" class="arrow"/>
+  <text x="114" y="432">PR closed or merged</text>
+
+  <path d="M320 470 L990 470" class="arrow"/>
+  <text x="520" y="462">Teardown job removes preview files and republishes</text>
+
+  <rect x="520" y="108" width="210" height="54" class="note"/>
+  <text x="534" y="130" font-weight="700">Changed flow</text>
+  <text x="534" y="148" class="sub">All sequence steps are PR additions</text>
 </svg>
-<figcaption>Stage artifacts and schema additions consumed by assembler</figcaption>
-</figure></div></section></main></div><script>
-(()=>{const io=('IntersectionObserver'in window)?new IntersectionObserver(es=>es.forEach(e=>e.target.classList.toggle('in',e.isIntersecting)),{threshold:.08}):null;document.querySelectorAll('.reveal').forEach(el=>io?io.observe(el):el.classList.add('in'));const prog=document.getElementById('prog');const onScroll=()=>{const h=document.documentElement;const max=h.scrollHeight-h.clientHeight;prog.style.width=(max>0?(h.scrollTop/max*100):0)+'%'};document.addEventListener('scroll',onScroll,{passive:true});onScroll();document.querySelectorAll('.copy-btn').forEach(btn=>btn.addEventListener('click',async()=>{const pre=btn.parentElement.querySelector('pre');const txt=[...pre.querySelectorAll('code')].map(c=>c.textContent).join('
-');try{await navigator.clipboard.writeText(txt);btn.textContent='Copied';setTimeout(()=>btn.textContent='Copy',1200)}catch(_){}}));const fi=document.getElementById('fileFilter');if(fi){fi.addEventListener('input',()=>{const q=fi.value.toLowerCase().trim();document.querySelectorAll('.file-item').forEach(d=>{const f=(d.dataset.file||'').toLowerCase();d.style.display=(!q||f.includes(q))?'':'none'})})}document.querySelectorAll('.fbtn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('active'));b.classList.add('active');const k=b.dataset.filter;document.querySelectorAll('.risk').forEach(r=>{r.style.display=(k==='all'||r.dataset.severity===k)?'':'none'})}))})();
-</script></body></html>
+<figcaption>End-to-end labeled PR flow through stages, deploy, and teardown</figcaption></figure></section><section id="files" class="reveal"><div class="files-top"><h2>File Walkthrough</h2><input id="fileSearch" class="search" type="search" placeholder="Jump to file"></div><details class="file" data-file=".github/workflows/ai-preview.yaml"><summary>.github/workflows/ai-preview.yaml</summary><div class="muted">Introduces end-to-end CI workflow including label gating, staged Codex executions, output validation, Pages deploy, and teardown logic.</div><figure class="diagram" data-diagram="03-data-shape.svg"><svg viewBox="0 0 1100 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Data shape additions in review-work artifacts">
+  <rect x="0" y="0" width="1100" height="500" fill="var(--surface, #ffffff)"/>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: var(--fg, #111827); font-size: 12px; }
+    .title { font-size: 20px; font-weight: 700; }
+    .sub { fill: var(--muted, #6b7280); }
+    .panel { fill: var(--surface, #ffffff); stroke: var(--border, #d1d5db); stroke-width: 1.5; rx: 10; }
+    .new { fill: var(--accent, #2563eb); opacity: 0.1; stroke: var(--accent, #2563eb); }
+    .arrow { stroke: var(--muted, #6b7280); stroke-width: 1.8; marker-end: url(#m); fill: none; }
+  </style>
+  <defs>
+    <marker id="m" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--muted, #6b7280)"/>
+    </marker>
+  </defs>
+
+  <text x="34" y="42" class="title">New `review-work/` Data Shapes Introduced by Pipeline</text>
+  <text x="34" y="64" class="sub">All shown structures are additions; accent marks newly introduced top-level fields</text>
+
+  <rect x="40" y="96" width="320" height="360" class="panel"/>
+  <text x="58" y="124" font-weight="700">`analysis.json`</text>
+  <rect x="56" y="138" width="288" height="300" class="new" rx="8"/>
+  <text x="72" y="164">meta</text>
+  <text x="72" y="186">stats</text>
+  <text x="72" y="208">tldr</text>
+  <text x="72" y="230">key_facts[]</text>
+  <text x="72" y="252">why</text>
+  <text x="72" y="274">components[]</text>
+  <text x="72" y="296">flows[]</text>
+  <text x="72" y="318">data_shapes[]</text>
+  <text x="72" y="340">files[]</text>
+  <text x="72" y="362">tests</text>
+
+  <rect x="390" y="140" width="300" height="140" class="panel"/>
+  <text x="408" y="168" font-weight="700">`diagrams.json`</text>
+  <rect x="406" y="182" width="268" height="82" class="new" rx="8"/>
+  <text x="422" y="208">diagrams[]</text>
+  <text x="422" y="230" class="sub">entries include id/title/source/svg</text>
+
+  <rect x="730" y="140" width="320" height="190" class="panel"/>
+  <text x="748" y="168" font-weight="700">`risks.json`</text>
+  <rect x="746" y="182" width="288" height="132" class="new" rx="8"/>
+  <text x="762" y="208">risks[]</text>
+  <text x="762" y="230">checklist[]</text>
+  <text x="762" y="252">testing</text>
+
+  <path d="M360 210 L390 210" class="arrow"/>
+  <path d="M690 210 L730 210" class="arrow"/>
+  <text x="468" y="198" class="sub">feeds diagram stage</text>
+  <text x="820" y="198" class="sub">feeds risk stage</text>
+
+  <rect x="390" y="340" width="660" height="116" class="panel"/>
+  <text x="408" y="368" font-weight="700">Pipeline artifact contract</text>
+  <text x="408" y="392" class="sub">Analyze writes base context → Diagrams and Risks consume it</text>
+  <text x="408" y="414" class="sub">Assemble stage then consumes all artifacts to render review dashboard</text>
+</svg>
+<figcaption>Added review-work JSON schemas and how stages depend on them</figcaption></figure></details><details class="file" data-file=".github/codex/agents/_shared.md"><summary>.github/codex/agents/_shared.md</summary><div class="muted">Adds common stage rules: non-interactive behavior, grounded claims, no builds/tests/network, and artifact-only file writes.</div></details><details class="file" data-file=".github/codex/agents/analyze.md"><summary>.github/codex/agents/analyze.md</summary><div class="muted">Defines Stage 1 schema and expectations for repository-grounded PR analysis output.</div></details><details class="file" data-file=".github/codex/agents/diagrams.md"><summary>.github/codex/agents/diagrams.md</summary><div class="muted">Defines Stage 2 requirements for hand-authored SVG diagrams and manifest generation.</div></details><details class="file" data-file=".github/codex/agents/risks.md"><summary>.github/codex/agents/risks.md</summary><div class="muted">Defines Stage 3 risk modeling output with severity, rationale, and reviewer checklist items.</div></details><details class="file" data-file=".github/codex/agents/assemble.md"><summary>.github/codex/agents/assemble.md</summary><div class="muted">Defines Stage 4 assembly constraints for a self-contained HTML dashboard that only presents prior artifacts.</div></details><details class="file" data-file=".github/codex/review-prompt.md"><summary>.github/codex/review-prompt.md</summary><div class="muted">Replaces earlier single-prompt approach with updated visual-first instructions and stricter reviewer-oriented output goals.</div></details><details class="file" data-file="readme.md"><summary>README.md</summary><div class="muted">Documents motivation, architecture, required secrets/variables, and usage for the `ai-preview` label workflow.</div></details><details class="file" data-file="review-site/index.html"><summary>review-site/index.html</summary><div class="muted">Adjusts template/validation assumptions for diagram embedding and review-work artifact references.</div></details></section><section id="risks" class="reveal"><h2>Risks</h2><div class="risk-controls"><button class="btn active" data-filter="all">All</button><button class="btn" data-filter="high">High</button><button class="btn" data-filter="medium">Medium</button><button class="btn" data-filter="low">Low</button></div><div class="risk-grid" id="riskGrid"><article class="risk" data-severity="high"><div><span class="sev high">high</span></div><p>The workflow installs and executes an unpinned `@openai/codex` from npm, so a compromised/new upstream release could execute arbitrary code with repo write and secrets access during CI.</p><p class="muted">Pin the Codex CLI to an exact version (or digest-verified artifact) and gate upgrades through reviewed PRs.</p></article><article class="risk" data-severity="medium"><div><span class="sev medium">medium</span></div><p>The workflow writes the full PR title/body and commit subjects into `meta.txt` and sends them to the model, which can exfiltrate sensitive text included in PR content to the external LLM endpoint.</p><p class="muted">Add explicit redaction/allowlist filtering for secrets and sensitive patterns before building `meta.txt`, or require opt-in labels only on trusted internal PRs.</p></article><article class="risk" data-severity="medium"><div><span class="sev medium">medium</span></div><p>Preview cleanup only runs on `pull_request.closed`, so stale `gh-pages/pr-preview/pr-&lt;n&gt;` directories persist if labeling strategy changes or teardown fails once, leaving outdated reviewer artifacts publicly served.</p><p class="muted">Add periodic reconciliation (scheduled cleanup) that removes preview directories for non-open PRs and validate teardown success with alerting.</p></article><article class="risk" data-severity="low"><div><span class="sev low">low</span></div><p>The documented trigger semantics changed to label-only regeneration; new commits after initial labeling are not reflected unless label is re-applied, so reviewers can trust stale previews.</p><p class="muted">Surface a prominent staleness indicator (head SHA/timestamp) in the generated page and optionally support `synchronize` events for automatic refresh.</p></article></div></section><section id="checklist" class="reveal"><h2>Review Checklist</h2><ul class="list"><li>Verify `.github/workflows/ai-preview.yaml` pins every executable action/tool version, including `@openai/codex`, before enabling in protected repos.</li><li>Check that `Collect PR context` in `.github/workflows/ai-preview.yaml` cannot include sensitive data in `meta.txt` that should not leave GitHub/Azure boundaries.</li><li>Confirm teardown path in `.github/workflows/ai-preview.yaml` deletes `pr-preview/pr-&lt;number&gt;` on close and that a failed push cannot silently leave stale pages.</li><li>Check generated `review-site/index.html` includes PR head SHA and generation time so humans can detect stale previews after new commits.</li><li>Verify GitHub App permissions (`contents:write`, `pull-requests:write`) used in `.github/workflows/ai-preview.yaml` are the minimum required for deploy + comment updates.</li></ul></section><section id="testing" class="reveal"><h2>Testing</h2><p><span class="chip">no tests</span></p><div class="facts"><div class="fact"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.5-1.5z"/></svg><div>No automated tests are added for workflow trigger logic (`labeled`/`closed`) or teardown behavior.</div></div><div class="fact"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.5-1.5z"/></svg><div>No tests validate `meta.txt` sanitization/redaction before model submission.</div></div><div class="fact"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.5-1.5z"/></svg><div>No tests verify generated preview freshness metadata against current PR head SHA.</div></div></div></section></main></div><script>const q=s=>document.querySelector(s),qa=s=>[...document.querySelectorAll(s)];const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('on')}),{threshold:.08});qa('.reveal').forEach(el=>io.observe(el));const bar=q('#bar');const onScroll=()=>{const h=document.documentElement;const p=(h.scrollTop)/(h.scrollHeight-h.clientHeight||1);bar.style.width=(p*100).toFixed(1)+'%'};addEventListener('scroll',onScroll,{passive:true});onScroll();qa('.copy').forEach(b=>b.addEventListener('click',async()=>{const pre=b.parentElement.querySelector('.code');const text=pre.innerText.replace(/^\s*\d+\s/gm,'');try{await navigator.clipboard.writeText(text);b.textContent='Copied';setTimeout(()=>b.textContent='Copy',900)}catch(e){b.textContent='Failed';setTimeout(()=>b.textContent='Copy',900)}}));const search=q('#fileSearch');if(search){search.addEventListener('input',()=>{const v=search.value.toLowerCase().trim();qa('.file').forEach(d=>{d.style.display=d.dataset.file.includes(v)?'block':'none'})})}qa('.btn').forEach(btn=>btn.addEventListener('click',()=>{qa('.btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');const f=btn.dataset.filter;qa('#riskGrid .risk').forEach(card=>{card.style.display=(f==='all'||card.dataset.severity===f)?'block':'none'})}));</script></body></html>
