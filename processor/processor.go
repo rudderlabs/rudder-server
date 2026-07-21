@@ -150,6 +150,7 @@ type Handle struct {
 	isolationStrategy          isolation.Strategy
 	limiter                    struct {
 		read         kitsync.Limiter
+		pread        kitsync.Limiter // proc pool read (getProcJobs), independent of gw pool read
 		preprocess   kitsync.Limiter
 		srcHydration kitsync.Limiter
 		pretransform kitsync.Limiter
@@ -682,6 +683,10 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.read.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.read.dynamicPeriod")))
+	proc.limiter.pread = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_pread",
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.pread.limit"),
+		s,
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.pread.dynamicPeriod")))
 	proc.limiter.preprocess = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_preprocess",
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.preprocess.limit"),
 		s,
@@ -706,14 +711,15 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.store.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.store.dynamicPeriod")))
+
 	g.Go(func() error {
 		limiterGroup.Wait()
 		return nil
 	})
 
-	// pinger loop
+	// gw consumer loop
 	g.Go(crash.Wrapper(func() error {
-		proc.logger.Infon("Starting pinger loop")
+		proc.logger.Infon("Starting gw consumer loop")
 		proc.backendConfig.WaitForConfig(ctx)
 		proc.logger.Infon("Backend config received")
 
@@ -739,7 +745,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 
 		h := &workerHandleAdapter{proc}
 		pool := workerpool.New(ctx, func(partition string) workerpool.Worker {
-			return newPartitionWorker(partition, h, proc.statsFactory.NewTracer("partitionWorker"), proc.statsFactory)
+			return newGwPartitionWorker(partition, h, proc.statsFactory.NewTracer("gwPartitionWorker"), proc.statsFactory)
 		}, proc.logger)
 		defer pool.Shutdown()
 		for {
@@ -752,6 +758,11 @@ func (proc *Handle) Start(ctx context.Context) error {
 				pool.PingWorker(partition)
 			}
 		}
+	}))
+
+	// proc consumer loop — no-op unless procDB is configured
+	g.Go(crash.Wrapper(func() error {
+		return proc.startProcConsumer(ctx)
 	}))
 
 	return g.Wait()
@@ -2429,22 +2440,20 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	activationRecordsReports := proc.activationRecordsReporter.GenerateReportsFromJobs(preTrans.jobList, sourceCategoriesBySourceID)
 
 	return &transformationMessage{
-		preTrans.subJobs.ctx,
-		groupedEvents,
-		sourcePipelineSteps,
-		preTrans.eventsByMessageID,
-		uniqueMessageIdsBySrcDestKey,
-		preTrans.reportMetrics,
-		preTrans.statusList,
-		preTrans.sourceDupStats,
-		preTrans.dedupKeys,
-
-		preTrans.totalEvents,
-
-		preTrans.subJobs.hasMore,
-		preTrans.subJobs.rsourcesStats,
-		trackedUsersReports,
-		activationRecordsReports,
+		ctx:                          preTrans.subJobs.ctx,
+		groupedEvents:                groupedEvents,
+		srcPipelineSteps:             sourcePipelineSteps,
+		eventsByMessageID:            preTrans.eventsByMessageID,
+		uniqueMessageIdsBySrcDestKey: uniqueMessageIdsBySrcDestKey,
+		reportMetrics:                preTrans.reportMetrics,
+		statusList:                   preTrans.statusList,
+		sourceDupStats:               preTrans.sourceDupStats,
+		dedupKeys:                    preTrans.dedupKeys,
+		totalEvents:                  preTrans.totalEvents,
+		hasMore:                      preTrans.subJobs.hasMore,
+		rsourcesStats:                preTrans.subJobs.rsourcesStats,
+		trackedUsersReports:          trackedUsersReports,
+		activationRecordsReports:     activationRecordsReports,
 	}, nil
 }
 
@@ -2690,25 +2699,23 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 	}
 
 	return &storeMessage{
-		in.ctx,
-		in.trackedUsersReports,
-		in.activationRecordsReports,
-		in.statusList,
-		destJobs,
-		batchDestJobs,
-		droppedJobs,
-
-		procErrorJobsByDestID,
-		lo.Keys(routerDestIDs),
-
-		in.reportMetrics,
-		in.sourceDupStats,
-		in.dedupKeys,
-		in.totalEvents,
-		in.start,
-		in.hasMore,
-		in.rsourcesStats,
-		in.traces,
+		ctx:                      in.ctx,
+		trackedUsersReports:      in.trackedUsersReports,
+		activationRecordsReports: in.activationRecordsReports,
+		statusList:               in.statusList,
+		destJobs:                 destJobs,
+		batchDestJobs:            batchDestJobs,
+		droppedJobs:              droppedJobs,
+		procErrorJobsByDestID:    procErrorJobsByDestID,
+		routerDestIDs:            lo.Keys(routerDestIDs),
+		reportMetrics:            in.reportMetrics,
+		sourceDupStats:           in.sourceDupStats,
+		dedupKeys:                in.dedupKeys,
+		totalEvents:              in.totalEvents,
+		start:                    in.start,
+		hasMore:                  in.hasMore,
+		rsourcesStats:            in.rsourcesStats,
+		traces:                   in.traces,
 	}
 }
 
@@ -2735,6 +2742,21 @@ type storeMessage struct {
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
 	traces        map[string]stats.Tags
+
+	// statusDB is the jobsdb whose job statuses (statusList) are updated in the final
+	// commit. When nil it defaults to gatewayDB (the in-memory gw pipeline). The
+	// proc pool sets it to procDB so the same storeStage commits its
+	// status update + reports + rsources against the intermediate jobsdb instead.
+	statusDB jobsdb.JobsDB
+}
+
+// statusUpdateDB returns the jobsdb whose statuses storeStage must update: the
+// explicit statusDB when set (proc pool / procDB), otherwise gatewayDB (gw pool).
+func (proc *Handle) statusUpdateDB(in *storeMessage) jobsdb.JobsDB {
+	if in.statusDB != nil {
+		return in.statusDB
+	}
+	return proc.gatewayDB
 }
 
 func (sm *storeMessage) merge(subJob *storeMessage) {
@@ -2946,11 +2968,12 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 		}
 	}
 	in.rsourcesStats.CollectStats(statusList)
+	statusDB := proc.statusUpdateDB(in)
 	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList)
+		return statusDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
+			err := statusDB.UpdateJobStatusInTx(ctx, tx, statusList)
 			if err != nil {
-				return fmt.Errorf("updating gateway jobs statuses: %w", err)
+				return fmt.Errorf("updating %s jobs statuses: %w", statusDB.Identifier(), err)
 			}
 
 			if proc.isReportingEnabled() {
