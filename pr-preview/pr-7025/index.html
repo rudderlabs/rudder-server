@@ -1,168 +1,194 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>feat: create a web page to explain the pr for prs labeled with `preview` #7025 · PR Review</title>
+<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>feat: create a web page to explain the pr for prs labeled with `preview`</title><style>
+:root{--accent:#2f6feb;--muted:#6b7280;--fg:#111827;--surface:#ffffff;--border:#e5e7eb;--bg:#f8fafc;--good:#16a34a;--bad:#dc2626}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--fg);background:var(--bg)}
+.container{max-width:1100px;margin:0 auto;padding:20px 16px 80px;display:grid;grid-template-columns:220px 1fr;gap:20px}.toc{position:sticky;top:12px;align-self:start;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px}.toc a{display:block;padding:6px 8px;color:var(--muted);text-decoration:none;border-radius:8px}.toc a:hover{background:#f3f4f6;color:var(--fg)}
+.progress{height:4px;background:#eef2ff;border-radius:99px;overflow:hidden;margin:6px 0 8px}.progress>i{display:block;height:100%;width:0;background:var(--accent)}main>*{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px}
+.top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}h1{margin:0 0 8px;font-size:24px;line-height:1.2}h2{margin:0 0 10px;font-size:18px}.meta-row,.stats-row{display:flex;gap:8px;flex-wrap:wrap}.badge,.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:#fff;color:#374151}
+.plus{color:var(--good)}.minus{color:var(--bad)}.facts{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:6px}.facts li{display:flex;gap:8px}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}.diagram{margin:0;border:1px solid var(--border);border-radius:10px;padding:8px;background:#fff;overflow:auto}.diagram svg{max-width:100%;height:auto;display:block}figcaption{font-size:12px;color:var(--muted);margin-top:6px}
+.compact{margin:8px 0 0;padding-left:18px}.file-item{border:1px solid var(--border);border-radius:10px;padding:8px;margin:10px 0;background:#fff}summary{cursor:pointer;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.file-path{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.file-summary{color:var(--muted)}.tools{display:flex;justify-content:flex-end}input[type=search]{width:280px;max-width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px}
+.code-wrap{position:relative;margin-top:8px}.copy-btn{position:absolute;top:8px;right:8px;border:1px solid var(--border);background:#fff;border-radius:8px;padding:4px 8px;cursor:pointer}pre{margin:0;overflow:auto;background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:10px}.code-line{display:flex;gap:10px;white-space:pre}.gutter{display:inline-block;width:22px;text-align:right;color:var(--muted);flex:0 0 22px}.callout{color:var(--accent);font-size:12px}
+.risk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}.risk{border:1px solid var(--border);border-radius:10px;padding:10px;background:#fff}.sev{padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--border);text-transform:capitalize}.sev.high{color:#b91c1c}.sev.medium{color:#92400e}.sev.low{color:#065f46}.filters{display:flex;gap:8px;margin-bottom:10px}.fbtn{border:1px solid var(--border);background:#fff;border-radius:999px;padding:4px 10px;cursor:pointer}.fbtn.active{border-color:var(--accent);color:var(--accent)}
+.reveal{opacity:0;transform:translateY(8px);transition:opacity .35s ease,transform .35s ease}.reveal.in{opacity:1;transform:none}
+@media (max-width:900px){.container{grid-template-columns:1fr}.toc{position:relative;top:0}.split{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.reveal{opacity:1;transform:none;transition:none}}
+</style></head><body><div class="container"><nav class="toc" aria-label="Contents"><div class="progress"><i id="prog"></i></div><a href="#top">Top</a><a href="#tldr">TL;DR</a><a href="#why">Why</a><a href="#what">What</a><a href="#flow">Flow</a><a href="#files">Files</a><a href="#risks">Risks</a><a href="#checklist">Checklist</a><a href="#testing">Testing</a></nav><main><header class="top" id="top"><div class="title-wrap"><h1>feat: create a web page to explain the pr for prs labeled with `preview`</h1><div class="meta-row"><span class="badge">#7025</span><span class="badge">mihir20</span><span class="badge">master ← mihir/ai-preview</span></div></div><div class="stats-row"><span class="chip">8 files</span><span class="chip minus">-294</span><span class="chip lang">Markdown </span><span class="chip lang">YAML </span></div></header><section id="tldr" class="card reveal"><h2>TL;DR</h2><p>Adds a label-gated GitHub Actions pipeline that uses four Codex stages to generate, validate, deploy, and tear down a PR review dashboard on GitHub Pages.</p><ul class="facts"><li><span class="fact-icon">💡</span><span>Introduces a four-stage artifact handoff model using `review-work/` between analyze, diagrams, risks, and assemble prompts.</span></li><li><span class="fact-icon">📌</span><span>Adds `.github/workflows/ai-preview.yaml` with label gating, concurrency cancellation, deploy safeguards, and sticky PR preview comments.</span></li><li><span class="fact-icon">🧩</span><span>Hardens pipeline checks by validating diagram manifests, embedding constraints, directory setup, and safe `gh-pages` lifecycle handling.</span></li></ul></section><section id="why" class="reveal"><h2>Why</h2><div class="split"><p>Reviewing unfamiliar PRs is slow and context-heavy; this adds an opt-in, visual-first preview that summarizes architecture, flow, risks, and review steps in one deployed page.</p><div class="diagram-stack"></div></div></section><section id="what" class="reveal"><h2>What changed at a glance</h2><div class="diagram-stack"><figure class="diagram" data-diagram="01-architecture.svg">
+<svg viewBox="0 0 1200 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Architecture of label-gated PR preview pipeline">
+  <rect x="0" y="0" width="1200" height="520" fill="var(--surface, #ffffff)"/>
   <style>
-    :root{--accent:#3b82f6;--muted:#6b7280;--fg:#111827;--surface:#ffffff;--border:#e5e7eb;--bg:#f8fafc;--ok:#10b981;--warn:#f59e0b;--danger:#ef4444}
-    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--fg)}
-    .layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:24px;max-width:1200px;margin:0 auto;padding:20px}
-    .toc{position:sticky;top:12px;align-self:start;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px}
-    .toc a{color:var(--muted);text-decoration:none;font-size:13px;padding:4px 6px;border-radius:8px}.toc a:hover,.toc a.active{background:#eef2ff;color:var(--accent)}
-    .prog{height:4px;background:#eef2ff;border-radius:999px;overflow:hidden}.prog span{display:block;height:100%;width:0;background:var(--accent)}
-    main{display:flex;flex-direction:column;gap:18px}
-    .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-    h1{margin:0 0 8px;font-size:clamp(20px,2.4vw,30px)}h2{margin:0 0 12px;font-size:18px}p{margin:0 0 10px;color:#1f2937}.lead{font-size:16px}
-    .meta-row,.stats-row,.lang-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.stats-row{margin:10px 0}
-    .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--border);border-radius:999px;font-size:12px;color:#374151;background:#fff}
-    .branch .arr{color:var(--accent)} .lang em{font-style:normal;color:var(--muted)}
-    .stat{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:10px;background:#fff}.stat b{font-size:14px}.stat small{color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.05em}
-    .ic{width:16px;height:16px;display:inline-flex}.ic svg{width:16px;height:16px;fill:currentColor}
-    .facts,.compact,.checklist{margin:0;padding:0;list-style:none;display:grid;gap:8px}.facts li{display:flex;gap:8px;align-items:flex-start}
-    .diagram-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));margin-top:8px}.diagram{margin:0;border:1px solid var(--border);border-radius:12px;padding:8px;background:#fff}
-    .diagram svg{display:block;max-width:100%;height:auto}.diagram figcaption{font-size:12px;color:var(--muted);margin-top:6px}
-    .toolbar{margin-bottom:10px}.toolbar input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px}
-    .file-list{display:grid;gap:10px}.file-item{border:1px solid var(--border);border-radius:10px;background:#fff;overflow:hidden}.file-item summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:10px 12px}.file-item .path{font-family:ui-monospace,monospace;font-size:12px}.file-item .sum{color:var(--muted);font-size:12px}
-    .code-wrap{position:relative;padding:0 10px 10px}.copy-btn{position:absolute;right:16px;top:8px;border:1px solid var(--border);background:#fff;border-radius:8px;padding:4px 8px;font-size:12px;cursor:pointer}
-    pre{margin:0;border:1px solid var(--border);border-radius:10px;background:#0b1020;color:#e5e7eb;overflow:auto;padding:12px 10px 10px}
-    .code-line{display:grid;grid-template-columns:52px 1fr auto;gap:10px;white-space:pre}.gutter{color:#7c89b0;text-align:right;user-select:none}.callout{color:#93c5fd}
-    .callouts{margin:8px 0 0;padding-left:18px;color:#374151}
-    .risk-controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.filter.active{border-color:var(--accent);color:var(--accent)}
-    .risk-grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}.risk{border:1px solid var(--border);border-radius:10px;padding:10px;background:#fff}.sev{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;text-transform:uppercase}.sev.high{background:#fef2f2;color:var(--danger)}.sev.medium{background:#fffbeb;color:var(--warn)}.sev.low{background:#ecfdf5;color:var(--ok)}.mit{color:var(--muted);font-size:13px}
-    .test-chip{margin-bottom:8px}
-    [data-reveal]{opacity:0;transform:translateY(10px);transition:opacity .45s ease,transform .45s ease}[data-reveal].show{opacity:1;transform:none}
-    @media (max-width:900px){.layout{grid-template-columns:1fr}.toc{position:static;order:-1}}
-    @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}[data-reveal]{transition:none;opacity:1;transform:none}}
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; fill: var(--fg, #111827); font-size: 13px; }
+    .title { font-size: 18px; font-weight: 700; }
+    .box { fill: var(--surface, #ffffff); stroke: var(--border, #cbd5e1); stroke-width: 1.5; rx: 10; }
+    .muted { stroke: var(--muted, #94a3b8); fill: color-mix(in srgb, var(--muted, #94a3b8) 10%, white); }
+    .changed { stroke: var(--accent, #2563eb); fill: color-mix(in srgb, var(--accent, #2563eb) 12%, white); }
+    .label { font-size: 12px; }
+    .small { font-size: 11px; fill: var(--muted, #64748b); }
+    .arrow-muted { stroke: var(--muted, #94a3b8); stroke-width: 1.8; fill: none; marker-end: url(#arrowMuted); }
+    .arrow-changed { stroke: var(--accent, #2563eb); stroke-width: 2.2; fill: none; marker-end: url(#arrowAccent); }
   </style>
-</head>
-<body>
-  <div class="layout">
-    <nav class="toc" aria-label="Page sections"><div class="prog"><span id="progBar"></span></div><a href="#tldr">TL;DR</a><a href="#why">Why</a><a href="#what-changed">What changed</a><a href="#flow">Flow</a><a href="#files">Files</a><a href="#risks">Risks</a><a href="#checklist">Checklist</a><a href="#testing">Testing</a></nav>
-    <main>
-      
-<section class="header card" id="top" data-reveal>
-  <div>
-    <h1>feat: create a web page to explain the pr for prs labeled with `preview`</h1>
-    <div class="meta-row">
-      <span class="chip">#7025</span>
-      <span class="chip">mihir20</span>
-      <span class="chip branch">master <span class="arr">←</span> mihir/ai-preview</span>
-    </div>
-  </div>
-  <div class="stats-row">
-    <span class="stat"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm7 1v5h5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9 13h6M9 17h6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></span><b>8</b><small>files</small></span>
-    <span class="stat plus"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><b>—</b><small>added</small></span>
-    <span class="stat minus"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><b>292</b><small>removed</small></span>
-  </div>
-  <div class="lang-row"><span class="chip lang" style="--i:0">YAML</span><span class="chip lang" style="--i:1">Markdown</span></div>
-</section>
-      
-<section id="tldr" class="card" data-reveal>
-  <h2>TL;DR</h2>
-  <p class="lead">Adds an opt-in GitHub Actions pipeline that generates a multi-stage AI PR review site and deploys/removes per-PR previews on GitHub Pages.</p>
-  <ul class="facts"><li><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.3L20 9l-4 3.9.9 5.6L12 16l-4.9 2.5.9-5.6L4 9l5.4-.7L12 3z"/></svg></span><span>Introduces a four-stage Codex pipeline using `review-work/` artifacts (`analysis`, `diagrams`, `risks`, `site`).</span></li><li><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.3L20 9l-4 3.9.9 5.6L12 16l-4.9 2.5.9-5.6L4 9l5.4-.7L12 3z"/></svg></span><span>Hardens preview publishing with GitHub App auth, safe metadata collection, orphan gh-pages setup, and symlink rejection.</span></li><li><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.3L20 9l-4 3.9.9 5.6L12 16l-4.9 2.5.9-5.6L4 9l5.4-.7L12 3z"/></svg></span><span>Changes trigger behavior so build/deploy happens on `ai-preview` labeling and teardown happens on PR close only.</span></li></ul>
-</section>
+  <defs>
+    <marker id="arrowAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent, #2563eb)"/>
+    </marker>
+    <marker id="arrowMuted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted, #94a3b8)"/>
+    </marker>
+  </defs>
 
-<section id="why" class="card" data-reveal>
-  <h2>Why</h2>
-  <p>Reviewing unfamiliar PRs is slow without context. This workflow creates a visual, structured onboarding page from the diff and repository, then publishes it behind an explicit label with automated cleanup on PR closure.</p>
-  
-</section>
+  <text x="24" y="36" class="title">PR preview architecture (new label-gated pipeline)</text>
 
-<section id="what-changed" class="card" data-reveal>
-  <h2>What Changed</h2>
-  <div class="diagram-grid"></div>
-  <ul class="compact"><li>Defines end-to-end trigger, context capture, Codex stages, gh-pages deploy, sticky comment upsert, and close-time teardown behavior.</li><li>Replaces monolithic prompt with strict orchestration that runs four stage-specific prompts and validates each produced artifact.</li><li>Introduces common rules for all stages, including grounding claims in `pr.diff`/repo and restricting file writes to owned outputs.</li><li>Specifies schema-rich `analysis.json` production with repository exploration, architecture components, flows, data shapes, and key hunks.</li><li>Defines deterministic SVG generation and manifesting for components, flows, and before/after visuals tied to analysis artifacts.</li></ul>
-</section>
+  <rect x="40" y="90" width="240" height="90" class="box muted"/>
+  <text x="60" y="124">Pull request event</text>
+  <text x="60" y="146" class="small">opened/reopened/synchronize/</text>
+  <text x="60" y="163" class="small">labeled/unlabeled/closed</text>
 
-<section id="flow" class="card" data-reveal>
-  <h2>Flow / Sequence</h2>
-  <div class="diagram-grid"></div>
-  
-</section>
+  <rect x="340" y="70" width="280" height="130" class="box changed"/>
+  <text x="360" y="106">Workflow trigger + job gating</text>
+  <text x="360" y="128" class="small">`.github/workflows/ai-preview.yaml`</text>
+  <text x="360" y="148" class="label">Build: label `ai-preview` + not closed</text>
+  <text x="360" y="168" class="label">Teardown: closed or unlabeled</text>
 
-<section id="files" class="card" data-reveal>
-  <h2>File Walkthrough</h2>
-  <div class="toolbar"><input id="fileSearch" type="search" placeholder="Jump to file…" aria-label="Jump to file"></div>
-  <div id="fileList" class="file-list">
-    <details class="file-item" data-file-name=".github/workflows/ai-preview.yaml"><summary><span class="path">.github/workflows/ai-preview.yaml</span><span class="sum">Converts the preview workflow into a label-gated multi-stage pipeline with hardened publish/teardown semantics and sticky PR comment management.</span></summary><div class="code-wrap"><button class="copy-btn" data-copy-target="code-0">Copy</button><pre id="code-0"><code><span class="code-line"><span class="gutter">1</span><span class="txt">on:</span></span><span class="code-line"><span class="gutter">2</span><span class="txt">  pull_request:</span></span><span class="code-line has-callout"><span class="gutter">3</span><span class="txt">    types: [ labeled, closed ]</span><span class="callout" title="Trigger set to labeled and closed; push-based rebuilds removed.">•</span></span><span class="code-line"><span class="gutter">4</span><span class="txt"></span></span><span class="code-line"><span class="gutter">5</span><span class="txt">...</span></span><span class="code-line"><span class="gutter">6</span><span class="txt"></span></span><span class="code-line"><span class="gutter">7</span><span class="txt">      - name: Analyze PR (Stage 1)</span></span><span class="code-line"><span class="gutter">8</span><span class="txt">        if: github.event.action != &#39;closed&#39; &amp;&amp; github.event.action != &#39;unlabeled&#39;</span></span><span class="code-line"><span class="gutter">9</span><span class="txt">        env:</span></span><span class="code-line"><span class="gutter">10</span><span class="txt">          CODEX_HOME: ${{ github.workspace }}/.codex</span></span><span class="code-line"><span class="gutter">11</span><span class="txt">          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}</span></span><span class="code-line has-callout"><span class="gutter">12</span><span class="txt">        run: |</span><span class="callout" title="Stage 1 starts a strict artifact-producing pipeline under `review-work/`.">•</span></span><span class="code-line"><span class="gutter">13</span><span class="txt">          set -euo pipefail</span></span><span class="code-line"><span class="gutter">14</span><span class="txt">          mkdir -p review-work</span></span><span class="code-line"><span class="gutter">15</span><span class="txt">          codex exec --sandbox workspace-write --cd &quot;$GITHUB_WORKSPACE&quot; \</span></span><span class="code-line"><span class="gutter">16</span><span class="txt">            &quot;$(cat .github/codex/agents/_shared.md)</span></span><span class="code-line"><span class="gutter">17</span><span class="txt"></span></span><span class="code-line"><span class="gutter">18</span><span class="txt">$(cat .github/codex/agents/analyze.md)&quot;</span></span><span class="code-line"><span class="gutter">19</span><span class="txt">          test -f review-work/analysis.json</span></span><span class="code-line"><span class="gutter">20</span><span class="txt"></span></span><span class="code-line"><span class="gutter">21</span><span class="txt">...</span></span><span class="code-line"><span class="gutter">22</span><span class="txt"></span></span><span class="code-line"><span class="gutter">23</span><span class="txt">      - name: Teardown preview from gh-pages (only on close/merge)</span></span><span class="code-line has-callout"><span class="gutter">24</span><span class="txt">        if: github.event.action == &#39;closed&#39;</span><span class="callout" title="Teardown runs only on close and conditionally commits deletion.">•</span></span><span class="code-line"><span class="gutter">25</span><span class="txt">        env:</span></span><span class="code-line"><span class="gutter">26</span><span class="txt">          PR_NUMBER: ${{ github.event.pull_request.number }}</span></span><span class="code-line"><span class="gutter">27</span><span class="txt">        run: |</span></span><span class="code-line"><span class="gutter">28</span><span class="txt">          set -euo pipefail</span></span><span class="code-line"><span class="gutter">29</span><span class="txt">          PREVIEW_DIR=&quot;pr-preview/pr-${PR_NUMBER}&quot;</span></span><span class="code-line"><span class="gutter">30</span><span class="txt">          if [ -d &quot;$PREVIEW_DIR&quot; ]; then</span></span><span class="code-line"><span class="gutter">31</span><span class="txt">            rm -rf &quot;$PREVIEW_DIR&quot;</span></span><span class="code-line"><span class="gutter">32</span><span class="txt">            if ! git diff --quiet -- &quot;$PREVIEW_DIR&quot;; then</span></span><span class="code-line"><span class="gutter">33</span><span class="txt">              git add -A &quot;$PREVIEW_DIR&quot;</span></span><span class="code-line"><span class="gutter">34</span><span class="txt">              git commit -m &quot;chore(pr-preview): remove preview for PR #${PR_NUMBER}&quot;</span></span><span class="code-line"><span class="gutter">35</span><span class="txt">              git push origin gh-pages</span></span><span class="code-line"><span class="gutter">36</span><span class="txt">            fi</span></span><span class="code-line"><span class="gutter">37</span><span class="txt">          fi</span></span></code></pre><ul class="callouts"><li><b>•</b> Trigger set to labeled and closed; push-based rebuilds removed.</li><li><b>•</b> Stage 1 starts a strict artifact-producing pipeline under `review-work/`.</li><li><b>•</b> Teardown runs only on close and conditionally commits deletion.</li></ul></div></details><details class="file-item" data-file-name=".github/codex/review-prompt.md"><summary><span class="path">.github/codex/review-prompt.md</span><span class="sum">Rewrites the top-level prompt from direct page generation to a four-stage handoff protocol with explicit artifact contracts.</span></summary><div class="code-wrap"><button class="copy-btn" data-copy-target="code-1">Copy</button><pre id="code-1"><code><span class="code-line has-callout"><span class="gutter">1</span><span class="txt">Your workflow:</span><span class="callout" title="Defines sequential orchestration instead of single-pass site synthesis.">•</span></span><span class="code-line"><span class="gutter">2</span><span class="txt"></span></span><span class="code-line has-callout"><span class="gutter">3</span><span class="txt">1) Run Stage 1 prompt from `.github/codex/agents/analyze.md` to produce</span><span class="callout" title="Establishes `analysis.json` as the source of truth for downstream stages.">•</span></span><span class="code-line"><span class="gutter">4</span><span class="txt">   `review-work/analysis.json`.</span></span><span class="code-line"><span class="gutter">5</span><span class="txt">2) Run Stage 2 prompt from `.github/codex/agents/diagrams.md` to produce</span></span><span class="code-line"><span class="gutter">6</span><span class="txt">   diagrams + `review-work/diagrams.json`.</span></span><span class="code-line has-callout"><span class="gutter">7</span><span class="txt">3) Run Stage 3 prompt from `.github/codex/agents/risks.md` to produce</span><span class="callout" title="Final output remains `review-site/index.html`, now assembled from staged artifacts.">•</span></span><span class="code-line"><span class="gutter">8</span><span class="txt">   `review-work/risks.json`.</span></span><span class="code-line"><span class="gutter">9</span><span class="txt">4) Run Stage 4 prompt from `.github/codex/agents/assemble.md` to produce</span></span><span class="code-line"><span class="gutter">10</span><span class="txt">   `review-site/index.html`.</span></span></code></pre><ul class="callouts"><li><b>•</b> Defines sequential orchestration instead of single-pass site synthesis.</li><li><b>•</b> Establishes `analysis.json` as the source of truth for downstream stages.</li><li><b>•</b> Final output remains `review-site/index.html`, now assembled from staged artifacts.</li></ul></div></details><details class="file-item" data-file-name=".github/codex/agents/analyze.md"><summary><span class="path">.github/codex/agents/analyze.md</span><span class="sum">Adds Stage 1 instructions and strict JSON schema requiring grounded PR metadata, architecture components, flows, data shapes, and per-file hunks.</span></summary></details><details class="file-item" data-file-name=".github/codex/agents/diagrams.md"><summary><span class="path">.github/codex/agents/diagrams.md</span><span class="sum">Adds Stage 2 instructions to generate deterministic inline SVG diagrams plus a manifest mapped to page sections.</span></summary></details><details class="file-item" data-file-name=".github/codex/agents/risks.md"><summary><span class="path">.github/codex/agents/risks.md</span><span class="sum">Adds Stage 3 instructions that bound risk detection, checklist items, and testing judgment to evidence from analysis artifacts.</span></summary></details><details class="file-item" data-file-name=".github/codex/agents/assemble.md"><summary><span class="path">.github/codex/agents/assemble.md</span><span class="sum">Adds Stage 4 instructions for rendering a visual-first single-file dashboard with required interactions and strict data-only rendering.</span></summary></details><details class="file-item" data-file-name=".github/codex/agents/_shared.md"><summary><span class="path">.github/codex/agents/_shared.md</span><span class="sum">Introduces shared conventions used by every stage, including no-test/no-network limits and strict output-file ownership.</span></summary></details><details class="file-item" data-file-name=".github/codex/review-promt.md"><summary><span class="path">.github/codex/review-promt.md</span><span class="sum">Adds an initial typo-named onboarding prompt file that was later superseded by the staged `review-prompt.md` workflow.</span></summary></details>
-  </div>
-</section>
+  <rect x="690" y="50" width="230" height="170" class="box changed"/>
+  <text x="710" y="86">Codex stages (1→4)</text>
+  <text x="710" y="110" class="small">Analyze → Diagrams → Risks → Assemble</text>
+  <text x="710" y="132" class="small">Shared contract: `review-work/`</text>
+  <text x="710" y="156" class="label">Produces `review-site/index.html`</text>
 
-<section id="risks" class="card" data-reveal>
-  <h2>Risks</h2>
-  <div class="risk-controls">
-    <button class="chip filter active" data-filter="all">All</button>
-    <button class="chip filter" data-filter="high">High</button>
-    <button class="chip filter" data-filter="medium">Medium</button>
-    <button class="chip filter" data-filter="low">Low</button>
-  </div>
-  <div class="risk-grid">
-    <article class="risk" data-severity="medium"><span class="sev medium">medium</span><p>On `pull_request` `synchronize` events (new commits), the preview is not regenerated because the workflow now only triggers on `labeled` and `closed`, so the published page can become stale while appearing current.</p><p class="mit">Require removing/re-adding the `ai-preview` label after each significant push (or restore `synchronize` trigger if always-fresh previews are required).</p></article><article class="risk" data-severity="medium"><span class="sev medium">medium</span><p>`Collect PR context` falls back to `git diff &quot;origin/${BASE_REF}...HEAD&quot;`, but there is no explicit fetch of `origin/${BASE_REF}` beyond the checked-out head ref, so fallback can fail and break preview generation.</p><p class="mit">Fetch the base ref explicitly before fallback (for example `git fetch origin ${BASE_REF}`) or make `gh pr diff` failure non-fatal with a clearer diagnostic path.</p></article><article class="risk" data-severity="low"><span class="sev low">low</span><p>The same workflow performs both deploy and teardown under `concurrency.cancel-in-progress: true`, so rapid label/close actions can cancel an in-flight job and leave preview/comment state temporarily inconsistent until a later event reruns.</p><p class="mit">Split deploy and teardown into separate jobs/concurrency groups or make cleanup idempotence checks robust enough to tolerate canceled intermediate runs.</p></article>
-  </div>
-</section>
+  <rect x="970" y="90" width="190" height="90" class="box changed"/>
+  <text x="990" y="124">`gh-pages` deployment</text>
+  <text x="990" y="146" class="small">`pr-&lt;number&gt;/` path</text>
 
-<section id="checklist" class="card" data-reveal>
-  <h2>Review Checklist</h2>
-  <ul class="checklist"><li>Check `.github/workflows/ai-preview.yaml` behavior on a PR commit push after labeling and confirm reviewers understand preview is intentionally stale until label reapply.</li><li>Check fallback robustness in `.github/workflows/ai-preview.yaml` by forcing `gh pr diff` failure and verifying whether `origin/${BASE_REF}` exists in the runner before `git diff` runs.</li><li>Check teardown path in `.github/workflows/ai-preview.yaml` removes both `pr-preview/pr-&lt;N&gt;/` and the sticky marker comment on close/merge for previously deployed previews.</li><li>Check `review-work/` stage contracts in `.github/codex/agents/*.md` enforce strict single-file outputs so one stage cannot overwrite artifacts owned by another stage.</li></ul>
-</section>
+  <rect x="370" y="300" width="330" height="140" class="box changed"/>
+  <text x="390" y="334">Preview lifecycle management</text>
+  <text x="390" y="356" class="small">Sticky PR comment with preview URL</text>
+  <text x="390" y="376" class="small">Concurrency cancel-in-progress</text>
+  <text x="390" y="396" class="small">Safe cleanup on unlabeled/closed</text>
 
-<section id="testing" class="card" data-reveal>
-  <h2>Testing</h2>
-  <span class="chip test-chip">no tests</span>
-  <ul class="compact"><li>No automated tests were added or modified for `.github/workflows/ai-preview.yaml` trigger, deploy, and teardown behavior.</li><li>No simulation coverage is added for `gh pr diff` fallback behavior when base refs are missing locally.</li><li>No validation tests are added for multi-stage artifact contracts under `.github/codex/agents/` prompts.</li></ul>
-</section>
-    </main>
-  </div>
-  <script>
-    (()=>{
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      const revealEls = Array.from(document.querySelectorAll('[data-reveal]'));
-      if(!reduced && 'IntersectionObserver' in window){
-        const io = new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('show')}),{threshold:.12});
-        revealEls.forEach(el=>io.observe(el));
-      } else revealEls.forEach(el=>el.classList.add('show'));
+  <path d="M280 135 L340 135" class="arrow-changed"/>
+  <path d="M620 135 L690 135" class="arrow-changed"/>
+  <path d="M920 135 L970 135" class="arrow-changed"/>
+  <path d="M1120 180 C1120 250, 830 250, 700 330" class="arrow-changed"/>
+  <path d="M530 300 C530 250, 510 230, 510 200" class="arrow-muted"/>
 
-      document.querySelectorAll('.copy-btn').forEach(btn=>{
-        btn.addEventListener('click', async ()=>{
-          const id = btn.getAttribute('data-copy-target');
-          const el = id && document.getElementById(id);
-          if(!el) return;
-          try{ await navigator.clipboard.writeText(el.innerText); const t=btn.textContent; btn.textContent='Copied'; setTimeout(()=>btn.textContent=t,900);}catch{}
-        });
-      });
+  <text x="42" y="500" class="small">Accent = behavior introduced in this PR; muted = surrounding context.</text>
+</svg>
+<figcaption>How label-gated jobs and stages produce the preview site</figcaption>
+</figure></div><ul class="compact"><li>{'name': 'PR preview workflow orchestration', 'path': '.github/workflows/ai-preview.yaml', 'change_kind': 'added', 'summary': 'Adds end-to-end workflow logic to run Codex stages, validate artifacts, deploy to GitHub Pages, and clean up on label removal or PR close.'}</li><li>{'name': 'Stage contract and shared execution rules', 'path': '.github/codex/agents/_shared.md', 'change_kind': 'added', 'summary': 'Defines common non-interactive rules, input contracts, and strict output/file-write boundaries shared by all stages.'}</li><li>{'name': 'Analyzer stage prompt', 'path': '.github/codex/agents/analyze.md', 'change_kind': 'added', 'summary': 'Specifies a schema-driven repository analysis stage that produces `review-work/analysis.json` as the factual base.'}</li><li>{'name': 'Diagram and risk stage prompts', 'path': '.github/codex/agents/diagrams.md', 'change_kind': 'added', 'summary': 'Defines deterministic SVG diagram generation and manifest output plus a structured adversarial risk assessment stage.'}</li><li>{'name': 'Assembler stage prompt', 'path': '.github/codex/agents/assemble.md', 'change_kind': 'added', 'summary': 'Defines strict artifact-only HTML assembly with inline SVG embedding, interactivity requirements, and CI-sensitive manifest/data-diagram constraints.'}</li></ul></section><section id="flow" class="reveal"><h2>Flow / sequence</h2><div class="diagram-stack"><figure class="diagram" data-diagram="02-sequence.svg">
+<svg viewBox="0 0 1200 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sequence of build/deploy and teardown paths">
+  <rect x="0" y="0" width="1200" height="620" fill="var(--surface, #ffffff)"/>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; fill: var(--fg, #111827); font-size: 12px; }
+    .title { font-size: 18px; font-weight: 700; }
+    .lane { stroke: var(--border, #cbd5e1); stroke-width: 1.2; }
+    .head { fill: color-mix(in srgb, var(--muted, #94a3b8) 10%, white); stroke: var(--muted, #94a3b8); rx: 8; }
+    .step { fill: color-mix(in srgb, var(--accent, #2563eb) 12%, white); stroke: var(--accent, #2563eb); rx: 8; }
+    .ctx { fill: color-mix(in srgb, var(--muted, #94a3b8) 8%, white); stroke: var(--muted, #94a3b8); rx: 8; }
+    .arrow { stroke: var(--accent, #2563eb); stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    .note { font-size: 11px; fill: var(--muted, #64748b); }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent, #2563eb)"/>
+    </marker>
+  </defs>
 
-      const filters = document.querySelectorAll('.filter');
-      const riskCards = document.querySelectorAll('.risk[data-severity]');
-      filters.forEach(f=>f.addEventListener('click',()=>{
-        filters.forEach(x=>x.classList.remove('active')); f.classList.add('active');
-        const val = f.getAttribute('data-filter');
-        riskCards.forEach(card=>{card.style.display = (val==='all' || card.getAttribute('data-severity')===val)?'block':'none';});
-      }));
+  <text x="24" y="34" class="title">Label-gated preview lifecycle sequence</text>
 
-      const search = document.getElementById('fileSearch');
-      const items = Array.from(document.querySelectorAll('.file-item'));
-      if(search){
-        search.addEventListener('input', ()=>{
-          const q = search.value.trim().toLowerCase();
-          items.forEach(it=>{const n=it.getAttribute('data-file-name')||''; it.style.display = n.includes(q)?'block':'none';});
-        });
-      }
+  <rect x="50" y="56" width="160" height="34" class="head"/><text x="88" y="78">PR event</text>
+  <rect x="290" y="56" width="190" height="34" class="head"/><text x="315" y="78">GitHub workflow</text>
+  <rect x="570" y="56" width="210" height="34" class="head"/><text x="607" y="78">Codex stages</text>
+  <rect x="860" y="56" width="130" height="34" class="head"/><text x="885" y="78">gh-pages</text>
+  <rect x="1030" y="56" width="140" height="34" class="head"/><text x="1048" y="78">PR comment</text>
 
-      const links = Array.from(document.querySelectorAll('.toc a'));
-      const prog = document.getElementById('progBar');
-      const tracked = links.map(a=>document.querySelector(a.getAttribute('href'))).filter(Boolean);
-      function onScroll(){
-        const max = document.documentElement.scrollHeight - window.innerHeight;
-        const pct = max>0 ? (window.scrollY/max)*100 : 0;
-        if(prog) prog.style.width = pct + '%';
-        let active = null; const y = window.scrollY + 120;
-        tracked.forEach(sec=>{ if(sec.offsetTop <= y) active = sec.id; });
-        links.forEach(a=>a.classList.toggle('active', a.getAttribute('href') === '#' + active));
-      }
-      window.addEventListener('scroll', onScroll, {passive:true}); onScroll();
-    })();
-  </script>
-</body>
-</html>
+  <line x1="130" y1="90" x2="130" y2="570" class="lane"/>
+  <line x1="385" y1="90" x2="385" y2="570" class="lane"/>
+  <line x1="675" y1="90" x2="675" y2="570" class="lane"/>
+  <line x1="925" y1="90" x2="925" y2="570" class="lane"/>
+  <line x1="1100" y1="90" x2="1100" y2="570" class="lane"/>
+
+  <rect x="70" y="120" width="120" height="34" class="ctx"/><text x="84" y="142">opened/sync/labeled</text>
+  <path d="M190 137 L320 137" class="arrow"/>
+
+  <rect x="310" y="170" width="150" height="42" class="step"/>
+  <text x="322" y="188">Gate condition:</text>
+  <text x="322" y="203">label=`ai-preview` and not closed</text>
+
+  <path d="M460 191 L600 191" class="arrow"/>
+  <rect x="590" y="224" width="170" height="42" class="step"/>
+  <text x="602" y="242">Run Stage 1..4</text>
+  <text x="602" y="257">Artifacts under `review-work/`</text>
+
+  <path d="M760 245 L900 245" class="arrow"/>
+  <rect x="875" y="278" width="100" height="42" class="step"/>
+  <text x="888" y="296">Deploy</text>
+  <text x="882" y="311">`pr-&lt;n&gt;/`</text>
+
+  <path d="M975 299 L1060 299" class="arrow"/>
+  <rect x="1040" y="332" width="120" height="42" class="step"/>
+  <text x="1048" y="350">Upsert sticky</text>
+  <text x="1048" y="365">preview comment</text>
+
+  <rect x="52" y="430" width="156" height="34" class="ctx"/><text x="72" y="452">unlabeled/closed</text>
+  <path d="M208 447 L320 447" class="arrow"/>
+  <rect x="310" y="478" width="150" height="42" class="step"/>
+  <text x="324" y="496">Teardown job</text>
+  <text x="318" y="511">remove preview path</text>
+  <path d="M460 499 L900 499" class="arrow"/>
+  <path d="M975 499 L1060 499" class="arrow"/>
+
+  <text x="24" y="600" class="note">Flow grounded in `.github/workflows/ai-preview.yaml` conditions and jobs.</text>
+</svg>
+<figcaption>Creation and teardown paths across PR events</figcaption>
+</figure></div><ul class="compact"><li>{'name': 'label-gated preview lifecycle', 'kind': 'sequence', 'steps': [{'from': 'pull_request event', 'to': 'workflow trigger', 'label': 'on opened/reopened/synchronize/labeled/unlabeled/closed', 'changed': True}, {'from': 'workflow trigger', 'to': 'build-and-deploy job', 'label': 'runs only when PR has `ai-preview` label and action is not `closed`', 'changed': True}, {'from': 'build-and-deploy job', 'to': 'review-work artifacts', 'label': 'runs sequential Codex stages producing analysis, diagrams, risks, and final HTML', 'changed': True}, {'from': 'review-work artifacts', 'to': 'gh-pages branch', 'label': 'publishes `review-site/` under `pr-&lt;number&gt;/` and posts/updates sticky PR comment', 'changed': True}, {'from': 'pull_request unlabeled/closed', 'to': 'teardown job', 'label': 'removes deployed preview path and updates/removes preview comment', 'changed': True}]}</li><li>{'name': 'multi-stage content pipeline', 'kind': 'dataflow', 'steps': [{'from': '`pr.diff` + `meta.txt` + repository', 'to': 'Stage 1 analyze', 'label': 'creates `review-work/analysis.json`', 'changed': True}, {'from': '`analysis.json`', 'to': 'Stage 2 diagrams', 'label': 'creates `review-work/diagrams/*.svg` and `review-work/diagrams/diagrams.json`', 'changed': True}, {'from': '`analysis.json` + diagrams', 'to': 'Stage 3 risks', 'label': 'creates `review-work/risks.json`', 'changed': True}, {'from': 'analysis + diagrams + risks artifacts', 'to': 'Stage 4 assemble', 'label': 'creates `review-site/index.html` with inline diagrams and interactive sections', 'changed': True}]}</li></ul></section><section id="files" class="reveal"><h2>File walkthrough</h2><div class="tools"><input id="fileFilter" type="search" placeholder="Jump to file" aria-label="Jump to file" /></div><details class="file-item" data-file=".github/workflows/ai-preview.yaml"><summary><span class="file-path">.github/workflows/ai-preview.yaml</span><span class="file-summary">Introduces the full PR preview automation pipeline with label gates, staged Codex execution, artifact validation, deploy/teardown logic, and PR comment management.</span></summary></details><details class="file-item" data-file=".github/codex/agents/_shared.md"><summary><span class="file-path">.github/codex/agents/_shared.md</span><span class="file-summary">Defines shared multi-stage conventions, CI-safe constraints, and strict artifact-based communication across stages.</span></summary></details><details class="file-item" data-file=".github/codex/agents/analyze.md"><summary><span class="file-path">.github/codex/agents/analyze.md</span><span class="file-summary">Adds the Stage 1 analyzer contract and exact JSON schema to produce the foundational PR fact model.</span></summary></details><details class="file-item" data-file=".github/codex/agents/diagrams.md"><summary><span class="file-path">.github/codex/agents/diagrams.md</span><span class="file-summary">Adds Stage 2 instructions for generating deterministic SVG diagrams and a manifest tied to analysis outputs.</span></summary></details><details class="file-item" data-file=".github/codex/agents/risks.md"><summary><span class="file-path">.github/codex/agents/risks.md</span><span class="file-summary">Adds Stage 3 instructions for adversarial risk analysis with severity ranking, evidence, and review checklist output.</span></summary></details><details class="file-item" data-file=".github/codex/agents/assemble.md"><summary><span class="file-path">.github/codex/agents/assemble.md</span><span class="file-summary">Adds Stage 4 rules to assemble a visual-first HTML dashboard from prior artifacts, including inline SVG and UI interaction constraints.</span></summary></details><details class="file-item" data-file=".github/codex/review-prompt.md"><summary><span class="file-path">.github/codex/review-prompt.md</span><span class="file-summary">Transitions from the previous single-prompt onboarding HTML instructions to the new staged-agent workflow documentation and constraints.</span></summary></details><details class="file-item" data-file=".github/codex/review-promt.md"><summary><span class="file-path">.github/codex/review-promt.md</span><span class="file-summary">Adds an initial typo-named prompt file used in early commits before normalization to the corrected prompt path.</span></summary></details></section><section id="risks" class="reveal"><h2>Risks</h2><div class="filters"><button class="fbtn active" data-filter="all">All</button><button class="fbtn" data-filter="high">High</button><button class="fbtn" data-filter="medium">Medium</button><button class="fbtn" data-filter="low">Low</button></div><div class="risk-grid"><article class="risk" data-severity="medium"><div class="risk-head"><span class="sev medium">medium</span></div><p>Preview updates no longer happen on new commits because the workflow now only triggers on labeled/closed events, so deployed review pages can become stale while a PR evolves.</p><p class="mit">Either reintroduce `synchronize`/`reopened` triggers or clearly enforce and document mandatory relabeling after every push.</p></article><article class="risk" data-severity="medium"><div class="risk-head"><span class="sev medium">medium</span></div><p>Each run globally installs the latest `@openai/codex` without version pinning, so behavior and output contracts can change unexpectedly and break artifact validation or HTML assembly.</p><p class="mit">Pin `@openai/codex` to a known version (or lock by checksum) and update intentionally with a compatibility check.</p></article><article class="risk" data-severity="low"><div class="risk-head"><span class="sev low">low</span></div><p>The workflow writes app-token-authenticated remote URLs into `.git/config` in temporary clones and does not scrub them, increasing accidental credential exposure risk if later debug/log steps ever print git config.</p><p class="mit">Prefer `actions/checkout` with token inputs or explicitly reset/remove remotes after push/cleanup steps.</p></article></div></section><section id="checklist" class="reveal"><h2>Review checklist</h2><ul class="compact"><li>Check `.github/workflows/ai-preview.yaml` trigger behavior matches intended lifecycle: relabel-only regeneration is explicitly acceptable for reviewers.</li><li>Check `.github/workflows/ai-preview.yaml` cleanup path reliably deletes `pr-preview/pr-&lt;number&gt;` and updates/removes sticky comments on close events.</li><li>Check `.github/workflows/ai-preview.yaml` label gates are consistent (`ai-preview` in job `if` and comment/deploy logic) so no mismatched label leaves orphaned previews.</li><li>Check `.github/codex/agents/assemble.md` constraints (`data-diagram` ids, missing SVG warnings, required sections) still tolerate real outputs from analyze/diagrams stages.</li><li>Check `review-work` artifact schema compatibility end-to-end: `analysis.json`, `diagrams.json`, and `risks.json` fields consumed by the assembler are all produced by upstream stage prompts.</li></ul></section><section id="testing" class="reveal"><h2>Testing</h2><span class="chip">no tests</span><ul class="compact"><li>No automated tests were added or modified for `.github/workflows/ai-preview.yaml` behavior changes.</li><li>No fixture-based validation tests were added for the multi-stage prompt contract under `.github/codex/agents/*.md`.</li><li>Deployment/teardown safety and stale-preview behavior are untested and depend on runtime GitHub Actions execution paths.</li></ul></section><section class="reveal"><h2>Files</h2><div class="diagram-stack"><figure class="diagram" data-diagram="03-data-shape.svg">
+<svg viewBox="0 0 1200 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Data-shape outputs across multi-stage pipeline">
+  <rect x="0" y="0" width="1200" height="500" fill="var(--surface, #ffffff)"/>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; fill: var(--fg, #111827); font-size: 12px; }
+    .title { font-size: 18px; font-weight: 700; }
+    .card { fill: var(--surface, #ffffff); stroke: var(--border, #cbd5e1); stroke-width: 1.4; rx: 10; }
+    .new { stroke: var(--accent, #2563eb); fill: color-mix(in srgb, var(--accent, #2563eb) 10%, white); }
+    .arrow { stroke: var(--accent, #2563eb); stroke-width: 2; fill: none; marker-end: url(#arr); }
+    .muted { fill: var(--muted, #64748b); font-size: 11px; }
+  </style>
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent, #2563eb)"/>
+    </marker>
+  </defs>
+
+  <text x="24" y="34" class="title">Stage artifact data shapes introduced by the PR</text>
+
+  <rect x="40" y="90" width="300" height="180" class="card new"/>
+  <text x="58" y="118">`review-work/analysis.json`</text>
+  <text x="58" y="140">- meta, stats, tldr, key_facts, why</text>
+  <text x="58" y="160">- components[], flows[], data_shapes[]</text>
+  <text x="58" y="180">- files[], tests{status,names}</text>
+  <text x="58" y="210" class="muted">Stage 1 factual base for all later stages</text>
+
+  <rect x="450" y="70" width="320" height="220" class="card new"/>
+  <text x="468" y="98">`review-work/diagrams.json` entries</text>
+  <text x="468" y="120">{file, type, title, caption, section,</text>
+  <text x="468" y="138"> width, height, source}</text>
+  <text x="468" y="168" fill="var(--accent, #2563eb)">New fields highlighted in analysis:</text>
+  <text x="468" y="188" fill="var(--accent, #2563eb)">`section`, `caption`, `source`</text>
+  <text x="468" y="218" class="muted">Referenced by assembler; validated in CI</text>
+
+  <rect x="880" y="90" width="280" height="180" class="card new"/>
+  <text x="898" y="118">`review-work/risks.json`</text>
+  <text x="898" y="140">- summary</text>
+  <text x="898" y="160">- risks[{id,title,severity,...}]</text>
+  <text x="898" y="180">- checklist[]</text>
+  <text x="898" y="200">- testing{status,gaps,suggestions}</text>
+  <text x="898" y="228" class="muted">Stage 3 adversarial review output</text>
+
+  <path d="M340 170 L450 170" class="arrow"/>
+  <path d="M770 170 L880 170" class="arrow"/>
+
+  <rect x="330" y="350" width="540" height="92" class="card"/>
+  <text x="350" y="382">Final assembly uses these artifacts to produce `review-site/index.html`</text>
+  <text x="350" y="404" class="muted">Assembler must inline each manifest SVG and match `data-diagram` to `file`.</text>
+</svg>
+<figcaption>Stage artifacts and schema additions consumed by assembler</figcaption>
+</figure></div></section></main></div><script>
+(()=>{const io=('IntersectionObserver'in window)?new IntersectionObserver(es=>es.forEach(e=>e.target.classList.toggle('in',e.isIntersecting)),{threshold:.08}):null;document.querySelectorAll('.reveal').forEach(el=>io?io.observe(el):el.classList.add('in'));const prog=document.getElementById('prog');const onScroll=()=>{const h=document.documentElement;const max=h.scrollHeight-h.clientHeight;prog.style.width=(max>0?(h.scrollTop/max*100):0)+'%'};document.addEventListener('scroll',onScroll,{passive:true});onScroll();document.querySelectorAll('.copy-btn').forEach(btn=>btn.addEventListener('click',async()=>{const pre=btn.parentElement.querySelector('pre');const txt=[...pre.querySelectorAll('code')].map(c=>c.textContent).join('
+');try{await navigator.clipboard.writeText(txt);btn.textContent='Copied';setTimeout(()=>btn.textContent='Copy',1200)}catch(_){}}));const fi=document.getElementById('fileFilter');if(fi){fi.addEventListener('input',()=>{const q=fi.value.toLowerCase().trim();document.querySelectorAll('.file-item').forEach(d=>{const f=(d.dataset.file||'').toLowerCase();d.style.display=(!q||f.includes(q))?'':'none'})})}document.querySelectorAll('.fbtn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('active'));b.classList.add('active');const k=b.dataset.filter;document.querySelectorAll('.risk').forEach(r=>{r.style.display=(k==='all'||r.dataset.severity===k)?'':'none'})}))})();
+</script></body></html>
