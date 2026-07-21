@@ -22,9 +22,11 @@ resolve a specific ambiguity in the artifacts.
   </figure>
   ```
 
-  The `data-diagram` attribute must equal the manifest `file` value exactly — the CI
-  pipeline fails the build if any manifest diagram has no matching `data-diagram`
-  in `index.html`. NEVER reference diagrams via `<img src>`, `<object>`, or any
+  The `data-diagram` attribute value must be byte-for-byte identical to the manifest
+  `file` field (full filename including `.svg`, double-quoted, no path prefix) — the
+  CI pipeline greps `index.html` for `data-diagram="<file>"` for EVERY manifest entry
+  and fails the build on any miss, so a renamed, re-quoted, or omitted attribute
+  breaks the deploy even if the SVG itself is present. NEVER reference diagrams via `<img src>`, `<object>`, or any
   file path (`review-work/` is not deployed, so such references 404), and never
   leave a diagram container empty. The SVGs use `var(--accent)`, `var(--muted)`,
   `var(--fg)`, `var(--surface)`, `var(--border)` — you MUST define these custom

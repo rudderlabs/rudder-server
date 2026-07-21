@@ -203,12 +203,18 @@ jobs:
           # references review-work/ instead would 404 — that dir never deploys.
           missing=0
           while read -r f; do
-            if ! grep -qF "data-diagram=\"$f\"" review-site/index.html; then
+            # Accept either quote style around the attribute value.
+            if ! grep -qF "data-diagram=\"$f\"" review-site/index.html \
+               && ! grep -qF "data-diagram='$f'" review-site/index.html; then
               echo "Diagram $f from the manifest is not embedded in index.html."
               missing=1
             fi
           done < <(jq -r '.[].file' review-work/diagrams.json)
-          [ "$missing" -eq 0 ]
+          if [ "$missing" -ne 0 ]; then
+            echo "data-diagram attributes actually present in index.html:"
+            grep -o 'data-diagram=[^ >]*' review-site/index.html || echo "(none)"
+            exit 1
+          fi
           # Only attribute references (src/href) to review-work/ are a problem —
           # they would 404 since that dir never deploys. The string may appear
           # legitimately in prose/snippets when the PR itself touches the pipeline.
