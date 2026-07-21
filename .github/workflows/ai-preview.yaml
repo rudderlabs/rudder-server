@@ -144,13 +144,24 @@ jobs:
           codex exec --dangerously-bypass-approvals-and-sandbox \
             --cd "$GITHUB_WORKSPACE" \
             "$(cat .github/codex/agents/_shared.md .github/codex/agents/diagrams.md)"
-          # Manifest must exist and be valid JSON, and every entry must point to a
-          # real SVG. An empty manifest is allowed — the assembler builds without
-          # diagrams rather than failing the whole pipeline.
+          # Manifest must exist, be valid JSON, contain at least one diagram (the
+          # prompt mandates 2-4 — an empty manifest means the stage failed), and
+          # every entry must point to a real SVG file.
           jq empty review-work/diagrams.json
-          jq -r '.[].file' review-work/diagrams.json | while read -r f; do
-            test -f "review-work/diagrams/$f"
-          done
+          echo "diagram manifest:" && jq . review-work/diagrams.json
+          count="$(jq 'length' review-work/diagrams.json)"
+          if [ "$count" -lt 1 ]; then
+            echo "Diagram stage produced an empty manifest; failing."
+            exit 1
+          fi
+          missing=0
+          while read -r f; do
+            if [ ! -f "review-work/diagrams/$f" ]; then
+              echo "Manifest entry $f has no SVG file in review-work/diagrams/."
+              missing=1
+            fi
+          done < <(jq -r '.[].file' review-work/diagrams.json)
+          [ "$missing" -eq 0 ]
 
       - name: 'Subagent 3: review risks'
         if: github.event.action != 'closed'
@@ -175,6 +186,21 @@ jobs:
             --cd "$GITHUB_WORKSPACE" \
             "$(cat .github/codex/agents/_shared.md .github/codex/agents/assemble.md)"
           test -f review-site/index.html  # fail the job if Codex produced nothing
+          # Every diagram in the manifest must be embedded inline: the assembler
+          # marks each embedded figure with data-diagram="<file>". A page that
+          # references review-work/ instead would 404 — that dir never deploys.
+          missing=0
+          while read -r f; do
+            if ! grep -qF "data-diagram=\"$f\"" review-site/index.html; then
+              echo "Diagram $f from the manifest is not embedded in index.html."
+              missing=1
+            fi
+          done < <(jq -r '.[].file' review-work/diagrams.json)
+          [ "$missing" -eq 0 ]
+          if grep -q 'review-work/' review-site/index.html; then
+            echo "index.html references review-work/ (not deployed); failing."
+            exit 1
+          fi
 
       # ---- Deploy on label/open/push; tear down on close/merge ----
       - name: Stage built site outside the worktree

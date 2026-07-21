@@ -12,7 +12,10 @@ reviewer's comprehension comes from — this is the highest-leverage stage.
 ## Task
 
 Author 2–4 diagrams, chosen from the catalog below based on what this PR actually
-does. Pick the ones that earn their place — do not pad to 4.
+does. Pick the ones that earn their place — do not pad to 4, but you MUST produce at
+least one diagram and list it in the manifest (the CI pipeline fails on an empty
+manifest). Every PR can support at least an architecture/component or blast-radius
+view of what changed.
 
 Write ONLY these files:
 

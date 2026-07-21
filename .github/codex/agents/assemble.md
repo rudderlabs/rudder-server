@@ -11,10 +11,24 @@ resolve a specific ambiguity in the artifacts.
   data shapes, per-file summaries and key hunks, tests.
 - `review-work/diagrams.json` — manifest of SVG diagrams: file, type, caption, and the
   `section` each belongs in.
-- `review-work/diagrams/*.svg` — the diagrams. Embed each one INLINE (paste the
-  `<svg>` element into the page) in the section its manifest entry names. The SVGs use
-  `var(--accent)`, `var(--muted)`, `var(--fg)`, `var(--surface)`, `var(--border)` —
-  you MUST define these custom properties on `:root`.
+- `review-work/diagrams/*.svg` — the diagrams. For EVERY entry in the manifest you
+  MUST open the SVG file, copy its full `<svg>...</svg>` markup, and paste it inline
+  into the page, wrapped like this in the section the manifest entry names:
+
+  ```html
+  <figure class="diagram" data-diagram="01-architecture.svg">
+    <svg viewBox="...">...full copied SVG content...</svg>
+    <figcaption>caption from the manifest</figcaption>
+  </figure>
+  ```
+
+  The `data-diagram` attribute must equal the manifest `file` value exactly — the CI
+  pipeline fails the build if any manifest diagram has no matching `data-diagram`
+  in `index.html`. NEVER reference diagrams via `<img src>`, `<object>`, or any
+  file path (`review-work/` is not deployed, so such references 404), and never
+  leave a diagram container empty. The SVGs use `var(--accent)`, `var(--muted)`,
+  `var(--fg)`, `var(--surface)`, `var(--border)` — you MUST define these custom
+  properties on `:root`.
 - `review-work/risks.json` — risks, review checklist, testing assessment.
 - `meta.txt` — fallback for PR metadata.
 
