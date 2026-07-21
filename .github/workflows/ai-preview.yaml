@@ -107,6 +107,10 @@ jobs:
           for stage in analyze diagrams risks assemble; do
             cat .github/codex/agents/_shared.md ".github/codex/agents/${stage}.md" \
               > "${RUNNER_TEMP}/codex-prompts/${stage}.md"
+            # Isolated Codex home per stage: the action appends its proxy
+            # provider block to CODEX_HOME/config.toml on every invocation, so
+            # reusing one home across stages produces duplicate TOML keys.
+            mkdir -p "${RUNNER_TEMP}/codex-home/${stage}"
           done
 
       # ---- Specialised subagents (sequential pipeline via review-work/) ----
@@ -143,6 +147,7 @@ jobs:
           safety-strategy: drop-sudo
           permission-profile: ':workspace'
           prompt-file: ${{ runner.temp }}/codex-prompts/analyze.md
+          codex-home: ${{ runner.temp }}/codex-home/analyze
 
       - name: Validate analysis artifact
         if: github.event.action != 'closed'
@@ -160,6 +165,7 @@ jobs:
           safety-strategy: unsafe  # sudo already dropped by Subagent 1
           permission-profile: ':workspace'
           prompt-file: ${{ runner.temp }}/codex-prompts/diagrams.md
+          codex-home: ${{ runner.temp }}/codex-home/diagrams
 
       - name: Validate diagram artifacts
         if: github.event.action != 'closed'
@@ -196,6 +202,7 @@ jobs:
           safety-strategy: unsafe  # sudo already dropped by Subagent 1
           permission-profile: ':workspace'
           prompt-file: ${{ runner.temp }}/codex-prompts/risks.md
+          codex-home: ${{ runner.temp }}/codex-home/risks
 
       - name: Validate risks artifact
         if: github.event.action != 'closed'
@@ -213,6 +220,7 @@ jobs:
           safety-strategy: unsafe  # sudo already dropped by Subagent 1
           permission-profile: ':workspace'
           prompt-file: ${{ runner.temp }}/codex-prompts/assemble.md
+          codex-home: ${{ runner.temp }}/codex-home/assemble
 
       - name: Validate assembled site
         if: github.event.action != 'closed'
