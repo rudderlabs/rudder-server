@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.81.1](https://github.com/rudderlabs/rudder-server/compare/v1.81.0...v1.81.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* use correct JSON tag for adjustedConversionTime in bing-ads ([#7204](https://github.com/rudderlabs/rudder-server/issues/7204)) ([a95807f](https://github.com/rudderlabs/rudder-server/commit/a95807fe5b19100e30b63255bba78f66a633cc71))
+
 ## [1.81.0](https://github.com/rudderlabs/rudder-server/compare/v1.80.0...v1.81.0) (2026-07-20)
 
 
