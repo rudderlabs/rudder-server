@@ -384,7 +384,8 @@ type Handle struct {
 		MaxDSSize                      config.ValueLoader[int]
 		numPartitions                  int // if zero or negative, no partitioning
 		partitionFunction              func(job *JobT) string
-		multiConsumer                  bool // if true, enables per-consumer indexes, views, and query paths
+		multiConsumer                  bool  // if true, enables per-consumer indexes, views, and query paths
+		defaultSkipStatusCompaction    *bool // overrides the multiConsumer-based default when set
 		warnOnStatusMissingPartitionID config.ValueLoader[bool]
 		staleDSListMaxRetries          config.ValueLoader[int]
 		dbTablesVersion                int // version of the database tables schema (0 means latest)

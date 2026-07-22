@@ -51,23 +51,25 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 	for _, tc := range []struct {
 		name                string
 		jobsDBFanoutEnabled bool // whether source nodes declare per-jobsdb fan-out on migration acknowledgement
+		forkDestinations    bool // fork the destination to the (multi-consumer) proc jobsdb, exercising proc-jobsdb migration
 	}{
-		{name: "normal", jobsDBFanoutEnabled: true},
-		{name: "legacy_no_jobsdb_fanout", jobsDBFanoutEnabled: false},
+		{name: "normal", jobsDBFanoutEnabled: true, forkDestinations: true},
+		{name: "legacy_no_jobsdb_fanout", jobsDBFanoutEnabled: false, forkDestinations: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			testPartitionMigrationEmbeddedMode(t, tc.jobsDBFanoutEnabled)
+			testPartitionMigrationEmbeddedMode(t, tc.jobsDBFanoutEnabled, tc.forkDestinations)
 		})
 	}
 }
 
-func testPartitionMigrationEmbeddedMode(t *testing.T, jobsDBFanoutEnabled bool) {
+func testPartitionMigrationEmbeddedMode(t *testing.T, jobsDBFanoutEnabled, forkDestinations bool) {
 	const (
-		namespace     = "namespace123"
-		workspaceID   = "workspace123"
-		sourceID      = "source123"
-		destinationID = "destination123"
-		writeKey      = "writekey123"
+		namespace          = "namespace123"
+		workspaceID        = "workspace123"
+		sourceID           = "source123"
+		destinationID      = "destination123"
+		abortDestinationID = "destination-abort-123" // second destination, aborted at the router
+		writeKey           = "writekey123"
 
 		numPartitions             = 4 // needs to be a power of 2 (e.g., 2, 4, 8, 16, ...)
 		jobsPerPartitionPerSecond = 50
@@ -116,22 +118,31 @@ func testPartitionMigrationEmbeddedMode(t *testing.T, jobsDBFanoutEnabled bool) 
 	wh := newTestWebhook(t)
 	t.Cleanup(wh.Close)
 
-	// start a test backendconfig with 1 source connected to the webhook
+	// start a test backendconfig with 1 source connected to the webhook. When forking, add a
+	// second destination on the same source that the router aborts (never delivered), so each
+	// forked proc job carries two consumers and migration must move all pending consumers.
+	sourceBuilder := backendconfigtest.NewSourceBuilder().
+		WithWorkspaceID(workspaceID).
+		WithID(sourceID).
+		WithWriteKey(writeKey).
+		WithConnection(
+			backendconfigtest.NewDestinationBuilder("WEBHOOK").
+				WithID(destinationID).
+				WithConfigOption("webhookMethod", "POST").
+				WithConfigOption("webhookUrl", wh.URL).
+				Build())
+	if forkDestinations {
+		sourceBuilder = sourceBuilder.WithConnection(
+			backendconfigtest.NewDestinationBuilder("WEBHOOK").
+				WithID(abortDestinationID).
+				WithConfigOption("webhookMethod", "POST").
+				WithConfigOption("webhookUrl", "http://localhost:1234"). // aborted at the router, never delivered
+				Build())
+	}
 	bc := backendconfigtest.NewBuilder().
 		WithNamespace(namespace, backendconfigtest.NewConfigBuilder().
 			WithWorkspaceID(workspaceID).
-			WithSource(
-				backendconfigtest.NewSourceBuilder().
-					WithWorkspaceID(workspaceID).
-					WithID(sourceID).
-					WithWriteKey(writeKey).
-					WithConnection(
-						backendconfigtest.NewDestinationBuilder("WEBHOOK").
-							WithID(destinationID).
-							WithConfigOption("webhookMethod", "POST").
-							WithConfigOption("webhookUrl", wh.URL).
-							Build()).
-					Build()).
+			WithSource(sourceBuilder.Build()).
 			Build()).
 		Build()
 
@@ -218,6 +229,12 @@ func testPartitionMigrationEmbeddedMode(t *testing.T, jobsDBFanoutEnabled bool) 
 		"JobsDB.dsLimit":                        "2",
 		"JobsDB.refreshDSListLoopSleepDuration": "5s",
 	}
+	if forkDestinations {
+		// fork both destinations to the proc jobsdb (isolation already enabled above) so each
+		// proc job carries two consumers; abort the second at the router so it is never delivered
+		commonEnv["Processor.DestinationIsolation.enabledDestinations.all"] = "true"
+		commonEnv["Router.toAbortDestinationIDs"] = abortDestinationID
+	}
 	rsBinaryPath := filepath.Join(t.TempDir(), "rudder-server-binary")
 	rudderserver.BuildRudderServerBinary(t, "../../main.go", rsBinaryPath)
 	node0Name := "proc-node-0"
@@ -281,6 +298,14 @@ func testPartitionMigrationEmbeddedMode(t *testing.T, jobsDBFanoutEnabled bool) 
 
 	// wait for some time to let events flow
 	time.Sleep(10 * time.Second)
+
+	if forkDestinations {
+		// the fan-out siphon must be active: forked jobs land in the proc jobsdb of some node,
+		// giving partition migration multi-consumer proc jobs to move
+		require.Eventually(t, func() bool {
+			return procJobsCount(t, pg0.DB)+procJobsCount(t, pg1.DB) > 0
+		}, 30*time.Second, 500*time.Millisecond, "forked jobs should appear in the proc jobsdb")
+	}
 
 	var srcRouterAcks []string
 	err = rudoacker.NewSrcrouterAcker(ctx, g, etcdResource.Client, namespace, []string{"srcrouter"}).

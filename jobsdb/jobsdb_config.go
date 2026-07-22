@@ -49,10 +49,15 @@ func (jd *Handle) loadConfig() {
 	jd.conf.compaction.vacuumFullStatusTableThreshold = jd.config.GetReloadableInt64Var(500*bytesize.MB, 1, jd.configKeys("vacuumFullStatusTableThreshold")...)
 	jd.conf.compaction.vacuumAnalyzeStatusTableThreshold = jd.config.GetReloadableInt64Var(30000, 1, jd.configKeys("vacuumAnalyzeStatusTableThreshold")...)
 	jd.conf.compaction.getJobsRetryOnCompaction = jd.config.GetReloadableBoolVar(true, jd.configKeys("getJobsRetryOnCompaction")...)
+	// multi-consumer datasets skip status compaction by default
+	defaultSkipStatusCompaction := jd.conf.multiConsumer
+	if jd.conf.defaultSkipStatusCompaction != nil {
+		defaultSkipStatusCompaction = *jd.conf.defaultSkipStatusCompaction
+	}
 	if jd.conf.multiConsumer { // if multiConsumer is enabled, we skip status compaction by default
-		jd.conf.compaction.skipStatusCompaction = jd.config.GetReloadableBoolVar(true, jd.configKeys("skipMultiConsumerStatusCompaction", "skipStatusCompaction")...)
+		jd.conf.compaction.skipStatusCompaction = jd.config.GetReloadableBoolVar(defaultSkipStatusCompaction, jd.configKeys("skipMultiConsumerStatusCompaction", "skipStatusCompaction")...)
 	} else {
-		jd.conf.compaction.skipStatusCompaction = jd.config.GetReloadableBoolVar(false, jd.configKeys("skipStatusCompaction")...)
+		jd.conf.compaction.skipStatusCompaction = jd.config.GetReloadableBoolVar(defaultSkipStatusCompaction, jd.configKeys("skipStatusCompaction")...)
 	}
 
 	// maxDSSize: Maximum size of a DS. The process which adds new DS runs in the background

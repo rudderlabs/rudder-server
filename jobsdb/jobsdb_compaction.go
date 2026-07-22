@@ -876,15 +876,46 @@ func (jd *Handle) checkIfCompactDS(ds dataSetT, db sqlDbOrTx) (
 	// latest status. For single-consumer datasets, there is at most one status row per job.
 	var terminalJobCountExpr string
 	if jd.conf.multiConsumer {
+		// Count the terminal (all-consumers-done) jobs with a single de-correlated,
+		// index-only pass instead of a per-job correlated subquery:
+		//   - the inner DISTINCT ON (job_id, consumer) takes each consumer's latest status,
+		//     selecting only job_state — served index-only by the
+		//     idx_<status>_jid_c_id_js (job_id, consumer, id DESC, job_state) index, so it
+		//     never touches the heap (unlike the "v_last_c_" view's SELECT *);
+		//   - grouping by job_id yields the per-job count of consumers whose latest status is
+		//     terminal, which the join treats as terminal only when it equals the job's
+		//     consumer count.
+		// This replaces ~one B-tree descent + heap fetch per job with one grouped scan.
 		terminalJobCountExpr = fmt.Sprintf(
-			`(select count(*) from %[1]q j
-			  where (select count(*) from "v_last_c_%[2]s" ls
-			         where ls.job_id = j.job_id and ls.job_state = any($1)) = array_length(j.consumers, 1)
+			`(select count(*)
+			  from %[1]q j
+			  join (
+			      select job_id, count(*) filter (where job_state = any($1)) as terminalConsumers
+			      from (
+			          select distinct on (job_id, consumer) job_id, job_state
+			          from %[2]q
+			          order by job_id, consumer, id desc
+			      ) latest
+			      group by job_id
+			  ) s on s.job_id = j.job_id
+			  where s.terminalConsumers = array_length(j.consumers, 1)
 			 ) as terminalJobCount`,
 			ds.JobTable, ds.JobStatusTable,
 		)
 	} else {
-		terminalJobCountExpr = fmt.Sprintf(`(select count(*) from "v_last_%s" where job_state = ANY($1)) as terminalJobCount`, ds.JobStatusTable)
+		// Same index-only rewrite as the multi-consumer branch: take the latest status per
+		// job (select only job_state) directly off the status table instead of the "v_last_"
+		// view's SELECT *. Every referenced column (job_id, id, job_state) is in the
+		// idx_<status>_jid_id_js (job_id ASC, id DESC, job_state) index, so no heap fetch.
+		terminalJobCountExpr = fmt.Sprintf(
+			`(select count(*) from (
+			     select distinct on (job_id) job_state
+			     from %[1]q
+			     order by job_id, id desc
+			 ) ls
+			 where ls.job_state = any($1)) as terminalJobCount`,
+			ds.JobStatusTable,
+		)
 	}
 
 	query := fmt.Sprintf(

@@ -558,7 +558,7 @@ func runRudderServer(ctx context.Context, cancel context.CancelFunc, port int, p
 	config.Set("SourceDebugger.disableEventUploads", true)
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
 	config.Set("JobsDB.backup.enabled", false)
-	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
+	config.Set("JobsDB.compactionLoopSleepDuration", "60m")
 	config.Set("archival.Enabled", false)
 	config.Set("Reporting.syncer.enabled", false)
 	config.Set("BatchRouter.pingFrequency", "1s")

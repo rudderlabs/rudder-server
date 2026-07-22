@@ -256,7 +256,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	config.Set("SourceDebugger.disableEventUploads", true)
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
 	config.Set("JobsDB.backup.enabled", false)
-	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
+	config.Set("JobsDB.compactionLoopSleepDuration", "60m")
 
 	config.Set("BatchRouter.isolationMode", string(spec.isolationMode))
 	config.Set("BatchRouter.jobQueryBatchSize", spec.jobQueryBatchSize)

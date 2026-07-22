@@ -84,6 +84,13 @@ func (pejdb *pendingEventsJobsDB) Store(ctx context.Context, jobList []*JobT) er
 }
 
 func (pejdb *pendingEventsJobsDB) StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) error {
+	// Register the pending-events increase only after the underlying store succeeds. The
+	// store may be retried internally on a stale dataset list; when it runs inside a
+	// caller-provided transaction (WithStoreSafeTxFromTx) that transaction is reused across
+	// retries, so registering before the store would double-count on every retry.
+	if err := pejdb.JobsDB.StoreInTx(ctx, tx, jobList); err != nil {
+		return err
+	}
 	tx.Tx().AddSuccessListener(func() {
 		counters := make(map[string]map[string]map[string]float64) // workspaceID -> destType -> destinationID -> count
 		for _, job := range jobList {
@@ -107,7 +114,7 @@ func (pejdb *pendingEventsJobsDB) StoreInTx(ctx context.Context, tx StoreSafeTx,
 			}
 		}
 	})
-	return pejdb.JobsDB.StoreInTx(ctx, tx, jobList)
+	return nil
 }
 
 func (pejdb *pendingEventsJobsDB) UpdateJobStatus(ctx context.Context, statusList []*JobStatusT) error {
@@ -117,6 +124,12 @@ func (pejdb *pendingEventsJobsDB) UpdateJobStatus(ctx context.Context, statusLis
 }
 
 func (pejdb *pendingEventsJobsDB) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT) error {
+	// Register the pending-events decrease only after the underlying update succeeds: the
+	// update retries internally on a stale dataset list against the (possibly reused)
+	// transaction, so registering before it would double-count on every retry.
+	if err := pejdb.JobsDB.UpdateJobStatusInTx(ctx, tx, statusList); err != nil {
+		return err
+	}
 	tx.Tx().AddSuccessListener(func() {
 		counters := make(map[string]map[string]map[string]float64) // workspaceID -> destType -> destinationID -> count
 		for _, status := range statusList {
@@ -142,5 +155,5 @@ func (pejdb *pendingEventsJobsDB) UpdateJobStatusInTx(ctx context.Context, tx Up
 			}
 		}
 	})
-	return pejdb.JobsDB.UpdateJobStatusInTx(ctx, tx, statusList)
+	return nil
 }
