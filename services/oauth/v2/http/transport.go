@@ -70,6 +70,15 @@ type roundTripState struct {
 // payload, so callers must not mistake it for a malformed upstream response.
 const TransportErrorHeader = "X-Rudder-Oauth-Transport-Error"
 
+// stripTransportErrorHeader removes the marker from a response that arrived over the wire, so only
+// this transport can assert it. Otherwise anything in front of the transformer could set it and
+// silently suppress the breach alert.
+func stripTransportErrorHeader(res *http.Response) {
+	if res != nil && res.Header != nil {
+		res.Header.Del(TransportErrorHeader)
+	}
+}
+
 func httpResponseCreator(statusCode int, body []byte) *http.Response {
 	header := http.Header{"apiVersion": []string{"2"}}
 	header.Set(TransportErrorHeader, "true")
@@ -253,7 +262,9 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return httpResponseCreator(http.StatusInternalServerError, fmt.Appendf(nil, "[OAuthPlatformError]checking if destination is oauth destination: %v", err.Error())), nil
 	}
 	if !isOauthDestination {
-		return t.Transport.RoundTrip(req)
+		res, err := t.Transport.RoundTrip(req)
+		stripTransportErrorHeader(res)
+		return res, err
 	}
 	rts := &roundTripState{}
 	rts.destination = destination
@@ -283,6 +294,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	roundTripStartTime := time.Now()
 	res, err := t.Transport.RoundTrip(rts.req)
+	stripTransportErrorHeader(res)
 	if err != nil {
 		t.log.Errorn("[RoundTrip]transport round trip",
 			obskit.DestinationID(rts.destination.ID),

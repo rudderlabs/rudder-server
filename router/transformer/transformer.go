@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -433,10 +434,15 @@ func (trans *handle) emitProxyInvalidResponse(proxyReqParams *ProxyRequestParams
 // and a batch response can be multi-MB.
 func truncatedBody(b []byte) string {
 	const maxBodyBytes = int(10 * bytesize.KB)
-	if len(b) > maxBodyBytes {
-		return string(b[:maxBodyBytes]) + "...[truncated]"
+	if len(b) <= maxBodyBytes {
+		return string(b)
 	}
-	return string(b)
+	cut := b[:maxBodyBytes]
+	// Trim back off a partial rune so the cut does not emit U+FFFD.
+	if r, size := utf8.DecodeLastRune(cut); r == utf8.RuneError && size <= 1 {
+		cut = cut[:len(cut)-size]
+	}
+	return string(cut) + "...[truncated]"
 }
 
 // proxyErrorResponse builds the error-path response shared by every early return in ProxyRequest.
@@ -510,11 +516,11 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		return proxyErrorResponse(respCode, requestError.Error(), routerJobDontBatchDirectives)
 	}
 
-	// Responses the oauth transport synthesized itself are infrastructure, not contract breaches, and
-	// get their own reason so the alert can exclude them. The upstream status is deliberately not part
-	// of this: v0 mirrors the destination's delivery status, so a destination 5xx would relabel a
-	// genuine breach as infra.
-	infraFailure := httpPrxResp.transportError
+	// Infrastructure, not a contract breach: either this transport synthesized the response, or it
+	// never came from the transformer at all (an ingress/LB error page sets no apiVersion). Status is
+	// deliberately not part of this - v0 mirrors the destination's delivery status, so a destination
+	// 5xx would relabel a genuine breach as infra.
+	infraFailure := httpPrxResp.transportError || !httpPrxResp.fromTransformer
 
 	/*
 		respData will be in ProxyResponseV0 or ProxyResponseV1
@@ -718,6 +724,10 @@ type httpProxyResponse struct {
 	// received from the transformer. Its body is a plain-text error string, so a non-JSON body on
 	// such a response is an infrastructure failure, not a transformer contract breach.
 	transportError bool
+	// fromTransformer reports that the response carried the apiVersion header, which only the
+	// transformer sets. An ingress/LB error page in front of the transformer carries neither it nor
+	// the transport marker, and is infrastructure rather than a contract breach.
+	fromTransformer bool
 }
 
 func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyReqParams *ProxyRequestParams, payload []byte) httpProxyResponse {
@@ -814,9 +824,10 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	}
 
 	return httpProxyResponse{
-		respData:       respData,
-		statusCode:     resp.StatusCode,
-		transportError: resp.Header.Get(oauthv2httpclient.TransportErrorHeader) != "",
+		respData:        respData,
+		statusCode:      resp.StatusCode,
+		transportError:  resp.Header.Get(oauthv2httpclient.TransportErrorHeader) != "",
+		fromTransformer: resp.Header.Get(apiVersionHeader) != "",
 	}
 }
 
