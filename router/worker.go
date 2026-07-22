@@ -802,7 +802,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 		},
 		Destination: &destinationJob.Destination,
 		Connection:  destinationJob.Connection,
-		Adapter:     transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
+		Adapter:     transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion()),
 	}
 	rtlTime := time.Now()
 

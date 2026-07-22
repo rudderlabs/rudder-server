@@ -7,19 +7,16 @@ import (
 
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 )
 
 func TestV0Adapter(t *testing.T) {
-	v0Adapter := NewTransformerProxyAdapter(transformer.V0, logger.NOP)
+	v0Adapter := NewTransformerProxyAdapter(transformer.V0)
 
 	t.Run("should return the right url", func(t *testing.T) {
 		testDestType := "testDestType"
@@ -130,10 +127,7 @@ func TestV0Adapter(t *testing.T) {
 }
 
 func TestV1Adapter(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockLogger := mock_logger.NewMockLogger(ctrl)
-
-	v1Adapter := NewTransformerProxyAdapter(transformer.V1, mockLogger)
+	v1Adapter := NewTransformerProxyAdapter(transformer.V1)
 
 	t.Run("should return the right url", func(t *testing.T) {
 		testDestType := "testDestType"
@@ -377,7 +371,7 @@ func TestProxyPayloadCarriesDestinationVersion(t *testing.T) {
 
 	for _, version := range []string{transformer.V0, transformer.V1} {
 		t.Run(version, func(t *testing.T) {
-			payload, err := NewTransformerProxyAdapter(version, logger.NOP).getPayload(params)
+			payload, err := NewTransformerProxyAdapter(version).getPayload(params)
 			require.NoError(t, err)
 
 			var got struct {

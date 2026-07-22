@@ -9,7 +9,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 )
@@ -47,6 +46,10 @@ type TransResponse struct {
 	routerJobDontBatchDirectives map[int64]bool
 	authErrorCategory            string
 	statTags                     map[string]string
+	// responseEntries is how many per-job entries the transformer actually returned, before they were
+	// keyed into the maps above. It is not derivable from those maps: two entries for the same jobID
+	// collapse to one key (last write wins), which is a breach the caller has to be able to see.
+	responseEntries int
 }
 
 type TPDestResponse struct {
@@ -56,12 +59,8 @@ type TPDestResponse struct {
 }
 
 type (
-	v0Adapter struct {
-		logger logger.Logger
-	}
-	v1Adapter struct {
-		logger logger.Logger
-	}
+	v0Adapter struct{}
+	v1Adapter struct{}
 )
 
 func (v0 *v0Adapter) getPayload(proxyReqParams *ProxyRequestParams) ([]byte, error) {
@@ -112,6 +111,9 @@ func (v0 *v0Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			routerJobDontBatchDirectives: routerJobDontBatchDirectives,
 			authErrorCategory:            transformerResponse.AuthErrorCategory,
 			statTags:                     transformerResponse.StatTags,
+			// v0 has no per-job response array - the map is keyed off the request metadata, so there is
+			// one entry per key by construction and the duplicate check below can never trip.
+			responseEntries: len(routerJobResponseCodes),
 		},
 		nil
 }
@@ -162,6 +164,7 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			routerJobDontBatchDirectives: routerJobDontBatchDirectives,
 			authErrorCategory:            transformerResponse.AuthErrorCategory,
 			statTags:                     transformerResponse.StatTags,
+			responseEntries:              len(transformerResponse.Response),
 		},
 		nil
 }
@@ -178,10 +181,10 @@ func getTransformerProxyURL(version, destType string) (string, error) {
 	return url.JoinPath(baseURL, version, "destinations", strings.ToLower(destType), "proxy")
 }
 
-func NewTransformerProxyAdapter(version string, logger logger.Logger) transformerProxyAdapter {
+func NewTransformerProxyAdapter(version string) transformerProxyAdapter {
 	switch version {
 	case "v1":
-		return &v1Adapter{logger: logger}
+		return &v1Adapter{}
 	}
-	return &v0Adapter{logger: logger}
+	return &v0Adapter{}
 }
