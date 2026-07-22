@@ -3,6 +3,7 @@ package offline_conversions
 import (
 	"archive/zip"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -524,6 +526,57 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			Expect(err.Error()).To(Equal(expectedResult.Error()))
 		})
 
+		It("Transform() Test -> update reformats and preserves adjustedConversionTime", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"adjustedConversionTime\": \"2023-05-22T18:27:54Z\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\", \"conversionCurrencyCode\": \"USD\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			expectedResp := `{"message":{"fields":{"adjustedConversionTime":"5/22/2023 6:27:54 PM","conversionCurrencyCode":"USD","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 AM","conversionValue":"100","microsoftClickId":"click_id"},"action":"update"},"metadata":{"jobId":0}}`
+			// Execute
+			resp, err := uploader.Transform(job)
+			Expect(err).To(BeNil())
+			Expect(resp).To(Equal(expectedResp))
+		})
+
+		It("Transform() Test -> insert ignores a malformed adjustedConversionTime", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"insert\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"adjustedConversionTime\": \"not-a-timestamp\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			// insert does not validate adjustedConversionTime, so the malformed value
+			// does not cause an error; it is left untouched (and ignored downstream).
+			expectedResp := `{"message":{"fields":{"adjustedConversionTime":"not-a-timestamp","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 AM","conversionValue":"100","microsoftClickId":"click_id"},"action":"insert"},"metadata":{"jobId":0}}`
+			// Execute
+			resp, err := uploader.Transform(job)
+			Expect(err).To(BeNil())
+			Expect(resp).To(Equal(expectedResp))
+		})
+
+		It("Transform() Test -> insert leaves a valid adjustedConversionTime untouched", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"insert\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"adjustedConversionTime\": \"2023-05-22T18:27:54Z\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			// conversionTime is reformatted; adjustedConversionTime is NOT reformatted
+			// on insert (it is not validated), so it stays in its original form.
+			expectedResp := `{"message":{"fields":{"adjustedConversionTime":"2023-05-22T18:27:54Z","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 AM","conversionValue":"100","microsoftClickId":"click_id"},"action":"insert"},"metadata":{"jobId":0}}`
+			// Execute
+			resp, err := uploader.Transform(job)
+			Expect(err).To(BeNil())
+			Expect(resp).To(Equal(expectedResp))
+		})
+
+		It("Transform() Test -> update errors naming a malformed adjustedConversionTime", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"adjustedConversionTime\": \"not-a-timestamp\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\", \"conversionCurrencyCode\": \"USD\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			// Execute
+			_, err := uploader.Transform(job)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("adjustedConversionTime must be in ISO 8601"))
+		})
+
 		It("Transform() Test -> microsoftClickId is required(email and phone undefined) but not present", func() {
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"conversionValue\": \"100\", \"conversionCurrencyCode\": \"USD\"}}"),
@@ -553,7 +606,9 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			uploader := &BingAdsBulkUploader{
 				isHashRequired: true,
 			}
-			expectedResp := `{"message":{"fields":{"adjustedConversionTime":"5/22/2023 6:27:54 PM","conversionCurrencyCode":"USD","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 PM","conversionValue":"100","email":"28a4da98f8812110001ab8ffacde3b38b4725a9e3570c39299fbf2d12c5aa70e","phone":"8c229df83de8ab269e90918846e326c4008c86481393223d17a30ff5a407b08e"},"action":"insert"},"metadata":{"jobId":0}}`
+			// insert does not reformat adjustedConversionTime (it is not validated on
+			// insert), so it stays in its original ISO form; conversionTime is reformatted.
+			expectedResp := `{"message":{"fields":{"adjustedConversionTime":"2023-05-22T18:27:54Z","conversionCurrencyCode":"USD","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 PM","conversionValue":"100","email":"28a4da98f8812110001ab8ffacde3b38b4725a9e3570c39299fbf2d12c5aa70e","phone":"8c229df83de8ab269e90918846e326c4008c86481393223d17a30ff5a407b08e"},"action":"insert"},"metadata":{"jobId":0}}`
 			// Execute
 			resp, err := uploader.Transform(job)
 			Expect(resp).To(Equal(expectedResp))
@@ -637,6 +692,93 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			Expect(err).To(BeNil())
 			Expect(resp).To(Equal(expectedResp))
 		})
+		// populateZipFile writes one record into the action-specific CSV. Each case below
+		// supplies the input fields and the FULL expected CSV (header + format version +
+		// data row) so we compare the entire file, catching any column shift or drop.
+		// The canonical field name emitted by rETL/VDM is `adjustedConversionTime`
+		// (rudder-integrations-info/src/routes/bingads_offline_conversions/index.ts:46).
+		DescribeTable("populateZipFile() -> writes the full expected CSV per action",
+			func(action string, fields map[string]string, expectedCSV [][]string) {
+				initBingads()
+				bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", nil, false)
+
+				actionFile, err := createActionFile(action)
+				Expect(err).ShouldNot(HaveOccurred())
+				defer os.Remove(actionFile.CSVFilePath)
+				defer os.Remove(actionFile.ZipFilePath)
+
+				fieldsJSON, err := jsonrs.Marshal(fields)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				err = bulkUploader.populateZipFile(actionFile, "some line", Data{
+					Message:  Message{Action: action, Fields: fieldsJSON},
+					Metadata: Metadata{JobID: 7},
+				})
+				Expect(err).ShouldNot(HaveOccurred())
+				actionFile.CSVWriter.Flush()
+
+				csvContent, err := os.ReadFile(actionFile.CSVFilePath)
+				Expect(err).ShouldNot(HaveOccurred())
+				records, err := csv.NewReader(strings.NewReader(string(csvContent))).ReadAll()
+				Expect(err).ShouldNot(HaveOccurred())
+
+				// Full comparison of every row (header, format version, data row).
+				Expect(records).To(Equal(expectedCSV))
+			},
+			Entry("insert",
+				"insert",
+				map[string]string{
+					"conversionCurrencyCode":    "USD",
+					"conversionName":            "Test-Integration",
+					"conversionTime":            "4/19/2024 5:01:20 AM",
+					"conversionValue":           "10",
+					"microsoftClickId":          "click_id",
+					"email":                     "hashed_email",
+					"phone":                     "hashed_phone",
+					"externalAttributionCredit": "0.5",
+					"externalAttributionModel":  "dummy goal name",
+				},
+				[][]string{
+					{"Type", "Status", "Id", "Parent Id", "Client Id", "Name", "Conversion Currency Code", "Conversion Name", "Conversion Time", "Conversion Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "External Attribution Credit", "External Attribution Model"},
+					{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""},
+					{"Offline Conversion", "", "7", "", "", "", "USD", "Test-Integration", "4/19/2024 5:01:20 AM", "10", "click_id", "hashed_email", "hashed_phone", "0.5", "dummy goal name"},
+				},
+			),
+			Entry("update (Restate)",
+				"update",
+				map[string]string{
+					"conversionCurrencyCode": "USD",
+					"conversionName":         "Test-Integration",
+					"conversionTime":         "4/1/2024 9:23:54 AM",
+					"conversionValue":        "100",
+					"adjustedConversionTime": "4/1/2024 9:33:54 AM",
+					"microsoftClickId":       "click_id",
+					"email":                  "hashed_email",
+					"phone":                  "hashed_phone",
+				},
+				[][]string{
+					{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Adjustment Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjusted Currency Code", "Adjustment Time"},
+					{"Format Version", "", "", "", "6.0", "", "", "", "", "", "", "", ""},
+					{"Offline Conversion", "Restate", "", "7", "", "Test-Integration", "4/1/2024 9:23:54 AM", "100", "click_id", "hashed_email", "hashed_phone", "USD", "4/1/2024 9:33:54 AM"},
+				},
+			),
+			Entry("delete (Retract)",
+				"delete",
+				map[string]string{
+					"conversionName":         "Test-Integration",
+					"conversionTime":         "4/1/2024 9:23:54 AM",
+					"adjustedConversionTime": "4/1/2024 9:33:54 AM",
+					"microsoftClickId":       "click_id",
+					"email":                  "hashed_email",
+					"phone":                  "hashed_phone",
+				},
+				[][]string{
+					{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjustment Time"},
+					{"Format Version", "", "", "", "6.0", "", "", "", "", "", ""},
+					{"Offline Conversion", "Retract", "", "7", "", "Test-Integration", "4/1/2024 9:23:54 AM", "click_id", "hashed_email", "hashed_phone", "4/1/2024 9:33:54 AM"},
+				},
+			),
+		)
 	})
 })
 
