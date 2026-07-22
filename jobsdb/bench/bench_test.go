@@ -143,7 +143,7 @@ func TestBench(t *testing.T) {
 		c.Set("JobsDB.cacheExpiration", 2*time.Hour)
 		c.Set("JobsDB.dsLimit", 4)
 		c.Set("JobsDB.maxDSRetention", 20*time.Second)
-		c.Set("JobsDB.migrateDSLoopSleepDuration", 10*time.Second)
+		c.Set("JobsDB.compactionLoopSleepDuration", 10*time.Second)
 		c.Set("JobsDB.jobMinRowsLeftMigrateThreshold", 0.7)
 		c.Set("JobsDB.refreshDSListLoopSleepDuration", 2*time.Second)
 		c.Set("JobsDB.addNewDSLoopSleepDuration", 2*time.Second)

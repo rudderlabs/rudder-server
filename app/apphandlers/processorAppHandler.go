@@ -210,6 +210,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 
 	gwROHandle := jobsdb.NewForRead(
 		"gw",
+		jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in gw jobsdb
 		jobsdb.WithDSLimit(a.config.gwDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "Gateway.jobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(statsFactory),
@@ -250,6 +251,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 	eschRWDB := jobsdb.NewForReadWrite(
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in esch jobsdb
 		jobsdb.WithDSLimit(a.config.eschDSLimit),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(jobsdbPool),
@@ -260,6 +262,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 	arcRWDB := jobsdb.NewForReadWrite(
 		"arc",
 		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in arc jobsdb
 		jobsdb.WithDSLimit(a.config.arcDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(false, "Processor.jobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(statsFactory),
@@ -275,6 +278,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 			"proc",
 			jobsdb.WithMultiConsumer(),
 			jobsdb.WithClearDB(options.ClearDB),
+			jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in proc jobsdb
 			jobsdb.WithDSLimit(a.config.procDSLimit),
 			jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(false, "Processor.jobsDB.skipMaintenanceError")),
 			jobsdb.WithStats(statsFactory),
