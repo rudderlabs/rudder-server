@@ -549,7 +549,6 @@ func runRudderServer(t testing.TB, ctx context.Context, cancel context.CancelFun
 	t.Setenv(configKeyToEnv("recovery.enabled"), "false")
 	t.Setenv(configKeyToEnv("Profiler.Enabled"), "false")
 	t.Setenv(configKeyToEnv("Gateway.enableSuppressUserFeature"), "false")
-	t.Setenv(configKeyToEnv("Processor.archiveInPreProcess"), "true")
 	t.Setenv(configKeyToEnv("Processor.SourceHydration.maxRetry"), "2")
 	t.Setenv(configKeyToEnv("enableStats"), "false")
 	if minioResource != nil {

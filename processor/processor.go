@@ -199,7 +199,6 @@ type Handle struct {
 		pythonTransformConfig                     transformerutils.PythonTransformConfig
 		userTransformationMirroringBlockedIDs     config.ValueLoader[[]string]
 		storeSamplerEnabled                       config.ValueLoader[bool]
-		archiveInPreProcess                       bool
 	}
 
 	drainConfig struct {
@@ -807,7 +806,6 @@ func (proc *Handle) loadConfig() {
 	proc.config.transformTimesPQLength = proc.conf.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = proc.conf.GetStringVar("GW", "Gateway.CustomVal")
-	proc.config.archiveInPreProcess = proc.conf.GetBoolVar(false, "Processor.archiveInPreProcess")
 	proc.config.pythonTransformConfig = transformerutils.LoadPythonTransformConfig(proc.conf)
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
@@ -2201,12 +2199,10 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		return nil, fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList))
 	}
 
-	if proc.config.archiveInPreProcess {
-		if err := proc.storeArchiveJobs(ctx, archivalJobs); err != nil {
-			return nil, err
-		}
-		archivalJobs = nil
+	if err := proc.storeArchiveJobs(ctx, archivalJobs); err != nil {
+		return nil, err
 	}
+	archivalJobs = nil
 
 	return &srcHydrationMessage{
 		partition:                     partition,
@@ -2247,30 +2243,11 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	groupedEvents := make(map[string][]types.TransformerEvent)
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 
-	if !proc.config.archiveInPreProcess {
-		g, groupCtx := errgroup.WithContext(ctx)
-
-		g.Go(func() error {
-			return proc.storeEventSchemaJobs(groupCtx,
-				lo.Flatten(lo.MapToSlice(preTrans.eventSchemaJobsBySourceId, func(_ SourceIDT, jobs []*jobsdb.JobT) []*jobsdb.JobT {
-					return jobs
-				})))
-		})
-
-		g.Go(func() error {
-			return proc.storeArchiveJobs(groupCtx, preTrans.archivalJobs)
-		})
-
-		if err := g.Wait(); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := proc.storeEventSchemaJobs(ctx,
-			lo.Flatten(lo.MapToSlice(preTrans.eventSchemaJobsBySourceId, func(_ SourceIDT, jobs []*jobsdb.JobT) []*jobsdb.JobT {
-				return jobs
-			}))); err != nil {
-			return nil, err
-		}
+	if err := proc.storeEventSchemaJobs(ctx,
+		lo.Flatten(lo.MapToSlice(preTrans.eventSchemaJobsBySourceId, func(_ SourceIDT, jobs []*jobsdb.JobT) []*jobsdb.JobT {
+			return jobs
+		}))); err != nil {
+		return nil, err
 	}
 
 	// REPORTING - START
