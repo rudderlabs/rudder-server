@@ -1461,8 +1461,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		},
 		cpResponses: []testutils.CpResponseParams{},
 		expected: ProxyRequestResponse{
-			// DontBatchDirectives is seeded from the request metadata, so both jobs appear; the per-job
-			// status maps only carry job 1, the one the transformer actually answered for.
+			// DontBatchDirectives is seeded from metadata; the status maps carry only the answered job.
 			DontBatchDirectives: map[int64]bool{
 				1: false,
 				2: false,
@@ -1519,9 +1518,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				},
 				Files: map[string]any{},
 			},
-			// Job 1 appears twice - a legitimate batch (router/worker.go only dedupes when building the
-			// final responses). Deduped, the request set {1,2} equals the response set {1,2}, so this
-			// must not page. Drop lo.Uniq on jobIDsInMetadata and this case fails.
+			// Job 1 twice is a legitimate batch; deduped the sets match, so this must not page.
 			Metadata: []ProxyRequestMetadata{
 				{
 					WorkspaceID:   "workspace_id",
@@ -1607,9 +1604,8 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		},
 		cpResponses: []testutils.CpResponseParams{},
 		expected: ProxyRequestResponse{
-			// The output parsed, so the per-job status is applied and the top-level 502 is preserved -
-			// exactly the pre-change behavior. A short-circuit on status would instead drop these and
-			// return empty maps, so this case guards against that regression.
+			// The output parsed, so per-job status is applied and the 502 preserved. A short-circuit on
+			// status would drop these and return empty maps.
 			DontBatchDirectives:      map[int64]bool{1: false},
 			RespBodys:                map[int64]string{1: "success"},
 			RespContentType:          "application/json",
@@ -1622,10 +1618,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 	},
 
 	{
-		// The jobID sets match here, so the set comparison alone would miss this. The transformer
-		// answered twice for job 1 with conflicting statuses and the map write silently kept the last
-		// one - exactly the "results attached to the wrong jobs" breach, so the entry-count check
-		// has to catch it.
+		// The jobID sets match, so only the entry-count check can catch this.
 		description:          "[v1proxy] when the transformer answers twice for the same jobID, should page with reason in out mismatch",
 		proxyVersion:         "v1",
 		expectedBreachReason: "in out mismatch",
@@ -1673,7 +1666,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		cpResponses: []testutils.CpResponseParams{},
 		expected: ProxyRequestResponse{
 			DontBatchDirectives: map[int64]bool{1: false, 2: false},
-			// Job 1's first status is gone - last write wins - which is why this must be flagged.
+			// Job 1's first status is gone - last write wins.
 			RespBodys:                map[int64]string{1: "second", 2: "success"},
 			RespContentType:          "application/json",
 			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","response":[{"statusCode":200,"error":"first","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":1}}]}`,
@@ -1721,9 +1714,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 	},
 
 	{
-		// Pins the output.Type == gjson.Null half of the guard: gjson reports an explicit null as
-		// existing, so dropping that check would let this through as an empty response set and get
-		// reported as "in out mismatch" instead.
+		// Pins the output.Type == gjson.Null half of the guard.
 		description:          "[v1proxy] when the response output is explicitly null, should page with reason missing output",
 		proxyVersion:         "v1",
 		rawBody:              `{"output":null}`,
@@ -2028,8 +2019,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 				if tc.rawBody != "" {
 					outputJson = []byte(tc.rawBody)
 				}
-				// Lets a case set the upstream HTTP status while still returning a real transformer body,
-				// to exercise a 5xx that carries a usable output.
+				// Lets a case return a real transformer body under a chosen upstream status.
 				if tc.upstreamStatusCode != 0 {
 					w.WriteHeader(tc.upstreamStatusCode)
 				}
@@ -2099,9 +2089,8 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 				require.Contains(t, proxyResp.ProxyRequestResponseBody, tc.expected.ProxyRequestResponseBody)
 			}
 
-			// A breach must produce exactly one metric under exactly one reason, and a healthy response
-			// (expectedBreachReason == "") must produce none - so a regression that spuriously pages on a
-			// success case is caught, not just a mislabeled breach.
+			// Exactly one reason per breach, and none at all for a healthy response - so a spurious page
+			// is caught, not just a mislabel.
 			var expectedReasons []string
 			if tc.expectedBreachReason != "" {
 				expectedReasons = []string{tc.expectedBreachReason}

@@ -46,9 +46,8 @@ type TransResponse struct {
 	routerJobDontBatchDirectives map[int64]bool
 	authErrorCategory            string
 	statTags                     map[string]string
-	// responseEntries is how many per-job entries the transformer actually returned, before they were
-	// keyed into the maps above. It is not derivable from those maps: two entries for the same jobID
-	// collapse to one key (last write wins), which is a breach the caller has to be able to see.
+	// responseEntries is the raw per-job entry count. Not derivable from the maps above: two entries
+	// for one jobID collapse to a single key.
 	responseEntries int
 }
 
@@ -111,8 +110,7 @@ func (v0 *v0Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			routerJobDontBatchDirectives: routerJobDontBatchDirectives,
 			authErrorCategory:            transformerResponse.AuthErrorCategory,
 			statTags:                     transformerResponse.StatTags,
-			// v0 has no per-job response array - the map is keyed off the request metadata, so there is
-			// one entry per key by construction and the duplicate check below can never trip.
+			// v0 has no per-job response array; keyed off the request metadata, so one entry per key.
 			responseEntries: len(routerJobResponseCodes),
 		},
 		nil
@@ -148,10 +146,7 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			fmt.Errorf("[TransformerProxy Unmarshalling]:: respData: %s, err: %w", string(respData), err)
 	}
 
-	// routerJobResponseCodes is keyed by the jobIDs the transformer returned results for, so its keys
-	// are the response's jobID set. The caller compares that against the request's jobIDs to detect a
-	// transformer that answered for a different set of jobs than we sent - the "in out mismatch"
-	// breach - keeping all three breach reasons in one place.
+	// Keys become the response's jobID set, which the caller compares against the request's.
 	for _, resp := range transformerResponse.Response {
 		routerJobResponseCodes[resp.Metadata.JobID] = resp.StatusCode
 		routerJobResponseBodys[resp.Metadata.JobID] = resp.Error
