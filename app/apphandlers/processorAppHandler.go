@@ -273,6 +273,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 	if config.GetBoolVar(false, "Processor.DestinationIsolation.enabled") {
 		procRWHandle := jobsdb.NewForReadWrite(
 			"proc",
+			jobsdb.WithMultiConsumer(),
 			jobsdb.WithClearDB(options.ClearDB),
 			jobsdb.WithDSLimit(a.config.procDSLimit),
 			jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(false, "Processor.jobsDB.skipMaintenanceError")),
@@ -283,7 +284,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 			jobsdb.WithNumPartitions(partitionCount),
 		)
 		defer procRWHandle.Close()
-		procRWDB = jobsdb.NewPendingEventsJobsDB(procRWHandle, pendingEventsRegistry)
+		procRWDB = jobsdb.NewPendingEventsJobsDB(procRWHandle, pendingEventsRegistry, jobsdb.WithConsumerAsDestinationID())
 	}
 
 	var schemaForwarder schema_forwarder.Forwarder
