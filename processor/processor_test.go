@@ -1408,378 +1408,363 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 func TestArchival(t *testing.T) {
 	initProcessor()
 
-	testFn := func(archiveInPreProcess bool) {
-		t.Run("process events and write to archival DB", func(t *testing.T) {
-			c := &testContext{}
-			c.Setup(t)
+	t.Run("process events and write to archival DB", func(t *testing.T) {
+		c := &testContext{}
+		c.Setup(t)
 
-			// crash recovery check
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+		// crash recovery check
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			defer c.Finish()
+		defer c.Finish()
 
-			prepareHandle := func(proc *Handle) *Handle {
-				proc.archivalDB = c.mockArchivalDB
-				proc.config.archivalEnabled = config.SingleValueLoader(true)
-				proc.config.enableConcurrentStore = config.SingleValueLoader(false)
-				isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
-				require.NoError(t, err)
-				proc.isolationStrategy = isolationStrategy
-				proc.config.archiveInPreProcess = archiveInPreProcess
-				return proc
-			}
-
-			messages := map[string]mockEventData{
-				// this message should be delivered only to destination A
-				"message-1": {
-					id:                        "1",
-					jobid:                     1010,
-					originalTimestamp:         "2000-01-02T01:23:45",
-					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
-					sentAt:                    "2000-01-02 01:23",
-					expectedSentAt:            "2000-01-02T01:23:00.000Z",
-					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
-				},
-				// this message should not be delivered to destination A
-				"message-2": {
-					id:                        "2",
-					jobid:                     1010,
-					originalTimestamp:         "2000-02-02T01:23:45",
-					expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
-					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{"All": true, "enabled-destination-a-definition-display-name": false},
-				},
-				// this message should be delivered to all destinations
-				"message-3": {
-					id:                 "3",
-					jobid:              2010,
-					originalTimestamp:  "malformed timestamp",
-					sentAt:             "2000-03-02T01:23:15",
-					expectedSentAt:     "2000-03-02T01:23:15.000Z",
-					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
-					integrations:       map[string]bool{"All": true},
-				},
-				// this message should be delivered to all destinations (default All value)
-				"message-4": {
-					id:                        "4",
-					jobid:                     2010,
-					originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
-					expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
-					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{},
-				},
-				// this message should not be delivered to any destination
-				"message-5": {
-					id:                 "5",
-					jobid:              2010,
-					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
-					integrations:       map[string]bool{"All": false},
-				},
-			}
-
-			unprocessedJobsList := []*jobsdb.JobT{
-				{
-					UUID:          uuid.New(),
-					JobID:         1002,
-					CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
-					ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
-					CustomVal:     gatewayCustomVal[0],
-					EventPayload:  nil,
-					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
-				},
-				{
-					UUID:      uuid.New(),
-					JobID:     1010,
-					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
-					CustomVal: gatewayCustomVal[0],
-					EventPayload: createBatchPayload(
-						WriteKeyEnabledNoUT,
-						"2001-01-02T02:23:45.000Z",
-						[]mockEventData{
-							messages["message-1"],
-							messages["message-2"],
-						},
-						createMessagePayloadWithoutSources, // should be stored
-					),
-					EventCount:    2,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabledNoUT),
-				},
-				{
-					UUID:          uuid.New(),
-					JobID:         2002,
-					CreatedAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
-					ExpireAt:      time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
-					CustomVal:     gatewayCustomVal[0],
-					EventPayload:  nil,
-					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
-				},
-				{
-					UUID:          uuid.New(),
-					JobID:         2003,
-					CreatedAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
-					ExpireAt:      time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
-					CustomVal:     gatewayCustomVal[0],
-					EventPayload:  nil,
-					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
-				},
-				{
-					UUID:      uuid.New(),
-					JobID:     2010,
-					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					CustomVal: gatewayCustomVal[0],
-					EventPayload: createBatchPayload(
-						WriteKeyEnabledNoUT,
-						"2002-01-02T02:23:45.000Z",
-						[]mockEventData{
-							messages["message-3"],
-							messages["message-4"],
-							messages["message-5"],
-						},
-						createMessagePayload, // shouldn't be stored to archivedb
-					),
-					EventCount: 3,
-					Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
-				},
-			}
-
-			c.mockArchivalDB.EXPECT().
-				WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
-					_ = f(jobsdb.EmptyStoreSafeTx())
-				}).Return(nil)
-			c.mockArchivalDB.EXPECT().
-				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-				Times(1).
-				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					require.Len(t, jobs, 2)
-				})
-
-			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
-
-			Setup(processor, c, false, false, t)
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
-			t.Log("Processor setup and init done")
-
-			srcHydrationMsg, err := processor.preprocessStage(
-				"",
-				subJob{
-					ctx:     ctx,
-					subJobs: unprocessedJobsList,
-				},
-				0,
-			)
+		prepareHandle := func(proc *Handle) *Handle {
+			proc.archivalDB = c.mockArchivalDB
+			proc.config.archivalEnabled = config.SingleValueLoader(true)
+			proc.config.enableConcurrentStore = config.SingleValueLoader(false)
+			isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 			require.NoError(t, err)
-			if archiveInPreProcess {
-				require.Nil(t, srcHydrationMsg.archivalJobs)
-			}
-			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
-			require.NoError(t, err)
+			proc.isolationStrategy = isolationStrategy
+			return proc
+		}
 
-			_, _ = processor.pretransformStage("", preTransMessage)
+		messages := map[string]mockEventData{
+			// this message should be delivered only to destination A
+			"message-1": {
+				id:                        "1",
+				jobid:                     1010,
+				originalTimestamp:         "2000-01-02T01:23:45",
+				expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+				sentAt:                    "2000-01-02 01:23",
+				expectedSentAt:            "2000-01-02T01:23:00.000Z",
+				expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+				integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+			},
+			// this message should not be delivered to destination A
+			"message-2": {
+				id:                        "2",
+				jobid:                     1010,
+				originalTimestamp:         "2000-02-02T01:23:45",
+				expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
+				expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+				integrations:              map[string]bool{"All": true, "enabled-destination-a-definition-display-name": false},
+			},
+			// this message should be delivered to all destinations
+			"message-3": {
+				id:                 "3",
+				jobid:              2010,
+				originalTimestamp:  "malformed timestamp",
+				sentAt:             "2000-03-02T01:23:15",
+				expectedSentAt:     "2000-03-02T01:23:15.000Z",
+				expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+				integrations:       map[string]bool{"All": true},
+			},
+			// this message should be delivered to all destinations (default All value)
+			"message-4": {
+				id:                        "4",
+				jobid:                     2010,
+				originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
+				expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
+				expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
+				integrations:              map[string]bool{},
+			},
+			// this message should not be delivered to any destination
+			"message-5": {
+				id:                 "5",
+				jobid:              2010,
+				expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+				integrations:       map[string]bool{"All": false},
+			},
+		}
 
-			require.Len(t, c.MockObserver.calls, 1)
-		})
+		unprocessedJobsList := []*jobsdb.JobT{
+			{
+				UUID:          uuid.New(),
+				JobID:         1002,
+				CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+				ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+				CustomVal:     gatewayCustomVal[0],
+				EventPayload:  nil,
+				EventCount:    1,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDEnabled),
+			},
+			{
+				UUID:      uuid.New(),
+				JobID:     1010,
+				CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+				ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+				CustomVal: gatewayCustomVal[0],
+				EventPayload: createBatchPayload(
+					WriteKeyEnabledNoUT,
+					"2001-01-02T02:23:45.000Z",
+					[]mockEventData{
+						messages["message-1"],
+						messages["message-2"],
+					},
+					createMessagePayloadWithoutSources, // should be stored
+				),
+				EventCount:    2,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDEnabledNoUT),
+			},
+			{
+				UUID:          uuid.New(),
+				JobID:         2002,
+				CreatedAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+				ExpireAt:      time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+				CustomVal:     gatewayCustomVal[0],
+				EventPayload:  nil,
+				EventCount:    1,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDEnabled),
+			},
+			{
+				UUID:          uuid.New(),
+				JobID:         2003,
+				CreatedAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+				ExpireAt:      time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+				CustomVal:     gatewayCustomVal[0],
+				EventPayload:  nil,
+				EventCount:    1,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDEnabled),
+			},
+			{
+				UUID:      uuid.New(),
+				JobID:     2010,
+				CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+				ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+				CustomVal: gatewayCustomVal[0],
+				EventPayload: createBatchPayload(
+					WriteKeyEnabledNoUT,
+					"2002-01-02T02:23:45.000Z",
+					[]mockEventData{
+						messages["message-3"],
+						messages["message-4"],
+						messages["message-5"],
+					},
+					createMessagePayload, // shouldn't be stored to archivedb
+				),
+				EventCount: 3,
+				Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
+			},
+		}
 
-		t.Run("skip writing events belonging to transient sources in archival DB", func(t *testing.T) {
-			c := &testContext{}
-			c.Setup(t)
+		c.mockArchivalDB.EXPECT().
+			WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).
+			Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+		c.mockArchivalDB.EXPECT().
+			StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+			Times(1).
+			Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
+				require.Len(t, jobs, 2)
+			})
 
-			// crash recovery check
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+		mockTransformerClients := transformer.NewSimpleClients()
+		processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
-			defer c.Finish()
+		Setup(processor, c, false, false, t)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+		t.Log("Processor setup and init done")
 
-			prepareHandle := func(proc *Handle) *Handle {
-				proc.archivalDB = c.mockArchivalDB
-				proc.config.archivalEnabled = config.SingleValueLoader(true)
-				proc.config.enableConcurrentStore = config.SingleValueLoader(false)
-				isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
-				require.NoError(t, err)
-				proc.isolationStrategy = isolationStrategy
-				proc.config.archiveInPreProcess = archiveInPreProcess
-				return proc
-			}
+		srcHydrationMsg, err := processor.preprocessStage(
+			"",
+			subJob{
+				ctx:     ctx,
+				subJobs: unprocessedJobsList,
+			},
+			0,
+		)
+		require.NoError(t, err)
+		require.Nil(t, srcHydrationMsg.archivalJobs)
+		preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
 
-			messages := map[string]mockEventData{
-				// this message should be delivered only to destination A
-				"message-1": {
-					id:                        "1",
-					jobid:                     1010,
-					originalTimestamp:         "2000-01-02T01:23:45",
-					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
-					sentAt:                    "2000-01-02 01:23",
-					expectedSentAt:            "2000-01-02T01:23:00.000Z",
-					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
-				},
-				// this message should not be delivered to destination A
-				"message-2": {
-					id:                        "2",
-					jobid:                     1010,
-					originalTimestamp:         "2000-02-02T01:23:45",
-					expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
-					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{"All": true, "enabled-destination-a-definition-display-name": false},
-				},
-				// this message should be delivered to all destinations
-				"message-3": {
-					id:                 "3",
-					jobid:              2010,
-					originalTimestamp:  "malformed timestamp",
-					sentAt:             "2000-03-02T01:23:15",
-					expectedSentAt:     "2000-03-02T01:23:15.000Z",
-					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
-					integrations:       map[string]bool{"All": true},
-				},
-				// this message should be delivered to all destinations (default All value)
-				"message-4": {
-					id:                        "4",
-					jobid:                     2010,
-					originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
-					expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
-					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{},
-				},
-				// this message should not be delivered to any destination
-				"message-5": {
-					id:                 "5",
-					jobid:              2010,
-					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
-					integrations:       map[string]bool{"All": false},
-				},
-			}
+		_, _ = processor.pretransformStage("", preTransMessage)
 
-			unprocessedJobsList := []*jobsdb.JobT{
-				{
-					UUID:          uuid.New(),
-					JobID:         1002,
-					CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
-					ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
-					CustomVal:     gatewayCustomVal[0],
-					EventPayload:  nil,
-					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
-				},
-				{
-					UUID:      uuid.New(),
-					JobID:     1010,
-					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
-					CustomVal: gatewayCustomVal[0],
-					EventPayload: createBatchPayload(
-						WriteKeyTransient,
-						"2001-01-02T02:23:45.000Z",
-						[]mockEventData{
-							messages["message-1"],
-							messages["message-2"],
-						},
-						createMessagePayloadWithoutSources,
-					),
-					EventCount:    2,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDTransient),
-				},
-				{
-					UUID:          uuid.New(),
-					JobID:         2002,
-					CreatedAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
-					ExpireAt:      time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
-					CustomVal:     gatewayCustomVal[0],
-					EventPayload:  nil,
-					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
-				},
-				{
-					UUID:          uuid.New(),
-					JobID:         2003,
-					CreatedAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
-					ExpireAt:      time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
-					CustomVal:     gatewayCustomVal[0],
-					EventPayload:  nil,
-					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
-				},
-				{
-					UUID:      uuid.New(),
-					JobID:     2010,
-					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					CustomVal: gatewayCustomVal[0],
-					EventPayload: createBatchPayload(
-						WriteKeyTransient,
-						"2002-01-02T02:23:45.000Z",
-						[]mockEventData{
-							messages["message-3"],
-							messages["message-4"],
-							messages["message-5"],
-						},
-						createMessagePayload,
-					),
-					EventCount: 3,
-					Parameters: createBatchParameters(SourceIDTransient),
-				},
-			}
-
-			c.mockArchivalDB.EXPECT().
-				WithStoreSafeTx(
-					gomock.Any(),
-					gomock.Any(),
-				).Times(0)
-			c.mockArchivalDB.EXPECT().
-				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-				Times(0)
-
-			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
-
-			Setup(processor, c, false, false, t)
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
-			t.Log("Processor setup and init done")
-
-			srcHydrationMsg, err := processor.preprocessStage(
-				"",
-				subJob{
-					ctx:     ctx,
-					subJobs: unprocessedJobsList,
-				},
-				0,
-			)
-			require.NoError(t, err)
-			if archiveInPreProcess {
-				require.Nil(t, srcHydrationMsg.archivalJobs)
-			}
-			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
-			require.NoError(t, err)
-
-			_, _ = processor.pretransformStage("", preTransMessage)
-
-			require.Len(t, c.MockObserver.calls, 1)
-		})
-	}
-
-	t.Run("archive in preprocess", func(t *testing.T) {
-		testFn(true)
+		require.Len(t, c.MockObserver.calls, 1)
 	})
-	t.Run("archive in preprocess disabled", func(t *testing.T) {
-		testFn(false)
+
+	t.Run("skip writing events belonging to transient sources in archival DB", func(t *testing.T) {
+		c := &testContext{}
+		c.Setup(t)
+
+		// crash recovery check
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+		defer c.Finish()
+
+		prepareHandle := func(proc *Handle) *Handle {
+			proc.archivalDB = c.mockArchivalDB
+			proc.config.archivalEnabled = config.SingleValueLoader(true)
+			proc.config.enableConcurrentStore = config.SingleValueLoader(false)
+			isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+			require.NoError(t, err)
+			proc.isolationStrategy = isolationStrategy
+			return proc
+		}
+
+		messages := map[string]mockEventData{
+			// this message should be delivered only to destination A
+			"message-1": {
+				id:                        "1",
+				jobid:                     1010,
+				originalTimestamp:         "2000-01-02T01:23:45",
+				expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+				sentAt:                    "2000-01-02 01:23",
+				expectedSentAt:            "2000-01-02T01:23:00.000Z",
+				expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+				integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+			},
+			// this message should not be delivered to destination A
+			"message-2": {
+				id:                        "2",
+				jobid:                     1010,
+				originalTimestamp:         "2000-02-02T01:23:45",
+				expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
+				expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+				integrations:              map[string]bool{"All": true, "enabled-destination-a-definition-display-name": false},
+			},
+			// this message should be delivered to all destinations
+			"message-3": {
+				id:                 "3",
+				jobid:              2010,
+				originalTimestamp:  "malformed timestamp",
+				sentAt:             "2000-03-02T01:23:15",
+				expectedSentAt:     "2000-03-02T01:23:15.000Z",
+				expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+				integrations:       map[string]bool{"All": true},
+			},
+			// this message should be delivered to all destinations (default All value)
+			"message-4": {
+				id:                        "4",
+				jobid:                     2010,
+				originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
+				expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
+				expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
+				integrations:              map[string]bool{},
+			},
+			// this message should not be delivered to any destination
+			"message-5": {
+				id:                 "5",
+				jobid:              2010,
+				expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+				integrations:       map[string]bool{"All": false},
+			},
+		}
+
+		unprocessedJobsList := []*jobsdb.JobT{
+			{
+				UUID:          uuid.New(),
+				JobID:         1002,
+				CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+				ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+				CustomVal:     gatewayCustomVal[0],
+				EventPayload:  nil,
+				EventCount:    1,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDEnabled),
+			},
+			{
+				UUID:      uuid.New(),
+				JobID:     1010,
+				CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+				ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+				CustomVal: gatewayCustomVal[0],
+				EventPayload: createBatchPayload(
+					WriteKeyTransient,
+					"2001-01-02T02:23:45.000Z",
+					[]mockEventData{
+						messages["message-1"],
+						messages["message-2"],
+					},
+					createMessagePayloadWithoutSources,
+				),
+				EventCount:    2,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDTransient),
+			},
+			{
+				UUID:          uuid.New(),
+				JobID:         2002,
+				CreatedAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+				ExpireAt:      time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+				CustomVal:     gatewayCustomVal[0],
+				EventPayload:  nil,
+				EventCount:    1,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDEnabled),
+			},
+			{
+				UUID:          uuid.New(),
+				JobID:         2003,
+				CreatedAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+				ExpireAt:      time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+				CustomVal:     gatewayCustomVal[0],
+				EventPayload:  nil,
+				EventCount:    1,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDEnabled),
+			},
+			{
+				UUID:      uuid.New(),
+				JobID:     2010,
+				CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+				ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+				CustomVal: gatewayCustomVal[0],
+				EventPayload: createBatchPayload(
+					WriteKeyTransient,
+					"2002-01-02T02:23:45.000Z",
+					[]mockEventData{
+						messages["message-3"],
+						messages["message-4"],
+						messages["message-5"],
+					},
+					createMessagePayload,
+				),
+				EventCount: 3,
+				Parameters: createBatchParameters(SourceIDTransient),
+			},
+		}
+
+		c.mockArchivalDB.EXPECT().
+			WithStoreSafeTx(
+				gomock.Any(),
+				gomock.Any(),
+			).Times(0)
+		c.mockArchivalDB.EXPECT().
+			StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+			Times(0)
+
+		mockTransformerClients := transformer.NewSimpleClients()
+		processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+
+		Setup(processor, c, false, false, t)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+		t.Log("Processor setup and init done")
+
+		srcHydrationMsg, err := processor.preprocessStage(
+			"",
+			subJob{
+				ctx:     ctx,
+				subJobs: unprocessedJobsList,
+			},
+			0,
+		)
+		require.NoError(t, err)
+		require.Nil(t, srcHydrationMsg.archivalJobs)
+		preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
+
+		_, _ = processor.pretransformStage("", preTransMessage)
+
+		require.Len(t, c.MockObserver.calls, 1)
 	})
 }
 
