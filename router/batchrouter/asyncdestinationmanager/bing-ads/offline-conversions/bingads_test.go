@@ -538,6 +538,45 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			Expect(resp).To(Equal(expectedResp))
 		})
 
+		It("Transform() Test -> insert ignores a malformed adjustedConversionTime", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"insert\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"adjustedConversionTime\": \"not-a-timestamp\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			// insert does not validate adjustedConversionTime, so the malformed value
+			// does not cause an error; it is left untouched (and ignored downstream).
+			expectedResp := `{"message":{"fields":{"adjustedConversionTime":"not-a-timestamp","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 AM","conversionValue":"100","microsoftClickId":"click_id"},"action":"insert"},"metadata":{"jobId":0}}`
+			// Execute
+			resp, err := uploader.Transform(job)
+			Expect(err).To(BeNil())
+			Expect(resp).To(Equal(expectedResp))
+		})
+
+		It("Transform() Test -> insert leaves a valid adjustedConversionTime untouched", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"insert\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"adjustedConversionTime\": \"2023-05-22T18:27:54Z\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			// conversionTime is reformatted; adjustedConversionTime is NOT reformatted
+			// on insert (it is not validated), so it stays in its original form.
+			expectedResp := `{"message":{"fields":{"adjustedConversionTime":"2023-05-22T18:27:54Z","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 AM","conversionValue":"100","microsoftClickId":"click_id"},"action":"insert"},"metadata":{"jobId":0}}`
+			// Execute
+			resp, err := uploader.Transform(job)
+			Expect(err).To(BeNil())
+			Expect(resp).To(Equal(expectedResp))
+		})
+
+		It("Transform() Test -> update errors naming a malformed adjustedConversionTime", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"adjustedConversionTime\": \"not-a-timestamp\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\", \"conversionCurrencyCode\": \"USD\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			// Execute
+			_, err := uploader.Transform(job)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("adjustedConversionTime must be in ISO 8601"))
+		})
+
 		It("Transform() Test -> microsoftClickId is required(email and phone undefined) but not present", func() {
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"conversionValue\": \"100\", \"conversionCurrencyCode\": \"USD\"}}"),
@@ -567,7 +606,9 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			uploader := &BingAdsBulkUploader{
 				isHashRequired: true,
 			}
-			expectedResp := `{"message":{"fields":{"adjustedConversionTime":"5/22/2023 6:27:54 PM","conversionCurrencyCode":"USD","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 PM","conversionValue":"100","email":"28a4da98f8812110001ab8ffacde3b38b4725a9e3570c39299fbf2d12c5aa70e","phone":"8c229df83de8ab269e90918846e326c4008c86481393223d17a30ff5a407b08e"},"action":"insert"},"metadata":{"jobId":0}}`
+			// insert does not reformat adjustedConversionTime (it is not validated on
+			// insert), so it stays in its original ISO form; conversionTime is reformatted.
+			expectedResp := `{"message":{"fields":{"adjustedConversionTime":"2023-05-22T18:27:54Z","conversionCurrencyCode":"USD","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 PM","conversionValue":"100","email":"28a4da98f8812110001ab8ffacde3b38b4725a9e3570c39299fbf2d12c5aa70e","phone":"8c229df83de8ab269e90918846e326c4008c86481393223d17a30ff5a407b08e"},"action":"insert"},"metadata":{"jobId":0}}`
 			// Execute
 			resp, err := uploader.Transform(job)
 			Expect(resp).To(Equal(expectedResp))
