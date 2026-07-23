@@ -91,11 +91,11 @@ func (m *icebergTableManager) createTableQuery(schemaIdentifier, tableName strin
 	return fmt.Sprintf(
 		`CREATE OR REPLACE ICEBERG TABLE %s.%s ( %v )
 		CATALOG = 'SNOWFLAKE'
-		EXTERNAL_VOLUME = '%s'
-		BASE_LOCATION = '%s'`,
+		EXTERNAL_VOLUME = %s
+		BASE_LOCATION = %s`,
 		schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName), columnsWithDataTypes(columns, m.dataTypesMap),
-		m.externalVolume,
-		baseLocation,
+		whutils.SQLStringLiteral(m.externalVolume),
+		whutils.SQLStringLiteral(baseLocation),
 	)
 }
 

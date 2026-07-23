@@ -574,7 +574,8 @@ func (d *Deltalake) tableLocationQuery(tableName string) string {
 		return ""
 	}
 
-	return fmt.Sprintf("LOCATION '%s/%s/%s'", externalLocation, d.Namespace, tableName)
+	location := fmt.Sprintf("%s/%s/%s", externalLocation, d.Namespace, tableName)
+	return fmt.Sprintf("LOCATION %s", warehouseutils.SQLStringLiteral(location))
 }
 
 // AddColumns adds columns to the table.
@@ -740,7 +741,7 @@ func (d *Deltalake) copyIntoLoadTable(
 				SELECT
 				  %s
 				FROM
-				  '%s'
+				  %s
 			  )
 			FILEFORMAT = PARQUET
 			PATTERN = '*.parquet'
@@ -748,7 +749,7 @@ func (d *Deltalake) copyIntoLoadTable(
 			%s;`,
 			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
 			sortedColumnNames,
-			loadFolder,
+			warehouseutils.SQLStringLiteral(loadFolder),
 			auth,
 		)
 	} else {
@@ -759,7 +760,7 @@ func (d *Deltalake) copyIntoLoadTable(
 				SELECT
 				  %s
 				FROM
-				  '%s'
+				  %s
 			  )
 			FILEFORMAT = CSV
 			PATTERN = '*.gz'
@@ -774,7 +775,7 @@ func (d *Deltalake) copyIntoLoadTable(
 `,
 			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
 			sortedColumnNames,
-			loadFolder,
+			warehouseutils.SQLStringLiteral(loadFolder),
 			auth,
 		)
 	}
@@ -1367,7 +1368,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 				SELECT
 				  %s
 				FROM
-				  '%s'
+				  %s
 			  )
 			FILEFORMAT = PARQUET
 			PATTERN = '*.parquet'
@@ -1376,7 +1377,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 `,
 			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
 			warehouseutils.BacktickQuoteAndJoinByComma([]string{"id", "val"}),
-			loadFolder,
+			warehouseutils.SQLStringLiteral(loadFolder),
 			auth,
 		)
 	} else {
@@ -1387,7 +1388,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 				SELECT
 				  %s
 				FROM
-				  '%s'
+				  %s
 			  )
 			FILEFORMAT = CSV
 			PATTERN = '*.gz'
@@ -1402,7 +1403,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 `,
 			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
 			"CAST ( '_c0' AS BIGINT ) AS id, CAST ( '_c1' AS STRING ) AS val",
-			loadFolder,
+			warehouseutils.SQLStringLiteral(loadFolder),
 			auth,
 		)
 	}
