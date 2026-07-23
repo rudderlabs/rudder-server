@@ -108,6 +108,26 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 	}
 	secret, scErr := t.oauthHandler.FetchToken(rts.tokenParams)
 	if scErr != nil {
+		// For permanent auth errors (invalid_grant), propagate the real status
+		// code via the interceptor envelope so the caller aborts instead of
+		// retrying. Other errors keep the raw body (mapped to a retryable 500).
+		if errors.Is(scErr, common.ErrInvalidGrant) {
+			message := scErr.Error()
+			var typeMessageError *v2.TypeMessageError
+			if errors.As(scErr, &typeMessageError) {
+				message = typeMessageError.Message
+			}
+			body, marshalErr := jsonrs.Marshal(v2.TransportResponse{
+				InterceptorResponse: v2.OAuthInterceptorResponse{
+					StatusCode: scErr.StatusCode(),
+					Response:   message,
+				},
+			})
+			if marshalErr != nil {
+				return httpResponseCreator(scErr.StatusCode(), []byte(scErr.Error()))
+			}
+			return httpResponseCreator(scErr.StatusCode(), body)
+		}
 		return httpResponseCreator(scErr.StatusCode(), []byte(scErr.Error()))
 	}
 	rts.req = rts.req.WithContext(cntx.CtxWithSecret(rts.req.Context(), secret))

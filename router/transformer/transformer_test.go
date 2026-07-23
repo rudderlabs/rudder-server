@@ -597,6 +597,42 @@ var oauthV2RtTcs = []oauthV2TestCase{
 			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, Error: "Reset Content", Destination: oauthDests[0]},
 		},
 	},
+	{
+		description: "when proactive fetch token fails with invalid_grant, all jobs abort with 400 instead of retrying with 500",
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request -> invalid_grant
+			{
+				Code:     403,
+				Response: `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant","access_token":"invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}`,
+			},
+		},
+		inputEvents: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+		expected: []types.DestinationJobT{
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`},
+		},
+	},
+	{
+		description: "when proactive fetch token fails with a non-invalid_grant error, jobs stay 500 (retryable), not aborted",
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request -> empty/invalid secret (non-invalid_grant failure)
+			{
+				Code:     200,
+				Response: `{}`,
+			},
+		},
+		inputEvents: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+		expected: []types.DestinationJobT{
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, Error: "status 500: empty secret received from CP"},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, Error: "status 500: empty secret received from CP"},
+		},
+	},
 }
 
 type mockIdentifier struct {
