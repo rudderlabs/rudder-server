@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
-	oauthv2httpclient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -715,9 +714,6 @@ type oauthv2ProxyTcs struct {
 	// closes the mock transformer before the request, so Transport.RoundTrip fails and the oauth
 	// transport synthesizes the response (transport.go:294).
 	transformerUnreachable bool
-	// makes the mock set the transport marker itself, i.e. an upstream passing its response off as
-	// transport-synthesized. The transport must strip it so the breach is still reported.
-	spoofTransportErrorHeader bool
 }
 
 var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
@@ -1684,46 +1680,6 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 	},
 
 	{
-		// The marker must not be assertable from over the wire, or anything in front of the transformer
-		// could silence the breach alert by setting it.
-		description:               "[v1proxy] when an upstream sets the transport marker itself, the breach is still reported",
-		proxyVersion:              "v1",
-		rawBody:                   `{"message":"no output field here"}`,
-		spoofTransportErrorHeader: true,
-		expectedBreachReason:      "missing output",
-		destType:                  "salesforce_oauth", // some destination
-		reqPayload: ProxyRequestPayload{
-			PostParametersT: integrations.PostParametersT{
-				Type:          "REST",
-				URL:           "http://www.ctx_timeout_dest.domain.com",
-				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]any{},
-				Body: map[string]any{
-					"JSON":       map[string]any{"key_1": "val_1"},
-					"FORM":       map[string]any{},
-					"JSON_ARRAY": map[string]any{},
-					"XML":        map[string]any{},
-				},
-				Files: map[string]any{},
-			},
-			Metadata: []ProxyRequestMetadata{
-				{WorkspaceID: "workspace_id", DestinationID: "destination_id", JobID: 1},
-			},
-			DestinationConfig: oauthDests[0].Config,
-		},
-		cpResponses: []testutils.CpResponseParams{},
-		expected: ProxyRequestResponse{
-			DontBatchDirectives:      map[int64]bool{1: false},
-			RespBodys:                map[int64]string{},
-			RespContentType:          "text/plain; charset=utf-8",
-			ProxyRequestResponseBody: `[TransformerProxy] response has no output field:`,
-			ProxyRequestStatusCode:   http.StatusInternalServerError,
-			RespStatusCodes:          map[int64]int{},
-		},
-		destination: oauthDests[0],
-	},
-
-	{
 		// v0 counterpart of the v1 null case. Before this PR v0 assigned respCode to every job, so a 200
 		// carrying a null output marked the batch delivered; now the jobs fail and retry.
 		description:          "[v0proxy] when the response output is explicitly null, should page with reason missing output",
@@ -2133,9 +2089,6 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 					return
 				}
 				w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
-				if tc.spoofTransportErrorHeader {
-					w.Header().Set(oauthv2httpclient.TransportErrorHeader, "true")
-				}
 				switch tc.proxyVersion {
 				case "v1":
 					b, _ = jsonrs.Marshal(tc.transformerProxyResponseV1)

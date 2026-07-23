@@ -65,27 +65,14 @@ type roundTripState struct {
 	req         *http.Request
 }
 
-// TransportErrorHeader marks a response synthesized by this transport rather than received from the
-// upstream service. The body of such a response is a plain-text error string, not the upstream's
-// payload, so callers must not mistake it for a malformed upstream response.
-const TransportErrorHeader = "X-Rudder-Oauth-Transport-Error"
-
-// stripTransportErrorHeader removes the marker from a response that arrived over the wire, so only
-// this transport can assert it. Otherwise anything in front of the transformer could set it and
-// silently suppress the breach alert.
-func stripTransportErrorHeader(res *http.Response) {
-	if res != nil && res.Header != nil {
-		res.Header.Del(TransportErrorHeader)
-	}
-}
-
+// httpResponseCreator builds a response this transport synthesizes on an error path, rather than one
+// received from the upstream service. It carries no apiVersion header - only the transformer sets that
+// - so callers can tell a synthesized response apart from a real one by its absence.
 func httpResponseCreator(statusCode int, body []byte) *http.Response {
-	header := http.Header{"apiVersion": []string{"2"}}
-	header.Set(TransportErrorHeader, "true")
 	return &http.Response{
 		StatusCode: statusCode,
 		Body:       io.NopCloser(bytes.NewReader(body)),
-		Header:     header,
+		Header:     http.Header{},
 	}
 }
 
@@ -262,9 +249,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return httpResponseCreator(http.StatusInternalServerError, fmt.Appendf(nil, "[OAuthPlatformError]checking if destination is oauth destination: %v", err.Error())), nil
 	}
 	if !isOauthDestination {
-		res, err := t.Transport.RoundTrip(req)
-		stripTransportErrorHeader(res)
-		return res, err
+		return t.Transport.RoundTrip(req)
 	}
 	rts := &roundTripState{}
 	rts.destination = destination
@@ -294,7 +279,6 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	roundTripStartTime := time.Now()
 	res, err := t.Transport.RoundTrip(rts.req)
-	stripTransportErrorHeader(res)
 	if err != nil {
 		t.log.Errorn("[RoundTrip]transport round trip",
 			obskit.DestinationID(rts.destination.ID),

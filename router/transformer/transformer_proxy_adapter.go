@@ -46,9 +46,9 @@ type TransResponse struct {
 	routerJobDontBatchDirectives map[int64]bool
 	authErrorCategory            string
 	statTags                     map[string]string
-	// responseEntries is the raw per-job entry count. Not derivable from the maps above: two entries
-	// for one jobID collapse to a single key.
-	responseEntries int
+	// responseEntriesCount is the raw per-job entry count. Not derivable from the maps above: two
+	// entries for one jobID collapse to a single key.
+	responseEntriesCount int
 }
 
 type TPDestResponse struct {
@@ -111,7 +111,7 @@ func (v0 *v0Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			authErrorCategory:            transformerResponse.AuthErrorCategory,
 			statTags:                     transformerResponse.StatTags,
 			// v0 has no per-job response array; keyed off the request metadata, so one entry per key.
-			responseEntries: len(routerJobResponseCodes),
+			responseEntriesCount: len(routerJobResponseCodes),
 		},
 		nil
 }
@@ -159,7 +159,7 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			routerJobDontBatchDirectives: routerJobDontBatchDirectives,
 			authErrorCategory:            transformerResponse.AuthErrorCategory,
 			statTags:                     transformerResponse.StatTags,
-			responseEntries:              len(transformerResponse.Response),
+			responseEntriesCount:         len(transformerResponse.Response),
 		},
 		nil
 }
