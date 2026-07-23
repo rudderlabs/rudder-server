@@ -708,14 +708,14 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 	}
 
 	// TODO: skipped top level temporary table for now
-	sqlStatement := fmt.Sprintf(`SELECT * into %[5]s FROM
+	sqlStatement := fmt.Sprintf(`SELECT * into %[4]s FROM
 												((
-													SELECT [id], %[4]s FROM %[2]s WHERE [id] in (SELECT [user_id] FROM %[3]s WHERE [user_id] IS NOT NULL)
+													SELECT [id], %[3]s FROM %[1]s WHERE [id] in (SELECT [user_id] FROM %[2]s WHERE [user_id] IS NOT NULL)
 												) UNION
 												(
-													SELECT [user_id], %[4]s FROM %[3]s  WHERE [user_id] IS NOT NULL
+													SELECT [user_id], %[3]s FROM %[2]s  WHERE [user_id] IS NOT NULL
 												)) a
-											`, ms.namespace, warehouseutils.BracketQuoteQualifiedIdentifier(ms.namespace, warehouseutils.UsersTable), warehouseutils.BracketQuoteQualifiedIdentifier(ms.namespace, identifyStagingTable), strings.Join(userColNames, ","), warehouseutils.BracketQuoteQualifiedIdentifier(ms.namespace, unionStagingTableName))
+											`, warehouseutils.BracketQuoteQualifiedIdentifier(ms.namespace, warehouseutils.UsersTable), warehouseutils.BracketQuoteQualifiedIdentifier(ms.namespace, identifyStagingTable), strings.Join(userColNames, ","), warehouseutils.BracketQuoteQualifiedIdentifier(ms.namespace, unionStagingTableName))
 
 	ms.logger.Debugn("MSSQL: Creating staging table for union of users table with identify staging table", logger.NewStringField("statement", sqlStatement))
 	_, err = ms.db.ExecContext(ctx, sqlStatement)
@@ -918,11 +918,11 @@ func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) error {
 		from
 		  information_schema.tables
 		where
-		  table_schema = '%s'
-		  AND table_name like '%s';
+		  table_schema = %s
+		  AND table_name like %s;
 	`,
-		ms.namespace,
-		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
+		warehouseutils.SQLStringLiteral(ms.namespace),
+		warehouseutils.SQLStringLiteral(fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider))),
 	)
 	rows, err := ms.db.QueryContext(ctx, sqlStatement)
 	if err != nil {

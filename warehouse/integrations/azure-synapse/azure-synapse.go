@@ -693,14 +693,14 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	}
 
 	// TODO: skipped top level temporary table for now
-	sqlStatement := fmt.Sprintf(`SELECT * into %[5]s FROM
+	sqlStatement := fmt.Sprintf(`SELECT * into %[4]s FROM
 												((
-													SELECT [id], %[4]s FROM %[2]s WHERE [id] in (SELECT [user_id] FROM %[3]s WHERE [user_id] IS NOT NULL)
+													SELECT [id], %[3]s FROM %[1]s WHERE [id] in (SELECT [user_id] FROM %[2]s WHERE [user_id] IS NOT NULL)
 												) UNION
 												(
-													SELECT [user_id], %[4]s FROM %[3]s  WHERE [user_id] IS NOT NULL
+													SELECT [user_id], %[3]s FROM %[2]s  WHERE [user_id] IS NOT NULL
 												)) a
-											`, as.namespace, warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, warehouseutils.UsersTable), warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, identifyStagingTable), strings.Join(userColNames, ","), warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, unionStagingTableName))
+											`, warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, warehouseutils.UsersTable), warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, identifyStagingTable), strings.Join(userColNames, ","), warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, unionStagingTableName))
 
 	as.logger.Debugn("AZ: Creating staging table for union of users table with identify staging table",
 		logger.NewStringField(logfield.Query, sqlStatement),
@@ -925,11 +925,11 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) error {
 		from
 		  information_schema.tables
 		where
-		  table_schema = '%s'
-		  AND table_name like '%s';
+		  table_schema = %s
+		  AND table_name like %s;
 	`,
-		as.namespace,
-		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
+		warehouseutils.SQLStringLiteral(as.namespace),
+		warehouseutils.SQLStringLiteral(fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider))),
 	)
 	rows, err := as.db.QueryContext(ctx, sqlStatement)
 	if err != nil {
