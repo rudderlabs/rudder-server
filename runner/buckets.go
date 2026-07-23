@@ -179,5 +179,8 @@ var (
 		"rsources_publish_time_second": {
 			0.1, 0.5, 1, 5, 10, 30, 60,
 		},
+		"processor_grpc_response_time": {
+			0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60, 120, // 0.1s, 0.25s, 0.5s, 1s, 2.5s, 5s, 10s, 1m, 2m
+		},
 	}
 )
