@@ -595,12 +595,60 @@ func GetWarehouseIdentifier(destType, sourceID, destinationID string) string {
 	return destType + ":" + sourceID + ":" + destinationID
 }
 
-func DoubleQuoteAndJoinByComma(elems []string) string {
-	var quotedSlice []string
+func DoubleQuoteIdentifier(identifier string) string {
+	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
+}
+
+func BacktickQuoteIdentifier(identifier string) string {
+	return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
+}
+
+func BracketQuoteIdentifier(identifier string) string {
+	return `[` + strings.ReplaceAll(identifier, `]`, `]]`) + `]`
+}
+
+func JoinQuotedIdentifiers(elems []string, quoteIdentifier func(string) string, separator string) string {
+	quotedSlice := make([]string, 0, len(elems))
 	for _, elem := range elems {
-		quotedSlice = append(quotedSlice, fmt.Sprintf("%q", elem))
+		quotedSlice = append(quotedSlice, quoteIdentifier(elem))
 	}
-	return strings.Join(quotedSlice, ",")
+	return strings.Join(quotedSlice, separator)
+}
+
+func DoubleQuoteAndJoinByComma(elems []string) string {
+	return JoinQuotedIdentifiers(elems, DoubleQuoteIdentifier, ",")
+}
+
+func BacktickQuoteAndJoinByComma(elems []string) string {
+	return JoinQuotedIdentifiers(elems, BacktickQuoteIdentifier, ",")
+}
+
+func BracketQuoteAndJoinByComma(elems []string) string {
+	return JoinQuotedIdentifiers(elems, BracketQuoteIdentifier, ",")
+}
+
+func DoubleQuoteQualifiedIdentifier(elems ...string) string {
+	return JoinQuotedIdentifiers(elems, DoubleQuoteIdentifier, ".")
+}
+
+func BacktickQuoteQualifiedIdentifier(elems ...string) string {
+	return JoinQuotedIdentifiers(elems, BacktickQuoteIdentifier, ".")
+}
+
+func BracketQuoteQualifiedIdentifier(elems ...string) string {
+	return JoinQuotedIdentifiers(elems, BracketQuoteIdentifier, ".")
+}
+
+func QuoteCommaSeparatedIdentifiers(value string, quoteIdentifier func(string) string) string {
+	parts := strings.Split(value, ",")
+	for i, part := range parts {
+		parts[i] = quoteIdentifier(strings.TrimSpace(part))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func SQLStringLiteral(value string) string {
+	return `'` + strings.ReplaceAll(value, `'`, `''`) + `'`
 }
 
 func GetTempFileExtension(destType string) string {

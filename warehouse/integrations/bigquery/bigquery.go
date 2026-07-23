@@ -230,7 +230,7 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 	}
 
 	viewName := tableName + "_view"
-	query := fmt.Sprintf("CREATE OR REPLACE VIEW `%s`.`%s` AS %s;", bq.namespace, viewName, deduplicationQuery)
+	query := fmt.Sprintf("CREATE OR REPLACE VIEW %s AS %s;", warehouseutils.BacktickQuoteQualifiedIdentifier(bq.namespace, viewName), deduplicationQuery)
 
 	bq.logger.Infon("Creating view", logger.NewStringField("view", viewName), logger.NewStringField("query", query))
 	job, err := bq.db.Query(query).Run(ctx)
@@ -252,10 +252,11 @@ func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSc
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
 	}
+	partitionKey = warehouseutils.QuoteCommaSeparatedIdentifiers(partitionKey, warehouseutils.BacktickQuoteIdentifier)
 
 	var viewOrderByStmt string
 	if _, ok := columnMap["loaded_at"]; ok {
-		viewOrderByStmt = " ORDER BY loaded_at DESC "
+		viewOrderByStmt = " ORDER BY " + warehouseutils.BacktickQuoteIdentifier("loaded_at") + " DESC "
 	}
 
 	var (
@@ -285,7 +286,7 @@ func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSc
 					logger.NewStringField("partitionColumn", partitionColumn),
 				)
 				granularity = string(bqPartitionType)
-				partitionFilter = `TIMESTAMP_TRUNC(` + partitionColumn + `, ` + granularity + `, 'UTC')`
+				partitionFilter = `TIMESTAMP_TRUNC(` + warehouseutils.BacktickQuoteIdentifier(partitionColumn) + `, ` + granularity + `, 'UTC')`
 			} else {
 				bq.logger.Warnn("Deduplication query: Partition column not found in schema",
 					logger.NewStringField("partitionColumn", partitionColumn),
@@ -300,7 +301,7 @@ func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSc
 	// the following view takes the last two months into consideration i.e. 60 * 60 * 24 * 60 * 1000000
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
 			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + viewOrderByStmt + `) AS __row_number
-			FROM ` + "`" + bq.projectID + "." + bq.namespace + "." + tableName + "`" + `
+			FROM ` + warehouseutils.BacktickQuoteQualifiedIdentifier(bq.projectID, bq.namespace, tableName) + `
 			WHERE
 				` + partitionFilter + ` BETWEEN TIMESTAMP_TRUNC(
 					TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 24 * 60 * 1000000),
@@ -395,7 +396,7 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 
 func (bq *BigQuery) DeleteBy(ctx context.Context, tableNames []string, params warehouseutils.DeleteByParams) error {
 	for _, tb := range tableNames {
-		tableName := fmt.Sprintf("`%s`.`%s`", bq.namespace, tb)
+		tableName := warehouseutils.BacktickQuoteQualifiedIdentifier(bq.namespace, tb)
 		sqlStatement := fmt.Sprintf(`
 			DELETE FROM
 				%[1]s
@@ -658,7 +659,7 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 	}
 
 	firstValueSQL := func(column string) string {
-		return fmt.Sprintf("FIRST_VALUE(`%[1]s` IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS `%[1]s`", column)
+		return fmt.Sprintf("FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY %[2]s ORDER BY %[3]s DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s", warehouseutils.BacktickQuoteIdentifier(column), warehouseutils.BacktickQuoteIdentifier("id"), warehouseutils.BacktickQuoteIdentifier("received_at"))
 	}
 
 	userColMap := bq.uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
@@ -667,7 +668,7 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 		if colName == "id" {
 			continue
 		}
-		userColNames = append(userColNames, fmt.Sprintf("`%s`", colName))
+		userColNames = append(userColNames, warehouseutils.BacktickQuoteIdentifier(colName))
 		firstValProps = append(firstValProps, firstValueSQL(colName))
 	}
 
@@ -695,7 +696,7 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 		strings.Join(firstValProps, ","),
 		strings.Join(userColNames, ","),
 		deduplicationQuery,
-		fmt.Sprintf("`%s`.`%s`", bq.namespace, stagingUsersTableName),
+		warehouseutils.BacktickQuoteQualifiedIdentifier(bq.namespace, stagingUsersTableName),
 	)
 
 	log.Infon("Loading data")
@@ -808,13 +809,14 @@ func (bq *BigQuery) dropDanglingStagingTables(ctx context.Context) error {
 		SELECT
 		  table_name
 		FROM
-		  %[1]s.INFORMATION_SCHEMA.TABLES
+		  %[1]s
 		WHERE
-		  table_schema = '%[1]s'
-		  AND table_name LIKE '%[2]s';
+		  table_schema = %[2]s
+		  AND table_name LIKE %[3]s;
 	`,
-		bq.namespace,
-		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
+		warehouseutils.BacktickQuoteQualifiedIdentifier(bq.namespace, "INFORMATION_SCHEMA", "TABLES"),
+		warehouseutils.SQLStringLiteral(bq.namespace),
+		warehouseutils.SQLStringLiteral(fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider))),
 	)
 	query := bq.db.Query(sqlStatement)
 	it, err := bq.db.Read(ctx, query)
@@ -962,19 +964,20 @@ func (bq *BigQuery) FetchSchema(ctx context.Context) (model.Schema, error) {
 		  c.column_name,
 		  c.data_type
 		FROM
-		  %[1]s.INFORMATION_SCHEMA.TABLES as t
-		  LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name)
+		  %[1]s as t
+		  LEFT JOIN %[2]s as c ON (t.table_name = c.table_name)
 		WHERE
 		  (t.table_type != 'VIEW')
 		  AND
-		  (t.table_name NOT LIKE '%s')
+		  (t.table_name NOT LIKE %[3]s)
 		  AND (
 			c.column_name != '_PARTITIONTIME'
 			OR c.column_name IS NULL
 		  );
 	`,
-		bq.namespace,
-		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
+		warehouseutils.BacktickQuoteQualifiedIdentifier(bq.namespace, "INFORMATION_SCHEMA", "TABLES"),
+		warehouseutils.BacktickQuoteQualifiedIdentifier(bq.namespace, "INFORMATION_SCHEMA", "COLUMNS"),
+		warehouseutils.SQLStringLiteral(fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider))),
 	)
 	query := bq.db.Query(sqlStatement)
 
@@ -1130,7 +1133,7 @@ func (bq *BigQuery) DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZ
 		batchSize := int64(10000)
 		var offset int64
 		for {
-			sqlStatement := fmt.Sprintf(`SELECT DISTINCT %[1]s FROM %[2]s.%[3]s LIMIT %[4]d OFFSET %[5]d`, toSelectFields, bq.namespace, tableName, batchSize, offset)
+			sqlStatement := fmt.Sprintf(`SELECT DISTINCT %[1]s FROM %[2]s LIMIT %[3]d OFFSET %[4]d`, toSelectFields, warehouseutils.BacktickQuoteQualifiedIdentifier(bq.namespace, tableName), batchSize, offset)
 			bq.logger.Infon("Downloading distinct combinations of anonymous_id, user_id",
 				logger.NewStringField(logfield.Query, sqlStatement),
 				logger.NewIntField(logfield.TotalRows, totalRows),

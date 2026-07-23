@@ -13,8 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lib/pq"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -35,11 +33,7 @@ type loadUsersTableResponse struct {
 // (e.g. a composite partition key) by quoting each column individually and
 // re-joining them, so the result is valid in a PARTITION BY / column list.
 func quoteColumnList(columns string) string {
-	parts := strings.Split(columns, ",")
-	for i, c := range parts {
-		parts[i] = pq.QuoteIdentifier(strings.TrimSpace(c))
-	}
-	return strings.Join(parts, ", ")
+	return warehouseutils.QuoteCommaSeparatedIdentifiers(columns, warehouseutils.DoubleQuoteIdentifier)
 }
 
 func (pg *Postgres) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
@@ -85,7 +79,7 @@ func (pg *Postgres) loadTable(
 
 	log.Debugn("setting search path")
 	searchPathStmt := fmt.Sprintf(`SET search_path TO %s;`,
-		pq.QuoteIdentifier(pg.Namespace),
+		warehouseutils.DoubleQuoteIdentifier(pg.Namespace),
 	)
 	if _, err := txn.ExecContext(ctx, searchPathStmt); err != nil {
 		return nil, "", fmt.Errorf("setting search path: %w", err)
@@ -109,9 +103,9 @@ func (pg *Postgres) loadTable(
 	createStagingTableStmt := fmt.Sprintf(
 		`CREATE TEMPORARY TABLE %[2]s (LIKE %[1]s.%[3]s)
 		ON COMMIT PRESERVE ROWS;`,
-		pq.QuoteIdentifier(pg.Namespace),
-		pq.QuoteIdentifier(stagingTableName),
-		pq.QuoteIdentifier(tableName),
+		warehouseutils.DoubleQuoteIdentifier(pg.Namespace),
+		warehouseutils.DoubleQuoteIdentifier(stagingTableName),
+		warehouseutils.DoubleQuoteIdentifier(tableName),
 	)
 	if _, err := txn.ExecContext(ctx, createStagingTableStmt); err != nil {
 		return nil, "", fmt.Errorf("creating temporary table: %w", err)
@@ -243,10 +237,10 @@ func (pg *Postgres) deleteFromLoadTable(
 	if tableName == warehouseutils.DiscardsTable {
 		additionalJoinClause = fmt.Sprintf(
 			`AND _source.%[3]s = %[1]s.%[2]s.%[3]s AND _source.%[4]s = %[1]s.%[2]s.%[4]s`,
-			pq.QuoteIdentifier(pg.Namespace),
-			pq.QuoteIdentifier(tableName),
-			pq.QuoteIdentifier("table_name"),
-			pq.QuoteIdentifier("column_name"),
+			warehouseutils.DoubleQuoteIdentifier(pg.Namespace),
+			warehouseutils.DoubleQuoteIdentifier(tableName),
+			warehouseutils.DoubleQuoteIdentifier("table_name"),
+			warehouseutils.DoubleQuoteIdentifier("column_name"),
 		)
 	}
 
@@ -257,10 +251,10 @@ func (pg *Postgres) deleteFromLoadTable(
 		  (
 			_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s
 		  );`,
-		pq.QuoteIdentifier(pg.Namespace),
-		pq.QuoteIdentifier(tableName),
-		pq.QuoteIdentifier(stagingTableName),
-		pq.QuoteIdentifier(primaryKey),
+		warehouseutils.DoubleQuoteIdentifier(pg.Namespace),
+		warehouseutils.DoubleQuoteIdentifier(tableName),
+		warehouseutils.DoubleQuoteIdentifier(stagingTableName),
+		warehouseutils.DoubleQuoteIdentifier(primaryKey),
 		additionalJoinClause,
 	)
 
@@ -307,10 +301,10 @@ func (pg *Postgres) insertIntoLoadTable(
 		  ) AS _
 		WHERE
 		  _rudder_staging_row_number = 1;`,
-		pq.QuoteIdentifier(pg.Namespace),
-		pq.QuoteIdentifier(tableName),
+		warehouseutils.DoubleQuoteIdentifier(pg.Namespace),
+		warehouseutils.DoubleQuoteIdentifier(tableName),
 		quotedColumnNames,
-		pq.QuoteIdentifier(stagingTableName),
+		warehouseutils.DoubleQuoteIdentifier(stagingTableName),
 		quotedPartitionKey,
 	)
 
@@ -413,7 +407,7 @@ func (pg *Postgres) loadUsersTable(
 		if colName == "id" {
 			continue
 		}
-		userColNames = append(userColNames, pq.QuoteIdentifier(colName))
+		userColNames = append(userColNames, warehouseutils.DoubleQuoteIdentifier(colName))
 		caseSubQuery := fmt.Sprintf(
 			`CASE WHEN (
 			  SELECT true
@@ -424,8 +418,8 @@ func (pg *Postgres) loadUsersTable(
 			  ORDER BY received_at DESC
 			  LIMIT 1
 			) END AS %[1]s`,
-			pq.QuoteIdentifier(colName),
-			pq.QuoteIdentifier(unionStagingTableName),
+			warehouseutils.DoubleQuoteIdentifier(colName),
+			warehouseutils.DoubleQuoteIdentifier(unionStagingTableName),
 		)
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
@@ -448,11 +442,11 @@ func (pg *Postgres) loadUsersTable(
 				WHERE user_id IS NOT NULL
 			)
 		);`,
-		pq.QuoteIdentifier(pg.Namespace),
-		pq.QuoteIdentifier(warehouseutils.UsersTable),
-		pq.QuoteIdentifier(identifyStagingTable),
+		warehouseutils.DoubleQuoteIdentifier(pg.Namespace),
+		warehouseutils.DoubleQuoteIdentifier(warehouseutils.UsersTable),
+		warehouseutils.DoubleQuoteIdentifier(identifyStagingTable),
 		strings.Join(userColNames, ","),
-		pq.QuoteIdentifier(unionStagingTableName),
+		warehouseutils.DoubleQuoteIdentifier(unionStagingTableName),
 	)
 
 	pg.logger.Infon("creating union staging users table",
@@ -474,7 +468,7 @@ func (pg *Postgres) loadUsersTable(
 
 	query = fmt.Sprintf(`
 		CREATE INDEX users_identifies_union_id_idx ON %[1]s (id);`,
-		pq.QuoteIdentifier(unionStagingTableName),
+		warehouseutils.DoubleQuoteIdentifier(unionStagingTableName),
 	)
 	pg.logger.Debugn("creating index on union staging users table",
 		logger.NewStringField(logfield.SourceID, pg.Warehouse.Source.ID),
@@ -506,9 +500,9 @@ func (pg *Postgres) loadUsersTable(
 			) AS xyz
 		);
 `,
-		pq.QuoteIdentifier(usersStagingTableName),
+		warehouseutils.DoubleQuoteIdentifier(usersStagingTableName),
 		strings.Join(firstValProps, ","),
-		pq.QuoteIdentifier(unionStagingTableName),
+		warehouseutils.DoubleQuoteIdentifier(unionStagingTableName),
 	)
 
 	pg.logger.Debugn("creating temporary users table",
@@ -533,10 +527,10 @@ func (pg *Postgres) loadUsersTable(
 	query = fmt.Sprintf(`
 		DELETE FROM %[1]s.%[2]s using %[3]s _source
 		WHERE _source.%[4]s = %[1]s.%[2]s.%[4]s;`,
-		pq.QuoteIdentifier(pg.Namespace),
-		pq.QuoteIdentifier(warehouseutils.UsersTable),
-		pq.QuoteIdentifier(usersStagingTableName),
-		pq.QuoteIdentifier(primaryKey),
+		warehouseutils.DoubleQuoteIdentifier(pg.Namespace),
+		warehouseutils.DoubleQuoteIdentifier(warehouseutils.UsersTable),
+		warehouseutils.DoubleQuoteIdentifier(usersStagingTableName),
+		warehouseutils.DoubleQuoteIdentifier(primaryKey),
 	)
 
 	pg.logger.Infon("deduplication for users table",
@@ -564,10 +558,10 @@ func (pg *Postgres) loadUsersTable(
 		FROM
 		  %[3]s;
 `,
-		pq.QuoteIdentifier(pg.Namespace),
-		pq.QuoteIdentifier(warehouseutils.UsersTable),
-		pq.QuoteIdentifier(usersStagingTableName),
-		strings.Join(append([]string{pq.QuoteIdentifier("id")}, userColNames...), ","),
+		warehouseutils.DoubleQuoteIdentifier(pg.Namespace),
+		warehouseutils.DoubleQuoteIdentifier(warehouseutils.UsersTable),
+		warehouseutils.DoubleQuoteIdentifier(usersStagingTableName),
+		strings.Join(append([]string{warehouseutils.DoubleQuoteIdentifier("id")}, userColNames...), ","),
 	)
 	pg.logger.Infon("inserting records to users table",
 		logger.NewStringField(logfield.SourceID, pg.Warehouse.Source.ID),
