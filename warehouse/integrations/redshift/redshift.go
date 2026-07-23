@@ -639,13 +639,13 @@ func (rs *Redshift) copyIntoLoadTable(
 	if rs.Uploader.GetLoadFileType() == warehouseutils.LoadFileTypeParquet {
 		copyStmt = fmt.Sprintf(
 			`COPY %s
-			FROM '%s'
+			FROM %s
 			ACCESS_KEY_ID '%s'
 			SECRET_ACCESS_KEY '%s'
 			SESSION_TOKEN '%s'
 			%s FORMAT PARQUET;`,
 			warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, stagingTableName),
-			s3Location,
+			warehouseutils.SQLStringLiteral(s3Location),
 			tempAccessKeyId,
 			tempSecretAccessKey,
 			token,
@@ -654,7 +654,7 @@ func (rs *Redshift) copyIntoLoadTable(
 	} else {
 		copyStmt = fmt.Sprintf(
 			`COPY %s(%s)
-			FROM '%s'
+			FROM %s
 			CSV GZIP
 			ACCESS_KEY_ID '%s'
 			SECRET_ACCESS_KEY '%s'
@@ -667,7 +667,7 @@ func (rs *Redshift) copyIntoLoadTable(
 			STATUPDATE OFF;`,
 			warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, stagingTableName),
 			sortedColumnNames,
-			s3Location,
+			warehouseutils.SQLStringLiteral(s3Location),
 			tempAccessKeyId,
 			tempSecretAccessKey,
 			token,
@@ -869,36 +869,35 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 			  SELECT DISTINCT *
 			  FROM
 				(
-				  SELECT %[7]s, %[3]s
+				  SELECT %[6]s, %[2]s
 				  FROM
 					(
 					  (
 						SELECT
-						  %[7]s,
-						  %[6]s
+						  %[6]s,
+						  %[5]s
 						FROM
-						  %[4]s
+						  %[3]s
 						WHERE
-						  %[7]s in (
+						  %[6]s in (
 							SELECT
-							  DISTINCT(%[8]s)
+							  DISTINCT(%[7]s)
 							FROM
-							  %[5]s
+							  %[4]s
 							WHERE
-							  %[8]s IS NOT NULL
+							  %[7]s IS NOT NULL
 						  )
 					  )
 					  UNION
 						(
-						  SELECT %[8]s, %[6]s
-						  FROM %[5]s
-						  WHERE %[8]s IS NOT NULL
+						  SELECT %[7]s, %[5]s
+						  FROM %[4]s
+						  WHERE %[7]s IS NOT NULL
 						)
 					)
 				)
 			);`,
 		warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, stagingTableName),
-		"",
 		strings.Join(firstValProps, ","),
 		warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, warehouseutils.UsersTable),
 		warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, identifyStagingTable),
@@ -1441,19 +1440,19 @@ func (rs *Redshift) TestLoadTable(ctx context.Context, location, tableName strin
 	var sqlStatement string
 	if format == warehouseutils.LoadFileTypeParquet {
 		// copy statement for parquet load files
-		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' FORMAT PARQUET`,
+		sqlStatement = fmt.Sprintf(`COPY %v FROM %s ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' FORMAT PARQUET`,
 			warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName),
-			s3Location,
+			warehouseutils.SQLStringLiteral(s3Location),
 			tempAccessKeyId,
 			tempSecretAccessKey,
 			token,
 		)
 	} else {
 		// copy statement for csv load files
-		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
+		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM %v CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
 			warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName),
 			warehouseutils.DoubleQuoteAndJoinByComma([]string{"id", "val"}),
-			s3Location,
+			warehouseutils.SQLStringLiteral(s3Location),
 			tempAccessKeyId,
 			tempSecretAccessKey,
 			token,

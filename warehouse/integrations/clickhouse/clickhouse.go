@@ -603,17 +603,17 @@ func (ch *Clickhouse) loadByCopyCommand(ctx context.Context, tableName string, t
 
 	sqlStatement := fmt.Sprintf(`
 		INSERT INTO %[1]s (
-			%[3]s
+			%[2]s
 		)
 		SELECT
 		  *
 		FROM
 		  s3(
-			'%[4]s',
+			%[3]s,
+		  	'%[4]s',
 		  	'%[5]s',
-		  	'%[6]s',
 			'CSV',
-			'%[7]s',
+			'%[6]s',
 			'gz'
 		  )
 			settings
@@ -621,12 +621,11 @@ func (ch *Clickhouse) loadByCopyCommand(ctx context.Context, tableName string, t
 				input_format_csv_arrays_as_nested_csv = 1;
 		`,
 		warehouseutils.DoubleQuoteQualifiedIdentifier(ch.Namespace, tableName), // 1
-		"",                             // 2
-		sortedColumnNames,              // 3
-		loadFolder,                     // 4
-		accessKeyID,                    // 5
-		secretAccessKey,                // 6
-		sortedColumnNamesWithDataTypes, // 7
+		sortedColumnNames, // 2
+		warehouseutils.SQLStringLiteral(loadFolder), // 3
+		accessKeyID,                    // 4
+		secretAccessKey,                // 5
+		sortedColumnNamesWithDataTypes, // 6
 	)
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {

@@ -604,13 +604,13 @@ func (sf *Snowflake) copyInto(
 		`COPY INTO
 			%s.%s(%v)
 		FROM
-		  '%v' %s
+		  %v %s
 		PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE)
 		TRUNCATECOLUMNS = TRUE;`,
 		schemaIdentifier, whutils.DoubleQuoteIdentifier(copyTargetTable),
 		sortedColumnNames,
-		loadFolder,
+		whutils.SQLStringLiteral(loadFolder),
 		authString,
 	)
 
@@ -697,13 +697,13 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`
 		COPY INTO %s.%s(%v)
-		FROM '%v'
+		FROM %v
 		%s
 		PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE;`,
 		schemaIdentifier, whutils.DoubleQuoteIdentifier(identityMergeRulesTable), sortedColumnNames,
-		loadLocation,
+		whutils.SQLStringLiteral(loadLocation),
 		authString,
 	)
 
@@ -782,11 +782,11 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
 	sqlStatement = fmt.Sprintf(
 		`COPY INTO %s.%s("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT")
-		FROM '%v' %s PATTERN = '.*\.csv\.gz'
+		FROM %v %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE`,
 		schemaIdentifier, whutils.DoubleQuoteIdentifier(stagingTableName),
-		loadLocation,
+		whutils.SQLStringLiteral(loadLocation),
 		authString,
 	)
 
@@ -1458,12 +1458,12 @@ func (sf *Snowflake) TestLoadTable(
 
 	loadFolder := whutils.GetObjectFolder(sf.ObjectStorage, location)
 	schemaIdentifier := sf.schemaIdentifier()
-	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
+	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM %v %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE`,
 		fmt.Sprintf(`%s.%s`, schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName)),
 		whutils.DoubleQuoteAndJoinByComma([]string{"id", "val"}),
-		loadFolder,
+		whutils.SQLStringLiteral(loadFolder),
 		authString,
 	)
 
