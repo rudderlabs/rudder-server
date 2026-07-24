@@ -61,6 +61,11 @@ func (d *k8sDeployer) RunOnEphemeral(
 	}); err != nil {
 		return 0, nil, fmt.Errorf("creating ephemeral pyt deployment %s/%s: %w", d.config.namespace, name, err)
 	}
+	// Delete runs regardless of what happens below — on a Service create
+	// failure, a readiness timeout, a forward error, or success alike. It
+	// never changes the response returned to the caller; a failed delete is
+	// only logged.
+	defer d.delete(ctx, name, workspaceID)
 	if _, err := withRetry(ctx, d.config.retry, func() (*corev1.Service, error) {
 		created, err := d.client.CoreV1().Services(d.config.namespace).Create(ctx, svc, metav1.CreateOptions{})
 		if apierrors.IsAlreadyExists(err) {
@@ -68,13 +73,8 @@ func (d *k8sDeployer) RunOnEphemeral(
 		}
 		return created, err
 	}); err != nil {
-		d.delete(ctx, name, workspaceID)
 		return 0, nil, fmt.Errorf("creating ephemeral pyt service %s/%s: %w", d.config.namespace, name, err)
 	}
-	// Delete runs regardless of what happens below — on a readiness timeout,
-	// a forward error, or success alike. It never changes the response
-	// returned to the caller; a failed delete is only logged.
-	defer d.delete(ctx, name, workspaceID)
 
 	readyStart := time.Now()
 	err := d.waitReady(ctx, name)

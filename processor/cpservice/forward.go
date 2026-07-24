@@ -125,6 +125,13 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 	default:
 		statusCode, body, err = timedForward(ctx, s.staticASTURL)
 	}
+	// success here means the RPC delivered a pyt response, whatever its HTTP
+	// status — false marks infrastructure failures (deployer create errors,
+	// readiness timeouts, transport failures), which are the only way to tell
+	// a failed RPC apart from a slow success. On a deployer create failure
+	// this is the ONLY metric emitted: the readiness and request timers never
+	// get a sample because those phases never ran.
+	tags["success"] = strconv.FormatBool(err == nil)
 	s.stat.NewTaggedStat("processor_pyt_forward_rpc_time", stats.TimerType, tags).Since(start)
 	if err != nil {
 		s.log.Warnn("forwarding to pyt",

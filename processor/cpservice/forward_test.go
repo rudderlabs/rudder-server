@@ -271,6 +271,7 @@ func TestForward(t *testing.T) {
 					"op":          tc.op.String(),
 					"route":       tc.wantRoute,
 					"workspaceId": "ws-1",
+					"success":     strconv.FormatBool(tc.fwdErr == nil),
 				}
 				metrics := statsStore.GetByName("processor_pyt_forward_rpc_time")
 				require.Len(t, metrics, 1)
@@ -303,8 +304,10 @@ func TestForward(t *testing.T) {
 
 		require.Empty(t, statsStore.GetByName("processor_pyt_request_handle_time"),
 			"no request was made, so no request sample must be recorded")
-		require.Len(t, statsStore.GetByName("processor_pyt_forward_rpc_time"), 1,
-			"the total timer still records the failed attempt")
+		rpcMetrics := statsStore.GetByName("processor_pyt_forward_rpc_time")
+		require.Len(t, rpcMetrics, 1, "the total timer still records the failed attempt")
+		require.Equal(t, "false", rpcMetrics[0].Tags["success"],
+			"a deployer failure must be distinguishable from a slow success")
 	})
 
 	t.Run("no timers when the request is rejected before forwarding", func(t *testing.T) {
