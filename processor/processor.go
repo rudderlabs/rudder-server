@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -134,8 +135,7 @@ type Handle struct {
 	backgroundCancel           context.CancelFunc
 	statsFactory               stats.Stats
 	stats                      processorStats
-	maxSrcToDestFanoutMu       sync.Mutex
-	maxSrcToDestFanout         int
+	maxSrcToDestFanout         atomic.Int64
 	payloadLimit               config.ValueLoader[int64]
 	jobsDBCommandTimeout       config.ValueLoader[time.Duration]
 	jobdDBQueryRequestTimeout  config.ValueLoader[time.Duration]
@@ -145,7 +145,7 @@ type Handle struct {
 	utSamplingFileManager      filemanager.FileManager
 	storeSamplingFileManager   filemanager.FileManager
 	mirrorFilteredCache        *cachettl.Cache[string, bool]
-	destinationIsolationMu     sync.Mutex
+	destinationIsolationMu     sync.RWMutex
 	destinationIsolationCache  map[string]bool
 	rsourcesService            rsources.JobService
 	transformerFeaturesService transformerFeaturesService.FeaturesService
@@ -2267,16 +2267,21 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	groupedEvents := make(map[string][]types.TransformerEvent)
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 
-	// Forked (proc) jobs siphoned at fan-out, keyed lookup of their parent gw job's
-	// parameters (source-level: source_id, source_job_run_id, traceparent, …), reused
-	// verbatim so a proc job resolves back to the same source/jobRun as its gw job. Built
-	// only when destination isolation is active.
+	// Forked (proc) jobs siphoned at fan-out. gwParams looks up a forked event's parent gw
+	// job parameters (source-level: source_id, source_job_run_id, traceparent, …), reused
+	// verbatim so a proc job resolves back to the same source/jobRun as its gw job. The
+	// backing map is built lazily on the first fork, so batches that fork nothing (the
+	// common case even when isolation is configured) pay no allocation. The pretransform
+	// event loop below is single-goroutine, so the lazy init needs no synchronisation.
 	var forkedJobs []*jobsdb.JobT
 	var gwParamsByJobID map[int64]json.RawMessage
-	if proc.procDB != nil {
-		gwParamsByJobID = lo.SliceToMap(preTrans.jobList, func(job *jobsdb.JobT) (int64, json.RawMessage) {
-			return job.JobID, job.Parameters
-		})
+	gwParams := func(jobID int64) json.RawMessage {
+		if gwParamsByJobID == nil {
+			gwParamsByJobID = lo.SliceToMap(preTrans.jobList, func(job *jobsdb.JobT) (int64, json.RawMessage) {
+				return job.JobID, job.Parameters
+			})
+		}
+		return gwParamsByJobID[jobID]
 	}
 
 	if !proc.config.archiveInPreProcess {
@@ -2460,7 +2465,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			proc.recordSrcToDestFanout(eventFanout)
 
 			if len(forkedDestIDs) > 0 {
-				job, err := proc.newForkedJob(event, forkedDestIDs, sourcePipelineSteps[sourceIdT], gwParamsByJobID[event.Metadata.JobID])
+				job, err := proc.newForkedJob(event, forkedDestIDs, sourcePipelineSteps[sourceIdT], gwParams(event.Metadata.JobID))
 				if err != nil {
 					return nil, fmt.Errorf("building forked job for message %q: %w", event.Metadata.MessageID, err)
 				}
@@ -4120,13 +4125,22 @@ func (*Handle) getLimiterPriority(partition string) kitsync.LimiterPriorityValue
 func (proc *Handle) recordSrcToDestFanout(fanout int) {
 	proc.stats.statSrcToDestFanout.Observe(float64(fanout))
 
-	proc.maxSrcToDestFanoutMu.Lock()
-	defer proc.maxSrcToDestFanoutMu.Unlock()
-	if fanout <= proc.maxSrcToDestFanout {
-		return
+	// The max is a monotonic high-water mark, so the common per-event case is a lock-free
+	// atomic read that returns early. Only a new maximum publishes the gauge, via a CAS
+	// loop. Two distinct new maxima observed truly concurrently could, in a rare
+	// interleaving, leave the gauge one observation stale; that is acceptable for a
+	// high-water-mark monitoring stat and avoids a lock on the fan-out hot path.
+	f := int64(fanout)
+	for {
+		prev := proc.maxSrcToDestFanout.Load()
+		if f <= prev {
+			return
+		}
+		if proc.maxSrcToDestFanout.CompareAndSwap(prev, f) {
+			proc.stats.statMaxSrcToDestFanout.Gauge(fanout)
+			return
+		}
 	}
-	proc.maxSrcToDestFanout = fanout
-	proc.stats.statMaxSrcToDestFanout.Gauge(fanout)
 }
 
 // check if event has eligible destinations to send to

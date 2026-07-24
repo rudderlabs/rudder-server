@@ -73,8 +73,12 @@ func TestNewForkedJob(t *testing.T) {
 			SourceID:    "src1",
 			SourceName:  "source-1",
 			// destination-specific fields must NOT leak into a multi-destination forked job
-			DestinationID:   "should-not-appear",
-			DestinationName: "should-not-appear",
+			DestinationID:           "should-not-appear",
+			DestinationName:         "should-not-appear",
+			DestinationType:         "should-not-appear",
+			DestinationDefinitionID: "should-not-appear",
+			TransformationID:        "should-not-appear",
+			TransformationVersionID: "should-not-appear",
 		},
 	}
 	steps := SourcePipelineSteps{srcHydration: true, trackingPlanValidation: true}
@@ -98,6 +102,17 @@ func TestNewForkedJob(t *testing.T) {
 	require.Equal(t, "src1", payload.Metadata.SourceID)
 	require.True(t, payload.SrcHydration)
 	require.True(t, payload.TrackingPlanValidation)
+
+	// destination-specific metadata must be stripped: a forked job fans out to multiple
+	// destinations, re-hydrated per consumer at drain time.
+	require.Empty(t, payload.Metadata.DestinationID)
+	require.Empty(t, payload.Metadata.DestinationName)
+	require.Empty(t, payload.Metadata.DestinationType)
+	require.Empty(t, payload.Metadata.DestinationDefinitionID)
+	require.Empty(t, payload.Metadata.TransformationID)
+	require.Empty(t, payload.Metadata.TransformationVersionID)
+	// the caller's event metadata must not be mutated (newForkedJob works on a copy)
+	require.Equal(t, "should-not-appear", event.Metadata.DestinationID)
 
 	// the parent gw job's params are reused verbatim (carrying source_job_run_id etc.
 	// for the eventual rsources resolution), never a synthetic copy
