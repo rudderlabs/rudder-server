@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -35,6 +37,7 @@ import (
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/cache"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 // createTestWorker creates a worker instance for testing with properly initialized StatsCache instances
@@ -53,6 +56,149 @@ func createTestWorker(destType string, transformProxy bool, stat stats.Stats) *w
 			return stat.NewTaggedStat("transformer_outgoing_request_count", stats.CountType, labels.ToStatTags())
 		}),
 	}
+}
+
+// TestDeliveredWithWarningsEnabled covers the OR between the destination-definition capability
+// (the GA switch) and the per-workspace controlled-rollout allow-list.
+func TestDeliveredWithWarningsEnabled(t *testing.T) {
+	const (
+		enabledWorkspace = "workspace-enabled"
+		otherWorkspace   = "workspace-other"
+	)
+
+	newHandle := func(destDefSupports bool, allowList ...string) *Handle {
+		rt := &Handle{}
+		rt.supportsDeliveredWithWarnings.Store(destDefSupports)
+		rt.deliveredWithWarningsEnabledForWorkspace = func(workspaceID string) bool {
+			return slices.Contains(allowList, workspaceID)
+		}
+		return rt
+	}
+
+	t.Run("destination definition supports it, workspace not allow-listed", func(t *testing.T) {
+		require.True(t, newHandle(true).deliveredWithWarningsEnabled(otherWorkspace))
+	})
+
+	t.Run("destination definition does not support it, workspace allow-listed", func(t *testing.T) {
+		require.True(t, newHandle(false, enabledWorkspace).deliveredWithWarningsEnabled(enabledWorkspace))
+	})
+
+	t.Run("both enabled", func(t *testing.T) {
+		require.True(t, newHandle(true, enabledWorkspace).deliveredWithWarningsEnabled(enabledWorkspace))
+	})
+
+	t.Run("neither enabled", func(t *testing.T) {
+		require.False(t, newHandle(false, enabledWorkspace).deliveredWithWarningsEnabled(otherWorkspace))
+	})
+
+	t.Run("allow-list predicate not wired fails closed", func(t *testing.T) {
+		require.False(t, (&Handle{}).deliveredWithWarningsEnabled(enabledWorkspace))
+	})
+}
+
+// TestGateDeliveredWithWarning covers the 296 -> 200 downgrade applied per job, per workspace.
+func TestGateDeliveredWithWarning(t *testing.T) {
+	const (
+		gateDestType     = "BRAZE"
+		downgradeMetric  = "router_warning_status_downgraded_count"
+		enabledWorkspace = "workspace-enabled"
+		otherWorkspace   = "workspace-other"
+	)
+	downgradeTags := stats.Tags{"destType": gateDestType}
+
+	newGateWorker := func(t *testing.T, destDefSupports bool, allowList ...string) (*worker, *memstats.Store) {
+		t.Helper()
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		rt := &Handle{
+			destType:                    gateDestType,
+			warningStatusDowngradedStat: statsStore.NewTaggedStat(downgradeMetric, stats.CountType, downgradeTags),
+		}
+		rt.supportsDeliveredWithWarnings.Store(destDefSupports)
+		rt.deliveredWithWarningsEnabledForWorkspace = func(workspaceID string) bool {
+			return slices.Contains(allowList, workspaceID)
+		}
+		return &worker{rt: rt, logger: logger.NOP}, statsStore
+	}
+
+	downgrades := func(statsStore *memstats.Store) float64 {
+		if m := statsStore.Get(downgradeMetric, downgradeTags); m != nil {
+			return m.LastValue()
+		}
+		return 0
+	}
+
+	jobsOf := func(metadata ...types.JobMetadataT) types.DestinationJobT {
+		return types.DestinationJobT{JobMetadataArray: metadata}
+	}
+	jobMeta := func(jobID int64, workspaceID string) types.JobMetadataT {
+		return types.JobMetadataT{JobID: jobID, WorkspaceID: workspaceID}
+	}
+
+	t.Run("allow-listed workspace keeps 296", func(t *testing.T) {
+		w, statsStore := newGateWorker(t, false, enabledWorkspace)
+		codes := map[int64]int{1: utilTypes.DeliveredWithWarningCode}
+		w.gateDeliveredWithWarning(jobsOf(jobMeta(1, enabledWorkspace)), codes)
+		require.Equal(t, utilTypes.DeliveredWithWarningCode, codes[1])
+		require.Zero(t, downgrades(statsStore))
+	})
+
+	t.Run("destination definition support keeps 296 for any workspace", func(t *testing.T) {
+		w, statsStore := newGateWorker(t, true)
+		codes := map[int64]int{1: utilTypes.DeliveredWithWarningCode}
+		w.gateDeliveredWithWarning(jobsOf(jobMeta(1, otherWorkspace)), codes)
+		require.Equal(t, utilTypes.DeliveredWithWarningCode, codes[1])
+		require.Zero(t, downgrades(statsStore))
+	})
+
+	t.Run("non allow-listed workspace downgrades to 200", func(t *testing.T) {
+		w, statsStore := newGateWorker(t, false, enabledWorkspace)
+		codes := map[int64]int{1: utilTypes.DeliveredWithWarningCode}
+		w.gateDeliveredWithWarning(jobsOf(jobMeta(1, otherWorkspace)), codes)
+		require.Equal(t, http.StatusOK, codes[1])
+		require.EqualValues(t, 1, downgrades(statsStore))
+	})
+
+	t.Run("batch spanning workspaces downgrades only the non allow-listed job", func(t *testing.T) {
+		w, statsStore := newGateWorker(t, false, enabledWorkspace)
+		codes := map[int64]int{
+			1: utilTypes.DeliveredWithWarningCode,
+			2: utilTypes.DeliveredWithWarningCode,
+		}
+		w.gateDeliveredWithWarning(jobsOf(jobMeta(1, enabledWorkspace), jobMeta(2, otherWorkspace)), codes)
+		require.Equal(t, utilTypes.DeliveredWithWarningCode, codes[1])
+		require.Equal(t, http.StatusOK, codes[2])
+		require.EqualValues(t, 1, downgrades(statsStore))
+	})
+
+	t.Run("only 296 is rewritten in a mixed-code batch", func(t *testing.T) {
+		w, statsStore := newGateWorker(t, false)
+		codes := map[int64]int{
+			1: http.StatusOK,
+			2: utilTypes.DeliveredWithWarningCode,
+			3: http.StatusBadRequest,
+			4: http.StatusInternalServerError,
+		}
+		w.gateDeliveredWithWarning(jobsOf(
+			jobMeta(1, otherWorkspace), jobMeta(2, otherWorkspace),
+			jobMeta(3, otherWorkspace), jobMeta(4, otherWorkspace),
+		), codes)
+		require.Equal(t, map[int64]int{
+			1: http.StatusOK,
+			2: http.StatusOK,
+			3: http.StatusBadRequest,
+			4: http.StatusInternalServerError,
+		}, codes)
+		require.EqualValues(t, 1, downgrades(statsStore))
+	})
+
+	t.Run("duplicate job metadata downgrades once", func(t *testing.T) {
+		w, statsStore := newGateWorker(t, false)
+		codes := map[int64]int{1: utilTypes.DeliveredWithWarningCode}
+		w.gateDeliveredWithWarning(jobsOf(jobMeta(1, otherWorkspace), jobMeta(1, otherWorkspace)), codes)
+		require.Equal(t, http.StatusOK, codes[1])
+		require.EqualValues(t, 1, downgrades(statsStore))
+	})
 }
 
 func TestConsolidateRespBodys(t *testing.T) {
