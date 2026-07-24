@@ -189,7 +189,7 @@ func loadConfig(conf *config.Config) deployerConfig {
 		cpuLimit:              parseQuantity(conf.GetStringVar("400m", "Processor.pytDeployer.pytTestCPULimit"), "400m"),
 		memoryLimit:           parseQuantity(conf.GetStringVar("700Mi", "Processor.pytDeployer.pytTestMemoryLimit"), "700Mi"),
 		readinessTimeout:      conf.GetReloadableDurationVar(60, time.Second, "Processor.pytDeployer.pytTestReadinessTimeout"),
-		readinessPollInterval: conf.GetReloadableDurationVar(250, time.Millisecond, "Processor.pytDeployer.pytTestReadinessPollInterval"),
+		readinessPollInterval: conf.GetReloadableDurationVar(1, time.Second, "Processor.pytDeployer.pytTestReadinessPollInterval"),
 		deleteTimeout:         conf.GetReloadableDurationVar(15, time.Second, "Processor.pytDeployer.pytTestDeleteTimeout"),
 		env:                   conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestEnv"),
 		labels:                conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestLabels"),
