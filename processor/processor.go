@@ -106,7 +106,7 @@ type trackedUsersReporter interface {
 }
 
 type activationRecordsReporter interface {
-	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceCategoriesBySourceID map[string]string) []*activationrecords.ActivationRecord
+	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceMetadataBySourceID map[string]activationrecords.SourceMetadata) []*activationrecords.ActivationRecord
 	ReportActivationRecords(ctx context.Context, reports []*activationrecords.ActivationRecord, tx *Tx) error
 }
 
@@ -189,7 +189,7 @@ type Handle struct {
 		eventAuditEnabled                         map[string]bool
 		credentialsMap                            map[string][]types.Credential
 		nonEventStreamSources                     map[string]bool
-		sourceIdCategoryMap                       map[string]string
+		sourceIDMetadataMap                       map[string]activationrecords.SourceMetadata
 		enableConcurrentStore                     config.ValueLoader[bool]
 		userTransformationMirroringSanitySampling config.ValueLoader[float64]
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
@@ -852,7 +852,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			eventAuditEnabled            = make(map[string]bool)
 			credentialsMap               = make(map[string][]types.Credential)
 			nonEventStreamSources        = make(map[string]bool)
-			sourceIdCategoryMap          = make(map[string]string)
+			sourceIDMetadataMap          = make(map[string]activationrecords.SourceMetadata)
 			connectionConfigMap          = make(map[connection]backendconfig.Connection)
 		)
 		for workspaceID, wConfig := range config {
@@ -862,7 +862,10 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
 				sourceIdSourceMap[source.ID] = *source
-				sourceIdCategoryMap[source.ID] = source.SourceDefinition.Category
+				sourceIDMetadataMap[source.ID] = activationrecords.SourceMetadata{
+					Category: source.SourceDefinition.Category,
+					Name:     source.SourceDefinition.Name,
+				}
 				if source.Enabled {
 					sourceIdDestinationMap[source.ID] = source.Destinations
 					genericConsentManagementMap[SourceID(source.ID)] = make(DestConsentMap)
@@ -904,7 +907,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.eventAuditEnabled = eventAuditEnabled
 		proc.config.credentialsMap = credentialsMap
 		proc.config.nonEventStreamSources = nonEventStreamSources
-		proc.config.sourceIdCategoryMap = sourceIdCategoryMap
+		proc.config.sourceIDMetadataMap = sourceIDMetadataMap
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
 			initDone = true
@@ -943,15 +946,15 @@ func (proc *Handle) getNonEventStreamSources() map[string]bool {
 	return proc.config.nonEventStreamSources
 }
 
-// getSourceCategoriesBySourceID returns the shared source_id -> SourceDefinition.Category
+// getSourceMetadataBySourceID returns the shared source_id -> source-definition metadata
 // map, which the config subscriber rebuilds and swaps on each backend-config change (hence
-// the read lock). Activation-records (MAR) metering uses it to classify reverse-ETL sources
-// without depending on the source_category job param (which is not populated on every
-// ingestion path). The returned map is shared and must not be mutated.
-func (proc *Handle) getSourceCategoriesBySourceID() map[string]string {
+// the read lock). Activation-records (MAR) metering uses it to classify real reverse-ETL
+// warehouse sources without depending on the source_category job param (which is not populated
+// on every ingestion path). The returned map is shared and must not be mutated.
+func (proc *Handle) getSourceMetadataBySourceID() map[string]activationrecords.SourceMetadata {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
-	return proc.config.sourceIdCategoryMap
+	return proc.config.sourceIDMetadataMap
 }
 
 func (proc *Handle) getEnabledDestinations(sourceId, destinationName string) []backendconfig.DestinationT {
@@ -2422,11 +2425,12 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	// GenerateReportsFromJobs reads context.activation from the raw job payloads
 	// (left intact here so metering still works); the destination-bound copies are
 	// already stripped per-event in preprocessStage. Fetch the config subscriber's
-	// current source_id -> category map once here (single lock; the map is swapped
+	// current source_id -> source-definition metadata map once here (single lock;
+	// the map is swapped
 	// atomically on config change), then pass it to the reporter, which indexes it
-	// per job to classify reverse-ETL sources.
-	sourceCategoriesBySourceID := proc.getSourceCategoriesBySourceID()
-	activationRecordsReports := proc.activationRecordsReporter.GenerateReportsFromJobs(preTrans.jobList, sourceCategoriesBySourceID)
+	// per job to classify real reverse-ETL warehouse sources.
+	sourceMetadataBySourceID := proc.getSourceMetadataBySourceID()
+	activationRecordsReports := proc.activationRecordsReporter.GenerateReportsFromJobs(preTrans.jobList, sourceMetadataBySourceID)
 
 	return &transformationMessage{
 		preTrans.subJobs.ctx,
