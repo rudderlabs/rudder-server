@@ -821,6 +821,20 @@ func (w *worker) hydrateRespStatusCodes(destinationJob types.DestinationJobT, re
 	}
 }
 
+// gateDeliveredWithWarning downgrades 296 (Delivered with Warning) to 200 for any job whose
+// workspace has not enabled the feature. Only the status code is rewritten — response bodies are
+// left untouched. Rewriting to 200 also makes this idempotent across duplicate job IDs in
+// JobMetadataArray, so the downgrade counter fires exactly once per job.
+func (w *worker) gateDeliveredWithWarning(destinationJob types.DestinationJobT, respStatusCodes map[int64]int) {
+	for _, metadata := range destinationJob.JobMetadataArray {
+		if respStatusCodes[metadata.JobID] == utilTypes.DeliveredWithWarningCode &&
+			!w.rt.deliveredWithWarningsEnabled(metadata.WorkspaceID) {
+			respStatusCodes[metadata.JobID] = http.StatusOK
+			w.rt.warningStatusDowngradedStat.Count(1)
+		}
+	}
+}
+
 func (w *worker) updateFailedJobOrderKeys(failedJobOrderKeys map[eventorder.BarrierKey]struct{}, destinationJob *types.DestinationJobT, respStatusCodes map[int64]int) {
 	for _, metadata := range destinationJob.JobMetadataArray {
 		if !isJobTerminated(respStatusCodes[metadata.JobID]) {
@@ -838,6 +852,7 @@ func (w *worker) updateFailedJobOrderKeys(failedJobOrderKeys map[eventorder.Barr
 
 func (w *worker) prepareRouterJobResponses(destinationJob types.DestinationJobT, respStatusCodes map[int64]int, respBodys map[int64]string, errorAt string) []*JobResponse {
 	w.hydrateRespStatusCodes(destinationJob, respStatusCodes, respBodys)
+	w.gateDeliveredWithWarning(destinationJob, respStatusCodes)
 
 	// Failure - Save response body
 	// Success - Skip saving response body
