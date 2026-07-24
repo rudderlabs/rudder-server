@@ -742,7 +742,7 @@ func runRudderServer(
 	config.Set("SourceDebugger.disableEventUploads", true)
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
 	config.Set("JobsDB.backup.enabled", false)
-	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
+	config.Set("JobsDB.compactionLoopSleepDuration", "60m")
 	config.Set("archival.Enabled", false)
 	config.Set("Reporting.syncer.enabled", false)
 	config.Set("Reporting.errorIndexReporting.enabled", true)

@@ -167,7 +167,7 @@ func runGateway(
 
 	config.Set("Gateway.webPort", strconv.Itoa(port))
 	config.Set("JobsDB.backup.enabled", false)
-	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
+	config.Set("JobsDB.compactionLoopSleepDuration", "60m")
 	config.Set("RUDDER_TMPDIR", os.TempDir())
 	config.Set("recovery.storagePath", path.Join(tmpDir, "/recovery_data.json"))
 	config.Set("recovery.enabled", false)

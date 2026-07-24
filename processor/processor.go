@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -134,6 +135,7 @@ type Handle struct {
 	backgroundCancel           context.CancelFunc
 	statsFactory               stats.Stats
 	stats                      processorStats
+	maxSrcToDestFanout         atomic.Int64
 	payloadLimit               config.ValueLoader[int64]
 	jobsDBCommandTimeout       config.ValueLoader[time.Duration]
 	jobdDBQueryRequestTimeout  config.ValueLoader[time.Duration]
@@ -143,6 +145,8 @@ type Handle struct {
 	utSamplingFileManager      filemanager.FileManager
 	storeSamplingFileManager   filemanager.FileManager
 	mirrorFilteredCache        *cachettl.Cache[string, bool]
+	destinationIsolationMu     sync.RWMutex
+	destinationIsolationCache  map[string]bool
 	rsourcesService            rsources.JobService
 	transformerFeaturesService transformerFeaturesService.FeaturesService
 	destDebugger               destinationdebugger.DestinationDebugger
@@ -231,6 +235,8 @@ type processorStats struct {
 	statDestNumOutputEvents       func(partition string) stats.Measurement
 	statBatchDestNumOutputEvents  func(partition string) stats.Measurement
 	trackedUsersReportGeneration  func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
+	statSrcToDestFanout           stats.Histogram
+	statMaxSrcToDestFanout        stats.Gauge
 
 	statReadStageCount         func(partition string) stats.Measurement
 	statPretransformStageCount func(partition string) stats.Measurement
@@ -554,6 +560,9 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
+	proc.stats.statMaxSrcToDestFanout = proc.statsFactory.NewStat("processor_max_source_to_destination_fanout", stats.GaugeType)
+	proc.stats.statMaxSrcToDestFanout.Gauge(0)
+	proc.stats.statSrcToDestFanout = proc.statsFactory.NewStat("processor_source_to_destination_fanout", stats.HistogramType)
 	proc.stats.statReadStageCount = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("proc_read_jobs", stats.CountType, stats.Tags{
 			"partition": partition,
@@ -2258,6 +2267,23 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	groupedEvents := make(map[string][]types.TransformerEvent)
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 
+	// Forked (proc) jobs siphoned at fan-out. gwParams looks up a forked event's parent gw
+	// job parameters (source-level: source_id, source_job_run_id, traceparent, …), reused
+	// verbatim so a proc job resolves back to the same source/jobRun as its gw job. The
+	// backing map is built lazily on the first fork, so batches that fork nothing (the
+	// common case even when isolation is configured) pay no allocation. The pretransform
+	// event loop below is single-goroutine, so the lazy init needs no synchronisation.
+	var forkedJobs []*jobsdb.JobT
+	var gwParamsByJobID map[int64]json.RawMessage
+	gwParams := func(jobID int64) json.RawMessage {
+		if gwParamsByJobID == nil {
+			gwParamsByJobID = lo.SliceToMap(preTrans.jobList, func(job *jobsdb.JobT) (int64, json.RawMessage) {
+				return job.JobID, job.Parameters
+			})
+		}
+		return gwParamsByJobID[jobID]
+	}
+
 	if !proc.config.archiveInPreProcess {
 		g, groupCtx := errgroup.WithContext(ctx)
 
@@ -2376,6 +2402,13 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			workspaceID := event.Metadata.WorkspaceID
 			workspaceLibraries := proc.getWorkspaceLibraries(workspaceID)
 
+			// Destinations whose events are siphoned to the intermediate (proc) jobsdb
+			// rather than transformed inline. rsources (retl) jobs stay inline until the
+			// intermediate stage is modelled in rsources accounting.
+			var forkedDestIDs []string
+			forkable := event.Metadata.SourceJobRunID == ""
+			eventFanout := 0
+
 			for _, destType := range enabledDestTypes {
 				enabledDestinationsList := proc.getConsentFilteredDestinations(
 					singularEvent,
@@ -2388,10 +2421,15 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 						return destId == ""
 					}),
 				)
+				eventFanout += len(enabledDestinationsList)
 
 				// Adding a singular event multiple times if there are multiple destinations of same type
 				for idx := range enabledDestinationsList {
 					destination := &enabledDestinationsList[idx]
+					if forkable && proc.shouldForkDestination(destination.ID) {
+						forkedDestIDs = append(forkedDestIDs, destination.ID)
+						continue
+					}
 					destinationEvent := types.TransformerEvent{}
 					destinationEvent.Connection = proc.getConnectionConfig(connection{sourceID: sourceId, destinationID: destination.ID})
 					destinationEvent.Message = singularEvent
@@ -2424,6 +2462,15 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 					uniqueMessageIdsBySrcDestKey[srcAndDestKey][metadata.MessageID] = struct{}{}
 				}
 			}
+			proc.recordSrcToDestFanout(eventFanout)
+
+			if len(forkedDestIDs) > 0 {
+				job, err := proc.newForkedJob(event, forkedDestIDs, sourcePipelineSteps[sourceIdT], gwParams(event.Metadata.JobID))
+				if err != nil {
+					return nil, fmt.Errorf("building forked job for message %q: %w", event.Metadata.MessageID, err)
+				}
+				forkedJobs = append(forkedJobs, job)
+			}
 		}
 	}
 	trackedUsersReportGenStart := time.Now()
@@ -2442,6 +2489,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	return &transformationMessage{
 		ctx:                          preTrans.subJobs.ctx,
 		groupedEvents:                groupedEvents,
+		forkedJobs:                   forkedJobs,
 		srcPipelineSteps:             sourcePipelineSteps,
 		eventsByMessageID:            preTrans.eventsByMessageID,
 		uniqueMessageIdsBySrcDestKey: uniqueMessageIdsBySrcDestKey,
@@ -2513,6 +2561,11 @@ type transformationMessage struct {
 	ctx           context.Context
 	groupedEvents map[string][]types.TransformerEvent
 
+	// forkedJobs are intermediate (proc) jobs siphoned at fan-out; they bypass the gw
+	// pool's transform stages and are committed to procDB atomically with the gateway
+	// status update in storeStage. Always empty in the proc pool (it never re-forks).
+	forkedJobs []*jobsdb.JobT
+
 	srcPipelineSteps             sourceIDPipelineSteps
 	eventsByMessageID            map[string]types.SingularEventWithReceivedAt
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}
@@ -2533,6 +2586,7 @@ type transformationMessage struct {
 type userTransformData struct {
 	ctx                           context.Context
 	userTransformAndFilterOutputs map[string]userTransformAndFilterOutput
+	forkedJobs                    []*jobsdb.JobT
 	reportMetrics                 []*reportingtypes.PUReportedMetric
 	statusList                    []*jobsdb.JobStatusT
 	sourceDupStats                map[dupStatKey]int
@@ -2624,6 +2678,7 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 	return &userTransformData{
 		ctx:                           in.ctx,
 		userTransformAndFilterOutputs: userTransformAndFilterOutputs,
+		forkedJobs:                    in.forkedJobs,
 		reportMetrics:                 in.reportMetrics,
 		statusList:                    in.statusList,
 		sourceDupStats:                in.sourceDupStats,
@@ -2700,6 +2755,7 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 
 	return &storeMessage{
 		ctx:                      in.ctx,
+		forkedJobs:               in.forkedJobs,
 		trackedUsersReports:      in.trackedUsersReports,
 		activationRecordsReports: in.activationRecordsReports,
 		statusList:               in.statusList,
@@ -2721,6 +2777,7 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 
 type storeMessage struct {
 	ctx                 context.Context
+	forkedJobs          []*jobsdb.JobT
 	trackedUsersReports []*trackedusers.UsersReport
 
 	activationRecordsReports []*activationrecords.ActivationRecord
@@ -2761,6 +2818,7 @@ func (proc *Handle) statusUpdateDB(in *storeMessage) jobsdb.JobsDB {
 
 func (sm *storeMessage) merge(subJob *storeMessage) {
 	sm.statusList = append(sm.statusList, subJob.statusList...)
+	sm.forkedJobs = append(sm.forkedJobs, subJob.forkedJobs...)
 	sm.destJobs = append(sm.destJobs, subJob.destJobs...)
 	sm.batchDestJobs = append(sm.batchDestJobs, subJob.batchDestJobs...)
 	sm.droppedJobs = append(sm.droppedJobs, subJob.droppedJobs...)
@@ -2969,11 +3027,24 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 	}
 	in.rsourcesStats.CollectStats(statusList)
 	statusDB := proc.statusUpdateDB(in)
-	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+	commitStatuses := func(ctx context.Context) error {
 		return statusDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 			err := statusDB.UpdateJobStatusInTx(ctx, tx, statusList)
 			if err != nil {
 				return fmt.Errorf("updating %s jobs statuses: %w", statusDB.Identifier(), err)
+			}
+
+			// Siphon forked events into the intermediate (proc) jobsdb in the same
+			// transaction as the gateway status update: a gateway job is marked done iff
+			// its forked jobs are durably persisted. procDB shares the connection pool
+			// with statusDB, so both writes commit atomically. Only ever populated in the
+			// gw pool; the proc pool never re-forks.
+			if len(in.forkedJobs) > 0 {
+				if err = proc.procDB.WithStoreSafeTxFromTx(ctx, tx.Tx(), func(stx jobsdb.StoreSafeTx) error {
+					return proc.procDB.StoreInTx(ctx, stx, in.forkedJobs)
+				}); err != nil {
+					return fmt.Errorf("storing forked jobs: %w", err)
+				}
 			}
 
 			if proc.isReportingEnabled() {
@@ -3009,6 +3080,21 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 			}
 			return nil
 		})
+	}
+	// Forked jobs are stored into procDB within this gateway status-update transaction. procDB routes
+	// each job to its primary or buffer store from the currently buffered partitions, so that routing
+	// must stay consistent with a concurrent flush switchover for the whole transaction. procDB owns
+	// the buffered-partitions read lock, which must be held from before the transaction opens until it
+	// commits — a buffered write only becomes visible to a switchover's drain once committed, so
+	// releasing the lock any earlier could orphan it.
+	storeConsistently := func(_ context.Context, fn func() error) error { return fn() }
+	if locker, ok := proc.procDB.(interface {
+		WithStoreConsistency(context.Context, func() error) error
+	}); ok && len(in.forkedJobs) > 0 {
+		storeConsistently = locker.WithStoreConsistency
+	}
+	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+		return storeConsistently(ctx, func() error { return commitStatuses(ctx) })
 	}, proc.sendRetryUpdateStats)
 	if err != nil {
 		panic(err)
@@ -4033,6 +4119,28 @@ func filterConfig(eventCopy *types.TransformerEvent) {
 
 func (*Handle) getLimiterPriority(partition string) kitsync.LimiterPriorityValue {
 	return kitsync.LimiterPriorityValue(config.GetIntVar(1, 1, fmt.Sprintf("Processor.Limiter.%s.Priority", partition)))
+}
+
+// recordSrcToDestFanout records source-to-destination fanout and the maximum seen so far.
+func (proc *Handle) recordSrcToDestFanout(fanout int) {
+	proc.stats.statSrcToDestFanout.Observe(float64(fanout))
+
+	// The max is a monotonic high-water mark, so the common per-event case is a lock-free
+	// atomic read that returns early. Only a new maximum publishes the gauge, via a CAS
+	// loop. Two distinct new maxima observed truly concurrently could, in a rare
+	// interleaving, leave the gauge one observation stale; that is acceptable for a
+	// high-water-mark monitoring stat and avoids a lock on the fan-out hot path.
+	f := int64(fanout)
+	for {
+		prev := proc.maxSrcToDestFanout.Load()
+		if f <= prev {
+			return
+		}
+		if proc.maxSrcToDestFanout.CompareAndSwap(prev, f) {
+			proc.stats.statMaxSrcToDestFanout.Gauge(fanout)
+			return
+		}
+	}
 }
 
 // check if event has eligible destinations to send to

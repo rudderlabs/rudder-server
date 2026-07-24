@@ -160,7 +160,7 @@ func ArchivalScenario(
 	config.Set("SourceDebugger.disableEventUploads", true)
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
 	config.Set("JobsDB.backup.enabled", false)
-	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
+	config.Set("JobsDB.compactionLoopSleepDuration", "60m")
 	config.Set("JobsDB.enableWriterQueue", false)
 	config.Set("RUDDER_TMPDIR", os.TempDir())
 	config.Set("archival.ArchiveSleepDuration", "1s")
@@ -322,7 +322,9 @@ func insertJobs(
 	configMap map[string]backendconfig.ConfigT,
 	numJobsPerSource int,
 ) (map[string][]*jobsdb.JobT, int) {
-	gwJobsDB := jobsdb.NewForWrite("gw", jobsdb.WithStats(stats.NOP))
+	gwJobsDB := jobsdb.NewForWrite("gw", jobsdb.WithStats(stats.NOP),
+		jobsdb.WithDefaultSkipStatusCompaction(true), // must match the default used by every other "gw" jobsdb construction
+	)
 	require.NoError(t, gwJobsDB.Start(), "it should be able to start the jobsdb")
 	defer gwJobsDB.Stop()
 

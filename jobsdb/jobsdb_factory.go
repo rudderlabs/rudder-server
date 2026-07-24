@@ -120,6 +120,15 @@ func WithMultiConsumer() OptsFunc {
 	}
 }
 
+// WithDefaultSkipStatusCompaction sets the default flag value for status-table cleanup.
+// Runtime config can still override this via JobsDB.<prefix>.skipStatusCompaction
+// or the corresponding global key.
+func WithDefaultSkipStatusCompaction(skip bool) OptsFunc {
+	return func(jd *Handle) {
+		jd.conf.defaultSkipStatusCompaction = &skip
+	}
+}
+
 // withDatabaseTablesVersion sets the schema version used by table migration tests.
 func withDatabaseTablesVersion(dbVersion int) OptsFunc {
 	return func(jd *Handle) {
