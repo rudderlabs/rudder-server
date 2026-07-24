@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 )
 
@@ -32,6 +34,7 @@ const (
 type k8sDeployer struct {
 	client kubernetes.Interface
 	log    logger.Logger
+	stat   stats.Stats
 	config deployerConfig
 }
 
@@ -65,15 +68,23 @@ func (d *k8sDeployer) RunOnEphemeral(
 		}
 		return created, err
 	}); err != nil {
-		d.delete(ctx, name)
+		d.delete(ctx, name, workspaceID)
 		return 0, nil, fmt.Errorf("creating ephemeral pyt service %s/%s: %w", d.config.namespace, name, err)
 	}
 	// Delete runs regardless of what happens below — on a readiness timeout,
 	// a forward error, or success alike. It never changes the response
 	// returned to the caller; a failed delete is only logged.
-	defer d.delete(ctx, name)
+	defer d.delete(ctx, name, workspaceID)
 
-	if err := d.waitReady(ctx, name); err != nil {
+	readyStart := time.Now()
+	err := d.waitReady(ctx, name)
+	// Emitted on both outcomes: the success:false series makes readiness
+	// timeouts visible and clusters at the configured readiness timeout.
+	d.stat.NewTaggedStat("processor_pyt_readiness_wait_time", stats.TimerType, stats.Tags{
+		"workspaceId": workspaceID,
+		"success":     strconv.FormatBool(err == nil),
+	}).Since(readyStart)
+	if err != nil {
 		return 0, nil, err
 	}
 
@@ -98,6 +109,12 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 	labels[LabelManagedBy] = LabelManagedByValue
 	labels[LabelPurpose] = LabelPurposeValue
 	labels[LabelWorkspaceID] = strings.ToLower(workspaceID)
+	// The run name makes the Deployment selector, pod labels, and Service
+	// selector unique per run. Concurrent runs (same workspace, same generic
+	// spec) otherwise carry identical labels, so each run's Service would
+	// select all runs' pods and route a request to a pod that another run
+	// deletes the moment it finishes.
+	labels[LabelRunName] = name
 
 	// WORKSPACE_ID is per-run, so it is injected programmatically on top of the
 	// config-provided env (prod injects it per workspace the same way). The
@@ -291,7 +308,7 @@ func (d *k8sDeployer) waitReady(ctx context.Context, name string) error {
 // already has. It runs on its own bounded timeout, detached from ctx's
 // cancellation, so cleanup still gets a chance to run when ctx is already
 // done (deadline exceeded, caller gone).
-func (d *k8sDeployer) delete(ctx context.Context, name string) {
+func (d *k8sDeployer) delete(ctx context.Context, name, workspaceID string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), d.config.deleteTimeout.Load())
 	defer cancel()
 
@@ -307,6 +324,8 @@ func (d *k8sDeployer) delete(ctx context.Context, name string) {
 		errs = append(errs, fmt.Errorf("deleting service %s/%s: %w", d.config.namespace, name, err))
 	}
 	if len(errs) > 0 {
+		d.stat.NewTaggedStat("processor_pyt_cleanup_failure_count", stats.CountType,
+			stats.Tags{"workspaceId": workspaceID}).Increment()
 		d.log.Errorn("cleaning up ephemeral pyt deployment; the reaper will collect any orphan",
 			logger.NewStringField("namespace", d.config.namespace),
 			logger.NewStringField("name", name),
