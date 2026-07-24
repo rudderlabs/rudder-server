@@ -31,6 +31,10 @@ type JobsDBPartitionBuffer interface {
 	RefreshBufferedPartitions(ctx context.Context) error
 	// FlushBufferedPartitions flushes the buffered data for the provided partition ids to the database and unmarks them as buffered.
 	FlushBufferedPartitions(ctx context.Context, partitionIds []string) error
+	// WithStoreConsistency runs fn while keeping Store routing consistent with concurrent flush switchovers.
+	// Callers storing into an externally-owned transaction (via WithStoreSafeTxFromTx + StoreInTx) must wrap
+	// that whole transaction with it.
+	WithStoreConsistency(ctx context.Context, fn func() error) error
 }
 
 type jobsDBPartitionBuffer struct {

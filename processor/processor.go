@@ -3022,7 +3022,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 	}
 	in.rsourcesStats.CollectStats(statusList)
 	statusDB := proc.statusUpdateDB(in)
-	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+	commitStatuses := func(ctx context.Context) error {
 		return statusDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 			err := statusDB.UpdateJobStatusInTx(ctx, tx, statusList)
 			if err != nil {
@@ -3075,6 +3075,21 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 			}
 			return nil
 		})
+	}
+	// Forked jobs are stored into procDB within this gateway status-update transaction. procDB routes
+	// each job to its primary or buffer store from the currently buffered partitions, so that routing
+	// must stay consistent with a concurrent flush switchover for the whole transaction. procDB owns
+	// the buffered-partitions read lock, which must be held from before the transaction opens until it
+	// commits — a buffered write only becomes visible to a switchover's drain once committed, so
+	// releasing the lock any earlier could orphan it.
+	storeConsistently := func(_ context.Context, fn func() error) error { return fn() }
+	if locker, ok := proc.procDB.(interface {
+		WithStoreConsistency(context.Context, func() error) error
+	}); ok && len(in.forkedJobs) > 0 {
+		storeConsistently = locker.WithStoreConsistency
+	}
+	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+		return storeConsistently(ctx, func() error { return commitStatuses(ctx) })
 	}, proc.sendRetryUpdateStats)
 	if err != nil {
 		panic(err)

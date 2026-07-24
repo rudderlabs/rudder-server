@@ -27,23 +27,21 @@ func (b *jobsDBPartitionBuffer) WithStoreSafeTx(ctx context.Context, fn func(tx 
 		return ErrStoreNotSupported
 	}
 	for {
-		if !b.bufferedPartitionsMu.RTryLockWithContext(ctx) {
-			return fmt.Errorf("acquiring a buffered partitions read lock: %w", ctx.Err())
-		}
-		err := b.primaryWriteJobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) (err error) {
-			if !b.differentBufferDBs { // no need to check for stale version
+		err := b.WithStoreConsistency(ctx, func() error {
+			return b.primaryWriteJobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) (err error) {
+				if !b.differentBufferDBs { // no need to check for stale version
+					return fn(tx)
+				}
+				diff, err := b.versionDiff(ctx, tx.Tx()) // get the version difference
+				if err != nil {
+					return err
+				}
+				if diff != 0 { // stale version
+					return errStaleBufferedPartitions
+				}
 				return fn(tx)
-			}
-			diff, err := b.versionDiff(ctx, tx.Tx()) // get the version difference
-			if err != nil {
-				return err
-			}
-			if diff != 0 { // stale version
-				return errStaleBufferedPartitions
-			}
-			return fn(tx)
+			})
 		})
-		b.bufferedPartitionsMu.RUnlock()
 		if !errors.Is(err, errStaleBufferedPartitions) {
 			return err
 		}
@@ -52,6 +50,24 @@ func (b *jobsDBPartitionBuffer) WithStoreSafeTx(ctx context.Context, fn func(tx 
 			return fmt.Errorf("refreshing buffered partitions after stale error: %w", err)
 		}
 	}
+}
+
+// WithStoreConsistency runs fn while holding the buffered-partitions read lock, so that Store
+// routing decisions (see splitJobs) stay consistent with a concurrent flush switchover, which
+// drains and unbuffers partitions under the corresponding write lock.
+//
+// The lock must be acquired before the transaction fn stores into is opened and held until that
+// transaction commits: a buffered write only becomes visible to a switchover's drain (a separate
+// connection) once it commits, so releasing the lock any earlier lets a switchover unbuffer the
+// partition in between and orphan the job. Store/WithStoreSafeTx use this internally; callers that
+// store into an externally-owned transaction (via WithStoreSafeTxFromTx + StoreInTx) must wrap that
+// whole transaction with it themselves.
+func (b *jobsDBPartitionBuffer) WithStoreConsistency(ctx context.Context, fn func() error) error {
+	if !b.bufferedPartitionsMu.RTryLockWithContext(ctx) {
+		return fmt.Errorf("acquiring a buffered partitions read lock: %w", ctx.Err())
+	}
+	defer b.bufferedPartitionsMu.RUnlock()
+	return fn()
 }
 
 // StoreInTx stores the provided jobs into the appropriate JobsDBs based on their partition buffering status within the provided StoreSafeTx
