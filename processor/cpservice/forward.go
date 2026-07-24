@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/user_transformer"
@@ -24,6 +27,14 @@ import (
 // pointed at either a freshly created ephemeral pyt Service or the shared
 // static AST deployment.
 type endpointForward func(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error)
+
+// route tag values for the processor_pyt_* metrics: which pyt deployment a
+// Forward request was served by.
+const (
+	routeEphemeral  = "ephemeral"  // fresh ephemeral deployment (execution ops)
+	routeProduction = "production" // the workspace's production pyt deployment (config-flagged execution ops)
+	routeStatic     = "static"     // the shared static AST deployment (AST ops)
+)
 
 // validWorkspaceID gates what Forward substitutes into the pyt URL template and
 // the pyt Deployment name. Anything beyond alphanumerics and hyphens must be
@@ -67,27 +78,61 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 		return nil, status.Error(codes.InvalidArgument, "workspaceId must be 1-59 alphanumeric or hyphen characters, starting and ending with an alphanumeric")
 	}
 
+	route := routeStatic
+	if isExecutionOp {
+		if s.isProdRouted(req.WorkspaceId) {
+			route = routeProduction
+		} else {
+			route = routeEphemeral
+		}
+	}
+	tags := stats.Tags{
+		"op":          req.Op.String(),
+		"route":       route,
+		"workspaceId": req.WorkspaceId,
+	}
+	// timedForward measures just the HTTP request to the pyt pod and emits the
+	// request timer itself, so on the ephemeral route it excludes the
+	// deployment creation and readiness wait (which RunOnEphemeral performs
+	// before invoking it) that the total timer includes — and a deployer
+	// failure that never invokes it produces no request sample. The success
+	// tag separates unhealthy requests — transport failures (connection
+	// refused, exhausted retries) and non-200 pyt responses alike — from
+	// healthy ones, whose latencies are not comparable.
+	timedForward := func(ctx context.Context, baseURL string) (int, []byte, error) {
+		execStart := time.Now()
+		statusCode, body, err := forward(ctx, baseURL, req.WorkspaceId, req.Payload)
+		reqTags := maps.Clone(tags)
+		reqTags["success"] = strconv.FormatBool(statusCode == http.StatusOK)
+		s.stat.NewTaggedStat("processor_pyt_request_handle_time", stats.TimerType, reqTags).Since(execStart)
+		return statusCode, body, err
+	}
+
 	var statusCode int
 	var body []byte
 	var err error
-	switch {
-	case isExecutionOp && s.isProdRouted(req.WorkspaceId):
+	switch route {
+	case routeProduction:
 		// Config-flagged workspace: its tests must run with prod-only config
 		// (custom DNS, pinned egress IPs, ...) the generic ephemeral spec can't
 		// reproduce, so forward straight to the workspace's production pyt
 		// deployment. No readiness wait — the forwarder's cold-start retries
 		// ride out the prod deployment's scale-from-zero window.
-		statusCode, body, err = forward(ctx,
-			user_transformer.PerWorkspacePyTBaseURL(s.prodURLTemplate, req.WorkspaceId),
-			req.WorkspaceId, req.Payload)
-	case isExecutionOp:
-		statusCode, body, err = s.deployer.RunOnEphemeral(ctx, req.WorkspaceId,
-			func(ctx context.Context, baseURL string) (int, []byte, error) {
-				return forward(ctx, baseURL, req.WorkspaceId, req.Payload)
-			})
+		statusCode, body, err = timedForward(ctx,
+			user_transformer.PerWorkspacePyTBaseURL(s.prodURLTemplate, req.WorkspaceId))
+	case routeEphemeral:
+		statusCode, body, err = s.deployer.RunOnEphemeral(ctx, req.WorkspaceId, timedForward)
 	default:
-		statusCode, body, err = forward(ctx, s.staticASTURL, req.WorkspaceId, req.Payload)
+		statusCode, body, err = timedForward(ctx, s.staticASTURL)
 	}
+	// success here means the RPC delivered a pyt response, whatever its HTTP
+	// status — false marks infrastructure failures (deployer create errors,
+	// readiness timeouts, transport failures), which are the only way to tell
+	// a failed RPC apart from a slow success. On a deployer create failure
+	// this is the ONLY metric emitted: the readiness and request timers never
+	// get a sample because those phases never ran.
+	tags["success"] = strconv.FormatBool(err == nil)
+	s.stat.NewTaggedStat("processor_pyt_forward_rpc_time", stats.TimerType, tags).Since(start)
 	if err != nil {
 		s.log.Warnn("forwarding to pyt",
 			obskit.WorkspaceID(req.WorkspaceId), logger.NewStringField("op", req.Op.String()), obskit.Error(err))

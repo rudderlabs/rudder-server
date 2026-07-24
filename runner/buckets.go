@@ -179,5 +179,17 @@ var (
 		"rsources_publish_time_second": {
 			0.1, 0.5, 1, 5, 10, 30, 60,
 		},
+		"processor_grpc_response_time": {
+			0.1, 0.25, 0.5, 1, 2.5, 5, 15, 30, 60, // 0.1s, 0.25s, 0.5s, 1s, 2.5s, 5s, 15s, 30s, 1m
+		},
+		"processor_pyt_forward_rpc_time": {
+			0.5, 1, 2.5, 5, 10, 30, 60, // 0.5s, 1s, 2.5s, 5s, 10s, 30s, 1m
+		},
+		"processor_pyt_request_handle_time": {
+			0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, // 0.1s, 0.25s, 0.5s, 1s, 2.5s, 5s, 10s, 30s, 1m
+		},
+		"processor_pyt_readiness_wait_time": {
+			0.5, 1, 2.5, 5, 10, 30, 60, // 0.5s, 1s, 2.5s, 5s, 10s, 30s, 1m
+		},
 	}
 )
