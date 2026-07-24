@@ -199,13 +199,16 @@ func loadConfig(conf *config.Config) deployerConfig {
 }
 
 // runIDLength loads the random-suffix length for ephemeral resource names,
-// clamped to what keeps "pyt-test-<suffix>" a valid DNS-1035 label (max 63
-// chars, so the suffix can be at most 54) rather than blocking the processor
-// from starting on an out-of-range value.
+// clamped to [8, 54] rather than blocking the processor from starting on an
+// out-of-range value. The upper bound keeps "pyt-test-<suffix>" a valid
+// DNS-1035 label (max 63 chars). The lower bound guards against a
+// misconfigured short suffix: with only a few characters, two concurrent runs
+// can generate the same name, and the colliding Create is swallowed by the
+// AlreadyExists-as-own-retry assumption — both runs would silently share one
+// Deployment/Service, and the first to finish would delete it under the other.
 func runIDLength(conf *config.Config) int {
 	const prefixLen = len("pyt-test-")
-	length := conf.GetIntVar(8, 1, "Processor.pytDeployer.pytTestRunIDLength")
-	return max(1, min(length, 63-prefixLen))
+	return max(8, min(conf.GetIntVar(8, 1, "Processor.pytDeployer.pytTestRunIDLength"), 63-prefixLen))
 }
 
 // toStringMap flattens a config map (map[string]any) into map[string]string.

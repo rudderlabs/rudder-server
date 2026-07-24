@@ -3,6 +3,7 @@ package cpservice
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -250,9 +251,14 @@ func TestForward(t *testing.T) {
 				if tc.prodRoute {
 					conf.Set("Processor.pytTestOverrides.routeToProduction", map[string]any{"ws-1": true})
 				}
+				// The real forwarder returns no status code alongside an error.
+				fwdStatus := 200
+				if tc.fwdErr != nil {
+					fwdStatus = 0
+				}
 				svc := NewService(conf, logger.NOP, statsStore,
 					WithDeployer(&fakeDeployer{baseURL: "http://pyt-test-abc.ns.svc:8080"}),
-					WithForwarder(&fakeForwarder{statusCode: 200, err: tc.fwdErr}))
+					WithForwarder(&fakeForwarder{statusCode: fwdStatus, err: tc.fwdErr}))
 
 				_, err = svc.Forward(context.Background(), &proto.ForwardRequest{Op: tc.op, WorkspaceId: "ws-1"})
 				if tc.fwdErr != nil {
@@ -270,9 +276,15 @@ func TestForward(t *testing.T) {
 				require.Len(t, metrics, 1)
 				require.Equal(t, wantTags, metrics[0].Tags)
 
+				wantReqTags := stats.Tags{
+					"op":          tc.op.String(),
+					"route":       tc.wantRoute,
+					"workspaceId": "ws-1",
+					"success":     strconv.FormatBool(tc.fwdErr == nil),
+				}
 				execMetrics := statsStore.GetByName("processor_pyt_request_handle_time")
 				require.Len(t, execMetrics, 1, "the forward ran, so the request timer must have a sample too")
-				require.Equal(t, wantTags, execMetrics[0].Tags)
+				require.Equal(t, wantReqTags, execMetrics[0].Tags)
 			})
 		}
 	})

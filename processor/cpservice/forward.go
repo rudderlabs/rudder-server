@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -25,6 +27,14 @@ import (
 // pointed at either a freshly created ephemeral pyt Service or the shared
 // static AST deployment.
 type endpointForward func(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error)
+
+// route tag values for the processor_pyt_* metrics: which pyt deployment a
+// Forward request was served by.
+const (
+	routeEphemeral  = "ephemeral"  // fresh ephemeral deployment (execution ops)
+	routeProduction = "production" // the workspace's production pyt deployment (config-flagged execution ops)
+	routeStatic     = "static"     // the shared static AST deployment (AST ops)
+)
 
 // validWorkspaceID gates what Forward substitutes into the pyt URL template and
 // the pyt Deployment name. Anything beyond alphanumerics and hyphens must be
@@ -68,12 +78,12 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 		return nil, status.Error(codes.InvalidArgument, "workspaceId must be 1-59 alphanumeric or hyphen characters, starting and ending with an alphanumeric")
 	}
 
-	route := "static"
+	route := routeStatic
 	if isExecutionOp {
 		if s.isProdRouted(req.WorkspaceId) {
-			route = "production"
+			route = routeProduction
 		} else {
-			route = "ephemeral"
+			route = routeEphemeral
 		}
 	}
 	tags := stats.Tags{
@@ -85,11 +95,16 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 	// request timer itself, so on the ephemeral route it excludes the
 	// deployment creation and readiness wait (which RunOnEphemeral performs
 	// before invoking it) that the total timer includes — and a deployer
-	// failure that never invokes it produces no request sample.
+	// failure that never invokes it produces no request sample. The success
+	// tag separates unhealthy requests — transport failures (connection
+	// refused, exhausted retries) and non-200 pyt responses alike — from
+	// healthy ones, whose latencies are not comparable.
 	timedForward := func(ctx context.Context, baseURL string) (int, []byte, error) {
 		execStart := time.Now()
 		statusCode, body, err := forward(ctx, baseURL, req.WorkspaceId, req.Payload)
-		s.stat.NewTaggedStat("processor_pyt_request_handle_time", stats.TimerType, tags).Since(execStart)
+		reqTags := maps.Clone(tags)
+		reqTags["success"] = strconv.FormatBool(statusCode == http.StatusOK)
+		s.stat.NewTaggedStat("processor_pyt_request_handle_time", stats.TimerType, reqTags).Since(execStart)
 		return statusCode, body, err
 	}
 
@@ -97,7 +112,7 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 	var body []byte
 	var err error
 	switch route {
-	case "production":
+	case routeProduction:
 		// Config-flagged workspace: its tests must run with prod-only config
 		// (custom DNS, pinned egress IPs, ...) the generic ephemeral spec can't
 		// reproduce, so forward straight to the workspace's production pyt
@@ -105,7 +120,7 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 		// ride out the prod deployment's scale-from-zero window.
 		statusCode, body, err = timedForward(ctx,
 			user_transformer.PerWorkspacePyTBaseURL(s.prodURLTemplate, req.WorkspaceId))
-	case "ephemeral":
+	case routeEphemeral:
 		statusCode, body, err = s.deployer.RunOnEphemeral(ctx, req.WorkspaceId, timedForward)
 	default:
 		statusCode, body, err = timedForward(ctx, s.staticASTURL)

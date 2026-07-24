@@ -279,7 +279,11 @@ func (d *k8sDeployer) waitReady(ctx context.Context, name string) error {
 	ctx, cancel := context.WithTimeout(ctx, d.config.readinessTimeout.Load())
 	defer cancel()
 
-	ticker := time.NewTicker(d.config.readinessPollInterval.Load())
+	// The floor guards against misconfigured reloadable values: NewTicker
+	// panics on a non-positive interval, and anything shorter than 250ms
+	// would only hot-poll the k8s API.
+	interval := max(d.config.readinessPollInterval.Load(), 250*time.Millisecond)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	var lastErr error
 	for {

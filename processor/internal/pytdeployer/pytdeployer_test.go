@@ -489,6 +489,20 @@ func TestRunOnEphemeral(t *testing.T) {
 		require.EqualValues(t, 1, metrics[0].Value)
 	})
 
+	t.Run("a too-short configured runIDLength is clamped to 8, keeping concurrent run names collision-safe", func(t *testing.T) {
+		conf := baseConfig()
+		conf.Set("Processor.pytDeployer.pytTestRunIDLength", 1)
+		cs := newAutoReadyClient()
+		dep := newDeployer(t, cs, conf)
+
+		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.NoError(t, err)
+
+		require.Len(t, findCreatedDeployment(t, cs).Name, len("pyt-test-")+8,
+			"a 1-char suffix would let concurrent runs collide and silently share one Deployment/Service")
+	})
+
 	t.Run("errors without calling forward when creating the Deployment fails", func(t *testing.T) {
 		cs := newFakeClient()
 		cs.PrependReactor("create", "deployments", func(ktesting.Action) (bool, runtime.Object, error) {
@@ -673,8 +687,9 @@ func baseConfig() *config.Config {
 	conf.Set("Processor.pytDeployer.pytTestImagePullSecret", "regcred")
 	conf.Set("Processor.pytDeployer.pytTestReadinessTimeout", "5s")
 	// Pinned so tests asserting on poll counts within short readiness windows
-	// don't depend on the production default poll interval.
-	conf.Set("Processor.pytDeployer.pytTestReadinessPollInterval", "100ms")
+	// don't depend on the production default poll interval. 250ms is the
+	// effective minimum — waitReady floors anything shorter.
+	conf.Set("Processor.pytDeployer.pytTestReadinessPollInterval", "250ms")
 	return conf
 }
 
