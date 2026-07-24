@@ -68,36 +68,49 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 		return nil, status.Error(codes.InvalidArgument, "workspaceId must be 1-59 alphanumeric or hyphen characters, starting and ending with an alphanumeric")
 	}
 
+	route := "static"
+	if isExecutionOp {
+		if s.isProdRouted(req.WorkspaceId) {
+			route = "production"
+		} else {
+			route = "ephemeral"
+		}
+	}
+	tags := stats.Tags{
+		"op":          req.Op.String(),
+		"route":       route,
+		"workspaceId": req.WorkspaceId,
+	}
+	// timedForward measures just the HTTP request to the pyt pod and emits the
+	// request timer itself, so on the ephemeral route it excludes the
+	// deployment creation and readiness wait (which RunOnEphemeral performs
+	// before invoking it) that the total timer includes — and a deployer
+	// failure that never invokes it produces no request sample.
+	timedForward := func(ctx context.Context, baseURL string) (int, []byte, error) {
+		execStart := time.Now()
+		statusCode, body, err := forward(ctx, baseURL, req.WorkspaceId, req.Payload)
+		s.stat.NewTaggedStat("processor_pyt_request_handle_time", stats.TimerType, tags).Since(execStart)
+		return statusCode, body, err
+	}
+
 	var statusCode int
 	var body []byte
 	var err error
-	var route string
-	switch {
-	case isExecutionOp && s.isProdRouted(req.WorkspaceId):
+	switch route {
+	case "production":
 		// Config-flagged workspace: its tests must run with prod-only config
 		// (custom DNS, pinned egress IPs, ...) the generic ephemeral spec can't
 		// reproduce, so forward straight to the workspace's production pyt
 		// deployment. No readiness wait — the forwarder's cold-start retries
 		// ride out the prod deployment's scale-from-zero window.
-		route = "production"
-		statusCode, body, err = forward(ctx,
-			user_transformer.PerWorkspacePyTBaseURL(s.prodURLTemplate, req.WorkspaceId),
-			req.WorkspaceId, req.Payload)
-	case isExecutionOp:
-		route = "ephemeral"
-		statusCode, body, err = s.deployer.RunOnEphemeral(ctx, req.WorkspaceId,
-			func(ctx context.Context, baseURL string) (int, []byte, error) {
-				return forward(ctx, baseURL, req.WorkspaceId, req.Payload)
-			})
+		statusCode, body, err = timedForward(ctx,
+			user_transformer.PerWorkspacePyTBaseURL(s.prodURLTemplate, req.WorkspaceId))
+	case "ephemeral":
+		statusCode, body, err = s.deployer.RunOnEphemeral(ctx, req.WorkspaceId, timedForward)
 	default:
-		route = "static"
-		statusCode, body, err = forward(ctx, s.staticASTURL, req.WorkspaceId, req.Payload)
+		statusCode, body, err = timedForward(ctx, s.staticASTURL)
 	}
-	s.stat.NewTaggedStat("processor_pyt_forward_time", stats.TimerType, stats.Tags{
-		"op":          req.Op.String(),
-		"route":       route,
-		"workspaceId": req.WorkspaceId,
-	}).Since(start)
+	s.stat.NewTaggedStat("processor_pyt_forward_rpc_time", stats.TimerType, tags).Since(start)
 	if err != nil {
 		s.log.Warnn("forwarding to pyt",
 			obskit.WorkspaceID(req.WorkspaceId), logger.NewStringField("op", req.Op.String()), obskit.Error(err))
