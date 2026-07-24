@@ -416,12 +416,16 @@ func requireReports(t *testing.T, ctx context.Context, db *sql.DB, expectedRepor
 	query := `
 					SELECT
 					  workspace_id, instance_id, source_id, destination_id,
-					  in_pu, pu, status_code, status, count,
+					  in_pu, pu, status_code, status, SUM(count)::BIGINT AS count,
 					  terminal_state, initial_state, source_category, event_type
 					FROM
 					  reports
+					GROUP BY
+					  workspace_id, instance_id, source_id, destination_id,
+					  in_pu, pu, status_code, status,
+					  terminal_state, initial_state, source_category, event_type
 					ORDER BY
-					  source_id, id;
+					  source_id, MIN(id);
 				`
 	require.Eventuallyf(t, func() bool {
 		rows, err := db.QueryContext(ctx, query)
