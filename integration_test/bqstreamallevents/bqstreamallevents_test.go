@@ -609,7 +609,8 @@ func TestBQStreamAllEvents(t *testing.T) {
 		t.Log("Sending 5 events again")
 		require.NoError(t, sendEvents(5, productReviewedEventFormat, "writekey1", url))
 		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 10)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 20)
+		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 15)
+		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "failed", 5)
 
 		productReviewedRecordsFromDB := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT COUNT(*) FROM %s.product_reviewed;`, safeNamespace))
 		require.Equal(t, [][]string{{"10"}}, productReviewedRecordsFromDB)
