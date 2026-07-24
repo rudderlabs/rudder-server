@@ -65,11 +65,14 @@ type roundTripState struct {
 	req         *http.Request
 }
 
+// httpResponseCreator builds a response this transport synthesizes on an error path, rather than one
+// received from the upstream service. It carries no apiVersion header - only the transformer sets that
+// - so callers can tell a synthesized response apart from a real one by its absence.
 func httpResponseCreator(statusCode int, body []byte) *http.Response {
 	return &http.Response{
 		StatusCode: statusCode,
 		Body:       io.NopCloser(bytes.NewReader(body)),
-		Header:     http.Header{"apiVersion": []string{"2"}},
+		Header:     http.Header{},
 	}
 }
 

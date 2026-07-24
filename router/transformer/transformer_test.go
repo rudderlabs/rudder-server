@@ -701,8 +701,19 @@ type oauthv2ProxyTcs struct {
 	destination backendconfig.DestinationT
 
 	ioReadError bool
+	// expected `reason` tag on router.transformerproxy.invalid.response.
+	// Empty means the metric is not asserted for this case.
+	expectedBreachReason string
 	// load-balancer erroring out
 	lbError bool
+	// upstream HTTP status the mock transformer returns; 0 means the default 200.
+	upstreamStatusCode int
+	// body the mock returns verbatim, bypassing the {"output": ...} envelope. Used to exercise
+	// responses that have no output field at all, or an explicit null one.
+	rawBody string
+	// closes the mock transformer before the request, so Transport.RoundTrip fails and the oauth
+	// transport synthesizes the response (transport.go:294).
+	transformerUnreachable bool
 }
 
 var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
@@ -1051,9 +1062,10 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		destination: oauthDests[0],
 	},
 	{
-		description:  "[v1proxy] when transformer response body cannot be read, should have respStatus as 500, respBody should have transformer sent response",
-		proxyVersion: "v1",
-		ioReadError:  true,
+		description:          "[v1proxy] when transformer response body cannot be read, should have respStatus as 500, respBody should have transformer sent response",
+		proxyVersion:         "v1",
+		ioReadError:          true,
+		expectedBreachReason: "transport error",
 		transformerProxyResponseV1: ProxyResponseV1{
 			Message:           "some message that we got from transformer",
 			AuthErrorCategory: common.CategoryRefreshToken,
@@ -1124,17 +1136,18 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespBodys:                map[int64]string{},
 			RespContentType:          "text/plain; charset=utf-8",
-			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: , err: sonnet: unexpected EOF reading a byte`,
+			ProxyRequestResponseBody: `[TransformerProxy] response is not valid JSON: [postRoundTrip]Error reading response body: unexpected EOF`,
 			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes:          map[int64]int{},
 		},
 		destination: oauthDests[0],
 	},
 	{
-		description:  "[v1proxy] when transformer does not respond properly",
-		proxyVersion: "v1",
-		lbError:      true,
-		destType:     "salesforce_oauth", // some destination
+		description:          "[v1proxy] when transformer does not respond properly",
+		proxyVersion:         "v1",
+		lbError:              true,
+		expectedBreachReason: "transport error",
+		destType:             "salesforce_oauth", // some destination
 		reqPayload: ProxyRequestPayload{
 			PostParametersT: integrations.PostParametersT{
 				Type:          "REST",
@@ -1181,17 +1194,18 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			RespBodys:       map[int64]string{},
 			RespContentType: "text/plain; charset=utf-8",
 			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category post roundTrip: LB cannot send to transformer"
-			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: , err: sonnet: unexpected EOF reading a byte`,
+			ProxyRequestResponseBody: `[TransformerProxy] response has no output field: LB cannot send to transformer`,
 			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes:          map[int64]int{},
 		},
 		destination: oauthDests[0],
 	},
 	{
-		description:  "[v0proxy] when transformer does not respond properly",
-		proxyVersion: "v0",
-		lbError:      true,
-		destType:     "salesforce_oauth", // some destination
+		description:          "[v0proxy] when transformer does not respond properly",
+		proxyVersion:         "v0",
+		lbError:              true,
+		expectedBreachReason: "transport error",
+		destType:             "salesforce_oauth", // some destination
 		reqPayload: ProxyRequestPayload{
 			PostParametersT: integrations.PostParametersT{
 				Type:          "REST",
@@ -1232,16 +1246,17 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			RespBodys:       map[int64]string{},
 			RespContentType: "text/plain; charset=utf-8",
 			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category post roundTrip: LB cannot send to transformer"
-			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: , err: sonnet: unexpected EOF reading a byte`,
+			ProxyRequestResponseBody: `[TransformerProxy] response has no output field: LB cannot send to transformer`,
 			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes:          map[int64]int{},
 		},
 		destination: oauthDests[0],
 	},
 	{
-		description:         "[v1proxy] when v1Proxy endpoint sending v0Proxy response, unmarshal should happen at proxyAdapter.getResponse level",
-		transformerResponse: `{"message": ["some other error"]}`,
-		destType:            "salesforce_oauth", // some destination
+		description:          "[v1proxy] when v1Proxy endpoint sending v0Proxy response, unmarshal should happen at proxyAdapter.getResponse level",
+		transformerResponse:  `{"message": ["some other error"]}`,
+		expectedBreachReason: "unmarshal error",
+		destType:             "salesforce_oauth", // some destination
 		reqPayload: ProxyRequestPayload{
 			PostParametersT: integrations.PostParametersT{
 				Type:          "REST",
@@ -1396,6 +1411,423 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				4: http.StatusOK,
 				6: http.StatusBadRequest,
 			},
+		},
+		destination: oauthDests[0],
+	},
+
+	{
+		description:  "[v1proxy] when the transformer answers for a different set of jobIDs than were sent, should page with reason in out mismatch",
+		proxyVersion: "v1",
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message: "some message that we got from transformer",
+			// Two jobs were sent (see Metadata below) but the transformer only answered for job 1.
+			Response: []TPDestResponse{
+				{
+					StatusCode: http.StatusOK,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         1,
+					},
+					Error: "success",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON":       map[string]any{"key_1": "val_1"},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
+				},
+				Files: map[string]any{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         1,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         2,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{},
+		expected: ProxyRequestResponse{
+			// DontBatchDirectives is seeded from metadata; the status maps carry only the answered job.
+			DontBatchDirectives: map[int64]bool{
+				1: false,
+				2: false,
+			},
+			RespBodys:                map[int64]string{1: "success"},
+			RespContentType:          "application/json",
+			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","response":[{"statusCode":200,"error":"success","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":1}}]}`,
+			ProxyRequestStatusCode:   http.StatusOK,
+			RespStatusCodes:          map[int64]int{1: http.StatusOK},
+		},
+		destination:          oauthDests[0],
+		expectedBreachReason: "in out mismatch",
+	},
+
+	{
+		description:  "[v1proxy] when a batch carries duplicate jobIDs, the deduped set must not spuriously page as in out mismatch",
+		proxyVersion: "v1",
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message: "some message that we got from transformer",
+			// The transformer collapses the duplicate job 1 into a single response entry.
+			Response: []TPDestResponse{
+				{
+					StatusCode: http.StatusOK,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         1,
+					},
+					Error: "success",
+				},
+				{
+					StatusCode: http.StatusOK,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         2,
+					},
+					Error: "success",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON":       map[string]any{"key_1": "val_1"},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
+				},
+				Files: map[string]any{},
+			},
+			// Job 1 twice is a legitimate batch; deduped the sets match, so this must not page.
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         1,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         1,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         2,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{
+				1: false,
+				2: false,
+			},
+			RespBodys: map[int64]string{
+				1: "success",
+				2: "success",
+			},
+			RespContentType:          "application/json",
+			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","response":[{"statusCode":200,"error":"success","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":1}},{"statusCode":200,"error":"success","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":2}}]}`,
+			ProxyRequestStatusCode:   http.StatusOK,
+			RespStatusCodes: map[int64]int{
+				1: http.StatusOK,
+				2: http.StatusOK,
+			},
+		},
+		destination: oauthDests[0],
+		// No breach: expectedBreachReason stays empty, so the runner asserts zero metrics were emitted.
+	},
+
+	{
+		description:        "[v1proxy] when the transformer returns a 5xx that still carries a usable output, per-job results are applied and it does not page",
+		proxyVersion:       "v1",
+		upstreamStatusCode: http.StatusBadGateway, // 502, but the body is a real, parseable transformer response
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message: "some message that we got from transformer",
+			Response: []TPDestResponse{
+				{
+					StatusCode: http.StatusOK,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         1,
+					},
+					Error: "success",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON":       map[string]any{"key_1": "val_1"},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
+				},
+				Files: map[string]any{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         1,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{},
+		expected: ProxyRequestResponse{
+			// The output parsed, so per-job status is applied and the 502 preserved. A short-circuit on
+			// status would drop these and return empty maps.
+			DontBatchDirectives:      map[int64]bool{1: false},
+			RespBodys:                map[int64]string{1: "success"},
+			RespContentType:          "application/json",
+			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","response":[{"statusCode":200,"error":"success","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":1}}]}`,
+			ProxyRequestStatusCode:   http.StatusBadGateway,
+			RespStatusCodes:          map[int64]int{1: http.StatusOK},
+		},
+		destination: oauthDests[0],
+		// No breach: a 5xx that carries a usable output is not an infra failure we page on.
+	},
+
+	{
+		// The jobID sets match, so only the entry-count check can catch this.
+		description:          "[v1proxy] when the transformer answers twice for the same jobID, should page with reason in out mismatch",
+		proxyVersion:         "v1",
+		expectedBreachReason: "in out mismatch",
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message: "some message that we got from transformer",
+			Response: []TPDestResponse{
+				{
+					StatusCode: http.StatusOK,
+					Metadata:   ProxyRequestMetadata{WorkspaceID: "workspace_id", DestinationID: "destination_id", JobID: 1},
+					Error:      "first",
+				},
+				{
+					StatusCode: http.StatusOK,
+					Metadata:   ProxyRequestMetadata{WorkspaceID: "workspace_id", DestinationID: "destination_id", JobID: 2},
+					Error:      "success",
+				},
+				{
+					StatusCode: http.StatusInternalServerError,
+					Metadata:   ProxyRequestMetadata{WorkspaceID: "workspace_id", DestinationID: "destination_id", JobID: 1},
+					Error:      "second",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON":       map[string]any{"key_1": "val_1"},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
+				},
+				Files: map[string]any{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{WorkspaceID: "workspace_id", DestinationID: "destination_id", JobID: 1},
+				{WorkspaceID: "workspace_id", DestinationID: "destination_id", JobID: 2},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{1: false, 2: false},
+			// Job 1's first status is gone - last write wins.
+			RespBodys:                map[int64]string{1: "second", 2: "success"},
+			RespContentType:          "application/json",
+			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","response":[{"statusCode":200,"error":"first","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":1}}]}`,
+			ProxyRequestStatusCode:   http.StatusOK,
+			RespStatusCodes:          map[int64]int{1: http.StatusInternalServerError, 2: http.StatusOK},
+		},
+		destination: oauthDests[0],
+	},
+
+	{
+		// v0 counterpart of the v1 null case. Before this PR v0 assigned respCode to every job, so a 200
+		// carrying a null output marked the batch delivered; now the jobs fail and retry.
+		description:          "[v0proxy] when the response output is explicitly null, should page with reason missing output",
+		proxyVersion:         "v0",
+		rawBody:              `{"output":null}`,
+		expectedBreachReason: "missing output",
+		destType:             "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON":       map[string]any{"key_1": "val_1"},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
+				},
+				Files: map[string]any{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{WorkspaceID: "workspace_id", DestinationID: "destination_id", JobID: 1},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives:      map[int64]bool{1: false},
+			RespBodys:                map[int64]string{},
+			RespContentType:          "text/plain; charset=utf-8",
+			ProxyRequestResponseBody: `[TransformerProxy] response has no output field:`,
+			ProxyRequestStatusCode:   http.StatusOK,
+			RespStatusCodes:          map[int64]int{},
+		},
+		destination: oauthDests[0],
+	},
+
+	{
+		// Pins transport.go:294 - RoundTrip fails, the oauth transport synthesizes the response, and the
+		// marker keeps it off the breach signal.
+		description:            "[v1proxy] when the transformer is unreachable, should report reason transport error",
+		proxyVersion:           "v1",
+		transformerUnreachable: true,
+		expectedBreachReason:   "transport error",
+		destType:               "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON":       map[string]any{"key_1": "val_1"},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
+				},
+				Files: map[string]any{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{WorkspaceID: "workspace_id", DestinationID: "destination_id", JobID: 1},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives:      map[int64]bool{1: false},
+			RespBodys:                map[int64]string{},
+			RespContentType:          "text/plain; charset=utf-8",
+			ProxyRequestResponseBody: `[TransformerProxy] response is not valid JSON:`,
+			ProxyRequestStatusCode:   http.StatusInternalServerError,
+			RespStatusCodes:          map[int64]int{},
+		},
+		destination: oauthDests[0],
+	},
+
+	{
+		description:          "[v1proxy] when the response body has no output field, should page with reason missing output",
+		proxyVersion:         "v1",
+		rawBody:              `{"message":"transformer said something without an output field"}`,
+		expectedBreachReason: "missing output",
+		destType:             "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON":       map[string]any{"key_1": "val_1"},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
+				},
+				Files: map[string]any{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{WorkspaceID: "workspace_id", DestinationID: "destination_id", JobID: 1},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives:      map[int64]bool{1: false},
+			RespBodys:                map[int64]string{},
+			RespContentType:          "text/plain; charset=utf-8",
+			ProxyRequestResponseBody: `[TransformerProxy] response has no output field:`,
+			ProxyRequestStatusCode:   http.StatusInternalServerError,
+			RespStatusCodes:          map[int64]int{},
+		},
+		destination: oauthDests[0],
+	},
+
+	{
+		// Pins the output.Type == gjson.Null half of the guard.
+		description:          "[v1proxy] when the response output is explicitly null, should page with reason missing output",
+		proxyVersion:         "v1",
+		rawBody:              `{"output":null}`,
+		expectedBreachReason: "missing output",
+		destType:             "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON":       map[string]any{"key_1": "val_1"},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
+				},
+				Files: map[string]any{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{WorkspaceID: "workspace_id", DestinationID: "destination_id", JobID: 1},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives:      map[int64]bool{1: false},
+			RespBodys:                map[int64]string{},
+			RespContentType:          "text/plain; charset=utf-8",
+			ProxyRequestResponseBody: `[TransformerProxy] response has no output field:`,
+			ProxyRequestStatusCode:   http.StatusOK,
+			RespStatusCodes:          map[int64]int{},
 		},
 		destination: oauthDests[0],
 	},
@@ -1647,15 +2079,16 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 	for _, tc := range oauthv2ProxyTestCases {
 		t.Run(tc.description, func(t *testing.T) {
 			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
 				b := []byte("LB cannot send to transformer")
 				statusCode := http.StatusBadGateway
 				var err error
 				if tc.lbError {
+					// An LB/ingress error page never reached the transformer, so it carries no apiVersion.
 					w.WriteHeader(statusCode)
 					_, _ = w.Write(b)
 					return
 				}
+				w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
 				switch tc.proxyVersion {
 				case "v1":
 					b, _ = jsonrs.Marshal(tc.transformerProxyResponseV1)
@@ -1665,6 +2098,13 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 					b = []byte(tc.transformerResponse)
 				}
 				outputJson, _ := sjson.SetRawBytes([]byte(`{}`), "output", b)
+				if tc.rawBody != "" {
+					outputJson = []byte(tc.rawBody)
+				}
+				// Lets a case return a real transformer body under a chosen upstream status.
+				if tc.upstreamStatusCode != 0 {
+					w.WriteHeader(tc.upstreamStatusCode)
+				}
 				if tc.ioReadError {
 					w.Header().Add("Content-Length", strconv.Itoa(len(string(outputJson))+10))
 					// return less bytes, which will result in an "unexpected EOF" from ioutil.ReadAll()
@@ -1692,10 +2132,14 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 
 			tr := NewTransformer("destType", time.Minute, time.Minute, mockBackendConfig, expTimeDiff, nil, config.New())
 
+			statsStore, statsErr := memstats.New()
+			require.NoError(t, statsErr)
+			tr.(*handle).stats = statsStore
+
 			var adapter transformerProxyAdapter
-			adapter = NewTransformerProxyAdapter("v1", loggerOverride)
+			adapter = NewTransformerProxyAdapter("v1")
 			if tc.proxyVersion == "v0" {
-				adapter = NewTransformerProxyAdapter("v0", loggerOverride)
+				adapter = NewTransformerProxyAdapter("v0")
 			}
 
 			dest := tc.destination
@@ -1705,6 +2149,10 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 				DestName:     tc.destType,
 				Adapter:      adapter,
 				Destination:  &dest,
+			}
+
+			if tc.transformerUnreachable {
+				svr.Close()
 			}
 
 			proxyResp := tr.ProxyRequest(context.Background(), reqParams)
@@ -1726,6 +2174,19 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 			} else {
 				require.Contains(t, proxyResp.ProxyRequestResponseBody, tc.expected.ProxyRequestResponseBody)
 			}
+
+			// Exactly one reason per breach, and none at all for a healthy response - so a spurious page
+			// is caught, not just a mislabel.
+			var expectedReasons []string
+			if tc.expectedBreachReason != "" {
+				expectedReasons = []string{tc.expectedBreachReason}
+			}
+			breaches := statsStore.GetByName("router.transformerproxy.invalid.response")
+			reasons := make([]string, 0, len(breaches))
+			for _, b := range breaches {
+				reasons = append(reasons, b.Tags["reason"])
+			}
+			require.ElementsMatch(t, expectedReasons, reasons)
 		})
 	}
 }

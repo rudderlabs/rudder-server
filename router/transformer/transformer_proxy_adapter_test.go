@@ -5,20 +5,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 )
 
 func TestV0Adapter(t *testing.T) {
-	v0Adapter := NewTransformerProxyAdapter(transformer.V0, logger.NOP)
+	v0Adapter := NewTransformerProxyAdapter(transformer.V0)
 
 	t.Run("should return the right url", func(t *testing.T) {
 		testDestType := "testDestType"
@@ -129,10 +127,7 @@ func TestV0Adapter(t *testing.T) {
 }
 
 func TestV1Adapter(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockLogger := mock_logger.NewMockLogger(ctrl)
-
-	v1Adapter := NewTransformerProxyAdapter(transformer.V1, mockLogger)
+	v1Adapter := NewTransformerProxyAdapter(transformer.V1)
 
 	t.Run("should return the right url", func(t *testing.T) {
 		testDestType := "testDestType"
@@ -230,7 +225,7 @@ func TestV1Adapter(t *testing.T) {
 		require.Equal(t, "oauth123", response.authErrorCategory)
 	})
 
-	t.Run("should produce warning log when in and out jobIDs mismatch", func(t *testing.T) {
+	t.Run("should map every response entry by its jobID, including jobIDs not in the request", func(t *testing.T) {
 		metadata := []ProxyRequestMetadata{
 			{
 				JobID:     11,
@@ -274,10 +269,14 @@ func TestV1Adapter(t *testing.T) {
 		r, err := jsonrs.Marshal(resp)
 		require.Nil(t, err)
 
-		mockLogger.EXPECT().Warnn(gomock.Any(), gomock.Any()).Times(1)
-
 		response, err := v1Adapter.getResponse(r, 200, metadata)
 		require.Nil(t, err)
+
+		// The keys of routerJobResponseCodes are the response's jobID set - what ProxyRequest compares
+		// against the request's jobIDs to detect an "in out mismatch". jobID 31 is in the response but
+		// not the request, so it is mapped and shows up in that set.
+		require.ElementsMatch(t, []int64{11, 21, 31}, lo.Keys(response.routerJobResponseCodes))
+
 		require.Equal(t, 3, len(response.routerJobResponseCodes))
 		require.Equal(t, 3, len(response.routerJobResponseBodys))
 		require.Equal(t, 3, len(response.routerJobDontBatchDirectives))
@@ -296,6 +295,40 @@ func TestV1Adapter(t *testing.T) {
 
 		require.Equal(t, "oauth123", response.authErrorCategory)
 	})
+
+	// A batch can carry the same JobID more than once, and the transformer may either collapse the
+	// duplicates or echo one entry per input item. Either way the response map is keyed by jobID, so
+	// its keys are the deduped response set - the caller then compares that against the deduped request
+	// jobIDs, so a duplicate batch is never a spurious "in out mismatch" page.
+	for _, tc := range []struct {
+		name          string
+		responseJobID []int64
+	}{
+		{name: "transformer collapses duplicate jobIDs", responseJobID: []int64{11, 21}},
+		{name: "transformer echoes duplicate jobIDs", responseJobID: []int64{11, 11, 21}},
+	} {
+		t.Run("should key the response map by the deduped set when the "+tc.name, func(t *testing.T) {
+			metadata := []ProxyRequestMetadata{
+				{JobID: 11, DontBatch: false},
+				{JobID: 11, DontBatch: false},
+				{JobID: 21, DontBatch: false},
+			}
+			resp := ProxyResponseV1{Message: "test"}
+			for _, jobID := range tc.responseJobID {
+				resp.Response = append(resp.Response, TPDestResponse{
+					StatusCode: 200,
+					Metadata:   ProxyRequestMetadata{JobID: jobID},
+				})
+			}
+			r, err := jsonrs.Marshal(resp)
+			require.Nil(t, err)
+
+			response, err := v1Adapter.getResponse(r, 200, metadata)
+			require.Nil(t, err)
+
+			require.ElementsMatch(t, []int64{11, 21}, lo.Keys(response.routerJobResponseCodes))
+		})
+	}
 
 	t.Run("should return the unmarshal error", func(t *testing.T) {
 		metadata := []ProxyRequestMetadata{
@@ -338,7 +371,7 @@ func TestProxyPayloadCarriesDestinationVersion(t *testing.T) {
 
 	for _, version := range []string{transformer.V0, transformer.V1} {
 		t.Run(version, func(t *testing.T) {
-			payload, err := NewTransformerProxyAdapter(version, logger.NOP).getPayload(params)
+			payload, err := NewTransformerProxyAdapter(version).getPayload(params)
 			require.NoError(t, err)
 
 			var got struct {
