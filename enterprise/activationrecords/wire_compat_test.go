@@ -92,7 +92,9 @@ func TestWireCompat(t *testing.T) {
 		}),
 	}
 
-	reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, map[string]string{"src-1": "warehouse"})
+	reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, map[string]SourceMetadata{
+		"src-1": {Category: "warehouse", Name: "snowflake"},
+	})
 	require.Len(t, reports, 1)
 
 	// The reporter must resolve the full grain from the gateway's actual on-the-wire

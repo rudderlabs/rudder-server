@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
@@ -18,7 +19,7 @@ import (
 func TestUniqueActivationRecordsReporter(t *testing.T) {
 	// prepareJob builds a job with the standard activation payload shape. The Parameters
 	// intentionally omit source_category: on the internal-batch ingestion path it is empty,
-	// and the reporter classifies reverse-ETL sources from the config map (categoriesByID
+	// and the reporter classifies reverse-ETL sources from the config map (metadataByID
 	// below), not the param.
 	prepareJob := func(sourceID, destinationID, fingerprint, origin, workspaceID string) *jobsdb.JobT {
 		return &jobsdb.JobT{
@@ -43,13 +44,14 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 		}
 	}
 
-	// categoriesByID maps source_id -> SourceDefinition.Category, mirroring the map the
-	// processor passes from the backend config. "src1" is a reverse-ETL (warehouse)
-	// source; "src-eventstream" is not. Unknown source_ids resolve to "" and are treated
-	// as non-rETL.
-	categoriesByID := map[string]string{
-		"src1":            "warehouse",
-		"src-eventstream": "eventStream",
+	// metadataByID maps source_id -> SourceDefinition metadata, mirroring the map the
+	// processor passes from the backend config. "src1" is a reverse-ETL SQL warehouse
+	// source; "src-eventstream" is not. Unknown source_ids resolve to zero-value metadata
+	// and are treated as non-rETL.
+	metadataByID := map[string]SourceMetadata{
+		"src1":            {Category: "warehouse", Name: "Snowflake"},
+		"src-eventstream": {Category: "eventStream", Name: "javascript"},
+		"src-s3":          {Category: "warehouse", Name: "s3"},
 	}
 
 	t.Run("constructor validates HLL settings", func(t *testing.T) {
@@ -92,7 +94,7 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 				},
 			},
 			{
-				name: "missing fingerprint - skip",
+				name: "allow-listed warehouse missing fingerprint - skip",
 				jobs: []*jobsdb.JobT{
 					prepareJob("src1", "dst1", "", "org1", "ws1"),
 				},
@@ -132,6 +134,15 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 						CustomVal:    "GW",
 						WorkspaceId:  "ws1",
 					},
+				},
+				verify: func(t *testing.T, reports []*ActivationRecord) {
+					require.Empty(t, reports)
+				},
+			},
+			{
+				name: "warehouse source not in allow-list - skip silently even with fingerprint",
+				jobs: []*jobsdb.JobT{
+					prepareJob("src-s3", "dst1", "fp-cloud-storage", "org1", "ws1"),
 				},
 				verify: func(t *testing.T, reports []*ActivationRecord) {
 					require.Empty(t, reports)
@@ -204,10 +215,62 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				reports := reporter.GenerateReportsFromJobs(tc.jobs, categoriesByID)
+				reports := reporter.GenerateReportsFromJobs(tc.jobs, metadataByID)
 				tc.verify(t, reports)
 			})
 		}
+	})
+
+	t.Run("GenerateReportsFromJobs_SourceDefinitionGateStats", func(t *testing.T) {
+		t.Run("warehouse source not in allow-list skips silently without missing fingerprint stat", func(t *testing.T) {
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			reporter, err := NewUniqueActivationRecordsReporter(logger.NOP, config.New(), statsStore)
+			require.NoError(t, err)
+
+			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{
+				prepareJob("src-s3", "dst1", "", "org1", "ws1"),
+			}, metadataByID)
+
+			require.Empty(t, reports)
+			require.Empty(t, statsStore.GetByName("activation_records_skipped"))
+		})
+
+		t.Run("allow-listed warehouse missing fingerprint increments missing_fingerprint", func(t *testing.T) {
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			reporter, err := NewUniqueActivationRecordsReporter(logger.NOP, config.New(), statsStore)
+			require.NoError(t, err)
+
+			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{
+				prepareJob("src1", "dst1", "", "org1", "ws1"),
+			}, metadataByID)
+
+			require.Empty(t, reports)
+			metric := statsStore.Get("activation_records_skipped", stats.Tags{"reason": "missing_fingerprint"})
+			require.NotNil(t, metric)
+			require.Equal(t, float64(1), metric.LastValue())
+		})
+
+		t.Run("allow-list config changes are observed without reconstructing reporter", func(t *testing.T) {
+			conf := config.New()
+			conf.Set("ActivationRecords.allowedSourceDefinitionNames", []string{"snowflake"})
+			reporter, err := NewUniqueActivationRecordsReporter(logger.NOP, conf, stats.NOP)
+			require.NoError(t, err)
+
+			customMetadataByID := map[string]SourceMetadata{
+				"src-custom": {Category: "warehouse", Name: "custom_sql"},
+			}
+			job := prepareJob("src-custom", "dst1", "fp1", "org1", "ws1")
+
+			require.Empty(t, reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, customMetadataByID))
+
+			conf.Set("ActivationRecords.allowedSourceDefinitionNames", []string{"custom_sql"})
+
+			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, customMetadataByID)
+			require.Len(t, reports, 1)
+			require.Equal(t, uint64(1), reports[0].FingerprintHll.Cardinality())
+		})
 	})
 
 	t.Run("GenerateReportsFromJobs_MultiEventBatch", func(t *testing.T) {
@@ -231,7 +294,7 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 
 		t.Run("two distinct fingerprints in same batch => cardinality 2", func(t *testing.T) {
 			job := prepareTwoEventJob("src1", "dst1", "fp-1", "fp-2", "org1", "ws1")
-			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, categoriesByID)
+			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, metadataByID)
 			require.Len(t, reports, 1)
 			require.Equal(t, "org1", reports[0].Origin)
 			require.NotNil(t, reports[0].FingerprintHll)
@@ -248,7 +311,7 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 				CustomVal:    "GW",
 				WorkspaceId:  "ws1",
 			}
-			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, categoriesByID)
+			reports := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, metadataByID)
 			require.Len(t, reports, 1)
 			require.Equal(t, uint64(1), reports[0].FingerprintHll.Cardinality())
 		})
@@ -271,11 +334,11 @@ func TestUniqueActivationRecordsReporter(t *testing.T) {
 
 		job := prepareJob("src1", "dst1", "fp1", "org1", "ws1")
 
-		first := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, categoriesByID)
+		first := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, metadataByID)
 		require.Len(t, first, 1)
 		require.Equal(t, uint64(1), first[0].FingerprintHll.Cardinality())
 
-		second := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, categoriesByID)
+		second := reporter.GenerateReportsFromJobs([]*jobsdb.JobT{job}, metadataByID)
 		require.Len(t, second, 1)
 		require.Equal(t, uint64(1), second[0].FingerprintHll.Cardinality())
 
