@@ -984,13 +984,21 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 		if respStatusCode == utilTypes.FilterEventCode {
 			status.JobState = jobsdb.Filtered.State
 		}
+		// For 296 (Delivered with Warning) report the transformed delivery body actually sent to
+		// the destination, so the warnings UX can surface it. Gated by a per-destType kill-switch;
+		// every other success code keeps reporting the router input payload unchanged.
+		successPayload := inputPayload
+		if respStatusCode == utilTypes.DeliveredWithWarningCode && w.rt.store296DeliveryPayload.Load() {
+			successPayload = destinationJob.Message
+			status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "payloadStage", "delivery")
+		}
 		w.logger.Debugn("sending success status to response")
 		w.rt.responseQ <- workerJobStatus{
 			userID:     destinationJobMetadata.UserID,
 			worker:     w,
 			job:        destinationJobMetadata.JobT,
 			status:     status,
-			payload:    inputPayload,
+			payload:    successPayload,
 			statTags:   destinationJob.StatTags,
 			parameters: destinationJobMetadata.Parameters,
 		}
