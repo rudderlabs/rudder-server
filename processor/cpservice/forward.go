@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/user_transformer"
@@ -70,6 +71,7 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 	var statusCode int
 	var body []byte
 	var err error
+	var route string
 	switch {
 	case isExecutionOp && s.isProdRouted(req.WorkspaceId):
 		// Config-flagged workspace: its tests must run with prod-only config
@@ -77,17 +79,25 @@ func (s *Service) Forward(ctx context.Context, req *proto.ForwardRequest) (*prot
 		// reproduce, so forward straight to the workspace's production pyt
 		// deployment. No readiness wait — the forwarder's cold-start retries
 		// ride out the prod deployment's scale-from-zero window.
+		route = "production"
 		statusCode, body, err = forward(ctx,
 			user_transformer.PerWorkspacePyTBaseURL(s.prodURLTemplate, req.WorkspaceId),
 			req.WorkspaceId, req.Payload)
 	case isExecutionOp:
+		route = "ephemeral"
 		statusCode, body, err = s.deployer.RunOnEphemeral(ctx, req.WorkspaceId,
 			func(ctx context.Context, baseURL string) (int, []byte, error) {
 				return forward(ctx, baseURL, req.WorkspaceId, req.Payload)
 			})
 	default:
+		route = "static"
 		statusCode, body, err = forward(ctx, s.staticASTURL, req.WorkspaceId, req.Payload)
 	}
+	s.stat.NewTaggedStat("processor_pyt_forward_time", stats.TimerType, stats.Tags{
+		"op":          req.Op.String(),
+		"route":       route,
+		"workspaceId": req.WorkspaceId,
+	}).Since(start)
 	if err != nil {
 		s.log.Warnn("forwarding to pyt",
 			obskit.WorkspaceID(req.WorkspaceId), logger.NewStringField("op", req.Op.String()), obskit.Error(err))

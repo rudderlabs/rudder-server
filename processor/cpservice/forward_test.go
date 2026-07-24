@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	proto "github.com/rudderlabs/rudder-server/proto/processor"
 )
@@ -200,7 +201,7 @@ func TestForward(t *testing.T) {
 		// No WithDeployer override: NewService tries to build a real k8s-backed
 		// deployer, which fails outside a cluster/without a kubeconfig, and
 		// falls back to unavailableDeployer.
-		svc := NewService(conf, logger.NOP, nil, WithForwarder(fwd))
+		svc := NewService(conf, logger.NOP, stats.NOP, WithForwarder(fwd))
 
 		_, err := svc.Forward(context.Background(), &proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: "ws-1"})
 		require.Equal(t, codes.FailedPrecondition, status.Code(err),
@@ -225,6 +226,66 @@ func TestForward(t *testing.T) {
 		svc := newService(t, nil, deployer, &fakeForwarder{err: errors.New("connection refused")})
 		_, err := svc.Forward(context.Background(), &proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: "ws-1"})
 		require.Equal(t, codes.Unavailable, status.Code(err))
+	})
+
+	t.Run("emits a forward-time metric tagged by op, route and workspace", func(t *testing.T) {
+		cases := []struct {
+			name      string
+			op        proto.Op
+			prodRoute bool
+			fwdErr    error
+			wantRoute string
+		}{
+			{"execution op on an ephemeral deployment", proto.Op_OP_TEST, false, nil, "ephemeral"},
+			{"execution op routed to production", proto.Op_OP_TEST_RUN, true, nil, "production"},
+			{"AST op on the static deployment", proto.Op_OP_TEST_LIBRARY, false, nil, "static"},
+			{"emitted on a failed forward too", proto.Op_OP_TEST, false, errors.New("connection refused"), "ephemeral"},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				statsStore, err := memstats.New()
+				require.NoError(t, err)
+				conf := config.New()
+				conf.Set("Processor.pytTestStaticASTURL", staticASTURL)
+				if tc.prodRoute {
+					conf.Set("Processor.pytTestOverrides.routeToProduction", map[string]any{"ws-1": true})
+				}
+				svc := NewService(conf, logger.NOP, statsStore,
+					WithDeployer(&fakeDeployer{baseURL: "http://pyt-test-abc.ns.svc:8080"}),
+					WithForwarder(&fakeForwarder{statusCode: 200, err: tc.fwdErr}))
+
+				_, err = svc.Forward(context.Background(), &proto.ForwardRequest{Op: tc.op, WorkspaceId: "ws-1"})
+				if tc.fwdErr != nil {
+					require.Error(t, err)
+				} else {
+					require.NoError(t, err)
+				}
+
+				metrics := statsStore.GetByName("processor_pyt_forward_time")
+				require.Len(t, metrics, 1)
+				require.Equal(t, stats.Tags{
+					"op":          tc.op.String(),
+					"route":       tc.wantRoute,
+					"workspaceId": "ws-1",
+				}, metrics[0].Tags)
+			})
+		}
+	})
+
+	t.Run("no forward-time metric when the request is rejected before forwarding", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		conf := config.New()
+		conf.Set("Processor.pytTestStaticASTURL", staticASTURL)
+		svc := NewService(conf, logger.NOP, statsStore,
+			WithDeployer(&fakeDeployer{}), WithForwarder(&fakeForwarder{}))
+
+		_, err = svc.Forward(context.Background(), &proto.ForwardRequest{Op: proto.Op_OP_UNSPECIFIED, WorkspaceId: "ws-1"})
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+		_, err = svc.Forward(context.Background(), &proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: "a@evil.com#"})
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+		require.Empty(t, statsStore.GetByName("processor_pyt_forward_time"))
 	})
 }
 
@@ -288,5 +349,5 @@ func newService(t *testing.T, conf *config.Config, deployer *fakeDeployer, fwd F
 		conf = config.New()
 	}
 	conf.Set("Processor.pytTestStaticASTURL", staticASTURL)
-	return NewService(conf, logger.NOP, nil, WithDeployer(deployer), WithForwarder(fwd))
+	return NewService(conf, logger.NOP, stats.NOP, WithDeployer(deployer), WithForwarder(fwd))
 }

@@ -35,6 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
 // Cross-component label contract. The reaper CronJob (INFRA-2) and the RBAC
@@ -52,6 +53,12 @@ const (
 	LabelPurposeValue = "pyt-test"
 	// LabelWorkspaceID carries the (lowercased) workspace ID for traceability.
 	LabelWorkspaceID = "rudderstack.com/workspace-id"
+	// LabelRunName carries the per-run object name. It is what keeps concurrent
+	// runs disjoint: without it, all runs for a workspace share the same label
+	// set, so every run's Service selects every run's pods and a request can be
+	// routed to another run's pod — which gets deleted when that run finishes,
+	// killing the request mid-flight ("Subprocess died (exit code -15)").
+	LabelRunName = "rudderstack.com/run"
 
 	// defaultTolerationsJSON mirrors the prod pyt chart's kata.tolerations: the
 	// Kata nodepool is tainted, and without this toleration the pod stays Pending
@@ -91,9 +98,10 @@ func WithClientset(client kubernetes.Interface) Opt {
 // surface as pods stuck in ImagePullBackOff at request time. Failing here
 // instead makes the misconfiguration visible at startup, and cpservice maps
 // it to FailedPrecondition for execution ops.
-func New(conf *config.Config, log logger.Logger, opts ...Opt) (Deployer, error) {
+func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) (Deployer, error) {
 	d := &k8sDeployer{
 		log:    log.Child("pytdeployer"),
+		stat:   stat,
 		config: loadConfig(conf),
 	}
 	for _, opt := range opts {
