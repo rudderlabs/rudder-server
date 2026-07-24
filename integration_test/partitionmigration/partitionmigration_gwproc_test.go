@@ -3,6 +3,7 @@ package partitionmigration_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -63,6 +64,11 @@ func TestPartitionMigrationGatewayProcessorMode(t *testing.T) {
 		{name: "legacy_no_jobsdb_fanout", extraStressWorkspaces: 0, restartProcessorEvery: 25 * time.Second, jobsDBFanoutEnabled: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// Keep the default package unit job within its timeout; full gw/proc stress and legacy
+			// compatibility variants still run in the explicit slow-test mode.
+			if os.Getenv("SLOW") != "1" && (tc.extraStressWorkspaces >= 1000 || !tc.jobsDBFanoutEnabled) {
+				t.Skip("skipping slow gateway-processor partition migration variant; set SLOW=1 to run")
+			}
 			testPartitionMigrationGatewayProcessorMode(t, tc.extraStressWorkspaces, tc.restartProcessorEvery, tc.jobsDBFanoutEnabled)
 		})
 	}
