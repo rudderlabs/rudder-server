@@ -25,13 +25,8 @@ import (
 )
 
 const (
-	pytContainerPort      = 8080
-	pytMetricsPort        = 9091
-	runIDLength           = 8
-	readinessPollInterval = 250 * time.Millisecond
-	// deleteTimeout bounds the best-effort cleanup so it can't hang the
-	// request past its own deadline even when ctx is already cancelled.
-	deleteTimeout = 15 * time.Second
+	pytContainerPort = 8080
+	pytMetricsPort   = 9091
 )
 
 type k8sDeployer struct {
@@ -49,7 +44,7 @@ func (d *k8sDeployer) RunOnEphemeral(
 	if d.config.namespace == "" {
 		return 0, nil, errors.New("pyt test namespace is not configured")
 	}
-	name := "pyt-test-" + rand.String(runIDLength)
+	name := "pyt-test-" + rand.String(d.config.runIDLength)
 	dep, svc := d.buildResources(name, workspaceID)
 
 	if _, err := withRetry(ctx, d.config.retry, func() (*appsv1.Deployment, error) {
@@ -267,7 +262,7 @@ func (d *k8sDeployer) waitReady(ctx context.Context, name string) error {
 	ctx, cancel := context.WithTimeout(ctx, d.config.readinessTimeout.Load())
 	defer cancel()
 
-	ticker := time.NewTicker(readinessPollInterval)
+	ticker := time.NewTicker(d.config.readinessPollInterval.Load())
 	defer ticker.Stop()
 	var lastErr error
 	for {
@@ -297,7 +292,7 @@ func (d *k8sDeployer) waitReady(ctx context.Context, name string) error {
 // cancellation, so cleanup still gets a chance to run when ctx is already
 // done (deadline exceeded, caller gone).
 func (d *k8sDeployer) delete(ctx context.Context, name string) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deleteTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), d.config.deleteTimeout.Load())
 	defer cancel()
 
 	var errs []error
