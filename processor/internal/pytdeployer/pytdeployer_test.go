@@ -672,6 +672,9 @@ func baseConfig() *config.Config {
 	conf.Set("Processor.pytDeployer.pytTestImage", "pytransformer/pyt:latest")
 	conf.Set("Processor.pytDeployer.pytTestImagePullSecret", "regcred")
 	conf.Set("Processor.pytDeployer.pytTestReadinessTimeout", "5s")
+	// Pinned so tests asserting on poll counts within short readiness windows
+	// don't depend on the production default poll interval.
+	conf.Set("Processor.pytDeployer.pytTestReadinessPollInterval", "100ms")
 	return conf
 }
 
