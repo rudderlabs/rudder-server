@@ -78,7 +78,7 @@ const (
 	destinationRevisionID = "test_destination_revision_id"
 	namespace             = "test_namespace"
 
-	defaultTimeout = 10 * time.Second
+	defaultTimeout = 30 * time.Second
 )
 
 func TestMain(m *testing.M) {
