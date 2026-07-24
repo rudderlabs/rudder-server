@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"testing/iotest"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -685,6 +686,78 @@ func TestWebhookRequestHandlerWithRetries(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Result().StatusCode)
 		_ = webhookHandler.Shutdown()
 	})
+}
+
+func TestWebhookRequestHandlerSourceNotRegistered(t *testing.T) {
+	initWebhook()
+
+	ctrl := gomock.NewController(t)
+	mockGW := mockWebhook.NewMockGateway(ctrl)
+
+	conf := config.New()
+	conf.Set("Gateway.webhookV2HandlerEnabled", false)
+
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, conf, newSourceStatReporter)
+	t.Cleanup(func() { _ = webhookHandler.Shutdown() })
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/webhook", bytes.NewBufferString(sampleJson))
+	w := httptest.NewRecorder()
+	reqCtx := context.WithValue(req.Context(), gwtypes.CtxParamCallType, "webhook")
+	reqCtx = context.WithValue(reqCtx, gwtypes.CtxParamAuthRequestContext, &gwtypes.AuthRequestContext{
+		SourceDefName: sourceDefName,
+	})
+
+	// sourceDefName was never registered — must not block, must return 503
+	webhookHandler.RequestHandler(w, req.WithContext(reqCtx))
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Result().StatusCode)
+	assert.Contains(t, w.Body.String(), response.ServiceUnavailable)
+}
+
+func TestWebhookRequestHandlerRequestContextCancellation(t *testing.T) {
+	initWebhook()
+
+	ctrl := gomock.NewController(t)
+	mockGW := mockWebhook.NewMockGateway(ctrl)
+
+	// sourceTransformAdapter blocks until cleanup so the batcher can never respond.
+	blocked := make(chan struct{})
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, config.Default, newSourceStatReporter, func(bt *batchWebhookTransformerT) {
+		bt.sourceTransformAdapter = func(_ context.Context) (sourceTransformAdapter, error) {
+			<-blocked
+			return nil, errors.New("unreachable")
+		}
+	})
+	t.Cleanup(func() {
+		close(blocked)
+		_ = webhookHandler.Shutdown()
+	})
+
+	webhookHandler.Register(sourceDefName)
+
+	// Use a short-deadline context: expires well before the blocked adapter returns.
+	reqCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	reqCtx = context.WithValue(reqCtx, gwtypes.CtxParamCallType, "webhook")
+	reqCtx = context.WithValue(reqCtx, gwtypes.CtxParamAuthRequestContext, &gwtypes.AuthRequestContext{
+		SourceDefName: sourceDefName,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/webhook", bytes.NewBufferString(sampleJson))
+	w := httptest.NewRecorder()
+
+	handlerDone := make(chan struct{})
+	go func() {
+		defer close(handlerDone)
+		webhookHandler.RequestHandler(w, req.WithContext(reqCtx))
+	}()
+
+	select {
+	case <-handlerDone:
+		// handler returned promptly after context expired — correct behaviour
+	case <-time.After(3 * time.Second):
+		t.Fatal("RequestHandler did not return after request context expired")
+	}
 }
 
 type mockTransformerServer struct {

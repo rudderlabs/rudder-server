@@ -69,6 +69,7 @@ type HandleT struct {
 	batchRequestsWg  sync.WaitGroup
 	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
+	ctx              context.Context // cancelled on Shutdown, before channels are closed
 
 	config struct {
 		maxReqSize                 config.ValueLoader[int]
@@ -212,7 +213,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("Content-Type", "application/json")
 	}
 
-	done := make(chan transformerResponse)
+	done := make(chan transformerResponse, 1)
 	req := webhookT{
 		request:     r,
 		writer:      w,
@@ -226,11 +227,46 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	webhook.requestQMu.RLock()
 	requestQ := webhook.requestQ[sourceDefName]
-	requestQ <- &req
-	webhook.requestQMu.RUnlock()
+	if requestQ == nil {
+		webhook.requestQMu.RUnlock()
+		stat := webhook.statReporterCreator(arctx, reqType)
+		stat.RequestFailed("sourceNotRegistered")
+		stat.Report(webhook.stats)
+		webhook.failRequest(w, r,
+			response.GetStatus(response.ServiceUnavailable),
+			response.GetErrorStatusCode(response.ServiceUnavailable),
+		)
+		webhook.ackCount.Add(1)
+		return
+	}
+	select {
+	case requestQ <- &req:
+		webhook.requestQMu.RUnlock()
+	case <-r.Context().Done():
+		webhook.requestQMu.RUnlock()
+		webhook.ackCount.Add(1)
+		return
+	case <-webhook.ctx.Done():
+		webhook.requestQMu.RUnlock()
+		stat := webhook.statReporterCreator(arctx, reqType)
+		stat.RequestFailed("shuttingDown")
+		stat.Report(webhook.stats)
+		webhook.failRequest(w, r,
+			response.GetStatus(response.ServiceUnavailable),
+			response.GetErrorStatusCode(response.ServiceUnavailable),
+		)
+		webhook.ackCount.Add(1)
+		return
+	}
 
-	// Wait for batcher process to be done
-	resp := <-done
+	// Wait for batcher process to be done, or bail if the client disconnects.
+	var resp transformerResponse
+	select {
+	case resp = <-done:
+	case <-r.Context().Done():
+		webhook.ackCount.Add(1)
+		return
+	}
 	webhook.ackCount.Add(1)
 	webhook.gwHandle.TrackRequestMetrics(resp.Err)
 
