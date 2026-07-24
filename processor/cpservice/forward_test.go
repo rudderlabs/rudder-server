@@ -228,7 +228,7 @@ func TestForward(t *testing.T) {
 		require.Equal(t, codes.Unavailable, status.Code(err))
 	})
 
-	t.Run("emits a forward-time metric tagged by op, route and workspace", func(t *testing.T) {
+	t.Run("emits total and request timers tagged by op, route and workspace", func(t *testing.T) {
 		cases := []struct {
 			name      string
 			op        proto.Op
@@ -261,18 +261,41 @@ func TestForward(t *testing.T) {
 					require.NoError(t, err)
 				}
 
-				metrics := statsStore.GetByName("processor_pyt_forward_time")
-				require.Len(t, metrics, 1)
-				require.Equal(t, stats.Tags{
+				wantTags := stats.Tags{
 					"op":          tc.op.String(),
 					"route":       tc.wantRoute,
 					"workspaceId": "ws-1",
-				}, metrics[0].Tags)
+				}
+				metrics := statsStore.GetByName("processor_pyt_forward_rpc_time")
+				require.Len(t, metrics, 1)
+				require.Equal(t, wantTags, metrics[0].Tags)
+
+				execMetrics := statsStore.GetByName("processor_pyt_request_handle_time")
+				require.Len(t, execMetrics, 1, "the forward ran, so the request timer must have a sample too")
+				require.Equal(t, wantTags, execMetrics[0].Tags)
 			})
 		}
 	})
 
-	t.Run("no forward-time metric when the request is rejected before forwarding", func(t *testing.T) {
+	t.Run("no request timer when the deployer fails before forwarding", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		conf := config.New()
+		conf.Set("Processor.pytTestStaticASTURL", staticASTURL)
+		svc := NewService(conf, logger.NOP, statsStore,
+			WithDeployer(&fakeDeployer{err: errors.New("create failed")}),
+			WithForwarder(&fakeForwarder{statusCode: 200}))
+
+		_, err = svc.Forward(context.Background(), &proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: "ws-1"})
+		require.Error(t, err)
+
+		require.Empty(t, statsStore.GetByName("processor_pyt_request_handle_time"),
+			"no request was made, so no request sample must be recorded")
+		require.Len(t, statsStore.GetByName("processor_pyt_forward_rpc_time"), 1,
+			"the total timer still records the failed attempt")
+	})
+
+	t.Run("no timers when the request is rejected before forwarding", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 		conf := config.New()
@@ -285,7 +308,7 @@ func TestForward(t *testing.T) {
 		_, err = svc.Forward(context.Background(), &proto.ForwardRequest{Op: proto.Op_OP_TEST, WorkspaceId: "a@evil.com#"})
 		require.Equal(t, codes.InvalidArgument, status.Code(err))
 
-		require.Empty(t, statsStore.GetByName("processor_pyt_forward_time"))
+		require.Empty(t, statsStore.GetByName("processor_pyt_forward_rpc_time"))
 	})
 }
 
