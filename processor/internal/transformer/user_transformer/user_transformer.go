@@ -588,14 +588,14 @@ func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path str
 				// additionally counted; retryability doesn't depend on them.
 				if isColdStartError(err, nil) {
 					u.stat.NewTaggedStat(coldStartErrorsMetric, stats.CountType,
-						stats.Tags{"workspaceID": workspaceID, "language": languagePython}).Increment()
+						stats.Tags{"workspaceID": workspaceID, "language": languagePython, "path": path}).Increment()
 				}
 				return err
 			}
 			defer func() { httputil.CloseResponse(resp) }()
 			if isColdStartError(nil, resp) {
 				u.stat.NewTaggedStat(coldStartErrorsMetric, stats.CountType,
-					stats.Tags{"workspaceID": workspaceID, "language": languagePython}).Increment()
+					stats.Tags{"workspaceID": workspaceID, "language": languagePython, "path": path}).Increment()
 				return fmt.Errorf("pyt cold start: status %d", resp.StatusCode)
 			}
 
@@ -618,7 +618,7 @@ func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path str
 		// otherwise mask what went wrong until the whole budget is exhausted.
 		backoff.WithNotify(func(err error, delay time.Duration) {
 			u.stat.NewTaggedStat(testForwardRetriesMetric, stats.CountType,
-				stats.Tags{"workspaceID": workspaceID, "language": languagePython}).Increment()
+				stats.Tags{"workspaceID": workspaceID, "language": languagePython, "path": path}).Increment()
 			u.log.Warnn("retrying pyt test forward",
 				obskit.WorkspaceID(workspaceID),
 				logger.NewStringField("path", path),
