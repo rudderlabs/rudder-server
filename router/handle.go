@@ -110,7 +110,7 @@ type Handle struct {
 	processJobsCountStat           stats.Measurement
 	throttlingErrorStat            stats.Measurement
 	throttledStat                  stats.Measurement
-	warningStatusDowngradedStat    stats.Measurement
+	statusDowngradedStat           stats.Counter
 	isolationStrategy              isolation.Strategy
 	backgroundGroup                *errgroup.Group
 	backgroundCtx                  context.Context
@@ -145,14 +145,10 @@ type Handle struct {
 }
 
 // deliveredWithWarningsEnabled reports whether a 296 (Delivered with Warning) status should be
-// honoured for a job in the given workspace — either the destination definition advertises support
-// (general availability), or the workspace is on the controlled-rollout allow-list. Fails closed
-// when the allow-list predicate has not been wired, preserving the default-deny guarantee.
+// honoured for a job in the given workspace — enabled either globally via the destination
+// definition (GA) or, before GA, for specific workspaces via the rollout allow-list.
 func (rt *Handle) deliveredWithWarningsEnabled(workspaceID string) bool {
-	if rt.supportsDeliveredWithWarnings.Load() {
-		return true
-	}
-	return rt.deliveredWithWarningsEnabledForWorkspace != nil &&
+	return rt.supportsDeliveredWithWarnings.Load() ||
 		rt.deliveredWithWarningsEnabledForWorkspace(workspaceID)
 }
 

@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"slices"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -90,29 +91,29 @@ func TestDeliveredWithWarningsEnabled(t *testing.T) {
 	t.Run("neither enabled", func(t *testing.T) {
 		require.False(t, newHandle(false, enabledWorkspace).deliveredWithWarningsEnabled(otherWorkspace))
 	})
-
-	t.Run("allow-list predicate not wired fails closed", func(t *testing.T) {
-		require.False(t, (&Handle{}).deliveredWithWarningsEnabled(enabledWorkspace))
-	})
 }
 
 // TestGateDeliveredWithWarning covers the 296 -> 200 downgrade applied per job, per workspace.
 func TestGateDeliveredWithWarning(t *testing.T) {
 	const (
 		gateDestType     = "BRAZE"
-		downgradeMetric  = "router_warning_status_downgraded_count"
+		downgradeMetric  = "router_status_downgraded_count"
 		enabledWorkspace = "workspace-enabled"
 		otherWorkspace   = "workspace-other"
 	)
-	downgradeTags := stats.Tags{"destType": gateDestType}
+	downgradeTags := stats.Tags{
+		"destType": gateDestType,
+		"from":     strconv.Itoa(utilTypes.DeliveredWithWarningCode),
+		"to":       strconv.Itoa(utilTypes.SuccessEventCode),
+	}
 
 	newGateWorker := func(t *testing.T, destDefSupports bool, allowList ...string) (*worker, *memstats.Store) {
 		t.Helper()
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 		rt := &Handle{
-			destType:                    gateDestType,
-			warningStatusDowngradedStat: statsStore.NewTaggedStat(downgradeMetric, stats.CountType, downgradeTags),
+			destType:             gateDestType,
+			statusDowngradedStat: statsStore.NewTaggedStat(downgradeMetric, stats.CountType, downgradeTags),
 		}
 		rt.supportsDeliveredWithWarnings.Store(destDefSupports)
 		rt.deliveredWithWarningsEnabledForWorkspace = func(workspaceID string) bool {

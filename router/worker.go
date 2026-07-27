@@ -830,7 +830,7 @@ func (w *worker) gateDeliveredWithWarning(destinationJob types.DestinationJobT, 
 		if respStatusCodes[metadata.JobID] == utilTypes.DeliveredWithWarningCode &&
 			!w.rt.deliveredWithWarningsEnabled(metadata.WorkspaceID) {
 			respStatusCodes[metadata.JobID] = http.StatusOK
-			w.rt.warningStatusDowngradedStat.Count(1)
+			w.rt.statusDowngradedStat.Count(1)
 		}
 	}
 }
