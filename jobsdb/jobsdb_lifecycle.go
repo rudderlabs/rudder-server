@@ -504,8 +504,8 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 			}
 			return nil
 		}
-		if err := addNewDS(); err != nil {
-			if !jd.conf.skipMaintenanceError && ctx.Err() == nil {
+		if err := addNewDS(); err != nil && ctx.Err() == nil {
+			if !jd.conf.skipMaintenanceError {
 				panic(fmt.Errorf("adding new ds for %q: %w", jd.tablePrefix, err))
 			}
 			jd.logger.Errorn("addNewDSLoop error", obskit.Error(err))
@@ -521,9 +521,9 @@ func (jd *Handle) refreshDSListLoop(ctx context.Context) {
 			return
 		}
 		timeoutCtx, cancel := context.WithTimeout(ctx, jd.conf.refreshDSTimeout.Load())
-		if err := jd.RefreshDSList(timeoutCtx); err != nil {
+		if err := jd.RefreshDSList(timeoutCtx); err != nil && ctx.Err() == nil {
 			cancel()
-			if !jd.conf.skipMaintenanceError && ctx.Err() == nil {
+			if !jd.conf.skipMaintenanceError {
 				panic(err)
 			}
 			jd.logger.Errorn("refreshDSListLoop error", obskit.Error(err))
