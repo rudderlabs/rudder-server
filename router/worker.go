@@ -793,7 +793,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 		})
 	}
 	proxyReqparams := &transformer.ProxyRequestParams{
-		DestName: w.rt.destType,
+		DestType: w.rt.destType,
 		ResponseData: transformer.ProxyRequestPayload{
 			PostParametersT:    val,
 			Metadata:           m,

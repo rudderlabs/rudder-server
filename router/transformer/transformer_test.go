@@ -340,7 +340,7 @@ func TestProxyRequest(t *testing.T) {
 				ctx := context.TODO()
 				reqParams := &ProxyRequestParams{
 					ResponseData: tc.postParameters,
-					DestName:     "not_found_dest",
+					DestType:     "not_found_dest",
 					Adapter:      &mockAdapter{url: srv.URL},
 					Destination: &backendconfig.DestinationT{
 						Config: tc.postParameters.DestinationConfig,
@@ -385,7 +385,7 @@ func TestProxyRequest(t *testing.T) {
 
 			reqParams := &ProxyRequestParams{
 				ResponseData: tc.postParameters,
-				DestName:     tc.destName,
+				DestType:     tc.destName,
 				Adapter:      &mockAdapter{url: srv.URL},
 				Destination: &backendconfig.DestinationT{
 					Config: tc.postParameters.DestinationConfig,
@@ -701,7 +701,7 @@ type oauthv2ProxyTcs struct {
 	destination backendconfig.DestinationT
 
 	ioReadError bool
-	// expected `reason` tag on router.transformerproxy.invalid.response.
+	// expected `reason` tag on router_transformerproxy_invalid_response.
 	// Empty means the metric is not asserted for this case.
 	expectedBreachReason string
 	// load-balancer erroring out
@@ -1621,6 +1621,56 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 	},
 
 	{
+		// A 404 makes doProxyRequest return a Go error, so this hits the requestError branch before
+		// content classification - the same path a non-oauth transport failure takes. It emits
+		// transport error so those show on the metric too (excluded from the alert, so it pages nothing).
+		description:          "[v1proxy] when the proxy returns 404, should report reason transport error via the request-error path",
+		proxyVersion:         "v1",
+		upstreamStatusCode:   http.StatusNotFound,
+		expectedBreachReason: "transport error",
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message: "some message that we got from transformer",
+			Response: []TPDestResponse{
+				{
+					StatusCode: http.StatusOK,
+					Metadata:   ProxyRequestMetadata{WorkspaceID: "workspace_id", DestinationID: "destination_id", JobID: 1},
+					Error:      "success",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON":       map[string]any{"key_1": "val_1"},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
+				},
+				Files: map[string]any{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{WorkspaceID: "workspace_id", DestinationID: "destination_id", JobID: 1},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives:      map[int64]bool{1: false},
+			RespBodys:                map[int64]string{},
+			RespContentType:          "text/plain; charset=utf-8",
+			ProxyRequestResponseBody: `not found`,
+			ProxyRequestStatusCode:   http.StatusInternalServerError,
+			RespStatusCodes:          map[int64]int{},
+		},
+		destination: oauthDests[0],
+	},
+
+	{
 		// The jobID sets match, so only the entry-count check can catch this.
 		description:          "[v1proxy] when the transformer answers twice for the same jobID, should page with reason in out mismatch",
 		proxyVersion:         "v1",
@@ -2146,7 +2196,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 			dest.WorkspaceID = tc.reqPayload.Metadata[0].WorkspaceID
 			reqParams := &ProxyRequestParams{
 				ResponseData: tc.reqPayload,
-				DestName:     tc.destType,
+				DestType:     tc.destType,
 				Adapter:      adapter,
 				Destination:  &dest,
 			}
@@ -2181,7 +2231,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 			if tc.expectedBreachReason != "" {
 				expectedReasons = []string{tc.expectedBreachReason}
 			}
-			breaches := statsStore.GetByName("router.transformerproxy.invalid.response")
+			breaches := statsStore.GetByName(proxyInvalidResponseMetric)
 			reasons := make([]string, 0, len(breaches))
 			for _, b := range breaches {
 				reasons = append(reasons, b.Tags["reason"])
