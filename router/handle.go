@@ -76,7 +76,7 @@ type Handle struct {
 	saveDestinationResponse            bool
 	saveDestinationResponseOverride    config.ValueLoader[bool]
 	reportJobsdbPayload                config.ValueLoader[bool]
-	store296DeliveryPayload            config.ValueLoader[bool]
+	storeDeliveredWithWarningPayload   config.ValueLoader[bool]
 
 	diagnosisTickerTime time.Duration
 

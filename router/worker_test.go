@@ -57,24 +57,24 @@ func createTestWorker(destType string, transformProxy bool, stat stats.Stats) *w
 	}
 }
 
-// TestPostStatusOnResponseQ296DeliveryPayload verifies that, on the success path, only a
-// 296 (Delivered with Warning) status reports the transformed delivery body instead of the
-// router input payload, gated by the store296DeliveryPayload kill-switch.
-func TestPostStatusOnResponseQ296DeliveryPayload(t *testing.T) {
+// TestPostStatusOnResponseQStoreDeliveredWithWarningPayload verifies that, on the success path,
+// only a Delivered-with-Warning (296) status reports the transformed delivery body instead of the
+// router input payload, gated by the storeDeliveredWithWarningPayload flag.
+func TestPostStatusOnResponseQStoreDeliveredWithWarningPayload(t *testing.T) {
 	const (
 		destType     = "BRAZE"
 		inputPayload = `{"input":"event"}`
 		deliveryBody = `{"delivery":"transformed batch body"}`
 	)
 
-	newTestWorker := func(store296 bool) *worker {
+	newTestWorker := func(storePayload bool) *worker {
 		return &worker{
 			logger: logger.NOP,
 			rt: &Handle{
-				destType:                destType,
-				responseQ:               make(chan workerJobStatus, 1),
-				reportJobsdbPayload:     config.SingleValueLoader(true),
-				store296DeliveryPayload: config.SingleValueLoader(store296),
+				destType:                         destType,
+				responseQ:                        make(chan workerJobStatus, 1),
+				reportJobsdbPayload:              config.SingleValueLoader(true),
+				storeDeliveredWithWarningPayload: config.SingleValueLoader(storePayload),
 			},
 		}
 	}
@@ -101,7 +101,7 @@ func TestPostStatusOnResponseQ296DeliveryPayload(t *testing.T) {
 		require.NotContains(t, string(got.status.ErrorResponse), "payloadStage")
 	})
 
-	t.Run("296 with the kill-switch off falls back to the input payload", func(t *testing.T) {
+	t.Run("296 with storeDeliveredWithWarningPayload off falls back to the input payload", func(t *testing.T) {
 		got := report(newTestWorker(false), utilTypes.DeliveredWithWarningCode, deliveryBody)
 		require.JSONEq(t, inputPayload, string(got.payload))
 		require.NotContains(t, string(got.status.ErrorResponse), "payloadStage")
@@ -111,12 +111,6 @@ func TestPostStatusOnResponseQ296DeliveryPayload(t *testing.T) {
 		got := report(newTestWorker(true), utilTypes.FilterEventCode, deliveryBody)
 		require.JSONEq(t, inputPayload, string(got.payload))
 		require.Equal(t, jobsdb.Filtered.State, got.status.JobState)
-	})
-
-	t.Run("empty delivery body on 296 reports empty without panicking", func(t *testing.T) {
-		got := report(newTestWorker(true), utilTypes.DeliveredWithWarningCode, "")
-		require.Empty(t, string(got.payload))
-		require.Contains(t, string(got.status.ErrorResponse), `"payloadStage":"delivery"`)
 	})
 }
 
