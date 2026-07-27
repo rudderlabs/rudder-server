@@ -987,18 +987,20 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 		// For 296 (Delivered with Warning) report the transformed delivery body actually sent to
 		// the destination, so the warnings UX can surface it. Gated by a per-destType opt-in flag
 		// (default off); every other success code keeps reporting the router input payload unchanged.
-		responsePayload := inputPayload
+		payload := inputPayload
 		if respStatusCode == utilTypes.DeliveredWithWarningCode && w.rt.storeDeliveredWithWarningPayload.Load() {
-			responsePayload = destinationJob.Message
+			payload = destinationJob.Message
 			status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "payloadStage", "delivery")
 		}
+		// Non-296 success responses intentionally omit a payloadStage marker (e.g. "router_input"):
+		// it isn't surfaced in the UI, so we skip setting it for now.
 		w.logger.Debugn("sending success status to response")
 		w.rt.responseQ <- workerJobStatus{
 			userID:     destinationJobMetadata.UserID,
 			worker:     w,
 			job:        destinationJobMetadata.JobT,
 			status:     status,
-			payload:    responsePayload,
+			payload:    payload,
 			statTags:   destinationJob.StatTags,
 			parameters: destinationJobMetadata.Parameters,
 		}
