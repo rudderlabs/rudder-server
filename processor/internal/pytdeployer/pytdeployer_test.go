@@ -21,6 +21,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 )
 
 const testNamespace = "pyt-test-ns"
@@ -45,6 +47,7 @@ func TestRunOnEphemeral(t *testing.T) {
 		require.Equal(t, LabelManagedByValue, created.Labels[LabelManagedBy])
 		require.Equal(t, LabelPurposeValue, created.Labels[LabelPurpose])
 		require.Equal(t, "ws-1", created.Labels[LabelWorkspaceID], "the workspace label must be lowercased")
+		require.Equal(t, created.Name, created.Labels[LabelRunName], "the run label must carry the per-run name")
 		require.Equal(t, "pytransformer/pyt:latest", created.Spec.Template.Spec.Containers[0].Image)
 		require.Equal(t, "kata-fc", *created.Spec.Template.Spec.RuntimeClassName)
 		require.EqualValues(t, 1, *created.Spec.Replicas)
@@ -54,6 +57,46 @@ func TestRunOnEphemeral(t *testing.T) {
 		require.Equal(t, LabelManagedByValue, createdSvc.Labels[LabelManagedBy])
 		require.Equal(t, created.Name, createdSvc.Name, "the Deployment and Service share the same run name")
 		require.Equal(t, created.Labels, createdSvc.Spec.Selector, "the Service selector must match the Deployment's pod labels")
+	})
+
+	t.Run("concurrent runs are label-disjoint: each Service selects only its own run's pods", func(t *testing.T) {
+		cs := newAutoReadyClient()
+		dep := newDeployer(t, cs, baseConfig())
+
+		// Two runs for the SAME workspace on the same generic spec — the
+		// worst case: every label except the run name is identical.
+		for range 2 {
+			_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
+				func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+			require.NoError(t, err)
+		}
+
+		deps := findCreatedDeployments(t, cs)
+		svcs := findCreatedServices(t, cs)
+		require.Len(t, deps, 2)
+		require.Len(t, svcs, 2)
+		require.NotEqual(t, deps[0].Name, deps[1].Name, "each run must create uniquely named objects")
+
+		podLabelsByRun := map[string]map[string]string{}
+		for _, d := range deps {
+			require.Equal(t, d.Name, d.Spec.Template.Labels[LabelRunName])
+			podLabelsByRun[d.Name] = d.Spec.Template.Labels
+		}
+		// Without the run label in the selector, every run's Service selects
+		// every run's pods, so a request forwarded through Service A can land
+		// on run B's pod — which run B deletes the moment it finishes, killing
+		// A's request mid-flight ("Subprocess died (exit code -15)").
+		for _, svc := range svcs {
+			require.Equal(t, svc.Name, svc.Spec.Selector[LabelRunName], "the Service selector must pin its own run name")
+			for run, podLabels := range podLabelsByRun {
+				if run == svc.Name {
+					require.True(t, selectorMatches(svc.Spec.Selector, podLabels))
+				} else {
+					require.False(t, selectorMatches(svc.Spec.Selector, podLabels),
+						"Service %s must not select run %s's pods", svc.Name, run)
+				}
+			}
+		}
 	})
 
 	t.Run("applies the generic env to the container, deterministically ordered", func(t *testing.T) {
@@ -396,6 +439,70 @@ func TestRunOnEphemeral(t *testing.T) {
 		require.True(t, hasAction(cs, "deployments"), "delete must still have been attempted")
 	})
 
+	t.Run("emits a success-tagged readiness-wait timer and no cleanup-failure count on a clean run", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		dep := newDeployerWithStats(t, newAutoReadyClient(), baseConfig(), statsStore)
+
+		_, _, err = dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.NoError(t, err)
+
+		metrics := statsStore.GetByName("processor_pyt_readiness_wait_time")
+		require.Len(t, metrics, 1)
+		require.Equal(t, stats.Tags{"workspaceId": "ws-1", "success": "true"}, metrics[0].Tags)
+		require.Empty(t, statsStore.GetByName("processor_pyt_cleanup_failure_count"))
+	})
+
+	t.Run("emits a failure-tagged readiness-wait timer on a readiness timeout", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		conf := baseConfig()
+		conf.Set("Processor.pytDeployer.pytTestReadinessTimeout", "300ms")
+		dep := newDeployerWithStats(t, newFakeClient(), conf, statsStore) // never becomes ready
+
+		_, _, err = dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.Error(t, err)
+
+		metrics := statsStore.GetByName("processor_pyt_readiness_wait_time")
+		require.Len(t, metrics, 1)
+		require.Equal(t, stats.Tags{"workspaceId": "ws-1", "success": "false"}, metrics[0].Tags)
+	})
+
+	t.Run("increments the cleanup-failure count when the best-effort delete fails", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		cs := newAutoReadyClient()
+		cs.PrependReactor("delete", "deployments", func(ktesting.Action) (bool, runtime.Object, error) {
+			return true, nil, errors.New("etcd is down")
+		})
+		dep := newDeployerWithStats(t, cs, baseConfig(), statsStore)
+
+		_, _, err = dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.NoError(t, err)
+
+		metrics := statsStore.GetByName("processor_pyt_cleanup_failure_count")
+		require.Len(t, metrics, 1)
+		require.Equal(t, stats.Tags{"workspaceId": "ws-1"}, metrics[0].Tags)
+		require.EqualValues(t, 1, metrics[0].Value)
+	})
+
+	t.Run("a too-short configured runIDLength is clamped to 8, keeping concurrent run names collision-safe", func(t *testing.T) {
+		conf := baseConfig()
+		conf.Set("Processor.pytDeployer.pytTestRunIDLength", 1)
+		cs := newAutoReadyClient()
+		dep := newDeployer(t, cs, conf)
+
+		_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
+			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+		require.NoError(t, err)
+
+		require.Len(t, findCreatedDeployment(t, cs).Name, len("pyt-test-")+8,
+			"a 1-char suffix would let concurrent runs collide and silently share one Deployment/Service")
+	})
+
 	t.Run("errors without calling forward when creating the Deployment fails", func(t *testing.T) {
 		cs := newFakeClient()
 		cs.PrependReactor("create", "deployments", func(ktesting.Action) (bool, runtime.Object, error) {
@@ -494,7 +601,7 @@ func TestNew(t *testing.T) {
 		conf.Set("Processor.pytDeployer.inCluster", false)
 		conf.Set("Processor.pytDeployer.kubeConfigPath", "/nonexistent/kubeconfig")
 
-		_, err := New(conf, logger.NOP)
+		_, err := New(conf, logger.NOP, stats.NOP)
 		require.Error(t, err)
 	})
 
@@ -502,7 +609,7 @@ func TestNew(t *testing.T) {
 		conf := baseConfig()
 		conf.Set("Processor.pytDeployer.pytTestImage", "")
 
-		_, err := New(conf, logger.NOP, WithClientset(fake.NewClientset()))
+		_, err := New(conf, logger.NOP, stats.NOP, WithClientset(fake.NewClientset()))
 		require.ErrorContains(t, err, "pytTestImage")
 	})
 
@@ -510,7 +617,7 @@ func TestNew(t *testing.T) {
 		conf := baseConfig()
 		conf.Set("Processor.pytDeployer.pytTestImagePullSecret", "")
 
-		_, err := New(conf, logger.NOP, WithClientset(fake.NewClientset()))
+		_, err := New(conf, logger.NOP, stats.NOP, WithClientset(fake.NewClientset()))
 		require.ErrorContains(t, err, "pytTestImagePullSecret")
 	})
 
@@ -519,7 +626,7 @@ func TestNew(t *testing.T) {
 		conf.Set("Processor.pytDeployer.pytTestCPURequest", "500m")
 		conf.Set("Processor.pytDeployer.pytTestCPULimit", "200m")
 
-		_, err := New(conf, logger.NOP, WithClientset(fake.NewClientset()))
+		_, err := New(conf, logger.NOP, stats.NOP, WithClientset(fake.NewClientset()))
 		require.ErrorContains(t, err, "pytTestCPULimit",
 			"limits below requests are rejected by the apiserver, so they must fail at startup")
 	})
@@ -529,12 +636,12 @@ func TestNew(t *testing.T) {
 		conf.Set("Processor.pytDeployer.pytTestMemoryRequest", "1Gi")
 		conf.Set("Processor.pytDeployer.pytTestMemoryLimit", "500Mi")
 
-		_, err := New(conf, logger.NOP, WithClientset(fake.NewClientset()))
+		_, err := New(conf, logger.NOP, stats.NOP, WithClientset(fake.NewClientset()))
 		require.ErrorContains(t, err, "pytTestMemoryLimit")
 	})
 
 	t.Run("succeeds with an injected clientset", func(t *testing.T) {
-		d, err := New(baseConfig(), logger.NOP, WithClientset(fake.NewClientset()))
+		d, err := New(baseConfig(), logger.NOP, stats.NOP, WithClientset(fake.NewClientset()))
 		require.NoError(t, err)
 		require.NotNil(t, d)
 	})
@@ -579,6 +686,10 @@ func baseConfig() *config.Config {
 	conf.Set("Processor.pytDeployer.pytTestImage", "pytransformer/pyt:latest")
 	conf.Set("Processor.pytDeployer.pytTestImagePullSecret", "regcred")
 	conf.Set("Processor.pytDeployer.pytTestReadinessTimeout", "5s")
+	// Pinned so tests asserting on poll counts within short readiness windows
+	// don't depend on the production default poll interval. 250ms is the
+	// effective minimum — waitReady floors anything shorter.
+	conf.Set("Processor.pytDeployer.pytTestReadinessPollInterval", "250ms")
 	return conf
 }
 
@@ -593,7 +704,12 @@ func fastRetryConfig() *config.Config {
 
 func newDeployer(t *testing.T, cs *fake.Clientset, conf *config.Config) Deployer {
 	t.Helper()
-	d, err := New(conf, logger.NOP, WithClientset(cs))
+	return newDeployerWithStats(t, cs, conf, stats.NOP)
+}
+
+func newDeployerWithStats(t *testing.T, cs *fake.Clientset, conf *config.Config, stat stats.Stats) Deployer {
+	t.Helper()
+	d, err := New(conf, logger.NOP, stat, WithClientset(cs))
 	require.NoError(t, err)
 	return d
 }
@@ -653,6 +769,39 @@ func findCreatedDeployment(t *testing.T, cs *fake.Clientset) *appsv1.Deployment 
 	}
 	t.Fatal("no Deployment create action found")
 	return nil
+}
+
+func findCreatedDeployments(t *testing.T, cs *fake.Clientset) []*appsv1.Deployment {
+	t.Helper()
+	var deps []*appsv1.Deployment
+	for _, a := range cs.Actions() {
+		if a.GetVerb() == "create" && a.GetResource().Resource == "deployments" {
+			deps = append(deps, a.(ktesting.CreateActionImpl).GetObject().(*appsv1.Deployment))
+		}
+	}
+	return deps
+}
+
+func findCreatedServices(t *testing.T, cs *fake.Clientset) []*corev1.Service {
+	t.Helper()
+	var svcs []*corev1.Service
+	for _, a := range cs.Actions() {
+		if a.GetVerb() == "create" && a.GetResource().Resource == "services" {
+			svcs = append(svcs, a.(ktesting.CreateActionImpl).GetObject().(*corev1.Service))
+		}
+	}
+	return svcs
+}
+
+// selectorMatches reports whether a Service selector matches a pod label set
+// the way kube-proxy would: every selector entry present with the same value.
+func selectorMatches(selector, podLabels map[string]string) bool {
+	for k, v := range selector {
+		if podLabels[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 func findCreatedService(t *testing.T, cs *fake.Clientset) *corev1.Service {

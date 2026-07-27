@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.81.2](https://github.com/rudderlabs/rudder-server/compare/v1.81.1...v1.81.2) (2026-07-27)
+
+
+### Bug Fixes
+
+* mid-run pod deaths under concurrent test runs ([#7212](https://github.com/rudderlabs/rudder-server/issues/7212)) ([cf89256](https://github.com/rudderlabs/rudder-server/commit/cf89256c9dc4dc4f98e987d536b9d7078ea7720d))
+
 ## [1.81.1](https://github.com/rudderlabs/rudder-server/compare/v1.81.0...v1.81.1) (2026-07-22)
 
 
