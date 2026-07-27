@@ -112,8 +112,14 @@ func TestGateDeliveredWithWarning(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 		rt := &Handle{
-			destType:             gateDestType,
-			statusDowngradedStat: statsStore.NewTaggedStat(downgradeMetric, stats.CountType, downgradeTags),
+			destType: gateDestType,
+			statusDowngradedStat: func(from, to int) stats.Counter {
+				return statsStore.NewTaggedStat(downgradeMetric, stats.CountType, stats.Tags{
+					"destType": gateDestType,
+					"from":     strconv.Itoa(from),
+					"to":       strconv.Itoa(to),
+				})
+			},
 		}
 		rt.supportsDeliveredWithWarnings.Store(destDefSupports)
 		rt.deliveredWithWarningsEnabledForWorkspace = func(workspaceID string) bool {

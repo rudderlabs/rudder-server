@@ -35,7 +35,6 @@ import (
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/crash"
-	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 )
 
@@ -137,11 +136,13 @@ func (rt *Handle) Setup(
 	rt.routerTransformInputCountStat = stats.Default.NewTaggedStat("router_transform_num_input_jobs", stats.CountType, statTags)
 	rt.routerTransformOutputCountStat = stats.Default.NewTaggedStat("router_transform_num_output_jobs", stats.CountType, statTags)
 	rt.batchInputOutputDiffCountStat = stats.Default.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, statTags)
-	rt.statusDowngradedStat = stats.Default.NewTaggedStat("router_status_downgraded_count", stats.CountType, stats.Tags{
-		"destType": rt.destType,
-		"from":     strconv.Itoa(utilTypes.DeliveredWithWarningCode),
-		"to":       strconv.Itoa(utilTypes.SuccessEventCode),
-	})
+	rt.statusDowngradedStat = func(from, to int) stats.Counter {
+		return stats.Default.NewTaggedStat("router_status_downgraded_count", stats.CountType, stats.Tags{
+			"destType": rt.destType,
+			"from":     strconv.Itoa(from),
+			"to":       strconv.Itoa(to),
+		})
+	}
 	rt.processJobsHistogramStat = stats.Default.NewTaggedStat("router_process_jobs_hist", stats.HistogramType, statTags)
 	rt.processJobsCountStat = stats.Default.NewTaggedStat("router_process_jobs_count", stats.CountType, statTags)
 	rt.processRequestsHistogramStat = stats.Default.NewTaggedStat("router_process_requests_hist", stats.HistogramType, statTags)

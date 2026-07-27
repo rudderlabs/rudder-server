@@ -110,7 +110,7 @@ type Handle struct {
 	processJobsCountStat           stats.Measurement
 	throttlingErrorStat            stats.Measurement
 	throttledStat                  stats.Measurement
-	statusDowngradedStat           stats.Counter
+	statusDowngradedStat           func(from, to int) stats.Counter
 	isolationStrategy              isolation.Strategy
 	backgroundGroup                *errgroup.Group
 	backgroundCtx                  context.Context
