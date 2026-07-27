@@ -353,6 +353,25 @@ func newInClusterClientset(conf *config.Config) (kubernetes.Interface, error) {
 }
 
 func restConfig(conf *config.Config) (*rest.Config, error) {
+	cfg, err := loadRestConfig(conf)
+	if err != nil {
+		return nil, err
+	}
+	// client-go's default rate limit (5 QPS, burst 10) is sized for CLI use,
+	// and the limiter is shared by every RunOnEphemeral call on this client.
+	// All Forward traffic funnels through the node-0 processor, and each
+	// in-flight run creates, polls, and deletes objects, so a handful of
+	// concurrent runs exhausts the default budget — queued requests then fail
+	// with "client rate limiter Wait returned an error: rate: Wait(n=1) would
+	// exceed context deadline" before ever reaching the apiserver.
+	cfg.QPS = float32(conf.GetIntVar(50, 1, "Processor.pytDeployer.k8sClientQPS"))
+	cfg.Burst = conf.GetIntVar(100, 1, "Processor.pytDeployer.k8sClientBurst")
+	return cfg, nil
+}
+
+// loadRestConfig builds the raw client config: in-cluster by default, falling
+// back to a kubeconfig file for local dev.
+func loadRestConfig(conf *config.Config) (*rest.Config, error) {
 	if conf.GetBoolVar(true, "Processor.pytDeployer.inCluster", "K8S_IN_CLUSTER") {
 		cfg, err := rest.InClusterConfig()
 		if err != nil {

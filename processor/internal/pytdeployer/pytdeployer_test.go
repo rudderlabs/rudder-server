@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -596,6 +598,42 @@ func TestRunOnEphemeral(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
+	t.Run("applies the configured client QPS/Burst instead of client-go's defaults", func(t *testing.T) {
+		kubeconfig := filepath.Join(t.TempDir(), "kubeconfig")
+		require.NoError(t, os.WriteFile(kubeconfig, []byte(`apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://127.0.0.1:6443
+  name: test
+contexts:
+- context:
+    cluster: test
+    user: test
+  name: test
+current-context: test
+users:
+- name: test
+  user:
+    token: dummy
+`), 0o600))
+		conf := config.New()
+		conf.Set("Processor.pytDeployer.inCluster", false)
+		conf.Set("Processor.pytDeployer.kubeConfigPath", kubeconfig)
+
+		cfg, err := restConfig(conf)
+		require.NoError(t, err)
+		require.EqualValues(t, 50, cfg.QPS, "the default must override client-go's 5 QPS")
+		require.Equal(t, 100, cfg.Burst, "the default must override client-go's burst of 10")
+
+		conf.Set("Processor.pytDeployer.k8sClientQPS", 10)
+		conf.Set("Processor.pytDeployer.k8sClientBurst", 20)
+		cfg, err = restConfig(conf)
+		require.NoError(t, err)
+		require.EqualValues(t, 10, cfg.QPS)
+		require.Equal(t, 20, cfg.Burst)
+	})
+
 	t.Run("returns an error when no clientset is injected and no in-cluster/kubeconfig is available", func(t *testing.T) {
 		conf := baseConfig()
 		conf.Set("Processor.pytDeployer.inCluster", false)
