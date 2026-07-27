@@ -623,15 +623,15 @@ users:
 
 		cfg, err := restConfig(conf)
 		require.NoError(t, err)
-		require.EqualValues(t, 50, cfg.QPS, "the default must override client-go's 5 QPS")
-		require.Equal(t, 100, cfg.Burst, "the default must override client-go's burst of 10")
+		require.EqualValues(t, 10, cfg.QPS, "the default must override client-go's 5 QPS")
+		require.Equal(t, 20, cfg.Burst, "the default must override client-go's burst of 10")
 
-		conf.Set("Processor.pytDeployer.k8sClientQPS", 10)
-		conf.Set("Processor.pytDeployer.k8sClientBurst", 20)
+		conf.Set("Processor.pytDeployer.k8sClientQPS", 30)
+		conf.Set("Processor.pytDeployer.k8sClientBurst", 60)
 		cfg, err = restConfig(conf)
 		require.NoError(t, err)
-		require.EqualValues(t, 10, cfg.QPS)
-		require.Equal(t, 20, cfg.Burst)
+		require.EqualValues(t, 30, cfg.QPS)
+		require.Equal(t, 60, cfg.Burst)
 	})
 
 	t.Run("returns an error when no clientset is injected and no in-cluster/kubeconfig is available", func(t *testing.T) {

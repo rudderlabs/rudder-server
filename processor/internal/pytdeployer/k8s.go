@@ -364,8 +364,8 @@ func restConfig(conf *config.Config) (*rest.Config, error) {
 	// concurrent runs exhausts the default budget — queued requests then fail
 	// with "client rate limiter Wait returned an error: rate: Wait(n=1) would
 	// exceed context deadline" before ever reaching the apiserver.
-	cfg.QPS = float32(conf.GetIntVar(50, 1, "Processor.pytDeployer.k8sClientQPS"))
-	cfg.Burst = conf.GetIntVar(100, 1, "Processor.pytDeployer.k8sClientBurst")
+	cfg.QPS = float32(conf.GetIntVar(10, 1, "Processor.pytDeployer.k8sClientQPS"))
+	cfg.Burst = conf.GetIntVar(20, 1, "Processor.pytDeployer.k8sClientBurst")
 	return cfg, nil
 }
 
