@@ -76,6 +76,7 @@ type Handle struct {
 	saveDestinationResponse            bool
 	saveDestinationResponseOverride    config.ValueLoader[bool]
 	reportJobsdbPayload                config.ValueLoader[bool]
+	storeDeliveredWithWarningPayload   config.ValueLoader[bool]
 	// supportsDeliveredWithWarnings mirrors the destination definition's capability flag. Written
 	// by the backend-config subscriber and read by workers, hence atomic.
 	supportsDeliveredWithWarnings atomic.Bool
