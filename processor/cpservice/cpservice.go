@@ -62,6 +62,7 @@ type Service struct {
 	proto.UnimplementedProcessorServiceServer
 
 	log             logger.Logger
+	stat            stats.Stats
 	deployer        pytdeployer.Deployer
 	forwarder       Forwarder
 	staticASTURL    string
@@ -117,6 +118,7 @@ func (u *unavailableDeployer) RunOnEphemeral(
 func NewService(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...ServiceOpt) *Service {
 	s := &Service{
 		log:             log.Child("cpservice"),
+		stat:            stat,
 		staticASTURL:    conf.GetStringVar("", "Processor.pytTestStaticASTURL"),
 		prodURLTemplate: conf.GetStringVar(user_transformer.DefaultPerWorkspacePyTURLTemplate, "Processor.UserTransformer.perWorkspacePyTURLTemplate"),
 		prodRouted:      conf.GetReloadableStringMapVar(nil, "Processor.pytTestOverrides.routeToProduction"),
@@ -125,7 +127,7 @@ func NewService(conf *config.Config, log logger.Logger, stat stats.Stats, opts .
 		opt(s)
 	}
 	if s.deployer == nil {
-		deployer, err := pytdeployer.New(conf, log)
+		deployer, err := pytdeployer.New(conf, log, stat)
 		if err != nil {
 			log.Warnn("ephemeral pyt deployer unavailable; execution test ops will fail", obskit.Error(err))
 			deployer = &unavailableDeployer{err: err}

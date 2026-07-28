@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.81.3](https://github.com/rudderlabs/rudder-server/compare/v1.81.2...v1.81.3) (2026-07-27)
+
+
+### Bug Fixes
+
+* apply configured client QPS and Burst settings in restConfig ([#7220](https://github.com/rudderlabs/rudder-server/issues/7220)) ([ab4dbf7](https://github.com/rudderlabs/rudder-server/commit/ab4dbf75140f7c7c515a59e86e7c75e2fc72fc76))
+
+## [1.81.2](https://github.com/rudderlabs/rudder-server/compare/v1.81.1...v1.81.2) (2026-07-27)
+
+
+### Bug Fixes
+
+* mid-run pod deaths under concurrent test runs ([#7212](https://github.com/rudderlabs/rudder-server/issues/7212)) ([cf89256](https://github.com/rudderlabs/rudder-server/commit/cf89256c9dc4dc4f98e987d536b9d7078ea7720d))
+
+## [1.81.1](https://github.com/rudderlabs/rudder-server/compare/v1.81.0...v1.81.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* use correct JSON tag for adjustedConversionTime in bing-ads ([#7204](https://github.com/rudderlabs/rudder-server/issues/7204)) ([a95807f](https://github.com/rudderlabs/rudder-server/commit/a95807fe5b19100e30b63255bba78f66a633cc71))
+
 ## [1.81.0](https://github.com/rudderlabs/rudder-server/compare/v1.80.0...v1.81.0) (2026-07-20)
 
 

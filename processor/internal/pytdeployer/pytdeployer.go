@@ -35,6 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
 // Cross-component label contract. The reaper CronJob (INFRA-2) and the RBAC
@@ -52,6 +53,12 @@ const (
 	LabelPurposeValue = "pyt-test"
 	// LabelWorkspaceID carries the (lowercased) workspace ID for traceability.
 	LabelWorkspaceID = "rudderstack.com/workspace-id"
+	// LabelRunName carries the per-run object name. It is what keeps concurrent
+	// runs disjoint: without it, all runs for a workspace share the same label
+	// set, so every run's Service selects every run's pods and a request can be
+	// routed to another run's pod — which gets deleted when that run finishes,
+	// killing the request mid-flight ("Subprocess died (exit code -15)").
+	LabelRunName = "rudderstack.com/run"
 
 	// defaultTolerationsJSON mirrors the prod pyt chart's kata.tolerations: the
 	// Kata nodepool is tainted, and without this toleration the pod stays Pending
@@ -91,9 +98,10 @@ func WithClientset(client kubernetes.Interface) Opt {
 // surface as pods stuck in ImagePullBackOff at request time. Failing here
 // instead makes the misconfiguration visible at startup, and cpservice maps
 // it to FailedPrecondition for execution ops.
-func New(conf *config.Config, log logger.Logger, opts ...Opt) (Deployer, error) {
+func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) (Deployer, error) {
 	d := &k8sDeployer{
 		log:    log.Child("pytdeployer"),
+		stat:   stat,
 		config: loadConfig(conf),
 	}
 	for _, opt := range opts {
@@ -129,35 +137,42 @@ func New(conf *config.Config, log logger.Logger, opts ...Opt) (Deployer, error) 
 // deployerConfig holds the settings loaded once at construction time (per the
 // house rule: reloadable values go through config.ValueLoader, registered
 // once in loadConfig and Load()ed where used, never re-registered per
-// request). readinessTimeout, env, labels, and podAnnotations are reloadable
-// so they can change without a restart.
+// request). readinessTimeout, readinessPollInterval, deleteTimeout, env,
+// labels, and podAnnotations are reloadable so they can change without a
+// restart.
 //
 // The defaults mirror the production per-workspace pytransformer chart
 // (rudderstack-operator helm-charts/rudderstack-aux/charts/pytransformer), so
 // an ephemeral test pod schedules and runs the same way a prod pyt pod does
 // unless a key is deliberately overridden.
 type deployerConfig struct {
-	namespace        string
-	image            string
-	imagePullSecret  string
-	runtimeClass     string
-	zone             string
-	nodeSelector     map[string]string
-	tolerations      []corev1.Toleration
-	cpuRequest       resource.Quantity
-	memoryRequest    resource.Quantity
-	cpuLimit         resource.Quantity
-	memoryLimit      resource.Quantity
-	readinessTimeout config.ValueLoader[time.Duration]
-	env              config.ValueLoader[map[string]any]
-	labels           config.ValueLoader[map[string]any]
-	podAnnotations   config.ValueLoader[map[string]any]
-	retry            retrySettings
+	namespace             string
+	runIDLength           int
+	image                 string
+	imagePullSecret       string
+	runtimeClass          string
+	zone                  string
+	nodeSelector          map[string]string
+	tolerations           []corev1.Toleration
+	cpuRequest            resource.Quantity
+	memoryRequest         resource.Quantity
+	cpuLimit              resource.Quantity
+	memoryLimit           resource.Quantity
+	readinessTimeout      config.ValueLoader[time.Duration]
+	readinessPollInterval config.ValueLoader[time.Duration]
+	// deleteTimeout bounds the best-effort cleanup so it can't hang the
+	// request past its own deadline even when ctx is already cancelled.
+	deleteTimeout  config.ValueLoader[time.Duration]
+	env            config.ValueLoader[map[string]any]
+	labels         config.ValueLoader[map[string]any]
+	podAnnotations config.ValueLoader[map[string]any]
+	retry          retrySettings
 }
 
 func loadConfig(conf *config.Config) deployerConfig {
 	return deployerConfig{
-		namespace: conf.GetStringVar("test-pytransformer", "Processor.pytDeployer.pytTestNamespace"),
+		namespace:   conf.GetStringVar("test-pytransformer", "Processor.pytDeployer.pytTestNamespace"),
+		runIDLength: runIDLength(conf),
 		// image and imagePullSecret deliberately have no default — [New]
 		// rejects an empty value rather than guessing (a stale or leaked
 		// default would be worse than failing fast).
@@ -168,17 +183,32 @@ func loadConfig(conf *config.Config) deployerConfig {
 		nodeSelector: toStringMap(conf.GetStringMapVar(
 			map[string]any{"karpenter.sh/nodepool": "kata"}, "Processor.pytDeployer.pytTestNodeSelector",
 		)),
-		tolerations:      loadTolerations(conf),
-		cpuRequest:       parseQuantity(conf.GetStringVar("200m", "Processor.pytDeployer.pytTestCPURequest"), "200m"),
-		memoryRequest:    parseQuantity(conf.GetStringVar("500Mi", "Processor.pytDeployer.pytTestMemoryRequest"), "500Mi"),
-		cpuLimit:         parseQuantity(conf.GetStringVar("400m", "Processor.pytDeployer.pytTestCPULimit"), "400m"),
-		memoryLimit:      parseQuantity(conf.GetStringVar("700Mi", "Processor.pytDeployer.pytTestMemoryLimit"), "700Mi"),
-		readinessTimeout: conf.GetReloadableDurationVar(60, time.Second, "Processor.pytDeployer.pytTestReadinessTimeout"),
-		env:              conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestEnv"),
-		labels:           conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestLabels"),
-		podAnnotations:   conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestPodAnnotations"),
-		retry:            newRetrySettings(conf),
+		tolerations:           loadTolerations(conf),
+		cpuRequest:            parseQuantity(conf.GetStringVar("200m", "Processor.pytDeployer.pytTestCPURequest"), "200m"),
+		memoryRequest:         parseQuantity(conf.GetStringVar("500Mi", "Processor.pytDeployer.pytTestMemoryRequest"), "500Mi"),
+		cpuLimit:              parseQuantity(conf.GetStringVar("400m", "Processor.pytDeployer.pytTestCPULimit"), "400m"),
+		memoryLimit:           parseQuantity(conf.GetStringVar("700Mi", "Processor.pytDeployer.pytTestMemoryLimit"), "700Mi"),
+		readinessTimeout:      conf.GetReloadableDurationVar(60, time.Second, "Processor.pytDeployer.pytTestReadinessTimeout"),
+		readinessPollInterval: conf.GetReloadableDurationVar(1, time.Second, "Processor.pytDeployer.pytTestReadinessPollInterval"),
+		deleteTimeout:         conf.GetReloadableDurationVar(15, time.Second, "Processor.pytDeployer.pytTestDeleteTimeout"),
+		env:                   conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestEnv"),
+		labels:                conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestLabels"),
+		podAnnotations:        conf.GetReloadableStringMapVar(nil, "Processor.pytDeployer.pytTestPodAnnotations"),
+		retry:                 newRetrySettings(conf),
 	}
+}
+
+// runIDLength loads the random-suffix length for ephemeral resource names,
+// clamped to [8, 54] rather than blocking the processor from starting on an
+// out-of-range value. The upper bound keeps "pyt-test-<suffix>" a valid
+// DNS-1035 label (max 63 chars). The lower bound guards against a
+// misconfigured short suffix: with only a few characters, two concurrent runs
+// can generate the same name, and the colliding Create is swallowed by the
+// AlreadyExists-as-own-retry assumption — both runs would silently share one
+// Deployment/Service, and the first to finish would delete it under the other.
+func runIDLength(conf *config.Config) int {
+	const prefixLen = len("pyt-test-")
+	return max(8, min(conf.GetIntVar(8, 1, "Processor.pytDeployer.pytTestRunIDLength"), 63-prefixLen))
 }
 
 // toStringMap flattens a config map (map[string]any) into map[string]string.
