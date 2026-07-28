@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -1264,6 +1265,21 @@ var _ = Describe("Utils", func() {
 		Expect(path).NotTo(BeEmpty())
 
 		Expect(os.RemoveAll(path)).NotTo(HaveOccurred())
+	})
+
+	It("SSL keys with path traversal destination ID", func() {
+		clientKey, clientCert, serverCA := misc.FastUUID().String(), misc.FastUUID().String(), misc.FastUUID().String()
+
+		tmpDir, tmpDirErr := misc.GetTmpDir()
+		Expect(tmpDirErr).NotTo(HaveOccurred())
+		escapedPath := filepath.Join(tmpDir, "escaped-destID")
+		defer os.RemoveAll(escapedPath)
+
+		destinationID := "../escaped-destID"
+		err := WriteSSLKeys(backendconfig.DestinationT{ID: destinationID, Config: map[string]any{"clientKey": clientKey, "clientCert": clientCert, "serverCA": serverCA}})
+		Expect(err.GetErrTag()).To(Equal("invalid_destination_id"))
+
+		Expect(escapedPath).NotTo(BeADirectory())
 	})
 })
 
