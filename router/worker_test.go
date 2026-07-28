@@ -23,6 +23,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -35,6 +36,7 @@ import (
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/cache"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 // createTestWorker creates a worker instance for testing with properly initialized StatsCache instances
@@ -53,6 +55,63 @@ func createTestWorker(destType string, transformProxy bool, stat stats.Stats) *w
 			return stat.NewTaggedStat("transformer_outgoing_request_count", stats.CountType, labels.ToStatTags())
 		}),
 	}
+}
+
+// TestPostStatusOnResponseQStoreDeliveredWithWarningPayload verifies that, on the success path,
+// only a Delivered-with-Warning (296) status reports the transformed delivery body instead of the
+// router input payload, gated by the storeDeliveredWithWarningPayload flag.
+func TestPostStatusOnResponseQStoreDeliveredWithWarningPayload(t *testing.T) {
+	const (
+		destType     = "BRAZE"
+		inputPayload = `{"input":"event"}`
+		deliveryBody = `{"delivery":"transformed batch body"}`
+	)
+
+	newTestWorker := func(storePayload bool) *worker {
+		return &worker{
+			logger: logger.NOP,
+			rt: &Handle{
+				destType:                         destType,
+				responseQ:                        make(chan workerJobStatus, 1),
+				reportJobsdbPayload:              config.SingleValueLoader(true),
+				storeDeliveredWithWarningPayload: config.SingleValueLoader(storePayload),
+			},
+		}
+	}
+
+	report := func(w *worker, statusCode int, message string) workerJobStatus {
+		destinationJob := &types.DestinationJobT{Message: json.RawMessage(message)}
+		metadata := &types.JobMetadataT{JobT: &jobsdb.JobT{EventPayload: json.RawMessage(inputPayload)}}
+		status := &jobsdb.JobStatusT{ErrorResponse: json.RawMessage(`{}`)}
+		w.postStatusOnResponseQ(statusCode, destinationJob, "application/json", metadata, status, "")
+		return <-w.rt.responseQ
+	}
+
+	t.Run("296 reports the transformed delivery body and marks payloadStage=delivery", func(t *testing.T) {
+		got := report(newTestWorker(true), utilTypes.DeliveredWithWarningCode, deliveryBody)
+		require.JSONEq(t, deliveryBody, string(got.payload))
+		require.Equal(t, jobsdb.Succeeded.State, got.status.JobState)
+		require.Contains(t, string(got.status.ErrorResponse), `"payloadStage":"delivery"`)
+	})
+
+	t.Run("200 keeps the router input payload with no delivery marker", func(t *testing.T) {
+		got := report(newTestWorker(true), utilTypes.SuccessEventCode, deliveryBody)
+		require.JSONEq(t, inputPayload, string(got.payload))
+		require.Equal(t, jobsdb.Succeeded.State, got.status.JobState)
+		require.NotContains(t, string(got.status.ErrorResponse), "payloadStage")
+	})
+
+	t.Run("296 with storeDeliveredWithWarningPayload off falls back to the input payload", func(t *testing.T) {
+		got := report(newTestWorker(false), utilTypes.DeliveredWithWarningCode, deliveryBody)
+		require.JSONEq(t, inputPayload, string(got.payload))
+		require.NotContains(t, string(got.status.ErrorResponse), "payloadStage")
+	})
+
+	t.Run("filter event code stays Filtered with the input payload", func(t *testing.T) {
+		got := report(newTestWorker(true), utilTypes.FilterEventCode, deliveryBody)
+		require.JSONEq(t, inputPayload, string(got.payload))
+		require.Equal(t, jobsdb.Filtered.State, got.status.JobState)
+	})
 }
 
 func TestConsolidateRespBodys(t *testing.T) {
