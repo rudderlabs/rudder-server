@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.82.0](https://github.com/rudderlabs/rudder-server/compare/v1.81.3...v1.82.0) (2026-07-28)
+
+
+### Features
+
+* **router:** report delivery payload for 296 delivered-with-warning ([#7213](https://github.com/rudderlabs/rudder-server/issues/7213)) ([a5e3159](https://github.com/rudderlabs/rudder-server/commit/a5e315987e2557f2b15cebb8f9c90f338cfaa80b))
+
 ## [1.81.3](https://github.com/rudderlabs/rudder-server/compare/v1.81.2...v1.81.3) (2026-07-27)
 
 
