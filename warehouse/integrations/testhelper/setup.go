@@ -148,7 +148,7 @@ func JobsDB(t testing.TB, port int) *sql.DB {
 	)
 	jobsDB, err := sql.Open("postgres", dsn)
 	require.NoError(t, err)
-	require.NoError(t, jobsDB.Ping())
+	require.NoError(t, WithConstantRetries(jobsDB.Ping))
 	t.Cleanup(func() {
 		_ = jobsDB.Close()
 	})
