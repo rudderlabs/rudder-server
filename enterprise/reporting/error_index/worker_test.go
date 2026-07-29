@@ -727,3 +727,80 @@ func BenchmarkFileFormat(b *testing.B) {
 		b.Log("parquet size:", buf.Len()) // parquet size: 13.8 MB
 	})
 }
+
+type closeTrackingUploader struct {
+	file *os.File
+}
+
+func (u *closeTrackingUploader) Upload(_ context.Context, f *os.File, _ ...string) (filemanager.UploadedFile, error) {
+	u.file = f
+	return filemanager.UploadedFile{Location: "s3://bucket/key", ObjectName: "key"}, nil
+}
+
+func TestUploadPayloadsClosesFileAfterUpload(t *testing.T) {
+	t.Parallel()
+
+	uploader := &closeTrackingUploader{}
+	w := &worker{
+		sourceID:     "test-source-id",
+		uploader:     uploader,
+		now:          time.Now,
+		statsFactory: stats.NOP,
+	}
+	w.config.instanceID = "test-instance"
+	w.config.parquetRowGroupSize = config.SingleValueLoader(512 * bytesize.MB)
+	w.config.parquetPageSize = config.SingleValueLoader(8 * bytesize.KB)
+	w.config.parquetParallelWriters = config.SingleValueLoader(int64(8))
+
+	p := payload{
+		MessageID: "message-1",
+		SourceID:  "source-1",
+	}
+	p.SetReceivedAt(time.Date(2021, 1, 1, 1, 0, 0, 0, time.UTC))
+	p.SetFailedAt(time.Date(2021, 1, 1, 2, 0, 0, 0, time.UTC))
+
+	_, err := w.uploadPayloads(context.Background(), []payload{p})
+	require.NoError(t, err)
+	require.NotNil(t, uploader.file)
+
+	// Writing to a closed *os.File must fail — proves uploadPayloads closed the FD.
+	_, writeErr := uploader.file.Write([]byte("should-fail"))
+	require.Error(t, writeErr)
+}
+
+type failingUploader struct {
+	file *os.File
+}
+
+func (u *failingUploader) Upload(_ context.Context, f *os.File, _ ...string) (filemanager.UploadedFile, error) {
+	u.file = f
+	return filemanager.UploadedFile{}, fmt.Errorf("upload failed")
+}
+
+func TestUploadPayloadsClosesFileOnUploadError(t *testing.T) {
+	t.Parallel()
+
+	uploader := &failingUploader{}
+	w := &worker{
+		sourceID:     "test-source-id",
+		uploader:     uploader,
+		now:          time.Now,
+		statsFactory: stats.NOP,
+	}
+	w.config.instanceID = "test-instance"
+	w.config.parquetRowGroupSize = config.SingleValueLoader(512 * bytesize.MB)
+	w.config.parquetPageSize = config.SingleValueLoader(8 * bytesize.KB)
+	w.config.parquetParallelWriters = config.SingleValueLoader(int64(8))
+
+	p := payload{MessageID: "message-1", SourceID: "source-1"}
+	p.SetReceivedAt(time.Date(2021, 1, 1, 1, 0, 0, 0, time.UTC))
+	p.SetFailedAt(time.Date(2021, 1, 1, 2, 0, 0, 0, time.UTC))
+
+	_, err := w.uploadPayloads(context.Background(), []payload{p})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "uploading file to object storage")
+	require.NotNil(t, uploader.file)
+
+	_, writeErr := uploader.file.Write([]byte("should-fail"))
+	require.Error(t, writeErr)
+}
