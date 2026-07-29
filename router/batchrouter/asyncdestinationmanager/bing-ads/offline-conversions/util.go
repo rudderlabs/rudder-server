@@ -73,20 +73,27 @@ func createActionFile(actionType string) (*ActionFileInfo, error) {
 	}
 	csvWriter, err := CreateActionFileTemplate(csvFile, actionType)
 	if err != nil {
+		_ = csvFile.Close()
+		_ = os.Remove(csvFilePath)
 		return nil, err
 	}
 	return &ActionFileInfo{
 		Action:      actionType,
 		ZipFilePath: zipFilePath,
 		CSVFilePath: csvFilePath,
+		CSVFile:     csvFile,
 		CSVWriter:   csvWriter,
 	}, nil
 }
 
 func convertCsvToZip(actionFile *ActionFileInfo) error {
+	if actionFile.CSVFile != nil {
+		_ = actionFile.CSVFile.Close()
+		actionFile.CSVFile = nil
+	}
 	if actionFile.EventCount == 0 {
-		os.Remove(actionFile.CSVFilePath)
-		os.Remove(actionFile.ZipFilePath)
+		_ = os.Remove(actionFile.CSVFilePath)
+		_ = os.Remove(actionFile.ZipFilePath)
 		return nil
 	}
 	zipFile, err := os.Create(actionFile.ZipFilePath)
@@ -105,6 +112,8 @@ func convertCsvToZip(actionFile *ActionFileInfo) error {
 	if err != nil {
 		return err
 	}
+	defer csvFile.Close()
+
 	if _, err := csvFile.Seek(0, 0); err != nil {
 		return err
 	}
@@ -176,9 +185,18 @@ func (b *BingAdsBulkUploader) createZipFile(filePath string) ([]*ActionFileInfo,
 	}
 	defer textFile.Close()
 	actionFiles := map[string]*ActionFileInfo{}
+	closeActionFiles := func() {
+		for _, af := range actionFiles {
+			if af != nil && af.CSVFile != nil {
+				_ = af.CSVFile.Close()
+				af.CSVFile = nil
+			}
+		}
+	}
 	for _, actionType := range actionTypes {
 		actionFiles[actionType], err = createActionFile(actionType)
 		if err != nil {
+			closeActionFiles()
 			return nil, err
 		}
 	}
@@ -188,17 +206,20 @@ func (b *BingAdsBulkUploader) createZipFile(filePath string) ([]*ActionFileInfo,
 		line := scanner.Text()
 		var data Data
 		if err := jsonrs.Unmarshal([]byte(line), &data); err != nil {
+			closeActionFiles()
 			return nil, err
 		}
 		actionFile := actionFiles[data.Message.Action]
 		err := b.populateZipFile(actionFile, line, data)
 		if err != nil {
+			closeActionFiles()
 			return nil, err
 		}
 
 	}
 	scannerErr := scanner.Err()
 	if scannerErr != nil {
+		closeActionFiles()
 		return nil, scannerErr
 	}
 	actionFilesList := []*ActionFileInfo{}

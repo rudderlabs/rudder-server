@@ -51,6 +51,7 @@ type DestinationConfig struct {
 type ActionFileInfo struct {
 	Action           string
 	CSVWriter        *csv.Writer
+	CSVFile          *os.File
 	CSVFilePath      string
 	ZipFilePath      string
 	SuccessfulJobIDs []int64
