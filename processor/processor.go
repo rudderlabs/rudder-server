@@ -204,6 +204,7 @@ type Handle struct {
 		pythonTransformConfig                     transformerutils.PythonTransformConfig
 		userTransformationMirroringBlockedIDs     config.ValueLoader[[]string]
 		storeSamplerEnabled                       config.ValueLoader[bool]
+		forkRsourcesTrackedJobs                   bool
 	}
 
 	drainConfig struct {
@@ -827,6 +828,7 @@ func (proc *Handle) loadConfig() {
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = proc.conf.GetStringVar("GW", "Gateway.CustomVal")
 	proc.config.pythonTransformConfig = transformerutils.LoadPythonTransformConfig(proc.conf)
+	proc.config.forkRsourcesTrackedJobs = proc.conf.GetBoolVar(false, "Processor.DestinationIsolation.forkRsourcesTrackedJobs")
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
 
@@ -2380,10 +2382,9 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			workspaceLibraries := proc.getWorkspaceLibraries(workspaceID)
 
 			// Destinations whose events are siphoned to the intermediate (proc) jobsdb
-			// rather than transformed inline. rsources (retl) jobs stay inline until the
-			// intermediate stage is modelled in rsources accounting.
+			// rather than transformed inline.
 			var forkedDestIDs []string
-			forkable := event.Metadata.SourceJobRunID == ""
+			forkable := proc.forkableEvent(event)
 			eventFanout := 0
 
 			for _, destType := range enabledDestTypes {
@@ -3003,6 +3004,9 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 		}
 	}
 	in.rsourcesStats.CollectStats(statusList)
+	// forkedJobs are only ever populated in the gw pool (the proc pool never re-forks),
+	// so this is a no-op when storeStage is invoked via procStoreStage.
+	in.rsourcesStats.JobsForked(in.forkedJobs)
 	statusDB := proc.statusUpdateDB(in)
 	commitStatuses := func(ctx context.Context) error {
 		return statusDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
