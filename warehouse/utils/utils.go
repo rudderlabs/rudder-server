@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
@@ -784,7 +785,11 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 	clientKey := FormatPemContent(clientKeyConfig.(string))
 	clientCert := FormatPemContent(clientCertConfig.(string))
 	serverCert := FormatPemContent(serverCAConfig.(string))
-	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destination.ID)
+	sslRootDir := filepath.Join(directoryName, "dest-ssls")
+	sslDirPath := filepath.Join(sslRootDir, destination.ID)
+	if sslDirPath != sslRootDir && !strings.HasPrefix(sslDirPath, sslRootDir+string(os.PathSeparator)) {
+		return WriteSSLKeyError{fmt.Sprintf("Error extracting ssl information; invalid destination ID %s", destination.ID), "invalid_destination_id"}
+	}
 	if err = os.MkdirAll(sslDirPath, 0o700); err != nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error creating SSL root directory for destination %s %v", destination.ID, err), "dest_ssl_create_err"}
 	}

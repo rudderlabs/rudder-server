@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.81.4](https://github.com/rudderlabs/rudder-server/compare/v1.81.3...v1.81.4) (2026-07-28)
+
+
+### Bug Fixes
+
+* gcs manager allows non-service account credentials and warehouse ssl keys can escape their containing path ([#7227](https://github.com/rudderlabs/rudder-server/issues/7227)) ([9d1b171](https://github.com/rudderlabs/rudder-server/commit/9d1b171a1a5f522eff357cec2df003fe5ca9017b))
+
 ## [1.81.3](https://github.com/rudderlabs/rudder-server/compare/v1.81.2...v1.81.3) (2026-07-27)
 
 
