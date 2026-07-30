@@ -27,6 +27,13 @@ func (jd *Handle) internalStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT
 		tags,
 	).RecordDuration()()
 
+	// Register post-commit listeners only after the store succeeds. doStoreJobsInTx may be
+	// retried on a stale dataset list; when it runs inside a caller-provided transaction
+	// (WithStoreSafeTxFromTx) that transaction is reused across retries, so registering
+	// before the store would re-add these listeners — and double-fire them — on every retry.
+	if err := jd.doStoreJobsInTx(ctx, tx, ds, jobList); err != nil {
+		return err
+	}
 	tx.AddSuccessListener(func() {
 		jd.invalidateCacheForJobs(ds, jobList)
 	})
@@ -35,8 +42,7 @@ func (jd *Handle) internalStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT
 		jd.stats.NewTaggedStat("jobsdb_stored_jobs", stats.CountType, statTags).Count(len(jobList))
 		jd.stats.NewTaggedStat("jobsdb_stored_bytes", stats.CountType, statTags).Count(lo.SumBy(jobList, func(j *JobT) int { return len(j.EventPayload) }))
 	})
-
-	return jd.doStoreJobsInTx(ctx, tx, ds, jobList)
+	return nil
 }
 
 func (jd *Handle) WithStoreSafeTx(ctx context.Context, f func(tx StoreSafeTx) error) error {
@@ -157,12 +163,10 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 			if job.PartitionID == "" && jd.conf.numPartitions > 0 {
 				job.PartitionID = jd.conf.partitionFunction(job)
 			}
-			// Single-consumer handles always store the legacy '' consumer, regardless of what a
-			// caller may have set on job.Consumers — named consumers are only meaningful on MC handles.
-			// defaultConsumers is a shared immutable sentinel (read-only via pq.Array) to avoid a
-			// per-job allocation on the store hot path.
 			consumers := defaultConsumers
-			if jd.conf.multiConsumer && len(job.Consumers) > 0 {
+			// We propagate a non-empty consumers list even in case of a non multi-consumer jobsdb
+			// due to partition migrations, so that _buf jobsdbs don't need to become multi-consumer themselves.
+			if len(job.Consumers) > 0 {
 				consumers = job.Consumers
 			}
 			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId, job.PartitionID, pq.Array(consumers)); err != nil {

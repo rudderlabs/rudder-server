@@ -538,7 +538,7 @@ func runRudderServer(t testing.TB, ctx context.Context, cancel context.CancelFun
 	t.Setenv(configKeyToEnv("SourceDebugger.disableEventUploads"), "true")
 	t.Setenv(configKeyToEnv("TransformationDebugger.disableTransformationStatusUploads"), "true")
 	t.Setenv(configKeyToEnv("JobsDB.backup.enabled"), "false")
-	t.Setenv(configKeyToEnv("JobsDB.migrateDSLoopSleepDuration"), "60m")
+	t.Setenv(configKeyToEnv("JobsDB.compactionLoopSleepDuration"), "60m")
 	t.Setenv(configKeyToEnv("archival.Enabled"), "false")
 	t.Setenv(configKeyToEnv("Reporting.syncer.enabled"), "false")
 	t.Setenv(configKeyToEnv("BatchRouter.pingFrequency"), "1s")
