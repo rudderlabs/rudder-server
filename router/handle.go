@@ -77,6 +77,9 @@ type Handle struct {
 	saveDestinationResponseOverride    config.ValueLoader[bool]
 	reportJobsdbPayload                config.ValueLoader[bool]
 	storeDeliveredWithWarningPayload   config.ValueLoader[bool]
+	// supportsDeliveredWithWarnings mirrors the destination definition's capability flag. Written
+	// by the backend-config subscriber and read by workers, hence atomic.
+	supportsDeliveredWithWarnings atomic.Bool
 
 	diagnosisTickerTime time.Duration
 
@@ -108,6 +111,7 @@ type Handle struct {
 	processJobsCountStat           stats.Measurement
 	throttlingErrorStat            stats.Measurement
 	throttledStat                  stats.Measurement
+	statusDowngradedStat           func(from, to int) stats.Counter
 	isolationStrategy              isolation.Strategy
 	backgroundGroup                *errgroup.Group
 	backgroundCtx                  context.Context
@@ -118,6 +122,10 @@ type Handle struct {
 
 	eventOrderingDisabledForWorkspace   func(workspaceID string) bool
 	eventOrderingDisabledForDestination func(destinationID string) bool
+
+	// deliveredWithWarningsEnabledForWorkspace reports whether a workspace is on the
+	// delivered-with-warnings controlled-rollout allow-list.
+	deliveredWithWarningsEnabledForWorkspace func(workspaceID string) bool
 
 	limiter struct {
 		pickup    kitsync.Limiter
@@ -135,6 +143,14 @@ type Handle struct {
 	drainer              routerutils.Drainer
 	drainingPartitionsMu sync.RWMutex
 	drainingPartitions   map[string]struct{} // keeps track of router partitions which are currently draining
+}
+
+// deliveredWithWarningsEnabled reports whether a 296 (Delivered with Warning) status should be
+// honoured for a job in the given workspace — enabled either globally via the destination
+// definition (GA) or, before GA, for specific workspaces via the rollout allow-list.
+func (rt *Handle) deliveredWithWarningsEnabled(workspaceID string) bool {
+	return rt.supportsDeliveredWithWarnings.Load() ||
+		rt.deliveredWithWarningsEnabledForWorkspace(workspaceID)
 }
 
 // activePartitions returns the list of active partitions, depending on the active isolation strategy

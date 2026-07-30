@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -45,6 +48,17 @@ const (
 	BATCH            = "BATCH"
 	ROUTER_TRANSFORM = "ROUTER_TRANSFORM"
 	apiVersionHeader = "apiVersion"
+)
+
+// proxyInvalidResponseMetric and its reasons: a transformer-proxy response the server could not
+// reconcile with the request. transportError is infrastructure (the response did not come from the
+// transformer) and is excluded from the paging alert; the rest are contract breaches.
+const (
+	proxyInvalidResponseMetric = "router_transformerproxy_invalid_response"
+	reasonTransportError       = "transport error"
+	reasonUnmarshalError       = "unmarshal error"
+	reasonMissingOutput        = "missing output"
+	reasonInOutMismatch        = "in out mismatch"
 )
 
 // handle is the handle for this class
@@ -94,7 +108,7 @@ type ProxyRequestPayload struct {
 
 type ProxyRequestParams struct {
 	ResponseData ProxyRequestPayload
-	DestName     string
+	DestType     string
 	Adapter      transformerProxyAdapter
 	Destination  *backendconfig.DestinationT
 	Connection   backendconfig.Connection `json:"connection"`
@@ -400,23 +414,47 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	return destinationJobs
 }
 
+// JobIDs returns the jobIDs in a proxy request batch — what a responder needs to look the affected
+// events up in jobsDB.
+func (p *ProxyRequestPayload) JobIDs() []int64 {
+	return lo.Map(p.Metadata, func(m ProxyRequestMetadata, _ int) int64 {
+		return m.JobID
+	})
+}
+
+// truncatedBody bounds a body embedded in an error string: nothing reads ProxyRequestResponseBody
+// and a batch response can be multi-MB. Sliced on the byte slice so the whole body is never allocated.
+func truncatedBody(b []byte) string {
+	const maxBodyBytes = int(1 * bytesize.KB)
+	if len(b) <= maxBodyBytes {
+		return string(b)
+	}
+	// A cut can land mid-rune and render as U+FFFD; acceptable, since nothing reads this field.
+	return string(b[:maxBodyBytes]) + "...[truncated]"
+}
+
+// proxyErrorResponse builds the error-path response shared by every early return in ProxyRequest.
+// RespStatusCodes/RespBodys are always empty here by construction: per-job results only exist once
+// the adapter has parsed a response, which has not happened on any path that bails out early.
+func proxyErrorResponse(code int, body string, dontBatch map[int64]bool) ProxyRequestResponse {
+	return ProxyRequestResponse{
+		ProxyRequestStatusCode:   code,
+		ProxyRequestResponseBody: body,
+		RespContentType:          "text/plain; charset=utf-8",
+		RespStatusCodes:          map[int64]int{},
+		RespBodys:                map[int64]string{},
+		DontBatchDirectives:      dontBatch,
+	}
+}
+
 func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) ProxyRequestResponse {
 	start := time.Now()
-	routerJobResponseCodes := make(map[int64]int)
-	routerJobResponseBodys := make(map[int64]string)
 	routerJobDontBatchDirectives := make(map[int64]bool)
 
 	if len(proxyReqParams.ResponseData.Metadata) == 0 {
 		trans.logger.Warnn("[TransformerProxy] Input metadata is empty",
-			logger.NewStringField("destination", proxyReqParams.DestName))
-		return ProxyRequestResponse{
-			ProxyRequestStatusCode:   http.StatusBadRequest,
-			ProxyRequestResponseBody: "Input metadata is empty",
-			RespContentType:          "text/plain; charset=utf-8",
-			RespStatusCodes:          routerJobResponseCodes,
-			RespBodys:                routerJobResponseBodys,
-			DontBatchDirectives:      routerJobDontBatchDirectives,
-		}
+			logger.NewStringField("destination", proxyReqParams.DestType))
+		return proxyErrorResponse(http.StatusBadRequest, "Input metadata is empty", routerJobDontBatchDirectives)
 	}
 
 	for _, m := range proxyReqParams.ResponseData.Metadata {
@@ -424,37 +462,23 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	}
 
 	trans.logger.Debugn("[TransformerProxy] Proxy Request starts",
-		logger.NewStringField("destination", proxyReqParams.DestName))
+		logger.NewStringField("destination", proxyReqParams.DestType))
 
 	payload, err := proxyReqParams.Adapter.getPayload(proxyReqParams)
 	if err != nil {
-		return ProxyRequestResponse{
-			ProxyRequestStatusCode:   http.StatusInternalServerError,
-			ProxyRequestResponseBody: "Payload preparation failed",
-			RespContentType:          "text/plain; charset=utf-8",
-			RespStatusCodes:          routerJobResponseCodes,
-			RespBodys:                routerJobResponseBodys,
-			DontBatchDirectives:      routerJobDontBatchDirectives,
-		}
+		return proxyErrorResponse(http.StatusInternalServerError, "Payload preparation failed", routerJobDontBatchDirectives)
 	}
 
-	proxyURL, err := proxyReqParams.Adapter.getProxyURL(proxyReqParams.DestName)
+	proxyURL, err := proxyReqParams.Adapter.getProxyURL(proxyReqParams.DestType)
 	if err != nil {
-		return ProxyRequestResponse{
-			ProxyRequestStatusCode:   http.StatusInternalServerError,
-			ProxyRequestResponseBody: "ProxyURL preparation failed",
-			RespContentType:          "text/plain; charset=utf-8",
-			RespStatusCodes:          routerJobResponseCodes,
-			RespBodys:                routerJobResponseBodys,
-			DontBatchDirectives:      routerJobDontBatchDirectives,
-		}
+		return proxyErrorResponse(http.StatusInternalServerError, "ProxyURL preparation failed", routerJobDontBatchDirectives)
 	}
 
 	// Create metric labels
 	labels := transformerMetricLabels{
 		Endpoint:        getEndpointFromURL(proxyURL),
 		Stage:           "router_proxy",
-		DestinationType: proxyReqParams.DestName,
+		DestinationType: proxyReqParams.DestType,
 		WorkspaceID:     proxyReqParams.ResponseData.Metadata[0].WorkspaceID,
 		DestinationID:   proxyReqParams.ResponseData.Metadata[0].DestinationID,
 	}.ToStatsTag()
@@ -476,24 +500,54 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	trans.stats.NewTaggedStat("transformer_proxy_request_latency", stats.TimerType, labelsWithSuccess).SendTiming(duration)
 	trans.stats.NewTaggedStat("transformer_proxy_request_result", stats.CountType, labelsWithSuccess).Increment()
 
-	if requestError != nil {
-		return ProxyRequestResponse{
-			ProxyRequestStatusCode:   respCode,
-			ProxyRequestResponseBody: requestError.Error(),
-			RespContentType:          "text/plain; charset=utf-8",
-			RespStatusCodes:          routerJobResponseCodes,
-			RespBodys:                routerJobResponseBodys,
-			DontBatchDirectives:      routerJobDontBatchDirectives,
-		}
+	// emitBreach records a router_transformerproxy_invalid_response and logs the jobIDs needed to
+	// inspect the affected events in jobsDB. Declared here, past the empty-metadata guard, so Metadata[0]
+	// is safe and no destType/destinationId has to be threaded to a call site (and so mis-tagged). The
+	// body is deliberately not logged - these are debugged by reading the events out of jobsDB by jobID.
+	emitBreach := func(reason, msg string, fields ...logger.Field) {
+		destinationID := proxyReqParams.ResponseData.Metadata[0].DestinationID
+		trans.stats.NewTaggedStat(proxyInvalidResponseMetric, stats.CountType, stats.Tags{
+			"reason":        reason,
+			"destType":      proxyReqParams.DestType,
+			"destinationId": destinationID,
+		}).Increment()
+		trans.logger.Warnn(msg, append([]logger.Field{obskit.DestinationID(destinationID)}, fields...)...)
 	}
+
+	if requestError != nil {
+		// A raw transport failure (unreachable transformer, timeout, unreadable body). The oauth path
+		// synthesizes a response for these so they reach the classifier below, but a non-oauth
+		// destination surfaces them here as a Go error - emit so both show on the metric. Excluded from
+		// the alert like every transport error, so this pages nothing.
+		emitBreach(reasonTransportError, "[TransformerProxy] transport request failed",
+			logger.NewIntField("statusCode", int64(respCode)),
+			logger.NewIntSliceField("jobIDs", proxyReqParams.ResponseData.JobIDs()))
+		return proxyErrorResponse(respCode, requestError.Error(), routerJobDontBatchDirectives)
+	}
+
+	// Infrastructure, not a contract breach: the response never came from the transformer. Only the
+	// transformer sets apiVersion - an oauth-transport-synthesized error and an ingress/LB error page
+	// both lack it. Status is deliberately not part of this: v0 mirrors the destination's delivery
+	// status, so a destination 5xx would relabel a genuine breach as infra.
+	infraFailure := !httpPrxResp.fromTransformer
 
 	/*
 		respData will be in ProxyResponseV0 or ProxyResponseV1
 	*/
 	var transportResponse oauthv2.TransportResponse // response that we get from oauth-interceptor in postRoundTrip
-	_ = jsonrs.Unmarshal(respData, &transportResponse)
-	// unmarshal unsuccessful scenarios
-	// if respData is not a valid json
+	// A non-oauth destination hands back the raw upstream body, so a non-JSON body here is either infra
+	// or a corrupt transformer response.
+	if err := jsonrs.Unmarshal(respData, &transportResponse); err != nil {
+		reason, msg := reasonUnmarshalError, "[TransformerProxy] proxy response unmarshal failed"
+		if infraFailure {
+			reason, msg = reasonTransportError, "[TransformerProxy] non-transformer response failed envelope unmarshal"
+		}
+		emitBreach(reason, msg,
+			logger.NewIntField("statusCode", int64(httpPrxResp.statusCode)),
+			logger.NewIntSliceField("jobIDs", proxyReqParams.ResponseData.JobIDs()))
+		// Not JSON, so `output` cannot exist; continuing would blank respData and fail on an empty body.
+		return proxyErrorResponse(respCode, fmt.Sprintf("[TransformerProxy] response is not valid JSON: %s, err: %v", truncatedBody(respData), err), routerJobDontBatchDirectives)
+	}
 	if transportResponse.OriginalResponse != "" {
 		respData = []byte(transportResponse.OriginalResponse)
 	}
@@ -514,18 +568,53 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			}
 		}
 	**/
-	respData = []byte(gjson.GetBytes(respData, "output").Raw)
+	output := gjson.GetBytes(respData, "output")
+	// gjson reports an explicit JSON null as existing (Exists is `Type != Null || len(Raw) != 0`, and
+	// a literal null has Raw == "null"), so the type has to be checked too. Otherwise
+	// `{"output":null}` slips through, unmarshals into an empty response set, and gets reported as an
+	// "in out mismatch" - sending the runbook down the data-corruption branch instead of this one.
+	if !output.Exists() || output.Type == gjson.Null {
+		// A non-transformer response has no output either, so it keeps its own reason.
+		reason, msg := reasonMissingOutput, "[TransformerProxy] proxy response missing output"
+		if infraFailure {
+			reason, msg = reasonTransportError, "[TransformerProxy] non-transformer response has no output field"
+		}
+		emitBreach(reason, msg,
+			logger.NewIntField("statusCode", int64(httpPrxResp.statusCode)),
+			logger.NewIntSliceField("jobIDs", proxyReqParams.ResponseData.JobIDs()))
+		// No per-job results to apply without `output`.
+		return proxyErrorResponse(respCode, fmt.Sprintf("[TransformerProxy] response has no output field: %s", truncatedBody(respData)), routerJobDontBatchDirectives)
+	}
+	respData = []byte(output.Raw)
 
 	transResp, err := proxyReqParams.Adapter.getResponse(respData, respCode, proxyReqParams.ResponseData.Metadata)
 	if err != nil {
-		return ProxyRequestResponse{
-			ProxyRequestStatusCode:   respCode,
-			ProxyRequestResponseBody: err.Error(),
-			RespContentType:          "text/plain; charset=utf-8",
-			RespStatusCodes:          routerJobResponseCodes,
-			RespBodys:                routerJobResponseBodys,
-			DontBatchDirectives:      routerJobDontBatchDirectives,
+		// output was present but its payload will not parse - same "unmarshal error" reason as the
+		// outer envelope.
+		reason, msg := reasonUnmarshalError, "[TransformerProxy] proxy response output unmarshal failed"
+		if infraFailure {
+			reason, msg = reasonTransportError, "[TransformerProxy] non-transformer response output unmarshal failed"
 		}
+		emitBreach(reason, msg,
+			logger.NewIntField("statusCode", int64(httpPrxResp.statusCode)),
+			logger.NewIntSliceField("jobIDs", proxyReqParams.ResponseData.JobIDs()))
+		return proxyErrorResponse(respCode, err.Error(), routerJobDontBatchDirectives)
+	}
+	// Compared as sets: a request can legitimately carry the same JobID twice (router/worker.go only
+	// dedupes when building final responses). Only meaningful for v1 - v0 keys the map by the request
+	// metadata, so the sets are equal by construction.
+	jobIDsInMetadata := lo.Uniq(proxyReqParams.ResponseData.JobIDs())
+	slices.Sort(jobIDsInMetadata)
+	jobIDsInResponse := slices.Sorted(maps.Keys(transResp.routerJobResponseCodes))
+	// Non-fatal: the results were applied, but may be attached to the wrong jobs. Duplicate response
+	// entries collapse to one map key, silently dropping a status - a breach the set check cannot see.
+	duplicateResponses := transResp.responseEntriesCount > len(transResp.routerJobResponseCodes)
+	if !slices.Equal(jobIDsInMetadata, jobIDsInResponse) || duplicateResponses {
+		emitBreach(reasonInOutMismatch,
+			"[TransformerProxy] JobIDs in out mismatch",
+			logger.NewIntSliceField("jobIDsInMetadata", jobIDsInMetadata),
+			logger.NewIntSliceField("jobIDsInResponse", jobIDsInResponse),
+			logger.NewIntField("responseEntries", int64(transResp.responseEntriesCount)))
 	}
 	integrations.CollectIntegrationFailureDetailedStats(trans.stats, transResp.statTags)
 
@@ -640,11 +729,15 @@ type httpProxyResponse struct {
 	respData   []byte
 	statusCode int
 	err        error
+	// fromTransformer reports that the response carried the apiVersion header, which only the
+	// transformer sets. An oauth-transport-synthesized error or an ingress/LB error page carries none,
+	// and is infrastructure rather than a transformer contract breach.
+	fromTransformer bool
 }
 
 func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyReqParams *ProxyRequestParams, payload []byte) httpProxyResponse {
 	var respData []byte
-	destName := proxyReqParams.DestName
+	destName := proxyReqParams.DestType
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, proxyUrl, bytes.NewReader(payload))
 	if err != nil {
 		trans.logger.Errorn("[TransformerProxy] NewRequestWithContext Failed",
@@ -736,8 +829,9 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	}
 
 	return httpProxyResponse{
-		respData:   respData,
-		statusCode: resp.StatusCode,
+		respData:        respData,
+		statusCode:      resp.StatusCode,
+		fromTransformer: resp.Header.Get(apiVersionHeader) != "",
 	}
 }
 
