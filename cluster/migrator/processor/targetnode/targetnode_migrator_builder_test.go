@@ -230,3 +230,7 @@ func (m *mockBufferedJobsDB) RefreshBufferedPartitions(ctx context.Context) erro
 func (m *mockBufferedJobsDB) FlushBufferedPartitions(ctx context.Context, partitionIds []string) error {
 	return nil
 }
+
+func (m *mockBufferedJobsDB) WithStoreConsistency(ctx context.Context, fn func() error) error {
+	return fn()
+}

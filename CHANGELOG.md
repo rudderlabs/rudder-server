@@ -6,7 +6,6 @@
 ### Bug Fixes
 
 * normalize null BingAds offline conversion fields ([#7236](https://github.com/rudderlabs/rudder-server/issues/7236)) ([bffc2b4](https://github.com/rudderlabs/rudder-server/commit/bffc2b49f85e1d1bd081779e4f7294a53d914a88))
-
 ## [1.81.4](https://github.com/rudderlabs/rudder-server/compare/v1.81.3...v1.81.4) (2026-07-28)
 
 
