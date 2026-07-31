@@ -21,7 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 )
 
-func TestGwWorkerPool(t *testing.T) {
+func TestWorkerPool(t *testing.T) {
 	run := func(t *testing.T, pipelining, limitsReached, shouldProcessMultipleSubJobs bool) {
 		wh := &mockWorkerHandle{
 			pipelining: pipelining,
@@ -61,7 +61,7 @@ func TestGwWorkerPool(t *testing.T) {
 
 		// create a worker pool
 		wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker {
-			return newGwPartitionWorker(partition, wh, stats.NOP.NewTracer(""), stats.NOP)
+			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""), stats.NOP)
 		}, logger.NOP)
 
 		// start pinging for work for 100 partitions
@@ -116,7 +116,7 @@ func TestGwWorkerPool(t *testing.T) {
 	})
 }
 
-func TestGwWorkerPoolIdle(t *testing.T) {
+func TestWorkerPoolIdle(t *testing.T) {
 	wh := &mockWorkerHandle{
 		pipelining: true,
 		log:        logger.NewLogger(),
@@ -138,7 +138,7 @@ func TestGwWorkerPoolIdle(t *testing.T) {
 	// create a worker pool
 	wp := workerpool.New(poolCtx,
 		func(partition string) workerpool.Worker {
-			return newGwPartitionWorker(partition, wh, stats.NOP.NewTracer(""), stats.NOP)
+			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""), stats.NOP)
 		},
 		logger.NOP,
 		workerpool.WithCleanupPeriod(200*time.Millisecond),

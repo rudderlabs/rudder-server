@@ -10,11 +10,10 @@ import (
 )
 
 const (
-	FilterEventCode          = 298
-	SuppressEventCode        = 299
-	DrainEventCode           = 410
-	SuccessEventCode         = 200
-	DeliveredWithWarningCode = 296
+	FilterEventCode   = 298
+	SuppressEventCode = 299
+	DrainEventCode    = 410
+	SuccessEventCode  = 200
 
 	FlagBotEventAction = "flag"
 	DropBotEventAction = "drop"

@@ -15,9 +15,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/tracing"
 )
 
-// newGwPipelineWorker new worker which manages a single pipeline of a partition
-func newGwPipelineWorker(index int, partition string, h workerHandle, t *tracing.Tracer) *gwPipelineWorker {
-	w := &gwPipelineWorker{
+// newPipelineWorker new worker which manages a single pipeline of a partition
+func newPipelineWorker(index int, partition string, h workerHandle, t *tracing.Tracer) *pipelineWorker {
+	w := &pipelineWorker{
 		index:     index,
 		handle:    h,
 		logger:    h.logger().Withn(logger.NewStringField("partition", partition)),
@@ -45,12 +45,12 @@ func newGwPipelineWorker(index int, partition string, h workerHandle, t *tracing
 	return w
 }
 
-// gwPipelineWorker performs all processing steps of a partition's pipeline:
+// pipelineWorker performs all processing steps of a partition's pipeline:
 //  1. preprocess
 //  2. preTransform
 //  3. transform
 //  4. store
-type gwPipelineWorker struct {
+type pipelineWorker struct {
 	index     int
 	partition string
 	handle    workerHandle
@@ -73,7 +73,7 @@ type gwPipelineWorker struct {
 }
 
 // start launches the various worker goroutines for the pipelined processing
-func (w *gwPipelineWorker) start() {
+func (w *pipelineWorker) start() {
 	// Setup context cancellation handler
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
@@ -230,7 +230,7 @@ func (w *gwPipelineWorker) start() {
 }
 
 // Stop gracefully terminates the worker by canceling its context and waiting for goroutines to finish
-func (w *gwPipelineWorker) Stop() {
+func (w *pipelineWorker) Stop() {
 	w.lifecycle.cancel()
 	w.lifecycle.wg.Wait()
 }

@@ -19,9 +19,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/tracing"
 )
 
-type gwPartitionWorker struct {
+type partitionWorker struct {
 	partition    string
-	pipelines    []*gwPipelineWorker
+	pipelines    []*pipelineWorker
 	logger       logger.Logger
 	stats        *processorStats
 	tracer       *tracing.Tracer
@@ -29,21 +29,21 @@ type gwPartitionWorker struct {
 	statsFactory stats.Stats
 }
 
-// newGwPartitionWorker creates a new worker for the specified partition
-func newGwPartitionWorker(partition string, h workerHandle, t stats.Tracer, statsFactory stats.Stats) *gwPartitionWorker {
-	w := &gwPartitionWorker{
+// newPartitionWorker creates a new worker for the specified partition
+func newPartitionWorker(partition string, h workerHandle, t stats.Tracer, statsFactory stats.Stats) *partitionWorker {
+	w := &partitionWorker{
 		partition:    partition,
 		logger:       h.logger().Child(partition),
 		stats:        h.stats(),
-		tracer:       tracing.New(t, tracing.WithNamePrefix("gwPartitionWorker")),
+		tracer:       tracing.New(t, tracing.WithNamePrefix("partitionWorker")),
 		handle:       h,
 		statsFactory: statsFactory,
 	}
 	// Create workers for each pipeline
 	pipelinesPerPartition := h.config().pipelinesPerPartition
-	w.pipelines = make([]*gwPipelineWorker, pipelinesPerPartition)
+	w.pipelines = make([]*pipelineWorker, pipelinesPerPartition)
 	for i := range pipelinesPerPartition {
-		w.pipelines[i] = newGwPipelineWorker(i, partition, h, tracing.New(t, tracing.WithNamePrefix("gwPipelineWorker")))
+		w.pipelines[i] = newPipelineWorker(i, partition, h, tracing.New(t, tracing.WithNamePrefix("pipelineWorker")))
 	}
 
 	return w
@@ -51,7 +51,7 @@ func newGwPartitionWorker(partition string, h workerHandle, t stats.Tracer, stat
 
 // Work processes jobs for the specified partition
 // Returns true if work was done, false otherwise
-func (w *gwPartitionWorker) Work() bool {
+func (w *partitionWorker) Work() bool {
 	// If pipelining is disabled, use the legacy job handling path
 	if !w.handle.config().enablePipelining {
 		return w.handle.handlePendingGatewayJobs(w.partition)
@@ -106,16 +106,16 @@ func (w *gwPartitionWorker) Work() bool {
 }
 
 // SleepDurations returns the min and max sleep durations for the worker
-func (w *gwPartitionWorker) SleepDurations() (min, max time.Duration) {
+func (w *partitionWorker) SleepDurations() (min, max time.Duration) {
 	return w.handle.config().readLoopSleep.Load(), w.handle.config().maxLoopSleep.Load()
 }
 
 // Stop stops the worker and waits until all its goroutines have stopped
-func (w *gwPartitionWorker) Stop() {
+func (w *partitionWorker) Stop() {
 	var wg sync.WaitGroup
 	for _, pipeline := range w.pipelines {
 		wg.Add(1)
-		go func(p *gwPipelineWorker) {
+		go func(p *pipelineWorker) {
 			defer wg.Done()
 			p.Stop()
 		}(pipeline)
@@ -123,7 +123,7 @@ func (w *gwPartitionWorker) Stop() {
 	wg.Wait() // Wait for all stop operations to complete
 }
 
-func (w *gwPartitionWorker) sendToPreProcess(ctx context.Context, jobsByPipeline map[int][]*jobsdb.JobT) error {
+func (w *partitionWorker) sendToPreProcess(ctx context.Context, jobsByPipeline map[int][]*jobsdb.JobT) error {
 	spanTags := stats.Tags{"partition": w.partition}
 	_, span := w.tracer.Trace(ctx, "Work.sendToPreProcess", tracing.WithTraceTags(spanTags))
 	defer span.End()

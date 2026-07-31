@@ -65,18 +65,11 @@ type roundTripState struct {
 	req         *http.Request
 }
 
-// httpResponseCreator builds a response this transport synthesizes on an error path, rather than one
-// received from the upstream service. It deliberately carries no apiVersion header: only the
-// transformer stamps that (ControllerUtility.deliveryPostProcess), so its absence marks a response that
-// did not come from the transformer. That covers more than this transport's own errors - an ingress or
-// reverse proxy in front of the transformer, or an unhandled transformer exception routed through the
-// global error handler rather than deliveryPostProcess, all lack it too - which is why the router keys
-// its infra-vs-breach classification on apiVersion presence rather than on this being a distinct marker.
 func httpResponseCreator(statusCode int, body []byte) *http.Response {
 	return &http.Response{
 		StatusCode: statusCode,
 		Body:       io.NopCloser(bytes.NewReader(body)),
-		Header:     http.Header{},
+		Header:     http.Header{"apiVersion": []string{"2"}},
 	}
 }
 

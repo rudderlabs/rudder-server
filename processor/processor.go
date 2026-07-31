@@ -150,7 +150,6 @@ type Handle struct {
 	isolationStrategy          isolation.Strategy
 	limiter                    struct {
 		read         kitsync.Limiter
-		pread        kitsync.Limiter // proc pool read (getProcJobs), independent of gw pool read
 		preprocess   kitsync.Limiter
 		srcHydration kitsync.Limiter
 		pretransform kitsync.Limiter
@@ -200,6 +199,7 @@ type Handle struct {
 		pythonTransformConfig                     transformerutils.PythonTransformConfig
 		userTransformationMirroringBlockedIDs     config.ValueLoader[[]string]
 		storeSamplerEnabled                       config.ValueLoader[bool]
+		archiveInPreProcess                       bool
 	}
 
 	drainConfig struct {
@@ -682,10 +682,6 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.read.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.read.dynamicPeriod")))
-	proc.limiter.pread = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_pread",
-		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.pread.limit"),
-		s,
-		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.pread.dynamicPeriod")))
 	proc.limiter.preprocess = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_preprocess",
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.preprocess.limit"),
 		s,
@@ -710,15 +706,14 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.store.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.store.dynamicPeriod")))
-
 	g.Go(func() error {
 		limiterGroup.Wait()
 		return nil
 	})
 
-	// gw consumer loop
+	// pinger loop
 	g.Go(crash.Wrapper(func() error {
-		proc.logger.Infon("Starting gw consumer loop")
+		proc.logger.Infon("Starting pinger loop")
 		proc.backendConfig.WaitForConfig(ctx)
 		proc.logger.Infon("Backend config received")
 
@@ -744,7 +739,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 
 		h := &workerHandleAdapter{proc}
 		pool := workerpool.New(ctx, func(partition string) workerpool.Worker {
-			return newGwPartitionWorker(partition, h, proc.statsFactory.NewTracer("gwPartitionWorker"), proc.statsFactory)
+			return newPartitionWorker(partition, h, proc.statsFactory.NewTracer("partitionWorker"), proc.statsFactory)
 		}, proc.logger)
 		defer pool.Shutdown()
 		for {
@@ -757,11 +752,6 @@ func (proc *Handle) Start(ctx context.Context) error {
 				pool.PingWorker(partition)
 			}
 		}
-	}))
-
-	// proc consumer loop — no-op unless procDB is configured
-	g.Go(crash.Wrapper(func() error {
-		return proc.startProcConsumer(ctx)
 	}))
 
 	return g.Wait()
@@ -817,6 +807,7 @@ func (proc *Handle) loadConfig() {
 	proc.config.transformTimesPQLength = proc.conf.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = proc.conf.GetStringVar("GW", "Gateway.CustomVal")
+	proc.config.archiveInPreProcess = proc.conf.GetBoolVar(false, "Processor.archiveInPreProcess")
 	proc.config.pythonTransformConfig = transformerutils.LoadPythonTransformConfig(proc.conf)
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
@@ -2210,10 +2201,12 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		return nil, fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList))
 	}
 
-	if err := proc.storeArchiveJobs(ctx, archivalJobs); err != nil {
-		return nil, err
+	if proc.config.archiveInPreProcess {
+		if err := proc.storeArchiveJobs(ctx, archivalJobs); err != nil {
+			return nil, err
+		}
+		archivalJobs = nil
 	}
-	archivalJobs = nil
 
 	return &srcHydrationMessage{
 		partition:                     partition,
@@ -2254,11 +2247,30 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	groupedEvents := make(map[string][]types.TransformerEvent)
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 
-	if err := proc.storeEventSchemaJobs(ctx,
-		lo.Flatten(lo.MapToSlice(preTrans.eventSchemaJobsBySourceId, func(_ SourceIDT, jobs []*jobsdb.JobT) []*jobsdb.JobT {
-			return jobs
-		}))); err != nil {
-		return nil, err
+	if !proc.config.archiveInPreProcess {
+		g, groupCtx := errgroup.WithContext(ctx)
+
+		g.Go(func() error {
+			return proc.storeEventSchemaJobs(groupCtx,
+				lo.Flatten(lo.MapToSlice(preTrans.eventSchemaJobsBySourceId, func(_ SourceIDT, jobs []*jobsdb.JobT) []*jobsdb.JobT {
+					return jobs
+				})))
+		})
+
+		g.Go(func() error {
+			return proc.storeArchiveJobs(groupCtx, preTrans.archivalJobs)
+		})
+
+		if err := g.Wait(); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := proc.storeEventSchemaJobs(ctx,
+			lo.Flatten(lo.MapToSlice(preTrans.eventSchemaJobsBySourceId, func(_ SourceIDT, jobs []*jobsdb.JobT) []*jobsdb.JobT {
+				return jobs
+			}))); err != nil {
+			return nil, err
+		}
 	}
 
 	// REPORTING - START
@@ -2417,20 +2429,22 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	activationRecordsReports := proc.activationRecordsReporter.GenerateReportsFromJobs(preTrans.jobList, sourceCategoriesBySourceID)
 
 	return &transformationMessage{
-		ctx:                          preTrans.subJobs.ctx,
-		groupedEvents:                groupedEvents,
-		srcPipelineSteps:             sourcePipelineSteps,
-		eventsByMessageID:            preTrans.eventsByMessageID,
-		uniqueMessageIdsBySrcDestKey: uniqueMessageIdsBySrcDestKey,
-		reportMetrics:                preTrans.reportMetrics,
-		statusList:                   preTrans.statusList,
-		sourceDupStats:               preTrans.sourceDupStats,
-		dedupKeys:                    preTrans.dedupKeys,
-		totalEvents:                  preTrans.totalEvents,
-		hasMore:                      preTrans.subJobs.hasMore,
-		rsourcesStats:                preTrans.subJobs.rsourcesStats,
-		trackedUsersReports:          trackedUsersReports,
-		activationRecordsReports:     activationRecordsReports,
+		preTrans.subJobs.ctx,
+		groupedEvents,
+		sourcePipelineSteps,
+		preTrans.eventsByMessageID,
+		uniqueMessageIdsBySrcDestKey,
+		preTrans.reportMetrics,
+		preTrans.statusList,
+		preTrans.sourceDupStats,
+		preTrans.dedupKeys,
+
+		preTrans.totalEvents,
+
+		preTrans.subJobs.hasMore,
+		preTrans.subJobs.rsourcesStats,
+		trackedUsersReports,
+		activationRecordsReports,
 	}, nil
 }
 
@@ -2676,23 +2690,25 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 	}
 
 	return &storeMessage{
-		ctx:                      in.ctx,
-		trackedUsersReports:      in.trackedUsersReports,
-		activationRecordsReports: in.activationRecordsReports,
-		statusList:               in.statusList,
-		destJobs:                 destJobs,
-		batchDestJobs:            batchDestJobs,
-		droppedJobs:              droppedJobs,
-		procErrorJobsByDestID:    procErrorJobsByDestID,
-		routerDestIDs:            lo.Keys(routerDestIDs),
-		reportMetrics:            in.reportMetrics,
-		sourceDupStats:           in.sourceDupStats,
-		dedupKeys:                in.dedupKeys,
-		totalEvents:              in.totalEvents,
-		start:                    in.start,
-		hasMore:                  in.hasMore,
-		rsourcesStats:            in.rsourcesStats,
-		traces:                   in.traces,
+		in.ctx,
+		in.trackedUsersReports,
+		in.activationRecordsReports,
+		in.statusList,
+		destJobs,
+		batchDestJobs,
+		droppedJobs,
+
+		procErrorJobsByDestID,
+		lo.Keys(routerDestIDs),
+
+		in.reportMetrics,
+		in.sourceDupStats,
+		in.dedupKeys,
+		in.totalEvents,
+		in.start,
+		in.hasMore,
+		in.rsourcesStats,
+		in.traces,
 	}
 }
 
@@ -2719,21 +2735,6 @@ type storeMessage struct {
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
 	traces        map[string]stats.Tags
-
-	// statusDB is the jobsdb whose job statuses (statusList) are updated in the final
-	// commit. When nil it defaults to gatewayDB (the in-memory gw pipeline). The
-	// proc pool sets it to procDB so the same storeStage commits its
-	// status update + reports + rsources against the intermediate jobsdb instead.
-	statusDB jobsdb.JobsDB
-}
-
-// statusUpdateDB returns the jobsdb whose statuses storeStage must update: the
-// explicit statusDB when set (proc pool / procDB), otherwise gatewayDB (gw pool).
-func (proc *Handle) statusUpdateDB(in *storeMessage) jobsdb.JobsDB {
-	if in.statusDB != nil {
-		return in.statusDB
-	}
-	return proc.gatewayDB
 }
 
 func (sm *storeMessage) merge(subJob *storeMessage) {
@@ -2945,12 +2946,11 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 		}
 	}
 	in.rsourcesStats.CollectStats(statusList)
-	statusDB := proc.statusUpdateDB(in)
 	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-		return statusDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-			err := statusDB.UpdateJobStatusInTx(ctx, tx, statusList)
+		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
+			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList)
 			if err != nil {
-				return fmt.Errorf("updating %s jobs statuses: %w", statusDB.Identifier(), err)
+				return fmt.Errorf("updating gateway jobs statuses: %w", err)
 			}
 
 			if proc.isReportingEnabled() {
