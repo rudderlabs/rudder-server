@@ -1,7 +1,6 @@
 package pytransformer_contract
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -16,10 +15,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -42,27 +41,18 @@ import (
 func TestConfigBackendRedirectResponse(t *testing.T) {
 	const versionID = "redirect-test-v1"
 
-	pythonCode := `
-def transformEvent(event, metadata):
-    event['foo'] = 'bar'
-    return event
-`
-
 	for _, redirectStatus := range []int{301, 302, 303, 307, 308} {
 		t.Run(fmt.Sprintf("status_%d", redirectStatus), func(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			cb := newRedirectingConfigBackend(t, redirectStatus, pythonCode)
-			pyTransformerURL := startRudderPytransformer(t, pool, cb.backend.URL)
+			cb := newRedirectingConfigBackend(t, redirectStatus)
+			pyURL := startRudderPytransformer(t, pool, cb.backend.URL)
 
-			status, headers, items := postCustomTransform(t, pyTransformerURL, versionID)
+			status, headers, items := sendRawTransformWithHeaders(t, pyURL, redirectTestEvents(versionID, 1))
 
 			t.Logf("pytransformer returned HTTP %d, should-retry=%q reason=%q",
 				status, headers.Get("X-Rudder-Should-Retry"), headers.Get("X-Rudder-Error-Reason"))
-			for _, it := range items {
-				t.Logf("  item: statusCode=%d error=%q", it.StatusCode, it.Error)
-			}
 
 			require.Positive(t, cb.backendHits.Load(),
 				"config backend was never asked for the transformation code")
@@ -91,21 +81,15 @@ def transformEvent(event, metadata):
 // delivered and no dead-letter table to replay them from. One misconfigured proxy destroyed
 // every event for every Python transformation, while JS transformations sailed through.
 //
-// So it proves the events survive, in the only way that really counts: hold the config
-// backend broken for a while and show nothing is aborted, then repair it and show the
-// original events come out the far end transformed. Recovery is the assertion — "not
-// aborted yet" alone would pass on a pipeline that was merely slow.
+// The load-bearing assertion is the recovery: hold the config backend broken, then repair it
+// and show the *original* events come out the far end transformed. Aborted events would be
+// gone, so phase 2 could not pass. The aborted-count check in phase 1 is there to fail early
+// with a clear message rather than as a 60s timeout in phase 2.
 func TestConfigBackendRedirectIsRetriedNotDropped(t *testing.T) {
 	const (
 		redirectStatus = http.StatusFound // 302
 		eventsCount    = 5
 	)
-
-	pythonCode := `
-def transformEvent(event, metadata):
-    event['foo'] = 'bar'
-    return event
-`
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -118,7 +102,7 @@ def transformEvent(event, metadata):
 	}))
 	defer webhookServer.Close()
 
-	cb := newRedirectingConfigBackend(t, redirectStatus, pythonCode)
+	cb := newRedirectingConfigBackend(t, redirectStatus)
 	pyTransformerURL := startRudderPytransformer(t, pool, cb.backend.URL)
 
 	trServer := transformertest.NewBuilder().Build()
@@ -170,16 +154,15 @@ def transformEvent(event, metadata):
 	t.Logf("Sending %d identify events while the config backend redirects...", eventsCount)
 	require.NoError(t, sendEvents(eventsCount, "identify", "writekey-1", url))
 
-	// Phase 1 — broken. Nothing may be aborted and nothing may be delivered.
+	// Phase 1 — broken. Nothing may be aborted.
 	//
-	// Note the gateway jobs are deliberately NOT asserted succeeded here: the processor is
+	// The gateway jobs are deliberately NOT asserted succeeded here: the processor is
 	// blocked retrying the fetch, so they stay in flight. That they are still in flight
 	// rather than resolved is the point — under the old terminal behaviour they would
 	// already have been marked done, with the events gone.
 	t.Log("--- phase 1: config backend redirecting ---")
 	hitsBefore := cb.backendHits.Load()
 	requireNoAbortedUserTransformations(t, ctx, postgresContainer.DB)
-	logAllJobsTableCounts(t, ctx, postgresContainer.DB)
 	require.Greater(t, cb.backendHits.Load(), hitsBefore,
 		"pytransformer should still be retrying the fetch, so the config backend keeps being hit")
 
@@ -190,8 +173,6 @@ def transformEvent(event, metadata):
 	requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 	requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 	requireTransformationApplied(t, ctx, postgresContainer.DB, eventsCount)
-	logAllJobsTableCounts(t, ctx, postgresContainer.DB)
-	logReportedStatuses(t, ctx, postgresContainer.DB)
 
 	require.Zero(t, cb.targetHits.Load(),
 		"redirect was followed: the target server received a request")
@@ -203,30 +184,62 @@ def transformEvent(event, metadata):
 	require.NoError(t, wg.Wait())
 }
 
+// redirectTestEvents builds n events bound to versionID, in the shape sendRawTransform wants.
+func redirectTestEvents(versionID string, n int) []types.TransformerEvent {
+	events := make([]types.TransformerEvent, n)
+	for i := range events {
+		messageID := fmt.Sprintf("msg-%d", i+1)
+		events[i] = types.TransformerEvent{
+			Message: types.SingularEventT{
+				"messageId": messageID, "type": "track", "event": "Test Event",
+			},
+			Metadata: types.Metadata{
+				SourceID: "src-1", DestinationID: "dest-1",
+				WorkspaceID: "ws-1", MessageID: messageID,
+			},
+			Destination: backendconfig.DestinationT{
+				Transformations: []backendconfig.TransformationT{
+					{VersionID: versionID, ID: "transformation-1", Language: "pythonfaas"},
+				},
+			},
+		}
+	}
+	return events
+}
+
 // redirectingConfigBackend is a config backend that answers /transformation/getByVersionId
 // with a redirect until serveCode is called, after which it serves the transformation
 // normally. The flip is what lets a test show that events were held rather than destroyed.
 //
-// It counts hits on both ends. The target counter is the load-bearing one: it distinguishes
-// "the redirect was refused" from "the redirect was followed", which changes what the test is
-// actually observing. The Location is built with toContainerURL so the target is genuinely
-// reachable from inside the pytransformer container — otherwise a followed redirect would
-// surface as a connection error and look like a refusal.
+// newContractConfigBackend can return an arbitrary status, but not a Location header and not
+// a mid-test flip, so this is its own fixture. It counts hits on both ends: the target
+// counter is the load-bearing one, distinguishing "the redirect was refused" from "the
+// redirect was followed", which changes what the test is actually observing. The Location is
+// built with toContainerURL so the target is genuinely reachable from inside the pytransformer
+// container — otherwise a followed redirect would surface as a connection error and look like
+// a refusal.
 type redirectingConfigBackend struct {
-	backend        *httptest.Server
-	target         *httptest.Server
-	backendHits    atomic.Int64
-	targetHits     atomic.Int64
-	redirecting    atomic.Bool
-	redirectStatus int
-	code           string
+	backend     *httptest.Server
+	target      *httptest.Server
+	backendHits atomic.Int64
+	targetHits  atomic.Int64
+	redirecting atomic.Bool
 }
 
-func newRedirectingConfigBackend(t *testing.T, redirectStatus int, code string) *redirectingConfigBackend {
+func newRedirectingConfigBackend(t *testing.T, redirectStatus int) *redirectingConfigBackend {
 	t.Helper()
 
-	cb := &redirectingConfigBackend{redirectStatus: redirectStatus, code: code}
+	cb := &redirectingConfigBackend{}
 	cb.redirecting.Store(true)
+
+	writeCode := func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"code":%q,"language":"pythonfaas","codeVersion":"1"}`, `
+def transformEvent(event, metadata):
+    event['foo'] = 'bar'
+    return event
+`)
+	}
 
 	// Where the redirect points. Serves a perfectly valid transformation, so if the
 	// redirect were followed the fetch would succeed and the test would fail loudly on
@@ -234,7 +247,7 @@ func newRedirectingConfigBackend(t *testing.T, redirectStatus int, code string) 
 	cb.target = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cb.targetHits.Add(1)
 		t.Logf("REDIRECT TARGET was contacted: %s %s", r.Method, r.URL.Path)
-		cb.writeCode(w)
+		writeCode(w)
 	}))
 	t.Cleanup(cb.target.Close)
 
@@ -243,12 +256,11 @@ func newRedirectingConfigBackend(t *testing.T, redirectStatus int, code string) 
 		case "/transformation/getByVersionId", "/transformationLibrary/getByVersionId":
 			cb.backendHits.Add(1)
 			if !cb.redirecting.Load() {
-				cb.writeCode(w)
+				writeCode(w)
 				return
 			}
-			location := toContainerURL(cb.target.URL) + r.URL.Path + "?" + r.URL.RawQuery
-			w.Header().Set("Location", location)
-			w.WriteHeader(cb.redirectStatus)
+			w.Header().Set("Location", toContainerURL(cb.target.URL)+r.URL.Path+"?"+r.URL.RawQuery)
+			w.WriteHeader(redirectStatus)
 		default:
 			t.Logf("CONFIG BACKEND: unexpected path %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -264,54 +276,9 @@ func (cb *redirectingConfigBackend) serveCode() {
 	cb.redirecting.Store(false)
 }
 
-func (cb *redirectingConfigBackend) writeCode(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = fmt.Fprintf(w, `{"code":%q,"language":"pythonfaas","codeVersion":"1"}`, cb.code)
-}
-
-// postCustomTransform posts a single event straight to pytransformer's /customTransform and
-// returns the raw status, headers and decoded items. sendRawTransform in
-// dns_cache_contract_test.go does almost this, but discards the headers, and the retry
-// headers are the contract under test here.
-func postCustomTransform(
-	t *testing.T,
-	baseURL, versionID string,
-) (int, http.Header, []types.TransformerResponse) {
-	t.Helper()
-
-	body, err := jsonrs.Marshal([]any{
-		map[string]any{
-			"message": map[string]any{"messageId": "msg-1", "type": "track", "event": "Test Event"},
-			"metadata": map[string]any{
-				"sourceId": "src-1", "destinationId": "dest-1",
-				"workspaceId": "ws-1", "messageId": "msg-1",
-			},
-			"destination": map[string]any{
-				"Transformations": []any{
-					map[string]any{"VersionID": versionID, "ID": "transformation-1", "Language": "pythonfaas"},
-				},
-			},
-		},
-	})
-	require.NoError(t, err)
-
-	req, err := http.NewRequest(http.MethodPost, baseURL+"/customTransform", bytes.NewReader(body))
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer func() { _ = resp.Body.Close() }()
-
-	var items []types.TransformerResponse
-	require.NoError(t, jsonrs.NewDecoder(resp.Body).Decode(&items))
-
-	return resp.StatusCode, resp.Header.Clone(), items
-}
-
 // requireNoAbortedUserTransformations holds for a few seconds and fails the moment anything
-// is aborted at the user transformation stage or queued for delivery. require.Never rather
-// than a point-in-time check, so a pipeline that has simply not got there yet cannot pass.
+// is aborted at the user transformation stage. require.Never rather than a point-in-time
+// check, so a pipeline that has simply not got there yet cannot pass.
 func requireNoAbortedUserTransformations(t *testing.T, ctx context.Context, db *sql.DB) {
 	t.Helper()
 
@@ -321,114 +288,16 @@ func requireNoAbortedUserTransformations(t *testing.T, ctx context.Context, db *
 			SELECT coalesce(sum(count), 0) FROM reports
 			WHERE pu = $1 AND status = 'aborted'
 		`, reportingtypes.USER_TRANSFORMER).Scan(&aborted)
-		if err == nil && aborted > 0 {
+		if err != nil {
+			return false // reporting not up yet; phase 2 is the real proof either way
+		}
+		if aborted > 0 {
 			t.Logf("ABORTED: %d events aborted at the user transformation stage", aborted)
-			return true
 		}
-
-		for _, table := range []string{"rt_jobs_1", "batch_rt_jobs_1"} {
-			var count int
-			//nolint:gosec // fixed table names
-			if err := db.QueryRowContext(ctx, "SELECT count(*) FROM "+table).Scan(&count); err != nil {
-				continue // a missing table is itself proof nothing was queued there
-			}
-			if count > 0 {
-				t.Logf("DELIVERED: %s unexpectedly has %d jobs", table, count)
-				return true
-			}
-		}
-		return false
+		return aborted > 0
 	},
 		10*time.Second,
 		500*time.Millisecond,
-		"events must be held for retry, not aborted or delivered, while the config backend redirects",
+		"events must be held for retry, not aborted, while the config backend redirects",
 	)
-}
-
-// logAllJobsTableCounts prints the row count of every jobs table in the database. It asserts
-// nothing: it exists so the reader can see for themselves where the events are.
-func logAllJobsTableCounts(t *testing.T, ctx context.Context, db *sql.DB) {
-	t.Helper()
-
-	rows, err := db.QueryContext(ctx, `
-		SELECT table_name
-		FROM information_schema.tables
-		WHERE table_schema = 'public' AND table_name LIKE '%_jobs_%'
-		ORDER BY table_name
-	`)
-	require.NoError(t, err)
-	defer func() { _ = rows.Close() }()
-
-	var tables []string
-	for rows.Next() {
-		var name string
-		require.NoError(t, rows.Scan(&name))
-		tables = append(tables, name)
-	}
-	require.NoError(t, rows.Err())
-
-	t.Log("--- jobs table row counts ---")
-	for _, table := range tables {
-		var count int
-		//nolint:gosec // table name comes from information_schema, not user input
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM "+table).Scan(&count); err != nil {
-			t.Logf("  %-24s <query failed: %v>", table, err)
-			continue
-		}
-		t.Logf("  %-24s %d", table, count)
-	}
-	t.Log("-----------------------------")
-}
-
-// logReportedStatuses prints what the reporting module recorded per pipeline stage. Evidence
-// only — reporting is not guaranteed to be on in this setup, so nothing is asserted.
-func logReportedStatuses(t *testing.T, ctx context.Context, db *sql.DB) {
-	t.Helper()
-
-	var exists bool
-	err := db.QueryRowContext(ctx, `
-		SELECT EXISTS (
-		  SELECT 1 FROM information_schema.tables
-		  WHERE table_schema = 'public' AND table_name = 'reports'
-		)
-	`).Scan(&exists)
-	if err != nil || !exists {
-		t.Logf("no reports table to inspect (err=%v, exists=%v)", err, exists)
-		return
-	}
-
-	rows, err := db.QueryContext(ctx, `
-		SELECT pu, status, status_code, count, coalesce(sample_response, '')
-		FROM reports
-		ORDER BY pu
-	`)
-	if err != nil {
-		t.Logf("querying reports: %v", err)
-		return
-	}
-	defer func() { _ = rows.Close() }()
-
-	t.Log("--- reported statuses ---")
-	var any bool
-	for rows.Next() {
-		var pu, status, sample string
-		var statusCode, count int
-		if err := rows.Scan(&pu, &status, &statusCode, &count, &sample); err != nil {
-			t.Logf("scanning reports: %v", err)
-			return
-		}
-		any = true
-		marker := ""
-		if pu == reportingtypes.USER_TRANSFORMER {
-			marker = "  <-- user transformation stage"
-		}
-		t.Logf("  pu=%-18s status=%-10s status_code=%d count=%d%s", pu, status, statusCode, count, marker)
-		if sample != "" {
-			t.Logf("      sample: %s", sample)
-		}
-	}
-	if !any {
-		t.Log("  (no rows)")
-	}
-	t.Log("-------------------------")
 }

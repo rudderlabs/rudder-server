@@ -447,6 +447,22 @@ func sendRawTransform(
 	[]types.TransformerResponse,
 ) {
 	t.Helper()
+	status, _, items := sendRawTransformWithHeaders(t, baseURL, events)
+	return status, items
+}
+
+// sendRawTransformWithHeaders is sendRawTransform plus the response headers, for tests that
+// assert the retry contract (X-Rudder-Should-Retry / X-Rudder-Error-Reason).
+func sendRawTransformWithHeaders(
+	t *testing.T,
+	baseURL string,
+	events []types.TransformerEvent,
+) (
+	int,
+	http.Header,
+	[]types.TransformerResponse,
+) {
+	t.Helper()
 	payload := make([]any, len(events))
 	for i, ev := range events {
 		payload[i] = map[string]any{
@@ -471,5 +487,5 @@ func sendRawTransform(
 	var items []types.TransformerResponse
 	require.NoError(t, jsonrs.NewDecoder(resp.Body).Decode(&items))
 
-	return resp.StatusCode, items
+	return resp.StatusCode, resp.Header.Clone(), items
 }
