@@ -615,6 +615,91 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			Expect(err).To(BeNil())
 		})
 
+		It("Transform() Test -> null microsoftClickId falls back to email/phone and writes empty CSV cells", func() {
+			job := &jobsdb.JobT{
+				JobID: 42,
+				EventPayload: []byte(`{
+						"type": "record",
+						"action": "insert",
+						"fields": {
+							"conversionName": "Test-Integration",
+							"conversionTime": "2023-05-22T18:27:54Z",
+							"conversionValue": "100",
+							"conversionCurrencyCode": "USD",
+							"microsoftClickId": null,
+							"email": "test@testmail.com",
+							"phone": "+911234567890",
+							"externalAttributionCredit": null,
+							"externalAttributionModel": "dummy goal name"
+						}
+					}`),
+			}
+			uploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", nil, false)
+
+			resp, err := uploader.Transform(job)
+			Expect(err).To(BeNil())
+
+			var data Data
+			err = jsonrs.Unmarshal([]byte(resp), &data)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			var transformedFields map[string]string
+			err = jsonrs.Unmarshal(data.Message.Fields, &transformedFields)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(transformedFields["microsoftClickId"]).To(Equal(""))
+			Expect(transformedFields["externalAttributionCredit"]).To(Equal(""))
+
+			actionFile, err := createActionFile("insert")
+			Expect(err).ShouldNot(HaveOccurred())
+			defer os.Remove(actionFile.CSVFilePath)
+			defer os.Remove(actionFile.ZipFilePath)
+
+			err = uploader.populateZipFile(actionFile, resp, data)
+			Expect(err).ShouldNot(HaveOccurred())
+			actionFile.CSVWriter.Flush()
+
+			csvContent, err := os.ReadFile(actionFile.CSVFilePath)
+			Expect(err).ShouldNot(HaveOccurred())
+			records, err := csv.NewReader(strings.NewReader(string(csvContent))).ReadAll()
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(records).To(HaveLen(3))
+
+			columnIndex := func(column string) int {
+				for index, header := range records[0] {
+					if header == column {
+						return index
+					}
+				}
+				Fail(fmt.Sprintf("missing CSV column %q", column))
+				return -1
+			}
+			dataRow := records[2]
+			Expect(dataRow[columnIndex("Microsoft Click Id")]).To(Equal(""))
+			Expect(dataRow[columnIndex("External Attribution Credit")]).To(Equal(""))
+			Expect(dataRow).NotTo(ContainElement("<nil>"))
+		})
+
+		It("Transform() Test -> null microsoftClickId without email/phone is invalid", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte(`{
+						"type": "record",
+						"action": "insert",
+						"fields": {
+							"conversionName": "Test-Integration",
+							"conversionTime": "2023-05-22T18:27:54Z",
+							"conversionValue": "100",
+							"conversionCurrencyCode": "USD",
+							"microsoftClickId": null
+						}
+					}`),
+			}
+			uploader := &BingAdsBulkUploader{}
+
+			_, err := uploader.Transform(job)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Equal("missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)"))
+		})
+
 		It("TestBingAdsTransformWithInvalidTimestamp", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
