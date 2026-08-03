@@ -191,7 +191,7 @@ def transformEvent(event, metadata):
 		// Our cap (1s) fires first. The transformation fails with a 400
 		// per-event error (non-retryable user code HTTP timeout).
 		events := []types.TransformerEvent{makeEvent("msg-bigger-1", versionBiggerTimeout)}
-		status, items := sendRawTransform(t, pyURL, events)
+		status, _, items := sendRawTransform(t, pyURL, events)
 		require.Equal(t, http.StatusOK, status,
 			"/customTransform HTTP response must be 200 (per-event errors are in the payload)")
 		require.Len(t, items, 1)
@@ -215,7 +215,7 @@ def transformEvent(event, metadata):
 		// The user passes timeout=0.1 s; the server replies after 2s.
 		// The user's cap fires first (0.5s < our 1s cap < server's 2s delay).
 		events := []types.TransformerEvent{makeEvent("msg-smaller-1", versionSmallerTimeout)}
-		status, items := sendRawTransform(t, pyURL, events)
+		status, _, items := sendRawTransform(t, pyURL, events)
 		require.Equal(t, http.StatusOK, status)
 		require.Len(t, items, 1)
 		require.Equal(t, http.StatusBadRequest, items[0].StatusCode,
@@ -272,13 +272,13 @@ def transformEvent(event, metadata):
 	newConns.Store(0)
 
 	ev1 := makeEvent("msg-pool-1", versionID)
-	status1, items1 := sendRawTransform(t, poolURL, []types.TransformerEvent{ev1})
+	status1, _, items1 := sendRawTransform(t, poolURL, []types.TransformerEvent{ev1})
 	require.Equal(t, http.StatusOK, status1)
 	require.Len(t, items1, 1)
 	require.Equal(t, http.StatusOK, items1[0].StatusCode, "first request must succeed")
 
 	ev2 := makeEvent("msg-pool-2", versionID)
-	status2, items2 := sendRawTransform(t, poolURL, []types.TransformerEvent{ev2})
+	status2, _, items2 := sendRawTransform(t, poolURL, []types.TransformerEvent{ev2})
 	require.Equal(t, http.StatusOK, status2)
 	require.Len(t, items2, 1)
 	require.Equal(t, http.StatusOK, items2[0].StatusCode, "second request must succeed")
@@ -352,13 +352,13 @@ def transformEvent(event, metadata):
 	newConns.Store(0)
 
 	ev1 := makeEvent("msg-shared-alpha", versionIDAlpha)
-	status1, items1 := sendRawTransform(t, sharedURL, []types.TransformerEvent{ev1})
+	status1, _, items1 := sendRawTransform(t, sharedURL, []types.TransformerEvent{ev1})
 	require.Equal(t, http.StatusOK, status1)
 	require.Len(t, items1, 1)
 	require.Equal(t, http.StatusOK, items1[0].StatusCode, "alpha request must succeed")
 
 	ev2 := makeEvent("msg-shared-beta", versionIDBeta)
-	status2, items2 := sendRawTransform(t, sharedURL, []types.TransformerEvent{ev2})
+	status2, _, items2 := sendRawTransform(t, sharedURL, []types.TransformerEvent{ev2})
 	require.Equal(t, http.StatusOK, status2)
 	require.Len(t, items2, 1)
 	require.Equal(t, http.StatusOK, items2[0].StatusCode, "beta request must succeed")
@@ -424,7 +424,7 @@ def transformEvent(event, metadata):
 	events := []types.TransformerEvent{makeEvent("msg-slow-drip-1", versionID)}
 
 	start := time.Now()
-	status, items := sendRawTransform(t, pyURL, events)
+	status, _, items := sendRawTransform(t, pyURL, events)
 	elapsed := time.Since(start)
 	t.Logf("slow-drip request elapsed: %s", elapsed)
 

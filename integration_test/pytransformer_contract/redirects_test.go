@@ -47,7 +47,7 @@ func TestConfigBackendRedirectResponse(t *testing.T) {
 			cb := newRedirectingConfigBackend(t, redirectStatus)
 			pyURL := startRudderPytransformer(t, pool, cb.backend.URL)
 
-			status, headers, items := sendRawTransformWithHeaders(t, pyURL, makeEvents(versionID, 1))
+			status, headers, items := sendRawTransform(t, pyURL, makeEvents(versionID, 1))
 
 			t.Logf("pytransformer returned HTTP %d, should-retry=%q reason=%q",
 				status, headers.Get("X-Rudder-Should-Retry"), headers.Get("X-Rudder-Error-Reason"))
