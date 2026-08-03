@@ -465,13 +465,19 @@ func sendRawTransformWithHeaders(
 	t.Helper()
 	payload := make([]any, len(events))
 	for i, ev := range events {
-		payload[i] = map[string]any{
+		item := map[string]any{
 			"message":  ev.Message,
 			"metadata": ev.Metadata,
 			"destination": map[string]any{
 				"Transformations": ev.Destination.Transformations,
 			},
 		}
+		// Only when set: pytransformer reads libraries per event, and an empty array would
+		// change the cache key for every test that does not use libraries.
+		if len(ev.Libraries) > 0 {
+			item["libraries"] = ev.Libraries
+		}
+		payload[i] = item
 	}
 	body, err := jsonrs.Marshal(payload)
 	require.NoError(t, err)

@@ -18,9 +18,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
@@ -49,7 +47,7 @@ func TestConfigBackendRedirectResponse(t *testing.T) {
 			cb := newRedirectingConfigBackend(t, redirectStatus)
 			pyURL := startRudderPytransformer(t, pool, cb.backend.URL)
 
-			status, headers, items := sendRawTransformWithHeaders(t, pyURL, redirectTestEvents(versionID, 1))
+			status, headers, items := sendRawTransformWithHeaders(t, pyURL, makeEvents(versionID, 1))
 
 			t.Logf("pytransformer returned HTTP %d, should-retry=%q reason=%q",
 				status, headers.Get("X-Rudder-Should-Retry"), headers.Get("X-Rudder-Error-Reason"))
@@ -182,29 +180,6 @@ func TestConfigBackendRedirectIsRetriedNotDropped(t *testing.T) {
 
 	cancel()
 	require.NoError(t, wg.Wait())
-}
-
-// redirectTestEvents builds n events bound to versionID, in the shape sendRawTransform wants.
-func redirectTestEvents(versionID string, n int) []types.TransformerEvent {
-	events := make([]types.TransformerEvent, n)
-	for i := range events {
-		messageID := fmt.Sprintf("msg-%d", i+1)
-		events[i] = types.TransformerEvent{
-			Message: types.SingularEventT{
-				"messageId": messageID, "type": "track", "event": "Test Event",
-			},
-			Metadata: types.Metadata{
-				SourceID: "src-1", DestinationID: "dest-1",
-				WorkspaceID: "ws-1", MessageID: messageID,
-			},
-			Destination: backendconfig.DestinationT{
-				Transformations: []backendconfig.TransformationT{
-					{VersionID: versionID, ID: "transformation-1", Language: "pythonfaas"},
-				},
-			},
-		}
-	}
-	return events
 }
 
 // redirectingConfigBackend is a config backend that answers /transformation/getByVersionId
