@@ -417,3 +417,42 @@ func TestMultiConsumerJobsDB_Cache(t *testing.T) {
 	require.NoError(t, jd.UpdateJobStatus(ctx, []*JobStatusT{succeedFor(res.Jobs[0], "B")}))
 	require.True(t, cacheHit("A"), "B's status update must not invalidate A's cache")
 }
+
+// TestStoreConsumersOnSingleConsumerHandle verifies that a single-consumer jobsdb preserves a
+// job's explicitly-set Consumers on store and round-trips them through GetUnprocessed. This is
+// relied upon by the partition-migration buffer (proc_buf): it is a single-consumer handle that
+// relays multi-consumer proc jobs between nodes, so it must carry their consumers through.
+// Without it, migrated jobs would resurface under the legacy ” consumer and be dropped at the
+// target (unknown destination ""). Jobs without explicit consumers keep the legacy ” consumer.
+func TestStoreConsumersOnSingleConsumerHandle(t *testing.T) {
+	postgres := startPostgres(t)
+
+	prefix := strings.ToLower(rand.String(5))
+	jd := NewForReadWrite(prefix, // NOT multi-consumer
+		WithDBHandle(postgres.DB),
+		WithConfig(config.New()),
+	)
+	require.NoError(t, jd.Start())
+	defer jd.TearDown()
+
+	ctx := context.Background()
+	const customVal = "SC"
+	newJob := func(userID string, consumers []string) *JobT {
+		return &JobT{
+			UUID: uuid.New(), UserID: userID, CustomVal: customVal,
+			Parameters: []byte(`{}`), EventPayload: []byte(`{}`), EventCount: 1,
+			WorkspaceId: "w", Consumers: consumers,
+		}
+	}
+	require.NoError(t, jd.Store(ctx, []*JobT{
+		newJob("with", []string{"A", "B"}),
+		newJob("without", nil),
+	}))
+
+	res, err := jd.GetUnprocessed(ctx, GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10})
+	require.NoError(t, err)
+	require.Len(t, res.Jobs, 2)
+	// GetUnprocessed returns jobs ordered by job_id, i.e. insertion order.
+	require.Equal(t, []string{"A", "B"}, res.Jobs[0].Consumers, "explicit consumers must be preserved on a single-consumer handle")
+	require.Equal(t, []string{""}, res.Jobs[1].Consumers, "a job without consumers keeps the legacy '' consumer")
+}

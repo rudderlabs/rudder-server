@@ -538,7 +538,7 @@ func runRudderServer(t testing.TB, ctx context.Context, cancel context.CancelFun
 	t.Setenv(configKeyToEnv("SourceDebugger.disableEventUploads"), "true")
 	t.Setenv(configKeyToEnv("TransformationDebugger.disableTransformationStatusUploads"), "true")
 	t.Setenv(configKeyToEnv("JobsDB.backup.enabled"), "false")
-	t.Setenv(configKeyToEnv("JobsDB.migrateDSLoopSleepDuration"), "60m")
+	t.Setenv(configKeyToEnv("JobsDB.compactionLoopSleepDuration"), "60m")
 	t.Setenv(configKeyToEnv("archival.Enabled"), "false")
 	t.Setenv(configKeyToEnv("Reporting.syncer.enabled"), "false")
 	t.Setenv(configKeyToEnv("BatchRouter.pingFrequency"), "1s")
@@ -549,7 +549,6 @@ func runRudderServer(t testing.TB, ctx context.Context, cancel context.CancelFun
 	t.Setenv(configKeyToEnv("recovery.enabled"), "false")
 	t.Setenv(configKeyToEnv("Profiler.Enabled"), "false")
 	t.Setenv(configKeyToEnv("Gateway.enableSuppressUserFeature"), "false")
-	t.Setenv(configKeyToEnv("Processor.archiveInPreProcess"), "true")
 	t.Setenv(configKeyToEnv("Processor.SourceHydration.maxRetry"), "2")
 	t.Setenv(configKeyToEnv("enableStats"), "false")
 	if minioResource != nil {

@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.81.5](https://github.com/rudderlabs/rudder-server/compare/v1.81.4...v1.81.5) (2026-07-31)
+
+
+### Bug Fixes
+
+* normalize null BingAds offline conversion fields ([#7236](https://github.com/rudderlabs/rudder-server/issues/7236)) ([bffc2b4](https://github.com/rudderlabs/rudder-server/commit/bffc2b49f85e1d1bd081779e4f7294a53d914a88))
+## [1.81.4](https://github.com/rudderlabs/rudder-server/compare/v1.81.3...v1.81.4) (2026-07-28)
+
+
+### Bug Fixes
+
+* gcs manager allows non-service account credentials and warehouse ssl keys can escape their containing path ([#7227](https://github.com/rudderlabs/rudder-server/issues/7227)) ([9d1b171](https://github.com/rudderlabs/rudder-server/commit/9d1b171a1a5f522eff357cec2df003fe5ca9017b))
+
+## [1.81.3](https://github.com/rudderlabs/rudder-server/compare/v1.81.2...v1.81.3) (2026-07-27)
+
+
+### Bug Fixes
+
+* apply configured client QPS and Burst settings in restConfig ([#7220](https://github.com/rudderlabs/rudder-server/issues/7220)) ([ab4dbf7](https://github.com/rudderlabs/rudder-server/commit/ab4dbf75140f7c7c515a59e86e7c75e2fc72fc76))
+
+## [1.81.2](https://github.com/rudderlabs/rudder-server/compare/v1.81.1...v1.81.2) (2026-07-27)
+
+
+### Bug Fixes
+
+* mid-run pod deaths under concurrent test runs ([#7212](https://github.com/rudderlabs/rudder-server/issues/7212)) ([cf89256](https://github.com/rudderlabs/rudder-server/commit/cf89256c9dc4dc4f98e987d536b9d7078ea7720d))
+
 ## [1.81.1](https://github.com/rudderlabs/rudder-server/compare/v1.81.0...v1.81.1) (2026-07-22)
 
 

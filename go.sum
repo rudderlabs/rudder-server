@@ -1129,8 +1129,8 @@ github.com/rudderlabs/keydb v1.4.1 h1:siT3oHhZ4OLKUam6j7Y9mwMVWJzn0pQqggjHMSM7Oo
 github.com/rudderlabs/keydb v1.4.1/go.mod h1:umU+ZD3zTXzhBjBvMHpg96D3WIDocxzVLdV+Mj8b3pw=
 github.com/rudderlabs/parquet-go v0.0.3 h1:/zgRj929pGKHsthc0kw8stVEcFu1JUcpxDRlhxjSLic=
 github.com/rudderlabs/parquet-go v0.0.3/go.mod h1:WmwBOdvwpXl2aZGRk3NxxgzC/DaWGfax3jrCRhKhtSo=
-github.com/rudderlabs/rudder-go-kit v0.78.0 h1:TKXf7Kn81VDQh2YjE5T97GsSRBql5noGYd908Uxkg2Y=
-github.com/rudderlabs/rudder-go-kit v0.78.0/go.mod h1:yoesfaiqAlJSXKbqZvK+6ohYzKBUVPV1T4yIl3Jq78M=
+github.com/rudderlabs/rudder-go-kit v0.78.1 h1:Kc8dXD/SsVOv9+1dScNwQhhUS5ri16oTs88UR4vJ+9Q=
+github.com/rudderlabs/rudder-go-kit v0.78.1/go.mod h1:UAndMSV22v84OYL4xoFMB1RMI9lQjPUGCF8iK968Dfk=
 github.com/rudderlabs/rudder-observability-kit v0.0.7 h1:vnIkOpcF7GRXytytls7ISfEJLNA14YE9qcoWvv5OGCo=
 github.com/rudderlabs/rudder-observability-kit v0.0.7/go.mod h1:VnydP2BRF1WXrWsbcfL09fC/+Tx/ZYSt3eBB/Yj3wqc=
 github.com/rudderlabs/rudder-schemas v0.12.0 h1:INUfeJdCe8BSEjC9FJkW3X47k/KN9RnutaQMpEWLG9E=
@@ -1946,8 +1946,8 @@ google.golang.org/grpc v1.40.0/go.mod h1:ogyxbiOoUXAkP+4+xa6PZSE9DZgIHtSpzjDTB9K
 google.golang.org/grpc v1.40.1/go.mod h1:ogyxbiOoUXAkP+4+xa6PZSE9DZgIHtSpzjDTB9KAK34=
 google.golang.org/grpc v1.44.0/go.mod h1:k+4IHHFw41K8+bbowsex27ge2rCb65oeWqe4jJ590SU=
 google.golang.org/grpc v1.45.0/go.mod h1:lN7owxKUQEqMfSyQikvvk5tf/6zMPsrK+ONuO11+0rQ=
-google.golang.org/grpc v1.82.0 h1:vguDnZUPjE26w09A63VoxZPnvPjB5Riyc0mkXPFmAIU=
-google.golang.org/grpc v1.82.0/go.mod h1:yzTZ1TB1Z3SG+LIYaI+WiE8D5+PZ3ArnrSp8zF3+/ZA=
+google.golang.org/grpc v1.82.1 h1:NnAxzGRA0677vCa4BUkOAnO5+FfQqVl9iUXeD0IqcGE=
+google.golang.org/grpc v1.82.1/go.mod h1:yzTZ1TB1Z3SG+LIYaI+WiE8D5+PZ3ArnrSp8zF3+/ZA=
 google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.1.0/go.mod h1:6Kw0yEErY5E/yWrBtf03jp27GLLJujG4z/JK95pnjjw=
 google.golang.org/protobuf v0.0.0-20200109180630-ec00e32a8dfd/go.mod h1:DFci5gLYBciE7Vtevhsrf46CRTquxDuWsQurQQe4oz8=
 google.golang.org/protobuf v0.0.0-20200221191635-4d8936d0db64/go.mod h1:kwYJMbMJ01Woi6D6+Kah6886xMZcty6N08ah7+eCXa0=

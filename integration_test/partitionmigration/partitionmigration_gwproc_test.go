@@ -2,6 +2,7 @@ package partitionmigration_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -56,31 +57,26 @@ func TestPartitionMigrationGatewayProcessorMode(t *testing.T) {
 		extraStressWorkspaces int           // number of extra workspace migrations to include (0 = normal mode)
 		restartProcessorEvery time.Duration // how often to restart processor nodes while migration is ongoing
 		jobsDBFanoutEnabled   bool          // whether source nodes declare per-jobsdb fan-out on migration acknowledgement
+		forkDestinations      bool          // fork the destination to the (multi-consumer) proc jobsdb, exercising proc-jobsdb migration
 	}{
-		{name: "normal", extraStressWorkspaces: 0, restartProcessorEvery: 25 * time.Second, jobsDBFanoutEnabled: true},
-		{name: "stress_100_workspaces", extraStressWorkspaces: 100, restartProcessorEvery: 30 * time.Second, jobsDBFanoutEnabled: true},
-		{name: "stress_1000_workspaces", extraStressWorkspaces: 1000, restartProcessorEvery: 35 * time.Second, jobsDBFanoutEnabled: true},
-		{name: "stress_5000_workspaces", extraStressWorkspaces: 5000, restartProcessorEvery: 50 * time.Second, jobsDBFanoutEnabled: true},
-		{name: "legacy_no_jobsdb_fanout", extraStressWorkspaces: 0, restartProcessorEvery: 25 * time.Second, jobsDBFanoutEnabled: false},
+		{name: "normal", extraStressWorkspaces: 0, restartProcessorEvery: 25 * time.Second, jobsDBFanoutEnabled: true, forkDestinations: true},
+		{name: "legacy_no_jobsdb_fanout", extraStressWorkspaces: 0, restartProcessorEvery: 25 * time.Second, jobsDBFanoutEnabled: false, forkDestinations: false},
+		{name: "stress_5000_workspaces", extraStressWorkspaces: 5000, restartProcessorEvery: 50 * time.Second, jobsDBFanoutEnabled: true, forkDestinations: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// Keep the default package unit job within its timeout; full gw/proc stress and legacy
-			// compatibility variants still run in the explicit slow-test mode.
-			if os.Getenv("SLOW") != "1" && (tc.extraStressWorkspaces >= 1000 || !tc.jobsDBFanoutEnabled) {
-				t.Skip("skipping slow gateway-processor partition migration variant; set SLOW=1 to run")
-			}
-			testPartitionMigrationGatewayProcessorMode(t, tc.extraStressWorkspaces, tc.restartProcessorEvery, tc.jobsDBFanoutEnabled)
+			testPartitionMigrationGatewayProcessorMode(t, tc.extraStressWorkspaces, tc.restartProcessorEvery, tc.jobsDBFanoutEnabled, tc.forkDestinations)
 		})
 	}
 }
 
-func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspaces int, restartProcessorEvery time.Duration, jobsDBFanoutEnabled bool) {
+func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspaces int, restartProcessorEvery time.Duration, jobsDBFanoutEnabled, forkDestinations bool) {
 	const (
-		namespace     = "namespace123"
-		workspaceID   = "workspace123"
-		sourceID      = "source123"
-		destinationID = "destination123"
-		writeKey      = "writekey123"
+		namespace          = "namespace123"
+		workspaceID        = "workspace123"
+		sourceID           = "source123"
+		destinationID      = "destination123"
+		abortDestinationID = "destination-abort-123" // second destination, aborted at the router
+		writeKey           = "writekey123"
 
 		numPartitions             = 4                // needs to be a power of 2 (e.g., 2, 4, 8, 16, ...)
 		jobsPerPartitionPerSecond = 50               // number of jobs to send per partition per second from the gateway client
@@ -143,22 +139,31 @@ func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspa
 	wh := newTestWebhook(t)
 	t.Cleanup(wh.Close)
 
-	// start a test backendconfig with 1 source connected to the webhook
+	// start a test backendconfig with 1 source connected to the webhook. When forking, add a
+	// second destination on the same source that the router aborts (never delivered), so each
+	// forked proc job carries two consumers and migration must move all pending consumers.
+	sourceBuilder := backendconfigtest.NewSourceBuilder().
+		WithWorkspaceID(workspaceID).
+		WithID(sourceID).
+		WithWriteKey(writeKey).
+		WithConnection(
+			backendconfigtest.NewDestinationBuilder("WEBHOOK").
+				WithID(destinationID).
+				WithConfigOption("webhookMethod", "POST").
+				WithConfigOption("webhookUrl", wh.URL).
+				Build())
+	if forkDestinations {
+		sourceBuilder = sourceBuilder.WithConnection(
+			backendconfigtest.NewDestinationBuilder("WEBHOOK").
+				WithID(abortDestinationID).
+				WithConfigOption("webhookMethod", "POST").
+				WithConfigOption("webhookUrl", "http://localhost:1234"). // aborted at the router, never delivered
+				Build())
+	}
 	bc := backendconfigtest.NewBuilder().
 		WithNamespace(namespace, backendconfigtest.NewConfigBuilder().
 			WithWorkspaceID(workspaceID).
-			WithSource(
-				backendconfigtest.NewSourceBuilder().
-					WithWorkspaceID(workspaceID).
-					WithID(sourceID).
-					WithWriteKey(writeKey).
-					WithConnection(
-						backendconfigtest.NewDestinationBuilder("WEBHOOK").
-							WithID(destinationID).
-							WithConfigOption("webhookMethod", "POST").
-							WithConfigOption("webhookUrl", wh.URL).
-							Build()).
-					Build()).
+			WithSource(sourceBuilder.Build()).
 			Build()).
 		Build()
 	bc.URL = strings.Replace(bc.URL, "127.0.0.1", localIp, 1) // replace localhost with local IP for docker containers to access
@@ -277,6 +282,12 @@ func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspa
 		"Router.Network.IncludeInstanceIdInHeader": "true", // for debugging in case of receiving out-of-order events
 		"Router.jobIterator.maxQueries":            "1",
 	}
+	if forkDestinations {
+		// fork both destinations to the proc jobsdb (isolation already enabled above) so each
+		// proc job carries two consumers; abort the second at the router so it is never delivered
+		procCommonEnv["Processor.DestinationIsolation.enabledDestinations.all"] = "true"
+		procCommonEnv["Router.toAbortDestinationIDs"] = abortDestinationID
+	}
 	rsBinaryPath := filepath.Join(t.TempDir(), "rudder-server-binary")
 	rudderserver.BuildRudderServerBinary(t, "../../main.go", rsBinaryPath)
 	gwNode0Name := "gw-node-0"
@@ -368,6 +379,14 @@ func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspa
 
 	// wait for some time to let events flow
 	time.Sleep(10 * time.Second)
+
+	if forkDestinations {
+		// the fan-out siphon must be active: forked jobs land in the proc jobsdb of some node,
+		// giving partition migration multi-consumer proc jobs to move
+		require.Eventually(t, func() bool {
+			return procJobsCount(t, pg0.DB)+procJobsCount(t, pg1.DB) > 0
+		}, 30*time.Second, 500*time.Millisecond, "forked jobs should appear in the proc jobsdb")
+	}
 
 	var srcRouterAcks []string
 	err = rudoacker.NewSrcrouterAcker(ctx, g, etcdResource.Client, namespace, []string{"srcrouter"}).
@@ -504,4 +523,14 @@ func restartingProcessorServer(t *testing.T, ctx context.Context, g *errgroup.Gr
 			}
 		}
 	})
+}
+
+// procJobsCount returns the number of jobs currently present in the intermediate (proc)
+// jobsdb of a node. Used to assert the destination-isolation fan-out siphon is active so
+// partition migration has proc jobs to move.
+func procJobsCount(t *testing.T, db *sql.DB) int {
+	t.Helper()
+	var count int
+	require.NoError(t, db.QueryRow("SELECT count(DISTINCT job_id) FROM unionjobsdbmetadata('proc', 10)").Scan(&count))
+	return count
 }
