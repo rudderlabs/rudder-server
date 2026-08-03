@@ -633,7 +633,7 @@ func (cb *configBackendAuthMock) requestsFor(path, versionID string) []cbAuthReq
 // startup concern with nothing for pytransformer to observe.
 func hostedSecretCredentials(hostedServiceSecrets string) []cbCredential {
 	var usernames []string
-	for _, secret := range strings.Split(hostedServiceSecrets, ",") {
+	for secret := range strings.SplitSeq(hostedServiceSecrets, ",") {
 		if trimmed := strings.TrimSpace(secret); trimmed != "" {
 			usernames = append(usernames, trimmed)
 		}
