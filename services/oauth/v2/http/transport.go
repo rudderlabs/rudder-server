@@ -108,7 +108,31 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 	}
 	secret, scErr := t.oauthHandler.FetchToken(rts.tokenParams)
 	if scErr != nil {
-		return httpResponseCreator(scErr.StatusCode(), []byte(scErr.Error()))
+		// Propagate the token fetch failure through the interceptor envelope, so that
+		// callers which ignore the raw HTTP status code (e.g. router transformation, which
+		// otherwise collapses every non-200 to a retryable 500) can act on it. ErrorType
+		// carries the specific failure (e.g. common.RefTokenInvalidGrant) so callers decide
+		// on the error itself rather than inferring terminality from the status code.
+		// OriginalResponse preserves the raw error text for the callers that fall back to it.
+		message := scErr.Error()
+		var errorType string
+		var typeMessageError *v2.TypeMessageError
+		if errors.As(scErr, &typeMessageError) { // use the message from the underlying TypeMessageError if possible
+			message = typeMessageError.Message
+			errorType = typeMessageError.Type
+		}
+		respBody, marshalErr := jsonrs.Marshal(v2.TransportResponse{
+			OriginalResponse: scErr.Error(),
+			InterceptorResponse: v2.OAuthInterceptorResponse{
+				StatusCode: scErr.StatusCode(),
+				Response:   message,
+				ErrorType:  errorType,
+			},
+		})
+		if marshalErr != nil { // should never happen, the payload is a plain struct of scalars
+			return httpResponseCreator(scErr.StatusCode(), []byte(scErr.Error()))
+		}
+		return httpResponseCreator(scErr.StatusCode(), respBody)
 	}
 	rts.req = rts.req.WithContext(cntx.CtxWithSecret(rts.req.Context(), secret))
 

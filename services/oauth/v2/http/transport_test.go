@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -345,6 +346,101 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			// The implementation doesn't modify the response body in the test environment
 			Expect(string(respBody)).To(Equal(`{"valid": "json"}`))
 		})
+
+		// Tests for a proactive token fetch (preRoundTrip) that fails: the failure is reported
+		// through the interceptor envelope so that callers which ignore the raw HTTP status
+		// code can still tell a terminal failure apart from a retryable one.
+		DescribeTable("should report a failing proactive token fetch through the interceptor envelope",
+			func(cpResponseCode int, cpResponse string, expectedStatusCode int, expectedResponse, expectedOriginalResponse, expectedErrorType string) {
+				cache := v2.NewOauthTokenCache()
+				ctrl := gomock.NewController(GinkgoT())
+
+				// the original transport must never be reached: preRoundTrip short circuits
+				mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
+
+				mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
+				mockAuthIdentityProvider.EXPECT().Identity().Return(nil).AnyTimes()
+
+				mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
+				mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(cpResponseCode, cpResponse)
+
+				oauthHandler := v2.NewOAuthHandler(mockAuthIdentityProvider,
+					v2.WithCache(v2.NewOauthTokenCache()),
+					v2.WithLocker(kitsync.NewPartitionRWLocker()),
+					v2.WithStats(stats.Default),
+					v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+					v2.WithCpClient(mockCpConnector),
+				)
+
+				transport := httpClient.NewOAuthTransport(&httpClient.TransportArgs{
+					FlowType:             common.RudderFlowDelivery,
+					TokenCache:           &cache,
+					Locker:               kitsync.NewPartitionRWLocker(),
+					GetAuthErrorCategory: func([]byte) (string, error) { return "", nil },
+					Augmenter:            extensions.RouterBodyAugmenter,
+					OAuthHandler:         oauthHandler,
+					OriginalTransport:    mockRoundTrip,
+				})
+
+				req, _ := http.NewRequest("POST", "http://example.com", bytes.NewReader([]byte(`{}`)))
+				req = req.WithContext(cntx.CtxWithDestination(req.Context(), &backendconfig.DestinationT{
+					ID:              "test-destination-id",
+					WorkspaceID:     "test-workspace-id",
+					Config:          map[string]any{"rudderAccountId": "test-account-id"},
+					DeliveryAccount: &backendconfig.Account{ID: "test-account-id"},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: "test-definition-name",
+						Config: map[string]any{
+							"auth": map[string]any{
+								"type":         "OAuth",
+								"rudderScopes": []any{"delivery"},
+							},
+						},
+					},
+				}))
+
+				res, err := transport.RoundTrip(req)
+				Expect(err).To(BeNil())
+				Expect(res).NotTo(BeNil())
+				Expect(res.StatusCode).To(Equal(expectedStatusCode))
+
+				respBody, err := io.ReadAll(res.Body)
+				Expect(err).To(BeNil())
+
+				var transportResponse v2.TransportResponse
+				Expect(jsonrs.Unmarshal(respBody, &transportResponse)).To(Succeed())
+				Expect(transportResponse.InterceptorResponse.StatusCode).To(Equal(expectedStatusCode))
+				Expect(transportResponse.InterceptorResponse.Response).To(Equal(expectedResponse))
+				// ErrorType is what callers key the abort decision on, not the status code
+				Expect(transportResponse.InterceptorResponse.ErrorType).To(Equal(expectedErrorType))
+				// OriginalResponse keeps the raw error text for the callers that fall back to it
+				Expect(transportResponse.OriginalResponse).To(Equal(expectedOriginalResponse))
+			},
+			Entry("terminal: invalid_grant is tagged as such and propagated as a 400 so the caller can abort",
+				403,
+				`{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant"}`,
+				http.StatusBadRequest,
+				`[google_analytics] "invalid_grant" error, refresh token has been revoked`,
+				`status 400: type: ref_token_invalid_grant, message: [google_analytics] "invalid_grant" error, refresh token has been revoked`,
+				common.RefTokenInvalidGrant,
+			),
+			Entry("retryable: a different error type is tagged with its own type and stays a 500",
+				403,
+				`{"status":403,"body":{"message":"invalid auth token refresh response","status":403,"code":"INVALID_REFRESH_RESPONSE"},"code":"INVALID_REFRESH_RESPONSE"}`,
+				http.StatusInternalServerError,
+				"invalid auth token refresh response",
+				"status 500: type: INVALID_REFRESH_RESPONSE, message: invalid auth token refresh response",
+				common.RefTokenInvalidResponse,
+			),
+			Entry("retryable: a failure with no error type carries an empty ErrorType and stays a 500",
+				200,
+				`{}`,
+				http.StatusInternalServerError,
+				"status 500: empty secret received from CP",
+				"status 500: empty secret received from CP",
+				"",
+			),
+		)
 
 		// Test for Bad Request errors
 		It("should convert Bad Request errors to 500 errors", func() {

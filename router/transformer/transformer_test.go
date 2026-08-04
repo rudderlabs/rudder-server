@@ -450,9 +450,39 @@ type oauthV2TestCase struct {
 	description              string
 	cpResponses              []testutils.CpResponseParams
 	routerTransformResponses []types.DestinationJobT
-	inputEvents              []types.RouterJobT
-	expected                 []types.DestinationJobT
+	// routerTransformStatusCode overrides the status code the mock transformer replies with;
+	// defaults to 200 when routerTransformResponses is set.
+	routerTransformStatusCode int
+	inputEvents               []types.RouterJobT
+	expected                  []types.DestinationJobT
 }
+
+// authStatusInactiveResponses is a transformer response carrying a non-invalid_grant auth error
+// category. The interceptor turns AUTH_STATUS_INACTIVE into a terminal 400, which must NOT be
+// mistaken for invalid_grant by the router transform response handler.
+var authStatusInactiveResponses = []types.DestinationJobT{
+	{
+		JobMetadataArray:  []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}},
+		StatusCode:        http.StatusUnauthorized,
+		AuthErrorCategory: common.CategoryAuthStatusInactive,
+		Destination:       oauthDests[0],
+		Message:           []byte("{}"),
+	},
+}
+
+// authStatusInactiveBody is the exact payload the mock transformer serves for the case above,
+// which is also what the handler records as the job error on the retryable path.
+var authStatusInactiveBody = func() string {
+	b, err := jsonrs.Marshal(authStatusInactiveResponses)
+	if err != nil {
+		panic(err)
+	}
+	out, err := sjson.SetRawBytes([]byte(`{}`), "output", b)
+	if err != nil {
+		panic(err)
+	}
+	return string(out)
+}()
 
 var oauthDests = []backendconfig.DestinationT{
 	{
@@ -597,6 +627,77 @@ var oauthV2RtTcs = []oauthV2TestCase{
 			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, Error: "Reset Content", Destination: oauthDests[0]},
 		},
 	},
+	{
+		description: "when proactive fetch token fails with invalid_grant, all jobs abort with 400 instead of retrying with 500",
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request -> invalid_grant
+			{
+				Code:     403,
+				Response: `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant","access_token":"invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}`,
+			},
+		},
+		inputEvents: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+		expected: []types.DestinationJobT{
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`},
+		},
+	},
+	{
+		description: "when proactive fetch token fails with a non-invalid_grant error, jobs stay 500 (retryable), not aborted",
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request -> empty/invalid secret (non-invalid_grant failure)
+			{
+				Code:     200,
+				Response: `{}`,
+			},
+		},
+		inputEvents: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+		expected: []types.DestinationJobT{
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, Error: "status 500: empty secret received from CP"},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, Error: "status 500: empty secret received from CP"},
+		},
+	},
+	{
+		description: "when fetch token fails with invalid_grant reported at the top level (status 500), jobs still abort with 400",
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request -> invalid_grant surfaced via the top-level errorType key,
+			// which the oauth handler maps to a 500. The error type, not the status, decides.
+			{
+				Code:     500,
+				Response: `{"errorType":"ref_token_invalid_grant","message":"refresh token has been revoked"}`,
+			},
+		},
+		inputEvents: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+		expected: []types.DestinationJobT{
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, Error: "refresh token has been revoked"},
+		},
+	},
+	{
+		description: "when a non-200 transform response carries a non-invalid_grant terminal status (authStatus inactive), jobs stay 500 (retryable), not aborted",
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request -> succeeds, so the failure comes from the transform response
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
+			},
+		},
+		routerTransformResponses:  authStatusInactiveResponses,
+		routerTransformStatusCode: http.StatusBadRequest,
+		inputEvents: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+		expected: []types.DestinationJobT{
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, Error: authStatusInactiveBody},
+		},
+	},
 }
 
 type mockIdentifier struct {
@@ -631,6 +732,9 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 					b, err = jsonrs.Marshal(tc.routerTransformResponses)
 					outputJson, _ = sjson.SetRawBytes([]byte(`{}`), "output", b)
 					statusCode = http.StatusOK
+				}
+				if tc.routerTransformStatusCode != 0 {
+					statusCode = tc.routerTransformStatusCode
 				}
 				require.NoError(t, err)
 				w.WriteHeader(statusCode)

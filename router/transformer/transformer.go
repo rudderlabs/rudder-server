@@ -377,6 +377,19 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		if resp.StatusCode == http.StatusNotFound {
 			statusCode = 404
 		}
+		errBody := string(respData)
+		// invalid_grant means the refresh token has been revoked: retrying cannot help, so the
+		// job is aborted instead of being retried as a generic 500. The error type alone
+		// decides this — not the status the interceptor attached, which is 400 for a token
+		// fetch but 500 when the control plane reports the same error type at the top level.
+		// Every other interceptor outcome, terminal-looking or not, keeps the default
+		// retryable path so that no unrelated failure changes behaviour or message.
+		if transResp.InterceptorResponse.ErrorType == common.RefTokenInvalidGrant {
+			statusCode = http.StatusBadRequest
+			if transResp.InterceptorResponse.Response != "" {
+				errBody = transResp.InterceptorResponse.Response
+			}
+		}
 		for i := range transformMessage.Data {
 			routerJob := &transformMessage.Data[i]
 			resp := types.DestinationJobT{
@@ -385,7 +398,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 				Destination:      routerJob.Destination,
 				Connection:       routerJob.Connection,
 				StatusCode:       statusCode,
-				Error:            string(respData),
+				Error:            errBody,
 			}
 			destinationJobs = append(destinationJobs, resp)
 		}
