@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 // TestColumnsWithDataTypesQuotesBacktickIdentifiers ensures a malicious column
@@ -20,4 +21,13 @@ func TestColumnsWithDataTypesQuotesBacktickIdentifiers(t *testing.T) {
 
 	require.Contains(t, fragment, "`x`` STRING); DROP TABLE users; --`")
 	require.NotContains(t, fragment, "x` STRING); DROP")
+}
+
+func TestQualifiedTableNamesQuoteBacktickIdentifiers(t *testing.T) {
+	tableName := "evil_table`); DROP TABLE victim_secrets; --"
+
+	qualifiedName := warehouseutils.BacktickQuoteQualifiedIdentifier("namespace", tableName)
+
+	require.Equal(t, "`namespace`.`evil_table``); DROP TABLE victim_secrets; --`", qualifiedName)
+	require.NotContains(t, qualifiedName, "evil_table`); DROP")
 }
