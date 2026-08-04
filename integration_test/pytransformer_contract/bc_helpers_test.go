@@ -533,65 +533,42 @@ func startRudderPytransformer(
 ) string {
 	t.Helper()
 	const containerPort = "8080"
-	var lastErr error
-	for attempt := 1; attempt <= 3; attempt++ {
-		cfg := newContainerConfig(t, containerPort)
-		env := []string{
-			"CONFIG_BACKEND_URL=" + toContainerURL(configBackendURL),
-			"UVICORN_PORT=" + cfg.portStr(containerPort),
-		}
-		// With host networking (Linux/CI) all containers share the same network
-		// namespace. This helper does not scrape Prometheus metrics, so let the OS
-		// pick an unused metrics port inside the container instead of racing on a
-		// host-side "free port" probe.
-		if runtime.GOOS != "darwin" {
-			env = append(env, "METRICS_PORT=0")
-		}
-		for _, e := range extraEnv {
-			env = append(env, toContainerURL(e))
-		}
-
-		container, err := pool.RunWithOptions(&dockertest.RunOptions{
-			Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
-			Tag:          "main", // todo: use latest after merging https://github.com/rudderlabs/rudder-pytransformer/pull/76
-			Auth:         registry.AuthConfiguration(),
-			Env:          env,
-			ExtraHosts:   cfg.ExtraHosts,
-			PortBindings: cfg.PortBindings,
-		}, cfg.hostConfigFn)
-		require.NoError(t, err, "failed to start rudder-pytransformer container")
-
-		purged := false
-		purge := func() {
-			if purged {
-				return
-			}
-			purged = true
-			if err := pool.Purge(container); err != nil {
-				t.Logf("Failed to purge pytransformer container: %v", err)
-			}
-		}
-		t.Cleanup(purge)
-
-		pyURL := cfg.url(container, containerPort)
-		err = waitForHealthyErr(pool, pyURL, "rudder-pytransformer")
-		if err == nil {
-			t.Logf("rudder-pytransformer is healthy at %s", pyURL)
-			return pyURL
-		}
-		lastErr = err
-
-		logs := containerLogs(t, pool, container, "rudder-pytransformer")
-		if strings.Contains(strings.ToLower(logs), "address already in use") && attempt < 3 {
-			t.Logf("Retrying rudder-pytransformer startup after host port collision (attempt %d): %v", attempt, err)
-			purge()
-			continue
-		}
-		dumpContainerLogs(t, pool, container, "rudder-pytransformer")
-		break
+	cfg := newContainerConfig(t, containerPort)
+	env := []string{
+		"CONFIG_BACKEND_URL=" + toContainerURL(configBackendURL),
+		"UVICORN_PORT=" + cfg.portStr(containerPort),
 	}
-	require.NoError(t, lastErr, "rudder-pytransformer failed to become healthy")
-	return ""
+	// With host networking (Linux/CI) all containers share the same network
+	// namespace. This helper does not scrape Prometheus metrics, so let the OS
+	// pick an unused metrics port inside the container instead of racing on a
+	// host-side "free port" probe.
+	if runtime.GOOS != "darwin" {
+		env = append(env, "METRICS_PORT=0")
+	}
+	for _, e := range extraEnv {
+		env = append(env, toContainerURL(e))
+	}
+
+	container, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
+		Tag:          "main", // todo: use latest after merging https://github.com/rudderlabs/rudder-pytransformer/pull/76
+		Auth:         registry.AuthConfiguration(),
+		Env:          env,
+		ExtraHosts:   cfg.ExtraHosts,
+		PortBindings: cfg.PortBindings,
+	}, cfg.hostConfigFn)
+	require.NoError(t, err, "failed to start rudder-pytransformer container")
+
+	t.Cleanup(func() {
+		if err := pool.Purge(container); err != nil {
+			t.Logf("Failed to purge pytransformer container: %v", err)
+		}
+	})
+
+	pyURL := cfg.url(container, containerPort)
+	waitForHealthy(t, pool, pyURL, "rudder-pytransformer", container)
+
+	return pyURL
 }
 
 // waitForHealthy polls a service's /health endpoint until it returns 200 OK.
@@ -600,16 +577,7 @@ func startRudderPytransformer(
 func waitForHealthy(t *testing.T, pool *dockertest.Pool, baseURL, name string, containers ...*dockertest.Resource) {
 	t.Helper()
 	t.Logf("Waiting for %s at %s to be healthy...", name, baseURL)
-	err := waitForHealthyErr(pool, baseURL, name)
-	if err != nil && len(containers) > 0 {
-		dumpContainerLogs(t, pool, containers[0], name)
-	}
-	require.NoError(t, err, "%s failed to become healthy", name)
-	t.Logf("%s is healthy at %s", name, baseURL)
-}
-
-func waitForHealthyErr(pool *dockertest.Pool, baseURL, name string) error {
-	return pool.Retry(func() error {
+	err := pool.Retry(func() error {
 		resp, err := http.Get(baseURL + "/health")
 		if err != nil {
 			return err
@@ -621,12 +589,17 @@ func waitForHealthyErr(pool *dockertest.Pool, baseURL, name string) error {
 		}
 		return nil
 	})
+	if err != nil && len(containers) > 0 {
+		dumpContainerLogs(t, pool, containers[0], name)
+	}
+	require.NoError(t, err, "%s failed to become healthy", name)
+	t.Logf("%s is healthy at %s", name, baseURL)
 }
 
 // dumpContainerLogs inspects a container's state and prints its last 100 log
 // lines. This is called when a health check fails so CI output contains enough
 // context to diagnose startup issues.
-func dumpContainerLogs(t testing.TB, pool *dockertest.Pool, container *dockertest.Resource, name string) {
+func dumpContainerLogs(t *testing.T, pool *dockertest.Pool, container *dockertest.Resource, name string) {
 	t.Helper()
 
 	info, err := pool.Client.InspectContainer(container.Container.ID)
@@ -637,18 +610,8 @@ func dumpContainerLogs(t testing.TB, pool *dockertest.Pool, container *dockertes
 			name, info.State.Running, info.State.ExitCode, info.State.Status)
 	}
 
-	logs := containerLogs(t, pool, container, name)
-	if logs == "" {
-		return
-	}
-	t.Logf("=== %s container logs ===\n%s=== end %s logs ===", name, logs, name)
-}
-
-func containerLogs(t testing.TB, pool *dockertest.Pool, container *dockertest.Resource, name string) string {
-	t.Helper()
-
 	var buf bytes.Buffer
-	err := pool.Client.Logs(docker.LogsOptions{
+	err = pool.Client.Logs(docker.LogsOptions{
 		Container:    container.Container.ID,
 		OutputStream: &buf,
 		ErrorStream:  &buf,
@@ -658,9 +621,9 @@ func containerLogs(t testing.TB, pool *dockertest.Pool, container *dockertest.Re
 	})
 	if err != nil {
 		t.Logf("Failed to fetch %s container logs: %v", name, err)
-		return ""
+		return
 	}
-	return buf.String()
+	t.Logf("=== %s container logs ===\n%s=== end %s logs ===", name, buf.String(), name)
 }
 
 // pollOpenFaasFlaskHealthy polls the openfaas-flask-base fwatchdog health
