@@ -32,6 +32,7 @@ type mockIntegrationManager struct {
 	fetchSchemaOutput    func() (whutils.ModelSchema, error)
 	createSchemaOutput   func() error
 	createTableOutputMap map[string]func() error
+	createTableCalls     map[string]*atomic.Int64
 	addColumnsOutputMap  map[string]func() error
 }
 
@@ -50,6 +51,9 @@ func (m *mockIntegrationManager) CreateSchema(_ context.Context) error {
 }
 
 func (m *mockIntegrationManager) CreateTable(_ context.Context, tableName string, _ whutils.ModelTableSchema) error {
+	if calls := m.createTableCalls[tableName]; calls != nil {
+		calls.Add(1)
+	}
 	if m.createTableOutputMap != nil {
 		return m.createTableOutputMap[tableName]()
 	}
@@ -758,11 +762,8 @@ func TestBQStreamAllEvents(t *testing.T) {
 		createProductsTableCalls := atomic.Int64{}
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			return &mockIntegrationManager{
-				createTableOutputMap: map[string]func() error{
-					"products": func() error {
-						createProductsTableCalls.Add(1)
-						return nil
-					},
+				createTableCalls: map[string]*atomic.Int64{
+					"products": &createProductsTableCalls,
 				},
 			}, nil
 		}
@@ -773,7 +774,7 @@ func TestBQStreamAllEvents(t *testing.T) {
 		sm.streamWriterFactory = &mockStreamWriterFactory{
 			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users": noOpStreamWriterFn,
-				"products": func(_ context.Context, _ destConfig, _ string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) {
+				"products": func(_ context.Context, _ destConfig, _ string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) { //nolint:unparam
 					writerNumber := productWriterCreations.Add(1)
 					output := &mockStreamWriter{
 						appendRowsOutput: func(ctx context.Context, data [][]byte) (AppendResult, error) {
