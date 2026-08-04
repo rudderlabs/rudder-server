@@ -1340,6 +1340,40 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(14))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 		})
+
+		t.Run("prevents SQL injection via malicious identifiers", func(t *testing.T) {
+			// Databricks/Delta rejects most special characters in identifiers
+			// (space, ; ( ) = , tab, newline) regardless of quoting, so the only
+			// backtick-quoting breakout character we can exercise is the backtick
+			// itself, which must be doubled. If it weren't, the generated SQL would
+			// malform (the identifier would terminate early) and the DDL would error.
+			maliciousTable := "evil_table`x"
+			maliciousColumn := "evil_col`x"
+			addedColumn := "added_col`x"
+			maliciousSchema := model.TableSchema{"id": "string", maliciousColumn: "string"}
+
+			// newMockUploader dereferences loadFiles[0], so pass a non-empty slice.
+			dummyLoadFiles := []whutils.LoadFile{{Location: "dummy.parquet"}}
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
+			require.NoError(t, d.Setup(ctx, warehouse, newMockUploader(t, dummyLoadFiles, maliciousTable, maliciousSchema, maliciousSchema, whutils.LoadFileTypeParquet, false, false)))
+
+			require.NoError(t, d.CreateSchema(ctx))
+			require.NoError(t, d.CreateTable(ctx, maliciousTable, maliciousSchema))
+			require.NoError(t, d.AddColumns(ctx, maliciousTable, []whutils.ColumnInfo{{Name: addedColumn, Type: "string"}}))
+
+			// FetchSchema round-trips the actual stored identifiers - a dialect-agnostic
+			// way to confirm the malicious names were created verbatim (quoted, not injected).
+			schema, err := d.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Contains(t, schema, maliciousTable, "malicious table must be created verbatim")
+			require.Contains(t, schema[maliciousTable], maliciousColumn)
+			require.Contains(t, schema[maliciousTable], addedColumn)
+
+			require.NoError(t, d.DropTable(ctx, maliciousTable))
+			schema, err = d.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, schema, maliciousTable, "malicious table should have been dropped")
+		})
 	})
 
 	t.Run("Fetch Schema", func(t *testing.T) {
