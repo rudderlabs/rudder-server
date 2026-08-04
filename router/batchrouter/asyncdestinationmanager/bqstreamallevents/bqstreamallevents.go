@@ -412,7 +412,7 @@ func (m *Manager) processTable(ctx context.Context, cfg destConfig, integrationM
 		m.stats.discards.Count(len(discardedRecords))
 	}
 
-	streamResult := m.streamEventBatches(ctx, cfg, tableName, warehouseEventsSchema, tableEventsList)
+	streamResult := m.streamEventBatches(ctx, cfg, integrationManagerCreator, tableName, warehouseEventsSchema, tableEventsList)
 
 	m.logger.Infon("Processed table",
 		logger.NewStringField("namespace", cfg.Namespace),
@@ -448,7 +448,7 @@ func (m *Manager) processTable(ctx context.Context, cfg destConfig, integrationM
 // re-appending (and duplicating) the chunks that landed. The writer and schema
 // cache are evicted on any failure so a retry rebuilds them against the current
 // table schema.
-func (m *Manager) streamEventBatches(ctx context.Context, cfg destConfig, tableName string, schema whutils.ModelTableSchema, tableEventsList []tableEvents) streamEventBatchesResult {
+func (m *Manager) streamEventBatches(ctx context.Context, cfg destConfig, integrationManagerCreator IntegrationManagerCreator, tableName string, schema whutils.ModelTableSchema, tableEventsList []tableEvents) streamEventBatchesResult {
 	tableStreamWriter, err := m.writerForTable(ctx, cfg, tableName, schema)
 	if err != nil {
 		m.invalidateTableCacheAndStreamWriter(cfg, tableName)
@@ -478,6 +478,19 @@ func (m *Manager) streamEventBatches(ctx context.Context, cfg destConfig, tableN
 		}
 
 		if err := tableStreamWriter.AppendRows(ctx, encodedRows); err != nil {
+			if isNotFoundError(err) {
+				recoveredWriter, recoveryErr := m.recoverTableAfterStreamNotFound(ctx, cfg, integrationManagerCreator, tableName, schema)
+				if recoveryErr != nil {
+					err = errors.Join(err, recoveryErr)
+				} else {
+					tableStreamWriter = recoveredWriter
+					err = tableStreamWriter.AppendRows(ctx, encodedRows)
+				}
+			}
+			if err == nil {
+				result.succeededIDs = append(result.succeededIDs, tableEvents.jobIDs...)
+				continue
+			}
 			result.failedIDs = append(result.failedIDs, tableEvents.jobIDs...)
 			result.failedError = errors.Join(result.failedError, fmt.Errorf("appending rows: %w", err))
 			continue
@@ -486,6 +499,26 @@ func (m *Manager) streamEventBatches(ctx context.Context, cfg destConfig, tableN
 		result.succeededIDs = append(result.succeededIDs, tableEvents.jobIDs...)
 	}
 	return result
+}
+
+func (m *Manager) recoverTableAfterStreamNotFound(ctx context.Context, cfg destConfig, integrationManagerCreator IntegrationManagerCreator, tableName string, schema whutils.ModelTableSchema) (*tableStreamWriter, error) {
+	m.logger.Infon("Recovering table stream after not found",
+		logger.NewStringField("namespace", cfg.Namespace),
+		logger.NewStringField("table", tableName),
+	)
+
+	m.invalidateTableCacheAndStreamWriter(cfg, tableName)
+
+	if err := m.createTableAndAddColumnsIfNeeded(ctx, cfg, integrationManagerCreator, tableName, schema); err != nil {
+		return nil, fmt.Errorf("reconciling table schema after not found: %w", err)
+	}
+
+	tableStreamWriter, err := m.writerForTable(ctx, cfg, tableName, schema)
+	if err != nil {
+		m.invalidateTableCacheAndStreamWriter(cfg, tableName)
+		return nil, fmt.Errorf("creating stream writer after not found: %w", err)
+	}
+	return tableStreamWriter, nil
 }
 
 // streamDiscardedEvents encodes the discarded rows and appends them through the

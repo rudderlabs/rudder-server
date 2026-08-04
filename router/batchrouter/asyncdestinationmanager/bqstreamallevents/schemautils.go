@@ -36,6 +36,10 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return false
 }
 
+func isNotFoundError(err error) bool {
+	return status.Code(err) == codes.NotFound
+}
+
 // shouldAbort classifies an error as terminal (abort the jobs) vs retryable
 func shouldAbort(err error) bool {
 	switch status.Code(err) {

@@ -742,6 +742,80 @@ func TestBQStreamAllEvents(t *testing.T) {
 		require.ElementsMatch(t, []int64{1001, 1003}, output.SucceededJobIDs)
 	})
 
+	t.Run("Upload: recovers events stream after table not found", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		now := timeutil.Now()
+		productsSchema := whutils.ModelTableSchema{"id": "int", "product_id": "string", "price": "float", "in_stock": "boolean", "received_at": "datetime"}
+		usersSchema := whutils.ModelTableSchema{"id": "int", "name": "string", "age": "int", "received_at": "datetime"}
+
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
+		sm.schemaCache.Set("products", productsSchema, now)
+		sm.schemaCache.Set("users", usersSchema, now)
+		sm.schemaCache.Set("rudder_discards", discardsTableSchema, now)
+
+		createProductsTableCalls := atomic.Int64{}
+		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
+			return &mockIntegrationManager{
+				createTableOutputMap: map[string]func() error{
+					"products": func() error {
+						createProductsTableCalls.Add(1)
+						return nil
+					},
+				},
+			}, nil
+		}
+
+		productWriterCreations := atomic.Int64{}
+		productWriterCloseCalls := atomic.Int64{}
+		productAppendCalls := atomic.Int64{}
+		sm.streamWriterFactory = &mockStreamWriterFactory{
+			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
+				"users": noOpStreamWriterFn,
+				"products": func(_ context.Context, _ destConfig, _ string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) {
+					writerNumber := productWriterCreations.Add(1)
+					output := &mockStreamWriter{
+						appendRowsOutput: func(ctx context.Context, data [][]byte) (AppendResult, error) {
+							productAppendCalls.Add(1)
+							outputResult := &mockAppendResult{
+								getResultOutput: func(ctx context.Context) (int64, error) {
+									if writerNumber == 1 {
+										return 0, status.Error(codes.NotFound, "table deleted")
+									}
+									return 0, nil
+								},
+							}
+							return outputResult, nil
+						},
+						closeOutput: func() error {
+							productWriterCloseCalls.Add(1)
+							return nil
+						},
+					}
+					return &tableStreamWriter{writer: output, descriptor: requireDescriptorForSchema(t, tableSchema)}, nil
+				},
+			},
+		}
+
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			ImportingJobIDs: []int64{1},
+			Destination:     destination,
+			FileName:        "testdata/successful_records.txt",
+		})
+
+		require.ElementsMatch(t, []int64{1001, 1002, 1003, 1004}, output.SucceededJobIDs)
+		require.Empty(t, output.FailedJobIDs)
+		require.Equal(t, 0, output.FailedCount)
+		require.Equal(t, int64(1), createProductsTableCalls.Load())
+		require.Equal(t, int64(2), productWriterCreations.Load())
+		require.Equal(t, int64(1), productWriterCloseCalls.Load())
+		require.Equal(t, int64(2), productAppendCalls.Load())
+		productsSchema, ok := sm.schemaCache.Get("products", now)
+		require.True(t, ok)
+		require.Equal(t, whutils.ModelTableSchema{"id": "int", "product_id": "string", "price": "float", "in_stock": "boolean", "received_at": "datetime"}, productsSchema)
+	})
+
 	t.Run("Upload: error getting result of events rows", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
