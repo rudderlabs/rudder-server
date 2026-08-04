@@ -63,7 +63,7 @@ func (c panicSafeCleaner) Cleanup(fn func()) {
 	c.TB.Cleanup(func() {
 		defer func() {
 			if r := recover(); r != nil {
-				c.TB.Logf("recovered panic from Docker cleanup: %v", r)
+				c.Logf("recovered panic from Docker cleanup: %v", r)
 			}
 		}()
 		fn()
