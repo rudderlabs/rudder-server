@@ -1344,12 +1344,11 @@ func TestIntegration(t *testing.T) {
 		t.Run("prevents SQL injection via malicious identifiers", func(t *testing.T) {
 			// Databricks/Delta rejects most special characters in identifiers
 			// (space, ; ( ) = , tab, newline) regardless of quoting, so the only
-			// backtick-quoting breakout character we can exercise is the backtick
-			// itself, which must be doubled. If it weren't, the generated SQL would
-			// malform (the identifier would terminate early) and the DDL would error.
-			maliciousTable := "evil_table`x"
-			maliciousColumn := "evil_col`x"
-			addedColumn := "added_col`x"
+			// backtick-quoting breakout character we can exercise in this live test
+			// is on columns, where the backtick must be doubled.
+			maliciousTable := "evil_table_drop_table"
+			maliciousColumn := "evil_col`drop_table"
+			addedColumn := "added_col`drop_table"
 			maliciousSchema := model.TableSchema{"id": "string", maliciousColumn: "string"}
 
 			// newMockUploader dereferences loadFiles[0], so pass a non-empty slice.
