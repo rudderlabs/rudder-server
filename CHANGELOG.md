@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.82.0](https://github.com/rudderlabs/rudder-server/compare/v1.81.0...v1.82.0) (2026-08-03)
+
+
+### Features
+
+* **processor:** fork event processing for configured isolated destinations ([#7207](https://github.com/rudderlabs/rudder-server/issues/7207)) ([6eb91b4](https://github.com/rudderlabs/rudder-server/commit/6eb91b47bfa76631dd22e370f244e70a6547c07b))
+* **processor:** isolated destination processing pipeline ([#7202](https://github.com/rudderlabs/rudder-server/issues/7202)) ([a684641](https://github.com/rudderlabs/rudder-server/commit/a684641a6705d0a377765b891868a162f2206b43))
+* **router:** detect and classify transformer-proxy contract breaches (INT-6839) ([#7184](https://github.com/rudderlabs/rudder-server/issues/7184)) ([c7a15a8](https://github.com/rudderlabs/rudder-server/commit/c7a15a8d88fe248cacd19edadf0d4fc257cb290f))
+* **router:** gate 296 delivered-with-warning behind per-workspace rollout ([#7217](https://github.com/rudderlabs/rudder-server/issues/7217)) ([1d772a1](https://github.com/rudderlabs/rudder-server/commit/1d772a1823ed23b073d44ac8cbd3b0949f443b36))
+
+
+### Bug Fixes
+
+* apply configured client QPS and Burst settings in restConfig ([#7220](https://github.com/rudderlabs/rudder-server/issues/7220)) ([762bc06](https://github.com/rudderlabs/rudder-server/commit/762bc06e2f45ae8660360c715539d2de0beade1b))
+* gcs manager allows non-service account credentials and warehouse ssl keys can escape their containing path ([#7227](https://github.com/rudderlabs/rudder-server/issues/7227)) ([3e126b2](https://github.com/rudderlabs/rudder-server/commit/3e126b2027150b3aaae85500a658e3ef9b9d724c))
+* mid-run pod deaths under concurrent test runs ([#7212](https://github.com/rudderlabs/rudder-server/issues/7212)) ([5279b64](https://github.com/rudderlabs/rudder-server/commit/5279b6473d1a6a6be6c87f349451f2c95b85f23a))
+* normalize null BingAds offline conversion fields ([#7236](https://github.com/rudderlabs/rudder-server/issues/7236)) ([678f130](https://github.com/rudderlabs/rudder-server/commit/678f1307d47314bf148ba50c8edf849ab8c0e430))
+* use correct JSON tag for adjustedConversionTime in bing-ads ([#7204](https://github.com/rudderlabs/rudder-server/issues/7204)) ([50df0f7](https://github.com/rudderlabs/rudder-server/commit/50df0f7a08c435e152a9d5bcdc4b25ba31344496))
+
+
+### Miscellaneous
+
+* add new readme logo ([#7200](https://github.com/rudderlabs/rudder-server/issues/7200)) ([ab86afd](https://github.com/rudderlabs/rudder-server/commit/ab86afdb1d2f27ed4a2f6ad545495655c8259e0c))
+* **deps:** bump the go-deps group across 1 directory with 32 updates ([#7199](https://github.com/rudderlabs/rudder-server/issues/7199)) ([0eaa833](https://github.com/rudderlabs/rudder-server/commit/0eaa8337a3b2efa3d562b87af196730bc4456427))
+* **jobsdb:** graceful shutdown of addNewDSLoop and refreshDSListLoop ([#7210](https://github.com/rudderlabs/rudder-server/issues/7210)) ([78e104c](https://github.com/rudderlabs/rudder-server/commit/78e104cb77d36bf4af7e6bf1b5e56b308f89081d))
+* remove archiveInPreProcess processor toggle ([#7205](https://github.com/rudderlabs/rudder-server/issues/7205)) ([f471b1d](https://github.com/rudderlabs/rudder-server/commit/f471b1db7899e72770d99c79a89d270cf686ed7f))
+
 ## [1.81.5](https://github.com/rudderlabs/rudder-server/compare/v1.81.4...v1.81.5) (2026-07-31)
 
 
