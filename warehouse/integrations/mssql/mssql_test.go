@@ -808,6 +808,43 @@ func TestIntegration(t *testing.T) {
 				{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
 			})
 		})
+
+		t.Run("prevents SQL injection via malicious identifiers", func(t *testing.T) {
+			dropVictim := `; DROP TABLE victim_secrets; --`
+			maliciousNamespace := `evil_ns]` + dropVictim
+			maliciousTable := `evil_table]` + dropVictim
+			maliciousColumn := `evil_col] int)` + dropVictim
+			addedColumn := `added_col] int)` + dropVictim
+
+			maliciousSchema := model.TableSchema{"id": "string", maliciousColumn: "string"}
+
+			maliciousWarehouse := warehouse
+			maliciousWarehouse.Namespace = maliciousNamespace
+
+			ms := mssql.New(config.New(), logger.NOP, stats.NOP)
+			require.NoError(t, ms.Setup(ctx, maliciousWarehouse, newMockUploader(t, nil, maliciousTable, maliciousSchema, maliciousSchema)))
+
+			require.NoError(t, ms.CreateSchema(ctx))
+			// Victim (control) table created through the manager itself.
+			require.NoError(t, ms.CreateTable(ctx, "victim_secrets", model.TableSchema{"id": "string"}))
+			require.NoError(t, ms.CreateTable(ctx, maliciousTable, maliciousSchema))
+			require.NoError(t, ms.AddColumns(ctx, maliciousTable, []whutils.ColumnInfo{{Name: addedColumn, Type: "string"}}))
+
+			// FetchSchema round-trips the stored identifiers - dialect-agnostic verification.
+			schema, err := ms.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Contains(t, schema, "victim_secrets", "victim table must survive - the injection executed")
+			require.Contains(t, schema, maliciousTable, "malicious table must be created verbatim")
+			require.Contains(t, schema[maliciousTable], maliciousColumn)
+			require.Contains(t, schema[maliciousTable], addedColumn)
+
+			// DropTable must also quote the identifier - a broken drop would inject a second DROP.
+			require.NoError(t, ms.DropTable(ctx, maliciousTable))
+			schema, err = ms.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Contains(t, schema, "victim_secrets", "victim table must survive DropTable injection")
+			require.NotContains(t, schema, maliciousTable, "malicious table should have been dropped")
+		})
 	})
 }
 

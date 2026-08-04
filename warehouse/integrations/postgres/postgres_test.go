@@ -5,13 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/lib/pq"
 	"github.com/lib/pq/pqerror"
 	"github.com/ory/dockertest/v3"
@@ -37,7 +35,6 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
@@ -56,28 +53,6 @@ func TestColumnsWithDataTypesQuotesIdentifiers(t *testing.T) {
 
 	require.Equal(t, `"x"" text);copy (select '') to program 'id>/tmp/rce';--" text`, fragment)
 	require.NotContains(t, fragment, `x" text);`)
-}
-
-func TestCreateTableQuotesSchemaAndTableIdentifiers(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer db.Close()
-
-	namespace := `schema";drop schema public;--`
-	tableName := `events");copy (select '') to program 'id>/tmp/rce';--`
-	pg := postgres.New(config.New(), logger.NOP, stats.NOP)
-	pg.DB = sqlmiddleware.New(db)
-	pg.Namespace = namespace
-
-	mock.ExpectExec(regexp.QuoteMeta(`SET search_path to "schema"";drop schema public;--"`)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec(regexp.QuoteMeta(`CREATE TABLE IF NOT EXISTS "schema"";drop schema public;--"."events"");copy (select '') to program 'id>/tmp/rce';--" ( "id" text )`)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-
-	require.NoError(t, pg.CreateTable(context.Background(), tableName, model.TableSchema{
-		"id": model.StringDataType,
-	}))
-	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestIntegration(t *testing.T) {
@@ -1156,66 +1131,49 @@ func TestIntegration(t *testing.T) {
 			require.NotContains(t, fragment, `x" text);`)
 		})
 
-		t.Run("quotes identifiers in create table", func(t *testing.T) {
+		t.Run("prevents SQL injection via malicious identifiers", func(t *testing.T) {
 			ctx := context.Background()
-			tableName := `events");copy (select '') to program 'id>/tmp/rce';--`
-			columnName := `x" text);copy (select '') to program 'id>/tmp/rce';--`
-			maliciousNamespace := `schema";drop schema public;--`
+
+			// Note: Postgres reserves the "pg_" prefix for schema names, so avoid it here.
+			maliciousNamespace := `evil_ns";drop table victim_secrets;--`
+			maliciousTable := `evil_table");drop table victim_secrets;--`
+			maliciousColumn := `evil_col" text);drop table victim_secrets;--`
+			addedColumn := `evil_added_col" text);drop table victim_secrets;--`
+
 			maliciousSchema := model.TableSchema{
-				columnName: "string",
-				"id":       "string",
+				"id":            "string",
+				maliciousColumn: "string",
 			}
 
 			maliciousWarehouse := th.Clone(t, warehouse)
 			maliciousWarehouse.Namespace = maliciousNamespace
 
-			loadFiles := []whutils.LoadFile{}
-			mockUploader := mockUploader(t, loadFiles, tableName, maliciousSchema, maliciousSchema)
-
 			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
-			require.NoError(t, pg.Setup(ctx, maliciousWarehouse, mockUploader))
+			require.NoError(t, pg.Setup(ctx, maliciousWarehouse, mockUploader(t, nil, maliciousTable, maliciousSchema, maliciousSchema)))
+
 			require.NoError(t, pg.CreateSchema(ctx))
-			require.NoError(t, pg.CreateTable(ctx, tableName, maliciousSchema))
+			// Victim (control) table created through the manager; an injected
+			// `drop table victim_secrets` (search_path is the malicious schema) would remove it.
+			require.NoError(t, pg.CreateTable(ctx, "victim_secrets", model.TableSchema{"id": "string"}))
+			require.NoError(t, pg.CreateTable(ctx, maliciousTable, maliciousSchema))
+			require.NoError(t, pg.AddColumns(ctx, maliciousTable, []whutils.ColumnInfo{
+				{Name: addedColumn, Type: "string"},
+			}))
 
-			var publicSchemaExists bool
-			err := pg.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'public')`).Scan(&publicSchemaExists)
+			// FetchSchema round-trips the stored identifiers - dialect-agnostic verification.
+			schema, err := pg.FetchSchema(ctx)
 			require.NoError(t, err)
-			require.True(t, publicSchemaExists)
+			require.Contains(t, schema, "victim_secrets", "victim table must survive - the injection executed")
+			require.Contains(t, schema, maliciousTable, "malicious table must be created verbatim")
+			require.Contains(t, schema[maliciousTable], maliciousColumn)
+			require.Contains(t, schema[maliciousTable], addedColumn)
 
-			var maliciousSchemaExists bool
-			err = pg.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = $1)`, maliciousNamespace).Scan(&maliciousSchemaExists)
+			// DropTable must also quote the identifier - a broken drop would inject a second DROP.
+			require.NoError(t, pg.DropTable(ctx, maliciousTable))
+			schema, err = pg.FetchSchema(ctx)
 			require.NoError(t, err)
-			require.True(t, maliciousSchemaExists)
-
-			var tableExists bool
-			err = pg.DB.QueryRowContext(ctx, `
-				SELECT EXISTS (
-				  SELECT 1
-				  FROM information_schema.tables
-				  WHERE table_schema = $1
-				    AND table_name = $2
-				)`,
-				maliciousNamespace,
-				tableName,
-			).Scan(&tableExists)
-			require.NoError(t, err)
-			require.True(t, tableExists)
-
-			var columnExists bool
-			err = pg.DB.QueryRowContext(ctx, `
-				SELECT EXISTS (
-				  SELECT 1
-				  FROM information_schema.columns
-				  WHERE table_schema = $1
-				    AND table_name = $2
-				    AND column_name = $3
-				)`,
-				maliciousNamespace,
-				tableName,
-				columnName,
-			).Scan(&columnExists)
-			require.NoError(t, err)
-			require.True(t, columnExists)
+			require.Contains(t, schema, "victim_secrets", "victim table must survive DropTable injection")
+			require.NotContains(t, schema, maliciousTable, "malicious table should have been dropped")
 		})
 	})
 
