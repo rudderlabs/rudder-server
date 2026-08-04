@@ -41,6 +41,20 @@ type DestinationDefinitionT struct {
 	Name        string
 	DisplayName string
 	Config      map[string]any
+	// Version is the destination definition's current major.minor version (for example "2.0").
+	// It is distinct from DestinationT.Version, which is the destination instance's pinned integration major.
+	Version  string                                   `json:"version,omitempty"`
+	Versions map[string]DestinationDefinitionVersionT `json:"versions,omitempty"`
+}
+
+type DestinationDefinitionVersionT struct {
+	Version          string         `json:"version,omitempty"`
+	Status           string         `json:"status,omitempty"`
+	RetirementDate   string         `json:"retirementDate,omitempty"`
+	MigrationDocsURL string         `json:"migrationDocsUrl,omitempty"`
+	Config           map[string]any `json:"config,omitempty"`
+	ConfigSchema     map[string]any `json:"configSchema,omitempty"`
+	UIConfig         map[string]any `json:"uiConfig,omitempty"`
 }
 
 type SourceDefinitionT struct {

@@ -127,3 +127,111 @@ func TestDestinationT_Version(t *testing.T) {
 		require.Equal(t, 2, cfg.Sources[0].Destinations[0].Version)
 	})
 }
+
+func TestDestinationDefinitionVersioningMetadata(t *testing.T) {
+	const blob = `{
+		"workspaceId": "ws-customerio",
+		"sources": [{
+			"id": "source-1",
+			"destinations": [{
+				"id": "customerio-prod",
+				"name": "Customer IO Prod",
+				"version": 1,
+				"destinationDefinition": {
+					"id": "customerio-definition",
+					"name": "CUSTOMERIO",
+					"displayName": "Customer.io",
+					"config": {
+						"apiVersion": "v2",
+						"secretKeys": ["appApiKey"]
+					},
+					"version": "2.0",
+					"versions": {
+						"1": {
+							"version": "1.0",
+							"status": "supported",
+							"retirementDate": "2026-12-31",
+							"migrationDocsUrl": "https://example.com/customerio-migration",
+							"config": {
+								"apiVersion": "v1",
+								"secretKeys": ["siteId", "apiKey"]
+							},
+							"configSchema": {
+								"type": "object"
+							},
+							"uiConfig": {
+								"legacy": true
+							}
+						}
+					}
+				}
+			}]
+		}]
+	}`
+
+	assertVersionedCustomerIODestination := func(t *testing.T, cfg ConfigT) {
+		t.Helper()
+		require.Len(t, cfg.Sources, 1)
+		require.Len(t, cfg.Sources[0].Destinations, 1)
+
+		destination := cfg.Sources[0].Destinations[0]
+		require.Equal(t, "customerio-prod", destination.ID)
+		require.Equal(t, 1, destination.Version, "destination instance pin must remain distinct from definition current version")
+
+		definition := destination.DestinationDefinition
+		require.Equal(t, "CUSTOMERIO", definition.Name)
+		require.Equal(t, "2.0", definition.Version, "current definition version should survive unmarshal")
+		require.Equal(t, map[string]any{
+			"apiVersion": "v2",
+			"secretKeys": []any{"appApiKey"},
+		}, definition.Config)
+
+		require.Contains(t, definition.Versions, "1")
+		legacyDefinition := definition.Versions["1"]
+		require.Equal(t, "1.0", legacyDefinition.Version)
+		require.Equal(t, "supported", legacyDefinition.Status)
+		require.Equal(t, "2026-12-31", legacyDefinition.RetirementDate)
+		require.Equal(t, "https://example.com/customerio-migration", legacyDefinition.MigrationDocsURL)
+		require.Equal(t, map[string]any{
+			"apiVersion": "v1",
+			"secretKeys": []any{"siteId", "apiKey"},
+		}, legacyDefinition.Config)
+		require.Equal(t, map[string]any{"type": "object"}, legacyDefinition.ConfigSchema)
+		require.Equal(t, map[string]any{"legacy": true}, legacyDefinition.UIConfig)
+	}
+
+	t.Run("unmarshals current-v2 definition with a v1-pinned destination", func(t *testing.T) {
+		var single ConfigT
+		require.NoError(t, jsonrs.Unmarshal([]byte(blob), &single))
+		assertVersionedCustomerIODestination(t, single)
+
+		var namespace map[string]*ConfigT
+		require.NoError(t, jsonrs.Unmarshal([]byte(`{"ws-customerio": `+blob+`}`), &namespace))
+		require.NotNil(t, namespace["ws-customerio"])
+		assertVersionedCustomerIODestination(t, *namespace["ws-customerio"])
+	})
+
+	t.Run("round-trips definition version archive without conflating destination version", func(t *testing.T) {
+		var cfg ConfigT
+		require.NoError(t, jsonrs.Unmarshal([]byte(blob), &cfg))
+
+		data, err := jsonrs.Marshal(cfg)
+		require.NoError(t, err)
+
+		var raw struct {
+			Sources []struct {
+				Destinations []struct {
+					Version               int `json:"version"`
+					DestinationDefinition struct {
+						Version  string                                   `json:"version"`
+						Versions map[string]DestinationDefinitionVersionT `json:"versions"`
+					} `json:"destinationDefinition"`
+				} `json:"destinations"`
+			} `json:"sources"`
+		}
+		require.NoError(t, jsonrs.Unmarshal(data, &raw))
+		require.Equal(t, 1, raw.Sources[0].Destinations[0].Version)
+		require.Equal(t, "2.0", raw.Sources[0].Destinations[0].DestinationDefinition.Version)
+		require.Equal(t, "1.0", raw.Sources[0].Destinations[0].DestinationDefinition.Versions["1"].Version)
+	})
+}

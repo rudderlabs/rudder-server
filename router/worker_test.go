@@ -422,6 +422,7 @@ var _ = Describe("Proxy Request", func() {
 					Expect(len(proxyReqParams.ResponseData.Metadata)).To(Equal(2))
 					Expect(proxyReqParams.ResponseData.Metadata[0].JobID).To(Equal(int64(1)))
 					Expect(proxyReqParams.ResponseData.Metadata[1].JobID).To(Equal(int64(2)))
+					Expect(proxyReqParams.ResponseData.DestinationVersion).To(Equal(1))
 					Expect(proxyReqParams.ResponseData.DestinationConfig).To(Equal(map[string]any{
 						"x": map[string]any{
 							"y": "z",
@@ -478,7 +479,8 @@ var _ = Describe("Proxy Request", func() {
 					},
 				},
 				Destination: backendconfig.DestinationT{
-					ID: gaDestinationID,
+					ID:      gaDestinationID,
+					Version: 1,
 					Config: map[string]any{
 						"x": map[string]any{
 							"y": "z",

@@ -47,6 +47,12 @@ func (b *DestinationBuilder) WithConfigOption(key string, value any) *Destinatio
 	return b
 }
 
+// WithVersion sets the integration major version for the destination instance.
+func (b *DestinationBuilder) WithVersion(version int) *DestinationBuilder {
+	b.v.Version = version
+	return b
+}
+
 // WithUserTransformation adds a user transformation to the destination
 func (b *DestinationBuilder) WithUserTransformation(id, version string) *DestinationBuilder {
 	b.v.Transformations = append(b.v.Transformations, backendconfig.TransformationT{
@@ -59,5 +65,12 @@ func (b *DestinationBuilder) WithUserTransformation(id, version string) *Destina
 // WithDefinitionConfigOption adds a config option to the destination definition
 func (b *DestinationBuilder) WithDefinitionConfigOption(key string, value any) *DestinationBuilder {
 	b.v.DestinationDefinition.Config[key] = value
+	return b
+}
+
+// WithDefinitionVersioning sets version metadata on the destination definition.
+func (b *DestinationBuilder) WithDefinitionVersioning(version string, versions map[string]backendconfig.DestinationDefinitionVersionT) *DestinationBuilder {
+	b.v.DestinationDefinition.Version = version
+	b.v.DestinationDefinition.Versions = versions
 	return b
 }
