@@ -103,7 +103,7 @@ def transformEvent(event, metadata):
 		// Send one request per mock server, sequentially
 		for _, name := range names {
 			events := []types.TransformerEvent{makeEvent("msg-"+name, versionIDs[name])}
-			status, items := sendRawTransform(t, pyURL, events)
+			status, _, items := sendRawTransform(t, pyURL, events)
 			requireCorrectServer(t, name, status, items)
 		}
 
@@ -116,7 +116,7 @@ def transformEvent(event, metadata):
 		// Now repeat the first two — DNS cache should still resolve correctly
 		for _, name := range []string{"alpha", "bravo"} {
 			events := []types.TransformerEvent{makeEvent("msg-"+name+"-repeat", versionIDs[name])}
-			status, items := sendRawTransform(t, pyURL, events)
+			status, _, items := sendRawTransform(t, pyURL, events)
 			requireCorrectServer(t, name, status, items)
 		}
 
@@ -144,7 +144,7 @@ def transformEvent(event, metadata):
 			idx, n := i, name
 			wg.Go(func() {
 				events := []types.TransformerEvent{makeEvent("msg-parallel-"+n, versionIDs[n])}
-				status, items := sendRawTransform(t, pyURL, events)
+				status, _, items := sendRawTransform(t, pyURL, events)
 				results[idx] = result{name: n, status: status, items: items}
 			})
 		}
@@ -168,7 +168,7 @@ def transformEvent(event, metadata):
 		// Same transformation 3 times — DNS cache must remain correct
 		for i := range 3 {
 			events := []types.TransformerEvent{makeEvent(fmt.Sprintf("msg-repeat-%d", i), versionIDs["alpha"])}
-			status, items := sendRawTransform(t, pyURL, events)
+			status, _, items := sendRawTransform(t, pyURL, events)
 			requireCorrectServer(t, "alpha", status, items)
 		}
 
@@ -224,7 +224,7 @@ def transformEvent(event, metadata):
 
 	t.Run("OverrideResolvesToCorrectServer", func(t *testing.T) {
 		events := []types.TransformerEvent{makeEvent("msg-override-1", versionID)}
-		status, items := sendRawTransform(t, pyURL, events)
+		status, _, items := sendRawTransform(t, pyURL, events)
 
 		require.Equal(t, http.StatusOK, status)
 		require.Len(t, items, 1)
@@ -242,7 +242,7 @@ def transformEvent(event, metadata):
 		callsBefore := mockCalls.Load()
 		for i := range 3 {
 			events := []types.TransformerEvent{makeEvent(fmt.Sprintf("msg-override-repeat-%d", i), versionID)}
-			status, items := sendRawTransform(t, pyURL, events)
+			status, _, items := sendRawTransform(t, pyURL, events)
 
 			require.Equal(t, http.StatusOK, status)
 			require.Len(t, items, 1)
@@ -325,22 +325,22 @@ def transformEvent(event, metadata):
 
 	wg.Go(func() {
 		events := []types.TransformerEvent{makeEvent("msg-combined-override-1", versionOverride)}
-		s, items := sendRawTransform(t, pyURL, events)
+		s, _, items := sendRawTransform(t, pyURL, events)
 		results[0] = result{"override-1", "override-server", s, items}
 	})
 	wg.Go(func() {
 		events := []types.TransformerEvent{makeEvent("msg-combined-cached-1", versionCached)}
-		s, items := sendRawTransform(t, pyURL, events)
+		s, _, items := sendRawTransform(t, pyURL, events)
 		results[1] = result{"cached-1", "cached-server", s, items}
 	})
 	wg.Go(func() {
 		events := []types.TransformerEvent{makeEvent("msg-combined-override-2", versionOverride)}
-		s, items := sendRawTransform(t, pyURL, events)
+		s, _, items := sendRawTransform(t, pyURL, events)
 		results[2] = result{"override-2", "override-server", s, items}
 	})
 	wg.Go(func() {
 		events := []types.TransformerEvent{makeEvent("msg-combined-cached-2", versionCached)}
-		s, items := sendRawTransform(t, pyURL, events)
+		s, _, items := sendRawTransform(t, pyURL, events)
 		results[3] = result{"cached-2", "cached-server", s, items}
 	})
 	wg.Wait()
@@ -435,27 +435,36 @@ func newMockAPIServer(t *testing.T, name string) (*httptest.Server, *atomic.Int6
 	return srv, calls
 }
 
-// sendRawTransform sends events directly to pytransformer's /customTransform
-// endpoint and returns the HTTP status code and parsed response items.
-// Unlike the usertransformer.Client, this allows inspecting raw HTTP status.
+// sendRawTransform sends events directly to pytransformer's /customTransform endpoint and
+// returns the HTTP status code, the response headers and the parsed response items. Unlike the
+// usertransformer.Client, this allows inspecting the raw HTTP status and the retry-contract
+// headers (X-Rudder-Should-Retry / X-Rudder-Error-Reason); discard the headers with _ when a
+// test does not assert on them.
 func sendRawTransform(
 	t *testing.T,
 	baseURL string,
 	events []types.TransformerEvent,
 ) (
 	int,
+	http.Header,
 	[]types.TransformerResponse,
 ) {
 	t.Helper()
 	payload := make([]any, len(events))
 	for i, ev := range events {
-		payload[i] = map[string]any{
+		item := map[string]any{
 			"message":  ev.Message,
 			"metadata": ev.Metadata,
 			"destination": map[string]any{
 				"Transformations": ev.Destination.Transformations,
 			},
 		}
+		// Only when set: pytransformer reads libraries per event, and an empty array would
+		// change the cache key for every test that does not use libraries.
+		if len(ev.Libraries) > 0 {
+			item["libraries"] = ev.Libraries
+		}
+		payload[i] = item
 	}
 	body, err := jsonrs.Marshal(payload)
 	require.NoError(t, err)
@@ -471,5 +480,5 @@ func sendRawTransform(
 	var items []types.TransformerResponse
 	require.NoError(t, jsonrs.NewDecoder(resp.Body).Decode(&items))
 
-	return resp.StatusCode, items
+	return resp.StatusCode, resp.Header.Clone(), items
 }
