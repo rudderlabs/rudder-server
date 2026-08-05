@@ -633,6 +633,7 @@ func TestIntegration(t *testing.T) {
 				t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_ENABLE_DELETE_BY_JOBS", "true")
 				t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_SLOW_QUERY_THRESHOLD", "0s")
+				t.Setenv("RSERVER_WAREHOUSE_RS_CONNECTION_TIMEOUT", "2m")
 				if tc.additionalEnvs != nil {
 					for envKey, envValue := range tc.additionalEnvs(destinationID) {
 						t.Setenv(envKey, envValue)
@@ -669,17 +670,23 @@ func TestIntegration(t *testing.T) {
 					db = sqlConnectDB.SqlDB()
 				} else {
 					var err error
-					dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-						tc.credentials.UserName, tc.credentials.Password, tc.credentials.Host, tc.credentials.Port, tc.credentials.Database,
-					)
-					db, err = sql.Open("postgres", dsn)
+					db, err = sql.Open("postgres", redshiftPostgresDSN(tc.credentials))
 					require.NoError(t, err)
 				}
 				require.NoError(t, db.Ping())
 				t.Cleanup(func() { _ = db.Close() })
-				t.Cleanup(func() {
-					dropSchema(t, db, namespace)
-				})
+
+				if schemaDB, ok := openRedshiftSchemaDB(t, tc.credentials); ok {
+					t.Cleanup(func() { _ = schemaDB.Close() })
+					ensureSchema(t, schemaDB, namespace)
+					t.Cleanup(func() {
+						dropSchema(t, schemaDB, namespace)
+					})
+				} else {
+					t.Cleanup(func() {
+						dropSchema(t, db, namespace)
+					})
+				}
 
 				sqlClient := &client.Client{
 					SQL:  db,
@@ -1596,7 +1603,10 @@ func dropSchema(t *testing.T, db *sql.DB, namespace string) {
 
 	require.Eventually(t,
 		func() bool {
-			_, err := db.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace))
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			_, err := db.ExecContext(ctx, fmt.Sprintf(`DROP SCHEMA %s CASCADE;`, whutils.DoubleQuoteIdentifier(namespace)))
 			if err != nil {
 				t.Logf("error deleting schema %q: %v", namespace, err)
 				return false
@@ -1605,6 +1615,36 @@ func dropSchema(t *testing.T, db *sql.DB, namespace string) {
 		},
 		time.Minute,
 		time.Second,
+	)
+}
+
+func ensureSchema(t *testing.T, db *sql.DB, namespace string) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	_, err := db.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, whutils.DoubleQuoteIdentifier(namespace)))
+	require.NoError(t, err)
+}
+
+func openRedshiftSchemaDB(t *testing.T, credentials *testCredentials) (*sql.DB, bool) {
+	t.Helper()
+
+	if credentials.Host == "" || credentials.Port == "" || credentials.UserName == "" || credentials.Password == "" || credentials.Database == "" {
+		return nil, false
+	}
+
+	db, err := sql.Open("postgres", redshiftPostgresDSN(credentials))
+	require.NoError(t, err)
+	require.NoError(t, db.Ping())
+
+	return db, true
+}
+
+func redshiftPostgresDSN(credentials *testCredentials) string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		credentials.UserName, credentials.Password, credentials.Host, credentials.Port, credentials.Database,
 	)
 }
 
