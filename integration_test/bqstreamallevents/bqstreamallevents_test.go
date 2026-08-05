@@ -572,8 +572,6 @@ func TestBQStreamAllEvents(t *testing.T) {
 		require.NoError(t, <-done)
 	})
 	t.Run("schema modified after stream writer creation (table deleted)", func(t *testing.T) {
-		t.Skip("BigQuery Storage Write API default streams can keep returning NotFound after deleting and recreating a table with the same name.")
-
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := randSchema()
 		safeNamespace := whutils.ToSafeNamespace(whutils.BQStreamAllEvents, namespace)
