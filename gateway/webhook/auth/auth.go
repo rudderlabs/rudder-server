@@ -9,21 +9,30 @@ import (
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 )
 
-var ErrSourceNotFound = errors.New("source not found")
+var (
+	ErrSourceNotFound     = errors.New("source not found")
+	ErrWorkspaceDisrupted = errors.New("workspace service disrupted")
+)
 
 type WebhookAuth struct {
 	onFailure             func(w http.ResponseWriter, r *http.Request, errorMessage string, authCtx *gwtypes.AuthRequestContext)
 	authReqCtxForWriteKey func(writeKey string) (*gwtypes.AuthRequestContext, error)
+	isWorkspaceDisrupted  func(*gwtypes.AuthRequestContext) bool
 }
 
 func NewWebhookAuth(
 	onFailure func(w http.ResponseWriter, r *http.Request, errorMessage string, authCtx *gwtypes.AuthRequestContext),
 	authReqCtxForWriteKey func(writeKey string) (*gwtypes.AuthRequestContext, error),
+	isWorkspaceDisrupted ...func(*gwtypes.AuthRequestContext) bool,
 ) *WebhookAuth {
-	return &WebhookAuth{
+	wa := &WebhookAuth{
 		onFailure:             onFailure,
 		authReqCtxForWriteKey: authReqCtxForWriteKey,
 	}
+	if len(isWorkspaceDisrupted) > 0 {
+		wa.isWorkspaceDisrupted = isWorkspaceDisrupted[0]
+	}
+	return wa
 }
 
 func (wa *WebhookAuth) AuthHandler(next http.HandlerFunc) http.HandlerFunc {
@@ -42,11 +51,14 @@ func (wa *WebhookAuth) AuthHandler(next http.HandlerFunc) http.HandlerFunc {
 		}
 		arctx, err := wa.authReqCtxForWriteKey(writeKey)
 		if err != nil {
-			if errors.Is(err, ErrSourceNotFound) {
+			switch {
+			case errors.Is(err, ErrSourceNotFound):
 				wa.onFailure(w, r, response.InvalidWriteKey, arctx)
-				return
+			case errors.Is(err, ErrWorkspaceDisrupted):
+				wa.onFailure(w, r, response.ServiceDisrupted, arctx)
+			default:
+				wa.onFailure(w, r, response.ErrAuthenticatingWebhookRequest, arctx)
 			}
-			wa.onFailure(w, r, response.ErrAuthenticatingWebhookRequest, arctx)
 			return
 		}
 		if arctx.SourceCategory != "webhook" {
@@ -55,6 +67,10 @@ func (wa *WebhookAuth) AuthHandler(next http.HandlerFunc) http.HandlerFunc {
 		}
 		if !arctx.SourceEnabled {
 			wa.onFailure(w, r, response.SourceDisabled, arctx)
+			return
+		}
+		if wa.isWorkspaceDisrupted != nil && wa.isWorkspaceDisrupted(arctx) {
+			wa.onFailure(w, r, response.ServiceDisrupted, arctx)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamAuthRequestContext, arctx)))

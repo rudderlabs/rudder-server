@@ -136,6 +136,7 @@ type Handle struct {
 	sourceIDSourceMap                 map[string]backendconfig.SourceT
 	nonEventStreamSources             map[string]bool
 	blockedEventsWorkspaceTypeNameMap map[string]map[string]map[string]bool
+	disruptedWorkspaces               map[string]bool
 
 	conf handleConfig
 
@@ -631,6 +632,13 @@ func (gw *Handle) isEventBlocked(workspaceID, sourceID, eventType, eventName str
 	return gw.blockedEventsWorkspaceTypeNameMap[workspaceID][eventType][eventName]
 }
 
+// isWorkspaceDisrupted checks if a workspace should be rejected at ingestion time.
+func (gw *Handle) isWorkspaceDisrupted(workspaceID string) bool {
+	gw.configSubscriberLock.RLock()
+	defer gw.configSubscriberLock.RUnlock()
+	return gw.disruptedWorkspaces[workspaceID]
+}
+
 // getPayload reads the request body and returns the payload's bytes or an error if the payload cannot be read
 func (gw *Handle) getPayload(arctx *gwtypes.AuthRequestContext, r *http.Request, reqType string) ([]byte, error) {
 	payload, err := gw.getPayloadFromRequest(r)
@@ -924,6 +932,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		}
 
 		writeKey, sourceDefName, sourceName, sourceType := "", "", "", ""
+		sourceWorkspaceID := msg.Properties.WorkspaceID
 		src, ok := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
 		if !ok {
 			// only live-events will not work if writeKey is not found
@@ -932,12 +941,26 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 				obskit.SourceID(msg.Properties.SourceID))
 		} else {
 			writeKey, sourceDefName, sourceName, sourceType = src.WriteKey, src.SourceDefinition.Name, src.Name, src.SourceDefinition.Category
+			sourceWorkspaceID = src.WorkspaceID
 		}
 		stat.SourceID = msg.Properties.SourceID
-		stat.WorkspaceID = msg.Properties.WorkspaceID
+		stat.WorkspaceID = sourceWorkspaceID
 		stat.WriteKey = writeKey
 		stat.SourceDefName = sourceDefName
 		stat.SourceType = sourceType
+
+		if gw.isWorkspaceDisrupted(sourceWorkspaceID) {
+			gw.recordWorkspaceDisruptedRequest(sourceWorkspaceID)
+			stat.RequestFailed(response.ServiceDisrupted)
+			stat.Report(gw.stats)
+			continue
+		}
+
+		if ok && msg.Properties.WorkspaceID != sourceWorkspaceID {
+			stat.RequestFailed(response.NotRudderEvent)
+			stat.Report(gw.stats)
+			return nil, errors.New(response.NotRudderEvent)
+		}
 
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
 			gw.logger.Infon("suppressed event",

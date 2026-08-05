@@ -21,8 +21,11 @@ import (
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/validator"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocks_gateway "github.com/rudderlabs/rudder-server/mocks/gateway"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
 // createTestGateway creates a minimal Handle instance for testing event blocking
@@ -38,8 +41,9 @@ func createTestGateway(t *testing.T, eventBlockingSettings backendconfig.EventBl
 		},
 		Sources: []backendconfig.SourceT{
 			{
-				ID:       "source-id-1",
-				WriteKey: "write-key-1",
+				ID:          "source-id-1",
+				WriteKey:    "write-key-1",
+				WorkspaceID: "workspace1",
 				SourceDefinition: backendconfig.SourceDefinitionT{
 					Name:     "JavaScript",
 					Category: "", // event stream source
@@ -48,8 +52,9 @@ func createTestGateway(t *testing.T, eventBlockingSettings backendconfig.EventBl
 				Enabled: true,
 			},
 			{
-				ID:       "source-id-2",
-				WriteKey: "write-key-2",
+				ID:          "source-id-2",
+				WriteKey:    "write-key-2",
+				WorkspaceID: "workspace1",
 				SourceDefinition: backendconfig.SourceDefinitionT{
 					Name:     "Webhook",
 					Category: "webhook", // event stream source
@@ -58,8 +63,9 @@ func createTestGateway(t *testing.T, eventBlockingSettings backendconfig.EventBl
 				Enabled: true,
 			},
 			{
-				ID:       "warehouse-source-id-1",
-				WriteKey: "warehouse-write-key",
+				ID:          "warehouse-source-id-1",
+				WriteKey:    "warehouse-write-key",
+				WorkspaceID: "workspace1",
 				SourceDefinition: backendconfig.SourceDefinitionT{
 					Name:     "Warehouse",
 					Category: "warehouse", // non-event stream source
@@ -436,6 +442,151 @@ func TestIsEventBlocked(t *testing.T) {
 	}
 }
 
+func TestIsWorkspaceDisrupted(t *testing.T) {
+	baseConfig := backendconfig.ConfigT{
+		Sources: []backendconfig.SourceT{{
+			ID:          "source-id-1",
+			WriteKey:    "write-key-1",
+			Enabled:     true,
+			WorkspaceID: "workspace1",
+		}},
+	}
+
+	t.Run("populates disrupted workspace from config", func(t *testing.T) {
+		gw := createTestGateway(t, backendconfig.EventBlocking{})
+		configData := map[string]backendconfig.ConfigT{
+			"workspace1": {
+				Settings: backendconfig.Settings{ServiceDisrupted: true},
+				Sources:  baseConfig.Sources,
+			},
+			"workspace2": {
+				Settings: backendconfig.Settings{ServiceDisrupted: false},
+			},
+		}
+
+		gw.processBackendConfig(configData)
+
+		require.True(t, gw.isWorkspaceDisrupted("workspace1"))
+		require.False(t, gw.isWorkspaceDisrupted("workspace2"))
+		require.False(t, gw.isWorkspaceDisrupted("unknown-workspace"))
+	})
+
+	t.Run("lifts disruption after config update", func(t *testing.T) {
+		gw := createTestGateway(t, backendconfig.EventBlocking{})
+		gw.processBackendConfig(map[string]backendconfig.ConfigT{
+			"workspace1": {
+				Settings: backendconfig.Settings{ServiceDisrupted: true},
+				Sources:  baseConfig.Sources,
+			},
+		})
+		require.True(t, gw.isWorkspaceDisrupted("workspace1"))
+
+		gw.processBackendConfig(map[string]backendconfig.ConfigT{
+			"workspace1": {
+				Settings: backendconfig.Settings{ServiceDisrupted: false},
+				Sources:  baseConfig.Sources,
+			},
+		})
+
+		require.False(t, gw.isWorkspaceDisrupted("workspace1"))
+	})
+}
+
+func TestBackendConfigSubscriberServiceDisruptionUpdate(t *testing.T) {
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+
+	mockCtrl := gomock.NewController(t)
+	t.Cleanup(mockCtrl.Finish)
+	backendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+	configCh := make(chan pubsub.DataEvent, 2)
+	backendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).Return(pubsub.DataChannel(configCh))
+
+	workspaceID := "workspace1"
+	writeKey := "write-key-1"
+	source := backendconfig.SourceT{
+		ID:          "source-id-1",
+		WriteKey:    writeKey,
+		Enabled:     true,
+		WorkspaceID: workspaceID,
+		Name:        "JS Source",
+		SourceDefinition: backendconfig.SourceDefinitionT{
+			Name: "JavaScript",
+		},
+	}
+
+	gw := &Handle{
+		backendConfig:                  backendConfig,
+		logger:                         logger.NOP,
+		stats:                          statsStore,
+		backendConfigInitialisedChan:   make(chan struct{}),
+		transformerFeaturesInitialised: make(chan struct{}),
+	}
+	close(gw.transformerFeaturesInitialised)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		gw.backendConfigSubscriber(ctx)
+		close(done)
+	}()
+
+	configCh <- pubsub.DataEvent{
+		Data: map[string]backendconfig.ConfigT{
+			workspaceID: {
+				Settings: backendconfig.Settings{ServiceDisrupted: true},
+				Sources:  []backendconfig.SourceT{source},
+			},
+		},
+		Topic: string(backendconfig.TopicProcessConfig),
+	}
+	require.Eventually(t, func() bool {
+		return gw.isWorkspaceDisrupted(workspaceID)
+	}, time.Second, 10*time.Millisecond)
+
+	disruptedReq := httptest.NewRequest(http.MethodPost, "/v1/track", http.NoBody)
+	disruptedReq.SetBasicAuth(writeKey, "")
+	disruptedRecorder := httptest.NewRecorder()
+	gw.callType("track", gw.writeKeyAuth(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(response.Ok))
+	})).ServeHTTP(disruptedRecorder, disruptedReq)
+	require.Equal(t, http.StatusServiceUnavailable, disruptedRecorder.Code)
+	require.Equal(t, response.ServiceDisrupted+"\n", disruptedRecorder.Body.String())
+
+	configCh <- pubsub.DataEvent{
+		Data: map[string]backendconfig.ConfigT{
+			workspaceID: {
+				Settings: backendconfig.Settings{ServiceDisrupted: false},
+				Sources:  []backendconfig.SourceT{source},
+			},
+		},
+		Topic: string(backendconfig.TopicProcessConfig),
+	}
+	require.Eventually(t, func() bool {
+		return !gw.isWorkspaceDisrupted(workspaceID)
+	}, time.Second, 10*time.Millisecond)
+
+	allowedReq := httptest.NewRequest(http.MethodPost, "/v1/track", http.NoBody)
+	allowedReq.SetBasicAuth(writeKey, "")
+	allowedRecorder := httptest.NewRecorder()
+	gw.callType("track", gw.writeKeyAuth(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(response.Ok))
+	})).ServeHTTP(allowedRecorder, allowedReq)
+	require.Equal(t, http.StatusOK, allowedRecorder.Code)
+	require.Equal(t, response.Ok, allowedRecorder.Body.String())
+
+	cancel()
+	close(configCh)
+	require.Eventually(t, func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+}
+
 func TestStartStoreJobsWatchdog(t *testing.T) {
 	t.Run("fires", func(t *testing.T) {
 		panicCh := make(chan any, 1)
@@ -465,6 +616,138 @@ func TestStartStoreJobsWatchdog(t *testing.T) {
 		case <-time.After(100 * time.Millisecond):
 		}
 	})
+}
+
+func TestExtractJobsFromInternalBatchPayload_ServiceDisrupted(t *testing.T) {
+	workspaceID := "workspace1"
+	gw := createTestGateway(t, backendconfig.EventBlocking{})
+	gw.disruptedWorkspaces = map[string]bool{workspaceID: true}
+
+	payloadBytes, err := jsonrs.Marshal([]stream.Message{{
+		Properties: stream.MessageProperties{
+			RequestType: "track",
+			RoutingKey:  "routing-key-1",
+			WorkspaceID: workspaceID,
+			SourceID:    "source-id-1",
+			ReceivedAt:  time.Now(),
+			RequestIP:   "1.1.1.1",
+		},
+		Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
+	}})
+	require.NoError(t, err)
+
+	jobs, err := gw.extractJobsFromInternalBatchPayload("batch", payloadBytes)
+
+	require.NoError(t, err)
+	require.Empty(t, jobs)
+	require.Equal(t, float64(1), gw.stats.(*memstats.Store).Get(
+		"gateway.workspace_disrupted_requests",
+		stats.Tags{"workspaceId": workspaceID},
+	).LastValue())
+}
+
+func TestExtractJobsFromInternalBatchPayload_ServiceDisruptedUsesSourceWorkspace(t *testing.T) {
+	workspaceID := "workspace1"
+	gw := createTestGateway(t, backendconfig.EventBlocking{})
+	gw.disruptedWorkspaces = map[string]bool{workspaceID: true}
+
+	payloadBytes, err := jsonrs.Marshal([]stream.Message{{
+		Properties: stream.MessageProperties{
+			RequestType: "track",
+			RoutingKey:  "routing-key-1",
+			WorkspaceID: "workspace2",
+			SourceID:    "source-id-1",
+			ReceivedAt:  time.Now(),
+			RequestIP:   "1.1.1.1",
+		},
+		Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
+	}})
+	require.NoError(t, err)
+
+	jobs, err := gw.extractJobsFromInternalBatchPayload("batch", payloadBytes)
+
+	require.NoError(t, err)
+	require.Empty(t, jobs)
+	require.Equal(t, float64(1), gw.stats.(*memstats.Store).Get(
+		"gateway.workspace_disrupted_requests",
+		stats.Tags{"workspaceId": workspaceID},
+	).LastValue())
+}
+
+func TestExtractJobsFromInternalBatchPayload_ServiceDisruptedDoesNotAbortMixedBatch(t *testing.T) {
+	gw := createTestGateway(t, backendconfig.EventBlocking{})
+	gw.disruptedWorkspaces = map[string]bool{"workspace1": true}
+	gw.configSubscriberLock.Lock()
+	gw.sourceIDSourceMap["source-id-3"] = backendconfig.SourceT{
+		ID:          "source-id-3",
+		WriteKey:    "write-key-3",
+		WorkspaceID: "workspace2",
+		Enabled:     true,
+		Name:        "Workspace 2 Source",
+		SourceDefinition: backendconfig.SourceDefinitionT{
+			Name: "JavaScript",
+		},
+	}
+	gw.configSubscriberLock.Unlock()
+
+	payloadBytes, err := jsonrs.Marshal([]stream.Message{
+		{
+			Properties: stream.MessageProperties{
+				RequestType: "track",
+				RoutingKey:  "routing-key-1",
+				WorkspaceID: "workspace1",
+				SourceID:    "source-id-1",
+				ReceivedAt:  time.Now(),
+				RequestIP:   "1.1.1.1",
+			},
+			Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
+		},
+		{
+			Properties: stream.MessageProperties{
+				RequestType: "track",
+				RoutingKey:  "routing-key-2",
+				WorkspaceID: "workspace2",
+				SourceID:    "source-id-3",
+				ReceivedAt:  time.Now(),
+				RequestIP:   "1.1.1.1",
+			},
+			Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-2","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
+		},
+	})
+	require.NoError(t, err)
+
+	jobs, err := gw.extractJobsFromInternalBatchPayload("batch", payloadBytes)
+
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	require.Equal(t, "source-id-3", jobs[0].stat.SourceID)
+	require.Equal(t, "workspace2", jobs[0].stat.WorkspaceID)
+	require.Equal(t, float64(1), gw.stats.(*memstats.Store).Get(
+		"gateway.workspace_disrupted_requests",
+		stats.Tags{"workspaceId": "workspace1"},
+	).LastValue())
+}
+
+func TestExtractJobsFromInternalBatchPayload_RejectsWorkspaceMismatch(t *testing.T) {
+	gw := createTestGateway(t, backendconfig.EventBlocking{})
+
+	payloadBytes, err := jsonrs.Marshal([]stream.Message{{
+		Properties: stream.MessageProperties{
+			RequestType: "track",
+			RoutingKey:  "routing-key-1",
+			WorkspaceID: "workspace2",
+			SourceID:    "source-id-1",
+			ReceivedAt:  time.Now(),
+			RequestIP:   "1.1.1.1",
+		},
+		Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
+	}})
+	require.NoError(t, err)
+
+	jobs, err := gw.extractJobsFromInternalBatchPayload("batch", payloadBytes)
+
+	require.Nil(t, jobs)
+	require.EqualError(t, err, response.NotRudderEvent)
 }
 
 func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {

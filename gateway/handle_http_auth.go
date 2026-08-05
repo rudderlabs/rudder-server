@@ -8,6 +8,7 @@ import (
 
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	gwCtx "github.com/rudderlabs/rudder-server/gateway/internal/context"
@@ -17,8 +18,8 @@ import (
 )
 
 // writeKeyAuth middleware to authenticate writeKey in the Authorization header.
-// If the writeKey is valid and the source is enabled, the source auth info is added to the request context.
-// If the writeKey is invalid, the request is rejected.
+// If the writeKey is valid, the source is enabled, and the workspace is not disrupted, the source auth info is added to the request context.
+// If the writeKey is invalid, the source is disabled, or the workspace is disrupted, the request is rejected.
 func (gw *Handle) writeKeyAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
@@ -50,6 +51,11 @@ func (gw *Handle) writeKeyAuth(delegate http.HandlerFunc) http.HandlerFunc {
 			errorMessage = response.SourceDisabled
 			return
 		}
+		if gw.isWorkspaceDisrupted(arctx.WorkspaceID) {
+			gw.recordWorkspaceDisruptedRequest(arctx.WorkspaceID)
+			errorMessage = response.ServiceDisrupted
+			return
+		}
 		augmentAuthRequestContext(arctx, r)
 		delegate.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamAuthRequestContext, arctx)))
 	}
@@ -57,8 +63,8 @@ func (gw *Handle) writeKeyAuth(delegate http.HandlerFunc) http.HandlerFunc {
 
 // webhookAuth middleware to authenticate webhook requests.
 // The writeKey can be passed in the Authorization header or as a query param.
-// If the writeKey is valid, corresponds to a webhook source and the source is enabled, the source auth info is added to the request context.
-// If the writeKey is invalid, the request is rejected.
+// If the writeKey is valid, corresponds to a webhook source, the source is enabled, and the workspace is not disrupted, the source auth info is added to the request context.
+// If the writeKey is invalid, the source is disabled, or the workspace is disrupted, the request is rejected.
 func (gw *Handle) webhookAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
@@ -88,14 +94,19 @@ func (gw *Handle) webhookAuth(delegate http.HandlerFunc) http.HandlerFunc {
 			errorMessage = response.SourceDisabled
 			return
 		}
+		if gw.isWorkspaceDisrupted(arctx.WorkspaceID) {
+			gw.recordWorkspaceDisruptedRequest(arctx.WorkspaceID)
+			errorMessage = response.ServiceDisrupted
+			return
+		}
 		augmentAuthRequestContext(arctx, r)
 		delegate.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamAuthRequestContext, arctx)))
 	}
 }
 
 // sourceIDAuth middleware to authenticate sourceID in the X-Rudder-Source-Id header.
-// If the sourceID is valid and the source is enabled, the source auth info is added to the request context.
-// If the sourceID is invalid, the request is rejected.
+// If the sourceID is valid, the source is enabled, and the workspace is not disrupted, the source auth info is added to the request context.
+// If the sourceID is invalid, the source is disabled, or the workspace is disrupted, the request is rejected.
 func (gw *Handle) sourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
@@ -117,6 +128,11 @@ func (gw *Handle) sourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 		}
 		if !arctx.SourceEnabled {
 			errorMessage = response.SourceDisabled
+			return
+		}
+		if gw.isWorkspaceDisrupted(arctx.WorkspaceID) {
+			gw.recordWorkspaceDisruptedRequest(arctx.WorkspaceID)
+			errorMessage = response.ServiceDisrupted
 			return
 		}
 		augmentAuthRequestContext(arctx, r)
@@ -196,6 +212,12 @@ func (gw *Handle) replaySourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc
 // If the sourceID or destinationID is invalid, the request is rejected.
 func (gw *Handle) sourceDestIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	return gw.sourceIDAuth(gw.authDestIDForSource(delegate))
+}
+
+func (gw *Handle) recordWorkspaceDisruptedRequest(workspaceID string) {
+	gw.stats.NewTaggedStat("gateway.workspace_disrupted_requests", stats.CountType, stats.Tags{
+		"workspaceId": workspaceID,
+	}).Increment()
 }
 
 // augmentAuthRequestContext adds source job run id and task run id from the request to the authentication context.
@@ -299,7 +321,7 @@ func (gw *Handle) handleFailureStats(errorMessage, reqType string, arctx *gwtype
 				ReqType:  reqType,
 				Source:   "noSourceIDInHeader",
 			}
-		case response.SourceDisabled, response.NoDestinationIDInHeader, response.InvalidDestinationID, response.DestinationDisabled:
+		case response.SourceDisabled, response.ServiceDisrupted, response.NoDestinationIDInHeader, response.InvalidDestinationID, response.DestinationDisabled:
 			stat = gwstats.SourceStat{
 				SourceID:      arctx.SourceID,
 				WriteKey:      arctx.WriteKey,

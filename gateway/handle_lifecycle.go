@@ -184,6 +184,13 @@ func (gw *Handle) Setup(
 				return nil, auth.ErrSourceNotFound
 			}
 			return authCtx, nil
+		},
+		func(authCtx *gwtypes.AuthRequestContext) bool {
+			if !gw.isWorkspaceDisrupted(authCtx.WorkspaceID) {
+				return false
+			}
+			gw.recordWorkspaceDisruptedRequest(authCtx.WorkspaceID)
+			return true
 		})
 
 	// new bg ctx for leaky logger
@@ -361,6 +368,7 @@ func (gw *Handle) processBackendConfig(configData map[string]backendconfig.Confi
 		sourceIDSourceMap                 = map[string]backendconfig.SourceT{}
 		nonEventStreamSources             = map[string]bool{}
 		blockedEventsWorkspaceTypeNameMap = map[string]map[string]map[string]bool{}
+		disruptedWorkspaces               = map[string]bool{}
 	)
 
 	for workspaceID, wsConfig := range configData {
@@ -375,6 +383,10 @@ func (gw *Handle) processBackendConfig(configData map[string]backendconfig.Confi
 			if source.SourceDefinition.Category != "" && !strings.EqualFold(source.SourceDefinition.Category, webhookSourceCategory) {
 				nonEventStreamSources[source.ID] = true
 			}
+		}
+
+		if wsConfig.Settings.ServiceDisrupted {
+			disruptedWorkspaces[workspaceID] = true
 		}
 
 		if len(wsConfig.Settings.EventBlocking.Events) > 0 {
@@ -395,6 +407,7 @@ func (gw *Handle) processBackendConfig(configData map[string]backendconfig.Confi
 	gw.sourceIDSourceMap = sourceIDSourceMap
 	gw.nonEventStreamSources = nonEventStreamSources
 	gw.blockedEventsWorkspaceTypeNameMap = blockedEventsWorkspaceTypeNameMap
+	gw.disruptedWorkspaces = disruptedWorkspaces
 	gw.configSubscriberLock.Unlock()
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/gateway/response"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 )
 
@@ -184,6 +185,53 @@ func TestAuth(t *testing.T) {
 				).LastValue(),
 			)
 		})
+		t.Run("disrupted workspace", func(t *testing.T) {
+			writeKey := "123-service-disrupted"
+			workspaceID := "disrupted-write-key-workspace"
+			delegateCalled := false
+			gw := newGateway(map[string]backendconfig.SourceT{
+				writeKey: {
+					Enabled:     true,
+					ID:          "456-service-disrupted",
+					Name:        "789",
+					WorkspaceID: workspaceID,
+					SourceDefinition: backendconfig.SourceDefinitionT{
+						Category: "catA",
+						Name:     "sourceA",
+					},
+					WriteKey: writeKey,
+				},
+			}, nil)
+			gw.disruptedWorkspaces = map[string]bool{workspaceID: true}
+			r := newWriteKeyRequest(writeKey)
+			w := httptest.NewRecorder()
+
+			gw.writeKeyAuth(func(w http.ResponseWriter, r *http.Request) { delegateCalled = true }).ServeHTTP(w, r)
+
+			require.False(t, delegateCalled)
+			require.Equal(t, http.StatusServiceUnavailable, w.Code, "authentication should not succeed")
+			body, err := io.ReadAll(w.Body)
+			require.NoError(t, err, "reading response body should succeed")
+			require.Equal(t, response.ServiceDisrupted+"\n", string(body))
+			require.Equal(t, float64(1), statsStore.Get(
+				"gateway.workspace_disrupted_requests",
+				map[string]string{"workspaceId": workspaceID},
+			).LastValue())
+			require.Equal(t, float64(1), statsStore.Get(
+				"gateway.write_key_failed_requests",
+				map[string]string{
+					"reqType":       "dummy",
+					"sdkVersion":    "",
+					"source":        "789_rupted",
+					"sourceID":      "456-service-disrupted",
+					"sourceType":    "catA",
+					"workspaceId":   workspaceID,
+					"writeKey":      writeKey,
+					"reason":        response.ServiceDisrupted,
+					"sourceDefName": "sourcea",
+				},
+			).LastValue())
+		})
 	})
 
 	t.Run("webhookAuth", func(t *testing.T) {
@@ -294,6 +342,38 @@ func TestAuth(t *testing.T) {
 			require.NoError(t, err, "reading response body should succeed")
 			require.Equal(t, "source is disabled\n", string(body))
 		})
+
+		t.Run("disrupted workspace", func(t *testing.T) {
+			writeKey := "webhook-service-disrupted"
+			workspaceID := "disrupted-webhook-workspace"
+			delegateCalled := false
+			gw := newGateway(map[string]backendconfig.SourceT{
+				writeKey: {
+					Enabled:     true,
+					ID:          "webhook-source-id",
+					WorkspaceID: workspaceID,
+					SourceDefinition: backendconfig.SourceDefinitionT{
+						Category: "webhook",
+					},
+					WriteKey: writeKey,
+				},
+			}, nil)
+			gw.disruptedWorkspaces = map[string]bool{workspaceID: true}
+			r := newWriteKeyRequest(writeKey)
+			w := httptest.NewRecorder()
+
+			gw.webhookAuth(func(w http.ResponseWriter, r *http.Request) { delegateCalled = true }).ServeHTTP(w, r)
+
+			require.False(t, delegateCalled)
+			require.Equal(t, http.StatusServiceUnavailable, w.Code, "authentication should not succeed")
+			body, err := io.ReadAll(w.Body)
+			require.NoError(t, err, "reading response body should succeed")
+			require.Equal(t, response.ServiceDisrupted+"\n", string(body))
+			require.Equal(t, float64(1), statsStore.Get(
+				"gateway.workspace_disrupted_requests",
+				map[string]string{"workspaceId": workspaceID},
+			).LastValue())
+		})
 	})
 
 	t.Run("sourceIDAuth", func(t *testing.T) {
@@ -353,6 +433,36 @@ func TestAuth(t *testing.T) {
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
 			require.Equal(t, "source is disabled\n", string(body))
+		})
+
+		t.Run("disrupted workspace", func(t *testing.T) {
+			sourceID := "source-id-service-disrupted"
+			workspaceID := "disrupted-source-id-workspace"
+			delegateCalled := false
+			gw := newGateway(nil, map[string]backendconfig.SourceT{
+				sourceID: {
+					Enabled:     true,
+					ID:          sourceID,
+					Name:        "Source ID Disrupted",
+					WorkspaceID: workspaceID,
+					WriteKey:    "source-id-write-key",
+				},
+			})
+			gw.disruptedWorkspaces = map[string]bool{workspaceID: true}
+			r := newSourceIDRequest(sourceID)
+			w := httptest.NewRecorder()
+
+			gw.sourceIDAuth(func(w http.ResponseWriter, r *http.Request) { delegateCalled = true }).ServeHTTP(w, r)
+
+			require.False(t, delegateCalled)
+			require.Equal(t, http.StatusServiceUnavailable, w.Code, "authentication should not succeed")
+			body, err := io.ReadAll(w.Body)
+			require.NoError(t, err, "reading response body should succeed")
+			require.Equal(t, response.ServiceDisrupted+"\n", string(body))
+			require.Equal(t, float64(1), statsStore.Get(
+				"gateway.workspace_disrupted_requests",
+				map[string]string{"workspaceId": workspaceID},
+			).LastValue())
 		})
 	})
 

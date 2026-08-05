@@ -140,3 +140,47 @@ func TestNewWebhookAuth(t *testing.T) {
 		})
 	}
 }
+
+func TestWebhookAuthWorkspaceDisrupted(t *testing.T) {
+	disruptedCtx := &gwtypes.AuthRequestContext{
+		SourceCategory: "webhook",
+		SourceEnabled:  true,
+		WorkspaceID:    "disrupted-workspace",
+	}
+	onFailureCalled := false
+	webhookAuth := NewWebhookAuth(
+		func(w http.ResponseWriter, r *http.Request, errorMessage string, authCtx *gwtypes.AuthRequestContext) {
+			onFailureCalled = true
+			require.Same(t, disruptedCtx, authCtx)
+			http.Error(w, errorMessage, response.GetErrorStatusCode(errorMessage))
+		},
+		func(writeKey string) (*gwtypes.AuthRequestContext, error) {
+			return disruptedCtx, nil
+		},
+		func(authCtx *gwtypes.AuthRequestContext) bool {
+			require.Same(t, disruptedCtx, authCtx)
+			return true
+		},
+	)
+
+	delegateCalled := false
+	server := httptest.NewServer(webhookAuth.AuthHandler(func(w http.ResponseWriter, request *http.Request) {
+		delegateCalled = true
+	}))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+	require.NoError(t, err)
+	req.SetBasicAuth("valid-key", "")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.True(t, onFailureCalled)
+	require.False(t, delegateCalled)
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	require.Equal(t, fmt.Sprintf("%s\n", response.ServiceDisrupted), string(body))
+}

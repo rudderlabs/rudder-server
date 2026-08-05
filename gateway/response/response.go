@@ -34,6 +34,8 @@ const (
 	SourceTransformerResponseErrorReadFailed = "failed to read error from source transformer response"
 	// SourceDisabled - write key is present, but the source for it is disabled.
 	SourceDisabled = "source is disabled"
+	// ServiceDisrupted - workspace has service disruption and cannot accept events.
+	ServiceDisrupted = "workspace service disrupted"
 	// SourceTransformerFailed - internal server error in source transformer
 	SourceTransformerFailed = "internal server error in source transformer"
 	// SourceTransformerFailedToReadOutput - output not found in source transformer response
@@ -96,6 +98,7 @@ var statusMap = map[string]status{
 	RequestBodyTooLarge:     {message: RequestBodyTooLarge, code: http.StatusRequestEntityTooLarge},
 	InvalidWriteKey:         {message: InvalidWriteKey, code: http.StatusUnauthorized},
 	SourceDisabled:          {message: SourceDisabled, code: http.StatusNotFound},
+	ServiceDisrupted:        {message: ServiceDisrupted, code: http.StatusServiceUnavailable},
 	InvalidJSON:             {message: InvalidJSON, code: http.StatusBadRequest},
 	EmptyBatchPayload:       {message: EmptyBatchPayload, code: http.StatusBadRequest},
 	NoSourceIdInHeader:      {message: NoSourceIdInHeader, code: http.StatusUnauthorized},

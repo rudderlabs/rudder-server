@@ -198,6 +198,7 @@ type Settings struct {
 	DataRetention     DataRetention `json:"dataRetention"`
 	EventAuditEnabled bool          `json:"eventAuditEnabled"`
 	EventBlocking     EventBlocking `json:"eventBlocking"`
+	ServiceDisrupted  bool          `json:"serviceDisrupted"`
 }
 
 type DataRetention struct {
