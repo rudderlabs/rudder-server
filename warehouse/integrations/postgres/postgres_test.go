@@ -55,49 +55,6 @@ func TestColumnsWithDataTypesQuotesIdentifiers(t *testing.T) {
 	require.NotContains(t, fragment, `x" text);`)
 }
 
-type panicSafeCleaner struct {
-	testing.TB
-}
-
-func (c panicSafeCleaner) Cleanup(fn func()) {
-	c.TB.Cleanup(func() {
-		defer func() {
-			if r := recover(); r != nil {
-				c.Logf("recovered panic from Docker cleanup: %v", r)
-			}
-		}()
-		fn()
-	})
-}
-
-func setupSSHServerWithRetry(t testing.TB, pool *dockertest.Pool, opts ...sshserver.Option) (*sshserver.Resource, error) {
-	t.Helper()
-
-	var lastErr error
-	cleaner := panicSafeCleaner{TB: t}
-	for attempt := 1; attempt <= 3; attempt++ {
-		resource, err := sshserver.Setup(pool, cleaner, opts...)
-		if err == nil {
-			return resource, nil
-		}
-		lastErr = err
-		if attempt == 3 || !isTransientDockerSetupError(err) {
-			break
-		}
-		t.Logf("retrying SSH server setup after transient Docker error (attempt %d): %v", attempt, err)
-		time.Sleep(time.Duration(attempt) * time.Second)
-	}
-	return nil, lastErr
-}
-
-func isTransientDockerSetupError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "toomanyrequests") || strings.Contains(msg, "too many requests")
-}
-
 func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
@@ -501,7 +458,7 @@ func TestIntegration(t *testing.T) {
 
 		postgresResource, err := dockerpg.Setup(pool, t, dockerpg.WithNetwork(network))
 		require.NoError(t, err)
-		sshServerResource, err := setupSSHServerWithRetry(t, pool,
+		sshServerResource, err := sshserver.Setup(pool, t,
 			sshserver.WithPublicKeyPath(publicKeyPath),
 			sshserver.WithCredentials("linuxserver.io", ""),
 			sshserver.WithDockerNetwork(network),
