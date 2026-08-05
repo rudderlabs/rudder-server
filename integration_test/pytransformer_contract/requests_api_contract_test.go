@@ -222,13 +222,13 @@ def transformEvent(event, metadata):
 			newConns.Store(0)
 
 			ev1 := makeEvent("msg-reuse-1", rc.versionID)
-			status1, items1 := sendRawTransform(t, pyTransformerURL, []types.TransformerEvent{ev1})
+			status1, _, items1 := sendRawTransform(t, pyTransformerURL, []types.TransformerEvent{ev1})
 			require.Equal(t, http.StatusOK, status1)
 			require.Len(t, items1, 1)
 			require.Equal(t, http.StatusOK, items1[0].StatusCode, "first request must succeed")
 
 			ev2 := makeEvent("msg-reuse-2", rc.versionID)
-			status2, items2 := sendRawTransform(t, pyTransformerURL, []types.TransformerEvent{ev2})
+			status2, _, items2 := sendRawTransform(t, pyTransformerURL, []types.TransformerEvent{ev2})
 			require.Equal(t, http.StatusOK, status2)
 			require.Len(t, items2, 1)
 			require.Equal(t, http.StatusOK, items2[0].StatusCode, "second request must succeed")

@@ -111,7 +111,7 @@ def transformEvent(event, metadata):
 		wg.Go(func() {
 			msgID := fmt.Sprintf("msg-cookie-iso-%d", i)
 			events := []types.TransformerEvent{makeEvent(msgID, versionID)}
-			status, items := sendRawTransform(t, pyURL, events)
+			status, _, items := sendRawTransform(t, pyURL, events)
 
 			res := result{idx: i, status: status, items: items}
 			if len(items) == 1 && items[0].StatusCode == http.StatusOK {
