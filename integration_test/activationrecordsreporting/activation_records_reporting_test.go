@@ -315,8 +315,9 @@ func setup(t testing.TB) testConfig {
 	// destination into source.Destinations so the gateway's authDestIDForSource can
 	// resolve the X-Rudder-Destination-Id header into the job's destination_id
 	// parameter (which MAR metering requires). The source carries the "warehouse"
-	// category (reverse-ETL): MAR meters warehouse sources only, so the gateway stamps
-	// source_category=warehouse into the job params for these records to be metered.
+	// category and an allow-listed source definition name (reverse-ETL): MAR meters
+	// only real warehouse sources, so the gateway stamps source_category=warehouse
+	// into the job params and processor source metadata keeps these records in scope.
 	// ConfigBuilder.WithConnection additionally registers the top-level connection the
 	// router requires before it will deliver warehouse-source jobs (router/worker.go).
 	bcServer := backendconfigtest.NewBuilder().
@@ -327,6 +328,7 @@ func setup(t testing.TB) testConfig {
 					WithWorkspaceID(workspaceID).
 					WithID(sourceID).
 					WithSourceCategory("warehouse").
+					WithSourceType("snowflake").
 					WithConnection(
 						backendconfigtest.NewDestinationBuilder("WEBHOOK").
 							WithID(destinationID).
