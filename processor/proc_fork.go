@@ -54,6 +54,14 @@ func (proc *Handle) shouldForkDestination(destinationID string) bool {
 	return enabled
 }
 
+// forkableEvent reports whether the given event is eligible to be forked to the
+// intermediate (proc) jobsdb at all, independent of the per-destination
+// shouldForkDestination check. rsources (retl) jobs — those carrying a SourceJobRunID —
+// stay inline by default, unless configured otherwise.
+func (proc *Handle) forkableEvent(event *types.TransformerEvent) bool {
+	return proc.config.forkRsourcesTrackedJobs || event.Metadata.SourceJobRunID == ""
+}
+
 // newForkedJob builds a single intermediate (proc) job for one source event fanned out to
 // forkedDestIDs. The payload carries the source-level message + metadata (destination is
 // re-hydrated per consumer at drain time, see procRebuildStage), the forked destination
