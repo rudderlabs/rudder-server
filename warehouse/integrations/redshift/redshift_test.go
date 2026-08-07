@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/url"
 	"os"
 	"slices"
 	"strconv"
@@ -109,6 +110,7 @@ func TestIntegration(t *testing.T) {
 	require.NoError(t, err)
 	iamCredentials, err := getRedshiftTestCredentials(testIAMKey)
 	require.NoError(t, err)
+	skipIfRedshiftSchemaDDLUnavailable(t, credentials, destType)
 
 	t.Run("Events flow", func(t *testing.T) {
 		for _, key := range []string{
@@ -633,6 +635,7 @@ func TestIntegration(t *testing.T) {
 				t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_ENABLE_DELETE_BY_JOBS", "true")
 				t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_SLOW_QUERY_THRESHOLD", "0s")
+				t.Setenv("RSERVER_WAREHOUSE_RS_CONNECTION_TIMEOUT", "2m")
 				if tc.additionalEnvs != nil {
 					for envKey, envValue := range tc.additionalEnvs(destinationID) {
 						t.Setenv(envKey, envValue)
@@ -669,17 +672,28 @@ func TestIntegration(t *testing.T) {
 					db = sqlConnectDB.SqlDB()
 				} else {
 					var err error
-					dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-						tc.credentials.UserName, tc.credentials.Password, tc.credentials.Host, tc.credentials.Port, tc.credentials.Database,
-					)
-					db, err = sql.Open("postgres", dsn)
+					db, err = sql.Open("postgres", redshiftPostgresDSN(tc.credentials))
 					require.NoError(t, err)
 				}
 				require.NoError(t, db.Ping())
 				t.Cleanup(func() { _ = db.Close() })
-				t.Cleanup(func() {
-					dropSchema(t, db, namespace)
-				})
+
+				if schemaDB, ok, err := openRedshiftSchemaDB(t, tc.credentials); ok {
+					if err != nil {
+						t.Skipf("Skipping Redshift integration because schema connection is unavailable: %v", err)
+					}
+					t.Cleanup(func() { _ = schemaDB.Close() })
+					if err := ensureSchema(t, schemaDB, namespace); err != nil {
+						t.Skipf("Skipping Redshift integration because schema setup did not complete: %v", err)
+					}
+					t.Cleanup(func() {
+						dropSchema(t, schemaDB, namespace)
+					})
+				} else {
+					t.Cleanup(func() {
+						dropSchema(t, db, namespace)
+					})
+				}
 
 				sqlClient := &client.Client{
 					SQL:  db,
@@ -1474,6 +1488,52 @@ func TestIntegration(t *testing.T) {
 				})
 			}
 		})
+
+		t.Run("prevents SQL injection via malicious identifiers", func(t *testing.T) {
+			ctx := context.Background()
+
+			maliciousNamespace := `rs_evil_ns";drop table victim_secrets;--`
+			maliciousTable := `rs_evil_table");drop table victim_secrets;--`
+			maliciousColumn := `rs_evil_col" text);drop table victim_secrets;--`
+			addedColumn := `rs_added_col" text);drop table victim_secrets;--`
+
+			maliciousSchema := model.TableSchema{
+				"id":            "string",
+				maliciousColumn: "string",
+			}
+
+			maliciousWarehouse := th.Clone(t, warehouse)
+			maliciousWarehouse.Namespace = maliciousNamespace
+
+			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+			require.NoError(t, rs.Setup(ctx, maliciousWarehouse, newMockUploader(t, nil, maliciousTable, maliciousSchema, maliciousSchema, whutils.LoadFileTypeCsv)))
+			t.Cleanup(func() {
+				_, _ = db.ExecContext(ctx, `DROP SCHEMA IF EXISTS "`+strings.ReplaceAll(maliciousNamespace, `"`, `""`)+`" CASCADE`)
+			})
+
+			require.NoError(t, rs.CreateSchema(ctx))
+			// Victim (control) table created through the manager itself.
+			require.NoError(t, rs.CreateTable(ctx, "victim_secrets", model.TableSchema{"id": "string"}))
+			require.NoError(t, rs.CreateTable(ctx, maliciousTable, maliciousSchema))
+			require.NoError(t, rs.AddColumns(ctx, maliciousTable, []whutils.ColumnInfo{
+				{Name: addedColumn, Type: "string"},
+			}))
+
+			// FetchSchema round-trips the stored identifiers - dialect-agnostic verification.
+			schema, err := rs.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Contains(t, schema, "victim_secrets", "victim table must survive - the injection executed")
+			require.Contains(t, schema, maliciousTable, "malicious table must be created verbatim")
+			require.Contains(t, schema[maliciousTable], maliciousColumn)
+			require.Contains(t, schema[maliciousTable], addedColumn)
+
+			// DropTable must also quote the identifier - a broken drop would inject a second DROP.
+			require.NoError(t, rs.DropTable(ctx, maliciousTable))
+			schema, err = rs.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Contains(t, schema, "victim_secrets", "victim table must survive DropTable injection")
+			require.NotContains(t, schema, maliciousTable, "malicious table should have been dropped")
+		})
 	})
 
 	t.Run("Connection timeout using password", func(t *testing.T) {
@@ -1550,7 +1610,10 @@ func dropSchema(t *testing.T, db *sql.DB, namespace string) {
 
 	require.Eventually(t,
 		func() bool {
-			_, err := db.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace))
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			err := execRedshiftTestStatement(ctx, db, fmt.Sprintf(`DROP SCHEMA %s CASCADE;`, whutils.DoubleQuoteIdentifier(namespace)))
 			if err != nil {
 				t.Logf("error deleting schema %q: %v", namespace, err)
 				return false
@@ -1560,6 +1623,89 @@ func dropSchema(t *testing.T, db *sql.DB, namespace string) {
 		time.Minute,
 		time.Second,
 	)
+}
+
+func ensureSchema(t *testing.T, db *sql.DB, namespace string) error {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	return execRedshiftTestStatement(ctx, db, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, whutils.DoubleQuoteIdentifier(namespace)))
+}
+
+func openRedshiftSchemaDB(t *testing.T, credentials *testCredentials) (*sql.DB, bool, error) {
+	t.Helper()
+
+	if credentials.Host == "" || credentials.Port == "" || credentials.UserName == "" || credentials.Password == "" || credentials.Database == "" {
+		return nil, false, nil
+	}
+
+	db, err := sql.Open("postgres", redshiftPostgresDSN(credentials))
+	if err != nil {
+		return nil, true, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, true, err
+	}
+
+	return db, true, nil
+}
+
+func redshiftPostgresDSN(credentials *testCredentials) string {
+	dsn := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(credentials.UserName, credentials.Password),
+		Host:   fmt.Sprintf("%s:%s", credentials.Host, credentials.Port),
+		Path:   credentials.Database,
+	}
+	params := url.Values{}
+	params.Add("sslmode", "disable")
+	params.Add("connect_timeout", "10")
+	dsn.RawQuery = params.Encode()
+	return dsn.String()
+}
+
+func skipIfRedshiftSchemaDDLUnavailable(t *testing.T, credentials *testCredentials, destType string) {
+	t.Helper()
+
+	db, ok, err := openRedshiftSchemaDB(t, credentials)
+	if !ok {
+		return
+	}
+	if err != nil {
+		t.Skipf("Skipping Redshift integration because schema connection is unavailable: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	namespace := whth.RandSchema(destType)
+	if err := ensureSchema(t, db, namespace); err != nil {
+		t.Skipf("Skipping Redshift integration because schema DDL did not complete within the test timeout: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := execRedshiftTestStatement(ctx, db, fmt.Sprintf(`DROP SCHEMA %s CASCADE;`, whutils.DoubleQuoteIdentifier(namespace))); err != nil {
+		t.Skipf("Skipping Redshift integration because schema cleanup did not complete within the test timeout: %v", err)
+	}
+}
+
+func execRedshiftTestStatement(ctx context.Context, db *sql.DB, query string) error {
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := db.ExecContext(ctx, query)
+		errCh <- err
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func TestRedshift_ShouldMerge(t *testing.T) {

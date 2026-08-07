@@ -737,6 +737,56 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, schema)
 		})
+
+		t.Run("prevents SQL injection via malicious identifiers", func(t *testing.T) {
+			dropVictim := "; DROP TABLE victim_secrets; --"
+			maliciousNamespace := `evil_ns"` + dropVictim
+			maliciousTable := `evil_table"` + dropVictim
+			maliciousColumn := `evil_col" String)` + dropVictim
+			addedColumn := `added_col" String)` + dropVictim
+
+			warehouse := model.Warehouse{
+				Namespace:   maliciousNamespace,
+				WorkspaceID: whutils.RandHex(),
+				Destination: backendconfig.DestinationT{
+					Config: map[string]any{
+						"host":     host,
+						"port":     strconv.Itoa(clickhousePort),
+						"database": database,
+						"user":     user,
+						"password": password,
+					},
+				},
+			}
+
+			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			require.NoError(t, ch.Setup(ctx, warehouse, newMockUploader(t, "", nil, nil)))
+
+			require.NoError(t, ch.CreateSchema(ctx))
+			// Victim (control) table created through the manager itself (received_at is the sort key).
+			require.NoError(t, ch.CreateTable(ctx, "victim_secrets", model.TableSchema{"id": "string", "received_at": "datetime"}))
+			require.NoError(t, ch.CreateTable(ctx, maliciousTable, model.TableSchema{
+				"id":            "string",
+				"received_at":   "datetime",
+				maliciousColumn: "string",
+			}))
+			require.NoError(t, ch.AddColumns(ctx, maliciousTable, []whutils.ColumnInfo{{Name: addedColumn, Type: "string"}}))
+
+			// FetchSchema round-trips the stored identifiers - dialect-agnostic verification.
+			schema, err := ch.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Contains(t, schema, "victim_secrets", "victim table must survive - the injection executed")
+			require.Contains(t, schema, maliciousTable, "malicious table must be created verbatim")
+			require.Contains(t, schema[maliciousTable], maliciousColumn)
+			require.Contains(t, schema[maliciousTable], addedColumn)
+
+			// DropTable must also quote the identifier - a broken drop would inject a second DROP.
+			require.NoError(t, ch.DropTable(ctx, maliciousTable))
+			schema, err = ch.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Contains(t, schema, "victim_secrets", "victim table must survive DropTable injection")
+			require.NotContains(t, schema, maliciousTable, "malicious table should have been dropped")
+		})
 	})
 
 	t.Run("Load Table round trip", func(t *testing.T) {

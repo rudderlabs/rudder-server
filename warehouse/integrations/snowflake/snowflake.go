@@ -46,9 +46,9 @@ var primaryKeyMap = map[string]string{
 }
 
 var partitionKeyMap = map[string]string{
-	usersTable:      `"ID"`,
-	identifiesTable: `"ID"`,
-	discardsTable:   `"ROW_ID", "COLUMN_NAME", "TABLE_NAME"`,
+	usersTable:      "ID",
+	identifiesTable: "ID",
+	discardsTable:   "ROW_ID, COLUMN_NAME, TABLE_NAME",
 }
 
 var errNoGrants = errors.New("no grants found")
@@ -201,9 +201,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
 
 // schemaIdentifier returns [DATABASE_NAME].[NAMESPACE] format to access the schema directly.
 func (sf *Snowflake) schemaIdentifier() string {
-	return fmt.Sprintf(`%q`,
-		sf.Namespace,
-	)
+	return whutils.DoubleQuoteIdentifier(sf.Namespace)
 }
 
 func (sf *Snowflake) createTable(ctx context.Context, tableName string, columns model.TableSchema) (err error) {
@@ -221,27 +219,27 @@ func (sf *Snowflake) createTable(ctx context.Context, tableName string, columns 
 
 func (sf *Snowflake) tableExists(ctx context.Context, tableName string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS ( SELECT 1
-   								 FROM   information_schema.tables
-   								 WHERE  table_schema = '%s'
-   								 AND    table_name = '%s'
-								   )`, sf.Namespace, tableName)
+								 FROM   information_schema.tables
+								 WHERE  table_schema = %s
+								 AND    table_name = %s
+								   )`, whutils.SQLStringLiteral(sf.Namespace), whutils.SQLStringLiteral(tableName))
 	err = sf.DB.QueryRowContext(ctx, sqlStatement).Scan(&exists)
 	return exists, err
 }
 
 func (sf *Snowflake) columnExists(ctx context.Context, columnName, tableName string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS ( SELECT 1
-   								 FROM   information_schema.columns
-   								 WHERE  table_schema = '%s'
-									AND table_name = '%s'
-									AND column_name = '%s'
-								   )`, sf.Namespace, tableName, columnName)
+								 FROM   information_schema.columns
+								 WHERE  table_schema = %s
+									AND table_name = %s
+									AND column_name = %s
+								   )`, whutils.SQLStringLiteral(sf.Namespace), whutils.SQLStringLiteral(tableName), whutils.SQLStringLiteral(columnName))
 	err = sf.DB.QueryRowContext(ctx, sqlStatement).Scan(&exists)
 	return exists, err
 }
 
 func (sf *Snowflake) schemaExists(ctx context.Context) (exists bool, err error) {
-	sqlStatement := fmt.Sprintf("SELECT EXISTS ( SELECT 1 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '%s' )", sf.Namespace)
+	sqlStatement := fmt.Sprintf("SELECT EXISTS ( SELECT 1 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = %s )", whutils.SQLStringLiteral(sf.Namespace))
 	r := sf.DB.QueryRowContext(ctx, sqlStatement)
 	err = r.Scan(&exists)
 	// ignore err if no results for query
@@ -301,7 +299,7 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 		)
 		log.Infon("Cleaning up the following tables in snowflake")
 		_, err := sf.DB.ExecContext(ctx,
-			`DELETE FROM "`+sf.Namespace+`"."`+tb+`"
+			`DELETE FROM `+whutils.DoubleQuoteQualifiedIdentifier(sf.Namespace, tb)+`
 		WHERE
 			context_sources_job_run_id <> ? AND
 			context_sources_task_run_id <> ? AND
@@ -343,7 +341,7 @@ func (sf *Snowflake) loadTable(
 	)
 	log.Infon("started loading")
 	schemaIdentifier := sf.schemaIdentifier()
-	if db, err = sf.connect(ctx, optionalCreds{schemaName: schemaIdentifier}); err != nil {
+	if db, err = sf.connect(ctx, optionalCreds{schemaName: sf.Namespace}); err != nil {
 		return nil, nil, fmt.Errorf("connect: %w", err)
 	}
 
@@ -357,7 +355,7 @@ func (sf *Snowflake) loadTable(
 	)
 
 	strKeys := getSortedColumnsFromTableSchema(tableSchemaInUpload)
-	sortedColumnNames := sf.joinColumnsWithFormatting(strKeys, "%q")
+	sortedColumnNames := whutils.DoubleQuoteAndJoinByComma(strKeys)
 
 	// Truncating the columns by default to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
@@ -378,10 +376,10 @@ func (sf *Snowflake) loadTable(
 	}
 
 	log.Debugn("creating staging table")
-	createStagingTableStmt := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q;`,
+	createStagingTableStmt := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s.%[2]s LIKE %[1]s.%[3]s;`,
 		schemaIdentifier,
-		stagingTableName,
-		tableName,
+		whutils.DoubleQuoteIdentifier(stagingTableName),
+		whutils.DoubleQuoteIdentifier(tableName),
 	)
 	if _, err = db.ExecContext(ctx, createStagingTableStmt); err != nil {
 		return nil, nil, fmt.Errorf("create staging table: %w", err)
@@ -440,23 +438,23 @@ func (sf *Snowflake) mergeIntoLoadTable(
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column
 	}
-	partitionKey := `"ID"`
+	partitionKey := whutils.DoubleQuoteIdentifier("ID")
 	if column, ok := partitionKeyMap[tableName]; ok {
-		partitionKey = column
+		partitionKey = whutils.QuoteCommaSeparatedIdentifiers(column, whutils.DoubleQuoteIdentifier)
 	}
 
-	stagingColumnNames := sf.joinColumnsWithFormatting(strKeys, `staging.%q`)
-	columnsWithValues := sf.joinColumnsWithFormatting(strKeys, `original.%[1]q = staging.%[1]q`)
+	stagingColumnNames := sf.joinColumnsWithFormatting(strKeys, `staging.%s`)
+	columnsWithValues := sf.joinColumnsWithFormatting(strKeys, `original.%[1]s = staging.%[1]s`)
 
 	var additionalJoinClause string
 	if tableName == discardsTable {
-		additionalJoinClause = fmt.Sprintf(`AND original.%[1]q = staging.%[1]q AND original.%[2]q = staging.%[2]q`, "TABLE_NAME", "COLUMN_NAME")
+		additionalJoinClause = fmt.Sprintf(`AND original.%[1]s = staging.%[1]s AND original.%[2]s = staging.%[2]s`, whutils.DoubleQuoteIdentifier("TABLE_NAME"), whutils.DoubleQuoteIdentifier("COLUMN_NAME"))
 	}
 
 	updateSet := columnsWithValues
 	if !sf.Uploader.ShouldOnDedupUseNewRecord() {
 		// This is being added in order to get the updates count
-		updateSet = fmt.Sprintf(`original.%[1]q = original.%[1]q`, strKeys[0])
+		updateSet = fmt.Sprintf(`original.%[1]s = original.%[1]s`, whutils.DoubleQuoteIdentifier(strKeys[0]))
 	}
 
 	configKeyPrefix := "Warehouse.snowflake.mergeWindow." + sf.Warehouse.Destination.ID
@@ -473,7 +471,7 @@ func (sf *Snowflake) mergeIntoLoadTable(
 		)
 	}
 
-	mergeStmt := fmt.Sprintf(`MERGE INTO %[1]s.%[2]q AS original USING (
+	mergeStmt := fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS original USING (
 	  SELECT *
 	  FROM
 		(
@@ -484,19 +482,19 @@ func (sf *Snowflake) mergeIntoLoadTable(
 				RECEIVED_AT DESC
 			) AS _rudder_staging_row_number
 		  FROM
-			%[1]s.%[3]q
+			%[1]s.%[3]s
 		) AS q
 	  WHERE
 		_rudder_staging_row_number = 1
 	) AS staging ON (
-	  original.%[5]q = staging.%[5]q %[6]s
+	  original.%[5]s = staging.%[5]s %[6]s
 	)
 	WHEN NOT MATCHED THEN
 	  INSERT (%[7]s) VALUES (%[8]s)
 	WHEN MATCHED THEN
 	  UPDATE SET %[9]s;`,
-		schemaIdentifier, tableName, stagingTableName,
-		partitionKey, primaryKey, additionalJoinClause,
+		schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName), whutils.DoubleQuoteIdentifier(stagingTableName),
+		partitionKey, whutils.DoubleQuoteIdentifier(primaryKey), additionalJoinClause,
 		sortedColumnNames, stagingColumnNames,
 		updateSet,
 	)
@@ -517,7 +515,7 @@ func (sf *Snowflake) mergeIntoLoadTable(
 
 func (sf *Snowflake) joinColumnsWithFormatting(columns []string, format string) string {
 	return whutils.JoinWithFormatting(columns, func(_ int, name string) string {
-		return fmt.Sprintf(format, name)
+		return fmt.Sprintf(format, whutils.DoubleQuoteIdentifier(name))
 	}, ",")
 }
 
@@ -535,8 +533,8 @@ func (sf *Snowflake) sampleDuplicateMessages(
 	}
 
 	identifier := sf.schemaIdentifier()
-	mainTable := fmt.Sprintf("%s.%q", identifier, mainTableName)
-	stagingTable := fmt.Sprintf("%s.%q", identifier, stagingTableName)
+	mainTable := fmt.Sprintf("%s.%s", identifier, whutils.DoubleQuoteIdentifier(mainTableName))
+	stagingTable := fmt.Sprintf("%s.%s", identifier, whutils.DoubleQuoteIdentifier(stagingTableName))
 
 	rows, err := db.QueryContext(ctx,
 		`SELECT ID, RECEIVED_AT
@@ -604,15 +602,15 @@ func (sf *Snowflake) copyInto(
 
 	copyStmt := fmt.Sprintf(
 		`COPY INTO
-			%s.%q(%v)
+			%s.%s(%v)
 		FROM
-		  '%v' %s
+		  %v %s
 		PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE)
 		TRUNCATECOLUMNS = TRUE;`,
-		schemaIdentifier, copyTargetTable,
+		schemaIdentifier, whutils.DoubleQuoteIdentifier(copyTargetTable),
 		sortedColumnNames,
-		loadFolder,
+		whutils.SQLStringLiteral(loadFolder),
 		authString,
 	)
 
@@ -693,19 +691,19 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 	}
 
 	sortedColumnNames := strings.Join([]string{
-		"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE",
+		whutils.DoubleQuoteIdentifier("MERGE_PROPERTY_1_TYPE"), whutils.DoubleQuoteIdentifier("MERGE_PROPERTY_1_VALUE"), whutils.DoubleQuoteIdentifier("MERGE_PROPERTY_2_TYPE"), whutils.DoubleQuoteIdentifier("MERGE_PROPERTY_2_VALUE"),
 	}, ",")
 	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`
-		COPY INTO %s.%q(%v)
-		FROM '%v'
+		COPY INTO %s.%s(%v)
+		FROM %v
 		%s
 		PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE;`,
-		schemaIdentifier, identityMergeRulesTable, sortedColumnNames,
-		loadLocation,
+		schemaIdentifier, whutils.DoubleQuoteIdentifier(identityMergeRulesTable), sortedColumnNames,
+		whutils.SQLStringLiteral(loadLocation),
 		authString,
 	)
 
@@ -746,8 +744,8 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	schemaIdentifier := sf.schemaIdentifier()
 	stagingTableName := whutils.StagingTableName(provider, identityMappingsTable, tableNameLimit)
 	sqlStatement := fmt.Sprintf(
-		`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q`,
-		schemaIdentifier, stagingTableName, identityMappingsTable,
+		`CREATE TEMPORARY TABLE %[1]s.%[2]s LIKE %[1]s.%[3]s`,
+		schemaIdentifier, whutils.DoubleQuoteIdentifier(stagingTableName), whutils.DoubleQuoteIdentifier(identityMappingsTable),
 	)
 
 	log = log.Withn(logger.NewStringField(lf.StagingTableName, stagingTableName))
@@ -763,8 +761,8 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	}
 
 	sqlStatement = fmt.Sprintf(
-		`ALTER TABLE %s.%q ADD COLUMN "ID" int AUTOINCREMENT start 1 increment 1`,
-		schemaIdentifier, stagingTableName,
+		`ALTER TABLE %s.%s ADD COLUMN %s int AUTOINCREMENT start 1 increment 1`,
+		schemaIdentifier, whutils.DoubleQuoteIdentifier(stagingTableName), whutils.DoubleQuoteIdentifier("ID"),
 	)
 	log.Infon("Adding autoincrement column", logger.NewStringField(lf.Query, sqlStatement))
 	_, err = db.ExecContext(ctx, sqlStatement)
@@ -783,12 +781,12 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 
 	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
 	sqlStatement = fmt.Sprintf(
-		`COPY INTO %s.%q("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT")
-		FROM '%v' %s PATTERN = '.*\.csv\.gz'
+		`COPY INTO %s.%s("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT")
+		FROM %v %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE`,
-		schemaIdentifier, stagingTableName,
-		loadLocation,
+		schemaIdentifier, whutils.DoubleQuoteIdentifier(stagingTableName),
+		whutils.SQLStringLiteral(loadLocation),
 		authString,
 	)
 
@@ -803,12 +801,12 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	}
 
 	sqlStatement = fmt.Sprintf(
-		`MERGE INTO %[3]s.%[1]q AS original
+		`MERGE INTO %[3]s.%[1]s AS original
 		USING (
 			SELECT * FROM (
 				SELECT *, row_number() OVER (
 					PARTITION BY "MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE" ORDER BY "ID" DESC
-				) AS _rudder_staging_row_number FROM %[3]s.%[2]q
+				) AS _rudder_staging_row_number FROM %[3]s.%[2]s
 			) AS q WHERE _rudder_staging_row_number = 1
 		) AS staging
 		ON (
@@ -822,7 +820,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 		VALUES (
 			staging."MERGE_PROPERTY_TYPE", staging."MERGE_PROPERTY_VALUE", staging."RUDDER_ID", staging."UPDATED_AT"
 		);`,
-		identityMappingsTable, stagingTableName, schemaIdentifier,
+		whutils.DoubleQuoteIdentifier(identityMappingsTable), whutils.DoubleQuoteIdentifier(stagingTableName), schemaIdentifier,
 	)
 	log.Infon("Merge records for dedup for table", logger.NewStringField(lf.Query, sqlStatement))
 	_, err = db.ExecContext(ctx, sqlStatement)
@@ -896,8 +894,8 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	if !sf.ShouldMerge(identifiesTable) {
 		tmpIdentifiesStagingTable := whutils.StagingTableName(provider, identifiesTable, tableNameLimit)
 		sqlStatement := fmt.Sprintf(
-			`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q;`,
-			schemaIdentifier, tmpIdentifiesStagingTable, resp.stagingTable,
+			`CREATE TEMPORARY TABLE %[1]s.%[2]s LIKE %[1]s.%[3]s;`,
+			schemaIdentifier, whutils.DoubleQuoteIdentifier(tmpIdentifiesStagingTable), whutils.DoubleQuoteIdentifier(resp.stagingTable),
 		)
 		if _, err = resp.db.ExecContext(ctx, sqlStatement); err != nil {
 			return map[string]error{
@@ -908,7 +906,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		}
 
 		strKeys := getSortedColumnsFromTableSchema(identifiesSchema)
-		sortedColumnNames := sf.joinColumnsWithFormatting(strKeys, "%q")
+		sortedColumnNames := whutils.DoubleQuoteAndJoinByComma(strKeys)
 
 		_, err = sf.copyInto(ctx, resp.db, schemaIdentifier, identifiesTable, sortedColumnNames, tmpIdentifiesStagingTable)
 		if err != nil {
@@ -929,55 +927,55 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		if colName == "ID" {
 			continue
 		}
-		userColNames = append(userColNames, fmt.Sprintf(`%q`, colName))
+		userColNames = append(userColNames, whutils.DoubleQuoteIdentifier(colName))
 		if _, ok := identifiesSchema[colName]; ok {
-			identifyColNames = append(identifyColNames, fmt.Sprintf(`%q`, colName))
+			identifyColNames = append(identifyColNames, whutils.DoubleQuoteIdentifier(colName))
 		} else {
 			// This is to handle cases when column in users table not present in identities table
-			identifyColNames = append(identifyColNames, fmt.Sprintf(`NULL as %q`, colName))
+			identifyColNames = append(identifyColNames, fmt.Sprintf(`NULL as %s`, whutils.DoubleQuoteIdentifier(colName)))
 		}
 		firstValPropsQuery := fmt.Sprintf(`
-			FIRST_VALUE(%[1]q IGNORE NULLS) OVER (
-			  PARTITION BY ID
-			  ORDER BY
-				RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING
-				AND UNBOUNDED FOLLOWING
-			) AS %[1]q`,
-			colName,
+				FIRST_VALUE(%[1]s IGNORE NULLS) OVER (
+				  PARTITION BY %[2]s
+				  ORDER BY
+					%[3]s DESC ROWS BETWEEN UNBOUNDED PRECEDING
+					AND UNBOUNDED FOLLOWING
+				) AS %[1]s`,
+			whutils.DoubleQuoteIdentifier(colName), whutils.DoubleQuoteIdentifier("ID"), whutils.DoubleQuoteIdentifier("RECEIVED_AT"),
 		)
 		firstValProps = append(firstValProps, firstValPropsQuery)
 	}
 
 	stagingTableName := whutils.StagingTableName(provider, usersTable, tableNameLimit)
 	sqlStatement := fmt.Sprintf(`
-		CREATE TEMPORARY TABLE %[1]s.%[2]q AS (
+		CREATE TEMPORARY TABLE %[1]s.%[2]s AS (
 			SELECT DISTINCT *
 			FROM (
 				SELECT "ID", %[3]s
 				FROM (
 					(
 						SELECT "ID", %[6]s
-						FROM %[1]s.%[4]q
+						FROM %[1]s.%[4]s
 						WHERE "ID" IN (
 							SELECT "USER_ID"
-							FROM %[1]s.%[5]q
+							FROM %[1]s.%[5]s
 							WHERE "USER_ID" IS NOT NULL
 						)
 					)
 					UNION
 					(
 						SELECT "USER_ID", %[7]s
-						FROM %[1]s.%[5]q
+						FROM %[1]s.%[5]s
 						WHERE "USER_ID" IS NOT NULL
 					)
 				)
 			)
 		);`,
 		schemaIdentifier,
-		stagingTableName,
+		whutils.DoubleQuoteIdentifier(stagingTableName),
 		strings.Join(firstValProps, ","),
-		usersTable,
-		resp.stagingTable,
+		whutils.DoubleQuoteIdentifier(usersTable),
+		whutils.DoubleQuoteIdentifier(resp.stagingTable),
 		strings.Join(userColNames, ","),
 		strings.Join(identifyColNames, ","),
 	)
@@ -995,7 +993,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	}
 
 	var (
-		primaryKey     = `"ID"`
+		primaryKey     = whutils.DoubleQuoteIdentifier("ID")
 		columnNames    = append([]string{primaryKey}, userColNames...)
 		columnNamesStr = strings.Join(columnNames, ",")
 	)
@@ -1010,14 +1008,14 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	}
 
 	sqlStatement = fmt.Sprintf(`
-		MERGE INTO %[7]s.%[1]q AS original USING (
-			SELECT %[3]s
-			FROM %[7]s.%[2]q
+			MERGE INTO %[7]s.%[1]s AS original USING (
+				SELECT %[3]s
+				FROM %[7]s.%[2]s
 		) AS staging ON (original.%[4]s = staging.%[4]s)
-		WHEN NOT MATCHED THEN INSERT (%[3]s) VALUES (%[6]s)
-		WHEN MATCHED THEN UPDATE SET %[5]s;`,
-		usersTable,
-		stagingTableName,
+			WHEN NOT MATCHED THEN INSERT (%[3]s) VALUES (%[6]s)
+			WHEN MATCHED THEN UPDATE SET %[5]s;`,
+		whutils.DoubleQuoteIdentifier(usersTable),
+		whutils.DoubleQuoteIdentifier(stagingTableName),
 		columnNamesStr,
 		primaryKey,
 		columnsWithValues.String(),
@@ -1168,7 +1166,7 @@ func (sf *Snowflake) CreateTable(ctx context.Context, tableName string, columnMa
 
 func (sf *Snowflake) DropTable(ctx context.Context, tableName string) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
-	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]q`, schemaIdentifier, tableName)
+	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s`, schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName))
 	sf.logger.Infon("Dropping table in snowflake",
 		logger.NewStringField(lf.DestinationID, sf.Warehouse.Destination.ID),
 		logger.NewStringField(lf.Query, sqlStatement),
@@ -1211,7 +1209,7 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 		}
 
 		schemaIdentifier := sf.schemaIdentifier()
-		sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s.%q`, schemaIdentifier, tableName)
+		sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s.%s`, schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName))
 		var totalRows int64
 		err = sf.DB.QueryRowContext(ctx, sqlStatement).Scan(&totalRows)
 		if err != nil {
@@ -1247,8 +1245,8 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 		for {
 			// TODO: Handle case for missing anonymous_id, user_id columns
 			sqlStatement = fmt.Sprintf(
-				`SELECT DISTINCT %s FROM %s.%q LIMIT %d OFFSET %d`,
-				toSelectFields, schemaIdentifier, tableName, batchSize, offset,
+				`SELECT DISTINCT %s FROM %s.%s LIMIT %d OFFSET %d`,
+				toSelectFields, schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName), batchSize, offset,
 			)
 			sf.logger.Infon("Downloading distinct combinations of anonymous_id, user_id",
 				logger.NewStringField(lf.Query, sqlStatement),
@@ -1329,7 +1327,7 @@ func (sf *Snowflake) IsEmpty(ctx context.Context, warehouse model.Warehouse) (em
 			continue
 		}
 		schemaIdentifier := sf.schemaIdentifier()
-		sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s.%q`, schemaIdentifier, tableName)
+		sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s`, schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName))
 		var count int64
 		err = sf.DB.QueryRowContext(ctx, sqlStatement).Scan(&count)
 		if err != nil {
@@ -1460,12 +1458,12 @@ func (sf *Snowflake) TestLoadTable(
 
 	loadFolder := whutils.GetObjectFolder(sf.ObjectStorage, location)
 	schemaIdentifier := sf.schemaIdentifier()
-	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
+	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM %v %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE`,
-		fmt.Sprintf(`%s.%q`, schemaIdentifier, tableName),
-		fmt.Sprintf(`%q, %q`, "id", "val"),
-		loadFolder,
+		fmt.Sprintf(`%s.%s`, schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName)),
+		whutils.DoubleQuoteAndJoinByComma([]string{"id", "val"}),
+		whutils.SQLStringLiteral(loadFolder),
 		authString,
 	)
 
@@ -1521,7 +1519,7 @@ func (sf *Snowflake) getRoles(ctx context.Context) ([]string, error) {
 
 func (sf *Snowflake) getGrantedRoles(ctx context.Context) ([]string, error) {
 	user := sf.Warehouse.GetStringDestinationConfig(sf.conf, model.UserSetting)
-	sqlStatement := fmt.Sprintf("SHOW GRANTS TO USER %q;", user)
+	sqlStatement := fmt.Sprintf("SHOW GRANTS TO USER %s;", whutils.DoubleQuoteIdentifier(user))
 
 	rows, err := sf.DB.QueryContext(ctx, sqlStatement)
 	if err != nil {
