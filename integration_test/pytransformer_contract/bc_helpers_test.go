@@ -248,6 +248,24 @@ func makeEventWithCredentials(messageID, versionID string, credentials []types.C
 	return ev
 }
 
+// makeEvents creates n TransformerEvents for versionID, optionally carrying library version ids.
+//
+// Message ids are prefixed with versionID so a test sharing one mock config backend across
+// subtests can scope its assertions to its own requests.
+func makeEvents(versionID string, n int, libraryVersionIDs ...string) []types.TransformerEvent {
+	libraries := make([]backendconfig.LibraryT, len(libraryVersionIDs))
+	for i, id := range libraryVersionIDs {
+		libraries[i] = backendconfig.LibraryT{VersionID: id}
+	}
+
+	events := make([]types.TransformerEvent, n)
+	for i := range events {
+		events[i] = makeEvent(fmt.Sprintf("%s-msg-%d", versionID, i+1), versionID)
+		events[i].Libraries = libraries
+	}
+	return events
+}
+
 // configBackendEntry controls what the mock config backend returns for a given versionId.
 //
 // When statusCode is 0 (default), the entry is treated as a normal transformation:
@@ -521,12 +539,11 @@ func startRudderPytransformer(
 		"UVICORN_PORT=" + cfg.portStr(containerPort),
 	}
 	// With host networking (Linux/CI) all containers share the same network
-	// namespace, so the Prometheus metrics server (default port 9091) must use
-	// a unique port to avoid "Address already in use" collisions.
+	// namespace. This helper does not scrape Prometheus metrics, so let the OS
+	// pick an unused metrics port inside the container instead of racing on a
+	// host-side "free port" probe.
 	if runtime.GOOS != "darwin" {
-		metricsPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
-		env = append(env, "METRICS_PORT="+strconv.Itoa(metricsPort))
+		env = append(env, "METRICS_PORT=0")
 	}
 	for _, e := range extraEnv {
 		env = append(env, toContainerURL(e))
@@ -534,7 +551,7 @@ func startRudderPytransformer(
 
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
-		Tag:          "main",
+		Tag:          "main", // todo: use latest after merging https://github.com/rudderlabs/rudder-pytransformer/pull/76
 		Auth:         registry.AuthConfiguration(),
 		Env:          env,
 		ExtraHosts:   cfg.ExtraHosts,

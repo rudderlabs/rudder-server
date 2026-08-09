@@ -191,8 +191,11 @@ func (m *migrator) onNewJob(ctx context.Context, key string, job *etcdtypes.Part
 	// Keep retrying errors with a backoff until context is done
 	if err := retry.PerpetualExponentialBackoffWithNotify(ctx, m.config,
 		func() error {
+			// resolve the buffered jobsdbs this job applies to: a single jobsdb for a fanned-out
+			// job, or all buffered jobsdbs (grouped) in legacy mode.
+			bufferedJobsDBs := m.resolveBufferedJobsDBs(job.JobsDB)
 			// flush jobs in sequence
-			for pbGroupIndex, pbGroup := range m.bufferedJobsDBs {
+			for pbGroupIndex, pbGroup := range bufferedJobsDBs {
 				// flush buffered partitions for this job in all partition buffers of this group concurrently
 				g, jobCtx := errgroup.WithContext(ctx)
 				groupIdentifiers := lo.Map(pbGroup, func(p partitionbuffer.JobsDBPartitionBuffer, _ int) string { return p.Identifier() })
@@ -257,6 +260,23 @@ func (m *migrator) statsTags() stats.Tags {
 		"nodeIndex": strconv.Itoa(m.nodeIndex),
 		"component": "processor",
 	}
+}
+
+// resolveBufferedJobsDBs returns the buffered jobsdbs a migration job applies to: a single jobsdb
+// (as a one-member group) for a fanned-out job, or all buffered jobsdbs (grouped) in legacy mode.
+func (m *migrator) resolveBufferedJobsDBs(jobsDB string) [][]partitionbuffer.JobsDBPartitionBuffer {
+	if jobsDB == "" {
+		return m.bufferedJobsDBs
+	}
+	for _, group := range m.bufferedJobsDBs {
+		for _, pb := range group {
+			if pb.Identifier() == jobsDB {
+				return [][]partitionbuffer.JobsDBPartitionBuffer{{pb}}
+			}
+		}
+	}
+	m.logger.Warnn("no buffered jobsdb found for migration job jobsdb, skipping", logger.NewStringField("jobsDB", jobsDB))
+	return nil
 }
 
 // getTargetPartitions returns the list of partitions assigned to the given target node index in the migration jobs

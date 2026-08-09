@@ -208,6 +208,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	gwWOHandle := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in gw jobsdb
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(jobsdbPool),
 		jobsdb.WithNumPartitions(partitionCount),
@@ -223,6 +224,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 
 	gwROHandle := jobsdb.NewForRead(
 		"gw",
+		jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in gw jobsdb
 		jobsdb.WithDSLimit(a.config.gwDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "Gateway.jobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(statsFactory),
@@ -265,6 +267,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	eschRWDB := jobsdb.NewForReadWrite(
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in esch jobsdb
 		jobsdb.WithDSLimit(a.config.eschDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(false, "Processor.jobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(statsFactory),
@@ -276,6 +279,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	arcRWDB := jobsdb.NewForReadWrite(
 		"arc",
 		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in arc jobsdb
 		jobsdb.WithDSLimit(a.config.arcDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(false, "Processor.jobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(statsFactory),
@@ -289,7 +293,9 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	if config.GetBoolVar(false, "Processor.DestinationIsolation.enabled") {
 		procRWHandle := jobsdb.NewForReadWrite(
 			"proc",
+			jobsdb.WithMultiConsumer(),
 			jobsdb.WithClearDB(options.ClearDB),
+			jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in proc jobsdb
 			jobsdb.WithDSLimit(a.config.procDSLimit),
 			jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(false, "Processor.jobsDB.skipMaintenanceError")),
 			jobsdb.WithStats(statsFactory),
@@ -299,7 +305,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 			jobsdb.WithNumPartitions(partitionCount),
 		)
 		defer procRWHandle.Close()
-		procRWDB = jobsdb.NewPendingEventsJobsDB(procRWHandle, pendingEventsRegistry)
+		procRWDB = jobsdb.NewPendingEventsJobsDB(procRWHandle, pendingEventsRegistry, jobsdb.WithConsumerAsDestinationID())
 	}
 
 	var schemaForwarder schema_forwarder.Forwarder

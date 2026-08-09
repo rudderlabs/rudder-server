@@ -2017,6 +2017,7 @@ def transformEvent(event, metadata):
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
 
 	// Collect all config backend entries for the shared config backend.
 	// Subtests with zero-value config are not registered — the config backend

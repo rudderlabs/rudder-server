@@ -1306,6 +1306,7 @@ def transformEvent(event, metadata):
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
 
 	// Start rudder-geolocation container (starts MinIO internally and uploads test MMDB).
 	geoContainer, geoURL := startRudderGeolocation(t, pool)
@@ -1566,6 +1567,7 @@ def transformBatch(events, metadata):
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
 
 	// Collect all config backend entries.
 	allEntries := make(map[string]configBackendEntry, len(subtests))
@@ -2385,6 +2387,7 @@ def transformEvent(event, metadata):
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
 
 	// Collect all config backend entries.
 	allEntries := make(map[string]configBackendEntry, len(subtests))

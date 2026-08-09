@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -89,6 +90,7 @@ def transformEvent(event, metadata):
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
 
 	t.Log("Starting mock config backend...")
 	configBackend := newContractConfigBackend(t, map[string]configBackendEntry{

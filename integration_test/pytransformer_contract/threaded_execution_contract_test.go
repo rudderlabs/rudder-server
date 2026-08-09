@@ -146,7 +146,7 @@ def transformEvent(event, metadata):
 		warmupID := fmt.Sprintf("warmup-%d", i)
 		warmupEvent := makeEvent(warmupID, versionID)
 		warmupEvent.Message["marker"] = warmupID
-		_, items := sendRawTransform(t, pyURL, []types.TransformerEvent{warmupEvent})
+		_, _, items := sendRawTransform(t, pyURL, []types.TransformerEvent{warmupEvent})
 		require.Len(t, items, 1, "warmup %d: expected one response item", i)
 		require.Equal(t, http.StatusOK, items[0].StatusCode,
 			"warmup %d: expected HTTP 200 (error=%s)", i, items[0].Error)
@@ -161,7 +161,7 @@ def transformEvent(event, metadata):
 	)
 	for i := range parallelRequests {
 		wg.Go(func() {
-			status, items := sendRawTransform(t, pyURL, requests[i])
+			status, _, items := sendRawTransform(t, pyURL, requests[i])
 			results[i] = result{idx: i, status: status, items: items}
 		})
 	}

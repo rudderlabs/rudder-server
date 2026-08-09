@@ -98,7 +98,7 @@ def transformEvent(event, metadata):
 		)
 
 		events := []types.TransformerEvent{makeEvent("msg-module-retry-1", versionID)}
-		status, items := sendRawTransform(t, pyURL, events)
+		status, _, items := sendRawTransform(t, pyURL, events)
 		require.Equal(t, http.StatusOK, status)
 		require.Len(t, items, 1)
 		require.Equal(t, http.StatusOK, items[0].StatusCode,
@@ -190,7 +190,7 @@ def transformEvent(event, metadata):
 		)
 
 		events := []types.TransformerEvent{makeEvent("msg-call-budget-1", versionID)}
-		status, items := sendRawTransform(t, pyURL, events)
+		status, _, items := sendRawTransform(t, pyURL, events)
 		require.Equal(t, http.StatusOK, status)
 		require.Len(t, items, 1)
 		require.Equal(t, http.StatusOK, items[0].StatusCode,
@@ -278,7 +278,7 @@ def transformEvent(event, metadata):
 		)
 
 		events := []types.TransformerEvent{makeEvent("msg-verify-false-1", versionID)}
-		status, items := sendRawTransform(t, pyURL, events)
+		status, _, items := sendRawTransform(t, pyURL, events)
 		require.Equal(t, http.StatusOK, status)
 		require.Len(t, items, 1)
 		require.Equal(t, http.StatusOK, items[0].StatusCode,
@@ -331,7 +331,7 @@ def transformEvent(event, metadata):
 		)
 
 		events := []types.TransformerEvent{makeEvent("msg-req-verify-false-1", versionID)}
-		status, items := sendRawTransform(t, pyURL, events)
+		status, _, items := sendRawTransform(t, pyURL, events)
 		require.Equal(t, http.StatusOK, status)
 		require.Len(t, items, 1)
 		require.Equal(t, http.StatusOK, items[0].StatusCode,
@@ -391,7 +391,7 @@ def transformEvent(event, metadata):
 
 		hits.Store(0)
 		events := []types.TransformerEvent{makeEvent("msg-subclass-1", versionID)}
-		status, items := sendRawTransform(t, pyURL, events)
+		status, _, items := sendRawTransform(t, pyURL, events)
 		require.Equal(t, http.StatusOK, status)
 		require.Len(t, items, 1)
 		require.Equal(t, http.StatusOK, items[0].StatusCode,
@@ -455,7 +455,7 @@ def transformEvent(event, metadata):
 		hitsA.Store(0)
 		hitsB.Store(0)
 		events := []types.TransformerEvent{makeEvent("msg-mount-prefix-1", versionID)}
-		status, items := sendRawTransform(t, pyURL, events)
+		status, _, items := sendRawTransform(t, pyURL, events)
 		require.Equal(t, http.StatusOK, status)
 		require.Len(t, items, 1)
 		require.Equal(t, http.StatusOK, items[0].StatusCode,
@@ -514,7 +514,7 @@ def transformEvent(event, metadata):
 
 		observed.reset()
 		events := []types.TransformerEvent{makeEvent("msg-headers-auth-1", versionID)}
-		status, items := sendRawTransform(t, pyURL, events)
+		status, _, items := sendRawTransform(t, pyURL, events)
 		require.Equal(t, http.StatusOK, status)
 		require.Len(t, items, 1)
 		require.Equal(t, http.StatusOK, items[0].StatusCode,
@@ -576,7 +576,7 @@ def transformEvent(event, metadata):
 
 		newConns.Store(0)
 		events := []types.TransformerEvent{makeEvent("msg-close-noop-1", versionID)}
-		status, items := sendRawTransform(t, pyURL, events)
+		status, _, items := sendRawTransform(t, pyURL, events)
 		require.Equal(t, http.StatusOK, status)
 		require.Len(t, items, 1)
 		require.Equal(t, http.StatusOK, items[0].StatusCode,
@@ -639,13 +639,13 @@ def transformEvent(event, metadata):
 		newConns.Store(0)
 
 		evA := makeEvent("msg-mgd-alpha", versionIDAlpha)
-		statusA, itemsA := sendRawTransform(t, pyURL, []types.TransformerEvent{evA})
+		statusA, _, itemsA := sendRawTransform(t, pyURL, []types.TransformerEvent{evA})
 		require.Equal(t, http.StatusOK, statusA)
 		require.Len(t, itemsA, 1)
 		require.Equal(t, http.StatusOK, itemsA[0].StatusCode)
 
 		evB := makeEvent("msg-mgd-beta", versionIDBeta)
-		statusB, itemsB := sendRawTransform(t, pyURL, []types.TransformerEvent{evB})
+		statusB, _, itemsB := sendRawTransform(t, pyURL, []types.TransformerEvent{evB})
 		require.Equal(t, http.StatusOK, statusB)
 		require.Len(t, itemsB, 1)
 		require.Equal(t, http.StatusOK, itemsB[0].StatusCode)
@@ -766,7 +766,7 @@ def transformEvent(event, metadata):
 				for i := range evs {
 					evs[i] = makeEvent(fmt.Sprintf("msg-%s-%d", variant.name, i), versionID)
 				}
-				status, items := sendRawTransform(t, pyURL, evs)
+				status, _, items := sendRawTransform(t, pyURL, evs)
 				require.Equal(t, http.StatusOK, status)
 				require.Len(t, items, eventsPerRun)
 				for i, it := range items {
@@ -888,7 +888,7 @@ def transformEvent(event, metadata):
 		for i := range evs {
 			evs[i] = makeEvent(fmt.Sprintf("msg-pool-maxsize-%d", i), versionID)
 		}
-		status, items := sendRawTransform(t, pyURL, evs)
+		status, _, items := sendRawTransform(t, pyURL, evs)
 		require.Equal(t, http.StatusOK, status)
 		require.Len(t, items, eventsPerRun)
 		for i, it := range items {

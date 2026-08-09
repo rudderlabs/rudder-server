@@ -129,6 +129,10 @@ func (m *mockSourceMigrator) Handle(ctx context.Context, migration *etcdtypes.Pa
 	return nil
 }
 
+func (m *mockSourceMigrator) JobsDBs() []string {
+	return nil
+}
+
 type mockTargetMigrator struct{}
 
 func (m *mockTargetMigrator) Run(ctx context.Context, wg *errgroup.Group) error {

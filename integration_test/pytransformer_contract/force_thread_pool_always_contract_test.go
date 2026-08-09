@@ -86,7 +86,7 @@ def transformEvent(event, metadata):
 	{
 		ev := makeEvent("single-evt", versionID)
 		ev.Message["n"] = 1
-		status, items := sendRawTransform(t, pyURL, []types.TransformerEvent{ev})
+		status, _, items := sendRawTransform(t, pyURL, []types.TransformerEvent{ev})
 		require.Equal(t, http.StatusOK, status, "single-event /customTransform failed")
 		require.Len(t, items, 1)
 		require.Equalf(t, http.StatusOK, items[0].StatusCode,
@@ -116,7 +116,7 @@ def transformEvent(event, metadata):
 			batch[j] = ev
 			inputs = append(inputs, inputEvent{messageID: messageID, n: n})
 		}
-		status, items := sendRawTransform(t, pyURL, batch)
+		status, _, items := sendRawTransform(t, pyURL, batch)
 		require.Equalf(t, http.StatusOK, status, "request %d /customTransform failed", r)
 		require.Lenf(t, items, eventsPerRequest, "request %d expected %d items", r, eventsPerRequest)
 

@@ -137,7 +137,7 @@ def transformEvent(event, metadata):
 	t.Logf("rudder-server is ready at %s", url)
 
 	// 10. Send events to rudder-server
-	eventsCount := 5
+	eventsCount := 6
 	t.Logf("Sending %d identify events...", eventsCount)
 	err = sendEvents(eventsCount, "identify", "writekey-1", url)
 	require.NoError(t, err)
@@ -185,7 +185,7 @@ func runRudderServer(
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "SourceDebugger.disableEventUploads"), "true")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "TransformationDebugger.disableTransformationStatusUploads"), "true")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.backup.enabled"), "false")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.migrateDSLoopSleepDuration"), "60m")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.compactionLoopSleepDuration"), "60m")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "archival.Enabled"), "false")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Reporting.syncer.enabled"), "false")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "BatchRouter.pingFrequency"), "1s")
@@ -264,6 +264,7 @@ func sendEvents(
 	return nil
 }
 
+// requireJobsCount waits until a jobsdb queue holds expectedCount jobs in a given state.
 func requireJobsCount(
 	t *testing.T,
 	ctx context.Context,

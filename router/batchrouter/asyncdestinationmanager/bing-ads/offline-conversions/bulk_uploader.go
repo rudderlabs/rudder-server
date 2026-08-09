@@ -69,14 +69,14 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 		}
 	}
 
-	err = validateAndTransformTimeFields(fields)
+	err = validateAndTransformTimeFields(fields, event.Action)
 	if err != nil {
 		return payload, err
 	}
 
 	// validate for mscklid
 	clickID, hasClickID := fields["microsoftClickId"]
-	enhancedConversionProvided := hasClickID && clickID != ""
+	enhancedConversionProvided := hasClickID && clickID != nil && clickID != ""
 
 	// Check for enhanced conversion fields: email or phone.
 	if !enhancedConversionProvided {
@@ -90,9 +90,11 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 
 	// Convert all fields to string as customer can provide it as integer or float
 	fields = lo.MapValues(fields, func(value any, key string) any {
-		_, ok := value.(string)
-		if ok {
-			return value
+		if value == nil {
+			return ""
+		}
+		if s, ok := value.(string); ok {
+			return s
 		}
 		return fmt.Sprintf("%v", value)
 	})
