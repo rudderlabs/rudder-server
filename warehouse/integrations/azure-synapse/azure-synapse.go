@@ -808,7 +808,7 @@ func (as *AzureSynapse) dropStagingTable(ctx context.Context, stagingTableName s
 	as.logger.Infon("AZ: dropping table",
 		logger.NewStringField(logfield.TableName, stagingTableName),
 	)
-	_, err := as.db.ExecContext(ctx, fmt.Sprintf(`IF OBJECT_ID (%s,'U') IS NOT NULL DROP TABLE %s;`, warehouseutils.SQLStringLiteral(as.namespace+"."+stagingTableName), warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, stagingTableName)))
+	_, err := as.db.ExecContext(ctx, fmt.Sprintf(`IF OBJECT_ID (%s,'U') IS NOT NULL DROP TABLE %s;`, warehouseutils.SQLStringLiteral(warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, stagingTableName)), warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, stagingTableName)))
 	if err != nil {
 		as.logger.Errorn("AZ: Error dropping staging table in synapse",
 			logger.NewStringField(logfield.TableName, warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, stagingTableName)),
@@ -820,7 +820,7 @@ func (as *AzureSynapse) dropStagingTable(ctx context.Context, stagingTableName s
 func (as *AzureSynapse) createTable(ctx context.Context, tableName string, columns model.TableSchema) (err error) {
 	tableIdentifier := warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, tableName)
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N%s) AND type = N'U')
-		CREATE TABLE %s ( %v )`, warehouseutils.SQLStringLiteral(as.namespace+"."+tableName), tableIdentifier, columnsWithDataTypes(columns, ""))
+		CREATE TABLE %s ( %v )`, warehouseutils.SQLStringLiteral(warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, tableName)), tableIdentifier, columnsWithDataTypes(columns, ""))
 
 	as.logger.Infon("AZ: Creating table in synapse for AZ",
 		logger.NewStringField(logfield.DestinationID, as.warehouse.Destination.ID),
@@ -862,7 +862,7 @@ func (as *AzureSynapse) AddColumns(ctx context.Context, tableName string, column
 					OBJECT_ID = OBJECT_ID(N%s)
 					AND name = %s
 				)`,
-			warehouseutils.SQLStringLiteral(as.namespace+"."+tableName),
+			warehouseutils.SQLStringLiteral(warehouseutils.BracketQuoteQualifiedIdentifier(as.namespace, tableName)),
 			warehouseutils.SQLStringLiteral(columnsInfo[0].Name),
 		))
 	}

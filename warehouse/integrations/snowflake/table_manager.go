@@ -94,8 +94,8 @@ func (m *icebergTableManager) createTableQuery(schemaIdentifier, tableName strin
 		EXTERNAL_VOLUME = %s
 		BASE_LOCATION = %s`,
 		schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName), columnsWithDataTypes(columns, m.dataTypesMap),
-		whutils.SQLStringLiteral(m.externalVolume),
-		whutils.SQLStringLiteral(baseLocation),
+		whutils.SQLStringLiteralBackslash(m.externalVolume),
+		whutils.SQLStringLiteralBackslash(baseLocation),
 	)
 }
 

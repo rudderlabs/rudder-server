@@ -222,7 +222,7 @@ func (sf *Snowflake) tableExists(ctx context.Context, tableName string) (exists 
 								 FROM   information_schema.tables
 								 WHERE  table_schema = %s
 								 AND    table_name = %s
-								   )`, whutils.SQLStringLiteral(sf.Namespace), whutils.SQLStringLiteral(tableName))
+								   )`, whutils.SQLStringLiteralBackslash(sf.Namespace), whutils.SQLStringLiteralBackslash(tableName))
 	err = sf.DB.QueryRowContext(ctx, sqlStatement).Scan(&exists)
 	return exists, err
 }
@@ -233,13 +233,13 @@ func (sf *Snowflake) columnExists(ctx context.Context, columnName, tableName str
 								 WHERE  table_schema = %s
 									AND table_name = %s
 									AND column_name = %s
-								   )`, whutils.SQLStringLiteral(sf.Namespace), whutils.SQLStringLiteral(tableName), whutils.SQLStringLiteral(columnName))
+								   )`, whutils.SQLStringLiteralBackslash(sf.Namespace), whutils.SQLStringLiteralBackslash(tableName), whutils.SQLStringLiteralBackslash(columnName))
 	err = sf.DB.QueryRowContext(ctx, sqlStatement).Scan(&exists)
 	return exists, err
 }
 
 func (sf *Snowflake) schemaExists(ctx context.Context) (exists bool, err error) {
-	sqlStatement := fmt.Sprintf("SELECT EXISTS ( SELECT 1 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = %s )", whutils.SQLStringLiteral(sf.Namespace))
+	sqlStatement := fmt.Sprintf("SELECT EXISTS ( SELECT 1 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = %s )", whutils.SQLStringLiteralBackslash(sf.Namespace))
 	r := sf.DB.QueryRowContext(ctx, sqlStatement)
 	err = r.Scan(&exists)
 	// ignore err if no results for query
@@ -610,7 +610,7 @@ func (sf *Snowflake) copyInto(
 		TRUNCATECOLUMNS = TRUE;`,
 		schemaIdentifier, whutils.DoubleQuoteIdentifier(copyTargetTable),
 		sortedColumnNames,
-		whutils.SQLStringLiteral(loadFolder),
+		whutils.SQLStringLiteralBackslash(loadFolder),
 		authString,
 	)
 
@@ -703,7 +703,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE;`,
 		schemaIdentifier, whutils.DoubleQuoteIdentifier(identityMergeRulesTable), sortedColumnNames,
-		whutils.SQLStringLiteral(loadLocation),
+		whutils.SQLStringLiteralBackslash(loadLocation),
 		authString,
 	)
 
@@ -786,7 +786,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE`,
 		schemaIdentifier, whutils.DoubleQuoteIdentifier(stagingTableName),
-		whutils.SQLStringLiteral(loadLocation),
+		whutils.SQLStringLiteralBackslash(loadLocation),
 		authString,
 	)
 
@@ -1463,7 +1463,7 @@ func (sf *Snowflake) TestLoadTable(
 		TRUNCATECOLUMNS = TRUE`,
 		fmt.Sprintf(`%s.%s`, schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName)),
 		whutils.DoubleQuoteAndJoinByComma([]string{"id", "val"}),
-		whutils.SQLStringLiteral(loadFolder),
+		whutils.SQLStringLiteralBackslash(loadFolder),
 		authString,
 	)
 

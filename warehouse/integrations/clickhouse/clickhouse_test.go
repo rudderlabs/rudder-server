@@ -744,6 +744,7 @@ func TestIntegration(t *testing.T) {
 			maliciousTable := `evil_table"` + dropVictim
 			maliciousColumn := `evil_col" String)` + dropVictim
 			addedColumn := `added_col" String)` + dropVictim
+			backslashColumn := `evil_bs\`
 
 			warehouse := model.Warehouse{
 				Namespace:   maliciousNamespace,
@@ -769,6 +770,7 @@ func TestIntegration(t *testing.T) {
 				"id":            "string",
 				"received_at":   "datetime",
 				maliciousColumn: "string",
+				backslashColumn: "string",
 			}))
 			require.NoError(t, ch.AddColumns(ctx, maliciousTable, []whutils.ColumnInfo{{Name: addedColumn, Type: "string"}}))
 
@@ -778,6 +780,7 @@ func TestIntegration(t *testing.T) {
 			require.Contains(t, schema, "victim_secrets", "victim table must survive - the injection executed")
 			require.Contains(t, schema, maliciousTable, "malicious table must be created verbatim")
 			require.Contains(t, schema[maliciousTable], maliciousColumn)
+			require.Contains(t, schema[maliciousTable], backslashColumn, "trailing-backslash column must round-trip - backslash escaping intact")
 			require.Contains(t, schema[maliciousTable], addedColumn)
 
 			// DropTable must also quote the identifier - a broken drop would inject a second DROP.

@@ -279,7 +279,7 @@ func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) error {
 
 // fetchTables fetches tables from the database
 func (d *Deltalake) fetchTables(ctx context.Context, regex string) ([]string, error) {
-	query := fmt.Sprintf(`SHOW tables FROM %s LIKE %s;`, warehouseutils.BacktickQuoteIdentifier(d.Namespace), warehouseutils.SQLStringLiteral(regex))
+	query := fmt.Sprintf(`SHOW tables FROM %s LIKE %s;`, warehouseutils.BacktickQuoteIdentifier(d.Namespace), warehouseutils.SQLStringLiteralBackslash(regex))
 
 	rows, err := d.DB.QueryContext(ctx, query)
 	if err != nil {
@@ -482,7 +482,7 @@ func (d *Deltalake) CreateSchema(ctx context.Context) error {
 
 // schemaExists checks if a schema exists in the warehouse.
 func (d *Deltalake) schemaExists(ctx context.Context) (bool, error) {
-	query := fmt.Sprintf(`SHOW SCHEMAS LIKE %s;`, warehouseutils.SQLStringLiteral(d.Namespace))
+	query := fmt.Sprintf(`SHOW SCHEMAS LIKE %s;`, warehouseutils.SQLStringLiteralBackslash(d.Namespace))
 
 	var schema string
 	err := d.DB.QueryRowContext(ctx, query).Scan(&schema)
@@ -575,7 +575,7 @@ func (d *Deltalake) tableLocationQuery(tableName string) string {
 	}
 
 	location := fmt.Sprintf("%s/%s/%s", externalLocation, d.Namespace, tableName)
-	return fmt.Sprintf("LOCATION %s", warehouseutils.SQLStringLiteral(location))
+	return fmt.Sprintf("LOCATION %s", warehouseutils.SQLStringLiteralBackslash(location))
 }
 
 // AddColumns adds columns to the table.
@@ -749,7 +749,7 @@ func (d *Deltalake) copyIntoLoadTable(
 			%s;`,
 			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
 			sortedColumnNames,
-			warehouseutils.SQLStringLiteral(loadFolder),
+			warehouseutils.SQLStringLiteralBackslash(loadFolder),
 			auth,
 		)
 	} else {
@@ -775,7 +775,7 @@ func (d *Deltalake) copyIntoLoadTable(
 `,
 			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
 			sortedColumnNames,
-			warehouseutils.SQLStringLiteral(loadFolder),
+			warehouseutils.SQLStringLiteralBackslash(loadFolder),
 			auth,
 		)
 	}
@@ -1377,7 +1377,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 `,
 			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
 			warehouseutils.BacktickQuoteAndJoinByComma([]string{"id", "val"}),
-			warehouseutils.SQLStringLiteral(loadFolder),
+			warehouseutils.SQLStringLiteralBackslash(loadFolder),
 			auth,
 		)
 	} else {
@@ -1403,7 +1403,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 `,
 			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
 			"CAST ( '_c0' AS BIGINT ) AS id, CAST ( '_c1' AS STRING ) AS val",
-			warehouseutils.SQLStringLiteral(loadFolder),
+			warehouseutils.SQLStringLiteralBackslash(loadFolder),
 			auth,
 		)
 	}

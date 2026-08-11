@@ -1139,10 +1139,12 @@ func TestIntegration(t *testing.T) {
 			maliciousTable := `evil_table");drop table victim_secrets;--`
 			maliciousColumn := `evil_col" text);drop table victim_secrets;--`
 			addedColumn := `evil_added_col" text);drop table victim_secrets;--`
+			backslashColumn := `evil_bs\`
 
 			maliciousSchema := model.TableSchema{
 				"id":            "string",
 				maliciousColumn: "string",
+				backslashColumn: "string",
 			}
 
 			maliciousWarehouse := th.Clone(t, warehouse)
@@ -1166,6 +1168,7 @@ func TestIntegration(t *testing.T) {
 			require.Contains(t, schema, "victim_secrets", "victim table must survive - the injection executed")
 			require.Contains(t, schema, maliciousTable, "malicious table must be created verbatim")
 			require.Contains(t, schema[maliciousTable], maliciousColumn)
+			require.Contains(t, schema[maliciousTable], backslashColumn, "trailing-backslash column must round-trip verbatim")
 			require.Contains(t, schema[maliciousTable], addedColumn)
 
 			// DropTable must also quote the identifier - a broken drop would inject a second DROP.

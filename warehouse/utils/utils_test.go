@@ -579,6 +579,81 @@ func TestQuoteIdentifiers(t *testing.T) {
 	require.Equal(t, `[schema]]; DROP TABLE users; --]`, BracketQuoteIdentifier(`schema]; DROP TABLE users; --`))
 }
 
+// TestIdentifierEscapingPerIntegration locks in the identifier-escaping convention
+// for every warehouse integration, so a future refactor cannot silently move an
+// engine onto the wrong escaper. Two conventions exist:
+//
+//   - doubling: the delimiter is escaped by repeating it, and a backslash is a
+//     literal character. Correct for Postgres, Redshift, Snowflake (double quote),
+//     MSSQL, Azure Synapse (bracket) and Spark/Deltalake (backtick).
+//   - backslash (string-literal escaping): the delimiter AND the backslash are
+//     escaped with a preceding backslash. Correct for ClickHouse (double quote)
+//     and BigQuery (backtick). Doubling here would leave a trailing `\` free to
+//     escape the closing delimiter and break out of the identifier.
+//
+// Each case feeds a malicious identifier (delimiter- or backslash-based breakout)
+// and asserts the exact neutralized output for that engine's escaper.
+func TestIdentifierEscapingPerIntegration(t *testing.T) {
+	type quoteCase struct {
+		input string
+		want  string
+	}
+	groups := []struct {
+		integrations []string
+		quote        func(string) string
+		cases        []quoteCase
+	}{
+		{
+			integrations: []string{"postgres", "redshift", "snowflake"},
+			quote:        DoubleQuoteIdentifier,
+			cases: []quoteCase{
+				{`x"; DROP TABLE users; --`, `"x""; DROP TABLE users; --"`},
+				{`evil\`, `"evil\"`}, // backslash is literal here - must NOT be doubled
+			},
+		},
+		{
+			integrations: []string{"mssql", "azure-synapse"},
+			quote:        BracketQuoteIdentifier,
+			cases: []quoteCase{
+				{`x]; DROP TABLE users; --`, `[x]]; DROP TABLE users; --]`},
+			},
+		},
+		{
+			integrations: []string{"deltalake"},
+			quote:        BacktickQuoteIdentifier,
+			cases: []quoteCase{
+				{"x`; DROP TABLE users; --", "`x``; DROP TABLE users; --`"},
+			},
+		},
+		{
+			integrations: []string{"clickhouse"},
+			quote:        ClickhouseQuoteIdentifier,
+			cases: []quoteCase{
+				{`x"; DROP TABLE users; --`, `"x\"; DROP TABLE users; --"`},
+				{`evil\`, `"evil\\"`}, // backslash MUST be escaped
+			},
+		},
+		{
+			integrations: []string{"bigquery"},
+			quote:        BigQueryBacktickQuoteIdentifier,
+			cases: []quoteCase{
+				{"x`; DROP TABLE users; --", "`x\\`; DROP TABLE users; --`"},
+				{`evil\`, "`evil\\\\`"}, // backslash MUST be escaped
+			},
+		},
+	}
+	for _, g := range groups {
+		for _, integration := range g.integrations {
+			t.Run(integration, func(t *testing.T) {
+				for _, c := range g.cases {
+					require.Equal(t, c.want, g.quote(c.input),
+						"identifier %q escaped incorrectly for %s", c.input, integration)
+				}
+			})
+		}
+	}
+}
+
 func TestQuoteQualifiedIdentifiers(t *testing.T) {
 	require.Equal(t, `"schema""name"."table;--"`, DoubleQuoteQualifiedIdentifier(`schema"name`, `table;--`))
 	require.Equal(t, "`project``id`.`dataset`.`table`", BacktickQuoteQualifiedIdentifier("project`id", "dataset", "table"))
@@ -592,6 +667,57 @@ func TestQuoteCommaSeparatedIdentifiers(t *testing.T) {
 
 func TestSQLStringLiteral(t *testing.T) {
 	require.Equal(t, `'schema''; DROP TABLE users; --'`, SQLStringLiteral(`schema'; DROP TABLE users; --`))
+}
+
+// TestSQLStringLiteralBackslash covers the string-literal escaper for engines that
+// honour backslash escapes (ClickHouse, BigQuery, Snowflake, Databricks/Spark).
+// Doubling alone can be defeated there: `\'` under doubling becomes `\''`, which the
+// engine reads as an escaped quote followed by a terminator, so the rest runs on.
+// The backslash-aware escaper backslash-escapes both the backslash and the quote.
+func TestSQLStringLiteralBackslash(t *testing.T) {
+	require.Equal(t, `'schema\'; DROP TABLE users; --'`, SQLStringLiteralBackslash(`schema'; DROP TABLE users; --`))
+	require.Equal(t, `'a\\'`, SQLStringLiteralBackslash(`a\`)) // trailing backslash must be escaped
+	// The backslash-quote breakout, neutralized: reads back as the literal \' with no terminator.
+	require.Equal(t, `'\\\''`, SQLStringLiteralBackslash(`\'`))
+}
+
+// TestEscapeCharacterMatrix feeds a single input that contains every character any
+// escaper treats specially - " (double quote), ` (backtick), ] (right bracket),
+// ' (single quote) and \ (backslash) - to every escaper, asserting the exact
+// output. Each escaper must neutralise its own delimiter (and the backslash where
+// the engine honours C-style escapes) while leaving unrelated characters untouched.
+func TestEscapeCharacterMatrix(t *testing.T) {
+	const sink = "a\"b`c]d'e\\f" // a "  b `  c ]  d '  e \  f
+
+	// Identifier escapers - doubling engines leave the backslash literal.
+	require.Equal(t, "\"a\"\"b`c]d'e\\f\"", DoubleQuoteIdentifier(sink))          // pg/rs/sf: " -> ""
+	require.Equal(t, "[a\"b`c]]d'e\\f]", BracketQuoteIdentifier(sink))            // mssql/synapse: ] -> ]]
+	require.Equal(t, "`a\"b``c]d'e\\f`", BacktickQuoteIdentifier(sink))           // deltalake/spark: ` -> ``
+
+	// Identifier escapers - backslash engines escape their delimiter AND the backslash.
+	require.Equal(t, "\"a\\\"b`c]d'e\\\\f\"", ClickhouseQuoteIdentifier(sink))     // clickhouse: " -> \" , \ -> \\
+	require.Equal(t, "`a\"b\\`c]d'e\\\\f`", BigQueryBacktickQuoteIdentifier(sink)) // bigquery: ` -> \` , \ -> \\
+
+	// String-literal escapers.
+	require.Equal(t, "'a\"b`c]d''e\\f'", SQLStringLiteral(sink))                  // pg/rs/mssql/synapse: ' -> ''
+	require.Equal(t, "'a\"b`c]d\\'e\\\\f'", SQLStringLiteralBackslash(sink))      // ch/bq/sf/spark: ' -> \' , \ -> \\
+}
+
+// TestBackslashQualifiedIdentifiers covers the qualified variants of the backslash
+// escapers (ClickHouse, BigQuery): each element must be escaped with backslash rules
+// and then joined with '.', matching the doubling qualified escapers above.
+func TestBackslashQualifiedIdentifiers(t *testing.T) {
+	require.Equal(t, "\"ev\\\"il\".\"t\\\\bl\"", ClickhouseQuoteQualifiedIdentifier(`ev"il`, `t\bl`))
+	require.Equal(t, "`proj`.`d\\`s`.`t\\\\bl`", BigQueryBacktickQuoteQualifiedIdentifier("proj", "d`s", `t\bl`))
+}
+
+// TestQuoteAndJoinByCommaVariants covers the comma-join wrappers that lacked direct
+// coverage (the DoubleQuote variant is covered separately). Each escapes every
+// element with its dialect's rules and joins with ",".
+func TestQuoteAndJoinByCommaVariants(t *testing.T) {
+	require.Equal(t, "`a``b`,`c`", BacktickQuoteAndJoinByComma([]string{"a`b", "c"}))
+	require.Equal(t, `[a]]b],[c]`, BracketQuoteAndJoinByComma([]string{"a]b", "c"}))
+	require.Equal(t, "\"a\\\"b\",\"c\\\\\"", ClickhouseQuoteAndJoinByComma([]string{`a"b`, `c\`}))
 }
 
 func TestDoubleQuoteAndJoinByComma(t *testing.T) {

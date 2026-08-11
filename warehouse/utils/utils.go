@@ -604,6 +604,46 @@ func BacktickQuoteIdentifier(identifier string) string {
 	return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
 }
 
+// backslashQuoteIdentifier quotes an identifier for engines that apply
+// string-literal (C-style) escaping inside quoted identifiers - the delimiter and
+// the backslash are escaped with a preceding backslash, NOT by doubling. Doubling
+// would leave a lone backslash free to escape the closing delimiter and break out
+// of the identifier (e.g. `evil\` -> "evil\" leaves the string unterminated).
+// The backslash must be escaped first, so the backslash introduced for the
+// delimiter is not itself doubled.
+func backslashQuoteIdentifier(identifier, delim string) string {
+	escaped := strings.ReplaceAll(identifier, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, delim, `\`+delim)
+	return delim + escaped + delim
+}
+
+// ClickhouseQuoteIdentifier quotes an identifier for ClickHouse, which uses the
+// same string-literal (backslash) escaping rules inside double-quoted identifiers.
+// Do not use the doubling DoubleQuoteIdentifier for ClickHouse: it passes a
+// backslash through untouched, leaving a `\`-based breakout open.
+func ClickhouseQuoteIdentifier(identifier string) string {
+	return backslashQuoteIdentifier(identifier, `"`)
+}
+
+func ClickhouseQuoteQualifiedIdentifier(elems ...string) string {
+	return JoinQuotedIdentifiers(elems, ClickhouseQuoteIdentifier, ".")
+}
+
+func ClickhouseQuoteAndJoinByComma(elems []string) string {
+	return JoinQuotedIdentifiers(elems, ClickhouseQuoteIdentifier, ",")
+}
+
+// BigQueryBacktickQuoteIdentifier quotes an identifier for BigQuery, which escapes
+// the backtick delimiter and backslash with a preceding backslash rather than by
+// doubling.
+func BigQueryBacktickQuoteIdentifier(identifier string) string {
+	return backslashQuoteIdentifier(identifier, "`")
+}
+
+func BigQueryBacktickQuoteQualifiedIdentifier(elems ...string) string {
+	return JoinQuotedIdentifiers(elems, BigQueryBacktickQuoteIdentifier, ".")
+}
+
 func BracketQuoteIdentifier(identifier string) string {
 	return `[` + strings.ReplaceAll(identifier, `]`, `]]`) + `]`
 }
@@ -650,6 +690,21 @@ func QuoteCommaSeparatedIdentifiers(value string, quoteIdentifier func(string) s
 
 func SQLStringLiteral(value string) string {
 	return `'` + strings.ReplaceAll(value, `'`, `''`) + `'`
+}
+
+// SQLStringLiteralBackslash quotes a value as a SQL string literal for engines that
+// honour backslash (C-style) escapes inside string literals - ClickHouse, BigQuery,
+// Snowflake and Databricks/Spark. On those engines doubling the quote alone is not
+// enough: a backslash can escape the doubled quote (e.g. `\'` becomes `\''`, which
+// reads as a literal quote followed by a string terminator, letting the rest of the
+// input run on as SQL). Both the backslash and the single quote are backslash-
+// escaped, and the backslash must be escaped first so the one added for the quote
+// is not itself doubled. `\'` is used for the quote (not `''`) because it is the one
+// form all four engines accept - BigQuery does not honour `''`.
+func SQLStringLiteralBackslash(value string) string {
+	escaped := strings.ReplaceAll(value, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `'`, `\'`)
+	return `'` + escaped + `'`
 }
 
 func GetTempFileExtension(destType string) string {

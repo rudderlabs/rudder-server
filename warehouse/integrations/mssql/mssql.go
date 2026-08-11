@@ -814,7 +814,7 @@ func (ms *MSSQL) dropStagingTable(ctx context.Context, stagingTableName string) 
 func (ms *MSSQL) createTable(ctx context.Context, tableName string, columns model.TableSchema) (err error) {
 	tableIdentifier := warehouseutils.BracketQuoteQualifiedIdentifier(ms.namespace, tableName)
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N%s) AND type = N'U')
-		CREATE TABLE %s ( %v )`, warehouseutils.SQLStringLiteral(ms.namespace+"."+tableName), tableIdentifier, ColumnsWithDataTypes(columns, ""))
+		CREATE TABLE %s ( %v )`, warehouseutils.SQLStringLiteral(warehouseutils.BracketQuoteQualifiedIdentifier(ms.namespace, tableName)), tableIdentifier, ColumnsWithDataTypes(columns, ""))
 
 	ms.logger.Infon("MSSQL: Creating table in mssql for MSSQL",
 		logger.NewStringField(logfield.DestinationID, ms.warehouse.Destination.ID),
@@ -855,7 +855,7 @@ func (ms *MSSQL) AddColumns(ctx context.Context, tableName string, columnsInfo [
 					OBJECT_ID = OBJECT_ID(N%s)
 					AND name = %s
 				)`,
-			warehouseutils.SQLStringLiteral(ms.namespace+"."+tableName),
+			warehouseutils.SQLStringLiteral(warehouseutils.BracketQuoteQualifiedIdentifier(ms.namespace, tableName)),
 			warehouseutils.SQLStringLiteral(columnsInfo[0].Name),
 		))
 	}

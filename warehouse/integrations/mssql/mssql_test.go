@@ -815,8 +815,9 @@ func TestIntegration(t *testing.T) {
 			maliciousTable := `evil_table]` + dropVictim
 			maliciousColumn := `evil_col] int)` + dropVictim
 			addedColumn := `added_col] int)` + dropVictim
+			backslashColumn := `evil_bs\`
 
-			maliciousSchema := model.TableSchema{"id": "string", maliciousColumn: "string"}
+			maliciousSchema := model.TableSchema{"id": "string", maliciousColumn: "string", backslashColumn: "string"}
 
 			maliciousWarehouse := warehouse
 			maliciousWarehouse.Namespace = maliciousNamespace
@@ -830,12 +831,20 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, ms.CreateTable(ctx, maliciousTable, maliciousSchema))
 			require.NoError(t, ms.AddColumns(ctx, maliciousTable, []whutils.ColumnInfo{{Name: addedColumn, Type: "string"}}))
 
+			// Re-running must be a no-op: the OBJECT_ID existence guard has to resolve
+			// the bracket-quoted name. If it uses the raw name it returns NULL for a
+			// name needing quoting (] and spaces here), the guard fails open, and the
+			// CREATE/ALTER re-runs and errors ("already an object named" / duplicate column).
+			require.NoError(t, ms.CreateTable(ctx, maliciousTable, maliciousSchema), "CreateTable must be idempotent - existence guard must match the quoted name")
+			require.NoError(t, ms.AddColumns(ctx, maliciousTable, []whutils.ColumnInfo{{Name: addedColumn, Type: "string"}}), "AddColumns must be idempotent - existence guard must match the quoted name")
+
 			// FetchSchema round-trips the stored identifiers - dialect-agnostic verification.
 			schema, err := ms.FetchSchema(ctx)
 			require.NoError(t, err)
 			require.Contains(t, schema, "victim_secrets", "victim table must survive - the injection executed")
 			require.Contains(t, schema, maliciousTable, "malicious table must be created verbatim")
 			require.Contains(t, schema[maliciousTable], maliciousColumn)
+			require.Contains(t, schema[maliciousTable], backslashColumn, "trailing-backslash column must round-trip verbatim")
 			require.Contains(t, schema[maliciousTable], addedColumn)
 
 			// DropTable must also quote the identifier - a broken drop would inject a second DROP.
