@@ -540,21 +540,20 @@ func (u *Client) ExtractLibs(ctx context.Context, baseURL, workspaceID string, p
 	return u.forwardTest(ctx, baseURL, workspaceID, "/extract-libs", payload)
 }
 
-// forwardTest is the shared machinery behind the per-endpoint test methods: it
-// POSTs payload to baseURL+path and returns the pyt HTTP status code and
-// response body unchanged.
+// forwardTest is the shared machinery behind the per-endpoint test methods: it POSTs payload to baseURL+path and
+// returns the pyt HTTP status code and response body unchanged.
 //
-// It is the cp-router test path's counterpart to the event-processing path
-// ([Client.doPost]): both share the client's maxRetry/maxRetryBackoffInterval
-// settings, but this call is time-boxed by ctx (cp-router's test deadline).
-// Callers that need a quicker cold-start recovery build the client with
-// [WithMaxRetryBackoffInterval]/[WithMaxRetry] to shrink the backoff and size
-// the retry budget — with the caller now waiting for the ephemeral pod's
-// readiness before calling in (see pytdeployer.Deployer), that budget only
-// needs to ride out whatever residual latency remains after the readiness
-// check, not a full cold-start window. Like [Client.doPost], it retries any
-// transport error plus cold-start 502/503 responses, counting the cold-start
-// signals; any other response is returned as-is for the caller to pass through.
+// It is the cp-router test path's counterpart to the event-processing path ([Client.doPost]): both share the client's
+// maxRetry/maxRetryBackoffInterval settings, but this call is time-boxed by ctx (cp-router's test deadline).
+// Callers that need a quicker cold-start recovery build the client with [WithMaxRetryBackoffInterval]/[WithMaxRetry] to
+// shrink the backoff and size the retry budget — with the caller now waiting for the ephemeral pod's readiness before
+// calling in (see pytdeployer.Deployer), that budget only needs to ride out whatever residual latency remains after the
+// readiness check, not a full cold-start window. Like [Client.doPost], it retries any transport error plus cold-start
+// 502/503 responses, counting the cold-start signals; any other response is returned as-is for the caller.
+//
+// A 502/503 carrying [transformerclient.HeaderShouldRetry] is not a cold start (see [isColdStartError]): pyt is up and
+// reporting a transient downstream failure, so the retryable transport owns retrying it and whatever it finally
+// returns is passed through here rather than retried again.
 func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path string, payload []byte) (int, []byte, error) {
 	if baseURL == "" {
 		return 0, nil, ErrEmptyForwardBaseURL
@@ -601,12 +600,12 @@ func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path str
 
 			body, err = io.ReadAll(resp.Body)
 			if err != nil {
-				// Reading the body can fail for several transport-level reasons
-				// (connection reset mid-response, idle timeout, ...). Like the
-				// event path, treat any of them as retryable — bounded by
-				// maxRetry and ctx — with each attempt made visible by the
-				// retry notify below.
-				return err
+				// Reading the body can fail for several transport-level reasons (connection reset mid-response,
+				// idle timeout, ...). Like the event path, treat any of them as retryable — bounded by
+				// maxRetry and ctx — with each attempt made visible by the retry notify below.
+				return fmt.Errorf("reading pyt response body (status %d, %s=%q): %w",
+					resp.StatusCode, transformerclient.HeaderErrorReason,
+					resp.Header.Get(transformerclient.HeaderErrorReason), err)
 			}
 			statusCode = resp.StatusCode
 			return nil

@@ -254,7 +254,6 @@ func newRetryableHTTPClient(name string, baseClient Client, retryableConfig *ret
 					maps.Copy(tags, perpetualRetriesStatsTagsFromContext(resp.Request.Context()))
 				}
 				stats.Default.NewTaggedStat("transformer_client_perpetual_retry_count", stats.CountType, tags).Increment()
-				resp.Body.Close()
 				return true, fmt.Errorf("got retryable error response from transformer: %s", reason)
 			}
 			return false, nil
