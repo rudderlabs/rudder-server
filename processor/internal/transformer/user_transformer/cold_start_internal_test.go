@@ -49,10 +49,14 @@ func TestIsColdStartError(t *testing.T) {
 			want:    false,
 		},
 		{
-			name:    "502 with X-Rudder-Should-Retry is not a cold start",
+			// The contract is 503-only: pyt normalises downstream failures (a downstream 502 included) into its
+			// own 503 plus these headers, so a 502 is infrastructure no matter what headers ride along with it.
+			// Honouring the header here too would put 502 in the one state that has no owner — not retried by the
+			// transport, which is 503-only, and not retried as a cold start either.
+			name:    "502 with X-Rudder-Should-Retry is still a cold start",
 			status:  http.StatusBadGateway,
 			headers: map[string]string{transformerclient.HeaderShouldRetry: "true"},
-			want:    false,
+			want:    true,
 		},
 		{
 			name:    "X-Rudder-Should-Retry is matched case-insensitively",

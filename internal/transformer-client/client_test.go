@@ -690,9 +690,12 @@ func TestClient_ResponseBodyReadableAfterRetriesExhausted(t *testing.T) {
 		defer server.Close()
 
 		// Unlimited retries, as in production: only the caller's context ends them.
-		client := NewClient("testClient", retryConfig(-1, 0))
+		cfg := retryConfig(-1, 0)
+		cfg.RetryRudderErrors.InitialInterval = 2 * time.Second
+		cfg.RetryRudderErrors.MaxInterval = 2 * time.Second
+		client := NewClient("testClient", cfg)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 		defer cancel()
 
 		req, err := http.NewRequestWithContext(ctx, "POST", server.URL, strings.NewReader("test data"))

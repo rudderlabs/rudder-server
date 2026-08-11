@@ -66,6 +66,17 @@ const (
 	HeaderErrorReason = "X-Rudder-Error-Reason"
 )
 
+// IsRetryableResponse reports whether resp is the transformer signalling a transient downstream failure that the
+// caller should retry, as opposed to the transformer being unreachable.
+//
+// This is the single definition of that signal. The retryable transport below decides what to retry with it, and
+// user_transformer's cold-start classifier decides what is *not* a cold start with it.
+func IsRetryableResponse(resp *http.Response) bool {
+	return resp != nil &&
+		resp.StatusCode == http.StatusServiceUnavailable &&
+		strings.EqualFold(resp.Header.Get(HeaderShouldRetry), "true")
+}
+
 type ClientConfig struct {
 	TransportConfig struct {
 		DisableKeepAlives   bool          //	true
@@ -238,8 +249,7 @@ func newRetryableHTTPClient(name string, baseClient Client, retryableConfig *ret
 			if err != nil {
 				return false, backoff.Permanent(err)
 			}
-			if resp.StatusCode == http.StatusServiceUnavailable &&
-				strings.EqualFold(resp.Header.Get(HeaderShouldRetry), "true") {
+			if IsRetryableResponse(resp) {
 				reason := resp.Header.Get(HeaderErrorReason)
 				attemptTag := strconv.Itoa(attempt)
 				if attempt > 4 {

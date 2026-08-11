@@ -483,6 +483,12 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 		if errors.Is(err, transformerutils.ErrColdStart) {
 			return fmt.Appendf(nil, "workspace transformer not reachable: %s", err), transformerutils.StatusColdStartWindowFailure, nil
 		}
+		// Deliberately no special case for a spent retryable-response budget here: it falls through to the bare
+		// error below, which sendBatch turns into a panic. Retries are effectively infinite in production
+		// (retryRudderErrors maxRetry=-1, maxElapsedTime=0); maxRetry exists to stop the contract tests running
+		// forever. We don't want to fail such events so crashing is the safe response to it: the jobs are still in
+		// jobsdb and are retried after the restart.
+		// Failing the events instead would abort them into proc-errors, i.e. lose customer data, quietly.
 		if u.config.failOnUserTransformTimeout.Load() && os.IsTimeout(err) {
 			return fmt.Appendf(nil, "transformer request timed out: %s", err), transformerutils.TransformerRequestTimeout, nil
 		} else if u.config.failOnError.Load() {
@@ -671,13 +677,13 @@ func isColdStartError(err error, resp *http.Response) bool {
 	}
 	if resp != nil && (resp.StatusCode == http.StatusServiceUnavailable ||
 		resp.StatusCode == http.StatusBadGateway) {
-		// A 503/502 carrying the should-retry header comes from PyT itself, not from the infrastructure in front of it.
-		// The pod is up and answering, reporting a transient downstream failure (e.g. the geolocation timeout).
-		// Reaching this line means the retryable transport in transformer-client stopped retrying it, which only
-		// happens once retryRudderErrors is bounded or disabled (by default it's enabled with maxRetry=-1).
+		// A response carrying the should-retry contract came from PyT itself: the pod is up and answering, reporting
+		// a transient downstream failure such as a geolocation timeout. Anything else is the infrastructure in front
+		// of it — a bare 502 from kube-proxy with no endpoints behind the Service — and means "not ready yet".
 		//
-		// Only an unlabelled 503/502, i.e. kube-proxy with no endpoints behind the Service, means "not ready yet".
-		return !strings.EqualFold(resp.Header.Get(transformerclient.HeaderShouldRetry), "true")
+		// Same predicate the transport retries on, so the two halves of the contract cannot drift apart on which
+		// responses mean "PyT is alive but degraded".
+		return !transformerclient.IsRetryableResponse(resp)
 	}
 	return false
 }
