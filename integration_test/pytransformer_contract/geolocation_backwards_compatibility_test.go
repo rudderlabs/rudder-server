@@ -1618,18 +1618,23 @@ def transformEvent(event, metadata):
 					makeEvent("msg-1", versionID),
 				}
 
+				// Both versions raise GeolocationServerError(BaseException), which bypasses
+				// the user's except Exception and propagates as HTTP 503 with retry →
+				// retries exhausted → failed event. The user's geo_error branch never runs.
 				baselineResp := env.BaselineClient.Transform(context.Background(), events)
 				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected (geo 5xx triggers retries)")
+				require.Equal(t, 1, len(baselineResp.FailedEvents), "baseline: 1 failed event expected")
+				t.Logf("Baseline error: %q", baselineResp.FailedEvents[0].Error)
 
-				// Baseline: except Exception catches the error → success event with geo_error
-
-				// Candidate: GeolocationServerError(BaseException) bypasses except Exception
-				// → propagates as HTTP 503 with retry → retries exhausted → failed event
 				candidateResp := env.CandidateClient.Transform(context.Background(), events)
 				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected (geo 5xx triggers retries)")
 				require.Equal(t, 1, len(candidateResp.FailedEvents), "candidate: 1 failed event expected")
 				t.Logf("Candidate error: %q", candidateResp.FailedEvents[0].Error)
+
+				diff, equal := baselineResp.Equal(&candidateResp)
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -1655,12 +1660,18 @@ def transformEvent(event, metadata):
 
 				baselineResp := env.BaselineClient.Transform(context.Background(), events)
 				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected (geo 5xx triggers retries)")
+				require.Equal(t, 1, len(baselineResp.FailedEvents), "baseline: 1 failed event expected")
+				t.Logf("Baseline error: %q", baselineResp.FailedEvents[0].Error)
 
 				candidateResp := env.CandidateClient.Transform(context.Background(), events)
 				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected (geo 5xx triggers retries)")
 				require.Equal(t, 1, len(candidateResp.FailedEvents), "candidate: 1 failed event expected")
 				t.Logf("Candidate error: %q", candidateResp.FailedEvents[0].Error)
+
+				diff, equal := baselineResp.Equal(&candidateResp)
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -1686,12 +1697,18 @@ def transformEvent(event, metadata):
 
 				baselineResp := env.BaselineClient.Transform(context.Background(), events)
 				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected (geo 5xx triggers retries)")
+				require.Equal(t, 1, len(baselineResp.FailedEvents), "baseline: 1 failed event expected")
+				t.Logf("Baseline error: %q", baselineResp.FailedEvents[0].Error)
 
 				candidateResp := env.CandidateClient.Transform(context.Background(), events)
 				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected (geo 5xx triggers retries)")
 				require.Equal(t, 1, len(candidateResp.FailedEvents), "candidate: 1 failed event expected")
 				t.Logf("Candidate error: %q", candidateResp.FailedEvents[0].Error)
+
+				diff, equal := baselineResp.Equal(&candidateResp)
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -1731,11 +1748,7 @@ def transformEvent(event, metadata):
 				require.Contains(t, candidateError, "status code: 429", "candidate: error should mention 429")
 
 				diff, equal := baselineResp.Equal(&candidateResp)
-				if equal {
-					t.Log("Both versions produce identical responses for 429")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -1756,18 +1769,22 @@ def transformEvent(event, metadata):
 					makeEvent("msg-1", versionID),
 				}
 
+				// No try/except here, so the GeolocationServerError propagates on both versions:
+				// 503 with retry → retries exhausted → failed event.
 				baselineResp := env.BaselineClient.Transform(context.Background(), events)
 				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
-
-				// Both produce failed events, but via different paths:
-				// Baseline: exception propagates → failed event with "status code: 500"
-				// Candidate: GeolocationServerError → 503 retries → exhausted → failed event
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 1, len(baselineResp.FailedEvents), "baseline: 1 failed event expected")
+				t.Logf("Baseline error: %q", baselineResp.FailedEvents[0].Error)
 
 				candidateResp := env.CandidateClient.Transform(context.Background(), events)
 				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
 				require.Equal(t, 1, len(candidateResp.FailedEvents), "candidate: 1 failed event expected")
 				t.Logf("Candidate error: %q", candidateResp.FailedEvents[0].Error)
+
+				diff, equal := baselineResp.Equal(&candidateResp)
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -1796,11 +1813,16 @@ def transformBatch(events, metadata):
 
 				baselineResp := env.BaselineClient.Transform(context.Background(), events)
 				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected (geo 5xx triggers retries)")
+				require.Equal(t, 3, len(baselineResp.FailedEvents), "baseline: 3 failed events expected")
 
 				candidateResp := env.CandidateClient.Transform(context.Background(), events)
 				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected (geo 5xx triggers retries)")
 				require.Equal(t, 3, len(candidateResp.FailedEvents), "candidate: 3 failed events expected")
+
+				diff, equal := baselineResp.Equal(&candidateResp)
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -1829,11 +1851,16 @@ def transformBatch(events, metadata):
 
 				baselineResp := env.BaselineClient.Transform(context.Background(), events)
 				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected (geo 5xx triggers retries)")
+				require.Equal(t, 3, len(baselineResp.FailedEvents), "baseline: 3 failed events expected")
 
 				candidateResp := env.CandidateClient.Transform(context.Background(), events)
 				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected (geo 5xx triggers retries)")
 				require.Equal(t, 3, len(candidateResp.FailedEvents), "candidate: 3 failed events expected")
+
+				diff, equal := baselineResp.Equal(&candidateResp)
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -1862,11 +1889,16 @@ def transformBatch(events, metadata):
 
 				baselineResp := env.BaselineClient.Transform(context.Background(), events)
 				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected (geo 5xx triggers retries)")
+				require.Equal(t, 3, len(baselineResp.FailedEvents), "baseline: 3 failed events expected")
 
 				candidateResp := env.CandidateClient.Transform(context.Background(), events)
 				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected (geo 5xx triggers retries)")
 				require.Equal(t, 3, len(candidateResp.FailedEvents), "candidate: 3 failed events expected")
+
+				diff, equal := baselineResp.Equal(&candidateResp)
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -1908,11 +1940,7 @@ def transformBatch(events, metadata):
 				}
 
 				diff, equal := baselineResp.Equal(&candidateResp)
-				if equal {
-					t.Log("Both versions produce identical responses for batch 429")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -1936,16 +1964,22 @@ def transformEvent(event, metadata):
 					makeEvent("msg-1", versionID),
 				}
 
-				// Baseline: connection error raises Exception → caught by except → success with geo_error
+				// On both versions the connection error becomes a GeolocationServerError(BaseException), which bypasses
+				// the user's except Exception → 503 retries → failed event.
 				baselineResp := env.BaselineClient.Transform(context.Background(), events)
 				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected (geo errors trigger retries)")
+				require.Equal(t, 1, len(baselineResp.FailedEvents), "baseline: 1 failed event expected")
+				t.Logf("Baseline error: %q", baselineResp.FailedEvents[0].Error)
 
-				// Candidate: connection error → GeolocationServerError(BaseException) → 503 retries → failed event
 				candidateResp := env.CandidateClient.Transform(context.Background(), events)
 				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected (geo errors trigger retries)")
 				require.Equal(t, 1, len(candidateResp.FailedEvents), "candidate: 1 failed event expected")
 				t.Logf("Candidate error: %q", candidateResp.FailedEvents[0].Error)
+
+				diff, equal := baselineResp.Equal(&candidateResp)
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -2021,11 +2055,7 @@ def transformEvent(event, metadata):
 				require.Contains(t, candidateError, "status code: 400", "candidate: error should mention 400")
 
 				diff, equal := baselineResp.Equal(&candidateResp)
-				if equal {
-					t.Log("Both versions produce identical responses for 400")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -2057,6 +2087,9 @@ def transformEvent(event, metadata):
 				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
 				require.Equal(t, 1, len(candidateResp.FailedEvents), "candidate: 1 failed event expected")
 				t.Logf("Candidate error: %q", candidateResp.FailedEvents[0].Error)
+
+				diff, equal := baselineResp.Equal(&candidateResp)
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -2088,6 +2121,9 @@ def transformEvent(event, metadata):
 				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
 				require.Equal(t, 1, len(candidateResp.FailedEvents), "candidate: 1 failed event expected")
 				t.Logf("Candidate error: %q", candidateResp.FailedEvents[0].Error)
+
+				diff, equal := baselineResp.Equal(&candidateResp)
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -2126,11 +2162,7 @@ def transformEvent(event, metadata):
 				require.Contains(t, candidateError, "status code: 429", "candidate: error should mention 429")
 
 				diff, equal := baselineResp.Equal(&candidateResp)
-				if equal {
-					t.Log("Both versions produce identical error for uncaught 429")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -2164,6 +2196,9 @@ def transformEvent(event, metadata):
 				require.Equal(t, 1, len(candidateResp.FailedEvents), "candidate: 1 failed event expected")
 				t.Logf("Candidate error: %q", candidateResp.FailedEvents[0].Error)
 				require.NotEmpty(t, candidateResp.FailedEvents[0].Error, "candidate: should have an error")
+
+				diff, equal := baselineResp.Equal(&candidateResp)
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -2195,6 +2230,9 @@ def transformBatch(events, metadata):
 				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
 				require.Equal(t, 2, len(candidateResp.FailedEvents), "candidate: 2 failed events expected")
+
+				diff, equal := baselineResp.Equal(&candidateResp)
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -2232,6 +2270,9 @@ def transformBatch(events, metadata):
 				for i := range candidateResp.FailedEvents {
 					require.NotEmptyf(t, candidateResp.FailedEvents[i].Error, "candidate: event %d should have an error", i)
 				}
+
+				diff, equal := baselineResp.Equal(&candidateResp)
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
 			},
 		},
 		{
@@ -2267,14 +2308,19 @@ def transformEvent(event, metadata):
 					makeEvent("msg-1", versionID),
 				}
 
-				// Baseline: openfaas-flask-base catches the timeout via
-				// `except Exception` so the user code records geo_error
-				// and the event succeeds.
+				// Both versions: timeout → GeolocationServerError → HTTP 503 + X-Rudder-Should-Retry →
+				// retries exhausted → failed event (with the user's event["geo_error"] branch never executed).
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				require.Len(t, baselineResp.Events, 0,
+					"baseline: slow geolocation must NOT produce a success event "+
+						"(GeolocationServerError must bypass user except-Exception)")
+				require.Len(t, baselineResp.FailedEvents, 1,
+					"baseline: slow geolocation must surface as a failed event after retries")
+				require.Contains(t, baselineResp.FailedEvents[0].Error,
+					"transformer returned status code: 503",
+					"baseline: failed event must carry the correct error message")
 
-				// Candidate: timeout → GeolocationServerError →
-				// HTTP 503 + X-Rudder-Should-Retry → retries exhausted →
-				// failed event (with the user's `event["geo_error"]`
-				// branch never executed).
 				candidateResp := env.CandidateClient.Transform(context.Background(), events)
 				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 				require.Len(t, candidateResp.Events, 0,
@@ -2286,9 +2332,18 @@ def transformEvent(event, metadata):
 					"transformer returned status code: 503",
 					"candidate: failed event must carry the correct error message")
 
+				diff, equal := baselineResp.Equal(&candidateResp)
+				require.Truef(t, equal, "baseline and candidate must agree:\n%s", diff)
+
 				retriesCounter := env.CandidateStats.GetByName("processor_user_transformer_http_retries")
 				require.Len(t, retriesCounter, 1)
 				require.EqualValues(t, 2, retriesCounter[0].Value)
+
+				// Both versions must exhaust the same retry budget on the same 503.
+				baselineRetries := env.BaselineStats.GetByName("processor_user_transformer_http_retries")
+				require.Len(t, baselineRetries, 1)
+				require.EqualValues(t, retriesCounter[0].Value, baselineRetries[0].Value,
+					"baseline and candidate must retry the same number of times")
 			},
 		},
 	}

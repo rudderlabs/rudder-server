@@ -756,18 +756,24 @@ def transformEvent(event, metadata):
 					makeEvent("msg-2", versionID),
 				}
 
-				// Baseline: transformer returns 809 (CP down) → failed events
+				// Both versions return 503 + retry for a config backend 5xx, so the retries are exhausted and the
+				// events fail on either side.
 				baselineResp := env.BaselineClient.Transform(context.Background(), events)
 				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
 				require.True(t, len(baselineResp.FailedEvents) > 0, "baseline: expected at least 1 failed event")
 
-				// Candidate: pytransformer returns 503 + retry for config backend 5xx
-				// → retries exhausted → failed events (different status code from baseline)
 				candidateResp := env.CandidateClient.Transform(context.Background(), events)
 				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
 				require.True(t, len(candidateResp.FailedEvents) > 0, "candidate: expected at least 1 failed event")
+
+				// Only compare status codes — error messages may differ between versions
+				require.Equal(t, len(baselineResp.FailedEvents), len(candidateResp.FailedEvents), "failed event count mismatch")
+				for i := range baselineResp.FailedEvents {
+					require.Equal(t, baselineResp.FailedEvents[i].StatusCode, candidateResp.FailedEvents[i].StatusCode,
+						"status code mismatch for failed event %d", i)
+				}
 			},
 		},
 		{
@@ -789,18 +795,24 @@ def transformEvent(event, metadata):
 							makeEvent("msg-2", versionID),
 						}
 
-						// Baseline: transformer returns 809 (CP down) → failed events
+						// Both versions return 503 + retry for a config backend 5xx, so the
+						// retries are exhausted and the events fail on either side.
 						baselineResp := env.BaselineClient.Transform(context.Background(), events)
 						t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 						require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
 						require.True(t, len(baselineResp.FailedEvents) > 0, "baseline: expected at least 1 failed event")
 
-						// Candidate: pytransformer returns 503 + retry for config backend 5xx
-						// → retries exhausted → failed events (different status code from baseline)
 						candidateResp := env.CandidateClient.Transform(context.Background(), events)
 						t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 						require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
 						require.True(t, len(candidateResp.FailedEvents) > 0, "candidate: expected at least 1 failed event")
+
+						// Only compare status codes — error messages may differ between versions
+						require.Equal(t, len(baselineResp.FailedEvents), len(candidateResp.FailedEvents), "failed event count mismatch")
+						for i := range baselineResp.FailedEvents {
+							require.Equal(t, baselineResp.FailedEvents[i].StatusCode, candidateResp.FailedEvents[i].StatusCode,
+								"status code mismatch for failed event %d", i)
+						}
 					})
 				}
 			},

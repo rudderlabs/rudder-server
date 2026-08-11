@@ -293,12 +293,8 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			require.Equal(t, decodeError(t, baselineBody), decodeError(t, candidateBody))
 		})
 
-		// pyt-only: in the baseline an unknown library version crashes
-		// the deployed flask container at startup (its --lvids fetch fails), so
-		// the request degenerates into a readiness-timeout/retry loop rather
-		// than a comparable 400.
 		t.Run("should return HTTP 400 when a library cannot be fetched", func(t *testing.T) {
-			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, map[string]any{
+			payload := map[string]any{
 				"trRevCode": map[string]any{
 					"code":        "def transformEvent(event, metadata):\n    return event",
 					"codeVersion": "1",
@@ -308,9 +304,14 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					{"message": map[string]any{"messageId": "m1"}, "metadata": map[string]any{"messageId": "m1"}},
 				},
 				"libraryVersionIDs": []string{"unknown-library-version"},
-			})
+			}
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.Test, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
+
 			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
 			require.NotEmpty(t, decodeError(t, candidateBody))
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
+			require.NotEmpty(t, decodeError(t, baselineBody))
 		})
 	})
 
