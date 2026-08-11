@@ -202,15 +202,15 @@ func getRetryCount(store *memstats.Store, name string) int {
 func (env *bcTestEnv) assertRetryCountsMatch(t *testing.T) {
 	t.Helper()
 
-	oldCPRetries := getRetryCount(env.BaselineStats, "processor_user_transformer_cp_down_retries")
-	newCPRetries := getRetryCount(env.CandidateStats, "processor_user_transformer_cp_down_retries")
-	t.Logf("CP down retries: baseline=%d, candidate=%d", oldCPRetries, newCPRetries)
-	require.Equal(t, oldCPRetries, newCPRetries, "CP down retry counts should match between baseline and candidate")
+	baselineCPRetries := getRetryCount(env.BaselineStats, "processor_user_transformer_cp_down_retries")
+	candidateCPRetries := getRetryCount(env.CandidateStats, "processor_user_transformer_cp_down_retries")
+	t.Logf("CP down retries: baseline=%d, candidate=%d", baselineCPRetries, candidateCPRetries)
+	require.Equal(t, baselineCPRetries, candidateCPRetries, "CP down retry counts should match between baseline and candidate")
 
-	oldHTTPRetries := getRetryCount(env.BaselineStats, "processor_user_transformer_http_retries")
-	newHTTPRetries := getRetryCount(env.CandidateStats, "processor_user_transformer_http_retries")
-	t.Logf("HTTP retries: baseline=%d, candidate=%d", oldHTTPRetries, newHTTPRetries)
-	require.Equal(t, oldHTTPRetries, newHTTPRetries, "HTTP retry counts should match between baseline and candidate")
+	baselineHTTPRetries := getRetryCount(env.BaselineStats, "processor_user_transformer_http_retries")
+	candidateHTTPRetries := getRetryCount(env.CandidateStats, "processor_user_transformer_http_retries")
+	t.Logf("HTTP retries: baseline=%d, candidate=%d", baselineHTTPRetries, candidateHTTPRetries)
+	require.Equal(t, baselineHTTPRetries, candidateHTTPRetries, "HTTP retry counts should match between baseline and candidate")
 }
 
 // makeEvent creates a TransformerEvent for backwards compatibility testing with minimal required fields.
@@ -349,7 +349,9 @@ func newContractConfigBackend(t *testing.T, entries map[string]configBackendEntr
 //
 // Either side can be overridden to point the suite at any pair:
 //
-//	PYTRANSFORMER_CANDIDATE_TAG=0.11.0 PYTRANSFORMER_BASELINE_TAG=0.10.0 go test ...
+//	PYT_CANDIDATE_TAG=0.11.0 PYT_BASELINE_TAG=0.10.0 go test ...
+//
+// See README.md in this directory for how to run the suite against your own build.
 const (
 	pytransformerImage = "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer"
 
@@ -372,7 +374,7 @@ func runningInCI() bool {
 // candidatePytransformerTag returns the tag under test: the local build when a
 // developer runs the suite, the latest release on CI.
 func candidatePytransformerTag() string {
-	if tag := os.Getenv("PYTRANSFORMER_CANDIDATE_TAG"); tag != "" {
+	if tag := os.Getenv("PYT_CANDIDATE_TAG"); tag != "" {
 		return tag
 	}
 	if runningInCI() {
@@ -384,7 +386,7 @@ func candidatePytransformerTag() string {
 // baselinePytransformerTag returns the tag the candidate is compared against:
 // the latest release locally, the release before it on CI.
 func baselinePytransformerTag() string {
-	if tag := os.Getenv("PYTRANSFORMER_BASELINE_TAG"); tag != "" {
+	if tag := os.Getenv("PYT_BASELINE_TAG"); tag != "" {
 		return tag
 	}
 	if runningInCI() {
@@ -393,11 +395,11 @@ func baselinePytransformerTag() string {
 	return latestReleaseTag
 }
 
-// startRudderPytransformer starts the candidate rudder-pytransformer container
+// startCandidatePytransformer starts the candidate rudder-pytransformer container
 // configured to use the mock config backend. Optional extra environment
 // variables can be passed (e.g. "GEOLOCATION_URL=http://...").
 // Returns the URL to reach it from the host.
-func startRudderPytransformer(
+func startCandidatePytransformer(
 	t *testing.T, pool *dockertest.Pool,
 	configBackendURL string,
 	extraEnv ...string,
@@ -420,7 +422,7 @@ func startBaselinePytransformer(
 		panic(fmt.Sprintf(
 			"baseline and candidate both resolved to rudder-pytransformer:%s — every comparison in this suite "+
 				"would pass without testing anything. Bump latestReleaseTag/previousReleaseTag, or set "+
-				"PYTRANSFORMER_BASELINE_TAG and PYTRANSFORMER_CANDIDATE_TAG to different tags.", baseline))
+				"PYT_BASELINE_TAG and PYT_CANDIDATE_TAG to different tags.", baseline))
 	}
 	t.Logf("Comparing rudder-pytransformer baseline=%s against candidate=%s", baseline, candidate)
 	return startRudderPytransformerWithTag(t, pool, baseline, configBackendURL, extraEnv...)
@@ -530,8 +532,8 @@ func dumpContainerLogs(t *testing.T, pool *dockertest.Pool, container *dockertes
 
 // normalizeJSON re-marshals a JSON string so keys are in deterministic (sorted) order.
 // For non-200 responses, the Go usertransformer client stores the raw JSON body as the
-// Error string. Different transformers (JS vs Python) may serialize JSON keys in different
-// orders, so we normalize before comparison.
+// Error string. Two pytransformer releases can still serialize the same object's keys in a
+// different order, so normalize before comparing rather than asserting on byte equality.
 func normalizeJSON(s string) string {
 	var v any
 	if err := jsonrs.Unmarshal([]byte(s), &v); err != nil {
@@ -620,7 +622,10 @@ func waitForGeolocation(t *testing.T, pool *dockertest.Pool, baseURL string) {
 }
 
 // mockGeoConfig holds configurable behavior for the mock geolocation service.
-// Use setResponse to change the HTTP status code and body between subtests.
+//
+// One instance is shared by every subtest, because the server's URL is fixed in the containers'
+// GEOLOCATION_URL at startup. Configure a failure mode with setResponse/setConnectionClose/setSlow,
+// and pair it with reset so the next subtest starts from a healthy backend.
 type mockGeoConfig struct {
 	mu         sync.Mutex
 	statusCode int
@@ -628,31 +633,35 @@ type mockGeoConfig struct {
 	delay      time.Duration
 }
 
-func (c *mockGeoConfig) setResponse(statusCode int) {
+// apply is the single place every field is assigned, so a new failure mode cannot be added to one
+// setter and forgotten in the others — which is what would let it leak between subtests.
+func (c *mockGeoConfig) apply(statusCode int, closeConn bool, delay time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.statusCode = statusCode
-	c.closeConn = false
-	c.delay = 0
+	c.closeConn = closeConn
+	c.delay = delay
 }
 
-func (c *mockGeoConfig) setConnectionClose() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.closeConn = true
-	c.delay = 0
-}
+// reset returns the mock to a healthy backend: HTTP 200, no delay, no connection close.
+//
+// This is the teardown for a subtest that configured a failure mode. The server itself keeps
+// running — its URL is baked into GEOLOCATION_URL when the containers start, and the containers
+// outlive the subtests, so the mock can only ever be reconfigured, never restarted. Without this,
+// a subtest that does not configure the mock inherits whatever the previous one left behind.
+func (c *mockGeoConfig) reset() { c.apply(http.StatusOK, false, 0) }
+
+// setResponse makes the mock answer /geoip/* with statusCode.
+func (c *mockGeoConfig) setResponse(statusCode int) { c.apply(statusCode, false, 0) }
+
+// setConnectionClose makes the mock hijack the connection and close it without responding,
+// simulating a geolocation backend that drops the connection mid-request.
+func (c *mockGeoConfig) setConnectionClose() { c.apply(http.StatusOK, true, 0) }
 
 // setSlow makes the mock /geoip/* handler block for "delay" before responding
 // with HTTP 200. Used to simulate a hung geolocation backend so the
 // pytransformer's GEOLOCATION_TIMEOUT_SECS deadline fires.
-func (c *mockGeoConfig) setSlow(delay time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.statusCode = http.StatusOK
-	c.closeConn = false
-	c.delay = delay
-}
+func (c *mockGeoConfig) setSlow(delay time.Duration) { c.apply(http.StatusOK, false, delay) }
 
 // newConfigurableMockGeolocationService creates a mock geolocation HTTP server
 // whose /geoip/* responses can be changed between subtests via mockGeoConfig.
@@ -702,4 +711,26 @@ func newConfigurableMockGeolocationService(t *testing.T) (*httptest.Server, *moc
 		w.WriteHeader(code)
 	}))
 	return server, cfg
+}
+
+// TestMockGeoConfigReset pins that reset clears every failure mode, not just the one a given setter
+// happens to set. The mock is shared across subtests and outlives them, so a field left behind here
+// silently changes the geolocation backend a later subtest runs against.
+func TestMockGeoConfigReset(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		configure func(*mockGeoConfig)
+	}{
+		{"after setResponse", func(c *mockGeoConfig) { c.setResponse(http.StatusInternalServerError) }},
+		{"after setConnectionClose", func(c *mockGeoConfig) { c.setConnectionClose() }},
+		{"after setSlow", func(c *mockGeoConfig) { c.setSlow(500 * time.Millisecond) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &mockGeoConfig{statusCode: http.StatusOK}
+			tc.configure(cfg)
+			cfg.reset()
+			require.Equal(t, &mockGeoConfig{statusCode: http.StatusOK}, cfg,
+				"reset must restore a healthy backend; a leftover field leaks into the next subtest")
+		})
+	}
 }

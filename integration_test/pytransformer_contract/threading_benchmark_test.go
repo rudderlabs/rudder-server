@@ -62,12 +62,11 @@ import (
 // is supposed to help, and the regime where the L1 cache marks the
 // transformation as I/O-bound.
 func TestThreadingBenchmark(t *testing.T) {
-	const (
-		imageTag           = "main"
-		benchmarkVersionID = "thread-bench-v1"
-	)
+	const benchmarkVersionID = "thread-bench-v1"
+	// Benchmark the candidate, i.e. the same image the contract tests treat as under test.
+	imageTag := candidatePytransformerTag()
 
-	// Workload parameters — tuneable via env (envInt helper from ipc_benchmark_test.go).
+	// Workload parameters — tuneable via env (envInt helper from benchmark_helpers_test.go).
 	eventsPerRequest := envInt(t, "THREAD_BENCH_EVENTS_PER_REQUEST", 10)
 	httpLatencyMs := envInt(t, "THREAD_BENCH_HTTP_LATENCY_MS", 50)
 	threadPoolSize := envInt(t, "THREAD_BENCH_THREAD_POOL_SIZE", 8)

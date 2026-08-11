@@ -27,12 +27,12 @@ import (
 // internal geolocation traffic. The two budgets are independent: geolocation
 // calls are bound exclusively by GEOLOCATION_TIMEOUT_SECS.
 //
-// Scenario: a geolocation backend that replies in 300 ms, with
+// Scenario: a geolocation backend that replies in 200 ms, with
 // SANDBOX_HTTP_BUDGET_S=0.1 s (user cap is SHORTER than the geo response)
 // and GEOLOCATION_TIMEOUT_SECS=0.5 s. Under the contract, the geolocation
 // call must succeed:
 //
-//   - The 300 ms server reply is faster than the 500 ms geolocation budget.
+//   - The 200 ms server reply is faster than the 500 ms geolocation budget.
 //   - The 100 ms sandbox cap is intended for user HTTP traffic and MUST NOT
 //     shadow the internal geolocation deadline.
 func TestSandboxHTTPBudgetDoesNotCapGeolocation(t *testing.T) {
@@ -42,7 +42,7 @@ func TestSandboxHTTPBudgetDoesNotCapGeolocation(t *testing.T) {
 
 	const versionID = "geo-cap-isolation-v1"
 
-	// Geolocation mock that replies after 300 ms with a real JSON body.
+	// Geolocation mock that replies after 200 ms with a real JSON body.
 	// Placed between the 100 ms sandbox cap and the 500 ms geolocation
 	// budget so only the correct deadline can govern the call.
 	mockGeo, geoCalls := newSlowGeolocationServer(t, 200*time.Millisecond)
@@ -62,21 +62,21 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	pyURL := startRudderPytransformer(
+	pyURL := startCandidatePytransformer(
 		t, pool, configBackend.URL,
 		"GEOLOCATION_URL="+mockGeo.URL,
 		// The user HTTP cap is intentionally SHORTER than the geo reply
-		// (100 ms < 300 ms). If the cap were applied to internal traffic,
+		// (100 ms < 200 ms). If the cap were applied to internal traffic,
 		// the geolocation call would time out at 100 ms.
 		"SANDBOX_HTTP_BUDGET_S=0.1",
 		// The geolocation budget is LARGER than the geo reply (500 ms >
-		// 300 ms) so the only legal outcome is success.
+		// 200 ms) so the only legal outcome is success.
 		"GEOLOCATION_TIMEOUT_SECS=0.5",
 	)
 
 	// Limited-retry client so a regression (which would trip retries) is
 	// visible within a bounded test runtime.
-	newStats, err := memstats.New()
+	candidateStats, err := memstats.New()
 	require.NoError(t, err)
 	conf := config.New()
 	setPytransformerRouting(conf, pyURL)
@@ -86,7 +86,7 @@ def transformEvent(event, metadata):
 	conf.Set("Processor.UserTransformer.failOnError", true)
 	conf.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxRetry", 2)
 	conf.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxInterval", 1*time.Millisecond)
-	client := usertransformer.New(conf, logger.NOP, newStats)
+	client := usertransformer.New(conf, logger.NOP, candidateStats)
 
 	events := []types.TransformerEvent{makeEvent("msg-geo-iso-1", versionID)}
 	resp := client.Transform(context.Background(), events)
@@ -94,7 +94,7 @@ def transformEvent(event, metadata):
 	// Happy path: geolocation returned within its 500 ms budget and the
 	// transformation produced a successful event.
 	require.Empty(t, resp.FailedEvents,
-		"geolocation call must succeed when the geo reply (300 ms) is within "+
+		"geolocation call must succeed when the geo reply (200 ms) is within "+
 			"GEOLOCATION_TIMEOUT_SECS (500 ms); SANDBOX_HTTP_BUDGET_S (100 ms) "+
 			"must NOT apply to internal traffic")
 	require.Len(t, resp.Events, 1,
@@ -110,7 +110,7 @@ def transformEvent(event, metadata):
 	// No retries: the client must NOT have retried anything. If the
 	// sandbox cap applied to this internal call, it would fire at 100 ms,
 	// raise GeolocationServerError, and trigger the retry counter here.
-	retriesCounter := newStats.GetByName("processor_user_transformer_http_retries")
+	retriesCounter := candidateStats.GetByName("processor_user_transformer_http_retries")
 	if len(retriesCounter) > 0 {
 		require.EqualValues(t, 0, retriesCounter[0].Value,
 			"no retries must occur — any retry indicates the user HTTP cap "+
@@ -179,7 +179,7 @@ def transformEvent(event, metadata):
 
 	// SANDBOX_HTTP_BUDGET_S=1: our cap is between the user's bigger (5s)
 	// and smaller (0.1s) values, so both subtests can verify the correct cap.
-	pyURL := startRudderPytransformer(
+	pyURL := startCandidatePytransformer(
 		t, pool, configBackend.URL,
 		"SANDBOX_HTTP_BUDGET_S=1",
 	)
@@ -261,7 +261,7 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	poolURL := startRudderPytransformer(
+	poolURL := startCandidatePytransformer(
 		t, pool, configBackend.URL,
 		"USER_CONN_POOL_MAX_SIZE=1",
 		// Single worker so both requests hit the same subprocess
@@ -340,7 +340,7 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	sharedURL := startRudderPytransformer(
+	sharedURL := startCandidatePytransformer(
 		t, pool, configBackend.URL,
 		"USER_CONN_POOL_MAX_SIZE=1",
 		// Pin to a single worker so both events land in the same
@@ -414,7 +414,7 @@ def transformEvent(event, metadata):
 	// the subprocess-level deadlines far above any plausible cap firing time,
 	// so the only thing that can cause a per-event 400 here is the HTTP-level
 	// wall-clock deadline we are testing.
-	pyURL := startRudderPytransformer(
+	pyURL := startCandidatePytransformer(
 		t, pool, configBackend.URL,
 		"SANDBOX_HTTP_BUDGET_S=1",
 		"SANDBOX_TRANSFORMATION_TIMEOUT_S=20",

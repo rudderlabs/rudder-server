@@ -80,7 +80,7 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	pyURL := startRudderPytransformer(
+	pyURL := startCandidatePytransformer(
 		t, pool, configBackend.URL,
 		// Single worker subprocess so every /customTransform request is
 		// dispatched through the SAME _user_session. Any cookie
@@ -231,11 +231,10 @@ func TestConnectionPoolRequestOptionIsolation(t *testing.T) {
 
 	echoSrv, newConns := newSessionDefaultsEchoServer(t)
 
-	// User code: every `transformEvent` invocation issues two sequential
-	// requests. The first primes a vanilla `requests.Session` with every
-	// per-request option `requests` supports; the second issues a bare
-	// GET. If any option persisted to session state — on the baseline	// vanilla session OR the candidate `StatelessPooledSession` — the
-	// second call would observe it and the parity check would fail.
+	// User code: every `transformEvent` invocation issues two sequential requests.
+	// The first primes a vanilla `requests.Session` with every per-request option `requests` supports; the second
+	// issues a bare GET. If any option persisted to session state — on either version's session implementation —
+	// the second call would observe it and the parity check would fail.
 	code := fmt.Sprintf(`
 import requests
 
@@ -309,7 +308,7 @@ def transformEvent(event, metadata):
 	baselineURL := startBaselinePytransformer(t, pool, configBackend.URL, pytEnv...)
 
 	t.Log("Starting candidate rudder-pytransformer...")
-	candidateURL := startRudderPytransformer(t, pool, configBackend.URL, pytEnv...)
+	candidateURL := startCandidatePytransformer(t, pool, configBackend.URL, pytEnv...)
 
 	env := newBCTestEnv(t, baselineURL, candidateURL,
 		withFailOnError(),
@@ -320,8 +319,8 @@ def transformEvent(event, metadata):
 	baselineResp := env.BaselineClient.Transform(context.Background(), events)
 	t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-	// Only the NEW-arch run's TCP activity counts toward the pool reuse
-	// assertion — reset the counter so every connection the baseline	// stack opened to the shared echo server is excluded.
+	// Only the candidate run's TCP activity counts toward the pool reuse assertion — reset the counter so every
+	// connection the baseline opened to the shared echo server is excluded.
 	newConns.Store(0)
 
 	t.Log("Sending batch to candidate (rudder-pytransformer)...")
@@ -366,13 +365,11 @@ def transformEvent(event, metadata):
 		}
 	}
 
-	// Core isolation assertion: the second bare GET, issued without any
-	// options, must see NONE of the state the first call attached.
-	// Vanilla `requests.Session` does not persist per-request kwargs,
-	// so the baseline passes this trivially; `StatelessPooledSession`
-	// must match that guarantee on the candidate pooled path. Per-field
-	// asserts keep failure output actionable; `Equal` below is the
-	// strict parity catch-all.
+	// Core isolation assertion: the second bare GET, issued without any options, must see NONE of the state the first
+	// call attached.
+	// Per-request kwargs must not persist into the session, on either version: that is the guarantee
+	// `StatelessPooledSession` has to preserve on the pooled path.
+	// Per-field asserts keep failure output actionable; `Equal` below is the strict parity catch-all.
 	for _, resp := range []*types.Response{&baselineResp, &candidateResp} {
 		for _, ev := range resp.Events {
 			require.Emptyf(t, ev.Output["second_x_leak"],

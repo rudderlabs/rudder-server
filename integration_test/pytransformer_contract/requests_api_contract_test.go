@@ -32,8 +32,7 @@ import (
 //   - "requests.api.get(url)" — attribute chain resolved at call time
 //   - "requests.request("GET", url)" — verb-parameterized entry point
 //
-// All three must produce the same output as the baseline
-// (vanilla "requests").
+// All three must produce the same output on both versions.
 //
 // Additional "ConnectionReuse" subtests prove that the calls actually
 // flow through the pooling wrapper by sending two sequential requests
@@ -144,7 +143,7 @@ def transformEvent(event, metadata):
 	baselineURL := startBaselinePytransformer(t, pool, configBackend.URL, pytEnv...)
 
 	t.Log("Starting candidate rudder-pytransformer...")
-	candidateURL := startRudderPytransformer(t, pool, configBackend.URL, pytEnv...)
+	candidateURL := startCandidatePytransformer(t, pool, configBackend.URL, pytEnv...)
 
 	styleCases := []struct {
 		style string

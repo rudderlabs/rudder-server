@@ -32,13 +32,11 @@ import (
 // Both sides go through usertransformer.Client.Test/TestRun/TestLibrary/
 // ExtractLibs — the same methods cpservice.Forward uses in production — so the
 // test covers the exact client → pyt path. Only the target base URL differs:
-// the baseline release on one side, the candidate on the other, which is the
-// role cpservice.Forward plays in production.
+// the baseline release on one side, the candidate on the other.
 //
-// Responses are compared byte-for-byte. Several assertions below carry comments
-// about wording that "deliberately differs" from openfaas's fn-ast; those record
-// why pyt's wording is what it is, and are kept as documentation of the intended
-// message. They no longer describe a difference between the two sides.
+// Responses are compared byte-for-byte. A few assertions carry historical notes
+// about how the pre-pyt architecture worded an error; those explain why pyt's
+// message is what it is and do not describe a difference between the two sides.
 func TestPyTransformerTestEndpoints(t *testing.T) {
 	env := newTestEndpointsEnv(t)
 
@@ -59,7 +57,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old status %d, old body: %s", baselineStatus, baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline status %d, baseline body: %s", baselineStatus, baselineBody)
 			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 2)
 			for _, ev := range resp.TransformedEvents {
@@ -84,7 +82,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			require.EqualValues(t, 42, resp.TransformedEvents[0]["doubled"])
@@ -107,7 +105,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			require.Equal(t, "secret123", resp.TransformedEvents[0]["secret"])
@@ -130,7 +128,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 
 			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 2)
@@ -166,7 +164,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 2)
 			require.EqualValues(t, 2, resp.TransformedEvents[0]["doubled"])
@@ -192,7 +190,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 2)
 			errored := resp.TransformedEvents[1]
@@ -218,16 +216,15 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
 			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
-			// The wording deliberately differs: the baseline surfaces fn-ast's
-			// BadCodeError (its import extraction parses the code before the
-			// function is even deployed), pyt surfaces its runtime compiler's
-			// message. Both must carry Python's syntax diagnosis.
-			oldErr := decodeError(t, baselineBody)
-			newErr := decodeError(t, candidateBody)
-			t.Logf("compile error — old: %q new: %q", oldErr, newErr)
-			require.Contains(t, oldErr, "expected ':'")
-			require.Contains(t, newErr, "expected ':'")
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
+			// Both versions surface their runtime compiler's message, and it must carry Python's syntax
+			// diagnosis. (Historically the old architecture reported fn-ast's BadCodeError here instead,
+			// which is why this was once a deliberate wording difference rather than a parity check.)
+			baselineErr := decodeError(t, baselineBody)
+			candidateErr := decodeError(t, candidateBody)
+			t.Logf("compile error — baseline: %q candidate: %q", baselineErr, candidateErr)
+			require.Contains(t, baselineErr, "expected ':'")
+			require.Contains(t, candidateErr, "expected ':'")
 		})
 
 		t.Run("should return the verbatim missing-code error", func(t *testing.T) {
@@ -331,7 +328,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			el := resp.TransformedEvents[0]
@@ -367,7 +364,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			meta, ok := resp.TransformedEvents[0]["metadata"].(map[string]any)
@@ -396,7 +393,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			transformed, ok := resp.TransformedEvents[0]["transformedEvent"].(map[string]any)
@@ -421,7 +418,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			el := resp.TransformedEvents[0]
@@ -452,7 +449,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 2)
 			for i, el := range resp.TransformedEvents {
@@ -481,7 +478,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			require.Equal(t, map[string]any{"sourceId": "s1"}, resp.TransformedEvents[0]["metadata"],
@@ -505,14 +502,14 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
 			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			// Wording deliberately differs (fn-ast BadCodeError vs pyt's runtime
 			// compiler); both must carry Python's syntax diagnosis.
-			oldErr := decodeError(t, baselineBody)
-			newErr := decodeError(t, candidateBody)
-			t.Logf("compile error — old: %q new: %q", oldErr, newErr)
-			require.Contains(t, oldErr, "expected ':'")
-			require.Contains(t, newErr, "expected ':'")
+			baselineErr := decodeError(t, baselineBody)
+			candidateErr := decodeError(t, candidateBody)
+			t.Logf("compile error — old: %q new: %q", baselineErr, candidateErr)
+			require.Contains(t, baselineErr, "expected ':'")
+			require.Contains(t, candidateErr, "expected ':'")
 		})
 
 		t.Run("should return the verbatim missing-code error", func(t *testing.T) {
@@ -560,7 +557,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestLibrary, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			require.Equal(t, map[string]any{"json": []any{}, "datetime": []any{}}, decodeImportMap(t, candidateBody))
 			require.Equal(t, decodeImportMap(t, baselineBody), decodeImportMap(t, candidateBody))
 		})
@@ -574,7 +571,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestLibrary, payload)
 
 			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			// The wording deliberately differs: fn-ast says "Unpermitted
 			// import(s). ...", pyt surfaces the runtime's message so static
 			// validation and runtime can't drift.
@@ -591,7 +588,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestLibrary, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			require.Equal(t, map[string]any{"urllib.parse": []any{}, "dateutil.parser": []any{}}, decodeImportMap(t, candidateBody))
 			require.Equal(t, decodeImportMap(t, baselineBody), decodeImportMap(t, candidateBody))
 		})
@@ -628,7 +625,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestLibrary, payload)
 
 			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			require.NotEmpty(t, decodeError(t, baselineBody))
 			require.Equal(t, "Relative imports are not allowed.", decodeError(t, candidateBody))
 		})
@@ -642,7 +639,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestLibrary, payload)
 
 			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			// Wording deliberately differs (fn-ast BadCodeError vs pyt's runtime
 			// compiler); both must carry Python's syntax diagnosis.
 			require.Contains(t, decodeError(t, baselineBody), "expected ':'")
@@ -672,7 +669,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.ExtractLibs, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			require.Equal(t, map[string]any{"os": []any{}, "json": []any{}}, decodeImportMap(t, candidateBody))
 			require.Equal(t, decodeImportMap(t, baselineBody), decodeImportMap(t, candidateBody))
 		})
@@ -688,7 +685,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.ExtractLibs, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			require.Equal(t, map[string]any{"mylib": []any{}, "json": []any{}}, decodeImportMap(t, candidateBody))
 			require.Equal(t, decodeImportMap(t, baselineBody), decodeImportMap(t, candidateBody))
 		})
@@ -703,7 +700,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.ExtractLibs, payload)
 
 			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			require.Equal(t, map[string]any{"os.path": []any{}}, decodeImportMap(t, candidateBody))
 			require.Equal(t, decodeImportMap(t, baselineBody), decodeImportMap(t, candidateBody))
 		})
@@ -722,7 +719,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.ExtractLibs, payload)
 
 			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			require.NotEmpty(t, decodeError(t, baselineBody))
 			require.Equal(t, "Relative imports are not allowed.", decodeError(t, candidateBody))
 		})
@@ -737,7 +734,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			candidateStatus, candidateBody := env.callCandidate(t, env.client.ExtractLibs, payload)
 
 			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
-			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
 			// Deliberate wording difference — see the test-library subtest above.
 			require.NotEmpty(t, decodeError(t, baselineBody))
 			require.Contains(t, decodeError(t, candidateBody), "Import of 'os' is not allowed.")
@@ -828,7 +825,7 @@ func newTestEndpointsEnv(t *testing.T) *testEndpointsEnv {
 	}
 	configBackend.Start()
 	t.Cleanup(configBackend.Close)
-	// Host-networked containers (rudder-transformer, pytransformer) and the test
+	// Host-networked containers (both pytransformer versions) and the test
 	// process reach the backend on the loopback; a wildcard listener reports
 	// 0.0.0.0, so pin the host explicitly. toContainerURL later rewrites this to
 	// host.docker.internal for the containers that need it.
@@ -844,7 +841,7 @@ func newTestEndpointsEnv(t *testing.T) *testEndpointsEnv {
 		baselineURL = startBaselinePytransformer(t, pool, configBackendURL)
 	})
 	wg.Go(func() {
-		candidateURL = startRudderPytransformer(t, pool, configBackendURL)
+		candidateURL = startCandidatePytransformer(t, pool, configBackendURL)
 	})
 	wg.Wait()
 
@@ -933,9 +930,9 @@ func compareTestFlowBodies(t *testing.T, baselineBody, candidateBody []byte) {
 	t.Helper()
 	baselineResp, candidateResp := decodeFlow(t, baselineBody), decodeFlow(t, candidateBody)
 	require.Len(t, candidateResp.TransformedEvents, len(baselineResp.TransformedEvents),
-		"old and candidate must return the same number of transformed events\nold: %s\nnew: %s", baselineBody, candidateBody)
-	for i, oldEl := range baselineResp.TransformedEvents {
-		require.Equal(t, oldEl, candidateResp.TransformedEvents[i], "transformed event %d", i)
+		"baseline and candidate must return the same number of transformed events\nbaseline: %s\ncandidate: %s", baselineBody, candidateBody)
+	for i, baselineEl := range baselineResp.TransformedEvents {
+		require.Equal(t, baselineEl, candidateResp.TransformedEvents[i], "transformed event %d", i)
 	}
 	require.Equal(t, baselineResp.Logs, candidateResp.Logs, "logs must match")
 }

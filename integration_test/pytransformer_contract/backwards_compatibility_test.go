@@ -300,10 +300,10 @@ def transformEvent(event, metadata):
 				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 				require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
 
-				newOutput := candidateResp.Events[0].Output
-				require.Equal(t, "src-1", newOutput["sourceId"])
-				require.Equal(t, "2", newOutput["instanceId"])
-				require.Equal(t, "ws-1-42", newOutput["partitionId"])
+				candidateOutput := candidateResp.Events[0].Output
+				require.Equal(t, "src-1", candidateOutput["sourceId"])
+				require.Equal(t, "2", candidateOutput["instanceId"])
+				require.Equal(t, "ws-1-42", candidateOutput["partitionId"])
 
 				for _, key := range []string{
 					"eventName",
@@ -315,7 +315,7 @@ def transformEvent(event, metadata):
 					"trackingPlanId",
 					"trackingPlanVersion",
 				} {
-					_, ok := newOutput[key]
+					_, ok := candidateOutput[key]
 					require.Falsef(t, ok, "key %q should stay absent when it wasn't present in the input metadata", key)
 				}
 
@@ -405,35 +405,35 @@ def transformEvent(event, metadata):
 					makeEvent("msg-1", versionID),
 				}
 
-				oldStartedAt := time.Now().UTC()
+				baselineStartedAt := time.Now().UTC()
 				baselineResp := env.BaselineClient.Transform(context.Background(), events)
-				oldFinishedAt := time.Now().UTC()
+				baselineFinishedAt := time.Now().UTC()
 
-				newStartedAt := time.Now().UTC()
+				candidateStartedAt := time.Now().UTC()
 				candidateResp := env.CandidateClient.Transform(context.Background(), events)
-				newFinishedAt := time.Now().UTC()
+				candidateFinishedAt := time.Now().UTC()
 
 				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
 				require.Equal(t, 0, len(baselineResp.FailedEvents), "baseline: no failed events expected")
 				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 				require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
 
-				oldTimestamp, ok := baselineResp.Events[0].Output["rudderstackTransformedUtc"].(string)
+				baselineTimestamp, ok := baselineResp.Events[0].Output["rudderstackTransformedUtc"].(string)
 				require.True(t, ok, "baseline: generated timestamp should be present")
-				newTimestamp, ok := candidateResp.Events[0].Output["rudderstackTransformedUtc"].(string)
+				candidateTimestamp, ok := candidateResp.Events[0].Output["rudderstackTransformedUtc"].(string)
 				require.True(t, ok, "candidate: generated timestamp should be present")
 
-				oldParsed, err := time.ParseInLocation(time.DateTime, oldTimestamp, time.UTC)
+				baselineParsed, err := time.ParseInLocation(time.DateTime, baselineTimestamp, time.UTC)
 				require.NoError(t, err, "baseline: generated timestamp should parse")
-				newParsed, err := time.ParseInLocation(time.DateTime, newTimestamp, time.UTC)
+				candidateParsed, err := time.ParseInLocation(time.DateTime, candidateTimestamp, time.UTC)
 				require.NoError(t, err, "candidate: generated timestamp should parse")
 
-				require.False(t, oldParsed.Before(oldStartedAt.Add(-time.Second)), "baseline timestamp should be created during the old request window")
-				require.False(t, oldParsed.After(oldFinishedAt.Add(time.Second)), "baseline timestamp should be created during the old request window")
-				require.False(t, newParsed.Before(newStartedAt.Add(-time.Second)), "candidate timestamp should be created during the new request window")
-				require.False(t, newParsed.After(newFinishedAt.Add(time.Second)), "candidate timestamp should be created during the new request window")
-				if oldTimestamp != newTimestamp {
-					t.Logf("Timestamps differ as expected: old=%s new=%s", oldTimestamp, newTimestamp)
+				require.False(t, baselineParsed.Before(baselineStartedAt.Add(-time.Second)), "baseline timestamp should be created during the old request window")
+				require.False(t, baselineParsed.After(baselineFinishedAt.Add(time.Second)), "baseline timestamp should be created during the old request window")
+				require.False(t, candidateParsed.Before(candidateStartedAt.Add(-time.Second)), "candidate timestamp should be created during the new request window")
+				require.False(t, candidateParsed.After(candidateFinishedAt.Add(time.Second)), "candidate timestamp should be created during the new request window")
+				if baselineTimestamp != candidateTimestamp {
+					t.Logf("Timestamps differ as expected: old=%s new=%s", baselineTimestamp, candidateTimestamp)
 				} else {
 					t.Log("Timestamps happened to land in the same second — datetime matching path not exercised this run")
 				}
@@ -498,17 +498,17 @@ def transformBatch(events, metadata):
 				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
 				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
-				oldMeta := baselineResp.Events[0].Metadata
-				newMeta := candidateResp.Events[0].Metadata
+				baselineMeta := baselineResp.Events[0].Metadata
+				candidateMeta := candidateResp.Events[0].Metadata
 
 				t.Logf("Baseline metadata: TraceParent=%q, SourceID=%q, MessageID=%q",
-					oldMeta.TraceParent, oldMeta.SourceID, oldMeta.MessageID)
+					baselineMeta.TraceParent, baselineMeta.SourceID, baselineMeta.MessageID)
 				t.Logf("Candidate metadata: TraceParent=%q, SourceID=%q, MessageID=%q",
-					newMeta.TraceParent, newMeta.SourceID, newMeta.MessageID)
+					candidateMeta.TraceParent, candidateMeta.SourceID, candidateMeta.MessageID)
 
 				// Control: both should have curated fields
-				require.Equal(t, "src-1", oldMeta.SourceID, "baseline: sourceId should be present")
-				require.Equal(t, "src-1", newMeta.SourceID, "candidate: sourceId should be present")
+				require.Equal(t, "src-1", baselineMeta.SourceID, "baseline: sourceId should be present")
+				require.Equal(t, "src-1", candidateMeta.SourceID, "candidate: sourceId should be present")
 
 				// Compare: responses should be equal after Go unmarshaling (non-curated metadata differences are not observable)
 				diff, equal := baselineResp.Equal(&candidateResp)
@@ -518,7 +518,7 @@ def transformBatch(events, metadata):
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 					t.Logf("Baseline TraceParent=%q (expected empty), Candidate TraceParent=%q (expected set)",
-						oldMeta.TraceParent, newMeta.TraceParent)
+						baselineMeta.TraceParent, candidateMeta.TraceParent)
 				}
 			},
 		},
@@ -1403,11 +1403,11 @@ def transformEvent(event, metadata):
 				require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
 
 				// All non-string keys (including None) should return None
-				oldOutput := baselineResp.Events[0].Output
-				newOutput := candidateResp.Events[0].Output
+				baselineOutput := baselineResp.Events[0].Output
+				candidateOutput := candidateResp.Events[0].Output
 				for _, key := range []string{"credentialValueForNoneKey", "credentialValueForNumkey", "credentialValueForBoolkey", "credentialValueForObjkey", "credentialValueForArrkey"} {
-					require.Nilf(t, oldOutput[key], "baseline: %s should be nil", key)
-					require.Nilf(t, newOutput[key], "candidate: %s should be nil", key)
+					require.Nilf(t, baselineOutput[key], "baseline: %s should be nil", key)
+					require.Nilf(t, candidateOutput[key], "candidate: %s should be nil", key)
 				}
 
 				diff, equal := baselineResp.Equal(&candidateResp)
@@ -1634,19 +1634,19 @@ def transformEvent(event, metadata):
 				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
 				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
-				oldOutput := baselineResp.Events[0].Output
-				newOutput := candidateResp.Events[0].Output
+				baselineOutput := baselineResp.Events[0].Output
+				candidateOutput := candidateResp.Events[0].Output
 
 				// Verify multiple credential accesses and repeated access
-				require.Equal(t, "testValue1", oldOutput["cred1"], "baseline: cred1 should be testValue1")
-				require.Equal(t, "testValue2", oldOutput["cred2"], "baseline: cred2 should be testValue2")
-				require.Equal(t, "testValue1", oldOutput["cred1_again"], "baseline: cred1_again should be testValue1")
-				require.Nil(t, oldOutput["missing"], "baseline: missing should be nil")
+				require.Equal(t, "testValue1", baselineOutput["cred1"], "baseline: cred1 should be testValue1")
+				require.Equal(t, "testValue2", baselineOutput["cred2"], "baseline: cred2 should be testValue2")
+				require.Equal(t, "testValue1", baselineOutput["cred1_again"], "baseline: cred1_again should be testValue1")
+				require.Nil(t, baselineOutput["missing"], "baseline: missing should be nil")
 
-				require.Equal(t, "testValue1", newOutput["cred1"], "candidate: cred1 should be testValue1")
-				require.Equal(t, "testValue2", newOutput["cred2"], "candidate: cred2 should be testValue2")
-				require.Equal(t, "testValue1", newOutput["cred1_again"], "candidate: cred1_again should be testValue1")
-				require.Nil(t, newOutput["missing"], "candidate: missing should be nil")
+				require.Equal(t, "testValue1", candidateOutput["cred1"], "candidate: cred1 should be testValue1")
+				require.Equal(t, "testValue2", candidateOutput["cred2"], "candidate: cred2 should be testValue2")
+				require.Equal(t, "testValue1", candidateOutput["cred1_again"], "candidate: cred1_again should be testValue1")
+				require.Nil(t, candidateOutput["missing"], "candidate: missing should be nil")
 
 				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
@@ -1818,10 +1818,10 @@ def transformEvent(event, metadata):
 				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
 				// An empty string value should be returned (not None)
-				oldOutput := baselineResp.Events[0].Output
-				newOutput := candidateResp.Events[0].Output
-				t.Logf("Baseline: cred=%v, credIsNone=%v, credIsEmpty=%v", oldOutput["cred"], oldOutput["credIsNone"], oldOutput["credIsEmpty"])
-				t.Logf("Candidate: cred=%v, credIsNone=%v, credIsEmpty=%v", newOutput["cred"], newOutput["credIsNone"], newOutput["credIsEmpty"])
+				baselineOutput := baselineResp.Events[0].Output
+				candidateOutput := candidateResp.Events[0].Output
+				t.Logf("Baseline: cred=%v, credIsNone=%v, credIsEmpty=%v", baselineOutput["cred"], baselineOutput["credIsNone"], baselineOutput["credIsEmpty"])
+				t.Logf("Candidate: cred=%v, credIsNone=%v, credIsEmpty=%v", candidateOutput["cred"], candidateOutput["credIsNone"], candidateOutput["credIsEmpty"])
 
 				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
@@ -1832,17 +1832,17 @@ def transformEvent(event, metadata):
 			},
 		},
 		{
-			// MetadataMergeAllKeys tests event.update(metadata(event)) which merges
-			// all 29 metadata keys (including None for missing fields) into the event.
-			name:      "MetadataMergeAllKeys",
-			versionID: "bc-metadata-merge-all-v1",
+			// Same merge as MetadataMergeAllKeys above, but with every metadata field populated:
+			// that one leaves most of them unset, so this pins how the fully-populated shape merges.
+			name:      "MetadataMergeAllKeysPopulated",
+			versionID: "bc-metadata-merge-all-populated-v1",
 			config: configBackendEntry{code: `
 def transformEvent(event, metadata):
     event.update(metadata(event))
     return event
 `},
 			run: func(t *testing.T, env *bcTestEnv) {
-				const versionID = "bc-metadata-merge-all-v1"
+				const versionID = "bc-metadata-merge-all-populated-v1"
 				events := []types.TransformerEvent{
 					{
 						Message: types.SingularEventT{
@@ -1873,10 +1873,10 @@ def transformEvent(event, metadata):
 				candidateResp := env.CandidateClient.Transform(context.Background(), events)
 				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
 				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
-				oldOutput := baselineResp.Events[0].Output
-				newOutput := candidateResp.Events[0].Output
-				t.Logf("Baseline output keys: %d", len(oldOutput))
-				t.Logf("Candidate output keys: %d", len(newOutput))
+				baselineOutput := baselineResp.Events[0].Output
+				candidateOutput := candidateResp.Events[0].Output
+				t.Logf("Baseline output keys: %d", len(baselineOutput))
+				t.Logf("Candidate output keys: %d", len(candidateOutput))
 				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
 					t.Log("Responses are equal")
@@ -1932,10 +1932,10 @@ def transformEvent(event, metadata):
 				candidateResp := env.CandidateClient.Transform(context.Background(), events)
 				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
 				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
-				oldOutput := baselineResp.Events[0].Output
-				newOutput := candidateResp.Events[0].Output
-				t.Logf("Baseline output keys: %d", len(oldOutput))
-				t.Logf("Candidate output keys: %d", len(newOutput))
+				baselineOutput := baselineResp.Events[0].Output
+				candidateOutput := candidateResp.Events[0].Output
+				t.Logf("Baseline output keys: %d", len(baselineOutput))
+				t.Logf("Candidate output keys: %d", len(candidateOutput))
 				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
 					t.Log("Responses are equal")
@@ -2012,10 +2012,10 @@ def transformEvent(event, metadata):
 				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
 				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
-				oldOutput := baselineResp.Events[0].Output
-				newOutput := candidateResp.Events[0].Output
-				t.Logf("Baseline output keys: %d", len(oldOutput))
-				t.Logf("Candidate output keys: %d", len(newOutput))
+				baselineOutput := baselineResp.Events[0].Output
+				candidateOutput := candidateResp.Events[0].Output
+				t.Logf("Baseline output keys: %d", len(baselineOutput))
+				t.Logf("Candidate output keys: %d", len(candidateOutput))
 				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
 					t.Log("Responses are equal")
@@ -2036,6 +2036,9 @@ def transformEvent(event, metadata):
 	allEntries := make(map[string]configBackendEntry, len(subtests))
 	for _, st := range subtests {
 		if st.config != (configBackendEntry{}) {
+			_, dup := allEntries[st.versionID]
+			require.Falsef(t, dup, "duplicate versionID %q: with shared containers the versionID is the only "+
+				"isolation boundary between subtests, so a collision serves one subtest's code to another", st.versionID)
 			allEntries[st.versionID] = st.config
 		}
 	}
@@ -2056,7 +2059,7 @@ def transformEvent(event, metadata):
 		baselineURL = startBaselinePytransformer(t, pool, configBackend.URL)
 	})
 	wg.Go(func() {
-		candidateURL = startRudderPytransformer(t, pool, configBackend.URL)
+		candidateURL = startCandidatePytransformer(t, pool, configBackend.URL)
 	})
 	wg.Wait()
 

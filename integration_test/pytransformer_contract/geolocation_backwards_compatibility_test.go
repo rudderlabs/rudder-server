@@ -60,10 +60,10 @@ def transformEvent(event, metadata):
 				require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
 
 				// Verify geo data was returned with correct IP
-				oldGeo, _ := baselineResp.Events[0].Output["geo"].(map[string]any)
-				newGeo, _ := candidateResp.Events[0].Output["geo"].(map[string]any)
-				require.Equal(t, "1.2.3.4", oldGeo["ip"], "baseline: geo should contain correct ip")
-				require.Equal(t, "1.2.3.4", newGeo["ip"], "candidate: geo should contain correct ip")
+				baselineGeo, _ := baselineResp.Events[0].Output["geo"].(map[string]any)
+				candidateGeo, _ := candidateResp.Events[0].Output["geo"].(map[string]any)
+				require.Equal(t, "1.2.3.4", baselineGeo["ip"], "baseline: geo should contain correct ip")
+				require.Equal(t, "1.2.3.4", candidateGeo["ip"], "candidate: geo should contain correct ip")
 
 				t.Logf("Baseline geo: %v", baselineResp.Events[0].Output["geo"])
 				t.Logf("Candidate geo: %v", candidateResp.Events[0].Output["geo"])
@@ -455,14 +455,14 @@ def transformEvent(event, metadata):
 				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
 				// Both should have two different geo results with correct IPs
-				oldGeo1, _ := baselineResp.Events[0].Output["geo1"].(map[string]any)
-				oldGeo2, _ := baselineResp.Events[0].Output["geo2"].(map[string]any)
-				newGeo1, _ := candidateResp.Events[0].Output["geo1"].(map[string]any)
-				newGeo2, _ := candidateResp.Events[0].Output["geo2"].(map[string]any)
-				require.Equal(t, "1.2.3.4", oldGeo1["ip"], "baseline: geo1 should contain correct ip")
-				require.Equal(t, "8.8.8.8", oldGeo2["ip"], "baseline: geo2 should contain correct ip")
-				require.Equal(t, "1.2.3.4", newGeo1["ip"], "candidate: geo1 should contain correct ip")
-				require.Equal(t, "8.8.8.8", newGeo2["ip"], "candidate: geo2 should contain correct ip")
+				baselineGeo1, _ := baselineResp.Events[0].Output["geo1"].(map[string]any)
+				baselineGeo2, _ := baselineResp.Events[0].Output["geo2"].(map[string]any)
+				candidateGeo1, _ := candidateResp.Events[0].Output["geo1"].(map[string]any)
+				candidateGeo2, _ := candidateResp.Events[0].Output["geo2"].(map[string]any)
+				require.Equal(t, "1.2.3.4", baselineGeo1["ip"], "baseline: geo1 should contain correct ip")
+				require.Equal(t, "8.8.8.8", baselineGeo2["ip"], "baseline: geo2 should contain correct ip")
+				require.Equal(t, "1.2.3.4", candidateGeo1["ip"], "candidate: geo1 should contain correct ip")
+				require.Equal(t, "8.8.8.8", candidateGeo2["ip"], "candidate: geo2 should contain correct ip")
 
 				t.Logf("Baseline geo1: %v", baselineResp.Events[0].Output["geo1"])
 				t.Logf("Baseline geo2: %v", baselineResp.Events[0].Output["geo2"])
@@ -565,15 +565,15 @@ def transformEvent(event, metadata):
 				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
 				// Verify geo data was placed in context.geo with correct IP
-				oldCtx, _ := baselineResp.Events[0].Output["context"].(map[string]any)
-				newCtx, _ := candidateResp.Events[0].Output["context"].(map[string]any)
-				oldGeo, _ := oldCtx["geo"].(map[string]any)
-				newGeo, _ := newCtx["geo"].(map[string]any)
-				require.Equal(t, "8.8.8.8", oldGeo["ip"], "baseline: context.geo should contain correct ip")
-				require.Equal(t, "8.8.8.8", newGeo["ip"], "candidate: context.geo should contain correct ip")
+				baselineCtx, _ := baselineResp.Events[0].Output["context"].(map[string]any)
+				candidateCtx, _ := candidateResp.Events[0].Output["context"].(map[string]any)
+				baselineGeo, _ := baselineCtx["geo"].(map[string]any)
+				candidateGeo, _ := candidateCtx["geo"].(map[string]any)
+				require.Equal(t, "8.8.8.8", baselineGeo["ip"], "baseline: context.geo should contain correct ip")
+				require.Equal(t, "8.8.8.8", candidateGeo["ip"], "candidate: context.geo should contain correct ip")
 
-				t.Logf("Baseline context.geo: %v", oldCtx["geo"])
-				t.Logf("Candidate context.geo: %v", newCtx["geo"])
+				t.Logf("Baseline context.geo: %v", baselineCtx["geo"])
+				t.Logf("Candidate context.geo: %v", candidateCtx["geo"])
 
 				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
@@ -620,10 +620,10 @@ def transformBatch(events, metadata):
 
 				// All events should have geo data with correct IP
 				for i := range baselineResp.Events {
-					oldGeo, _ := baselineResp.Events[i].Output["geo"].(map[string]any)
-					newGeo, _ := candidateResp.Events[i].Output["geo"].(map[string]any)
-					require.Equalf(t, "1.2.3.4", oldGeo["ip"], "baseline: event %d geo should contain correct ip", i)
-					require.Equalf(t, "1.2.3.4", newGeo["ip"], "candidate: event %d geo should contain correct ip", i)
+					baselineGeo, _ := baselineResp.Events[i].Output["geo"].(map[string]any)
+					candidateGeo, _ := candidateResp.Events[i].Output["geo"].(map[string]any)
+					require.Equalf(t, "1.2.3.4", baselineGeo["ip"], "baseline: event %d geo should contain correct ip", i)
+					require.Equalf(t, "1.2.3.4", candidateGeo["ip"], "candidate: event %d geo should contain correct ip", i)
 				}
 
 				diff, equal := baselineResp.Equal(&candidateResp)
@@ -822,10 +822,10 @@ def transformEvent(event, metadata):
 				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
 				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
-				oldGeo, _ := baselineResp.Events[0].Output["geo_lookup"].(map[string]any)
-				newGeo, _ := candidateResp.Events[0].Output["geo_lookup"].(map[string]any)
-				require.Equal(t, "8.8.8.8", oldGeo["ip"], "baseline: geo_lookup should contain correct ip")
-				require.Equal(t, "8.8.8.8", newGeo["ip"], "candidate: geo_lookup should contain correct ip")
+				baselineGeo, _ := baselineResp.Events[0].Output["geo_lookup"].(map[string]any)
+				candidateGeo, _ := candidateResp.Events[0].Output["geo_lookup"].(map[string]any)
+				require.Equal(t, "8.8.8.8", baselineGeo["ip"], "baseline: geo_lookup should contain correct ip")
+				require.Equal(t, "8.8.8.8", candidateGeo["ip"], "candidate: geo_lookup should contain correct ip")
 
 				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
@@ -874,10 +874,10 @@ def transformBatch(events, metadata):
 				// Second should have different geo data
 				expectedIPs := []string{"1.2.3.4", "8.8.8.8", "1.2.3.4"}
 				for i := range baselineResp.Events {
-					oldGeo, _ := baselineResp.Events[i].Output["geo"].(map[string]any)
-					newGeo, _ := candidateResp.Events[i].Output["geo"].(map[string]any)
-					require.Equalf(t, expectedIPs[i], oldGeo["ip"], "baseline: event %d geo should contain correct ip", i)
-					require.Equalf(t, expectedIPs[i], newGeo["ip"], "candidate: event %d geo should contain correct ip", i)
+					baselineGeo, _ := baselineResp.Events[i].Output["geo"].(map[string]any)
+					candidateGeo, _ := candidateResp.Events[i].Output["geo"].(map[string]any)
+					require.Equalf(t, expectedIPs[i], baselineGeo["ip"], "baseline: event %d geo should contain correct ip", i)
+					require.Equalf(t, expectedIPs[i], candidateGeo["ip"], "candidate: event %d geo should contain correct ip", i)
 				}
 
 				diff, equal := baselineResp.Equal(&candidateResp)
@@ -1156,10 +1156,10 @@ def transformEvent(event, metadata):
 				require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
 
 				// Geo data should be present with correct IP but empty values
-				oldGeo, _ := baselineResp.Events[0].Output["geo"].(map[string]any)
-				newGeo, _ := candidateResp.Events[0].Output["geo"].(map[string]any)
-				require.Equal(t, "127.0.0.1", oldGeo["ip"], "baseline: geo should contain correct ip")
-				require.Equal(t, "127.0.0.1", newGeo["ip"], "candidate: geo should contain correct ip")
+				baselineGeo, _ := baselineResp.Events[0].Output["geo"].(map[string]any)
+				candidateGeo, _ := candidateResp.Events[0].Output["geo"].(map[string]any)
+				require.Equal(t, "127.0.0.1", baselineGeo["ip"], "baseline: geo should contain correct ip")
+				require.Equal(t, "127.0.0.1", candidateGeo["ip"], "candidate: geo should contain correct ip")
 
 				t.Logf("Baseline geo: %v", baselineResp.Events[0].Output["geo"])
 				t.Logf("Candidate geo: %v", candidateResp.Events[0].Output["geo"])
@@ -1320,6 +1320,9 @@ def transformEvent(event, metadata):
 	allEntries := make(map[string]configBackendEntry, len(subtests))
 	for _, st := range subtests {
 		if st.config != (configBackendEntry{}) {
+			_, dup := allEntries[st.versionID]
+			require.Falsef(t, dup, "duplicate versionID %q: with shared containers the versionID is the only "+
+				"isolation boundary between subtests, so a collision serves one subtest's code to another", st.versionID)
 			allEntries[st.versionID] = st.config
 		}
 	}
@@ -1334,7 +1337,7 @@ def transformEvent(event, metadata):
 		baselineURL = startBaselinePytransformer(t, pool, configBackend.URL, "GEOLOCATION_URL="+geoURL)
 	})
 	wg.Go(func() {
-		candidateURL = startRudderPytransformer(t, pool, configBackend.URL, "GEOLOCATION_URL="+geoURL)
+		candidateURL = startCandidatePytransformer(t, pool, configBackend.URL, "GEOLOCATION_URL="+geoURL)
 	})
 	wg.Wait()
 
@@ -1547,6 +1550,9 @@ def transformBatch(events, metadata):
 	allEntries := make(map[string]configBackendEntry, len(subtests))
 	for _, st := range subtests {
 		if st.config != (configBackendEntry{}) {
+			_, dup := allEntries[st.versionID]
+			require.Falsef(t, dup, "duplicate versionID %q: with shared containers the versionID is the only "+
+				"isolation boundary between subtests, so a collision serves one subtest's code to another", st.versionID)
 			allEntries[st.versionID] = st.config
 		}
 	}
@@ -1563,7 +1569,7 @@ def transformBatch(events, metadata):
 		baselineURL = startBaselinePytransformer(t, pool, configBackend.URL)
 	})
 	wg.Go(func() {
-		candidateURL = startRudderPytransformer(t, pool, configBackend.URL)
+		candidateURL = startCandidatePytransformer(t, pool, configBackend.URL)
 	})
 	wg.Wait()
 
@@ -1584,12 +1590,15 @@ def transformBatch(events, metadata):
 // Both versions raise: "geolocation fetch failed with status code: {code}"
 func TestBackwardsCompatibilityGeolocationFailure(t *testing.T) {
 	type subtest struct {
-		name                string
-		versionID           string
-		config              configBackendEntry
-		setup               func() // called before run to configure mock behavior
-		run                 func(t *testing.T, env *bcTestEnv)
-		skipRetryCountMatch bool // skip assertRetryCountsMatch when old/candidate retry differently
+		name      string
+		versionID string
+		config    configBackendEntry
+		setup     func() // called before run to configure mock behavior
+		run       func(t *testing.T, env *bcTestEnv)
+		// skipRetryCountMatch skips assertRetryCountsMatch. Two releases of the same engine should retry
+		// identically, so a divergence is a real regression: set this only where the subtest itself makes the
+		// counts incomparable (e.g. it drives the two sides differently), and say why at the call site.
+		skipRetryCountMatch bool
 	}
 
 	mockGeoService, mockGeoCfg := newConfigurableMockGeolocationService(t)
@@ -2356,6 +2365,9 @@ def transformEvent(event, metadata):
 	allEntries := make(map[string]configBackendEntry, len(subtests))
 	for _, st := range subtests {
 		if st.config != (configBackendEntry{}) {
+			_, dup := allEntries[st.versionID]
+			require.Falsef(t, dup, "duplicate versionID %q: with shared containers the versionID is the only "+
+				"isolation boundary between subtests, so a collision serves one subtest's code to another", st.versionID)
 			allEntries[st.versionID] = st.config
 		}
 	}
@@ -2363,8 +2375,8 @@ def transformEvent(event, metadata):
 	t.Cleanup(configBackend.Close)
 
 	// Both containers run with the configurable mock geolocation URL.
-	// GEOLOCATION_TIMEOUT_SECS=0.5 governs the GeoTimeout subtest's 1s mock
-	// delay (500 ms < 1 s → retryable 503). SANDBOX_HTTP_BUDGET_S is kept
+	// GEOLOCATION_TIMEOUT_SECS=0.1 governs the GeoTimeout subtest's 500 ms mock
+	// delay (100 ms < 500 ms → retryable 503). SANDBOX_HTTP_BUDGET_S is kept
 	// low as a guard for any future subtest exercising user HTTP traffic; it
 	// does NOT affect geolocation calls — see
 	// TestSandboxHTTPBudgetDoesNotCapGeolocation.
@@ -2382,7 +2394,7 @@ def transformEvent(event, metadata):
 		baselineURL = startBaselinePytransformer(t, pool, configBackend.URL, pytEnv...)
 	})
 	wg.Go(func() {
-		candidateURL = startRudderPytransformer(t, pool, configBackend.URL, pytEnv...)
+		candidateURL = startCandidatePytransformer(t, pool, configBackend.URL, pytEnv...)
 	})
 	wg.Wait()
 
@@ -2394,6 +2406,9 @@ def transformEvent(event, metadata):
 				withLimitedRetryableHTTPRetries(),
 			)
 
+			// The mock is shared with every other subtest, so hand it back healthy however this one
+			// ends — including on failure, which is when a leaked failure mode would be most confusing.
+			t.Cleanup(mockGeoCfg.reset)
 			if st.setup != nil {
 				st.setup()
 			}

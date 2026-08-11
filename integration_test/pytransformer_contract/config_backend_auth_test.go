@@ -92,7 +92,7 @@ func TestConfigBackendAuthWithoutHostedSecret(t *testing.T) {
 
 	// No CONFIG_BACKEND_HOSTED_SECRET passed at all — not empty, absent. This is the
 	// pre-change deployment, and every self-hosted one.
-	pyURL := startRudderPytransformer(t, pool, cb.server.URL)
+	pyURL := startCandidatePytransformer(t, pool, cb.server.URL)
 
 	t.Run("public unauthenticated routes are reached with no Authorization header", func(t *testing.T) {
 		const versionID = "cbauth-nosecret-public-v1"
@@ -172,7 +172,7 @@ func TestConfigBackendAuthWithHostedSecret(t *testing.T) {
 	require.NoError(t, err)
 
 	cb := newConfigBackendAuthMock(t, cbAuthSecret, cbAuthOtherSecret)
-	pyURL := startRudderPytransformer(t, pool, cb.server.URL,
+	pyURL := startCandidatePytransformer(t, pool, cb.server.URL,
 		"CONFIG_BACKEND_HOSTED_SECRET="+cbAuthSecret)
 
 	// What the config backend must receive, spelled out rather than recomputed from the same
@@ -258,7 +258,7 @@ func TestConfigBackendAuthWithWrongHostedSecret(t *testing.T) {
 
 	cb := newConfigBackendAuthMock(t, cbAuthSecret, cbAuthOtherSecret)
 	cb.setMode(cbModeHostedSecret)
-	pyURL := startRudderPytransformer(t, pool, cb.server.URL,
+	pyURL := startCandidatePytransformer(t, pool, cb.server.URL,
 		"CONFIG_BACKEND_HOSTED_SECRET=py-contract-hosted-secret-rotated-away")
 
 	const versionID = "cbauth-wrongsecret-v1"
@@ -293,7 +293,7 @@ func TestConfigBackendHostedSecretTrailingNewlineIsTrimmed(t *testing.T) {
 
 	cb := newConfigBackendAuthMock(t, cbAuthSecret)
 	cb.setMode(cbModeHostedSecret)
-	pyURL := startRudderPytransformer(t, pool, cb.server.URL,
+	pyURL := startCandidatePytransformer(t, pool, cb.server.URL,
 		"CONFIG_BACKEND_HOSTED_SECRET="+cbAuthSecret+"\n")
 
 	const versionID = "cbauth-trailing-newline-v1"

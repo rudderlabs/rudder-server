@@ -37,7 +37,11 @@ import (
 const (
 	coldStartErrorsMetric    = "processor_user_transformer_cold_start_errors_total"
 	testForwardRetriesMetric = "processor_user_transformer_test_forward_retries_total"
-	languagePython           = "python"
+	// retryableErrorsMetric counts responses PyT labelled retryable that still reached the processor, i.e. the
+	// transport's retry budget was spent. Distinct from coldStartErrorsMetric, which no longer fires for these:
+	// without it, the two very different causes of a 503 are indistinguishable from rudder-server's own metrics.
+	retryableErrorsMetric = "processor_user_transformer_retryable_errors_total"
+	languagePython        = "python"
 )
 
 // ErrEmptyForwardBaseURL is returned by the test-forwarding methods ([Client.Test]
@@ -430,6 +434,20 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 				return transformerutils.ErrColdStart
 			}
 
+			// The transformer is up and reporting a downstream failure, and the transport already gave up retrying it.
+			// coldStartErrorsMetric deliberately does not fire here, so count it separately — otherwise this
+			// case is invisible and looks identical to any other unexpected status code.
+			if transformerclient.IsRetryableResponse(resp) {
+				u.stat.NewTaggedStat(retryableErrorsMetric, stats.CountType, stats.Tags{
+					"workspaceID": labels.WorkspaceID,
+					"language":    labels.Language,
+					"reason":      retryReasonTag(resp),
+				}).Increment()
+				u.log.Warnn("transformer reported a retryable failure and the transport's retries were exhausted",
+					append(labels.ToLoggerFields(),
+						logger.NewStringField("reason", retryReasonTag(resp)))...)
+			}
+
 			if reqErr != nil {
 				return reqErr
 			}
@@ -686,6 +704,28 @@ func isColdStartError(err error, resp *http.Response) bool {
 		return !transformerclient.IsRetryableResponse(resp)
 	}
 	return false
+}
+
+// retryReasonTag returns [transformerclient.HeaderErrorReason] in a form that is safe to use as a stats tag.
+//
+// The value is chosen by the transformer, so it must not reach the metrics backend unbounded: one unexpected
+// per-request string there is a new time series per request. Anything that isn't a short, plain identifier
+// becomes "other" — the tag is for grouping, and the exact string is already in the log line beside it.
+func retryReasonTag(resp *http.Response) string {
+	const maxReasonLen = 64
+	reason := resp.Header.Get(transformerclient.HeaderErrorReason)
+	if reason == "" {
+		return "unknown"
+	}
+	if len(reason) > maxReasonLen {
+		return "other"
+	}
+	for _, r := range reason {
+		if !(r == '_' || r == '-' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+			return "other"
+		}
+	}
+	return reason
 }
 
 func isPythonTransformation(language string) bool {

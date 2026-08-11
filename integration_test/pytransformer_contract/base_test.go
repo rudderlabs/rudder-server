@@ -9,13 +9,8 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
-	"github.com/rudderlabs/rudder-server/processor/usertransformer"
 )
 
 // TestBaseContract is the base contract test that compares responses from the
@@ -102,22 +97,21 @@ def transformEvent(event, metadata):
 		baselineURL = startBaselinePytransformer(t, pool, configBackend.URL)
 	})
 	wg.Go(func() {
-		candidateURL = startRudderPytransformer(t, pool, configBackend.URL)
+		candidateURL = startCandidatePytransformer(t, pool, configBackend.URL)
 	})
 	wg.Wait()
 
-	newClientFor := func(url string) *usertransformer.Client {
-		conf := config.New()
-		setPytransformerRouting(conf, url)
-		return usertransformer.New(conf, logger.NOP, stats.NOP)
-	}
+	// newBCTestEnv rather than hand-rolled clients: it bounds maxRetry, the retry backoff and
+	// cpDownEndlessRetries, so a container that answers 809/503 fails this test instead of retrying
+	// until the package timeout and taking every other test in the package down with it.
+	env := newBCTestEnv(t, baselineURL, candidateURL)
 
 	t.Logf("Sending request to rudder-pytransformer:%s (baseline)...", baselinePytransformerTag())
-	baselineResp := newClientFor(baselineURL).Transform(context.Background(), events)
+	baselineResp := env.BaselineClient.Transform(context.Background(), events)
 	t.Logf("Baseline returned %d events, %d failed", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
 	t.Logf("Sending request to rudder-pytransformer:%s (candidate)...", candidatePytransformerTag())
-	candidateResp := newClientFor(candidateURL).Transform(context.Background(), events)
+	candidateResp := env.CandidateClient.Transform(context.Background(), events)
 	t.Logf("Candidate returned %d events, %d failed", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 	t.Log("Comparing responses...")

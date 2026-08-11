@@ -118,7 +118,7 @@ def transformEvent(event, metadata):
 	baselineURL := startBaselinePytransformer(t, pool, configBackend.URL, pytEnv...)
 
 	t.Log("Starting candidate rudder-pytransformer...")
-	candidateURL := startRudderPytransformer(t, pool, configBackend.URL, pytEnv...)
+	candidateURL := startCandidatePytransformer(t, pool, configBackend.URL, pytEnv...)
 
 	// Every verb that accepts a second positional argument must survive
 	// the pooling bridge. GET exercises the params-promotion path; the
@@ -212,8 +212,8 @@ def transformEvent(event, metadata):
 // keyword, raising “TypeError: post() got multiple values for argument
 // 'data'“.
 //
-// This contract pins the correct behaviour: the baseline (vanilla
-// “requests“) accepts this call shape; the candidate must too.
+// This contract pins the correct behaviour: this call shape is accepted, and
+// both versions must keep accepting it.
 func TestBareRequestsPostThreePositionalArgsContract(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -266,7 +266,7 @@ def transformEvent(event, metadata):
 	baselineURL := startBaselinePytransformer(t, pool, configBackend.URL, pytEnv...)
 
 	t.Log("Starting candidate rudder-pytransformer...")
-	candidateURL := startRudderPytransformer(t, pool, configBackend.URL, pytEnv...)
+	candidateURL := startCandidatePytransformer(t, pool, configBackend.URL, pytEnv...)
 
 	env := newBCTestEnv(t, baselineURL, candidateURL,
 		withFailOnError(),

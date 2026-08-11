@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -78,12 +79,60 @@ func TestIsColdStartError(t *testing.T) {
 			want:   false,
 		},
 		{
+			// The header only means anything inside the 503/502 branch. Pinning this stops a refactor that
+			// hoists the header check above the status check from silently reclassifying every 5xx.
+			name:    "500 with X-Rudder-Should-Retry is not a cold start",
+			status:  http.StatusInternalServerError,
+			headers: map[string]string{transformerclient.HeaderShouldRetry: "true"},
+			want:    false,
+		},
+		{
+			name: "no error and no response is not a cold start",
+			want: false,
+		},
+		{
 			name: "connection refused is a cold start",
 			err: &net.OpError{
 				Op: "dial", Net: "tcp",
 				Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNREFUSED},
 			},
 			want: true,
+		},
+		{
+			// Stale iptables / EndpointSlice after a pod replacement.
+			name: "no route to host is a cold start",
+			err: &net.OpError{
+				Op: "dial", Net: "tcp",
+				Err: &os.SyscallError{Syscall: "connect", Err: syscall.EHOSTUNREACH},
+			},
+			want: true,
+		},
+		{
+			// The SYN went unanswered: the pod is coming up, or going down and its DNS record has not
+			// been withdrawn yet. Indistinguishable from the dialer, and retryable either way.
+			name: "dial timeout is a cold start",
+			err:  &net.OpError{Op: "dial", Net: "tcp", Err: timeoutError{}},
+			want: true,
+		},
+		{
+			// Not a dial: a read timeout mid-response means the pod answered, so it is up.
+			name: "non-dial timeout is not a cold start",
+			err:  &net.OpError{Op: "read", Net: "tcp", Err: timeoutError{}},
+			want: false,
+		},
+		{
+			name: "DNS error is a cold start",
+			err:  &net.DNSError{Err: "no such host", Name: "pyt-ws-1", IsNotFound: true},
+			want: true,
+		},
+		{
+			// err wins: the branch returns before resp is consulted, so a transport failure is classified
+			// on its own merits even when a stale response is still in hand.
+			name:    "err takes precedence over resp",
+			err:     &net.DNSError{Err: "no such host", Name: "pyt-ws-1", IsNotFound: true},
+			status:  http.StatusOK,
+			headers: map[string]string{transformerclient.HeaderShouldRetry: "true"},
+			want:    true,
 		},
 	}
 
@@ -98,6 +147,41 @@ func TestIsColdStartError(t *testing.T) {
 				resp = &http.Response{StatusCode: tc.status, Header: hdr, Body: http.NoBody}
 			}
 			require.Equal(t, tc.want, isColdStartError(tc.err, resp))
+		})
+	}
+}
+
+// timeoutError is a net.Error that reports Timeout() == true, so a case can exercise the dial-timeout branch
+// without waiting on a real unanswered SYN.
+type timeoutError struct{}
+
+func (timeoutError) Error() string   { return "i/o timeout" }
+func (timeoutError) Timeout() bool   { return true }
+func (timeoutError) Temporary() bool { return true }
+
+// TestRetryReasonTag pins that a transformer-chosen header cannot become an unbounded stats tag.
+//
+// The value is picked by the peer, so anything that is not a short plain identifier has to collapse to a
+// constant. One per-request string reaching the metrics backend is a new time series per request.
+func TestRetryReasonTag(t *testing.T) {
+	respWith := func(reason string) *http.Response {
+		hdr := http.Header{}
+		if reason != "" {
+			hdr.Set(transformerclient.HeaderErrorReason, reason)
+		}
+		return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: hdr, Body: http.NoBody}
+	}
+
+	for _, tc := range []struct{ name, reason, want string }{
+		{"a known reason passes through", "geolocation_timeout", "geolocation_timeout"},
+		{"hyphens and digits are fine", "config-backend-503", "config-backend-503"},
+		{"absent header is reported as unknown", "", "unknown"},
+		{"a per-request id is collapsed", "failed for message 0b41-9f2a at 12:04:11", "other"},
+		{"an over-long value is collapsed", strings.Repeat("x", 65), "other"},
+		{"a value at the length limit is kept", strings.Repeat("x", 64), strings.Repeat("x", 64)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, retryReasonTag(respWith(tc.reason)))
 		})
 	}
 }

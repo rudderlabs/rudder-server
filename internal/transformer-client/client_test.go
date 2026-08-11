@@ -27,8 +27,8 @@ func TestClient_RetryBehavior(t *testing.T) {
 
 			if requestCount <= retryableResponses {
 				// Return retriable error
-				w.Header().Set("X-Rudder-Should-Retry", "true")
-				w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+				w.Header().Set(HeaderShouldRetry, "true")
+				w.Header().Set(HeaderErrorReason, "temporary-overload")
 				w.WriteHeader(http.StatusServiceUnavailable)
 				_, _ = w.Write([]byte("Service temporarily unavailable"))
 			} else {
@@ -80,8 +80,8 @@ func TestClient_RetryBehavior(t *testing.T) {
 		var requestCount int
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
-			w.Header().Set("X-Rudder-Should-Retry", "true")
-			w.Header().Set("X-Rudder-Error-Reason", "persistent-overload")
+			w.Header().Set(HeaderShouldRetry, "true")
+			w.Header().Set(HeaderErrorReason, "persistent-overload")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("Service permanently unavailable"))
 		}))
@@ -133,8 +133,8 @@ func TestClient_RetryBehavior(t *testing.T) {
 
 			if requestCount <= switchAfter {
 				// Return retriable error
-				w.Header().Set("X-Rudder-Should-Retry", "true")
-				w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+				w.Header().Set(HeaderShouldRetry, "true")
+				w.Header().Set(HeaderErrorReason, "temporary-overload")
 				w.WriteHeader(http.StatusServiceUnavailable)
 				_, _ = w.Write([]byte("Service temporarily unavailable"))
 			} else {
@@ -374,8 +374,8 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
 			// Always return retriable error
-			w.Header().Set("X-Rudder-Should-Retry", "true")
-			w.Header().Set("X-Rudder-Error-Reason", "test-overload")
+			w.Header().Set(HeaderShouldRetry, "true")
+			w.Header().Set(HeaderErrorReason, "test-overload")
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}))
 		defer server.Close()
@@ -421,8 +421,8 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 		var requestCount int
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
-			w.Header().Set("X-Rudder-Should-Retry", "true")
-			w.Header().Set("X-Rudder-Error-Reason", "test-overload")
+			w.Header().Set(HeaderShouldRetry, "true")
+			w.Header().Set(HeaderErrorReason, "test-overload")
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}))
 		defer server.Close()
@@ -468,8 +468,8 @@ func TestClient_PerpetualRetriesStatsTags(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
 			if requestCount <= retryableResponses {
-				w.Header().Set("X-Rudder-Should-Retry", "true")
-				w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+				w.Header().Set(HeaderShouldRetry, "true")
+				w.Header().Set(HeaderErrorReason, "temporary-overload")
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
 			}
@@ -527,8 +527,8 @@ func TestClient_PerpetualRetriesStatsTags(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
 			if requestCount == 1 {
-				w.Header().Set("X-Rudder-Should-Retry", "true")
-				w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+				w.Header().Set(HeaderShouldRetry, "true")
+				w.Header().Set(HeaderErrorReason, "temporary-overload")
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
 			}
@@ -582,8 +582,8 @@ func TestClient_RetryDisabled(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
 			// Return retriable error that would normally be retried
-			w.Header().Set("X-Rudder-Should-Retry", "true")
-			w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+			w.Header().Set(HeaderShouldRetry, "true")
+			w.Header().Set(HeaderErrorReason, "temporary-overload")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("Service temporarily unavailable"))
 		}))

@@ -92,7 +92,7 @@ type ClientConfig struct {
 	Recycle       bool          // false
 	RecycleTTL    time.Duration // 60s
 
-	// Configuration for retryable HTTP client in case of [X-Rudder-Should-Retry: true] HTTP 503 responses
+	// Configuration for the retryable HTTP client, for responses matching [IsRetryableResponse]
 	RetryRudderErrors struct {
 		Enabled         bool          // false
 		MaxRetry        int           // -1 - no limit

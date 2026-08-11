@@ -71,13 +71,13 @@ def transformEvent(event, metadata):
 	wg := sync.WaitGroup{}
 	wg.Go(func() {
 		// Start pytransformer WITH mirror filter enabled
-		pyFilteredURL = startRudderPytransformer(
+		pyFilteredURL = startCandidatePytransformer(
 			t, pool, configBackend.URL, "MIRROR_FILTER_ENABLED=true",
 		)
 	})
 	wg.Go(func() {
 		// Start pytransformer WITHOUT mirror filter (default)
-		pyNormalURL = startRudderPytransformer(
+		pyNormalURL = startCandidatePytransformer(
 			t, pool, configBackend.URL,
 		)
 	})
