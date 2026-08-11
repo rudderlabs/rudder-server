@@ -414,7 +414,13 @@ func startBaselinePytransformer(
 	extraEnv ...string,
 ) string {
 	t.Helper()
-	return startRudderPytransformerWithTag(t, pool, baselinePytransformerTag(), configBackendURL, extraEnv...)
+	baseline, candidate := baselinePytransformerTag(), candidatePytransformerTag()
+	require.NotEqualf(t, candidate, baseline,
+		"baseline and candidate both resolved to rudder-pytransformer:%s — the comparison would be vacuous. "+
+			"Bump latestReleaseTag/previousReleaseTag, or set PYTRANSFORMER_BASELINE_TAG and "+
+			"PYTRANSFORMER_CANDIDATE_TAG to different tags.", baseline)
+	t.Logf("Comparing rudder-pytransformer baseline=%s against candidate=%s", baseline, candidate)
+	return startRudderPytransformerWithTag(t, pool, baseline, configBackendURL, extraEnv...)
 }
 
 // startRudderPytransformerWithTag starts a rudder-pytransformer container at an
