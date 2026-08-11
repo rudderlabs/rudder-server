@@ -79,7 +79,7 @@ def transformEvent(event, metadata):
 	newStats, err := memstats.New()
 	require.NoError(t, err)
 	conf := config.New()
-	conf.Set("PYTHON_TRANSFORM_URL", pyURL)
+	setPytransformerRouting(conf, pyURL)
 	conf.Set("Processor.UserTransformer.maxRetry", 2)
 	conf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
 	conf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)

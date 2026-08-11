@@ -6,11 +6,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,8 +35,8 @@ import (
 
 // containerConfig holds platform-specific Docker container configuration.
 // On Linux, containers use host networking (sharing the host's network namespace).
-// On macOS — or when bridge networking is forced via withBridgeNetworking —
-// containers use bridge networking with port bindings and host.docker.internal.
+// On macOS, containers use bridge networking with port bindings and
+// host.docker.internal.
 type containerConfig struct {
 	bridge       bool // bridge networking (vs host networking)
 	hostPort     int  // allocated host port (host networking only)
@@ -46,30 +45,12 @@ type containerConfig struct {
 	hostConfigFn func(*docker.HostConfig)
 }
 
-type containerConfigOpts struct {
-	forceBridge bool
-}
-
-type containerConfigOpt func(*containerConfigOpts)
-
-// withBridgeNetworking forces bridge networking even where host networking is
-// the default (Linux). For containers that must not share the host's network
-// namespace — e.g. openfaas-flask function containers, whose of-watchdog binds
-// a hard-coded metrics port that collides when two of them share a namespace.
-func withBridgeNetworking() containerConfigOpt {
-	return func(o *containerConfigOpts) { o.forceBridge = true }
-}
-
 // newContainerConfig returns the appropriate Docker configuration for the current platform.
 // Default is host networking (Linux, CI, production). On macOS, Docker Desktop does not
 // support host networking so we fall back to bridge networking with port bindings.
-func newContainerConfig(t *testing.T, containerPort string, opts ...containerConfigOpt) containerConfig {
+func newContainerConfig(t *testing.T, containerPort string) containerConfig {
 	t.Helper()
-	var o containerConfigOpts
-	for _, opt := range opts {
-		opt(&o)
-	}
-	if runtime.GOOS == "darwin" || o.forceBridge {
+	if runtime.GOOS == "darwin" {
 		return containerConfig{
 			bridge:     true,
 			ExtraHosts: []string{"host.docker.internal:host-gateway"},
@@ -118,78 +99,92 @@ func toContainerURL(url string) string {
 	return url
 }
 
-// bcTestEnv holds clients for both the old architecture (rudder-transformer + openfaas)
-// and the new architecture (rudder-pytransformer) to compare their responses.
+// bcTestEnv holds clients for the two rudder-pytransformer builds under
+// comparison: the baseline (last released version) and the candidate (main).
 type bcTestEnv struct {
-	OldClient *usertransformer.Client // rudder-transformer + openfaas (old architecture)
-	NewClient *usertransformer.Client // rudder-pytransformer (new architecture)
-	OldStats  *memstats.Store         // stats store for old architecture client
-	NewStats  *memstats.Store         // stats store for new architecture client
+	BaselineClient  *usertransformer.Client // baseline rudder-pytransformer
+	CandidateClient *usertransformer.Client // candidate rudder-pytransformer
+	BaselineStats   *memstats.Store         // stats store for the baseline client
+	CandidateStats  *memstats.Store         // stats store for the candidate client
 }
 
-type bcTestEnvOpt func(oldConf, newConf *config.Config)
+type bcTestEnvOpt func(baselineConf, candidateConf *config.Config)
 
 // withFailOnError configures the test env to return error responses (instead of
 // panicking) when transformer retries are exhausted. Required for tests where
-// the new architecture triggers retries (e.g. geolocation 5xx → HTTP 503).
+// pytransformer triggers retries (e.g. geolocation 5xx → HTTP 503).
 func withFailOnError() bcTestEnvOpt {
-	return func(oldConf, newConf *config.Config) {
-		oldConf.Set("Processor.UserTransformer.failOnError", true)
-		newConf.Set("Processor.UserTransformer.failOnError", true)
+	return func(baselineConf, candidateConf *config.Config) {
+		baselineConf.Set("Processor.UserTransformer.failOnError", true)
+		candidateConf.Set("Processor.UserTransformer.failOnError", true)
 	}
 }
 
 // withLimitedRetryableHTTPRetries caps the retryable HTTP client retries so that
 // 503 + X-Rudder-Should-Retry responses don't retry indefinitely in tests.
 func withLimitedRetryableHTTPRetries() bcTestEnvOpt {
-	return func(oldConf, newConf *config.Config) {
-		for _, c := range []*config.Config{oldConf, newConf} {
+	return func(baselineConf, candidateConf *config.Config) {
+		for _, c := range []*config.Config{baselineConf, candidateConf} {
 			c.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxRetry", 2)
 			c.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxInterval", 1*time.Millisecond)
 		}
 	}
 }
 
+// setPytransformerRouting points a client at one pytransformer container the way
+// production addresses PyT: the per-workspace path. PerWorkspacePyTBaseURL only
+// substitutes "{workspaceID}", so a template without that placeholder resolves
+// to the container URL verbatim and one container serves every workspace id.
+func setPytransformerRouting(conf *config.Config, pyTransformerURL string) {
+	conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+	conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", pyTransformerURL)
+	// The per-workspace path classifies ECONNREFUSED/502/503 from PyT as a cold
+	// start, and cold starts retry forever by default so a Deployment scaling off
+	// zero is waited out rather than failed. Tests must not hang on that: several
+	// subtests make pytransformer answer 503 deliberately.
+	conf.Set("Processor.UserTransformer.perWorkspacePyTEndlessRetries", false)
+}
+
 // newBCTestEnv creates a bcTestEnv with fresh memstats stores per subtest.
 // Fresh stores are needed because memstats accumulates counts and cannot be reset.
-func newBCTestEnv(t *testing.T, transformerURL, pyTransformerURL string, opts ...bcTestEnvOpt) *bcTestEnv {
+func newBCTestEnv(t *testing.T, baselineURL, candidateURL string, opts ...bcTestEnvOpt) *bcTestEnv {
 	t.Helper()
 
-	oldStats, err := memstats.New()
+	baselineStats, err := memstats.New()
 	require.NoError(t, err)
-	newStats, err := memstats.New()
+	candidateStats, err := memstats.New()
 	require.NoError(t, err)
 
-	oldArchConf := config.New()
-	oldArchConf.Set("Processor.UserTransformer.maxRetry", 2)
-	oldArchConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
-	oldArchConf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)
-	oldArchConf.Set("USER_TRANSFORM_URL", transformerURL)
+	baselineConf := config.New()
+	baselineConf.Set("Processor.UserTransformer.maxRetry", 2)
+	baselineConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
+	baselineConf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)
+	setPytransformerRouting(baselineConf, baselineURL)
 
-	newArchConf := config.New()
-	newArchConf.Set("Processor.UserTransformer.maxRetry", 2)
-	newArchConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
-	newArchConf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)
-	newArchConf.Set("PYTHON_TRANSFORM_URL", pyTransformerURL)
+	candidateConf := config.New()
+	candidateConf.Set("Processor.UserTransformer.maxRetry", 2)
+	candidateConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
+	candidateConf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)
+	setPytransformerRouting(candidateConf, candidateURL)
 
 	for _, opt := range opts {
-		opt(oldArchConf, newArchConf)
+		opt(baselineConf, candidateConf)
 	}
 
 	var (
-		oldArchLogger = logger.NOP
-		newArchLogger = logger.NOP
+		baselineLogger  = logger.NOP
+		candidateLogger = logger.NOP
 	)
 	if testing.Verbose() {
-		oldArchLogger = logger.NewLogger().Child("old-arch")
-		newArchLogger = logger.NewLogger().Child("new-arch")
+		baselineLogger = logger.NewLogger().Child("baseline")
+		candidateLogger = logger.NewLogger().Child("candidate")
 	}
 
 	return &bcTestEnv{
-		OldClient: usertransformer.New(oldArchConf, oldArchLogger, oldStats),
-		NewClient: usertransformer.New(newArchConf, newArchLogger, newStats),
-		OldStats:  oldStats,
-		NewStats:  newStats,
+		BaselineClient:  usertransformer.New(baselineConf, baselineLogger, baselineStats),
+		CandidateClient: usertransformer.New(candidateConf, candidateLogger, candidateStats),
+		BaselineStats:   baselineStats,
+		CandidateStats:  candidateStats,
 	}
 }
 
@@ -203,19 +198,19 @@ func getRetryCount(store *memstats.Store, name string) int {
 	return int(m.LastValue())
 }
 
-// assertRetryCountsMatch asserts that both architectures triggered the same number of retries.
+// assertRetryCountsMatch asserts that both PyT versions triggered the same number of retries.
 func (env *bcTestEnv) assertRetryCountsMatch(t *testing.T) {
 	t.Helper()
 
-	oldCPRetries := getRetryCount(env.OldStats, "processor_user_transformer_cp_down_retries")
-	newCPRetries := getRetryCount(env.NewStats, "processor_user_transformer_cp_down_retries")
-	t.Logf("CP down retries: old=%d, new=%d", oldCPRetries, newCPRetries)
-	require.Equal(t, oldCPRetries, newCPRetries, "CP down retry counts should match between old and new arch")
+	oldCPRetries := getRetryCount(env.BaselineStats, "processor_user_transformer_cp_down_retries")
+	newCPRetries := getRetryCount(env.CandidateStats, "processor_user_transformer_cp_down_retries")
+	t.Logf("CP down retries: baseline=%d, candidate=%d", oldCPRetries, newCPRetries)
+	require.Equal(t, oldCPRetries, newCPRetries, "CP down retry counts should match between baseline and candidate")
 
-	oldHTTPRetries := getRetryCount(env.OldStats, "processor_user_transformer_http_retries")
-	newHTTPRetries := getRetryCount(env.NewStats, "processor_user_transformer_http_retries")
-	t.Logf("HTTP retries: old=%d, new=%d", oldHTTPRetries, newHTTPRetries)
-	require.Equal(t, oldHTTPRetries, newHTTPRetries, "HTTP retry counts should match between old and new arch")
+	oldHTTPRetries := getRetryCount(env.BaselineStats, "processor_user_transformer_http_retries")
+	newHTTPRetries := getRetryCount(env.CandidateStats, "processor_user_transformer_http_retries")
+	t.Logf("HTTP retries: baseline=%d, candidate=%d", oldHTTPRetries, newHTTPRetries)
+	require.Equal(t, oldHTTPRetries, newHTTPRetries, "HTTP retry counts should match between baseline and candidate")
 }
 
 // makeEvent creates a TransformerEvent for backwards compatibility testing with minimal required fields.
@@ -280,11 +275,11 @@ type configBackendEntry struct {
 }
 
 // newContractConfigBackend creates a mock config backend that serves
-// transformation code for both rudder-transformer and rudder-pytransformer.
+// transformation code to both rudder-pytransformer containers under comparison.
 //
-// The response includes language: "pythonfaas" so rudder-transformer routes
-// to the OpenFaaS path. rudder-pytransformer and openfaas-flask-base only
-// use the "code" field.
+// The response includes language: "pythonfaas", which is what production still
+// stores for Python transformations; rudder-pytransformer only uses the "code"
+// field.
 func newContractConfigBackend(t *testing.T, entries map[string]configBackendEntry) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -339,196 +334,94 @@ func newContractConfigBackend(t *testing.T, entries map[string]configBackendEntr
 	}))
 }
 
-// newMockOpenFaaSGateway creates a mock OpenFaaS gateway that:
-// - Accepts function deployment requests (POST /system/functions)
-// - Reports functions as healthy (GET /function/*)
-// - Proxies function invocations (POST /function/*) to the URL returned by getTarget()
+// The suite always compares two rudder-pytransformer builds — a candidate
+// against a baseline — so a behaviour change between two PyT versions fails here
+// the same way it would surface in a mirrored production comparison.
 //
-// getTarget is called on each invocation, allowing the target to change between subtests.
-// Returns the server and an atomic counter tracking POST /function/* invocations.
-func newMockOpenFaaSGateway(t *testing.T, getTarget func() string) (*httptest.Server, *atomic.Int64) {
-	t.Helper()
-	invocations := &atomic.Int64{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		// Deploy function
-		case r.Method == http.MethodPost && r.URL.Path == "/system/functions":
-			w.WriteHeader(http.StatusOK)
-
-		// Update function
-		case r.Method == http.MethodPut && r.URL.Path == "/system/functions":
-			w.WriteHeader(http.StatusOK)
-
-		// Delete function
-		case r.Method == http.MethodDelete && r.URL.Path == "/system/functions":
-			w.WriteHeader(http.StatusOK)
-
-		// List functions
-		case r.Method == http.MethodGet && r.URL.Path == "/system/functions":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte("[]"))
-
-		// Get function info
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/system/function/"):
-			name := strings.TrimPrefix(r.URL.Path, "/system/function/")
-			w.Header().Set("Content-Type", "application/json")
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
-				"name":     name,
-				"replicas": 1,
-			})
-
-		// Health check or invoke function
-		case strings.HasPrefix(r.URL.Path, "/function/"):
-			if r.Method == http.MethodGet {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"service": "UP"}`))
-				return
-			}
-			if r.Method == http.MethodPost {
-				invocations.Add(1)
-				targetURL := getTarget()
-				if targetURL == "" {
-					t.Log("MockOpenFaaS: no target URL set")
-					w.WriteHeader(http.StatusServiceUnavailable)
-					return
-				}
-
-				body, err := io.ReadAll(r.Body)
-				if err != nil {
-					t.Logf("MockOpenFaaS: failed to read body: %v", err)
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-
-				proxyReq, err := http.NewRequest(http.MethodPost, targetURL+"/", bytes.NewReader(body))
-				if err != nil {
-					t.Logf("MockOpenFaaS: failed to create proxy request: %v", err)
-					w.WriteHeader(http.StatusBadGateway)
-					return
-				}
-				proxyReq.Header.Set("Content-Type", "application/json")
-
-				resp, err := http.DefaultClient.Do(proxyReq)
-				if err != nil {
-					t.Logf("MockOpenFaaS: failed to proxy to openfaas-flask-base: %v", err)
-					w.WriteHeader(http.StatusBadGateway)
-					return
-				}
-				defer func() { _ = resp.Body.Close() }()
-
-				respBody, err := io.ReadAll(resp.Body)
-				if err != nil {
-					t.Logf("MockOpenFaaS: failed to read proxy response: %v", err)
-					w.WriteHeader(http.StatusBadGateway)
-					return
-				}
-
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(resp.StatusCode)
-				_, _ = w.Write(respBody)
-				return
-			}
-			w.WriteHeader(http.StatusMethodNotAllowed)
-
-		default:
-			t.Logf("MockOpenFaaS: unhandled %s %s", r.Method, r.URL.Path)
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	return srv, invocations
-}
-
-// startOpenFaasFlask starts an openfaas-flask-base container with transformation code
-// loaded at startup via --vid and --config-backend-url. Optional extra environment
-// variables can be passed (e.g. "geolocation_url=http://...").
+// Which pair depends on where the suite runs:
 //
-// The container is purged via “t.Cleanup“ and the function blocks until the
-// fwatchdog health endpoint is responsive, so callers get a URL that is
-// immediately ready to serve requests.
-func startOpenFaasFlask(
-	t *testing.T, pool *dockertest.Pool,
-	versionID, configBackendURL string,
-	extraEnv ...string,
-) string {
-	t.Helper()
-	const containerPort = "8080"
-	cfg := newContainerConfig(t, containerPort)
-	env := []string{
-		fmt.Sprintf("fprocess=python index.py --vid %s --config-backend-url %s", versionID, toContainerURL(configBackendURL)),
-		fmt.Sprintf("port=%s", cfg.portStr(containerPort)),
-	}
-	for _, e := range extraEnv {
-		env = append(env, toContainerURL(e))
-	}
-	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/openfaas-flask",
-		// Pinned to match the production version
-		Tag:          "1.13.2",
-		Auth:         registry.AuthConfiguration(),
-		Env:          env,
-		ExtraHosts:   cfg.ExtraHosts,
-		PortBindings: cfg.PortBindings,
-	}, cfg.hostConfigFn)
-	require.NoError(t, err, "failed to start openfaas-flask-base container")
+//   - Locally: the image you just built with "make build-ecr-latest" in the
+//     rudder-pytransformer repo (tagged "main") against the latest release. This
+//     is the question a developer is asking — does my change regress anything?
+//   - On CI: the latest release against the one before it. CI has no locally
+//     built image, so comparing against "main" would compare a release to
+//     whatever last landed on that branch.
+//
+// Either side can be overridden to point the suite at any pair:
+//
+//	PYTRANSFORMER_CANDIDATE_TAG=0.11.0 PYTRANSFORMER_BASELINE_TAG=0.10.0 go test ...
+const (
+	pytransformerImage = "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer"
 
-	t.Cleanup(func() {
-		if err := pool.Purge(container); err != nil {
-			t.Logf("Failed to purge openfaas-flask-base container: %v", err)
-		}
-	})
+	// localBuildTag is the tag "make build-ecr-latest" writes in the
+	// rudder-pytransformer repo, so a locally built image is picked up as-is.
+	localBuildTag = "main"
+	// latestReleaseTag and previousReleaseTag are the two most recent released
+	// rudder-pytransformer versions. Bump both when a new version ships.
+	latestReleaseTag   = "0.10.2"
+	previousReleaseTag = "0.10.1"
+)
 
-	openFaasURL := cfg.url(container, containerPort)
-	waitForOpenFaasFlask(t, pool, openFaasURL)
-	return openFaasURL
+// runningInCI reports whether the suite is running on CI rather than a
+// developer machine. Every mainstream CI provider sets CI=true.
+func runningInCI() bool {
+	inCI, err := strconv.ParseBool(os.Getenv("CI"))
+	return err == nil && inCI
 }
 
-// startRudderTransformer starts a rudder-transformer container configured to use
-// the mock config backend and mock OpenFaaS gateway. Optional extra environment
-// variables can be passed (e.g. "TRANSFORMER_TEST_MODE=true").
-// Returns the container resource and the URL to reach it from the host.
-func startRudderTransformer(
-	t *testing.T, pool *dockertest.Pool,
-	configBackendURL, openfaasGatewayURL string,
-	extraEnv ...string,
-) string {
-	t.Helper()
-	const containerPort = "9090"
-	cfg := newContainerConfig(t, containerPort)
-	env := []string{
-		"CONFIG_BACKEND_URL=" + toContainerURL(configBackendURL),
-		"OPENFAAS_GATEWAY_URL=" + toContainerURL(openfaasGatewayURL),
-		"PORT=" + cfg.portStr(containerPort),
-		"NODE_OPTIONS=--no-node-snapshot",
+// candidatePytransformerTag returns the tag under test: the local build when a
+// developer runs the suite, the latest release on CI.
+func candidatePytransformerTag() string {
+	if tag := os.Getenv("PYTRANSFORMER_CANDIDATE_TAG"); tag != "" {
+		return tag
 	}
-	env = append(env, extraEnv...)
-	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "rudderstack/rudder-transformer",
-		Tag:          "latest",
-		Env:          env,
-		ExtraHosts:   cfg.ExtraHosts,
-		PortBindings: cfg.PortBindings,
-	}, cfg.hostConfigFn)
-	require.NoError(t, err, "failed to start rudder-transformer container")
-
-	t.Cleanup(func() {
-		if err := pool.Purge(container); err != nil {
-			t.Logf("Failed to purge rudder-transformer: %v", err)
-		}
-	})
-
-	transformerURL := cfg.url(container, containerPort)
-	waitForHealthy(t, pool, transformerURL, "rudder-transformer", container)
-
-	return transformerURL
+	if runningInCI() {
+		return latestReleaseTag
+	}
+	return localBuildTag
 }
 
-// startRudderPytransformer starts a rudder-pytransformer container configured
-// to use the mock config backend. Optional extra environment variables can be
-// passed (e.g. "GEOLOCATION_URL=http://...").
-// Returns the container resource and the URL to reach it from the host.
+// baselinePytransformerTag returns the tag the candidate is compared against:
+// the latest release locally, the release before it on CI.
+func baselinePytransformerTag() string {
+	if tag := os.Getenv("PYTRANSFORMER_BASELINE_TAG"); tag != "" {
+		return tag
+	}
+	if runningInCI() {
+		return previousReleaseTag
+	}
+	return latestReleaseTag
+}
+
+// startRudderPytransformer starts the candidate rudder-pytransformer container
+// configured to use the mock config backend. Optional extra environment
+// variables can be passed (e.g. "GEOLOCATION_URL=http://...").
+// Returns the URL to reach it from the host.
 func startRudderPytransformer(
 	t *testing.T, pool *dockertest.Pool,
 	configBackendURL string,
+	extraEnv ...string,
+) string {
+	t.Helper()
+	return startRudderPytransformerWithTag(t, pool, candidatePytransformerTag(), configBackendURL, extraEnv...)
+}
+
+// startBaselinePytransformer starts the baseline rudder-pytransformer container,
+// i.e. the released version the candidate is compared against.
+func startBaselinePytransformer(
+	t *testing.T, pool *dockertest.Pool,
+	configBackendURL string,
+	extraEnv ...string,
+) string {
+	t.Helper()
+	return startRudderPytransformerWithTag(t, pool, baselinePytransformerTag(), configBackendURL, extraEnv...)
+}
+
+// startRudderPytransformerWithTag starts a rudder-pytransformer container at an
+// explicit image tag.
+func startRudderPytransformerWithTag(
+	t *testing.T, pool *dockertest.Pool,
+	tag, configBackendURL string,
 	extraEnv ...string,
 ) string {
 	t.Helper()
@@ -550,23 +443,23 @@ func startRudderPytransformer(
 	}
 
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
-		Tag:          "main", // todo: use latest after merging https://github.com/rudderlabs/rudder-pytransformer/pull/76
+		Repository:   pytransformerImage,
+		Tag:          tag,
 		Auth:         registry.AuthConfiguration(),
 		Env:          env,
 		ExtraHosts:   cfg.ExtraHosts,
 		PortBindings: cfg.PortBindings,
 	}, cfg.hostConfigFn)
-	require.NoError(t, err, "failed to start rudder-pytransformer container")
+	require.NoErrorf(t, err, "failed to start rudder-pytransformer:%s container", tag)
 
 	t.Cleanup(func() {
 		if err := pool.Purge(container); err != nil {
-			t.Logf("Failed to purge pytransformer container: %v", err)
+			t.Logf("Failed to purge pytransformer:%s container: %v", tag, err)
 		}
 	})
 
 	pyURL := cfg.url(container, containerPort)
-	waitForHealthy(t, pool, pyURL, "rudder-pytransformer", container)
+	waitForHealthy(t, pool, pyURL, "rudder-pytransformer:"+tag, container)
 
 	return pyURL
 }
@@ -624,40 +517,6 @@ func dumpContainerLogs(t *testing.T, pool *dockertest.Pool, container *dockertes
 		return
 	}
 	t.Logf("=== %s container logs ===\n%s=== end %s logs ===", name, buf.String(), name)
-}
-
-// pollOpenFaasFlaskHealthy polls the openfaas-flask-base fwatchdog health
-// endpoint until it returns 200. fwatchdog responds to GET / with the
-// X-REQUEST-TYPE: HEALTH-CHECK header. It returns an error instead of failing
-// the test so it is safe to call from a non-test goroutine (e.g. the dynamic
-// gateway's HTTP handler).
-func pollOpenFaasFlaskHealthy(pool *dockertest.Pool, baseURL string) error {
-	return pool.Retry(func() error {
-		req, err := http.NewRequest(http.MethodGet, baseURL+"/", nil)
-		if err != nil {
-			return err
-		}
-		req.Header.Set("X-REQUEST-TYPE", "HEALTH-CHECK")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return fmt.Errorf("openfaas-flask health check failed: %d - %s", resp.StatusCode, string(body))
-		}
-		return nil
-	})
-}
-
-// waitForOpenFaasFlask polls the openfaas-flask-base fwatchdog health endpoint.
-// fwatchdog responds to GET / with X-REQUEST-TYPE: HEALTH-CHECK header.
-func waitForOpenFaasFlask(t *testing.T, pool *dockertest.Pool, baseURL string) {
-	t.Helper()
-	t.Logf("Waiting for openfaas-flask-base at %s to be healthy...", baseURL)
-	require.NoError(t, pollOpenFaasFlaskHealthy(pool, baseURL), "openfaas-flask-base failed to become healthy")
-	t.Logf("openfaas-flask-base is healthy at %s", baseURL)
 }
 
 // normalizeJSON re-marshals a JSON string so keys are in deterministic (sorted) order.

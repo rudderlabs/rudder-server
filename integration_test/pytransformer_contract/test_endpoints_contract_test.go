@@ -1,15 +1,11 @@
 package pytransformer_contract
 
 import (
-	"bytes"
 	"context"
-	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -21,36 +17,28 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	dockertesthelper "github.com/rudderlabs/rudder-go-kit/testhelper/docker"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/registry"
 
 	"github.com/rudderlabs/rudder-server/processor/usertransformer"
 )
 
 // TestPyTransformerTestEndpoints pins the wire contract of the four
-// control-plane endpoints introduced for the Python transformation-test flow,
-// comparing the new architecture against the old one:
+// control-plane endpoints for the Python transformation-test flow:
 //
-//	pyt POST /test          ~ rudder-transformer POST /transformation/test
-//	pyt POST /testRun       ~ rudder-transformer POST /transformation/testRun
-//	pyt POST /test-library  ~ rudder-transformer POST /transformationLibrary/test
-//	pyt POST /extract-libs  ~ rudder-transformer POST /extractLibs
+//	POST /test
+//	POST /testRun
+//	POST /test-library
+//	POST /extract-libs
 //
-// Old architecture: rudder-transformer (TRANSFORMER_TEST_MODE=true) deploys a
-// per-request OpenFaaS function whose fprocess carries the inline code, invokes
-// it, and deletes it; the AST routes invoke the long-lived fn-ast function. The
-// dynamic mock gateway backs each deployment with a real openfaas-flask-base
-// container so the inline code actually runs.
+// Both sides go through usertransformer.Client.Test/TestRun/TestLibrary/
+// ExtractLibs — the same methods cpservice.Forward uses in production — so the
+// test covers the exact client → pyt path. Only the target base URL differs:
+// the baseline release on one side, the candidate on the other, which is the
+// role cpservice.Forward plays in production.
 //
-// New architecture: requests go through usertransformer.Client.Test/TestRun/
-// TestLibrary/ExtractLibs — the same methods cpservice.Forward uses in
-// production — so the test covers the exact client → pyt path.
-//
-// Responses are compared byte-for-byte except where rudder-pytransformer
-// deliberately (and documentedly, see its README) diverges:
-//   - AST import-violation messages: pyt surfaces the runtime's wording
-//     ("Import of 'os' is not allowed. ...") instead of fn-ast's
-//     ("Unpermitted import(s). ...") — the runtime is the source of truth.
+// Responses are compared byte-for-byte. Several assertions below carry comments
+// about wording that "deliberately differs" from openfaas's fn-ast; those record
+// why pyt's wording is what it is, and are kept as documentation of the intended
+// message. They no longer describe a difference between the two sides.
 func TestPyTransformerTestEndpoints(t *testing.T) {
 	env := newTestEndpointsEnv(t)
 
@@ -67,17 +55,17 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					{"message": map[string]any{"messageId": "m2"}, "metadata": map[string]any{"messageId": "m2"}},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.Test, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.Test, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old status %d, old body: %s", oldStatus, oldBody)
-			resp := decodeFlow(t, newBody)
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old status %d, old body: %s", baselineStatus, baselineBody)
+			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 2)
 			for _, ev := range resp.TransformedEvents {
 				require.Equal(t, "bar", ev["foo"])
 			}
-			compareTestFlowBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, baselineBody, candidateBody)
 		})
 
 		t.Run("should fetch libraries from the config backend", func(t *testing.T) {
@@ -92,15 +80,15 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				},
 				"libraryVersionIDs": []string{libVersionID},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.Test, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.Test, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			resp := decodeFlow(t, newBody)
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			require.EqualValues(t, 42, resp.TransformedEvents[0]["doubled"])
-			compareTestFlowBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, baselineBody, candidateBody)
 		})
 
 		t.Run("should expose request credentials via getCredential", func(t *testing.T) {
@@ -115,15 +103,15 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				},
 				"credentials": []map[string]any{{"key": "API_KEY", "value": "secret123"}},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.Test, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.Test, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			resp := decodeFlow(t, newBody)
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			require.Equal(t, "secret123", resp.TransformedEvents[0]["secret"])
-			compareTestFlowBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, baselineBody, candidateBody)
 		})
 
 		t.Run("should keep a single event's error inline with HTTP 200", func(t *testing.T) {
@@ -138,13 +126,13 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					{"message": map[string]any{"messageId": "m1", "n": 1}, "metadata": map[string]any{"messageId": "m1"}},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.Test, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.Test, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
 
-			resp := decodeFlow(t, newBody)
+			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 2)
 			var errored []map[string]any
 			for _, ev := range resp.TransformedEvents {
@@ -157,7 +145,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			require.NotContains(t, errored[0], "metadata",
 				"errored /test elements are {error} only, matching rudder-transformer")
 
-			compareTestFlowBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, baselineBody, candidateBody)
 		})
 
 		// Both engines key per-event metadata by the message body's messageId,
@@ -174,16 +162,16 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					{"message": map[string]any{"messageId": "dup-1", "n": 2}, "metadata": map[string]any{"messageId": "dup-1", "sourceId": "s2"}},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.Test, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.Test, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			resp := decodeFlow(t, newBody)
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 2)
 			require.EqualValues(t, 2, resp.TransformedEvents[0]["doubled"])
 			require.EqualValues(t, 4, resp.TransformedEvents[1]["doubled"])
-			compareTestFlowBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, baselineBody, candidateBody)
 		})
 
 		// Metadata without a messageId is echoed as-is on errored elements —
@@ -200,18 +188,18 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					{"message": map[string]any{"messageId": "m1", "n": 1}, "metadata": map[string]any{"sourceId": "s1"}},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.Test, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.Test, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			resp := decodeFlow(t, newBody)
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 2)
 			errored := resp.TransformedEvents[1]
 			require.Contains(t, errored["error"], "no meta id")
 			require.NotContains(t, errored, "metadata",
 				"errored /test elements are {error} only, matching rudder-transformer")
-			compareTestFlowBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, baselineBody, candidateBody)
 		})
 
 		t.Run("should return HTTP 400 with a top-level error for a compile error", func(t *testing.T) {
@@ -226,17 +214,17 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					{"message": map[string]any{"messageId": "m1"}, "metadata": map[string]any{"messageId": "m1"}},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.Test, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.Test, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			// The wording deliberately differs: the old arch surfaces fn-ast's
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			// The wording deliberately differs: the baseline surfaces fn-ast's
 			// BadCodeError (its import extraction parses the code before the
 			// function is even deployed), pyt surfaces its runtime compiler's
 			// message. Both must carry Python's syntax diagnosis.
-			oldErr := decodeError(t, oldBody)
-			newErr := decodeError(t, newBody)
+			oldErr := decodeError(t, baselineBody)
+			newErr := decodeError(t, candidateBody)
 			t.Logf("compile error — old: %q new: %q", oldErr, newErr)
 			require.Contains(t, oldErr, "expected ':'")
 			require.Contains(t, newErr, "expected ':'")
@@ -249,13 +237,13 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					{"message": map[string]any{"messageId": "m1"}, "metadata": map[string]any{"messageId": "m1"}},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.Test, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.Test, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus)
-			require.Equal(t, "Error: Invalid Request. Missing parameters in transformation code block", decodeError(t, newBody))
-			require.Equal(t, decodeError(t, oldBody), decodeError(t, newBody))
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus)
+			require.Equal(t, "Error: Invalid Request. Missing parameters in transformation code block", decodeError(t, candidateBody))
+			require.Equal(t, decodeError(t, baselineBody), decodeError(t, candidateBody))
 		})
 
 		t.Run("should return the verbatim missing-events error", func(t *testing.T) {
@@ -267,22 +255,23 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				},
 				"events": []map[string]any{},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.Test, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.Test, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus)
-			require.Equal(t, "Error: Invalid request. Missing events", decodeError(t, newBody))
-			require.Equal(t, decodeError(t, oldBody), decodeError(t, newBody))
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus)
+			require.Equal(t, "Error: Invalid request. Missing events", decodeError(t, candidateBody))
+			require.Equal(t, decodeError(t, baselineBody), decodeError(t, candidateBody))
 		})
 
-		// Known security tightening: pyt compiles with RestrictedPython 8, whose
-		// transformer blocks generator/frame introspection attributes
-		// (INSPECT_ATTRIBUTES — the CVE-2023-37271 sandbox-escape fix: gi_frame,
-		// f_back, cr_frame, ...). The old architecture runs RestrictedPython 6.1,
-		// which predates the fix and only guards underscore-prefixed names, so
-		// the same code compiles AND executes there.
-		t.Run("should reject frame-introspection code the old architecture compiles and runs", func(t *testing.T) {
+		// Security property, not a parity check: pyt compiles with
+		// RestrictedPython 8, whose transformer blocks generator/frame
+		// introspection attributes (INSPECT_ATTRIBUTES — the CVE-2023-37271
+		// sandbox-escape fix: gi_frame, f_back, cr_frame, ...). openfaas ran
+		// RestrictedPython 6.1, which predates the fix, and this case existed to
+		// pin that tightening. Both versions must now reject it — a release that
+		// loosened it back would be a security regression.
+		t.Run("should reject frame-introspection code", func(t *testing.T) {
 			payload := map[string]any{
 				"trRevCode": map[string]any{
 					"code":        "def transformEvent(event, metadata):\n    gen = (x for x in [1])\n    event['has_frame'] = gen.gi_frame is None\n    return event",
@@ -293,26 +282,23 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					{"message": map[string]any{"messageId": "m1"}, "metadata": map[string]any{"messageId": "m1"}},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.Test, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.Test, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, payload)
 
-			require.Equal(t, http.StatusOK, oldStatus, "old architecture accepts, body: %s", oldBody)
-			oldResp := decodeFlow(t, oldBody)
-			require.Len(t, oldResp.TransformedEvents, 1)
-			require.Equal(t, false, oldResp.TransformedEvents[0]["has_frame"],
-				"old architecture executed the gi_frame access")
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "candidate must reject at compile, body: %s", candidateBody)
+			require.Contains(t, decodeError(t, candidateBody), "gi_frame")
+			require.Contains(t, decodeError(t, candidateBody), "restricted name")
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "pyt rejects at compile, body: %s", newBody)
-			require.Contains(t, decodeError(t, newBody), "gi_frame")
-			require.Contains(t, decodeError(t, newBody), "restricted name")
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
+			require.Equal(t, decodeError(t, baselineBody), decodeError(t, candidateBody))
 		})
 
-		// pyt-only: in the old architecture an unknown library version crashes
+		// pyt-only: in the baseline an unknown library version crashes
 		// the deployed flask container at startup (its --lvids fetch fails), so
 		// the request degenerates into a readiness-timeout/retry loop rather
 		// than a comparable 400.
 		t.Run("should return HTTP 400 when a library cannot be fetched", func(t *testing.T) {
-			newStatus, newBody := env.callNew(t, env.client.Test, map[string]any{
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.Test, map[string]any{
 				"trRevCode": map[string]any{
 					"code":        "def transformEvent(event, metadata):\n    return event",
 					"codeVersion": "1",
@@ -323,8 +309,8 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				},
 				"libraryVersionIDs": []string{"unknown-library-version"},
 			})
-			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
-			require.NotEmpty(t, decodeError(t, newBody))
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
+			require.NotEmpty(t, decodeError(t, candidateBody))
 		})
 	})
 
@@ -340,19 +326,19 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					{"message": map[string]any{"messageId": "m1"}, "metadata": map[string]any{"messageId": "m1", "sourceId": "s1"}},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/testRun", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestRun, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestRun, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			resp := decodeFlow(t, newBody)
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			el := resp.TransformedEvents[0]
 			transformed, ok := el["transformedEvent"].(map[string]any)
 			require.True(t, ok, "element carries the transformed event under the transformedEvent key, matching rudder-transformer")
 			require.Equal(t, "bar", transformed["foo"])
 			require.NotContains(t, el, "statusCode", "no statusCode, matching rudder-transformer")
-			compareTestFlowBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, baselineBody, candidateBody)
 		})
 
 		// Test-case metadata is user-authored JSON: neither engine validates its
@@ -376,18 +362,18 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/testRun", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestRun, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestRun, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			resp := decodeFlow(t, newBody)
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			meta, ok := resp.TransformedEvents[0]["metadata"].(map[string]any)
 			require.True(t, ok)
 			require.EqualValues(t, 123, meta["rudderId"], "int rudderId is echoed back, not rejected")
 			require.Contains(t, meta, "customKey", "unknown metadata keys are echoed back, not dropped")
-			compareTestFlowBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, baselineBody, candidateBody)
 		})
 
 		t.Run("should resolve dependencies libraries and credentials", func(t *testing.T) {
@@ -405,18 +391,18 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					"credentials": []map[string]any{{"key": "API_KEY", "value": "secret123"}},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/testRun", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestRun, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestRun, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			resp := decodeFlow(t, newBody)
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			transformed, ok := resp.TransformedEvents[0]["transformedEvent"].(map[string]any)
 			require.True(t, ok)
 			require.EqualValues(t, 42, transformed["doubled"])
 			require.Equal(t, "secret123", transformed["secret"])
-			compareTestFlowBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, baselineBody, candidateBody)
 		})
 
 		t.Run("should keep a per-event error inline with its metadata", func(t *testing.T) {
@@ -430,12 +416,12 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					{"message": map[string]any{"messageId": "m1"}, "metadata": map[string]any{"messageId": "m1"}},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/testRun", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestRun, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestRun, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			resp := decodeFlow(t, newBody)
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			el := resp.TransformedEvents[0]
 			require.Contains(t, el["error"], "boom")
@@ -443,7 +429,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 			require.True(t, ok, "errored /testRun elements keep the input event's metadata")
 			require.Equal(t, "m1", meta["messageId"])
 			require.NotContains(t, el, "statusCode", "no statusCode, matching rudder-transformer")
-			compareTestFlowBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, baselineBody, candidateBody)
 		})
 
 		// Both engines key echoed metadata by the message body's messageId, so
@@ -461,12 +447,12 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					{"message": map[string]any{"messageId": "dup-1", "n": 2}, "metadata": map[string]any{"messageId": "dup-1", "sourceId": "s2"}},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/testRun", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestRun, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestRun, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			resp := decodeFlow(t, newBody)
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 2)
 			for i, el := range resp.TransformedEvents {
 				transformed, ok := el["transformedEvent"].(map[string]any)
@@ -476,7 +462,7 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				require.True(t, ok)
 				require.Equal(t, "s2", meta["sourceId"], "last event's metadata wins for element %d", i)
 			}
-			compareTestFlowBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, baselineBody, candidateBody)
 		})
 
 		t.Run("should echo metadata without messageId as-is", func(t *testing.T) {
@@ -490,16 +476,16 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					{"message": map[string]any{"messageId": "m1"}, "metadata": map[string]any{"sourceId": "s1"}},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/testRun", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestRun, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestRun, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			resp := decodeFlow(t, newBody)
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			resp := decodeFlow(t, candidateBody)
 			require.Len(t, resp.TransformedEvents, 1)
 			require.Equal(t, map[string]any{"sourceId": "s1"}, resp.TransformedEvents[0]["metadata"],
 				"metadata is echoed as-is, without injecting a messageId")
-			compareTestFlowBodies(t, oldBody, newBody)
+			compareTestFlowBodies(t, baselineBody, candidateBody)
 		})
 
 		t.Run("should return HTTP 400 with a top-level error for a compile error", func(t *testing.T) {
@@ -514,15 +500,15 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					{"message": map[string]any{"messageId": "m1"}, "metadata": map[string]any{"messageId": "m1"}},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/testRun", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestRun, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestRun, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
 			// Wording deliberately differs (fn-ast BadCodeError vs pyt's runtime
 			// compiler); both must carry Python's syntax diagnosis.
-			oldErr := decodeError(t, oldBody)
-			newErr := decodeError(t, newBody)
+			oldErr := decodeError(t, baselineBody)
+			newErr := decodeError(t, candidateBody)
 			t.Logf("compile error — old: %q new: %q", oldErr, newErr)
 			require.Contains(t, oldErr, "expected ':'")
 			require.Contains(t, newErr, "expected ':'")
@@ -535,13 +521,13 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 					{"message": map[string]any{"messageId": "m1"}, "metadata": map[string]any{"messageId": "m1"}},
 				},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/testRun", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestRun, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestRun, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus)
-			require.Equal(t, "Error: Invalid Request. Missing parameters in transformation code block", decodeError(t, newBody))
-			require.Equal(t, decodeError(t, oldBody), decodeError(t, newBody))
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus)
+			require.Equal(t, "Error: Invalid Request. Missing parameters in transformation code block", decodeError(t, candidateBody))
+			require.Equal(t, decodeError(t, baselineBody), decodeError(t, candidateBody))
 		})
 
 		t.Run("should return the verbatim missing-events error", func(t *testing.T) {
@@ -553,13 +539,13 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				},
 				"input": []map[string]any{},
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformation/testRun", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestRun, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestRun, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestRun, payload)
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus)
-			require.Equal(t, "Error: Invalid request. Missing events", decodeError(t, newBody))
-			require.Equal(t, decodeError(t, oldBody), decodeError(t, newBody))
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus)
+			require.Equal(t, "Error: Invalid request. Missing events", decodeError(t, candidateBody))
+			require.Equal(t, decodeError(t, baselineBody), decodeError(t, candidateBody))
 		})
 	})
 
@@ -569,13 +555,13 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"code":     "import json\nimport datetime\ndef double(x):\n    return x * 2",
 				"language": "pythonfaas",
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformationLibrary/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestLibrary, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestLibrary, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestLibrary, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			require.Equal(t, map[string]any{"json": []any{}, "datetime": []any{}}, decodeImportMap(t, newBody))
-			require.Equal(t, decodeImportMap(t, oldBody), decodeImportMap(t, newBody))
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, map[string]any{"json": []any{}, "datetime": []any{}}, decodeImportMap(t, candidateBody))
+			require.Equal(t, decodeImportMap(t, baselineBody), decodeImportMap(t, candidateBody))
 		})
 
 		t.Run("should reject a non-whitelisted import with the runtime's message", func(t *testing.T) {
@@ -583,16 +569,16 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"code":     "import os\ndef double(x):\n    return x * 2",
 				"language": "pythonfaas",
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformationLibrary/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestLibrary, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestLibrary, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestLibrary, payload)
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
 			// The wording deliberately differs: fn-ast says "Unpermitted
 			// import(s). ...", pyt surfaces the runtime's message so static
 			// validation and runtime can't drift.
-			require.NotEmpty(t, decodeError(t, oldBody))
-			require.Contains(t, decodeError(t, newBody), "Import of 'os' is not allowed.")
+			require.NotEmpty(t, decodeError(t, baselineBody))
+			require.Contains(t, decodeError(t, candidateBody), "Import of 'os' is not allowed.")
 		})
 
 		t.Run("should key the import map by the module path as written", func(t *testing.T) {
@@ -600,49 +586,50 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"code":     "import urllib.parse\nfrom dateutil.parser import parse",
 				"language": "pythonfaas",
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformationLibrary/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestLibrary, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestLibrary, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestLibrary, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			require.Equal(t, map[string]any{"urllib.parse": []any{}, "dateutil.parser": []any{}}, decodeImportMap(t, newBody))
-			require.Equal(t, decodeImportMap(t, oldBody), decodeImportMap(t, newBody))
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, map[string]any{"urllib.parse": []any{}, "dateutil.parser": []any{}}, decodeImportMap(t, candidateBody))
+			require.Equal(t, decodeImportMap(t, baselineBody), decodeImportMap(t, candidateBody))
 		})
 
-		// Known security tightening: pyt's runtime blocks urllib.request (raw
-		// HTTP would bypass the requests wrappers), and its validator agrees
-		// with its runtime. fn-ast accepted it (only the top-level "urllib" is
-		// whitelisted-checked there).
-		t.Run("should reject urllib.request that the old architecture accepts", func(t *testing.T) {
+		// Security property, not a parity check: pyt's runtime blocks
+		// urllib.request (raw HTTP would bypass the requests wrappers) and its
+		// validator agrees with its runtime. openfaas's fn-ast accepted it (only
+		// the top-level "urllib" was whitelist-checked there), and this case
+		// existed to pin that tightening. Both versions must now reject it.
+		t.Run("should reject urllib.request", func(t *testing.T) {
 			payload := map[string]any{
 				"code":     "import urllib.request",
 				"language": "pythonfaas",
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformationLibrary/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestLibrary, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestLibrary, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestLibrary, payload)
 
-			require.Equal(t, http.StatusOK, oldStatus, "old architecture accepts, body: %s", oldBody)
-			require.Equal(t, map[string]any{"urllib.request": []any{}}, decodeImportMap(t, oldBody))
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "candidate must reject, body: %s", candidateBody)
+			require.Contains(t, decodeError(t, candidateBody), "Import of 'urllib.request' is not allowed.")
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "pyt rejects, body: %s", newBody)
-			require.Contains(t, decodeError(t, newBody), "Import of 'urllib.request' is not allowed.")
+			require.Equal(t, baselineStatus, candidateStatus, "baseline body: %s", baselineBody)
+			require.Equal(t, decodeError(t, baselineBody), decodeError(t, candidateBody))
 		})
 
 		// Both reject relative imports; the wording deliberately differs —
 		// fn-ast surfaces an incidental crash trace ("'NoneType' object has no
 		// attribute 'split'"), pyt a clean message.
-		t.Run("should reject relative imports like the old architecture", func(t *testing.T) {
+		t.Run("should reject relative imports", func(t *testing.T) {
 			payload := map[string]any{
 				"code":     "from . import helper",
 				"language": "pythonfaas",
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformationLibrary/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestLibrary, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestLibrary, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestLibrary, payload)
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			require.NotEmpty(t, decodeError(t, oldBody))
-			require.Equal(t, "Relative imports are not allowed.", decodeError(t, newBody))
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.NotEmpty(t, decodeError(t, baselineBody))
+			require.Equal(t, "Relative imports are not allowed.", decodeError(t, candidateBody))
 		})
 
 		t.Run("should return HTTP 400 for a syntax error", func(t *testing.T) {
@@ -650,26 +637,26 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"code":     "def double(x)\n    return x * 2",
 				"language": "pythonfaas",
 			}
-			oldStatus, oldBody := env.callOld(t, "/transformationLibrary/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestLibrary, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestLibrary, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestLibrary, payload)
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
 			// Wording deliberately differs (fn-ast BadCodeError vs pyt's runtime
 			// compiler); both must carry Python's syntax diagnosis.
-			require.Contains(t, decodeError(t, oldBody), "expected ':'")
-			require.Contains(t, decodeError(t, newBody), "expected ':'")
+			require.Contains(t, decodeError(t, baselineBody), "expected ':'")
+			require.Contains(t, decodeError(t, candidateBody), "expected ':'")
 		})
 
 		t.Run("should return the verbatim missing-code error", func(t *testing.T) {
 			payload := map[string]any{"language": "pythonfaas"}
-			oldStatus, oldBody := env.callOld(t, "/transformationLibrary/test", payload)
-			newStatus, newBody := env.callNew(t, env.client.TestLibrary, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.TestLibrary, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.TestLibrary, payload)
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus)
-			require.Equal(t, "Invalid request. Missing code", decodeError(t, newBody))
-			require.Equal(t, decodeError(t, oldBody), decodeError(t, newBody))
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus)
+			require.Equal(t, "Invalid request. Missing code", decodeError(t, candidateBody))
+			require.Equal(t, decodeError(t, baselineBody), decodeError(t, candidateBody))
 		})
 	})
 
@@ -680,13 +667,13 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"language":        "pythonfaas",
 				"validateImports": false,
 			}
-			oldStatus, oldBody := env.callOld(t, "/extractLibs", payload)
-			newStatus, newBody := env.callNew(t, env.client.ExtractLibs, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.ExtractLibs, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.ExtractLibs, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			require.Equal(t, map[string]any{"os": []any{}, "json": []any{}}, decodeImportMap(t, newBody))
-			require.Equal(t, decodeImportMap(t, oldBody), decodeImportMap(t, newBody))
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, map[string]any{"os": []any{}, "json": []any{}}, decodeImportMap(t, candidateBody))
+			require.Equal(t, decodeImportMap(t, baselineBody), decodeImportMap(t, candidateBody))
 		})
 
 		t.Run("should allow additional libraries under validation", func(t *testing.T) {
@@ -696,13 +683,13 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"validateImports":     true,
 				"additionalLibraries": []string{"mylib"},
 			}
-			oldStatus, oldBody := env.callOld(t, "/extractLibs", payload)
-			newStatus, newBody := env.callNew(t, env.client.ExtractLibs, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.ExtractLibs, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.ExtractLibs, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			require.Equal(t, map[string]any{"mylib": []any{}, "json": []any{}}, decodeImportMap(t, newBody))
-			require.Equal(t, decodeImportMap(t, oldBody), decodeImportMap(t, newBody))
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, map[string]any{"mylib": []any{}, "json": []any{}}, decodeImportMap(t, candidateBody))
+			require.Equal(t, decodeImportMap(t, baselineBody), decodeImportMap(t, candidateBody))
 		})
 
 		t.Run("should extract dotted imports with their full path when validation is off", func(t *testing.T) {
@@ -711,32 +698,32 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"language":        "pythonfaas",
 				"validateImports": false,
 			}
-			oldStatus, oldBody := env.callOld(t, "/extractLibs", payload)
-			newStatus, newBody := env.callNew(t, env.client.ExtractLibs, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.ExtractLibs, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.ExtractLibs, payload)
 
-			require.Equal(t, http.StatusOK, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			require.Equal(t, map[string]any{"os.path": []any{}}, decodeImportMap(t, newBody))
-			require.Equal(t, decodeImportMap(t, oldBody), decodeImportMap(t, newBody))
+			require.Equal(t, http.StatusOK, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.Equal(t, map[string]any{"os.path": []any{}}, decodeImportMap(t, candidateBody))
+			require.Equal(t, decodeImportMap(t, baselineBody), decodeImportMap(t, candidateBody))
 		})
 
 		// Both reject relative imports (regardless of validateImports); the
 		// wording deliberately differs — fn-ast surfaces an incidental crash
 		// trace ("'NoneType' object has no attribute 'split'"), pyt a clean
 		// message.
-		t.Run("should reject relative imports like the old architecture", func(t *testing.T) {
+		t.Run("should reject relative imports", func(t *testing.T) {
 			payload := map[string]any{
 				"code":            "from . import helper",
 				"language":        "pythonfaas",
 				"validateImports": false,
 			}
-			oldStatus, oldBody := env.callOld(t, "/extractLibs", payload)
-			newStatus, newBody := env.callNew(t, env.client.ExtractLibs, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.ExtractLibs, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.ExtractLibs, payload)
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
-			require.NotEmpty(t, decodeError(t, oldBody))
-			require.Equal(t, "Relative imports are not allowed.", decodeError(t, newBody))
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
+			require.NotEmpty(t, decodeError(t, baselineBody))
+			require.Equal(t, "Relative imports are not allowed.", decodeError(t, candidateBody))
 		})
 
 		t.Run("should reject a non-whitelisted import when validation is on", func(t *testing.T) {
@@ -745,14 +732,14 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"language":        "pythonfaas",
 				"validateImports": true,
 			}
-			oldStatus, oldBody := env.callOld(t, "/extractLibs", payload)
-			newStatus, newBody := env.callNew(t, env.client.ExtractLibs, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.ExtractLibs, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.ExtractLibs, payload)
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus, "old body: %s", oldBody)
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus, "old body: %s", baselineBody)
 			// Deliberate wording difference — see the test-library subtest above.
-			require.NotEmpty(t, decodeError(t, oldBody))
-			require.Contains(t, decodeError(t, newBody), "Import of 'os' is not allowed.")
+			require.NotEmpty(t, decodeError(t, baselineBody))
+			require.Contains(t, decodeError(t, candidateBody), "Import of 'os' is not allowed.")
 		})
 
 		t.Run("should return the verbatim missing-code error", func(t *testing.T) {
@@ -760,37 +747,35 @@ func TestPyTransformerTestEndpoints(t *testing.T) {
 				"language":        "pythonfaas",
 				"validateImports": true,
 			}
-			oldStatus, oldBody := env.callOld(t, "/extractLibs", payload)
-			newStatus, newBody := env.callNew(t, env.client.ExtractLibs, payload)
+			baselineStatus, baselineBody := env.callBaseline(t, env.client.ExtractLibs, payload)
+			candidateStatus, candidateBody := env.callCandidate(t, env.client.ExtractLibs, payload)
 
-			require.Equal(t, http.StatusBadRequest, newStatus, "body: %s", newBody)
-			require.Equal(t, oldStatus, newStatus)
-			require.Equal(t, "Invalid request. Code is missing", decodeError(t, newBody))
-			require.Equal(t, decodeError(t, oldBody), decodeError(t, newBody))
+			require.Equal(t, http.StatusBadRequest, candidateStatus, "body: %s", candidateBody)
+			require.Equal(t, baselineStatus, candidateStatus)
+			require.Equal(t, "Invalid request. Code is missing", decodeError(t, candidateBody))
+			require.Equal(t, decodeError(t, baselineBody), decodeError(t, candidateBody))
 		})
 	})
 }
 
 const (
-	// workspaceID is the workspace the new-architecture client calls are made as.
+	// workspaceID is the workspace the client calls are made as.
 	workspaceID = "ws-test-endpoints"
 	// libVersionID is the only library version the mock config backend serves.
 	libVersionID = "lib-mathhelper-v1"
 )
 
 // testEndpointsEnv is everything TestPyTransformerTestEndpoints' subtests need:
-// the old architecture reachable over plain HTTP (transformerURL) and the new
-// one through the production client.
+// the two rudder-pytransformer versions under comparison, both reached through
+// the production client.
 type testEndpointsEnv struct {
-	transformerURL   string
-	pyTransformerURL string
-	client           *usertransformer.Client
+	baselineURL  string
+	candidateURL string
+	client       *usertransformer.Client
 }
 
-// newTestEndpointsEnv brings up both architectures against a shared mock config
-// backend: rudder-transformer in test mode backed by the dynamic OpenFaaS
-// gateway (plus the long-lived fn-ast function it routes AST requests to), and
-// rudder-pytransformer with the production client pointed at it.
+// newTestEndpointsEnv brings up both rudder-pytransformer versions against a
+// shared mock config backend, with the production client pointed at them.
 func newTestEndpointsEnv(t *testing.T) *testEndpointsEnv {
 	t.Helper()
 
@@ -803,10 +788,9 @@ func newTestEndpointsEnv(t *testing.T) *testEndpointsEnv {
 	pool.MaxWait = time.Minute
 
 	// The inline test endpoints never fetch transformation code (it arrives in
-	// the request body). Libraries are fetched by rudder-transformer
-	// (getLibraryCodeV1: name/handleName), openfaas-flask-base (--lvids at
-	// startup: importName/code) and pyt (fetch_library: importName/code) — one
-	// response body serves all three.
+	// the request body). Libraries are fetched by pyt (fetch_library:
+	// importName/code). The extra name/handleName fields are harmless and keep
+	// the body shape identical to what the real config backend returns.
 	configBackendHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/transformationLibrary/getByVersionId" {
 			t.Logf("ConfigBackend: unexpected path %s", r.URL.Path)
@@ -829,12 +813,11 @@ func newTestEndpointsEnv(t *testing.T) *testEndpointsEnv {
 			"language":   "pythonfaas",
 		})
 	})
-	// The flask containers run in isolated bridge namespaces and reach this
-	// server through host.docker.internal. On Linux that resolves to the docker
-	// bridge IP, so the server must listen on all interfaces — httptest's
-	// default 127.0.0.1 binding is unreachable from inside the container. macOS
-	// Docker Desktop forwards host.docker.internal to the host loopback, so the
-	// default binding is fine there.
+	// Listen on all interfaces on Linux so the server stays reachable from a
+	// container in its own network namespace (host.docker.internal resolves to
+	// the docker bridge IP there, which httptest's default 127.0.0.1 binding
+	// does not answer). macOS Docker Desktop forwards host.docker.internal to
+	// the host loopback, so the default binding is fine there.
 	configBackend := httptest.NewUnstartedServer(configBackendHandler)
 	if runtime.GOOS != "darwin" {
 		ln, lerr := net.Listen("tcp", "0.0.0.0:0") //nolint:gosec // deliberate: must be reachable from the docker bridge
@@ -852,68 +835,59 @@ func newTestEndpointsEnv(t *testing.T) *testEndpointsEnv {
 	require.NoError(t, err)
 	configBackendURL := "http://127.0.0.1:" + configBackendPort
 
-	gateway := newDynamicFaasGateway(t, pool)
-
 	var (
-		wg                               sync.WaitGroup
-		transformerURL, pyTransformerURL string
+		wg                        sync.WaitGroup
+		baselineURL, candidateURL string
 	)
 	wg.Go(func() {
-		transformerURL = startRudderTransformer(t, pool, configBackendURL, gateway.server.URL,
-			"TRANSFORMER_TEST_MODE=true")
+		baselineURL = startBaselinePytransformer(t, pool, configBackendURL)
 	})
 	wg.Go(func() {
-		pyTransformerURL = startRudderPytransformer(t, pool, configBackendURL)
-	})
-	wg.Go(func() {
-		// The AST routes invoke the long-lived fn-ast function (versionId
-		// "ast" makes flask-base load its built-in AST parser instead of
-		// fetching code).
-		astURL, astContainer, err := startOpenFaasFlaskFprocess(t, pool, "python index.py --vid ast")
-		require.NoError(t, err, "failed to start fn-ast container")
-		waitForOpenFaasFlask(t, pool, astURL)
-		gateway.register("fn-ast", astURL, astContainer)
+		candidateURL = startRudderPytransformer(t, pool, configBackendURL)
 	})
 	wg.Wait()
 
 	// This mirrors production: cpservice.Forward resolves the target base URL
 	// (an ephemeral deployment, the prod pyt, or the static AST deployment) and
 	// passes it to the client per call — the client itself needs no pyt config.
-	// Here the single pyt container serves as the target for every call.
+	// One client serves both versions; only the base URL differs per call.
 	return &testEndpointsEnv{
-		transformerURL:   transformerURL,
-		pyTransformerURL: pyTransformerURL,
-		client:           usertransformer.New(config.New(), logger.NOP, stats.NOP),
+		baselineURL:  baselineURL,
+		candidateURL: candidateURL,
+		client:       usertransformer.New(config.New(), logger.NOP, stats.NOP),
 	}
 }
 
-// callOld POSTs payload to a rudder-transformer test route and returns the
-// HTTP status and body. These routes were only ever called by the control
-// plane (never rudder-server), so a plain HTTP call is the faithful client.
-func (env *testEndpointsEnv) callOld(t *testing.T, path string, payload map[string]any) (int, []byte) {
+// testEndpointMethod is the shape of the client's four test-flow entry points.
+type testEndpointMethod func(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error)
+
+// callBaseline sends payload through the given client method against the baseline
+// pytransformer container.
+func (env *testEndpointsEnv) callBaseline(t *testing.T, method testEndpointMethod, payload map[string]any) (int, []byte) {
 	t.Helper()
-	body, err := jsonrs.Marshal(payload)
-	require.NoError(t, err)
-	resp, err := http.Post(env.transformerURL+path, "application/json", bytes.NewReader(body))
-	require.NoError(t, err)
-	defer func() { _ = resp.Body.Close() }()
-	respBody, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	return resp.StatusCode, respBody
+	return env.call(t, method, env.baselineURL, payload)
 }
 
-// callNew marshals payload and sends it through the given client method
-// against the pyt container's base URL (the role cpservice.Forward plays in
-// production), returning the pyt HTTP status code and response body unchanged.
-func (env *testEndpointsEnv) callNew(
+// callCandidate sends payload through the given client method against the candidate
+// pytransformer container.
+func (env *testEndpointsEnv) callCandidate(t *testing.T, method testEndpointMethod, payload map[string]any) (int, []byte) {
+	t.Helper()
+	return env.call(t, method, env.candidateURL, payload)
+}
+
+// call marshals payload and sends it through the given client method against
+// one container's base URL (the role cpservice.Forward plays in production),
+// returning the pyt HTTP status code and response body unchanged.
+func (env *testEndpointsEnv) call(
 	t *testing.T,
-	method func(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error),
+	method testEndpointMethod,
+	baseURL string,
 	payload map[string]any,
 ) (int, []byte) {
 	t.Helper()
 	body, err := jsonrs.Marshal(payload)
 	require.NoError(t, err)
-	statusCode, respBody, err := method(context.Background(), env.pyTransformerURL, workspaceID, body)
+	statusCode, respBody, err := method(context.Background(), baseURL, workspaceID, body)
 	require.NoError(t, err)
 	return statusCode, respBody
 }
@@ -950,262 +924,17 @@ func decodeImportMap(t *testing.T, body []byte) map[string]any {
 	return resp
 }
 
-// compareTestFlowBodies compares old- and new-arch /test and /testRun bodies
+// compareTestFlowBodies compares baseline and candidate /test and /testRun bodies
 // element-by-element — byte-identical on both sides. /test elements are bare
 // transformed events on success and {error} on per-event failure; /testRun
 // elements are {transformedEvent|error, metadata}.
-func compareTestFlowBodies(t *testing.T, oldBody, newBody []byte) {
+func compareTestFlowBodies(t *testing.T, baselineBody, candidateBody []byte) {
 	t.Helper()
-	oldResp, newResp := decodeFlow(t, oldBody), decodeFlow(t, newBody)
-	require.Len(t, newResp.TransformedEvents, len(oldResp.TransformedEvents),
-		"old and new arch must return the same number of transformed events\nold: %s\nnew: %s", oldBody, newBody)
-	for i, oldEl := range oldResp.TransformedEvents {
-		require.Equal(t, oldEl, newResp.TransformedEvents[i], "transformed event %d", i)
+	baselineResp, candidateResp := decodeFlow(t, baselineBody), decodeFlow(t, candidateBody)
+	require.Len(t, candidateResp.TransformedEvents, len(baselineResp.TransformedEvents),
+		"old and candidate must return the same number of transformed events\nold: %s\nnew: %s", baselineBody, candidateBody)
+	for i, oldEl := range baselineResp.TransformedEvents {
+		require.Equal(t, oldEl, candidateResp.TransformedEvents[i], "transformed event %d", i)
 	}
-	require.Equal(t, oldResp.Logs, newResp.Logs, "logs must match")
-}
-
-// faasDeployRequest is the subset of the OpenFaaS deployment payload
-// (buildOpenfaasFn in rudder-transformer) the mock gateway needs.
-type faasDeployRequest struct {
-	Service    string `json:"service"`
-	Name       string `json:"name"`
-	EnvProcess string `json:"envProcess"`
-}
-
-// dynamicFaasGateway mocks the OpenFaaS gateway for the control-plane test flow.
-// Unlike newMockOpenFaaSGateway (fixed proxy target), it honours function
-// deployments: POST /system/functions starts a real openfaas-flask-base
-// container whose fprocess is the deployed envProcess — which is how test-mode
-// inline code reaches the old architecture (`python index.py --code "..."`).
-// Health checks and invocations are routed to the per-function container, and
-// DELETE purges it (rudder-transformer deletes test functions after each run).
-type dynamicFaasGateway struct {
-	t          *testing.T
-	pool       *dockertest.Pool
-	server     *httptest.Server
-	mu         sync.Mutex
-	fnURLs     map[string]string
-	containers map[string]*dockertest.Resource
-}
-
-func newDynamicFaasGateway(t *testing.T, pool *dockertest.Pool) *dynamicFaasGateway {
-	t.Helper()
-	g := &dynamicFaasGateway{
-		t:          t,
-		pool:       pool,
-		fnURLs:     map[string]string{},
-		containers: map[string]*dockertest.Resource{},
-	}
-	g.server = httptest.NewServer(http.HandlerFunc(g.handle))
-	t.Cleanup(g.server.Close)
-	return g
-}
-
-// register makes the gateway route /function/{name} traffic to the function's
-// container at url.
-func (g *dynamicFaasGateway) register(name, url string, container *dockertest.Resource) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.fnURLs[name] = url
-	g.containers[name] = container
-}
-
-func (g *dynamicFaasGateway) lookup(name string) (string, bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	url, ok := g.fnURLs[name]
-	return url, ok
-}
-
-func (g *dynamicFaasGateway) lookupContainer(name string) *dockertest.Resource {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return g.containers[name]
-}
-
-func (g *dynamicFaasGateway) handle(w http.ResponseWriter, r *http.Request) {
-	switch {
-	// Deploy function: start a flask-base container with the deployed envProcess.
-	case r.Method == http.MethodPost && r.URL.Path == "/system/functions":
-		var req faasDeployRequest
-		if err := jsonrs.NewDecoder(r.Body).Decode(&req); err != nil {
-			g.t.Errorf("DynamicFaasGateway: decoding deploy request: %v", err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		name := req.Service
-		if name == "" {
-			name = req.Name
-		}
-		// rudder-transformer builds the fprocess with the config-backend URL as
-		// the host sees it (127.0.0.1 on Linux). The flask container runs in its
-		// own bridge namespace, so rewrite host-local addresses to
-		// host.docker.internal so the function can reach the host. On macOS the
-		// URL is already host.docker.internal, so this is a no-op there.
-		envProcess := dockertesthelper.ToInternalDockerHost(req.EnvProcess)
-		g.t.Logf("DynamicFaasGateway: deploying %q with fprocess %q", name, envProcess)
-		url, container, err := startOpenFaasFlaskFprocess(g.t, g.pool, envProcess)
-		if err != nil {
-			g.t.Errorf("DynamicFaasGateway: starting flask container for %q: %v", name, err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		// Wait for the container to actually accept connections before returning
-		// 200. On Linux host networking the mapped port is unreachable
-		// (connection refused) until fwatchdog binds it — without this gate the
-		// caller invokes prematurely and the deploy appears to have failed.
-		if err := pollOpenFaasFlaskHealthy(g.pool, url); err != nil {
-			g.t.Errorf("DynamicFaasGateway: %q did not become healthy: %v", name, err)
-			dumpContainerLogs(g.t, g.pool, container, name)
-			_ = g.pool.Purge(container)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		g.register(name, url, container)
-		w.WriteHeader(http.StatusOK)
-
-	// Update function
-	case r.Method == http.MethodPut && r.URL.Path == "/system/functions":
-		w.WriteHeader(http.StatusOK)
-
-	// Delete function: purge its container.
-	case r.Method == http.MethodDelete && r.URL.Path == "/system/functions":
-		var req struct {
-			FunctionName string `json:"functionName"`
-		}
-		if err := jsonrs.NewDecoder(r.Body).Decode(&req); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		g.mu.Lock()
-		container := g.containers[req.FunctionName]
-		delete(g.containers, req.FunctionName)
-		delete(g.fnURLs, req.FunctionName)
-		g.mu.Unlock()
-		if container != nil {
-			if err := g.pool.Purge(container); err != nil {
-				g.t.Logf("DynamicFaasGateway: purging %q: %v", req.FunctionName, err)
-			}
-		}
-		w.WriteHeader(http.StatusOK)
-
-	// List functions
-	case r.Method == http.MethodGet && r.URL.Path == "/system/functions":
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte("[]"))
-
-	// Get function info
-	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/system/function/"):
-		name := strings.TrimPrefix(r.URL.Path, "/system/function/")
-		if _, ok := g.lookup(name); !ok {
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = fmt.Fprintf(w, "error finding function %s", name)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = jsonrs.NewEncoder(w).Encode(map[string]any{"name": name, "replicas": 1})
-
-	// Health check (GET) or invoke (POST) — proxied to the function's container.
-	case strings.HasPrefix(r.URL.Path, "/function/"):
-		name := strings.TrimPrefix(r.URL.Path, "/function/")
-		target, ok := g.lookup(name)
-		if !ok {
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = fmt.Fprintf(w, "error finding function %s", name)
-			return
-		}
-		switch r.Method {
-		case http.MethodGet:
-			// fwatchdog health check; 503 until the container is up.
-			req, err := http.NewRequest(http.MethodGet, target+"/", nil)
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			req.Header.Set("X-REQUEST-TYPE", "HEALTH-CHECK")
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				return
-			}
-			defer func() { _ = resp.Body.Close() }()
-			w.WriteHeader(resp.StatusCode)
-			_, _ = io.Copy(w, resp.Body)
-		case http.MethodPost:
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			resp, err := http.Post(target+"/", "application/json", bytes.NewReader(body))
-			if err != nil {
-				g.t.Logf("DynamicFaasGateway: invoking %q: %v", name, err)
-				w.WriteHeader(http.StatusBadGateway)
-				return
-			}
-			defer func() { _ = resp.Body.Close() }()
-			respBody, _ := io.ReadAll(resp.Body)
-			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				g.t.Logf("DynamicFaasGateway: invoke %q returned %d: %s", name, resp.StatusCode, respBody)
-				if c := g.lookupContainer(name); c != nil {
-					dumpContainerLogs(g.t, g.pool, c, name)
-				}
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(resp.StatusCode)
-			_, _ = w.Write(respBody)
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-
-	default:
-		g.t.Logf("DynamicFaasGateway: unhandled %s %s", r.Method, r.URL.Path)
-		w.WriteHeader(http.StatusNotFound)
-	}
-}
-
-// startOpenFaasFlaskFprocess starts an openfaas-flask-base container running
-// the given fprocess verbatim (as rudder-transformer deploys it). It does not
-// wait for readiness — callers gate on pollOpenFaasFlaskHealthy (the deploy
-// handler) or waitForOpenFaasFlask (fn-ast startup) before use. Returns an
-// error instead of failing the test because it is called from the gateway's
-// HTTP handler goroutine.
-//
-// Each flask container runs in its own bridge-network namespace — never host
-// networking, even on Linux — because of-watchdog binds a HARD-CODED Prometheus
-// metrics port 8081 that is not configurable via env. Under host networking two
-// flask containers (the long-lived fn-ast and a per-request fn-test) share the
-// host namespace and collide on 8081: of-watchdog panics with "bind: address
-// already in use", the container exits, and the invoke port never comes up
-// ("connection refused"). A per-container namespace keeps each 8081 private.
-func startOpenFaasFlaskFprocess(
-	t *testing.T, pool *dockertest.Pool, fprocess string,
-) (string, *dockertest.Resource, error) {
-	t.Helper()
-	const containerPort = "8080"
-	cfg := newContainerConfig(t, containerPort, withBridgeNetworking())
-	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/openfaas-flask",
-		// Pinned to match the production version
-		Tag:  "1.13.2",
-		Auth: registry.AuthConfiguration(),
-		Env: []string{
-			"fprocess=" + fprocess,
-			"port=" + cfg.portStr(containerPort),
-		},
-		// The image does not EXPOSE any port, and Docker ignores port bindings
-		// for unexposed ports.
-		ExposedPorts: []string{containerPort + "/tcp"},
-		ExtraHosts:   cfg.ExtraHosts,
-		PortBindings: cfg.PortBindings,
-	}, cfg.hostConfigFn)
-	if err != nil {
-		return "", nil, err
-	}
-	t.Cleanup(func() {
-		// Best effort: functions deleted by rudder-transformer are already gone.
-		_ = pool.Purge(container)
-	})
-	return cfg.url(container, containerPort), container, nil
+	require.Equal(t, baselineResp.Logs, candidateResp.Logs, "logs must match")
 }

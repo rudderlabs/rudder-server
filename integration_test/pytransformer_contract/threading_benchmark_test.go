@@ -124,12 +124,12 @@ func TestThreadingBenchmark(t *testing.T) {
 	}
 
 	t.Logf("Starting baseline pytransformer (threading OFF)...")
-	baselineEP := startRudderPytransformerWithTag(
+	baselineEP := startBenchPytransformerWithTag(
 		t, pool, imageTag, configBackend.URL,
 		append(commonEnv, "ENABLE_THREAD_POOL_IO_BOUND=false")...,
 	)
 	t.Logf("Starting threaded pytransformer (threading ON)...")
-	threadedEP := startRudderPytransformerWithTag(
+	threadedEP := startBenchPytransformerWithTag(
 		t, pool, imageTag, configBackend.URL,
 		append(commonEnv, "ENABLE_THREAD_POOL_IO_BOUND=true")...,
 	)

@@ -53,6 +53,19 @@ const (
 	defaultRetryRudderErrorsMultiplier      = 2.0
 )
 
+// Headers of the transformer's retryable-error contract.
+// A transformer that is up and answering signals a transient downstream failure with HTTP 503 plus these headers,
+// so callers can retry the request instead of concluding that the transformer itself is unavailable.
+//
+// The peer half of this contract lives in rudder-pytransformer, which necessarily hardcodes the same strings, so these
+// values are a wire format: renaming the constants is free, changing their values is a breaking change on both sides.
+const (
+	// HeaderShouldRetry is "true" when the response is worth retrying.
+	HeaderShouldRetry = "X-Rudder-Should-Retry"
+	// HeaderErrorReason carries a short cause, used as a stat tag.
+	HeaderErrorReason = "X-Rudder-Error-Reason"
+)
+
 type ClientConfig struct {
 	TransportConfig struct {
 		DisableKeepAlives   bool          //	true
@@ -226,8 +239,8 @@ func newRetryableHTTPClient(name string, baseClient Client, retryableConfig *ret
 				return false, backoff.Permanent(err)
 			}
 			if resp.StatusCode == http.StatusServiceUnavailable &&
-				strings.ToLower(resp.Header.Get("X-Rudder-Should-Retry")) == "true" {
-				reason := resp.Header.Get("X-Rudder-Error-Reason")
+				strings.EqualFold(resp.Header.Get(HeaderShouldRetry), "true") {
+				reason := resp.Header.Get(HeaderErrorReason)
 				attemptTag := strconv.Itoa(attempt)
 				if attempt > 4 {
 					attemptTag = "5+"

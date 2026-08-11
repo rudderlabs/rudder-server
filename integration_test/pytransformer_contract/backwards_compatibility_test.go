@@ -17,13 +17,12 @@ import (
 	utilstypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
-// TestBackwardsCompatibility compares responses from the old architecture
-// (rudder-transformer + openfaas-flask-base) against the new architecture
-// (rudder-pytransformer) for various edge cases.
+// TestBackwardsCompatibility compares responses from the baseline
+// rudder-pytransformer against the candidate one for various edge cases.
 //
-// rudder-transformer and rudder-pytransformer are started once and shared
-// across all subtests. Each subtest gets its own openfaas-flask-base container
-// since openfaas loads transformation code at startup (one version per container).
+// Both containers are started once and shared across all subtests: each fetches
+// transformation code per request from the shared mock config backend, so one
+// container per version serves every versionID.
 func TestBackwardsCompatibility(t *testing.T) {
 	type subtest struct {
 		name                string
@@ -38,8 +37,8 @@ func TestBackwardsCompatibility(t *testing.T) {
 			name:      "TransformationCodeNotFound",
 			versionID: "bc-not-found-v1",
 			// config is zero-value — versionId is NOT registered in config backend.
-			// Config backend returns 404 for unknown versionIds.
-			// No openfaas container is needed (error happens before execution).
+			// Config backend returns 404 for unknown versionIds, so the error
+			// happens before the transformation ever executes.
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionId = "bc-not-found-v1"
 
@@ -48,22 +47,22 @@ func TestBackwardsCompatibility(t *testing.T) {
 					makeEvent("msg-2", versionId),
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
-				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
+				require.True(t, len(baselineResp.FailedEvents) > 0, "baseline: expected at least 1 failed event")
+				require.True(t, len(candidateResp.FailedEvents) > 0, "candidate: expected at least 1 failed event")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical error responses for unknown versionId")
+					t.Log("Both versions produce identical error responses for unknown versionId")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -88,23 +87,23 @@ def transformEvent(event, metadata):
 					makeEvent("msg-1", versionId),
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// Both should expand 1 input event into 3 output events (including one without messageId)
-				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 expanded events expected")
-				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-				require.Equal(t, 3, len(newResp.Events), "new arch: 3 expanded events expected")
-				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+				require.Equal(t, 3, len(baselineResp.Events), "baseline: 3 expanded events expected")
+				require.Equal(t, 0, len(baselineResp.FailedEvents), "baseline: no failed events expected")
+				require.Equal(t, 3, len(candidateResp.Events), "candidate: 3 expanded events expected")
+				require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical expanded event responses")
+					t.Log("Both versions produce identical expanded event responses")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -129,37 +128,37 @@ def helper(event):
 					makeEvent("msg-1", versionId),
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 1, len(oldResp.FailedEvents), "old arch: 1 failed event expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 1, len(baselineResp.FailedEvents), "baseline: 1 failed event expected")
+				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
+				require.Equal(t, 1, len(candidateResp.FailedEvents), "candidate: 1 failed event expected")
 
-				oldError := oldResp.FailedEvents[0].Error
-				newError := newResp.FailedEvents[0].Error
+				baselineError := baselineResp.FailedEvents[0].Error
+				candidateError := candidateResp.FailedEvents[0].Error
 
-				t.Logf("Old arch error message:\n%s", oldError)
-				t.Logf("New arch error message:\n%s", newError)
+				t.Logf("Baseline error message:\n%s", baselineError)
+				t.Logf("Candidate error message:\n%s", candidateError)
 
-				require.Contains(t, oldError, "intentional error for testing", "old arch: error should contain the message")
-				require.Contains(t, newError, "intentional error for testing", "new arch: error should contain the message")
+				require.Contains(t, baselineError, "intentional error for testing", "baseline: error should contain the message")
+				require.Contains(t, candidateError, "intentional error for testing", "candidate: error should contain the message")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical error messages")
+					t.Log("Both versions produce identical error messages")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 
-					if len(oldError) > len(newError) {
-						t.Logf("Old arch error is longer (%d chars vs %d chars), likely contains stack trace",
-							len(oldError), len(newError))
+					if len(baselineError) > len(candidateError) {
+						t.Logf("Baseline error is longer (%d chars vs %d chars), likely contains stack trace",
+							len(baselineError), len(candidateError))
 					}
 				}
 			},
@@ -180,32 +179,32 @@ def transformBatch(events, metadata):
 					makeEvent("msg-3", versionId),
 				}
 
-				t.Log("Sending 3 events to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending 3 events to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending 3 events to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending 3 events to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				for i, fe := range oldResp.FailedEvents {
-					t.Logf("Old arch FailedEvent[%d]: statusCode=%d, error=%q, messageId=%q, messageIds=%v",
+				for i, fe := range baselineResp.FailedEvents {
+					t.Logf("Baseline FailedEvent[%d]: statusCode=%d, error=%q, messageId=%q, messageIds=%v",
 						i, fe.StatusCode, fe.Error, fe.Metadata.MessageID, fe.Metadata.MessageIDs)
 				}
-				for i, fe := range newResp.FailedEvents {
-					t.Logf("New arch FailedEvent[%d]: statusCode=%d, error=%q, messageId=%q, messageIds=%v",
+				for i, fe := range candidateResp.FailedEvents {
+					t.Logf("Candidate FailedEvent[%d]: statusCode=%d, error=%q, messageId=%q, messageIds=%v",
 						i, fe.StatusCode, fe.Error, fe.Metadata.MessageID, fe.Metadata.MessageIDs)
 				}
 
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Logf("Both architectures returned %d failed events", len(oldResp.FailedEvents))
+					t.Logf("Both versions returned %d failed events", len(baselineResp.FailedEvents))
 				} else {
-					t.Logf("Old arch: %d failed events, New arch: %d failed events",
-						len(oldResp.FailedEvents), len(newResp.FailedEvents))
+					t.Logf("Baseline: %d failed events, Candidate: %d failed events",
+						len(baselineResp.FailedEvents), len(candidateResp.FailedEvents))
 					t.Errorf("Responses differ:\n%s", diff)
 				}
 			},
@@ -224,26 +223,26 @@ def transformEvent(event, metadata):
 					makeEvent("msg-1", versionId),
 				}
 
-				t.Log("Sending request to old architecture (rudder-transformer + openfaas)...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline pytransformer...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture (rudder-pytransformer)...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate (rudder-pytransformer)...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 1, len(oldResp.FailedEvents), "old arch: 1 failed event expected")
-				t.Logf("Old arch error: statusCode=%d, error=%q", oldResp.FailedEvents[0].StatusCode, oldResp.FailedEvents[0].Error)
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 1, len(baselineResp.FailedEvents), "baseline: 1 failed event expected")
+				t.Logf("Baseline error: statusCode=%d, error=%q", baselineResp.FailedEvents[0].StatusCode, baselineResp.FailedEvents[0].Error)
 
-				if len(newResp.FailedEvents) > 0 {
-					t.Logf("New arch error: statusCode=%d, error=%q", newResp.FailedEvents[0].StatusCode, newResp.FailedEvents[0].Error)
+				if len(candidateResp.FailedEvents) > 0 {
+					t.Logf("Candidate error: statusCode=%d, error=%q", candidateResp.FailedEvents[0].StatusCode, candidateResp.FailedEvents[0].Error)
 				}
-				if len(newResp.Events) > 0 {
-					t.Logf("New arch success: statusCode=%d, output=%v", newResp.Events[0].StatusCode, newResp.Events[0].Output)
+				if len(candidateResp.Events) > 0 {
+					t.Logf("Candidate success: statusCode=%d, output=%v", candidateResp.Events[0].StatusCode, candidateResp.Events[0].Output)
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
 					t.Log("Responses are equal")
 				} else {
@@ -288,20 +287,20 @@ def transformEvent(event, metadata):
 					},
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 0, len(baselineResp.FailedEvents), "baseline: no failed events expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
+				require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
 
-				newOutput := newResp.Events[0].Output
+				newOutput := candidateResp.Events[0].Output
 				require.Equal(t, "src-1", newOutput["sourceId"])
 				require.Equal(t, "2", newOutput["instanceId"])
 				require.Equal(t, "ws-1-42", newOutput["partitionId"])
@@ -320,7 +319,7 @@ def transformEvent(event, metadata):
 					require.Falsef(t, ok, "key %q should stay absent when it wasn't present in the input metadata", key)
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
 					t.Log("Responses are equal")
 				} else {
@@ -373,13 +372,13 @@ def transformEvent(event, metadata):
 						},
 					},
 				}
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				newResp := env.NewClient.Transform(context.Background(), events)
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
-				diff, equal := oldResp.Equal(&newResp)
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 0, len(baselineResp.FailedEvents), "baseline: no failed events expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
+				require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
 					t.Log("Responses are equal")
 				} else {
@@ -407,49 +406,49 @@ def transformEvent(event, metadata):
 				}
 
 				oldStartedAt := time.Now().UTC()
-				oldResp := env.OldClient.Transform(context.Background(), events)
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
 				oldFinishedAt := time.Now().UTC()
 
 				newStartedAt := time.Now().UTC()
-				newResp := env.NewClient.Transform(context.Background(), events)
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
 				newFinishedAt := time.Now().UTC()
 
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 0, len(baselineResp.FailedEvents), "baseline: no failed events expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
+				require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
 
-				oldTimestamp, ok := oldResp.Events[0].Output["rudderstackTransformedUtc"].(string)
-				require.True(t, ok, "old arch: generated timestamp should be present")
-				newTimestamp, ok := newResp.Events[0].Output["rudderstackTransformedUtc"].(string)
-				require.True(t, ok, "new arch: generated timestamp should be present")
+				oldTimestamp, ok := baselineResp.Events[0].Output["rudderstackTransformedUtc"].(string)
+				require.True(t, ok, "baseline: generated timestamp should be present")
+				newTimestamp, ok := candidateResp.Events[0].Output["rudderstackTransformedUtc"].(string)
+				require.True(t, ok, "candidate: generated timestamp should be present")
 
 				oldParsed, err := time.ParseInLocation(time.DateTime, oldTimestamp, time.UTC)
-				require.NoError(t, err, "old arch: generated timestamp should parse")
+				require.NoError(t, err, "baseline: generated timestamp should parse")
 				newParsed, err := time.ParseInLocation(time.DateTime, newTimestamp, time.UTC)
-				require.NoError(t, err, "new arch: generated timestamp should parse")
+				require.NoError(t, err, "candidate: generated timestamp should parse")
 
-				require.False(t, oldParsed.Before(oldStartedAt.Add(-time.Second)), "old arch timestamp should be created during the old request window")
-				require.False(t, oldParsed.After(oldFinishedAt.Add(time.Second)), "old arch timestamp should be created during the old request window")
-				require.False(t, newParsed.Before(newStartedAt.Add(-time.Second)), "new arch timestamp should be created during the new request window")
-				require.False(t, newParsed.After(newFinishedAt.Add(time.Second)), "new arch timestamp should be created during the new request window")
+				require.False(t, oldParsed.Before(oldStartedAt.Add(-time.Second)), "baseline timestamp should be created during the old request window")
+				require.False(t, oldParsed.After(oldFinishedAt.Add(time.Second)), "baseline timestamp should be created during the old request window")
+				require.False(t, newParsed.Before(newStartedAt.Add(-time.Second)), "candidate timestamp should be created during the new request window")
+				require.False(t, newParsed.After(newFinishedAt.Add(time.Second)), "candidate timestamp should be created during the new request window")
 				if oldTimestamp != newTimestamp {
 					t.Logf("Timestamps differ as expected: old=%s new=%s", oldTimestamp, newTimestamp)
 				} else {
 					t.Log("Timestamps happened to land in the same second — datetime matching path not exercised this run")
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
 					t.Log("Responses are equal once datetime matching is applied")
 				} else {
 					t.Errorf("Responses differ despite datetime matching:\n%s", diff)
 				}
 
-				delete(oldResp.Events[0].Output, "rudderstackTransformedUtc")
-				delete(newResp.Events[0].Output, "rudderstackTransformedUtc")
+				delete(baselineResp.Events[0].Output, "rudderstackTransformedUtc")
+				delete(candidateResp.Events[0].Output, "rudderstackTransformedUtc")
 
-				require.Equal(t, oldResp, newResp, "execution-time field should be the only raw response difference")
+				require.Equal(t, baselineResp, candidateResp, "execution-time field should be the only raw response difference")
 			},
 		},
 		{
@@ -476,7 +475,7 @@ def transformBatch(events, metadata):
 							DestinationID: "dest-1",
 							WorkspaceID:   "ws-1",
 							MessageID:     "msg-1",
-							// Non-curated fields that should be stripped by old arch but kept by new arch:
+							// Non-curated fields that should be stripped by baseline but kept by candidate:
 							TraceParent: "00-trace-id-span-id-01",
 						},
 						Destination: backendconfig.DestinationT{
@@ -487,38 +486,38 @@ def transformBatch(events, metadata):
 					},
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// Both should succeed
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
-				oldMeta := oldResp.Events[0].Metadata
-				newMeta := newResp.Events[0].Metadata
+				oldMeta := baselineResp.Events[0].Metadata
+				newMeta := candidateResp.Events[0].Metadata
 
-				t.Logf("Old arch metadata: TraceParent=%q, SourceID=%q, MessageID=%q",
+				t.Logf("Baseline metadata: TraceParent=%q, SourceID=%q, MessageID=%q",
 					oldMeta.TraceParent, oldMeta.SourceID, oldMeta.MessageID)
-				t.Logf("New arch metadata: TraceParent=%q, SourceID=%q, MessageID=%q",
+				t.Logf("Candidate metadata: TraceParent=%q, SourceID=%q, MessageID=%q",
 					newMeta.TraceParent, newMeta.SourceID, newMeta.MessageID)
 
 				// Control: both should have curated fields
-				require.Equal(t, "src-1", oldMeta.SourceID, "old arch: sourceId should be present")
-				require.Equal(t, "src-1", newMeta.SourceID, "new arch: sourceId should be present")
+				require.Equal(t, "src-1", oldMeta.SourceID, "baseline: sourceId should be present")
+				require.Equal(t, "src-1", newMeta.SourceID, "candidate: sourceId should be present")
 
 				// Compare: responses should be equal after Go unmarshaling (non-curated metadata differences are not observable)
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
 					t.Log("Responses are equal")
 					t.Log("This means the metadata difference is not observable after Go unmarshaling")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
-					t.Logf("Old arch TraceParent=%q (expected empty), New arch TraceParent=%q (expected set)",
+					t.Logf("Baseline TraceParent=%q (expected empty), Candidate TraceParent=%q (expected set)",
 						oldMeta.TraceParent, newMeta.TraceParent)
 				}
 			},
@@ -541,17 +540,17 @@ def transformEvent(event, metadata):
 					makeEvent("body-msg-2", versionID),
 				}
 
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				require.Len(t, oldResp.FailedEvents, 1, "old arch: 1 failed event expected")
-				require.Len(t, oldResp.Events, 1, "old arch: 1 event expected")
-				require.EqualValues(t, utilstypes.FilterEventCode, oldResp.FailedEvents[0].StatusCode, "old arch: 298 filter detected")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				require.Len(t, baselineResp.FailedEvents, 1, "baseline: 1 failed event expected")
+				require.Len(t, baselineResp.Events, 1, "baseline: 1 event expected")
+				require.EqualValues(t, utilstypes.FilterEventCode, baselineResp.FailedEvents[0].StatusCode, "baseline: 298 filter detected")
 
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// Compare: responses may differ in the 298 response metadata
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
 					t.Log("Responses are equal")
 					t.Log("This means the messageId source difference doesn't affect the output")
@@ -565,17 +564,17 @@ def transformEvent(event, metadata):
 					makeEvent("body-msg-4", versionID),
 				}
 
-				oldResp = env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				require.Len(t, oldResp.FailedEvents, 2)
-				require.Len(t, oldResp.Events, 0)
-				require.EqualValues(t, utilstypes.FilterEventCode, oldResp.FailedEvents[0].StatusCode, "old arch: 298 filter detected")
+				baselineResp = env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				require.Len(t, baselineResp.FailedEvents, 2)
+				require.Len(t, baselineResp.Events, 0)
+				require.EqualValues(t, utilstypes.FilterEventCode, baselineResp.FailedEvents[0].StatusCode, "baseline: 298 filter detected")
 
-				newResp = env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				candidateResp = env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// Compare: responses may differ in the 298 response metadata
-				diff, equal = oldResp.Equal(&newResp)
+				diff, equal = baselineResp.Equal(&candidateResp)
 				if equal {
 					t.Log("Responses are equal")
 					t.Log("This means the messageId source difference doesn't affect the output")
@@ -637,15 +636,15 @@ def transformEvent(event, metadata):
 					},
 				}
 
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				// When all events are filtered, both architectures should produce 298 responses.
+				// When all events are filtered, both versions should produce 298 responses.
 				// The X-Feature-Filter-Code header is set by the usertransformer client.
 				// Status 298 goes to FailedEvents (not 200).
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
 					t.Log("Responses are equal")
 					t.Log("This means the messageId source difference doesn't affect the output")
@@ -666,19 +665,19 @@ def transformEvent(event, metadata):
 					makeEvent("msg-2", versionID),
 				}
 
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
-				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
+				require.True(t, len(baselineResp.FailedEvents) > 0, "baseline: expected at least 1 failed event")
+				require.True(t, len(candidateResp.FailedEvents) > 0, "candidate: expected at least 1 failed event")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for empty config backend body")
+					t.Log("Both versions produce identical responses for empty config backend body")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -696,19 +695,19 @@ def transformEvent(event, metadata):
 					makeEvent("msg-2", versionID),
 				}
 
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
-				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
+				require.True(t, len(baselineResp.FailedEvents) > 0, "baseline: expected at least 1 failed event")
+				require.True(t, len(candidateResp.FailedEvents) > 0, "candidate: expected at least 1 failed event")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for unexpected config backend body")
+					t.Log("Both versions produce identical responses for unexpected config backend body")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -726,19 +725,19 @@ def transformEvent(event, metadata):
 					makeEvent("msg-2", versionID),
 				}
 
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
-				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
+				require.True(t, len(baselineResp.FailedEvents) > 0, "baseline: expected at least 1 failed event")
+				require.True(t, len(candidateResp.FailedEvents) > 0, "candidate: expected at least 1 failed event")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for 404 config backend")
+					t.Log("Both versions produce identical responses for 404 config backend")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -757,18 +756,18 @@ def transformEvent(event, metadata):
 					makeEvent("msg-2", versionID),
 				}
 
-				// Old arch: transformer returns 809 (CP down) → failed events
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
+				// Baseline: transformer returns 809 (CP down) → failed events
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.True(t, len(baselineResp.FailedEvents) > 0, "baseline: expected at least 1 failed event")
 
-				// New arch: pytransformer returns 503 + retry for config backend 5xx
-				// → retries exhausted → failed events (different status code from old arch)
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+				// Candidate: pytransformer returns 503 + retry for config backend 5xx
+				// → retries exhausted → failed events (different status code from baseline)
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
+				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
+				require.True(t, len(candidateResp.FailedEvents) > 0, "candidate: expected at least 1 failed event")
 			},
 		},
 		{
@@ -790,18 +789,18 @@ def transformEvent(event, metadata):
 							makeEvent("msg-2", versionID),
 						}
 
-						// Old arch: transformer returns 809 (CP down) → failed events
-						oldResp := env.OldClient.Transform(context.Background(), events)
-						t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-						require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-						require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
+						// Baseline: transformer returns 809 (CP down) → failed events
+						baselineResp := env.BaselineClient.Transform(context.Background(), events)
+						t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+						require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+						require.True(t, len(baselineResp.FailedEvents) > 0, "baseline: expected at least 1 failed event")
 
-						// New arch: pytransformer returns 503 + retry for config backend 5xx
-						// → retries exhausted → failed events (different status code from old arch)
-						newResp := env.NewClient.Transform(context.Background(), events)
-						t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-						require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-						require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+						// Candidate: pytransformer returns 503 + retry for config backend 5xx
+						// → retries exhausted → failed events (different status code from baseline)
+						candidateResp := env.CandidateClient.Transform(context.Background(), events)
+						t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
+						require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
+						require.True(t, len(candidateResp.FailedEvents) > 0, "candidate: expected at least 1 failed event")
 					})
 				}
 			},
@@ -818,21 +817,21 @@ def transformEvent(event, metadata):
 					makeEvent("msg-2", versionID),
 				}
 
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
-				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
+				require.True(t, len(baselineResp.FailedEvents) > 0, "baseline: expected at least 1 failed event")
+				require.True(t, len(candidateResp.FailedEvents) > 0, "candidate: expected at least 1 failed event")
 
-				normalizeResponseErrors(&oldResp)
-				normalizeResponseErrors(&newResp)
-				diff, equal := oldResp.Equal(&newResp)
+				normalizeResponseErrors(&baselineResp)
+				normalizeResponseErrors(&candidateResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for 400 config backend")
+					t.Log("Both versions produce identical responses for 400 config backend")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -859,31 +858,31 @@ def transformEvent(event, metadata):
 					events[i] = makeEvent(fmt.Sprintf("msg-%d", i+1), versionId)
 				}
 
-				t.Log("Sending 10 events to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending 10 events to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending 10 events to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending 10 events to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// 8 events should succeed, 2 should fail
-				require.Equal(t, 8, len(oldResp.Events), "old arch: 8 success events expected")
-				require.Equal(t, 2, len(oldResp.FailedEvents), "old arch: 2 failed events expected")
-				require.Equal(t, 8, len(newResp.Events), "new arch: 8 success events expected")
-				require.Equal(t, 2, len(newResp.FailedEvents), "new arch: 2 failed events expected")
+				require.Equal(t, 8, len(baselineResp.Events), "baseline: 8 success events expected")
+				require.Equal(t, 2, len(baselineResp.FailedEvents), "baseline: 2 failed events expected")
+				require.Equal(t, 8, len(candidateResp.Events), "candidate: 8 success events expected")
+				require.Equal(t, 2, len(candidateResp.FailedEvents), "candidate: 2 failed events expected")
 
 				// Log error details
-				for i, fe := range oldResp.FailedEvents {
-					t.Logf("Old arch FailedEvent[%d]: statusCode=%d, error=%q", i, fe.StatusCode, fe.Error)
+				for i, fe := range baselineResp.FailedEvents {
+					t.Logf("Baseline FailedEvent[%d]: statusCode=%d, error=%q", i, fe.StatusCode, fe.Error)
 				}
-				for i, fe := range newResp.FailedEvents {
-					t.Logf("New arch FailedEvent[%d]: statusCode=%d, error=%q", i, fe.StatusCode, fe.Error)
+				for i, fe := range candidateResp.FailedEvents {
+					t.Logf("Candidate FailedEvent[%d]: statusCode=%d, error=%q", i, fe.StatusCode, fe.Error)
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for partial errors")
+					t.Log("Both versions produce identical responses for partial errors")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -907,35 +906,35 @@ def transformEvent(event, metadata):
 					makeEvent("msg-3", versionId),
 				}
 
-				t.Log("Sending 3 events to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending 3 events to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending 3 events to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending 3 events to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// All 3 should succeed
-				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
-				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
-				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+				require.Equal(t, 3, len(baselineResp.Events), "baseline: 3 success events expected")
+				require.Equal(t, 0, len(baselineResp.FailedEvents), "baseline: no failed events expected")
+				require.Equal(t, 3, len(candidateResp.Events), "candidate: 3 success events expected")
+				require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
 
 				// Verify tampering was applied
-				for i, ev := range oldResp.Events {
+				for i, ev := range baselineResp.Events {
 					output := ev.Output
-					t.Logf("Old arch Event[%d]: messageId=%v, originalMessageId=%v, metadata.messageId=%v",
+					t.Logf("Baseline Event[%d]: messageId=%v, originalMessageId=%v, metadata.messageId=%v",
 						i, output["messageId"], output["originalMessageId"], ev.Metadata.MessageID)
 				}
-				for i, ev := range newResp.Events {
+				for i, ev := range candidateResp.Events {
 					output := ev.Output
-					t.Logf("New arch Event[%d]: messageId=%v, originalMessageId=%v, metadata.messageId=%v",
+					t.Logf("Candidate Event[%d]: messageId=%v, originalMessageId=%v, metadata.messageId=%v",
 						i, output["messageId"], output["originalMessageId"], ev.Metadata.MessageID)
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for messageId tampering")
+					t.Log("Both versions produce identical responses for messageId tampering")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -953,20 +952,20 @@ def transformEvent(event, metadata):
 					makeEvent("msg-2", versionID),
 				}
 
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
-				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
+				require.True(t, len(baselineResp.FailedEvents) > 0, "baseline: expected at least 1 failed event")
+				require.True(t, len(candidateResp.FailedEvents) > 0, "candidate: expected at least 1 failed event")
 
-				// Only compare status codes — error messages may differ between architectures
-				require.Equal(t, len(oldResp.FailedEvents), len(newResp.FailedEvents), "failed event count mismatch")
-				for i := range oldResp.FailedEvents {
-					require.Equal(t, oldResp.FailedEvents[i].StatusCode, newResp.FailedEvents[i].StatusCode,
+				// Only compare status codes — error messages may differ between versions
+				require.Equal(t, len(baselineResp.FailedEvents), len(candidateResp.FailedEvents), "failed event count mismatch")
+				for i := range baselineResp.FailedEvents {
+					require.Equal(t, baselineResp.FailedEvents[i].StatusCode, candidateResp.FailedEvents[i].StatusCode,
 						"status code mismatch for failed event %d", i)
 				}
 			},
@@ -983,20 +982,20 @@ def transformEvent(event, metadata):
 					makeEvent("msg-2", versionID),
 				}
 
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
-				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
+				require.True(t, len(baselineResp.FailedEvents) > 0, "baseline: expected at least 1 failed event")
+				require.True(t, len(candidateResp.FailedEvents) > 0, "candidate: expected at least 1 failed event")
 
-				// Only compare status codes — error messages may differ between architectures
-				require.Equal(t, len(oldResp.FailedEvents), len(newResp.FailedEvents), "failed event count mismatch")
-				for i := range oldResp.FailedEvents {
-					require.Equal(t, oldResp.FailedEvents[i].StatusCode, newResp.FailedEvents[i].StatusCode,
+				// Only compare status codes — error messages may differ between versions
+				require.Equal(t, len(baselineResp.FailedEvents), len(candidateResp.FailedEvents), "failed event count mismatch")
+				for i := range baselineResp.FailedEvents {
+					require.Equal(t, baselineResp.FailedEvents[i].StatusCode, candidateResp.FailedEvents[i].StatusCode,
 						"status code mismatch for failed event %d", i)
 				}
 			},
@@ -1025,23 +1024,23 @@ def transformBatch(events, metadata):
 					makeEvent("msg-2", versionID),
 				}
 
-				t.Log("Sending 2 events to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending 2 events to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending 2 events to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending 2 events to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// Both should expand 2 input events into 4 output events (2 per input)
-				require.Equal(t, 4, len(oldResp.Events), "old arch: 4 expanded events expected")
-				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-				require.Equal(t, 4, len(newResp.Events), "new arch: 4 expanded events expected")
-				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+				require.Equal(t, 4, len(baselineResp.Events), "baseline: 4 expanded events expected")
+				require.Equal(t, 0, len(baselineResp.FailedEvents), "baseline: no failed events expected")
+				require.Equal(t, 4, len(candidateResp.Events), "candidate: 4 expanded events expected")
+				require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical expanded batch event responses")
+					t.Log("Both versions produce identical expanded batch event responses")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1074,23 +1073,23 @@ def transformBatch(events, metadata):
 					makeEvent("msg-2", versionID),
 				}
 
-				t.Log("Sending 2 events to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending 2 events to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending 2 events to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending 2 events to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 2, len(oldResp.FailedEvents), "old arch: 2 failed events expected")
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 2, len(baselineResp.FailedEvents), "baseline: 2 failed events expected")
 
-				require.Equal(t, 0, len(newResp.Events), "new arch: 0 success events expected (KeyError)")
-				require.Equal(t, 2, len(newResp.FailedEvents), "new arch: 2 failed events expected")
+				require.Equal(t, 0, len(candidateResp.Events), "candidate: 0 success events expected (KeyError)")
+				require.Equal(t, 2, len(candidateResp.FailedEvents), "candidate: 2 failed events expected")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical expanded batch event responses")
+					t.Log("Both versions produce identical expanded batch event responses")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1113,28 +1112,28 @@ def transformBatch(events, metadata):
 					makeEvent("msg-3", versionID),
 				}
 
-				t.Log("Sending 3 events to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending 3 events to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending 3 events to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending 3 events to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// msg-2 should be dropped, msg-1 and msg-3 should pass through
-				require.Equal(t, 2, len(oldResp.Events), "old arch: 2 success events expected")
-				require.Equal(t, 2, len(newResp.Events), "new arch: 2 success events expected")
+				require.Equal(t, 2, len(baselineResp.Events), "baseline: 2 success events expected")
+				require.Equal(t, 2, len(candidateResp.Events), "candidate: 2 success events expected")
 
-				for i, ev := range oldResp.Events {
-					t.Logf("Old arch Event[%d]: messageId=%v", i, ev.Output["messageId"])
+				for i, ev := range baselineResp.Events {
+					t.Logf("Baseline Event[%d]: messageId=%v", i, ev.Output["messageId"])
 				}
-				for i, ev := range newResp.Events {
-					t.Logf("New arch Event[%d]: messageId=%v", i, ev.Output["messageId"])
+				for i, ev := range candidateResp.Events {
+					t.Logf("Candidate Event[%d]: messageId=%v", i, ev.Output["messageId"])
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for batch partial drop")
+					t.Log("Both versions produce identical responses for batch partial drop")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1155,22 +1154,22 @@ def transformBatch(events, metadata):
 					makeEvent("msg-2", versionID),
 				}
 
-				t.Log("Sending 2 events to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending 2 events to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending 2 events to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending 2 events to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.True(t, len(oldResp.FailedEvents) == 2, "old arch: expected 2 failed events")
-				require.True(t, len(newResp.FailedEvents) == 2, "new arch: expected 2 failed events")
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
+				require.True(t, len(baselineResp.FailedEvents) == 2, "baseline: expected 2 failed events")
+				require.True(t, len(candidateResp.FailedEvents) == 2, "candidate: expected 2 failed events")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for mixed indentation")
+					t.Log("Both versions produce identical responses for mixed indentation")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1188,31 +1187,31 @@ def transformBatch(events, metadata):
 					makeEvent("msg-2", versionId),
 				}
 
-				t.Log("Sending 2 events to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending 2 events to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending 2 events to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending 2 events to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// Both should fail (compilation error)
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
-				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
+				require.True(t, len(baselineResp.FailedEvents) > 0, "baseline: expected at least 1 failed event")
+				require.True(t, len(candidateResp.FailedEvents) > 0, "candidate: expected at least 1 failed event")
 
 				// Log error details for debugging
-				for i, fe := range oldResp.FailedEvents {
-					t.Logf("Old arch FailedEvent[%d]: statusCode=%d, error=%q", i, fe.StatusCode, fe.Error)
+				for i, fe := range baselineResp.FailedEvents {
+					t.Logf("Baseline FailedEvent[%d]: statusCode=%d, error=%q", i, fe.StatusCode, fe.Error)
 				}
-				for i, fe := range newResp.FailedEvents {
-					t.Logf("New arch FailedEvent[%d]: statusCode=%d, error=%q", i, fe.StatusCode, fe.Error)
+				for i, fe := range candidateResp.FailedEvents {
+					t.Logf("Candidate FailedEvent[%d]: statusCode=%d, error=%q", i, fe.StatusCode, fe.Error)
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for mixed indentation")
+					t.Log("Both versions produce identical responses for mixed indentation")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1238,26 +1237,26 @@ def transformEvent(event, metadata):
 					makeEventWithCredentials("msg-1", versionID, creds),
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 0, len(baselineResp.FailedEvents), "baseline: no failed events expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
+				require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
 
 				// Verify credential value was retrieved correctly
-				require.Equal(t, "testValue1", oldResp.Events[0].Output["credential"], "old arch: credential value should be testValue1")
-				require.Equal(t, "testValue1", newResp.Events[0].Output["credential"], "new arch: credential value should be testValue1")
+				require.Equal(t, "testValue1", baselineResp.Events[0].Output["credential"], "baseline: credential value should be testValue1")
+				require.Equal(t, "testValue1", candidateResp.Events[0].Output["credential"], "candidate: credential value should be testValue1")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for credential with valid key")
+					t.Log("Both versions produce identical responses for credential with valid key")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1282,24 +1281,24 @@ def transformEvent(event, metadata):
 					makeEventWithCredentials("msg-1", versionID, creds),
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// getCredential returns None for missing keys — event should succeed with null value
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
-				require.Nil(t, oldResp.Events[0].Output["credential"], "old arch: credential should be nil for missing key")
-				require.Nil(t, newResp.Events[0].Output["credential"], "new arch: credential should be nil for missing key")
+				require.Nil(t, baselineResp.Events[0].Output["credential"], "baseline: credential should be nil for missing key")
+				require.Nil(t, candidateResp.Events[0].Output["credential"], "candidate: credential should be nil for missing key")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for credential with missing key")
+					t.Log("Both versions produce identical responses for credential with missing key")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1324,31 +1323,31 @@ def transformEvent(event, metadata):
 					makeEventWithCredentials("msg-1", versionID, creds),
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// getCredential() with no args raises TypeError — event should fail
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 1, len(oldResp.FailedEvents), "old arch: 1 failed event expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
+				require.Equal(t, 0, len(baselineResp.Events), "baseline: no success events expected")
+				require.Equal(t, 1, len(baselineResp.FailedEvents), "baseline: 1 failed event expected")
+				require.Equal(t, 0, len(candidateResp.Events), "candidate: no success events expected")
+				require.Equal(t, 1, len(candidateResp.FailedEvents), "candidate: 1 failed event expected")
 
-				oldError := oldResp.FailedEvents[0].Error
-				newError := newResp.FailedEvents[0].Error
-				t.Logf("Old arch error: %q", oldError)
-				t.Logf("New arch error: %q", newError)
+				baselineError := baselineResp.FailedEvents[0].Error
+				candidateError := candidateResp.FailedEvents[0].Error
+				t.Logf("Baseline error: %q", baselineError)
+				t.Logf("Candidate error: %q", candidateError)
 
-				require.Contains(t, oldError, "Key should be valid and defined", "old arch: error should mention invalid key")
-				require.Contains(t, newError, "Key should be valid and defined", "new arch: error should mention invalid key")
+				require.Contains(t, baselineError, "Key should be valid and defined", "baseline: error should mention invalid key")
+				require.Contains(t, candidateError, "Key should be valid and defined", "candidate: error should mention invalid key")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for credential with no arguments")
+					t.Log("Both versions produce identical responses for credential with no arguments")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1377,31 +1376,31 @@ def transformEvent(event, metadata):
 					makeEventWithCredentials("msg-1", versionID, creds),
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// Non-string keys should return None (not raise errors)
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 0, len(baselineResp.FailedEvents), "baseline: no failed events expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
+				require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
 
 				// All non-string keys (including None) should return None
-				oldOutput := oldResp.Events[0].Output
-				newOutput := newResp.Events[0].Output
+				oldOutput := baselineResp.Events[0].Output
+				newOutput := candidateResp.Events[0].Output
 				for _, key := range []string{"credentialValueForNoneKey", "credentialValueForNumkey", "credentialValueForBoolkey", "credentialValueForObjkey", "credentialValueForArrkey"} {
-					require.Nilf(t, oldOutput[key], "old arch: %s should be nil", key)
-					require.Nilf(t, newOutput[key], "new arch: %s should be nil", key)
+					require.Nilf(t, oldOutput[key], "baseline: %s should be nil", key)
+					require.Nilf(t, newOutput[key], "candidate: %s should be nil", key)
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for credential with non-string keys")
+					t.Log("Both versions produce identical responses for credential with non-string keys")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1424,24 +1423,24 @@ def transformEvent(event, metadata):
 					makeEventWithCredentials("msg-1", versionID, []types.Credential{}),
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// With empty credentials, getCredential returns None for any key
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
-				require.Nil(t, oldResp.Events[0].Output["credential"], "old arch: credential should be nil with empty credentials")
-				require.Nil(t, newResp.Events[0].Output["credential"], "new arch: credential should be nil with empty credentials")
+				require.Nil(t, baselineResp.Events[0].Output["credential"], "baseline: credential should be nil with empty credentials")
+				require.Nil(t, candidateResp.Events[0].Output["credential"], "candidate: credential should be nil with empty credentials")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for credential with empty list")
+					t.Log("Both versions produce identical responses for credential with empty list")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1464,24 +1463,24 @@ def transformEvent(event, metadata):
 					makeEvent("msg-1", versionID),
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// With no credentials field, getCredential returns None for any key
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
-				require.Nil(t, oldResp.Events[0].Output["credential"], "old arch: credential should be nil with no credentials")
-				require.Nil(t, newResp.Events[0].Output["credential"], "new arch: credential should be nil with no credentials")
+				require.Nil(t, baselineResp.Events[0].Output["credential"], "baseline: credential should be nil with no credentials")
+				require.Nil(t, candidateResp.Events[0].Output["credential"], "candidate: credential should be nil with no credentials")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for credential with no credentials field")
+					t.Log("Both versions produce identical responses for credential with no credentials field")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1509,31 +1508,31 @@ def transformBatch(events, metadata):
 					makeEventWithCredentials("msg-2", versionID, creds),
 				}
 
-				t.Log("Sending 2 events to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending 2 events to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending 2 events to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending 2 events to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 				// Both events should succeed with credential from first event
-				require.Equal(t, 2, len(oldResp.Events), "old arch: 2 success events expected")
-				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-				require.Equal(t, 2, len(newResp.Events), "new arch: 2 success events expected")
-				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+				require.Equal(t, 2, len(baselineResp.Events), "baseline: 2 success events expected")
+				require.Equal(t, 0, len(baselineResp.FailedEvents), "baseline: no failed events expected")
+				require.Equal(t, 2, len(candidateResp.Events), "candidate: 2 success events expected")
+				require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
 
 				// Both events should have the same credential value
-				for i := range oldResp.Events {
-					require.Equal(t, "testValue1", oldResp.Events[i].Output["credential"],
-						"old arch: event %d credential should be testValue1", i)
-					require.Equal(t, "testValue1", newResp.Events[i].Output["credential"],
-						"new arch: event %d credential should be testValue1", i)
+				for i := range baselineResp.Events {
+					require.Equal(t, "testValue1", baselineResp.Events[i].Output["credential"],
+						"baseline: event %d credential should be testValue1", i)
+					require.Equal(t, "testValue1", candidateResp.Events[i].Output["credential"],
+						"candidate: event %d credential should be testValue1", i)
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for credential in batch transform")
+					t.Log("Both versions produce identical responses for credential in batch transform")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1553,7 +1552,7 @@ def transformBatch(events, metadata):
 				const versionID = "bc-cred-first-event-v1"
 
 				// First event has key1, second event has key2.
-				// Both architectures extract credentials from the first event only.
+				// Both versions extract credentials from the first event only.
 				events := []types.TransformerEvent{
 					makeEventWithCredentials("msg-1", versionID, []types.Credential{
 						{ID: "id1", Key: "key1", Value: "value1", IsSecret: false},
@@ -1563,28 +1562,28 @@ def transformBatch(events, metadata):
 					}),
 				}
 
-				t.Log("Sending 2 events to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending 2 events to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending 2 events to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending 2 events to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 2, len(oldResp.Events), "old arch: 2 success events expected")
-				require.Equal(t, 2, len(newResp.Events), "new arch: 2 success events expected")
+				require.Equal(t, 2, len(baselineResp.Events), "baseline: 2 success events expected")
+				require.Equal(t, 2, len(candidateResp.Events), "candidate: 2 success events expected")
 
 				// key1 from first event should be available, key2 from second event should not
-				for i, ev := range oldResp.Events {
-					t.Logf("Old arch Event[%d]: cred1=%v, cred2=%v", i, ev.Output["cred1"], ev.Output["cred2"])
+				for i, ev := range baselineResp.Events {
+					t.Logf("Baseline Event[%d]: cred1=%v, cred2=%v", i, ev.Output["cred1"], ev.Output["cred2"])
 				}
-				for i, ev := range newResp.Events {
-					t.Logf("New arch Event[%d]: cred1=%v, cred2=%v", i, ev.Output["cred1"], ev.Output["cred2"])
+				for i, ev := range candidateResp.Events {
+					t.Logf("Candidate Event[%d]: cred1=%v, cred2=%v", i, ev.Output["cred1"], ev.Output["cred2"])
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for credentials from first event only")
+					t.Log("Both versions produce identical responses for credentials from first event only")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1612,34 +1611,34 @@ def transformEvent(event, metadata):
 					makeEventWithCredentials("msg-1", versionID, creds),
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
-				oldOutput := oldResp.Events[0].Output
-				newOutput := newResp.Events[0].Output
+				oldOutput := baselineResp.Events[0].Output
+				newOutput := candidateResp.Events[0].Output
 
 				// Verify multiple credential accesses and repeated access
-				require.Equal(t, "testValue1", oldOutput["cred1"], "old arch: cred1 should be testValue1")
-				require.Equal(t, "testValue2", oldOutput["cred2"], "old arch: cred2 should be testValue2")
-				require.Equal(t, "testValue1", oldOutput["cred1_again"], "old arch: cred1_again should be testValue1")
-				require.Nil(t, oldOutput["missing"], "old arch: missing should be nil")
+				require.Equal(t, "testValue1", oldOutput["cred1"], "baseline: cred1 should be testValue1")
+				require.Equal(t, "testValue2", oldOutput["cred2"], "baseline: cred2 should be testValue2")
+				require.Equal(t, "testValue1", oldOutput["cred1_again"], "baseline: cred1_again should be testValue1")
+				require.Nil(t, oldOutput["missing"], "baseline: missing should be nil")
 
-				require.Equal(t, "testValue1", newOutput["cred1"], "new arch: cred1 should be testValue1")
-				require.Equal(t, "testValue2", newOutput["cred2"], "new arch: cred2 should be testValue2")
-				require.Equal(t, "testValue1", newOutput["cred1_again"], "new arch: cred1_again should be testValue1")
-				require.Nil(t, newOutput["missing"], "new arch: missing should be nil")
+				require.Equal(t, "testValue1", newOutput["cred1"], "candidate: cred1 should be testValue1")
+				require.Equal(t, "testValue2", newOutput["cred2"], "candidate: cred2 should be testValue2")
+				require.Equal(t, "testValue1", newOutput["cred1_again"], "candidate: cred1_again should be testValue1")
+				require.Nil(t, newOutput["missing"], "candidate: missing should be nil")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for multiple credential accesses")
+					t.Log("Both versions produce identical responses for multiple credential accesses")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1666,26 +1665,26 @@ def transformEvent(event, metadata):
 					makeEventWithCredentials("msg-1", versionID, creds),
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
 				// Both secret and public credentials should be accessible via getCredential
-				require.Equal(t, "secretValue", oldResp.Events[0].Output["secretCred"], "old arch: secret credential should be accessible")
-				require.Equal(t, "publicValue", oldResp.Events[0].Output["publicCred"], "old arch: public credential should be accessible")
-				require.Equal(t, "secretValue", newResp.Events[0].Output["secretCred"], "new arch: secret credential should be accessible")
-				require.Equal(t, "publicValue", newResp.Events[0].Output["publicCred"], "new arch: public credential should be accessible")
+				require.Equal(t, "secretValue", baselineResp.Events[0].Output["secretCred"], "baseline: secret credential should be accessible")
+				require.Equal(t, "publicValue", baselineResp.Events[0].Output["publicCred"], "baseline: public credential should be accessible")
+				require.Equal(t, "secretValue", candidateResp.Events[0].Output["secretCred"], "candidate: secret credential should be accessible")
+				require.Equal(t, "publicValue", candidateResp.Events[0].Output["publicCred"], "candidate: public credential should be accessible")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for credentials with isSecret flag")
+					t.Log("Both versions produce identical responses for credentials with isSecret flag")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1709,23 +1708,23 @@ def transformEvent(event, metadata):
 					makeEventWithCredentials("msg-1", versionID, creds),
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
-				require.Equal(t, "special-value!@#$%", oldResp.Events[0].Output["cred"], "old arch: credential value with special chars")
-				require.Equal(t, "special-value!@#$%", newResp.Events[0].Output["cred"], "new arch: credential value with special chars")
+				require.Equal(t, "special-value!@#$%", baselineResp.Events[0].Output["cred"], "baseline: credential value with special chars")
+				require.Equal(t, "special-value!@#$%", candidateResp.Events[0].Output["cred"], "candidate: credential value with special chars")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for credentials with special characters")
+					t.Log("Both versions produce identical responses for credentials with special characters")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1742,7 +1741,7 @@ def transformEvent(event, metadata):
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-cred-dup-keys-v1"
 
-				// When duplicate keys exist, the last one wins (both architectures
+				// When duplicate keys exist, the last one wins (both versions
 				// iterate the credentials slice in order, overwriting earlier values).
 				creds := []types.Credential{
 					{ID: "id1", Key: "dupKey", Value: "firstValue", IsSecret: false},
@@ -1752,24 +1751,24 @@ def transformEvent(event, metadata):
 					makeEventWithCredentials("msg-1", versionID, creds),
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
 				// Assert that the last credential wins when keys are duplicated
-				require.Equal(t, "secondValue", oldResp.Events[0].Output["cred"], "old arch: last credential value should win for duplicate keys")
-				require.Equal(t, "secondValue", newResp.Events[0].Output["cred"], "new arch: last credential value should win for duplicate keys")
+				require.Equal(t, "secondValue", baselineResp.Events[0].Output["cred"], "baseline: last credential value should win for duplicate keys")
+				require.Equal(t, "secondValue", candidateResp.Events[0].Output["cred"], "candidate: last credential value should win for duplicate keys")
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for duplicate credential keys")
+					t.Log("Both versions produce identical responses for duplicate credential keys")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1795,26 +1794,26 @@ def transformEvent(event, metadata):
 					makeEventWithCredentials("msg-1", versionID, creds),
 				}
 
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
 
 				// An empty string value should be returned (not None)
-				oldOutput := oldResp.Events[0].Output
-				newOutput := newResp.Events[0].Output
-				t.Logf("Old arch: cred=%v, credIsNone=%v, credIsEmpty=%v", oldOutput["cred"], oldOutput["credIsNone"], oldOutput["credIsEmpty"])
-				t.Logf("New arch: cred=%v, credIsNone=%v, credIsEmpty=%v", newOutput["cred"], newOutput["credIsNone"], newOutput["credIsEmpty"])
+				oldOutput := baselineResp.Events[0].Output
+				newOutput := candidateResp.Events[0].Output
+				t.Logf("Baseline: cred=%v, credIsNone=%v, credIsEmpty=%v", oldOutput["cred"], oldOutput["credIsNone"], oldOutput["credIsEmpty"])
+				t.Logf("Candidate: cred=%v, credIsNone=%v, credIsEmpty=%v", newOutput["cred"], newOutput["credIsNone"], newOutput["credIsEmpty"])
 
-				diff, equal := oldResp.Equal(&newResp)
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for credential with empty value")
+					t.Log("Both versions produce identical responses for credential with empty value")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1858,15 +1857,15 @@ def transformEvent(event, metadata):
 						},
 					},
 				}
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				newResp := env.NewClient.Transform(context.Background(), events)
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-				oldOutput := oldResp.Events[0].Output
-				newOutput := newResp.Events[0].Output
-				t.Logf("Old arch output keys: %d", len(oldOutput))
-				t.Logf("New arch output keys: %d", len(newOutput))
-				diff, equal := oldResp.Equal(&newResp)
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
+				oldOutput := baselineResp.Events[0].Output
+				newOutput := candidateResp.Events[0].Output
+				t.Logf("Baseline output keys: %d", len(oldOutput))
+				t.Logf("Candidate output keys: %d", len(newOutput))
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
 					t.Log("Responses are equal")
 				} else {
@@ -1917,15 +1916,15 @@ def transformEvent(event, metadata):
 						},
 					},
 				}
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				newResp := env.NewClient.Transform(context.Background(), events)
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-				oldOutput := oldResp.Events[0].Output
-				newOutput := newResp.Events[0].Output
-				t.Logf("Old arch output keys: %d", len(oldOutput))
-				t.Logf("New arch output keys: %d", len(newOutput))
-				diff, equal := oldResp.Equal(&newResp)
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
+				oldOutput := baselineResp.Events[0].Output
+				newOutput := candidateResp.Events[0].Output
+				t.Logf("Baseline output keys: %d", len(oldOutput))
+				t.Logf("Candidate output keys: %d", len(newOutput))
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
 					t.Log("Responses are equal")
 				} else {
@@ -1947,7 +1946,7 @@ def transformEvent(event, metadata):
 			// will also be overwritten), and SourceJobID/TrackingPlanID/etc. are zero
 			// values which are omitted from the metadata JSON (omitempty) so the metadata
 			// function returns None for them. This mirrors the production scenario that
-			// exposed the diff between old and new arch.
+			// exposed the diff between old and candidate.
 			name:      "MetadataAddMetaPattern",
 			versionID: "bc-add-meta-pattern-v1",
 			config: configBackendEntry{code: `
@@ -1993,19 +1992,19 @@ def transformEvent(event, metadata):
 						},
 					},
 				}
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-				oldOutput := oldResp.Events[0].Output
-				newOutput := newResp.Events[0].Output
-				t.Logf("Old arch output keys: %d", len(oldOutput))
-				t.Logf("New arch output keys: %d", len(newOutput))
-				diff, equal := oldResp.Equal(&newResp)
+				t.Log("Sending request to baseline...")
+				baselineResp := env.BaselineClient.Transform(context.Background(), events)
+				t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
+				t.Log("Sending request to candidate...")
+				candidateResp := env.CandidateClient.Transform(context.Background(), events)
+				t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
+				require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+				require.Equal(t, 1, len(candidateResp.Events), "candidate: 1 success event expected")
+				oldOutput := baselineResp.Events[0].Output
+				newOutput := candidateResp.Events[0].Output
+				t.Logf("Baseline output keys: %d", len(oldOutput))
+				t.Logf("Candidate output keys: %d", len(newOutput))
+				diff, equal := baselineResp.Equal(&candidateResp)
 				if equal {
 					t.Log("Responses are equal")
 				} else {
@@ -2035,59 +2034,28 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, allEntries)
 	t.Cleanup(configBackend.Close)
 
-	// Create a mock OpenFaaS gateway with a dynamic proxy target.
-	// The target URL is updated before each subtest to point to that
-	// subtest's openfaas-flask-base container.
+	// Both rudder-pytransformer versions read from the same config backend, so
+	// one container per version serves every subtest.
 	var (
-		gatewayMu        sync.Mutex
-		gatewayTargetURL string
-	)
-	getGatewayTarget := func() string {
-		gatewayMu.Lock()
-		defer gatewayMu.Unlock()
-		return gatewayTargetURL
-	}
-	setGatewayTarget := func(url string) {
-		gatewayMu.Lock()
-		defer gatewayMu.Unlock()
-		gatewayTargetURL = url
-	}
-	mockGateway, _ := newMockOpenFaaSGateway(t, getGatewayTarget)
-	t.Cleanup(mockGateway.Close)
-
-	var (
-		wg                               sync.WaitGroup
-		transformerURL, pyTransformerURL string
+		wg                        sync.WaitGroup
+		baselineURL, candidateURL string
 	)
 	wg.Go(func() {
-		transformerURL = startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
+		baselineURL = startBaselinePytransformer(t, pool, configBackend.URL)
 	})
 	wg.Go(func() {
-		pyTransformerURL = startRudderPytransformer(t, pool, configBackend.URL)
+		candidateURL = startRudderPytransformer(t, pool, configBackend.URL)
 	})
 	wg.Wait()
 
-	// Run subtests sequentially. Each subtest with python code spins up its own
-	// openfaas-flask-base since openfaas loads code at startup.
-	// Subtests without python code skip openfaas (error happens before execution).
-	// Each subtest gets a fresh bcTestEnv with its own memstats stores so that
-	// retry counts are isolated per subtest.
+	// Run subtests sequentially. Each subtest gets a fresh bcTestEnv with its own
+	// memstats stores so that retry counts are isolated per subtest.
 	for _, st := range subtests {
 		t.Run(st.name, func(t *testing.T) {
-			env := newBCTestEnv(t, transformerURL, pyTransformerURL,
+			env := newBCTestEnv(t, baselineURL, candidateURL,
 				withFailOnError(),
 				withLimitedRetryableHTTPRetries(),
 			)
-
-			if st.config.code != "" {
-				t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)
-				openFaasURL := startOpenFaasFlask(t, pool, st.versionID, configBackend.URL)
-
-				// Point the mock gateway to this subtest's openfaas container.
-				setGatewayTarget(openFaasURL)
-			} else {
-				t.Logf("Skipping openfaas-flask-base for %s (error path test)", st.name)
-			}
 
 			st.run(t, env)
 			if !st.skipRetryCountMatch {

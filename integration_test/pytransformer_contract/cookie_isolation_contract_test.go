@@ -188,23 +188,23 @@ def transformEvent(event, metadata):
 		parallelRequests, newConns.Load())
 }
 
-// TestConnectionPoolRequestOptionIsolation locks the cross-architecture
+// TestConnectionPoolRequestOptionIsolation locks the cross-version
 // contract that per-request options attached to a bare “requests.<verb>“
 // call never become defaults on the user-facing HTTP session.
 //
 // The goal is parity, not a one-sided property check. The same
 // transformation code runs through two stacks:
 //
-//  1. Old arch — rudder-transformer + openfaas-flask-base (vanilla
-//     “requests“ inside the OpenFaaS container).
-//  2. New arch — rudder-pytransformer routing every bare call through a
+//  1. Baseline — the last released rudder-pytransformer (the reference
+//     behaviour the candidate must match).
+//  2. Candidate — rudder-pytransformer routing every bare call through a
 //     “StatelessPooledSession“ pinned to a single TCP socket. This is
 //     the path that could regress if the pooling wrapper ever started
 //     persisting “headers“ / “auth“ / “params“ / “cookies“ / “hooks“
 //     onto the shared session.
 //
 // Both stacks must produce the exact same “types.Response“, so any drift
-// introduced by the pooling layer surfaces via “oldResp.Equal(&newResp)“.
+// introduced by the pooling layer surfaces via “baselineResp.Equal(&candidateResp)“.
 //
 // The batch of transformation events is larger than one so the assertion
 // covers cross-transformation isolation on the shared session, not only
@@ -234,8 +234,7 @@ func TestConnectionPoolRequestOptionIsolation(t *testing.T) {
 	// User code: every `transformEvent` invocation issues two sequential
 	// requests. The first primes a vanilla `requests.Session` with every
 	// per-request option `requests` supports; the second issues a bare
-	// GET. If any option persisted to session state — on the old-arch
-	// vanilla session OR the new-arch `StatelessPooledSession` — the
+	// GET. If any option persisted to session state — on the baseline	// vanilla session OR the candidate `StatelessPooledSession` — the
 	// second call would observe it and the parity check would fail.
 	code := fmt.Sprintf(`
 import requests
@@ -291,67 +290,56 @@ def transformEvent(event, metadata):
 	})
 	t.Cleanup(configBackend.Close)
 
-	// --- Old architecture (rudder-transformer + openfaas-flask-base) ---
-	//
-	// Becomes the reference behaviour the new arch must match.
-
-	t.Log("Starting openfaas-flask-base (old arch backend)...")
-	openFaasURL := startOpenFaasFlask(t, pool, versionID, configBackend.URL)
-
-	t.Log("Starting mock OpenFaaS gateway...")
-	mockGateway, _ := newMockOpenFaaSGateway(t, func() string { return openFaasURL })
-	t.Cleanup(mockGateway.Close)
-
-	t.Log("Starting rudder-transformer (old arch frontend)...")
-	transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
-
 	events := make([]types.TransformerEvent, numEvents)
 	for i := range events {
 		events[i] = makeEvent(fmt.Sprintf("msg-req-opt-iso-%d", i), versionID)
 	}
 
-	// --- New architecture (rudder-pytransformer) ---
-	//
 	// Every bare requests.<verb> call routes through StatelessPooledSession.
 	// Pin SANDBOX_POOL_MAX_SIZE=1 and USER_CONN_POOL_MAX_SIZE=1 so the
 	// test actually exercises the shared-session path, not a fresh
-	// session per subprocess.
-	pyTransformerURL := startRudderPytransformer(
-		t, pool, configBackend.URL,
+	// session per subprocess. Identical on both sides so the comparison
+	// isolates the version difference.
+	pytEnv := []string{
 		"SANDBOX_POOL_MAX_SIZE=1",
 		"USER_CONN_POOL_MAX_SIZE=1",
-	)
+	}
 
-	env := newBCTestEnv(t, transformerURL, pyTransformerURL,
+	t.Log("Starting baseline rudder-pytransformer...")
+	baselineURL := startBaselinePytransformer(t, pool, configBackend.URL, pytEnv...)
+
+	t.Log("Starting candidate rudder-pytransformer...")
+	candidateURL := startRudderPytransformer(t, pool, configBackend.URL, pytEnv...)
+
+	env := newBCTestEnv(t, baselineURL, candidateURL,
 		withFailOnError(),
 		withLimitedRetryableHTTPRetries(),
 	)
 
-	t.Log("Sending batch to old arch (openfaas-flask-base)...")
-	oldResp := env.OldClient.Transform(context.Background(), events)
-	t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+	t.Log("Sending batch to baseline pytransformer...")
+	baselineResp := env.BaselineClient.Transform(context.Background(), events)
+	t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
 	// Only the NEW-arch run's TCP activity counts toward the pool reuse
-	// assertion — reset the counter so every connection the old-arch
-	// stack opened to the shared echo server is excluded.
+	// assertion — reset the counter so every connection the baseline	// stack opened to the shared echo server is excluded.
 	newConns.Store(0)
 
-	t.Log("Sending batch to new arch (rudder-pytransformer)...")
-	newResp := env.NewClient.Transform(context.Background(), events)
-	t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+	t.Log("Sending batch to candidate (rudder-pytransformer)...")
+	candidateResp := env.CandidateClient.Transform(context.Background(), events)
+	t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-	require.Equalf(t, numEvents, len(oldResp.Events), "old arch: all %d events must succeed", numEvents)
-	require.Empty(t, oldResp.FailedEvents, "old arch: no failed events expected")
-	require.Equalf(t, numEvents, len(newResp.Events),
-		"new arch: all %d events must succeed", numEvents)
-	require.Empty(t, newResp.FailedEvents, "new arch: no failed events expected")
+	require.Equalf(t, numEvents, len(baselineResp.Events), "baseline: all %d events must succeed", numEvents)
+	require.Empty(t, baselineResp.FailedEvents, "baseline: no failed events expected")
+	require.Equalf(t, numEvents, len(candidateResp.Events),
+		"candidate: all %d events must succeed", numEvents)
+	require.Empty(t, candidateResp.FailedEvents, "candidate: no failed events expected")
 
 	// Proof-of-mechanism: every event on BOTH stacks must have carried
 	// the full set of per-request options on its first call. Without
 	// these checks, a regression that stopped the mock echo from
 	// observing any single option would make the isolation parity check
 	// below vacuously true for that option.
-	for _, resp := range []*types.Response{&oldResp, &newResp} {
+	for _, resp := range []*types.Response{&baselineResp, &candidateResp} {
 		for _, ev := range resp.Events {
 			require.Equalf(t, "1", ev.Output["first_x_leak"],
 				"msg=%s: first request must carry X-Leak header",
@@ -359,7 +347,7 @@ def transformEvent(event, metadata):
 			// Exact match (rather than NotEmpty) — base64("user:pass").
 			// A malformed Authorization header would still be
 			// non-empty but would silently diverge from the
-			// old-arch reference.
+			// baseline reference.
 			require.Equalf(t, "Basic dXNlcjpwYXNz", ev.Output["first_authorization"],
 				"msg=%s: first request must carry Basic user:pass auth",
 				ev.Metadata.MessageID)
@@ -381,11 +369,11 @@ def transformEvent(event, metadata):
 	// Core isolation assertion: the second bare GET, issued without any
 	// options, must see NONE of the state the first call attached.
 	// Vanilla `requests.Session` does not persist per-request kwargs,
-	// so the old arch passes this trivially; `StatelessPooledSession`
-	// must match that guarantee on the new-arch pooled path. Per-field
+	// so the baseline passes this trivially; `StatelessPooledSession`
+	// must match that guarantee on the candidate pooled path. Per-field
 	// asserts keep failure output actionable; `Equal` below is the
 	// strict parity catch-all.
-	for _, resp := range []*types.Response{&oldResp, &newResp} {
+	for _, resp := range []*types.Response{&baselineResp, &candidateResp} {
 		for _, ev := range resp.Events {
 			require.Emptyf(t, ev.Output["second_x_leak"],
 				"msg=%s: header must not carry into the next request",
@@ -405,14 +393,14 @@ def transformEvent(event, metadata):
 		}
 	}
 
-	// Strict parity: old arch and new arch must produce identical
+	// Strict parity: baseline and candidate must produce identical
 	// responses field-for-field. Any divergence the per-field asserts
 	// above missed (e.g. a difference in `Metadata`, `StatTags`, or
 	// an Output key that was added to the transformation code but not
 	// to this test) surfaces here.
-	diff, equal := oldResp.Equal(&newResp)
+	diff, equal := baselineResp.Equal(&candidateResp)
 	require.Truef(t, equal,
-		"old and new architectures must produce identical responses:\n%s", diff)
+		"baseline and candidate must produce identical responses:\n%s", diff)
 
 	env.assertRetryCountsMatch(t)
 

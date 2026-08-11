@@ -672,7 +672,13 @@ func isColdStartError(err error, resp *http.Response) bool {
 	}
 	if resp != nil && (resp.StatusCode == http.StatusServiceUnavailable ||
 		resp.StatusCode == http.StatusBadGateway) {
-		return true
+		// A 503/502 carrying the should-retry header comes from PyT itself, not from the infrastructure in front of it.
+		// The pod is up and answering, reporting a transient downstream failure (e.g. the geolocation timeout).
+		// Reaching this line means the retryable transport in transformer-client stopped retrying it, which only
+		// happens once retryRudderErrors is bounded or disabled (by default it's enabled with maxRetry=-1).
+		//
+		// Only an unlabelled 503/502, i.e. kube-proxy with no endpoints behind the Service, means "not ready yet".
+		return !strings.EqualFold(resp.Header.Get(transformerclient.HeaderShouldRetry), "true")
 	}
 	return false
 }
