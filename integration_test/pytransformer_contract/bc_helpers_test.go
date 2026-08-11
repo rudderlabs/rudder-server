@@ -415,10 +415,13 @@ func startBaselinePytransformer(
 ) string {
 	t.Helper()
 	baseline, candidate := baselinePytransformerTag(), candidatePytransformerTag()
-	require.NotEqualf(t, candidate, baseline,
-		"baseline and candidate both resolved to rudder-pytransformer:%s — the comparison would be vacuous. "+
-			"Bump latestReleaseTag/previousReleaseTag, or set PYTRANSFORMER_BASELINE_TAG and "+
-			"PYTRANSFORMER_CANDIDATE_TAG to different tags.", baseline)
+	if baseline == candidate {
+		// Panic rather than t.Fatal: most callers start the two containers from a wg.Go goroutine
+		panic(fmt.Sprintf(
+			"baseline and candidate both resolved to rudder-pytransformer:%s — every comparison in this suite "+
+				"would pass without testing anything. Bump latestReleaseTag/previousReleaseTag, or set "+
+				"PYTRANSFORMER_BASELINE_TAG and PYTRANSFORMER_CANDIDATE_TAG to different tags.", baseline))
+	}
 	t.Logf("Comparing rudder-pytransformer baseline=%s against candidate=%s", baseline, candidate)
 	return startRudderPytransformerWithTag(t, pool, baseline, configBackendURL, extraEnv...)
 }
