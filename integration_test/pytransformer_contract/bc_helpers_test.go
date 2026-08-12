@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -32,6 +33,59 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/processor/usertransformer"
 )
+
+// The suite always compares two rudder-pytransformer builds — a candidate against a baseline — so a behaviour change
+// between two PyT versions fails here the same way it would surface in a mirrored production comparison.
+//
+// Which pair to compare is the caller's decision, not this file's. Both tags are required and neither has a default:
+// a hardcoded pair silently goes stale, and the suite then keeps passing while comparing two versions nobody ships.
+//
+// TestMain rejects a run that omits either.
+//
+//   - CI resolves the two most recent released tags and exports them, so it always compares the
+//     current release against the one before it without anyone editing this file.
+//
+//   - Locally, build your image and point the candidate at it:
+//
+//     PYT_CANDIDATE_TAG=main PYT_BASELINE_TAG=0.10.2 go test ./integration_test/pytransformer_contract/...
+//
+// See README.md in this directory.
+const (
+	pytransformerImage = "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer"
+
+	candidateTagEnv = "PYT_CANDIDATE_TAG"
+	baselineTagEnv  = "PYT_BASELINE_TAG"
+)
+
+// TestMain fails the whole package when either tag is missing.
+//
+// Every test in this package starts at least the candidate container, so there is no useful subset to
+// run without them; failing here reports the cause once instead of once per test, and before any
+// container is started.
+func TestMain(m *testing.M) {
+	var missing []string
+	for _, key := range []string{candidateTagEnv, baselineTagEnv} {
+		if os.Getenv(key) == "" {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) > 0 {
+		fmt.Fprintf(os.Stderr,
+			"pytransformer contract tests: %s must be set to the rudder-pytransformer image tags to compare.\n"+
+				"Locally, build your image and run:\n"+
+				"  %s=main %s=<last released tag> go test ./integration_test/pytransformer_contract/...\n"+
+				"On CI both are resolved from the released tags and exported for you.\n",
+			strings.Join(missing, " and "), candidateTagEnv, baselineTagEnv)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
+
+// candidatePytransformerTag returns the tag under test.
+func candidatePytransformerTag() string { return os.Getenv(candidateTagEnv) }
+
+// baselinePytransformerTag returns the tag the candidate is compared against.
+func baselinePytransformerTag() string { return os.Getenv(baselineTagEnv) }
 
 // containerConfig holds platform-specific Docker container configuration.
 // On Linux, containers use host networking (sharing the host's network namespace).
@@ -334,67 +388,6 @@ func newContractConfigBackend(t *testing.T, entries map[string]configBackendEntr
 	}))
 }
 
-// The suite always compares two rudder-pytransformer builds — a candidate
-// against a baseline — so a behaviour change between two PyT versions fails here
-// the same way it would surface in a mirrored production comparison.
-//
-// Which pair depends on where the suite runs:
-//
-//   - Locally: the image you just built with "make build-ecr-latest" in the
-//     rudder-pytransformer repo (tagged "main") against the latest release. This
-//     is the question a developer is asking — does my change regress anything?
-//   - On CI: the latest release against the one before it. CI has no locally
-//     built image, so comparing against "main" would compare a release to
-//     whatever last landed on that branch.
-//
-// Either side can be overridden to point the suite at any pair:
-//
-//	PYT_CANDIDATE_TAG=0.11.0 PYT_BASELINE_TAG=0.10.0 go test ...
-//
-// See README.md in this directory for how to run the suite against your own build.
-const (
-	pytransformerImage = "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer"
-
-	// localBuildTag is the tag "make build-ecr-latest" writes in the
-	// rudder-pytransformer repo, so a locally built image is picked up as-is.
-	localBuildTag = "main"
-	// latestReleaseTag and previousReleaseTag are the two most recent released
-	// rudder-pytransformer versions. Bump both when a new version ships.
-	latestReleaseTag   = "0.10.2"
-	previousReleaseTag = "0.10.1"
-)
-
-// runningInCI reports whether the suite is running on CI rather than a
-// developer machine. Every mainstream CI provider sets CI=true.
-func runningInCI() bool {
-	inCI, err := strconv.ParseBool(os.Getenv("CI"))
-	return err == nil && inCI
-}
-
-// candidatePytransformerTag returns the tag under test: the local build when a
-// developer runs the suite, the latest release on CI.
-func candidatePytransformerTag() string {
-	if tag := os.Getenv("PYT_CANDIDATE_TAG"); tag != "" {
-		return tag
-	}
-	if runningInCI() {
-		return latestReleaseTag
-	}
-	return localBuildTag
-}
-
-// baselinePytransformerTag returns the tag the candidate is compared against:
-// the latest release locally, the release before it on CI.
-func baselinePytransformerTag() string {
-	if tag := os.Getenv("PYT_BASELINE_TAG"); tag != "" {
-		return tag
-	}
-	if runningInCI() {
-		return previousReleaseTag
-	}
-	return latestReleaseTag
-}
-
 // startCandidatePytransformer starts the candidate rudder-pytransformer container
 // configured to use the mock config backend. Optional extra environment
 // variables can be passed (e.g. "GEOLOCATION_URL=http://...").
@@ -421,7 +414,7 @@ func startBaselinePytransformer(
 		// Panic rather than t.Fatal: most callers start the two containers from a wg.Go goroutine
 		panic(fmt.Sprintf(
 			"baseline and candidate both resolved to rudder-pytransformer:%s — every comparison in this suite "+
-				"would pass without testing anything. Bump latestReleaseTag/previousReleaseTag, or set "+
+				"would pass without testing anything. Set "+
 				"PYT_BASELINE_TAG and PYT_CANDIDATE_TAG to different tags.", baseline))
 	}
 	t.Logf("Comparing rudder-pytransformer baseline=%s against candidate=%s", baseline, candidate)

@@ -9,35 +9,34 @@ the candidate only. Everything else compares.
 
 ## Which two images
 
-|                | candidate                 | baseline              |
-|----------------|---------------------------|-----------------------|
-| Local          | your build, tagged `main` | latest release        |
-| CI (`CI=true`) | latest release            | the release before it |
-
-The release tags are the `latestReleaseTag` / `previousReleaseTag` constants in `bc_helpers_test.go`. **Bump both when a
-new PyT version ships** — nothing does it automatically.
-
-Override either side:
+**`PYT_CANDIDATE_TAG` and `PYT_BASELINE_TAG` are both required.** There is no default pair, because a hardcoded one
+goes stale: the suite would keep passing while comparing two versions nobody ships any more. `TestMain` fails the
+package if either is missing, before any container starts.
 
 ```sh
 PYT_CANDIDATE_TAG=0.11.0 PYT_BASELINE_TAG=0.10.2 go test ./integration_test/pytransformer_contract/ -count=1
 ```
+
+CI resolves the two most recent released tags from ECR and exports them, so a new release is picked up without editing
+anything here.
 
 If the two resolve to the same tag, `startBaselinePytransformer` panics rather than let every comparison pass against
 itself.
 
 ## Running
 
-You need to be able to pull from ECR (see the Notion docs). Then:
+You need to be able to pull from ECR (see the Notion docs), and both tags set. To check your own PyT build, build it
+first in the rudder-pytransformer repo — `make build-ecr-latest` tags it `main` — then point the candidate at it:
 
 ```sh
-make test package=integration_test/pytransformer_contract
+PYT_CANDIDATE_TAG=main PYT_BASELINE_TAG=<last released tag> make test package=integration_test/pytransformer_contract
 # or one suite while iterating:
-go test ./integration_test/pytransformer_contract/ -run TestBackwardsCompatibility -count=1 -timeout=30m
+PYT_CANDIDATE_TAG=main PYT_BASELINE_TAG=<last released tag> go test ./integration_test/pytransformer_contract/ \
+   -run TestBackwardsCompatibility -count=1 -timeout=20m
 ```
 
-To check your own PyT build, build it first in the rudder-pytransformer repo (`make build-ecr-latest`, which tags it
-`main`) and run with no flags — the local default already compares that against the latest release.
+The rudder-pytransformer Makefile recipe that builds and runs this suite sets both for you, and requires the baseline
+tag as an argument.
 
 **Docker only pulls a tag it doesn't already have.** Skip the rebuild and `main` is whatever you last built or pulled,
 and the suite compares that instead, silently. Rebuild before trusting a green run.
