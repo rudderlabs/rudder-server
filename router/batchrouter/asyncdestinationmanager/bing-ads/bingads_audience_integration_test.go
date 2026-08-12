@@ -59,7 +59,7 @@ func TestBingAdsAudienceIntegration(t *testing.T) {
 					jobs = append(jobs, newAudienceJob(t, jobID, action, hashedEmail))
 				}
 			}
-			pollResponse, ids := runUpload(t, uploader, destination, jobs)
+			pollResponse, ids := runUploadAndPoll(t, uploader, destination, jobs)
 			requireImportSucceeded(t, pollResponse, len(ids))
 		})
 	}
@@ -84,7 +84,7 @@ func TestBingAdsAudienceIntegration(t *testing.T) {
 			jobs = append(jobs, newAudienceJob(t, jobID, "Add", email))
 		}
 
-		pollResponse, ids := runUpload(t, uploader, destination, jobs)
+		pollResponse, ids := runUploadAndPoll(t, uploader, destination, jobs)
 		meta := fetchUploadStats(t, uploader, pollResponse, ids)
 		require.ElementsMatch(t, abortedJobIDs, meta.AbortedKeys, "unexpected set of aborted jobs")
 		require.ElementsMatch(t, succeededJobIDs, meta.SucceededKeys, "unexpected set of succeeded jobs")

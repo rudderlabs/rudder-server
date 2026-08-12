@@ -151,7 +151,7 @@ func TestBingAdsOfflineConversionsIntegration(t *testing.T) {
 				jobs = append(jobs, newConversionJob(t, jobID, tc.action, fields))
 			}
 
-			pollResponse, ids := runUpload(t, uploader, destination, jobs)
+			pollResponse, ids := runUploadAndPoll(t, uploader, destination, jobs)
 			if tc.wantAbortReason == "" {
 				requireImportSucceeded(t, pollResponse, len(ids))
 				return
