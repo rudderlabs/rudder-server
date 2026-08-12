@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	clickhousev2 "github.com/ClickHouse/clickhouse-go/v2"
@@ -121,12 +122,14 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 
 var errorsMappings = []model.JobError{
 	{
+		// Match the code + phrase only; the v2 driver wraps exception messages differently
+		// from v1 (e.g. prefix/suffix around "code: 516, message: ..."), so avoid over-anchoring.
 		Type:   model.PermissionError,
-		Format: regexp.MustCompile(`code: 516, message: .*: Authentication failed: password is incorrect, or there is no user with such name`),
+		Format: regexp.MustCompile(`(?i)code: 516[\s\S]*Authentication failed`),
 	},
 	{
 		Type:   model.InsufficientResourceError,
-		Format: regexp.MustCompile(`code: 241, message: Memory limit .* exceeded: would use .*, maximum: .*`),
+		Format: regexp.MustCompile(`(?i)code: 241[\s\S]*Memory limit[\s\S]*exceeded`),
 	},
 }
 
@@ -143,12 +146,18 @@ type Clickhouse struct {
 	logger logger.Logger
 	stats  stats.Stats
 
+	// jsonTypeSupport caches whether the connected server supports the native JSON type
+	// (>= 25.3), resolved once via a version query.
+	jsonTypeSupport struct {
+		once      sync.Once
+		supported bool
+	}
+
 	config struct {
 		queryDebugLogs              string
 		blockSize                   string
 		poolSize                    string
 		readTimeout                 string
-		writeTimeout                string
 		compress                    bool
 		disableNullable             bool
 		execTimeout                 time.Duration
@@ -226,7 +235,6 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	ch.config.blockSize = conf.GetStringVar("1000000", "Warehouse.clickhouse.blockSize")
 	ch.config.poolSize = conf.GetStringVar("100", "Warehouse.clickhouse.poolSize")
 	ch.config.readTimeout = conf.GetStringVar("300", "Warehouse.clickhouse.readTimeout")
-	ch.config.writeTimeout = conf.GetStringVar("1800", "Warehouse.clickhouse.writeTimeout")
 	ch.config.compress = conf.GetBoolVar(false, "Warehouse.clickhouse.compress")
 	ch.config.disableNullable = conf.GetBoolVar(false, "Warehouse.clickhouse.disableNullable")
 	ch.config.execTimeout = conf.GetDurationVar(600, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
@@ -263,11 +271,61 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	return ch
 }
 
-// useNativeJSON reports whether json columns should use ClickHouse's native JSON type
-// (opt-in per destination id, per workspace id, or globally). Requires a ClickHouse server
+// nativeJSONMinMajor / nativeJSONMinMinor is the minimum ClickHouse version (25.3) in which
+// the native JSON type is production-ready.
+const (
+	nativeJSONMinMajor = 25
+	nativeJSONMinMinor = 3
+)
+
+// useNativeJSON reports whether json columns should use ClickHouse's native JSON type. It is
+// opt-in (per destination id, per workspace id, or globally) AND requires a ClickHouse server
 // >= 25.3; otherwise json columns are stored as String.
 func (ch *Clickhouse) useNativeJSON() bool {
-	return ch.config.nativeJSONColumns(ch.Warehouse.WorkspaceID, ch.Warehouse.Destination.ID)
+	if !ch.config.nativeJSONColumns(ch.Warehouse.WorkspaceID, ch.Warehouse.Destination.ID) {
+		return false
+	}
+	return ch.serverSupportsNativeJSON()
+}
+
+// serverSupportsNativeJSON queries the server version once and caches whether it is >= 25.3.
+// On any error (including no DB yet) it returns false, so json columns fall back to String.
+func (ch *Clickhouse) serverSupportsNativeJSON() bool {
+	ch.jsonTypeSupport.once.Do(func() {
+		if ch.DB == nil {
+			return
+		}
+		var version string
+		if err := ch.DB.QueryRowContext(context.Background(), "SELECT version()").Scan(&version); err != nil {
+			ch.logger.Warnn("could not fetch clickhouse version for native JSON gating; falling back to String",
+				obskit.Error(err),
+			)
+			return
+		}
+		ch.jsonTypeSupport.supported = clickhouseVersionAtLeast(version, nativeJSONMinMajor, nativeJSONMinMinor)
+	})
+	return ch.jsonTypeSupport.supported
+}
+
+// clickhouseVersionAtLeast reports whether a ClickHouse version string (e.g. "25.3.1.2000")
+// is >= major.minor.
+func clickhouseVersionAtLeast(version string, major, minor int) bool {
+	parts := strings.Split(strings.TrimSpace(version), ".")
+	if len(parts) < 2 {
+		return false
+	}
+	gotMajor, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return false
+	}
+	gotMinor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return false
+	}
+	if gotMajor != major {
+		return gotMajor > major
+	}
+	return gotMinor >= minor
 }
 
 // connectToClickhouse opens a connection using the clickhouse-go v2 driver. It returns a
@@ -327,7 +385,12 @@ func (ch *Clickhouse) clickhouseV2Options(cred *credentials, includeDBInConn boo
 		opts.ReadTimeout = time.Duration(readTimeout) * time.Second
 	}
 	if blockSize, err := strconv.Atoi(ch.config.blockSize); err == nil && blockSize > 0 {
+		// v1's client-side block_size has no direct v2 equivalent; map it to the server-side
+		// max_block_size setting (closest analogue for controlling block size on reads).
 		opts.Settings["max_block_size"] = blockSize
+	}
+	if lifetime := ch.conf.GetDurationVar(0, time.Second, "Warehouse.clickhouse.connMaxLifetime"); lifetime > 0 {
+		opts.ConnMaxLifetime = lifetime
 	}
 	if ch.config.compress {
 		opts.Compression = &clickhousev2.Compression{Method: clickhousev2.CompressionLZ4}
@@ -545,6 +608,17 @@ func (ch *Clickhouse) typecastDataFromType(data, dataType string) any {
 		if b {
 			dataI = uint8(1)
 		}
+	case "json":
+		if !ch.useNativeJSON() {
+			return data // String column stores the raw JSON text as-is.
+		}
+		// Native JSON column: the v2 driver binds structured Go values, not a raw string.
+		var v any
+		if err := jsonrs.Unmarshal([]byte(data), &v); err != nil {
+			ch.logger.Errorn("Error while unmarshalling json column value", obskit.Error(err))
+			return data
+		}
+		return v
 	default:
 		if strings.Contains(dataType, "array") {
 			dataI = ch.castStringToArray(data, dataType)
@@ -1168,7 +1242,12 @@ func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, error) {
 		if _, ok := schema[tableName]; !ok {
 			schema[tableName] = make(model.TableSchema)
 		}
-		if datatype, ok := clickhouseDataTypesMapToRudder[columnType]; ok {
+		datatype, ok := clickhouseDataTypesMapToRudder[columnType]
+		if !ok && strings.HasPrefix(columnType, "JSON") {
+			// Native JSON columns may carry parameters, e.g. JSON(max_dynamic_paths=1024).
+			datatype, ok = "json", true
+		}
+		if ok {
 			schema[tableName][columnName] = datatype
 		} else {
 			warehouseutils.WHCounterStat(ch.stats, warehouseutils.RudderMissingDatatype, &ch.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)

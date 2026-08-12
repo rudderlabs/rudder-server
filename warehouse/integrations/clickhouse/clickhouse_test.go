@@ -1168,8 +1168,11 @@ func TestIntegration(t *testing.T) {
 func connectClickhouseDB(t testing.TB, ctx context.Context, dsn string) *sql.DB {
 	t.Helper()
 
-	db, err := sql.Open("clickhouse", dsn)
+	// v1 registered the "clickhouse" database/sql driver; with the v2 migration we build the
+	// connection from a parsed DSN via the v2 driver's OpenDB instead of sql.Open.
+	opt, err := clickhousestd.ParseDSN(dsn)
 	require.NoError(t, err)
+	db := clickhousestd.OpenDB(opt)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()

@@ -60,6 +60,9 @@ func TestClickhouseColumnTypeAndDDL(t *testing.T) {
 				conf := config.New()
 				conf.Set("Warehouse.clickhouse.nativeJSONColumns", tc.nativeJSON)
 				ch := newTestClickhouse(t, conf, wsID, destID, nil)
+				if tc.nativeJSON {
+					markNativeJSONServerSupported(ch)
+				}
 
 				ddl := ch.ColumnsWithDataTypes("some_table", model.TableSchema{"payload": "json"}, nil)
 				if tc.wantJSON {
@@ -77,6 +80,7 @@ func TestClickhouseColumnTypeAndDDL(t *testing.T) {
 		conf := config.New()
 		conf.Set("Warehouse.clickhouse.nativeJSONColumns", true)
 		ch := newTestClickhouse(t, conf, wsID, destID, nil)
+		markNativeJSONServerSupported(ch)
 
 		ddl := ch.ColumnsWithDataTypes(warehouseutils.UsersTable, model.TableSchema{"payload": "json"}, nil)
 		require.Contains(t, ddl, `"payload" JSON`)
@@ -187,4 +191,44 @@ func selfSignedCertPEM(t *testing.T) string {
 	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})))
+}
+
+// markNativeJSONServerSupported seeds the cached server-version check so unit tests (which
+// have no live DB) can exercise the native JSON path.
+func markNativeJSONServerSupported(ch *Clickhouse) {
+	ch.jsonTypeSupport.once.Do(func() { ch.jsonTypeSupport.supported = true })
+}
+
+func TestClickhouseVersionAtLeast(t *testing.T) {
+	testCases := []struct {
+		version string
+		want    bool
+	}{
+		{"25.3.1.2000", true},
+		{"25.3", true},
+		{"25.4.0.1", true},
+		{"26.1.0.0", true},
+		{"25.2.9.9", false},
+		{"24.8.14.1", false},
+		{"", false},
+		{"garbage", false},
+	}
+	for _, tc := range testCases {
+		require.Equalf(t, tc.want, clickhouseVersionAtLeast(tc.version, 25, 3), "version %q", tc.version)
+	}
+}
+
+func TestTypecastJSONColumn(t *testing.T) {
+	t.Run("String path returns the raw JSON text", func(t *testing.T) {
+		ch := newTestClickhouse(t, config.New(), "ws", "dest", nil)
+		require.Equal(t, `{"a":1}`, ch.typecastDataFromType(`{"a":1}`, "json"))
+	})
+
+	t.Run("native path returns a structured value", func(t *testing.T) {
+		conf := config.New()
+		conf.Set("Warehouse.clickhouse.nativeJSONColumns", true)
+		ch := newTestClickhouse(t, conf, "ws", "dest", nil)
+		markNativeJSONServerSupported(ch)
+		require.Equal(t, map[string]any{"a": float64(1)}, ch.typecastDataFromType(`{"a":1}`, "json"))
+	})
 }
