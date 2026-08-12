@@ -104,8 +104,7 @@ func TestTLSConfigV2(t *testing.T) {
 			"secure":     true,
 			"skipVerify": true,
 		})
-		tlsConfig, err := ch.tlsConfigV2()
-		require.NoError(t, err)
+		tlsConfig := ch.tlsConfigV2()
 		require.NotNil(t, tlsConfig)
 		require.True(t, tlsConfig.InsecureSkipVerify)
 		require.Nil(t, tlsConfig.RootCAs)
@@ -116,19 +115,19 @@ func TestTLSConfigV2(t *testing.T) {
 			"secure":        true,
 			"caCertificate": selfSignedCertPEM(t),
 		})
-		tlsConfig, err := ch.tlsConfigV2()
-		require.NoError(t, err)
+		tlsConfig := ch.tlsConfigV2()
 		require.NotNil(t, tlsConfig)
 		require.NotNil(t, tlsConfig.RootCAs)
 	})
 
-	t.Run("invalid certificate errors", func(t *testing.T) {
+	t.Run("invalid certificate is ignored, not fatal", func(t *testing.T) {
 		ch := newTestClickhouse(t, config.New(), "ws", "dest", map[string]any{
 			"secure":        true,
 			"caCertificate": "not-a-valid-pem",
 		})
-		_, err := ch.tlsConfigV2()
-		require.Error(t, err)
+		tlsConfig := ch.tlsConfigV2()
+		require.NotNil(t, tlsConfig)
+		require.Nil(t, tlsConfig.RootCAs)
 	})
 }
 
@@ -149,8 +148,7 @@ func TestClickhouseV2Options(t *testing.T) {
 
 	cred := ch.connectionCredentials()
 
-	opts, err := ch.clickhouseV2Options(cred, true)
-	require.NoError(t, err)
+	opts := ch.clickhouseV2Options(cred, true)
 
 	require.Equal(t, []string{"clickhouse.example.com:9440"}, opts.Addr)
 	require.Equal(t, "rudder", opts.Auth.Username)
@@ -165,8 +163,7 @@ func TestClickhouseV2Options(t *testing.T) {
 	require.Zero(t, opts.MaxIdleConns)
 
 	t.Run("database omitted when includeDBInConn is false", func(t *testing.T) {
-		opts, err := ch.clickhouseV2Options(cred, false)
-		require.NoError(t, err)
+		opts := ch.clickhouseV2Options(cred, false)
 		require.Empty(t, opts.Auth.Database)
 	})
 

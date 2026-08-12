@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -1168,11 +1169,20 @@ func TestIntegration(t *testing.T) {
 func connectClickhouseDB(t testing.TB, ctx context.Context, dsn string) *sql.DB {
 	t.Helper()
 
-	// v1 registered the "clickhouse" database/sql driver; with the v2 migration we build the
-	// connection from a parsed DSN via the v2 driver's OpenDB instead of sql.Open.
-	opt, err := clickhousestd.ParseDSN(dsn)
+	// Build v2 Options explicitly from the DSN. clickhouse-go v2 does not read the v1-style
+	// username/password/database query params, so map them ourselves to avoid connecting as
+	// the default user/database.
+	u, err := url.Parse(dsn)
 	require.NoError(t, err)
-	db := clickhousestd.OpenDB(opt)
+	q := u.Query()
+	db := clickhousestd.OpenDB(&clickhousestd.Options{
+		Addr: []string{u.Host},
+		Auth: clickhousestd.Auth{
+			Database: q.Get("database"),
+			Username: q.Get("username"),
+			Password: q.Get("password"),
+		},
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()

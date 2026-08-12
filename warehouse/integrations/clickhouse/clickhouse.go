@@ -335,12 +335,7 @@ func clickhouseVersionAtLeast(version string, major, minor int) bool {
 func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) (*sqlmw.DB, error) {
 	cred := ch.connectionCredentials()
 
-	opts, err := ch.clickhouseV2Options(cred, includeDBInConn)
-	if err != nil {
-		return nil, fmt.Errorf("building clickhouse options: %w", err)
-	}
-
-	db := clickhousev2.OpenDB(opts)
+	db := clickhousev2.OpenDB(ch.clickhouseV2Options(cred, includeDBInConn))
 	// clickhouse-go v2 forbids setting pool sizes on Options when using OpenDB; they must be
 	// applied on the *sql.DB instead (otherwise the connector errors with "invalid settings").
 	ch.applyConnPoolSettings(db)
@@ -359,7 +354,7 @@ func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) (*sqlmw.DB, erro
 // clickhouseV2Options translates the destination credentials and connection config into
 // clickhouse-go v2 Options. Pool sizing is intentionally NOT set here: with OpenDB it must be
 // applied on the *sql.DB (see applyConnPoolSettings).
-func (ch *Clickhouse) clickhouseV2Options(cred *credentials, includeDBInConn bool) (*clickhousev2.Options, error) {
+func (ch *Clickhouse) clickhouseV2Options(cred *credentials, includeDBInConn bool) *clickhousev2.Options {
 	opts := &clickhousev2.Options{
 		Addr:     []string{fmt.Sprintf("%s:%s", cred.host, cred.port)},
 		Auth:     clickhousev2.Auth{Username: cred.user, Password: cred.password},
@@ -367,11 +362,7 @@ func (ch *Clickhouse) clickhouseV2Options(cred *credentials, includeDBInConn boo
 		Debug:    ch.config.queryDebugLogs == "true",
 	}
 	if ch.tlsEnabled() {
-		tlsConfig, err := ch.tlsConfigV2()
-		if err != nil {
-			return nil, err
-		}
-		opts.TLS = tlsConfig
+		opts.TLS = ch.tlsConfigV2()
 	}
 	if includeDBInConn {
 		opts.Auth.Database = cred.database
@@ -390,7 +381,7 @@ func (ch *Clickhouse) clickhouseV2Options(cred *credentials, includeDBInConn boo
 	if ch.config.compress {
 		opts.Compression = &clickhousev2.Compression{Method: clickhousev2.CompressionLZ4}
 	}
-	return opts, nil
+	return opts
 }
 
 // applyConnPoolSettings applies pool sizing to the *sql.DB. clickhouse-go v2 requires this to
@@ -405,28 +396,28 @@ func (ch *Clickhouse) applyConnPoolSettings(db *sql.DB) {
 	}
 }
 
-// tlsEnabled reports whether the destination requires TLS (secure flag set or a CA cert given).
+// tlsEnabled reports whether TLS should be used. As in v1, this is driven by the secure flag;
+// a CA certificate alone (without secure) does not enable TLS.
 func (ch *Clickhouse) tlsEnabled() bool {
-	if ch.Warehouse.GetBoolDestinationConfig(model.SecureSetting) {
-		return true
-	}
-	return strings.TrimSpace(ch.Warehouse.GetStringDestinationConfig(ch.conf, model.CACertificateSetting)) != ""
+	return ch.Warehouse.GetBoolDestinationConfig(model.SecureSetting)
 }
 
-// tlsConfigV2 builds an inline *tls.Config for the v2 driver. Only call it when tlsEnabled().
-func (ch *Clickhouse) tlsConfigV2() (*tls.Config, error) {
+// tlsConfigV2 builds an inline *tls.Config for the v2 driver. A malformed CA certificate is
+// logged and ignored (matching v1's lenient behaviour). Only call it when tlsEnabled().
+func (ch *Clickhouse) tlsConfigV2() *tls.Config {
 	skipVerify := ch.Warehouse.GetBoolDestinationConfig(model.SkipVerifySetting)
 	certificate := ch.Warehouse.GetStringDestinationConfig(ch.conf, model.CACertificateSetting)
 
 	tlsConfig := &tls.Config{InsecureSkipVerify: skipVerify} //nolint:gosec // skipVerify is destination-configured, matching v1 behaviour
 	if strings.TrimSpace(certificate) != "" {
 		caCertPool := x509.NewCertPool()
-		if ok := caCertPool.AppendCertsFromPEM([]byte(certificate)); !ok {
-			return nil, fmt.Errorf("appending CA certificate to pool")
+		if ok := caCertPool.AppendCertsFromPEM([]byte(certificate)); ok {
+			tlsConfig.RootCAs = caCertPool
+		} else {
+			ch.logger.Warnn("could not parse CA certificate for clickhouse; proceeding without it")
 		}
-		tlsConfig.RootCAs = caCertPool
 	}
-	return tlsConfig, nil
+	return tlsConfig
 }
 
 // connectionCredentials returns the credentials for connecting to clickhouse.
