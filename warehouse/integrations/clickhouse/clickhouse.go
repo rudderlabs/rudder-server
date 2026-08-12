@@ -333,10 +333,7 @@ func clickhouseVersionAtLeast(version string, major, minor int) bool {
 // code is driver-agnostic. v2 speaks the same native protocol as v1, so existing
 // ClickHouse servers, tables, and queries remain compatible.
 func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) (*sqlmw.DB, error) {
-	cred, err := ch.connectionCredentials()
-	if err != nil {
-		return nil, fmt.Errorf("could not get connection credentials: %w", err)
-	}
+	cred := ch.connectionCredentials()
 
 	opts, err := ch.clickhouseV2Options(cred, includeDBInConn)
 	if err != nil {
@@ -344,6 +341,9 @@ func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) (*sqlmw.DB, erro
 	}
 
 	db := clickhousev2.OpenDB(opts)
+	// clickhouse-go v2 forbids setting pool sizes on Options when using OpenDB; they must be
+	// applied on the *sql.DB instead (otherwise the connector errors with "invalid settings").
+	ch.applyConnPoolSettings(db)
 
 	middleware := sqlmw.New(
 		db,
@@ -357,29 +357,27 @@ func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) (*sqlmw.DB, erro
 }
 
 // clickhouseV2Options translates the destination credentials and connection config into
-// clickhouse-go v2 Options.
+// clickhouse-go v2 Options. Pool sizing is intentionally NOT set here: with OpenDB it must be
+// applied on the *sql.DB (see applyConnPoolSettings).
 func (ch *Clickhouse) clickhouseV2Options(cred *credentials, includeDBInConn bool) (*clickhousev2.Options, error) {
-	tlsConfig, err := ch.tlsConfigV2()
-	if err != nil {
-		return nil, err
-	}
-
 	opts := &clickhousev2.Options{
 		Addr:     []string{fmt.Sprintf("%s:%s", cred.host, cred.port)},
 		Auth:     clickhousev2.Auth{Username: cred.user, Password: cred.password},
 		Settings: clickhousev2.Settings{},
 		Debug:    ch.config.queryDebugLogs == "true",
-		TLS:      tlsConfig,
+	}
+	if ch.tlsEnabled() {
+		tlsConfig, err := ch.tlsConfigV2()
+		if err != nil {
+			return nil, err
+		}
+		opts.TLS = tlsConfig
 	}
 	if includeDBInConn {
 		opts.Auth.Database = cred.database
 	}
 	if cred.timeout > 0 {
 		opts.DialTimeout = cred.timeout
-	}
-	if poolSize, err := strconv.Atoi(ch.config.poolSize); err == nil && poolSize > 0 {
-		opts.MaxOpenConns = poolSize
-		opts.MaxIdleConns = poolSize
 	}
 	if readTimeout, err := strconv.Atoi(ch.config.readTimeout); err == nil && readTimeout > 0 {
 		opts.ReadTimeout = time.Duration(readTimeout) * time.Second
@@ -389,27 +387,38 @@ func (ch *Clickhouse) clickhouseV2Options(cred *credentials, includeDBInConn boo
 		// max_block_size setting (closest analogue for controlling block size on reads).
 		opts.Settings["max_block_size"] = blockSize
 	}
-	if lifetime := ch.conf.GetDurationVar(0, time.Second, "Warehouse.clickhouse.connMaxLifetime"); lifetime > 0 {
-		opts.ConnMaxLifetime = lifetime
-	}
 	if ch.config.compress {
 		opts.Compression = &clickhousev2.Compression{Method: clickhousev2.CompressionLZ4}
 	}
 	return opts, nil
 }
 
-// tlsConfigV2 builds an inline *tls.Config for the v2 driver (which takes TLS in Options
-// rather than via the v1 global registry). Returns nil when TLS is not required.
+// applyConnPoolSettings applies pool sizing to the *sql.DB. clickhouse-go v2 requires this to
+// be done on the DB (not via Options) when using OpenDB.
+func (ch *Clickhouse) applyConnPoolSettings(db *sql.DB) {
+	if poolSize, err := strconv.Atoi(ch.config.poolSize); err == nil && poolSize > 0 {
+		db.SetMaxOpenConns(poolSize)
+		db.SetMaxIdleConns(poolSize)
+	}
+	if lifetime := ch.conf.GetDurationVar(0, time.Second, "Warehouse.clickhouse.connMaxLifetime"); lifetime > 0 {
+		db.SetConnMaxLifetime(lifetime)
+	}
+}
+
+// tlsEnabled reports whether the destination requires TLS (secure flag set or a CA cert given).
+func (ch *Clickhouse) tlsEnabled() bool {
+	if ch.Warehouse.GetBoolDestinationConfig(model.SecureSetting) {
+		return true
+	}
+	return strings.TrimSpace(ch.Warehouse.GetStringDestinationConfig(ch.conf, model.CACertificateSetting)) != ""
+}
+
+// tlsConfigV2 builds an inline *tls.Config for the v2 driver. Only call it when tlsEnabled().
 func (ch *Clickhouse) tlsConfigV2() (*tls.Config, error) {
-	secure := ch.Warehouse.GetBoolDestinationConfig(model.SecureSetting)
 	skipVerify := ch.Warehouse.GetBoolDestinationConfig(model.SkipVerifySetting)
 	certificate := ch.Warehouse.GetStringDestinationConfig(ch.conf, model.CACertificateSetting)
 
-	if !secure && strings.TrimSpace(certificate) == "" {
-		return nil, nil
-	}
-
-	tlsConfig := &tls.Config{InsecureSkipVerify: skipVerify}
+	tlsConfig := &tls.Config{InsecureSkipVerify: skipVerify} //nolint:gosec // skipVerify is destination-configured, matching v1 behaviour
 	if strings.TrimSpace(certificate) != "" {
 		caCertPool := x509.NewCertPool()
 		if ok := caCertPool.AppendCertsFromPEM([]byte(certificate)); !ok {
@@ -421,7 +430,7 @@ func (ch *Clickhouse) tlsConfigV2() (*tls.Config, error) {
 }
 
 // connectionCredentials returns the credentials for connecting to clickhouse.
-func (ch *Clickhouse) connectionCredentials() (*credentials, error) {
+func (ch *Clickhouse) connectionCredentials() *credentials {
 	return &credentials{
 		host:     ch.Warehouse.GetStringDestinationConfig(ch.conf, model.HostSetting),
 		database: ch.Warehouse.GetStringDestinationConfig(ch.conf, model.DatabaseSetting),
@@ -429,7 +438,7 @@ func (ch *Clickhouse) connectionCredentials() (*credentials, error) {
 		password: ch.Warehouse.GetStringDestinationConfig(ch.conf, model.PasswordSetting),
 		port:     ch.Warehouse.GetStringDestinationConfig(ch.conf, model.PortSetting),
 		timeout:  ch.connectTimeout,
-	}, nil
+	}
 }
 
 // clickhouseUnknownDatabaseCode is ClickHouse's server error code for a missing database.

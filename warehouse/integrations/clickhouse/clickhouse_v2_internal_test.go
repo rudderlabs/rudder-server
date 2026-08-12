@@ -89,11 +89,14 @@ func TestClickhouseColumnTypeAndDDL(t *testing.T) {
 }
 
 func TestTLSConfigV2(t *testing.T) {
-	t.Run("nil when not secure and no certificate", func(t *testing.T) {
+	t.Run("not required when not secure and no certificate", func(t *testing.T) {
 		ch := newTestClickhouse(t, config.New(), "ws", "dest", map[string]any{})
-		tlsConfig, err := ch.tlsConfigV2()
-		require.NoError(t, err)
-		require.Nil(t, tlsConfig)
+		require.False(t, ch.tlsEnabled())
+	})
+
+	t.Run("required when secure or a certificate is set", func(t *testing.T) {
+		ch := newTestClickhouse(t, config.New(), "ws", "dest", map[string]any{"secure": true})
+		require.True(t, ch.tlsEnabled())
 	})
 
 	t.Run("secure without certificate uses system roots and honors skipVerify", func(t *testing.T) {
@@ -144,8 +147,7 @@ func TestClickhouseV2Options(t *testing.T) {
 		"password": "secret",
 	})
 
-	cred, err := ch.connectionCredentials()
-	require.NoError(t, err)
+	cred := ch.connectionCredentials()
 
 	opts, err := ch.clickhouseV2Options(cred, true)
 	require.NoError(t, err)
@@ -154,17 +156,25 @@ func TestClickhouseV2Options(t *testing.T) {
 	require.Equal(t, "rudder", opts.Auth.Username)
 	require.Equal(t, "secret", opts.Auth.Password)
 	require.Equal(t, "analytics", opts.Auth.Database)
-	require.Equal(t, 42, opts.MaxOpenConns)
-	require.Equal(t, 42, opts.MaxIdleConns)
 	require.Equal(t, 300*time.Second, opts.ReadTimeout)
 	require.Equal(t, 1000, opts.Settings["max_block_size"])
 	require.NotNil(t, opts.Compression)
 	require.Equal(t, clickhousev2.CompressionLZ4, opts.Compression.Method)
+	// Pool sizing must NOT be on Options (v2 OpenDB rejects it); it is applied on the *sql.DB.
+	require.Zero(t, opts.MaxOpenConns)
+	require.Zero(t, opts.MaxIdleConns)
 
 	t.Run("database omitted when includeDBInConn is false", func(t *testing.T) {
 		opts, err := ch.clickhouseV2Options(cred, false)
 		require.NoError(t, err)
 		require.Empty(t, opts.Auth.Database)
+	})
+
+	t.Run("pool sizing is applied on the sql.DB", func(t *testing.T) {
+		db := clickhousev2.OpenDB(&clickhousev2.Options{Addr: []string{"localhost:9000"}})
+		defer func() { _ = db.Close() }()
+		ch.applyConnPoolSettings(db)
+		require.Equal(t, 42, db.Stats().MaxOpenConnections)
 	})
 }
 
