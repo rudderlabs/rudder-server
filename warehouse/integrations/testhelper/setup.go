@@ -288,6 +288,13 @@ func RetrieveRecordsFromWarehouse(
 			switch item := item.(type) {
 			case time.Time:
 				return item.Format(time.RFC3339)
+			case *time.Time:
+				// clickhouse-go v2 returns *time.Time for nullable / SimpleAggregateFunction
+				// DateTime columns; format it the same as a plain time.Time.
+				if item == nil {
+					return ""
+				}
+				return item.Format(time.RFC3339)
 			case string:
 				if t, err := time.Parse(time.RFC3339Nano, item); err == nil {
 					return t.Format(time.RFC3339)
