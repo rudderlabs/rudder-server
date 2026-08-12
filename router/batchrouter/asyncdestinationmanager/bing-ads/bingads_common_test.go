@@ -113,7 +113,7 @@ func writeUploadDataFile(t *testing.T, uploader common.AsyncUploadAndTransformMa
 	return filePath
 }
 
-func runUpload(t *testing.T, uploader common.AsyncDestinationManager, destination *backendconfig.DestinationT, jobs []*jobsdb.JobT) (common.PollStatusResponse, []int64) {
+func runUploadAndPoll(t *testing.T, uploader common.AsyncDestinationManager, destination *backendconfig.DestinationT, jobs []*jobsdb.JobT) (common.PollStatusResponse, []int64) {
 	t.Helper()
 	ctx := context.Background()
 
