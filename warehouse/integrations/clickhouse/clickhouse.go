@@ -332,7 +332,7 @@ func clickhouseVersionAtLeast(version string, major, minor int) bool {
 // database/sql *sql.DB (via OpenDB) wrapped in middleware, so all downstream query/load
 // code is driver-agnostic. v2 speaks the same native protocol as v1, so existing
 // ClickHouse servers, tables, and queries remain compatible.
-func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) (*sqlmw.DB, error) {
+func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) *sqlmw.DB {
 	cred := ch.connectionCredentials()
 
 	db := clickhousev2.OpenDB(ch.clickhouseV2Options(cred, includeDBInConn))
@@ -340,7 +340,7 @@ func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) (*sqlmw.DB, erro
 	// applied on the *sql.DB instead (otherwise the connector errors with "invalid settings").
 	ch.applyConnPoolSettings(db)
 
-	middleware := sqlmw.New(
+	return sqlmw.New(
 		db,
 		sqlmw.WithStats(ch.stats),
 		sqlmw.WithLogger(ch.logger),
@@ -348,7 +348,6 @@ func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) (*sqlmw.DB, erro
 		sqlmw.WithQueryTimeout(ch.connectTimeout),
 		sqlmw.WithSlowQueryThreshold(ch.config.slowQueryThreshold),
 	)
-	return middleware, nil
 }
 
 // clickhouseV2Options translates the destination credentials and connection config into
@@ -1145,10 +1144,7 @@ func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
 		return nil
 	}
 
-	db, err := ch.connectToClickhouse(false)
-	if err != nil {
-		return fmt.Errorf("connecting to clickhouse: %v", err)
-	}
+	db := ch.connectToClickhouse(false)
 	defer func() { _ = db.Close() }()
 
 	ch.logger.Infon("Creating schema",
@@ -1162,7 +1158,7 @@ func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
 	)
 
 	query := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS %q %s`, ch.Namespace, ch.clusterClause())
-	if _, err = db.ExecContext(ctx, query); err != nil {
+	if _, err := db.ExecContext(ctx, query); err != nil {
 		return fmt.Errorf("creating database: %v", err)
 	}
 	return nil
@@ -1199,10 +1195,8 @@ func (ch *Clickhouse) Setup(_ context.Context, warehouse model.Warehouse, upload
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 	ch.LoadFileDownloader = downloader.NewDownloader(&warehouse, uploader, ch.config.numWorkersDownloadLoadFiles)
 
-	if ch.DB, err = ch.connectToClickhouse(true); err != nil {
-		return fmt.Errorf("connecting to clickhouse: %w", err)
-	}
-	return err
+	ch.DB = ch.connectToClickhouse(true)
+	return nil
 }
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
@@ -1357,12 +1351,8 @@ func (ch *Clickhouse) Connect(_ context.Context, warehouse model.Warehouse) (cli
 		misc.IsConfiguredToUseRudderObjectStorage(ch.Warehouse.Destination.Config),
 	)
 
-	db, err := ch.connectToClickhouse(true)
-	if err != nil {
-		return client.Client{}, fmt.Errorf("connecting to clickhouse: %w", err)
-	}
-
-	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
+	db := ch.connectToClickhouse(true)
+	return client.Client{Type: client.SQLClient, SQL: db.DB}, nil
 }
 
 func (ch *Clickhouse) GetLogIdentifier(args ...string) string {
