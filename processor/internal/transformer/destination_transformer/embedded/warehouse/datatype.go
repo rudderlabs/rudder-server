@@ -53,6 +53,14 @@ func dataTypeOverride(destType, key string, val any, isJSONKey bool) string {
 		return overrideForPostgresSnowflake(key, isJSONKey)
 	case whutils.RS:
 		return overrideForRedshift(val, isJSONKey)
+	case whutils.CLICKHOUSE:
+		// isJSONKey is only true when a configured jsonPath matched, which only
+		// happens when JSON columns are enabled for this destination (see options.go
+		// gating in Transformer.isJSONPathSupported). So this branch is inherently gated.
+		if isJSONKey {
+			return model.JSONDataType
+		}
+		return ""
 	default:
 		return ""
 	}

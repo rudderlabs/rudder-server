@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	clickhousestd "github.com/ClickHouse/clickhouse-go"
+	clickhousestd "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -1393,7 +1393,7 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 
 			var clickhouseErr *clickhousestd.Exception
 			require.ErrorAs(t, err, &clickhouseErr)
-			require.Equal(t, int32(253), clickhouseErr.Code)
+			require.EqualValues(t, 253, clickhouseErr.Code)
 		})
 	})
 	// Alter columns to all the cluster tables

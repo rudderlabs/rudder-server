@@ -46,12 +46,15 @@ func TestDataType(t *testing.T) {
 		{"Snowflake JSON Key", whutils.SNOWFLAKE, "someKey", `{"key": "value"}`, true, "json"},
 		{"Snowpipe Streaming JSON Key", whutils.SnowpipeStreaming, "someKey", `{"key": "value"}`, true, "json"},
 		{"Redshift JSON Key", whutils.RS, "someKey", `{"key": "value"}`, true, "json"},
+		{"Clickhouse JSON Key", whutils.CLICKHOUSE, "someKey", `{"key": "value"}`, true, "json"},
+		{"Clickhouse non-JSON Key", whutils.CLICKHOUSE, "someKey", `{"key": "value"}`, false, "string"},
 
 		// Violation Errors
 		{"Postgres violationErrors", whutils.POSTGRES, violationErrors, `{"key": "value"}`, false, "json"},
 		{"Snowflake violationErrors", whutils.SNOWFLAKE, violationErrors, `{"key": "value"}`, false, "json"},
 		{"Snowpipe Streaming violationErrors", whutils.SnowpipeStreaming, violationErrors, `{"key": "value"}`, false, "json"},
 		{"Redshift violationErrors", whutils.RS, violationErrors, `{"key": "value"}`, false, "string"},
+		{"Clickhouse violationErrors", whutils.CLICKHOUSE, violationErrors, `{"key": "value"}`, false, "string"},
 
 		// Redshift with text and string types
 		{"Redshift Text Type (Any Slice)", whutils.RS, "someKey", anySlice, false, "text"},
