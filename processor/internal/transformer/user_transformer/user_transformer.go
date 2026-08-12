@@ -438,14 +438,14 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			// coldStartErrorsMetric deliberately does not fire here, so count it separately — otherwise this
 			// case is invisible and looks identical to any other unexpected status code.
 			if transformerclient.IsRetryableResponse(resp) {
+				reason := retryReasonTag(resp.Header)
 				u.stat.NewTaggedStat(retryableErrorsMetric, stats.CountType, stats.Tags{
 					"workspaceID": labels.WorkspaceID,
 					"language":    labels.Language,
-					"reason":      retryReasonTag(resp),
+					"reason":      reason,
 				}).Increment()
 				u.log.Warnn("transformer reported a retryable failure and the transport's retries were exhausted",
-					append(labels.ToLoggerFields(),
-						logger.NewStringField("reason", retryReasonTag(resp)))...)
+					append(labels.ToLoggerFields(), logger.NewStringField("reason", reason))...)
 			}
 
 			if reqErr != nil {
@@ -711,9 +711,9 @@ func isColdStartError(err error, resp *http.Response) bool {
 // The value is chosen by the transformer, so it must not reach the metrics backend unbounded: one unexpected
 // per-request string there is a new time series per request. Anything that isn't a short, plain identifier
 // becomes "other" — the tag is for grouping, and the exact string is already in the log line beside it.
-func retryReasonTag(resp *http.Response) string {
+func retryReasonTag(header http.Header) string {
 	const maxReasonLen = 64
-	reason := resp.Header.Get(transformerclient.HeaderErrorReason)
+	reason := header.Get(transformerclient.HeaderErrorReason)
 	if reason == "" {
 		return "unknown"
 	}
@@ -721,7 +721,12 @@ func retryReasonTag(resp *http.Response) string {
 		return "other"
 	}
 	for _, r := range reason {
-		if !(r == '_' || r == '-' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+		switch {
+		case r == '_', r == '-',
+			r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9':
+		default:
 			return "other"
 		}
 	}

@@ -164,12 +164,12 @@ func (timeoutError) Temporary() bool { return true }
 // The value is picked by the peer, so anything that is not a short plain identifier has to collapse to a
 // constant. One per-request string reaching the metrics backend is a new time series per request.
 func TestRetryReasonTag(t *testing.T) {
-	respWith := func(reason string) *http.Response {
+	headerWith := func(reason string) http.Header {
 		hdr := http.Header{}
 		if reason != "" {
 			hdr.Set(transformerclient.HeaderErrorReason, reason)
 		}
-		return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: hdr, Body: http.NoBody}
+		return hdr
 	}
 
 	for _, tc := range []struct{ name, reason, want string }{
@@ -181,7 +181,7 @@ func TestRetryReasonTag(t *testing.T) {
 		{"a value at the length limit is kept", strings.Repeat("x", 64), strings.Repeat("x", 64)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, retryReasonTag(respWith(tc.reason)))
+			require.Equal(t, tc.want, retryReasonTag(headerWith(tc.reason)))
 		})
 	}
 }
