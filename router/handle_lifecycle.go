@@ -334,8 +334,9 @@ func (rt *Handle) Setup(
 		rt.adaptiveLimit = func(limit int64) int64 { return limit }
 	}
 
-	rruntime.Go(func() {
+	rt.backgroundGroup.Go(func() error {
 		rt.backendConfigSubscriber()
+		return nil
 	})
 }
 
@@ -468,7 +469,7 @@ func (rt *Handle) statusInsertLoop() {
 }
 
 func (rt *Handle) backendConfigSubscriber() {
-	ch := rt.backendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
+	ch := rt.backendConfig.Subscribe(rt.backgroundCtx, backendconfig.TopicBackendConfig)
 	for configEvent := range ch {
 		destinationsMap := map[string]*routerutils.DestinationWithSources{}
 		connectionsMap := map[types.SourceDest]types.ConnectionWithID{}
