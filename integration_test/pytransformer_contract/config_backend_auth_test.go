@@ -17,7 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 )
 
-// This file pins what CONFIG_BACKEND_HOSTED_SECRET does to the wire, both variants, against a
+// This file pins what CONFIG_BACKEND_TRANSFORMER_SERVICE_SECRET does to the wire, both variants, against a
 // mock config backend ported from ../rudder-config-backend rather than invented here (see
 // configBackendAuthMock below for the file-by-file provenance).
 //
@@ -25,7 +25,7 @@ import (
 // must be indistinguishable from the build that did not know about it. "We return {} when the
 // secret is unset" is an implementation detail; what a deployment cares about is that the
 // request reaching the config backend is unchanged, which is what
-// TestConfigBackendAuthWithoutHostedSecret asserts directly — no Authorization header at all,
+// TestConfigBackendAuthWithoutTransformerServiceSecret asserts directly — no Authorization header at all,
 // same path, same query, events transformed.
 //
 // The rest is the other variant: with the secret set, the header is exactly
@@ -37,12 +37,12 @@ const (
 	// cbAuthSecret is the secret both pytransformer and the mock config backend are given in
 	// the happy path. Restricted to [A-Za-z0-9_-] on purpose: a ":" breaks the basic-auth token
 	// and a "," is split apart by the config backend's comma-separated secret list.
-	cbAuthSecret = "py-contract-hosted-secret"
+	cbAuthSecret = "py-contract-transformer-service"
 
 	// cbAuthOtherSecret is a second, valid secret configured on the config backend alongside
 	// cbAuthSecret. rudder-config-backend accepts a comma-separated list so a secret can be
 	// rotated without a flag day; carrying two here keeps that path exercised.
-	cbAuthOtherSecret = "py-contract-hosted-secret-next"
+	cbAuthOtherSecret = "py-contract-transformer-service-next"
 
 	// cbAuthTransformationRoute / cbAuthLibraryRoute are the two routes pytransformer fetches
 	// from. Both are authenticated on the internal gateway, and the library one is easy to
@@ -75,8 +75,8 @@ def transformEvent(event, metadata):
 `
 )
 
-// TestConfigBackendAuthWithoutHostedSecret is the regression guard for the change being
-// additive: with CONFIG_BACKEND_HOSTED_SECRET absent from the environment, pytransformer must
+// TestConfigBackendAuthWithoutTransformerServiceSecret is the regression guard for the change being
+// additive: with CONFIG_BACKEND_TRANSFORMER_SERVICE_SECRET absent from the environment, pytransformer must
 // talk to the config backend exactly as the build before it did.
 //
 // The assertion that carries the claim is not "it still works" — it is that every request the
@@ -84,13 +84,13 @@ def transformEvent(event, metadata):
 // `Authorization: Basic Og==` (base64 of ":") would still transform events fine against a
 // permissive backend and quietly break against a strict one; only inspecting the received
 // header separates the two.
-func TestConfigBackendAuthWithoutHostedSecret(t *testing.T) {
+func TestConfigBackendAuthWithoutTransformerServiceSecret(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
 	cb := newConfigBackendAuthMock(t, cbAuthSecret, cbAuthOtherSecret)
 
-	// No CONFIG_BACKEND_HOSTED_SECRET passed at all — not empty, absent. This is the
+	// No CONFIG_BACKEND_TRANSFORMER_SERVICE_SECRET passed at all — not empty, absent. This is the
 	// pre-change deployment, and every self-hosted one.
 	pyURL := startRudderPytransformer(t, pool, cb.server.URL)
 
@@ -113,18 +113,18 @@ func TestConfigBackendAuthWithoutHostedSecret(t *testing.T) {
 		require.NotEmpty(t, seen, "config backend was never asked for the transformation code")
 		for _, r := range seen {
 			require.Empty(t, r.authorization,
-				"an unset CONFIG_BACKEND_HOSTED_SECRET must send no Authorization header at all")
+				"an unset CONFIG_BACKEND_TRANSFORMER_SERVICE_SECRET must send no Authorization header at all")
 			require.Equal(t, versionID, r.versionID)
 		}
 	})
 
-	t.Run("hosted-secret routes reject the anonymous fetch as retryable", func(t *testing.T) {
+	t.Run("transformer-service routes reject the anonymous fetch as retryable", func(t *testing.T) {
 		// Pointing CONFIG_BACKEND_URL at the internal gateway and forgetting the secret. The
 		// interesting question is not that it fails but *how*: a per-event 401 is terminal, and
 		// rudder-server aborts every per-event status that is not 200/298, so the events would
 		// be destroyed by a configuration mistake.
 		const versionID = "cbauth-nosecret-authenticated-v1"
-		cb.setMode(cbModeHostedSecret)
+		cb.setMode(cbModeTransformerServiceSecret)
 
 		status, headers, items := sendRawTransform(t, pyURL, makeEvents(versionID, 2))
 
@@ -164,16 +164,16 @@ func TestConfigBackendAuthWithoutHostedSecret(t *testing.T) {
 	})
 }
 
-// TestConfigBackendAuthWithHostedSecret is the other variant: the secret is set, so every fetch
+// TestConfigBackendAuthWithTransformerServiceSecret is the other variant: the secret is set, so every fetch
 // must carry Basic base64("<secret>:") and authenticate against a config backend that enforces
 // the real check.
-func TestConfigBackendAuthWithHostedSecret(t *testing.T) {
+func TestConfigBackendAuthWithTransformerServiceSecret(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
 	cb := newConfigBackendAuthMock(t, cbAuthSecret, cbAuthOtherSecret)
 	pyURL := startRudderPytransformer(t, pool, cb.server.URL,
-		"CONFIG_BACKEND_HOSTED_SECRET="+cbAuthSecret)
+		"CONFIG_BACKEND_TRANSFORMER_SERVICE_SECRET="+cbAuthSecret)
 
 	// What the config backend must receive, spelled out rather than recomputed from the same
 	// helper the assertion is checking: the secret is the username and the password is empty.
@@ -181,7 +181,7 @@ func TestConfigBackendAuthWithHostedSecret(t *testing.T) {
 
 	t.Run("the transformation fetch authenticates", func(t *testing.T) {
 		const versionID = "cbauth-secret-transformation-v1"
-		cb.setMode(cbModeHostedSecret)
+		cb.setMode(cbModeTransformerServiceSecret)
 
 		status, headers, items := sendRawTransform(t, pyURL, makeEvents(versionID, 2))
 
@@ -209,7 +209,7 @@ func TestConfigBackendAuthWithHostedSecret(t *testing.T) {
 			versionID    = "cbauth-secret-library-v1"
 			libVersionID = "cbauth-secret-library-lib-v1"
 		)
-		cb.setMode(cbModeHostedSecret)
+		cb.setMode(cbModeTransformerServiceSecret)
 		cb.addTransformation(versionID, cbAuthCodeUsingLibrary)
 		cb.addLibrary(libVersionID, cbAuthLibraryImportName, cbAuthLibraryCode)
 
@@ -249,17 +249,17 @@ func TestConfigBackendAuthWithHostedSecret(t *testing.T) {
 	})
 }
 
-// TestConfigBackendAuthWithWrongHostedSecret is the unhappy path that matters operationally: a
+// TestConfigBackendAuthWithWrongTransformerServiceSecret is the unhappy path that matters operationally: a
 // stale secret after a rotation. It must be retryable, so the events survive until someone
 // updates the secret, exactly like the no-secret-against-a-strict-backend case.
-func TestConfigBackendAuthWithWrongHostedSecret(t *testing.T) {
+func TestConfigBackendAuthWithWrongTransformerServiceSecret(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
 	cb := newConfigBackendAuthMock(t, cbAuthSecret, cbAuthOtherSecret)
-	cb.setMode(cbModeHostedSecret)
+	cb.setMode(cbModeTransformerServiceSecret)
 	pyURL := startRudderPytransformer(t, pool, cb.server.URL,
-		"CONFIG_BACKEND_HOSTED_SECRET=py-contract-hosted-secret-rotated-away")
+		"CONFIG_BACKEND_TRANSFORMER_SERVICE_SECRET=py-contract-transformer-service-rotated-away")
 
 	const versionID = "cbauth-wrongsecret-v1"
 	status, headers, items := sendRawTransform(t, pyURL, makeEvents(versionID, 3))
@@ -278,23 +278,23 @@ func TestConfigBackendAuthWithWrongHostedSecret(t *testing.T) {
 	require.NotEmpty(t, seen)
 	for _, r := range seen {
 		require.Equal(t,
-			"Basic "+base64.StdEncoding.EncodeToString([]byte("py-contract-hosted-secret-rotated-away:")),
+			"Basic "+base64.StdEncoding.EncodeToString([]byte("py-contract-transformer-service-rotated-away:")),
 			r.authorization)
 		require.Equal(t, http.StatusUnauthorized, r.status)
 	}
 }
 
-// TestConfigBackendHostedSecretTrailingNewlineIsTrimmed covers the shape the secret actually
+// TestConfigBackendTransformerServiceSecretTrailingNewlineIsTrimmed covers the shape the secret actually
 // arrives in on Kubernetes: mounted from a file, which commonly ends in a newline. Untrimmed it
 // would 401 every fetch, and the failure would look like a wrong secret rather than a stray byte.
-func TestConfigBackendHostedSecretTrailingNewlineIsTrimmed(t *testing.T) {
+func TestConfigBackendTransformerServiceSecretTrailingNewlineIsTrimmed(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
 	cb := newConfigBackendAuthMock(t, cbAuthSecret)
-	cb.setMode(cbModeHostedSecret)
+	cb.setMode(cbModeTransformerServiceSecret)
 	pyURL := startRudderPytransformer(t, pool, cb.server.URL,
-		"CONFIG_BACKEND_HOSTED_SECRET="+cbAuthSecret+"\n")
+		"CONFIG_BACKEND_TRANSFORMER_SERVICE_SECRET="+cbAuthSecret+"\n")
 
 	const versionID = "cbauth-trailing-newline-v1"
 	status, _, items := sendRawTransform(t, pyURL, makeEvents(versionID, 1))
@@ -324,7 +324,7 @@ func TestConfigBackendAuthMockMatchesConfigBackend(t *testing.T) {
 		return "Basic " + base64.StdEncoding.EncodeToString([]byte(token))
 	}
 
-	t.Run("hostedSecretCredentials", func(t *testing.T) {
+	t.Run("transformerServiceSecretCredentials", func(t *testing.T) {
 		for _, tc := range []struct {
 			name     string
 			raw      string
@@ -337,12 +337,12 @@ func TestConfigBackendAuthMockMatchesConfigBackend(t *testing.T) {
 			{"unset keeps the development default", "", []string{"password"}},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				creds := hostedSecretCredentials(tc.raw)
+				creds := transformerServiceSecretCredentials(tc.raw)
 				usernames := make([]string, len(creds))
 				for i, c := range creds {
 					usernames[i] = c.username
 					require.Empty(t, c.password,
-						"every hosted secret is a username with an empty password")
+						"every transformer service secret is a username with an empty password")
 				}
 				require.Equal(t, tc.expected, usernames)
 			})
@@ -350,7 +350,7 @@ func TestConfigBackendAuthMockMatchesConfigBackend(t *testing.T) {
 	})
 
 	t.Run("rudderKoaBasicAuth", func(t *testing.T) {
-		creds := hostedSecretCredentials("s3cr3t,rotating-new")
+		creds := transformerServiceSecretCredentials("s3cr3t,rotating-new")
 		for _, tc := range []struct {
 			name       string
 			header     string
@@ -397,12 +397,12 @@ const (
 	// every self-hosted config backend serves.
 	cbModePublic cbAuthMode = iota
 
-	// cbModeHostedSecret is the internal gateway in
+	// cbModeTransformerServiceSecret is the internal gateway in
 	// ../rudder-config-backend/src/modules/transformations/internalRoutes.ts, registered on
-	// getDataplaneGatewayRouter, which attaches DataPlaneController.verifyHostedDataPlaneSecret
+	// getTransformerServiceGatewayRouter, which attaches DataPlaneController.verifyTransformerServiceSecret
 	// to every route. Same paths, so a caller only swaps the base URL — and must start sending
-	// the hosted secret.
-	cbModeHostedSecret
+	// the transformer service secret.
+	cbModeTransformerServiceSecret
 
 	// cbModePublicBlocked is the public router with BLOCK_PUBLIC_TRANSFORMATION_ROUTES on and
 	// the versionId's workspace on a paid plan: DataPlaneController.blockHostedPublicAccess
@@ -434,15 +434,15 @@ type cbAuthRequest struct {
 //
 //   - src/modules/transformations/internalRoutes.ts — the internal-gateway mirror of
 //     /transformation/getByVersionId and /transformationLibrary/getByVersionId, registered on
-//     getDataplaneGatewayRouter.
-//   - src/modules/internal-gateway/router.ts — getDataplaneGatewayRouter attaches
-//     DataPlaneController.verifyHostedDataPlaneSecret to every route on it.
-//   - src/controllers/dataPlane.controller.ts — verifyHostedDataPlaneSecret swallows the
-//     specific failure and throws UnauthenticatedError(Message.IncorrectHostedServiceSecret),
+//     getTransformerServiceGatewayRouter.
+//   - src/modules/internal-gateway/router.ts — getTransformerServiceGatewayRouter attaches
+//     DataPlaneController.verifyTransformerServiceSecret to every route on it.
+//   - src/controllers/dataPlane.controller.ts — verifyTransformerServiceSecret swallows the
+//     specific failure and throws UnauthenticatedError(Message.IncorrectTransformerServiceSecret),
 //     so every rejection reads the same regardless of which rule was broken.
 //   - src/modules/rudder-basic-auth/index.ts — RudderKoaBasicAuth, the actual check (see
 //     rudderKoaBasicAuth).
-//   - src/config.ts — hostedSecretConfig (see hostedSecretCredentials).
+//   - src/config.ts — transformerServiceSecretConfig (see transformerServiceSecretCredentials).
 //   - src/serverUtils/middlewares.ts — a thrown CustomError becomes {"message": ...} with the
 //     error's own status code, and no WWW-Authenticate header.
 //   - src/controllers/transformation.controller.ts and transformationLibrary.controller.ts —
@@ -454,8 +454,8 @@ type cbAuthRequest struct {
 type configBackendAuthMock struct {
 	server *httptest.Server
 
-	// hostedSecrets is the parsed HOSTED_SERVICE_SECRETS of the config backend being imitated.
-	hostedSecrets []cbCredential
+	// transformerServiceSecrets is the parsed TRANSFORMER_SERVICE_SECRETS of the config backend being imitated.
+	transformerServiceSecrets []cbCredential
 
 	mode atomic.Int32
 
@@ -470,20 +470,20 @@ type cbLibrary struct {
 	code       string
 }
 
-// newConfigBackendAuthMock starts a mock config backend whose HOSTED_SERVICE_SECRETS is the
+// newConfigBackendAuthMock starts a mock config backend whose TRANSFORMER_SERVICE_SECRETS is the
 // given list. It starts in cbModePublic; a test picks the mode it needs with setMode.
 //
 // Every versionId resolves — an unregistered one is served cbAuthCode — so a test only registers
 // a transformation when the code itself matters (the library case). Subtests still need distinct
 // versionIds, but for a different reason: pytransformer caches fetched code in its L2 cache and
 // would not re-fetch, so a reused id would be answered without the config backend being asked.
-func newConfigBackendAuthMock(t *testing.T, hostedServiceSecrets ...string) *configBackendAuthMock {
+func newConfigBackendAuthMock(t *testing.T, transformerServiceSecrets ...string) *configBackendAuthMock {
 	t.Helper()
 
 	cb := &configBackendAuthMock{
-		hostedSecrets:   hostedSecretCredentials(strings.Join(hostedServiceSecrets, ",")),
-		transformations: map[string]string{},
-		libraries:       map[string]cbLibrary{},
+		transformerServiceSecrets: transformerServiceSecretCredentials(strings.Join(transformerServiceSecrets, ",")),
+		transformations:           map[string]string{},
+		libraries:                 map[string]cbLibrary{},
 	}
 
 	cb.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -526,12 +526,12 @@ func (cb *configBackendAuthMock) handle(path, versionID, authorization string) (
 	switch cbAuthMode(cb.mode.Load()) {
 	case cbModePublic:
 		// unAuthenticatedRouter: the Authorization header, present or not, is never read.
-	case cbModeHostedSecret:
-		if rudderKoaBasicAuth(cb.hostedSecrets, authorization) != "" {
-			// verifyHostedDataPlaneSecret discards the specific reason and throws
-			// UnauthenticatedError(Message.IncorrectHostedServiceSecret) -> 401.
+	case cbModeTransformerServiceSecret:
+		if rudderKoaBasicAuth(cb.transformerServiceSecrets, authorization) != "" {
+			// verifyTransformerServiceSecret discards the specific reason and throws
+			// UnauthenticatedError(Message.IncorrectTransformerServiceSecret) -> 401.
 			return http.StatusUnauthorized, map[string]any{
-				"message": "Incorrect hosted workspace secret",
+				"message": "Incorrect transformer service secret",
 			}
 		}
 	case cbModePublicBlocked:
@@ -623,17 +623,17 @@ func (cb *configBackendAuthMock) requestsFor(path, versionID string) []cbAuthReq
 	return out
 }
 
-// hostedSecretCredentials ports parseHostedServiceSecrets and hostedSecretConfig from
-// ../rudder-config-backend/src/config.ts: HOSTED_SERVICE_SECRETS is a comma-separated list, each
+// transformerServiceSecretCredentials ports parseServiceSecrets and transformerServiceSecretConfig from
+// ../rudder-config-backend/src/config.ts: TRANSFORMER_SERVICE_SECRETS is a comma-separated list, each
 // entry trimmed and blanks dropped, and every password is the empty string. That last detail is
 // the whole reason pytransformer sends base64("<secret>:") rather than base64("<secret>").
 //
 // The unset case keeps the config backend's development default of a single "password" secret.
 // Its startup-time throw for a set-but-all-blank value is not ported: it is a config backend
 // startup concern with nothing for pytransformer to observe.
-func hostedSecretCredentials(hostedServiceSecrets string) []cbCredential {
+func transformerServiceSecretCredentials(transformerServiceSecrets string) []cbCredential {
 	var usernames []string
-	for secret := range strings.SplitSeq(hostedServiceSecrets, ",") {
+	for secret := range strings.SplitSeq(transformerServiceSecrets, ",") {
 		if trimmed := strings.TrimSpace(secret); trimmed != "" {
 			usernames = append(usernames, trimmed)
 		}
@@ -661,7 +661,7 @@ const (
 // rudderKoaBasicAuth ports RudderKoaBasicAuth from
 // ../rudder-config-backend/src/modules/rudder-basic-auth/index.ts. It returns "" when the header
 // authenticates, otherwise the message that rule would have thrown — a string rather than an
-// error because it is never wrapped or compared, and because verifyHostedDataPlaneSecret
+// error because it is never wrapped or compared, and because verifyTransformerServiceSecret
 // collapses all three into one 401 body on the wire. Keeping them distinct here is what lets a
 // test say *which* rule rejected a header.
 //
