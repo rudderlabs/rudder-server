@@ -39,34 +39,35 @@ func (rt *Handle) collectMetrics(ctx context.Context) {
 			return
 		case <-rt.telemetry.diagnosisTicker.C:
 		}
-		rt.telemetry.requestsMetricLock.RLock()
+		rt.telemetry.requestsMetricLock.Lock()
+		snapshot := rt.telemetry.requestsMetric
+		rt.telemetry.requestsMetric = nil
+		rt.telemetry.requestsMetricLock.Unlock()
+
 		var diagnosisProperties map[string]any
 		retries := 0
 		aborted := 0
 		success := 0
 		var compTime time.Duration
-		for _, reqMetric := range rt.telemetry.requestsMetric {
+		for _, reqMetric := range snapshot {
 			retries += reqMetric.RequestRetries
 			aborted += reqMetric.RequestAborted
 			success += reqMetric.RequestSuccess
 			compTime += reqMetric.RequestCompletedTime
 		}
-		if len(rt.telemetry.requestsMetric) > 0 {
+		if len(snapshot) > 0 {
 			diagnosisProperties = map[string]any{
 				rt.destType: map[string]any{
 					diagnostics.RouterAborted:       aborted,
 					diagnostics.RouterRetries:       retries,
 					diagnostics.RouterSuccess:       success,
-					diagnostics.RouterCompletedTime: (compTime / time.Duration(len(rt.telemetry.requestsMetric))) / time.Millisecond,
+					diagnostics.RouterCompletedTime: (compTime / time.Duration(len(snapshot))) / time.Millisecond,
 				},
 			}
 			if diagnostics.Diagnostics != nil {
 				diagnostics.Diagnostics.Track(diagnostics.RouterEvents, diagnosisProperties)
 			}
 		}
-
-		rt.telemetry.requestsMetric = nil
-		rt.telemetry.requestsMetricLock.RUnlock()
 
 		// This lock will ensure we don't send out Track Request while filling up the
 		// failureMetric struct
