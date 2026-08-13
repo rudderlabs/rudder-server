@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
