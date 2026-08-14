@@ -248,20 +248,14 @@ func makeEventWithCredentials(messageID, versionID string, credentials []types.C
 	return ev
 }
 
-// makeEvents creates n TransformerEvents for versionID, optionally carrying library version ids.
+// makeEvents creates n TransformerEvents for versionID.
 //
 // Message ids are prefixed with versionID so a test sharing one mock config backend across
 // subtests can scope its assertions to its own requests.
-func makeEvents(versionID string, n int, libraryVersionIDs ...string) []types.TransformerEvent {
-	libraries := make([]backendconfig.LibraryT, len(libraryVersionIDs))
-	for i, id := range libraryVersionIDs {
-		libraries[i] = backendconfig.LibraryT{VersionID: id}
-	}
-
+func makeEvents(versionID string, n int) []types.TransformerEvent {
 	events := make([]types.TransformerEvent, n)
 	for i := range events {
 		events[i] = makeEvent(fmt.Sprintf("%s-msg-%d", versionID, i+1), versionID)
-		events[i].Libraries = libraries
 	}
 	return events
 }

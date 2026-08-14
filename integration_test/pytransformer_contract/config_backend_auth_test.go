@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
 // This file pins what CONFIG_BACKEND_HOSTED_SECRET does to the wire, both variants, against a
@@ -220,8 +221,9 @@ func TestConfigBackendAuthWithHostedSecret(t *testing.T) {
 		cb.addTransformation(versionID, cbAuthCodeUsingLibrary)
 		cb.addLibrary(libVersionID, cbAuthLibraryImportName, cbAuthLibraryCode)
 
-		status, _, items := sendRawTransform(t, pyURL,
-			makeEvents(versionID, 1, libVersionID))
+		events := makeEvents(versionID, 1)
+		events[0].Libraries = []backendconfig.LibraryT{{VersionID: libVersionID}}
+		status, _, items := sendRawTransform(t, pyURL, events)
 
 		require.Equal(t, http.StatusOK, status, "items: %+v", items)
 		require.Len(t, items, 1)
