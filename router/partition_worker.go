@@ -23,6 +23,7 @@ import (
 func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *partitionWorker {
 	samplerCtx, samplerCancel := context.WithCancel(context.Background())
 	barrier := rt.newBarrierFn()
+	noOfWorkers := getPartitionRouterConfigInt("noOfWorkers", rt.destType, partition, rt.noOfWorkers)
 	pw := &partitionWorker{
 		logger:               rt.logger.Child("p-" + partition),
 		rt:                   rt,
@@ -33,7 +34,7 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 	}
 	pw.g, _ = errgroup.WithContext(context.Background())
 	pw.barrier = barrier
-	pw.workers = make([]*worker, rt.noOfWorkers)
+	pw.workers = make([]*worker, noOfWorkers)
 	deliveryTimeStat := stats.Default.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destType})
 	routerDeliveryLatencyStat := stats.Default.NewTaggedStat("router_delivery_latency", stats.TimerType, stats.Tags{"destType": rt.destType})
 	routerProxyStat := stats.Default.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": rt.destType})
@@ -41,7 +42,7 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 	bufferCapacityStat := stats.Default.NewTaggedStat("router_worker_buffer_capacity", stats.HistogramType, stats.Tags{"destType": rt.destType, "partition": partition})
 	bufferSizeStat := stats.Default.NewTaggedStat("router_worker_buffer_size", stats.HistogramType, stats.Tags{"destType": rt.destType, "partition": partition})
 
-	for i := 0; i < rt.noOfWorkers; i++ {
+	for i := 0; i < noOfWorkers; i++ {
 		ctx, cancelFunc := context.WithCancel(context.Background())
 		workLoopThroughput := metric.NewSimpleMovingAverage(20)
 		workLoopThroughputStat := stats.Default.NewTaggedStat("router_worker_work_loop_throughput", stats.HistogramType, stats.Tags{"destType": rt.destType, "partition": partition})
@@ -56,7 +57,7 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 				newBufferSizeCalculatorSwitcher(
 					rt.reloadableConfig.enableDynamicBufferSizeCalculator,
 					pw.pickupBatchSizeGauge,
-					rt.noOfWorkers,
+					noOfWorkers,
 					rt.reloadableConfig.noOfJobsToBatchInAWorker,
 					workLoopThroughput,
 					rt.reloadableConfig.dynamicBufferSizeScalingFactor,

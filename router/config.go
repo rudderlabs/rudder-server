@@ -12,6 +12,14 @@ func getRouterConfigInt(key, destType string, defaultValue int) int {
 	return config.GetIntVar(defaultValue, 1, getRouterConfigKeys(key, destType)...)
 }
 
+func getPartitionRouterConfigInt(key, destType, partition string, defaultValue int) int {
+	keys := getRouterConfigKeys(key, destType)
+	if partition != "" {
+		keys = append([]string{"Router." + destType + "." + partition + "." + key}, keys...)
+	}
+	return config.GetIntVar(defaultValue, 1, keys...)
+}
+
 func getHierarchicalRouterConfigInt(destType string, defaultValue int, keys ...string) int {
 	orderedKeys := make([]string, 0, len(keys)*2)
 	for i := range keys {
