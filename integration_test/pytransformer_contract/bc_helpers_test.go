@@ -6,11 +6,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,10 +34,63 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/usertransformer"
 )
 
+// The suite always compares two rudder-pytransformer builds — a candidate against a baseline — so a behaviour change
+// between two PyT versions fails here the same way it would surface in a mirrored production comparison.
+//
+// Which pair to compare is the caller's decision, not this file's. Both tags are required and neither has a default:
+// a hardcoded pair silently goes stale, and the suite then keeps passing while comparing two versions nobody ships.
+//
+// TestMain rejects a run that omits either.
+//
+//   - CI resolves the two most recent released tags and exports them, so it always compares the
+//     current release against the one before it without anyone editing this file.
+//
+//   - Locally, build your image and point the candidate at it:
+//
+//     PYT_CANDIDATE_TAG=main PYT_BASELINE_TAG=0.10.2 go test ./integration_test/pytransformer_contract/...
+//
+// See README.md in this directory.
+const (
+	pytransformerImage = "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer"
+
+	candidateTagEnv = "PYT_CANDIDATE_TAG"
+	baselineTagEnv  = "PYT_BASELINE_TAG"
+)
+
+// TestMain fails the whole package when either tag is missing.
+//
+// Every test in this package starts at least the candidate container, so there is no useful subset to
+// run without them; failing here reports the cause once instead of once per test, and before any
+// container is started.
+func TestMain(m *testing.M) {
+	var missing []string
+	for _, key := range []string{candidateTagEnv, baselineTagEnv} {
+		if os.Getenv(key) == "" {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) > 0 {
+		fmt.Fprintf(os.Stderr,
+			"pytransformer contract tests: %s must be set to the rudder-pytransformer image tags to compare.\n"+
+				"Locally, build your image and run:\n"+
+				"  %s=main %s=<last released tag> go test ./integration_test/pytransformer_contract/...\n"+
+				"On CI both are resolved from the released tags and exported for you.\n",
+			strings.Join(missing, " and "), candidateTagEnv, baselineTagEnv)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
+
+// candidatePytransformerTag returns the tag under test.
+func candidatePytransformerTag() string { return os.Getenv(candidateTagEnv) }
+
+// baselinePytransformerTag returns the tag the candidate is compared against.
+func baselinePytransformerTag() string { return os.Getenv(baselineTagEnv) }
+
 // containerConfig holds platform-specific Docker container configuration.
 // On Linux, containers use host networking (sharing the host's network namespace).
-// On macOS — or when bridge networking is forced via withBridgeNetworking —
-// containers use bridge networking with port bindings and host.docker.internal.
+// On macOS, containers use bridge networking with port bindings and
+// host.docker.internal.
 type containerConfig struct {
 	bridge       bool // bridge networking (vs host networking)
 	hostPort     int  // allocated host port (host networking only)
@@ -46,30 +99,12 @@ type containerConfig struct {
 	hostConfigFn func(*docker.HostConfig)
 }
 
-type containerConfigOpts struct {
-	forceBridge bool
-}
-
-type containerConfigOpt func(*containerConfigOpts)
-
-// withBridgeNetworking forces bridge networking even where host networking is
-// the default (Linux). For containers that must not share the host's network
-// namespace — e.g. openfaas-flask function containers, whose of-watchdog binds
-// a hard-coded metrics port that collides when two of them share a namespace.
-func withBridgeNetworking() containerConfigOpt {
-	return func(o *containerConfigOpts) { o.forceBridge = true }
-}
-
 // newContainerConfig returns the appropriate Docker configuration for the current platform.
 // Default is host networking (Linux, CI, production). On macOS, Docker Desktop does not
 // support host networking so we fall back to bridge networking with port bindings.
-func newContainerConfig(t *testing.T, containerPort string, opts ...containerConfigOpt) containerConfig {
+func newContainerConfig(t *testing.T, containerPort string) containerConfig {
 	t.Helper()
-	var o containerConfigOpts
-	for _, opt := range opts {
-		opt(&o)
-	}
-	if runtime.GOOS == "darwin" || o.forceBridge {
+	if runtime.GOOS == "darwin" {
 		return containerConfig{
 			bridge:     true,
 			ExtraHosts: []string{"host.docker.internal:host-gateway"},
@@ -118,78 +153,92 @@ func toContainerURL(url string) string {
 	return url
 }
 
-// bcTestEnv holds clients for both the old architecture (rudder-transformer + openfaas)
-// and the new architecture (rudder-pytransformer) to compare their responses.
+// bcTestEnv holds clients for the two rudder-pytransformer builds under
+// comparison: the baseline (last released version) and the candidate (main).
 type bcTestEnv struct {
-	OldClient *usertransformer.Client // rudder-transformer + openfaas (old architecture)
-	NewClient *usertransformer.Client // rudder-pytransformer (new architecture)
-	OldStats  *memstats.Store         // stats store for old architecture client
-	NewStats  *memstats.Store         // stats store for new architecture client
+	BaselineClient  *usertransformer.Client // baseline rudder-pytransformer
+	CandidateClient *usertransformer.Client // candidate rudder-pytransformer
+	BaselineStats   *memstats.Store         // stats store for the baseline client
+	CandidateStats  *memstats.Store         // stats store for the candidate client
 }
 
-type bcTestEnvOpt func(oldConf, newConf *config.Config)
+type bcTestEnvOpt func(baselineConf, candidateConf *config.Config)
 
 // withFailOnError configures the test env to return error responses (instead of
 // panicking) when transformer retries are exhausted. Required for tests where
-// the new architecture triggers retries (e.g. geolocation 5xx → HTTP 503).
+// pytransformer triggers retries (e.g. geolocation 5xx → HTTP 503).
 func withFailOnError() bcTestEnvOpt {
-	return func(oldConf, newConf *config.Config) {
-		oldConf.Set("Processor.UserTransformer.failOnError", true)
-		newConf.Set("Processor.UserTransformer.failOnError", true)
+	return func(baselineConf, candidateConf *config.Config) {
+		baselineConf.Set("Processor.UserTransformer.failOnError", true)
+		candidateConf.Set("Processor.UserTransformer.failOnError", true)
 	}
 }
 
 // withLimitedRetryableHTTPRetries caps the retryable HTTP client retries so that
 // 503 + X-Rudder-Should-Retry responses don't retry indefinitely in tests.
 func withLimitedRetryableHTTPRetries() bcTestEnvOpt {
-	return func(oldConf, newConf *config.Config) {
-		for _, c := range []*config.Config{oldConf, newConf} {
+	return func(baselineConf, candidateConf *config.Config) {
+		for _, c := range []*config.Config{baselineConf, candidateConf} {
 			c.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxRetry", 2)
 			c.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxInterval", 1*time.Millisecond)
 		}
 	}
 }
 
+// setPytransformerRouting points a client at one pytransformer container the way
+// production addresses PyT: the per-workspace path. PerWorkspacePyTBaseURL only
+// substitutes "{workspaceID}", so a template without that placeholder resolves
+// to the container URL verbatim and one container serves every workspace id.
+func setPytransformerRouting(conf *config.Config, pyTransformerURL string) {
+	conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+	conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", pyTransformerURL)
+	// The per-workspace path classifies ECONNREFUSED/502/503 from PyT as a cold
+	// start, and cold starts retry forever by default so a Deployment scaling off
+	// zero is waited out rather than failed. Tests must not hang on that: several
+	// subtests make pytransformer answer 503 deliberately.
+	conf.Set("Processor.UserTransformer.perWorkspacePyTEndlessRetries", false)
+}
+
 // newBCTestEnv creates a bcTestEnv with fresh memstats stores per subtest.
 // Fresh stores are needed because memstats accumulates counts and cannot be reset.
-func newBCTestEnv(t *testing.T, transformerURL, pyTransformerURL string, opts ...bcTestEnvOpt) *bcTestEnv {
+func newBCTestEnv(t *testing.T, baselineURL, candidateURL string, opts ...bcTestEnvOpt) *bcTestEnv {
 	t.Helper()
 
-	oldStats, err := memstats.New()
+	baselineStats, err := memstats.New()
 	require.NoError(t, err)
-	newStats, err := memstats.New()
+	candidateStats, err := memstats.New()
 	require.NoError(t, err)
 
-	oldArchConf := config.New()
-	oldArchConf.Set("Processor.UserTransformer.maxRetry", 2)
-	oldArchConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
-	oldArchConf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)
-	oldArchConf.Set("USER_TRANSFORM_URL", transformerURL)
+	baselineConf := config.New()
+	baselineConf.Set("Processor.UserTransformer.maxRetry", 2)
+	baselineConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
+	baselineConf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)
+	setPytransformerRouting(baselineConf, baselineURL)
 
-	newArchConf := config.New()
-	newArchConf.Set("Processor.UserTransformer.maxRetry", 2)
-	newArchConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
-	newArchConf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)
-	newArchConf.Set("PYTHON_TRANSFORM_URL", pyTransformerURL)
+	candidateConf := config.New()
+	candidateConf.Set("Processor.UserTransformer.maxRetry", 2)
+	candidateConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
+	candidateConf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)
+	setPytransformerRouting(candidateConf, candidateURL)
 
 	for _, opt := range opts {
-		opt(oldArchConf, newArchConf)
+		opt(baselineConf, candidateConf)
 	}
 
 	var (
-		oldArchLogger = logger.NOP
-		newArchLogger = logger.NOP
+		baselineLogger  = logger.NOP
+		candidateLogger = logger.NOP
 	)
 	if testing.Verbose() {
-		oldArchLogger = logger.NewLogger().Child("old-arch")
-		newArchLogger = logger.NewLogger().Child("new-arch")
+		baselineLogger = logger.NewLogger().Child("baseline")
+		candidateLogger = logger.NewLogger().Child("candidate")
 	}
 
 	return &bcTestEnv{
-		OldClient: usertransformer.New(oldArchConf, oldArchLogger, oldStats),
-		NewClient: usertransformer.New(newArchConf, newArchLogger, newStats),
-		OldStats:  oldStats,
-		NewStats:  newStats,
+		BaselineClient:  usertransformer.New(baselineConf, baselineLogger, baselineStats),
+		CandidateClient: usertransformer.New(candidateConf, candidateLogger, candidateStats),
+		BaselineStats:   baselineStats,
+		CandidateStats:  candidateStats,
 	}
 }
 
@@ -203,19 +252,19 @@ func getRetryCount(store *memstats.Store, name string) int {
 	return int(m.LastValue())
 }
 
-// assertRetryCountsMatch asserts that both architectures triggered the same number of retries.
+// assertRetryCountsMatch asserts that both PyT versions triggered the same number of retries.
 func (env *bcTestEnv) assertRetryCountsMatch(t *testing.T) {
 	t.Helper()
 
-	oldCPRetries := getRetryCount(env.OldStats, "processor_user_transformer_cp_down_retries")
-	newCPRetries := getRetryCount(env.NewStats, "processor_user_transformer_cp_down_retries")
-	t.Logf("CP down retries: old=%d, new=%d", oldCPRetries, newCPRetries)
-	require.Equal(t, oldCPRetries, newCPRetries, "CP down retry counts should match between old and new arch")
+	baselineCPRetries := getRetryCount(env.BaselineStats, "processor_user_transformer_cp_down_retries")
+	candidateCPRetries := getRetryCount(env.CandidateStats, "processor_user_transformer_cp_down_retries")
+	t.Logf("CP down retries: baseline=%d, candidate=%d", baselineCPRetries, candidateCPRetries)
+	require.Equal(t, baselineCPRetries, candidateCPRetries, "CP down retry counts should match between baseline and candidate")
 
-	oldHTTPRetries := getRetryCount(env.OldStats, "processor_user_transformer_http_retries")
-	newHTTPRetries := getRetryCount(env.NewStats, "processor_user_transformer_http_retries")
-	t.Logf("HTTP retries: old=%d, new=%d", oldHTTPRetries, newHTTPRetries)
-	require.Equal(t, oldHTTPRetries, newHTTPRetries, "HTTP retry counts should match between old and new arch")
+	baselineHTTPRetries := getRetryCount(env.BaselineStats, "processor_user_transformer_http_retries")
+	candidateHTTPRetries := getRetryCount(env.CandidateStats, "processor_user_transformer_http_retries")
+	t.Logf("HTTP retries: baseline=%d, candidate=%d", baselineHTTPRetries, candidateHTTPRetries)
+	require.Equal(t, baselineHTTPRetries, candidateHTTPRetries, "HTTP retry counts should match between baseline and candidate")
 }
 
 // makeEvent creates a TransformerEvent for backwards compatibility testing with minimal required fields.
@@ -273,20 +322,45 @@ func makeEvents(versionID string, n int, libraryVersionIDs ...string) []types.Tr
 //
 // When statusCode is non-zero, the config backend returns that status code with body
 // as the raw response body (no JSON envelope).
+// contractLibrary is a user transformation library the mock config backend serves from
+// /transformationLibrary/getByVersionId, so contract tests can exercise library-importing transformations
+// (the event must also carry the library version ids in its Libraries — see makeEvents).
+type contractLibrary struct {
+	versionID  string
+	importName string
+	code       string
+}
+
 type configBackendEntry struct {
 	statusCode int
 	body       string
 	code       string
+	// libraries this transformation imports; served by version id from the mock config backend.
+	libraries []contractLibrary
+}
+
+// isZero reports whether the entry is the zero value (nothing configured). Used instead of == because the
+// struct carries a slice field and is therefore no longer comparable.
+func (e configBackendEntry) isZero() bool {
+	return e.statusCode == 0 && e.body == "" && e.code == "" && len(e.libraries) == 0
 }
 
 // newContractConfigBackend creates a mock config backend that serves
-// transformation code for both rudder-transformer and rudder-pytransformer.
+// transformation code to both rudder-pytransformer containers under comparison.
 //
-// The response includes language: "pythonfaas" so rudder-transformer routes
-// to the OpenFaaS path. rudder-pytransformer and openfaas-flask-base only
-// use the "code" field.
+// The response includes language: "pythonfaas", which is what production still
+// stores for Python transformations; rudder-pytransformer only uses the "code"
+// field.
 func newContractConfigBackend(t *testing.T, entries map[string]configBackendEntry) *httptest.Server {
 	t.Helper()
+	// Library registry keyed by library versionId, deduped across all transformation entries, so the mock
+	// can serve /transformationLibrary/getByVersionId (pytransformer fetches each library the event lists).
+	libByVersion := map[string]contractLibrary{}
+	for _, e := range entries {
+		for _, lib := range e.libraries {
+			libByVersion[lib.versionID] = lib
+		}
+	}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/transformation/getByVersionId":
@@ -330,8 +404,26 @@ func newContractConfigBackend(t *testing.T, entries map[string]configBackendEntr
 				t.Errorf("ConfigBackend: failed to encode response: %v", err)
 			}
 		case "/transformationLibrary/getByVersionId":
-			t.Logf("ConfigBackend: library request for %s (not configured)", r.URL.Query().Get("versionId"))
-			w.WriteHeader(http.StatusNotFound)
+			versionID := r.URL.Query().Get("versionId")
+			lib, ok := libByVersion[versionID]
+			if !ok {
+				t.Logf("ConfigBackend: unknown library versionId %q", versionID)
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			t.Logf("ConfigBackend: serving library %q (importName %q)", versionID, lib.importName)
+			w.Header().Set("Content-Type", "application/json")
+			resp := map[string]any{
+				"versionId":   lib.versionID,
+				"importName":  lib.importName,
+				"handleName":  lib.importName,
+				"code":        lib.code,
+				"language":    "pythonfaas",
+				"codeVersion": "1",
+			}
+			if err := jsonrs.NewEncoder(w).Encode(resp); err != nil {
+				t.Errorf("ConfigBackend: failed to encode library response: %v", err)
+			}
 		default:
 			t.Logf("ConfigBackend: unexpected path %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -339,196 +431,44 @@ func newContractConfigBackend(t *testing.T, entries map[string]configBackendEntr
 	}))
 }
 
-// newMockOpenFaaSGateway creates a mock OpenFaaS gateway that:
-// - Accepts function deployment requests (POST /system/functions)
-// - Reports functions as healthy (GET /function/*)
-// - Proxies function invocations (POST /function/*) to the URL returned by getTarget()
-//
-// getTarget is called on each invocation, allowing the target to change between subtests.
-// Returns the server and an atomic counter tracking POST /function/* invocations.
-func newMockOpenFaaSGateway(t *testing.T, getTarget func() string) (*httptest.Server, *atomic.Int64) {
-	t.Helper()
-	invocations := &atomic.Int64{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		// Deploy function
-		case r.Method == http.MethodPost && r.URL.Path == "/system/functions":
-			w.WriteHeader(http.StatusOK)
-
-		// Update function
-		case r.Method == http.MethodPut && r.URL.Path == "/system/functions":
-			w.WriteHeader(http.StatusOK)
-
-		// Delete function
-		case r.Method == http.MethodDelete && r.URL.Path == "/system/functions":
-			w.WriteHeader(http.StatusOK)
-
-		// List functions
-		case r.Method == http.MethodGet && r.URL.Path == "/system/functions":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte("[]"))
-
-		// Get function info
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/system/function/"):
-			name := strings.TrimPrefix(r.URL.Path, "/system/function/")
-			w.Header().Set("Content-Type", "application/json")
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
-				"name":     name,
-				"replicas": 1,
-			})
-
-		// Health check or invoke function
-		case strings.HasPrefix(r.URL.Path, "/function/"):
-			if r.Method == http.MethodGet {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"service": "UP"}`))
-				return
-			}
-			if r.Method == http.MethodPost {
-				invocations.Add(1)
-				targetURL := getTarget()
-				if targetURL == "" {
-					t.Log("MockOpenFaaS: no target URL set")
-					w.WriteHeader(http.StatusServiceUnavailable)
-					return
-				}
-
-				body, err := io.ReadAll(r.Body)
-				if err != nil {
-					t.Logf("MockOpenFaaS: failed to read body: %v", err)
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-
-				proxyReq, err := http.NewRequest(http.MethodPost, targetURL+"/", bytes.NewReader(body))
-				if err != nil {
-					t.Logf("MockOpenFaaS: failed to create proxy request: %v", err)
-					w.WriteHeader(http.StatusBadGateway)
-					return
-				}
-				proxyReq.Header.Set("Content-Type", "application/json")
-
-				resp, err := http.DefaultClient.Do(proxyReq)
-				if err != nil {
-					t.Logf("MockOpenFaaS: failed to proxy to openfaas-flask-base: %v", err)
-					w.WriteHeader(http.StatusBadGateway)
-					return
-				}
-				defer func() { _ = resp.Body.Close() }()
-
-				respBody, err := io.ReadAll(resp.Body)
-				if err != nil {
-					t.Logf("MockOpenFaaS: failed to read proxy response: %v", err)
-					w.WriteHeader(http.StatusBadGateway)
-					return
-				}
-
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(resp.StatusCode)
-				_, _ = w.Write(respBody)
-				return
-			}
-			w.WriteHeader(http.StatusMethodNotAllowed)
-
-		default:
-			t.Logf("MockOpenFaaS: unhandled %s %s", r.Method, r.URL.Path)
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	return srv, invocations
-}
-
-// startOpenFaasFlask starts an openfaas-flask-base container with transformation code
-// loaded at startup via --vid and --config-backend-url. Optional extra environment
-// variables can be passed (e.g. "geolocation_url=http://...").
-//
-// The container is purged via “t.Cleanup“ and the function blocks until the
-// fwatchdog health endpoint is responsive, so callers get a URL that is
-// immediately ready to serve requests.
-func startOpenFaasFlask(
-	t *testing.T, pool *dockertest.Pool,
-	versionID, configBackendURL string,
-	extraEnv ...string,
-) string {
-	t.Helper()
-	const containerPort = "8080"
-	cfg := newContainerConfig(t, containerPort)
-	env := []string{
-		fmt.Sprintf("fprocess=python index.py --vid %s --config-backend-url %s", versionID, toContainerURL(configBackendURL)),
-		fmt.Sprintf("port=%s", cfg.portStr(containerPort)),
-	}
-	for _, e := range extraEnv {
-		env = append(env, toContainerURL(e))
-	}
-	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/openfaas-flask",
-		// Pinned to match the production version
-		Tag:          "1.13.2",
-		Auth:         registry.AuthConfiguration(),
-		Env:          env,
-		ExtraHosts:   cfg.ExtraHosts,
-		PortBindings: cfg.PortBindings,
-	}, cfg.hostConfigFn)
-	require.NoError(t, err, "failed to start openfaas-flask-base container")
-
-	t.Cleanup(func() {
-		if err := pool.Purge(container); err != nil {
-			t.Logf("Failed to purge openfaas-flask-base container: %v", err)
-		}
-	})
-
-	openFaasURL := cfg.url(container, containerPort)
-	waitForOpenFaasFlask(t, pool, openFaasURL)
-	return openFaasURL
-}
-
-// startRudderTransformer starts a rudder-transformer container configured to use
-// the mock config backend and mock OpenFaaS gateway. Optional extra environment
-// variables can be passed (e.g. "TRANSFORMER_TEST_MODE=true").
-// Returns the container resource and the URL to reach it from the host.
-func startRudderTransformer(
-	t *testing.T, pool *dockertest.Pool,
-	configBackendURL, openfaasGatewayURL string,
-	extraEnv ...string,
-) string {
-	t.Helper()
-	const containerPort = "9090"
-	cfg := newContainerConfig(t, containerPort)
-	env := []string{
-		"CONFIG_BACKEND_URL=" + toContainerURL(configBackendURL),
-		"OPENFAAS_GATEWAY_URL=" + toContainerURL(openfaasGatewayURL),
-		"PORT=" + cfg.portStr(containerPort),
-		"NODE_OPTIONS=--no-node-snapshot",
-	}
-	env = append(env, extraEnv...)
-	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "rudderstack/rudder-transformer",
-		Tag:          "latest",
-		Env:          env,
-		ExtraHosts:   cfg.ExtraHosts,
-		PortBindings: cfg.PortBindings,
-	}, cfg.hostConfigFn)
-	require.NoError(t, err, "failed to start rudder-transformer container")
-
-	t.Cleanup(func() {
-		if err := pool.Purge(container); err != nil {
-			t.Logf("Failed to purge rudder-transformer: %v", err)
-		}
-	})
-
-	transformerURL := cfg.url(container, containerPort)
-	waitForHealthy(t, pool, transformerURL, "rudder-transformer", container)
-
-	return transformerURL
-}
-
-// startRudderPytransformer starts a rudder-pytransformer container configured
-// to use the mock config backend. Optional extra environment variables can be
-// passed (e.g. "GEOLOCATION_URL=http://...").
-// Returns the container resource and the URL to reach it from the host.
-func startRudderPytransformer(
+// startCandidatePytransformer starts the candidate rudder-pytransformer container
+// configured to use the mock config backend. Optional extra environment
+// variables can be passed (e.g. "GEOLOCATION_URL=http://...").
+// Returns the URL to reach it from the host.
+func startCandidatePytransformer(
 	t *testing.T, pool *dockertest.Pool,
 	configBackendURL string,
+	extraEnv ...string,
+) string {
+	t.Helper()
+	return startRudderPytransformerWithTag(t, pool, candidatePytransformerTag(), configBackendURL, extraEnv...)
+}
+
+// startBaselinePytransformer starts the baseline rudder-pytransformer container,
+// i.e. the released version the candidate is compared against.
+func startBaselinePytransformer(
+	t *testing.T, pool *dockertest.Pool,
+	configBackendURL string,
+	extraEnv ...string,
+) string {
+	t.Helper()
+	baseline, candidate := baselinePytransformerTag(), candidatePytransformerTag()
+	if baseline == candidate {
+		// Panic rather than t.Fatal: most callers start the two containers from a wg.Go goroutine
+		panic(fmt.Sprintf(
+			"baseline and candidate both resolved to rudder-pytransformer:%s — every comparison in this suite "+
+				"would pass without testing anything. Set "+
+				"PYT_BASELINE_TAG and PYT_CANDIDATE_TAG to different tags.", baseline))
+	}
+	t.Logf("Comparing rudder-pytransformer baseline=%s against candidate=%s", baseline, candidate)
+	return startRudderPytransformerWithTag(t, pool, baseline, configBackendURL, extraEnv...)
+}
+
+// startRudderPytransformerWithTag starts a rudder-pytransformer container at an
+// explicit image tag.
+func startRudderPytransformerWithTag(
+	t *testing.T, pool *dockertest.Pool,
+	tag, configBackendURL string,
 	extraEnv ...string,
 ) string {
 	t.Helper()
@@ -550,23 +490,23 @@ func startRudderPytransformer(
 	}
 
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
-		Tag:          "main", // todo: use latest after merging https://github.com/rudderlabs/rudder-pytransformer/pull/76
+		Repository:   pytransformerImage,
+		Tag:          tag,
 		Auth:         registry.AuthConfiguration(),
 		Env:          env,
 		ExtraHosts:   cfg.ExtraHosts,
 		PortBindings: cfg.PortBindings,
 	}, cfg.hostConfigFn)
-	require.NoError(t, err, "failed to start rudder-pytransformer container")
+	require.NoErrorf(t, err, "failed to start rudder-pytransformer:%s container", tag)
 
 	t.Cleanup(func() {
 		if err := pool.Purge(container); err != nil {
-			t.Logf("Failed to purge pytransformer container: %v", err)
+			t.Logf("Failed to purge pytransformer:%s container: %v", tag, err)
 		}
 	})
 
 	pyURL := cfg.url(container, containerPort)
-	waitForHealthy(t, pool, pyURL, "rudder-pytransformer", container)
+	waitForHealthy(t, pool, pyURL, "rudder-pytransformer:"+tag, container)
 
 	return pyURL
 }
@@ -626,44 +566,10 @@ func dumpContainerLogs(t *testing.T, pool *dockertest.Pool, container *dockertes
 	t.Logf("=== %s container logs ===\n%s=== end %s logs ===", name, buf.String(), name)
 }
 
-// pollOpenFaasFlaskHealthy polls the openfaas-flask-base fwatchdog health
-// endpoint until it returns 200. fwatchdog responds to GET / with the
-// X-REQUEST-TYPE: HEALTH-CHECK header. It returns an error instead of failing
-// the test so it is safe to call from a non-test goroutine (e.g. the dynamic
-// gateway's HTTP handler).
-func pollOpenFaasFlaskHealthy(pool *dockertest.Pool, baseURL string) error {
-	return pool.Retry(func() error {
-		req, err := http.NewRequest(http.MethodGet, baseURL+"/", nil)
-		if err != nil {
-			return err
-		}
-		req.Header.Set("X-REQUEST-TYPE", "HEALTH-CHECK")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return fmt.Errorf("openfaas-flask health check failed: %d - %s", resp.StatusCode, string(body))
-		}
-		return nil
-	})
-}
-
-// waitForOpenFaasFlask polls the openfaas-flask-base fwatchdog health endpoint.
-// fwatchdog responds to GET / with X-REQUEST-TYPE: HEALTH-CHECK header.
-func waitForOpenFaasFlask(t *testing.T, pool *dockertest.Pool, baseURL string) {
-	t.Helper()
-	t.Logf("Waiting for openfaas-flask-base at %s to be healthy...", baseURL)
-	require.NoError(t, pollOpenFaasFlaskHealthy(pool, baseURL), "openfaas-flask-base failed to become healthy")
-	t.Logf("openfaas-flask-base is healthy at %s", baseURL)
-}
-
 // normalizeJSON re-marshals a JSON string so keys are in deterministic (sorted) order.
 // For non-200 responses, the Go usertransformer client stores the raw JSON body as the
-// Error string. Different transformers (JS vs Python) may serialize JSON keys in different
-// orders, so we normalize before comparison.
+// Error string. Two pytransformer releases can still serialize the same object's keys in a
+// different order, so normalize before comparing rather than asserting on byte equality.
 func normalizeJSON(s string) string {
 	var v any
 	if err := jsonrs.Unmarshal([]byte(s), &v); err != nil {
@@ -752,7 +658,10 @@ func waitForGeolocation(t *testing.T, pool *dockertest.Pool, baseURL string) {
 }
 
 // mockGeoConfig holds configurable behavior for the mock geolocation service.
-// Use setResponse to change the HTTP status code and body between subtests.
+//
+// One instance is shared by every subtest, because the server's URL is fixed in the containers'
+// GEOLOCATION_URL at startup. Configure a failure mode with setResponse/setConnectionClose/setSlow,
+// and pair it with reset so the next subtest starts from a healthy backend.
 type mockGeoConfig struct {
 	mu         sync.Mutex
 	statusCode int
@@ -760,31 +669,35 @@ type mockGeoConfig struct {
 	delay      time.Duration
 }
 
-func (c *mockGeoConfig) setResponse(statusCode int) {
+// apply is the single place every field is assigned, so a new failure mode cannot be added to one
+// setter and forgotten in the others — which is what would let it leak between subtests.
+func (c *mockGeoConfig) apply(statusCode int, closeConn bool, delay time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.statusCode = statusCode
-	c.closeConn = false
-	c.delay = 0
+	c.closeConn = closeConn
+	c.delay = delay
 }
 
-func (c *mockGeoConfig) setConnectionClose() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.closeConn = true
-	c.delay = 0
-}
+// reset returns the mock to a healthy backend: HTTP 200, no delay, no connection close.
+//
+// This is the teardown for a subtest that configured a failure mode. The server itself keeps
+// running — its URL is baked into GEOLOCATION_URL when the containers start, and the containers
+// outlive the subtests, so the mock can only ever be reconfigured, never restarted. Without this,
+// a subtest that does not configure the mock inherits whatever the previous one left behind.
+func (c *mockGeoConfig) reset() { c.apply(http.StatusOK, false, 0) }
+
+// setResponse makes the mock answer /geoip/* with statusCode.
+func (c *mockGeoConfig) setResponse(statusCode int) { c.apply(statusCode, false, 0) }
+
+// setConnectionClose makes the mock hijack the connection and close it without responding,
+// simulating a geolocation backend that drops the connection mid-request.
+func (c *mockGeoConfig) setConnectionClose() { c.apply(http.StatusOK, true, 0) }
 
 // setSlow makes the mock /geoip/* handler block for "delay" before responding
 // with HTTP 200. Used to simulate a hung geolocation backend so the
 // pytransformer's GEOLOCATION_TIMEOUT_SECS deadline fires.
-func (c *mockGeoConfig) setSlow(delay time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.statusCode = http.StatusOK
-	c.closeConn = false
-	c.delay = delay
-}
+func (c *mockGeoConfig) setSlow(delay time.Duration) { c.apply(http.StatusOK, false, delay) }
 
 // newConfigurableMockGeolocationService creates a mock geolocation HTTP server
 // whose /geoip/* responses can be changed between subtests via mockGeoConfig.
@@ -834,4 +747,26 @@ func newConfigurableMockGeolocationService(t *testing.T) (*httptest.Server, *moc
 		w.WriteHeader(code)
 	}))
 	return server, cfg
+}
+
+// TestMockGeoConfigReset pins that reset clears every failure mode, not just the one a given setter
+// happens to set. The mock is shared across subtests and outlives them, so a field left behind here
+// silently changes the geolocation backend a later subtest runs against.
+func TestMockGeoConfigReset(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		configure func(*mockGeoConfig)
+	}{
+		{"after setResponse", func(c *mockGeoConfig) { c.setResponse(http.StatusInternalServerError) }},
+		{"after setConnectionClose", func(c *mockGeoConfig) { c.setConnectionClose() }},
+		{"after setSlow", func(c *mockGeoConfig) { c.setSlow(500 * time.Millisecond) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &mockGeoConfig{statusCode: http.StatusOK}
+			tc.configure(cfg)
+			cfg.reset()
+			require.Equal(t, &mockGeoConfig{statusCode: http.StatusOK}, cfg,
+				"reset must restore a healthy backend; a leftover field leaks into the next subtest")
+		})
+	}
 }
