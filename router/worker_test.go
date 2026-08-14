@@ -20,6 +20,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
@@ -83,9 +84,11 @@ func (v1TransformerProxyFeaturesService) RouterTransform(string) bool { return f
 func (v1TransformerProxyFeaturesService) TransformerProxyVersion() string {
 	return transformerFeaturesService.V1
 }
+
 func (v1TransformerProxyFeaturesService) SupportDestTransformCompactedPayloadV1() bool {
 	return false
 }
+
 func (v1TransformerProxyFeaturesService) Wait() chan struct{} {
 	ch := make(chan struct{})
 	close(ch)
@@ -308,7 +311,7 @@ func TestBrazeTransformerProxyStatusContract(t *testing.T) {
 		inputEvent = `{"braze":"input-event"}`
 	)
 
-	newJob := func(jobID int64, eventName string) *jobsdb.JobT {
+	newJob := func(jobID int64) *jobsdb.JobT {
 		return &jobsdb.JobT{
 			JobID:        jobID,
 			UserID:       fmt.Sprintf("user-%d", jobID),
@@ -378,7 +381,7 @@ func TestBrazeTransformerProxyStatusContract(t *testing.T) {
 			}
 			rw.Header().Set("Content-Type", "application/json")
 			rw.Header().Set("apiVersion", strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
-			require.NoError(t, json.NewEncoder(rw).Encode(response))
+			require.NoError(t, jsonrs.NewEncoder(rw).Encode(response))
 		}))
 		t.Cleanup(svr.Close)
 		t.Setenv("DELIVERY_TRANSFORMER_URL", "")
@@ -408,12 +411,12 @@ func TestBrazeTransformerProxyStatusContract(t *testing.T) {
 		w.rt.reloadableConfig.jobdDBMaxRetries = config.SingleValueLoader(1)
 
 		jobsByID := map[int64]*jobsdb.JobT{
-			101: newJob(101, "warning"),
-			102: newJob(102, "bad-request"),
-			103: newJob(103, "rate-limited"),
-			104: newJob(104, "server-error"),
-			105: newJob(105, "missing-output"),
-			106: newJob(106, "duplicate-job-id"),
+			101: newJob(101),
+			102: newJob(102),
+			103: newJob(103),
+			104: newJob(104),
+			105: newJob(105),
+			106: newJob(106),
 		}
 		destinationJob := types.DestinationJobT{
 			Message: json.RawMessage(delivery),
@@ -575,15 +578,15 @@ func TestBrazeTransformerProxyStatusContract(t *testing.T) {
 		reportByCode := make(map[int]*utilTypes.PUReportedMetric)
 		for _, metric := range reporter.metrics {
 			reportByCode[metric.StatusDetail.StatusCode] = metric
-			require.Equal(t, utilTypes.ROUTER, metric.PUDetails.PU)
-			require.Equal(t, utilTypes.DEST_TRANSFORMER, metric.PUDetails.InPU)
-			require.True(t, metric.PUDetails.TerminalPU)
-			require.False(t, metric.PUDetails.InitialPU)
-			require.Equal(t, sourceID, metric.ConnectionDetails.SourceID)
-			require.Equal(t, destID, metric.ConnectionDetails.DestinationID)
-			require.Equal(t, "braze-def", metric.ConnectionDetails.DestinationDefinitionID)
-			require.Equal(t, "source-def-braze", metric.ConnectionDetails.SourceDefinitionID)
-			require.Equal(t, "webhook", metric.ConnectionDetails.SourceCategory)
+			require.Equal(t, utilTypes.ROUTER, metric.PU)
+			require.Equal(t, utilTypes.DEST_TRANSFORMER, metric.InPU)
+			require.True(t, metric.TerminalPU)
+			require.False(t, metric.InitialPU)
+			require.Equal(t, sourceID, metric.SourceID)
+			require.Equal(t, destID, metric.DestinationID)
+			require.Equal(t, "braze-def", metric.DestinationDefinitionID)
+			require.Equal(t, "source-def-braze", metric.SourceDefinitionID)
+			require.Equal(t, "webhook", metric.SourceCategory)
 		}
 		require.Equal(t, jobsdb.Succeeded.State, reportByCode[utilTypes.DeliveredWithWarningCode].StatusDetail.Status)
 		require.Equal(t, int64(1), reportByCode[utilTypes.DeliveredWithWarningCode].StatusDetail.Count)
@@ -599,7 +602,7 @@ func TestBrazeTransformerProxyStatusContract(t *testing.T) {
 
 	t.Run("malformed proxy output without per-job results stays retryable", func(t *testing.T) {
 		w, statsStore := newWorker(t, false)
-		job := newJob(201, "malformed-output")
+		job := newJob(201)
 		destinationJob := types.DestinationJobT{
 			Message: json.RawMessage(delivery),
 			Destination: backendconfig.DestinationT{
@@ -644,7 +647,7 @@ func TestBrazeTransformerProxyStatusContract(t *testing.T) {
 
 	t.Run("delivered-with-warning keeps router input payload when payload storage is disabled", func(t *testing.T) {
 		w, _ := newWorker(t, false)
-		job := newJob(301, "warning-no-payload-store")
+		job := newJob(301)
 		destinationJob := types.DestinationJobT{
 			Message:          json.RawMessage(delivery),
 			JobMetadataArray: []types.JobMetadataT{newMetadata(job, "warning-no-payload-store")},
