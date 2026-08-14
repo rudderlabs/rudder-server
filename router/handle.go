@@ -65,7 +65,7 @@ type Handle struct {
 	netClientTimeout                   time.Duration
 	transformerTimeout                 time.Duration
 	enableBatching                     bool
-	noOfWorkers                        int
+	defaultNoOfWorkers                 int // handle for overriding the default value in tests
 	eventOrderKeyThreshold             config.ValueLoader[int]
 	eventOrderDisabledStateDuration    config.ValueLoader[time.Duration]
 	eventOrderHalfEnabledStateDuration config.ValueLoader[time.Duration]
