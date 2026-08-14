@@ -322,10 +322,27 @@ func makeEvents(versionID string, n int, libraryVersionIDs ...string) []types.Tr
 //
 // When statusCode is non-zero, the config backend returns that status code with body
 // as the raw response body (no JSON envelope).
+// contractLibrary is a user transformation library the mock config backend serves from
+// /transformationLibrary/getByVersionId, so contract tests can exercise library-importing transformations
+// (the event must also carry the library version ids in its Libraries — see makeEvents).
+type contractLibrary struct {
+	versionID  string
+	importName string
+	code       string
+}
+
 type configBackendEntry struct {
 	statusCode int
 	body       string
 	code       string
+	// libraries this transformation imports; served by version id from the mock config backend.
+	libraries []contractLibrary
+}
+
+// isZero reports whether the entry is the zero value (nothing configured). Used instead of == because the
+// struct carries a slice field and is therefore no longer comparable.
+func (e configBackendEntry) isZero() bool {
+	return e.statusCode == 0 && e.body == "" && e.code == "" && len(e.libraries) == 0
 }
 
 // newContractConfigBackend creates a mock config backend that serves
@@ -336,6 +353,14 @@ type configBackendEntry struct {
 // field.
 func newContractConfigBackend(t *testing.T, entries map[string]configBackendEntry) *httptest.Server {
 	t.Helper()
+	// Library registry keyed by library versionId, deduped across all transformation entries, so the mock
+	// can serve /transformationLibrary/getByVersionId (pytransformer fetches each library the event lists).
+	libByVersion := map[string]contractLibrary{}
+	for _, e := range entries {
+		for _, lib := range e.libraries {
+			libByVersion[lib.versionID] = lib
+		}
+	}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/transformation/getByVersionId":
@@ -379,8 +404,26 @@ func newContractConfigBackend(t *testing.T, entries map[string]configBackendEntr
 				t.Errorf("ConfigBackend: failed to encode response: %v", err)
 			}
 		case "/transformationLibrary/getByVersionId":
-			t.Logf("ConfigBackend: library request for %s (not configured)", r.URL.Query().Get("versionId"))
-			w.WriteHeader(http.StatusNotFound)
+			versionID := r.URL.Query().Get("versionId")
+			lib, ok := libByVersion[versionID]
+			if !ok {
+				t.Logf("ConfigBackend: unknown library versionId %q", versionID)
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			t.Logf("ConfigBackend: serving library %q (importName %q)", versionID, lib.importName)
+			w.Header().Set("Content-Type", "application/json")
+			resp := map[string]any{
+				"versionId":   lib.versionID,
+				"importName":  lib.importName,
+				"handleName":  lib.importName,
+				"code":        lib.code,
+				"language":    "pythonfaas",
+				"codeVersion": "1",
+			}
+			if err := jsonrs.NewEncoder(w).Encode(resp); err != nil {
+				t.Errorf("ConfigBackend: failed to encode library response: %v", err)
+			}
 		default:
 			t.Logf("ConfigBackend: unexpected path %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)

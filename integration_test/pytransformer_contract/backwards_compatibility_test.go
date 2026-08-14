@@ -2035,7 +2035,7 @@ def transformEvent(event, metadata):
 	// returns 404 for those versionIds, which tests error handling paths.
 	allEntries := make(map[string]configBackendEntry, len(subtests))
 	for _, st := range subtests {
-		if st.config != (configBackendEntry{}) {
+		if !st.config.isZero() {
 			_, dup := allEntries[st.versionID]
 			require.Falsef(t, dup, "duplicate versionID %q: with shared containers the versionID is the only "+
 				"isolation boundary between subtests, so a collision serves one subtest's code to another", st.versionID)
