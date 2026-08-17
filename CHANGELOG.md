@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.83.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.82.0...v1.83.0-rc.1) (2026-08-17)
+
+
+### Features
+
+* add OriginalID and OriginalDestinationID to support replay event transformations ([#7274](https://github.com/rudderlabs/rudder-server/issues/7274)) ([28d38e9](https://github.com/rudderlabs/rudder-server/commit/28d38e95d55e6d3b4a5e6e516316181c1dca151b))
+* bingads integration tests ([#7253](https://github.com/rudderlabs/rudder-server/issues/7253)) ([fdb8c0a](https://github.com/rudderlabs/rudder-server/commit/fdb8c0a8e8534daa39cb6878d615c76734f48580))
+* **processor:** fork event processing for rsources pipelines ([#7235](https://github.com/rudderlabs/rudder-server/issues/7235)) ([707ea06](https://github.com/rudderlabs/rudder-server/commit/707ea06afdba808b818e5e3e5ce8a46d0c9cf0c8))
+
+
+### Bug Fixes
+
+* pyt contract tests data race ([#7247](https://github.com/rudderlabs/rudder-server/issues/7247)) ([9e62d0c](https://github.com/rudderlabs/rudder-server/commit/9e62d0cf7de5c5e1551914114200968ce752b18b))
+
+
+### Miscellaneous
+
+* bump sqlconnect-go to v1.30.2 ([#7251](https://github.com/rudderlabs/rudder-server/issues/7251)) ([f5d6175](https://github.com/rudderlabs/rudder-server/commit/f5d61755700e27e4b465fc1e8a5d19392400f5c7))
+* **jobsdb:** multi-consumer compaction improvements ([#7248](https://github.com/rudderlabs/rudder-server/issues/7248)) ([b4af86c](https://github.com/rudderlabs/rudder-server/commit/b4af86c680f833052a6952d5882efec2d2904d17))
+* pyt contract tests for candidate releases ([#7252](https://github.com/rudderlabs/rudder-server/issues/7252)) ([149e91a](https://github.com/rudderlabs/rudder-server/commit/149e91aecaefe8067b107e9c6b772f0b0b3d9ec4))
+* pyt contract tests for transformations auth ([#7239](https://github.com/rudderlabs/rudder-server/issues/7239)) ([ac4a859](https://github.com/rudderlabs/rudder-server/commit/ac4a85900346185723f71004e5a78c87e2722d41))
+* **router:** support per-partition noOfWorkers override ([#7270](https://github.com/rudderlabs/rudder-server/issues/7270)) ([9d6f7cf](https://github.com/rudderlabs/rudder-server/commit/9d6f7cfbb26cbee122c47d0cb27998ebe10e5ebd))
+* sync release v1.82.0 to main branch ([#7243](https://github.com/rudderlabs/rudder-server/issues/7243)) ([a6e29f2](https://github.com/rudderlabs/rudder-server/commit/a6e29f2af042425867b43746a50d6becca57b9bd))
+
 ## [1.82.0](https://github.com/rudderlabs/rudder-server/compare/v1.81.0...v1.82.0) (2026-08-03)
 
 
