@@ -177,15 +177,19 @@ func TestBadResponse(t *testing.T) {
 	parsedURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
+	nsConfig := &namespaceConfig{
+		config:              config.New(),
+		configBackendURL:    parsedURL,
+		namespace:           "some-namespace",
+		hostedServiceSecret: "some-secret",
+		client:              http.DefaultClient,
+		logger:              logger.NOP,
+		stats:               stats.NOP,
+	}
+	require.NoError(t, nsConfig.SetUp())
+
 	configs := map[string]workspaceConfig{
-		"namespace": &namespaceConfig{
-			configBackendURL:     parsedURL,
-			namespace:            "some-namespace",
-			client:               http.DefaultClient,
-			logger:               logger.NOP,
-			httpCallsStat:        stats.NOP.NewStat("backend_config_http_calls", stats.CountType),
-			httpResponseSizeStat: stats.NOP.NewStat("backend_config_http_response_size", stats.HistogramType),
-		},
+		"namespace": nsConfig,
 		"single-workspace": &singleWorkspaceConfig{
 			configBackendURL:     parsedURL,
 			logger:               logger.NOP,
