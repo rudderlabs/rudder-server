@@ -219,6 +219,9 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 			if transformerResponse.Metadata.OriginalSourceID != "" {
 				transformerResponse.Metadata.SourceID, transformerResponse.Metadata.OriginalSourceID = transformerResponse.Metadata.OriginalSourceID, transformerResponse.Metadata.SourceID
 			}
+			if transformerResponse.Metadata.OriginalDestinationID != "" {
+				transformerResponse.Metadata.DestinationID, transformerResponse.Metadata.OriginalDestinationID = transformerResponse.Metadata.OriginalDestinationID, transformerResponse.Metadata.DestinationID
+			}
 			switch transformerResponse.StatusCode {
 			case http.StatusOK:
 				outClientEvents = append(outClientEvents, transformerResponse)
@@ -258,10 +261,14 @@ func (u *Client) sendBatch(
 
 	data := lo.Map(clientEvents, func(clientEvent types.TransformerEvent, index int) types.UserTransformerEvent {
 		res := *clientEvent.ToUserTransformerEvent()
-		// flip sourceID and originalSourceID if it's a replay source for the purpose of any user transformation
+		// flip sourceID and originalSourceID (and destinationID and originalDestinationID)
+		// if it's a replay source for the purpose of any user transformation
 		// flip back afterward
 		if res.Metadata.OriginalSourceID != "" {
 			res.Metadata.OriginalSourceID, res.Metadata.SourceID = res.Metadata.SourceID, res.Metadata.OriginalSourceID
+		}
+		if res.Metadata.OriginalDestinationID != "" {
+			res.Metadata.OriginalDestinationID, res.Metadata.DestinationID = res.Metadata.DestinationID, res.Metadata.OriginalDestinationID
 		}
 		return res
 	})

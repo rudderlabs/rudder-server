@@ -190,6 +190,7 @@ type Metadata struct {
 
 	// destination metadata (available after tracking plan)
 	DestinationID           string `json:"destinationId"`
+	OriginalDestinationID   string `json:"originalDestinationId,omitempty"` // for replayed events
 	DestinationName         string `json:"destinationName"`
 	DestinationType         string `json:"destinationType"`
 	DestinationDefinitionID string `json:"destinationDefinitionId,omitempty"`
@@ -233,6 +234,7 @@ func (m Metadata) CommonMetadata() *Metadata {
 
 		// destination metadata (available after tracking plan)
 		DestinationID:           m.DestinationID,
+		OriginalDestinationID:   m.OriginalDestinationID,
 		DestinationName:         m.DestinationName,
 		DestinationType:         m.DestinationType,
 		DestinationDefinitionID: m.DestinationDefinitionID,

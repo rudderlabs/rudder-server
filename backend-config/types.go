@@ -59,6 +59,7 @@ type SourceDefinitionOptions struct {
 
 type DestinationT struct {
 	ID                    string
+	OriginalID            string
 	Name                  string
 	DestinationDefinition DestinationDefinitionT
 	Config                map[string]any

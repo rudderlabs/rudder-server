@@ -37,6 +37,7 @@ func (c *ConfigT) ApplyReplaySources() {
 			}
 			newDestination := *d
 			newDestination.ID = id
+			newDestination.OriginalID = d.ID
 			newDestination.IsProcessorEnabled = true // processor is always enabled for replay destinations
 			return &newDestination
 		}), []*DestinationT{nil})

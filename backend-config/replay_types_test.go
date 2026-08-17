@@ -63,6 +63,7 @@ func TestApplyReplayConfig(t *testing.T) {
 		require.JSONEq(t, "{}", string(c.Sources[1].Config))
 		require.Len(t, c.Sources[1].Destinations, 1)
 		require.Equal(t, "er-d-1", c.Sources[1].Destinations[0].ID)
+		require.Equal(t, "d-1", c.Sources[1].Destinations[0].OriginalID)
 		require.Equal(t, true, c.Sources[1].Destinations[0].IsProcessorEnabled)
 		require.Equal(t, "rev-1", c.Sources[1].Destinations[0].RevisionID)
 	})
