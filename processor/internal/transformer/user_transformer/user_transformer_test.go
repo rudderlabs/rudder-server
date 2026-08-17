@@ -316,6 +316,57 @@ func TestUserTransformer(t *testing.T) {
 				}
 			})
 
+			t.Run("should flip replay source and destination IDs for the transformation and flip them back in the response", func(t *testing.T) {
+				ft := &fakeTransformer{
+					t: t,
+				}
+
+				srv := httptest.NewServer(ft)
+				defer srv.Close()
+
+				conf.Set("USER_TRANSFORM_URL", srv.URL)
+				conf.Set("Processor.userTransformBatchSize", 10)
+				tr := user_transformer.New(conf, logger.NOP, stats.NOP, user_transformer.WithClient(srv.Client()))
+
+				destinationConfig := backendconfigtest.NewDestinationBuilder("WEBHOOK").
+					WithUserTransformation(rand.String(10), rand.String(10)).Build()
+
+				events := []types.TransformerEvent{
+					{
+						Metadata: types.Metadata{
+							MessageID:             "messageID-1",
+							SourceID:              "replay-source-id",
+							OriginalSourceID:      "original-source-id",
+							DestinationID:         "replay-destination-id",
+							OriginalDestinationID: "original-destination-id",
+						},
+						Message: map[string]any{
+							"src-key-1":       "messageID-1",
+							"forceStatusCode": http.StatusOK,
+						},
+						Destination: destinationConfig,
+					},
+				}
+
+				rsp := tr.Transform(context.TODO(), events)
+
+				// the transformation must see the original IDs
+				require.Len(t, ft.requests, 1)
+				require.Len(t, ft.requests[0], 1)
+				sentMetadata := ft.requests[0][0].Metadata
+				require.Equal(t, "original-source-id", sentMetadata.SourceID)
+				require.Equal(t, "replay-source-id", sentMetadata.OriginalSourceID)
+				require.Equal(t, "original-destination-id", sentMetadata.DestinationID)
+				require.Equal(t, "replay-destination-id", sentMetadata.OriginalDestinationID)
+
+				// the response must carry the replay IDs again
+				require.Len(t, rsp.Events, 1)
+				require.Equal(t, "replay-source-id", rsp.Events[0].Metadata.SourceID)
+				require.Equal(t, "original-source-id", rsp.Events[0].Metadata.OriginalSourceID)
+				require.Equal(t, "replay-destination-id", rsp.Events[0].Metadata.DestinationID)
+				require.Equal(t, "original-destination-id", rsp.Events[0].Metadata.OriginalDestinationID)
+			})
+
 			t.Run("timeout", func(t *testing.T) {
 				msgID := "messageID-0"
 				events := append([]types.TransformerEvent{}, types.TransformerEvent{

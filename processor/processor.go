@@ -2417,6 +2417,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 
 					// At the TP flow we are not having destination information, so adding it here.
 					destinationEvent.Metadata.DestinationID = destination.ID
+					destinationEvent.Metadata.OriginalDestinationID = destination.OriginalID
 					destinationEvent.Metadata.DestinationName = destination.Name
 					destinationEvent.Metadata.DestinationType = destination.DestinationDefinition.Name
 					destinationEvent.Metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
