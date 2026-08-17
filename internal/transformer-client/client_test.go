@@ -3,6 +3,7 @@ package transformerclient
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
@@ -25,8 +27,8 @@ func TestClient_RetryBehavior(t *testing.T) {
 
 			if requestCount <= retryableResponses {
 				// Return retriable error
-				w.Header().Set("X-Rudder-Should-Retry", "true")
-				w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+				w.Header().Set(HeaderShouldRetry, "true")
+				w.Header().Set(HeaderErrorReason, "temporary-overload")
 				w.WriteHeader(http.StatusServiceUnavailable)
 				_, _ = w.Write([]byte("Service temporarily unavailable"))
 			} else {
@@ -78,8 +80,8 @@ func TestClient_RetryBehavior(t *testing.T) {
 		var requestCount int
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
-			w.Header().Set("X-Rudder-Should-Retry", "true")
-			w.Header().Set("X-Rudder-Error-Reason", "persistent-overload")
+			w.Header().Set(HeaderShouldRetry, "true")
+			w.Header().Set(HeaderErrorReason, "persistent-overload")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("Service permanently unavailable"))
 		}))
@@ -131,8 +133,8 @@ func TestClient_RetryBehavior(t *testing.T) {
 
 			if requestCount <= switchAfter {
 				// Return retriable error
-				w.Header().Set("X-Rudder-Should-Retry", "true")
-				w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+				w.Header().Set(HeaderShouldRetry, "true")
+				w.Header().Set(HeaderErrorReason, "temporary-overload")
 				w.WriteHeader(http.StatusServiceUnavailable)
 				_, _ = w.Write([]byte("Service temporarily unavailable"))
 			} else {
@@ -372,8 +374,8 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
 			// Always return retriable error
-			w.Header().Set("X-Rudder-Should-Retry", "true")
-			w.Header().Set("X-Rudder-Error-Reason", "test-overload")
+			w.Header().Set(HeaderShouldRetry, "true")
+			w.Header().Set(HeaderErrorReason, "test-overload")
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}))
 		defer server.Close()
@@ -419,8 +421,8 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 		var requestCount int
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
-			w.Header().Set("X-Rudder-Should-Retry", "true")
-			w.Header().Set("X-Rudder-Error-Reason", "test-overload")
+			w.Header().Set(HeaderShouldRetry, "true")
+			w.Header().Set(HeaderErrorReason, "test-overload")
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}))
 		defer server.Close()
@@ -466,8 +468,8 @@ func TestClient_PerpetualRetriesStatsTags(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
 			if requestCount <= retryableResponses {
-				w.Header().Set("X-Rudder-Should-Retry", "true")
-				w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+				w.Header().Set(HeaderShouldRetry, "true")
+				w.Header().Set(HeaderErrorReason, "temporary-overload")
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
 			}
@@ -525,8 +527,8 @@ func TestClient_PerpetualRetriesStatsTags(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
 			if requestCount == 1 {
-				w.Header().Set("X-Rudder-Should-Retry", "true")
-				w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+				w.Header().Set(HeaderShouldRetry, "true")
+				w.Header().Set(HeaderErrorReason, "temporary-overload")
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
 			}
@@ -580,8 +582,8 @@ func TestClient_RetryDisabled(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
 			// Return retriable error that would normally be retried
-			w.Header().Set("X-Rudder-Should-Retry", "true")
-			w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+			w.Header().Set(HeaderShouldRetry, "true")
+			w.Header().Set(HeaderErrorReason, "temporary-overload")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("Service temporarily unavailable"))
 		}))
@@ -615,5 +617,100 @@ func TestClient_RetryDisabled(t *testing.T) {
 		require.True(t, elapsed < 100*time.Millisecond, "Should complete quickly without retries")
 
 		resp.Body.Close()
+	})
+}
+
+// TestClient_ResponseBodyReadableAfterRetriesExhausted pins the contract that [Client.Do] returns a response whose body
+// the caller can still read.
+//
+// The retryable transport closes the previous response between attempts to avoid leaking connections, but the attempt
+// that exhausts the budget is not followed by a retry — its response is handed back to the caller, so its body must
+// stay open.
+func TestClient_ResponseBodyReadableAfterRetriesExhausted(t *testing.T) {
+	const responseBody = `{"error":"geolocation timeout"}`
+
+	newRetryingServer := func() *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set(HeaderShouldRetry, "true")
+			w.Header().Set(HeaderErrorReason, "geolocation_timeout")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(responseBody))
+		}))
+	}
+
+	retryConfig := func(maxRetry int, maxElapsedTime time.Duration) *ClientConfig {
+		return &ClientConfig{
+			ClientTimeout: 10 * time.Second,
+			RetryRudderErrors: struct {
+				Enabled         bool
+				MaxRetry        int
+				InitialInterval time.Duration
+				MaxInterval     time.Duration
+				MaxElapsedTime  time.Duration
+				Multiplier      float64
+			}{
+				Enabled:         true,
+				MaxRetry:        maxRetry,
+				InitialInterval: 10 * time.Millisecond,
+				MaxInterval:     20 * time.Millisecond,
+				MaxElapsedTime:  maxElapsedTime,
+				Multiplier:      2.0,
+			},
+		}
+	}
+
+	t.Run("maxRetry exhausted", func(t *testing.T) {
+		server := newRetryingServer()
+		defer server.Close()
+
+		client := NewClient("testClient", retryConfig(1, 500*time.Millisecond))
+
+		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		defer func() { httputil.CloseResponse(resp) }()
+
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+		read, err := io.ReadAll(resp.Body)
+		require.NoError(t, err, "body of the returned response must still be readable")
+		require.Equal(t, responseBody, string(read))
+	})
+
+	// Documents a limitation this package cannot fix: when the context is cancelled during a backoff wait,
+	// retryablehttp returns the response of the last *completed* attempt — one its own notify hook already drained and
+	// closed in order to retry — and pairs it with a nil error.
+	// Callers therefore cannot treat a nil error from Do as "this body is readable"; see user_transformer's
+	// forwardTest, which reports the status and error reason instead of the bare read failure.
+	t.Run("context cancelled mid-backoff returns a stale, closed response", func(t *testing.T) {
+		server := newRetryingServer()
+		defer server.Close()
+
+		// Unlimited retries, as in production: only the caller's context ends them.
+		cfg := retryConfig(-1, 0)
+		cfg.RetryRudderErrors.InitialInterval = 2 * time.Second
+		cfg.RetryRudderErrors.MaxInterval = 2 * time.Second
+		client := NewClient("testClient", cfg)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(ctx, "POST", server.URL, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		resp, err := client.Do(req)
+		require.NoError(t, err, "Do reports no error even though the context ended the retries")
+		require.NotNil(t, resp)
+		defer func() { httputil.CloseResponse(resp) }()
+
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, "true", resp.Header.Get(HeaderShouldRetry), "headers survive; only the body is gone")
+
+		_, err = io.ReadAll(resp.Body)
+		require.ErrorContains(t, err, "read on closed response body",
+			"upstream behaviour: change this expectation if rudder-go-kit stops returning a stale response")
 	})
 }

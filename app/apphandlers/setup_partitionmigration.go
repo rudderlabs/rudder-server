@@ -95,6 +95,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		gwBuffRWHandle := jobsdb.NewForReadWrite(
 			"gw_buf",
 			jobsdb.WithClearDB(false),
+			jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in gw_buf jobsdb
 			jobsdb.WithDSLimit(config.GetReloadableIntVar(0, 1, "JobsDB.gw_buf.dsLimit", "JobsDB.dsLimit")),
 			jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.gw_buf.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
 			jobsdb.WithStats(stats),
@@ -115,6 +116,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		gwWODB = jobsdb.NewForWrite(
 			"gw",
 			jobsdb.WithClearDB(false),
+			jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in gw jobsdb
 			jobsdb.WithStats(stats),
 			jobsdb.WithDBHandle(dbPool),
 			jobsdb.WithPriorityPoolDB(priorityPool),
@@ -123,6 +125,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		)
 		gwBuffROHandle := jobsdb.NewForRead(
 			"gw_buf",
+			jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in gw_buf jobsdb
 			jobsdb.WithDSLimit(config.GetReloadableIntVar(0, 1, "JobsDB.gw_buf.dsLimit", "JobsDB.dsLimit")),
 			jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.gw_buf.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
 			jobsdb.WithStats(stats),
@@ -153,6 +156,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 	rtBuffRWHandle := jobsdb.NewForReadWrite(
 		"rt_buf",
 		jobsdb.WithClearDB(false),
+		jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in rt_buf jobsdb
 		jobsdb.WithDSLimit(config.GetReloadableIntVar(0, 1, "JobsDB.rt_buff.dsLimit", "JobsDB.dsLimit")),
 		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.rt_buff.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(stats),
@@ -180,6 +184,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 	brtBuffRWHandle := jobsdb.NewForReadWrite(
 		"batch_rt_buf",
 		jobsdb.WithClearDB(false),
+		jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in batch_rt_buf jobsdb
 		jobsdb.WithDSLimit(config.GetReloadableIntVar(0, 1, "JobsDB.batch_rt_buff.dsLimit", "JobsDB.dsLimit")),
 		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.batch_rt_buff.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(stats),
@@ -208,7 +213,10 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 	if procRWDB != nil {
 		procBuffRWHandle := jobsdb.NewForReadWrite(
 			"proc_buf",
+			// proc_buf doesn't need to be multi-consumer because it is used only as a temporary storage.
+			// During flush, a single consumer will move the jobs to the proc jobsdb which is multi-consumer.
 			jobsdb.WithClearDB(false),
+			jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in proc_buf jobsdb
 			jobsdb.WithDSLimit(config.GetReloadableIntVar(0, 1, "JobsDB.proc_buf.dsLimit", "JobsDB.dsLimit")),
 			jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.proc_buf.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
 			jobsdb.WithStats(stats),
@@ -347,6 +355,7 @@ func setupGatewayPartitionMigrator(ctx context.Context,
 	gwBuffWOHandle := jobsdb.NewForWrite(
 		"gw_buf",
 		jobsdb.WithClearDB(false),
+		jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in gw_buf jobsdb
 		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.gw_buf.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(stats),
 		jobsdb.WithDBHandle(dbPool),

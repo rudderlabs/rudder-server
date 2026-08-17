@@ -31,14 +31,14 @@ jobs:
         with:
           egress-policy: audit
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
+        uses: aws-actions/configure-aws-credentials@517a711dbcd0e402f90c77e7e2f81e849156e31d # v6.2.2
         with:
           role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
           aws-region: ${{ vars.AWS_ECR_REGION }}
           role-session-name: ${{ github.event.repository.name }}
       - name: Login to ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@fa648b43de3d4d023bcb3f89ed6940096949c419 # v2.1.5
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
       - name: Unset AWS Credentials
         run: |
           echo "AWS_ACCESS_KEY_ID=" >> $GITHUB_ENV
@@ -51,8 +51,8 @@ jobs:
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: 'go.mod'
           cache: false
@@ -110,14 +110,14 @@ jobs:
         with:
           egress-policy: audit
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
+        uses: aws-actions/configure-aws-credentials@517a711dbcd0e402f90c77e7e2f81e849156e31d # v6.2.2
         with:
           role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
           aws-region: ${{ vars.AWS_ECR_REGION }}
           role-session-name: ${{ github.event.repository.name }}
       - name: Login to ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@fa648b43de3d4d023bcb3f89ed6940096949c419 # v2.1.5
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
       - name: Unset AWS Credentials
         run: |
           echo "AWS_ACCESS_KEY_ID=" >> $GITHUB_ENV
@@ -137,9 +137,9 @@ jobs:
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: 'go.mod'
           cache: false
@@ -175,6 +175,67 @@ jobs:
         with:
           name: ${{ matrix.destination }}
           path: coverage.txt
+  async-destination-integration:
+    name: Async Destination Integration
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        destination: [ bingads ]
+        include:
+          - destination: bingads
+            package: router/batchrouter/asyncdestinationmanager/bing-ads
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@517a711dbcd0e402f90c77e7e2f81e849156e31d # v6.2.2
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_ECR_REGION }}
+          role-session-name: ${{ github.event.repository.name }}
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+      - name: Pull rudder-auth image
+        run: docker pull 422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-auth:develop
+      - name: Unset AWS Credentials
+        run: |
+          echo "AWS_ACCESS_KEY_ID=" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=" >> $GITHUB_ENV
+          echo "AWS_SESSION_TOKEN=" >> $GITHUB_ENV
+          echo "AWS_REGION=" >> $GITHUB_ENV
+          echo "AWS_DEFAULT_REGION=" >> $GITHUB_ENV
+      - name: Disable IPv6 (temporary fix)
+        run: |
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: 'go.mod'
+          cache: false
+      - run: go version
+      - run: go mod download # Not required, used to segregate module download vs test times
+      - name: Async Destination Integration [ ${{ matrix.destination }} ]
+        run: make test-async-destination package=${{ matrix.package }}
+        env:
+          BINGADS_OFFLINE_CONVERSIONS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BINGADS_OFFLINE_CONVERSIONS_INTEGRATION_TEST_CREDENTIALS }}
+          BINGADS_AUDIENCE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BINGADS_AUDIENCE_INTEGRATION_TEST_CREDENTIALS }}
+          RACE_ENABLED: "true"
+          FORCE_RUN_INTEGRATION_TESTS: "true"
+      - name: Upload coverage report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: async-${{ matrix.destination }}
+          path: coverage.txt
   unit:
     name: Unit
     runs-on: ubuntu-latest
@@ -187,14 +248,14 @@ jobs:
         with:
           egress-policy: audit
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
+        uses: aws-actions/configure-aws-credentials@517a711dbcd0e402f90c77e7e2f81e849156e31d # v6.2.2
         with:
           role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
           aws-region: ${{ vars.AWS_ECR_REGION }}
           role-session-name: ${{ github.event.repository.name }}
       - name: Login to ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@fa648b43de3d4d023bcb3f89ed6940096949c419 # v2.1.5
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
       - name: Unset AWS Credentials
         run: |
           echo "AWS_ACCESS_KEY_ID=" >> $GITHUB_ENV
@@ -206,8 +267,8 @@ jobs:
         run: |
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: 'go.mod'
           cache: false
@@ -269,20 +330,40 @@ jobs:
             exclude: services/dedup
           - package: warehouse
             race: true
+          - package: router
+            exclude: router/batchrouter/asyncdestinationmanager/bing-ads
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
+        uses: aws-actions/configure-aws-credentials@517a711dbcd0e402f90c77e7e2f81e849156e31d # v6.2.2
         with:
           role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
           aws-region: ${{ vars.AWS_ECR_REGION }}
           role-session-name: ${{ github.event.repository.name }}
       - name: Login to ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@fa648b43de3d4d023bcb3f89ed6940096949c419 # v2.1.5
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+      # Must run while the AWS credentials are still set, i.e. before the step below unsets them.
+      # The contract suite compares two rudder-pytransformer releases and requires both tags; resolving
+      # them here means a new release is picked up automatically instead of going stale in the source.
+      - name: Resolve rudder-pytransformer tags to compare
+        if: matrix.package == 'integration_test/pytransformer_contract'
+        run: |
+          set -euo pipefail
+          tags=$(aws ecr describe-images \
+            --repository-name rudderstack/rudder-pytransformer \
+            --query 'imageDetails[].imageTags[]' --output text \
+            | tr '\t' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -u | tail -2)
+          if [ "$(echo "$tags" | wc -l)" -ne 2 ]; then
+            echo "expected 2 released tags, got: ${tags:-<none>}" >&2
+            exit 1
+          fi
+          echo "PYT_BASELINE_TAG=$(echo "$tags" | head -1)" >> $GITHUB_ENV
+          echo "PYT_CANDIDATE_TAG=$(echo "$tags" | tail -1)" >> $GITHUB_ENV
+          echo "comparing rudder-pytransformer $(echo "$tags" | head -1) -> $(echo "$tags" | tail -1)"
       - name: Unset AWS Credentials
         run: |
           echo "AWS_ACCESS_KEY_ID=" >> $GITHUB_ENV
@@ -295,8 +376,8 @@ jobs:
         run: |
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: 'go.mod'
           cache: false
@@ -337,6 +418,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - warehouse-integration
+      - async-destination-integration
       - unit
       - package-unit
     steps:
@@ -346,9 +428,9 @@ jobs:
           egress-policy: audit
 
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: 'go.mod'
           cache: false
@@ -370,6 +452,7 @@ jobs:
     needs:
       - integration
       - warehouse-integration
+      - async-destination-integration
       - unit
       - package-unit
     steps:

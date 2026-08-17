@@ -362,6 +362,108 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 			})
 		})
 
+		Context("it calls statsCollector.JobsForked", func() {
+			Context("jobs carry multiple consumers", func() {
+				BeforeEach(func() {
+					for _, job := range jobs {
+						job.Consumers = []string{"destA", "destB", "destC"}
+					}
+					statsCollector.JobsForked(jobs)
+				})
+
+				It("increments In by the number of consumers per job", func() {
+					js.EXPECT().
+						IncrementStats(
+							gomock.Any(),
+							gomock.Any(),
+							params.JobRunID,
+							JobTargetKey{
+								TaskRunID:     params.TaskRunID,
+								SourceID:      params.SourceID,
+								DestinationID: params.DestinationID,
+							},
+							Stats{
+								In: uint(len(jobs) * 3),
+							}).
+						Times(1)
+
+					err := statsCollector.Publish(context.TODO(), nil)
+					Expect(err).To(BeNil())
+					Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+				})
+
+				It("does not index jobs for a later CollectStats call", func() {
+					defer func() {
+						err, _ := recover().(error)
+						Expect(err).ToNot(BeNil())
+					}()
+					for _, job := range jobs {
+						jobStatuses = append(jobStatuses, newSucceededStatus(job.JobID))
+					}
+					// BeginProcessing was never called, so CollectStats must panic.
+					statsCollector.CollectStats(jobStatuses)
+				})
+			})
+
+			Context("jobs carry no consumers", func() {
+				BeforeEach(func() {
+					statsCollector.JobsForked(jobs)
+				})
+
+				It("increments In by 1 per job", func() {
+					js.EXPECT().
+						IncrementStats(
+							gomock.Any(),
+							gomock.Any(),
+							params.JobRunID,
+							JobTargetKey{
+								TaskRunID:     params.TaskRunID,
+								SourceID:      params.SourceID,
+								DestinationID: params.DestinationID,
+							},
+							Stats{
+								In: uint(len(jobs)),
+							}).
+						Times(1)
+
+					err := statsCollector.Publish(context.TODO(), nil)
+					Expect(err).To(BeNil())
+					Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+				})
+			})
+
+			Context("combined with a subsequent JobsStored call for the same key", func() {
+				BeforeEach(func() {
+					for _, job := range jobs {
+						job.Consumers = []string{"destA", "destB"}
+					}
+					statsCollector.JobsForked(jobs)
+					statsCollector.JobsStored(jobs)
+				})
+
+				It("sums both In contributions", func() {
+					js.EXPECT().
+						IncrementStats(
+							gomock.Any(),
+							gomock.Any(),
+							params.JobRunID,
+							JobTargetKey{
+								TaskRunID:     params.TaskRunID,
+								SourceID:      params.SourceID,
+								DestinationID: params.DestinationID,
+							},
+							Stats{
+								In: uint(len(jobs)*2 + len(jobs)),
+							}).
+						Times(1)
+
+					err := statsCollector.Publish(context.TODO(), nil)
+					Expect(err).To(BeNil())
+					Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+				})
+			})
+		})
+
 		Context("it calls failedRecordsCollector.JobsDropped", func() {
 			BeforeEach(func() {
 				droppedJobsCollector.JobsDropped(jobs)
@@ -431,6 +533,21 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 		Context("all jobs are stored", func() {
 			BeforeEach(func() {
 				statsCollector.JobsStored(jobs)
+			})
+			It("doesn't publish any jobs", func() {
+				// no js.EXPECT
+				err := statsCollector.Publish(context.TODO(), nil)
+				Expect(err).To(BeNil())
+				Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+			})
+		})
+
+		Context("all jobs are forked", func() {
+			BeforeEach(func() {
+				for _, job := range jobs {
+					job.Consumers = []string{"destA", "destB"}
+				}
+				statsCollector.JobsForked(jobs)
 			})
 			It("doesn't publish any jobs", func() {
 				// no js.EXPECT

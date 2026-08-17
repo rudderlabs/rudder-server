@@ -92,7 +92,7 @@ func (d *DestinationT) UpdateHasDynamicConfig(cache dynamicconfig.Cache) {
 	// RevisionID is not in cache or has changed, recompute the dynamic config flag
 	d.HasDynamicConfig = dynamicconfig.ContainsPattern(d.Config)
 
-	pkgLogger.Infon("HasDynamicConfig flag updated",
+	pkgLogger.Debugn("HasDynamicConfig flag updated",
 		obskit.DestinationID(d.ID),
 		obskit.WorkspaceID(d.WorkspaceID),
 		logger.NewBoolField("hasDynamicConfig", d.HasDynamicConfig),

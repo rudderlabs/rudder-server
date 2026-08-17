@@ -49,6 +49,10 @@ type processorPartitionMigrator struct {
 	sourceMigrator sourcenode.Migrator
 	targetMigrator targetnode.Migrator
 
+	// jobsDBFanoutEnabled gates whether this node declares its jobsdbs when acknowledging a
+	// migration, opting into per-JobsDB fan-out. The decision is made once, at acknowledgement.
+	jobsDBFanoutEnabled config.ValueLoader[bool]
+
 	// component lifecycle
 	wg              *errgroup.Group
 	lifecycleCtx    context.Context
@@ -189,8 +193,13 @@ func (ppm *processorPartitionMigrator) onNewMigration(ctx context.Context, pm *e
 			if err := mg.Wait(); err != nil {
 				return err
 			}
-			// send ack for migration started
-			v, err := jsonrs.Marshal(pm.Ack(ppm.nodeIndex, ppm.nodeName))
+			// send ack for migration started, declaring our jobsdbs to opt into per-JobsDB fan-out
+			// when both this node and the orchestrator support it.
+			var jobsDBs []string
+			if ppm.jobsDBFanoutEnabled.Load() && pm.Features.JobsDBFanout && slices.Contains(pm.SourceNodes(), ppm.nodeIndex) {
+				jobsDBs = ppm.sourceMigrator.JobsDBs()
+			}
+			v, err := jsonrs.Marshal(pm.AckWithJobsDBs(ppm.nodeIndex, ppm.nodeName, jobsDBs))
 			if err != nil {
 				return fmt.Errorf("marshalling ack value: %w", err)
 			}

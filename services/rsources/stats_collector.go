@@ -36,6 +36,15 @@ type StatsCollector interface {
 	// JobsStoredWithErrors captures incoming job statistics
 	JobsStoredWithErrors(jobs []*jobsdb.JobT, failedJobs map[uuid.UUID]string)
 
+	// JobsForked captures the fan-out of an already-tracked job into an intermediate
+	// stage that will later be drained once per consumer (e.g. proc pool fan-out): In
+	// is incremented by len(job.Consumers) per job (or 1 if Consumers is empty), so a
+	// source is not reported complete while forked work is still pending downstream.
+	// Unlike JobsStored, it does not index jobs for a later CollectStats call — the
+	// forked job's own JobID isn't known yet at fork time, and its terminal status is
+	// tracked by a separate collector when it's eventually drained.
+	JobsForked(jobs []*jobsdb.JobT)
+
 	// BeginProcessing prepares the necessary indices in order to
 	// be ready for capturing JobStatus statistics
 	BeginProcessing(jobs []*jobsdb.JobT)
@@ -158,6 +167,30 @@ func (r *statsCollector) JobsDropped(jobs []*jobsdb.JobT) {
 
 func (r *statsCollector) JobsStoredWithErrors(jobs []*jobsdb.JobT, failedJobs map[uuid.UUID]string) {
 	r.buildStats(jobs, failedJobs, true)
+}
+
+func (r *statsCollector) JobsForked(jobs []*jobsdb.JobT) {
+	for i := range jobs {
+		job := jobs[i]
+		jobRunId, _, jobTargetKey := r.parametersParser(job.Parameters)
+		if jobRunId == "" {
+			continue
+		}
+		sk := statKey{
+			jobRunId:     jobRunId,
+			JobTargetKey: jobTargetKey,
+		}
+		stats, ok := r.statsIndex[sk]
+		if !ok {
+			stats = &Stats{}
+			r.statsIndex[sk] = stats
+		}
+		consumers := uint(len(job.Consumers))
+		if consumers == 0 {
+			consumers = 1
+		}
+		stats.In += consumers
+	}
 }
 
 func (r *statsCollector) BeginProcessing(jobs []*jobsdb.JobT) {

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -34,6 +35,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/user_transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -1623,6 +1625,9 @@ type fakeColdStartTransport struct {
 	// a transport-level error (ECONNREFUSED / DNS / ...).
 	failStatus int
 	failErr    error
+	// failHeaders are set on the failing response, so tests can drive the
+	// transformer's retryable-error contract (X-Rudder-Should-Retry).
+	failHeaders map[string]string
 	// failures: number of failing calls before switching to successBody. Use
 	// math.MaxInt for "always fail".
 	failures int
@@ -1639,9 +1644,13 @@ func (f *fakeColdStartTransport) Do(_ *http.Request) (*http.Response, error) {
 	n := int(f.calls.Add(1))
 	if n <= f.failures {
 		if f.failStatus > 0 {
+			failHdr := hdr.Clone()
+			for k, v := range f.failHeaders {
+				failHdr.Set(k, v)
+			}
 			return &http.Response{
 				StatusCode: f.failStatus,
-				Header:     hdr,
+				Header:     failHdr,
 				Body:       io.NopCloser(bytes.NewReader(nil)),
 			}, nil
 		}
@@ -1671,6 +1680,16 @@ func TestColdStartCounter(t *testing.T) {
 		Op:  "dial",
 		Net: "tcp",
 		Err: &os.SyscallError{Syscall: "connect", Err: syscall.EHOSTUNREACH},
+	}
+	dialTimeout := &net.OpError{
+		Op:  "dial",
+		Net: "tcp",
+		Err: os.ErrDeadlineExceeded,
+	}
+	readTimeout := &net.OpError{
+		Op:  "read",
+		Net: "tcp",
+		Err: os.ErrDeadlineExceeded,
 	}
 	dnsErr := &net.DNSError{Err: "no such host", Name: "pyt-ws-A1", IsNotFound: true}
 
@@ -1723,6 +1742,16 @@ func TestColdStartCounter(t *testing.T) {
 			// replacement or scale-down. Same transient signal as ECONNREFUSED.
 			name:             "EHOSTUNREACH twice → counted twice, then warm",
 			failErr:          noRouteToHost,
+			failures:         2,
+			expectCounter:    2,
+			expectEventCount: 1,
+		},
+		{
+			// dial i/o timeout — unanswered SYN: the headless-service DNS record
+			// points at a pod that is still booting or terminating. Same scale-
+			// churn window as ECONNREFUSED, just a different failure mode.
+			name:             "dial timeout twice → counted twice, then warm",
+			failErr:          dialTimeout,
 			failures:         2,
 			expectCounter:    2,
 			expectEventCount: 1,
@@ -1795,6 +1824,16 @@ func TestColdStartCounter(t *testing.T) {
 			name:             "guard: JS language → cold-start error not counted",
 			language:         "javascript",
 			failErr:          connRefused,
+			failures:         2,
+			expectCounter:    0,
+			expectEventCount: 1,
+		},
+		{
+			// A timeout after the connection is established means the pod is up
+			// but slow — not a cold start. Still retried by doPost's generic
+			// budget, so the transport warms and the request succeeds.
+			name:             "guard: post-connect read timeout → not counted",
+			failErr:          readTimeout,
 			failures:         2,
 			expectCounter:    0,
 			expectEventCount: 1,
@@ -1900,7 +1939,7 @@ func TestColdStartCounter(t *testing.T) {
 }
 
 func TestForwardTest(t *testing.T) {
-	t.Run("each endpoint method posts to its pyt path and returns status/body", func(t *testing.T) {
+	t.Run("each endpoint method posts to baseURL+path and returns status/body", func(t *testing.T) {
 		var gotPath, gotContentType string
 		var gotBody []byte
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1912,13 +1951,10 @@ func TestForwardTest(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		conf := config.New()
-		conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
-		client := user_transformer.New(conf, logger.NOP, stats.NOP)
+		client := user_transformer.New(config.New(), logger.NOP, stats.NOP)
 
 		cases := map[string]struct {
-			call     func(context.Context, string, []byte) (int, []byte, error)
+			call     func(context.Context, string, string, []byte) (int, []byte, error)
 			wantPath string
 		}{
 			"Test":        {client.Test, "/test"},
@@ -1928,7 +1964,7 @@ func TestForwardTest(t *testing.T) {
 		}
 		for name, tc := range cases {
 			t.Run(name, func(t *testing.T) {
-				status, body, err := tc.call(context.Background(), "WS-1", []byte(`{"code":"x"}`))
+				status, body, err := tc.call(context.Background(), srv.URL, "WS-1", []byte(`{"code":"x"}`))
 				require.NoError(t, err)
 				require.Equal(t, http.StatusCreated, status)
 				require.JSONEq(t, `{"ok":true}`, string(body))
@@ -1953,13 +1989,10 @@ func TestForwardTest(t *testing.T) {
 
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
-		conf := config.New()
-		conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
-		client := user_transformer.New(conf, logger.NOP, statsStore,
+		client := user_transformer.New(config.New(), logger.NOP, statsStore,
 			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
 
-		status, body, err := client.Test(context.Background(), "ws-1", []byte(`{}`))
+		status, body, err := client.Test(context.Background(), srv.URL, "ws-1", []byte(`{}`))
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, status)
 		require.Equal(t, "done", string(body))
@@ -1972,6 +2005,36 @@ func TestForwardTest(t *testing.T) {
 		require.Equal(t, 2, total, "each cold-start retry should increment the counter")
 	})
 
+	t.Run("retries other transport errors without counting them as cold starts", func(t *testing.T) {
+		var attempts atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if attempts.Add(1) < 3 {
+				// Abrupt close → the client sees EOF: a transport error that is
+				// not a cold-start signal, yet must still be retried (doPost parity).
+				conn, _, err := w.(http.Hijacker).Hijack()
+				require.NoError(t, err)
+				_ = conn.Close()
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`done`))
+		}))
+		defer srv.Close()
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		client := user_transformer.New(config.New(), logger.NOP, statsStore,
+			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
+
+		status, body, err := client.Test(context.Background(), srv.URL, "ws-1", []byte(`{}`))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, status)
+		require.Equal(t, "done", string(body))
+		require.EqualValues(t, 3, attempts.Load())
+		require.Empty(t, statsStore.GetByName("processor_user_transformer_cold_start_errors_total"),
+			"a non-cold-start transport error must not tick the cold-start counter")
+	})
+
 	t.Run("stops retrying when the deadline is exceeded", func(t *testing.T) {
 		var attempts atomic.Int32
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1980,33 +2043,106 @@ func TestForwardTest(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		conf := config.New()
-		conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
-		client := user_transformer.New(conf, logger.NOP, stats.NOP,
+		client := user_transformer.New(config.New(), logger.NOP, stats.NOP,
 			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
 
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
-		_, _, err := client.Test(ctx, "ws-1", []byte(`{}`))
+		_, _, err := client.Test(ctx, srv.URL, "ws-1", []byte(`{}`))
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 		require.Greater(t, attempts.Load(), int32(1), "the 503 should have been retried until the deadline")
 	})
 
-	t.Run("returns ErrPerWorkspacePyTNotEnabled without dialing when the feature is off", func(t *testing.T) {
-		var calls atomic.Int32
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls.Add(1)
-		}))
-		defer srv.Close()
+	t.Run("returns ErrEmptyForwardBaseURL without dialing when baseURL is empty", func(t *testing.T) {
+		client := user_transformer.New(config.New(), logger.NOP, stats.NOP)
 
-		conf := config.New()
-		// perWorkspacePyTEnabled left at its default (false).
-		conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
-		client := user_transformer.New(conf, logger.NOP, stats.NOP)
+		_, _, err := client.Test(context.Background(), "", "ws-1", []byte(`{}`))
+		require.ErrorIs(t, err, user_transformer.ErrEmptyForwardBaseURL)
+	})
+}
 
-		_, _, err := client.Test(context.Background(), "ws-1", []byte(`{}`))
-		require.ErrorIs(t, err, user_transformer.ErrPerWorkspacePyTNotEnabled)
-		require.Zero(t, calls.Load(), "nothing must be dialed when the feature is off")
+// TestRetryableResponseExhaustedPanics pins that a spent retry budget crashes the processor instead of quietly
+// failing the events.
+//
+// This looks like a bug and is not. In production the retryable transport retries forever
+// (retryRudderErrors maxRetry=-1, maxElapsedTime=0); maxRetry exists so the contract tests terminate.
+// A bounded budget in production is therefore a misconfiguration, and the two ways out of it are not equivalent:
+// panicking leaves the jobs in jobsdb to be retried after the restart, whereas returning a failed event aborts them
+// into proc-errors and loses customer data. Loud and recoverable beats quiet and lossy.
+//
+// If this test starts failing because someone made the exhausted path return a status instead of an error, that
+// change is dropping events — fix the misconfiguration, not this.
+func TestRetryableResponseExhaustedPanics(t *testing.T) {
+	const (
+		workspaceID = "ws-retryable"
+		messageID   = "msg-retryable"
+		versionID   = "v-retryable"
+	)
+
+	newClient := func(t *testing.T, headers map[string]string) (*user_transformer.Client, []types.TransformerEvent) {
+		t.Helper()
+		c := config.New()
+		c.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+		c.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", "http://pyt-{workspaceID}:9090")
+		// Bounded, so the outer cold-start loop terminates and the response reaches the caller.
+		c.Set("Processor.UserTransformer.perWorkspacePyTEndlessRetries", false)
+		c.Set("Processor.UserTransformer.maxRetry", 1)
+		c.Set("Processor.UserTransformer.maxRetryBackoffInterval", "1ms")
+
+		transport := &fakeColdStartTransport{
+			failStatus:  http.StatusServiceUnavailable,
+			failHeaders: headers,
+			failures:    math.MaxInt,
+		}
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		events := []types.TransformerEvent{{
+			Metadata: types.Metadata{MessageID: messageID, WorkspaceID: workspaceID},
+			Message:  map[string]any{"src-key-1": messageID},
+			Destination: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "test-destination"},
+				Transformations: []backendconfig.TransformationT{{
+					ID: "transform-1", VersionID: versionID, Language: "pythonfaas",
+				}},
+			},
+		}}
+		return user_transformer.New(c, logger.NOP, statsStore, user_transformer.WithClient(transport)), events
+	}
+
+	// The panic happens inside a wg.Go goroutine, so it cannot be recovered by the caller and takes the process
+	// with it — which is the whole point, but also means require.Panics cannot observe it. Re-exec this test in a
+	// child process and assert that the child died instead.
+	const crashEnv = "USER_TRANSFORMER_CRASH_CHILD"
+
+	t.Run("503 with should-retry crashes rather than dropping the events", func(t *testing.T) {
+		if os.Getenv(crashEnv) == "1" {
+			tr, events := newClient(t, map[string]string{
+				transformerclient.HeaderShouldRetry: "true",
+				transformerclient.HeaderErrorReason: "geolocation_timeout",
+			})
+			_ = tr.Transform(context.Background(), events)
+			return // unreachable: the transform above must take the process down
+		}
+
+		cmd := exec.Command(os.Args[0], "-test.run="+t.Name()+"$", "-test.v")
+		cmd.Env = append(os.Environ(), crashEnv+"=1")
+		out, err := cmd.CombinedOutput()
+
+		require.Error(t, err, "child must die: the events have to survive in jobsdb via a crash, "+
+			"not be aborted into proc-errors\n%s", out)
+		require.Contains(t, string(out), "transformer returned status code: 503",
+			"child must die on the transformer error, not something incidental")
+	})
+
+	t.Run("bare 503 stays a cold start and never reaches the panic", func(t *testing.T) {
+		// No contract header: the infrastructure is answering, not pyt. This is the case
+		// [transformerclient.IsRetryableResponse] keeps out of the panic path, a bare 502 included.
+		tr, events := newClient(t, nil)
+		var rsp types.Response
+		require.NotPanics(t, func() { rsp = tr.Transform(context.Background(), events) })
+		require.Empty(t, rsp.Events)
+		require.Len(t, rsp.FailedEvents, 1)
+		require.Equal(t, transformerutils.StatusColdStartWindowFailure, rsp.FailedEvents[0].StatusCode)
 	})
 }
