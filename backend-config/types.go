@@ -59,10 +59,8 @@ type SourceDefinitionOptions struct {
 
 type DestinationT struct {
 	ID string
-	// OriginalID is the ID of the original destination for replay destinations. Its json tag is deliberately
-	// not "originalId", so that the unrelated originalID field in control plane destination history payloads
-	// cannot populate it during unmarshalling.
-	OriginalID            string `json:"replayOriginalId,omitempty"`
+	// OriginalID is the ID of the original destination for replay destinations
+	OriginalID            string `json:"originalId,omitempty"`
 	Name                  string
 	DestinationDefinition DestinationDefinitionT
 	Config                map[string]any
