@@ -59,6 +59,31 @@ func TestShouldForkDestination(t *testing.T) {
 	})
 }
 
+func TestForkableEvent(t *testing.T) {
+	retlEvent := &types.TransformerEvent{
+		Metadata: types.Metadata{SourceJobRunID: "jr1"},
+	}
+	nonRetlEvent := &types.TransformerEvent{
+		Metadata: types.Metadata{SourceJobRunID: ""},
+	}
+
+	t.Run("rsources-tracked events stay inline by default", func(t *testing.T) {
+		proc := newTestProcHandle()
+		require.False(t, proc.config.forkRsourcesTrackedJobs)
+
+		require.False(t, proc.forkableEvent(retlEvent))
+		require.True(t, proc.forkableEvent(nonRetlEvent))
+	})
+
+	t.Run("rsources-tracked events fork once opted in", func(t *testing.T) {
+		proc := newTestProcHandle()
+		proc.config.forkRsourcesTrackedJobs = true
+
+		require.True(t, proc.forkableEvent(retlEvent))
+		require.True(t, proc.forkableEvent(nonRetlEvent))
+	})
+}
+
 func TestNewForkedJob(t *testing.T) {
 	proc := newTestProcHandle()
 	event := &types.TransformerEvent{

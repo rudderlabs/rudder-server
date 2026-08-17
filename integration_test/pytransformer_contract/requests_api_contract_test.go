@@ -20,7 +20,7 @@ import (
 // TestRequestsModuleWrapperContract locks the contract that user code
 // accessing HTTP helpers through alternative module paths produces
 // identical results to the standard "import requests; requests.get(url)"
-// path on both architectures.
+// path on both versions.
 //
 // pytransformer's "wrap_requests_methods" must rebind names on both
 // "requests" and "requests.api", and must also wrap
@@ -32,8 +32,7 @@ import (
 //   - "requests.api.get(url)" — attribute chain resolved at call time
 //   - "requests.request("GET", url)" — verb-parameterized entry point
 //
-// All three must produce the same output as the old architecture
-// (vanilla "requests").
+// All three must produce the same output on both versions.
 //
 // Additional "ConnectionReuse" subtests prove that the calls actually
 // flow through the pooling wrapper by sending two sequential requests
@@ -132,23 +131,19 @@ def transformEvent(event, metadata):
 	})
 	t.Cleanup(configBackend.Close)
 
-	t.Log("Starting openfaas-flask-base (old arch backend)...")
-	openFaasURL := startOpenFaasFlask(t, pool, parityVersionID, configBackend.URL)
-
-	t.Log("Starting mock OpenFaaS gateway...")
-	mockGateway, _ := newMockOpenFaaSGateway(t, func() string { return openFaasURL })
-	t.Cleanup(mockGateway.Close)
-
-	t.Log("Starting rudder-transformer (old arch frontend)...")
-	transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
-
 	// Pin pool + subprocess count to 1 so the ConnectionReuse subtests
-	// actually exercise the shared pooled session.
-	pyTransformerURL := startRudderPytransformer(
-		t, pool, configBackend.URL,
+	// actually exercise the shared pooled session. Identical on both sides
+	// so the comparison isolates the version difference.
+	pytEnv := []string{
 		"USER_CONN_POOL_MAX_SIZE=1",
 		"SANDBOX_POOL_MAX_SIZE=1",
-	)
+	}
+
+	t.Log("Starting baseline rudder-pytransformer...")
+	baselineURL := startBaselinePytransformer(t, pool, configBackend.URL, pytEnv...)
+
+	t.Log("Starting candidate rudder-pytransformer...")
+	candidateURL := startCandidatePytransformer(t, pool, configBackend.URL, pytEnv...)
 
 	styleCases := []struct {
 		style string
@@ -160,7 +155,7 @@ def transformEvent(event, metadata):
 
 	for _, sc := range styleCases {
 		t.Run(sc.style, func(t *testing.T) {
-			env := newBCTestEnv(t, transformerURL, pyTransformerURL,
+			env := newBCTestEnv(t, baselineURL, candidateURL,
 				withFailOnError(),
 				withLimitedRetryableHTTPRetries(),
 			)
@@ -169,28 +164,28 @@ def transformEvent(event, metadata):
 			event.Message["style"] = sc.style
 			events := []types.TransformerEvent{event}
 
-			t.Log("Sending request to old architecture...")
-			oldResp := env.OldClient.Transform(context.Background(), events)
-			t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+			t.Log("Sending request to baseline...")
+			baselineResp := env.BaselineClient.Transform(context.Background(), events)
+			t.Logf("Baseline: Events=%d, FailedEvents=%d", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-			t.Log("Sending request to new architecture...")
-			newResp := env.NewClient.Transform(context.Background(), events)
-			t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+			t.Log("Sending request to candidate...")
+			candidateResp := env.CandidateClient.Transform(context.Background(), events)
+			t.Logf("Candidate: Events=%d, FailedEvents=%d", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
-			require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-			require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-			require.Equalf(t, 1, len(newResp.Events),
-				"new arch (style=%s): 1 success event expected", sc.style)
-			require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+			require.Equal(t, 1, len(baselineResp.Events), "baseline: 1 success event expected")
+			require.Equal(t, 0, len(baselineResp.FailedEvents), "baseline: no failed events expected")
+			require.Equalf(t, 1, len(candidateResp.Events),
+				"candidate (style=%s): 1 success event expected", sc.style)
+			require.Equal(t, 0, len(candidateResp.FailedEvents), "candidate: no failed events expected")
 
-			require.Equal(t, "hello", oldResp.Events[0].Output["echo"],
-				"old arch must echo q=hello")
-			require.Equalf(t, "hello", newResp.Events[0].Output["echo"],
-				"new arch (style=%s) must echo q=hello", sc.style)
+			require.Equal(t, "hello", baselineResp.Events[0].Output["echo"],
+				"baseline must echo q=hello")
+			require.Equalf(t, "hello", candidateResp.Events[0].Output["echo"],
+				"candidate (style=%s) must echo q=hello", sc.style)
 
-			diff, equal := oldResp.Equal(&newResp)
+			diff, equal := baselineResp.Equal(&candidateResp)
 			require.Truef(t, equal,
-				"style=%s: old and new architectures must produce identical responses:\n%s",
+				"style=%s: baseline and candidate must produce identical responses:\n%s",
 				sc.style, diff)
 
 			env.assertRetryCountsMatch(t)
@@ -209,7 +204,7 @@ def transformEvent(event, metadata):
 	// rebound to the wrapper. (The count can legitimately be 0 if an
 	// earlier subtest already warmed a connection to the shared
 	// countingEcho host; both subtests run against the same
-	// pyTransformerURL and thus the same subprocess-shared pool.)
+	// candidate container and thus the same subprocess-shared pool.)
 	reuseCases := []struct {
 		name      string
 		versionID string
@@ -222,13 +217,13 @@ def transformEvent(event, metadata):
 			newConns.Store(0)
 
 			ev1 := makeEvent("msg-reuse-1", rc.versionID)
-			status1, items1 := sendRawTransform(t, pyTransformerURL, []types.TransformerEvent{ev1})
+			status1, _, items1 := sendRawTransform(t, candidateURL, []types.TransformerEvent{ev1})
 			require.Equal(t, http.StatusOK, status1)
 			require.Len(t, items1, 1)
 			require.Equal(t, http.StatusOK, items1[0].StatusCode, "first request must succeed")
 
 			ev2 := makeEvent("msg-reuse-2", rc.versionID)
-			status2, items2 := sendRawTransform(t, pyTransformerURL, []types.TransformerEvent{ev2})
+			status2, _, items2 := sendRawTransform(t, candidateURL, []types.TransformerEvent{ev2})
 			require.Equal(t, http.StatusOK, status2)
 			require.Len(t, items2, 1)
 			require.Equal(t, http.StatusOK, items2[0].StatusCode, "second request must succeed")

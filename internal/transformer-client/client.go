@@ -53,6 +53,30 @@ const (
 	defaultRetryRudderErrorsMultiplier      = 2.0
 )
 
+// Headers of the transformer's retryable-error contract.
+// A transformer that is up and answering signals a transient downstream failure with HTTP 503 plus these headers,
+// so callers can retry the request instead of concluding that the transformer itself is unavailable.
+//
+// The peer half of this contract lives in rudder-pytransformer, which necessarily hardcodes the same strings, so these
+// values are a wire format: renaming the constants is free, changing their values is a breaking change on both sides.
+const (
+	// HeaderShouldRetry is "true" when the response is worth retrying.
+	HeaderShouldRetry = "X-Rudder-Should-Retry"
+	// HeaderErrorReason carries a short cause, used as a stat tag.
+	HeaderErrorReason = "X-Rudder-Error-Reason"
+)
+
+// IsRetryableResponse reports whether resp is the transformer signalling a transient downstream failure that the
+// caller should retry, as opposed to the transformer being unreachable.
+//
+// This is the single definition of that signal. The retryable transport below decides what to retry with it, and
+// user_transformer's cold-start classifier decides what is *not* a cold start with it.
+func IsRetryableResponse(resp *http.Response) bool {
+	return resp != nil &&
+		resp.StatusCode == http.StatusServiceUnavailable &&
+		strings.EqualFold(resp.Header.Get(HeaderShouldRetry), "true")
+}
+
 type ClientConfig struct {
 	TransportConfig struct {
 		DisableKeepAlives   bool          //	true
@@ -68,7 +92,7 @@ type ClientConfig struct {
 	Recycle       bool          // false
 	RecycleTTL    time.Duration // 60s
 
-	// Configuration for retryable HTTP client in case of [X-Rudder-Should-Retry: true] HTTP 503 responses
+	// Configuration for the retryable HTTP client, for responses matching [IsRetryableResponse]
 	RetryRudderErrors struct {
 		Enabled         bool          // false
 		MaxRetry        int           // -1 - no limit
@@ -225,9 +249,8 @@ func newRetryableHTTPClient(name string, baseClient Client, retryableConfig *ret
 			if err != nil {
 				return false, backoff.Permanent(err)
 			}
-			if resp.StatusCode == http.StatusServiceUnavailable &&
-				strings.ToLower(resp.Header.Get("X-Rudder-Should-Retry")) == "true" {
-				reason := resp.Header.Get("X-Rudder-Error-Reason")
+			if IsRetryableResponse(resp) {
+				reason := resp.Header.Get(HeaderErrorReason)
 				attemptTag := strconv.Itoa(attempt)
 				if attempt > 4 {
 					attemptTag = "5+"
@@ -241,7 +264,6 @@ func newRetryableHTTPClient(name string, baseClient Client, retryableConfig *ret
 					maps.Copy(tags, perpetualRetriesStatsTagsFromContext(resp.Request.Context()))
 				}
 				stats.Default.NewTaggedStat("transformer_client_perpetual_retry_count", stats.CountType, tags).Increment()
-				resp.Body.Close()
 				return true, fmt.Errorf("got retryable error response from transformer: %s", reason)
 			}
 			return false, nil

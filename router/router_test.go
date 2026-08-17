@@ -262,7 +262,7 @@ func TestBackoff(t *testing.T) {
 		r := &Handle{
 			logger:                logger.NOP,
 			backgroundCtx:         context.Background(),
-			noOfWorkers:           1,
+			defaultNoOfWorkers:    1,
 			maxNoOfJobsPerChannel: 3,
 			noOfJobsPerChannel:    3,
 			reloadableConfig: &reloadableConfig{
@@ -1096,7 +1096,7 @@ var _ = Describe("router", func() {
 				throttler.NewNoOpThrottlerFactory(),
 			)
 			router.transformer = mockTransformer
-			router.noOfWorkers = 1
+			router.defaultNoOfWorkers = 1
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(5)
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
@@ -1207,7 +1207,7 @@ var _ = Describe("router", func() {
 
 			router.enableBatching = true
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
-			router.noOfWorkers = 1
+			router.defaultNoOfWorkers = 1
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
@@ -1555,7 +1555,7 @@ var _ = Describe("router", func() {
 				throttler.NewNoOpThrottlerFactory(),
 			)
 			router.transformer = mockTransformer
-			router.noOfWorkers = 1
+			router.defaultNoOfWorkers = 1
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(5)
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
@@ -1775,7 +1775,7 @@ var _ = Describe("router", func() {
 				throttler.NewNoOpThrottlerFactory(),
 			)
 			router.transformer = mockTransformer
-			router.noOfWorkers = 1
+			router.defaultNoOfWorkers = 1
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
@@ -1956,7 +1956,7 @@ var _ = Describe("router", func() {
 			router.transformer = mockTransformer
 
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
-			router.noOfWorkers = 1
+			router.defaultNoOfWorkers = 1
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
@@ -2127,7 +2127,7 @@ var _ = Describe("router", func() {
 
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
 			router.reloadableConfig.transformerProxy = config.SingleValueLoader(true)
-			router.noOfWorkers = 1
+			router.defaultNoOfWorkers = 1
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
@@ -2284,7 +2284,7 @@ var _ = Describe("router", func() {
 
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
 			router.reloadableConfig.transformerProxy = config.SingleValueLoader(true)
-			router.noOfWorkers = 1
+			router.defaultNoOfWorkers = 1
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002

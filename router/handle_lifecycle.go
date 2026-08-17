@@ -103,7 +103,7 @@ func (rt *Handle) Setup(
 		rt.supportsDeliveredWithWarnings.Store(value)
 	}
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destType, true)
-	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destType, 64)
+	rt.defaultNoOfWorkers = 64
 	rt.maxNoOfJobsPerChannel = getRouterConfigInt("maxNoOfJobsPerChannel", destType, 10000)
 	rt.noOfJobsPerChannel = getRouterConfigInt("noOfJobsPerChannel", destType, 1000)
 	if rt.noOfJobsPerChannel > rt.maxNoOfJobsPerChannel { // if noOfJobsPerChannel is more than max, set it as the new max

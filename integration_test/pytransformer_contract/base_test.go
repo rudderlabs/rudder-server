@@ -4,32 +4,24 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
-	"github.com/rudderlabs/rudder-server/processor/usertransformer"
 )
 
 // TestBaseContract is the base contract test that compares responses from the
-// old architecture (rudder-transformer + openfaas-flask-base) against the new
-// architecture (rudder-pytransformer).
+// baseline rudder-pytransformer (the last released version) against the
+// candidate one (main).
 //
 // This test:
-// 1. Starts a mock config backend serving Python transformation code
-// 2. Starts openfaas-flask-base with the transformation pre-loaded
-// 3. Starts a mock OpenFaaS gateway that proxies invocations to openfaas-flask-base
-// 4. Starts rudder-transformer connected to the mock gateway
-// 5. Starts rudder-pytransformer connected to the mock config backend
-// 6. Uses the actual user_transformer.Client to send /customTransform to both
-// 7. Asserts the OpenFaaS gateway was invoked (proving the old architecture path)
-// 8. Compares the responses for equivalence
+//  1. Starts a mock config backend serving Python transformation code
+//  2. Starts both rudder-pytransformer versions against that config backend
+//  3. Uses the actual user_transformer.Client to send /customTransform to both
+//  4. Compares the responses for equivalence
 //
 // Copy this test and change pythonCode + events to create new contract test cases.
 //
@@ -43,10 +35,9 @@ def transformEvent(event, metadata):
     return event
 `
 
-	// Language "pythonfaas" is required: the user_transformer.Client reads it from
-	// Destination.Transformations[0].Language to decide URL routing.
-	// - When PYTHON_TRANSFORM_URL is empty, python falls through to USER_TRANSFORM_URL (old architecture).
-	// - When PYTHON_TRANSFORM_URL is set, python routes there (new architecture).
+	// Language "pythonfaas" is what production stores for Python transformations:
+	// the user_transformer.Client reads it from Destination.Transformations[0].Language
+	// to decide URL routing, and any "python" prefix routes to rudder-pytransformer.
 	events := []types.TransformerEvent{
 		{
 			Message: types.SingularEventT{
@@ -89,6 +80,7 @@ def transformEvent(event, metadata):
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
 
 	t.Log("Starting mock config backend...")
 	configBackend := newContractConfigBackend(t, map[string]configBackendEntry{
@@ -97,52 +89,34 @@ def transformEvent(event, metadata):
 	defer configBackend.Close()
 	t.Logf("Config backend at %s", configBackend.URL)
 
-	t.Log("Starting openfaas-flask-base container...")
-	openFaasURL := startOpenFaasFlask(t, pool, versionID, configBackend.URL)
-
-	t.Log("Starting mock OpenFaaS gateway...")
-	mockGateway, openFaaSInvocations := newMockOpenFaaSGateway(t, func() string { return openFaasURL })
-	defer mockGateway.Close()
-	t.Logf("Mock OpenFaaS gateway at %s", mockGateway.URL)
-
 	var (
-		wg                               sync.WaitGroup
-		transformerURL, pyTransformerURL string
+		wg                        sync.WaitGroup
+		baselineURL, candidateURL string
 	)
 	wg.Go(func() {
-		transformerURL = startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
+		baselineURL = startBaselinePytransformer(t, pool, configBackend.URL)
 	})
 	wg.Go(func() {
-		pyTransformerURL = startRudderPytransformer(t, pool, configBackend.URL)
+		candidateURL = startCandidatePytransformer(t, pool, configBackend.URL)
 	})
 	wg.Wait()
 
-	// Old architecture: PYTHON_TRANSFORM_URL is empty, so the client falls through
-	// to USER_TRANSFORM_URL for python transformations (same as production before pytransformer).
-	t.Log("Sending request to rudder-transformer (old architecture)...")
-	oldArchConf := config.New()
-	oldArchConf.Set("USER_TRANSFORM_URL", transformerURL)
-	oldClient := usertransformer.New(oldArchConf, logger.NOP, stats.NOP)
-	oldResp := oldClient.Transform(context.Background(), events)
-	t.Logf("Old architecture returned %d events, %d failed", len(oldResp.Events), len(oldResp.FailedEvents))
+	// newBCTestEnv rather than hand-rolled clients: it bounds maxRetry, the retry backoff and
+	// cpDownEndlessRetries, so a container that answers 809/503 fails this test instead of retrying
+	// until the package timeout and taking every other test in the package down with it.
+	env := newBCTestEnv(t, baselineURL, candidateURL)
 
-	t.Log("Asserting OpenFaaS gateway was invoked by rudder-transformer...")
-	require.Greater(t, openFaaSInvocations.Load(), int64(0),
-		"expected OpenFaaS gateway to be invoked at least once by rudder-transformer")
-	t.Logf("OpenFaaS gateway was invoked %d times", openFaaSInvocations.Load())
+	t.Logf("Sending request to rudder-pytransformer:%s (baseline)...", baselinePytransformerTag())
+	baselineResp := env.BaselineClient.Transform(context.Background(), events)
+	t.Logf("Baseline returned %d events, %d failed", len(baselineResp.Events), len(baselineResp.FailedEvents))
 
-	// New architecture: PYTHON_TRANSFORM_URL is set, so the client routes python
-	// transformations directly to rudder-pytransformer.
-	t.Log("Sending request to rudder-pytransformer (new architecture)...")
-	newArchConf := config.New()
-	newArchConf.Set("PYTHON_TRANSFORM_URL", pyTransformerURL)
-	newClient := usertransformer.New(newArchConf, logger.NOP, stats.NOP)
-	newResp := newClient.Transform(context.Background(), events)
-	t.Logf("New architecture returned %d events, %d failed", len(newResp.Events), len(newResp.FailedEvents))
+	t.Logf("Sending request to rudder-pytransformer:%s (candidate)...", candidatePytransformerTag())
+	candidateResp := env.CandidateClient.Transform(context.Background(), events)
+	t.Logf("Candidate returned %d events, %d failed", len(candidateResp.Events), len(candidateResp.FailedEvents))
 
 	t.Log("Comparing responses...")
-	diff, equal := oldResp.Equal(&newResp)
+	diff, equal := baselineResp.Equal(&candidateResp)
 	require.True(t, equal, "responses differ:\n%s", diff)
 
-	t.Log("Contract test passed: old and new architectures return equivalent responses")
+	t.Log("Contract test passed: baseline and candidate return equivalent responses")
 }

@@ -113,7 +113,7 @@ def transformEvent(event, metadata):
 
 	// 1) Prime the only L1 slot with a CPU-bound transformation.
 	fillerEvent := makeEvent("filler-1", fillerVersionID)
-	status, items := sendRawTransform(t, pyURL, []types.TransformerEvent{fillerEvent})
+	status, _, items := sendRawTransform(t, pyURL, []types.TransformerEvent{fillerEvent})
 	require.Equal(t, http.StatusOK, status, "filler request must return 200")
 	require.Len(t, items, 1, "filler request must produce one response item")
 	require.Equal(t, http.StatusOK, items[0].StatusCode,
@@ -125,7 +125,7 @@ def transformEvent(event, metadata):
 	for i := range eventsPerBatch {
 		ioBatch1[i] = makeEvent(fmt.Sprintf("io1-%d", i), ioVersionID)
 	}
-	status, items = sendRawTransform(t, pyURL, ioBatch1)
+	status, _, items = sendRawTransform(t, pyURL, ioBatch1)
 	require.Equal(t, http.StatusOK, status, "first I/O batch must return 200")
 	require.Len(t, items, eventsPerBatch, "first I/O batch must produce one item per event")
 	for i, item := range items {
@@ -148,7 +148,7 @@ def transformEvent(event, metadata):
 	for i := range eventsPerBatch {
 		ioBatch2[i] = makeEvent(fmt.Sprintf("io2-%d", i), ioVersionID)
 	}
-	status, items = sendRawTransform(t, pyURL, ioBatch2)
+	status, _, items = sendRawTransform(t, pyURL, ioBatch2)
 	require.Equal(t, http.StatusOK, status, "second I/O batch must return 200")
 	require.Len(t, items, eventsPerBatch, "second I/O batch must produce one item per event")
 	for i, item := range items {
@@ -255,7 +255,7 @@ def transformEvent(event, metadata):
 		ev.Message["do_http"] = true
 		ioBatch[i] = ev
 	}
-	status, items := sendRawTransform(t, pyURL, ioBatch)
+	status, _, items := sendRawTransform(t, pyURL, ioBatch)
 	require.Equal(t, http.StatusOK, status, "I/O batch must return 200")
 	require.Len(t, items, eventsPerBatch)
 	for i, item := range items {
@@ -274,7 +274,7 @@ def transformEvent(event, metadata):
 		ev.Message["do_http"] = false
 		cpuBatch[i] = ev
 	}
-	status, items = sendRawTransform(t, pyURL, cpuBatch)
+	status, _, items = sendRawTransform(t, pyURL, cpuBatch)
 	require.Equal(t, http.StatusOK, status, "CPU batch must return 200")
 	require.Len(t, items, eventsPerBatch)
 	for i, item := range items {

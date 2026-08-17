@@ -56,6 +56,10 @@ var _ = Describe("LYTICS_BULK_UPLOAD test", func() {
 		BeforeEach(func() {
 			config.Reset()
 			config.Set("BatchRouter.LYTICS_BULK_UPLOAD.MaxUploadLimit", 1*bytesize.MB)
+
+			tmpDir := GinkgoT().TempDir()
+			GinkgoT().Setenv("RUDDER_TMPDIR", tmpDir)
+			Expect(os.MkdirAll(filepath.Join(tmpDir, misc.RudderAsyncDestinationLogs), 0o755)).To(Succeed())
 		})
 
 		AfterEach(func() {

@@ -87,7 +87,7 @@ def transformEvent(event, metadata):
 	defer pyConfigBackend.Close()
 
 	// 4. Start rudder-pytransformer container
-	pyTransformerURL := startRudderPytransformer(t, pool, pyConfigBackend.URL)
+	pyTransformerURL := startCandidatePytransformer(t, pool, pyConfigBackend.URL)
 
 	// 6. Create mock transformer for features and destination transforms
 	// This handles everything except /customTransform (which goes to pytransformer)
@@ -137,7 +137,7 @@ def transformEvent(event, metadata):
 	t.Logf("rudder-server is ready at %s", url)
 
 	// 10. Send events to rudder-server
-	eventsCount := 5
+	eventsCount := 6
 	t.Logf("Sending %d identify events...", eventsCount)
 	err = sendEvents(eventsCount, "identify", "writekey-1", url)
 	require.NoError(t, err)
@@ -264,6 +264,7 @@ func sendEvents(
 	return nil
 }
 
+// requireJobsCount waits until a jobsdb queue holds expectedCount jobs in a given state.
 func requireJobsCount(
 	t *testing.T,
 	ctx context.Context,
