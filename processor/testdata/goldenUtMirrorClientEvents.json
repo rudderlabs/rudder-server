@@ -33,6 +33,7 @@
         },
         "destination": {
             "ID": "enabled-destination-b",
+          "OriginalID": "",
             "Name": "B",
             "DestinationDefinition": {
                 "ID": "enabled-destination-b-definition-id",
@@ -99,6 +100,7 @@
         },
         "destination": {
             "ID": "enabled-destination-b",
+          "OriginalID": "",
             "Name": "B",
             "DestinationDefinition": {
                 "ID": "enabled-destination-b-definition-id",
@@ -163,6 +165,7 @@
         },
         "destination": {
             "ID": "enabled-destination-b",
+          "OriginalID": "",
             "Name": "B",
             "DestinationDefinition": {
                 "ID": "enabled-destination-b-definition-id",
