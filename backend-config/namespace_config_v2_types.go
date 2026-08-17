@@ -1,0 +1,119 @@
+package backendconfig
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/tidwall/gjson"
+)
+
+// v2ConfigVersion is the version the v2 namespace config endpoint stamps on its response.
+const v2ConfigVersion = 2
+
+// v2NamespaceConfig is the response of the v2 namespace config endpoint:
+//
+//	GET /configuration/v2/namespaces/{namespace}?secrets=embed
+//
+// The definitions that v1 embeds in every source and destination are hoisted here into three
+// namespace-global catalogues sent once, and each workspace references them by name.
+type v2NamespaceConfig struct {
+	Version int `json:"version"`
+	v2Catalogues
+	Workspaces map[string]*v2Workspace `json:"workspaces"`
+}
+
+// v2Catalogues are the namespace-global definition catalogues, keyed by definition name.
+//
+// An entry is its v1 definition plus UpdatedAt, which the v1 types do not carry and which feeds
+// the generation key of the transform memo. Whatever else is on the wire (configSchema, uiConfig,
+// responseRules, ...) stays unparsed: a v1 ConfigT has nowhere to put it, so it would be decoded
+// and held on every poll without ever reaching a consumer.
+type v2Catalogues struct {
+	SourceDefinitions      map[string]v2SourceDefinition      `json:"sourceDefinitions"`
+	DestinationDefinitions map[string]v2DestinationDefinition `json:"destinationDefinitions"`
+	AccountDefinitions     map[string]v2AccountDefinition     `json:"accountDefinitions"`
+}
+
+// v2SourceDefinition is an entry of the sourceDefinitions catalogue.
+//
+// Note the embedded Name is not on the wire: source and destination definitions are named by their
+// catalogue key alone. Reach for toV1 rather than the embedded value, or the name is empty.
+type v2SourceDefinition struct {
+	SourceDefinitionT
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// toV1 returns the definition as v1 spells it, named after the key it is catalogued under.
+func (d v2SourceDefinition) toV1(name string) SourceDefinitionT {
+	definition := d.SourceDefinitionT
+	definition.Name = name
+	return definition
+}
+
+// v2DestinationDefinition is an entry of the destinationDefinitions catalogue.
+type v2DestinationDefinition struct {
+	DestinationDefinitionT
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// toV1 returns the definition as v1 spells it, named after the key it is catalogued under.
+func (d v2DestinationDefinition) toV1(name string) DestinationDefinitionT {
+	definition := d.DestinationDefinitionT
+	definition.Name = name
+	return definition
+}
+
+// v2AccountDefinition is an entry of the accountDefinitions catalogue. Unlike the other two,
+// account definitions do carry their own name, which the control plane keeps equal to the key.
+type v2AccountDefinition struct {
+	AccountDefinition
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// toV1 returns the definition as v1 spells it, named after the key it is catalogued under.
+func (d v2AccountDefinition) toV1(name string) AccountDefinition {
+	definition := d.AccountDefinition
+	definition.Name = name
+	return definition
+}
+
+// v2Workspace is one workspace of the response.
+//
+// The workspace body is deliberately left untyped: the resolver caches the raw bytes and hands
+// them to the mapper, so the full workspace schema belongs to the mapper alone. Only updatedAt is
+// read here, and it is load bearing - it drives the updatedAfter of the next poll and the memo
+// that lets an unchanged workspace skip the transform.
+type v2Workspace struct {
+	UpdatedAt time.Time
+	Raw       json.RawMessage
+}
+
+func (w *v2Workspace) UnmarshalJSON(data []byte) error {
+	// the body is scanned for the one field we need rather than decoded: the decoder that handed
+	// us these bytes has already validated them, and decoding a single field out of a workspace
+	// this size costs more than the scan does
+	if updatedAt := gjson.GetBytes(data, "updatedAt"); updatedAt.Exists() {
+		if updatedAt.Type != gjson.String {
+			return fmt.Errorf("workspace updatedAt is a %s, expected a string", updatedAt.Type)
+		}
+		parsed, err := time.Parse(time.RFC3339, updatedAt.Str)
+		if err != nil {
+			return fmt.Errorf("parsing workspace updatedAt: %w", err)
+		}
+		w.UpdatedAt = parsed
+	}
+	// sonnet, the default jsonrs implementation, hands back a slice of the response buffer rather
+	// than a copy, as does std: a cached workspace would otherwise pin the whole payload for as
+	// long as it is cached, and change under us if that buffer is ever reused
+	w.Raw = bytes.Clone(data)
+	return nil
+}
+
+// mapper joins one workspace's raw v2 blob with the namespace-global catalogues to produce a v1
+// ConfigT. The post-transform steps (ApplyReplaySources, processAccountAssociations,
+// ProcessDestinationsInSources) stay with the caller.
+type mapper interface {
+	Map(workspaceID string, raw json.RawMessage, catalogues v2Catalogues) (ConfigT, error)
+}
