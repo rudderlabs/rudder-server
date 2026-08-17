@@ -58,8 +58,9 @@ type SourceDefinitionOptions struct {
 }
 
 type DestinationT struct {
-	ID                    string
-	OriginalID            string
+	ID string
+	// OriginalID is the ID of the original destination for replay destinations
+	OriginalID            string `json:"-"`
 	Name                  string
 	DestinationDefinition DestinationDefinitionT
 	Config                map[string]any
