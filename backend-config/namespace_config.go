@@ -3,24 +3,16 @@ package backendconfig
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"time"
 
-	"github.com/cenkalti/backoff/v5"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
-	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
-	"github.com/rudderlabs/rudder-server/backend-config/dynamicconfig"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
-	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -29,6 +21,13 @@ var (
 	ErrIncrementalUpdateFailed = errors.New("incremental update failed")
 )
 
+// configFetcher fetches the configs of all workspaces in a namespace, keyed by workspace ID.
+// Implementations own their own incremental update state and are responsible for
+// recovering from a failed incremental update.
+type configFetcher interface {
+	Get(ctx context.Context) (map[string]ConfigT, error)
+}
+
 type namespaceConfig struct {
 	configEnvHandler types.ConfigEnvI
 	cpRouterURL      string
@@ -36,6 +35,7 @@ type namespaceConfig struct {
 	config *config.Config
 	logger logger.Logger
 	client *http.Client
+	stats  stats.Stats
 
 	hostedServiceSecret string
 
@@ -43,12 +43,8 @@ type namespaceConfig struct {
 	configBackendURL         *url.URL
 	region                   string
 	incrementalConfigUpdates bool
-	lastUpdatedAt            time.Time
-	workspacesConfig         map[string]ConfigT
-	dynamicConfigCache       dynamicconfig.Cache
 
-	httpCallsStat        stats.Counter
-	httpResponseSizeStat stats.Histogram
+	fetcher configFetcher
 }
 
 func (nc *namespaceConfig) SetUp() (err error) {
@@ -79,154 +75,25 @@ func (nc *namespaceConfig) SetUp() (err error) {
 			Timeout: nc.config.GetDurationVar(30, time.Second, "HttpClient.backendConfig.timeout"),
 		}
 	}
-	nc.workspacesConfig = make(map[string]ConfigT)
-	nc.dynamicConfigCache = make(DynamicConfigMapCache)
-	nc.httpCallsStat = stats.Default.NewStat("backend_config_http_calls", stats.CountType)
-	nc.httpResponseSizeStat = stats.Default.NewStat("backend_config_http_response_size", stats.HistogramType)
+
+	if nc.stats == nil {
+		nc.stats = stats.Default
+	}
 
 	if nc.logger == nil {
 		nc.logger = logger.NewLogger().Child("backend-config").Withn(obskit.Namespace(nc.namespace))
 	}
+
+	nc.fetcher = newV1ConfigFetcher(nc)
+
 	nc.logger.Infon("Setup backend config complete")
 
 	return nil
 }
 
-// Get returns sources from the workspace
+// Get returns the configs of all workspaces in the namespace
 func (nc *namespaceConfig) Get(ctx context.Context) (map[string]ConfigT, error) {
-	conf, err := nc.getFromAPI(ctx)
-	if errors.Is(err, ErrIncrementalUpdateFailed) {
-		// reset state here
-		// this triggers a full update
-		nc.lastUpdatedAt = time.Time{}
-		return nc.getFromAPI(ctx)
-	}
-	return conf, err
-}
-
-// getFromApi gets the workspace config from api
-func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, error) {
-	configOnError := make(map[string]ConfigT)
-	if nc.namespace == "" {
-		return configOnError, fmt.Errorf("namespace is not configured")
-	}
-
-	var respBody []byte
-	u := *nc.configBackendURL
-	u.Path = fmt.Sprintf("/data-plane/v1/namespaces/%s/config", nc.namespace)
-	if nc.incrementalConfigUpdates && !nc.lastUpdatedAt.IsZero() {
-		values := u.Query()
-		values.Add("updatedAfter", nc.lastUpdatedAt.Format(updatedAfterTimeFormat))
-		u.RawQuery = values.Encode()
-	}
-
-	urlString := u.String()
-	req, err := nc.prepareHTTPRequest(ctx, urlString)
-	if err != nil {
-		return configOnError, fmt.Errorf("error preparing request: %s: %w", urlString, err)
-	}
-
-	operation := func() (fetchError error) {
-		defer nc.httpCallsStat.Increment()
-		nc.logger.Debugn("Fetching backend config", logger.NewStringField("url", urlString))
-		respBody, fetchError = nc.makeHTTPRequest(req)
-		return fetchError
-	}
-
-	err = backoffvoid.Retry(ctx, operation,
-		backoff.WithMaxTries(3+1),
-		backoff.WithNotify(func(err error, t time.Duration) {
-			nc.logger.Warnn("Failed to fetch backend config from API",
-				obskit.Error(err), logger.NewDurationField("retryAfter", t),
-			)
-		}),
-	)
-	if err != nil {
-		if ctx.Err() == nil {
-			nc.logger.Errorn("Error sending request to the server", obskit.Error(err))
-		}
-		return configOnError, err
-	}
-	configEnvHandler := nc.configEnvHandler
-	if configEnvReplacementEnabled && configEnvHandler != nil {
-		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
-	}
-
-	var requestData map[string]*ConfigT
-	err = jsonrs.Unmarshal(respBody, &requestData)
-	if err != nil {
-		nc.logger.Errorn("Error while parsing request", obskit.Error(err))
-		return configOnError, err
-	}
-
-	workspacesConfig := make(map[string]ConfigT, len(requestData))
-	for workspaceID, workspace := range requestData {
-		if workspace == nil { // this workspace was not updated, populate it with the previous config
-			previousConfig, ok := nc.workspacesConfig[workspaceID]
-			if !ok {
-				nc.logger.Errorn(
-					"workspace was not updated but was not present in previous config",
-					obskit.WorkspaceID(workspaceID),
-					logger.NewStringField("requestURL", req.URL.String()),
-				)
-				return configOnError, ErrIncrementalUpdateFailed
-			}
-			workspace = &previousConfig
-		} else {
-			workspace.ApplyReplaySources()
-			workspace.processAccountAssociations()
-			// Process dynamic config with the instance cache
-			ProcessDestinationsInSources(workspace.Sources, nc.dynamicConfigCache)
-		}
-		// always set connection flags to true for hosted and multi-tenant warehouse and processor services
-		workspace.ConnectionFlags.URL = nc.cpRouterURL
-		workspace.ConnectionFlags.Services = map[string]bool{"warehouse": true, "rudderstack-processor": true}
-		workspacesConfig[workspaceID] = *workspace
-		if nc.incrementalConfigUpdates && workspace.UpdatedAt.After(nc.lastUpdatedAt) {
-			nc.lastUpdatedAt = workspace.UpdatedAt
-		}
-	}
-
-	nc.workspacesConfig = workspacesConfig
-
-	return nc.workspacesConfig, nil
-}
-
-func (nc *namespaceConfig) prepareHTTPRequest(ctx context.Context, url string) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
-	if err != nil {
-		return nil, err
-	}
-
-	req.SetBasicAuth(nc.Identity().BasicAuth())
-	if nc.region != "" {
-		q := req.URL.Query()
-		q.Add("region", nc.region)
-		req.URL.RawQuery = q.Encode()
-	}
-
-	return req, nil
-}
-
-func (nc *namespaceConfig) makeHTTPRequest(req *http.Request) ([]byte, error) {
-	resp, err := nc.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() { kithttputil.CloseResponse(resp) }()
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	nc.httpResponseSizeStat.Observe(float64(len(respBody)))
-
-	if resp.StatusCode >= 300 {
-		return nil, getNotOKError(respBody, resp.StatusCode)
-	}
-
-	return respBody, nil
+	return nc.fetcher.Get(ctx)
 }
 
 func (nc *namespaceConfig) AccessToken() string {
