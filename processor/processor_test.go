@@ -5806,3 +5806,189 @@ func TestStoreMessageMerge(t *testing.T) {
 		start:          time.UnixMicro(99999999),
 	})
 }
+
+// TestDedupReporting pins the dedup report-row emission added at the duplicate-drop
+// point in preprocessStage: a single DEDUP/filtered row per drop, gated by
+// proc.isReportingEnabled() && proc.config.dedupMetricsEnabled, with no gateway row
+// for the dropped twin and no change to the unconditional sourceDupStats counter.
+func TestDedupReporting(t *testing.T) {
+	dedupRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.DEDUP
+		})
+	}
+	gatewayRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.GATEWAY
+		})
+	}
+
+	// newDedupProcessor builds the shared fixture: a Handle with dedup and reporting
+	// wired up, backed by a config.Config the test can mutate (for the reloadable
+	// dedupMetricsEnabled flag) and a MockDedup that allows only allowedIndex.
+	newDedupProcessor := func(t *testing.T, enableReporting bool, allowedIndex int) (*Handle, *config.Config, *testContext) {
+		t.Helper()
+		conf := config.New()
+		c := &testContext{}
+		c.Setup(t)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
+
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		require.NoError(t, err)
+
+		processor := NewHandle(conf, transformer.NewSimpleClients())
+		processor.isolationStrategy = isolationStrategy
+		processor.config.archivalEnabled = config.SingleValueLoader(false)
+		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+
+		Setup(processor, c, true /* dedup */, enableReporting, t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+
+		processor.dedup = c.MockDedup
+		c.MockDedup.EXPECT().Allowed(gomock.Any()).DoAndReturn(func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+			return map[dedup.BatchKey]bool{
+				{Index: allowedIndex, Key: "message-some-id"}: true,
+			}, nil
+		}).AnyTimes()
+
+		return processor, conf, c
+	}
+
+	// runDedupPipeline drives preprocessStage -> srcHydrationStage -> pretransformStage,
+	// which is where the new AssertKeysSubset(connectionDetailsMap, dedupStatusDetailsMap)
+	// panics and where the CreatePUDetails("", DEDUP, false, false) row is built.
+	runDedupPipeline := func(t *testing.T, processor *Handle, events []mockEventData) *transformationMessage {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		srcHydrationMsg, err := processor.preprocessStage(
+			"",
+			subJob{
+				ctx: ctx,
+				subJobs: []*jobsdb.JobT{
+					{
+						UUID:      uuid.New(),
+						JobID:     1,
+						CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+						ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+						CustomVal: gatewayCustomVal[0],
+						EventPayload: createBatchPayload(
+							WriteKeyEnabled,
+							"2001-01-02T02:23:45.000Z",
+							events,
+							createMessagePayloadWithSameMessageId,
+						),
+						EventCount: len(events),
+						Parameters: createBatchParameters(SourceIDEnabled),
+					},
+				},
+			},
+			0,
+		)
+		require.NoError(t, err)
+
+		preTransMsg, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
+
+		transMsg, err := processor.pretransformStage("", preTransMsg)
+		require.NoError(t, err)
+		return transMsg
+	}
+
+	twoDuplicates := []mockEventData{
+		{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+		{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+	}
+
+	// shared across the first two subtests: the run with the flag turned on after Setup.
+	var flagOnTransMsg *transformationMessage
+
+	t.Run("should emit exactly one dedup filtered row for a duplicate event when the flag is on", func(t *testing.T) {
+		processor, conf, c := newDedupProcessor(t, true, 0)
+		defer c.Finish()
+
+		// set after Setup: also exercises that dedupMetricsEnabled is read via .Load() at
+		// emission time, not cached at Setup time.
+		conf.Set("Reporting.dedupMetrics.enabled", true)
+
+		flagOnTransMsg = runDedupPipeline(t, processor, twoDuplicates)
+
+		rows := dedupRows(flagOnTransMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		row := rows[0]
+		require.Equal(t, reportingtypes.DEDUP, row.PU)
+		require.Equal(t, "", row.InPU)
+		require.False(t, row.TerminalPU)
+		require.False(t, row.InitialPU)
+		require.Equal(t, jobsdb.Filtered.State, row.StatusDetail.Status)
+		require.Equal(t, reportingtypes.FilterEventCode, row.StatusDetail.StatusCode)
+		require.EqualValues(t, 1, row.StatusDetail.Count)
+		require.Equal(t, SourceIDEnabled, row.SourceID)
+	})
+
+	t.Run("should not emit a gateway row for the deduped event", func(t *testing.T) {
+		require.NotNil(t, flagOnTransMsg, "requires the preceding subtest to have populated the shared run")
+
+		rows := gatewayRows(flagOnTransMsg.reportMetrics)
+		require.Len(t, rows, 1, "only the surviving twin should produce a gateway row")
+		require.EqualValues(t, 1, rows[0].StatusDetail.Count, "the deduped twin must not be counted in the gateway row")
+	})
+
+	t.Run("should emit no dedup row when the flag is off", func(t *testing.T) {
+		processorRun1, _, c1 := newDedupProcessor(t, true, 0)
+		defer c1.Finish()
+		run1 := runDedupPipeline(t, processorRun1, twoDuplicates)
+		require.Empty(t, dedupRows(run1.reportMetrics))
+
+		processorRun2, _, c2 := newDedupProcessor(t, true, 0)
+		defer c2.Finish()
+		run2 := runDedupPipeline(t, processorRun2, twoDuplicates)
+		require.Empty(t, dedupRows(run2.reportMetrics))
+
+		require.Equal(t, run1.reportMetrics, run2.reportMetrics, "an otherwise identical run must produce the same report metrics")
+	})
+
+	t.Run("should emit no dedup row when reporting is disabled but the flag is on", func(t *testing.T) {
+		processor, conf, c := newDedupProcessor(t, false, 0)
+		defer c.Finish()
+
+		conf.Set("Reporting.dedupMetrics.enabled", true)
+
+		transMsg := runDedupPipeline(t, processor, twoDuplicates)
+		require.Empty(t, dedupRows(transMsg.reportMetrics))
+	})
+
+	t.Run("should increment the duplicate counter identically whether the flag is on or off", func(t *testing.T) {
+		processorOn, confOn, cOn := newDedupProcessor(t, true, 0)
+		defer cOn.Finish()
+		confOn.Set("Reporting.dedupMetrics.enabled", true)
+		runOn := runDedupPipeline(t, processorOn, twoDuplicates)
+		require.Equal(t, 1, runOn.sourceDupStats[dupStatKey{sourceID: SourceIDEnabled}])
+
+		processorOff, _, cOff := newDedupProcessor(t, true, 0)
+		defer cOff.Finish()
+		runOff := runDedupPipeline(t, processorOff, twoDuplicates)
+		require.Equal(t, 1, runOff.sourceDupStats[dupStatKey{sourceID: SourceIDEnabled}])
+	})
+
+	t.Run("should aggregate multiple duplicates from one source into a single dedup row", func(t *testing.T) {
+		threeDuplicates := []mockEventData{
+			{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+			{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+			{id: "3", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+		}
+		processor, conf, c := newDedupProcessor(t, true, 0)
+		defer c.Finish()
+		conf.Set("Reporting.dedupMetrics.enabled", true)
+
+		transMsg := runDedupPipeline(t, processor, threeDuplicates)
+
+		rows := dedupRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		require.EqualValues(t, 2, rows[0].StatusDetail.Count)
+	})
+}
