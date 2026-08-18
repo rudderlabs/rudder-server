@@ -948,6 +948,51 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		{
 			// Hydration-enabled and tracking-plan-enabled: gives
 			// TestDestinationVisibilityReporting a source that exercises the
+			// source_hydration arm of the tracking-plan inPU switch (trackingplan.go:122),
+			// which SourceIDEnabledTp (no hydration) and fblaSourceId (no TP, no
+			// destinations) cannot reach on their own.
+			ID:       SourceIDHydrationTp,
+			Name:     SourceIDHydrationTpName,
+			WriteKey: WriteKeyHydrationTp,
+			Enabled:  true,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Category: "webhook",
+				Options: backendconfig.SourceDefinitionOptions{
+					Hydration: struct {
+						Enabled bool
+					}{Enabled: true},
+				},
+			},
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 DestinationIDEnabledA,
+					Name:               "A",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "enabled-destination-a-definition-id",
+						Name:        "enabled-destination-a-definition-name",
+						DisplayName: "enabled-destination-a-definition-display-name",
+						Config:      map[string]any{},
+					},
+					Transformations: []backendconfig.TransformationT{
+						{
+							VersionID: "hydration-tp-transformation-version-id",
+						},
+					},
+				},
+			},
+			DgSourceTrackingPlanConfig: backendconfig.DgSourceTrackingPlanConfigT{
+				SourceId: SourceIDHydrationTp,
+				TrackingPlan: backendconfig.TrackingPlanT{
+					Id:      "tracking-plan-id",
+					Version: 100,
+				},
+			},
+		},
+		{
+			// Hydration-enabled and tracking-plan-enabled: gives
+			// TestDestinationVisibilityReporting a source that exercises the
 			// source_hydration arm of the tracking-plan inPU selection, which
 			// SourceIDEnabledTp (no hydration) and fblaSourceId (no TP, no
 			// destinations) cannot reach on their own.
@@ -1003,6 +1048,23 @@ var sampleBackendConfig = backendconfig.ConfigT{
 				},
 			},
 			WorkspaceID: "test-workspace-id",
+			// TestDestinationVisibilityReporting's pipelineStepsInPU case needs a
+			// hydration-only (no TP) source that also has a destination, to exercise the
+			// source_hydration arm of destination_enter's inPU selection.
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 "fbla-destination",
+					Name:               "FBLA-DEST",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "fbla-destination-definition-id",
+						Name:        "fbla-destination-definition-name",
+						DisplayName: "fbla-destination-definition-display-name",
+						Config:      map[string]any{},
+					},
+				},
+			},
 		},
 		{
 			ID: fblaSourceId2,
@@ -1129,7 +1191,8 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 									},
 								},
 								func(e mockEventData) string {
-									return fmt.Sprintf(`
+									return fmt.Sprintf(
+										`
 										{
 										  "rudderId": "some-rudder-id",
 										  "messageId": "message-%[1]s",
@@ -1211,7 +1274,8 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 									},
 								},
 								func(e mockEventData) string {
-									return fmt.Sprintf(`
+									return fmt.Sprintf(
+										`
 										{
 										  "rudderId": "some-rudder-id",
 										  "messageId": "message-%[1]s",
@@ -2048,7 +2112,8 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					JobsLimit:        processor.config.maxEventsToProcess.Load(),
 					EventsLimit:      processor.config.maxEventsToProcess.Load(),
 					PayloadSizeLimit: processor.payloadLimit.Load(),
-				}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
+				},
+			).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
 				Expect(job.UUID.String()).To(testutils.BeValidUUID())
@@ -2335,7 +2400,8 @@ var _ = Describe("Processor", Ordered, func() {
 					JobsLimit:        processor.config.maxEventsToProcess.Load(),
 					EventsLimit:      processor.config.maxEventsToProcess.Load(),
 					PayloadSizeLimit: processor.payloadLimit.Load(),
-				}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
+				},
+			).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
 
 			didWork := processor.handlePendingGatewayJobs("")
 			Expect(didWork).To(Equal(false))
@@ -2478,7 +2544,8 @@ var _ = Describe("Processor", Ordered, func() {
 					JobsLimit:        processor.config.maxEventsToProcess.Load(),
 					EventsLimit:      processor.config.maxEventsToProcess.Load(),
 					PayloadSizeLimit: processor.payloadLimit.Load(),
-				}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
+				},
+			).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			mockTransformerClients.SetDestinationTransformOutput(
 				types.Response{
@@ -3885,7 +3952,8 @@ var _ = Describe("Processor", Ordered, func() {
 				FailedEvents: FailedEvents,
 			}
 
-			m := processor.getNonSuccessfulMetrics(transformerResponse,
+			m := processor.getNonSuccessfulMetrics(
+				transformerResponse,
 				inputEvents,
 				&commonMetadata,
 				eventsByMessageID,
@@ -5226,7 +5294,8 @@ func createBatchPayload(writeKey, receivedAt string, events []mockEventData, eve
 		payloads = append(payloads, eventCreator(event))
 	}
 	batch := strings.Join(payloads, ",")
-	return fmt.Appendf(nil,
+	return fmt.Appendf(
+		nil,
 		`{"writeKey":%q,"batch":[%s],"requestIP":"1.2.3.4","receivedAt":%q}`, writeKey, batch, receivedAt,
 	)
 }
