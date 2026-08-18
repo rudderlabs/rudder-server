@@ -285,7 +285,8 @@ func TestSrcHydrationStage(t *testing.T) {
 		err := proc.config.asyncInit.WaitContext(ctx)
 		require.NoError(t, err)
 
-		// Create test message
+		// Create test message. earlyDestinationFilter mirrors the per-batch snapshot
+		// preprocessStage would have taken; Processor.earlyDestinationFilter defaults to true.
 		message := &srcHydrationMessage{
 			partition: "test-partition",
 			subJobs: subJob{
@@ -295,7 +296,8 @@ func TestSrcHydrationStage(t *testing.T) {
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,
 			},
-			eventsByMessageID: make(map[string]types.SingularEventWithReceivedAt),
+			eventsByMessageID:      make(map[string]types.SingularEventWithReceivedAt),
+			earlyDestinationFilter: true,
 		}
 
 		// Execute the source hydration stage
@@ -315,6 +317,93 @@ func TestSrcHydrationStage(t *testing.T) {
 			},
 			PUDetails: reportingtypes.PUDetails{
 				InPU:       reportingtypes.DESTINATION_FILTER,
+				PU:         reportingtypes.SOURCE_HYDRATION,
+				TerminalPU: false,
+				InitialPU:  false,
+			},
+			StatusDetail: &reportingtypes.StatusDetail{
+				Status:         "aborted",
+				Count:          1,
+				StatusCode:     500,
+				SampleResponse: "hydration error",
+				SampleEvent:    sampleEvent,
+				EventName:      "Product Viewed",
+				EventType:      "track",
+				FailedMessages: []*reportingtypes.FailedMessage{
+					{
+						MessageID:  msgId,
+						ReceivedAt: receivedAt.Truncate(time.Millisecond),
+					},
+				},
+			},
+		})
+	})
+
+	t.Run("the hydration-failure source_hydration row carries inPU gateway when earlyDestinationFilter is false", func(t *testing.T) {
+		// getHydrationFailedReports (src_hydration_stage.go:252) is the only site in the repo
+		// that emits a source_hydration row, so sourceHydrationInPU's false arm (the reorder
+		// target state, src_hydration_stage.go:228-233) has no other observable. The true arm
+		// (today's default) is pinned above and at :422/:449.
+		msgId := "message-1"
+		receivedAt := time.Now().In(time.UTC)
+		events := []types.TransformerEvent{
+			{
+				Message: map[string]any{
+					"type":      "track",
+					"event":     "Product Viewed",
+					"productId": "12345",
+				},
+				Metadata: types.Metadata{
+					MessageID:  msgId,
+					ReceivedAt: receivedAt.Format(misc.RFC3339Milli),
+					SourceID:   fblaSourceId,
+				},
+			},
+		}
+
+		transformerClients := transformer.NewSimpleClients()
+		transformerClients.SetSrcHydrationOutput(types.SrcHydrationResponse{}, errors.New("hydration error"))
+
+		c := &testContext{}
+		c.Setup(t)
+		defer c.Finish()
+		conf := config.New()
+		conf.Set("Processor.earlyDestinationFilter", false)
+		proc := NewHandle(conf, transformerClients)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().AnyTimes()
+		Setup(proc, c, true, true, t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		err := proc.config.asyncInit.WaitContext(ctx)
+		require.NoError(t, err)
+
+		message := &srcHydrationMessage{
+			partition: "test-partition",
+			subJobs: subJob{
+				ctx: context.Background(),
+			},
+			eventSchemaJobsBySourceId: make(map[SourceIDT][]*jobsdb.JobT),
+			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
+				SourceIDT(fblaSourceId): events,
+			},
+			eventsByMessageID: make(map[string]types.SingularEventWithReceivedAt),
+		}
+
+		result, err := proc.srcHydrationStage("test-partition", message)
+
+		require.NoError(t, err)
+		require.Len(t, result.reportMetrics, 1)
+		sampleEvent, err := jsonrs.Marshal(events[0].Message)
+		require.NoError(t, err)
+
+		require.EqualValues(t, result.reportMetrics[0], &reportingtypes.PUReportedMetric{
+			ConnectionDetails: reportingtypes.ConnectionDetails{
+				SourceID:       fblaSourceId,
+				SourceCategory: "webhook",
+			},
+			PUDetails: reportingtypes.PUDetails{
+				InPU:       reportingtypes.GATEWAY,
 				PU:         reportingtypes.SOURCE_HYDRATION,
 				TerminalPU: false,
 				InitialPU:  false,
@@ -388,7 +477,8 @@ func TestSrcHydrationStage(t *testing.T) {
 		err := proc.config.asyncInit.WaitContext(ctx)
 		require.NoError(t, err)
 
-		// Create test message
+		// Create test message. earlyDestinationFilter mirrors the per-batch snapshot
+		// preprocessStage would have taken; Processor.earlyDestinationFilter defaults to true.
 		message := &srcHydrationMessage{
 			partition: "test-partition",
 			subJobs: subJob{
@@ -398,7 +488,8 @@ func TestSrcHydrationStage(t *testing.T) {
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,
 			},
-			eventsByMessageID: make(map[string]types.SingularEventWithReceivedAt),
+			eventsByMessageID:      make(map[string]types.SingularEventWithReceivedAt),
+			earlyDestinationFilter: true,
 		}
 
 		// Execute the source hydration stage

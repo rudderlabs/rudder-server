@@ -46,6 +46,10 @@ type srcHydrationMessage struct {
 	jobList                       []*jobsdb.JobT
 	sourceDupStats                map[dupStatKey]int
 	dedupKeys                     map[string]struct{}
+	// earlyDestinationFilter is a per-batch snapshot of Processor.earlyDestinationFilter taken
+	// once in preprocessStage, so that every stage this batch passes through observes the same
+	// value even if the reloadable config flips mid-flight.
+	earlyDestinationFilter bool
 }
 
 func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMessage) (*preTransformationMessage, error) {
@@ -61,7 +65,8 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 		defer proc.stats.statSrcHydrationStageCount(partition).Count(
 			lo.Sum(lo.MapToSlice(message.groupedEventsBySourceId, func(key SourceIDT, jobs []types.TransformerEvent) int {
 				return len(jobs)
-			})))
+			})),
+		)
 	}
 
 	// Process sources in parallel using errgroup
@@ -88,13 +93,14 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 					return err
 				}
 				if !errors.Is(err, types.ErrPermanentTransformerFailure) {
-					proc.logger.Errorn("failed to hydrate source events, skipping jobs",
+					proc.logger.Errorn(
+						"failed to hydrate source events, skipping jobs",
 						obskit.SourceID(string(sourceId)),
 						obskit.Error(err),
 					)
 				}
 				// report metrics for failed hydration
-				hydrationFailedReports = proc.getHydrationFailedReports(source, jobs, err)
+				hydrationFailedReports = proc.getHydrationFailedReports(source, jobs, err, message.earlyDestinationFilter)
 			}
 
 			// Update shared maps with mutex protection
@@ -138,7 +144,8 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 					}
 					payload, err := jsonrs.Marshal(hydratedJobs[i].Message)
 					if err != nil {
-						proc.logger.Errorn("failed to marshal hydrated event for event schema",
+						proc.logger.Errorn(
+							"failed to marshal hydrated event for event schema",
 							obskit.SourceID(string(sourceId)),
 							obskit.Error(err),
 						)
@@ -181,6 +188,7 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 		sourceDupStats:                message.sourceDupStats,
 		dedupKeys:                     message.dedupKeys,
 		srcHydrationEnabledMap:        srcHydrationEnabledMap,
+		earlyDestinationFilter:        message.earlyDestinationFilter,
 	}, nil
 }
 
@@ -218,7 +226,20 @@ func (proc *Handle) hydrate(ctx context.Context, source *backendconfig.SourceT, 
 	}), nil
 }
 
-func (proc *Handle) getHydrationFailedReports(source *backendconfig.SourceT, jobs []types.TransformerEvent, err error) []*reportingtypes.PUReportedMetric {
+// sourceHydrationInPU is the inPU label for source_hydration rows. With
+// Processor.earlyDestinationFilter true (default), source hydration still follows the preprocess
+// destination-filter guard, as today. With it false, the guard is skipped and source hydration is
+// the first stage after gateway ingestion (plan 1d). earlyDestinationFilter is the per-batch
+// snapshot taken in preprocessStage, not a fresh config read, so it stays consistent for the
+// whole batch even if the reloadable flag flips mid-flight.
+func sourceHydrationInPU(earlyDestinationFilter bool) string {
+	if earlyDestinationFilter {
+		return reportingtypes.DESTINATION_FILTER
+	}
+	return reportingtypes.GATEWAY
+}
+
+func (proc *Handle) getHydrationFailedReports(source *backendconfig.SourceT, jobs []types.TransformerEvent, err error, earlyDestinationFilter bool) []*reportingtypes.PUReportedMetric {
 	metricsMap := make(map[string]map[string]*reportingtypes.PUReportedMetric)
 	return lo.FilterMap(jobs, func(job types.TransformerEvent, _ int) (*reportingtypes.PUReportedMetric, bool) {
 		eventName, _ := misc.MapLookup(job.Message, "event").(string)
@@ -235,7 +256,7 @@ func (proc *Handle) getHydrationFailedReports(source *backendconfig.SourceT, job
 					SourceDefinitionID: source.SourceDefinition.ID,
 					SourceCategory:     source.SourceDefinition.Category,
 				},
-				PUDetails: *reportingtypes.CreatePUDetails(reportingtypes.DESTINATION_FILTER, reportingtypes.SOURCE_HYDRATION, false, false),
+				PUDetails: *reportingtypes.CreatePUDetails(sourceHydrationInPU(earlyDestinationFilter), reportingtypes.SOURCE_HYDRATION, false, false),
 				StatusDetail: &reportingtypes.StatusDetail{
 					Status:         jobsdb.Aborted.State,
 					Count:          1,
