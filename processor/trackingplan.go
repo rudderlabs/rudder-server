@@ -66,7 +66,7 @@ func enhanceWithViolation(response types.Response, trackingPlanID string, tracki
 // validateEvents If the TrackingPlanId exist for a particular write key then we are going to Validate from the transformer.
 // The Response will contain both the Events and FailedEvents
 // 1. eventsToTransform gets added to validatedEventsBySourceId
-func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types.TransformerEvent, eventsByMessageID map[string]types.SingularEventWithReceivedAt, srcHydrationEnabledMap map[SourceIDT]bool) (map[SourceIDT][]types.TransformerEvent, []*reportingtypes.PUReportedMetric, sourceIDPipelineSteps) {
+func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types.TransformerEvent, eventsByMessageID map[string]types.SingularEventWithReceivedAt, srcHydrationEnabledMap map[SourceIDT]bool, earlyDestinationFilter bool) (map[SourceIDT][]types.TransformerEvent, []*reportingtypes.PUReportedMetric, sourceIDPipelineSteps) {
 	validatedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
 	validatedReportMetrics := make([]*reportingtypes.PUReportedMetric, 0)
 	sourcePipelineSteps := make(sourceIDPipelineSteps)
@@ -110,7 +110,16 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		sourceSteps.trackingPlanValidation = true
 		sourcePipelineSteps[sourceId] = sourceSteps
 
-		inPU := reportingtypes.DESTINATION_FILTER
+		// earlyDestinationFilter (default true) is the per-batch snapshot of
+		// Processor.earlyDestinationFilter, gating which stage precedes tracking-plan validation
+		// in the inPU chain. When false, the destination filter has moved to fan-out (post
+		// tracking-plan), so it can no longer precede TP — the chain falls back to gateway
+		// instead (plan 1d, see also src_hydration_stage.go and the user_transformer inPU switch).
+		defaultInPU := reportingtypes.DESTINATION_FILTER
+		if !earlyDestinationFilter {
+			defaultInPU = reportingtypes.GATEWAY
+		}
+		inPU := defaultInPU
 		if sourcePipelineSteps[sourceId].srcHydration {
 			inPU = reportingtypes.SOURCE_HYDRATION
 		}

@@ -15,6 +15,7 @@ const (
 	DrainEventCode           = 410
 	SuccessEventCode         = 200
 	DeliveredWithWarningCode = 296
+	ConsentDeniedEventCode   = 297
 
 	FlagBotEventAction = "flag"
 	DropBotEventAction = "drop"
