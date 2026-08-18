@@ -6,7 +6,7 @@
 
 **Precedence:** the **closest `AGENTS.md`** to the files you're changing wins. Root holds global defaults only.
 
-RudderStack Server — open-source Customer Data Platform (CDP). Go 1.26.5 monolith: events flow Gateway → Processor →
+RudderStack Server — open-source Customer Data Platform (CDP). Go 1.26 monolith: events flow Gateway → Processor →
 Router/BatchRouter → 90+ destinations and warehouses. Segment API-compatible. Jobs are queued in PostgreSQL (`jobsdb`).
 
 ## Commands
