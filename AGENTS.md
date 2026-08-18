@@ -1,5 +1,6 @@
 <!-- FOR AI AGENTS - Human readability is a side effect, not a goal -->
 <!-- Managed by agent: keep sections and order; edit content, not structure -->
+<!-- Generated with the agent-rules skill v3.14.1 — https://github.com/netresearch/agent-rules-skill -->
 <!-- Last updated: 2026-08-18 | Last verified: 2026-08-18 -->
 
 # AGENTS.md
