@@ -3092,13 +3092,18 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.NoError(t, err)
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
+		// The committed offset keeps advancing, so the channel is flushing, just not fast enough.
+		committedOffsets := []string{"0", "1001"}
+		var bulkStatusCalls int
 		sm.api = &mockAPI{
 			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
 				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					offset := committedOffsets[min(bulkStatusCalls, len(committedOffsets)-1)]
+					bulkStatusCalls++
 					return &model.BulkStatusResponse{
 						Success: true,
 						Statuses: map[string]*model.StatusResponse{
-							"test-products-channel": {Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"},
+							"test-products-channel": {Valid: true, Success: true, Offset: offset, LatestInsertedOffset: "1003"},
 						},
 					}, nil
 				},
@@ -3107,7 +3112,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			// It reports valid, so the channel is treated as genuinely stuck.
 			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
 				"test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"}, nil
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "1001", LatestInsertedOffset: "1003"}, nil
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
@@ -3177,6 +3182,114 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.True(t, second.HasFailed)
 		// Failed via the per-channel invalid path, not the stuck-pipeline path.
 		require.JSONEq(t, second.FailedJobParameters, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"channel reported invalid by per-channel status check after threshold","count":2}]`)
+	})
+
+	t.Run("Poll recovers a channel Snowpipe stopped persisting without stuck-pipeline alert", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			// Snowpipe accepted every row (latestInsertedOffset reaches the expected offset) but its
+			// committed offset never moves: rows are left uncommitted server-side
+			// (snowflake-ingest-java#351).
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true, Offset: "1001", LatestInsertedOffset: "1003"},
+						},
+					}, nil
+				},
+			},
+			// The channel itself still reports healthy, which is why this cannot be caught by the
+			// invalid-channel check alone.
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "1001", LatestInsertedOffset: "1003"}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+		}
+
+		now := time.Now().UTC()
+		sm.now = func() time.Time { return now }
+
+		first := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
+		require.True(t, first.InProgress)
+
+		now = now.Add(1 * time.Hour)
+		second := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
+		require.False(t, second.InProgress)
+		require.True(t, second.Complete)
+		require.Equal(t, http.StatusOK, second.StatusCode)
+		require.True(t, second.HasFailed)
+		// Recovered via the stalled-offset path, so no stuck-pipeline alert is raised.
+		require.JSONEq(t, second.FailedJobParameters, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"channel valid but its committed offset did not advance before threshold","count":2}]`)
+	})
+
+	t.Run("Committed offset tracking only reports a stall on repeated identical samples", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+
+		// A single sample is never enough to call a channel stalled.
+		sm.recordCommittedOffset("chan-single", "100")
+		require.False(t, sm.hasStalledCommittedOffset("chan-single"))
+
+		// Repeated identical samples mean the committed offset never moved.
+		sm.recordCommittedOffset("chan-single", "100")
+		require.True(t, sm.hasStalledCommittedOffset("chan-single"))
+
+		// Once it advances the channel is no longer stalled, even if it stops moving afterwards.
+		sm.recordCommittedOffset("chan-single", "101")
+		sm.recordCommittedOffset("chan-single", "101")
+		require.False(t, sm.hasStalledCommittedOffset("chan-single"))
+
+		// An unparseable offset is skipped, so it can never push a channel into a stalled verdict.
+		sm.recordCommittedOffset("chan-bad", "not-a-number")
+		sm.recordCommittedOffset("chan-bad", "not-a-number")
+		require.False(t, sm.hasStalledCommittedOffset("chan-bad"))
+
+		// An unknown channel is never reported as stalled.
+		require.False(t, sm.hasStalledCommittedOffset("chan-unknown"))
+	})
+
+	t.Run("Poll drops committed offset samples left behind by a previous batch", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: true, Success: true, Offset: "1001", LatestInsertedOffset: "1003"},
+						},
+					}, nil
+				},
+			},
+		}
+
+		// Channels are reused across batches, so a batch that never reached its terminal poll can
+		// leave samples behind. They must not count towards the next batch's stall verdict.
+		sm.committedOffsets["test-products-channel"] = &committedOffsetProgress{lastOffset: 1001, samples: 5}
+		require.True(t, sm.hasStalledCommittedOffset("test-products-channel"))
+
+		first := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
+		require.True(t, first.InProgress)
+		// Only the single sample taken by this poll survives, which is not enough to call a stall.
+		require.False(t, sm.hasStalledCommittedOffset("test-products-channel"))
 	})
 
 	t.Run("Poll treats inconclusive single-channel check at threshold as stuck", func(t *testing.T) {

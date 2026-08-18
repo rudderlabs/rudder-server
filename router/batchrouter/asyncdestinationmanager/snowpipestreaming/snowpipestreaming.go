@@ -59,6 +59,7 @@ func New(
 		now:                 timeutil.Now,
 		channelCache:        sync.Map{},
 		polledImportInfoMap: make(map[string]*importInfo),
+		committedOffsets:    make(map[string]*committedOffsetProgress),
 	}
 
 	m.config.client.url = conf.GetStringVar("http://localhost:9078", "SnowpipeStreaming.Client.URL")
@@ -705,6 +706,13 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 		}
 	}
 
+	// Channels are reused across batches, so offset samples left behind by a batch that never reached
+	// its terminal poll must not be read as a stall for the next one. A zero polling start time is the
+	// existing signal that a new batch is starting.
+	if m.pollingStartTime.IsZero() {
+		m.committedOffsets = make(map[string]*committedOffsetProgress)
+	}
+
 	inProgressInfos := m.provideInProgressImportInfos(ctx, importInfos)
 	if len(inProgressInfos) > 0 {
 		m.stats.pollingInProgress.Increment()
@@ -723,14 +731,12 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 			return common.PollStatusResponse{InProgress: true}
 		}
 
-		// The bulk-status endpoint can silently report a server-side broken channel as valid=true
-		// (snowflake-ingest-java#1154), so a channel that looks in-progress here may actually be invalid.
-		// Re-check each in-progress channel via the single-channel status endpoint, which surfaces the
-		// failure. Channels confirmed invalid are recovered through the normal failed-import path without
-		// raising the stuck-pipeline alert; genuinely stuck (or inconclusive) channels keep the alert.
+		// A channel still in progress at the threshold is recovered the same way whatever the cause,
+		// but only a cause we may have to act on ourselves raises the stuck-pipeline alert.
 		var stuckInfos []*importInfo
 		for _, info := range inProgressInfos {
-			if invalid := m.isChannelInvalidViaSingleStatus(ctx, info.ChannelID); invalid {
+			switch m.classifyStuckChannel(ctx, info.ChannelID) {
+			case causeChannelInvalid:
 				m.logger.Warnn("Channel reported invalid at stuck threshold; recovering without stuck-pipeline alert",
 					logger.NewStringField("channelId", info.ChannelID),
 					logger.NewStringField("table", info.Table),
@@ -740,22 +746,37 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 				info.Failed = true
 				info.Reason = "channel reported invalid by per-channel status check after threshold"
 				m.polledImportInfoMap[info.ChannelID] = info
-				continue
+			case causeNotPersisting:
+				m.logger.Warnn("Snowpipe stopped persisting rows for channel; recovering without stuck-pipeline alert",
+					logger.NewStringField("channelId", info.ChannelID),
+					logger.NewStringField("table", info.Table),
+					logger.NewStringField("expectedOffset", info.Offset),
+					logger.NewDurationField("duration", duration),
+					logger.NewDurationField("threshold", threshold),
+				)
+				info.Failed = true
+				info.Reason = "channel valid but its committed offset did not advance before threshold"
+				m.polledImportInfoMap[info.ChannelID] = info
+			default:
+				stuckInfos = append(stuckInfos, info)
 			}
-			stuckInfos = append(stuckInfos, info)
 		}
 
 		if len(stuckInfos) > 0 {
-			m.logger.Warnn("Stuck snowpipe pipeline detected",
-				logger.NewDurationField("duration", duration),
-				logger.NewDurationField("threshold", threshold),
-				logger.NewStringField("importID", pollInput.ImportId),
-			)
 			for _, info := range stuckInfos {
 				info.Failed = true
 				info.Reason = fmt.Sprintf("events still in progress after threshold: %s > %s", duration, threshold)
 				m.polledImportInfoMap[info.ChannelID] = info
 			}
+			// Only the stuck channels are logged: logging the whole import ID makes every channel in
+			// the batch look stuck, including the ones that flushed successfully.
+			m.logger.Warnn("Stuck snowpipe pipeline detected",
+				logger.NewDurationField("duration", duration),
+				logger.NewDurationField("threshold", threshold),
+				logger.NewIntField("stuckChannels", int64(len(stuckInfos))),
+				logger.NewIntField("channelsInBatch", int64(len(importInfos))),
+				logger.NewStringField("stuckImports", stringify.Any(stuckInfos)),
+			)
 		}
 	}
 
@@ -770,6 +791,7 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 	// Reset batch polling start time since all imports completed
 	m.pollingStartTime = time.Time{}
 	m.polledImportInfoMap = make(map[string]*importInfo)
+	m.committedOffsets = make(map[string]*committedOffsetProgress)
 
 	return m.buildPollStatusResponse(updatedImportInfos, failedImports)
 }
@@ -845,20 +867,65 @@ func (m *Manager) getBulkStatusForChannel(ctx context.Context, channelID string)
 	return statusRes, nil
 }
 
-// isChannelInvalidViaSingleStatus re-checks a single channel through the per-channel status endpoint,
-// which (unlike bulk status) surfaces server-side channel failures. It returns true only when the
-// channel is positively confirmed invalid. On an inconclusive result (request error) it returns false
-// so the caller falls back to stuck-pipeline handling (fail-safe: never suppress a genuine alert).
-func (m *Manager) isChannelInvalidViaSingleStatus(ctx context.Context, channelID string) bool {
+// classifyStuckChannel determines why a channel was still in progress once the stuck threshold was
+// crossed, so that only causes which may need a fix on our side raise the stuck-pipeline alert.
+//
+// The bulk-status endpoint can silently report a server-side broken channel as valid=true
+// (snowflake-ingest-java#1154), so the channel is re-checked through the single-channel status
+// endpoint, which surfaces the failure.
+//
+// A channel that is valid and already holds every row we sent, but whose committed offset never moved
+// while we polled, is one Snowpipe accepted rows for and then stopped persisting
+// (snowflake-ingest-java#351). That is a Snowflake-side fault the manager recovers from on its own,
+// so it is reported separately instead of as a stuck pipeline.
+//
+// Anything else - including an inconclusive status check - is reported as stuck, so a pipeline we
+// cannot explain is never silently suppressed.
+func (m *Manager) classifyStuckChannel(ctx context.Context, channelID string) stuckChannelCause {
 	statusRes, err := m.api.GetStatus(ctx, channelID)
 	if err != nil {
 		m.logger.Warnn("Failed to get single-channel status at stuck threshold; treating as stuck",
 			logger.NewStringField("channelId", channelID),
 			obskit.Error(err),
 		)
-		return false
+		return causeStuck
 	}
-	return !statusRes.Valid || !statusRes.Success
+	if !statusRes.Valid || !statusRes.Success {
+		return causeChannelInvalid
+	}
+	if m.hasStalledCommittedOffset(channelID) {
+		return causeNotPersisting
+	}
+	return causeStuck
+}
+
+// recordCommittedOffset samples the latest committed offset of an in-progress channel so that a
+// channel Snowpipe stopped persisting can be told apart from one that is merely flushing slowly.
+// An offset that cannot be parsed is skipped: fewer samples only make the caller more conservative.
+func (m *Manager) recordCommittedOffset(channelID, offset string) {
+	committedOffset, err := convertToInt(offset)
+	if err != nil {
+		return
+	}
+
+	progress, ok := m.committedOffsets[channelID]
+	if !ok {
+		m.committedOffsets[channelID] = &committedOffsetProgress{lastOffset: committedOffset, samples: 1}
+		return
+	}
+	if committedOffset != progress.lastOffset {
+		progress.lastOffset = committedOffset
+		progress.advanced = true
+	}
+	progress.samples++
+}
+
+// hasStalledCommittedOffset reports whether a channel's committed offset stayed put across every poll
+// of the current batch. At least two samples are required so a single observation is never mistaken
+// for a stalled channel.
+func (m *Manager) hasStalledCommittedOffset(channelID string) bool {
+	progress, ok := m.committedOffsets[channelID]
+	return ok && progress.samples >= 2 && !progress.advanced
 }
 
 func (m *Manager) getBulkStatus(ctx context.Context, channelIDs []string) (map[string]*model.StatusResponse, []string, error) {
@@ -923,6 +990,7 @@ func (m *Manager) getNonProcessedImportInfosWithBulkStatus(ctx context.Context, 
 			continue
 		}
 		if inProgress {
+			m.recordCommittedOffset(info.ChannelID, statusRes.Offset)
 			inProgressInfos = append(inProgressInfos, info)
 			continue
 		}
