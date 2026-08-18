@@ -3,6 +3,7 @@ package offline_conversions
 import (
 	"encoding/csv"
 	"encoding/json"
+	"os"
 
 	"github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -42,6 +43,7 @@ type DestinationConfig struct {
 type ActionFileInfo struct {
 	Action           string
 	CSVWriter        *csv.Writer
+	CSVFile          *os.File
 	CSVFilePath      string
 	ZipFilePath      string
 	SuccessfulJobIDs []int64
