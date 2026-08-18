@@ -337,19 +337,23 @@ func (brt *Handle) crashRecover() {
 
 			err = downloader.Download(context.TODO(), jsonFile, objKey)
 			if err != nil {
+				_ = jsonFile.Close()
+				_ = os.Remove(jsonPath)
 				brt.logger.Errorn("BRT: Failed to download data for incomplete journal entry to recover from", logger.NewStringField("provider", object.Provider), logger.NewStringField("key", object.Key), obskit.Error(err))
 				brt.jobsDB.JournalDeleteEntry(entry.OpID)
 				continue
 			}
 
 			_ = jsonFile.Close()
-			defer func() { _ = os.Remove(jsonPath) }()
 			rawf, err := os.Open(jsonPath)
 			if err != nil {
+				_ = os.Remove(jsonPath)
 				panic(err)
 			}
 			reader, err := gzip.NewReader(rawf)
 			if err != nil {
+				_ = rawf.Close()
+				_ = os.Remove(jsonPath)
 				panic(err)
 			}
 
@@ -365,6 +369,8 @@ func (brt *Handle) crashRecover() {
 				brt.uploadedRawDataJobsCache[object.DestinationID][eventID] = true
 			}
 			_ = reader.Close()
+			_ = rawf.Close()
+			_ = os.Remove(jsonPath)
 			brt.jobsDB.JournalDeleteEntry(entry.OpID)
 		}
 	}
