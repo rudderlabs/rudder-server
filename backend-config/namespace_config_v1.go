@@ -33,7 +33,6 @@ type v1ConfigFetcher struct {
 	namespace                string
 	identity                 identity.Identifier
 	configBackendURL         *url.URL
-	region                   string
 	cpRouterURL              string
 	incrementalConfigUpdates bool
 
@@ -54,7 +53,6 @@ func newV1ConfigFetcher(nc *namespaceConfig) *v1ConfigFetcher {
 		namespace:                nc.namespace,
 		identity:                 nc.Identity(),
 		configBackendURL:         nc.configBackendURL,
-		region:                   nc.region,
 		cpRouterURL:              nc.cpRouterURL,
 		incrementalConfigUpdates: nc.incrementalConfigUpdates,
 
@@ -173,11 +171,6 @@ func (f *v1ConfigFetcher) prepareHTTPRequest(ctx context.Context, url string) (*
 	}
 
 	req.SetBasicAuth(f.identity.BasicAuth())
-	if f.region != "" {
-		q := req.URL.Query()
-		q.Add("region", f.region)
-		req.URL.RawQuery = q.Encode()
-	}
 
 	return req, nil
 }

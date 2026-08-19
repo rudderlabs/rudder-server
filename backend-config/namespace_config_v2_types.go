@@ -21,8 +21,12 @@ const v2ConfigVersion = 2
 type v2NamespaceConfig struct {
 	Version int `json:"version"`
 	v2Catalogues
-	Workspaces map[string]*v2Workspace `json:"workspaces"`
+	Workspaces v2Workspaces `json:"workspaces"`
 }
+
+// v2Workspaces is the only updateable list of the response: a workspace that did not change since
+// updatedAfter arrives as null, and the key set is the namespace's membership.
+type v2Workspaces map[string]*v2Workspace
 
 // v2Catalogues are the namespace-global definition catalogues, keyed by definition name.
 //
@@ -31,10 +35,24 @@ type v2NamespaceConfig struct {
 // responseRules, ...) stays unparsed: a v1 ConfigT has nowhere to put it, so it would be decoded
 // and held on every poll without ever reaching a consumer.
 type v2Catalogues struct {
-	SourceDefinitions      map[string]v2SourceDefinition      `json:"sourceDefinitions"`
-	DestinationDefinitions map[string]v2DestinationDefinition `json:"destinationDefinitions"`
-	AccountDefinitions     map[string]v2AccountDefinition     `json:"accountDefinitions"`
+	SourceDefinitions      v2SourceDefinitions      `json:"sourceDefinitions"`
+	DestinationDefinitions v2DestinationDefinitions `json:"destinationDefinitions"`
+	AccountDefinitions     v2AccountDefinitions     `json:"accountDefinitions"`
 }
+
+type (
+	v2SourceDefinitions      map[string]v2SourceDefinition
+	v2DestinationDefinitions map[string]v2DestinationDefinition
+	v2AccountDefinitions     map[string]v2AccountDefinition
+)
+
+// v2DefinitionMeta is what every catalogue entry adds to its v1 definition: when it last changed,
+// which the v1 types do not carry and the generation key is folded from.
+type v2DefinitionMeta struct {
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+func (m v2DefinitionMeta) updatedAt() time.Time { return m.UpdatedAt }
 
 // v2SourceDefinition is an entry of the sourceDefinitions catalogue.
 //
@@ -42,7 +60,7 @@ type v2Catalogues struct {
 // catalogue key alone. Reach for toV1 rather than the embedded value, or the name is empty.
 type v2SourceDefinition struct {
 	SourceDefinitionT
-	UpdatedAt time.Time `json:"updatedAt"`
+	v2DefinitionMeta
 }
 
 // toV1 returns the definition as v1 spells it, named after the key it is catalogued under.
@@ -55,7 +73,7 @@ func (d v2SourceDefinition) toV1(name string) SourceDefinitionT {
 // v2DestinationDefinition is an entry of the destinationDefinitions catalogue.
 type v2DestinationDefinition struct {
 	DestinationDefinitionT
-	UpdatedAt time.Time `json:"updatedAt"`
+	v2DefinitionMeta
 }
 
 // toV1 returns the definition as v1 spells it, named after the key it is catalogued under.
@@ -69,7 +87,7 @@ func (d v2DestinationDefinition) toV1(name string) DestinationDefinitionT {
 // account definitions do carry their own name, which the control plane keeps equal to the key.
 type v2AccountDefinition struct {
 	AccountDefinition
-	UpdatedAt time.Time `json:"updatedAt"`
+	v2DefinitionMeta
 }
 
 // toV1 returns the definition as v1 spells it, named after the key it is catalogued under.

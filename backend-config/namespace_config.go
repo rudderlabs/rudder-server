@@ -41,7 +41,6 @@ type namespaceConfig struct {
 
 	namespace                string
 	configBackendURL         *url.URL
-	region                   string
 	incrementalConfigUpdates bool
 
 	fetcher configFetcher
@@ -84,6 +83,8 @@ func (nc *namespaceConfig) SetUp() (err error) {
 		nc.logger = logger.NewLogger().Child("backend-config").Withn(obskit.Namespace(nc.namespace))
 	}
 
+	// the mode is fixed at setup. v2 is not selectable yet, see
+	// newV2ConfigFetcher
 	nc.fetcher = newV1ConfigFetcher(nc)
 
 	nc.logger.Infon("Setup backend config complete")
