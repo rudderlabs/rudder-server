@@ -2,6 +2,7 @@ package jobsdb
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -256,4 +257,139 @@ func TestJobsdbPileupCountMultiConsumer(t *testing.T) {
 		WorkspaceId: workspaceID, CustomVal: customVal, Consumer: "A",
 	}}))
 	require.Equal(t, map[string]int{"A": 1, "B": 1}, pileup())
+}
+
+// TestJobsdbPileupCountCutoff verifies that the cutoff bounds both sides of the count: jobs created
+// after it are not counted, no matter whether they are pending or not. Counting them would make the
+// caller, which accounts for jobs stored after the cutoff on its own, count them twice.
+func TestJobsdbPileupCountCutoff(t *testing.T) {
+	_ = startPostgres(t)
+
+	const (
+		customVal   = "CUTOFF"
+		workspaceID = "ws"
+	)
+	generateJobs := func(numOfJob int, consumers []string) []*JobT {
+		js := make([]*JobT, numOfJob)
+		for i := range numOfJob {
+			js[i] = &JobT{
+				WorkspaceId:  workspaceID,
+				Parameters:   []byte(`{"source_id":"sourceID","destination_id":"destinationID"}`),
+				EventPayload: []byte(`{"testKey":"testValue"}`),
+				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:         uuid.New(),
+				CustomVal:    customVal,
+				EventCount:   1,
+				Consumers:    consumers,
+			}
+		}
+		return js
+	}
+
+	for _, multiConsumer := range []bool{false, true} {
+		t.Run("multiConsumer="+strconv.FormatBool(multiConsumer), func(t *testing.T) {
+			c := config.New()
+			c.Set("JobsDB.maxDSSize", 1) // create 1 dataset per event, so that the cutoff is applied across datasets
+
+			jdb := Handle{config: c}
+			jdb.conf.multiConsumer = multiConsumer
+			var consumers []string
+			if multiConsumer {
+				consumers = []string{"destinationID"}
+			}
+			require.NoError(t, jdb.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
+			defer jdb.TearDown()
+
+			pileup := func(cutoff time.Time) int {
+				var count int
+				require.NoError(t, jdb.GetPileUpCounts(context.Background(), cutoff, func(_, _, _, _ string, value float64) {
+					count += int(value)
+				}))
+				return count
+			}
+			// dbNow returns the database's current time, the same clock that stamps created_at.
+			dbNow := func() time.Time {
+				var now time.Time
+				require.NoError(t, jdb.dbHandle.QueryRow("SELECT NOW()").Scan(&now))
+				return now
+			}
+
+			require.NoError(t, jdb.Store(context.Background(), generateJobs(5, consumers)))
+			cutoff := dbNow()
+			require.NoError(t, jdb.Store(context.Background(), generateJobs(3, consumers)))
+
+			require.Equal(t, 5, pileup(cutoff), "jobs stored after the cutoff should not be counted")
+			require.Equal(t, 8, pileup(dbNow()), "all jobs should be counted with a cutoff past the last store")
+
+			// A job stored after the cutoff stays uncounted even once it is terminal.
+			stored, err := jdb.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10, Consumer: lo.Ternary(multiConsumer, "destinationID", "")})
+			require.NoError(t, err)
+			require.Len(t, stored.Jobs, 8)
+			last := stored.Jobs[len(stored.Jobs)-1]
+			require.NoError(t, jdb.UpdateJobStatus(context.Background(), []*JobStatusT{{
+				JobID: last.JobID, JobState: Succeeded.State, AttemptNum: 1,
+				ExecTime: time.Now(), RetryTime: time.Now(), ErrorCode: "200",
+				ErrorResponse: []byte(`{}`), Parameters: []byte(`{}`),
+				WorkspaceId: workspaceID, CustomVal: customVal, Consumer: lo.Ternary(multiConsumer, "destinationID", ""),
+			}}))
+			require.Equal(t, 5, pileup(cutoff))
+			require.Equal(t, 7, pileup(dbNow()))
+		})
+	}
+}
+
+// TestJobsdbPileupCountCompactionBarrier verifies that pileup counting and compaction are mutually
+// exclusive: the count waits for an in-flight compaction to finish, and a compaction triggered while
+// a count is in progress skips its round instead of moving datasets under it.
+func TestJobsdbPileupCountCompactionBarrier(t *testing.T) {
+	_ = startPostgres(t)
+
+	const customVal = "BARRIER"
+
+	c := config.New()
+	c.Set("JobsDB.maxDSSize", 1)
+	jdb := Handle{config: c}
+	require.NoError(t, jdb.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
+	defer jdb.TearDown()
+
+	require.NoError(t, jdb.Store(context.Background(), []*JobT{{
+		UUID: uuid.New(), UserID: "u", CustomVal: customVal, Parameters: []byte(`{}`),
+		EventPayload: []byte(`{}`), EventCount: 1, WorkspaceId: "ws",
+	}}))
+
+	t.Run("a count waits for an in-flight compaction", func(t *testing.T) {
+		require.True(t, jdb.compactionLock.TryLock(), "no one else should be holding the compaction lock")
+		defer jdb.compactionLock.Unlock()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		err := jdb.GetPileUpCounts(ctx, time.Now(), func(_, _, _, _ string, _ float64) {
+			t.Error("no counting should happen while compaction is in progress")
+		})
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	})
+
+	t.Run("a compaction skips its round during a count", func(t *testing.T) {
+		counting := make(chan struct{})
+		release := make(chan struct{})
+		var count atomic.Int64
+		done := make(chan error, 1)
+		go func() {
+			done <- jdb.GetPileUpCounts(context.Background(), time.Now(), func(_, _, _, _ string, value float64) {
+				if count.Add(int64(value)) == 1 {
+					close(counting)
+					<-release
+				}
+			})
+		}()
+
+		<-counting // the count is in progress and holding the compaction lock
+		require.False(t, jdb.compactionLock.TryLock(), "compaction should skip its round while a count is in progress")
+		close(release)
+
+		require.NoError(t, <-done)
+		require.EqualValues(t, 1, count.Load())
+		require.True(t, jdb.compactionLock.TryLock(), "compaction should be able to run once the count is over")
+		jdb.compactionLock.Unlock()
+	})
 }

@@ -38,14 +38,17 @@ func (jd *Handle) compactionLoop(ctx context.Context) {
 	for {
 		select {
 		case <-jd.TriggerCompaction():
-			if jd.compactionPaused.Load() {
-				jd.logger.Debugn("compaction loop paused")
-				continue
-			}
 		case <-ctx.Done():
 			return
 		}
+		// Skip this round instead of queueing behind the reader currently holding the lock: it needs
+		// the datasets to stay put for its whole duration and compaction can always run next round.
+		if !jd.compactionLock.TryLock() {
+			jd.logger.Debugn("compaction loop paused")
+			continue
+		}
 		compact := func() error {
+			defer jd.compactionLock.Unlock()
 			start := time.Now()
 			jd.logger.Debugn("Start", logger.NewStringField("operation", "compactionLoop"))
 			timeoutCtx, cancel := context.WithTimeout(ctx, jd.conf.compaction.compactionTimeout.Load())
