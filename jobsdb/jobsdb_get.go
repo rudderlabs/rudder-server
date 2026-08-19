@@ -83,17 +83,29 @@ var cacheParameterFilters = []string{"source_id", "destination_id"}
 
 const consumerParamName = "consumer" // the name of the consumer parameter, used for multi-consumer scoping of queries and cache entries
 
+// GetPileUpCounts counts the jobs that were pending as of cutoffTime, grouped by workspace ID,
+// custom value and destination ID, and reports them through increaseFunc.
+//
+// cutoffTime bounds both sides of the count: only jobs created before it are considered, and only
+// statuses recorded before it are taken into account when deciding whether a job is still pending.
+// Jobs stored - and statuses recorded - after the cutoff are the caller's responsibility to account
+// for separately, so that a job is never counted twice, nor missed, when writers are running
+// concurrently with this query.
 func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) error {
-	// pause compaction to get a consistent view during pileup count
-	jd.compactionPaused.Store(true)
-	defer jd.compactionPaused.Store(false)
+	// Wait for an in-flight compaction to finish and keep the next ones out for the duration of the
+	// count, so that the dataset list acquired below stays valid throughout.
+	if !jd.compactionLock.RTryLockWithCtx(ctx) {
+		return fmt.Errorf("could not acquire the compaction read lock: %w", ctx.Err())
+	}
+	defer jd.compactionLock.RUnlock()
 	dsList, _, release, err := jd.acquireDSListForRead(ctx)
 	if err != nil {
 		return err
 	}
 	defer release()
 
-	// Single-consumer: one pending row per job, destination_id read from the job's parameters.
+	// Single-consumer: one pending row per job, destination_id read from the job's parameters,
+	// counting each job created before the cutoff whose latest pre-cutoff status is missing or non-terminal.
 	queryString := `WITH pending AS (
 	SELECT
 		j.workspace_id AS workspace_id,
@@ -103,7 +115,7 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, inc
 		%[1]q j
 		LEFT JOIN (SELECT DISTINCT ON (job_id) job_id, job_state FROM %[2]q WHERE exec_time < $1 ORDER BY job_id ASC, id DESC) s ON j.job_id = s.job_id
 	WHERE
-		s.job_id is null OR s.job_state = ANY($2)
+		j.created_at < $1 AND (s.job_id is null OR s.job_state = ANY($2))
 )
 SELECT
 	workspace_id,
@@ -113,8 +125,8 @@ SELECT
 FROM pending GROUP BY workspace_id, custom_val, destination_id;`
 
 	// Multi-consumer: assuming for now that a consumer IS a destination, so fan out per consumer over the narrow consumers
-	// array (no payload), counting each (job, consumer) whose latest pre-cutoff status is missing or
-	// non-terminal. The per-consumer latest status uses the (job_id, consumer, id DESC) index.
+	// array (no payload), counting each (job, consumer) - the job created before the cutoff - whose
+	// latest pre-cutoff status is missing or non-terminal. The per-consumer latest status uses the (job_id, consumer, id DESC) index.
 	if jd.conf.multiConsumer {
 		queryString = `WITH pending AS (
 	SELECT
@@ -128,7 +140,7 @@ FROM pending GROUP BY workspace_id, custom_val, destination_id;`
 			SELECT job_state FROM %[2]q WHERE job_id = j.job_id AND consumer = c.consumer AND exec_time < $1 ORDER BY id DESC LIMIT 1
 		) s ON true
 	WHERE
-		s.job_state is null OR s.job_state = ANY($2)
+		j.created_at < $1 AND (s.job_state is null OR s.job_state = ANY($2))
 )
 SELECT
 	workspace_id,

@@ -4213,7 +4213,16 @@ func (proc *Handle) pipelineDelayStats(partition string, first, last *jobsdb.Job
 	proc.statsFactory.NewTaggedStat("pipeline_delay_max_seconds", stats.GaugeType, stats.Tags{"partition": partition, "module": "processor"}).Gauge(firstJobDelay)
 }
 
-func (proc *Handle) countPendingEvents(ctx context.Context) error {
+// countPendingEvents seeds the pending events registry with the jobs that were already pending as of
+// cutoff, i.e. before this processor started producing jobs.
+//
+// The registry must have been reset by the caller, and cutoff captured, before any writer is started:
+// the processor is the only writer of router & batch router jobs and it always starts before router
+// and batch router, so nothing can be written below the cutoff once it has been captured. Everything
+// below the cutoff is therefore accounted for by the queries here and everything above it by the
+// increase/decrease calls of the pending events jobsdb wrappers, with no overlap in between. Metrics
+// are published to the global registry once the baseline is in place.
+func (proc *Handle) countPendingEvents(ctx context.Context, cutoff time.Time) error {
 	dbs := map[string]jobsdb.JobsDB{"rt": proc.routerDB, "batch_rt": proc.batchRouterDB}
 	if proc.procDB != nil {
 		dbs["proc"] = proc.procDB
@@ -4221,23 +4230,30 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 	jobdDBQueryRequestTimeout := proc.conf.GetDurationVar(600, time.Second, "JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
 	jobdDBMaxRetries := proc.conf.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
 
+	defer proc.pendingEventsRegistry.Publish()
 	err := misc.RetryWithNotify(ctx,
 		jobdDBQueryRequestTimeout,
 		jobdDBMaxRetries.Load(),
 		func(ctx context.Context) error {
-			startTime := time.Now()
-			proc.pendingEventsRegistry.Reset()
-			defer proc.pendingEventsRegistry.Publish()
+			// Counts are accumulated separately and applied to the registry only after all queries
+			// have succeeded: an attempt that fails halfway must not leave its partial counts behind
+			// for the next attempt to add on top of, and the registry cannot be reset in between
+			// without discarding the concurrent increases & decreases of the running processor.
+			baseline := &pendingEventsBaseline{}
 			g, ctx := errgroup.WithContext(ctx)
 			for tablePrefix, db := range dbs {
 				g.Go(func() error {
-					if err := db.GetPileUpCounts(ctx, startTime, proc.pendingEventsRegistry.IncreasePendingEvents); err != nil {
+					if err := db.GetPileUpCounts(ctx, cutoff, baseline.add); err != nil {
 						return fmt.Errorf("pileup counts for %s: %w", tablePrefix, err)
 					}
 					return nil
 				})
 			}
-			return g.Wait()
+			if err := g.Wait(); err != nil {
+				return err
+			}
+			baseline.flush(proc.pendingEventsRegistry.IncreasePendingEvents)
+			return nil
 		}, func(attempt int) {
 			proc.logger.Warnn("Timeout during GetPileUpCounts",
 				logger.NewIntField("attempt", int64(attempt)))
@@ -4247,6 +4263,38 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// pendingEventsBaseline accumulates pileup counts, reported concurrently by multiple jobsdbs, until
+// they are ready to be applied to the pending events registry.
+type pendingEventsBaseline struct {
+	mu     sync.Mutex
+	counts map[pendingEventsBaselineKey]float64
+}
+
+type pendingEventsBaselineKey struct {
+	tablePrefix   string
+	workspaceID   string
+	destType      string
+	destinationID string
+}
+
+func (b *pendingEventsBaseline) add(tablePrefix, workspaceID, destType, destinationID string, value float64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.counts == nil {
+		b.counts = make(map[pendingEventsBaselineKey]float64)
+	}
+	b.counts[pendingEventsBaselineKey{tablePrefix, workspaceID, destType, destinationID}] += value
+}
+
+func (b *pendingEventsBaseline) flush(increaseFunc rmetrics.IncreasePendingEventsFunc) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for key, value := range b.counts {
+		increaseFunc(key.tablePrefix, key.workspaceID, key.destType, key.destinationID, value)
+	}
+	b.counts = nil
 }
 
 // shouldSample sampling percentage precision can be with two decimals like 12.34%.
