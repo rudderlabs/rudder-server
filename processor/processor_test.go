@@ -5809,7 +5809,7 @@ func TestStoreMessageMerge(t *testing.T) {
 
 // TestDedupReporting pins the dedup report-row emission added at the duplicate-drop
 // point in preprocessStage: a single DEDUP/filtered row per drop, gated by
-// proc.isReportingEnabled() && proc.config.dedupMetricsEnabled, with no gateway row
+// proc.isReportingEnabled() && proc.config.reportingDedupMetricsEnabled, with no gateway row
 // for the dropped twin and no change to the unconditional sourceDupStats counter.
 func TestDedupReporting(t *testing.T) {
 	dedupRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
@@ -5825,7 +5825,7 @@ func TestDedupReporting(t *testing.T) {
 
 	// newDedupProcessor builds the shared fixture: a Handle with dedup and reporting
 	// wired up, backed by a config.Config the test can mutate (for the reloadable
-	// dedupMetricsEnabled flag) and a MockDedup that allows only allowedIndex.
+	// reportingDedupMetricsEnabled flag) and a MockDedup that allows only allowedIndex.
 	newDedupProcessor := func(t *testing.T, enableReporting bool, allowedIndex int) (*Handle, *config.Config, *testContext) {
 		t.Helper()
 		conf := config.New()
@@ -5911,7 +5911,7 @@ func TestDedupReporting(t *testing.T) {
 		processor, conf, c := newDedupProcessor(t, true, 0)
 		defer c.Finish()
 
-		// set after Setup: also exercises that dedupMetricsEnabled is read via .Load() at
+		// set after Setup: also exercises that reportingDedupMetricsEnabled is read via .Load() at
 		// emission time, not cached at Setup time.
 		conf.Set("Reporting.dedupMetrics.enabled", true)
 

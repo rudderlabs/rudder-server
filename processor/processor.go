@@ -205,7 +205,7 @@ type Handle struct {
 		userTransformationMirroringBlockedIDs     config.ValueLoader[[]string]
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		forkRsourcesTrackedJobs                   bool
-		dedupMetricsEnabled                       config.ValueLoader[bool]
+		reportingDedupMetricsEnabled              config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -852,7 +852,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.mirrorFilterCacheTTL = proc.conf.GetDurationVar(3, time.Hour, "Processor.userTransformationMirroring.filterCacheTTL")
 	proc.config.userTransformationMirroringBlockedIDs = proc.conf.GetReloadableStringSliceVar(nil, "Processor.userTransformationMirroring.blockedTransformationIDs")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
-	proc.config.dedupMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.dedupMetrics.enabled")
+	proc.config.reportingDedupMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.dedupMetrics.enabled")
 }
 
 type connection struct {
@@ -2072,7 +2072,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 				sourceDupStats[dupStatKey{sourceID: event.eventParams.SourceId}] += 1
 
 				// REPORTING - DEDUP metrics - START
-				if proc.isReportingEnabled() && proc.config.dedupMetricsEnabled.Load() {
+				if proc.isReportingEnabled() && proc.config.reportingDedupMetricsEnabled.Load() {
 					reportingEvent.StatusCode = reportingtypes.FilterEventCode
 					proc.updateMetricMaps(
 						nil,
