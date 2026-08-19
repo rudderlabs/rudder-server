@@ -2535,31 +2535,30 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 				destinationEvent.Libraries = workspaceLibraries
 				destinationEvent.Metadata = event.Metadata
 
-					// At the TP flow we are not having destination information, so adding it here.
-					destinationEvent.Metadata.DestinationID = destination.ID
-					destinationEvent.Metadata.OriginalDestinationID = destination.OriginalID
-					destinationEvent.Metadata.DestinationName = destination.Name
-					destinationEvent.Metadata.DestinationType = destination.DestinationDefinition.Name
-					destinationEvent.Metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
-					if len(destination.Transformations) > 0 {
-						destinationEvent.Metadata.TransformationID = destination.Transformations[0].ID
-						destinationEvent.Metadata.TransformationVersionID = destination.Transformations[0].VersionID
-					}
-					destinationEvent.Credentials = proc.config.credentialsMap[destination.WorkspaceID]
-					filterConfig(&destinationEvent)
-					metadata := &destinationEvent.Metadata
-					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
-					// We have at-least one event so marking it good
-					_, ok := groupedEvents[srcAndDestKey]
-					if !ok {
-						groupedEvents[srcAndDestKey] = make([]types.TransformerEvent, 0)
-					}
-					groupedEvents[srcAndDestKey] = append(groupedEvents[srcAndDestKey], destinationEvent)
-					if _, ok := uniqueMessageIdsBySrcDestKey[srcAndDestKey]; !ok {
-						uniqueMessageIdsBySrcDestKey[srcAndDestKey] = make(map[string]struct{})
-					}
-					uniqueMessageIdsBySrcDestKey[srcAndDestKey][metadata.MessageID] = struct{}{}
+				// At the TP flow we are not having destination information, so adding it here.
+				destinationEvent.Metadata.DestinationID = destination.ID
+				destinationEvent.Metadata.OriginalDestinationID = destination.OriginalID
+				destinationEvent.Metadata.DestinationName = destination.Name
+				destinationEvent.Metadata.DestinationType = destination.DestinationDefinition.Name
+				destinationEvent.Metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
+				if len(destination.Transformations) > 0 {
+					destinationEvent.Metadata.TransformationID = destination.Transformations[0].ID
+					destinationEvent.Metadata.TransformationVersionID = destination.Transformations[0].VersionID
 				}
+				destinationEvent.Credentials = proc.config.credentialsMap[destination.WorkspaceID]
+				filterConfig(&destinationEvent)
+				metadata := &destinationEvent.Metadata
+				srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
+				// We have at-least one event so marking it good
+				_, ok := groupedEvents[srcAndDestKey]
+				if !ok {
+					groupedEvents[srcAndDestKey] = make([]types.TransformerEvent, 0)
+				}
+				groupedEvents[srcAndDestKey] = append(groupedEvents[srcAndDestKey], destinationEvent)
+				if _, ok := uniqueMessageIdsBySrcDestKey[srcAndDestKey]; !ok {
+					uniqueMessageIdsBySrcDestKey[srcAndDestKey] = make(map[string]struct{})
+				}
+				uniqueMessageIdsBySrcDestKey[srcAndDestKey][metadata.MessageID] = struct{}{}
 			}
 			proc.recordSrcToDestFanout(eventFanout)
 
