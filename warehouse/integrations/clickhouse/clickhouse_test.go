@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	clickhousestd "github.com/ClickHouse/clickhouse-go"
+	clickhousestd "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -1168,8 +1169,20 @@ func TestIntegration(t *testing.T) {
 func connectClickhouseDB(t testing.TB, ctx context.Context, dsn string) *sql.DB {
 	t.Helper()
 
-	db, err := sql.Open("clickhouse", dsn)
+	// Build v2 Options explicitly from the DSN. clickhouse-go v2 does not read the v1-style
+	// username/password/database query params, so map them ourselves to avoid connecting as
+	// the default user/database.
+	u, err := url.Parse(dsn)
 	require.NoError(t, err)
+	q := u.Query()
+	db := clickhousestd.OpenDB(&clickhousestd.Options{
+		Addr: []string{u.Host},
+		Auth: clickhousestd.Auth{
+			Database: q.Get("database"),
+			Username: q.Get("username"),
+			Password: q.Get("password"),
+		},
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -1393,7 +1406,7 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 
 			var clickhouseErr *clickhousestd.Exception
 			require.ErrorAs(t, err, &clickhouseErr)
-			require.Equal(t, int32(253), clickhouseErr.Code)
+			require.EqualValues(t, 253, clickhouseErr.Code)
 		})
 	})
 	// Alter columns to all the cluster tables

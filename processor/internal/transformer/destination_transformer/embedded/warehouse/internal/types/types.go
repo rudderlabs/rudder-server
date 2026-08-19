@@ -12,6 +12,7 @@ type Metadata struct {
 	ReceivedAt        string         `json:"receivedAt"`
 	SourceID          string         `json:"sourceId"`
 	SourceType        string         `json:"sourceType"`
+	WorkspaceID       string         `json:"workspaceId"`
 	DestinationID     string         `json:"destinationId"`
 	DestinationType   string         `json:"destinationType"`
 	SourceCategory    string         `json:"sourceCategory"`
@@ -41,6 +42,7 @@ func New(
 	wEvent.Metadata.ReceivedAt = utils.ExtractReceivedAt(event, now)
 	wEvent.Metadata.SourceID = event.Metadata.SourceID
 	wEvent.Metadata.SourceType = event.Metadata.SourceType
+	wEvent.Metadata.WorkspaceID = event.Metadata.WorkspaceID
 	wEvent.Metadata.DestinationID = event.Metadata.DestinationID
 	wEvent.Metadata.DestinationType = event.Metadata.DestinationType
 	wEvent.Metadata.SourceCategory = event.Metadata.SourceCategory

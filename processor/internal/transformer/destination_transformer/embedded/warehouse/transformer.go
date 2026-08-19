@@ -190,9 +190,25 @@ func (t *Transformer) eventContext(tec *transformEventContext) any {
 	return clonedContext
 }
 
+// isJSONPathSupported reports whether jsonPaths config should be honored for this
+// destination. For ClickHouse it is gated by a feature flag, opt-in per destination id,
+// per workspace id, or globally (in that order of precedence). Every other destination
+// keeps its existing static capability.
+func (t *Transformer) isJSONPathSupported(destType, workspaceID, destinationID string) bool {
+	if destType == whutils.CLICKHOUSE {
+		return t.conf.GetBoolVar(false,
+			fmt.Sprintf("Warehouse.clickhouse.%s.enableJSONColumns", destinationID),
+			fmt.Sprintf("Warehouse.clickhouse.%s.enableJSONColumns", workspaceID),
+			"Warehouse.clickhouse.enableJSONColumns",
+		)
+	}
+	return utils.IsJSONPathSupportedAsPartOfConfig(destType)
+}
+
 func (t *Transformer) handleEvent(event *wtypes.TransformerEvent, cache *cache) ([]map[string]any, error) {
-	intrOpts := extractIntrOpts(event.Metadata.DestinationType, event.Message)
-	destOpts := extractDestOpts(event.Metadata.DestinationType, event.Metadata.DestinationConfig)
+	jsonPathsSupported := t.isJSONPathSupported(event.Metadata.DestinationType, event.Metadata.WorkspaceID, event.Metadata.DestinationID)
+	intrOpts := extractIntrOpts(event.Metadata.DestinationType, event.Message, jsonPathsSupported)
+	destOpts := extractDestOpts(event.Metadata.DestinationConfig, jsonPathsSupported)
 	jsonPathsInfo := extractJSONPathInfo(append(intrOpts.jsonPaths, destOpts.jsonPaths...))
 
 	eventType := strings.ToLower(event.Metadata.EventType)
