@@ -454,8 +454,9 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sqlmiddleware.Tx, g
 func (idr *Identity) uploadFile(ctx context.Context, filePath string, txn *sqlmiddleware.Tx, tableName string, totalRecords int) (err error) {
 	outputFile, err := os.Open(filePath)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("opening load file %s: %w", filePath, err)
 	}
+	defer func() { _ = outputFile.Close() }()
 	storageProvider := warehouseutils.ObjectStorageType(idr.warehouse.Destination.DestinationDefinition.Name, idr.warehouse.Destination.Config, idr.uploader.UseRudderStorage())
 	uploader, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,

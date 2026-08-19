@@ -35,10 +35,10 @@ type pytransformerEndpoints struct {
 	metricsURL string
 }
 
-// startRudderPytransformerWithTag is a copy of startRudderPytransformer that
+// startBenchPytransformerWithTag is a copy of startRudderPytransformerWithTag that
 // accepts an explicit image tag and ALSO binds the Prometheus metrics port
 // so benchmarks can scrape it. Returns both URLs.
-func startRudderPytransformerWithTag(
+func startBenchPytransformerWithTag(
 	t *testing.T,
 	pool *dockertest.Pool,
 	tag string,
@@ -75,7 +75,7 @@ func startRudderPytransformerWithTag(
 	}
 
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
+		Repository:   pytransformerImage,
 		Tag:          tag,
 		Auth:         registry.AuthConfiguration(),
 		Env:          env,

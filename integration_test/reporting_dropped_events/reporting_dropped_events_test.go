@@ -458,6 +458,84 @@ func TestReportingDroppedEvents(t *testing.T) {
 		})
 	})
 
+	t.Run("Events dropped in dedup stage", func(t *testing.T) {
+		config.Reset()
+		defer config.Reset()
+
+		bcserver := backendconfigtest.NewBuilder().
+			WithWorkspaceConfig(
+				backendconfigtest.NewConfigBuilder().
+					WithSource(
+						backendconfigtest.NewSourceBuilder().
+							WithID("source-1").
+							WithWriteKey("writekey-1").
+							Build()).
+					Build()).
+			Build()
+		defer bcserver.Close()
+
+		trServer := transformertest.NewBuilder().Build()
+		defer trServer.Close()
+
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+		postgresContainer, err := postgres.Setup(pool, t)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		wg, ctx := errgroup.WithContext(ctx)
+		gwPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+		// the dedup badger db lives under RUDDER_TMPDIR: keep it isolated and cleaned up, but
+		// short enough for the admin unix socket path that also lives there (t.TempDir() is too long)
+		dedupTmpDir, err := os.MkdirTemp("", "dedup")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = os.RemoveAll(dedupTmpDir) })
+		wg.Go(func() error {
+			err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir(), map[string]any{
+				"Dedup.enableDedup":              true,
+				"RUDDER_TMPDIR":                  dedupTmpDir,
+				"Reporting.dedupMetrics.enabled": true,
+			})
+			if err != nil {
+				t.Logf("rudder-server exited with error: %v", err)
+			}
+			return err
+		})
+		url := fmt.Sprintf("http://localhost:%d", gwPort)
+		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
+		// 1 original + 2 duplicates, all carrying the same messageId
+		err = sendEventsWithMessageID(3, "message-id-1", "identify", "writekey-1", url)
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			var jobsCount int
+			require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('gw',1) WHERE job_state = 'succeeded'").Scan(&jobsCount))
+			t.Logf("gw processedJobCount: %d", jobsCount)
+			return jobsCount == 3
+		}, 20*time.Second, 1*time.Second, "all gw events should be successfully processed")
+
+		require.Eventually(t, func() bool {
+			var dedupCount, matchingDedupCount sql.NullInt64
+			require.NoError(t, postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE source_id = 'source-1' and destination_id = '' AND pu = 'dedup'").Scan(&dedupCount))
+			require.NoError(t, postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE source_id = 'source-1' and destination_id = '' AND pu = 'dedup' and status = 'filtered' and status_code = 298 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''").Scan(&matchingDedupCount))
+			t.Logf("dedup filtered count: %d (matching: %d)", dedupCount.Int64, matchingDedupCount.Int64)
+			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
+			return dedupCount.Int64 == 2 && matchingDedupCount.Int64 == 2
+		}, 10*time.Second, 1*time.Second, "both duplicates should be filtered in dedup stage")
+
+		require.Eventually(t, func() bool {
+			var gatewayCount sql.NullInt64
+			require.NoError(t, postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE source_id = 'source-1' and destination_id = '' AND pu = 'gateway'").Scan(&gatewayCount))
+			t.Logf("gateway count: %d", gatewayCount.Int64)
+			return gatewayCount.Int64 == 1
+		}, 10*time.Second, 1*time.Second, "only the surviving event should be counted in the gateway stage")
+
+		cancel()
+		_ = wg.Wait()
+	})
+
 	t.Run("Events dropped in batch router delivery stage", func(t *testing.T) {
 		t.Run("destination id included in BatchRouter.toAbortDestinationIDs", func(t *testing.T) {
 			config.Reset()
@@ -543,7 +621,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 	})
 }
 
-func runRudderServer(ctx context.Context, cancel context.CancelFunc, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string) (err error) {
+func runRudderServer(ctx context.Context, cancel context.CancelFunc, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string, configOverrides ...map[string]any) (err error) {
 	config.Set("CONFIG_BACKEND_URL", cbURL)
 	config.Set("WORKSPACE_TOKEN", "token")
 	config.Set("DB.host", postgresContainer.Host)
@@ -569,6 +647,12 @@ func runRudderServer(ctx context.Context, cancel context.CancelFunc, port int, p
 	config.Set("recovery.enabled", false)
 	config.Set("Profiler.Enabled", false)
 	config.Set("Gateway.enableSuppressUserFeature", false)
+
+	for _, overrides := range configOverrides {
+		for key, value := range overrides {
+			config.Set(key, value)
+		}
+	}
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -603,6 +687,51 @@ func sendEvents(num int, eventType, writeKey, url string) error { // nolint:unpa
 			"timestamp": "2020-02-02T00:23:09.544Z"
 			}]}`,
 			rand.String(10),
+			eventType)
+		req, err := http.NewRequest("POST", url+"/v1/batch", bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+		req.SetBasicAuth(writeKey, "password")
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("failed to send event to rudder server, status code: %d: %s", resp.StatusCode, string(b))
+		}
+		func() { kithttputil.CloseResponse(resp) }()
+	}
+
+	return nil
+}
+
+// sendEventsWithMessageID sends num events all carrying the same messageId, so that every
+// event after the first one is a duplicate as far as the processor's dedup stage is concerned.
+func sendEventsWithMessageID(num int, messageID, eventType, writeKey, url string) error { // nolint:unparam
+	for range num {
+		payload := fmt.Appendf(nil, `{"batch": [{
+			"userId": %[1]q,
+			"messageId": %[2]q,
+			"type": %[3]q,
+			"context":
+			{
+				"traits":
+				{
+					"trait1": "new-val"
+				},
+				"ip": "14.5.67.21",
+				"library":
+				{
+					"name": "http"
+				}
+			},
+			"timestamp": "2020-02-02T00:23:09.544Z"
+			}]}`,
+			rand.String(10),
+			messageID,
 			eventType)
 		req, err := http.NewRequest("POST", url+"/v1/batch", bytes.NewReader(payload))
 		if err != nil {

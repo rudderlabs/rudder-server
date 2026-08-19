@@ -917,9 +917,10 @@ def transformEvent(event, metadata):
 	})
 }
 
-// startRudderPytransformerWithMetrics is startRudderPytransformer plus the
+// startRudderPytransformerWithMetrics is startCandidatePytransformer plus the
 // Prometheus metrics port wired through to the host so contract tests can
-// scrape counters and gauges.
+// scrape counters and gauges. Like startCandidatePytransformer it runs the
+// candidate tag, so these tests exercise the same image as the rest of the suite.
 func startRudderPytransformerWithMetrics(
 	t *testing.T, pool *dockertest.Pool,
 	configBackendURL string,
@@ -961,15 +962,16 @@ func startRudderPytransformerWithMetrics(
 		env = append(env, toContainerURL(e))
 	}
 
+	tag := candidatePytransformerTag()
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
-		Tag:          "main",
+		Repository:   pytransformerImage,
+		Tag:          tag,
 		Auth:         registry.AuthConfiguration(),
 		Env:          env,
 		ExtraHosts:   cfg.ExtraHosts,
 		PortBindings: cfg.PortBindings,
 	}, cfg.hostConfigFn)
-	require.NoError(t, err, "failed to start rudder-pytransformer container")
+	require.NoErrorf(t, err, "failed to start rudder-pytransformer:%s container", tag)
 
 	t.Cleanup(func() {
 		if err := pool.Purge(container); err != nil {

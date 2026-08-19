@@ -45,7 +45,7 @@ func TestConfigBackendRedirectResponse(t *testing.T) {
 			require.NoError(t, err)
 
 			cb := newRedirectingConfigBackend(t, redirectStatus)
-			pyURL := startRudderPytransformer(t, pool, cb.backend.URL)
+			pyURL := startCandidatePytransformer(t, pool, cb.backend.URL)
 
 			status, headers, items := sendRawTransform(t, pyURL, makeEvents(versionID, 1))
 
@@ -101,7 +101,7 @@ func TestConfigBackendRedirectIsRetriedNotDropped(t *testing.T) {
 	defer webhookServer.Close()
 
 	cb := newRedirectingConfigBackend(t, redirectStatus)
-	pyTransformerURL := startRudderPytransformer(t, pool, cb.backend.URL)
+	pyTransformerURL := startCandidatePytransformer(t, pool, cb.backend.URL)
 
 	trServer := transformertest.NewBuilder().Build()
 	defer trServer.Close()

@@ -68,7 +68,7 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	pyURL := startRudderPytransformer(
+	pyURL := startCandidatePytransformer(
 		t, pool, configBackend.URL,
 		"DNS_CACHE_ENABLED=true",
 		"DNS_CACHE_TTL_S=300",
@@ -217,7 +217,7 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	pyURL := startRudderPytransformer(
+	pyURL := startCandidatePytransformer(
 		t, pool, configBackend.URL,
 		"DNS_OVERRIDES=custom-api.test,"+hostIP,
 	)
@@ -306,7 +306,7 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	pyURL := startRudderPytransformer(
+	pyURL := startCandidatePytransformer(
 		t, pool, configBackend.URL,
 		"DNS_CACHE_ENABLED=true",
 		"DNS_CACHE_TTL_S=300",

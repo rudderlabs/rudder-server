@@ -606,7 +606,19 @@ func (jd *Handle) doCompaction(ctx context.Context) error {
 	}
 	release()
 
-	compactionList, err := jd.getCompactionList(dsList, jd.lastCompactionProbeIndex, jd.maintenanceDB())
+	// The probe's terminal-job subquery groups the status table, which the planner always costs
+	// at a fixed rows=200. On multi-consumer datasets that misestimate makes it pick a nested
+	// loop over the jobs table, one probe per job; a hash or merge join is ~2x cheaper and
+	// doesn't scale with the job count. No-op for single-consumer probes, which don't join.
+	var compactionList compactionListResult
+	err = jd.withMaintenanceTx(ctx, func(tx *Tx) error {
+		if _, err := tx.ExecContext(ctx, `SET LOCAL enable_nestloop = off`); err != nil {
+			return fmt.Errorf("disable nestloop for compaction probe: %w", err)
+		}
+		var err error
+		compactionList, err = jd.getCompactionList(dsList, jd.lastCompactionProbeIndex, tx)
+		return err
+	})
 	jd.lastCompactionProbeIndex = nil
 	if err != nil {
 		return fmt.Errorf("could not get compaction list: %w", err)

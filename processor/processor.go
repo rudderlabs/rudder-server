@@ -205,6 +205,7 @@ type Handle struct {
 		userTransformationMirroringBlockedIDs     config.ValueLoader[[]string]
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		forkRsourcesTrackedJobs                   bool
+		reportingDedupMetricsEnabled              config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -855,6 +856,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.mirrorFilterCacheTTL = proc.conf.GetDurationVar(3, time.Hour, "Processor.userTransformationMirroring.filterCacheTTL")
 	proc.config.userTransformationMirroringBlockedIDs = proc.conf.GetReloadableStringSliceVar(nil, "Processor.userTransformationMirroring.blockedTransformationIDs")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
+	proc.config.reportingDedupMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.dedupMetrics.enabled")
 }
 
 type connection struct {
@@ -1762,6 +1764,7 @@ type preTransformationMessage struct {
 	enricherStatusDetailsMap      map[string]map[string]*reportingtypes.StatusDetail
 	botManagementStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
 	eventBlockingStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
+	dedupStatusDetailsMap         map[string]map[string]*reportingtypes.StatusDetail
 	destFilterStatusDetailMap     map[string]map[string]*reportingtypes.StatusDetail
 	reportMetrics                 []*reportingtypes.PUReportedMetric
 	totalEvents                   int
@@ -1820,6 +1823,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 	enricherStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	botManagementStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	eventBlockingStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+	dedupStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	// map of jobID to destinationID: for messages that needs to be delivered to a specific destinations only
 	jobIDToSpecificDestMapOnly := make(map[int64]string)
 
@@ -2070,6 +2074,28 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			if !allowedBatchKeys[event.dedupKey] {
 				proc.logger.Debugn("Dropping event with duplicate key %s", logger.NewStringField("key", event.dedupKey.Key))
 				sourceDupStats[dupStatKey{sourceID: event.eventParams.SourceId}] += 1
+
+				// REPORTING - DEDUP metrics - START
+				if proc.isReportingEnabled() && proc.config.reportingDedupMetricsEnabled.Load() {
+					reportingEvent.StatusCode = reportingtypes.FilterEventCode
+					proc.updateMetricMaps(
+						nil,
+						nil,
+						connectionDetailsMap,
+						dedupStatusDetailsMap,
+						reportingEvent,
+						jobsdb.Filtered.State,
+						reportingtypes.DEDUP,
+						func() json.RawMessage {
+							return nil
+						},
+						nil,
+					)
+					// reset status code to 0 because transformerEvent is reused for other metrics
+					reportingEvent.StatusCode = 0
+				}
+				// REPORTING - DEDUP metrics - END
+
 				continue
 			}
 			dedupKeys[event.dedupKey.Key] = struct{}{}
@@ -2240,6 +2266,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		enricherStatusDetailsMap:      enricherStatusDetailsMap,
 		botManagementStatusDetailsMap: botManagementStatusDetailsMap,
 		eventBlockingStatusDetailsMap: eventBlockingStatusDetailsMap,
+		dedupStatusDetailsMap:         dedupStatusDetailsMap,
 		reportMetrics:                 reportMetrics,
 		destFilterStatusDetailMap:     destFilterStatusDetailMap,
 		totalEvents:                   totalEvents,
@@ -2300,6 +2327,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.destFilterStatusDetailMap)
 		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.botManagementStatusDetailsMap)
 		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.eventBlockingStatusDetailsMap)
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.dedupStatusDetailsMap)
 		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.enricherStatusDetailsMap)
 
 		for k, cd := range preTrans.connectionDetailsMap {
@@ -2315,6 +2343,14 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
 					ConnectionDetails: *cd,
 					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.EVENT_BLOCKING, false, false),
+					StatusDetail:      sd,
+				})
+			}
+
+			for _, sd := range preTrans.dedupStatusDetailsMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DEDUP, false, false),
 					StatusDetail:      sd,
 				})
 			}
@@ -2421,6 +2457,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 
 					// At the TP flow we are not having destination information, so adding it here.
 					destinationEvent.Metadata.DestinationID = destination.ID
+					destinationEvent.Metadata.OriginalDestinationID = destination.OriginalID
 					destinationEvent.Metadata.DestinationName = destination.Name
 					destinationEvent.Metadata.DestinationType = destination.DestinationDefinition.Name
 					destinationEvent.Metadata.DestinationDefinitionID = destination.DestinationDefinition.ID

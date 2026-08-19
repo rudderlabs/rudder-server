@@ -17,7 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 )
 
-// This file pins what CONFIG_BACKEND_HOSTED_SECRET does to the wire, both variants, against a
+// This file pins what CONFIG_BACKEND_TRANSFORMER_SERVICE_SECRET does to the wire, both variants, against a
 // mock config backend ported from ../rudder-config-backend rather than invented here (see
 // configBackendAuthMock below for the file-by-file provenance).
 //
@@ -76,7 +76,7 @@ def transformEvent(event, metadata):
 )
 
 // TestConfigBackendAuthWithoutHostedSecret is the regression guard for the change being
-// additive: with CONFIG_BACKEND_HOSTED_SECRET absent from the environment, pytransformer must
+// additive: with CONFIG_BACKEND_TRANSFORMER_SERVICE_SECRET absent from the environment, pytransformer must
 // talk to the config backend exactly as the build before it did.
 //
 // The assertion that carries the claim is not "it still works" — it is that every request the
@@ -90,9 +90,9 @@ func TestConfigBackendAuthWithoutHostedSecret(t *testing.T) {
 
 	cb := newConfigBackendAuthMock(t, cbAuthSecret, cbAuthOtherSecret)
 
-	// No CONFIG_BACKEND_HOSTED_SECRET passed at all — not empty, absent. This is the
+	// No CONFIG_BACKEND_TRANSFORMER_SERVICE_SECRET passed at all — not empty, absent. This is the
 	// pre-change deployment, and every self-hosted one.
-	pyURL := startRudderPytransformer(t, pool, cb.server.URL)
+	pyURL := startCandidatePytransformer(t, pool, cb.server.URL)
 
 	t.Run("public unauthenticated routes are reached with no Authorization header", func(t *testing.T) {
 		const versionID = "cbauth-nosecret-public-v1"
@@ -113,7 +113,7 @@ func TestConfigBackendAuthWithoutHostedSecret(t *testing.T) {
 		require.NotEmpty(t, seen, "config backend was never asked for the transformation code")
 		for _, r := range seen {
 			require.Empty(t, r.authorization,
-				"an unset CONFIG_BACKEND_HOSTED_SECRET must send no Authorization header at all")
+				"an unset CONFIG_BACKEND_TRANSFORMER_SERVICE_SECRET must send no Authorization header at all")
 			require.Equal(t, versionID, r.versionID)
 		}
 	})
@@ -172,8 +172,8 @@ func TestConfigBackendAuthWithHostedSecret(t *testing.T) {
 	require.NoError(t, err)
 
 	cb := newConfigBackendAuthMock(t, cbAuthSecret, cbAuthOtherSecret)
-	pyURL := startRudderPytransformer(t, pool, cb.server.URL,
-		"CONFIG_BACKEND_HOSTED_SECRET="+cbAuthSecret)
+	pyURL := startCandidatePytransformer(t, pool, cb.server.URL,
+		"CONFIG_BACKEND_TRANSFORMER_SERVICE_SECRET="+cbAuthSecret)
 
 	// What the config backend must receive, spelled out rather than recomputed from the same
 	// helper the assertion is checking: the secret is the username and the password is empty.
@@ -258,8 +258,8 @@ func TestConfigBackendAuthWithWrongHostedSecret(t *testing.T) {
 
 	cb := newConfigBackendAuthMock(t, cbAuthSecret, cbAuthOtherSecret)
 	cb.setMode(cbModeHostedSecret)
-	pyURL := startRudderPytransformer(t, pool, cb.server.URL,
-		"CONFIG_BACKEND_HOSTED_SECRET=py-contract-hosted-secret-rotated-away")
+	pyURL := startCandidatePytransformer(t, pool, cb.server.URL,
+		"CONFIG_BACKEND_TRANSFORMER_SERVICE_SECRET=py-contract-hosted-secret-rotated-away")
 
 	const versionID = "cbauth-wrongsecret-v1"
 	status, headers, items := sendRawTransform(t, pyURL, makeEvents(versionID, 3))
@@ -293,8 +293,8 @@ func TestConfigBackendHostedSecretTrailingNewlineIsTrimmed(t *testing.T) {
 
 	cb := newConfigBackendAuthMock(t, cbAuthSecret)
 	cb.setMode(cbModeHostedSecret)
-	pyURL := startRudderPytransformer(t, pool, cb.server.URL,
-		"CONFIG_BACKEND_HOSTED_SECRET="+cbAuthSecret+"\n")
+	pyURL := startCandidatePytransformer(t, pool, cb.server.URL,
+		"CONFIG_BACKEND_TRANSFORMER_SERVICE_SECRET="+cbAuthSecret+"\n")
 
 	const versionID = "cbauth-trailing-newline-v1"
 	status, _, items := sendRawTransform(t, pyURL, makeEvents(versionID, 1))

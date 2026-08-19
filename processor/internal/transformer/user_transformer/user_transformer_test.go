@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -34,6 +35,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/user_transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -312,6 +314,57 @@ func TestUserTransformer(t *testing.T) {
 						}
 					}
 				}
+			})
+
+			t.Run("should flip replay source and destination IDs for the transformation and flip them back in the response", func(t *testing.T) {
+				ft := &fakeTransformer{
+					t: t,
+				}
+
+				srv := httptest.NewServer(ft)
+				defer srv.Close()
+
+				conf.Set("USER_TRANSFORM_URL", srv.URL)
+				conf.Set("Processor.userTransformBatchSize", 10)
+				tr := user_transformer.New(conf, logger.NOP, stats.NOP, user_transformer.WithClient(srv.Client()))
+
+				destinationConfig := backendconfigtest.NewDestinationBuilder("WEBHOOK").
+					WithUserTransformation(rand.String(10), rand.String(10)).Build()
+
+				events := []types.TransformerEvent{
+					{
+						Metadata: types.Metadata{
+							MessageID:             "messageID-1",
+							SourceID:              "replay-source-id",
+							OriginalSourceID:      "original-source-id",
+							DestinationID:         "replay-destination-id",
+							OriginalDestinationID: "original-destination-id",
+						},
+						Message: map[string]any{
+							"src-key-1":       "messageID-1",
+							"forceStatusCode": http.StatusOK,
+						},
+						Destination: destinationConfig,
+					},
+				}
+
+				rsp := tr.Transform(context.TODO(), events)
+
+				// the transformation must see the original IDs
+				require.Len(t, ft.requests, 1)
+				require.Len(t, ft.requests[0], 1)
+				sentMetadata := ft.requests[0][0].Metadata
+				require.Equal(t, "original-source-id", sentMetadata.SourceID)
+				require.Equal(t, "replay-source-id", sentMetadata.OriginalSourceID)
+				require.Equal(t, "original-destination-id", sentMetadata.DestinationID)
+				require.Equal(t, "replay-destination-id", sentMetadata.OriginalDestinationID)
+
+				// the response must carry the replay IDs again
+				require.Len(t, rsp.Events, 1)
+				require.Equal(t, "replay-source-id", rsp.Events[0].Metadata.SourceID)
+				require.Equal(t, "original-source-id", rsp.Events[0].Metadata.OriginalSourceID)
+				require.Equal(t, "replay-destination-id", rsp.Events[0].Metadata.DestinationID)
+				require.Equal(t, "original-destination-id", rsp.Events[0].Metadata.OriginalDestinationID)
 			})
 
 			t.Run("timeout", func(t *testing.T) {
@@ -1623,6 +1676,9 @@ type fakeColdStartTransport struct {
 	// a transport-level error (ECONNREFUSED / DNS / ...).
 	failStatus int
 	failErr    error
+	// failHeaders are set on the failing response, so tests can drive the
+	// transformer's retryable-error contract (X-Rudder-Should-Retry).
+	failHeaders map[string]string
 	// failures: number of failing calls before switching to successBody. Use
 	// math.MaxInt for "always fail".
 	failures int
@@ -1639,9 +1695,13 @@ func (f *fakeColdStartTransport) Do(_ *http.Request) (*http.Response, error) {
 	n := int(f.calls.Add(1))
 	if n <= f.failures {
 		if f.failStatus > 0 {
+			failHdr := hdr.Clone()
+			for k, v := range f.failHeaders {
+				failHdr.Set(k, v)
+			}
 			return &http.Response{
 				StatusCode: f.failStatus,
-				Header:     hdr,
+				Header:     failHdr,
 				Body:       io.NopCloser(bytes.NewReader(nil)),
 			}, nil
 		}
@@ -2049,5 +2109,91 @@ func TestForwardTest(t *testing.T) {
 
 		_, _, err := client.Test(context.Background(), "", "ws-1", []byte(`{}`))
 		require.ErrorIs(t, err, user_transformer.ErrEmptyForwardBaseURL)
+	})
+}
+
+// TestRetryableResponseExhaustedPanics pins that a spent retry budget crashes the processor instead of quietly
+// failing the events.
+//
+// This looks like a bug and is not. In production the retryable transport retries forever
+// (retryRudderErrors maxRetry=-1, maxElapsedTime=0); maxRetry exists so the contract tests terminate.
+// A bounded budget in production is therefore a misconfiguration, and the two ways out of it are not equivalent:
+// panicking leaves the jobs in jobsdb to be retried after the restart, whereas returning a failed event aborts them
+// into proc-errors and loses customer data. Loud and recoverable beats quiet and lossy.
+//
+// If this test starts failing because someone made the exhausted path return a status instead of an error, that
+// change is dropping events — fix the misconfiguration, not this.
+func TestRetryableResponseExhaustedPanics(t *testing.T) {
+	const (
+		workspaceID = "ws-retryable"
+		messageID   = "msg-retryable"
+		versionID   = "v-retryable"
+	)
+
+	newClient := func(t *testing.T, headers map[string]string) (*user_transformer.Client, []types.TransformerEvent) {
+		t.Helper()
+		c := config.New()
+		c.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+		c.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", "http://pyt-{workspaceID}:9090")
+		// Bounded, so the outer cold-start loop terminates and the response reaches the caller.
+		c.Set("Processor.UserTransformer.perWorkspacePyTEndlessRetries", false)
+		c.Set("Processor.UserTransformer.maxRetry", 1)
+		c.Set("Processor.UserTransformer.maxRetryBackoffInterval", "1ms")
+
+		transport := &fakeColdStartTransport{
+			failStatus:  http.StatusServiceUnavailable,
+			failHeaders: headers,
+			failures:    math.MaxInt,
+		}
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		events := []types.TransformerEvent{{
+			Metadata: types.Metadata{MessageID: messageID, WorkspaceID: workspaceID},
+			Message:  map[string]any{"src-key-1": messageID},
+			Destination: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "test-destination"},
+				Transformations: []backendconfig.TransformationT{{
+					ID: "transform-1", VersionID: versionID, Language: "pythonfaas",
+				}},
+			},
+		}}
+		return user_transformer.New(c, logger.NOP, statsStore, user_transformer.WithClient(transport)), events
+	}
+
+	// The panic happens inside a wg.Go goroutine, so it cannot be recovered by the caller and takes the process
+	// with it — which is the whole point, but also means require.Panics cannot observe it. Re-exec this test in a
+	// child process and assert that the child died instead.
+	const crashEnv = "USER_TRANSFORMER_CRASH_CHILD"
+
+	t.Run("503 with should-retry crashes rather than dropping the events", func(t *testing.T) {
+		if os.Getenv(crashEnv) == "1" {
+			tr, events := newClient(t, map[string]string{
+				transformerclient.HeaderShouldRetry: "true",
+				transformerclient.HeaderErrorReason: "geolocation_timeout",
+			})
+			_ = tr.Transform(context.Background(), events)
+			return // unreachable: the transform above must take the process down
+		}
+
+		cmd := exec.Command(os.Args[0], "-test.run="+t.Name()+"$", "-test.v")
+		cmd.Env = append(os.Environ(), crashEnv+"=1")
+		out, err := cmd.CombinedOutput()
+
+		require.Error(t, err, "child must die: the events have to survive in jobsdb via a crash, "+
+			"not be aborted into proc-errors\n%s", out)
+		require.Contains(t, string(out), "transformer returned status code: 503",
+			"child must die on the transformer error, not something incidental")
+	})
+
+	t.Run("bare 503 stays a cold start and never reaches the panic", func(t *testing.T) {
+		// No contract header: the infrastructure is answering, not pyt. This is the case
+		// [transformerclient.IsRetryableResponse] keeps out of the panic path, a bare 502 included.
+		tr, events := newClient(t, nil)
+		var rsp types.Response
+		require.NotPanics(t, func() { rsp = tr.Transform(context.Background(), events) })
+		require.Empty(t, rsp.Events)
+		require.Len(t, rsp.FailedEvents, 1)
+		require.Equal(t, transformerutils.StatusColdStartWindowFailure, rsp.FailedEvents[0].StatusCode)
 	})
 }
