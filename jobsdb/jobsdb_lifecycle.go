@@ -59,6 +59,7 @@ func (jd *Handle) init() {
 		jd.stats = stats.Default
 	}
 	jd.dsListLock = lock.NewLocker("dsListLock", jd.tablePrefix, jd.stats)
+	jd.compactionLock = lock.NewLocker("compactionLock", jd.tablePrefix, jd.stats)
 
 	jd.loadConfig()
 
