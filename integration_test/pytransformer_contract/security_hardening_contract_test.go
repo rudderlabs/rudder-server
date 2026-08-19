@@ -68,8 +68,8 @@ def transformEvent(event, metadata):
     return {'v': str(requests.utils.os)}
 `
 	// requests.utils.__getattribute__('os') reaches the os module through the raw attribute-lookup primitive,
-	// which never re-enters guarded_getattr. Same soft landing as the value guard: recorded + allowed in shadow,
-	// blocked under SANDBOX_GETATTR_GUARD_ENFORCE (which the candidate below sets) -> the event fails.
+	// which never re-enters guarded_getattr. This read is blocked unconditionally by the value guard -> the event
+	// fails.
 	getattributeBypassCode := `
 def transformEvent(event, metadata):
     import requests
@@ -81,7 +81,7 @@ def transformEvent(event, metadata):
     return {'v': str(event.__getattr__)}
 `
 	// requests.packages.urllib3 reaches urllib3 (PoolManager = raw HTTP that skips the managed session's
-	// budget/metrics). Dropped from SAFE_TRAVERSAL_MODULES -> the value guard flags it -> blocked under enforce.
+	// budget/metrics). Dropped from SAFE_TRAVERSAL_MODULES -> blocked unconditionally by the value guard.
 	urllib3TraversalCode := `
 def transformEvent(event, metadata):
     import requests
@@ -121,72 +121,138 @@ def transformEvent(event, metadata):
 		baselineURL = startBaselinePytransformer(t, pool, configBackend.URL)
 	})
 	wg.Go(func() {
-		// The getattr and import guards both default to shadow (allow + record); enforce both so their blocks are
-		// observable here. (The getattr() withdrawal is unconditional and does not depend on either flag.)
-		candidateURL = startCandidatePytransformer(t, pool, configBackend.URL,
-			"SANDBOX_GETATTR_GUARD_ENFORCE=true", "SANDBOX_IMPORT_GUARD_ENFORCE=true")
+		// getattr, import, and (once enforce ships) write guards no longer take an env flag — getattr and import
+		// enforce by default. No candidate env override is needed to observe their blocks.
+		candidateURL = startCandidatePytransformer(t, pool, configBackend.URL)
 	})
 	wg.Wait()
 
 	env := newBCTestEnv(t, baselineURL, candidateURL)
 
-	// assertBlockedOnCandidate sends one event through the candidate and asserts the escape became a
-	// clean per-event failure whose error message identifies the *specific* block — every substring in
-	// wantErrSubstrs must appear. Locking the message (not just the 400) is what makes this a contract on
-	// the security violation itself rather than on any generic bad-request.
-	assertBlockedOnCandidate := func(t *testing.T, versionID string, wantErrSubstrs ...string) {
-		t.Helper()
-		events := []types.TransformerEvent{makeEvent(versionID+"-msg", versionID)}
-
-		resp := env.CandidateClient.Transform(context.Background(), events)
-
-		require.Empty(t, resp.Events, "candidate must not produce a successful event for an escape attempt")
-		require.Len(t, resp.FailedEvents, 1, "candidate must fail exactly the one event")
-		fe := resp.FailedEvents[0]
-		require.Equal(t, http.StatusBadRequest, fe.StatusCode,
-			"escape must be a clean 400 per-event failure, not a 5xx/crash; error=%q", fe.Error)
-		require.NotEmpty(t, fe.Error, "a security block must carry an error message")
-		require.Nil(t, fe.Output, "a blocked event must not carry an output payload; got %v", fe.Output)
-		low := strings.ToLower(fe.Error)
-		for _, want := range wantErrSubstrs {
-			require.Containsf(t, low, strings.ToLower(want),
-				"failure error should identify the specific block (missing %q); got %q", want, fe.Error)
-		}
-	}
-
 	t.Run("getattr() builtin is withdrawn", func(t *testing.T) {
 		// NotImplementedError("getattr() is not supported in transformations")
-		assertBlockedOnCandidate(t, getattrVersionID, "getattr", "not supported")
+		assertBlockedOnCandidate(t, env, getattrVersionID, "getattr", "not supported")
 	})
 
 	t.Run("reaching os by attribute traversal is blocked", func(t *testing.T) {
 		// SecurityViolationError("Accessing module 'os' via attribute access is not allowed")
-		assertBlockedOnCandidate(t, osTraversalVID, "module 'os'", "attribute access", "not allowed")
+		assertBlockedOnCandidate(t, env, osTraversalVID, "module 'os'", "attribute access", "not allowed")
 	})
 
 	t.Run("__getattribute__ cannot be used to bypass the guard", func(t *testing.T) {
 		// SecurityViolationError("Accessing '__getattribute__' is not allowed: it is a raw attribute-access ...")
-		assertBlockedOnCandidate(t, getattributeBypassVID, "__getattribute__", "not allowed")
+		assertBlockedOnCandidate(t, env, getattributeBypassVID, "__getattribute__", "not allowed")
 	})
 
 	t.Run("reading the __getattr__ primitive is refused", func(t *testing.T) {
 		// SecurityViolationError("Accessing '__getattr__' is not allowed: it is a raw attribute-access ...")
-		assertBlockedOnCandidate(t, getattrDunderVID, "__getattr__", "not allowed")
+		assertBlockedOnCandidate(t, env, getattrDunderVID, "__getattr__", "not allowed")
 	})
 
 	t.Run("urllib3 raw-HTTP traversal is blocked", func(t *testing.T) {
 		// SecurityViolationError("Accessing module 'urllib3' via attribute access is not allowed")
-		assertBlockedOnCandidate(t, urllib3TraversalVID, "module 'urllib3'", "attribute access", "not allowed")
+		assertBlockedOnCandidate(t, env, urllib3TraversalVID, "module 'urllib3'", "attribute access", "not allowed")
 	})
 
 	t.Run("logging file-write traversal is blocked", func(t *testing.T) {
 		// SecurityViolationError("Accessing module 'logging' via attribute access is not allowed")
-		assertBlockedOnCandidate(t, loggingTraversalVID, "module 'logging'", "attribute access", "not allowed")
+		assertBlockedOnCandidate(t, env, loggingTraversalVID, "module 'logging'", "attribute access", "not allowed")
 	})
 
 	t.Run("from-import of a re-exported module is blocked", func(t *testing.T) {
 		// SecurityViolationError("Importing 'socket' from 'requests.utils' is not allowed: it resolves to the
 		// non-importable module 'socket'.")
-		assertBlockedOnCandidate(t, fromImportModuleVID, "socket", "not allowed", "non-importable")
+		assertBlockedOnCandidate(t, env, fromImportModuleVID, "socket", "not allowed", "non-importable")
+	})
+}
+
+// assertBlockedOnCandidate sends one event through env's candidate and asserts the escape became a
+// clean per-event failure whose error message identifies the *specific* block — every substring in
+// wantErrSubstrs must appear. Locking the message (not just the 400) is what makes this a contract on
+// the security violation itself rather than on any generic bad-request. Shared by every hardening
+// contract test in this file so the assertion is defined once and cannot drift between them.
+func assertBlockedOnCandidate(t *testing.T, env *bcTestEnv, versionID string, wantErrSubstrs ...string) {
+	t.Helper()
+	events := []types.TransformerEvent{makeEvent(versionID+"-msg", versionID)}
+
+	resp := env.CandidateClient.Transform(context.Background(), events)
+
+	require.Empty(t, resp.Events, "candidate must not produce a successful event for an escape attempt")
+	require.Len(t, resp.FailedEvents, 1, "candidate must fail exactly the one event")
+	fe := resp.FailedEvents[0]
+	require.Equal(t, http.StatusBadRequest, fe.StatusCode,
+		"escape must be a clean 400 per-event failure, not a 5xx/crash; error=%q", fe.Error)
+	require.NotEmpty(t, fe.Error, "a security block must carry an error message")
+	require.Nil(t, fe.Output, "a blocked event must not carry an output payload; got %v", fe.Output)
+	low := strings.ToLower(fe.Error)
+	for _, want := range wantErrSubstrs {
+		require.Containsf(t, low, strings.ToLower(want),
+			"failure error should identify the specific block (missing %q); got %q", want, fe.Error)
+	}
+}
+
+// TestWriteGuardEnforceContract pins the client↔server contract for the write guard's enforce mode
+// (SANDBOX_WRITE_GUARD_ENFORCE=true): a write (setattr / attribute-store) to a non-user-owned target — any
+// module object, or a class the transformation/library did not define — is refused rather than silently
+// applied. The guard defaults to shadow (record + allow) precisely so a customer cannot be broken by
+// flipping it on unannounced; this test locks the OTHER side of that switch, the one this rollout is
+// building towards.
+//
+// Both targets below are reached by a plain top-level import + attribute read (json, requests.exceptions),
+// which the getattr/import guards already allow unconditionally, so the write itself — not the read — is
+// what trips the block here. The targets are deliberately NOT socket.socket: requests.utils.socket is not
+// on the value guard's reachability allow-list (SAFE_TRAVERSAL_MODULES), so a socket.socket write would be
+// refused at the READ step by the getattr guard, carrying the getattr guard's error message instead of the
+// write guard's — the wrong contract for this test to pin.
+//
+// CANDIDATE-ONLY on purpose, matching TestGetattrAndModuleGuardContract above: the write guard is new, so
+// no baseline (a released image that predates it) is started here — there is nothing for it to compare
+// against.
+func TestWriteGuardEnforceContract(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
+
+	const (
+		moduleWriteVID       = "hardening-write-guard-module-blocked-v1"
+		foreignClassWriteVID = "hardening-write-guard-foreign-class-blocked-v1"
+	)
+
+	// json.loads = None rebinds an attribute on the json MODULE object itself -> write guard kind=module.
+	moduleWriteCode := `
+def transformEvent(event, metadata):
+    import json
+    json.loads = None
+    return {'ok': True}
+`
+	// requests.exceptions.HTTPError is reached by plain traversal off the whitelisted 'requests' import — it is a
+	// CLASS, not a module, so the getattr/value guard never fires reading it. setattr on it is a write to a class
+	// the transformation does not own -> write guard kind=foreign_class.
+	foreignClassWriteCode := `
+def transformEvent(event, metadata):
+    import requests
+    setattr(requests.exceptions.HTTPError, 'x', 1)
+    return {'ok': True}
+`
+
+	configBackend := newContractConfigBackend(t, map[string]configBackendEntry{
+		moduleWriteVID:       {code: moduleWriteCode},
+		foreignClassWriteVID: {code: foreignClassWriteCode},
+	})
+	defer configBackend.Close()
+	t.Logf("Config backend at %s", configBackend.URL)
+
+	// No baseline container: this test only ever talks to env.CandidateClient (see doc comment above).
+	candidateURL := startCandidatePytransformer(t, pool, configBackend.URL, "SANDBOX_WRITE_GUARD_ENFORCE=true")
+	env := newBCTestEnv(t, "", candidateURL)
+
+	t.Run("write to a module object is blocked", func(t *testing.T) {
+		// SecurityViolationError("Setting attribute 'loads' on a non-user-owned module is not allowed")
+		assertBlockedOnCandidate(t, env, moduleWriteVID, "not allowed", "non-user-owned")
+	})
+
+	t.Run("write to a foreign (non-user-owned) class is blocked", func(t *testing.T) {
+		// SecurityViolationError("Setting attribute 'x' on a non-user-owned foreign class is not allowed")
+		assertBlockedOnCandidate(t, env, foreignClassWriteVID, "not allowed", "non-user-owned")
 	})
 }
