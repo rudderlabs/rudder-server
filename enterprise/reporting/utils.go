@@ -62,6 +62,10 @@ func getStringifiedSampleEvent(rawSampleEvent json.RawMessage) string {
 
 // getSampleWithEventSamplingCore contains the common event sampling logic
 func getSampleWithEventSamplingCore(sampleEvent json.RawMessage, sampleResponse string, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, hashGenerator func() string) (json.RawMessage, string, error) {
+	if int64(len(sampleEvent)) > maxSampleEventSizeBytes.Load() {
+		return nil, "", nil
+	}
+
 	if !eventSamplingEnabled || eventSampler == nil {
 		return sampleEvent, sampleResponse, nil
 	}
@@ -79,9 +83,6 @@ func getSampleWithEventSamplingCore(sampleEvent json.RawMessage, sampleResponse 
 		}
 
 		if found {
-			sampleEvent = nil
-			sampleResponse = ""
-		} else if int64(len(sampleEvent)) > maxSampleEventSizeBytes.Load() {
 			sampleEvent = nil
 			sampleResponse = ""
 		} else {
