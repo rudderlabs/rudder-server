@@ -822,3 +822,32 @@ func (edr *ErrorDetailReporter) Stop() {
 		edr.eventSampler.Close()
 	}
 }
+
+func sendEDMetricWithPayloadTooLargeSplit(ctx context.Context, commonClient *client.Client, metric *types.EDMetric) error {
+	err := commonClient.Send(ctx, metric)
+	if !errors.Is(err, client.ErrPayloadTooLarge) {
+		return err
+	}
+
+	for _, errorDetail := range metric.Errors {
+		individualMetric := edMetricWithSingleErrorDetail(metric, errorDetail)
+		err = commonClient.Send(ctx, individualMetric)
+		if errors.Is(err, client.ErrPayloadTooLarge) {
+			strippedMetric := edMetricWithSingleErrorDetail(metric, errorDetail)
+			if len(strippedMetric.Errors) > 0 {
+				strippedMetric.Errors[0].SampleEvent = sampleEventNotAvailableForPayloadTooLarge()
+			}
+			err = commonClient.SendWithRetryOnTooLarge(ctx, strippedMetric)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func edMetricWithSingleErrorDetail(metric *types.EDMetric, errorDetail types.EDErrorDetails) *types.EDMetric {
+	metricCopy := *metric
+	metricCopy.Errors = []types.EDErrorDetails{errorDetail}
+	return &metricCopy
+}

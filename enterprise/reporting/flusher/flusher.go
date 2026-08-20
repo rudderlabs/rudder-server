@@ -311,7 +311,7 @@ func (f *Flusher) sendBatchWithPayloadTooLargeSplit(ctx context.Context, batch [
 		individualBatch := []json.RawMessage{item}
 		err = f.commonClient.Send(ctx, individualBatch)
 		if errors.Is(err, client.ErrPayloadTooLarge) {
-			err = f.commonClient.SendWithoutPayloadTooLargeSplit(ctx, individualBatch)
+			err = f.commonClient.SendWithRetryOnTooLarge(ctx, individualBatch)
 		}
 		if err != nil {
 			return err

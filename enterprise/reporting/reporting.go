@@ -750,3 +750,37 @@ func (r *DefaultReporter) Stop() {
 		r.eventSampler.Close()
 	}
 }
+
+func sendMetricWithPayloadTooLargeSplit(ctx context.Context, commonClient *client.Client, metric *types.Metric) error {
+	err := commonClient.Send(ctx, metric)
+	if !errors.Is(err, client.ErrPayloadTooLarge) {
+		return err
+	}
+
+	for _, statusDetail := range metric.StatusDetails {
+		individualMetric := metricWithSingleStatusDetail(metric, statusDetail)
+		err = commonClient.Send(ctx, individualMetric)
+		if errors.Is(err, client.ErrPayloadTooLarge) {
+			strippedMetric := metricWithSingleStatusDetail(metric, statusDetail)
+			if len(strippedMetric.StatusDetails) > 0 && strippedMetric.StatusDetails[0] != nil {
+				strippedMetric.StatusDetails[0].SampleEvent = sampleEventNotAvailableForPayloadTooLarge()
+			}
+			err = commonClient.SendWithRetryOnTooLarge(ctx, strippedMetric)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func metricWithSingleStatusDetail(metric *types.Metric, statusDetail *types.StatusDetail) *types.Metric {
+	metricCopy := *metric
+	if statusDetail == nil {
+		metricCopy.StatusDetails = []*types.StatusDetail{nil}
+		return &metricCopy
+	}
+	statusDetailCopy := *statusDetail
+	metricCopy.StatusDetails = []*types.StatusDetail{&statusDetailCopy}
+	return &metricCopy
+}

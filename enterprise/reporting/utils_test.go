@@ -7,6 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	mocks "github.com/rudderlabs/rudder-server/mocks/enterprise/reporting/event_sampler"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -132,4 +136,13 @@ func TestGetSampleWithEventSamplingForEDReportsDB(t *testing.T) {
 		require.Nil(t, sampleEvent)
 		require.Equal(t, "", sampleResponse)
 	})
+}
+
+func newPayloadTooLargeTestClient(t *testing.T, serverURL string, maxRetries int) *client.Client {
+	t.Helper()
+	conf := config.New()
+	conf.Set("REPORTING_URL", serverURL)
+	conf.Set("Reporting.payloadTooLargeHandling.enabled", true)
+	conf.Set("Reporting.httpClient.backoff.maxRetries", maxRetries)
+	return client.New(client.RouteMetrics, conf, logger.NOP, stats.NOP)
 }

@@ -141,3 +141,9 @@ func getPIIColumnsToExclude() []string {
 	}
 	return piiColumnsToExclude
 }
+
+const sampleEventNotAvailableEntityTooLarge = `{"sample_event_not_available":"entity too large"}`
+
+func sampleEventNotAvailableForPayloadTooLarge() json.RawMessage {
+	return json.RawMessage(sampleEventNotAvailableEntityTooLarge)
+}

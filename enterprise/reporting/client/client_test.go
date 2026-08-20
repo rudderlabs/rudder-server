@@ -442,7 +442,7 @@ func TestClientPayloadTooLargeFeatureGate(t *testing.T) {
 		conf := config.New()
 		conf.Set("REPORTING_URL", server.URL)
 		conf.Set("Reporting.httpClient.backoff.maxRetries", 3)
-		conf.Set("Reporting.splitOnPayloadTooLarge.enabled", true)
+		conf.Set("Reporting.payloadTooLargeHandling.enabled", true)
 
 		c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
 		err = c.Send(context.Background(), metric)
@@ -465,10 +465,10 @@ func TestClientPayloadTooLargeFeatureGate(t *testing.T) {
 		conf := config.New()
 		conf.Set("REPORTING_URL", server.URL)
 		conf.Set("Reporting.httpClient.backoff.maxRetries", 1)
-		conf.Set("Reporting.splitOnPayloadTooLarge.enabled", true)
+		conf.Set("Reporting.payloadTooLargeHandling.enabled", true)
 
 		c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
-		err = c.SendWithoutPayloadTooLargeSplit(context.Background(), metric)
+		err = c.SendWithRetryOnTooLarge(context.Background(), metric)
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
 		require.Contains(t, err.Error(), "statusCode: 413")
