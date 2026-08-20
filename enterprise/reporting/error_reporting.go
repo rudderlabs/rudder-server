@@ -829,15 +829,15 @@ func sendEDMetricWithPayloadTooLargeSplit(ctx context.Context, commonClient *cli
 		return err
 	}
 
+	if len(metric.Errors) == 1 {
+		// nothing to split: a single-error metric is the payload that was just rejected
+		return sendStrippedErrorDetail(ctx, commonClient, metric, metric.Errors[0])
+	}
+
 	for _, errorDetail := range metric.Errors {
-		individualMetric := edMetricWithSingleErrorDetail(metric, errorDetail)
-		err = commonClient.Send(ctx, individualMetric)
+		err = commonClient.Send(ctx, edMetricWithSingleErrorDetail(metric, errorDetail))
 		if errors.Is(err, client.ErrPayloadTooLarge) {
-			strippedMetric := edMetricWithSingleErrorDetail(metric, errorDetail)
-			if len(strippedMetric.Errors) > 0 {
-				strippedMetric.Errors[0].SampleEvent = sampleEventNotAvailableForPayloadTooLarge()
-			}
-			err = commonClient.SendWithRetryOnTooLarge(ctx, strippedMetric)
+			err = sendStrippedErrorDetail(ctx, commonClient, metric, errorDetail)
 		}
 		if err != nil {
 			return err
@@ -846,6 +846,16 @@ func sendEDMetricWithPayloadTooLargeSplit(ctx context.Context, commonClient *cli
 	return nil
 }
 
+// sendStrippedErrorDetail sends a single error detail with its sample event
+// replaced by a placeholder, retrying a 413 like any other non-2xx response.
+func sendStrippedErrorDetail(ctx context.Context, commonClient *client.Client, metric *types.EDMetric, errorDetail types.EDErrorDetails) error {
+	strippedMetric := edMetricWithSingleErrorDetail(metric, errorDetail)
+	strippedMetric.Errors[0].SampleEvent = sampleEventNotAvailableEntityTooLarge
+	return commonClient.SendWithRetryOnTooLarge(ctx, strippedMetric)
+}
+
+// edMetricWithSingleErrorDetail returns a copy of metric carrying only the given
+// error detail, so the result can be mutated without affecting metric.
 func edMetricWithSingleErrorDetail(metric *types.EDMetric, errorDetail types.EDErrorDetails) *types.EDMetric {
 	metricCopy := *metric
 	metricCopy.Errors = []types.EDErrorDetails{errorDetail}

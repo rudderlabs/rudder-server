@@ -487,6 +487,38 @@ func TestGetSampleWithEventSamplingForEDReportsDBSkipsOversizedSampleEvent(t *te
 	require.Empty(t, sampleResponse)
 }
 
+func TestGetSampleWithEventSamplingSkipsOversizedSampleEventWhenSamplingDisabled(t *testing.T) {
+	config.Set("Reporting.maxSampleEventSizeBytes", 5)
+	t.Cleanup(func() { config.Set("Reporting.maxSampleEventSizeBytes", 80*bytesize.MB) })
+
+	metric := types.PUReportedMetric{
+		StatusDetail: &types.StatusDetail{
+			SampleEvent:    json.RawMessage(`{"event":"too-large"}`),
+			SampleResponse: "sample response",
+		},
+	}
+
+	sampleEvent, _, err := getSampleWithEventSampling(metric, 1234567890, nil, false, 60)
+	require.NoError(t, err)
+	require.Nil(t, sampleEvent, "oversized sample event must be dropped even when event sampling is disabled")
+}
+
+func TestGetSampleWithEventSamplingForEDReportsDBSkipsOversizedSampleEventWhenSamplingDisabled(t *testing.T) {
+	config.Set("Reporting.maxSampleEventSizeBytes", 5)
+	t.Cleanup(func() { config.Set("Reporting.maxSampleEventSizeBytes", 80*bytesize.MB) })
+
+	metric := types.EDReportsDB{
+		EDErrorDetails: types.EDErrorDetails{
+			SampleEvent:    json.RawMessage(`{"event":"too-large"}`),
+			SampleResponse: "sample response",
+		},
+	}
+
+	sampleEvent, _, err := getSampleWithEventSamplingForEDReportsDB(metric, 1234567890, nil, false, 60)
+	require.NoError(t, err)
+	require.Nil(t, sampleEvent, "oversized sample event must be dropped even when event sampling is disabled")
+}
+
 func TestGetStringifiedSampleEvent(t *testing.T) {
 	cases := []struct {
 		name        string

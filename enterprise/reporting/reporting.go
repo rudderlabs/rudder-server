@@ -757,15 +757,15 @@ func sendMetricWithPayloadTooLargeSplit(ctx context.Context, commonClient *clien
 		return err
 	}
 
+	if len(metric.StatusDetails) == 1 {
+		// nothing to split: a single-status-detail metric is the payload that was just rejected
+		return sendStrippedStatusDetail(ctx, commonClient, metric, metric.StatusDetails[0])
+	}
+
 	for _, statusDetail := range metric.StatusDetails {
-		individualMetric := metricWithSingleStatusDetail(metric, statusDetail)
-		err = commonClient.Send(ctx, individualMetric)
+		err = commonClient.Send(ctx, metricWithSingleStatusDetail(metric, statusDetail))
 		if errors.Is(err, client.ErrPayloadTooLarge) {
-			strippedMetric := metricWithSingleStatusDetail(metric, statusDetail)
-			if len(strippedMetric.StatusDetails) > 0 && strippedMetric.StatusDetails[0] != nil {
-				strippedMetric.StatusDetails[0].SampleEvent = sampleEventNotAvailableForPayloadTooLarge()
-			}
-			err = commonClient.SendWithRetryOnTooLarge(ctx, strippedMetric)
+			err = sendStrippedStatusDetail(ctx, commonClient, metric, statusDetail)
 		}
 		if err != nil {
 			return err
@@ -774,12 +774,18 @@ func sendMetricWithPayloadTooLargeSplit(ctx context.Context, commonClient *clien
 	return nil
 }
 
+// sendStrippedStatusDetail sends a single status detail with its sample event
+// replaced by a placeholder, retrying a 413 like any other non-2xx response.
+func sendStrippedStatusDetail(ctx context.Context, commonClient *client.Client, metric *types.Metric, statusDetail *types.StatusDetail) error {
+	strippedMetric := metricWithSingleStatusDetail(metric, statusDetail)
+	strippedMetric.StatusDetails[0].SampleEvent = sampleEventNotAvailableEntityTooLarge
+	return commonClient.SendWithRetryOnTooLarge(ctx, strippedMetric)
+}
+
+// metricWithSingleStatusDetail returns a copy of metric carrying only a copy of
+// the given status detail, so the result can be mutated without affecting metric.
 func metricWithSingleStatusDetail(metric *types.Metric, statusDetail *types.StatusDetail) *types.Metric {
 	metricCopy := *metric
-	if statusDetail == nil {
-		metricCopy.StatusDetails = []*types.StatusDetail{nil}
-		return &metricCopy
-	}
 	statusDetailCopy := *statusDetail
 	metricCopy.StatusDetails = []*types.StatusDetail{&statusDetailCopy}
 	return &metricCopy

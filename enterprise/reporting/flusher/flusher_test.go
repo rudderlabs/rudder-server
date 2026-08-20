@@ -81,11 +81,37 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 
 		mu.Lock()
 		defer mu.Unlock()
-		require.Equal(t, 4, requestCount)
+		// batch (413) + fallback (413, retried once); no identical individual resend in between
+		require.Equal(t, 3, requestCount)
 		for _, payload := range payloads {
 			require.Len(t, payload, 1)
 			require.Equal(t, float64(1), payload[0]["id"])
 		}
+	})
+
+	t.Run("single item skips redundant resend and goes straight to fallback", func(t *testing.T) {
+		var mu sync.Mutex
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			requestCount++
+			if requestCount == 1 {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		f := newPayloadTooLargeTestFlusher(t, server.URL, 0, 1)
+		err := f.send(context.Background(), []json.RawMessage{[]byte(`{"id":1}`)})
+		require.NoError(t, err)
+
+		mu.Lock()
+		defer mu.Unlock()
+		// batch (413) + fallback (200)
+		require.Equal(t, 2, requestCount)
 	})
 
 	t.Run("individual non-413 error retries through normal path", func(t *testing.T) {

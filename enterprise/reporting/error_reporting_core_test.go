@@ -184,15 +184,60 @@ func TestSendEDMetricWithPayloadTooLargeSplit(t *testing.T) {
 		defer server.Close()
 
 		edClient := newPayloadTooLargeTestClient(t, server.URL, 0)
-		err := sendEDMetricWithPayloadTooLargeSplit(context.Background(), edClient, testPayloadTooLargeEDMetricWithOneError())
+		metric := testPayloadTooLargeEDMetric()
+		err := sendEDMetricWithPayloadTooLargeSplit(context.Background(), edClient, metric)
 		require.NoError(t, err)
 
 		mu.Lock()
 		defer mu.Unlock()
-		require.Equal(t, 3, requestCount)
-		require.JSONEq(t, sampleEventNotAvailableEntityTooLarge, string(payloads[2].Errors[0].SampleEvent))
-		require.Equal(t, "sample-response-1", payloads[2].Errors[0].SampleResponse)
+		// batch (413) + event-1 (413) + event-1 stripped (200) + event-2 (200)
+		require.Equal(t, 4, requestCount)
+		require.Equal(t, "event-1", payloads[1].Errors[0].EventName)
 		require.JSONEq(t, `{"event":"sample-1"}`, string(payloads[1].Errors[0].SampleEvent))
+		require.Equal(t, "event-1", payloads[2].Errors[0].EventName)
+		require.JSONEq(t, string(sampleEventNotAvailableEntityTooLarge), string(payloads[2].Errors[0].SampleEvent))
+		require.Equal(t, "sample-response-1", payloads[2].Errors[0].SampleResponse)
+		require.Equal(t, "event-2", payloads[3].Errors[0].EventName)
+		require.JSONEq(t, `{"event":"sample-2"}`, string(payloads[3].Errors[0].SampleEvent))
+		// caller's metric must not be mutated by the split/strip
+		require.Len(t, metric.Errors, 2)
+		require.JSONEq(t, `{"event":"sample-1"}`, string(metric.Errors[0].SampleEvent))
+	})
+
+	t.Run("single error detail skips redundant resend and goes straight to stripped fallback", func(t *testing.T) {
+		var mu sync.Mutex
+		var payloads []types.EDMetric
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			requestCount++
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			var payload types.EDMetric
+			require.NoError(t, jsonrs.Unmarshal(body, &payload))
+			payloads = append(payloads, payload)
+
+			if requestCount == 1 {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		edClient := newPayloadTooLargeTestClient(t, server.URL, 0)
+		metric := testPayloadTooLargeEDMetricWithOneError()
+		err := sendEDMetricWithPayloadTooLargeSplit(context.Background(), edClient, metric)
+		require.NoError(t, err)
+
+		mu.Lock()
+		defer mu.Unlock()
+		// batch (413) + stripped (200); no identical individual resend in between
+		require.Equal(t, 2, requestCount)
+		require.JSONEq(t, `{"event":"sample-1"}`, string(payloads[0].Errors[0].SampleEvent))
+		require.JSONEq(t, string(sampleEventNotAvailableEntityTooLarge), string(payloads[1].Errors[0].SampleEvent))
+		require.JSONEq(t, `{"event":"sample-1"}`, string(metric.Errors[0].SampleEvent))
 	})
 
 	t.Run("stripped oversized error metric retries through normal fallback path", func(t *testing.T) {
@@ -214,7 +259,78 @@ func TestSendEDMetricWithPayloadTooLargeSplit(t *testing.T) {
 
 		mu.Lock()
 		defer mu.Unlock()
+		// batch (413) + stripped fallback (413, retried once)
+		require.Equal(t, 3, requestCount)
+	})
+
+	t.Run("partial failure returns error after delivering earlier error metrics", func(t *testing.T) {
+		var mu sync.Mutex
+		var payloads []types.EDMetric
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			requestCount++
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			var payload types.EDMetric
+			require.NoError(t, jsonrs.Unmarshal(body, &payload))
+			payloads = append(payloads, payload)
+
+			switch requestCount {
+			case 1:
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+			case 2:
+				w.WriteHeader(http.StatusOK)
+			default:
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		}))
+		defer server.Close()
+
+		edClient := newPayloadTooLargeTestClient(t, server.URL, 1)
+		err := sendEDMetricWithPayloadTooLargeSplit(context.Background(), edClient, testPayloadTooLargeEDMetric())
+		require.Error(t, err)
+		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
+		require.Contains(t, err.Error(), "statusCode: 500")
+
+		mu.Lock()
+		defer mu.Unlock()
+		// 1 batch (413) + 1 for event-1 (200) + 2 for event-2 (500, retried once)
 		require.Equal(t, 4, requestCount)
+		require.Len(t, payloads[1].Errors, 1)
+		require.Equal(t, "event-1", payloads[1].Errors[0].EventName)
+		require.Len(t, payloads[2].Errors, 1)
+		require.Equal(t, "event-2", payloads[2].Errors[0].EventName)
+		require.Equal(t, "event-2", payloads[3].Errors[0].EventName)
+	})
+
+	t.Run("individual non-413 error retries through normal path", func(t *testing.T) {
+		var mu sync.Mutex
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			requestCount++
+			currentRequest := requestCount
+			mu.Unlock()
+
+			if currentRequest == 1 {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		edClient := newPayloadTooLargeTestClient(t, server.URL, 1)
+		err := sendEDMetricWithPayloadTooLargeSplit(context.Background(), edClient, testPayloadTooLargeEDMetricWithOneError())
+		require.Error(t, err)
+		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
+		require.Contains(t, err.Error(), "statusCode: 500")
+
+		mu.Lock()
+		defer mu.Unlock()
+		require.Equal(t, 3, requestCount)
 	})
 }
 
