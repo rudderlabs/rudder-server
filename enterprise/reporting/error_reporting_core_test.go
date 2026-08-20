@@ -148,12 +148,14 @@ func TestSendEDMetricWithPayloadTooLargeSplit(t *testing.T) {
 		defer server.Close()
 
 		edClient := newPayloadTooLargeTestClient(t, server.URL, 0)
-		err := sendEDMetricWithPayloadTooLargeSplit(context.Background(), edClient, testPayloadTooLargeEDMetric())
+		edr, statsStore := newPayloadTooLargeTestEDReporter(t, edClient)
+		err := edr.sendEDMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeEDMetric(), testPayloadTooLargeTags)
 		require.NoError(t, err)
 
 		mu.Lock()
 		defer mu.Unlock()
 		require.Equal(t, 3, requestCount)
+		requirePayloadTooLargeStats(t, statsStore, StatErrorDetailReportingPayloadTooLargeSplit, StatErrorDetailReportingSampleEventReplacedTooLarge, 1, 0)
 		require.Len(t, payloads[0].Errors, 2)
 		require.Len(t, payloads[1].Errors, 1)
 		require.Equal(t, "event-1", payloads[1].Errors[0].EventName)
@@ -185,13 +187,15 @@ func TestSendEDMetricWithPayloadTooLargeSplit(t *testing.T) {
 
 		edClient := newPayloadTooLargeTestClient(t, server.URL, 0)
 		metric := testPayloadTooLargeEDMetric()
-		err := sendEDMetricWithPayloadTooLargeSplit(context.Background(), edClient, metric)
+		edr, statsStore := newPayloadTooLargeTestEDReporter(t, edClient)
+		err := edr.sendEDMetricWithPayloadTooLargeSplit(context.Background(), metric, testPayloadTooLargeTags)
 		require.NoError(t, err)
 
 		mu.Lock()
 		defer mu.Unlock()
 		// batch (413) + event-1 (413) + event-1 stripped (200) + event-2 (200)
 		require.Equal(t, 4, requestCount)
+		requirePayloadTooLargeStats(t, statsStore, StatErrorDetailReportingPayloadTooLargeSplit, StatErrorDetailReportingSampleEventReplacedTooLarge, 1, 1)
 		require.Equal(t, "event-1", payloads[1].Errors[0].EventName)
 		require.JSONEq(t, `{"event":"sample-1"}`, string(payloads[1].Errors[0].SampleEvent))
 		require.Equal(t, "event-1", payloads[2].Errors[0].EventName)
@@ -228,13 +232,15 @@ func TestSendEDMetricWithPayloadTooLargeSplit(t *testing.T) {
 
 		edClient := newPayloadTooLargeTestClient(t, server.URL, 0)
 		metric := testPayloadTooLargeEDMetricWithOneError()
-		err := sendEDMetricWithPayloadTooLargeSplit(context.Background(), edClient, metric)
+		edr, statsStore := newPayloadTooLargeTestEDReporter(t, edClient)
+		err := edr.sendEDMetricWithPayloadTooLargeSplit(context.Background(), metric, testPayloadTooLargeTags)
 		require.NoError(t, err)
 
 		mu.Lock()
 		defer mu.Unlock()
 		// batch (413) + stripped (200); no identical individual resend in between
 		require.Equal(t, 2, requestCount)
+		requirePayloadTooLargeStats(t, statsStore, StatErrorDetailReportingPayloadTooLargeSplit, StatErrorDetailReportingSampleEventReplacedTooLarge, 1, 1)
 		require.JSONEq(t, `{"event":"sample-1"}`, string(payloads[0].Errors[0].SampleEvent))
 		require.JSONEq(t, string(sampleEventNotAvailableEntityTooLarge), string(payloads[1].Errors[0].SampleEvent))
 		require.JSONEq(t, `{"event":"sample-1"}`, string(metric.Errors[0].SampleEvent))
@@ -252,7 +258,8 @@ func TestSendEDMetricWithPayloadTooLargeSplit(t *testing.T) {
 		defer server.Close()
 
 		edClient := newPayloadTooLargeTestClient(t, server.URL, 1)
-		err := sendEDMetricWithPayloadTooLargeSplit(context.Background(), edClient, testPayloadTooLargeEDMetricWithOneError())
+		edr, statsStore := newPayloadTooLargeTestEDReporter(t, edClient)
+		err := edr.sendEDMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeEDMetricWithOneError(), testPayloadTooLargeTags)
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
 		require.Contains(t, err.Error(), "statusCode: 413")
@@ -261,6 +268,7 @@ func TestSendEDMetricWithPayloadTooLargeSplit(t *testing.T) {
 		defer mu.Unlock()
 		// batch (413) + stripped fallback (413, retried once)
 		require.Equal(t, 3, requestCount)
+		requirePayloadTooLargeStats(t, statsStore, StatErrorDetailReportingPayloadTooLargeSplit, StatErrorDetailReportingSampleEventReplacedTooLarge, 1, 1)
 	})
 
 	t.Run("partial failure returns error after delivering earlier error metrics", func(t *testing.T) {
@@ -289,7 +297,8 @@ func TestSendEDMetricWithPayloadTooLargeSplit(t *testing.T) {
 		defer server.Close()
 
 		edClient := newPayloadTooLargeTestClient(t, server.URL, 1)
-		err := sendEDMetricWithPayloadTooLargeSplit(context.Background(), edClient, testPayloadTooLargeEDMetric())
+		edr, statsStore := newPayloadTooLargeTestEDReporter(t, edClient)
+		err := edr.sendEDMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeEDMetric(), testPayloadTooLargeTags)
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
 		require.Contains(t, err.Error(), "statusCode: 500")
@@ -298,6 +307,7 @@ func TestSendEDMetricWithPayloadTooLargeSplit(t *testing.T) {
 		defer mu.Unlock()
 		// 1 batch (413) + 1 for event-1 (200) + 2 for event-2 (500, retried once)
 		require.Equal(t, 4, requestCount)
+		requirePayloadTooLargeStats(t, statsStore, StatErrorDetailReportingPayloadTooLargeSplit, StatErrorDetailReportingSampleEventReplacedTooLarge, 1, 0)
 		require.Len(t, payloads[1].Errors, 1)
 		require.Equal(t, "event-1", payloads[1].Errors[0].EventName)
 		require.Len(t, payloads[2].Errors, 1)
@@ -323,7 +333,8 @@ func TestSendEDMetricWithPayloadTooLargeSplit(t *testing.T) {
 		defer server.Close()
 
 		edClient := newPayloadTooLargeTestClient(t, server.URL, 1)
-		err := sendEDMetricWithPayloadTooLargeSplit(context.Background(), edClient, testPayloadTooLargeEDMetricWithOneError())
+		edr, statsStore := newPayloadTooLargeTestEDReporter(t, edClient)
+		err := edr.sendEDMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeEDMetricWithOneError(), testPayloadTooLargeTags)
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
 		require.Contains(t, err.Error(), "statusCode: 500")
@@ -331,6 +342,7 @@ func TestSendEDMetricWithPayloadTooLargeSplit(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		require.Equal(t, 3, requestCount)
+		requirePayloadTooLargeStats(t, statsStore, StatErrorDetailReportingPayloadTooLargeSplit, StatErrorDetailReportingSampleEventReplacedTooLarge, 1, 1)
 	})
 }
 

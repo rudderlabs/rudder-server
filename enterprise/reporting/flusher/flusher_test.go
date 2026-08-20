@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 )
@@ -42,13 +43,14 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		}))
 		defer server.Close()
 
-		f := newPayloadTooLargeTestFlusher(t, server.URL, 0, 2)
+		f, statsStore := newPayloadTooLargeTestFlusher(t, server.URL, 0, 2)
 		err := f.send(context.Background(), []json.RawMessage{[]byte(`{"id":1}`), []byte(`{"id":2}`)})
 		require.NoError(t, err)
 
 		mu.Lock()
 		defer mu.Unlock()
 		require.Equal(t, 3, requestCount)
+		requirePayloadTooLargeSplits(t, statsStore, 1)
 		require.Len(t, payloads[0], 2)
 		require.Len(t, payloads[1], 1)
 		require.Equal(t, float64(1), payloads[1][0]["id"])
@@ -73,7 +75,7 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		}))
 		defer server.Close()
 
-		f := newPayloadTooLargeTestFlusher(t, server.URL, 1, 1)
+		f, statsStore := newPayloadTooLargeTestFlusher(t, server.URL, 1, 1)
 		err := f.send(context.Background(), []json.RawMessage{[]byte(`{"id":1}`)})
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
@@ -83,6 +85,7 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		defer mu.Unlock()
 		// batch (413) + fallback (413, retried once); no identical individual resend in between
 		require.Equal(t, 3, requestCount)
+		requirePayloadTooLargeSplits(t, statsStore, 1)
 		for _, payload := range payloads {
 			require.Len(t, payload, 1)
 			require.Equal(t, float64(1), payload[0]["id"])
@@ -104,7 +107,7 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		}))
 		defer server.Close()
 
-		f := newPayloadTooLargeTestFlusher(t, server.URL, 0, 1)
+		f, statsStore := newPayloadTooLargeTestFlusher(t, server.URL, 0, 1)
 		err := f.send(context.Background(), []json.RawMessage{[]byte(`{"id":1}`)})
 		require.NoError(t, err)
 
@@ -112,6 +115,7 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		defer mu.Unlock()
 		// batch (413) + fallback (200)
 		require.Equal(t, 2, requestCount)
+		requirePayloadTooLargeSplits(t, statsStore, 1)
 	})
 
 	t.Run("individual non-413 error retries through normal path", func(t *testing.T) {
@@ -131,7 +135,7 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		}))
 		defer server.Close()
 
-		f := newPayloadTooLargeTestFlusher(t, server.URL, 1, 1)
+		f, statsStore := newPayloadTooLargeTestFlusher(t, server.URL, 1, 1)
 		err := f.send(context.Background(), []json.RawMessage{[]byte(`{"id":1}`)})
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
@@ -140,10 +144,11 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		require.Equal(t, 3, requestCount)
+		requirePayloadTooLargeSplits(t, statsStore, 1)
 	})
 }
 
-func newPayloadTooLargeTestFlusher(t *testing.T, serverURL string, maxRetries, batchSize int) *Flusher {
+func newPayloadTooLargeTestFlusher(t *testing.T, serverURL string, maxRetries, batchSize int) (*Flusher, *memstats.Store) {
 	t.Helper()
 	conf := config.New()
 	conf.Set("REPORTING_URL", serverURL)
@@ -152,8 +157,17 @@ func newPayloadTooLargeTestFlusher(t *testing.T, serverURL string, maxRetries, b
 	conf.Set("Reporting.flusher.batchSizeToReporting", batchSize)
 	conf.Set("Reporting.flusher.minConcurrentRequests", 1)
 	conf.Set("Reporting.flusher.maxConcurrentRequests", 1)
-	commonClient := client.New(client.RouteTrackedUsers, conf, logger.NOP, stats.NOP)
-	f, err := NewFlusher(nil, logger.NOP, stats.NOP, conf, "tracked_users_reports", commonClient, nil, "test")
+	statsStore, err := memstats.New()
 	require.NoError(t, err)
-	return f
+	commonClient := client.New(client.RouteTrackedUsers, conf, logger.NOP, stats.NOP)
+	f, err := NewFlusher(nil, logger.NOP, statsStore, conf, "tracked_users_reports", commonClient, nil, "test")
+	require.NoError(t, err)
+	return f, statsStore
+}
+
+func requirePayloadTooLargeSplits(t *testing.T, statsStore *memstats.Store, want float64) {
+	t.Helper()
+	metrics := statsStore.GetByName("reporting_flusher_payload_too_large_split")
+	require.Len(t, metrics, 1)
+	require.Equal(t, want, metrics[0].Value, "payload too large split count")
 }

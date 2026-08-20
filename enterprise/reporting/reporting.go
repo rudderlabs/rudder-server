@@ -42,6 +42,9 @@ const (
 	StatReportingGetReportsQueryTime                         = "reporting_client_get_reports_query_time"
 	StatReportingVacuumDuration                              = "reporting_vacuum_duration"
 	StatReportingMainLoopBlockedDueToActiveTransactionsCount = "reporting_main_loop_blocked_due_to_active_transactions_count"
+	StatReportingPayloadTooLargeSplit                        = "reporting_payload_too_large_split"
+	StatReportingSampleEventReplacedTooLarge                 = "reporting_sample_event_replaced_too_large"
+	StatReportingSampleEventDroppedOversized                 = "reporting_sample_event_dropped_oversized"
 )
 
 type DefaultReporter struct {
@@ -64,10 +67,11 @@ type DefaultReporter struct {
 	maxConcurrentRequests                config.ValueLoader[int]
 	vacuumFull                           config.ValueLoader[bool]
 
-	getMinReportedAtQueryTime stats.Measurement
-	getReportsQueryTime       stats.Measurement
-	stats                     stats.Stats
-	maxReportsCountInARequest config.ValueLoader[int]
+	getMinReportedAtQueryTime    stats.Measurement
+	getReportsQueryTime          stats.Measurement
+	oversizedSampleEventsDropped stats.Measurement
+	stats                        stats.Stats
+	maxReportsCountInARequest    config.ValueLoader[int]
 
 	eventSamplingEnabled  config.ValueLoader[bool]
 	eventSamplingDuration config.ValueLoader[time.Duration]
@@ -81,7 +85,7 @@ type DefaultReporter struct {
 	activeTransactionsByReportedAt      map[int64]int64
 }
 
-func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
+func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Logger, configSubscriber *configSubscriber, statsFactory stats.Stats) *DefaultReporter {
 	var dbQueryTimeout *config.Reloadable[time.Duration]
 	var eventSampler event_sampler.EventSampler
 
@@ -107,7 +111,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 
 	if eventSamplingEnabled.Load() {
 		var err error
-		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, event_sampler.MetricsReporting, conf, log, stats)
+		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, event_sampler.MetricsReporting, conf, log, statsFactory)
 		if err != nil {
 			panic(err)
 		}
@@ -132,13 +136,14 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		maxConcurrentRequests:                maxConcurrentRequests,
 		dbQueryTimeout:                       dbQueryTimeout,
 		maxReportsCountInARequest:            maxReportsCountInARequest,
-		stats:                                stats,
+		stats:                                statsFactory,
+		oversizedSampleEventsDropped:         statsFactory.NewStat(StatReportingSampleEventDroppedOversized, stats.CountType),
 		eventSamplingEnabled:                 eventSamplingEnabled,
 		eventSamplingDuration:                eventSamplingDuration,
 		eventSampler:                         eventSampler,
 		eventNamePrefixLength:                eventNamePrefixLength,
 		eventNameSuffixLength:                eventNameSuffixLength,
-		commonClient:                         client.New(client.RouteMetrics, conf, log, stats),
+		commonClient:                         client.New(client.RouteMetrics, conf, log, statsFactory),
 		activeTransactionsByReportedAt:       make(map[int64]int64),
 	}
 }
@@ -524,7 +529,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 					break
 				}
 				errGroup.Go(func() error {
-					err := sendMetricWithPayloadTooLargeSplit(errCtx, r.commonClient, metricToSend)
+					err := r.sendMetricWithPayloadTooLargeSplit(errCtx, metricToSend, tags)
 					<-requestChan
 					return err
 				})
@@ -689,7 +694,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
 
-		sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, reportedAt, r.eventSampler, r.eventSamplingEnabled.Load(), int64(r.eventSamplingDuration.Load().Minutes()))
+		sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, reportedAt, r.eventSampler, r.eventSamplingEnabled.Load(), int64(r.eventSamplingDuration.Load().Minutes()), r.oversizedSampleEventsDropped)
 		if err != nil {
 			return err
 		}
@@ -751,21 +756,22 @@ func (r *DefaultReporter) Stop() {
 	}
 }
 
-func sendMetricWithPayloadTooLargeSplit(ctx context.Context, commonClient *client.Client, metric *types.Metric) error {
-	err := commonClient.Send(ctx, metric)
+func (r *DefaultReporter) sendMetricWithPayloadTooLargeSplit(ctx context.Context, metric *types.Metric, tags stats.Tags) error {
+	err := r.commonClient.Send(ctx, metric)
 	if !errors.Is(err, client.ErrPayloadTooLarge) {
 		return err
 	}
+	r.stats.NewTaggedStat(StatReportingPayloadTooLargeSplit, stats.CountType, tags).Increment()
 
 	if len(metric.StatusDetails) == 1 {
 		// nothing to split: a single-status-detail metric is the payload that was just rejected
-		return sendStrippedStatusDetail(ctx, commonClient, metric, metric.StatusDetails[0])
+		return r.sendStrippedStatusDetail(ctx, metric, metric.StatusDetails[0], tags)
 	}
 
 	for _, statusDetail := range metric.StatusDetails {
-		err = commonClient.Send(ctx, metricWithSingleStatusDetail(metric, statusDetail))
+		err = r.commonClient.Send(ctx, metricWithSingleStatusDetail(metric, statusDetail))
 		if errors.Is(err, client.ErrPayloadTooLarge) {
-			err = sendStrippedStatusDetail(ctx, commonClient, metric, statusDetail)
+			err = r.sendStrippedStatusDetail(ctx, metric, statusDetail, tags)
 		}
 		if err != nil {
 			return err
@@ -776,10 +782,11 @@ func sendMetricWithPayloadTooLargeSplit(ctx context.Context, commonClient *clien
 
 // sendStrippedStatusDetail sends a single status detail with its sample event
 // replaced by a placeholder, retrying a 413 like any other non-2xx response.
-func sendStrippedStatusDetail(ctx context.Context, commonClient *client.Client, metric *types.Metric, statusDetail *types.StatusDetail) error {
+func (r *DefaultReporter) sendStrippedStatusDetail(ctx context.Context, metric *types.Metric, statusDetail *types.StatusDetail, tags stats.Tags) error {
 	strippedMetric := metricWithSingleStatusDetail(metric, statusDetail)
 	strippedMetric.StatusDetails[0].SampleEvent = sampleEventNotAvailableEntityTooLarge
-	return commonClient.SendWithRetryOnTooLarge(ctx, strippedMetric)
+	r.stats.NewTaggedStat(StatReportingSampleEventReplacedTooLarge, stats.CountType, tags).Increment()
+	return r.commonClient.SendWithRetryOnTooLarge(ctx, strippedMetric)
 }
 
 // metricWithSingleStatusDetail returns a copy of metric carrying only a copy of

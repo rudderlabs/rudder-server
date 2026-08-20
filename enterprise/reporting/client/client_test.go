@@ -392,6 +392,11 @@ func TestClientSendCompressed(t *testing.T) {
 	compressed := statsStore.GetByName(client.StatRequestCompressedBytes)
 	require.Len(t, compressed, 1)
 	require.Less(t, compressed[0].Value, uncompressed[0].Value, "compressed bytes should be smaller than uncompressed")
+
+	// The payload size histogram observes the uncompressed size once per send.
+	payloadSize := statsStore.GetByName(client.StatRequestPayloadBytes)
+	require.Len(t, payloadSize, 1)
+	require.Equal(t, []float64{uncompressed[0].Value}, payloadSize[0].Values)
 }
 
 func TestClientPayloadTooLargeFeatureGate(t *testing.T) {

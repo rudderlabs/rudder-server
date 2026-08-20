@@ -7,6 +7,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -61,8 +62,9 @@ func getStringifiedSampleEvent(rawSampleEvent json.RawMessage) string {
 }
 
 // getSampleWithEventSamplingCore contains the common event sampling logic
-func getSampleWithEventSamplingCore(sampleEvent json.RawMessage, sampleResponse string, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, hashGenerator func() string) (json.RawMessage, string, error) {
+func getSampleWithEventSamplingCore(sampleEvent json.RawMessage, sampleResponse string, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, hashGenerator func() string, oversizedDropped stats.Measurement) (json.RawMessage, string, error) {
 	if int64(len(sampleEvent)) > maxSampleEventSizeBytes.Load() {
+		oversizedDropped.Increment()
 		return nil, "", nil
 	}
 
@@ -96,7 +98,7 @@ func getSampleWithEventSamplingCore(sampleEvent json.RawMessage, sampleResponse 
 	return sampleEvent, sampleResponse, nil
 }
 
-func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64) (sampleEvent json.RawMessage, sampleResponse string, err error) {
+func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64, oversizedDropped stats.Measurement) (sampleEvent json.RawMessage, sampleResponse string, err error) {
 	sampleEvent = metric.StatusDetail.SampleEvent
 	sampleResponse = metric.StatusDetail.SampleResponse
 
@@ -105,12 +107,12 @@ func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64,
 		return NewLabelSet(metric, sampleEventBucket).generateHash()
 	}
 
-	return getSampleWithEventSamplingCore(sampleEvent, sampleResponse, eventSampler, eventSamplingEnabled, hashGenerator)
+	return getSampleWithEventSamplingCore(sampleEvent, sampleResponse, eventSampler, eventSamplingEnabled, hashGenerator, oversizedDropped)
 }
 
 // getSampleWithEventSamplingForEDReportsDB applies event sampling to EDReportsDB metrics
 // It reuses the common logic from getSampleWithEventSampling but works with EDReportsDB
-func getSampleWithEventSamplingForEDReportsDB(metric types.EDReportsDB, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64) (sampleEvent json.RawMessage, sampleResponse string, err error) {
+func getSampleWithEventSamplingForEDReportsDB(metric types.EDReportsDB, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64, oversizedDropped stats.Measurement) (sampleEvent json.RawMessage, sampleResponse string, err error) {
 	sampleEvent = metric.SampleEvent
 	sampleResponse = metric.SampleResponse
 
@@ -119,7 +121,7 @@ func getSampleWithEventSamplingForEDReportsDB(metric types.EDReportsDB, reported
 		return NewLabelSetFromEDReportsDB(metric, sampleEventBucket).generateHash()
 	}
 
-	return getSampleWithEventSamplingCore(sampleEvent, sampleResponse, eventSampler, eventSamplingEnabled, hashGenerator)
+	return getSampleWithEventSamplingCore(sampleEvent, sampleResponse, eventSampler, eventSamplingEnabled, hashGenerator, oversizedDropped)
 }
 
 func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) types.PUReportedMetric {

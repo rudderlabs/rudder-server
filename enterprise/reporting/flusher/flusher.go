@@ -59,6 +59,7 @@ type Flusher struct {
 	vacuumReportsTimer      stats.Measurement
 	concurrentRequests      stats.Measurement
 	flushLag                stats.Measurement
+	payloadTooLargeSplits   stats.Measurement
 
 	commonTags stats.Tags
 }
@@ -137,6 +138,8 @@ func (f *Flusher) initStats(tags map[string]string) {
 	f.concurrentRequests = f.stats.NewTaggedStat("reporting_flusher_concurrent_requests_in_progress", stats.GaugeType, tags)
 
 	f.flushLag = f.stats.NewTaggedStat("reporting_flusher_lag_seconds", stats.GaugeType, tags)
+
+	f.payloadTooLargeSplits = f.stats.NewTaggedStat("reporting_flusher_payload_too_large_split", stats.CountType, tags)
 }
 
 func (f *Flusher) getStart(ctx context.Context) (time.Time, error) {
@@ -306,6 +309,7 @@ func (f *Flusher) sendBatchWithPayloadTooLargeSplit(ctx context.Context, batch [
 	if !errors.Is(err, client.ErrPayloadTooLarge) {
 		return err
 	}
+	f.payloadTooLargeSplits.Increment()
 
 	if len(batch) == 1 {
 		// nothing to split: a single-item batch is the payload that was just rejected

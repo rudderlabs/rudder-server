@@ -29,6 +29,7 @@ import (
 const (
 	StatRequestTotalBytes      = "reporting_client_http_request_total_bytes"
 	StatRequestCompressedBytes = "reporting_client_http_request_compressed_bytes"
+	StatRequestPayloadBytes    = "reporting_client_http_request_payload_bytes"
 	StatTotalDurationsSeconds  = "reporting_client_http_total_duration_seconds"
 	StatRequestLatency         = "reporting_client_http_request_latency"
 	StatHttpRequest            = "reporting_client_http_request"
@@ -137,6 +138,8 @@ func (c *Client) send(ctx context.Context, payload any, failFastOnTooLarge bool)
 		return err
 	}
 	uncompressedBytes := len(payloadBytes)
+
+	c.stats.NewTaggedStat(StatRequestPayloadBytes, stats.HistogramType, c.getTags()).Observe(float64(uncompressedBytes))
 
 	// bodyBytes is what we actually put on the wire: either the raw payload or
 	// its gzip-compressed form. It is materialized once here (not streamed)

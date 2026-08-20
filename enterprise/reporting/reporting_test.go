@@ -837,12 +837,14 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 		defer server.Close()
 
 		metricClient := newPayloadTooLargeTestClient(t, server.URL, 0)
-		err := sendMetricWithPayloadTooLargeSplit(context.Background(), metricClient, testPayloadTooLargeMetric())
+		r, statsStore := newPayloadTooLargeTestReporter(t, metricClient)
+		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeMetric(), testPayloadTooLargeTags)
 		require.NoError(t, err)
 
 		mu.Lock()
 		defer mu.Unlock()
 		require.Equal(t, 3, requestCount)
+		requirePayloadTooLargeStats(t, statsStore, StatReportingPayloadTooLargeSplit, StatReportingSampleEventReplacedTooLarge, 1, 0)
 		require.Len(t, payloads[0].StatusDetails, 2)
 		require.Len(t, payloads[1].StatusDetails, 1)
 		require.Equal(t, "event-1", payloads[1].StatusDetails[0].EventName)
@@ -874,13 +876,15 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 
 		metricClient := newPayloadTooLargeTestClient(t, server.URL, 0)
 		metric := testPayloadTooLargeMetric()
-		err := sendMetricWithPayloadTooLargeSplit(context.Background(), metricClient, metric)
+		r, statsStore := newPayloadTooLargeTestReporter(t, metricClient)
+		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), metric, testPayloadTooLargeTags)
 		require.NoError(t, err)
 
 		mu.Lock()
 		defer mu.Unlock()
 		// batch (413) + event-1 (413) + event-1 stripped (200) + event-2 (200)
 		require.Equal(t, 4, requestCount)
+		requirePayloadTooLargeStats(t, statsStore, StatReportingPayloadTooLargeSplit, StatReportingSampleEventReplacedTooLarge, 1, 1)
 		require.Equal(t, "event-1", payloads[1].StatusDetails[0].EventName)
 		require.JSONEq(t, `{"event":"sample-1"}`, string(payloads[1].StatusDetails[0].SampleEvent))
 		require.Equal(t, "event-1", payloads[2].StatusDetails[0].EventName)
@@ -917,13 +921,15 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 
 		metricClient := newPayloadTooLargeTestClient(t, server.URL, 0)
 		metric := testPayloadTooLargeMetricWithOneStatusDetail()
-		err := sendMetricWithPayloadTooLargeSplit(context.Background(), metricClient, metric)
+		r, statsStore := newPayloadTooLargeTestReporter(t, metricClient)
+		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), metric, testPayloadTooLargeTags)
 		require.NoError(t, err)
 
 		mu.Lock()
 		defer mu.Unlock()
 		// batch (413) + stripped (200); no identical individual resend in between
 		require.Equal(t, 2, requestCount)
+		requirePayloadTooLargeStats(t, statsStore, StatReportingPayloadTooLargeSplit, StatReportingSampleEventReplacedTooLarge, 1, 1)
 		require.JSONEq(t, `{"event":"sample-1"}`, string(payloads[0].StatusDetails[0].SampleEvent))
 		require.JSONEq(t, string(sampleEventNotAvailableEntityTooLarge), string(payloads[1].StatusDetails[0].SampleEvent))
 		require.JSONEq(t, `{"event":"sample-1"}`, string(metric.StatusDetails[0].SampleEvent))
@@ -941,7 +947,8 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 		defer server.Close()
 
 		metricClient := newPayloadTooLargeTestClient(t, server.URL, 1)
-		err := sendMetricWithPayloadTooLargeSplit(context.Background(), metricClient, testPayloadTooLargeMetricWithOneStatusDetail())
+		r, statsStore := newPayloadTooLargeTestReporter(t, metricClient)
+		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeMetricWithOneStatusDetail(), testPayloadTooLargeTags)
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
 		require.Contains(t, err.Error(), "statusCode: 413")
@@ -950,6 +957,7 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 		defer mu.Unlock()
 		// batch (413) + stripped fallback (413, retried once)
 		require.Equal(t, 3, requestCount)
+		requirePayloadTooLargeStats(t, statsStore, StatReportingPayloadTooLargeSplit, StatReportingSampleEventReplacedTooLarge, 1, 1)
 	})
 
 	t.Run("partial failure returns error after delivering earlier metrics", func(t *testing.T) {
@@ -978,7 +986,8 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 		defer server.Close()
 
 		metricClient := newPayloadTooLargeTestClient(t, server.URL, 1)
-		err := sendMetricWithPayloadTooLargeSplit(context.Background(), metricClient, testPayloadTooLargeMetric())
+		r, statsStore := newPayloadTooLargeTestReporter(t, metricClient)
+		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeMetric(), testPayloadTooLargeTags)
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
 		require.Contains(t, err.Error(), "statusCode: 500")
@@ -987,6 +996,7 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 		defer mu.Unlock()
 		// 1 batch (413) + 1 for event-1 (200) + 2 for event-2 (500, retried once)
 		require.Equal(t, 4, requestCount)
+		requirePayloadTooLargeStats(t, statsStore, StatReportingPayloadTooLargeSplit, StatReportingSampleEventReplacedTooLarge, 1, 0)
 		require.Len(t, payloads[1].StatusDetails, 1)
 		require.Equal(t, "event-1", payloads[1].StatusDetails[0].EventName)
 		require.Len(t, payloads[2].StatusDetails, 1)
@@ -1012,7 +1022,8 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 		defer server.Close()
 
 		metricClient := newPayloadTooLargeTestClient(t, server.URL, 1)
-		err := sendMetricWithPayloadTooLargeSplit(context.Background(), metricClient, testPayloadTooLargeMetricWithOneStatusDetail())
+		r, statsStore := newPayloadTooLargeTestReporter(t, metricClient)
+		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeMetricWithOneStatusDetail(), testPayloadTooLargeTags)
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
 		require.Contains(t, err.Error(), "statusCode: 500")
@@ -1020,6 +1031,7 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		require.Equal(t, 3, requestCount)
+		requirePayloadTooLargeStats(t, statsStore, StatReportingPayloadTooLargeSplit, StatReportingSampleEventReplacedTooLarge, 1, 1)
 	})
 }
 

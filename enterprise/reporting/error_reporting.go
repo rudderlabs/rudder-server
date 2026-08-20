@@ -34,6 +34,10 @@ import (
 const (
 	ErrorDetailReportsTable = "error_detail_reports"
 	groupKeyDelimitter      = "$::$"
+
+	StatErrorDetailReportingPayloadTooLargeSplit        = "error_detail_reporting_payload_too_large_split"
+	StatErrorDetailReportingSampleEventReplacedTooLarge = "error_detail_reporting_sample_event_replaced_too_large"
+	StatErrorDetailReportingSampleEventDroppedOversized = "error_detail_reporting_sample_event_dropped_oversized"
 )
 
 var ErrorDetailReportsColumns = []string{
@@ -68,6 +72,9 @@ type ErrorReportingStats struct {
 
 	// Error normalizer stats
 	NormalizerCleanupTime stats.Measurement
+
+	// Sample event stats
+	SampleEventDroppedOversized stats.Measurement
 }
 
 // NewErrorReportingStats creates a new stats manager
@@ -79,6 +86,7 @@ func NewErrorReportingStats(statsInstance stats.Stats) *ErrorReportingStats {
 		HttpRequest:                  statsInstance.NewStat("error_detail_reporting_http_request", stats.CountType),
 		VacuumDuration:               statsInstance.NewStat("reporting_vacuum_duration", stats.TimerType),
 		NormalizerCleanupTime:        statsInstance.NewStat("error_detail_reporter_normalizer_cleanup_time", stats.TimerType),
+		SampleEventDroppedOversized:  statsInstance.NewStat(StatErrorDetailReportingSampleEventDroppedOversized, stats.CountType),
 	}
 }
 
@@ -339,7 +347,7 @@ func (edr *ErrorDetailReporter) writeGroupedErrors(ctx context.Context, groups m
 		for _, metric := range groupMetrics {
 			totalCount += metric.Count
 
-			sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(*metric, metric.ReportedAt, edr.eventSampler, edr.eventSamplingEnabled.Load(), int64(edr.eventSamplingDuration.Load().Minutes()))
+			sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(*metric, metric.ReportedAt, edr.eventSampler, edr.eventSamplingEnabled.Load(), int64(edr.eventSamplingDuration.Load().Minutes()), edr.statsManager.SampleEventDroppedOversized)
 			if err != nil {
 				return fmt.Errorf("event sampling error: %v", err)
 			}
@@ -534,7 +542,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 					break
 				}
 				errGroup.Go(func() error {
-					err := sendEDMetricWithPayloadTooLargeSplit(errCtx, edr.commonClient, metricToSend)
+					err := edr.sendEDMetricWithPayloadTooLargeSplit(errCtx, metricToSend, tags)
 					if err != nil {
 						edr.log.Errorn("Error while sending to Reporting service", obskit.Error(err))
 					}
@@ -823,21 +831,22 @@ func (edr *ErrorDetailReporter) Stop() {
 	}
 }
 
-func sendEDMetricWithPayloadTooLargeSplit(ctx context.Context, commonClient *client.Client, metric *types.EDMetric) error {
-	err := commonClient.Send(ctx, metric)
+func (edr *ErrorDetailReporter) sendEDMetricWithPayloadTooLargeSplit(ctx context.Context, metric *types.EDMetric, tags stats.Tags) error {
+	err := edr.commonClient.Send(ctx, metric)
 	if !errors.Is(err, client.ErrPayloadTooLarge) {
 		return err
 	}
+	edr.stats.NewTaggedStat(StatErrorDetailReportingPayloadTooLargeSplit, stats.CountType, tags).Increment()
 
 	if len(metric.Errors) == 1 {
 		// nothing to split: a single-error metric is the payload that was just rejected
-		return sendStrippedErrorDetail(ctx, commonClient, metric, metric.Errors[0])
+		return edr.sendStrippedErrorDetail(ctx, metric, metric.Errors[0], tags)
 	}
 
 	for _, errorDetail := range metric.Errors {
-		err = commonClient.Send(ctx, edMetricWithSingleErrorDetail(metric, errorDetail))
+		err = edr.commonClient.Send(ctx, edMetricWithSingleErrorDetail(metric, errorDetail))
 		if errors.Is(err, client.ErrPayloadTooLarge) {
-			err = sendStrippedErrorDetail(ctx, commonClient, metric, errorDetail)
+			err = edr.sendStrippedErrorDetail(ctx, metric, errorDetail, tags)
 		}
 		if err != nil {
 			return err
@@ -848,10 +857,11 @@ func sendEDMetricWithPayloadTooLargeSplit(ctx context.Context, commonClient *cli
 
 // sendStrippedErrorDetail sends a single error detail with its sample event
 // replaced by a placeholder, retrying a 413 like any other non-2xx response.
-func sendStrippedErrorDetail(ctx context.Context, commonClient *client.Client, metric *types.EDMetric, errorDetail types.EDErrorDetails) error {
+func (edr *ErrorDetailReporter) sendStrippedErrorDetail(ctx context.Context, metric *types.EDMetric, errorDetail types.EDErrorDetails, tags stats.Tags) error {
 	strippedMetric := edMetricWithSingleErrorDetail(metric, errorDetail)
 	strippedMetric.Errors[0].SampleEvent = sampleEventNotAvailableEntityTooLarge
-	return commonClient.SendWithRetryOnTooLarge(ctx, strippedMetric)
+	edr.stats.NewTaggedStat(StatErrorDetailReportingSampleEventReplacedTooLarge, stats.CountType, tags).Increment()
+	return edr.commonClient.SendWithRetryOnTooLarge(ctx, strippedMetric)
 }
 
 // edMetricWithSingleErrorDetail returns a copy of metric carrying only the given
