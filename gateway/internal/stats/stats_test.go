@@ -7,10 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
-	"github.com/stretchr/testify/require"
 )
 
 func TestReport(t *testing.T) {

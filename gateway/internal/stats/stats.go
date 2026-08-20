@@ -3,9 +3,11 @@ package stats
 import (
 	"strings"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 )
 
 type SourceStat struct {

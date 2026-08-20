@@ -5,6 +5,7 @@ import (
 
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
