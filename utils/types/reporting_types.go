@@ -31,6 +31,7 @@ const (
 	EVENT_BLOCKING         = "event_blocking"
 	DEDUP                  = "dedup"
 	GATEWAY                = "gateway"
+	DESTINATION_ENTER      = "destination_enter"
 	DESTINATION_FILTER     = "destination_filter"
 	SOURCE_HYDRATION       = "source_hydration"
 	TRACKINGPLAN_VALIDATOR = "tracking_plan_validator"
@@ -40,6 +41,11 @@ const (
 	ROUTER                 = "router"
 	BATCH_ROUTER           = "batch_router"
 	WAREHOUSE              = "warehouse"
+
+	// destination_filter statuses (per-destination visibility, at the destination_enter boundary)
+	FilteredIntegrationStatus   = "filtered_integration"
+	FilteredConsentStatus       = "filtered_consent"
+	FilteredNoDestinationStatus = "filtered_no_destination"
 )
 
 var (

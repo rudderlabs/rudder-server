@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -469,8 +470,10 @@ func TestReportingDroppedEvents(t *testing.T) {
 						backendconfigtest.NewSourceBuilder().
 							WithID("source-1").
 							WithWriteKey("writekey-1").
-							Build()).
-					Build()).
+							Build(),
+					).
+					Build(),
+			).
 			Build()
 		defer bcserver.Close()
 
@@ -531,6 +534,197 @@ func TestReportingDroppedEvents(t *testing.T) {
 			t.Logf("gateway count: %d", gatewayCount.Int64)
 			return gatewayCount.Int64 == 1
 		}, 10*time.Second, 1*time.Second, "only the surviving event should be counted in the gateway stage")
+
+		cancel()
+		_ = wg.Wait()
+	})
+
+	// Phase 1 of the pipeline inspector: per-destination visibility at the destination-filter
+	// boundary. A single server processes four batches with the (reloadable)
+	// Processor.earlyDestinationFilter flag flipped between them via config.Set, so both rollout
+	// states are exercised end to end against the same reports table:
+	//
+	//	1. reorder off (default)     -> zero candidates drop at preprocess, old filtered/298 row
+	//	2. reorder on                -> one succeeded/200 destination_enter row per candidate
+	//	3. reorder on, part. exclude -> filtered_integration/298 per destination, no source-level row
+	//	4. reorder on, zero cands    -> filtered_no_destination/298 with an empty destination_id
+	//
+	// Batches are drained before the flag is flipped: report rows are committed in the same
+	// transaction as the gateway job statuses, so "all gw jobs succeeded" is a safe barrier.
+	t.Run("Per destination visibility at the destination filter boundary", func(t *testing.T) {
+		config.Reset()
+		defer config.Reset()
+
+		const eventsPerBatch = 10
+
+		bcserver := backendconfigtest.NewBuilder().
+			WithWorkspaceConfig(
+				backendconfigtest.NewConfigBuilder().
+					WithSource(
+						backendconfigtest.NewSourceBuilder().
+							WithID("source-1").
+							WithWriteKey("writekey-1").
+							WithConnection(newDestinationOfType("WEBHOOK", "destination-1")).
+							WithConnection(newDestinationOfType("AM", "destination-2")).
+							WithConnection(newDestinationOfType("GA", "destination-3")).
+							Build(),
+					).
+					WithSource(
+						// no connections at all: every event is a zero-candidate event
+						backendconfigtest.NewSourceBuilder().
+							WithID("source-2").
+							WithWriteKey("writekey-2").
+							Build(),
+					).
+					Build(),
+			).
+			Build()
+		defer bcserver.Close()
+
+		trServer := transformertest.NewBuilder().Build()
+		defer trServer.Close()
+
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+		postgresContainer, err := postgres.Setup(pool, t)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		wg, ctx := errgroup.WithContext(ctx)
+		gwPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+		wg.Go(func() error {
+			err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir(), map[string]any{
+				// keep the router from retrying against the mirrored (undeliverable) payloads
+				"Router.toAbortDestinationIDs": "destination-1,destination-2,destination-3",
+			})
+			if err != nil {
+				t.Logf("rudder-server exited with error: %v", err)
+			}
+			return err
+		})
+		url := fmt.Sprintf("http://localhost:%d", gwPort)
+		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
+
+		// reportCount sums the reports rows matching where, returning -1 on any query error so
+		// that it can be used inside a require.Eventually callback without asserting there.
+		reportCount := func(where string) int64 {
+			var count sql.NullInt64
+			if err := postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE " + where).Scan(&count); err != nil {
+				return -1
+			}
+			return count.Int64
+		}
+		routerJobCount := func(destinationID string) int64 {
+			var count int64
+			if err := postgresContainer.DB.QueryRow(
+				"SELECT count(*) FROM unionjobsdbmetadata('rt',1) WHERE parameters->>'destination_id' = $1", destinationID,
+			).Scan(&count); err != nil {
+				return -1
+			}
+			return count
+		}
+		// drainGateway waits until every event sent so far has been processed. Reports are
+		// committed in the same transaction as the gateway job statuses, so once this returns
+		// every report row of the batch is visible.
+		drainGateway := func(total int) {
+			t.Helper()
+			require.Eventually(t, func() bool {
+				var jobsCount int
+				if err := postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('gw',1) WHERE job_state = 'succeeded'").Scan(&jobsCount); err != nil {
+					return false
+				}
+				t.Logf("gw processedJobCount: %d (expecting %d)", jobsCount, total)
+				return jobsCount == total
+			}, 60*time.Second, 500*time.Millisecond, "all gw events should be successfully processed")
+		}
+
+		t.Run("reorder off (default): zero-candidate events drop at preprocess with the old source-level filtered row", func(t *testing.T) {
+			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-2", url))
+			drainGateway(eventsPerBatch)
+
+			require.Eventually(t, func() bool {
+				return reportCount("source_id = 'source-2' and destination_id = '' and pu = 'destination_filter' and status = 'filtered' and status_code = 298 and in_pu = 'gateway' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "the preprocess source-level filtered row should be emitted")
+
+			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
+			require.EqualValues(t, 0, reportCount("pu = 'destination_enter'"),
+				"no destination_enter rows while Processor.earlyDestinationFilter is on")
+			require.EqualValues(t, 0, reportCount("pu = 'destination_filter' and status like 'filtered_%'"),
+				"no per-destination rows while Processor.earlyDestinationFilter is on")
+		})
+
+		t.Run("reorder on: one destination_enter row per candidate destination", func(t *testing.T) {
+			config.Set("Processor.earlyDestinationFilter", false)
+
+			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-1", url))
+			drainGateway(2 * eventsPerBatch)
+
+			require.Eventually(t, func() bool {
+				return reportCount("source_id = 'source-1' and pu = 'destination_enter' and status = 'succeeded' and status_code = 200 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''") == 3*eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "every candidate destination should get a destination_enter row")
+
+			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
+			for _, destinationID := range []string{"destination-1", "destination-2", "destination-3"} {
+				require.EqualValues(t, eventsPerBatch,
+					reportCount("source_id = 'source-1' and pu = 'destination_enter' and destination_id = '"+destinationID+"'"),
+					"destination_enter rows should be attributed to %s", destinationID)
+			}
+			require.EqualValues(t, 0, reportCount("pu = 'destination_enter' and destination_id = ''"),
+				"destination_enter rows must always carry a destination id")
+			require.EqualValues(t, 0, reportCount("source_id = 'source-1' and pu = 'destination_filter'"),
+				"nothing was excluded, so no destination_filter rows for source-1")
+		})
+
+		t.Run("reorder on: partial exclusion emits a per-destination row instead of the source level row", func(t *testing.T) {
+			// opt out of destination-2's type only; destination-1 and destination-3 still deliver
+			require.NoError(t, sendEventsWithIntegrations(eventsPerBatch, `{"AM": false}`, "identify", "writekey-1", url))
+			drainGateway(3 * eventsPerBatch)
+
+			require.Eventually(t, func() bool {
+				return reportCount("source_id = 'source-1' and destination_id = 'destination-2' and pu = 'destination_filter' and status = 'filtered_integration' and status_code = 298 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "the excluded destination should get a filtered_integration row")
+
+			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
+			// excluded destinations are still candidates, so all three keep entering
+			require.EqualValues(t, 2*3*eventsPerBatch,
+				reportCount("source_id = 'source-1' and pu = 'destination_enter' and status = 'succeeded'"),
+				"excluded destinations are candidates too and still emit destination_enter")
+			require.EqualValues(t, eventsPerBatch,
+				reportCount("source_id = 'source-1' and pu = 'destination_filter' and status like 'filtered_%'"),
+				"only destination-2 should be filtered")
+			// the cutover: the old source-level row is gone for this source
+			require.EqualValues(t, 0,
+				reportCount("source_id = 'source-1' and destination_id = '' and pu = 'destination_filter' and status = 'filtered'"),
+				"the source-level filtered row must not be emitted once per-destination metrics are on")
+
+			// the exclusion is a reporting outcome, not a routing change: the two survivors got
+			// jobs from both batches, the excluded one only from the previous batch
+			require.Eventually(t, func() bool {
+				return routerJobCount("destination-1") == 2*eventsPerBatch && routerJobCount("destination-3") == 2*eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "the surviving destinations should still be routed to")
+			require.EqualValues(t, eventsPerBatch, routerJobCount("destination-2"),
+				"the excluded destination should not have received this batch")
+		})
+
+		t.Run("reorder on: zero candidate events keep a source level row as filtered_no_destination", func(t *testing.T) {
+			filteredBefore := reportCount("source_id = 'source-2' and pu = 'destination_filter' and status = 'filtered'")
+
+			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-2", url))
+			drainGateway(4 * eventsPerBatch)
+
+			require.Eventually(t, func() bool {
+				return reportCount("source_id = 'source-2' and destination_id = '' and pu = 'destination_filter' and status = 'filtered_no_destination' and status_code = 298 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "zero-candidate events should be reported as filtered_no_destination")
+
+			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
+			require.EqualValues(t, filteredBefore,
+				reportCount("source_id = 'source-2' and pu = 'destination_filter' and status = 'filtered'"),
+				"no new plain filtered rows should be emitted for source-2")
+			require.EqualValues(t, 0, reportCount("source_id = 'source-2' and pu = 'destination_enter'"),
+				"a source without destinations has no candidates to enter")
+		})
 
 		cancel()
 		_ = wg.Wait()
@@ -751,6 +945,63 @@ func sendEventsWithMessageID(num int, messageID, eventType, writeKey, url string
 	}
 
 	return nil
+}
+
+// sendEventsWithIntegrations sends num events carrying the given `integrations` object, which is
+// what the processor's client-integration filter reads to decide which destination types an event
+// opts out of.
+func sendEventsWithIntegrations(num int, integrations, eventType, writeKey, url string) error { // nolint:unparam
+	for range num {
+		payload := fmt.Appendf(nil, `{"batch": [{
+			"userId": %[1]q,
+			"type": %[2]q,
+			"integrations": %[3]s,
+			"context":
+			{
+				"traits":
+				{
+					"trait1": "new-val"
+				},
+				"ip": "14.5.67.21",
+				"library":
+				{
+					"name": "http"
+				}
+			},
+			"timestamp": "2020-02-02T00:23:09.544Z"
+			}]}`,
+			rand.String(10),
+			eventType,
+			integrations)
+		req, err := http.NewRequest("POST", url+"/v1/batch", bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+		req.SetBasicAuth(writeKey, "password")
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("failed to send event to rudder server, status code: %d: %s", resp.StatusCode, string(b))
+		}
+		func() { kithttputil.CloseResponse(resp) }()
+	}
+
+	return nil
+}
+
+// newDestinationOfType builds a destination whose definition display name is set alongside its
+// name. The processor keys enabled destination types by DestinationDefinition.DisplayName (and the
+// client `integrations` object is matched against those same keys), but backendconfigtest's
+// destination builder only sets the definition Name — without this, destinations of different
+// types would all collapse into a single "" type.
+func newDestinationOfType(destType, id string) backendconfig.DestinationT {
+	destination := backendconfigtest.NewDestinationBuilder(destType).WithID(id).Build()
+	destination.DestinationDefinition.DisplayName = destType
+	return destination
 }
 
 func logRows(t *testing.T, db *sql.DB, query string) { // nolint:unparam
