@@ -6235,6 +6235,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 			}),
 		}
 	}
+	// nolint:unparam // signature is dictated by SimpleClients.WithDynamicSrcHydration
 	echoHydration := func(_ context.Context, req types.SrcHydrationRequest) (types.SrcHydrationResponse, error) {
 		return types.SrcHydrationResponse{Batch: req.Batch}, nil
 	}
