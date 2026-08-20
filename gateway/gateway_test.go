@@ -1052,11 +1052,14 @@ var _ = Describe("Gateway", func() {
 					stat := statsStore.Get(
 						"gateway.write_key_dropped_requests",
 						map[string]string{
-							"source":        rCtxEnabled.SourceTag(),
-							"sourceID":      rCtxEnabled.SourceID,
-							"workspaceId":   rCtxEnabled.WorkspaceID,
-							"writeKey":      rCtxEnabled.WriteKey,
-							"reqType":       "alias",
+							"source":      rCtxEnabled.SourceTag(),
+							"sourceID":    rCtxEnabled.SourceID,
+							"workspaceId": rCtxEnabled.WorkspaceID,
+							"writeKey":    rCtxEnabled.WriteKey,
+							"reqType":     "alias",
+							// a drop now says why: this is what lets a consumer tell a rate limit from any other
+							// reason a request was turned away
+							"reason":        gwtypes.ReasonRateLimit.Value(),
 							"sourceType":    rCtxEnabled.SourceCategory,
 							"sdkVersion":    "",
 							"sourceDefName": rCtxEnabled.SourceDefName,

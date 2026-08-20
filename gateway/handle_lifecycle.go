@@ -174,9 +174,9 @@ func (gw *Handle) Setup(
 	gw.msgValidator = validator.NewValidateMediator(gw.logger, stream.NewMessagePropertiesValidator())
 
 	gw.webhookAuthMiddleware = auth.NewWebhookAuth(
-		func(w http.ResponseWriter, r *http.Request, errorMessage string, authCtx *gwtypes.AuthRequestContext) {
+		func(w http.ResponseWriter, r *http.Request, errorMessage string, reason gwtypes.StatReason, authCtx *gwtypes.AuthRequestContext) {
 			gw.handleHttpError(w, r, errorMessage)
-			gw.handleFailureStats(errorMessage, "webhook", authCtx)
+			gw.handleFailureStats(errorMessage, reason, "webhook", authCtx)
 		},
 		func(writeKey string) (*gwtypes.AuthRequestContext, error) {
 			authCtx := gw.authRequestContextForWriteKey(writeKey)

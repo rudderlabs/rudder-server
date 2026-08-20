@@ -202,10 +202,10 @@ type transformerBatchResponseT struct {
 	statusCode int
 }
 
-func (bt *batchWebhookTransformerT) markResponseFail(reason string) transformerResponse {
-	statusCode := response.GetErrorStatusCode(reason)
+func (bt *batchWebhookTransformerT) markResponseFail(errorMessage string) transformerResponse {
+	statusCode := response.GetErrorStatusCode(errorMessage)
 	resp := transformerResponse{
-		Err:        response.GetStatus(reason),
+		Err:        response.GetStatus(errorMessage),
 		StatusCode: statusCode,
 	}
 	bt.stats.failedStat.Count(1)
