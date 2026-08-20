@@ -46,10 +46,8 @@ func TestReportingDroppedEvents(t *testing.T) {
 						backendconfigtest.NewSourceBuilder().
 							WithID("source-1").
 							WithWriteKey("writekey-1").
-							Build(),
-					).
-					Build(),
-			).
+							Build()).
+					Build()).
 			Build()
 		defer bcserver.Close()
 
@@ -112,12 +110,9 @@ func TestReportingDroppedEvents(t *testing.T) {
 							WithConnection(
 								backendconfigtest.NewDestinationBuilder("WEBHOOK").
 									WithID("destination-1").
-									Build(),
-							).
-							Build(),
-					).
-					Build(),
-			).
+									Build()).
+							Build()).
+					Build()).
 			Build()
 		defer bcserver.Close()
 
@@ -190,12 +185,9 @@ func TestReportingDroppedEvents(t *testing.T) {
 									backendconfigtest.NewDestinationBuilder("WEBHOOK").
 										WithID("destination-1").
 										WithUserTransformation("transformation-1", "version-1").
-										Build(),
-								).
-								Build(),
-						).
-						Build(),
-				).
+										Build()).
+								Build()).
+						Build()).
 				Build()
 			defer bcserver.Close()
 
@@ -262,12 +254,9 @@ func TestReportingDroppedEvents(t *testing.T) {
 									backendconfigtest.NewDestinationBuilder("WEBHOOK").
 										WithID("destination-1").
 										WithDefinitionConfigOption("supportedMessageTypes", []string{"track"}).
-										Build(),
-								).
-								Build(),
-						).
-						Build(),
-				).
+										Build()).
+								Build()).
+						Build()).
 				Build()
 			defer bcserver.Close()
 
@@ -332,12 +321,9 @@ func TestReportingDroppedEvents(t *testing.T) {
 							WithConnection(
 								backendconfigtest.NewDestinationBuilder("WEBHOOK").
 									WithID("destination-1").
-									Build(),
-							).
-							Build(),
-					).
-					Build(),
-			).
+									Build()).
+							Build()).
+					Build()).
 			Build()
 		defer bcserver.Close()
 
@@ -405,12 +391,9 @@ func TestReportingDroppedEvents(t *testing.T) {
 								WithConnection(
 									backendconfigtest.NewDestinationBuilder("WEBHOOK").
 										WithID("destination-1").
-										Build(),
-								).
-								Build(),
-						).
-						Build(),
-				).
+										Build()).
+								Build()).
+						Build()).
 				Build()
 			defer bcserver.Close()
 
@@ -762,12 +745,9 @@ func TestReportingDroppedEvents(t *testing.T) {
 								WithConnection(
 									backendconfigtest.NewDestinationBuilder("S3").
 										WithID("destination-1").
-										Build(),
-								).
-								Build(),
-						).
-						Build(),
-				).
+										Build()).
+								Build()).
+						Build()).
 				Build()
 			defer bcserver.Close()
 

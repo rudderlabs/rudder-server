@@ -1539,8 +1539,7 @@ func (proc *Handle) getTransformationMetrics(
 					}
 					return sampleEvent
 				},
-				eventsByMessageID,
-			)
+				eventsByMessageID)
 		}
 
 		proc.logger.Debugn(
@@ -1876,8 +1875,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			proc.logger.Debugn("Missing traceParent in preprocessStage", logger.NewIntField("jobId", job.JobID))
 		} else {
 			ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
-			_, span = proc.tracer.Trace(
-				ctx, "preprocessStage", tracing.WithTraceKind(stats.SpanKindConsumer),
+			_, span = proc.tracer.Trace(ctx, "preprocessStage", tracing.WithTraceKind(stats.SpanKindConsumer),
 				tracing.WithTraceTags(stats.Tags{
 					"workspaceId": job.WorkspaceId,
 					"sourceId":    eventParams.SourceId,
@@ -2124,8 +2122,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			singularEventMetadata.SourceJobRunID == "" &&
 			!sourceIsTransient {
 			if eventPayload := event.payloadFunc(); eventPayload != nil {
-				eventSchemaJobsBySourceId[SourceIDT(sourceId)] = append(
-					eventSchemaJobsBySourceId[SourceIDT(sourceId)],
+				eventSchemaJobsBySourceId[SourceIDT(sourceId)] = append(eventSchemaJobsBySourceId[SourceIDT(sourceId)],
 					&jobsdb.JobT{
 						UUID:         event.uuid,
 						UserID:       event.userId,
@@ -2144,8 +2141,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			singularEventMetadata.SourceJobRunID == "" && // archival enabled&&
 			!sourceIsTransient {
 			if eventPayload := event.payloadFunc(); eventPayload != nil {
-				archivalJobs = append(
-					archivalJobs,
+				archivalJobs = append(archivalJobs,
 					&jobsdb.JobT{
 						UUID:         event.uuid,
 						UserID:       event.userId,
@@ -2307,8 +2303,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		defer proc.stats.statPretransformStageCount(partition).Count(
 			lo.Sum(lo.MapToSlice(preTrans.groupedEventsBySourceId, func(key SourceIDT, jobs []types.TransformerEvent) int {
 				return len(jobs)
-			})),
-		)
+			})))
 	}
 
 	groupedEvents := make(map[string][]types.TransformerEvent)
@@ -2629,8 +2624,7 @@ func (proc *Handle) storeEventSchemaJobs(ctx context.Context, eventSchemaJobs []
 					return proc.eventSchemaDB.StoreInTx(ctx, tx, eventSchemaJobs)
 				},
 			)
-		}, proc.sendRetryStoreStats,
-	)
+		}, proc.sendRetryStoreStats)
 	if err != nil {
 		return fmt.Errorf("store into event schema table failed with error: %v", err)
 	}
@@ -2653,8 +2647,7 @@ func (proc *Handle) storeArchiveJobs(ctx context.Context, archivalJobs []*jobsdb
 					return proc.archivalDB.StoreInTx(ctx, tx, archivalJobs)
 				},
 			)
-		}, proc.sendRetryStoreStats,
-	)
+		}, proc.sendRetryStoreStats)
 	if err != nil {
 		return fmt.Errorf("store into archival table failed with error: %v", err)
 	}
@@ -2981,11 +2974,9 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 				deferred = append(deferred, func() { proc.storePlocker.Unlock(pKey) })
 			}
 		} else {
-			proc.logger.Warnn(
-				"empty storeMessage.routerDestIDs",
+			proc.logger.Warnn("empty storeMessage.routerDestIDs",
 				logger.NewStringField("partition", partition),
-				logger.NewStringField(
-					"expected",
+				logger.NewStringField("expected",
 					strings.Join(
 						lo.Uniq(
 							lo.Map(in.destJobs, func(j *jobsdb.JobT, _ int) string { return gjson.GetBytes(j.Parameters, "destination_id").String() }),
@@ -3064,8 +3055,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 									if err != nil {
 										return fmt.Errorf("uploading sample batch router jobs: %w: %w", storeErr, err)
 									}
-									proc.logger.Infon(
-										"Successfully upload proc sample",
+									proc.logger.Infon("Successfully upload proc sample",
 										logger.NewStringField("location", uploadFile.Location),
 										logger.NewStringField("objectName", uploadFile.ObjectName),
 									)
@@ -3079,10 +3069,8 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 								return fmt.Errorf("publishing rsources stats for batch router: %w", err)
 							}
 							return nil
-						},
-					)
-				}, proc.sendRetryStoreStats,
-			)
+						})
+				}, proc.sendRetryStoreStats)
 			if err != nil {
 				return err
 			}
@@ -3122,10 +3110,8 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 								return fmt.Errorf("publishing rsources stats for router: %w", err)
 							}
 							return nil
-						},
-					)
-				}, proc.sendRetryStoreStats,
-			)
+						})
+				}, proc.sendRetryStoreStats)
 			if err != nil {
 				return err
 			}
@@ -3383,8 +3369,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 						_, versionID, transformationID := transformerutils.GetTransformationInfo(eventList)
 						proc.mirrorFilteredCache.Put(versionID, true, proc.config.mirrorFilterCacheTTL)
 						proc.stats.utMirroringFilteredResponses(partition, transformationID).Increment()
-						proc.logger.Infon(
-							"UT mirroring filtered by mirror response",
+						proc.logger.Infon("UT mirroring filtered by mirror response",
 							logger.NewStringField("versionId", versionID),
 							logger.NewStringField("transformationId", transformationID),
 						)
@@ -3397,8 +3382,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 					d := time.Since(startedAt)
 					userTransformationMirroringStat.transformTime.SendTiming(d)
 					userTransformationMirroringStat.numOutputSuccessEvents.Count(len(response.Events))
-					filtered := lo.GroupBy(
-						response.FailedEvents,
+					filtered := lo.GroupBy(response.FailedEvents,
 						func(event types.TransformerResponse) bool {
 							return event.StatusCode == reportingtypes.FilterEventCode
 						},
@@ -3468,15 +3452,13 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 					result := response.EqualDetailed(&normalizedMirror)
 					if result.Equal {
 						proc.stats.utMirroringEqualResponses(partition, transformationID).Increment()
-						proc.logger.Debugn(
-							"UT mirroring sanity check equal",
+						proc.logger.Debugn("UT mirroring sanity check equal",
 							logger.NewStringField("versionId", versionID),
 							logger.NewStringField("transformationId", transformationID),
 						)
 						if result.DatetimeForgiven {
 							proc.stats.utMirroringDatetimeForgivenResponses(partition, transformationID).Increment()
-							proc.logger.Debugn(
-								"UT mirroring sanity check datetime forgiven",
+							proc.logger.Debugn("UT mirroring sanity check datetime forgiven",
 								logger.NewStringField("versionId", versionID),
 								logger.NewStringField("transformationId", transformationID),
 							)
@@ -3525,8 +3507,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 
 					clientEventsFile, err := proc.utSamplingFileManager.UploadReader(ctx, clientEventsObjName, bytes.NewReader(eventListCopy))
 					if err != nil {
-						log.Errorn(
-							"Error uploading UserTransform clientEvents file",
+						log.Errorn("Error uploading UserTransform clientEvents file",
 							obskit.Error(err),
 							logger.NewStringField("diffLocation", diffFile.Location),
 							logger.NewStringField("diffObjectName", diffFile.ObjectName),
@@ -3534,8 +3515,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 						return
 					}
 
-					log.Warnn(
-						"UserTransform sanity check failed",
+					log.Warnn("UserTransform sanity check failed",
 						logger.NewStringField("diffLocation", diffFile.Location),
 						logger.NewStringField("diffObjectName", diffFile.ObjectName),
 						logger.NewStringField("clientEventsLocation", clientEventsFile.Location),
@@ -3897,8 +3877,7 @@ func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.Transforme
 
 	if blockedIDs := proc.config.userTransformationMirroringBlockedIDs.Load(); slices.Contains(blockedIDs, transformationID) {
 		proc.stats.utMirroringBlockedByTransformationID(partition, transformationID).Increment()
-		proc.logger.Debugn(
-			"UT mirroring blocked by transformation ID",
+		proc.logger.Debugn("UT mirroring blocked by transformation ID",
 			logger.NewStringField("versionId", versionID),
 			logger.NewStringField("transformationId", transformationID),
 		)
@@ -3907,8 +3886,7 @@ func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.Transforme
 
 	if proc.mirrorFilteredCache.Get(versionID) {
 		proc.stats.utMirroringFilteredResponses(partition, transformationID).Increment()
-		proc.logger.Debugn(
-			"UT mirroring filtered by cache",
+		proc.logger.Debugn("UT mirroring filtered by cache",
 			logger.NewStringField("versionId", versionID),
 			logger.NewStringField("transformationId", transformationID),
 		)
@@ -4174,8 +4152,7 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 	if err != nil {
 		panic(err)
 	}
-	proc.storeStage(
-		partition, 0,
+	proc.storeStage(partition, 0,
 		proc.destinationTransformStage(partition,
 			proc.userTransformStage(partition, transMessage)),
 	)
