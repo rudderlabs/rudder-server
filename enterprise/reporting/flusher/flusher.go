@@ -311,18 +311,10 @@ func (f *Flusher) sendBatchWithPayloadTooLargeSplit(ctx context.Context, batch [
 	}
 	f.payloadTooLargeSplits.Increment()
 
-	if len(batch) == 1 {
-		// nothing to split: a single-item batch is the payload that was just rejected
-		return f.commonClient.SendWithRetryOnTooLarge(ctx, batch)
-	}
-
+	// Items are opaque and cannot be shrunk further, so a 413 on an individual
+	// item is retried like any other non-2xx response.
 	for _, item := range batch {
-		individualBatch := []json.RawMessage{item}
-		err = f.commonClient.Send(ctx, individualBatch)
-		if errors.Is(err, client.ErrPayloadTooLarge) {
-			err = f.commonClient.SendWithRetryOnTooLarge(ctx, individualBatch)
-		}
-		if err != nil {
+		if err := f.commonClient.SendWithRetryOnTooLarge(ctx, []json.RawMessage{item}); err != nil {
 			return err
 		}
 	}

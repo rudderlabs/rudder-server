@@ -141,13 +141,13 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		}))
 		defer server.Close()
 
-		f, statsStore := newPayloadTooLargeTestFlusher(t, server.URL, 0, 2)
+		f, statsStore := newPayloadTooLargeTestFlusher(t, server.URL, 1, 2)
 		err := f.send(context.Background(), []json.RawMessage{[]byte(`{"id":1}`), []byte(`{"id":2}`)})
-		require.NoError(t, err, "a 413 on an individual item must be retried through the no-fail-fast fallback")
+		require.NoError(t, err, "a 413 on an individual item must be retried like any other non-2xx")
 
 		mu.Lock()
 		defer mu.Unlock()
-		// batch (413) + item1 (200) + item2 (413) + item2 fallback (200)
+		// batch (413) + item1 (200) + item2 (413, retried once) + item2 (200)
 		require.Equal(t, 4, requestCount)
 		requirePayloadTooLargeSplits(t, statsStore, 1)
 		require.Len(t, payloads[3], 1)
