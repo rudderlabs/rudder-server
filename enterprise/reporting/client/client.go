@@ -139,8 +139,6 @@ func (c *Client) send(ctx context.Context, payload any, failFastOnTooLarge bool)
 	}
 	uncompressedBytes := len(payloadBytes)
 
-	c.stats.NewTaggedStat(StatRequestPayloadBytes, stats.HistogramType, c.getTags()).Observe(float64(uncompressedBytes))
-
 	// bodyBytes is what we actually put on the wire: either the raw payload or
 	// its gzip-compressed form. It is materialized once here (not streamed)
 	// because the request body is replayed on every backoff retry attempt.
@@ -157,6 +155,8 @@ func (c *Client) send(ctx context.Context, payload any, failFastOnTooLarge bool)
 	if err != nil {
 		return fmt.Errorf("constructing URL for service endpoint (%q, %q): %w", c.route, c.reportingServiceURL, err)
 	}
+
+	c.stats.NewTaggedStat(StatRequestPayloadBytes, stats.HistogramType, c.getTags()).Observe(float64(uncompressedBytes))
 
 	o := func() error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(bodyBytes))
@@ -238,11 +238,14 @@ func (c *Client) gzipCompress(b []byte) ([]byte, error) {
 
 // getTags returns the common tags for reporting metrics
 func (c *Client) getTags() stats.Tags {
-	serverURL, _ := url.Parse(c.reportingServiceURL)
+	var endpoint string
+	if serverURL, err := url.Parse(c.reportingServiceURL); err == nil {
+		endpoint = serverURL.Host
+	}
 	return stats.Tags{
 		"module":     c.moduleName,
 		"instanceId": c.instanceID,
-		"endpoint":   serverURL.Host,
+		"endpoint":   endpoint,
 		"path":       string(c.route),
 	}
 }

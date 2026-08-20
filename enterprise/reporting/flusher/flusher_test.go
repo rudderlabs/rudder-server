@@ -118,6 +118,69 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		requirePayloadTooLargeSplits(t, statsStore, 1)
 	})
 
+	t.Run("individual 413 falls back instead of aborting the batch", func(t *testing.T) {
+		var mu sync.Mutex
+		var payloads [][]map[string]any
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			requestCount++
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			var payload []map[string]any
+			require.NoError(t, jsonrs.Unmarshal(body, &payload))
+			payloads = append(payloads, payload)
+
+			// 413 on the batch (1) and on the *second* individual item (3)
+			if requestCount == 1 || requestCount == 3 {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		f, statsStore := newPayloadTooLargeTestFlusher(t, server.URL, 0, 2)
+		err := f.send(context.Background(), []json.RawMessage{[]byte(`{"id":1}`), []byte(`{"id":2}`)})
+		require.NoError(t, err, "a 413 on an individual item must be retried through the no-fail-fast fallback")
+
+		mu.Lock()
+		defer mu.Unlock()
+		// batch (413) + item1 (200) + item2 (413) + item2 fallback (200)
+		require.Equal(t, 4, requestCount)
+		requirePayloadTooLargeSplits(t, statsStore, 1)
+		require.Len(t, payloads[3], 1)
+		require.Equal(t, float64(2), payloads[3][0]["id"])
+	})
+
+	t.Run("non-413 error on one item aborts the loop", func(t *testing.T) {
+		var mu sync.Mutex
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			requestCount++
+			if requestCount == 1 {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		f, statsStore := newPayloadTooLargeTestFlusher(t, server.URL, 0, 2)
+		err := f.send(context.Background(), []json.RawMessage{[]byte(`{"id":1}`), []byte(`{"id":2}`)})
+		require.Error(t, err, "a non-413 failure on an individual item must not be swallowed")
+		require.Contains(t, err.Error(), "statusCode: 500")
+
+		mu.Lock()
+		defer mu.Unlock()
+		// batch (413) + item1 (500, maxRetries=0) then abort: item2 never sent
+		require.Equal(t, 2, requestCount, "the loop must stop at the first failing item")
+		requirePayloadTooLargeSplits(t, statsStore, 1)
+	})
+
 	t.Run("individual non-413 error retries through normal path", func(t *testing.T) {
 		var mu sync.Mutex
 		requestCount := 0

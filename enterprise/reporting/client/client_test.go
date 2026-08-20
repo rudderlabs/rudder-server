@@ -479,6 +479,45 @@ func TestClientPayloadTooLargeFeatureGate(t *testing.T) {
 		require.Contains(t, err.Error(), "statusCode: 413")
 		require.Equal(t, int64(2), requestCount.Load())
 	})
+
+	for _, status := range []int{http.StatusBadRequest, http.StatusInternalServerError} {
+		t.Run(fmt.Sprintf("feature enabled still retries non-413 status %d", status), func(t *testing.T) {
+			var requestCount atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requestCount.Add(1)
+				w.WriteHeader(status)
+			}))
+			defer server.Close()
+
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
+			conf := config.New()
+			conf.Set("REPORTING_URL", server.URL)
+			conf.Set("Reporting.httpClient.backoff.maxRetries", 1)
+			conf.Set("Reporting.payloadTooLargeHandling.enabled", true)
+
+			c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
+			err = c.Send(context.Background(), metric)
+			require.Error(t, err)
+			require.False(t, errors.Is(err, client.ErrPayloadTooLarge), "only 413 may be reported as ErrPayloadTooLarge")
+			require.Contains(t, err.Error(), fmt.Sprintf("statusCode: %d", status))
+			require.Equal(t, int64(2), requestCount.Load(), "non-413 responses must still be retried when fail-fast is enabled")
+		})
+	}
+}
+
+func TestClientMalformedURLReturnsError(t *testing.T) {
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+
+	conf := config.New()
+	conf.Set("REPORTING_URL", "http://host:notaport")
+
+	c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
+	err = c.Send(context.Background(), &types.Metric{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "constructing URL for service endpoint")
 }
 
 func TestClient5xx(t *testing.T) {

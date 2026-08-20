@@ -838,7 +838,7 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 
 		metricClient := newPayloadTooLargeTestClient(t, server.URL, 0)
 		r, statsStore := newPayloadTooLargeTestReporter(t, metricClient)
-		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeMetric(), testPayloadTooLargeTags)
+		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeMetric(), testPayloadTooLargeTags())
 		require.NoError(t, err)
 
 		mu.Lock()
@@ -877,7 +877,7 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 		metricClient := newPayloadTooLargeTestClient(t, server.URL, 0)
 		metric := testPayloadTooLargeMetric()
 		r, statsStore := newPayloadTooLargeTestReporter(t, metricClient)
-		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), metric, testPayloadTooLargeTags)
+		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), metric, testPayloadTooLargeTags())
 		require.NoError(t, err)
 
 		mu.Lock()
@@ -922,7 +922,7 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 		metricClient := newPayloadTooLargeTestClient(t, server.URL, 0)
 		metric := testPayloadTooLargeMetricWithOneStatusDetail()
 		r, statsStore := newPayloadTooLargeTestReporter(t, metricClient)
-		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), metric, testPayloadTooLargeTags)
+		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), metric, testPayloadTooLargeTags())
 		require.NoError(t, err)
 
 		mu.Lock()
@@ -948,7 +948,7 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 
 		metricClient := newPayloadTooLargeTestClient(t, server.URL, 1)
 		r, statsStore := newPayloadTooLargeTestReporter(t, metricClient)
-		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeMetricWithOneStatusDetail(), testPayloadTooLargeTags)
+		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeMetricWithOneStatusDetail(), testPayloadTooLargeTags())
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
 		require.Contains(t, err.Error(), "statusCode: 413")
@@ -958,6 +958,69 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 		// batch (413) + stripped fallback (413, retried once)
 		require.Equal(t, 3, requestCount)
 		requirePayloadTooLargeStats(t, statsStore, StatReportingPayloadTooLargeSplit, StatReportingSampleEventReplacedTooLarge, 1, 1)
+	})
+
+	t.Run("strips the rejected status detail, not the first one", func(t *testing.T) {
+		var mu sync.Mutex
+		var payloads []types.Metric
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			requestCount++
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			var payload types.Metric
+			require.NoError(t, jsonrs.Unmarshal(body, &payload))
+			payloads = append(payloads, payload)
+
+			// 413 on the batch (1) and on the *second* individual metric (3)
+			if requestCount == 1 || requestCount == 3 {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		metricClient := newPayloadTooLargeTestClient(t, server.URL, 0)
+		r, statsStore := newPayloadTooLargeTestReporter(t, metricClient)
+		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeMetric(), testPayloadTooLargeTags())
+		require.NoError(t, err)
+
+		mu.Lock()
+		defer mu.Unlock()
+		// batch (413) + event-1 (200) + event-2 (413) + event-2 stripped (200)
+		require.Equal(t, 4, requestCount)
+		requirePayloadTooLargeStats(t, statsStore, StatReportingPayloadTooLargeSplit, StatReportingSampleEventReplacedTooLarge, 1, 1)
+		require.Len(t, payloads[3].StatusDetails, 1)
+		require.Equal(t, "event-2", payloads[3].StatusDetails[0].EventName, "stripped resend must carry the rejected status detail, not StatusDetails[0]")
+		require.JSONEq(t, string(sampleEventNotAvailableEntityTooLarge), string(payloads[3].StatusDetails[0].SampleEvent))
+		require.Equal(t, "sample-response-2", payloads[3].StatusDetails[0].SampleResponse)
+	})
+
+	t.Run("non-413 batch error is returned without splitting", func(t *testing.T) {
+		var mu sync.Mutex
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			requestCount++
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		metricClient := newPayloadTooLargeTestClient(t, server.URL, 0)
+		r, statsStore := newPayloadTooLargeTestReporter(t, metricClient)
+		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeMetric(), testPayloadTooLargeTags())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "statusCode: 500")
+
+		mu.Lock()
+		defer mu.Unlock()
+		// maxRetries=0 => exactly one attempt, and no split
+		require.Equal(t, 1, requestCount, "a non-413 batch error must be returned as-is, without splitting")
+		requirePayloadTooLargeStats(t, statsStore, StatReportingPayloadTooLargeSplit, StatReportingSampleEventReplacedTooLarge, 0, 0)
 	})
 
 	t.Run("partial failure returns error after delivering earlier metrics", func(t *testing.T) {
@@ -987,7 +1050,7 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 
 		metricClient := newPayloadTooLargeTestClient(t, server.URL, 1)
 		r, statsStore := newPayloadTooLargeTestReporter(t, metricClient)
-		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeMetric(), testPayloadTooLargeTags)
+		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeMetric(), testPayloadTooLargeTags())
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
 		require.Contains(t, err.Error(), "statusCode: 500")
@@ -1023,7 +1086,7 @@ func TestSendMetricWithPayloadTooLargeSplit(t *testing.T) {
 
 		metricClient := newPayloadTooLargeTestClient(t, server.URL, 1)
 		r, statsStore := newPayloadTooLargeTestReporter(t, metricClient)
-		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeMetricWithOneStatusDetail(), testPayloadTooLargeTags)
+		err := r.sendMetricWithPayloadTooLargeSplit(context.Background(), testPayloadTooLargeMetricWithOneStatusDetail(), testPayloadTooLargeTags())
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
 		require.Contains(t, err.Error(), "statusCode: 500")

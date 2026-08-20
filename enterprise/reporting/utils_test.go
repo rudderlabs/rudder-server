@@ -149,7 +149,9 @@ func newPayloadTooLargeTestClient(t *testing.T, serverURL string, maxRetries int
 	return client.New(client.RouteMetrics, conf, logger.NOP, stats.NOP)
 }
 
-var testPayloadTooLargeTags = stats.Tags{"clientName": "test"}
+// testPayloadTooLargeTags returns a fresh tag map per call: memstats retains the
+// caller's map by reference, so sharing one across measurements is unsafe.
+func testPayloadTooLargeTags() stats.Tags { return stats.Tags{"clientName": "test"} }
 
 // newPayloadTooLargeTestReporter returns a DefaultReporter wired with the given client
 // and an in-memory stats store so tests can assert split / sample-event-replaced counts.
@@ -157,7 +159,12 @@ func newPayloadTooLargeTestReporter(t *testing.T, commonClient *client.Client) (
 	t.Helper()
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
-	return &DefaultReporter{commonClient: commonClient, stats: statsStore}, statsStore
+	return &DefaultReporter{
+		commonClient:                 commonClient,
+		stats:                        statsStore,
+		log:                          logger.NOP,
+		oversizedSampleEventsDropped: statsStore.NewStat(StatReportingSampleEventDroppedOversized, stats.CountType),
+	}, statsStore
 }
 
 // newPayloadTooLargeTestEDReporter is the ErrorDetailReporter analogue of newPayloadTooLargeTestReporter.
@@ -165,13 +172,18 @@ func newPayloadTooLargeTestEDReporter(t *testing.T, commonClient *client.Client)
 	t.Helper()
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
-	return &ErrorDetailReporter{commonClient: commonClient, stats: statsStore}, statsStore
+	return &ErrorDetailReporter{
+		commonClient: commonClient,
+		stats:        statsStore,
+		log:          logger.NOP,
+		statsManager: NewErrorReportingStats(statsStore),
+	}, statsStore
 }
 
 func requirePayloadTooLargeStats(t *testing.T, statsStore *memstats.Store, splitStat, replacedStat string, splits, replaced float64) {
 	t.Helper()
 	getCount := func(name string) float64 {
-		m := statsStore.Get(name, testPayloadTooLargeTags)
+		m := statsStore.Get(name, testPayloadTooLargeTags())
 		if m == nil {
 			return 0
 		}
