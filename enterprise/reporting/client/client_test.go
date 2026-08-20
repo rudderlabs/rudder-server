@@ -399,7 +399,7 @@ func TestClientSendCompressed(t *testing.T) {
 	require.Equal(t, []float64{uncompressed[0].Value}, payloadSize[0].Values)
 }
 
-func TestClientPayloadTooLargeFeatureGate(t *testing.T) {
+func TestClientLargePayloadFeatureGate(t *testing.T) {
 	metric := &types.Metric{
 		InstanceDetails: types.InstanceDetails{
 			WorkspaceID: "test-workspace",
@@ -447,7 +447,7 @@ func TestClientPayloadTooLargeFeatureGate(t *testing.T) {
 		conf := config.New()
 		conf.Set("REPORTING_URL", server.URL)
 		conf.Set("Reporting.httpClient.backoff.maxRetries", 3)
-		conf.Set("Reporting.payloadTooLargeHandling.enabled", true)
+		conf.Set("Reporting.largePayloadHandling.enabled", true)
 
 		c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
 		err = c.Send(context.Background(), metric)
@@ -470,10 +470,10 @@ func TestClientPayloadTooLargeFeatureGate(t *testing.T) {
 		conf := config.New()
 		conf.Set("REPORTING_URL", server.URL)
 		conf.Set("Reporting.httpClient.backoff.maxRetries", 1)
-		conf.Set("Reporting.payloadTooLargeHandling.enabled", true)
+		conf.Set("Reporting.largePayloadHandling.enabled", true)
 
 		c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
-		err = c.SendWithRetryOnTooLarge(context.Background(), metric)
+		err = c.SendWithoutFailFast(context.Background(), metric)
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
 		require.Contains(t, err.Error(), "statusCode: 413")
@@ -495,7 +495,7 @@ func TestClientPayloadTooLargeFeatureGate(t *testing.T) {
 			conf := config.New()
 			conf.Set("REPORTING_URL", server.URL)
 			conf.Set("Reporting.httpClient.backoff.maxRetries", 1)
-			conf.Set("Reporting.payloadTooLargeHandling.enabled", true)
+			conf.Set("Reporting.largePayloadHandling.enabled", true)
 
 			c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
 			err = c.Send(context.Background(), metric)

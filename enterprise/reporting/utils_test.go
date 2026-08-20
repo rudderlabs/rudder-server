@@ -140,35 +140,35 @@ func TestGetSampleWithEventSamplingForEDReportsDB(t *testing.T) {
 	})
 }
 
-func newPayloadTooLargeTestClient(t *testing.T, serverURL string, maxRetries int) *client.Client {
+func newLargePayloadTestClient(t *testing.T, serverURL string, maxRetries int) *client.Client {
 	t.Helper()
 	conf := config.New()
 	conf.Set("REPORTING_URL", serverURL)
-	conf.Set("Reporting.payloadTooLargeHandling.enabled", true)
+	conf.Set("Reporting.largePayloadHandling.enabled", true)
 	conf.Set("Reporting.httpClient.backoff.maxRetries", maxRetries)
 	return client.New(client.RouteMetrics, conf, logger.NOP, stats.NOP)
 }
 
-// testPayloadTooLargeTags returns a fresh tag map per call: memstats retains the
+// testLargePayloadTags returns a fresh tag map per call: memstats retains the
 // caller's map by reference, so sharing one across measurements is unsafe.
-func testPayloadTooLargeTags() stats.Tags { return stats.Tags{"clientName": "test"} }
+func testLargePayloadTags() stats.Tags { return stats.Tags{"clientName": "test"} }
 
-// newPayloadTooLargeTestReporter returns a DefaultReporter wired with the given client
+// newLargePayloadTestReporter returns a DefaultReporter wired with the given client
 // and an in-memory stats store so tests can assert split / sample-event-replaced counts.
-func newPayloadTooLargeTestReporter(t *testing.T, commonClient *client.Client) (*DefaultReporter, *memstats.Store) {
+func newLargePayloadTestReporter(t *testing.T, commonClient *client.Client) (*DefaultReporter, *memstats.Store) {
 	t.Helper()
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
 	return &DefaultReporter{
-		commonClient:                 commonClient,
-		stats:                        statsStore,
-		log:                          logger.NOP,
-		oversizedSampleEventsDropped: statsStore.NewStat(StatReportingSampleEventDroppedOversized, stats.CountType),
+		commonClient:                       commonClient,
+		stats:                              statsStore,
+		log:                                logger.NOP,
+		oversizedSampleEventDroppedCounter: statsStore.NewStat(StatReportingOversizedSampleEventDroppedCounter, stats.CountType),
 	}, statsStore
 }
 
-// newPayloadTooLargeTestEDReporter is the ErrorDetailReporter analogue of newPayloadTooLargeTestReporter.
-func newPayloadTooLargeTestEDReporter(t *testing.T, commonClient *client.Client) (*ErrorDetailReporter, *memstats.Store) {
+// newLargePayloadTestEDReporter is the ErrorDetailReporter analogue of newLargePayloadTestReporter.
+func newLargePayloadTestEDReporter(t *testing.T, commonClient *client.Client) (*ErrorDetailReporter, *memstats.Store) {
 	t.Helper()
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
@@ -180,10 +180,10 @@ func newPayloadTooLargeTestEDReporter(t *testing.T, commonClient *client.Client)
 	}, statsStore
 }
 
-func requirePayloadTooLargeStats(t *testing.T, statsStore *memstats.Store, splitStat, replacedStat string, splits, replaced float64) {
+func requireLargePayloadStats(t *testing.T, statsStore *memstats.Store, splitStat, replacedStat string, splits, replaced float64) {
 	t.Helper()
 	getCount := func(name string) float64 {
-		m := statsStore.Get(name, testPayloadTooLargeTags())
+		m := statsStore.Get(name, testLargePayloadTags())
 		if m == nil {
 			return 0
 		}

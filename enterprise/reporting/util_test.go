@@ -467,13 +467,13 @@ func TestGetSampleWithEventSamplingSkipsOversizedSampleEvent(t *testing.T) {
 
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
-	dropped := statsStore.NewStat(StatReportingSampleEventDroppedOversized, stats.CountType)
+	dropped := statsStore.NewStat(StatReportingOversizedSampleEventDroppedCounter, stats.CountType)
 
 	sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, 1234567890, mockEventSampler, true, 60, dropped)
 	require.NoError(t, err)
 	require.Nil(t, sampleEvent)
 	require.Empty(t, sampleResponse)
-	require.EqualValues(t, 1, statsStore.Get(StatReportingSampleEventDroppedOversized, nil).LastValue())
+	require.EqualValues(t, 1, statsStore.Get(StatReportingOversizedSampleEventDroppedCounter, nil).LastValue())
 }
 
 func TestGetSampleWithEventSamplingForEDReportsDBSkipsOversizedSampleEvent(t *testing.T) {
@@ -495,13 +495,13 @@ func TestGetSampleWithEventSamplingForEDReportsDBSkipsOversizedSampleEvent(t *te
 
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
-	dropped := statsStore.NewStat(StatErrorDetailReportingSampleEventDroppedOversized, stats.CountType)
+	dropped := statsStore.NewStat(StatErrorDetailReportingOversizedSampleEventDroppedCounter, stats.CountType)
 
 	sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(metric, 1234567890, mockEventSampler, true, 60, dropped)
 	require.NoError(t, err)
 	require.Nil(t, sampleEvent)
 	require.Empty(t, sampleResponse)
-	require.EqualValues(t, 1, statsStore.Get(StatErrorDetailReportingSampleEventDroppedOversized, nil).LastValue())
+	require.EqualValues(t, 1, statsStore.Get(StatErrorDetailReportingOversizedSampleEventDroppedCounter, nil).LastValue())
 }
 
 func TestGetSampleWithEventSamplingSkipsOversizedSampleEventWhenSamplingDisabled(t *testing.T) {
@@ -589,13 +589,13 @@ func TestGetSampleWithEventSamplingKeepsSampleEventAtSizeLimit(t *testing.T) {
 
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
-	dropped := statsStore.NewStat(StatReportingSampleEventDroppedOversized, stats.CountType)
+	dropped := statsStore.NewStat(StatReportingOversizedSampleEventDroppedCounter, stats.CountType)
 
 	gotEvent, gotResponse, err := getSampleWithEventSampling(metric, 1234567890, sampler, true, 60, dropped)
 	require.NoError(t, err)
 	require.Equal(t, sampleEvent, gotEvent, "sample event exactly at the limit must be kept")
 	require.Equal(t, "sample response", gotResponse)
-	require.Zero(t, statsStore.Get(StatReportingSampleEventDroppedOversized, nil).LastValue())
+	require.Zero(t, statsStore.Get(StatReportingOversizedSampleEventDroppedCounter, nil).LastValue())
 }
 
 func TestGetStringifiedSampleEvent(t *testing.T) {

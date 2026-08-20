@@ -82,9 +82,9 @@ type Client struct {
 	moduleName string
 	instanceID string
 
-	compress                  config.ValueLoader[bool]
-	compressionLevel          config.ValueLoader[int]
-	failFastOnTooLargeEnabled config.ValueLoader[bool]
+	compress               config.ValueLoader[bool]
+	compressionLevel       config.ValueLoader[int]
+	failFastOnLargePayload config.ValueLoader[bool]
 
 	conf *config.Config
 }
@@ -107,32 +107,34 @@ func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) 
 			Timeout:   conf.GetDurationVar(60, time.Second, "Reporting.httpClient.timeout", "HttpClient.reporting.timeout"),
 			Transport: &http.Transport{},
 		},
-		reportingServiceURL:       reportingServiceURL,
-		userName:                  conf.GetStringVar("", "REPORTING_USERNAME"),
-		password:                  conf.GetStringVar("", "REPORTING_PASSWORD"),
-		route:                     path,
-		instanceID:                conf.GetStringVar("1", "INSTANCE_ID"),
-		moduleName:                conf.GetStringVar("", "clientName"),
-		compress:                  conf.GetReloadableBoolVar(false, "Reporting.httpClient.compression.enabled"),
-		compressionLevel:          conf.GetReloadableIntVar(gzip.DefaultCompression, 1, "Reporting.httpClient.compression.level"),
-		failFastOnTooLargeEnabled: conf.GetReloadableBoolVar(false, "Reporting.payloadTooLargeHandling.enabled"),
-		stats:                     stats,
-		log:                       log,
-		conf:                      conf,
+		reportingServiceURL:    reportingServiceURL,
+		userName:               conf.GetStringVar("", "REPORTING_USERNAME"),
+		password:               conf.GetStringVar("", "REPORTING_PASSWORD"),
+		route:                  path,
+		instanceID:             conf.GetStringVar("1", "INSTANCE_ID"),
+		moduleName:             conf.GetStringVar("", "clientName"),
+		compress:               conf.GetReloadableBoolVar(false, "Reporting.httpClient.compression.enabled"),
+		compressionLevel:       conf.GetReloadableIntVar(gzip.DefaultCompression, 1, "Reporting.httpClient.compression.level"),
+		failFastOnLargePayload: conf.GetReloadableBoolVar(false, "Reporting.largePayloadHandling.enabled"),
+		stats:                  stats,
+		log:                    log,
+		conf:                   conf,
 	}
 }
 
 func (c *Client) Send(ctx context.Context, payload any) error {
-	return c.send(ctx, payload, c.failFastOnTooLargeEnabled.Load())
+	return c.send(ctx, payload, c.failFastOnLargePayload.Load())
 }
 
-// SendWithRetryOnTooLarge sends a payload and retries a 413 like any other non-2xx
-// response, even when Reporting.payloadTooLargeHandling.enabled is true.
-func (c *Client) SendWithRetryOnTooLarge(ctx context.Context, payload any) error {
+// SendWithoutFailFast sends a payload with 413 fail-fast disabled: a 413 is
+// retried like any other non-2xx response, even when
+// Reporting.largePayloadHandling.enabled is true. Callers use it for payloads
+// that are already minimal and cannot be split any further.
+func (c *Client) SendWithoutFailFast(ctx context.Context, payload any) error {
 	return c.send(ctx, payload, false)
 }
 
-func (c *Client) send(ctx context.Context, payload any, failFastOnTooLarge bool) error {
+func (c *Client) send(ctx context.Context, payload any, failFastOnLargePayload bool) error {
 	payloadBytes, err := jsonrs.Marshal(payload)
 	if err != nil {
 		return err
@@ -196,7 +198,7 @@ func (c *Client) send(ctx context.Context, payload any, failFastOnTooLarge bool)
 		}
 
 		if !c.isHTTPRequestSuccessful(resp.StatusCode) {
-			if resp.StatusCode == http.StatusRequestEntityTooLarge && failFastOnTooLarge {
+			if resp.StatusCode == http.StatusRequestEntityTooLarge && failFastOnLargePayload {
 				return backoff.Permanent(ErrPayloadTooLarge)
 			}
 			err = fmt.Errorf("received unexpected response: %q: statusCode: %d body: %v", c.route, resp.StatusCode, string(respBody))
