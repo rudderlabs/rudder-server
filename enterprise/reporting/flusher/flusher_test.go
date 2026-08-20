@@ -50,7 +50,7 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		require.Equal(t, 3, requestCount)
-		requirePayloadTooLargeSplits(t, statsStore, 1)
+		requireSinglePayloadTooLargeSplit(t, statsStore)
 		require.Len(t, payloads[0], 2)
 		require.Len(t, payloads[1], 1)
 		require.Equal(t, float64(1), payloads[1][0]["id"])
@@ -85,7 +85,7 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		defer mu.Unlock()
 		// batch (413) + fallback (413, retried once); no identical individual resend in between
 		require.Equal(t, 3, requestCount)
-		requirePayloadTooLargeSplits(t, statsStore, 1)
+		requireSinglePayloadTooLargeSplit(t, statsStore)
 		for _, payload := range payloads {
 			require.Len(t, payload, 1)
 			require.Equal(t, float64(1), payload[0]["id"])
@@ -115,7 +115,7 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		defer mu.Unlock()
 		// batch (413) + fallback (200)
 		require.Equal(t, 2, requestCount)
-		requirePayloadTooLargeSplits(t, statsStore, 1)
+		requireSinglePayloadTooLargeSplit(t, statsStore)
 	})
 
 	t.Run("individual 413 falls back instead of aborting the batch", func(t *testing.T) {
@@ -149,7 +149,7 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		defer mu.Unlock()
 		// batch (413) + item1 (200) + item2 (413, retried once) + item2 (200)
 		require.Equal(t, 4, requestCount)
-		requirePayloadTooLargeSplits(t, statsStore, 1)
+		requireSinglePayloadTooLargeSplit(t, statsStore)
 		require.Len(t, payloads[3], 1)
 		require.Equal(t, float64(2), payloads[3][0]["id"])
 	})
@@ -178,7 +178,7 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		defer mu.Unlock()
 		// batch (413) + item1 (500, maxRetries=0) then abort: item2 never sent
 		require.Equal(t, 2, requestCount, "the loop must stop at the first failing item")
-		requirePayloadTooLargeSplits(t, statsStore, 1)
+		requireSinglePayloadTooLargeSplit(t, statsStore)
 	})
 
 	t.Run("individual non-413 error retries through normal path", func(t *testing.T) {
@@ -207,7 +207,7 @@ func TestFlusherSendPayloadTooLarge(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		require.Equal(t, 3, requestCount)
-		requirePayloadTooLargeSplits(t, statsStore, 1)
+		requireSinglePayloadTooLargeSplit(t, statsStore)
 	})
 }
 
@@ -228,9 +228,10 @@ func newPayloadTooLargeTestFlusher(t *testing.T, serverURL string, maxRetries, b
 	return f, statsStore
 }
 
-func requirePayloadTooLargeSplits(t *testing.T, statsStore *memstats.Store, want float64) {
+// requireSinglePayloadTooLargeSplit asserts that exactly one batch-level 413 split was recorded.
+func requireSinglePayloadTooLargeSplit(t *testing.T, statsStore *memstats.Store) {
 	t.Helper()
 	metrics := statsStore.GetByName("reporting_flusher_payload_too_large_split")
 	require.Len(t, metrics, 1)
-	require.Equal(t, want, metrics[0].Value, "payload too large split count")
+	require.Equal(t, float64(1), metrics[0].Value, "payload too large split count")
 }
