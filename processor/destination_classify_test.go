@@ -32,11 +32,11 @@ func newClassifyTestHandle(sourceID string, destinations []backendconfig.Destina
 	return proc
 }
 
-func webhookDest(id string, enabled bool) backendconfig.DestinationT {
+func webhookDest() backendconfig.DestinationT {
 	return backendconfig.DestinationT{
-		ID:      id,
-		Name:    id,
-		Enabled: enabled,
+		ID:      "dest-1",
+		Name:    "dest-1",
+		Enabled: true,
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			ID:          "webhook-def",
 			Name:        "WEBHOOK",
@@ -45,11 +45,11 @@ func webhookDest(id string, enabled bool) backendconfig.DestinationT {
 	}
 }
 
-func amplitudeDest(id string, enabled bool) backendconfig.DestinationT {
+func amplitudeDest(id string) backendconfig.DestinationT {
 	return backendconfig.DestinationT{
 		ID:      id,
 		Name:    id,
-		Enabled: enabled,
+		Enabled: true,
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			ID:          "amplitude-def",
 			Name:        "AM",
@@ -79,13 +79,13 @@ func deniedConsentEvent() types.SingularEventT {
 	}
 }
 
-// integrationsExcludingEvent builds an `integrations` object opting out of a destination type,
-// keyed by DisplayName — FilterClientIntegrations ranges over destNameIDMap keyed by DisplayName
-// (processor.go:1005, integrations.go:52).
-func integrationsExcludingEvent(destDisplayName string) types.SingularEventT {
+// integrationsExcludingAmplitude builds an `integrations` object opting out of the Amplitude
+// destination type, keyed by DisplayName — FilterClientIntegrations ranges over destNameIDMap
+// keyed by DisplayName (processor.go:1005, integrations.go:52).
+func integrationsExcludingAmplitude() types.SingularEventT {
 	return types.SingularEventT{
 		"integrations": map[string]any{
-			destDisplayName: false,
+			"Amplitude": false,
 		},
 	}
 }
@@ -105,7 +105,7 @@ func availableIDs(available []backendconfig.DestinationT) []string {
 func TestClassifyDestinations(t *testing.T) {
 	t.Run("all candidates survive", func(t *testing.T) {
 		sourceID := "source-1"
-		dests := []backendconfig.DestinationT{webhookDest("dest-1", true), amplitudeDest("dest-2", true)}
+		dests := []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")}
 		proc := newClassifyTestHandle(sourceID, dests)
 
 		available, excluded := proc.classifyDestinations(types.SingularEventT{}, sourceID, "")
@@ -117,13 +117,13 @@ func TestClassifyDestinations(t *testing.T) {
 	t.Run("an integrations object disabling one destination type excludes every destination of that type", func(t *testing.T) {
 		sourceID := "source-1"
 		dests := []backendconfig.DestinationT{
-			webhookDest("dest-1", true),
-			amplitudeDest("dest-2", true),
-			amplitudeDest("dest-3", true),
+			webhookDest(),
+			amplitudeDest("dest-2"),
+			amplitudeDest("dest-3"),
 		}
 		proc := newClassifyTestHandle(sourceID, dests)
 
-		available, excluded := proc.classifyDestinations(integrationsExcludingEvent("Amplitude"), sourceID, "")
+		available, excluded := proc.classifyDestinations(integrationsExcludingAmplitude(), sourceID, "")
 
 		require.ElementsMatch(t, []string{"dest-1"}, availableIDs(available))
 		require.ElementsMatch(t, []string{"dest-2", "dest-3"}, excludedIDs(excluded))
@@ -135,7 +135,7 @@ func TestClassifyDestinations(t *testing.T) {
 
 	t.Run("a consent-denied destination is excluded with reason filtered_consent and code 297", func(t *testing.T) {
 		sourceID := "source-1"
-		dests := []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1", true))}
+		dests := []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))}
 		proc := newClassifyTestHandle(sourceID, dests)
 
 		available, excluded := proc.classifyDestinations(deniedConsentEvent(), sourceID, "")
@@ -149,7 +149,7 @@ func TestClassifyDestinations(t *testing.T) {
 
 	t.Run("a destination excluded by integrations and also consent-denied yields exactly one entry, with reason filtered_integration", func(t *testing.T) {
 		sourceID := "source-1"
-		dests := []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1", true))}
+		dests := []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))}
 		proc := newClassifyTestHandle(sourceID, dests)
 
 		event := deniedConsentEvent()
@@ -166,9 +166,9 @@ func TestClassifyDestinations(t *testing.T) {
 	t.Run("two destinations of the same type with one consent-denied preserve backend-config order in available", func(t *testing.T) {
 		sourceID := "source-1"
 		dests := []backendconfig.DestinationT{
-			consentDeniedDest(amplitudeDest("dest-1", true)),
-			amplitudeDest("dest-2", true),
-			amplitudeDest("dest-3", true),
+			consentDeniedDest(amplitudeDest("dest-1")),
+			amplitudeDest("dest-2"),
+			amplitudeDest("dest-3"),
 		}
 		proc := newClassifyTestHandle(sourceID, dests)
 
@@ -181,9 +181,9 @@ func TestClassifyDestinations(t *testing.T) {
 	t.Run("specificDestID narrows the candidate set to the stamped destination and siblings appear in neither slice", func(t *testing.T) {
 		sourceID := "source-1"
 		dests := []backendconfig.DestinationT{
-			webhookDest("dest-1", true),
-			amplitudeDest("dest-2", true),
-			amplitudeDest("dest-3", true),
+			webhookDest(),
+			amplitudeDest("dest-2"),
+			amplitudeDest("dest-3"),
 		}
 		proc := newClassifyTestHandle(sourceID, dests)
 
@@ -196,8 +196,8 @@ func TestClassifyDestinations(t *testing.T) {
 	t.Run("specificDestID set and the stamped destination consent-denied yields empty available and exactly one excluded entry", func(t *testing.T) {
 		sourceID := "source-1"
 		dests := []backendconfig.DestinationT{
-			consentDeniedDest(amplitudeDest("dest-1", true)),
-			amplitudeDest("dest-2", true),
+			consentDeniedDest(amplitudeDest("dest-1")),
+			amplitudeDest("dest-2"),
 		}
 		proc := newClassifyTestHandle(sourceID, dests)
 
@@ -211,7 +211,7 @@ func TestClassifyDestinations(t *testing.T) {
 
 	t.Run("specificDestID naming a disabled or unconnected destination yields empty available AND empty excluded", func(t *testing.T) {
 		sourceID := "source-1"
-		dests := []backendconfig.DestinationT{webhookDest("dest-1", true)}
+		dests := []backendconfig.DestinationT{webhookDest()}
 		proc := newClassifyTestHandle(sourceID, dests)
 
 		available, excluded := proc.classifyDestinations(types.SingularEventT{}, sourceID, "dest-not-connected")
@@ -223,12 +223,12 @@ func TestClassifyDestinations(t *testing.T) {
 	t.Run("specificDestID set and the stamped destination's type integration-excluded yields empty available and one filtered_integration entry", func(t *testing.T) {
 		sourceID := "source-1"
 		dests := []backendconfig.DestinationT{
-			webhookDest("dest-1", true),
-			amplitudeDest("dest-2", true),
+			webhookDest(),
+			amplitudeDest("dest-2"),
 		}
 		proc := newClassifyTestHandle(sourceID, dests)
 
-		available, excluded := proc.classifyDestinations(integrationsExcludingEvent("Amplitude"), sourceID, "dest-2")
+		available, excluded := proc.classifyDestinations(integrationsExcludingAmplitude(), sourceID, "dest-2")
 
 		require.Empty(t, available)
 		require.Len(t, excluded, 1)
@@ -248,7 +248,7 @@ func TestClassifyDestinations(t *testing.T) {
 
 	t.Run("a malformed integrations.All value excludes every candidate as filtered_integration", func(t *testing.T) {
 		sourceID := "source-1"
-		dests := []backendconfig.DestinationT{webhookDest("dest-1", true), amplitudeDest("dest-2", true)}
+		dests := []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")}
 		proc := newClassifyTestHandle(sourceID, dests)
 
 		event := types.SingularEventT{
@@ -273,27 +273,27 @@ func TestClassifyDestinations(t *testing.T) {
 		}{
 			{
 				name:  "all survive",
-				dests: []backendconfig.DestinationT{webhookDest("dest-1", true), amplitudeDest("dest-2", true)},
+				dests: []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")},
 				event: types.SingularEventT{},
 			},
 			{
 				name:  "integration excluded type",
-				dests: []backendconfig.DestinationT{webhookDest("dest-1", true), amplitudeDest("dest-2", true)},
-				event: integrationsExcludingEvent("Amplitude"),
+				dests: []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")},
+				event: integrationsExcludingAmplitude(),
 			},
 			{
 				name:  "all excluded by integrations",
-				dests: []backendconfig.DestinationT{amplitudeDest("dest-1", true)},
-				event: integrationsExcludingEvent("Amplitude"),
+				dests: []backendconfig.DestinationT{amplitudeDest("dest-1")},
+				event: integrationsExcludingAmplitude(),
 			},
 			{
 				name:  "consent denies the only destination",
-				dests: []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1", true))},
+				dests: []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))},
 				event: deniedConsentEvent(),
 			},
 			{
 				name:  "consent denies one of two",
-				dests: []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1", true)), amplitudeDest("dest-2", true)},
+				dests: []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1")), amplitudeDest("dest-2")},
 				event: deniedConsentEvent(),
 			},
 			{
@@ -303,25 +303,25 @@ func TestClassifyDestinations(t *testing.T) {
 			},
 			{
 				name:           "RETL narrowed to available sibling",
-				dests:          []backendconfig.DestinationT{webhookDest("dest-1", true), amplitudeDest("dest-2", true)},
+				dests:          []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")},
 				event:          types.SingularEventT{},
 				specificDestID: "dest-2",
 			},
 			{
 				name:           "RETL narrowed to unavailable/unconnected destination",
-				dests:          []backendconfig.DestinationT{webhookDest("dest-1", true)},
+				dests:          []backendconfig.DestinationT{webhookDest()},
 				event:          types.SingularEventT{},
 				specificDestID: "dest-not-connected",
 			},
 			{
 				name:           "RETL narrowed to consent-denied stamped destination",
-				dests:          []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1", true))},
+				dests:          []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))},
 				event:          deniedConsentEvent(),
 				specificDestID: "dest-1",
 			},
 			{
 				name:  "malformed integrations.All",
-				dests: []backendconfig.DestinationT{webhookDest("dest-1", true)},
+				dests: []backendconfig.DestinationT{webhookDest()},
 				event: types.SingularEventT{"integrations": map[string]any{"All": "not-a-bool"}},
 			},
 		}
