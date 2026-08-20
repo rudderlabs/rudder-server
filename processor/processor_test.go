@@ -1174,8 +1174,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 									},
 								},
 								func(e mockEventData) string {
-									return fmt.Sprintf(
-										`
+									return fmt.Sprintf(`
 										{
 										  "rudderId": "some-rudder-id",
 										  "messageId": "message-%[1]s",
@@ -1257,8 +1256,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 									},
 								},
 								func(e mockEventData) string {
-									return fmt.Sprintf(
-										`
+									return fmt.Sprintf(`
 										{
 										  "rudderId": "some-rudder-id",
 										  "messageId": "message-%[1]s",
@@ -2095,8 +2093,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					JobsLimit:        processor.config.maxEventsToProcess.Load(),
 					EventsLimit:      processor.config.maxEventsToProcess.Load(),
 					PayloadSizeLimit: processor.payloadLimit.Load(),
-				},
-			).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
+				}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
 				Expect(job.UUID.String()).To(testutils.BeValidUUID())
@@ -2383,8 +2380,7 @@ var _ = Describe("Processor", Ordered, func() {
 					JobsLimit:        processor.config.maxEventsToProcess.Load(),
 					EventsLimit:      processor.config.maxEventsToProcess.Load(),
 					PayloadSizeLimit: processor.payloadLimit.Load(),
-				},
-			).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
+				}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
 
 			didWork := processor.handlePendingGatewayJobs("")
 			Expect(didWork).To(Equal(false))
@@ -2527,8 +2523,7 @@ var _ = Describe("Processor", Ordered, func() {
 					JobsLimit:        processor.config.maxEventsToProcess.Load(),
 					EventsLimit:      processor.config.maxEventsToProcess.Load(),
 					PayloadSizeLimit: processor.payloadLimit.Load(),
-				},
-			).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
+				}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			mockTransformerClients.SetDestinationTransformOutput(
 				types.Response{
@@ -3935,8 +3930,7 @@ var _ = Describe("Processor", Ordered, func() {
 				FailedEvents: FailedEvents,
 			}
 
-			m := processor.getNonSuccessfulMetrics(
-				transformerResponse,
+			m := processor.getNonSuccessfulMetrics(transformerResponse,
 				inputEvents,
 				&commonMetadata,
 				eventsByMessageID,
@@ -5277,8 +5271,7 @@ func createBatchPayload(writeKey, receivedAt string, events []mockEventData, eve
 		payloads = append(payloads, eventCreator(event))
 	}
 	batch := strings.Join(payloads, ",")
-	return fmt.Appendf(
-		nil,
+	return fmt.Appendf(nil,
 		`{"writeKey":%q,"batch":[%s],"requestIP":"1.2.3.4","receivedAt":%q}`, writeKey, batch, receivedAt,
 	)
 }
