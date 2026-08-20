@@ -1405,6 +1405,27 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 	})
 })
 
+func TestSourceMetadataBySourceID(t *testing.T) {
+	initProcessor()
+
+	var c testContext
+	c.Setup(t)
+	defer c.Finish()
+
+	c.mockGatewayJobsDB.EXPECT().DeleteExecuting()
+
+	processor := NewHandle(config.New(), nil)
+	Setup(processor, &c, false, false, t)
+	defer processor.Shutdown()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+
+	metadataBySourceID := processor.getSourceMetadataBySourceID()
+	require.Equal(t, activationrecords.SourceMetadata{Category: "webhook", Name: "fbla"}, metadataBySourceID[fblaSourceId])
+}
+
 func TestArchival(t *testing.T) {
 	initProcessor()
 

@@ -34,11 +34,28 @@ const (
 	activationRecordsTable = "activation_records_reports"
 
 	// retlSourceCategory is the SourceDefinition.Category of reverse-ETL ("warehouse
-	// actions") sources. MAR meters activation records from these sources only; the
-	// classification is resolved from the source's config category (via the source_id ->
-	// category map passed to GenerateReportsFromJobs), not from the job's source_category param.
+	// actions") sources. MAR meters activation records from these sources only when
+	// the source definition name is also allow-listed; classification is resolved
+	// from backend-config source metadata, not from the job's source_category param.
 	retlSourceCategory = "warehouse"
 )
+
+var defaultAllowedSourceDefinitionNames = []string{
+	"postgres",
+	"redshift",
+	"snowflake",
+	"bigquery",
+	"mysql",
+	"databricks",
+	"trino",
+}
+
+// SourceMetadata is the source-definition metadata needed to classify whether a
+// job belongs to a real reverse-ETL warehouse source for MAR metering.
+type SourceMetadata struct {
+	Category string
+	Name     string
+}
 
 // recordKey is the aggregation grain for activation records: one HLL sketch per
 // (workspace, source, destination). origin is intentionally NOT part of the key —
@@ -67,18 +84,19 @@ type ActivationRecord struct {
 
 // ActivationRecordsReporter is the interface to report monthly active records (MAR).
 type ActivationRecordsReporter interface {
-	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceCategoriesBySourceID map[string]string) []*ActivationRecord
+	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceMetadataBySourceID map[string]SourceMetadata) []*ActivationRecord
 	ReportActivationRecords(ctx context.Context, reports []*ActivationRecord, tx *txn.Tx) error
 	MigrateDatabase(dbConn string, conf *config.Config) error
 }
 
 // UniqueActivationRecordsReporter implements ActivationRecordsReporter using HLL sketches.
 type UniqueActivationRecordsReporter struct {
-	log         logger.Logger
-	hllSettings *hll.Settings
-	instanceID  string
-	now         func() time.Time
-	stats       stats.Stats
+	log                          logger.Logger
+	hllSettings                  *hll.Settings
+	instanceID                   string
+	now                          func() time.Time
+	stats                        stats.Stats
+	allowedSourceDefinitionNames config.ValueLoader[[]string]
 }
 
 // NewUniqueActivationRecordsReporter constructs a UniqueActivationRecordsReporter.
@@ -100,6 +118,10 @@ func NewUniqueActivationRecordsReporter(log logger.Logger, conf *config.Config, 
 		hllSettings: hllSettings,
 		instanceID:  conf.GetStringVar("1", "INSTANCE_ID"),
 		stats:       stats,
+		allowedSourceDefinitionNames: conf.GetReloadableStringSliceVar(
+			defaultAllowedSourceDefinitionNames,
+			"ActivationRecords.allowedSourceDefinitionNames",
+		),
 		now: func() time.Time {
 			return timeutil.Now()
 		},
@@ -131,33 +153,34 @@ func (u *UniqueActivationRecordsReporter) MigrateDatabase(dbConn string, conf *c
 
 // GenerateReportsFromJobs aggregates activation records from a batch of jobs.
 // It is FAIL-CLOSED: jobs missing fingerprint or origin are skipped (counted via stats).
-// sourceCategoriesBySourceID maps a source_id to its SourceDefinition.Category (from the
-// backend config); reverse-ETL classification is done via this map rather than the job's
-// source_category param, which is not populated on every ingestion path.
-func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceCategoriesBySourceID map[string]string) []*ActivationRecord {
+// sourceMetadataBySourceID maps a source_id to source-definition metadata (from
+// backend config); reverse-ETL classification is done via this map rather than
+// the job's source_category param, which is not populated on every ingestion path.
+func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceMetadataBySourceID map[string]SourceMetadata) []*ActivationRecord {
 	if len(jobs) == 0 {
 		return nil
 	}
 
 	accumulators := make(map[recordKey]*recordAccumulator)
+	allowedSourceDefinitionNames := normalizedSourceDefinitionNames(u.allowedSourceDefinitionNames.Load())
 
 	for _, job := range jobs {
-		if job.WorkspaceId == "" {
-			u.log.Warnn("workspace_id not found in job", logger.NewIntField("jobId", job.JobID))
-			u.recordSkip("missing_workspace")
+		sourceID := jsonparser.GetStringOrEmpty(job.Parameters, "source_id")
+
+		// MAR meters real reverse-ETL SQL warehouse sources only. Classify by
+		// SourceDefinition metadata from backend config (looked up by source_id), NOT
+		// the job's source_category param: the internal-batch ingestion path leaves that
+		// param empty, so trusting it would under-count. Requiring both category=warehouse
+		// and an allow-listed source-definition name avoids metering cloud-storage sources
+		// such as S3 that also use category=warehouse. Missing, unknown, non-warehouse, and
+		// warehouse-but-not-allow-listed sources are skipped silently — no per-job skip stat.
+		if !u.isAllowedWarehouseSource(sourceMetadataBySourceID[sourceID], allowedSourceDefinitionNames) {
 			continue
 		}
 
-		sourceID := jsonparser.GetStringOrEmpty(job.Parameters, "source_id")
-
-		// MAR meters reverse-ETL (warehouse) sources only. Classify by the source's
-		// SourceDefinition.Category from the backend config (looked up by source_id), NOT
-		// the job's source_category param: the internal-batch ingestion path leaves that
-		// param empty, so trusting it would under-count. This also prevents a client from
-		// being metered by stamping context.activation.fingerprint on a non-rETL source.
-		// A missing or unknown source_id resolves to "" here and is skipped. Non-rETL is
-		// the expected majority of traffic, so skip it silently — no per-job skip stat.
-		if !strings.EqualFold(sourceCategoriesBySourceID[sourceID], retlSourceCategory) {
+		if job.WorkspaceId == "" {
+			u.log.Warnn("workspace_id not found in job", logger.NewIntField("jobId", job.JobID))
+			u.recordSkip("missing_workspace")
 			continue
 		}
 
@@ -244,6 +267,29 @@ func (u *UniqueActivationRecordsReporter) GenerateReportsFromJobs(jobs []*jobsdb
 		})
 	}
 	return reports
+}
+
+func (u *UniqueActivationRecordsReporter) isAllowedWarehouseSource(source SourceMetadata, allowedSourceDefinitionNames map[string]struct{}) bool {
+	if !strings.EqualFold(source.Category, retlSourceCategory) {
+		return false
+	}
+	_, ok := allowedSourceDefinitionNames[normalizeSourceDefinitionName(source.Name)]
+	return ok
+}
+
+func normalizedSourceDefinitionNames(names []string) map[string]struct{} {
+	allowed := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		normalized := normalizeSourceDefinitionName(name)
+		if normalized != "" {
+			allowed[normalized] = struct{}{}
+		}
+	}
+	return allowed
+}
+
+func normalizeSourceDefinitionName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
 }
 
 // ReportActivationRecords writes activation records to the database via a COPY statement.
