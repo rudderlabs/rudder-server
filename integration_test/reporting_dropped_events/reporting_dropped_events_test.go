@@ -667,7 +667,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 			drainGateway(eventsPerBatch)
 
 			require.Eventually(t, func() bool {
-				return reportCount("source_id = 'source-2' and destination_id = '' and pu = 'destination_filter' and status = 'filtered' and status_code = 298 and in_pu = 'gateway' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
+				return reportCount("source_id = 'source-2' and destination_id = '' and pu = 'destination_filter' and status = 'filtered' and status_code = 298 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
 			}, 30*time.Second, 500*time.Millisecond, "the fallback source-level filtered row should still be emitted, from fan-out")
 
 			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
@@ -684,7 +684,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 			drainGateway(2 * eventsPerBatch)
 
 			require.Eventually(t, func() bool {
-				return reportCount("source_id = 'source-1' and pu = 'destination_enter' and status = 'succeeded' and status_code = 200 and in_pu = 'gateway' and terminal_state = false and initial_state = false and error_type = ''") == 3*eventsPerBatch
+				return reportCount("source_id = 'source-1' and pu = 'destination_enter' and status = 'succeeded' and status_code = 200 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''") == 3*eventsPerBatch
 			}, 30*time.Second, 500*time.Millisecond, "every candidate destination should get a destination_enter row")
 
 			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
@@ -707,7 +707,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 			drainGateway(3 * eventsPerBatch)
 
 			require.Eventually(t, func() bool {
-				return reportCount("source_id = 'source-1' and destination_id = 'destination-2' and pu = 'destination_filter' and status = 'filtered_integration' and status_code = 298 and in_pu = 'destination_enter' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
+				return reportCount("source_id = 'source-1' and destination_id = 'destination-2' and pu = 'destination_filter' and status = 'filtered_integration' and status_code = 298 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
 			}, 30*time.Second, 500*time.Millisecond, "the excluded destination should get a filtered_integration row")
 
 			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
@@ -739,7 +739,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 			drainGateway(4 * eventsPerBatch)
 
 			require.Eventually(t, func() bool {
-				return reportCount("source_id = 'source-2' and destination_id = '' and pu = 'destination_filter' and status = 'filtered_no_destination' and status_code = 298 and in_pu = 'gateway' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
+				return reportCount("source_id = 'source-2' and destination_id = '' and pu = 'destination_filter' and status = 'filtered_no_destination' and status_code = 298 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
 			}, 30*time.Second, 500*time.Millisecond, "zero-candidate events should be reported as filtered_no_destination")
 
 			logRows(t, postgresContainer.DB, "SELECT * FROM reports")

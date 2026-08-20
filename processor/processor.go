@@ -1802,10 +1802,9 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 	proc.stats.statNumRequests(partition).Count(len(jobList))
 
 	// earlyDestinationFilter is snapshotted once per batch here, at the start of the pipeline,
-	// so every downstream stage this batch passes through (source hydration, tracking-plan
-	// validation, fan-out, user-transform) observes the same value even if the reloadable
-	// config flips while the batch is in flight. Do not call .Load() again downstream — thread
-	// this snapshot through the stage message structs instead.
+	// so the preprocess guard below and the fan-out fallback (pretransformStage) observe the
+	// same value even if the reloadable config flips while the batch is in flight. Do not call
+	// .Load() again downstream — thread this snapshot through the stage message structs instead.
 	earlyDestinationFilter := proc.config.earlyDestinationFilter.Load()
 
 	var statusList []*jobsdb.JobStatusT
@@ -2319,15 +2318,13 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	groupedEvents := make(map[string][]types.TransformerEvent)
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 
-	// destination_enter (Reporting.destinationEnterMetrics.enabled) and the source-level
-	// destination_filter rows emitted from fan-out (Reporting.perDestinationFilterMetrics.enabled
-	// off fallback, and the permanent filtered_no_destination carve-out) chain from whichever
-	// pipeline step actually ran ahead of them for that source (tracking_plan_validator,
-	// source_hydration or gateway), so their inPU varies per source. Per-destination
-	// destination_filter rows always chain from destination_enter, a single constant inPU, so
-	// they use one flat pair of maps instead of the bucket-by-inPU below.
-	destinationEnterByInPU := make(map[string]*inPUStatusMaps)
-	sourceLevelDestFilterByInPU := make(map[string]*inPUStatusMaps)
+	// destination_enter (Reporting.destinationEnterMetrics.enabled) and destination_filter rows
+	// emitted from fan-out carry an empty inPU: the field is slated for deprecation, so no chain
+	// value is computed for the rows introduced here.
+	destEnterConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
+	destEnterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+	sourceLevelDestFilterConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
+	sourceLevelDestFilterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	destFilterPerDestConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 	destFilterPerDestStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	nilPayload := func() json.RawMessage { return nil }
@@ -2437,7 +2434,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	// Placing the trackingPlan validation filters here.
 	// Else further down events are duplicated by destId, so multiple validation takes places for same event
 	validateEventsStart := time.Now()
-	validatedEventsBySourceId, validatedReportMetrics, sourcePipelineSteps := proc.validateEvents(preTrans.groupedEventsBySourceId, preTrans.eventsByMessageID, preTrans.srcHydrationEnabledMap, preTrans.earlyDestinationFilter)
+	validatedEventsBySourceId, validatedReportMetrics, sourcePipelineSteps := proc.validateEvents(preTrans.groupedEventsBySourceId, preTrans.eventsByMessageID, preTrans.srcHydrationEnabledMap)
 	validateEventsTime := time.Since(validateEventsStart)
 	defer proc.stats.validateEventsTime(preTrans.partition).SendTiming(validateEventsTime)
 
@@ -2475,16 +2472,15 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 				}
 
 				if proc.config.destinationEnterMetricsEnabled.Load() {
-					enterBucket := getInPUStatusMaps(destinationEnterByInPU, pipelineStepsInPU(sourcePipelineSteps[sourceIdT], reportingtypes.GATEWAY))
 					for i := range availableDestinations {
 						setReportingDestination(&availableDestinations[i])
 						reportingEvent.StatusCode = reportingtypes.SuccessEventCode
-						proc.updateMetricMaps(nil, nil, enterBucket.connectionDetailsMap, enterBucket.statusDetailsMap, reportingEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_ENTER, nilPayload, nil)
+						proc.updateMetricMaps(nil, nil, destEnterConnectionDetailsMap, destEnterStatusDetailMap, reportingEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_ENTER, nilPayload, nil)
 					}
 					for _, ex := range excludedDestinations {
 						setReportingDestination(ex.destination)
 						reportingEvent.StatusCode = reportingtypes.SuccessEventCode
-						proc.updateMetricMaps(nil, nil, enterBucket.connectionDetailsMap, enterBucket.statusDetailsMap, reportingEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_ENTER, nilPayload, nil)
+						proc.updateMetricMaps(nil, nil, destEnterConnectionDetailsMap, destEnterStatusDetailMap, reportingEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_ENTER, nilPayload, nil)
 					}
 				}
 
@@ -2501,16 +2497,14 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 						// per-destination metrics on, since no per-destination row is possible.
 						resetReportingDestination()
 						reportingEvent.StatusCode = reportingtypes.FilterEventCode
-						sourceLevelBucket := getInPUStatusMaps(sourceLevelDestFilterByInPU, pipelineStepsInPU(sourcePipelineSteps[sourceIdT], reportingtypes.GATEWAY))
-						proc.updateMetricMaps(nil, nil, sourceLevelBucket.connectionDetailsMap, sourceLevelBucket.statusDetailsMap, reportingEvent, reportingtypes.FilteredNoDestinationStatus, reportingtypes.DESTINATION_FILTER, nilPayload, nil)
+						proc.updateMetricMaps(nil, nil, sourceLevelDestFilterConnectionDetailsMap, sourceLevelDestFilterStatusDetailMap, reportingEvent, reportingtypes.FilteredNoDestinationStatus, reportingtypes.DESTINATION_FILTER, nilPayload, nil)
 					}
 				case !preTrans.earlyDestinationFilter && len(availableDestinations) == 0:
 					// reorder flag on, per-destination metrics off: fall back to the old
 					// source-level filtered/298 row, now emitted from fan-out instead of preprocess.
 					resetReportingDestination()
 					reportingEvent.StatusCode = reportingtypes.FilterEventCode
-					sourceLevelBucket := getInPUStatusMaps(sourceLevelDestFilterByInPU, pipelineStepsInPU(sourcePipelineSteps[sourceIdT], reportingtypes.GATEWAY))
-					proc.updateMetricMaps(nil, nil, sourceLevelBucket.connectionDetailsMap, sourceLevelBucket.statusDetailsMap, reportingEvent, jobsdb.Filtered.State, reportingtypes.DESTINATION_FILTER, nilPayload, nil)
+					proc.updateMetricMaps(nil, nil, sourceLevelDestFilterConnectionDetailsMap, sourceLevelDestFilterStatusDetailMap, reportingEvent, jobsdb.Filtered.State, reportingtypes.DESTINATION_FILTER, nilPayload, nil)
 				}
 			}
 			// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - END
@@ -2574,15 +2568,13 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 
 	// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - START
 	if proc.isReportingEnabled() {
-		for inPU, bucket := range destinationEnterByInPU {
-			for k, cd := range bucket.connectionDetailsMap {
-				for _, sd := range bucket.statusDetailsMap[k] {
-					preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
-						ConnectionDetails: *cd,
-						PUDetails:         *reportingtypes.CreatePUDetails(inPU, reportingtypes.DESTINATION_ENTER, false, false),
-						StatusDetail:      sd,
-					})
-				}
+		for k, cd := range destEnterConnectionDetailsMap {
+			for _, sd := range destEnterStatusDetailMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DESTINATION_ENTER, false, false),
+					StatusDetail:      sd,
+				})
 			}
 		}
 
@@ -2590,21 +2582,19 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			for _, sd := range destFilterPerDestStatusDetailMap[k] {
 				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
 					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.DESTINATION_ENTER, reportingtypes.DESTINATION_FILTER, false, false),
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DESTINATION_FILTER, false, false),
 					StatusDetail:      sd,
 				})
 			}
 		}
 
-		for inPU, bucket := range sourceLevelDestFilterByInPU {
-			for k, cd := range bucket.connectionDetailsMap {
-				for _, sd := range bucket.statusDetailsMap[k] {
-					preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
-						ConnectionDetails: *cd,
-						PUDetails:         *reportingtypes.CreatePUDetails(inPU, reportingtypes.DESTINATION_FILTER, false, false),
-						StatusDetail:      sd,
-					})
-				}
+		for k, cd := range sourceLevelDestFilterConnectionDetailsMap {
+			for _, sd := range sourceLevelDestFilterStatusDetailMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DESTINATION_FILTER, false, false),
+					StatusDetail:      sd,
+				})
 			}
 		}
 	}
@@ -2634,7 +2624,6 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		statusList:                   preTrans.statusList,
 		sourceDupStats:               preTrans.sourceDupStats,
 		dedupKeys:                    preTrans.dedupKeys,
-		earlyDestinationFilter:       preTrans.earlyDestinationFilter,
 		totalEvents:                  preTrans.totalEvents,
 		hasMore:                      preTrans.subJobs.hasMore,
 		rsourcesStats:                preTrans.subJobs.rsourcesStats,
@@ -2697,40 +2686,6 @@ type SourcePipelineSteps struct {
 }
 type sourceIDPipelineSteps map[SourceIDT]SourcePipelineSteps
 
-// pipelineStepsInPU picks the inPU label of whichever pipeline step actually ran immediately
-// ahead of the caller for this source: tracking_plan_validator, then source_hydration, falling
-// back to defaultPU when neither ran.
-func pipelineStepsInPU(steps SourcePipelineSteps, defaultPU string) string {
-	switch {
-	case steps.trackingPlanValidation:
-		return reportingtypes.TRACKINGPLAN_VALIDATOR
-	case steps.srcHydration:
-		return reportingtypes.SOURCE_HYDRATION
-	default:
-		return defaultPU
-	}
-}
-
-// inPUStatusMaps is the connectionDetails/statusDetails pair updateMetricMaps accumulates into,
-// bucketed by inPU where the inPU varies across the accumulation (see destinationEnterByInPU).
-type inPUStatusMaps struct {
-	connectionDetailsMap map[string]*reportingtypes.ConnectionDetails
-	statusDetailsMap     map[string]map[string]*reportingtypes.StatusDetail
-}
-
-// getInPUStatusMaps returns the bucket for inPU, creating it on first use.
-func getInPUStatusMaps(byInPU map[string]*inPUStatusMaps, inPU string) *inPUStatusMaps {
-	b, ok := byInPU[inPU]
-	if !ok {
-		b = &inPUStatusMaps{
-			connectionDetailsMap: make(map[string]*reportingtypes.ConnectionDetails),
-			statusDetailsMap:     make(map[string]map[string]*reportingtypes.StatusDetail),
-		}
-		byInPU[inPU] = b
-	}
-	return b
-}
-
 type transformationMessage struct {
 	ctx           context.Context
 	groupedEvents map[string][]types.TransformerEvent
@@ -2747,9 +2702,6 @@ type transformationMessage struct {
 	statusList                   []*jobsdb.JobStatusT
 	sourceDupStats               map[dupStatKey]int
 	dedupKeys                    map[string]struct{}
-	// earlyDestinationFilter is the per-batch snapshot threaded from srcHydrationMessage; see the
-	// field doc on srcHydrationMessage.
-	earlyDestinationFilter bool
 
 	totalEvents int
 
@@ -2839,7 +2791,6 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 				in.srcPipelineSteps,
 				in.eventsByMessageID,
 				in.uniqueMessageIdsBySrcDestKey,
-				in.earlyDestinationFilter,
 			)
 		})
 	}
@@ -3351,7 +3302,7 @@ type userTransformAndFilterOutput struct {
 	transformAt           string
 }
 
-func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAndDestKey string, eventList []types.TransformerEvent, srcPipelineSteps sourceIDPipelineSteps, eventsByMessageID map[string]types.SingularEventWithReceivedAt, uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}, earlyDestinationFilter bool) userTransformAndFilterOutput {
+func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAndDestKey string, eventList []types.TransformerEvent, srcPipelineSteps sourceIDPipelineSteps, eventsByMessageID map[string]types.SingularEventWithReceivedAt, uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}) userTransformAndFilterOutput {
 	if len(eventList) == 0 {
 		return userTransformAndFilterOutput{
 			eventsToTransform: eventList,
@@ -3418,12 +3369,12 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 	var response types.Response
 	var eventsToTransform []types.TransformerEvent
 	var inPU string
-	if earlyDestinationFilter {
-		inPU = pipelineStepsInPU(sourceSteps, reportingtypes.DESTINATION_FILTER)
-	} else {
-		// With the destination filter moved to fan-out (post tracking-plan, pre user-transform),
-		// the filter decision is always the stage immediately before user_transformer now,
-		// regardless of which of tracking-plan/source-hydration ran for this source.
+	switch {
+	case sourceSteps.trackingPlanValidation:
+		inPU = reportingtypes.TRACKINGPLAN_VALIDATOR
+	case sourceSteps.srcHydration:
+		inPU = reportingtypes.SOURCE_HYDRATION
+	default:
 		inPU = reportingtypes.DESTINATION_FILTER
 	}
 	// Send to custom transformer only if the destination has a transformer enabled

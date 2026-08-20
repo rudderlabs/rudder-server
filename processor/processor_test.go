@@ -948,8 +948,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		{
 			// Hydration-enabled and tracking-plan-enabled: gives
 			// TestDestinationVisibilityReporting a source that exercises the
-			// source_hydration arm of the tracking-plan inPU switch (trackingplan.go:122),
-			// which SourceIDEnabledTp (no hydration) and fblaSourceId (no TP, no
+			// source_hydration arm of the tracking-plan inPU selection, which
+			// SourceIDEnabledTp (no hydration) and fblaSourceId (no TP, no
 			// destinations) cannot reach on their own.
 			ID:       SourceIDHydrationTp,
 			Name:     SourceIDHydrationTpName,
@@ -1003,23 +1003,6 @@ var sampleBackendConfig = backendconfig.ConfigT{
 				},
 			},
 			WorkspaceID: "test-workspace-id",
-			// TestDestinationVisibilityReporting's pipelineStepsInPU case needs a
-			// hydration-only (no TP) source that also has a destination, to exercise the
-			// source_hydration arm of destination_enter's inPU selection.
-			Destinations: []backendconfig.DestinationT{
-				{
-					ID:                 "fbla-destination",
-					Name:               "FBLA-DEST",
-					Enabled:            true,
-					IsProcessorEnabled: true,
-					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						ID:          "fbla-destination-definition-id",
-						Name:        "fbla-destination-definition-name",
-						DisplayName: "fbla-destination-definition-display-name",
-						Config:      map[string]any{},
-					},
-				},
-			},
 		},
 		{
 			ID: fblaSourceId2,
@@ -6077,9 +6060,9 @@ func TestDedupReporting(t *testing.T) {
 
 // TestDestinationVisibilityReporting exercises the fan-out reporting added for
 // per-destination visibility (destination_enter / destination_filter), see processor.go:2450-2505,
-// plus the earlyDestinationFilter reorder (processor.go:2211, trackingplan.go:113-124,
-// processor.go:3404-3418) and the inPU rewiring it drives in src_hydration_stage.go and
-// trackingplan.go. Dedup is off throughout; SourceIDEnabled's three enabled destinations
+// plus the earlyDestinationFilter reorder (processor.go:2211). The rows introduced here carry an
+// empty inPU (the field is slated for deprecation), and the reorder must not change the inPU of
+// pre-existing rows. Dedup is off throughout; SourceIDEnabled's three enabled destinations
 // (A, B, C — three distinct destination types plus one disabled) are reused as-is.
 func TestDestinationVisibilityReporting(t *testing.T) {
 	destEnterRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
@@ -6309,10 +6292,9 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	})
 
 	t.Run("with defaults tracking-plan rows carry inPU destination_filter and user-transformer rows carry inPU destination_filter by default", func(t *testing.T) {
-		// TP's own inPU (trackingplan.go:117-120) defaults to DESTINATION_FILTER regardless
-		// of whether TP validation ran for the source — it is only overridden to
+		// TP's own inPU defaults to DESTINATION_FILTER — it is only overridden to
 		// SOURCE_HYDRATION when hydration ran ahead of it. SourceIDEnabledTp has no
-		// hydration, so this checks the flag-true default squarely.
+		// hydration, so this checks the default squarely.
 		t.Run("tracking-plan rows", func(t *testing.T) {
 			processor, _, c, transformerClients := newVisibilityProcessor(t, true)
 			defer c.Finish()
@@ -6365,6 +6347,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		for _, r := range rows {
 			require.False(t, r.TerminalPU)
 			require.False(t, r.InitialPU)
+			require.Equal(t, "", r.InPU, "destination_enter rows carry an empty inPU (field slated for deprecation)")
 			require.EqualValues(t, 1, r.StatusDetail.Count)
 			require.Equal(t, jobsdb.Succeeded.State, r.StatusDetail.Status)
 			require.Equal(t, reportingtypes.SuccessEventCode, r.StatusDetail.StatusCode)
@@ -6385,53 +6368,24 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.ElementsMatch(t, []string{DestinationIDEnabledA, DestinationIDEnabledB, DestinationIDEnabledC}, ids)
 	})
 
-	t.Run("destination_enter inPU is gateway, source_hydration or tracking_plan_validator per the source's pipeline steps", func(t *testing.T) {
-		t.Run("no hydration, no TP: gateway", func(t *testing.T) {
-			processor, conf, c, _ := newVisibilityProcessor(t, true)
-			defer c.Finish()
-			conf.Set("Reporting.destinationEnterMetrics.enabled", true)
+	t.Run("destination_enter inPU stays empty regardless of the source's pipeline steps", func(t *testing.T) {
+		// SourceIDHydrationTp runs both source hydration and TP validation ahead of fan-out —
+		// even then no chain value is computed for destination_enter (inPU is slated for
+		// deprecation).
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Reporting.destinationEnterMetrics.enabled", true)
+		transformerClients.WithDynamicSrcHydration(echoHydration)
+		transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
 
-			jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
-			msg := runVisibilityPretransform(t, processor, jobs)
+		jobs := []*jobsdb.JobT{job(1, SourceIDHydrationTp, "", []string{payload("m1", nil, nil)})}
+		msg := runVisibilityPretransform(t, processor, jobs)
 
-			rows := destEnterRows(msg.reportMetrics)
-			require.NotEmpty(t, rows)
-			for _, r := range rows {
-				require.Equal(t, reportingtypes.GATEWAY, r.InPU)
-			}
-		})
-
-		t.Run("tracking-plan validation ran: tracking_plan_validator", func(t *testing.T) {
-			processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
-			defer c.Finish()
-			conf.Set("Reporting.destinationEnterMetrics.enabled", true)
-			transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
-
-			jobs := []*jobsdb.JobT{job(1, SourceIDEnabledTp, "", []string{payload("m1", nil, nil)})}
-			msg := runVisibilityPretransform(t, processor, jobs)
-
-			rows := destEnterRows(msg.reportMetrics)
-			require.NotEmpty(t, rows)
-			for _, r := range rows {
-				require.Equal(t, reportingtypes.TRACKINGPLAN_VALIDATOR, r.InPU)
-			}
-		})
-
-		t.Run("only source hydration ran (no TP): source_hydration", func(t *testing.T) {
-			processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
-			defer c.Finish()
-			conf.Set("Reporting.destinationEnterMetrics.enabled", true)
-			transformerClients.WithDynamicSrcHydration(echoHydration)
-
-			jobs := []*jobsdb.JobT{job(1, fblaSourceId, "", []string{payload("m1", nil, nil)})}
-			msg := runVisibilityPretransform(t, processor, jobs)
-
-			rows := destEnterRows(msg.reportMetrics)
-			require.NotEmpty(t, rows)
-			for _, r := range rows {
-				require.Equal(t, reportingtypes.SOURCE_HYDRATION, r.InPU)
-			}
-		})
+		rows := destEnterRows(msg.reportMetrics)
+		require.NotEmpty(t, rows)
+		for _, r := range rows {
+			require.Equal(t, "", r.InPU)
+		}
 	})
 
 	t.Run("destination_enter is emitted for a forked destination that produces no inline clone", func(t *testing.T) {
@@ -6465,7 +6419,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	// the candidate-semantics invariant subtest that follows it.
 	var sharedConsentRun *transformationMessage
 
-	t.Run("consent excluding one of three destinations yields three enter rows, exactly one filtered_consent/297 row with inPU destination_enter, and clones to the other two", func(t *testing.T) {
+	t.Run("consent excluding one of three destinations yields three enter rows, exactly one filtered_consent/297 row, and clones to the other two", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
 		conf.Set("Reporting.destinationEnterMetrics.enabled", true)
@@ -6484,7 +6438,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.Equal(t, DestinationIDEnabledB, filterRows[0].DestinationID)
 		require.Equal(t, reportingtypes.FilteredConsentStatus, filterRows[0].StatusDetail.Status)
 		require.Equal(t, reportingtypes.ConsentDeniedEventCode, filterRows[0].StatusDetail.StatusCode)
-		require.Equal(t, reportingtypes.DESTINATION_ENTER, filterRows[0].InPU)
+		require.Equal(t, "", filterRows[0].InPU)
 
 		require.ElementsMatch(t, []string{
 			getKeyFromSourceAndDest(SourceIDEnabled, DestinationIDEnabledA),
@@ -6521,7 +6475,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.Empty(t, sourceLevelDestFilterRows(msg.reportMetrics))
 	})
 
-	t.Run("a zero-candidate event emits filtered_no_destination/298 with empty destination id and pipeline-steps inPU", func(t *testing.T) {
+	t.Run("a zero-candidate event emits filtered_no_destination/298 with empty destination id", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
 		conf.Set("Processor.earlyDestinationFilter", false)
@@ -6536,7 +6490,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.Equal(t, "", rows[0].DestinationID)
 		require.Equal(t, reportingtypes.FilteredNoDestinationStatus, rows[0].StatusDetail.Status)
 		require.Equal(t, reportingtypes.FilterEventCode, rows[0].StatusDetail.StatusCode)
-		require.Equal(t, reportingtypes.GATEWAY, rows[0].InPU)
+		require.Equal(t, "", rows[0].InPU)
 	})
 
 	t.Run("a RETL event whose stamped destination is unavailable emits filtered_no_destination and no rows at all for sibling destinations", func(t *testing.T) {
@@ -6617,7 +6571,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.Empty(t, tpRows(msgReorderOff.reportMetrics), "with the flag true (default) the event never reaches TP")
 	})
 
-	t.Run("with the reorder on and per-destination metrics off, the drop emits exactly one source-level filtered/298 row carrying the pipeline-steps inPU", func(t *testing.T) {
+	t.Run("with the reorder on and per-destination metrics off, the drop emits exactly one source-level filtered/298 row", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
 		conf.Set("Processor.earlyDestinationFilter", false)
@@ -6629,11 +6583,11 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.Len(t, rows, 1, "exactly one — the preprocess guard is skipped, a second row would mean double emission")
 		require.Equal(t, "", rows[0].DestinationID)
 		require.Equal(t, jobsdb.Filtered.State, rows[0].StatusDetail.Status)
-		require.Equal(t, reportingtypes.GATEWAY, rows[0].InPU)
+		require.Equal(t, "", rows[0].InPU)
 	})
 
-	t.Run("with the reorder on, tracking-plan rows carry inPU gateway (no hydration) or source_hydration (hydration), and user-transformer rows carry inPU destination_filter for every source", func(t *testing.T) {
-		t.Run("no TP, no hydration: user-transformer still chains from destination_filter", func(t *testing.T) {
+	t.Run("the reorder does not change the inPU of pre-existing tracking-plan and user-transformer rows", func(t *testing.T) {
+		t.Run("no TP, no hydration: user-transformer chains from destination_filter", func(t *testing.T) {
 			processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
 			defer c.Finish()
 			conf.Set("Processor.earlyDestinationFilter", false)
@@ -6651,7 +6605,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 			}
 		})
 
-		t.Run("TP only (no hydration): tracking-plan inPU gateway", func(t *testing.T) {
+		t.Run("TP only (no hydration): tracking-plan inPU destination_filter, user-transformer chains from tracking_plan_validator", func(t *testing.T) {
 			processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
 			defer c.Finish()
 			conf.Set("Processor.earlyDestinationFilter", false)
@@ -6664,16 +6618,16 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 			tRows := tpRows(utMsg.reportMetrics)
 			require.NotEmpty(t, tRows)
 			for _, r := range tRows {
-				require.Equal(t, reportingtypes.GATEWAY, r.InPU)
+				require.Equal(t, reportingtypes.DESTINATION_FILTER, r.InPU)
 			}
 			uRows := utRows(utMsg.reportMetrics)
 			require.NotEmpty(t, uRows)
 			for _, r := range uRows {
-				require.Equal(t, reportingtypes.DESTINATION_FILTER, r.InPU)
+				require.Equal(t, reportingtypes.TRACKINGPLAN_VALIDATOR, r.InPU)
 			}
 		})
 
-		t.Run("TP and hydration: tracking-plan inPU source_hydration", func(t *testing.T) {
+		t.Run("TP and hydration: tracking-plan inPU source_hydration, user-transformer chains from tracking_plan_validator", func(t *testing.T) {
 			processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
 			defer c.Finish()
 			conf.Set("Processor.earlyDestinationFilter", false)
@@ -6692,7 +6646,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 			uRows := utRows(utMsg.reportMetrics)
 			require.NotEmpty(t, uRows)
 			for _, r := range uRows {
-				require.Equal(t, reportingtypes.DESTINATION_FILTER, r.InPU)
+				require.Equal(t, reportingtypes.TRACKINGPLAN_VALIDATOR, r.InPU)
 			}
 		})
 	})
