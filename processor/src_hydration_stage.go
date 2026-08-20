@@ -100,7 +100,7 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 					)
 				}
 				// report metrics for failed hydration
-				hydrationFailedReports = proc.getHydrationFailedReports(source, jobs, err, message.earlyDestinationFilter)
+				hydrationFailedReports = proc.getHydrationFailedReports(source, jobs, err)
 			}
 
 			// Update shared maps with mutex protection
@@ -226,20 +226,7 @@ func (proc *Handle) hydrate(ctx context.Context, source *backendconfig.SourceT, 
 	}), nil
 }
 
-// sourceHydrationInPU is the inPU label for source_hydration rows. With
-// Processor.earlyDestinationFilter true (default), source hydration still follows the preprocess
-// destination-filter guard, as today. With it false, the guard is skipped and source hydration is
-// the first stage after gateway ingestion (plan 1d). earlyDestinationFilter is the per-batch
-// snapshot taken in preprocessStage, not a fresh config read, so it stays consistent for the
-// whole batch even if the reloadable flag flips mid-flight.
-func sourceHydrationInPU(earlyDestinationFilter bool) string {
-	if earlyDestinationFilter {
-		return reportingtypes.DESTINATION_FILTER
-	}
-	return reportingtypes.GATEWAY
-}
-
-func (proc *Handle) getHydrationFailedReports(source *backendconfig.SourceT, jobs []types.TransformerEvent, err error, earlyDestinationFilter bool) []*reportingtypes.PUReportedMetric {
+func (proc *Handle) getHydrationFailedReports(source *backendconfig.SourceT, jobs []types.TransformerEvent, err error) []*reportingtypes.PUReportedMetric {
 	metricsMap := make(map[string]map[string]*reportingtypes.PUReportedMetric)
 	return lo.FilterMap(jobs, func(job types.TransformerEvent, _ int) (*reportingtypes.PUReportedMetric, bool) {
 		eventName, _ := misc.MapLookup(job.Message, "event").(string)
@@ -256,7 +243,7 @@ func (proc *Handle) getHydrationFailedReports(source *backendconfig.SourceT, job
 					SourceDefinitionID: source.SourceDefinition.ID,
 					SourceCategory:     source.SourceDefinition.Category,
 				},
-				PUDetails: *reportingtypes.CreatePUDetails(sourceHydrationInPU(earlyDestinationFilter), reportingtypes.SOURCE_HYDRATION, false, false),
+				PUDetails: *reportingtypes.CreatePUDetails(reportingtypes.DESTINATION_FILTER, reportingtypes.SOURCE_HYDRATION, false, false),
 				StatusDetail: &reportingtypes.StatusDetail{
 					Status:         jobsdb.Aborted.State,
 					Count:          1,
