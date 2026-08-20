@@ -141,7 +141,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(strings.ToLower(contentType), "application/x-www-form-urlencoded") {
 		if err := r.ParseForm(); err != nil {
 			stat := webhook.statReporterCreator(arctx, reqType)
-			stat.RequestFailed("couldNotParseForm")
+			stat.RequestFailed(gwtypes.ReasonCouldNotParseForm)
 			stat.Report(webhook.stats)
 
 			webhook.failRequest(
@@ -157,7 +157,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	} else if strings.Contains(strings.ToLower(contentType), "multipart/form-data") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
 			stat := webhook.statReporterCreator(arctx, reqType)
-			stat.RequestFailed("couldNotParseMultiform")
+			stat.RequestFailed(gwtypes.ReasonCouldNotParseMultiform)
 			stat.Report(webhook.stats)
 
 			webhook.failRequest(
@@ -179,7 +179,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		jsonByte, err = jsonrs.Marshal(multipartForm)
 		if err != nil {
 			stat := webhook.statReporterCreator(arctx, reqType)
-			stat.RequestFailed("couldNotMarshal")
+			stat.RequestFailed(gwtypes.ReasonCouldNotMarshal)
 			stat.Report(webhook.stats)
 			webhook.failRequest(
 				w,
@@ -194,7 +194,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		jsonByte, err = jsonrs.Marshal(postFrom)
 		if err != nil {
 			stat := webhook.statReporterCreator(arctx, reqType)
-			stat.RequestFailed("couldNotMarshal")
+			stat.RequestFailed(gwtypes.ReasonCouldNotMarshal)
 			stat.Report(webhook.stats)
 			webhook.failRequest(
 				w,
@@ -248,10 +248,12 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 			logger.NewStringField("error", resp.Err))
 		http.Error(w, resp.Err, code)
 		if resp.StatusCode == http.StatusTooManyRequests {
-			ss.RequestDropped()
+			// A 429 is a rate limit whoever imposed it - the gateway the payload was enqueued into, or the source
+			// transformer answering for the source. The distinction is not available here, and either way the source
+			// is losing data to a limit, which is what a consumer of this reason acts on.
+			ss.RequestDropped(gwtypes.ReasonRateLimit)
 		} else {
-			failureReason := getWebhookFailureReason(resp.Err, resp.StatusCode)
-			ss.RequestFailed(failureReason)
+			ss.RequestFailed(getWebhookFailureReason(resp.Err, resp.StatusCode))
 		}
 		ss.Report(webhook.stats)
 		return
@@ -271,16 +273,14 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	ss.Report(webhook.stats)
 }
 
-func getWebhookFailureReason(errMsg string, statusCode int) string {
+func getWebhookFailureReason(errMsg string, statusCode int) gwtypes.StatReason {
 	switch {
 	case errMsg == response.RequestBodyTooLarge:
-		return response.RequestBodyTooLarge
+		return gwtypes.ReasonRequestBodyTooLarge
 	case statusCode != 0:
-		return response.SourceTransformerNonSuccessResponse
-	case errMsg != "":
-		return response.SourceTransformerResponseError
+		return gwtypes.ReasonSourceTransformerNonSuccessResponse
 	default:
-		return response.SourceTransformerResponseError
+		return gwtypes.ReasonSourceTransformerResponseError
 	}
 }
 
@@ -483,7 +483,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				}
 				failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: failureReason})
 				bt.webhook.logger.Errorn("webhook source transformation failed", obskit.SourceType(breq.sourceType), logger.NewStringField("errorMsg", resp.Err), logger.NewIntField("statusCode", int64(resp.StatusCode)))
-				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, getWebhookFailureReason(resp.Err, resp.StatusCode), resp.StatusCode, 1)
+				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, getWebhookFailureReason(resp.Err, resp.StatusCode).Value(), resp.StatusCode, 1)
 			}
 			webRequest.done <- resp
 		}

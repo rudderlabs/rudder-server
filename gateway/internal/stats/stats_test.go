@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReport(t *testing.T) {
@@ -40,7 +40,7 @@ func TestReport(t *testing.T) {
 
 		randInt = 1 + newRand.Int()%9 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
-			sourceStat.RequestDropped()
+			sourceStat.RequestDropped(gwtypes.ReasonRateLimit)
 		}
 		counterMap[sourceTag].dropped += randInt
 		counterMap[sourceTag].total += randInt
@@ -54,7 +54,7 @@ func TestReport(t *testing.T) {
 
 		randInt = 1 + newRand.Int()%9 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
-			sourceStat.RequestFailed("reason")
+			sourceStat.RequestFailed(gwtypes.ReasonInvalidJSON)
 		}
 		counterMap[sourceTag].failed += randInt
 		counterMap[sourceTag].total += randInt
@@ -70,7 +70,7 @@ func TestReport(t *testing.T) {
 
 		randInt = 1 + newRand.Int()%9 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
-			sourceStat.RequestEventsFailed(10, "reason")
+			sourceStat.RequestEventsFailed(10, gwtypes.ReasonInvalidJSON)
 		}
 		counterMap[sourceTag].eventsFailed += randInt * 10
 		counterMap[sourceTag].eventsTotal += randInt * 10
@@ -106,7 +106,19 @@ func TestReport(t *testing.T) {
 			"reqType":       statMap[sourceTag].ReqType,
 			"sourceType":    statMap[sourceTag].SourceType,
 			"sdkVersion":    statMap[sourceTag].Version,
-			"reason":        "reason",
+			"reason":        gwtypes.ReasonInvalidJSON.Value(),
+			"sourceDefName": strings.ToLower(statMap[sourceTag].SourceDefName),
+		}
+		// a drop now carries its own reason, kept apart from the failure reason: one SourceStat collects both
+		droppedTags := map[string]string{
+			"source":        statMap[sourceTag].Source,
+			"sourceID":      statMap[sourceTag].SourceID,
+			"workspaceId":   statMap[sourceTag].WorkspaceID,
+			"writeKey":      statMap[sourceTag].WriteKey,
+			"reqType":       statMap[sourceTag].ReqType,
+			"sourceType":    statMap[sourceTag].SourceType,
+			"sdkVersion":    statMap[sourceTag].Version,
+			"reason":        gwtypes.ReasonRateLimit.Value(),
 			"sourceDefName": strings.ToLower(statMap[sourceTag].SourceDefName),
 		}
 		require.Equal(t,
@@ -127,7 +139,7 @@ func TestReport(t *testing.T) {
 			float64(counterMap[sourceTag].dropped),
 			statsStore.Get(
 				"gateway.write_key_dropped_requests",
-				tags,
+				droppedTags,
 			).LastValue(),
 		)
 		require.Equal(t,
