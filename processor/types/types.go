@@ -176,6 +176,7 @@ type Metadata struct {
 	SourceJobRunID  string `json:"sourceJobRunId,omitempty"`
 	SourceTaskRunID string `json:"sourceTaskRunId,omitempty"`
 	RecordID        any    `json:"recordId,omitempty"`
+	CaptureError    bool   `json:"captureError,omitempty"`
 
 	// other metadata
 	InstanceID  string `json:"instanceId,omitempty"`
@@ -334,6 +335,7 @@ type EventParams struct {
 	BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser,omitempty"`
 	BotAction           string `json:"bot_action,omitempty"`
 	IsEventBlocked      bool   `json:"is_event_blocked,omitempty"`
+	CaptureError        bool   `json:"capture_error,omitempty"`
 }
 
 type TransformerMetricLabels struct {
