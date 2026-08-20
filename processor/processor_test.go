@@ -948,8 +948,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		{
 			// Hydration-enabled and tracking-plan-enabled: gives
 			// TestDestinationVisibilityReporting a source that exercises the
-			// source_hydration arm of the tracking-plan inPU switch (trackingplan.go:122),
-			// which SourceIDEnabledTp (no hydration) and fblaSourceId (no TP, no
+			// source_hydration arm of the tracking-plan inPU selection, which
+			// SourceIDEnabledTp (no hydration) and fblaSourceId (no TP, no
 			// destinations) cannot reach on their own.
 			ID:       SourceIDHydrationTp,
 			Name:     SourceIDHydrationTpName,
@@ -1048,23 +1048,6 @@ var sampleBackendConfig = backendconfig.ConfigT{
 				},
 			},
 			WorkspaceID: "test-workspace-id",
-			// TestDestinationVisibilityReporting's pipelineStepsInPU case needs a
-			// hydration-only (no TP) source that also has a destination, to exercise the
-			// source_hydration arm of destination_enter's inPU selection.
-			Destinations: []backendconfig.DestinationT{
-				{
-					ID:                 "fbla-destination",
-					Name:               "FBLA-DEST",
-					Enabled:            true,
-					IsProcessorEnabled: true,
-					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						ID:          "fbla-destination-definition-id",
-						Name:        "fbla-destination-definition-name",
-						DisplayName: "fbla-destination-definition-display-name",
-						Config:      map[string]any{},
-					},
-				},
-			},
 		},
 		{
 			ID: fblaSourceId2,
