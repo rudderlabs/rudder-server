@@ -557,16 +557,16 @@ func TestReportingDroppedEvents(t *testing.T) {
 	})
 
 	// Phase 1 of the pipeline inspector: per-destination visibility at the destination-filter
-	// boundary. A single server processes four batches with the three (reloadable) flags flipped
-	// between them via config.Set, so every rollout state of the plan is exercised end to end
-	// against the same reports table:
+	// boundary. A single server processes four batches with the (reloadable)
+	// Processor.earlyDestinationFilter flag flipped between them via config.Set, so both rollout
+	// states are exercised end to end against the same reports table:
 	//
-	//	1. reorder on, metrics off  -> the old source-level filtered/298 row, now from fan-out
-	//	2. destination_enter on     -> one succeeded/200 row per candidate destination
-	//	3. both on, partial exclude -> filtered_integration/298 per destination, no source-level row
-	//	4. both on, zero candidates -> filtered_no_destination/298 with an empty destination_id
+	//	1. reorder off (default)     -> zero candidates drop at preprocess, old filtered/298 row
+	//	2. reorder on                -> one succeeded/200 destination_enter row per candidate
+	//	3. reorder on, part. exclude -> filtered_integration/298 per destination, no source-level row
+	//	4. reorder on, zero cands    -> filtered_no_destination/298 with an empty destination_id
 	//
-	// Batches are drained before the flags are flipped: report rows are committed in the same
+	// Batches are drained before the flag is flipped: report rows are committed in the same
 	// transaction as the gateway job statuses, so "all gw jobs succeeded" is a safe barrier.
 	t.Run("Per destination visibility at the destination filter boundary", func(t *testing.T) {
 		config.Reset()
@@ -613,11 +613,6 @@ func TestReportingDroppedEvents(t *testing.T) {
 		require.NoError(t, err)
 		wg.Go(func() error {
 			err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir(), map[string]any{
-				// the destination filter moves to fan-out; the metrics start off, so the first
-				// batch exercises the safety fallback
-				"Processor.earlyDestinationFilter":              false,
-				"Reporting.destinationEnterMetrics.enabled":     false,
-				"Reporting.perDestinationFilterMetrics.enabled": false,
 				// keep the router from retrying against the mirrored (undeliverable) payloads
 				"Router.toAbortDestinationIDs": "destination-1,destination-2,destination-3",
 			})
@@ -662,23 +657,23 @@ func TestReportingDroppedEvents(t *testing.T) {
 			}, 60*time.Second, 500*time.Millisecond, "all gw events should be successfully processed")
 		}
 
-		t.Run("reorder on, metrics off: the source level filtered row moves to fan-out", func(t *testing.T) {
+		t.Run("reorder off (default): zero-candidate events drop at preprocess with the old source-level filtered row", func(t *testing.T) {
 			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-2", url))
 			drainGateway(eventsPerBatch)
 
 			require.Eventually(t, func() bool {
-				return reportCount("source_id = 'source-2' and destination_id = '' and pu = 'destination_filter' and status = 'filtered' and status_code = 298 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
-			}, 30*time.Second, 500*time.Millisecond, "the fallback source-level filtered row should still be emitted, from fan-out")
+				return reportCount("source_id = 'source-2' and destination_id = '' and pu = 'destination_filter' and status = 'filtered' and status_code = 298 and in_pu = 'gateway' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "the preprocess source-level filtered row should be emitted")
 
 			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
 			require.EqualValues(t, 0, reportCount("pu = 'destination_enter'"),
-				"no destination_enter rows while Reporting.destinationEnterMetrics.enabled is off")
+				"no destination_enter rows while Processor.earlyDestinationFilter is on")
 			require.EqualValues(t, 0, reportCount("pu = 'destination_filter' and status like 'filtered_%'"),
-				"no per-destination rows while Reporting.perDestinationFilterMetrics.enabled is off")
+				"no per-destination rows while Processor.earlyDestinationFilter is on")
 		})
 
-		t.Run("destination_enter metrics on: one succeeded row per candidate destination", func(t *testing.T) {
-			config.Set("Reporting.destinationEnterMetrics.enabled", true)
+		t.Run("reorder on: one destination_enter row per candidate destination", func(t *testing.T) {
+			config.Set("Processor.earlyDestinationFilter", false)
 
 			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-1", url))
 			drainGateway(2 * eventsPerBatch)
@@ -699,9 +694,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 				"nothing was excluded, so no destination_filter rows for source-1")
 		})
 
-		t.Run("per destination filter metrics on: partial exclusion replaces the source level row", func(t *testing.T) {
-			config.Set("Reporting.perDestinationFilterMetrics.enabled", true)
-
+		t.Run("reorder on: partial exclusion emits a per-destination row instead of the source level row", func(t *testing.T) {
 			// opt out of destination-2's type only; destination-1 and destination-3 still deliver
 			require.NoError(t, sendEventsWithIntegrations(eventsPerBatch, `{"AM": false}`, "identify", "writekey-1", url))
 			drainGateway(3 * eventsPerBatch)
@@ -732,7 +725,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 				"the excluded destination should not have received this batch")
 		})
 
-		t.Run("per destination filter metrics on: zero candidate events keep a source level row", func(t *testing.T) {
+		t.Run("reorder on: zero candidate events keep a source level row as filtered_no_destination", func(t *testing.T) {
 			filteredBefore := reportCount("source_id = 'source-2' and pu = 'destination_filter' and status = 'filtered'")
 
 			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-2", url))

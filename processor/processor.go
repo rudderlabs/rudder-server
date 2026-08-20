@@ -207,8 +207,6 @@ type Handle struct {
 		forkRsourcesTrackedJobs                   bool
 		reportingDedupMetricsEnabled              config.ValueLoader[bool]
 		earlyDestinationFilter                    config.ValueLoader[bool]
-		destinationEnterMetricsEnabled            config.ValueLoader[bool]
-		perDestinationFilterMetricsEnabled        config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -857,8 +855,6 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
 	proc.config.reportingDedupMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.dedupMetrics.enabled")
 	proc.config.earlyDestinationFilter = proc.conf.GetReloadableBoolVar(true, "Processor.earlyDestinationFilter")
-	proc.config.destinationEnterMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.destinationEnterMetrics.enabled")
-	proc.config.perDestinationFilterMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.perDestinationFilterMetrics.enabled")
 }
 
 type connection struct {
@@ -2318,9 +2314,9 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	groupedEvents := make(map[string][]types.TransformerEvent)
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 
-	// destination_enter (Reporting.destinationEnterMetrics.enabled) and destination_filter rows
-	// emitted from fan-out carry an empty inPU: the field is slated for deprecation, so no chain
-	// value is computed for the rows introduced here.
+	// destination_enter and destination_filter rows emitted from fan-out (only when
+	// Processor.earlyDestinationFilter is off) carry an empty inPU: the field is slated for
+	// deprecation, so no chain value is computed for the rows introduced here.
 	destEnterConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 	destEnterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	sourceLevelDestFilterConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
@@ -2456,7 +2452,12 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			availableDestinations, excludedDestinations := proc.classifyDestinations(singularEvent, sourceId, specificDestID)
 
 			// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - START
-			if proc.isReportingEnabled() {
+			// With Processor.earlyDestinationFilter off, the destination filter runs here at
+			// fan-out and per-destination visibility comes with it: every candidate destination
+			// gets a destination_enter row, excluded candidates additionally get a
+			// per-destination destination_filter row, and zero-candidate events get the
+			// source-level filtered_no_destination row.
+			if proc.isReportingEnabled() && !preTrans.earlyDestinationFilter {
 				reportingEvent := &types.TransformerResponse{Metadata: event.Metadata}
 				setReportingDestination := func(dest *backendconfig.DestinationT) {
 					reportingEvent.Metadata.DestinationID = dest.ID
@@ -2464,47 +2465,28 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 					reportingEvent.Metadata.DestinationType = dest.DestinationDefinition.Name
 					reportingEvent.Metadata.DestinationDefinitionID = dest.DestinationDefinition.ID
 				}
-				resetReportingDestination := func() {
+
+				for i := range availableDestinations {
+					setReportingDestination(&availableDestinations[i])
+					reportingEvent.StatusCode = reportingtypes.SuccessEventCode
+					proc.updateMetricMaps(nil, nil, destEnterConnectionDetailsMap, destEnterStatusDetailMap, reportingEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_ENTER, nilPayload, nil)
+				}
+				for _, ex := range excludedDestinations {
+					setReportingDestination(ex.destination)
+					reportingEvent.StatusCode = reportingtypes.SuccessEventCode
+					proc.updateMetricMaps(nil, nil, destEnterConnectionDetailsMap, destEnterStatusDetailMap, reportingEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_ENTER, nilPayload, nil)
+					reportingEvent.StatusCode = ex.statusCode
+					proc.updateMetricMaps(nil, nil, destFilterPerDestConnectionDetailsMap, destFilterPerDestStatusDetailMap, reportingEvent, ex.reason, reportingtypes.DESTINATION_FILTER, nilPayload, nil)
+				}
+				if len(availableDestinations) == 0 && len(excludedDestinations) == 0 {
+					// zero-candidate event: source has no destinations, or the RETL-stamped
+					// destination is unavailable — no per-destination row is possible.
 					reportingEvent.Metadata.DestinationID = ""
 					reportingEvent.Metadata.DestinationName = ""
 					reportingEvent.Metadata.DestinationType = ""
 					reportingEvent.Metadata.DestinationDefinitionID = ""
-				}
-
-				if proc.config.destinationEnterMetricsEnabled.Load() {
-					for i := range availableDestinations {
-						setReportingDestination(&availableDestinations[i])
-						reportingEvent.StatusCode = reportingtypes.SuccessEventCode
-						proc.updateMetricMaps(nil, nil, destEnterConnectionDetailsMap, destEnterStatusDetailMap, reportingEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_ENTER, nilPayload, nil)
-					}
-					for _, ex := range excludedDestinations {
-						setReportingDestination(ex.destination)
-						reportingEvent.StatusCode = reportingtypes.SuccessEventCode
-						proc.updateMetricMaps(nil, nil, destEnterConnectionDetailsMap, destEnterStatusDetailMap, reportingEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_ENTER, nilPayload, nil)
-					}
-				}
-
-				switch {
-				case proc.config.perDestinationFilterMetricsEnabled.Load():
-					for _, ex := range excludedDestinations {
-						setReportingDestination(ex.destination)
-						reportingEvent.StatusCode = ex.statusCode
-						proc.updateMetricMaps(nil, nil, destFilterPerDestConnectionDetailsMap, destFilterPerDestStatusDetailMap, reportingEvent, ex.reason, reportingtypes.DESTINATION_FILTER, nilPayload, nil)
-					}
-					if len(availableDestinations) == 0 && len(excludedDestinations) == 0 {
-						// zero-candidate event: source has no destinations, or the RETL-stamped
-						// destination is unavailable. Permanent carve-out — kept even with the
-						// per-destination metrics on, since no per-destination row is possible.
-						resetReportingDestination()
-						reportingEvent.StatusCode = reportingtypes.FilterEventCode
-						proc.updateMetricMaps(nil, nil, sourceLevelDestFilterConnectionDetailsMap, sourceLevelDestFilterStatusDetailMap, reportingEvent, reportingtypes.FilteredNoDestinationStatus, reportingtypes.DESTINATION_FILTER, nilPayload, nil)
-					}
-				case !preTrans.earlyDestinationFilter && len(availableDestinations) == 0:
-					// reorder flag on, per-destination metrics off: fall back to the old
-					// source-level filtered/298 row, now emitted from fan-out instead of preprocess.
-					resetReportingDestination()
 					reportingEvent.StatusCode = reportingtypes.FilterEventCode
-					proc.updateMetricMaps(nil, nil, sourceLevelDestFilterConnectionDetailsMap, sourceLevelDestFilterStatusDetailMap, reportingEvent, jobsdb.Filtered.State, reportingtypes.DESTINATION_FILTER, nilPayload, nil)
+					proc.updateMetricMaps(nil, nil, sourceLevelDestFilterConnectionDetailsMap, sourceLevelDestFilterStatusDetailMap, reportingEvent, reportingtypes.FilteredNoDestinationStatus, reportingtypes.DESTINATION_FILTER, nilPayload, nil)
 				}
 			}
 			// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - END

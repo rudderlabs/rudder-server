@@ -6101,8 +6101,8 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 
 	// newVisibilityProcessor builds a Handle with dedup off and reporting optionally on,
 	// backed by a config.Config the test can mutate for the reloadable
-	// earlyDestinationFilter/destinationEnterMetrics/perDestinationFilterMetrics flags,
-	// and returns the SimpleClients so a case can wire up TP/hydration/UT echo transforms.
+	// Processor.earlyDestinationFilter flag, and returns the SimpleClients so a case can
+	// wire up TP/hydration/UT echo transforms.
 	newVisibilityProcessor := func(t *testing.T, enableReporting bool) (*Handle, *config.Config, *testContext, *transformer.SimpleClients) {
 		t.Helper()
 		conf := config.New()
@@ -6244,7 +6244,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 
 	allDestOptOut := map[string]any{"All": false}
 
-	t.Run("with all three flags at defaults no destination_enter row and no destination-scoped destination_filter row is emitted", func(t *testing.T) {
+	t.Run("with earlyDestinationFilter at its default (true) no destination_enter row and no destination-scoped destination_filter row is emitted", func(t *testing.T) {
 		processor, _, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
 
@@ -6255,7 +6255,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.Empty(t, destFilterRows(msg.reportMetrics))
 	})
 
-	t.Run("with all flags at defaults two identical runs produce identical reportMetrics and identical groupedEvents keys and lengths", func(t *testing.T) {
+	t.Run("with defaults two identical runs produce identical reportMetrics and identical groupedEvents keys and lengths", func(t *testing.T) {
 		buildJobs := func() []*jobsdb.JobT {
 			return []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
 		}
@@ -6332,10 +6332,10 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		})
 	})
 
-	t.Run("with destination_enter on a three-destination source produces three succeeded/200 rows with distinct non-empty destination ids", func(t *testing.T) {
+	t.Run("with the reorder on a three-destination source produces three succeeded/200 destination_enter rows with distinct non-empty destination ids", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
-		conf.Set("Reporting.destinationEnterMetrics.enabled", true)
+		conf.Set("Processor.earlyDestinationFilter", false)
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
 		msg := runVisibilityPretransform(t, processor, jobs)
@@ -6357,7 +6357,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	t.Run("destination_enter is emitted for excluded candidates as well as survivors", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
-		conf.Set("Reporting.destinationEnterMetrics.enabled", true)
+		conf.Set("Processor.earlyDestinationFilter", false)
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", map[string]any{"enabled-destination-c-definition-display-name": false}, nil)})}
 		msg := runVisibilityPretransform(t, processor, jobs)
@@ -6374,7 +6374,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		// deprecation).
 		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
 		defer c.Finish()
-		conf.Set("Reporting.destinationEnterMetrics.enabled", true)
+		conf.Set("Processor.earlyDestinationFilter", false)
 		transformerClients.WithDynamicSrcHydration(echoHydration)
 		transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
 
@@ -6391,7 +6391,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	t.Run("destination_enter is emitted for a forked destination that produces no inline clone", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
-		conf.Set("Reporting.destinationEnterMetrics.enabled", true)
+		conf.Set("Processor.earlyDestinationFilter", false)
 		conf.Set("Processor.DestinationIsolation.enabledDestinations."+DestinationIDEnabledC, true)
 		processor.procDB = c.mockGatewayJobsDB
 
@@ -6404,10 +6404,10 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.Len(t, msg.forkedJobs, 1, "C is siphoned to a forked job instead")
 	})
 
-	t.Run("no destination_enter row when reporting is disabled even with the flag on", func(t *testing.T) {
+	t.Run("no destination_enter row when reporting is disabled even with the reorder on", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, false)
 		defer c.Finish()
-		conf.Set("Reporting.destinationEnterMetrics.enabled", true)
+		conf.Set("Processor.earlyDestinationFilter", false)
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
 		msg := runVisibilityPretransform(t, processor, jobs)
@@ -6422,8 +6422,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	t.Run("consent excluding one of three destinations yields three enter rows, exactly one filtered_consent/297 row, and clones to the other two", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
-		conf.Set("Reporting.destinationEnterMetrics.enabled", true)
-		conf.Set("Reporting.perDestinationFilterMetrics.enabled", true)
+		conf.Set("Processor.earlyDestinationFilter", false)
 		denyConsentFor(processor, DestinationIDEnabledB, "cat-1")
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, []string{"cat-1"})})}
@@ -6460,8 +6459,6 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
 		conf.Set("Processor.earlyDestinationFilter", false)
-		conf.Set("Reporting.destinationEnterMetrics.enabled", true)
-		conf.Set("Reporting.perDestinationFilterMetrics.enabled", true)
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", allDestOptOut, nil)})}
 		msg := runVisibilityPretransform(t, processor, jobs)
@@ -6479,7 +6476,6 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
 		conf.Set("Processor.earlyDestinationFilter", false)
-		conf.Set("Reporting.perDestinationFilterMetrics.enabled", true)
 
 		// SourceIDDisabled has no destinations configured — reused as-is, no new fixture.
 		jobs := []*jobsdb.JobT{job(1, SourceIDDisabled, "", []string{payload("m1", nil, nil)})}
@@ -6497,8 +6493,6 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
 		conf.Set("Processor.earlyDestinationFilter", false)
-		conf.Set("Reporting.destinationEnterMetrics.enabled", true)
-		conf.Set("Reporting.perDestinationFilterMetrics.enabled", true)
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "not-connected-destination-id", []string{payload("m1", nil, nil)})}
 		msg := runVisibilityPretransform(t, processor, jobs)
@@ -6514,7 +6508,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	t.Run("a RETL event stamped for an available destination emits exactly one destination_enter row and none for siblings", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
-		conf.Set("Reporting.destinationEnterMetrics.enabled", true)
+		conf.Set("Processor.earlyDestinationFilter", false)
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, DestinationIDEnabledA, []string{payload("m1", nil, nil)})}
 		msg := runVisibilityPretransform(t, processor, jobs)
@@ -6525,25 +6519,10 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.Equal(t, []string{getKeyFromSourceAndDest(SourceIDEnabled, DestinationIDEnabledA)}, lo.Keys(msg.groupedEvents))
 	})
 
-	t.Run("with earlyDestinationFilter true and per-destination metrics on, a fully-excluded event still dies in preprocess with only the old filtered row", func(t *testing.T) {
-		processor, conf, c, _ := newVisibilityProcessor(t, true)
-		defer c.Finish()
-		conf.Set("Reporting.perDestinationFilterMetrics.enabled", true)
-
-		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", allDestOptOut, nil)})}
-		msg := runVisibilityPretransform(t, processor, jobs)
-
-		rows := destFilterRows(msg.reportMetrics)
-		require.Len(t, rows, 1, "the per-destination undercount documented in rollout state 1b")
-		require.Equal(t, jobsdb.Filtered.State, rows[0].StatusDetail.Status)
-		require.Equal(t, reportingtypes.GATEWAY, rows[0].InPU)
-		require.Empty(t, destEnterRows(msg.reportMetrics))
-	})
-
 	t.Run("no per-destination row when reporting is disabled", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, false)
 		defer c.Finish()
-		conf.Set("Reporting.perDestinationFilterMetrics.enabled", true)
+		conf.Set("Processor.earlyDestinationFilter", false)
 		denyConsentFor(processor, DestinationIDEnabledB, "cat-1")
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, []string{"cat-1"})})}
@@ -6569,21 +6548,6 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		transformerClients2.WithDynamicTrackingPlanValidate(echoTrackingPlan)
 		msgReorderOff := runVisibilityPretransform(t, reorderOff, buildJobs())
 		require.Empty(t, tpRows(msgReorderOff.reportMetrics), "with the flag true (default) the event never reaches TP")
-	})
-
-	t.Run("with the reorder on and per-destination metrics off, the drop emits exactly one source-level filtered/298 row", func(t *testing.T) {
-		processor, conf, c, _ := newVisibilityProcessor(t, true)
-		defer c.Finish()
-		conf.Set("Processor.earlyDestinationFilter", false)
-
-		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", allDestOptOut, nil)})}
-		msg := runVisibilityPretransform(t, processor, jobs)
-
-		rows := destFilterRows(msg.reportMetrics)
-		require.Len(t, rows, 1, "exactly one — the preprocess guard is skipped, a second row would mean double emission")
-		require.Equal(t, "", rows[0].DestinationID)
-		require.Equal(t, jobsdb.Filtered.State, rows[0].StatusDetail.Status)
-		require.Equal(t, "", rows[0].InPU)
 	})
 
 	t.Run("the reorder does not change the inPU of pre-existing tracking-plan and user-transformer rows", func(t *testing.T) {
@@ -6651,23 +6615,24 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		})
 	})
 
-	t.Run("flipping perDestinationFilterMetrics off between two runs on the same handle restores the source-level filtered row", func(t *testing.T) {
+	t.Run("flipping earlyDestinationFilter back on between two runs on the same handle restores the preprocess source-level filtered row", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
 		conf.Set("Processor.earlyDestinationFilter", false)
-		conf.Set("Reporting.perDestinationFilterMetrics.enabled", true)
 
 		run1 := runVisibilityPretransform(t, processor, []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", allDestOptOut, nil)})})
 		require.NotEmpty(t, perDestFilterRows(run1.reportMetrics))
 		require.Empty(t, sourceLevelDestFilterRows(run1.reportMetrics))
 
-		conf.Set("Reporting.perDestinationFilterMetrics.enabled", false)
+		conf.Set("Processor.earlyDestinationFilter", true)
 
 		run2 := runVisibilityPretransform(t, processor, []*jobsdb.JobT{job(2, SourceIDEnabled, "", []string{payload("m2", allDestOptOut, nil)})})
 		require.Empty(t, perDestFilterRows(run2.reportMetrics))
+		require.Empty(t, destEnterRows(run2.reportMetrics))
 		rows := sourceLevelDestFilterRows(run2.reportMetrics)
 		require.Len(t, rows, 1)
 		require.Equal(t, jobsdb.Filtered.State, rows[0].StatusDetail.Status)
+		require.Equal(t, reportingtypes.GATEWAY, rows[0].InPU, "the preprocess-guard row, not the fan-out one")
 	})
 }
 
