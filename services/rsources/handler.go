@@ -156,6 +156,7 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 		seenRecordIDs := make(map[string]struct{}, len(batch))
 		recordIDs := make([]string, 0, len(batch))
 		codes := make([]int64, 0, len(batch))
+		errorResponses := make([]string, 0, len(batch))
 		for _, rec := range batch {
 			if _, exists := seenRecordIDs[string(rec.Record)]; exists {
 				continue
@@ -164,13 +165,14 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 			ids = append(ids, id)
 			recordIDs = append(recordIDs, string(rec.Record))
 			codes = append(codes, int64(rec.Code))
+			errorResponses = append(errorResponses, rec.ErrorResponse)
 		}
 
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code)
-			SELECT * FROM unnest($1::varchar(27)[], $2::text[], $3::numeric(4)[])
+			`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code, error_response)
+			SELECT * FROM unnest($1::varchar(27)[], $2::text[], $3::numeric(4)[], $4::text[])
 			ON CONFLICT (id, record_id) DO UPDATE SET ts = NOW()`,
-			pq.Array(ids), pq.Array(recordIDs), pq.Array(codes),
+			pq.Array(ids), pq.Array(recordIDs), pq.Array(codes), pq.Array(errorResponses),
 		); err != nil {
 			return fmt.Errorf("inserting into rsources_failed_keys_v2_records: %w", err)
 		}
@@ -230,7 +232,8 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			k.destination_id,
 			r.id,
 			r.record_id,
-			r.code
+			r.code,
+			r.error_response
 		FROM "rsources_failed_keys_v2_records" r
 		JOIN "rsources_failed_keys_v2" k ON r.id = k.id %[1]s
 		ORDER BY r.id, r.record_id ASC %[2]s`,
@@ -246,6 +249,7 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 	for rows.Next() {
 		var key JobTargetKey
 		var code int
+		var errorResponse string
 		err := rows.Scan(
 			&key.TaskRunID,
 			&key.SourceID,
@@ -253,11 +257,16 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			&nextPageToken.ID,
 			&nextPageToken.RecordID,
 			&code,
+			&errorResponse,
 		)
 		if err != nil {
 			return JobFailedRecordsV2{ID: jobRunId}, err
 		}
-		failedRecordsMap[key] = append(failedRecordsMap[key], FailedRecord{Record: json.RawMessage(nextPageToken.RecordID), Code: code})
+		failedRecordsMap[key] = append(failedRecordsMap[key], FailedRecord{
+			Record:        json.RawMessage(nextPageToken.RecordID),
+			Code:          code,
+			ErrorResponse: errorResponse,
+		})
 		queryResultSize++
 	}
 	if err := rows.Err(); err != nil {
@@ -526,6 +535,12 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string,
 		}
 	}
 	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2_records add column if not exists code numeric(4) not null default 0`); err != nil {
+		return err
+	}
+	// The final error text RudderStack recorded for the record. Stays TEXT: the cap
+	// is enforced in code before the insert, since a varchar(n) constraint would
+	// error the whole batch instead of clipping the one oversized message.
+	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2_records add column if not exists error_response text not null default ''`); err != nil {
 		return err
 	}
 	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2 add column if not exists ts timestamp not null default now()`); err != nil {

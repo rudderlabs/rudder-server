@@ -70,23 +70,15 @@ type FailedJobsStatsCollector interface {
 
 // NewStatsCollector creates a new stats collector
 func NewStatsCollector(jobservice JobService, component string, statFactory stats.Stats, opts ...OptFunc) StatsCollector {
-	sc := &statsCollector{
-		jobService:            jobservice,
-		jobIdsToStatKeyIndex:  map[int64]statKey{},
-		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
-		statsIndex:            map[statKey]*Stats{},
-		failedRecordsIndex:    map[statKey][]FailedRecord{},
-		parametersParser:      defaultParametersParser,
-	}
-	for _, opt := range opts {
-		opt(sc)
-	}
-	sc.stats.publishTime = statFactory.NewTaggedStat(rsourcesPublishTime, stats.TimerType, stats.Tags{"module": component})
-	return sc
+	return newStatsCollector(jobservice, component, statFactory, opts...)
 }
 
 // NewDroppedJobsCollector creates a new stats collector for publishing failed job stats and records
 func NewDroppedJobsCollector(jobservice JobService, component string, statFactory stats.Stats, opts ...OptFunc) FailedJobsStatsCollector {
+	return newStatsCollector(jobservice, component, statFactory, opts...)
+}
+
+func newStatsCollector(jobservice JobService, component string, statFactory stats.Stats, opts ...OptFunc) *statsCollector {
 	sc := &statsCollector{
 		jobService:            jobservice,
 		jobIdsToStatKeyIndex:  map[int64]statKey{},
@@ -94,6 +86,8 @@ func NewDroppedJobsCollector(jobservice JobService, component string, statFactor
 		statsIndex:            map[statKey]*Stats{},
 		failedRecordsIndex:    map[statKey][]FailedRecord{},
 		parametersParser:      defaultParametersParser,
+		errorCapture:          sharedErrorCaptureSettings(),
+		statFactory:           statFactory,
 	}
 	for _, opt := range opts {
 		opt(sc)
@@ -121,7 +115,15 @@ type statsCollector struct {
 	statsIndex            map[statKey]*Stats
 	failedRecordsIndex    map[statKey][]FailedRecord
 	parametersParser      parametersParser
-	stats                 struct {
+	// captureErrorJobIds holds the job ids whose connection opted in to error
+	// capture. Lazily allocated: nil while the feature is unused.
+	captureErrorJobIds map[int64]struct{}
+	errorCapture       errorCaptureSettings
+	// errorCaptureIndex accumulates the per-connection capture outcome, reported
+	// once per publish. Lazily allocated.
+	errorCaptureIndex map[statKey]*errorCaptureCounters
+	statFactory       stats.Stats
+	stats             struct {
 		publishTime stats.Timer
 	}
 }
@@ -172,13 +174,13 @@ func (r *statsCollector) JobsStoredWithErrors(jobs []*jobsdb.JobT, failedJobs ma
 func (r *statsCollector) JobsForked(jobs []*jobsdb.JobT) {
 	for i := range jobs {
 		job := jobs[i]
-		jobRunId, _, jobTargetKey := r.parametersParser(job.Parameters)
-		if jobRunId == "" {
+		p := r.parametersParser(job.Parameters)
+		if p.jobRunID == "" {
 			continue
 		}
 		sk := statKey{
-			jobRunId:     jobRunId,
-			JobTargetKey: jobTargetKey,
+			jobRunId:     p.jobRunID,
+			JobTargetKey: p.target,
 		}
 		stats, ok := r.statsIndex[sk]
 		if !ok {
@@ -230,18 +232,28 @@ func (r *statsCollector) CollectFailedRecords(jobStatuses []*jobsdb.JobStatusT) 
 	if len(r.jobIdsToRecordIdIndex) == 0 || len(r.jobIdsToStatKeyIndex) == 0 {
 		return
 	}
+	// One snapshot per batch: every record is judged by the same settings, and a
+	// blacklist edit takes effect on the next batch without a restart.
+	gate := r.errorCapture.snapshot()
 	for i := range jobStatuses {
 		jobStatus := jobStatuses[i]
-		if statKey, statKeyOk := r.jobIdsToStatKeyIndex[jobStatus.JobID]; statKeyOk {
-			if recordId, recordIdOK := r.jobIdsToRecordIdIndex[jobStatus.JobID]; recordIdOK {
-				if jobStatus.JobState == jobsdb.Aborted.State {
-					if len(recordId) > 0 {
-						code, _ := strconv.Atoi(jobStatus.ErrorCode)
-						r.failedRecordsIndex[statKey] = append(r.failedRecordsIndex[statKey], FailedRecord{Record: recordId, Code: code})
-					}
-				}
-			}
+		statKey, statKeyOk := r.jobIdsToStatKeyIndex[jobStatus.JobID]
+		if !statKeyOk {
+			continue
 		}
+		recordId, recordIdOK := r.jobIdsToRecordIdIndex[jobStatus.JobID]
+		if !recordIdOK || len(recordId) == 0 {
+			continue
+		}
+		if jobStatus.JobState != jobsdb.Aborted.State {
+			continue
+		}
+		code, _ := strconv.Atoi(jobStatus.ErrorCode)
+		r.failedRecordsIndex[statKey] = append(r.failedRecordsIndex[statKey], FailedRecord{
+			Record:        recordId,
+			Code:          code,
+			ErrorResponse: r.captureErrorResponse(gate, statKey, jobStatus),
+		})
 	}
 }
 
@@ -276,6 +288,7 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 		if err != nil {
 			return fmt.Errorf("failed to add failed records for job %s: %w", k.String(), err)
 		}
+		r.reportErrorCapture(k)
 	}
 	r.stats.publishTime.SendTiming(time.Since(startTime))
 
@@ -288,11 +301,11 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 		if _, ok := failedJobs[job.UUID]; ok {
 			continue
 		}
-		jobRunId, recordId, jobTargetKey := r.parametersParser(job.Parameters)
-		if jobRunId != "" {
+		p := r.parametersParser(job.Parameters)
+		if p.jobRunID != "" {
 			sk := statKey{
-				jobRunId:     jobRunId,
-				JobTargetKey: jobTargetKey,
+				jobRunId:     p.jobRunID,
+				JobTargetKey: p.target,
 			}
 			var stats *Stats
 			stats, ok := r.statsIndex[sk]
@@ -304,56 +317,82 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 				stats.In++
 			}
 			r.jobIdsToStatKeyIndex[job.JobID] = sk
-			if recordId != "" && recordId != "null" && recordId != `""` {
-				recordIdJson := json.RawMessage(recordId)
+			if p.recordID != "" && p.recordID != "null" && p.recordID != `""` {
+				recordIdJson := json.RawMessage(p.recordID)
 				if json.Valid(recordIdJson) {
 					r.jobIdsToRecordIdIndex[job.JobID] = recordIdJson
+					if p.captureError {
+						// Sparse on purpose: nothing is allocated while the
+						// feature is off or the connection has not opted in.
+						if r.captureErrorJobIds == nil {
+							r.captureErrorJobIds = make(map[int64]struct{})
+						}
+						r.captureErrorJobIds[job.JobID] = struct{}{}
+					}
 				}
 			}
 		}
 	}
 }
 
-type parametersParser func(jp json.RawMessage) (jobRunID, recordID string, target JobTargetKey)
+// jobParameters is the subset of a job's parameters the collector needs. It is a
+// struct rather than a tuple so that adding a parameter does not ripple through
+// every parser implementation and call site.
+type jobParameters struct {
+	jobRunID string
+	recordID string
+	// captureError is the per-connection opt-in for capturing the final recorded
+	// error text, stamped by rudder-sources on the event context and carried here
+	// through the gateway and the processor.
+	captureError bool
+	target       JobTargetKey
+}
+
+type parametersParser func(jp json.RawMessage) jobParameters
 
 type OptFunc func(*statsCollector)
 
 // IgnoreDestinationID ignores the destinationID parameter of the job and while capturing statistics
 func IgnoreDestinationID() OptFunc {
 	return func(r *statsCollector) {
-		r.parametersParser = func(jobParams json.RawMessage) (jobRunID, recordID string, target JobTargetKey) {
-			jobRunID, recordID, target = defaultParametersParser(jobParams)
-			target.DestinationID = ""
-			return jobRunID, recordID, target
+		r.parametersParser = func(jobParams json.RawMessage) jobParameters {
+			p := defaultParametersParser(jobParams)
+			p.target.DestinationID = ""
+			return p
 		}
 	}
 }
 
-func defaultParametersParser(jobParams json.RawMessage) (jobRunID, recordID string, target JobTargetKey) {
-	var jobRunId string
-	var jobTargetKey JobTargetKey
-	var recordId string
-	remaining := 5
+func defaultParametersParser(jobParams json.RawMessage) jobParameters {
+	var p jobParameters
+	// One decrement per key below; the ForEach stops as soon as all of them have
+	// been seen. capture_error is marshalled with omitempty, so it is only present
+	// on opted-in rETL jobs - exactly the traffic that benefits from the early exit.
+	remaining := 6
 	jp := gjson.ParseBytes(jobParams)
 	jp.ForEach(func(key, value gjson.Result) bool {
 		switch key.Str {
 		case "source_job_run_id":
-			jobRunId = value.Str
+			p.jobRunID = value.Str
 			remaining--
 		case "source_task_run_id":
-			jobTargetKey.TaskRunID = value.Str
+			p.target.TaskRunID = value.Str
 			remaining--
 		case "source_id":
-			jobTargetKey.SourceID = value.Str
+			p.target.SourceID = value.Str
 			remaining--
 		case "destination_id":
-			jobTargetKey.DestinationID = value.Str
+			p.target.DestinationID = value.Str
 			remaining--
 		case "record_id":
-			recordId = value.Raw
+			p.recordID = value.Raw
+			remaining--
+		case "capture_error":
+			// Strictly a JSON bool: the string "true" is a rejected shape.
+			p.captureError = value.Type == gjson.True
 			remaining--
 		}
 		return remaining != 0
 	})
-	return jobRunId, recordId, jobTargetKey
+	return p
 }
