@@ -106,6 +106,16 @@ var (
 
 	ReasonSourceTransformerNonSuccessResponse StatReason = newReason(response.SourceTransformerNonSuccessResponse)
 	ReasonSourceTransformerResponseError      StatReason = newReason(response.SourceTransformerResponseError)
+
+	// Reasons for the webhook batch transformer's own failures. The first four keep the strings those sites reported
+	// before; the rest replace a raw error message, which is logged at each of them instead.
+	ReasonInOutMismatch            StatReason = newReason("in out mismatch")
+	ReasonBatchResponseError       StatReason = newReason("batch response error")
+	ReasonMarshalError             StatReason = newReason("marshal error")
+	ReasonEnqueueInGatewayFailed   StatReason = newReason("enqueueInGateway failed")
+	ReasonSourceTransformerAdapter StatReason = newReason("source transformer adapter")
+	ReasonSourceTransformerURL     StatReason = newReason("source transformer url")
+	ReasonTransformerEventBuild    StatReason = newReason("transformer event build")
 )
 
 // Reasons introduced with StatReason, at sites that reported a raw error message before. The message itself is logged

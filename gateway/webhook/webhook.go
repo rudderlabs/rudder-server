@@ -106,7 +106,7 @@ type batchWebhookTransformerT struct {
 
 type batchTransformerOption func(bt *batchWebhookTransformerT)
 
-func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reason string, code int) {
+func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, errorMessage string, code int) {
 	statusCode := http.StatusBadRequest
 	if code != 0 {
 		statusCode = code
@@ -115,8 +115,8 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 		logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
 		logger.NewStringField("path", r.URL.Path),
 		logger.NewIntField("code", int64(code)),
-		logger.NewStringField("reason", reason))
-	http.Error(w, reason, statusCode)
+		logger.NewStringField("errorMessage", errorMessage))
+	http.Error(w, errorMessage, statusCode)
 }
 
 func (wb *HandleT) IsGetAndNotAllow(reqMethod, sourceDefName string) bool {
@@ -328,7 +328,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			bt.webhook.logger.Errorn("webhook source transformation failed",
 				obskit.SourceType(breq.sourceType),
 				obskit.Error(err))
-			bt.webhook.recordWebhookErrors(breq.sourceType, err.Error(), breq.batchRequest, response.GetErrorStatusCode(err.Error()))
+			bt.webhook.recordWebhookErrors(breq.sourceType, gwtypes.ReasonSourceTransformerAdapter, breq.batchRequest, response.GetErrorStatusCode(err.Error()))
 			for _, req := range breq.batchRequest {
 				req.done <- transformerResponse{StatusCode: response.GetErrorStatusCode(response.GatewayTimeout), Err: response.GetStatus(response.GatewayTimeout)}
 			}
@@ -342,7 +342,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			bt.webhook.logger.Errorn("webhook source transformation failed",
 				obskit.SourceType(breq.sourceType),
 				obskit.Error(err))
-			bt.webhook.recordWebhookErrors(breq.sourceType, err.Error(), breq.batchRequest, response.GetErrorStatusCode(response.ServiceUnavailable))
+			bt.webhook.recordWebhookErrors(breq.sourceType, gwtypes.ReasonSourceTransformerURL, breq.batchRequest, response.GetErrorStatusCode(response.ServiceUnavailable))
 			for _, req := range breq.batchRequest {
 				req.done <- transformerResponse{StatusCode: response.GetErrorStatusCode(response.ServiceUnavailable), Err: response.GetStatus(response.ServiceUnavailable)}
 			}
@@ -361,22 +361,26 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				eventRequest, err = prepareTransformerEventRequestV2(req.request)
 			}
 
+			// The reason is set beside the error rather than read back off its message, so it stays a declared value
+			// however the error is built. It starts as the build failure above, if there was one.
+			reason := gwtypes.ReasonTransformerEventBuild
 			if err == nil {
 				eventRequest, err = misc.SanitizeJSON(eventRequest)
 				if err != nil {
 					bt.webhook.logger.Errorn("invalid payload", obskit.Error(err), obskit.SourceType(breq.sourceType), obskit.SourceID(req.sourceID))
-					err = errors.New(response.InvalidJSON)
+					err, reason = errors.New(response.InvalidJSON), gwtypes.ReasonInvalidJSON
 				}
 			}
 
 			if err == nil && !json.Valid(eventRequest) {
-				err = errors.New(response.InvalidJSON)
+				err, reason = errors.New(response.InvalidJSON), gwtypes.ReasonInvalidJSON
 			}
 			if err == nil && len(eventRequest) > bt.webhook.config.maxReqSize.Load() {
-				err = errors.New(response.RequestBodyTooLarge)
+				err, reason = errors.New(response.RequestBodyTooLarge), gwtypes.ReasonRequestBodyTooLarge
 			}
 			if err == nil {
 				payload, err = sourceTransformAdapter.getTransformerEvent(req.authContext, eventRequest)
+				reason = gwtypes.ReasonTransformerEventBuild
 			}
 
 			if err != nil {
@@ -384,7 +388,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 					obskit.SourceType(req.sourceType),
 					obskit.SourceID(req.sourceID),
 					obskit.Error(err))
-				bt.webhook.countWebhookErrors(breq.sourceType, req.authContext, err.Error(), response.GetErrorStatusCode(err.Error()), 1)
+				bt.webhook.countWebhookErrors(breq.sourceType, req.authContext, reason, response.GetErrorStatusCode(err.Error()), 1)
 				req.done <- transformerResponse{Err: response.GetStatus(err.Error()), StatusCode: response.GetErrorStatusCode(err.Error())}
 				continue
 			}
@@ -411,16 +415,16 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		// stats
 		bt.stats.sourceStats[breq.sourceType].sourceTransform.Since(transformStart)
 
-		var reason string
+		var reason gwtypes.StatReason
 		if batchResponse.batchError == nil && len(batchResponse.responses) != len(payloadArr) {
 			batchResponse.batchError = errors.New("webhook batch transform response events size does not equal sent events size")
-			reason = "in out mismatch"
+			reason = gwtypes.ReasonInOutMismatch
 			bt.webhook.logger.Errorn("webhook batch transform response events size does not equal sent events size",
 				obskit.Error(batchResponse.batchError))
 		}
 		if batchResponse.batchError != nil {
-			if reason == "" {
-				reason = "batch response error"
+			if reason == nil {
+				reason = gwtypes.ReasonBatchResponseError
 			}
 			statusCode := http.StatusInternalServerError
 			if batchResponse.statusCode != 0 {
@@ -458,14 +462,15 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		for idx, resp := range batchResponse.responses {
 			webRequest := webRequests[idx]
 			if resp.Err == "" && resp.Output != nil {
-				var errMessage, reason string
+				var errMessage string
+				var reason gwtypes.StatReason
 				outputPayload, err := jsonrs.Marshal(resp.Output)
 				if err != nil {
 					errMessage = response.SourceTransformerInvalidOutputFormatInResponse
-					reason = "marshal error"
+					reason = gwtypes.ReasonMarshalError
 				} else {
 					errMessage = bt.webhook.enqueueInGateway(webRequest, outputPayload)
-					reason = "enqueueInGateway failed"
+					reason = gwtypes.ReasonEnqueueInGatewayFailed
 				}
 				if errMessage != "" {
 					bt.webhook.logger.Errorn("webhook source transformation failed",
@@ -483,7 +488,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				}
 				failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: failureReason})
 				bt.webhook.logger.Errorn("webhook source transformation failed", obskit.SourceType(breq.sourceType), logger.NewStringField("errorMsg", resp.Err), logger.NewIntField("statusCode", int64(resp.StatusCode)))
-				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, getWebhookFailureReason(resp.Err, resp.StatusCode).Value(), resp.StatusCode, 1)
+				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, getWebhookFailureReason(resp.Err, resp.StatusCode), resp.StatusCode, 1)
 			}
 			webRequest.done <- resp
 		}
@@ -495,15 +500,16 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	}
 }
 
-func (bt *batchWebhookTransformerT) getWebhookFailureReason(errMessage, reason string) string {
-	if reason == "enqueueInGateway failed" {
+// getWebhookFailureReason refines the reason for a payload the gateway refused to enqueue. The gateway answers with a
+// message rather than a reason, so the two it can give that mean something more specific than "the enqueue failed" are
+// recognised here. A rate limit reports ReasonRateLimit, the same value every other rate limit reports.
+func (bt *batchWebhookTransformerT) getWebhookFailureReason(errMessage string, reason gwtypes.StatReason) gwtypes.StatReason {
+	if reason == gwtypes.ReasonEnqueueInGatewayFailed {
 		switch errMessage {
 		case response.TooManyRequests:
-			return response.TooManyRequests
+			return gwtypes.ReasonRateLimit
 		case response.RequestBodyTooLarge:
-			return response.RequestBodyTooLarge
-		default:
-			return reason
+			return gwtypes.ReasonRequestBodyTooLarge
 		}
 	}
 	return reason
@@ -557,18 +563,18 @@ func (webhook *HandleT) Shutdown() error {
 	return webhook.backgroundWait()
 }
 
-func (webhook *HandleT) countWebhookErrors(sourceType string, arctx *gwtypes.AuthRequestContext, reason string, statusCode, count int) {
+func (webhook *HandleT) countWebhookErrors(sourceType string, arctx *gwtypes.AuthRequestContext, reason gwtypes.StatReason, statusCode, count int) {
 	webhook.stats.NewTaggedStat("webhook_num_errors", stats.CountType, stats.Tags{
 		"writeKey":    arctx.WriteKey,
 		"workspaceId": arctx.WorkspaceID,
 		"sourceID":    arctx.SourceID,
 		"statusCode":  strconv.Itoa(statusCode),
 		"sourceType":  sourceType,
-		"reason":      reason,
+		"reason":      reason.Value(),
 	}).Count(count)
 }
 
-func (webhook *HandleT) recordWebhookErrors(sourceType, reason string, reqs []*webhookT, statusCode int) {
+func (webhook *HandleT) recordWebhookErrors(sourceType string, reason gwtypes.StatReason, reqs []*webhookT, statusCode int) {
 	authCtxs := lo.SliceToMap(reqs, func(request *webhookT) (string, *gwtypes.AuthRequestContext) {
 		return request.authContext.WriteKey, request.authContext
 	})
