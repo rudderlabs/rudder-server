@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -50,14 +51,15 @@ type Flusher struct {
 	maxConcurrentRequests config.ValueLoader[int]
 	batchSizeToReporting  config.ValueLoader[int]
 
-	stats                   stats.Stats
-	minReportedAtQueryTimer stats.Measurement
-	aggReportsTimer         stats.Measurement
-	sendReportsTimer        stats.Measurement
-	deleteReportsTimer      stats.Measurement
-	vacuumReportsTimer      stats.Measurement
-	concurrentRequests      stats.Measurement
-	flushLag                stats.Measurement
+	stats                    stats.Stats
+	minReportedAtQueryTimer  stats.Measurement
+	aggReportsTimer          stats.Measurement
+	sendReportsTimer         stats.Measurement
+	deleteReportsTimer       stats.Measurement
+	vacuumReportsTimer       stats.Measurement
+	concurrentRequests       stats.Measurement
+	flushLag                 stats.Measurement
+	largePayloadSplitCounter stats.Measurement
 
 	commonTags stats.Tags
 }
@@ -136,6 +138,8 @@ func (f *Flusher) initStats(tags map[string]string) {
 	f.concurrentRequests = f.stats.NewTaggedStat("reporting_flusher_concurrent_requests_in_progress", stats.GaugeType, tags)
 
 	f.flushLag = f.stats.NewTaggedStat("reporting_flusher_lag_seconds", stats.GaugeType, tags)
+
+	f.largePayloadSplitCounter = f.stats.NewTaggedStat("reporting_flusher_large_payload_split", stats.CountType, tags)
 }
 
 func (f *Flusher) getStart(ctx context.Context) (time.Time, error) {
@@ -289,10 +293,7 @@ func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error 
 		batch := aggReports[i:end]
 
 		g.Go(func() error {
-			if err := f.commonClient.Send(ctx, batch); err != nil {
-				return err
-			}
-			return nil
+			return f.sendBatchWithLargePayloadHandler(ctx, batch)
 		})
 	}
 
@@ -300,6 +301,23 @@ func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error 
 		return err
 	}
 
+	return nil
+}
+
+func (f *Flusher) sendBatchWithLargePayloadHandler(ctx context.Context, batch []json.RawMessage) error {
+	err := f.commonClient.Send(ctx, batch)
+	if !errors.Is(err, client.ErrPayloadTooLarge) {
+		return err
+	}
+	f.largePayloadSplitCounter.Increment()
+
+	// Items are opaque and cannot be shrunk further, so a 413 on an individual
+	// item is retried like any other non-2xx response.
+	for _, item := range batch {
+		if err := f.commonClient.SendWithoutFailFast(ctx, []json.RawMessage{item}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

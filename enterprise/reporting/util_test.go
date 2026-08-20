@@ -9,6 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
 	mockEventSampler "github.com/rudderlabs/rudder-server/mocks/enterprise/reporting/event_sampler"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -234,7 +240,7 @@ func TestGetSampleWithEventSamplingWithNilEventSampler(t *testing.T) {
 			SampleResponse: inputSampleResponse,
 		},
 	}
-	outputSampleEvent, outputSampleResponse, err := getSampleWithEventSampling(metric, 1234567890, nil, false, 60)
+	outputSampleEvent, outputSampleResponse, err := getSampleWithEventSampling(metric, 1234567890, nil, false, 60, stats.NOP.NewStat("dropped", stats.CountType))
 	require.NoError(t, err)
 	require.Equal(t, inputSampleEvent, outputSampleEvent)
 	require.Equal(t, inputSampleResponse, outputSampleResponse)
@@ -430,7 +436,7 @@ func TestGetSampleWithEventSampling(t *testing.T) {
 				mockEventSampler.EXPECT().Put(gomock.Any()).Return(tt.putError)
 			}
 
-			sampleEvent, sampleResponse, err := getSampleWithEventSampling(tt.metric, 1234567890, mockEventSampler, true, 60)
+			sampleEvent, sampleResponse, err := getSampleWithEventSampling(tt.metric, 1234567890, mockEventSampler, true, 60, stats.NOP.NewStat("dropped", stats.CountType))
 			if tt.getError != nil || tt.putError != nil {
 				require.Error(t, err)
 			} else {
@@ -440,6 +446,156 @@ func TestGetSampleWithEventSampling(t *testing.T) {
 			require.Equal(t, tt.wantMetric.StatusDetail.SampleResponse, sampleResponse)
 		})
 	}
+}
+
+func TestGetSampleWithEventSamplingSkipsOversizedSampleEvent(t *testing.T) {
+	config.Set("Reporting.maxSampleEventSizeBytes", 5)
+	t.Cleanup(func() { config.Set("Reporting.maxSampleEventSizeBytes", 80*bytesize.MB) })
+
+	ctrl := gomock.NewController(t)
+	mockEventSampler := mockEventSampler.NewMockEventSampler(ctrl)
+	// oversized samples must be dropped without consulting or updating the sampler
+	mockEventSampler.EXPECT().Get(gomock.Any()).Times(0)
+	mockEventSampler.EXPECT().Put(gomock.Any()).Times(0)
+
+	metric := types.PUReportedMetric{
+		StatusDetail: &types.StatusDetail{
+			SampleEvent:    json.RawMessage(`{"event":"too-large"}`),
+			SampleResponse: "sample response",
+		},
+	}
+
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+	dropped := statsStore.NewStat(StatReportingOversizedSampleEventDroppedCounter, stats.CountType)
+
+	sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, 1234567890, mockEventSampler, true, 60, dropped)
+	require.NoError(t, err)
+	require.Nil(t, sampleEvent)
+	require.Empty(t, sampleResponse)
+	require.EqualValues(t, 1, statsStore.Get(StatReportingOversizedSampleEventDroppedCounter, nil).LastValue())
+}
+
+func TestGetSampleWithEventSamplingForEDReportsDBSkipsOversizedSampleEvent(t *testing.T) {
+	config.Set("Reporting.maxSampleEventSizeBytes", 5)
+	t.Cleanup(func() { config.Set("Reporting.maxSampleEventSizeBytes", 80*bytesize.MB) })
+
+	ctrl := gomock.NewController(t)
+	mockEventSampler := mockEventSampler.NewMockEventSampler(ctrl)
+	// oversized samples must be dropped without consulting or updating the sampler
+	mockEventSampler.EXPECT().Get(gomock.Any()).Times(0)
+	mockEventSampler.EXPECT().Put(gomock.Any()).Times(0)
+
+	metric := types.EDReportsDB{
+		EDErrorDetails: types.EDErrorDetails{
+			SampleEvent:    json.RawMessage(`{"event":"too-large"}`),
+			SampleResponse: "sample response",
+		},
+	}
+
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+	dropped := statsStore.NewStat(StatErrorDetailReportingOversizedSampleEventDroppedCounter, stats.CountType)
+
+	sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(metric, 1234567890, mockEventSampler, true, 60, dropped)
+	require.NoError(t, err)
+	require.Nil(t, sampleEvent)
+	require.Empty(t, sampleResponse)
+	require.EqualValues(t, 1, statsStore.Get(StatErrorDetailReportingOversizedSampleEventDroppedCounter, nil).LastValue())
+}
+
+func TestGetSampleWithEventSamplingSkipsOversizedSampleEventWhenSamplingDisabled(t *testing.T) {
+	config.Set("Reporting.maxSampleEventSizeBytes", 5)
+	t.Cleanup(func() { config.Set("Reporting.maxSampleEventSizeBytes", 80*bytesize.MB) })
+
+	ctrl := gomock.NewController(t)
+	unusedSampler := mockEventSampler.NewMockEventSampler(ctrl)
+
+	cases := []struct {
+		name    string
+		sampler event_sampler.EventSampler
+		enabled bool
+	}{
+		{name: "sampling disabled, nil sampler", sampler: nil, enabled: false},
+		{name: "sampling disabled, sampler present", sampler: unusedSampler, enabled: false},
+		{name: "sampling enabled, nil sampler", sampler: nil, enabled: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			metric := types.PUReportedMetric{
+				StatusDetail: &types.StatusDetail{
+					SampleEvent:    json.RawMessage(`{"event":"too-large"}`),
+					SampleResponse: "sample response",
+				},
+			}
+
+			sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, 1234567890, tc.sampler, tc.enabled, 60, stats.NOP.NewStat("dropped", stats.CountType))
+			require.NoError(t, err)
+			require.Nil(t, sampleEvent, "oversized sample event must be dropped even when event sampling is disabled")
+			require.Empty(t, sampleResponse)
+		})
+	}
+}
+
+func TestGetSampleWithEventSamplingForEDReportsDBSkipsOversizedSampleEventWhenSamplingDisabled(t *testing.T) {
+	config.Set("Reporting.maxSampleEventSizeBytes", 5)
+	t.Cleanup(func() { config.Set("Reporting.maxSampleEventSizeBytes", 80*bytesize.MB) })
+
+	ctrl := gomock.NewController(t)
+	unusedSampler := mockEventSampler.NewMockEventSampler(ctrl)
+
+	cases := []struct {
+		name    string
+		sampler event_sampler.EventSampler
+		enabled bool
+	}{
+		{name: "sampling disabled, nil sampler", sampler: nil, enabled: false},
+		{name: "sampling disabled, sampler present", sampler: unusedSampler, enabled: false},
+		{name: "sampling enabled, nil sampler", sampler: nil, enabled: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			metric := types.EDReportsDB{
+				EDErrorDetails: types.EDErrorDetails{
+					SampleEvent:    json.RawMessage(`{"event":"too-large"}`),
+					SampleResponse: "sample response",
+				},
+			}
+
+			sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(metric, 1234567890, tc.sampler, tc.enabled, 60, stats.NOP.NewStat("dropped", stats.CountType))
+			require.NoError(t, err)
+			require.Nil(t, sampleEvent, "oversized sample event must be dropped even when event sampling is disabled")
+			require.Empty(t, sampleResponse)
+		})
+	}
+}
+
+func TestGetSampleWithEventSamplingKeepsSampleEventAtSizeLimit(t *testing.T) {
+	sampleEvent := json.RawMessage(`{"event":"at-limit"}`)
+	config.Set("Reporting.maxSampleEventSizeBytes", len(sampleEvent))
+	t.Cleanup(func() { config.Set("Reporting.maxSampleEventSizeBytes", 80*bytesize.MB) })
+
+	ctrl := gomock.NewController(t)
+	sampler := mockEventSampler.NewMockEventSampler(ctrl)
+	sampler.EXPECT().Get(gomock.Any()).Return(false, nil)
+	sampler.EXPECT().Put(gomock.Any()).Return(nil)
+
+	metric := types.PUReportedMetric{
+		StatusDetail: &types.StatusDetail{
+			SampleEvent:    sampleEvent,
+			SampleResponse: "sample response",
+		},
+	}
+
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+	dropped := statsStore.NewStat(StatReportingOversizedSampleEventDroppedCounter, stats.CountType)
+
+	gotEvent, gotResponse, err := getSampleWithEventSampling(metric, 1234567890, sampler, true, 60, dropped)
+	require.NoError(t, err)
+	require.Equal(t, sampleEvent, gotEvent, "sample event exactly at the limit must be kept")
+	require.Equal(t, "sample response", gotResponse)
+	require.Zero(t, statsStore.Get(StatReportingOversizedSampleEventDroppedCounter, nil).LastValue())
 }
 
 func TestGetStringifiedSampleEvent(t *testing.T) {

@@ -7,6 +7,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	mocks "github.com/rudderlabs/rudder-server/mocks/enterprise/reporting/event_sampler"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -20,7 +26,7 @@ func TestGetSampleWithEventSamplingForEDReportsDB(t *testing.T) {
 			},
 		}
 
-		sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(metric, 123456, nil, false, 60)
+		sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(metric, 123456, nil, false, 60, stats.NOP.NewStat("dropped", stats.CountType))
 		require.NoError(t, err)
 		require.Equal(t, json.RawMessage(`{"test": "event"}`), sampleEvent)
 		require.Equal(t, "test response", sampleResponse)
@@ -34,7 +40,7 @@ func TestGetSampleWithEventSamplingForEDReportsDB(t *testing.T) {
 			},
 		}
 
-		sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(metric, 123456, nil, true, 60)
+		sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(metric, 123456, nil, true, 60, stats.NOP.NewStat("dropped", stats.CountType))
 		require.NoError(t, err)
 		require.Equal(t, json.RawMessage(`{"test": "event"}`), sampleEvent)
 		require.Equal(t, "test response", sampleResponse)
@@ -52,7 +58,7 @@ func TestGetSampleWithEventSamplingForEDReportsDB(t *testing.T) {
 		defer ctrl.Finish()
 		mockSampler := mocks.NewMockEventSampler(ctrl)
 
-		sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(metric, 123456, mockSampler, true, 60)
+		sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(metric, 123456, mockSampler, true, 60, stats.NOP.NewStat("dropped", stats.CountType))
 		require.NoError(t, err)
 		require.Nil(t, sampleEvent)
 		require.Equal(t, "", sampleResponse)
@@ -90,7 +96,7 @@ func TestGetSampleWithEventSamplingForEDReportsDB(t *testing.T) {
 		// Expect Put to be called
 		mockSampler.EXPECT().Put(gomock.Any()).Return(nil)
 
-		sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(metric, 123456, mockSampler, true, 60)
+		sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(metric, 123456, mockSampler, true, 60, stats.NOP.NewStat("dropped", stats.CountType))
 		require.NoError(t, err)
 		require.Equal(t, json.RawMessage(`{"test": "event"}`), sampleEvent)
 		require.Equal(t, "test response", sampleResponse)
@@ -127,9 +133,62 @@ func TestGetSampleWithEventSamplingForEDReportsDB(t *testing.T) {
 		mockSampler.EXPECT().Get(gomock.Any()).Return(true, nil)
 		// Put should not be called when sample is already found
 
-		sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(metric, 123456, mockSampler, true, 60)
+		sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(metric, 123456, mockSampler, true, 60, stats.NOP.NewStat("dropped", stats.CountType))
 		require.NoError(t, err)
 		require.Nil(t, sampleEvent)
 		require.Equal(t, "", sampleResponse)
 	})
+}
+
+func newLargePayloadTestClient(t *testing.T, serverURL string, maxRetries int) *client.Client {
+	t.Helper()
+	conf := config.New()
+	conf.Set("REPORTING_URL", serverURL)
+	conf.Set("Reporting.largePayloadHandling.enabled", true)
+	conf.Set("Reporting.httpClient.backoff.maxRetries", maxRetries)
+	return client.New(client.RouteMetrics, conf, logger.NOP, stats.NOP)
+}
+
+// testLargePayloadTags returns a fresh tag map per call: memstats retains the
+// caller's map by reference, so sharing one across measurements is unsafe.
+func testLargePayloadTags() stats.Tags { return stats.Tags{"clientName": "test"} }
+
+// newLargePayloadTestReporter returns a DefaultReporter wired with the given client
+// and an in-memory stats store so tests can assert split / sample-event-replaced counts.
+func newLargePayloadTestReporter(t *testing.T, commonClient *client.Client) (*DefaultReporter, *memstats.Store) {
+	t.Helper()
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+	return &DefaultReporter{
+		commonClient:                       commonClient,
+		stats:                              statsStore,
+		log:                                logger.NOP,
+		oversizedSampleEventDroppedCounter: statsStore.NewStat(StatReportingOversizedSampleEventDroppedCounter, stats.CountType),
+	}, statsStore
+}
+
+// newLargePayloadTestEDReporter is the ErrorDetailReporter analogue of newLargePayloadTestReporter.
+func newLargePayloadTestEDReporter(t *testing.T, commonClient *client.Client) (*ErrorDetailReporter, *memstats.Store) {
+	t.Helper()
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+	return &ErrorDetailReporter{
+		commonClient: commonClient,
+		stats:        statsStore,
+		log:          logger.NOP,
+		statsManager: NewErrorReportingStats(statsStore),
+	}, statsStore
+}
+
+func requireLargePayloadStats(t *testing.T, statsStore *memstats.Store, splitStat, replacedStat string, splits, replaced float64) {
+	t.Helper()
+	getCount := func(name string) float64 {
+		m := statsStore.Get(name, testLargePayloadTags())
+		if m == nil {
+			return 0
+		}
+		return m.LastValue()
+	}
+	require.Equal(t, splits, getCount(splitStat), "split count")
+	require.Equal(t, replaced, getCount(replacedStat), "sample event replaced count")
 }

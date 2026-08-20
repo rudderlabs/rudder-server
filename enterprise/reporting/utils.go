@@ -5,11 +5,19 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
+
+var maxSampleEventSizeBytes = config.GetReloadableInt64Var(80*bytesize.MB, 1, "Reporting.maxSampleEventSizeBytes")
+
+// sampleEventNotAvailableEntityTooLarge replaces a sample event that the reporting
+// service rejected as too large. Shared slice: read-only, never mutate.
+var sampleEventNotAvailableEntityTooLarge = json.RawMessage(`{"sample_event_not_available":"entity too large"}`)
 
 func floorFactor(intervalMs int64) int64 {
 	factors := []int64{1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60}
@@ -54,7 +62,12 @@ func getStringifiedSampleEvent(rawSampleEvent json.RawMessage) string {
 }
 
 // getSampleWithEventSamplingCore contains the common event sampling logic
-func getSampleWithEventSamplingCore(sampleEvent json.RawMessage, sampleResponse string, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, hashGenerator func() string) (json.RawMessage, string, error) {
+func getSampleWithEventSamplingCore(sampleEvent json.RawMessage, sampleResponse string, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, hashGenerator func() string, oversizedSampleEventDroppedCounter stats.Measurement) (json.RawMessage, string, error) {
+	if int64(len(sampleEvent)) > maxSampleEventSizeBytes.Load() {
+		oversizedSampleEventDroppedCounter.Increment()
+		return nil, "", nil
+	}
+
 	if !eventSamplingEnabled || eventSampler == nil {
 		return sampleEvent, sampleResponse, nil
 	}
@@ -85,7 +98,7 @@ func getSampleWithEventSamplingCore(sampleEvent json.RawMessage, sampleResponse 
 	return sampleEvent, sampleResponse, nil
 }
 
-func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64) (sampleEvent json.RawMessage, sampleResponse string, err error) {
+func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64, oversizedSampleEventDroppedCounter stats.Measurement) (sampleEvent json.RawMessage, sampleResponse string, err error) {
 	sampleEvent = metric.StatusDetail.SampleEvent
 	sampleResponse = metric.StatusDetail.SampleResponse
 
@@ -94,12 +107,12 @@ func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64,
 		return NewLabelSet(metric, sampleEventBucket).generateHash()
 	}
 
-	return getSampleWithEventSamplingCore(sampleEvent, sampleResponse, eventSampler, eventSamplingEnabled, hashGenerator)
+	return getSampleWithEventSamplingCore(sampleEvent, sampleResponse, eventSampler, eventSamplingEnabled, hashGenerator, oversizedSampleEventDroppedCounter)
 }
 
 // getSampleWithEventSamplingForEDReportsDB applies event sampling to EDReportsDB metrics
 // It reuses the common logic from getSampleWithEventSampling but works with EDReportsDB
-func getSampleWithEventSamplingForEDReportsDB(metric types.EDReportsDB, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64) (sampleEvent json.RawMessage, sampleResponse string, err error) {
+func getSampleWithEventSamplingForEDReportsDB(metric types.EDReportsDB, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64, oversizedSampleEventDroppedCounter stats.Measurement) (sampleEvent json.RawMessage, sampleResponse string, err error) {
 	sampleEvent = metric.SampleEvent
 	sampleResponse = metric.SampleResponse
 
@@ -108,7 +121,7 @@ func getSampleWithEventSamplingForEDReportsDB(metric types.EDReportsDB, reported
 		return NewLabelSetFromEDReportsDB(metric, sampleEventBucket).generateHash()
 	}
 
-	return getSampleWithEventSamplingCore(sampleEvent, sampleResponse, eventSampler, eventSamplingEnabled, hashGenerator)
+	return getSampleWithEventSamplingCore(sampleEvent, sampleResponse, eventSampler, eventSamplingEnabled, hashGenerator, oversizedSampleEventDroppedCounter)
 }
 
 func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) types.PUReportedMetric {

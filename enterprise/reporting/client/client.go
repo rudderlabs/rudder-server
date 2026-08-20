@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +29,7 @@ import (
 const (
 	StatRequestTotalBytes      = "reporting_client_http_request_total_bytes"
 	StatRequestCompressedBytes = "reporting_client_http_request_compressed_bytes"
+	StatRequestPayloadBytes    = "reporting_client_http_request_payload_bytes"
 	StatTotalDurationsSeconds  = "reporting_client_http_total_duration_seconds"
 	StatRequestLatency         = "reporting_client_http_request_latency"
 	StatHttpRequest            = "reporting_client_http_request"
@@ -39,6 +41,9 @@ const (
 	RouteTrackedUsers      Route = "/trackedUser"
 	RouteActivationRecords Route = "/activationRecords"
 )
+
+// ErrPayloadTooLarge indicates that the reporting service rejected a payload as too large.
+var ErrPayloadTooLarge = errors.New("payload too large")
 
 // Route contains the HTTP path and query string for the service.
 type Route string
@@ -77,8 +82,9 @@ type Client struct {
 	moduleName string
 	instanceID string
 
-	compress         config.ValueLoader[bool]
-	compressionLevel config.ValueLoader[int]
+	compress               config.ValueLoader[bool]
+	compressionLevel       config.ValueLoader[int]
+	failFastOnLargePayload config.ValueLoader[bool]
 
 	conf *config.Config
 }
@@ -101,21 +107,34 @@ func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) 
 			Timeout:   conf.GetDurationVar(60, time.Second, "Reporting.httpClient.timeout", "HttpClient.reporting.timeout"),
 			Transport: &http.Transport{},
 		},
-		reportingServiceURL: reportingServiceURL,
-		userName:            conf.GetStringVar("", "REPORTING_USERNAME"),
-		password:            conf.GetStringVar("", "REPORTING_PASSWORD"),
-		route:               path,
-		instanceID:          conf.GetStringVar("1", "INSTANCE_ID"),
-		moduleName:          conf.GetStringVar("", "clientName"),
-		compress:            conf.GetReloadableBoolVar(false, "Reporting.httpClient.compression.enabled"),
-		compressionLevel:    conf.GetReloadableIntVar(gzip.DefaultCompression, 1, "Reporting.httpClient.compression.level"),
-		stats:               stats,
-		log:                 log,
-		conf:                conf,
+		reportingServiceURL:    reportingServiceURL,
+		userName:               conf.GetStringVar("", "REPORTING_USERNAME"),
+		password:               conf.GetStringVar("", "REPORTING_PASSWORD"),
+		route:                  path,
+		instanceID:             conf.GetStringVar("1", "INSTANCE_ID"),
+		moduleName:             conf.GetStringVar("", "clientName"),
+		compress:               conf.GetReloadableBoolVar(false, "Reporting.httpClient.compression.enabled"),
+		compressionLevel:       conf.GetReloadableIntVar(gzip.DefaultCompression, 1, "Reporting.httpClient.compression.level"),
+		failFastOnLargePayload: conf.GetReloadableBoolVar(false, "Reporting.largePayloadHandling.enabled"),
+		stats:                  stats,
+		log:                    log,
+		conf:                   conf,
 	}
 }
 
 func (c *Client) Send(ctx context.Context, payload any) error {
+	return c.send(ctx, payload, c.failFastOnLargePayload.Load())
+}
+
+// SendWithoutFailFast sends a payload with 413 fail-fast disabled: a 413 is
+// retried like any other non-2xx response, even when
+// Reporting.largePayloadHandling.enabled is true. Callers use it for payloads
+// that are already minimal and cannot be split any further.
+func (c *Client) SendWithoutFailFast(ctx context.Context, payload any) error {
+	return c.send(ctx, payload, false)
+}
+
+func (c *Client) send(ctx context.Context, payload any, failFastOnLargePayload bool) error {
 	payloadBytes, err := jsonrs.Marshal(payload)
 	if err != nil {
 		return err
@@ -138,6 +157,8 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 	if err != nil {
 		return fmt.Errorf("constructing URL for service endpoint (%q, %q): %w", c.route, c.reportingServiceURL, err)
 	}
+
+	c.stats.NewTaggedStat(StatRequestPayloadBytes, stats.HistogramType, c.getTags()).Observe(float64(uncompressedBytes))
 
 	o := func() error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(bodyBytes))
@@ -177,6 +198,9 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 		}
 
 		if !c.isHTTPRequestSuccessful(resp.StatusCode) {
+			if resp.StatusCode == http.StatusRequestEntityTooLarge && failFastOnLargePayload {
+				return backoff.Permanent(ErrPayloadTooLarge)
+			}
 			err = fmt.Errorf("received unexpected response: %q: statusCode: %d body: %v", c.route, resp.StatusCode, string(respBody))
 		}
 		return err
@@ -216,11 +240,14 @@ func (c *Client) gzipCompress(b []byte) ([]byte, error) {
 
 // getTags returns the common tags for reporting metrics
 func (c *Client) getTags() stats.Tags {
-	serverURL, _ := url.Parse(c.reportingServiceURL)
+	var endpoint string
+	if serverURL, err := url.Parse(c.reportingServiceURL); err == nil {
+		endpoint = serverURL.Host
+	}
 	return stats.Tags{
 		"module":     c.moduleName,
 		"instanceId": c.instanceID,
-		"endpoint":   serverURL.Host,
+		"endpoint":   endpoint,
 		"path":       string(c.route),
 	}
 }

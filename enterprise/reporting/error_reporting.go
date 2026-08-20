@@ -34,6 +34,10 @@ import (
 const (
 	ErrorDetailReportsTable = "error_detail_reports"
 	groupKeyDelimitter      = "$::$"
+
+	StatErrorDetailReportingLargePayloadSplitCounter           = "error_detail_reporting_large_payload_split"
+	StatErrorDetailReportingLargeSampleEventReplacedCounter    = "error_detail_reporting_large_sample_event_replaced"
+	StatErrorDetailReportingOversizedSampleEventDroppedCounter = "error_detail_reporting_oversized_sample_event_dropped"
 )
 
 var ErrorDetailReportsColumns = []string{
@@ -68,17 +72,21 @@ type ErrorReportingStats struct {
 
 	// Error normalizer stats
 	NormalizerCleanupTime stats.Measurement
+
+	// Sample event stats
+	OversizedSampleEventDroppedCounter stats.Measurement
 }
 
 // NewErrorReportingStats creates a new stats manager
 func NewErrorReportingStats(statsInstance stats.Stats) *ErrorReportingStats {
 	return &ErrorReportingStats{
-		ReportTime:                   statsInstance.NewStat("error_detail_reporter_report_time", stats.TimerType),
-		ReportingLag:                 statsInstance.NewStat("error_detail_reports_metrics_lag_seconds", stats.GaugeType),
-		ErrorDetailReportingFailures: statsInstance.NewStat("error_detail_reporting_failures", stats.CountType),
-		HttpRequest:                  statsInstance.NewStat("error_detail_reporting_http_request", stats.CountType),
-		VacuumDuration:               statsInstance.NewStat("reporting_vacuum_duration", stats.TimerType),
-		NormalizerCleanupTime:        statsInstance.NewStat("error_detail_reporter_normalizer_cleanup_time", stats.TimerType),
+		ReportTime:                         statsInstance.NewStat("error_detail_reporter_report_time", stats.TimerType),
+		ReportingLag:                       statsInstance.NewStat("error_detail_reports_metrics_lag_seconds", stats.GaugeType),
+		ErrorDetailReportingFailures:       statsInstance.NewStat("error_detail_reporting_failures", stats.CountType),
+		HttpRequest:                        statsInstance.NewStat("error_detail_reporting_http_request", stats.CountType),
+		VacuumDuration:                     statsInstance.NewStat("reporting_vacuum_duration", stats.TimerType),
+		NormalizerCleanupTime:              statsInstance.NewStat("error_detail_reporter_normalizer_cleanup_time", stats.TimerType),
+		OversizedSampleEventDroppedCounter: statsInstance.NewStat(StatErrorDetailReportingOversizedSampleEventDroppedCounter, stats.CountType),
 	}
 }
 
@@ -339,7 +347,7 @@ func (edr *ErrorDetailReporter) writeGroupedErrors(ctx context.Context, groups m
 		for _, metric := range groupMetrics {
 			totalCount += metric.Count
 
-			sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(*metric, metric.ReportedAt, edr.eventSampler, edr.eventSamplingEnabled.Load(), int64(edr.eventSamplingDuration.Load().Minutes()))
+			sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(*metric, metric.ReportedAt, edr.eventSampler, edr.eventSamplingEnabled.Load(), int64(edr.eventSamplingDuration.Load().Minutes()), edr.statsManager.OversizedSampleEventDroppedCounter)
 			if err != nil {
 				return fmt.Errorf("event sampling error: %v", err)
 			}
@@ -534,7 +542,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 					break
 				}
 				errGroup.Go(func() error {
-					err := edr.commonClient.Send(errCtx, metricToSend)
+					err := edr.sendEDMetricWithLargePayloadHandler(errCtx, metricToSend, tags)
 					if err != nil {
 						edr.log.Errorn("Error while sending to Reporting service", obskit.Error(err))
 					}
@@ -821,4 +829,45 @@ func (edr *ErrorDetailReporter) Stop() {
 	if edr.eventSampler != nil {
 		edr.eventSampler.Close()
 	}
+}
+
+func (edr *ErrorDetailReporter) sendEDMetricWithLargePayloadHandler(ctx context.Context, metric *types.EDMetric, tags stats.Tags) error {
+	err := edr.commonClient.Send(ctx, metric)
+	if !errors.Is(err, client.ErrPayloadTooLarge) {
+		return err
+	}
+	edr.stats.NewTaggedStat(StatErrorDetailReportingLargePayloadSplitCounter, stats.CountType, tags).Increment()
+
+	if len(metric.Errors) == 1 {
+		// nothing to split: a single-error metric is the payload that was just rejected
+		return edr.sendStrippedErrorDetail(ctx, metric, metric.Errors[0], tags)
+	}
+
+	for _, errorDetail := range metric.Errors {
+		err = edr.commonClient.Send(ctx, edMetricWithSingleErrorDetail(metric, errorDetail))
+		if errors.Is(err, client.ErrPayloadTooLarge) {
+			err = edr.sendStrippedErrorDetail(ctx, metric, errorDetail, tags)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sendStrippedErrorDetail sends a single error detail with its sample event
+// replaced by a placeholder, retrying a 413 like any other non-2xx response.
+func (edr *ErrorDetailReporter) sendStrippedErrorDetail(ctx context.Context, metric *types.EDMetric, errorDetail types.EDErrorDetails, tags stats.Tags) error {
+	strippedMetric := edMetricWithSingleErrorDetail(metric, errorDetail)
+	strippedMetric.Errors[0].SampleEvent = sampleEventNotAvailableEntityTooLarge
+	edr.stats.NewTaggedStat(StatErrorDetailReportingLargeSampleEventReplacedCounter, stats.CountType, tags).Increment()
+	return edr.commonClient.SendWithoutFailFast(ctx, strippedMetric)
+}
+
+// edMetricWithSingleErrorDetail returns a copy of metric carrying only the given
+// error detail, so the result can be mutated without affecting metric.
+func edMetricWithSingleErrorDetail(metric *types.EDMetric, errorDetail types.EDErrorDetails) *types.EDMetric {
+	metricCopy := *metric
+	metricCopy.Errors = []types.EDErrorDetails{errorDetail}
+	return &metricCopy
 }
