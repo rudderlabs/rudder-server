@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -289,10 +290,7 @@ func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error 
 		batch := aggReports[i:end]
 
 		g.Go(func() error {
-			if err := f.commonClient.Send(ctx, batch); err != nil {
-				return err
-			}
-			return nil
+			return f.sendBatchWithPayloadTooLargeSplit(ctx, batch)
 		})
 	}
 
@@ -300,6 +298,25 @@ func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error 
 		return err
 	}
 
+	return nil
+}
+
+func (f *Flusher) sendBatchWithPayloadTooLargeSplit(ctx context.Context, batch []json.RawMessage) error {
+	err := f.commonClient.Send(ctx, batch)
+	if !errors.Is(err, client.ErrPayloadTooLarge) {
+		return err
+	}
+
+	for _, item := range batch {
+		individualBatch := []json.RawMessage{item}
+		err = f.commonClient.Send(ctx, individualBatch)
+		if errors.Is(err, client.ErrPayloadTooLarge) {
+			err = f.commonClient.SendWithoutPayloadTooLargeSplit(ctx, individualBatch)
+		}
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

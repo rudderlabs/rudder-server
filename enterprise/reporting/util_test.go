@@ -9,6 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	mockEventSampler "github.com/rudderlabs/rudder-server/mocks/enterprise/reporting/event_sampler"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -440,6 +443,48 @@ func TestGetSampleWithEventSampling(t *testing.T) {
 			require.Equal(t, tt.wantMetric.StatusDetail.SampleResponse, sampleResponse)
 		})
 	}
+}
+
+func TestGetSampleWithEventSamplingSkipsOversizedSampleEvent(t *testing.T) {
+	config.Set("Reporting.maxSampleEventSizeBytes", 5)
+	t.Cleanup(func() { config.Set("Reporting.maxSampleEventSizeBytes", 80*bytesize.MB) })
+
+	ctrl := gomock.NewController(t)
+	mockEventSampler := mockEventSampler.NewMockEventSampler(ctrl)
+	mockEventSampler.EXPECT().Get(gomock.Any()).Return(false, nil)
+
+	metric := types.PUReportedMetric{
+		StatusDetail: &types.StatusDetail{
+			SampleEvent:    json.RawMessage(`{"event":"too-large"}`),
+			SampleResponse: "sample response",
+		},
+	}
+
+	sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, 1234567890, mockEventSampler, true, 60)
+	require.NoError(t, err)
+	require.Nil(t, sampleEvent)
+	require.Empty(t, sampleResponse)
+}
+
+func TestGetSampleWithEventSamplingForEDReportsDBSkipsOversizedSampleEvent(t *testing.T) {
+	config.Set("Reporting.maxSampleEventSizeBytes", 5)
+	t.Cleanup(func() { config.Set("Reporting.maxSampleEventSizeBytes", 80*bytesize.MB) })
+
+	ctrl := gomock.NewController(t)
+	mockEventSampler := mockEventSampler.NewMockEventSampler(ctrl)
+	mockEventSampler.EXPECT().Get(gomock.Any()).Return(false, nil)
+
+	metric := types.EDReportsDB{
+		EDErrorDetails: types.EDErrorDetails{
+			SampleEvent:    json.RawMessage(`{"event":"too-large"}`),
+			SampleResponse: "sample response",
+		},
+	}
+
+	sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(metric, 1234567890, mockEventSampler, true, 60)
+	require.NoError(t, err)
+	require.Nil(t, sampleEvent)
+	require.Empty(t, sampleResponse)
 }
 
 func TestGetStringifiedSampleEvent(t *testing.T) {

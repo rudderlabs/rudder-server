@@ -524,7 +524,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 					break
 				}
 				errGroup.Go(func() error {
-					err := r.commonClient.Send(errCtx, metricToSend)
+					err := sendMetricWithPayloadTooLargeSplit(errCtx, r.commonClient, metricToSend)
 					<-requestChan
 					return err
 				})

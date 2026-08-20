@@ -5,11 +5,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
+
+var maxSampleEventSizeBytes = config.GetReloadableInt64Var(80*bytesize.MB, 1, "Reporting.maxSampleEventSizeBytes")
 
 func floorFactor(intervalMs int64) int64 {
 	factors := []int64{1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60}
@@ -72,6 +75,9 @@ func getSampleWithEventSamplingCore(sampleEvent json.RawMessage, sampleResponse 
 		}
 
 		if found {
+			sampleEvent = nil
+			sampleResponse = ""
+		} else if int64(len(sampleEvent)) > maxSampleEventSizeBytes.Load() {
 			sampleEvent = nil
 			sampleResponse = ""
 		} else {

@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -390,6 +392,88 @@ func TestClientSendCompressed(t *testing.T) {
 	compressed := statsStore.GetByName(client.StatRequestCompressedBytes)
 	require.Len(t, compressed, 1)
 	require.Less(t, compressed[0].Value, uncompressed[0].Value, "compressed bytes should be smaller than uncompressed")
+}
+
+func TestClientPayloadTooLargeFeatureGate(t *testing.T) {
+	metric := &types.Metric{
+		InstanceDetails: types.InstanceDetails{
+			WorkspaceID: "test-workspace",
+			InstanceID:  "test-instance",
+		},
+		StatusDetails: []*types.StatusDetail{{Status: "success", Count: 100, StatusCode: 200}},
+	}
+
+	t.Run("feature disabled retries as normal non-2xx response", func(t *testing.T) {
+		var requestCount atomic.Int64
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount.Add(1)
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			_, _ = fmt.Fprint(w, "request entity too large")
+		}))
+		defer server.Close()
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		conf := config.New()
+		conf.Set("REPORTING_URL", server.URL)
+		conf.Set("Reporting.httpClient.backoff.maxRetries", 1)
+
+		c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
+		err = c.Send(context.Background(), metric)
+		require.Error(t, err)
+		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
+		require.Contains(t, err.Error(), "statusCode: 413")
+		require.Equal(t, int64(2), requestCount.Load())
+	})
+
+	t.Run("feature enabled returns sentinel without inner retries", func(t *testing.T) {
+		var requestCount atomic.Int64
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount.Add(1)
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			_, _ = fmt.Fprint(w, "request entity too large")
+		}))
+		defer server.Close()
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		conf := config.New()
+		conf.Set("REPORTING_URL", server.URL)
+		conf.Set("Reporting.httpClient.backoff.maxRetries", 3)
+		conf.Set("Reporting.splitOnPayloadTooLarge.enabled", true)
+
+		c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
+		err = c.Send(context.Background(), metric)
+		require.ErrorIs(t, err, client.ErrPayloadTooLarge)
+		require.Equal(t, int64(1), requestCount.Load())
+	})
+
+	t.Run("no-split fallback retries 413 as normal response when feature enabled", func(t *testing.T) {
+		var requestCount atomic.Int64
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount.Add(1)
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			_, _ = fmt.Fprint(w, "request entity too large")
+		}))
+		defer server.Close()
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		conf := config.New()
+		conf.Set("REPORTING_URL", server.URL)
+		conf.Set("Reporting.httpClient.backoff.maxRetries", 1)
+		conf.Set("Reporting.splitOnPayloadTooLarge.enabled", true)
+
+		c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
+		err = c.SendWithoutPayloadTooLargeSplit(context.Background(), metric)
+		require.Error(t, err)
+		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
+		require.Contains(t, err.Error(), "statusCode: 413")
+		require.Equal(t, int64(2), requestCount.Load())
+	})
 }
 
 func TestClient5xx(t *testing.T) {

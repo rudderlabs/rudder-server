@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,6 +40,9 @@ const (
 	RouteTrackedUsers      Route = "/trackedUser"
 	RouteActivationRecords Route = "/activationRecords"
 )
+
+// ErrPayloadTooLarge indicates that the reporting service rejected a payload as too large.
+var ErrPayloadTooLarge = errors.New("payload too large")
 
 // Route contains the HTTP path and query string for the service.
 type Route string
@@ -77,8 +81,9 @@ type Client struct {
 	moduleName string
 	instanceID string
 
-	compress         config.ValueLoader[bool]
-	compressionLevel config.ValueLoader[int]
+	compress               config.ValueLoader[bool]
+	compressionLevel       config.ValueLoader[int]
+	splitOnTooLargeEnabled config.ValueLoader[bool]
 
 	conf *config.Config
 }
@@ -101,21 +106,32 @@ func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) 
 			Timeout:   conf.GetDurationVar(60, time.Second, "Reporting.httpClient.timeout", "HttpClient.reporting.timeout"),
 			Transport: &http.Transport{},
 		},
-		reportingServiceURL: reportingServiceURL,
-		userName:            conf.GetStringVar("", "REPORTING_USERNAME"),
-		password:            conf.GetStringVar("", "REPORTING_PASSWORD"),
-		route:               path,
-		instanceID:          conf.GetStringVar("1", "INSTANCE_ID"),
-		moduleName:          conf.GetStringVar("", "clientName"),
-		compress:            conf.GetReloadableBoolVar(false, "Reporting.httpClient.compression.enabled"),
-		compressionLevel:    conf.GetReloadableIntVar(gzip.DefaultCompression, 1, "Reporting.httpClient.compression.level"),
-		stats:               stats,
-		log:                 log,
-		conf:                conf,
+		reportingServiceURL:    reportingServiceURL,
+		userName:               conf.GetStringVar("", "REPORTING_USERNAME"),
+		password:               conf.GetStringVar("", "REPORTING_PASSWORD"),
+		route:                  path,
+		instanceID:             conf.GetStringVar("1", "INSTANCE_ID"),
+		moduleName:             conf.GetStringVar("", "clientName"),
+		compress:               conf.GetReloadableBoolVar(false, "Reporting.httpClient.compression.enabled"),
+		compressionLevel:       conf.GetReloadableIntVar(gzip.DefaultCompression, 1, "Reporting.httpClient.compression.level"),
+		splitOnTooLargeEnabled: conf.GetReloadableBoolVar(false, "Reporting.splitOnPayloadTooLarge.enabled"),
+		stats:                  stats,
+		log:                    log,
+		conf:                   conf,
 	}
 }
 
 func (c *Client) Send(ctx context.Context, payload any) error {
+	return c.send(ctx, payload, c.splitOnTooLargeEnabled.Load())
+}
+
+// SendWithoutPayloadTooLargeSplit sends a payload using the normal non-2xx retry
+// path even when Reporting.splitOnPayloadTooLarge.enabled is true.
+func (c *Client) SendWithoutPayloadTooLargeSplit(ctx context.Context, payload any) error {
+	return c.send(ctx, payload, false)
+}
+
+func (c *Client) send(ctx context.Context, payload any, splitOnTooLarge bool) error {
 	payloadBytes, err := jsonrs.Marshal(payload)
 	if err != nil {
 		return err
@@ -177,6 +193,9 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 		}
 
 		if !c.isHTTPRequestSuccessful(resp.StatusCode) {
+			if resp.StatusCode == http.StatusRequestEntityTooLarge && splitOnTooLarge {
+				return backoff.Permanent(ErrPayloadTooLarge)
+			}
 			err = fmt.Errorf("received unexpected response: %q: statusCode: %d body: %v", c.route, resp.StatusCode, string(respBody))
 		}
 		return err

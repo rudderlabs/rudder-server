@@ -534,7 +534,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 					break
 				}
 				errGroup.Go(func() error {
-					err := edr.commonClient.Send(errCtx, metricToSend)
+					err := sendEDMetricWithPayloadTooLargeSplit(errCtx, edr.commonClient, metricToSend)
 					if err != nil {
 						edr.log.Errorn("Error while sending to Reporting service", obskit.Error(err))
 					}
