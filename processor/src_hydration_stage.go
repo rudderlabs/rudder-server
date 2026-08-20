@@ -65,8 +65,7 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 		defer proc.stats.statSrcHydrationStageCount(partition).Count(
 			lo.Sum(lo.MapToSlice(message.groupedEventsBySourceId, func(key SourceIDT, jobs []types.TransformerEvent) int {
 				return len(jobs)
-			})),
-		)
+			})))
 	}
 
 	// Process sources in parallel using errgroup
@@ -93,8 +92,7 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 					return err
 				}
 				if !errors.Is(err, types.ErrPermanentTransformerFailure) {
-					proc.logger.Errorn(
-						"failed to hydrate source events, skipping jobs",
+					proc.logger.Errorn("failed to hydrate source events, skipping jobs",
 						obskit.SourceID(string(sourceId)),
 						obskit.Error(err),
 					)
@@ -144,8 +142,7 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 					}
 					payload, err := jsonrs.Marshal(hydratedJobs[i].Message)
 					if err != nil {
-						proc.logger.Errorn(
-							"failed to marshal hydrated event for event schema",
+						proc.logger.Errorn("failed to marshal hydrated event for event schema",
 							obskit.SourceID(string(sourceId)),
 							obskit.Error(err),
 						)
