@@ -61,11 +61,45 @@ func TestApplyReplayConfig(t *testing.T) {
 		require.Equal(t, "s-1", c.Sources[1].OriginalID)
 		require.Equal(t, "er-s-1", c.Sources[1].WriteKey)
 		require.JSONEq(t, "{}", string(c.Sources[1].Config))
+		require.JSONEq(t, `{"eventUpload": true}`, string(c.Sources[0].Config),
+			"the replay source is a copy: dropping eventUpload must not touch the original")
 		require.Len(t, c.Sources[1].Destinations, 1)
 		require.Equal(t, "er-d-1", c.Sources[1].Destinations[0].ID)
 		require.Equal(t, "d-1", c.Sources[1].Destinations[0].OriginalID)
 		require.Equal(t, true, c.Sources[1].Destinations[0].IsProcessorEnabled)
 		require.Equal(t, "rev-1", c.Sources[1].Destinations[0].RevisionID)
+	})
+
+	t.Run("Source configs the key cannot be dropped from", func(t *testing.T) {
+		for _, tc := range []struct {
+			name, config, want string
+		}{
+			{"without the key", `{"foo": "bar"}`, `{"foo": "bar"}`},
+			{"empty object", `{}`, `{}`},
+			{"empty", ``, ``},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				c := &ConfigT{
+					Sources: []SourceT{{
+						ID:           "s-1",
+						Config:       json.RawMessage(tc.config),
+						Destinations: []DestinationT{{ID: "d-1"}},
+					}},
+					EventReplays: map[string]EventReplayConfig{
+						"er-1": {
+							Sources:      map[string]EventReplaySource{"er-s-1": {OriginalSourceID: "s-1"}},
+							Destinations: map[string]EventReplayDestination{"er-d-1": {OriginalDestinationID: "d-1"}},
+							Connections:  []EventReplayConnection{{SourceID: "er-s-1", DestinationID: "er-d-1"}},
+						},
+					},
+				}
+				c.ApplyReplaySources()
+
+				require.Len(t, c.Sources, 2)
+				require.Equal(t, "er-s-1", c.Sources[1].ID)
+				require.Equal(t, tc.want, string(c.Sources[1].Config))
+			})
+		}
 	})
 
 	t.Run("Invalid Replay Config", func(t *testing.T) {
