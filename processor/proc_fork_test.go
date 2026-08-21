@@ -99,6 +99,7 @@ func TestNewForkedJob(t *testing.T) {
 			SourceName:  "source-1",
 			// destination-specific fields must NOT leak into a multi-destination forked job
 			DestinationID:           "should-not-appear",
+			OriginalDestinationID:   "should-not-appear",
 			DestinationName:         "should-not-appear",
 			DestinationType:         "should-not-appear",
 			DestinationDefinitionID: "should-not-appear",
@@ -131,6 +132,7 @@ func TestNewForkedJob(t *testing.T) {
 	// destination-specific metadata must be stripped: a forked job fans out to multiple
 	// destinations, re-hydrated per consumer at drain time.
 	require.Empty(t, payload.Metadata.DestinationID)
+	require.Empty(t, payload.Metadata.OriginalDestinationID)
 	require.Empty(t, payload.Metadata.DestinationName)
 	require.Empty(t, payload.Metadata.DestinationType)
 	require.Empty(t, payload.Metadata.DestinationDefinitionID)
