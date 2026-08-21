@@ -88,7 +88,7 @@ func TestConnectUsesNewDriverSelection(t *testing.T) {
 
 	openClickhouseV1 = func(Config) (*sql.DB, error) {
 		require.FailNow(t, "v1 opener should not be used")
-		return nil, nil
+		return nil, fmt.Errorf("v1 opener should not be used")
 	}
 	openClickhouseV2 = func(conf Config) (*sql.DB, error) {
 		require.True(t, conf.includeDBInConn)

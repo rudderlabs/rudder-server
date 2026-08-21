@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -390,35 +389,6 @@ func (ch *Clickhouse) driverConfig(includeDBInConn bool) (Config, error) {
 	}, nil
 }
 
-func (conf Config) toV1DSN() string {
-	values := url.Values{
-		"username":      []string{conf.user},
-		"password":      []string{conf.password},
-		"block_size":    []string{conf.blockSize},
-		"pool_size":     []string{conf.poolSize},
-		"debug":         []string{conf.queryDebugLogs},
-		"secure":        []string{strconv.FormatBool(conf.secure)},
-		"skip_verify":   []string{strconv.FormatBool(conf.skipVerify)},
-		"tls_config":    []string{conf.tlsConfig},
-		"read_timeout":  []string{conf.readTimeout},
-		"write_timeout": []string{conf.writeTimeout},
-		"compress":      []string{strconv.FormatBool(conf.compress)},
-	}
-	if conf.includeDBInConn {
-		values.Add("database", conf.database)
-	}
-	if conf.timeout > 0 {
-		values.Add("timeout", fmt.Sprintf("%d", conf.timeout/time.Second))
-	}
-
-	dsn := url.URL{
-		Scheme:   "tcp",
-		Host:     fmt.Sprintf("%s:%s", conf.host, conf.port),
-		RawQuery: values.Encode(),
-	}
-	return dsn.String()
-}
-
 func (conf Config) toV2Options() (*clickhousev2.Options, error) {
 	debug := false
 	if conf.queryDebugLogs != "" {
@@ -507,11 +477,12 @@ func (ch *Clickhouse) connectionCredentials() (*credentials, error) {
 	return credentials, nil
 }
 
-// registerTLSConfig will create a global map, use different names for the different tls config.
-// clickhouse will access the config by mentioning the key in connection string
-func registerTLSConfig(_ string, certificate string) (*tls.Config, error) {
+// registerTLSConfig builds a TLS config from the destination CA certificate.
+func registerTLSConfig(name string, certificate string) (*tls.Config, error) {
 	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM([]byte(certificate))
+	if ok := caCertPool.AppendCertsFromPEM([]byte(certificate)); !ok {
+		return nil, fmt.Errorf("invalid clickhouse CA certificate for %s", name)
+	}
 
 	return &tls.Config{
 		RootCAs: caCertPool,

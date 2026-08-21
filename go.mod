@@ -22,7 +22,6 @@ require (
 	cloud.google.com/go/pubsub/v2 v2.6.1
 	cloud.google.com/go/storage v1.63.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
-	github.com/ClickHouse/clickhouse-go v1.5.4
 	github.com/ClickHouse/clickhouse-go/v2 v2.36.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/alexeyco/simpletable v1.0.0
@@ -192,7 +191,6 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/containerd/continuity v0.5.0 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
