@@ -21,7 +21,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go"
+	clickhousev2 "github.com/ClickHouse/clickhouse-go/v2"
+	chproto "github.com/ClickHouse/clickhouse-go/v2/lib/proto"
 	"github.com/cenkalti/backoff/v5"
 	"github.com/google/uuid"
 
@@ -127,8 +128,18 @@ var errorsMappings = []model.JobError{
 	},
 }
 
+type clickhouseDriver interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryContext(context.Context, string, ...any) (*sqlmw.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sqlmw.Row
+	BeginTx(context.Context, *sql.TxOptions) (*sqlmw.Tx, error)
+	PingContext(context.Context) error
+	Close() error
+	SqlDB() *sql.DB
+}
+
 type Clickhouse struct {
-	DB                 *sqlmw.DB
+	DB                 clickhouseDriver
 	Namespace          string
 	ObjectStorage      string
 	Warehouse          model.Warehouse
@@ -136,9 +147,12 @@ type Clickhouse struct {
 	connectTimeout     time.Duration
 	LoadFileDownloader downloader.Downloader
 
-	conf   *config.Config
-	logger logger.Logger
-	stats  stats.Stats
+	conf        *config.Config
+	baseLogger  logger.Logger
+	logger      logger.Logger
+	stats       stats.Stats
+	driverName  string
+	commitEvery int
 
 	config struct {
 		queryDebugLogs              string
@@ -165,9 +179,10 @@ type credentials struct {
 	user       string
 	password   string
 	port       string
-	secure     string
-	skipVerify string
+	secure     bool
+	skipVerify bool
 	tlsConfig  string
+	tls        *tls.Config
 	timeout    time.Duration
 }
 
@@ -190,6 +205,7 @@ func (ch *Clickhouse) newClickHouseStat(tableName string) *clickHouseStat {
 		"source":      ch.Warehouse.Source.ID,
 		"identifier":  ch.Warehouse.Identifier,
 		"tableName":   warehouseutils.TableNameForStats(tableName),
+		"driver":      ch.selectedDriverName(),
 	}
 
 	numRowsLoadFile := ch.stats.NewTaggedStat("warehouse.clickhouse.numRowsLoadFile", stats.CountType, tags)
@@ -215,7 +231,10 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	ch := &Clickhouse{}
 
 	ch.conf = conf
-	ch.logger = log.Child("integrations").Child("clickhouse")
+	ch.baseLogger = log.Child("integrations").Child("clickhouse")
+	ch.driverName = "v1"
+	ch.commitEvery = 0
+	ch.logger = ch.baseLogger.Withn(logger.NewStringField("driver", ch.driverName))
 	ch.stats = stat
 
 	ch.config.queryDebugLogs = conf.GetStringVar("false", "Warehouse.clickhouse.queryDebugLogs")
@@ -251,52 +270,214 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	return ch
 }
 
-func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) (*sqlmw.DB, error) {
-	cred, err := ch.connectionCredentials()
-	if err != nil {
-		return nil, fmt.Errorf("could not get connection credentials: %w", err)
+// Config contains all settings needed to create a ClickHouse SQL driver.
+type Config struct {
+	host               string
+	database           string
+	user               string
+	password           string
+	port               string
+	secure             bool
+	skipVerify         bool
+	tlsConfig          string
+	timeout            time.Duration
+	includeDBInConn    bool
+	queryDebugLogs     string
+	blockSize          string
+	poolSize           string
+	readTimeout        string
+	writeTimeout       string
+	compress           bool
+	tls                *tls.Config
+	stats              stats.Stats
+	logger             logger.Logger
+	logFields          []any
+	queryTimeout       time.Duration
+	slowQueryThreshold time.Duration
+}
+
+var (
+	openClickhouseV1 = func(conf Config) (*sql.DB, error) {
+		options, err := conf.toV2Options()
+		if err != nil {
+			return nil, err
+		}
+		return clickhousev2.OpenDB(options), nil
+	}
+	openClickhouseV2 = func(conf Config) (*sql.DB, error) {
+		options, err := conf.toV2Options()
+		if err != nil {
+			return nil, err
+		}
+		return clickhousev2.OpenDB(options), nil
+	}
+)
+
+func newDriver(conf Config, warehouse model.Warehouse, cfg *config.Config) (clickhouseDriver, string, int, error) {
+	driverName := "v1"
+	commitEvery := 0
+	open := openClickhouseV1
+	if useV2Driver(warehouse, cfg) {
+		driverName = "v2"
+		parsedBlockSize, err := strconv.Atoi(conf.blockSize)
+		if err != nil {
+			return nil, "", 0, fmt.Errorf("parsing clickhouse block size: %w", err)
+		}
+		if parsedBlockSize <= 0 {
+			return nil, "", 0, fmt.Errorf("clickhouse block size must be greater than 0: %d", parsedBlockSize)
+		}
+		commitEvery = parsedBlockSize
+		open = openClickhouseV2
 	}
 
+	db, err := open(conf)
+	if err != nil {
+		return nil, "", 0, fmt.Errorf("opening connection: %w", err)
+	}
+
+	logFields := append([]any{}, conf.logFields...)
+	logFields = append(logFields, "driver", driverName)
+	middleware := sqlmw.New(
+		db,
+		sqlmw.WithStats(conf.stats),
+		sqlmw.WithLogger(conf.logger.Withn(logger.NewStringField("driver", driverName))),
+		sqlmw.WithKeyAndValues(logFields...),
+		sqlmw.WithQueryTimeout(conf.queryTimeout),
+		sqlmw.WithSlowQueryThreshold(conf.slowQueryThreshold),
+	)
+	return middleware, driverName, commitEvery, nil
+}
+
+func useV2Driver(warehouse model.Warehouse, cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return cfg.GetBoolVar(
+		false,
+		fmt.Sprintf("Warehouse.clickhouse.%s.useV2Driver", warehouse.WorkspaceID),
+		"Warehouse.clickhouse.useV2Driver",
+	)
+}
+
+func (ch *Clickhouse) driverConfig(includeDBInConn bool) (Config, error) {
+	cred, err := ch.connectionCredentials()
+	if err != nil {
+		return Config{}, fmt.Errorf("could not get connection credentials: %w", err)
+	}
+	return Config{
+		host:               cred.host,
+		database:           cred.database,
+		user:               cred.user,
+		password:           cred.password,
+		port:               cred.port,
+		secure:             cred.secure,
+		skipVerify:         cred.skipVerify,
+		tlsConfig:          cred.tlsConfig,
+		timeout:            cred.timeout,
+		includeDBInConn:    includeDBInConn,
+		queryDebugLogs:     ch.config.queryDebugLogs,
+		blockSize:          ch.config.blockSize,
+		poolSize:           ch.config.poolSize,
+		readTimeout:        ch.config.readTimeout,
+		writeTimeout:       ch.config.writeTimeout,
+		compress:           ch.config.compress,
+		tls:                cred.tls,
+		stats:              ch.stats,
+		logger:             ch.baseLogger,
+		logFields:          ch.defaultLogFieldsWithoutDriver(),
+		queryTimeout:       ch.connectTimeout,
+		slowQueryThreshold: ch.config.slowQueryThreshold,
+	}, nil
+}
+
+func (conf Config) toV1DSN() string {
 	values := url.Values{
-		"username":      []string{cred.user},
-		"password":      []string{cred.password},
-		"block_size":    []string{ch.config.blockSize},
-		"pool_size":     []string{ch.config.poolSize},
-		"debug":         []string{ch.config.queryDebugLogs},
-		"secure":        []string{cred.secure},
-		"skip_verify":   []string{cred.skipVerify},
-		"tls_config":    []string{cred.tlsConfig},
-		"read_timeout":  []string{ch.config.readTimeout},
-		"write_timeout": []string{ch.config.writeTimeout},
-		"compress":      []string{strconv.FormatBool(ch.config.compress)},
+		"username":      []string{conf.user},
+		"password":      []string{conf.password},
+		"block_size":    []string{conf.blockSize},
+		"pool_size":     []string{conf.poolSize},
+		"debug":         []string{conf.queryDebugLogs},
+		"secure":        []string{strconv.FormatBool(conf.secure)},
+		"skip_verify":   []string{strconv.FormatBool(conf.skipVerify)},
+		"tls_config":    []string{conf.tlsConfig},
+		"read_timeout":  []string{conf.readTimeout},
+		"write_timeout": []string{conf.writeTimeout},
+		"compress":      []string{strconv.FormatBool(conf.compress)},
 	}
-	if includeDBInConn {
-		values.Add("database", cred.database)
+	if conf.includeDBInConn {
+		values.Add("database", conf.database)
 	}
-	if cred.timeout > 0 {
-		values.Add("timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
+	if conf.timeout > 0 {
+		values.Add("timeout", fmt.Sprintf("%d", conf.timeout/time.Second))
 	}
 
 	dsn := url.URL{
 		Scheme:   "tcp",
-		Host:     fmt.Sprintf("%s:%s", cred.host, cred.port),
+		Host:     fmt.Sprintf("%s:%s", conf.host, conf.port),
 		RawQuery: values.Encode(),
 	}
+	return dsn.String()
+}
 
-	db, err := sql.Open("clickhouse", dsn.String())
-	if err != nil {
-		return nil, fmt.Errorf("opening connection: %w", err)
+func (conf Config) toV2Options() (*clickhousev2.Options, error) {
+	debug := false
+	if conf.queryDebugLogs != "" {
+		parsedDebug, err := strconv.ParseBool(conf.queryDebugLogs)
+		if err != nil {
+			return nil, fmt.Errorf("parsing clickhouse debug setting: %w", err)
+		}
+		debug = parsedDebug
 	}
 
-	middleware := sqlmw.New(
-		db,
-		sqlmw.WithStats(ch.stats),
-		sqlmw.WithLogger(ch.logger),
-		sqlmw.WithKeyAndValues(ch.defaultLogFields()),
-		sqlmw.WithQueryTimeout(ch.connectTimeout),
-		sqlmw.WithSlowQueryThreshold(ch.config.slowQueryThreshold),
-	)
-	return middleware, nil
+	readTimeout, err := parseClickhouseDurationSeconds(conf.readTimeout, "read_timeout")
+	if err != nil {
+		return nil, err
+	}
+
+	options := &clickhousev2.Options{
+		Addr: []string{fmt.Sprintf("%s:%s", conf.host, conf.port)},
+		Auth: clickhousev2.Auth{
+			Username: conf.user,
+			Password: conf.password,
+		},
+		Debug:       debug,
+		DialTimeout: conf.timeout,
+		ReadTimeout: readTimeout,
+	}
+	if conf.includeDBInConn {
+		options.Auth.Database = conf.database
+	}
+	if conf.compress {
+		options.Compression = &clickhousev2.Compression{Method: clickhousev2.CompressionLZ4}
+	}
+	if conf.secure {
+		if conf.tls != nil {
+			options.TLS = conf.tls.Clone()
+		} else {
+			options.TLS = &tls.Config{}
+		}
+		options.TLS.InsecureSkipVerify = conf.skipVerify
+	}
+	return options, nil
+}
+
+func parseClickhouseDurationSeconds(value, name string) (time.Duration, error) {
+	if value == "" {
+		return 0, nil
+	}
+	seconds, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parsing clickhouse %s: %w", name, err)
+	}
+	return time.Duration(seconds * float64(time.Second)), nil
+}
+
+func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) (clickhouseDriver, string, int, error) {
+	driverConfig, err := ch.driverConfig(includeDBInConn)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	return newDriver(driverConfig, ch.Warehouse, ch.conf)
 }
 
 // connectionCredentials returns the credentials for connecting to clickhouse
@@ -308,34 +489,43 @@ func (ch *Clickhouse) connectionCredentials() (*credentials, error) {
 		user:       ch.Warehouse.GetStringDestinationConfig(ch.conf, model.UserSetting),
 		password:   ch.Warehouse.GetStringDestinationConfig(ch.conf, model.PasswordSetting),
 		port:       ch.Warehouse.GetStringDestinationConfig(ch.conf, model.PortSetting),
-		secure:     strconv.FormatBool(ch.Warehouse.GetBoolDestinationConfig(model.SecureSetting)),
-		skipVerify: strconv.FormatBool(ch.Warehouse.GetBoolDestinationConfig(model.SkipVerifySetting)),
+		secure:     ch.Warehouse.GetBoolDestinationConfig(model.SecureSetting),
+		skipVerify: ch.Warehouse.GetBoolDestinationConfig(model.SkipVerifySetting),
 		timeout:    ch.connectTimeout,
 	}
 
 	certificate := ch.Warehouse.GetStringDestinationConfig(ch.conf, model.CACertificateSetting)
 	if strings.TrimSpace(certificate) != "" {
-		if err := registerTLSConfig(ch.Warehouse.Destination.ID, certificate); err != nil {
+		tlsConfig, err := registerTLSConfig(ch.Warehouse.Destination.ID, certificate)
+		if err != nil {
 			return nil, fmt.Errorf("registering tls config: %w", err)
 		}
 
 		credentials.tlsConfig = ch.Warehouse.Destination.ID
+		credentials.tls = tlsConfig
 	}
 	return credentials, nil
 }
 
 // registerTLSConfig will create a global map, use different names for the different tls config.
 // clickhouse will access the config by mentioning the key in connection string
-func registerTLSConfig(key, certificate string) error {
+func registerTLSConfig(_ string, certificate string) (*tls.Config, error) {
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM([]byte(certificate))
 
-	return clickhouse.RegisterTLSConfig(key, &tls.Config{
+	return &tls.Config{
 		RootCAs: caCertPool,
-	})
+	}, nil
 }
 
-func (ch *Clickhouse) defaultLogFields() []any {
+func (ch *Clickhouse) selectedDriverName() string {
+	if ch.driverName == "" {
+		return "v1"
+	}
+	return ch.driverName
+}
+
+func (ch *Clickhouse) defaultLogFieldsWithoutDriver() []any {
 	return []any{
 		logfield.SourceID, ch.Warehouse.Source.ID,
 		logfield.SourceType, ch.Warehouse.Source.SourceDefinition.Name,
@@ -344,6 +534,16 @@ func (ch *Clickhouse) defaultLogFields() []any {
 		logfield.WorkspaceID, ch.Warehouse.WorkspaceID,
 		logfield.Namespace, ch.Namespace,
 	}
+}
+
+func (ch *Clickhouse) defaultLogFields() []any {
+	fields := ch.defaultLogFieldsWithoutDriver()
+	fields = append(fields, "driver", ch.selectedDriverName())
+	return fields
+}
+
+func (ch *Clickhouse) driverField() logger.Field {
+	return logger.NewStringField("driver", ch.selectedDriverName())
 }
 
 // ColumnsWithDataTypes creates columns and its datatype into sql format for creating table
@@ -542,7 +742,7 @@ func (ch *Clickhouse) loadByDownloadingLoadFiles(ctx context.Context, tableName 
 	defer misc.RemoveFilePaths(fileNames...)
 
 	operation := func() error {
-		tableError := ch.loadTablesFromFilesNamesWithRetry(ctx, tableName, tableSchemaInUpload, fileNames, chStats)
+		tableError := ch.loadTablesFromFilesNamesWithRetry(ctx, tableName, tableSchemaInUpload, fileNames, chStats, ch.commitEvery)
 		err = tableError.err
 		if !tableError.enableRetry {
 			return nil
@@ -644,7 +844,7 @@ type tableError struct {
 	err         error
 }
 
-func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema, fileNames []string, chStats *clickHouseStat) (terr tableError) {
+func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema, fileNames []string, chStats *clickHouseStat, commitEvery int) (terr tableError) {
 	ch.logger.Debugn("LoadTablesFromFilesNamesWithRetry Started",
 		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
 	)
@@ -652,8 +852,12 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
 	)
 
-	var txn *sqlmw.Tx
-	var err error
+	var (
+		txn       *sqlmw.Tx
+		stmt      *sql.Stmt
+		err       error
+		batchRows int
+	)
 
 	onError := func(err error) {
 		if txn != nil {
@@ -674,40 +878,85 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 		)
 	}
 
-	ch.logger.Debugn("Beginning a transaction in db for loading in table",
-		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
-	)
-	txn, err = ch.DB.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		err = fmt.Errorf("%s Error while beginning a transaction in db for loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
-		onError(err)
-		return terr
-	}
-	ch.logger.Debugn("Completed a transaction in db for loading in table",
-		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
-	)
-
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 	sortedColumnString := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
-
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString(len(sortedColumnKeys)))
-	ch.logger.Debugn("Preparing statement exec in db for loading in table",
-		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
-		logger.NewStringField(logfield.Query, sqlStatement),
-	)
-	stmt, err := txn.PrepareContext(ctx, sqlStatement)
-	if err != nil {
-		err = fmt.Errorf("%s Error while preparing statement for transaction in db for loading in table for query:%s error:%v", ch.GetLogIdentifier(tableName), sqlStatement, err)
-		onError(err)
-		return terr
+
+	beginBatch := func() error {
+		ch.logger.Debugn("Beginning a transaction in db for loading in table",
+			logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+		)
+		txn, err = ch.DB.BeginTx(ctx, &sql.TxOptions{})
+		if err != nil {
+			return fmt.Errorf("%s Error while beginning a transaction in db for loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
+		}
+		ch.logger.Debugn("Completed a transaction in db for loading in table",
+			logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+		)
+
+		ch.logger.Debugn("Preparing statement exec in db for loading in table",
+			logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+			logger.NewStringField(logfield.Query, sqlStatement),
+		)
+		stmt, err = txn.PrepareContext(ctx, sqlStatement)
+		if err != nil {
+			return fmt.Errorf("%s Error while preparing statement for transaction in db for loading in table for query:%s error:%v", ch.GetLogIdentifier(tableName), sqlStatement, err)
+		}
+		ch.logger.Debugn("Prepared statement exec in db for loading in table",
+			logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+		)
+		return nil
 	}
-	defer func() {
-		_ = stmt.Close()
-	}()
-	ch.logger.Debugn("Prepared statement exec in db for loading in table",
-		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
-	)
+
+	closeStatement := func() {
+		if stmt != nil {
+			_ = stmt.Close()
+			stmt = nil
+		}
+	}
+	defer closeStatement()
+
+	commitBatch := func() error {
+		if txn == nil {
+			return nil
+		}
+
+		var commitErr error
+		misc.RunWithTimeout(func() {
+			defer chStats.commitTime.RecordDuration()()
+
+			ch.logger.Debugn("Committing transaction",
+				logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+			)
+			if commitErr = txn.Commit(); commitErr != nil {
+				commitErr = fmt.Errorf("%s Error while committing transaction as there was error while loading in table with error:%v", ch.GetLogIdentifier(tableName), commitErr)
+				return
+			}
+			ch.logger.Debugn("Committed transaction",
+				logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+			)
+		}, func() {
+			commitErr = fmt.Errorf("%s Timed out while committing", ch.GetLogIdentifier(tableName))
+			terr.enableRetry = true
+			chStats.commitTimeouts.Count(1)
+		}, ch.config.commitTimeout)
+
+		if commitErr != nil {
+			return fmt.Errorf("%s Error occurred while committing with error:%v", ch.GetLogIdentifier(tableName), commitErr)
+		}
+		closeStatement()
+		txn = nil
+		batchRows = 0
+		return nil
+	}
+
+	if commitEvery == 0 {
+		if err = beginBatch(); err != nil {
+			onError(err)
+			return terr
+		}
+	}
 
 	for _, objectFileName := range fileNames {
 		syncStart := time.Now()
@@ -759,6 +1008,13 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 				recordInterface = append(recordInterface, data)
 			}
 
+			if txn == nil {
+				if err = beginBatch(); err != nil {
+					onError(err)
+					return terr
+				}
+			}
+
 			stmtCtx, stmtCancel := context.WithCancel(ctx)
 			misc.RunWithTimeout(func() {
 				ch.logger.Debugn("Starting Prepared statement exec",
@@ -774,9 +1030,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 					logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
 				)
 				stmtCancel()
-				go func() {
-					_ = stmt.Close()
-				}()
+				go closeStatement()
 				err = fmt.Errorf("%s Timed out exec table for objectFileName: %s", ch.GetLogIdentifier(tableName), objectFileName)
 				terr.enableRetry = true
 				chStats.execTimeouts.Count(1)
@@ -788,6 +1042,13 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 				return terr
 			}
 			csvRowsProcessedCount++
+			batchRows++
+			if commitEvery > 0 && batchRows == commitEvery {
+				if err = commitBatch(); err != nil {
+					onError(err)
+					return terr
+				}
+			}
 		}
 
 		chStats.numRowsLoadFile.Count(csvRowsProcessedCount)
@@ -798,27 +1059,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 		chStats.syncLoadFileTime.Since(syncStart)
 	}
 
-	misc.RunWithTimeout(func() {
-		defer chStats.commitTime.RecordDuration()()
-
-		ch.logger.Debugn("Committing transaction",
-			logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
-		)
-		if err = txn.Commit(); err != nil {
-			err = fmt.Errorf("%s Error while committing transaction as there was error while loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
-			return
-		}
-		ch.logger.Debugn("Committed transaction",
-			logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
-		)
-	}, func() {
-		err = fmt.Errorf("%s Timed out while committing", ch.GetLogIdentifier(tableName))
-		terr.enableRetry = true
-		chStats.commitTimeouts.Count(1)
-	}, ch.config.commitTimeout)
-
-	if err != nil {
-		err = fmt.Errorf("%s Error occurred while committing with error:%v", ch.GetLogIdentifier(tableName), err)
+	if err = commitBatch(); err != nil {
 		onError(err)
 		return terr
 	}
@@ -1012,7 +1253,7 @@ func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
 		return nil
 	}
 
-	db, err := ch.connectToClickhouse(false)
+	db, _, _, err := ch.connectToClickhouse(false)
 	if err != nil {
 		return fmt.Errorf("connecting to clickhouse: %v", err)
 	}
@@ -1066,10 +1307,15 @@ func (ch *Clickhouse) Setup(_ context.Context, warehouse model.Warehouse, upload
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 	ch.LoadFileDownloader = downloader.NewDownloader(&warehouse, uploader, ch.config.numWorkersDownloadLoadFiles)
 
-	if ch.DB, err = ch.connectToClickhouse(true); err != nil {
+	driver, driverName, commitEvery, err := ch.connectToClickhouse(true)
+	if err != nil {
 		return fmt.Errorf("connecting to clickhouse: %w", err)
 	}
-	return err
+	ch.DB = driver
+	ch.driverName = driverName
+	ch.commitEvery = commitEvery
+	ch.logger = ch.baseLogger.Withn(ch.driverField())
+	return nil
 }
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
@@ -1092,7 +1338,7 @@ func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, error) {
 		return schema, nil
 	}
 	if err != nil {
-		var clickhouseErr *clickhouse.Exception
+		var clickhouseErr *chproto.Exception
 		if errors.As(err, &clickhouseErr) && clickhouseErr.Code == 81 {
 			return schema, nil
 		}
@@ -1113,7 +1359,13 @@ func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, error) {
 		if datatype, ok := clickhouseDataTypesMapToRudder[columnType]; ok {
 			schema[tableName][columnName] = datatype
 		} else {
-			warehouseutils.WHCounterStat(ch.stats, warehouseutils.RudderMissingDatatype, &ch.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
+			warehouseutils.WHCounterStat(
+				ch.stats,
+				warehouseutils.RudderMissingDatatype,
+				&ch.Warehouse,
+				warehouseutils.Tag{Name: "datatype", Value: columnType},
+				warehouseutils.Tag{Name: "driver", Value: ch.selectedDriverName()},
+			).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -1220,12 +1472,15 @@ func (ch *Clickhouse) Connect(_ context.Context, warehouse model.Warehouse) (cli
 		misc.IsConfiguredToUseRudderObjectStorage(ch.Warehouse.Destination.Config),
 	)
 
-	db, err := ch.connectToClickhouse(true)
+	driver, driverName, commitEvery, err := ch.connectToClickhouse(true)
 	if err != nil {
 		return client.Client{}, fmt.Errorf("connecting to clickhouse: %w", err)
 	}
+	ch.driverName = driverName
+	ch.commitEvery = commitEvery
+	ch.logger = ch.baseLogger.Withn(ch.driverField())
 
-	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
+	return client.Client{Type: client.SQLClient, SQL: driver.SqlDB()}, nil
 }
 
 func (ch *Clickhouse) GetLogIdentifier(args ...string) string {
