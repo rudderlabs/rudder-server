@@ -281,6 +281,7 @@ type ParametersT struct {
 	WorkspaceId             string `json:"workspaceId"`
 	TraceParent             string `json:"traceparent"`
 	ConnectionID            string `json:"connection_id"`
+	CaptureError            bool   `json:"capture_error,omitempty"`
 }
 
 type MetricMetadata struct {
@@ -1083,6 +1084,7 @@ func (proc *Handle) singularEventMetadata(singularEvent types.SingularEventT, us
 	commonMetadata.SourceJobRunID = eventParams.SourceJobRunId
 	commonMetadata.SourceTaskRunID = eventParams.SourceTaskRunId
 	commonMetadata.RecordID = misc.MapLookup(singularEvent, "recordId")
+	commonMetadata.CaptureError = eventParams.CaptureError
 
 	// other metadata
 	commonMetadata.InstanceID = proc.instanceID
@@ -1231,6 +1233,7 @@ func (proc *Handle) getTransformerEvents(
 		eventMetadata.SourceJobRunID = userTransformedEvent.Metadata.SourceJobRunID
 		eventMetadata.SourceTaskRunID = userTransformedEvent.Metadata.SourceTaskRunID
 		eventMetadata.RecordID = userTransformedEvent.Metadata.RecordID
+		eventMetadata.CaptureError = userTransformedEvent.Metadata.CaptureError
 
 		// other metadata
 		eventMetadata.TraceParent = userTransformedEvent.Metadata.TraceParent
@@ -3690,6 +3693,7 @@ func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilt
 			sourceCategory := metadata.SourceCategory
 			workspaceID := metadata.WorkspaceID
 			partitionID := metadata.PartitionID
+			captureError := metadata.CaptureError
 			// If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			// This is done to respect findWorker logic in router.
 			if rudderID == "" {
@@ -3716,6 +3720,7 @@ func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilt
 				WorkspaceId:             workspaceID,
 				TraceParent:             metadata.TraceParent,
 				ConnectionID:            generateConnectionID(sourceID, destID),
+				CaptureError:            captureError,
 			}
 			marshalledParams, err := jsonrs.Marshal(params)
 			if err != nil {
