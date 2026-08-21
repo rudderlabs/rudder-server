@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -305,6 +306,66 @@ func TestV2ConfigFetcher(t *testing.T) {
 			fetcher.cache.SourceDefinitions["webhook"].UpdatedAt.Format(updatedAfterTimeFormat))
 	})
 
+	t.Run("a poll that fails to map leaves updatedAfter where it was", func(t *testing.T) {
+		ctx := context.Background()
+		srv := &v2Server{t: t, secret: "service-secret"}
+		srv.responses = [][]byte{
+			v2Doc{Workspaces: map[string]any{"ws-1": v2Workspaceof("2026-07-24T17:01:55.777Z")}}.json(t),
+			v2Doc{Workspaces: map[string]any{"ws-1": v2Workspaceof("2026-07-26T10:00:00.000Z")}}.json(t),
+			v2Doc{Workspaces: map[string]any{"ws-1": v2Workspaceof("2026-07-26T10:00:00.000Z")}}.json(t),
+		}
+		fetcher, counting := newV2TestFetcher(t, srv)
+
+		_, err := fetcher.Get(ctx)
+		require.NoError(t, err)
+
+		// the update arrives but cannot be mapped
+		counting.err = errors.New("mapper is having a day")
+		_, err = fetcher.Get(ctx)
+		require.ErrorContains(t, err, "mapper is having a day")
+
+		// had updatedAfter moved, the control plane would answer the next poll with a null for a
+		// workspace nothing has mapped yet, and the memo would keep serving the config it replaced
+		counting.err = nil
+		configs, err := fetcher.Get(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "2026-07-24T17:01:55.777Z", srv.requests[2].Query().Get("updatedAfter"))
+		require.Equal(t, "2026-07-26T10:00:00.000Z", configs["ws-1"].UpdatedAt.Format(updatedAfterTimeFormat))
+	})
+
+	t.Run("a response without workspaces", func(t *testing.T) {
+		ctx := context.Background()
+
+		t.Run("is not worth refetching when it already was a full response", func(t *testing.T) {
+			srv := &v2Server{t: t, secret: "service-secret"}
+			srv.responses = [][]byte{v2Doc{Workspaces: map[string]any{}}.json(t)}
+			fetcher, _ := newV2TestFetcher(t, srv)
+
+			_, err := fetcher.Get(ctx)
+			require.ErrorContains(t, err, "no workspaces in response")
+			require.NotErrorIs(t, err, ErrIncrementalUpdateFailed)
+			require.Len(t, srv.requests, 1, "asking again would only repeat it")
+		})
+
+		t.Run("is retried in full when a delta was asked for", func(t *testing.T) {
+			srv := &v2Server{t: t, secret: "service-secret"}
+			srv.responses = [][]byte{
+				v2Doc{Workspaces: map[string]any{"ws-1": v2Workspaceof("2026-07-24T17:01:55.777Z")}}.json(t),
+				v2Doc{Workspaces: map[string]any{}}.json(t),
+				v2Doc{Workspaces: map[string]any{"ws-1": v2Workspaceof("2026-07-24T17:01:55.777Z")}}.json(t),
+			}
+			fetcher, _ := newV2TestFetcher(t, srv)
+
+			_, err := fetcher.Get(ctx)
+			require.NoError(t, err)
+			configs, err := fetcher.Get(ctx)
+			require.NoError(t, err, "the retry asks for everything and gets it")
+			require.Len(t, configs, 1)
+			require.Len(t, srv.requests, 3)
+			require.Empty(t, srv.requests[2].Query().Get("updatedAfter"))
+		})
+	})
+
 	t.Run("request failures", func(t *testing.T) {
 		ctx := context.Background()
 
@@ -448,6 +509,7 @@ type countingMapper struct {
 	inner mapper
 	calls map[string]int
 	raw   map[string]json.RawMessage
+	err   error // when set, every mapping fails
 }
 
 func (m *countingMapper) Map(workspaceID string, raw json.RawMessage, catalogues v2Catalogues) (ConfigT, error) {
@@ -456,6 +518,9 @@ func (m *countingMapper) Map(workspaceID string, raw json.RawMessage, catalogues
 	}
 	m.calls[workspaceID]++
 	m.raw[workspaceID] = raw
+	if m.err != nil {
+		return ConfigT{}, m.err
+	}
 	return m.inner.Map(workspaceID, raw, catalogues)
 }
 

@@ -139,6 +139,13 @@ func (f *v2ConfigFetcher) getFromAPI(ctx context.Context) (map[string]ConfigT, e
 	if response.Version != v2ConfigVersion {
 		return configOnError, fmt.Errorf("unexpected config version %d, expected %d", response.Version, v2ConfigVersion)
 	}
+	if len(response.Workspaces) == 0 { // zero workspaces means invalid response
+		if !f.lastUpdatedAt.IsZero() { // by returning ErrIncrementalUpdateFailed we force to reset lastUpdatedAt amd retry
+			return configOnError, fmt.Errorf("%w: no workspaces in response", ErrIncrementalUpdateFailed)
+		}
+		return configOnError, fmt.Errorf("no workspaces in response")
+	}
+
 	// both the members and the changed set are read here, off the response and before the cache
 	// is updated: UpdateCache writes cached workspaces back over the nils
 	members := make([]string, 0, len(response.Workspaces))
@@ -154,7 +161,6 @@ func (f *v2ConfigFetcher) getFromAPI(ctx context.Context) (map[string]ConfigT, e
 	if err != nil {
 		return configOnError, fmt.Errorf("%w: %w", ErrIncrementalUpdateFailed, err)
 	}
-	f.lastUpdatedAt = lastUpdatedAt
 
 	generation := f.cache.generation()
 	workspacesConfig := make(map[string]ConfigT, len(members))
@@ -186,6 +192,8 @@ func (f *v2ConfigFetcher) getFromAPI(ctx context.Context) (map[string]ConfigT, e
 		config.ConnectionFlags.Services = map[string]bool{"warehouse": true, "rudderstack-processor": true}
 		workspacesConfig[workspaceID] = config
 	}
+	// both lastUpdatedAt & memo should move together once the whole poll has succeeded
+	f.lastUpdatedAt = lastUpdatedAt
 	// rebuilt rather than updated, so that a workspace which left the namespace leaves the memo with it
 	f.memo = memo
 
