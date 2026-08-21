@@ -127,8 +127,20 @@ var errorsMappings = []model.JobError{
 	},
 }
 
+type clickhouseDriver interface {
+	Exec(string, ...any) (sql.Result, error)
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	Query(string, ...any) (*sqlmw.Rows, error)
+	QueryContext(context.Context, string, ...any) (*sqlmw.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sqlmw.Row
+	BeginTx(context.Context, *sql.TxOptions) (*sqlmw.Tx, error)
+	PingContext(context.Context) error
+	Close() error
+	SqlDB() *sql.DB
+}
+
 type Clickhouse struct {
-	DB                 *sqlmw.DB
+	DB                 clickhouseDriver
 	Namespace          string
 	ObjectStorage      string
 	Warehouse          model.Warehouse
@@ -1225,7 +1237,7 @@ func (ch *Clickhouse) Connect(_ context.Context, warehouse model.Warehouse) (cli
 		return client.Client{}, fmt.Errorf("connecting to clickhouse: %w", err)
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
+	return client.Client{Type: client.SQLClient, SQL: db.SqlDB()}, err
 }
 
 func (ch *Clickhouse) GetLogIdentifier(args ...string) string {
