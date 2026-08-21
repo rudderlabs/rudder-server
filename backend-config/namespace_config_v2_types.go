@@ -3,14 +3,20 @@ package backendconfig
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/tidwall/gjson"
+	kitjsonparser "github.com/rudderlabs/rudder-go-kit/jsonparser"
 )
 
 // v2ConfigVersion is the version the v2 namespace config endpoint stamps on its response.
 const v2ConfigVersion = 2
+
+// Pinning the gjson backed implementation rather than taking the default one: workspace config bodies are
+// the largest JSON this process scans, and gjson goes through them at roughly twice the rate, measured from 16KB up to
+// 100MB with the field last in the object, which is where the control plane puts it.
+var jsonparser = kitjsonparser.NewWithLibrary(kitjsonparser.TidwallLib)
 
 // v2NamespaceConfig is the response of the v2 namespace config endpoint:
 //
@@ -112,11 +118,13 @@ func (w *v2Workspace) UnmarshalJSON(data []byte) error {
 	// the body is scanned for the one field we need rather than decoded: the decoder that handed
 	// us these bytes has already validated them, and decoding a single field out of a workspace
 	// this size costs more than the scan does
-	if updatedAt := gjson.GetBytes(data, "updatedAt"); updatedAt.Exists() {
-		if updatedAt.Type != gjson.String {
-			return fmt.Errorf("workspace updatedAt is a %s, expected a string", updatedAt.Type)
-		}
-		parsed, err := time.Parse(time.RFC3339, updatedAt.Str)
+	updatedAt, err := jsonparser.GetString(data, "updatedAt")
+	switch {
+	case errors.Is(err, kitjsonparser.ErrKeyNotFound): // lenient
+	case err != nil:
+		return fmt.Errorf("reading workspace updatedAt: %w", err)
+	default:
+		parsed, err := time.Parse(time.RFC3339, updatedAt)
 		if err != nil {
 			return fmt.Errorf("parsing workspace updatedAt: %w", err)
 		}

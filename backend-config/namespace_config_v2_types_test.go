@@ -168,7 +168,7 @@ func TestV2NamespaceConfigUnmarshal(t *testing.T) {
 		for _, tc := range []struct {
 			name, updatedAt, wantErr string
 		}{
-			{"not a string", `1784909557360`, "expected a string"},
+			{"not a string", `1784909557360`, "not of expected type"},
 			{"not a timestamp", `"yesterday"`, "parsing workspace updatedAt"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {

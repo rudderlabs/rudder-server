@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-
-	"github.com/tidwall/gjson"
 )
 
 var _ mapper = &stubMapper{}
@@ -17,8 +15,8 @@ type stubMapper struct{}
 
 func (*stubMapper) Map(workspaceID string, raw json.RawMessage, _ v2Catalogues) (ConfigT, error) {
 	config := ConfigT{WorkspaceID: workspaceID}
-	if updatedAt := gjson.GetBytes(raw, "updatedAt"); updatedAt.Exists() {
-		parsed, err := time.Parse(time.RFC3339, updatedAt.Str)
+	if updatedAt := jsonparser.GetStringOrEmpty(raw, "updatedAt"); updatedAt != "" {
+		parsed, err := time.Parse(time.RFC3339, updatedAt)
 		if err != nil {
 			return ConfigT{}, fmt.Errorf("parsing updatedAt: %w", err)
 		}

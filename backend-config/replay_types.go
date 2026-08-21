@@ -1,7 +1,6 @@
 package backendconfig
 
 import (
-	"github.com/grafana/jsonparser"
 	"github.com/samber/lo"
 )
 
@@ -26,8 +25,11 @@ func (c *ConfigT) ApplyReplaySources() {
 			newSource.ID = id
 			newSource.OriginalID = s.ID
 			newSource.WriteKey = id
-			newSource.Config = jsonparser.Delete(s.Config, "eventUpload") // no event uploads for replay sources for now
-			newSource.Destinations = nil                                  // destinations are added later
+			// no event uploads for replay sources
+			if config, err := jsonparser.DeleteKey(s.Config, "eventUpload"); err == nil { // the only error here is an empty config, which leaves the copy as it is
+				newSource.Config = config
+			}
+			newSource.Destinations = nil // destinations are added later
 			return &newSource
 		}), []*SourceT{nil})
 		destinations := lo.OmitByValues(lo.MapValues(replay.Destinations, func(value EventReplayDestination, id string) *DestinationT {
