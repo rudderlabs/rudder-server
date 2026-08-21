@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	chproto "github.com/ClickHouse/clickhouse-go/v2/lib/proto"
+	clickhousestd "github.com/ClickHouse/clickhouse-go"
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -727,7 +727,7 @@ func TestIntegration(t *testing.T) {
 			err = ch.CreateSchema(ctx)
 			require.NoError(t, err)
 
-			_, err = ch.DB.ExecContext(ctx, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog;",
+			_, err = ch.DB.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog;",
 				warehouse.Namespace,
 				table,
 			))
@@ -927,7 +927,7 @@ func TestIntegration(t *testing.T) {
 
 				t.Log("verifying if columns are not like Nullable(T) if disableNullable set to true")
 				if tc.disableNullable {
-					rows, err := ch.DB.QueryContext(ctx, fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, warehouse.Namespace))
+					rows, err := ch.DB.Query(fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, warehouse.Namespace))
 					require.NoError(t, err)
 
 					defer func() { _ = rows.Close() }()
@@ -1391,7 +1391,7 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 			})
 			require.Error(t, err)
 
-			var clickhouseErr *chproto.Exception
+			var clickhouseErr *clickhousestd.Exception
 			require.ErrorAs(t, err, &clickhouseErr)
 			require.Equal(t, int32(253), clickhouseErr.Code)
 		})
