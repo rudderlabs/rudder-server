@@ -1233,6 +1233,7 @@ func (proc *Handle) getTransformerEvents(
 		eventMetadata.SourceJobRunID = userTransformedEvent.Metadata.SourceJobRunID
 		eventMetadata.SourceTaskRunID = userTransformedEvent.Metadata.SourceTaskRunID
 		eventMetadata.RecordID = userTransformedEvent.Metadata.RecordID
+		eventMetadata.CaptureError = userTransformedEvent.Metadata.CaptureError
 
 		// other metadata
 		eventMetadata.TraceParent = userTransformedEvent.Metadata.TraceParent
