@@ -478,7 +478,7 @@ func (ch *Clickhouse) connectionCredentials() (*credentials, error) {
 }
 
 // registerTLSConfig builds a TLS config from the destination CA certificate.
-func registerTLSConfig(name string, certificate string) (*tls.Config, error) {
+func registerTLSConfig(name, certificate string) (*tls.Config, error) {
 	caCertPool := x509.NewCertPool()
 	if ok := caCertPool.AppendCertsFromPEM([]byte(certificate)); !ok {
 		return nil, fmt.Errorf("invalid clickhouse CA certificate for %s", name)
