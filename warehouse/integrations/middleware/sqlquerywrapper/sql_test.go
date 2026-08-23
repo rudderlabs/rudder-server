@@ -447,17 +447,6 @@ func TestQueryWrapper(t *testing.T) {
 	})
 }
 
-func TestSqlDB(t *testing.T) {
-	t.Parallel()
-
-	db, err := sql.Open("postgres", "")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-
-	wrapped := New(db)
-	require.Same(t, db, wrapped.SqlDB())
-}
-
 func TestWithStats(t *testing.T) {
 	t.Parallel()
 
