@@ -148,10 +148,6 @@ func New(db *sql.DB, opts ...Opt) *DB {
 	return s
 }
 
-func (db *DB) SqlDB() *sql.DB {
-	return db.DB
-}
-
 func (db *DB) Exec(query string, args ...any) (sql.Result, error) {
 	return db.ExecContext(context.Background(), query, args...)
 }
