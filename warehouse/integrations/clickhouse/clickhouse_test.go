@@ -32,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -39,7 +40,18 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
+// TestIntegration runs the suite against the v1 ClickHouse implementation, and
+// TestIntegrationV2 runs the same suite against v2. Every subtest is shared, so
+// coverage cannot drift between the two.
 func TestIntegration(t *testing.T) {
+	testIntegration(t, false)
+}
+
+func TestIntegrationV2(t *testing.T) {
+	testIntegration(t, true)
+}
+
+func testIntegration(t *testing.T, useV2 bool) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
@@ -47,6 +59,24 @@ func TestIntegration(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	whutils.Init()
+
+	// v1 stays on the 21.x server it has always been tested against; v2 needs a
+	// server its driver supports (MinSupportedVersion 25.8.0).
+	clickhouseCompose := "testdata/docker-compose.clickhouse.yml"
+	clusterCompose := "testdata/docker-compose.clickhouse-cluster.yml"
+	if useV2 {
+		clickhouseCompose = "testdata/docker-compose.clickhouse-v2.yml"
+		clusterCompose = "testdata/docker-compose.clickhouse-cluster-v2.yml"
+	}
+
+	// Both implementations satisfy the same interface, so the subtests below only
+	// differ in which one they construct.
+	newClickhouse := func(conf *config.Config) manager.WarehouseOperations {
+		if useV2 {
+			return clickhouse.NewV2(conf, logger.NOP, stats.NOP)
+		}
+		return clickhouse.New(conf, logger.NOP, stats.NOP)
+	}
 
 	destType := whutils.CLICKHOUSE
 
@@ -73,7 +103,7 @@ func TestIntegration(t *testing.T) {
 	userIDSQL := "SUBSTRING(user_id, 1, 17)"
 	uuidTSSQL := "formatDateTime(uuid_ts, '%Y-%m-%d')"
 
-	t.Run("Events flow (single mode)", func(t *testing.T) {
+	t.Run("Events flow (single mode)"+" - "+strconv.FormatBool(useV2)+" driver", func(t *testing.T) {
 		testCases := []struct {
 			name            string
 			configOverride  map[string]any
@@ -159,7 +189,7 @@ func TestIntegration(t *testing.T) {
 				httpPort, err := kithelper.GetFreePort()
 				require.NoError(t, err)
 
-				c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
+				c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 				c.Start(context.Background())
 
 				workspaceID := whutils.RandHex()
@@ -247,6 +277,9 @@ func TestIntegration(t *testing.T) {
 
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
+				if useV2 {
+					t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_USEV2DRIVER", "true")
+				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
@@ -321,11 +354,11 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("Events flow (cluster mode)", func(t *testing.T) {
+	t.Run("Events flow (cluster mode)"+" - "+strconv.FormatBool(useV2)+" driver", func(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse-cluster.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{clusterCompose, "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -452,6 +485,9 @@ func TestIntegration(t *testing.T) {
 
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
+				if useV2 {
+					t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_USEV2DRIVER", "true")
+				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
@@ -527,8 +563,8 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("Validations", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "../testdata/docker-compose.minio.yml"}))
+	t.Run("Validations"+" - "+strconv.FormatBool(useV2)+" driver", func(t *testing.T) {
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.minio.yml"}))
 		c.Start(context.Background())
 
 		clickhousePort := c.Port("clickhouse", 9000)
@@ -562,11 +598,14 @@ func TestIntegration(t *testing.T) {
 			Enabled:    true,
 			RevisionID: "29eeuTnqbBKn0XVTj5z9XQIbaru",
 		}
+		if useV2 {
+			t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_USEV2DRIVER", "true")
+		}
 		whth.VerifyConfigurationTest(t, dest)
 	})
 
-	t.Run("Fetch schema", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
+	t.Run("Fetch schema"+" - "+strconv.FormatBool(useV2)+" driver", func(t *testing.T) {
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -583,7 +622,7 @@ func TestIntegration(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		t.Run("Success", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_success", namespace),
@@ -627,7 +666,7 @@ func TestIntegration(t *testing.T) {
 		})
 
 		t.Run("Invalid host", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_invalid_host", namespace),
@@ -652,7 +691,7 @@ func TestIntegration(t *testing.T) {
 		})
 
 		t.Run("Invalid database", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_invalid_database", namespace),
@@ -677,7 +716,7 @@ func TestIntegration(t *testing.T) {
 		})
 
 		t.Run("Empty schema", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_empty_schema", namespace),
@@ -705,7 +744,7 @@ func TestIntegration(t *testing.T) {
 		})
 
 		t.Run("Unrecognized schema", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_unrecognized_schema", namespace),
@@ -727,7 +766,7 @@ func TestIntegration(t *testing.T) {
 			err = ch.CreateSchema(ctx)
 			require.NoError(t, err)
 
-			_, err = ch.DB.ExecContext(ctx, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog;",
+			_, err = db.ExecContext(ctx, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog;",
 				warehouse.Namespace,
 				table,
 			))
@@ -739,8 +778,8 @@ func TestIntegration(t *testing.T) {
 		})
 	})
 
-	t.Run("Load Table round trip", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "../testdata/docker-compose.minio.yml"}))
+	t.Run("Load Table round trip"+" - "+strconv.FormatBool(useV2)+" driver", func(t *testing.T) {
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.minio.yml"}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -763,6 +802,12 @@ func TestIntegration(t *testing.T) {
 			S3EngineEnabledWorkspaceIDs []string
 			disableNullable             bool
 			disableLoadTableStats       bool
+
+			// commitEvery only changes behaviour on v2, which drives the commit
+			// cadence itself; v1 hands block_size to the driver and ignores it.
+			// The cases still run on both, which makes v1 the control: the same
+			// load has to produce the same rows however it was committed.
+			commitEvery int
 		}{
 			{
 				name:                  "normal loading using downloading of load files",
@@ -793,6 +838,25 @@ func TestIntegration(t *testing.T) {
 				fileName:              "testdata/load.csv.gz",
 				disableLoadTableStats: true,
 			},
+			{
+				// load.csv.gz holds 16 rows, so this commits four blocks and
+				// exercises a mid-file commit boundary.
+				name:        "loading in blocks smaller than the file",
+				fileName:    "testdata/load.csv.gz",
+				commitEvery: 5,
+			},
+			{
+				// 16 rows in blocks of 8 ends exactly on a boundary, which is
+				// the case that costs one extra call to learn the stream ended.
+				name:        "row count an exact multiple of the block size",
+				fileName:    "testdata/load.csv.gz",
+				commitEvery: 8,
+			},
+			{
+				name:        "one row per block",
+				fileName:    "testdata/load.csv.gz",
+				commitEvery: 1,
+			},
 		}
 
 		for i, tc := range testCases {
@@ -801,8 +865,11 @@ func TestIntegration(t *testing.T) {
 				conf.Set("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", tc.S3EngineEnabledWorkspaceIDs)
 				conf.Set("Warehouse.clickhouse.disableNullable", tc.disableNullable)
 				conf.Set("Warehouse.clickhouse.disableLoadTableStats", tc.disableLoadTableStats)
+				if tc.commitEvery > 0 {
+					conf.Set("Warehouse.clickhouse.commitEvery", tc.commitEvery)
+				}
 
-				ch := clickhouse.New(conf, logger.NOP, stats.NOP)
+				ch := newClickhouse(conf)
 
 				warehouse := model.Warehouse{
 					Namespace:   fmt.Sprintf("test_namespace_%d", i),
@@ -927,7 +994,7 @@ func TestIntegration(t *testing.T) {
 
 				t.Log("verifying if columns are not like Nullable(T) if disableNullable set to true")
 				if tc.disableNullable {
-					rows, err := ch.DB.QueryContext(ctx, fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, warehouse.Namespace))
+					rows, err := db.QueryContext(ctx, fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, warehouse.Namespace))
 					require.NoError(t, err)
 
 					defer func() { _ = rows.Close() }()
@@ -989,8 +1056,8 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("Test connection", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
+	t.Run("Test connection"+" - "+strconv.FormatBool(useV2)+" driver", func(t *testing.T) {
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -1036,7 +1103,7 @@ func TestIntegration(t *testing.T) {
 
 		for i, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+				ch := newClickhouse(config.New())
 
 				host := host
 				if tc.host != "" {
@@ -1078,8 +1145,8 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("Load test table", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
+	t.Run("Load test table"+" - "+strconv.FormatBool(useV2)+" driver", func(t *testing.T) {
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -1122,7 +1189,7 @@ func TestIntegration(t *testing.T) {
 
 		for i, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+				ch := newClickhouse(config.New())
 
 				warehouse := model.Warehouse{
 					Namespace:   namespace,
