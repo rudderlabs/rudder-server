@@ -31,9 +31,10 @@ func newTestProcHandle() *Handle {
 
 func testDestination(id, name string, enabled bool) backendconfig.DestinationT { //nolint: unparam
 	return backendconfig.DestinationT{
-		ID:      id,
-		Name:    name,
-		Enabled: enabled,
+		ID:         id,
+		OriginalID: "orig-" + id,
+		Name:       name,
+		Enabled:    enabled,
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			ID:   "defID-" + id,
 			Name: "WEBHOOK",
@@ -94,6 +95,7 @@ func TestProcRebuildStage(t *testing.T) {
 		ev := out.groupedEvents[key][0]
 		require.Equal(t, dstID, ev.Destination.ID)
 		require.Equal(t, dstID, ev.Metadata.DestinationID)
+		require.Equal(t, "orig-"+dstID, ev.Metadata.OriginalDestinationID)
 		require.Equal(t, "my-webhook", ev.Metadata.DestinationName)
 		require.Equal(t, "WEBHOOK", ev.Metadata.DestinationType)
 		require.Equal(t, "defID-"+dstID, ev.Metadata.DestinationDefinitionID)
@@ -127,6 +129,7 @@ func TestProcRebuildStage(t *testing.T) {
 
 		ev := out.groupedEvents[getKeyFromSourceAndDest(srcID, dstID)][0]
 		require.Equal(t, dstID, ev.Metadata.DestinationID)
+		require.Equal(t, "orig-"+dstID, ev.Metadata.OriginalDestinationID)
 		require.Equal(t, "my-webhook", ev.Metadata.DestinationName)
 		require.Equal(t, "WEBHOOK", ev.Metadata.DestinationType)
 		require.Equal(t, "defID-"+dstID, ev.Metadata.DestinationDefinitionID)
