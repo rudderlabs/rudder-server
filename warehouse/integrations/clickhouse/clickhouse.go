@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -19,9 +18,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go"
+	clickhousev2 "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/cenkalti/backoff/v5"
 	"github.com/google/uuid"
 
@@ -60,6 +60,9 @@ var rudderDataTypesMapToClickHouse = map[string]string{
 	"array(datetime)": "Array(DateTime)",
 	"boolean":         "UInt8",
 	"array(boolean)":  "Array(UInt8)",
+	// json is stored as raw text in a String column (queryable via JSONExtract).
+	// ponytail: native JSON type needs clickhouse-go v2 + CH>=25.3; switch this to "JSON" behind a flag when a workspace needs it.
+	"json": "String",
 }
 
 var clickhouseSpecificColumnNameMappings = map[string]string{
@@ -68,9 +71,9 @@ var clickhouseSpecificColumnNameMappings = map[string]string{
 }
 
 var datatypeDefaultValuesMap = map[string]any{
-	"int":      0,
+	"int":      int64(0),
 	"float":    0.0,
-	"boolean":  0,
+	"boolean":  uint8(0),
 	"datetime": clickhouseDefaultDateTime,
 }
 
@@ -96,6 +99,7 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 	"Array(Nullable(UInt8))":           "array(boolean)",
 	"LowCardinality(String)":           "string",
 	"LowCardinality(Nullable(String))": "string",
+	"JSON":                             "json",
 	"Nullable(Int8)":                   "int",
 	"Nullable(Int16)":                  "int",
 	"Nullable(Int32)":                  "int",
@@ -118,12 +122,14 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 
 var errorsMappings = []model.JobError{
 	{
+		// Match the code + phrase only; the v2 driver wraps exception messages differently
+		// from v1 (e.g. prefix/suffix around "code: 516, message: ..."), so avoid over-anchoring.
 		Type:   model.PermissionError,
-		Format: regexp.MustCompile(`code: 516, message: .*: Authentication failed: password is incorrect, or there is no user with such name`),
+		Format: regexp.MustCompile(`(?i)code: 516[\s\S]*Authentication failed`),
 	},
 	{
 		Type:   model.InsufficientResourceError,
-		Format: regexp.MustCompile(`code: 241, message: Memory limit .* exceeded: would use .*, maximum: .*`),
+		Format: regexp.MustCompile(`(?i)code: 241[\s\S]*Memory limit[\s\S]*exceeded`),
 	},
 }
 
@@ -140,12 +146,18 @@ type Clickhouse struct {
 	logger logger.Logger
 	stats  stats.Stats
 
+	// jsonTypeSupport caches whether the connected server supports the native JSON type
+	// (>= 25.3), resolved once via a version query.
+	jsonTypeSupport struct {
+		once      sync.Once
+		supported bool
+	}
+
 	config struct {
 		queryDebugLogs              string
 		blockSize                   string
 		poolSize                    string
 		readTimeout                 string
-		writeTimeout                string
 		compress                    bool
 		disableNullable             bool
 		execTimeout                 time.Duration
@@ -156,19 +168,20 @@ type Clickhouse struct {
 		slowQueryThreshold          time.Duration
 		randomLoadDelay             func(string) time.Duration
 		disableLoadTableStats       func(string) bool
+		// nativeJSONColumns renders json columns as ClickHouse's native JSON type instead of
+		// String (opt-in per destination id, per workspace id, or globally). Requires a
+		// ClickHouse server >= 25.3.
+		nativeJSONColumns func(workspaceID, destID string) bool
 	}
 }
 
 type credentials struct {
-	host       string
-	database   string
-	user       string
-	password   string
-	port       string
-	secure     string
-	skipVerify string
-	tlsConfig  string
-	timeout    time.Duration
+	host     string
+	database string
+	user     string
+	password string
+	port     string
+	timeout  time.Duration
 }
 
 type clickHouseStat struct {
@@ -222,7 +235,6 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	ch.config.blockSize = conf.GetStringVar("1000000", "Warehouse.clickhouse.blockSize")
 	ch.config.poolSize = conf.GetStringVar("100", "Warehouse.clickhouse.poolSize")
 	ch.config.readTimeout = conf.GetStringVar("300", "Warehouse.clickhouse.readTimeout")
-	ch.config.writeTimeout = conf.GetStringVar("1800", "Warehouse.clickhouse.writeTimeout")
 	ch.config.compress = conf.GetBoolVar(false, "Warehouse.clickhouse.compress")
 	ch.config.disableNullable = conf.GetBoolVar(false, "Warehouse.clickhouse.disableNullable")
 	ch.config.execTimeout = conf.GetDurationVar(600, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
@@ -247,48 +259,88 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 		)
 		return time.Duration(float64(maxDelay) * (1 - rand.Float64()))
 	}
+	ch.config.nativeJSONColumns = func(workspaceID, destID string) bool {
+		return conf.GetBoolVar(
+			false,
+			fmt.Sprintf("Warehouse.clickhouse.%s.nativeJSONColumns", destID),
+			fmt.Sprintf("Warehouse.clickhouse.%s.nativeJSONColumns", workspaceID),
+			"Warehouse.clickhouse.nativeJSONColumns",
+		)
+	}
 
 	return ch
 }
 
-func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) (*sqlmw.DB, error) {
-	cred, err := ch.connectionCredentials()
+// nativeJSONMinMajor / nativeJSONMinMinor is the minimum ClickHouse version (25.3) in which
+// the native JSON type is production-ready.
+const (
+	nativeJSONMinMajor = 25
+	nativeJSONMinMinor = 3
+)
+
+// useNativeJSON reports whether json columns should use ClickHouse's native JSON type. It is
+// opt-in (per destination id, per workspace id, or globally) AND requires a ClickHouse server
+// >= 25.3; otherwise json columns are stored as String.
+func (ch *Clickhouse) useNativeJSON() bool {
+	if !ch.config.nativeJSONColumns(ch.Warehouse.WorkspaceID, ch.Warehouse.Destination.ID) {
+		return false
+	}
+	return ch.serverSupportsNativeJSON()
+}
+
+// serverSupportsNativeJSON queries the server version once and caches whether it is >= 25.3.
+// On any error (including no DB yet) it returns false, so json columns fall back to String.
+func (ch *Clickhouse) serverSupportsNativeJSON() bool {
+	ch.jsonTypeSupport.once.Do(func() {
+		if ch.DB == nil {
+			return
+		}
+		var version string
+		if err := ch.DB.QueryRowContext(context.Background(), "SELECT version()").Scan(&version); err != nil {
+			ch.logger.Warnn("could not fetch clickhouse version for native JSON gating; falling back to String",
+				obskit.Error(err),
+			)
+			return
+		}
+		ch.jsonTypeSupport.supported = clickhouseVersionAtLeast(version, nativeJSONMinMajor, nativeJSONMinMinor)
+	})
+	return ch.jsonTypeSupport.supported
+}
+
+// clickhouseVersionAtLeast reports whether a ClickHouse version string (e.g. "25.3.1.2000")
+// is >= major.minor.
+func clickhouseVersionAtLeast(version string, major, minor int) bool {
+	parts := strings.Split(strings.TrimSpace(version), ".")
+	if len(parts) < 2 {
+		return false
+	}
+	gotMajor, err := strconv.Atoi(parts[0])
 	if err != nil {
-		return nil, fmt.Errorf("could not get connection credentials: %w", err)
+		return false
 	}
-
-	values := url.Values{
-		"username":      []string{cred.user},
-		"password":      []string{cred.password},
-		"block_size":    []string{ch.config.blockSize},
-		"pool_size":     []string{ch.config.poolSize},
-		"debug":         []string{ch.config.queryDebugLogs},
-		"secure":        []string{cred.secure},
-		"skip_verify":   []string{cred.skipVerify},
-		"tls_config":    []string{cred.tlsConfig},
-		"read_timeout":  []string{ch.config.readTimeout},
-		"write_timeout": []string{ch.config.writeTimeout},
-		"compress":      []string{strconv.FormatBool(ch.config.compress)},
-	}
-	if includeDBInConn {
-		values.Add("database", cred.database)
-	}
-	if cred.timeout > 0 {
-		values.Add("timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
-	}
-
-	dsn := url.URL{
-		Scheme:   "tcp",
-		Host:     fmt.Sprintf("%s:%s", cred.host, cred.port),
-		RawQuery: values.Encode(),
-	}
-
-	db, err := sql.Open("clickhouse", dsn.String())
+	gotMinor, err := strconv.Atoi(parts[1])
 	if err != nil {
-		return nil, fmt.Errorf("opening connection: %w", err)
+		return false
 	}
+	if gotMajor != major {
+		return gotMajor > major
+	}
+	return gotMinor >= minor
+}
 
-	middleware := sqlmw.New(
+// connectToClickhouse opens a connection using the clickhouse-go v2 driver. It returns a
+// database/sql *sql.DB (via OpenDB) wrapped in middleware, so all downstream query/load
+// code is driver-agnostic. v2 speaks the same native protocol as v1, so existing
+// ClickHouse servers, tables, and queries remain compatible.
+func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) *sqlmw.DB {
+	cred := ch.connectionCredentials()
+
+	db := clickhousev2.OpenDB(ch.clickhouseV2Options(cred, includeDBInConn))
+	// clickhouse-go v2 forbids setting pool sizes on Options when using OpenDB; they must be
+	// applied on the *sql.DB instead (otherwise the connector errors with "invalid settings").
+	ch.applyConnPoolSettings(db)
+
+	return sqlmw.New(
 		db,
 		sqlmw.WithStats(ch.stats),
 		sqlmw.WithLogger(ch.logger),
@@ -296,43 +348,96 @@ func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) (*sqlmw.DB, erro
 		sqlmw.WithQueryTimeout(ch.connectTimeout),
 		sqlmw.WithSlowQueryThreshold(ch.config.slowQueryThreshold),
 	)
-	return middleware, nil
 }
 
-// connectionCredentials returns the credentials for connecting to clickhouse
-// Each destination will have separate tls config, hence using destination id as tlsName
-func (ch *Clickhouse) connectionCredentials() (*credentials, error) {
-	credentials := &credentials{
-		host:       ch.Warehouse.GetStringDestinationConfig(ch.conf, model.HostSetting),
-		database:   ch.Warehouse.GetStringDestinationConfig(ch.conf, model.DatabaseSetting),
-		user:       ch.Warehouse.GetStringDestinationConfig(ch.conf, model.UserSetting),
-		password:   ch.Warehouse.GetStringDestinationConfig(ch.conf, model.PasswordSetting),
-		port:       ch.Warehouse.GetStringDestinationConfig(ch.conf, model.PortSetting),
-		secure:     strconv.FormatBool(ch.Warehouse.GetBoolDestinationConfig(model.SecureSetting)),
-		skipVerify: strconv.FormatBool(ch.Warehouse.GetBoolDestinationConfig(model.SkipVerifySetting)),
-		timeout:    ch.connectTimeout,
+// clickhouseV2Options translates the destination credentials and connection config into
+// clickhouse-go v2 Options. Pool sizing is intentionally NOT set here: with OpenDB it must be
+// applied on the *sql.DB (see applyConnPoolSettings).
+func (ch *Clickhouse) clickhouseV2Options(cred *credentials, includeDBInConn bool) *clickhousev2.Options {
+	opts := &clickhousev2.Options{
+		Addr:     []string{fmt.Sprintf("%s:%s", cred.host, cred.port)},
+		Auth:     clickhousev2.Auth{Username: cred.user, Password: cred.password},
+		Settings: clickhousev2.Settings{},
+		Debug:    ch.config.queryDebugLogs == "true",
 	}
+	if ch.tlsEnabled() {
+		opts.TLS = ch.tlsConfigV2()
+	}
+	if includeDBInConn {
+		opts.Auth.Database = cred.database
+	}
+	if cred.timeout > 0 {
+		opts.DialTimeout = cred.timeout
+	}
+	if readTimeout, err := strconv.Atoi(ch.config.readTimeout); err == nil && readTimeout > 0 {
+		opts.ReadTimeout = time.Duration(readTimeout) * time.Second
+	}
+	if blockSize, err := strconv.Atoi(ch.config.blockSize); err == nil && blockSize > 0 {
+		// v1's client-side block_size has no direct v2 equivalent; map it to the server-side
+		// max_block_size setting (closest analogue for controlling block size on reads).
+		opts.Settings["max_block_size"] = blockSize
+	}
+	if ch.config.compress {
+		opts.Compression = &clickhousev2.Compression{Method: clickhousev2.CompressionLZ4}
+	}
+	return opts
+}
 
+// applyConnPoolSettings applies pool sizing to the *sql.DB. clickhouse-go v2 requires this to
+// be done on the DB (not via Options) when using OpenDB.
+func (ch *Clickhouse) applyConnPoolSettings(db *sql.DB) {
+	if poolSize, err := strconv.Atoi(ch.config.poolSize); err == nil && poolSize > 0 {
+		db.SetMaxOpenConns(poolSize)
+		db.SetMaxIdleConns(poolSize)
+	}
+	if lifetime := ch.conf.GetDurationVar(0, time.Second, "Warehouse.clickhouse.connMaxLifetime"); lifetime > 0 {
+		db.SetConnMaxLifetime(lifetime)
+	}
+}
+
+// tlsEnabled reports whether TLS should be used. As in v1, this is driven by the secure flag;
+// a CA certificate alone (without secure) does not enable TLS.
+func (ch *Clickhouse) tlsEnabled() bool {
+	return ch.Warehouse.GetBoolDestinationConfig(model.SecureSetting)
+}
+
+// tlsConfigV2 builds an inline *tls.Config for the v2 driver. A malformed CA certificate is
+// logged and ignored (matching v1's lenient behaviour). Only call it when tlsEnabled().
+func (ch *Clickhouse) tlsConfigV2() *tls.Config {
+	skipVerify := ch.Warehouse.GetBoolDestinationConfig(model.SkipVerifySetting)
 	certificate := ch.Warehouse.GetStringDestinationConfig(ch.conf, model.CACertificateSetting)
-	if strings.TrimSpace(certificate) != "" {
-		if err := registerTLSConfig(ch.Warehouse.Destination.ID, certificate); err != nil {
-			return nil, fmt.Errorf("registering tls config: %w", err)
-		}
 
-		credentials.tlsConfig = ch.Warehouse.Destination.ID
+	tlsConfig := &tls.Config{InsecureSkipVerify: skipVerify} //nolint:gosec // skipVerify is destination-configured, matching v1 behaviour
+	if strings.TrimSpace(certificate) != "" {
+		caCertPool := x509.NewCertPool()
+		if ok := caCertPool.AppendCertsFromPEM([]byte(certificate)); ok {
+			tlsConfig.RootCAs = caCertPool
+		} else {
+			ch.logger.Warnn("could not parse CA certificate for clickhouse; proceeding without it")
+		}
 	}
-	return credentials, nil
+	return tlsConfig
 }
 
-// registerTLSConfig will create a global map, use different names for the different tls config.
-// clickhouse will access the config by mentioning the key in connection string
-func registerTLSConfig(key, certificate string) error {
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM([]byte(certificate))
+// connectionCredentials returns the credentials for connecting to clickhouse.
+func (ch *Clickhouse) connectionCredentials() *credentials {
+	return &credentials{
+		host:     ch.Warehouse.GetStringDestinationConfig(ch.conf, model.HostSetting),
+		database: ch.Warehouse.GetStringDestinationConfig(ch.conf, model.DatabaseSetting),
+		user:     ch.Warehouse.GetStringDestinationConfig(ch.conf, model.UserSetting),
+		password: ch.Warehouse.GetStringDestinationConfig(ch.conf, model.PasswordSetting),
+		port:     ch.Warehouse.GetStringDestinationConfig(ch.conf, model.PortSetting),
+		timeout:  ch.connectTimeout,
+	}
+}
 
-	return clickhouse.RegisterTLSConfig(key, &tls.Config{
-		RootCAs: caCertPool,
-	})
+// clickhouseUnknownDatabaseCode is ClickHouse's server error code for a missing database.
+const clickhouseUnknownDatabaseCode = 81
+
+// isUnknownDatabaseErr reports whether err is ClickHouse's "database doesn't exist" error.
+func isUnknownDatabaseErr(err error) bool {
+	var chErr *clickhousev2.Exception
+	return errors.As(err, &chErr) && chErr.Code == clickhouseUnknownDatabaseCode
 }
 
 func (ch *Clickhouse) defaultLogFields() []any {
@@ -351,10 +456,20 @@ func (ch *Clickhouse) ColumnsWithDataTypes(tableName string, columns model.Table
 	var arr []string
 	for columnName, dataType := range columns {
 		codec := ch.getClickHouseCodecForColumnType(dataType, tableName)
-		columnType := ch.getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[dataType], slices.Contains(notNullableColumns, columnName))
+		columnType := ch.getClickHouseColumnTypeForSpecificTable(tableName, columnName, ch.clickhouseColumnType(dataType), slices.Contains(notNullableColumns, columnName))
 		arr = append(arr, fmt.Sprintf(`%q %s %s`, columnName, columnType, codec))
 	}
 	return strings.Join(arr, ",")
+}
+
+// clickhouseColumnType maps a rudder data type to its ClickHouse column type. json maps to
+// the native JSON type when native JSON columns are enabled (v2 driver + flag), otherwise
+// to String (raw JSON text, queryable via JSONExtract).
+func (ch *Clickhouse) clickhouseColumnType(rudderType string) string {
+	if rudderType == "json" && ch.useNativeJSON() {
+		return "JSON"
+	}
+	return rudderDataTypesMapToClickHouse[rudderType]
 }
 
 func (ch *Clickhouse) getClickHouseCodecForColumnType(columnType, tableName string) string {
@@ -383,6 +498,10 @@ func getClickhouseColumnTypeForSpecificColumn(columnName, columnType string, isN
 
 // getClickHouseColumnTypeForSpecificTable gets suitable columnType based on the tableName
 func (ch *Clickhouse) getClickHouseColumnTypeForSpecificTable(tableName, columnName, columnType string, notNullableKey bool) string {
+	// Native JSON cannot be wrapped in Nullable(...) or SimpleAggregateFunction(anyLast, ...).
+	if columnType == "JSON" {
+		return columnType
+	}
 	if notNullableKey || (tableName != warehouseutils.IdentifiesTable && ch.config.disableNullable) {
 		return getClickhouseColumnTypeForSpecificColumn(columnName, columnType, false)
 	}
@@ -445,25 +564,25 @@ func (ch *Clickhouse) castStringToArray(data, dataType string) any {
 		}
 		return dataTime
 	case "array(boolean)":
-		dataInt := make([]int32, 0)
+		// Column type is Array(UInt8); the v2 driver binds it strictly, so return []uint8.
+		// Values are converted to 1/0 in warehouse slave; fall back to []bool if needed.
+		dataUint := make([]uint8, 0)
+		if err := jsonrs.Unmarshal([]byte(data), &dataUint); err == nil {
+			return dataUint
+		}
+
 		dataBool := make([]bool, 0)
-
-		// Since we are converting true/false to 1/0 in warehouse slave
-		// We need to unmarshal into []int32 first to load the data into the table
-		// If it is unsuccessful, we unmarshal for []bool
-		if err := jsonrs.Unmarshal([]byte(data), &dataInt); err == nil {
-			for _, value := range dataInt {
-				dataBool = append(dataBool, value != 0)
-			}
-			return dataBool
-		}
-
-		err := jsonrs.Unmarshal([]byte(data), &dataBool)
-		if err != nil {
+		if err := jsonrs.Unmarshal([]byte(data), &dataBool); err != nil {
 			ch.logger.Errorn("Error while unmarshalling data into array of bool", obskit.Error(err))
-			return dataBool
+			return []uint8{}
 		}
-		return dataBool
+		result := make([]uint8, len(dataBool))
+		for i, value := range dataBool {
+			if value {
+				result[i] = 1
+			}
+		}
+		return result
 	}
 	return data
 }
@@ -474,18 +593,31 @@ func (ch *Clickhouse) typecastDataFromType(data, dataType string) any {
 	var err error
 	switch dataType {
 	case "int":
-		dataI, err = strconv.Atoi(data)
+		// Column type is Int64; the v2 driver binds strictly, so return int64 (not int).
+		dataI, err = strconv.ParseInt(data, 10, 64)
 	case "float":
 		dataI, err = strconv.ParseFloat(data, 64)
 	case "datetime":
 		dataI, err = time.Parse(time.RFC3339, data)
 	case "boolean":
+		// Column type is UInt8; return uint8 (not int) for the v2 driver's strict binding.
 		var b bool
 		b, err = strconv.ParseBool(data)
-		dataI = 0
+		dataI = uint8(0)
 		if b {
-			dataI = 1
+			dataI = uint8(1)
 		}
+	case "json":
+		if !ch.useNativeJSON() {
+			return data // String column stores the raw JSON text as-is.
+		}
+		// Native JSON column: the v2 driver binds structured Go values, not a raw string.
+		var v any
+		if err := jsonrs.Unmarshal([]byte(data), &v); err != nil {
+			ch.logger.Errorn("Error while unmarshalling json column value", obskit.Error(err))
+			return data
+		}
+		return v
 	default:
 		if strings.Contains(dataType, "array") {
 			dataI = ch.castStringToArray(data, dataType)
@@ -586,7 +718,7 @@ func (ch *Clickhouse) loadByCopyCommand(ctx context.Context, tableName string, t
 	sort.Strings(strKeys)
 	sortedColumnNames := strings.Join(strKeys, ",")
 	sortedColumnNamesWithDataTypes := warehouseutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
-		return fmt.Sprintf(`%s %s`, name, rudderDataTypesMapToClickHouse[tableSchemaInUpload[name]])
+		return fmt.Sprintf(`%s %s`, name, ch.clickhouseColumnType(tableSchemaInUpload[name]))
 	}, ",")
 
 	csvObjectLocation, err := ch.Uploader.GetSampleLoadFileLocation(ctx, tableName)
@@ -983,7 +1115,7 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 		columnType := ch.getClickHouseColumnTypeForSpecificTable(
 			tableName,
 			columnInfo.Name,
-			rudderDataTypesMapToClickHouse[columnInfo.Type],
+			ch.clickhouseColumnType(columnInfo.Type),
 			false,
 		)
 		queryBuilder.WriteString(fmt.Sprintf(` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, columnType))
@@ -1012,10 +1144,7 @@ func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
 		return nil
 	}
 
-	db, err := ch.connectToClickhouse(false)
-	if err != nil {
-		return fmt.Errorf("connecting to clickhouse: %v", err)
-	}
+	db := ch.connectToClickhouse(false)
 	defer func() { _ = db.Close() }()
 
 	ch.logger.Infon("Creating schema",
@@ -1029,7 +1158,7 @@ func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
 	)
 
 	query := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS %q %s`, ch.Namespace, ch.clusterClause())
-	if _, err = db.ExecContext(ctx, query); err != nil {
+	if _, err := db.ExecContext(ctx, query); err != nil {
 		return fmt.Errorf("creating database: %v", err)
 	}
 	return nil
@@ -1066,10 +1195,8 @@ func (ch *Clickhouse) Setup(_ context.Context, warehouse model.Warehouse, upload
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 	ch.LoadFileDownloader = downloader.NewDownloader(&warehouse, uploader, ch.config.numWorkersDownloadLoadFiles)
 
-	if ch.DB, err = ch.connectToClickhouse(true); err != nil {
-		return fmt.Errorf("connecting to clickhouse: %w", err)
-	}
-	return err
+	ch.DB = ch.connectToClickhouse(true)
+	return nil
 }
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
@@ -1092,8 +1219,7 @@ func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, error) {
 		return schema, nil
 	}
 	if err != nil {
-		var clickhouseErr *clickhouse.Exception
-		if errors.As(err, &clickhouseErr) && clickhouseErr.Code == 81 {
+		if isUnknownDatabaseErr(err) {
 			return schema, nil
 		}
 		return nil, fmt.Errorf("fetching schema: %w", err)
@@ -1110,7 +1236,12 @@ func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, error) {
 		if _, ok := schema[tableName]; !ok {
 			schema[tableName] = make(model.TableSchema)
 		}
-		if datatype, ok := clickhouseDataTypesMapToRudder[columnType]; ok {
+		datatype, ok := clickhouseDataTypesMapToRudder[columnType]
+		if !ok && strings.HasPrefix(columnType, "JSON") {
+			// Native JSON columns may carry parameters, e.g. JSON(max_dynamic_paths=1024).
+			datatype, ok = "json", true
+		}
+		if ok {
 			schema[tableName][columnName] = datatype
 		} else {
 			warehouseutils.WHCounterStat(ch.stats, warehouseutils.RudderMissingDatatype, &ch.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
@@ -1220,12 +1351,8 @@ func (ch *Clickhouse) Connect(_ context.Context, warehouse model.Warehouse) (cli
 		misc.IsConfiguredToUseRudderObjectStorage(ch.Warehouse.Destination.Config),
 	)
 
-	db, err := ch.connectToClickhouse(true)
-	if err != nil {
-		return client.Client{}, fmt.Errorf("connecting to clickhouse: %w", err)
-	}
-
-	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
+	db := ch.connectToClickhouse(true)
+	return client.Client{Type: client.SQLClient, SQL: db.DB}, nil
 }
 
 func (ch *Clickhouse) GetLogIdentifier(args ...string) string {

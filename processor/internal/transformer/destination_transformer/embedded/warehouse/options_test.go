@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
-	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestIntegrationOptions(t *testing.T) {
@@ -30,7 +29,7 @@ func TestIntegrationOptions(t *testing.T) {
 			},
 		}
 
-		opts := extractIntrOpts(event.Metadata.DestinationType, event.Message)
+		opts := extractIntrOpts(event.Metadata.DestinationType, event.Message, true)
 
 		require.True(t, opts.skipReservedKeywordsEscaping)
 		require.False(t, opts.useBlendoCasing)
@@ -51,7 +50,7 @@ func TestIntegrationOptions(t *testing.T) {
 				DestinationType: "POSTGRES",
 			},
 		}
-		opts := extractIntrOpts(event.Metadata.DestinationType, event.Message)
+		opts := extractIntrOpts(event.Metadata.DestinationType, event.Message, true)
 
 		require.False(t, opts.skipReservedKeywordsEscaping)
 		require.False(t, opts.useBlendoCasing)
@@ -72,7 +71,7 @@ func TestIntegrationOptions(t *testing.T) {
 				DestinationType: "POSTGRES",
 			},
 		}
-		opts := extractIntrOpts(event.Metadata.DestinationType, event.Message)
+		opts := extractIntrOpts(event.Metadata.DestinationType, event.Message, true)
 
 		require.False(t, opts.skipReservedKeywordsEscaping)
 		require.False(t, opts.useBlendoCasing)
@@ -97,7 +96,7 @@ func TestIntegrationOptions(t *testing.T) {
 			},
 		}
 
-		opts := extractIntrOpts(event.Metadata.DestinationType, event.Message)
+		opts := extractIntrOpts(event.Metadata.DestinationType, event.Message, true)
 
 		require.True(t, opts.skipUsersTable)
 		require.False(t, opts.skipReservedKeywordsEscaping)
@@ -130,7 +129,7 @@ func TestIntegrationOptions(t *testing.T) {
 			},
 		}
 
-		opts := extractIntrOpts(event.Metadata.DestinationType, event.Message)
+		opts := extractIntrOpts(event.Metadata.DestinationType, event.Message, true)
 
 		require.True(t, opts.skipReservedKeywordsEscaping)
 		require.False(t, opts.useBlendoCasing)
@@ -151,7 +150,7 @@ func TestDestinationOptions(t *testing.T) {
 			"jsonPaths":               "path1,path2",
 		}
 
-		opts := extractDestOpts(whutils.POSTGRES, destConfig)
+		opts := extractDestOpts(destConfig, true)
 
 		require.True(t, opts.skipTracksTable)
 		require.False(t, opts.skipUsersTable)
@@ -163,7 +162,7 @@ func TestDestinationOptions(t *testing.T) {
 	t.Run("MissingOptions", func(t *testing.T) {
 		destConfig := map[string]any{}
 
-		opts := extractDestOpts(whutils.POSTGRES, destConfig)
+		opts := extractDestOpts(destConfig, true)
 
 		require.False(t, opts.skipTracksTable)
 		require.False(t, opts.skipUsersTable)
@@ -173,7 +172,7 @@ func TestDestinationOptions(t *testing.T) {
 		require.Empty(t, opts.jsonPaths)
 	})
 	t.Run("NilDestinationConfig", func(t *testing.T) {
-		opts := extractDestOpts(whutils.POSTGRES, nil)
+		opts := extractDestOpts(nil, true)
 
 		require.False(t, opts.skipTracksTable)
 		require.False(t, opts.skipUsersTable)
@@ -189,7 +188,7 @@ func TestDestinationOptions(t *testing.T) {
 			"allowUsersContextTraits": true,
 		}
 
-		opts := extractDestOpts(whutils.POSTGRES, destConfig)
+		opts := extractDestOpts(destConfig, true)
 
 		require.True(t, opts.skipTracksTable)
 		require.False(t, opts.skipUsersTable)
@@ -203,7 +202,7 @@ func TestDestinationOptions(t *testing.T) {
 			"jsonPaths": "path1,path2",
 		}
 
-		require.Equal(t, []string{"path1", "path2"}, extractDestOpts(whutils.POSTGRES, destConfig).jsonPaths)
-		require.Empty(t, extractDestOpts(whutils.CLICKHOUSE, destConfig).jsonPaths)
+		require.Equal(t, []string{"path1", "path2"}, extractDestOpts(destConfig, true).jsonPaths)
+		require.Empty(t, extractDestOpts(destConfig, false).jsonPaths)
 	})
 }

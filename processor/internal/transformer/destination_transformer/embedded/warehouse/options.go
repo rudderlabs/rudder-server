@@ -7,10 +7,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func extractIntrOpts(destType string, message map[string]any) intrOptions {
+func extractIntrOpts(destType string, message map[string]any, jsonPathsSupported bool) intrOptions {
 	options := misc.MapLookup(message, "integrations", destType, "options")
 	if options == nil || !utils.IsObject(options) {
-		return mergeDataWarehouseIntrOpts(destType, message, intrOptions{})
+		return mergeDataWarehouseIntrOpts(message, intrOptions{}, jsonPathsSupported)
 	}
 
 	var opts intrOptions
@@ -24,17 +24,17 @@ func extractIntrOpts(destType string, message map[string]any) intrOptions {
 	setOption(srcMap, "useBlendoCasing", &opts.useBlendoCasing)
 	setOption(srcMap, "jsonPaths", &jsonPaths)
 
-	if len(jsonPaths) > 0 && utils.IsJSONPathSupportedAsPartOfConfig(destType) {
+	if len(jsonPaths) > 0 && jsonPathsSupported {
 		for _, jp := range jsonPaths {
 			if jpStr, ok := jp.(string); ok {
 				opts.jsonPaths = append(opts.jsonPaths, jpStr)
 			}
 		}
 	}
-	return mergeDataWarehouseIntrOpts(destType, message, opts)
+	return mergeDataWarehouseIntrOpts(message, opts, jsonPathsSupported)
 }
 
-func mergeDataWarehouseIntrOpts(destType string, message map[string]any, opts intrOptions) intrOptions {
+func mergeDataWarehouseIntrOpts(message map[string]any, opts intrOptions, jsonPathsSupported bool) intrOptions {
 	options := misc.MapLookup(message, "integrations", "DATA_WAREHOUSE", "options")
 	if options == nil || !utils.IsObject(options) {
 		return opts
@@ -45,7 +45,7 @@ func mergeDataWarehouseIntrOpts(destType string, message map[string]any, opts in
 	srcMap := options.(map[string]any)
 
 	setOption(srcMap, "jsonPaths", &jsonPaths)
-	if len(jsonPaths) > 0 && utils.IsJSONPathSupportedAsPartOfConfig(destType) {
+	if len(jsonPaths) > 0 && jsonPathsSupported {
 		mergedJSONPaths := make([]string, 0, len(jsonPaths)+len(opts.jsonPaths))
 		for _, jsonPath := range jsonPaths {
 			if jsonPathStr, ok := jsonPath.(string); ok {
@@ -58,7 +58,7 @@ func mergeDataWarehouseIntrOpts(destType string, message map[string]any, opts in
 	return opts
 }
 
-func extractDestOpts(destType string, destConfig map[string]any) destOptions {
+func extractDestOpts(destConfig map[string]any, jsonPathsSupported bool) destOptions {
 	var jsonPaths string
 	var opts destOptions
 
@@ -69,7 +69,7 @@ func extractDestOpts(destType string, destConfig map[string]any) destOptions {
 	setOption(destConfig, "storeFullEvent", &opts.storeFullEvent)
 	setOption(destConfig, "jsonPaths", &jsonPaths)
 
-	if len(jsonPaths) > 0 && utils.IsJSONPathSupportedAsPartOfConfig(destType) {
+	if len(jsonPaths) > 0 && jsonPathsSupported {
 		opts.jsonPaths = strings.Split(jsonPaths, ",")
 	}
 	return opts

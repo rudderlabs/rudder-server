@@ -1,0 +1,241 @@
+package clickhouse
+
+import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"errors"
+	"math/big"
+	"strings"
+	"testing"
+	"time"
+
+	clickhousev2 "github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+)
+
+func newTestClickhouse(t *testing.T, conf *config.Config, wsID, destID string, destConfig map[string]any) *Clickhouse {
+	t.Helper()
+	ch := New(conf, logger.NOP, stats.NOP)
+	ch.Namespace = "test_ns"
+	ch.Warehouse = model.Warehouse{
+		WorkspaceID: wsID,
+		Destination: backendconfig.DestinationT{ID: destID, Config: destConfig},
+	}
+	return ch
+}
+
+func TestClickhouseColumnTypeAndDDL(t *testing.T) {
+	const wsID, destID = "ws1", "dest1"
+
+	t.Run("json maps to String when native JSON disabled", func(t *testing.T) {
+		ch := newTestClickhouse(t, config.New(), wsID, destID, nil)
+		ddl := ch.ColumnsWithDataTypes("some_table", model.TableSchema{"payload": "json"}, nil)
+		require.Contains(t, ddl, `"payload" Nullable(String)`)
+		require.NotContains(t, ddl, "JSON")
+	})
+
+	t.Run("native JSON gated by the nativeJSONColumns flag", func(t *testing.T) {
+		testCases := []struct {
+			name       string
+			nativeJSON bool
+			wantJSON   bool
+		}{
+			{"native JSON disabled", false, false},
+			{"native JSON enabled", true, true},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				conf := config.New()
+				conf.Set("Warehouse.clickhouse.nativeJSONColumns", tc.nativeJSON)
+				ch := newTestClickhouse(t, conf, wsID, destID, nil)
+				if tc.nativeJSON {
+					markNativeJSONServerSupported(ch)
+				}
+
+				ddl := ch.ColumnsWithDataTypes("some_table", model.TableSchema{"payload": "json"}, nil)
+				if tc.wantJSON {
+					// Native JSON must not be wrapped in Nullable(...).
+					require.Contains(t, ddl, `"payload" JSON`)
+					require.NotContains(t, ddl, "Nullable(JSON)")
+				} else {
+					require.Contains(t, ddl, `"payload" Nullable(String)`)
+				}
+			})
+		}
+	})
+
+	t.Run("native JSON on the users table is not wrapped in SimpleAggregateFunction", func(t *testing.T) {
+		conf := config.New()
+		conf.Set("Warehouse.clickhouse.nativeJSONColumns", true)
+		ch := newTestClickhouse(t, conf, wsID, destID, nil)
+		markNativeJSONServerSupported(ch)
+
+		ddl := ch.ColumnsWithDataTypes(warehouseutils.UsersTable, model.TableSchema{"payload": "json"}, nil)
+		require.Contains(t, ddl, `"payload" JSON`)
+		require.NotContains(t, ddl, "SimpleAggregateFunction(anyLast, JSON)")
+	})
+}
+
+func TestTLSConfigV2(t *testing.T) {
+	t.Run("not required when not secure and no certificate", func(t *testing.T) {
+		ch := newTestClickhouse(t, config.New(), "ws", "dest", map[string]any{})
+		require.False(t, ch.tlsEnabled())
+	})
+
+	t.Run("required when secure or a certificate is set", func(t *testing.T) {
+		ch := newTestClickhouse(t, config.New(), "ws", "dest", map[string]any{"secure": true})
+		require.True(t, ch.tlsEnabled())
+	})
+
+	t.Run("secure without certificate uses system roots and honors skipVerify", func(t *testing.T) {
+		ch := newTestClickhouse(t, config.New(), "ws", "dest", map[string]any{
+			"secure":     true,
+			"skipVerify": true,
+		})
+		tlsConfig := ch.tlsConfigV2()
+		require.NotNil(t, tlsConfig)
+		require.True(t, tlsConfig.InsecureSkipVerify)
+		require.Nil(t, tlsConfig.RootCAs)
+	})
+
+	t.Run("certificate is added to the root pool", func(t *testing.T) {
+		ch := newTestClickhouse(t, config.New(), "ws", "dest", map[string]any{
+			"secure":        true,
+			"caCertificate": selfSignedCertPEM(t),
+		})
+		tlsConfig := ch.tlsConfigV2()
+		require.NotNil(t, tlsConfig)
+		require.NotNil(t, tlsConfig.RootCAs)
+	})
+
+	t.Run("invalid certificate is ignored, not fatal", func(t *testing.T) {
+		ch := newTestClickhouse(t, config.New(), "ws", "dest", map[string]any{
+			"secure":        true,
+			"caCertificate": "not-a-valid-pem",
+		})
+		tlsConfig := ch.tlsConfigV2()
+		require.NotNil(t, tlsConfig)
+		require.Nil(t, tlsConfig.RootCAs)
+	})
+}
+
+func TestClickhouseV2Options(t *testing.T) {
+	conf := config.New()
+	conf.Set("Warehouse.clickhouse.compress", true)
+	conf.Set("Warehouse.clickhouse.poolSize", "42")
+	conf.Set("Warehouse.clickhouse.readTimeout", "300")
+	conf.Set("Warehouse.clickhouse.blockSize", "1000")
+
+	ch := newTestClickhouse(t, conf, "ws", "dest", map[string]any{
+		"host":     "clickhouse.example.com",
+		"port":     "9440",
+		"database": "analytics",
+		"user":     "rudder",
+		"password": "secret",
+	})
+
+	cred := ch.connectionCredentials()
+
+	opts := ch.clickhouseV2Options(cred, true)
+
+	require.Equal(t, []string{"clickhouse.example.com:9440"}, opts.Addr)
+	require.Equal(t, "rudder", opts.Auth.Username)
+	require.Equal(t, "secret", opts.Auth.Password)
+	require.Equal(t, "analytics", opts.Auth.Database)
+	require.Equal(t, 300*time.Second, opts.ReadTimeout)
+	require.Equal(t, 1000, opts.Settings["max_block_size"])
+	require.NotNil(t, opts.Compression)
+	require.Equal(t, clickhousev2.CompressionLZ4, opts.Compression.Method)
+	// Pool sizing must NOT be on Options (v2 OpenDB rejects it); it is applied on the *sql.DB.
+	require.Zero(t, opts.MaxOpenConns)
+	require.Zero(t, opts.MaxIdleConns)
+
+	t.Run("database omitted when includeDBInConn is false", func(t *testing.T) {
+		opts := ch.clickhouseV2Options(cred, false)
+		require.Empty(t, opts.Auth.Database)
+	})
+
+	t.Run("pool sizing is applied on the sql.DB", func(t *testing.T) {
+		db := clickhousev2.OpenDB(&clickhousev2.Options{Addr: []string{"localhost:9000"}})
+		defer func() { _ = db.Close() }()
+		ch.applyConnPoolSettings(db)
+		require.Equal(t, 42, db.Stats().MaxOpenConnections)
+	})
+}
+
+func TestIsUnknownDatabaseErr(t *testing.T) {
+	require.False(t, isUnknownDatabaseErr(nil))
+	require.False(t, isUnknownDatabaseErr(errors.New("some other error")))
+	require.True(t, isUnknownDatabaseErr(&clickhousev2.Exception{Code: clickhouseUnknownDatabaseCode}))
+	require.False(t, isUnknownDatabaseErr(&clickhousev2.Exception{Code: 60}))
+}
+
+// selfSignedCertPEM returns a PEM-encoded self-signed CA certificate for tests.
+func selfSignedCertPEM(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	template := x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "test-ca"},
+		NotBefore:             time.Unix(0, 0),
+		NotAfter:              time.Unix(1<<31-1, 0),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	require.NoError(t, err)
+	return strings.TrimSpace(string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})))
+}
+
+// markNativeJSONServerSupported seeds the cached server-version check so unit tests (which
+// have no live DB) can exercise the native JSON path.
+func markNativeJSONServerSupported(ch *Clickhouse) {
+	ch.jsonTypeSupport.once.Do(func() { ch.jsonTypeSupport.supported = true })
+}
+
+func TestClickhouseVersionAtLeast(t *testing.T) {
+	testCases := []struct {
+		version string
+		want    bool
+	}{
+		{"25.3.1.2000", true},
+		{"25.3", true},
+		{"25.4.0.1", true},
+		{"26.1.0.0", true},
+		{"25.2.9.9", false},
+		{"24.8.14.1", false},
+		{"", false},
+		{"garbage", false},
+	}
+	for _, tc := range testCases {
+		require.Equalf(t, tc.want, clickhouseVersionAtLeast(tc.version, 25, 3), "version %q", tc.version)
+	}
+}
+
+func TestTypecastJSONColumn(t *testing.T) {
+	t.Run("String path returns the raw JSON text", func(t *testing.T) {
+		ch := newTestClickhouse(t, config.New(), "ws", "dest", nil)
+		require.Equal(t, `{"a":1}`, ch.typecastDataFromType(`{"a":1}`, "json"))
+	})
+
+	t.Run("native path returns a structured value", func(t *testing.T) {
+		conf := config.New()
+		conf.Set("Warehouse.clickhouse.nativeJSONColumns", true)
+		ch := newTestClickhouse(t, conf, "ws", "dest", nil)
+		markNativeJSONServerSupported(ch)
+		require.Equal(t, map[string]any{"a": float64(1)}, ch.typecastDataFromType(`{"a":1}`, "json"))
+	})
+}
