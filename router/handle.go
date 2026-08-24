@@ -111,6 +111,7 @@ type Handle struct {
 	processJobsCountStat           stats.Measurement
 	throttlingErrorStat            stats.Measurement
 	throttledStat                  stats.Measurement
+	statusDowngradedStat           func(from, to int) stats.Counter
 	isolationStrategy              isolation.Strategy
 	backgroundGroup                *errgroup.Group
 	backgroundCtx                  context.Context
@@ -138,6 +139,12 @@ type Handle struct {
 	drainer              routerutils.Drainer
 	drainingPartitionsMu sync.RWMutex
 	drainingPartitions   map[string]struct{} // keeps track of router partitions which are currently draining
+}
+
+// deliveredWithWarningsEnabled reports whether the destination definition allows preserving a 296
+// (Delivered with Warning) status.
+func (rt *Handle) deliveredWithWarningsEnabled() bool {
+	return rt.supportsDeliveredWithWarnings.Load()
 }
 
 // activePartitions returns the list of active partitions, depending on the active isolation strategy

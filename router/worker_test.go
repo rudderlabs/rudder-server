@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -55,6 +57,109 @@ func createTestWorker(destType string, transformProxy bool, stat stats.Stats) *w
 			return stat.NewTaggedStat("transformer_outgoing_request_count", stats.CountType, labels.ToStatTags())
 		}),
 	}
+}
+
+func TestDeliveredWithWarningsEnabled(t *testing.T) {
+	newHandle := func(destDefSupports bool) *Handle {
+		rt := &Handle{}
+		rt.supportsDeliveredWithWarnings.Store(destDefSupports)
+		return rt
+	}
+
+	t.Run("destination definition supports it", func(t *testing.T) {
+		require.True(t, newHandle(true).deliveredWithWarningsEnabled())
+	})
+
+	t.Run("destination definition does not support it", func(t *testing.T) {
+		require.False(t, newHandle(false).deliveredWithWarningsEnabled())
+	})
+}
+
+func TestGateDeliveredWithWarning(t *testing.T) {
+	const (
+		gateDestType    = "BRAZE"
+		downgradeMetric = "router_status_downgraded_count"
+		workspaceID     = "workspace-id"
+	)
+	downgradeTags := stats.Tags{
+		"destType": gateDestType,
+		"from":     strconv.Itoa(utilTypes.DeliveredWithWarningCode),
+		"to":       strconv.Itoa(utilTypes.SuccessEventCode),
+	}
+
+	newGateWorker := func(t *testing.T, destDefSupports bool) (*worker, *memstats.Store) {
+		t.Helper()
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		rt := &Handle{
+			destType: gateDestType,
+			statusDowngradedStat: func(from, to int) stats.Counter {
+				return statsStore.NewTaggedStat(downgradeMetric, stats.CountType, stats.Tags{
+					"destType": gateDestType,
+					"from":     strconv.Itoa(from),
+					"to":       strconv.Itoa(to),
+				})
+			},
+		}
+		rt.supportsDeliveredWithWarnings.Store(destDefSupports)
+		return &worker{rt: rt, logger: logger.NOP}, statsStore
+	}
+
+	downgrades := func(statsStore *memstats.Store) float64 {
+		if m := statsStore.Get(downgradeMetric, downgradeTags); m != nil {
+			return m.LastValue()
+		}
+		return 0
+	}
+
+	jobsOf := func(metadata ...types.JobMetadataT) types.DestinationJobT {
+		return types.DestinationJobT{JobMetadataArray: metadata}
+	}
+	jobMeta := func(jobID int64) types.JobMetadataT {
+		return types.JobMetadataT{JobID: jobID, WorkspaceID: workspaceID}
+	}
+
+	t.Run("destination definition support keeps 296", func(t *testing.T) {
+		w, statsStore := newGateWorker(t, true)
+		codes := map[int64]int{1: utilTypes.DeliveredWithWarningCode}
+		w.gateDeliveredWithWarning(jobsOf(jobMeta(1)), codes)
+		require.Equal(t, utilTypes.DeliveredWithWarningCode, codes[1])
+		require.Zero(t, downgrades(statsStore))
+	})
+
+	t.Run("destination definition disabled downgrades 296 to 200", func(t *testing.T) {
+		w, statsStore := newGateWorker(t, false)
+		codes := map[int64]int{1: utilTypes.DeliveredWithWarningCode}
+		w.gateDeliveredWithWarning(jobsOf(jobMeta(1)), codes)
+		require.Equal(t, http.StatusOK, codes[1])
+		require.EqualValues(t, 1, downgrades(statsStore))
+	})
+
+	t.Run("only 296 is rewritten in a mixed-code batch", func(t *testing.T) {
+		w, statsStore := newGateWorker(t, false)
+		codes := map[int64]int{
+			1: http.StatusOK,
+			2: utilTypes.DeliveredWithWarningCode,
+			3: http.StatusBadRequest,
+			4: http.StatusInternalServerError,
+		}
+		w.gateDeliveredWithWarning(jobsOf(jobMeta(1), jobMeta(2), jobMeta(3), jobMeta(4)), codes)
+		require.Equal(t, map[int64]int{
+			1: http.StatusOK,
+			2: http.StatusOK,
+			3: http.StatusBadRequest,
+			4: http.StatusInternalServerError,
+		}, codes)
+		require.EqualValues(t, 1, downgrades(statsStore))
+	})
+
+	t.Run("duplicate job metadata downgrades once", func(t *testing.T) {
+		w, statsStore := newGateWorker(t, false)
+		codes := map[int64]int{1: utilTypes.DeliveredWithWarningCode}
+		w.gateDeliveredWithWarning(jobsOf(jobMeta(1), jobMeta(1)), codes)
+		require.Equal(t, http.StatusOK, codes[1])
+		require.EqualValues(t, 1, downgrades(statsStore))
+	})
 }
 
 func TestPrepareRouterJobResponsesPreservesDeliveredWithWarning(t *testing.T) {
