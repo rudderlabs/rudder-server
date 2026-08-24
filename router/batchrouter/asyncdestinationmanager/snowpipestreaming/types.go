@@ -30,6 +30,9 @@ type (
 		api                 api
 		channelCache        sync.Map
 		polledImportInfoMap map[string]*importInfo
+		// Tracks how the committed offset of each in-progress channel moved within the current
+		// batch, used at the stuck threshold to tell a stalled channel from a slow one.
+		committedOffsets map[string]*committedOffsetProgress
 
 		config struct {
 			client struct {
@@ -102,6 +105,17 @@ type (
 		End   int64 `json:"end"`
 	}
 
+	// committedOffsetProgress records how a channel's latest committed offset moved across the polls
+	// of a single batch.
+	committedOffsetProgress struct {
+		lastOffset int64
+		samples    int
+		advanced   bool
+	}
+
+	// stuckChannelCause classifies why a channel was still in progress at the stuck threshold.
+	stuckChannelCause string
+
 	importInfo struct {
 		ChannelID string `json:"channelId"`
 		Offset    string `json:"offset"`
@@ -148,6 +162,16 @@ type (
 		destination  *backendconfig.DestinationT
 		api
 	}
+)
+
+const (
+	// causeChannelInvalid: the per-channel status endpoint positively reports the channel as invalid.
+	causeChannelInvalid stuckChannelCause = "channel_invalid"
+	// causeNotPersisting: the channel is valid and holds every row we sent, but Snowpipe stopped
+	// committing them.
+	causeNotPersisting stuckChannelCause = "not_persisting"
+	// causeStuck: everything else, including an inconclusive status check.
+	causeStuck stuckChannelCause = "stuck"
 )
 
 func (d *destConfig) Decode(m map[string]any) error {
