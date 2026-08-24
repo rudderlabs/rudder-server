@@ -1,7 +1,9 @@
 package pytransformer_contract
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -10,6 +12,8 @@ import (
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
@@ -408,4 +412,260 @@ def transformEvent(event, metadata):
 				"the write-guard counter must fire under enforce too, not only in shadow")
 		}
 	})
+}
+
+// TestWriteGuardDelattrContract covers the third write-guard kind, restricted_name, and the entry point that
+// produces it — the guarded delattr() builtin.
+//
+// delattr deserves its own contract test for a reason none of the other kinds share: it was RAW CPYTHON before
+// this guard existed. Every other guard was already in the request path, so "shadow changes nothing" is trivially
+// true for them. Here it is a claim about new code sitting on a path every transformation can reach, and the whole
+// rollout promise — nothing breaks until SANDBOX_WRITE_GUARD_ENFORCE=true — rests on it. The Python suite proves
+// the parity in-process; this proves it survives the real container, the real subprocess pool and the real IPC hop.
+//
+// restricted_name is also the only kind the target predicate cannot see: it is a rule about the attribute NAME, so
+// nothing in is_foreign_write_target produces it. If its sample were dropped anywhere between the worker and
+// /metrics, a delete the flip will refuse would be invisible in the data the flip is decided from, and no other
+// contract test would notice.
+//
+// CANDIDATE-ONLY, matching its siblings: the write guard is new, so no released baseline image has it.
+func TestWriteGuardDelattrContract(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
+
+	const (
+		shadowDelattrVID  = "hardening-write-guard-delattr-shadow-v1"
+		enforceDelattrVID = "hardening-write-guard-delattr-enforce-v1"
+		absentDelattrVID  = "hardening-write-guard-delattr-absent-v1"
+	)
+
+	// A freshly constructed requests.Response really carries _content, so this delete REMOVES something. The
+	// target has to be a foreign INSTANCE: the sandbox cannot build a user object holding a private attribute
+	// (`r._x = 1` is a compile error and setattr refuses the name), and an instance is not itself a flagged write
+	// target, so restricted_name is the only kind that can be produced here — which is what makes the assertion
+	// below unambiguous.
+	reservedNameDelattrCode := `
+def transformEvent(event, metadata):
+    import requests
+    r = requests.Response()
+    name = '_content'
+    delattr(r, name)
+    return {'ok': True}
+`
+	// The same shape against an attribute that is NOT there. Raw delattr raises AttributeError, and so does every
+	// mode of the guard — the flip cannot change this transformation's behaviour, so it must not be counted as one
+	// the flip would break.
+	absentNameDelattrCode := `
+def transformEvent(event, metadata):
+    import requests
+    r = requests.Response()
+    name = '_not_here_at_all'
+    try:
+        delattr(r, name)
+    except AttributeError:
+        pass
+    return {'ok': True}
+`
+
+	configBackend := newContractConfigBackend(t, map[string]configBackendEntry{
+		shadowDelattrVID:  {code: reservedNameDelattrCode},
+		enforceDelattrVID: {code: reservedNameDelattrCode},
+		absentDelattrVID:  {code: absentNameDelattrCode},
+	})
+	defer configBackend.Close()
+	t.Logf("Config backend at %s", configBackend.URL)
+
+	t.Run("shadow allows the delete and records restricted_name", func(t *testing.T) {
+		// No SANDBOX_WRITE_GUARD_ENFORCE: the shipping default. delattr must behave exactly like the builtin it
+		// replaced — the delete lands and the transformation runs to completion.
+		pyURL, metricsURL := startRudderPytransformerWithMetrics(t, pool, configBackend.URL)
+
+		status, _, items := sendRawTransform(t, pyURL,
+			[]types.TransformerEvent{makeEvent(shadowDelattrVID+"-msg", shadowDelattrVID)})
+		require.Equal(t, http.StatusOK, status)
+		require.Len(t, items, 1)
+		require.Equalf(t, http.StatusOK, items[0].StatusCode,
+			"shadow must let a reserved-name delattr through, exactly as raw CPython did (error=%s)",
+			items[0].Error)
+		require.Equal(t, map[string]interface{}{"ok": true}, items[0].Output)
+
+		requireMetricAtLeast(t, metricsURL, "transformer_write_guard_unsafe_total",
+			map[string]string{"kind": "restricted_name", "transformation_id": shadowDelattrVID}, 1,
+			"the name rule's own sample must cross the subprocess->parent IPC boundary; it is the only "+
+				"kind is_foreign_write_target cannot produce, so nothing else would carry it")
+
+		// An instance is not a flagged target, so neither of the other kinds may appear for this transformation.
+		// Without these the assertion above would still pass if every kind collapsed into one label value.
+		for _, kind := range []string{"module", "foreign_class"} {
+			requireMetricEquals(t, metricsURL, "transformer_write_guard_unsafe_total",
+				map[string]string{"kind": kind, "transformation_id": shadowDelattrVID}, 0,
+				"a delete on a foreign INSTANCE is a name-rule hit only, not a target-rule hit")
+		}
+
+		requireMetricEquals(t, metricsURL, "transformer_security_violations_total",
+			map[string]string{"transformation_id": shadowDelattrVID}, 0,
+			"nothing is blocked in shadow, so nothing is a security violation")
+
+		// A delete that removes nothing behaves identically before and after the flip, so it must produce no
+		// sample at all — otherwise the counter reports breakage that cannot happen.
+		status, _, items = sendRawTransform(t, pyURL,
+			[]types.TransformerEvent{makeEvent(absentDelattrVID+"-msg", absentDelattrVID)})
+		require.Equal(t, http.StatusOK, status)
+		require.Len(t, items, 1)
+		require.Equal(t, http.StatusOK, items[0].StatusCode)
+		for _, kind := range []string{"module", "foreign_class", "restricted_name"} {
+			requireMetricEquals(t, metricsURL, "transformer_write_guard_unsafe_total",
+				map[string]string{"kind": kind, "transformation_id": absentDelattrVID}, 0,
+				"deleting an absent attribute raises AttributeError in every mode, so the flip changes "+
+					"nothing for this transformation and it must not be counted")
+		}
+	})
+
+	t.Run("enforce blocks the delete and records it", func(t *testing.T) {
+		candidateURL, metricsURL := startRudderPytransformerWithMetrics(
+			t, pool, configBackend.URL, "SANDBOX_WRITE_GUARD_ENFORCE=true")
+		env := newBCTestEnv(t, "", candidateURL)
+
+		// AttributeError('"_content" is an invalid attribute name because it starts with "_"')
+		assertBlockedOnCandidate(t, env, enforceDelattrVID, "invalid attribute name")
+
+		requireMetricAtLeast(t, metricsURL, "transformer_write_guard_unsafe_total",
+			map[string]string{"kind": "restricted_name", "transformation_id": enforceDelattrVID}, 1,
+			"the counter must fire under enforce too, not only in shadow")
+	})
+}
+
+// TestTestFlowSecurityMetricsContract pins where the inline preview flow's security signals land.
+//
+// Two things have to be true at once, and they pull in opposite directions. A guard that fires in a worker and is
+// never replayed to the parent is a block nobody can see — and /test is where a customer FIRST runs the code the
+// write-guard flip would refuse, so dropping it loses the earliest and best signal there is. But preview traffic is
+// not production traffic: transformer_security_violations_total is alerted on, and a customer iterating on
+// half-finished code in the preview box must not page on-call. transformer_write_guard_unsafe_total is the number
+// the flip is decided from, and draft code that may never ship must not inflate it.
+//
+// The resolution is the transformer_test_flow_* twins. This test pins both halves: the twins move, and the
+// production series with the SAME transformation_id stay at zero. The shared transformation_id is the point —
+// previewing an already-deployed transformation reuses its real id, so "it would only ever land under unknown" is
+// not a defence.
+//
+// CANDIDATE-ONLY: the twins are new, so no released baseline image exports them.
+func TestTestFlowSecurityMetricsContract(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
+
+	const (
+		previewWriteGuardVID = "hardening-test-flow-write-guard-v1"
+		previewCompileVID    = "hardening-test-flow-compile-violation-v1"
+		previewCleanVID      = "hardening-test-flow-clean-v1"
+	)
+
+	// The inline flow ships the code in the request body, so the config backend is only needed to stand the
+	// container up.
+	configBackend := newContractConfigBackend(t, map[string]configBackendEntry{})
+	defer configBackend.Close()
+
+	pyURL, metricsURL := startRudderPytransformerWithMetrics(t, pool, configBackend.URL)
+
+	t.Run("a shadow write-guard hit in a preview reaches the twin, not the production series", func(t *testing.T) {
+		status, body := sendInlineTest(t, pyURL, previewWriteGuardVID, `
+def transformEvent(event, metadata):
+    import json
+    json.loads = None
+    return {'ok': True}
+`)
+		require.Equal(t, http.StatusOK, status, "shadow must allow the write in the preview flow too: %s", body)
+
+		requireMetricAtLeast(t, metricsURL, "transformer_test_flow_write_guard_unsafe_total",
+			map[string]string{"kind": "module", "transformation_id": previewWriteGuardVID}, 1,
+			"a preview write-guard hit must survive the subprocess->parent IPC hop and reach /metrics")
+		requireMetricEquals(t, metricsURL, "transformer_write_guard_unsafe_total",
+			map[string]string{"kind": "module", "transformation_id": previewWriteGuardVID}, 0,
+			"preview traffic must not inflate the production series the enforce flip is decided from")
+	})
+
+	t.Run("a compile-time block in a preview is still recorded", func(t *testing.T) {
+		// Rejected by RestrictedPython at COMPILE time, so the worker returns a whole-execution failure rather
+		// than a per-event error. That is the case the recording call is deliberately placed BEFORE the status
+		// check for: after it, this sample would be dropped — and a preview that is refused outright is exactly
+		// what an operator wants to see.
+		status, body := sendInlineTest(t, pyURL, previewCompileVID, `
+def transformEvent(event, metadata):
+    return event._private
+`)
+		require.Equal(t, http.StatusBadRequest, status,
+			"a compile-time security violation is a whole-execution failure: %s", body)
+
+		requireMetricAtLeast(t, metricsURL, "transformer_test_flow_security_violations_total",
+			map[string]string{"transformation_id": previewCompileVID}, 1,
+			"a refused preview must not be a block nobody can see")
+		requireMetricEquals(t, metricsURL, "transformer_security_violations_total",
+			map[string]string{"transformation_id": previewCompileVID}, 0,
+			"a customer pasting probing code into the preview box must not page on-call")
+	})
+
+	// The unhappy-path twin. Without it every assertion above would still pass if the replay fired
+	// unconditionally, on every preview, guard or no guard.
+	t.Run("a clean preview moves nothing at all", func(t *testing.T) {
+		status, body := sendInlineTest(t, pyURL, previewCleanVID, `
+def transformEvent(event, metadata):
+    return {'ok': True}
+`)
+		require.Equal(t, http.StatusOK, status, "a clean preview must succeed: %s", body)
+
+		for _, name := range []string{
+			"transformer_test_flow_security_violations_total",
+			"transformer_security_violations_total",
+		} {
+			requireMetricEquals(t, metricsURL, name,
+				map[string]string{"transformation_id": previewCleanVID}, 0,
+				"no guard fired, so nothing may be recorded")
+		}
+		for _, kind := range []string{"module", "foreign_class", "restricted_name"} {
+			requireMetricEquals(t, metricsURL, "transformer_test_flow_write_guard_unsafe_total",
+				map[string]string{"kind": kind, "transformation_id": previewCleanVID}, 0,
+				"no flagged write happened, so no kind may be recorded")
+		}
+	})
+}
+
+// sendInlineTest posts one event to the inline /test preview endpoint and returns the status code and raw body.
+//
+// The transformationId in the event metadata is what /test labels its security samples with, so it must be set
+// explicitly: without it the sample lands under the "unknown" sentinel and no per-transformation assertion is
+// possible.
+func sendInlineTest(t *testing.T, baseURL, transformationID, code string) (int, string) {
+	t.Helper()
+	payload := map[string]any{
+		"trRevCode": map[string]any{
+			"code":        code,
+			"codeVersion": "1",
+			"language":    "python",
+		},
+		"events": []any{
+			map[string]any{
+				"message": map[string]any{"messageId": "m1"},
+				"metadata": map[string]any{
+					"messageId":        "m1",
+					"transformationId": transformationID,
+				},
+			},
+		},
+	}
+	body, err := jsonrs.Marshal(payload)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/test", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return resp.StatusCode, string(respBody)
 }
