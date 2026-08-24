@@ -164,7 +164,7 @@ func newLargePayloadTestReporter(t *testing.T, commonClient *client.Client) (*De
 		stats:                         statsStore,
 		log:                           logger.NOP,
 		requestEntityTooLargeHandling: config.SingleValueLoader(true),
-		maxSampleEventSizeBytes:       config.SingleValueLoader(int64(maxSampleEventSizeBytesForTest)),
+		maxSampleEventSizeBytes:       config.SingleValueLoader(maxSampleEventSizeBytesForTest),
 	}, statsStore
 }
 
@@ -179,7 +179,7 @@ func newLargePayloadTestEDReporter(t *testing.T, commonClient *client.Client) (*
 		log:                           logger.NOP,
 		statsManager:                  NewErrorReportingStats(statsStore),
 		requestEntityTooLargeHandling: config.SingleValueLoader(true),
-		maxSampleEventSizeBytes:       config.SingleValueLoader(int64(maxSampleEventSizeBytesForTest)),
+		maxSampleEventSizeBytes:       config.SingleValueLoader(maxSampleEventSizeBytesForTest),
 	}, statsStore
 }
 

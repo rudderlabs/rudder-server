@@ -93,7 +93,7 @@ func getSampleWithEventSamplingCore(sampleEvent json.RawMessage, sampleResponse 
 	return sampleEvent, sampleResponse, false, nil
 }
 
-func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64, maxSampleEventSizeBytes int64) (sampleEvent json.RawMessage, sampleResponse string, isOversized bool, err error) {
+func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration, maxSampleEventSizeBytes int64) (sampleEvent json.RawMessage, sampleResponse string, isOversized bool, err error) {
 	sampleEvent = metric.StatusDetail.SampleEvent
 	sampleResponse = metric.StatusDetail.SampleResponse
 
@@ -107,7 +107,7 @@ func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64,
 
 // getSampleWithEventSamplingForEDReportsDB applies event sampling to EDReportsDB metrics
 // It reuses the common logic from getSampleWithEventSampling but works with EDReportsDB
-func getSampleWithEventSamplingForEDReportsDB(metric types.EDReportsDB, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64, maxSampleEventSizeBytes int64) (sampleEvent json.RawMessage, sampleResponse string, isOversized bool, err error) {
+func getSampleWithEventSamplingForEDReportsDB(metric types.EDReportsDB, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration, maxSampleEventSizeBytes int64) (sampleEvent json.RawMessage, sampleResponse string, isOversized bool, err error) {
 	sampleEvent = metric.SampleEvent
 	sampleResponse = metric.SampleResponse
 
