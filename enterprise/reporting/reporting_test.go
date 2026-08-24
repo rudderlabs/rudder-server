@@ -813,7 +813,7 @@ func TestDefaultReporter_Report_EventNameTrimming_InvalidConfig(t *testing.T) {
 	}
 }
 
-func TestSendMetricWithLargePayloadHandler(t *testing.T) {
+func TestSendMetric(t *testing.T) {
 	t.Run("splits batch and sends individual metrics", func(t *testing.T) {
 		var mu sync.Mutex
 		var payloads []types.Metric
@@ -838,13 +838,13 @@ func TestSendMetricWithLargePayloadHandler(t *testing.T) {
 
 		metricClient := newLargePayloadTestClient(t, server.URL, 0)
 		r, statsStore := newLargePayloadTestReporter(t, metricClient)
-		err := r.sendMetricWithLargePayloadHandler(context.Background(), testLargePayloadMetric(), testLargePayloadTags())
+		err := r.sendMetric(context.Background(), testLargePayloadMetric())
 		require.NoError(t, err)
 
 		mu.Lock()
 		defer mu.Unlock()
 		require.Equal(t, 3, requestCount)
-		requireLargePayloadStats(t, statsStore, StatReportingLargePayloadSplitCounter, StatReportingLargeSampleEventReplacedCounter, 1, 0)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 0)
 		require.Len(t, payloads[0].StatusDetails, 2)
 		require.Len(t, payloads[1].StatusDetails, 1)
 		require.Equal(t, "event-1", payloads[1].StatusDetails[0].EventName)
@@ -877,14 +877,14 @@ func TestSendMetricWithLargePayloadHandler(t *testing.T) {
 		metricClient := newLargePayloadTestClient(t, server.URL, 0)
 		metric := testLargePayloadMetric()
 		r, statsStore := newLargePayloadTestReporter(t, metricClient)
-		err := r.sendMetricWithLargePayloadHandler(context.Background(), metric, testLargePayloadTags())
+		err := r.sendMetric(context.Background(), metric)
 		require.NoError(t, err)
 
 		mu.Lock()
 		defer mu.Unlock()
 		// batch (413) + event-1 (413) + event-1 stripped (200) + event-2 (200)
 		require.Equal(t, 4, requestCount)
-		requireLargePayloadStats(t, statsStore, StatReportingLargePayloadSplitCounter, StatReportingLargeSampleEventReplacedCounter, 1, 1)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 1)
 		require.Equal(t, "event-1", payloads[1].StatusDetails[0].EventName)
 		require.JSONEq(t, `{"event":"sample-1"}`, string(payloads[1].StatusDetails[0].SampleEvent))
 		require.Equal(t, "event-1", payloads[2].StatusDetails[0].EventName)
@@ -922,14 +922,14 @@ func TestSendMetricWithLargePayloadHandler(t *testing.T) {
 		metricClient := newLargePayloadTestClient(t, server.URL, 0)
 		metric := testLargePayloadMetricWithOneStatusDetail()
 		r, statsStore := newLargePayloadTestReporter(t, metricClient)
-		err := r.sendMetricWithLargePayloadHandler(context.Background(), metric, testLargePayloadTags())
+		err := r.sendMetric(context.Background(), metric)
 		require.NoError(t, err)
 
 		mu.Lock()
 		defer mu.Unlock()
 		// batch (413) + stripped (200); no identical individual resend in between
 		require.Equal(t, 2, requestCount)
-		requireLargePayloadStats(t, statsStore, StatReportingLargePayloadSplitCounter, StatReportingLargeSampleEventReplacedCounter, 1, 1)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 1)
 		require.JSONEq(t, `{"event":"sample-1"}`, string(payloads[0].StatusDetails[0].SampleEvent))
 		require.JSONEq(t, string(sampleEventNotAvailableEntityTooLarge), string(payloads[1].StatusDetails[0].SampleEvent))
 		require.JSONEq(t, `{"event":"sample-1"}`, string(metric.StatusDetails[0].SampleEvent))
@@ -948,7 +948,7 @@ func TestSendMetricWithLargePayloadHandler(t *testing.T) {
 
 		metricClient := newLargePayloadTestClient(t, server.URL, 1)
 		r, statsStore := newLargePayloadTestReporter(t, metricClient)
-		err := r.sendMetricWithLargePayloadHandler(context.Background(), testLargePayloadMetricWithOneStatusDetail(), testLargePayloadTags())
+		err := r.sendMetric(context.Background(), testLargePayloadMetricWithOneStatusDetail())
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
 		require.Contains(t, err.Error(), "statusCode: 413")
@@ -957,7 +957,7 @@ func TestSendMetricWithLargePayloadHandler(t *testing.T) {
 		defer mu.Unlock()
 		// batch (413) + stripped fallback (413, retried once)
 		require.Equal(t, 3, requestCount)
-		requireLargePayloadStats(t, statsStore, StatReportingLargePayloadSplitCounter, StatReportingLargeSampleEventReplacedCounter, 1, 1)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 1)
 	})
 
 	t.Run("strips the rejected status detail, not the first one", func(t *testing.T) {
@@ -985,14 +985,14 @@ func TestSendMetricWithLargePayloadHandler(t *testing.T) {
 
 		metricClient := newLargePayloadTestClient(t, server.URL, 0)
 		r, statsStore := newLargePayloadTestReporter(t, metricClient)
-		err := r.sendMetricWithLargePayloadHandler(context.Background(), testLargePayloadMetric(), testLargePayloadTags())
+		err := r.sendMetric(context.Background(), testLargePayloadMetric())
 		require.NoError(t, err)
 
 		mu.Lock()
 		defer mu.Unlock()
 		// batch (413) + event-1 (200) + event-2 (413) + event-2 stripped (200)
 		require.Equal(t, 4, requestCount)
-		requireLargePayloadStats(t, statsStore, StatReportingLargePayloadSplitCounter, StatReportingLargeSampleEventReplacedCounter, 1, 1)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 1)
 		require.Len(t, payloads[3].StatusDetails, 1)
 		require.Equal(t, "event-2", payloads[3].StatusDetails[0].EventName, "stripped resend must carry the rejected status detail, not StatusDetails[0]")
 		require.JSONEq(t, string(sampleEventNotAvailableEntityTooLarge), string(payloads[3].StatusDetails[0].SampleEvent))
@@ -1012,7 +1012,7 @@ func TestSendMetricWithLargePayloadHandler(t *testing.T) {
 
 		metricClient := newLargePayloadTestClient(t, server.URL, 0)
 		r, statsStore := newLargePayloadTestReporter(t, metricClient)
-		err := r.sendMetricWithLargePayloadHandler(context.Background(), testLargePayloadMetric(), testLargePayloadTags())
+		err := r.sendMetric(context.Background(), testLargePayloadMetric())
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "statusCode: 500")
 
@@ -1020,7 +1020,7 @@ func TestSendMetricWithLargePayloadHandler(t *testing.T) {
 		defer mu.Unlock()
 		// maxRetries=0 => exactly one attempt, and no split
 		require.Equal(t, 1, requestCount, "a non-413 batch error must be returned as-is, without splitting")
-		requireLargePayloadStats(t, statsStore, StatReportingLargePayloadSplitCounter, StatReportingLargeSampleEventReplacedCounter, 0, 0)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 0)
 	})
 
 	t.Run("partial failure returns error after delivering earlier metrics", func(t *testing.T) {
@@ -1050,7 +1050,7 @@ func TestSendMetricWithLargePayloadHandler(t *testing.T) {
 
 		metricClient := newLargePayloadTestClient(t, server.URL, 1)
 		r, statsStore := newLargePayloadTestReporter(t, metricClient)
-		err := r.sendMetricWithLargePayloadHandler(context.Background(), testLargePayloadMetric(), testLargePayloadTags())
+		err := r.sendMetric(context.Background(), testLargePayloadMetric())
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
 		require.Contains(t, err.Error(), "statusCode: 500")
@@ -1059,7 +1059,7 @@ func TestSendMetricWithLargePayloadHandler(t *testing.T) {
 		defer mu.Unlock()
 		// 1 batch (413) + 1 for event-1 (200) + 2 for event-2 (500, retried once)
 		require.Equal(t, 4, requestCount)
-		requireLargePayloadStats(t, statsStore, StatReportingLargePayloadSplitCounter, StatReportingLargeSampleEventReplacedCounter, 1, 0)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 0)
 		require.Len(t, payloads[1].StatusDetails, 1)
 		require.Equal(t, "event-1", payloads[1].StatusDetails[0].EventName)
 		require.Len(t, payloads[2].StatusDetails, 1)
@@ -1086,7 +1086,7 @@ func TestSendMetricWithLargePayloadHandler(t *testing.T) {
 
 		metricClient := newLargePayloadTestClient(t, server.URL, 1)
 		r, statsStore := newLargePayloadTestReporter(t, metricClient)
-		err := r.sendMetricWithLargePayloadHandler(context.Background(), testLargePayloadMetricWithOneStatusDetail(), testLargePayloadTags())
+		err := r.sendMetric(context.Background(), testLargePayloadMetricWithOneStatusDetail())
 		require.Error(t, err)
 		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
 		require.Contains(t, err.Error(), "statusCode: 500")
@@ -1094,7 +1094,7 @@ func TestSendMetricWithLargePayloadHandler(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		require.Equal(t, 3, requestCount)
-		requireLargePayloadStats(t, statsStore, StatReportingLargePayloadSplitCounter, StatReportingLargeSampleEventReplacedCounter, 1, 1)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 1)
 	})
 }
 

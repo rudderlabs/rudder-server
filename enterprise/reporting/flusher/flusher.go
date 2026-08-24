@@ -47,19 +47,20 @@ type Flusher struct {
 	vacuumFull                          config.ValueLoader[bool]
 	vacuumInterval                      config.ValueLoader[time.Duration]
 
+	requestEntityTooLargeHandling config.ValueLoader[bool]
+
 	minConcurrentRequests config.ValueLoader[int]
 	maxConcurrentRequests config.ValueLoader[int]
 	batchSizeToReporting  config.ValueLoader[int]
 
-	stats                    stats.Stats
-	minReportedAtQueryTimer  stats.Measurement
-	aggReportsTimer          stats.Measurement
-	sendReportsTimer         stats.Measurement
-	deleteReportsTimer       stats.Measurement
-	vacuumReportsTimer       stats.Measurement
-	concurrentRequests       stats.Measurement
-	flushLag                 stats.Measurement
-	largePayloadSplitCounter stats.Measurement
+	stats                   stats.Stats
+	minReportedAtQueryTimer stats.Measurement
+	aggReportsTimer         stats.Measurement
+	sendReportsTimer        stats.Measurement
+	deleteReportsTimer      stats.Measurement
+	vacuumReportsTimer      stats.Measurement
+	concurrentRequests      stats.Measurement
+	flushLag                stats.Measurement
 
 	commonTags stats.Tags
 }
@@ -78,22 +79,24 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 	vacuumThresholdDeletedRows := conf.GetReloadableIntVar(100000, 1, "Reporting.flusher.vacuumThresholdDeletedRows")
 	vacuumInterval := conf.GetReloadableDurationVar(15, time.Minute, "Reporting.flusher.vacuumInterval", "Reporting.vacuumInterval")
 	vacuumThresholdBytes := conf.GetReloadableInt64Var(10*bytesize.GB, 1, "Reporting.flusher.vacuumThresholdBytes", "Reporting.vacuumThresholdBytes")
+	requestEntityTooLargeHandling := conf.GetReloadableBoolVar(false, "Reporting.flusher.requestEntityTooLargeHandling", "Reporting.requestEntityTooLargeHandling")
 
 	f := Flusher{
-		db:                         db,
-		log:                        log,
-		instanceId:                 conf.GetStringVar("1", "INSTANCE_ID"),
-		sleepInterval:              sleepInterval,
-		flushWindow:                flushWindow,
-		recentExclusionWindow:      recentExclusionWindow,
-		minConcurrentRequests:      minConcReqs,
-		maxConcurrentRequests:      maxConcReqs,
-		stats:                      stats,
-		batchSizeFromDB:            batchSizeFromDB,
-		vacuumThresholdDeletedRows: vacuumThresholdDeletedRows,
-		vacuumFull:                 conf.GetReloadableBoolVar(false, "Reporting.flusher.vacuumFull", "Reporting.vacuumFull"),
-		vacuumInterval:             vacuumInterval,
-		vacuumThresholdBytes:       vacuumThresholdBytes,
+		db:                            db,
+		log:                           log,
+		instanceId:                    conf.GetStringVar("1", "INSTANCE_ID"),
+		sleepInterval:                 sleepInterval,
+		flushWindow:                   flushWindow,
+		recentExclusionWindow:         recentExclusionWindow,
+		minConcurrentRequests:         minConcReqs,
+		maxConcurrentRequests:         maxConcReqs,
+		stats:                         stats,
+		batchSizeFromDB:               batchSizeFromDB,
+		vacuumThresholdDeletedRows:    vacuumThresholdDeletedRows,
+		vacuumFull:                    conf.GetReloadableBoolVar(false, "Reporting.flusher.vacuumFull", "Reporting.vacuumFull"),
+		vacuumInterval:                vacuumInterval,
+		vacuumThresholdBytes:          vacuumThresholdBytes,
+		requestEntityTooLargeHandling: requestEntityTooLargeHandling,
 
 		table:                               table,
 		aggregator:                          aggregator,
@@ -138,8 +141,6 @@ func (f *Flusher) initStats(tags map[string]string) {
 	f.concurrentRequests = f.stats.NewTaggedStat("reporting_flusher_concurrent_requests_in_progress", stats.GaugeType, tags)
 
 	f.flushLag = f.stats.NewTaggedStat("reporting_flusher_lag_seconds", stats.GaugeType, tags)
-
-	f.largePayloadSplitCounter = f.stats.NewTaggedStat("reporting_flusher_large_payload_split", stats.CountType, tags)
 }
 
 func (f *Flusher) getStart(ctx context.Context) (time.Time, error) {
@@ -293,7 +294,7 @@ func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error 
 		batch := aggReports[i:end]
 
 		g.Go(func() error {
-			return f.sendBatchWithLargePayloadHandler(ctx, batch)
+			return f.sendBatch(ctx, batch)
 		})
 	}
 
@@ -304,12 +305,15 @@ func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error 
 	return nil
 }
 
-func (f *Flusher) sendBatchWithLargePayloadHandler(ctx context.Context, batch []json.RawMessage) error {
+func (f *Flusher) sendBatch(ctx context.Context, batch []json.RawMessage) error {
+	if !f.requestEntityTooLargeHandling.Load() {
+		return f.commonClient.SendWithoutFailFast(ctx, batch)
+	}
+
 	err := f.commonClient.Send(ctx, batch)
 	if !errors.Is(err, client.ErrPayloadTooLarge) {
 		return err
 	}
-	f.largePayloadSplitCounter.Increment()
 
 	// Items are opaque and cannot be shrunk further, so a 413 on an individual
 	// item is retried like any other non-2xx response.

@@ -42,9 +42,7 @@ const (
 	StatReportingGetReportsQueryTime                         = "reporting_client_get_reports_query_time"
 	StatReportingVacuumDuration                              = "reporting_vacuum_duration"
 	StatReportingMainLoopBlockedDueToActiveTransactionsCount = "reporting_main_loop_blocked_due_to_active_transactions_count"
-	StatReportingLargePayloadSplitCounter                    = "reporting_large_payload_split"
-	StatReportingLargeSampleEventReplacedCounter             = "reporting_large_sample_event_replaced"
-	StatReportingOversizedSampleEventDroppedCounter          = "reporting_oversized_sample_event_dropped"
+	StatReportingOversizedSampleEventSkippedCounter          = "reporting_oversized_sample_event_skipped"
 )
 
 type DefaultReporter struct {
@@ -67,15 +65,17 @@ type DefaultReporter struct {
 	maxConcurrentRequests                config.ValueLoader[int]
 	vacuumFull                           config.ValueLoader[bool]
 
-	getMinReportedAtQueryTime          stats.Measurement
-	getReportsQueryTime                stats.Measurement
-	oversizedSampleEventDroppedCounter stats.Measurement
-	stats                              stats.Stats
-	maxReportsCountInARequest          config.ValueLoader[int]
+	getMinReportedAtQueryTime stats.Measurement
+	getReportsQueryTime       stats.Measurement
+	stats                     stats.Stats
+	maxReportsCountInARequest config.ValueLoader[int]
 
 	eventSamplingEnabled  config.ValueLoader[bool]
 	eventSamplingDuration config.ValueLoader[time.Duration]
 	eventSampler          event_sampler.EventSampler
+
+	requestEntityTooLargeHandling config.ValueLoader[bool]
+	maxSampleEventSizeBytes       config.ValueLoader[int64]
 
 	eventNamePrefixLength config.ValueLoader[int]
 	eventNameSuffixLength config.ValueLoader[int]
@@ -97,6 +97,8 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
 	maxReportsCountInARequest := conf.GetReloadableIntVar(10, 1, "Reporting.maxReportsCountInARequest")
+	requestEntityTooLargeHandling := conf.GetReloadableBoolVar(false, "Reporting.requestEntityTooLargeHandling")
+	maxSampleEventSizeBytes := conf.GetReloadableInt64Var(80*bytesize.MB, 1, "Reporting.maxSampleEventSizeBytes")
 	eventSamplingEnabled := conf.GetReloadableBoolVar(false, "Reporting.eventSampling.enabled")
 	eventSamplingDuration := conf.GetReloadableDurationVar(60, time.Minute, "Reporting.eventSampling.durationInMinutes")
 	eventSamplerType := conf.GetReloadableStringVar("badger", "Reporting.eventSampling.type")
@@ -137,10 +139,11 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		dbQueryTimeout:                       dbQueryTimeout,
 		maxReportsCountInARequest:            maxReportsCountInARequest,
 		stats:                                statsFactory,
-		oversizedSampleEventDroppedCounter:   statsFactory.NewStat(StatReportingOversizedSampleEventDroppedCounter, stats.CountType),
 		eventSamplingEnabled:                 eventSamplingEnabled,
 		eventSamplingDuration:                eventSamplingDuration,
 		eventSampler:                         eventSampler,
+		requestEntityTooLargeHandling:        requestEntityTooLargeHandling,
+		maxSampleEventSizeBytes:              maxSampleEventSizeBytes,
 		eventNamePrefixLength:                eventNamePrefixLength,
 		eventNameSuffixLength:                eventNameSuffixLength,
 		commonClient:                         client.New(client.RouteMetrics, conf, log, statsFactory),
@@ -529,7 +532,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 					break
 				}
 				errGroup.Go(func() error {
-					err := r.sendMetricWithLargePayloadHandler(errCtx, metricToSend, tags)
+					err := r.sendMetric(errCtx, metricToSend)
 					<-requestChan
 					return err
 				})
@@ -694,7 +697,11 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
 
-		sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, reportedAt, r.eventSampler, r.eventSamplingEnabled.Load(), int64(r.eventSamplingDuration.Load().Minutes()), r.oversizedSampleEventDroppedCounter)
+		sampleEvent, sampleResponse, isOversized, err := getSampleWithEventSampling(metric, reportedAt, r.eventSampler, r.eventSamplingEnabled.Load(), int64(r.eventSamplingDuration.Load().Minutes()), r.maxSampleEventSizeBytes.Load())
+		if isOversized {
+			r.stats.NewTaggedStat(StatReportingOversizedSampleEventSkippedCounter, stats.CountType, stats.Tags{"stage": "sampler", "sourceId": metric.SourceID, "destinationId": metric.DestinationID}).Increment()
+		}
+
 		if err != nil {
 			return err
 		}
@@ -756,22 +763,25 @@ func (r *DefaultReporter) Stop() {
 	}
 }
 
-func (r *DefaultReporter) sendMetricWithLargePayloadHandler(ctx context.Context, metric *types.Metric, tags stats.Tags) error {
+func (r *DefaultReporter) sendMetric(ctx context.Context, metric *types.Metric) error {
+	if !r.requestEntityTooLargeHandling.Load() {
+		return r.commonClient.SendWithoutFailFast(ctx, metric)
+	}
+
 	err := r.commonClient.Send(ctx, metric)
 	if !errors.Is(err, client.ErrPayloadTooLarge) {
 		return err
 	}
-	r.stats.NewTaggedStat(StatReportingLargePayloadSplitCounter, stats.CountType, tags).Increment()
 
 	if len(metric.StatusDetails) == 1 {
 		// nothing to split: a single-status-detail metric is the payload that was just rejected
-		return r.sendStrippedStatusDetail(ctx, metric, metric.StatusDetails[0], tags)
+		return r.sendStrippedStatusDetail(ctx, metric, metric.StatusDetails[0])
 	}
 
 	for _, statusDetail := range metric.StatusDetails {
 		err = r.commonClient.Send(ctx, metricWithSingleStatusDetail(metric, statusDetail))
 		if errors.Is(err, client.ErrPayloadTooLarge) {
-			err = r.sendStrippedStatusDetail(ctx, metric, statusDetail, tags)
+			err = r.sendStrippedStatusDetail(ctx, metric, statusDetail)
 		}
 		if err != nil {
 			return err
@@ -782,10 +792,10 @@ func (r *DefaultReporter) sendMetricWithLargePayloadHandler(ctx context.Context,
 
 // sendStrippedStatusDetail sends a single status detail with its sample event
 // replaced by a placeholder, retrying a 413 like any other non-2xx response.
-func (r *DefaultReporter) sendStrippedStatusDetail(ctx context.Context, metric *types.Metric, statusDetail *types.StatusDetail, tags stats.Tags) error {
+func (r *DefaultReporter) sendStrippedStatusDetail(ctx context.Context, metric *types.Metric, statusDetail *types.StatusDetail) error {
 	strippedMetric := metricWithSingleStatusDetail(metric, statusDetail)
 	strippedMetric.StatusDetails[0].SampleEvent = sampleEventNotAvailableEntityTooLarge
-	r.stats.NewTaggedStat(StatReportingLargeSampleEventReplacedCounter, stats.CountType, tags).Increment()
+	r.stats.NewTaggedStat(StatReportingOversizedSampleEventSkippedCounter, stats.CountType, stats.Tags{"stage": "client", "sourceId": metric.SourceID, "destinationId": metric.DestinationID}).Increment()
 	return r.commonClient.SendWithoutFailFast(ctx, strippedMetric)
 }
 

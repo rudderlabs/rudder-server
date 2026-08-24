@@ -82,9 +82,8 @@ type Client struct {
 	moduleName string
 	instanceID string
 
-	compress               config.ValueLoader[bool]
-	compressionLevel       config.ValueLoader[int]
-	failFastOnLargePayload config.ValueLoader[bool]
+	compress         config.ValueLoader[bool]
+	compressionLevel config.ValueLoader[int]
 
 	conf *config.Config
 }
@@ -107,29 +106,26 @@ func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) 
 			Timeout:   conf.GetDurationVar(60, time.Second, "Reporting.httpClient.timeout", "HttpClient.reporting.timeout"),
 			Transport: &http.Transport{},
 		},
-		reportingServiceURL:    reportingServiceURL,
-		userName:               conf.GetStringVar("", "REPORTING_USERNAME"),
-		password:               conf.GetStringVar("", "REPORTING_PASSWORD"),
-		route:                  path,
-		instanceID:             conf.GetStringVar("1", "INSTANCE_ID"),
-		moduleName:             conf.GetStringVar("", "clientName"),
-		compress:               conf.GetReloadableBoolVar(false, "Reporting.httpClient.compression.enabled"),
-		compressionLevel:       conf.GetReloadableIntVar(gzip.DefaultCompression, 1, "Reporting.httpClient.compression.level"),
-		failFastOnLargePayload: conf.GetReloadableBoolVar(false, "Reporting.largePayloadHandling.enabled"),
-		stats:                  stats,
-		log:                    log,
-		conf:                   conf,
+		reportingServiceURL: reportingServiceURL,
+		userName:            conf.GetStringVar("", "REPORTING_USERNAME"),
+		password:            conf.GetStringVar("", "REPORTING_PASSWORD"),
+		route:               path,
+		instanceID:          conf.GetStringVar("1", "INSTANCE_ID"),
+		moduleName:          conf.GetStringVar("", "clientName"),
+		compress:            conf.GetReloadableBoolVar(false, "Reporting.httpClient.compression.enabled"),
+		compressionLevel:    conf.GetReloadableIntVar(gzip.DefaultCompression, 1, "Reporting.httpClient.compression.level"),
+		stats:               stats,
+		log:                 log,
+		conf:                conf,
 	}
 }
 
 func (c *Client) Send(ctx context.Context, payload any) error {
-	return c.send(ctx, payload, c.failFastOnLargePayload.Load())
+	return c.send(ctx, payload, true)
 }
 
 // SendWithoutFailFast sends a payload with 413 fail-fast disabled: a 413 is
-// retried like any other non-2xx response, even when
-// Reporting.largePayloadHandling.enabled is true. Callers use it for payloads
-// that are already minimal and cannot be split any further.
+// retried like any other non-2xx response.
 func (c *Client) SendWithoutFailFast(ctx context.Context, payload any) error {
 	return c.send(ctx, payload, false)
 }
