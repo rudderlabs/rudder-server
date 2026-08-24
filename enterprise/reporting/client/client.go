@@ -86,6 +86,12 @@ type Client struct {
 	compressionLevel config.ValueLoader[int]
 
 	conf *config.Config
+
+	payloadBytes    stats.Measurement
+	latency         stats.Measurement
+	totalBytes      stats.Measurement
+	compressedBytes stats.Measurement
+	totalDuration   stats.Measurement
 }
 
 func backoffOptsFromConfig(conf *config.Config) (opts []backoff.RetryOption) {
@@ -97,11 +103,11 @@ func backoffOptsFromConfig(conf *config.Config) (opts []backoff.RetryOption) {
 }
 
 // New creates a new reporting client
-func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) *Client {
+func New(path Route, conf *config.Config, log logger.Logger, statsInstance stats.Stats) *Client {
 	reportingServiceURL := conf.GetStringVar("https://reporting.dev.rudderlabs.com", "REPORTING_URL")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 
-	return &Client{
+	c := &Client{
 		httpClient: &http.Client{
 			Timeout:   conf.GetDurationVar(60, time.Second, "Reporting.httpClient.timeout", "HttpClient.reporting.timeout"),
 			Transport: &http.Transport{},
@@ -114,10 +120,19 @@ func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) 
 		moduleName:          conf.GetStringVar("", "clientName"),
 		compress:            conf.GetReloadableBoolVar(false, "Reporting.httpClient.compression.enabled"),
 		compressionLevel:    conf.GetReloadableIntVar(gzip.DefaultCompression, 1, "Reporting.httpClient.compression.level"),
-		stats:               stats,
+		stats:               statsInstance,
 		log:                 log,
 		conf:                conf,
 	}
+
+	tags := c.getTags()
+	c.payloadBytes = statsInstance.NewTaggedStat(StatRequestPayloadBytes, stats.HistogramType, tags)
+	c.latency = statsInstance.NewTaggedStat(StatRequestLatency, stats.TimerType, tags)
+	c.totalBytes = statsInstance.NewTaggedStat(StatRequestTotalBytes, stats.CountType, tags)
+	c.compressedBytes = statsInstance.NewTaggedStat(StatRequestCompressedBytes, stats.CountType, tags)
+	c.totalDuration = statsInstance.NewTaggedStat(StatTotalDurationsSeconds, stats.CountType, tags)
+
+	return c
 }
 
 func (c *Client) Send(ctx context.Context, payload any) error {
@@ -154,7 +169,7 @@ func (c *Client) send(ctx context.Context, payload any, failFastOnLargePayload b
 		return fmt.Errorf("constructing URL for service endpoint (%q, %q): %w", c.route, c.reportingServiceURL, err)
 	}
 
-	c.stats.NewTaggedStat(StatRequestPayloadBytes, stats.HistogramType, c.getTags()).Observe(float64(uncompressedBytes))
+	c.payloadBytes.Observe(float64(uncompressedBytes))
 
 	o := func() error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(bodyBytes))
@@ -172,20 +187,19 @@ func (c *Client) send(ctx context.Context, payload any, failFastOnLargePayload b
 			return err
 		}
 
-		tags := c.getTags()
 		duration := time.Since(httpRequestStart)
 
-		c.stats.NewTaggedStat(StatRequestLatency, stats.TimerType, tags).Since(httpRequestStart)
+		c.latency.Since(httpRequestStart)
 
-		httpStatTags := lo.Assign(tags, map[string]string{"status": strconv.Itoa(resp.StatusCode)})
+		httpStatTags := lo.Assign(c.getTags(), map[string]string{"status": strconv.Itoa(resp.StatusCode)})
 		c.stats.NewTaggedStat(StatHttpRequest, stats.CountType, httpStatTags).Count(1)
 
 		// Record total (uncompressed) bytes and the bytes actually sent on the wire
-		c.stats.NewTaggedStat(StatRequestTotalBytes, stats.CountType, tags).Count(uncompressedBytes)
-		c.stats.NewTaggedStat(StatRequestCompressedBytes, stats.CountType, tags).Count(len(bodyBytes))
+		c.totalBytes.Count(uncompressedBytes)
+		c.compressedBytes.Count(len(bodyBytes))
 
 		// Record request duration
-		c.stats.NewTaggedStat(StatTotalDurationsSeconds, stats.CountType, tags).Count(int(duration.Seconds()))
+		c.totalDuration.Count(int(duration.Seconds()))
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
