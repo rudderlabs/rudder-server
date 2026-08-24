@@ -194,7 +194,7 @@ func (proc *Handle) procRebuildStage(destinationID string, in subJob) (*transfor
 		totalEvents++
 		sourceID := payload.Metadata.SourceID
 
-		// Re-hydrate the destination from live config. Config drift: a destination
+		// Hydrate the destination from live config. Config drift: a destination
 		// deleted/disabled since fan-out is dropped gracefully to a terminal status.
 		dest, ok := proc.getEnabledDestinationByID(sourceID, destinationID)
 		if !ok {
@@ -210,8 +210,10 @@ func (proc *Handle) procRebuildStage(destinationID string, in subJob) (*transfor
 			Libraries:   proc.getWorkspaceLibraries(payload.Metadata.WorkspaceID),
 			Credentials: proc.config.credentialsMap[payload.Metadata.WorkspaceID],
 		}
-		// Refresh destination metadata from the (possibly drifted) live config.
+		// Populate the destination metadata fields, which are cleared at fork time
+		// (see newForkedJob) since a forked job fans out to multiple destinations.
 		event.Metadata.DestinationID = dest.ID
+		event.Metadata.OriginalDestinationID = dest.OriginalID
 		event.Metadata.DestinationName = dest.Name
 		event.Metadata.DestinationType = dest.DestinationDefinition.Name
 		event.Metadata.DestinationDefinitionID = dest.DestinationDefinition.ID

@@ -74,6 +74,7 @@ func (proc *Handle) newForkedJob(event *types.TransformerEvent, forkedDestIDs []
 	// (procRebuildStage), so no single destination's identity may be baked into the payload.
 	metadata := event.Metadata
 	metadata.DestinationID = ""
+	metadata.OriginalDestinationID = ""
 	metadata.DestinationName = ""
 	metadata.DestinationType = ""
 	metadata.DestinationDefinitionID = ""
