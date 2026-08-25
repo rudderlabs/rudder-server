@@ -97,7 +97,7 @@ func TestJSONColumnAmongOthersV2(t *testing.T) {
 		parts[i] = strings.TrimSpace(parts[i])
 	}
 	require.ElementsMatch(t, []string{
-		`"context_props" JSON`,
+		`"context_props" Nullable(JSON)`,
 		`"name" Nullable(String)`,
 		`"rating" Nullable(Int64)`,
 		`"tags" Array(String)`,
