@@ -1283,6 +1283,217 @@ func testIntegration(t *testing.T, useV2 bool) {
 		}
 	})
 
+	// A path listed in jsonPaths reaches the warehouse as a json column, which v2
+	// declares as a native JSON column. It needs ClickHouse 25.3 or newer, so it
+	// only runs against the server v2 is tested on.
+	t.Run("Load table with a JSON column", func(t *testing.T) {
+		if !useV2 {
+			t.Skip("native JSON columns are a v2 feature; v1 stores the payload as text")
+		}
+
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.minio.yml"}))
+		c.Start(context.Background())
+
+		workspaceID := whutils.RandHex()
+		clickhousePort := c.Port("clickhouse", 9000)
+		minioPort := c.Port("minio", 9000)
+		minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
+
+		ctx := context.Background()
+		namespace := "test_namespace_json"
+		tableName := "json_paths_test_table"
+		region := "us-east-1"
+
+		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
+			host, clickhousePort, database, password, user,
+		)
+		db := connectClickhouseDB(t, ctx, dsn)
+		defer func() { _ = db.Close() }()
+
+		tableSchema := model.TableSchema{
+			"id":            "string",
+			"context_props": "json",
+		}
+
+		ch := newClickhouse(config.New())
+
+		warehouse := model.Warehouse{
+			Namespace:   namespace,
+			WorkspaceID: workspaceID,
+			Destination: backendconfig.DestinationT{
+				Config: map[string]any{
+					"bucketProvider":  whutils.MINIO,
+					"host":            host,
+					"port":            strconv.Itoa(clickhousePort),
+					"database":        database,
+					"user":            user,
+					"password":        password,
+					"bucketName":      bucketName,
+					"accessKeyID":     accessKeyID,
+					"secretAccessKey": secretAccessKey,
+					"endPoint":        minioEndpoint,
+				},
+			},
+		}
+
+		f, err := os.Open("testdata/load-json.csv.gz")
+		require.NoError(t, err)
+		defer func() { _ = f.Close() }()
+
+		fm, err := filemanager.New(&filemanager.Settings{
+			Provider: whutils.MINIO,
+			Config: map[string]any{
+				"bucketName":      bucketName,
+				"accessKeyID":     accessKeyID,
+				"secretAccessKey": secretAccessKey,
+				"endPoint":        minioEndpoint,
+				"forcePathStyle":  true,
+				"disableSSL":      true,
+				"region":          region,
+				"enableSSE":       false,
+			},
+			Conf: config.Default,
+		})
+		require.NoError(t, err)
+
+		uploadOutput, err := fm.Upload(ctx, f, "json_paths_prefix")
+		require.NoError(t, err)
+
+		mockUploader := newMockUploader(t, strconv.Itoa(minioPort), tableSchema, []whutils.LoadFile{
+			{Location: uploadOutput.Location},
+		})
+
+		require.NoError(t, ch.Setup(ctx, warehouse, mockUploader))
+		require.NoError(t, ch.CreateSchema(ctx))
+		require.NoError(t, ch.CreateTable(ctx, tableName, tableSchema))
+
+		t.Run("column is declared with the driver's JSON type", func(t *testing.T) {
+			var columnType string
+			require.NoError(t, db.QueryRowContext(ctx,
+				"SELECT type FROM system.columns WHERE database = ? AND table = ? AND name = 'context_props'",
+				namespace, tableName,
+			).Scan(&columnType))
+
+			// Never Nullable: Nullable(JSON) stops rows collapsing on merge.
+			require.Equal(t, "JSON", columnType)
+		})
+
+		t.Run("load", func(t *testing.T) {
+			_, err := ch.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+
+			var rows int64
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf("SELECT count(*) FROM %q.%q", namespace, tableName),
+			).Scan(&rows))
+			require.EqualValues(t, 3, rows)
+		})
+
+		t.Run("payload round trips", func(t *testing.T) {
+			var payload string
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf("SELECT toString(context_props) FROM %q.%q WHERE id = 'row-1'", namespace, tableName),
+			).Scan(&payload))
+			require.Contains(t, payload, "USD")
+			require.Contains(t, payload, "10")
+		})
+
+		t.Run("an empty cell is stored as an empty object", func(t *testing.T) {
+			var payload string
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf("SELECT toString(context_props) FROM %q.%q WHERE id = 'row-2'", namespace, tableName),
+			).Scan(&payload))
+			require.Equal(t, "{}", payload)
+		})
+
+		// Reading a path out of the column is what separates a real JSON column
+		// from text holding the same bytes.
+		t.Run("paths inside the column are queryable", func(t *testing.T) {
+			var revenue string
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf("SELECT toString(context_props.revenue) FROM %q.%q WHERE id = 'row-1'", namespace, tableName),
+			).Scan(&revenue))
+			require.Equal(t, "10", revenue)
+
+			var nested string
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf("SELECT toString(context_props.nested.a) FROM %q.%q WHERE id = 'row-3'", namespace, tableName),
+			).Scan(&nested))
+			require.Contains(t, nested, "1")
+		})
+
+		// The users table wraps every column in SimpleAggregateFunction(anyLast, ...)
+		// so rows collapsing on id take the newest value. That holds for JSON too.
+		t.Run("users table", func(t *testing.T) {
+			usersSchema := model.TableSchema{
+				"id":                     "string",
+				"received_at":            "datetime",
+				"context_traits_address": "json",
+			}
+			require.NoError(t, ch.CreateTable(ctx, whutils.UsersTable, usersSchema))
+
+			var columnType string
+			require.NoError(t, db.QueryRowContext(ctx,
+				"SELECT type FROM system.columns WHERE database = ? AND table = ? AND name = 'context_traits_address'",
+				namespace, whutils.UsersTable,
+			).Scan(&columnType))
+			require.Equal(t, "SimpleAggregateFunction(anyLast, JSON)", columnType)
+
+			for _, city := range []string{"Bengaluru", "Mumbai"} {
+				_, err := db.ExecContext(ctx, fmt.Sprintf(
+					`INSERT INTO %q.%q (id, received_at, context_traits_address) VALUES ('user-1', now(), '{"city":"%s"}')`,
+					namespace, whutils.UsersTable, city,
+				))
+				require.NoError(t, err)
+			}
+
+			_, err := db.ExecContext(ctx, fmt.Sprintf(`OPTIMIZE TABLE %q.%q FINAL`, namespace, whutils.UsersTable))
+			require.NoError(t, err)
+
+			var rows int64
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf(`SELECT count(*) FROM %q.%q`, namespace, whutils.UsersTable),
+			).Scan(&rows))
+			require.EqualValues(t, 1, rows, "the two rows for user-1 collapse on merge")
+
+			// anyLast keeps the newest write, and the value stays queryable as JSON.
+			var city string
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf(`SELECT toString(context_traits_address.city) FROM %q.%q WHERE id = 'user-1'`, namespace, whutils.UsersTable),
+			).Scan(&city))
+			require.Equal(t, "Mumbai", city)
+		})
+
+		// A jsonPath added to a destination after the table exists arrives through
+		// ALTER TABLE, which takes the same declaration path as CREATE.
+		t.Run("added to an existing table", func(t *testing.T) {
+			require.NoError(t, ch.AddColumns(ctx, tableName, []whutils.ColumnInfo{
+				{Name: "context_extra", Type: model.JSONDataType},
+			}))
+
+			var columnType string
+			require.NoError(t, db.QueryRowContext(ctx,
+				"SELECT type FROM system.columns WHERE database = ? AND table = ? AND name = 'context_extra'",
+				namespace, tableName,
+			).Scan(&columnType))
+			require.Equal(t, "JSON", columnType)
+
+			// Rows written before the column existed read back as an empty object
+			// rather than null, since the column is not declared Nullable.
+			var backfilled string
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf(`SELECT toString(context_extra) FROM %q.%q WHERE id = 'row-1'`, namespace, tableName),
+			).Scan(&backfilled))
+			require.Equal(t, "{}", backfilled)
+		})
+
+		t.Run("fetched schema reports it as json", func(t *testing.T) {
+			schema, err := ch.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Equal(t, model.JSONDataType, schema[tableName]["context_props"])
+		})
+	})
+
 	t.Run("Load test table", func(t *testing.T) {
 		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
 		c.Start(context.Background())
