@@ -1304,11 +1304,12 @@ func testIntegration(t *testing.T, useV2 bool) {
 		tableName := "json_paths_test_table"
 		region := "us-east-1"
 
-		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, clickhousePort, database, password, user,
-		)
-		db := connectClickhouseDB(t, ctx, dsn)
-		defer func() { _ = db.Close() }()
+		// This block only runs for v2, so it verifies over v2 too. The suite's
+		// usual handle is registered by github.com/ClickHouse/clickhouse-go,
+		// which has no JSON type at all: reads happen to work because every
+		// query here coerces the column to String, but writing one fails inside
+		// the driver rather than at the server.
+		db := connectDB(t, ctx, clickhousePort)
 
 		// received_at has to be here: CreateTable always sorts by
 		// ("received_at", "id"), so a schema without it fails to create.
@@ -1450,10 +1451,9 @@ func testIntegration(t *testing.T, useV2 bool) {
 			).Scan(&columnType))
 			require.Equal(t, "SimpleAggregateFunction(anyLast, Nullable(JSON))", columnType)
 
-			// The v2 driver rejects a plain INSERT through Exec - it only takes
-			// them in batch mode - so each write is its own transaction. That
-			// also lands them in separate parts, which is the state the merge
-			// below is meant to collapse.
+			// v2 takes an INSERT only as a batch, and a batch per write also
+			// lands them in separate parts, which is the state the merge below
+			// is meant to collapse.
 			for _, city := range []string{"Bengaluru", "Mumbai"} {
 				scope, err := db.Begin()
 				require.NoError(t, err)
