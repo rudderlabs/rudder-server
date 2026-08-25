@@ -1,6 +1,7 @@
 package clickhouse
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -175,19 +176,45 @@ func TestJSONTypeMappingsV2(t *testing.T) {
 	require.Equal(t, model.JSONDataType, clickhouseDataTypesMapToRudder["Nullable(JSON)"])
 	require.Equal(t, model.JSONDataType, clickhouseDataTypesMapToRudder["SimpleAggregateFunction(anyLast, Nullable(JSON))"])
 
-	// Every rendering CreateTable can produce has to map back, or FetchSchema
-	// drops the column and only bumps a missing-datatype counter.
-	ch := NewV2(config.New(), logger.NOP, stats.NOP)
-	for _, tableName := range []string{"product_track", warehouseutils.UsersTable, warehouseutils.IdentifiesTable} {
-		declared := ch.ColumnsWithDataTypes(tableName, model.TableSchema{jsonColumn: model.JSONDataType}, nil)
-		columnType := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(declared), `"`+jsonColumn+`"`))
-		require.Equal(t, model.JSONDataType, clickhouseDataTypesMapToRudder[columnType], "no reverse mapping for %q", columnType)
-	}
-
 	require.Equal(t, "String", rudderDataTypesMapToClickHouse[model.StringDataType])
 	require.Equal(t, model.StringDataType, clickhouseDataTypesMapToRudder["Nullable(String)"])
 
 	// json carries a typed default like every other non-array type, used when
 	// nullable columns are disabled and there is no null to fall back to
 	require.Equal(t, "{}", datatypeDefaultValuesMap[model.JSONDataType])
+}
+
+// FetchSchema looks a rendering up in clickhouseDataTypesMapToRudder as a raw
+// string, and a miss drops the column while only bumping a counter. So every
+// rendering CreateTable can produce, for every datatype and every table shape,
+// has to map back. Restricting this to json is what let
+// SimpleAggregateFunction(anyLast, Array(...)) go missing.
+func TestEveryRenderingMapsBackV2(t *testing.T) {
+	tables := []string{"product_track", warehouseutils.UsersTable, warehouseutils.IdentifiesTable}
+
+	for _, disableNullable := range []bool{false, true} {
+		for dataType := range rudderDataTypesMapToClickHouse {
+			for _, tableName := range tables {
+				name := fmt.Sprintf("%s/%s/disableNullable=%t", tableName, dataType, disableNullable)
+
+				t.Run(name, func(t *testing.T) {
+					conf := config.New()
+					conf.Set("Warehouse.clickhouse.v2.disableNullable", disableNullable)
+
+					ch := NewV2(conf, logger.NOP, stats.NOP)
+					declared := ch.ColumnsWithDataTypes(tableName, model.TableSchema{jsonColumn: dataType}, nil)
+					columnType := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(declared), `"`+jsonColumn+`"`))
+
+					// ColumnsWithDataTypes appends a codec for datetime, but
+					// system.columns.type carries the type alone, so that is
+					// what FetchSchema looks up.
+					columnType, _, _ = strings.Cut(columnType, " Codec(")
+					columnType = strings.TrimSpace(columnType)
+
+					require.Equal(t, dataType, clickhouseDataTypesMapToRudder[columnType],
+						"no reverse mapping for %q", columnType)
+				})
+			}
+		}
+	}
 }
