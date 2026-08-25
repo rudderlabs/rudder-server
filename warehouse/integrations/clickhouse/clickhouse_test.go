@@ -72,13 +72,15 @@ func testIntegration(t *testing.T, useV2 bool) {
 	validations.Init()
 	whutils.Init()
 
-	// v1 stays on the 21.x server it has always been tested against; v2 needs a
-	// server its driver supports (MinSupportedVersion 25.8.0).
+	// The single node server is newer for v2 because native JSON needs 25.3+.
+	// The driver itself does not require it: MinSupportedVersion only makes it
+	// log "unsupported clickhouse version" and it connects regardless. So the
+	// cluster keeps the 21.x server both implementations have always used,
+	// along with the node configs written for it.
 	clickhouseCompose := "testdata/docker-compose.clickhouse.yml"
 	clusterCompose := "testdata/docker-compose.clickhouse-cluster.yml"
 	if useV2 {
 		clickhouseCompose = "testdata/docker-compose.clickhouse-v2.yml"
-		clusterCompose = "testdata/docker-compose.clickhouse-cluster-v2.yml"
 	}
 
 	// Both implementations satisfy the same interface, so the subtests below only
