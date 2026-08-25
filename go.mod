@@ -1,6 +1,6 @@
 module github.com/rudderlabs/rudder-server
 
-go 1.26.5
+go 1.26.6
 
 // Addressing snyk vulnerabilities in indirect dependencies
 // When upgrading a dependency, please make sure that
@@ -20,7 +20,7 @@ replace (
 require (
 	cloud.google.com/go/bigquery v1.78.0
 	cloud.google.com/go/pubsub/v2 v2.6.1
-	cloud.google.com/go/storage v1.63.0
+	cloud.google.com/go/storage v1.64.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go v1.5.4
 	github.com/DATA-DOG/go-sqlmock v1.5.2
@@ -88,7 +88,7 @@ require (
 	github.com/rudderlabs/clickhouse-go/v2 v2.0.0
 	github.com/rudderlabs/compose-test v0.1.5
 	github.com/rudderlabs/keydb v1.4.1
-	github.com/rudderlabs/rudder-go-kit v0.78.1
+	github.com/rudderlabs/rudder-go-kit v0.78.2
 	github.com/rudderlabs/rudder-observability-kit v0.0.7
 	github.com/rudderlabs/rudder-schemas v0.12.0
 	github.com/rudderlabs/rudder-transformer/go v1.141.4
@@ -299,7 +299,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
-	github.com/opencontainers/runc v1.3.3 // indirect
+	github.com/opencontainers/runc v1.3.6 // indirect
 	github.com/paulmach/orb v0.13.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.3.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
