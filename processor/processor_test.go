@@ -6635,7 +6635,7 @@ func TestClassifyDestinations(t *testing.T) {
 		dests := []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")}
 		proc := newClassifyTestHandle(sourceID, dests)
 
-		available, excluded := proc.classifyDestinations(types.SingularEventT{}, sourceID, "")
+		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "")
 
 		require.ElementsMatch(t, []string{"dest-1", "dest-2"}, availableIDs(available))
 		require.Nil(t, excluded)
@@ -6650,7 +6650,7 @@ func TestClassifyDestinations(t *testing.T) {
 		}
 		proc := newClassifyTestHandle(sourceID, dests)
 
-		available, excluded := proc.classifyDestinations(integrationsExcludingAmplitude(), sourceID, "")
+		available, excluded := proc.classifyDestinations(integrationsExcludingAmplitude(), proc.getSourceDestinations(sourceID), sourceID, "")
 
 		require.ElementsMatch(t, []string{"dest-1"}, availableIDs(available))
 		require.ElementsMatch(t, []string{"dest-2", "dest-3"}, excludedIDs(excluded))
@@ -6665,7 +6665,7 @@ func TestClassifyDestinations(t *testing.T) {
 		dests := []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))}
 		proc := newClassifyTestHandle(sourceID, dests)
 
-		available, excluded := proc.classifyDestinations(deniedConsentEvent(), sourceID, "")
+		available, excluded := proc.classifyDestinations(deniedConsentEvent(), proc.getSourceDestinations(sourceID), sourceID, "")
 
 		require.Empty(t, available)
 		require.Len(t, excluded, 1)
@@ -6682,7 +6682,7 @@ func TestClassifyDestinations(t *testing.T) {
 		event := deniedConsentEvent()
 		event["integrations"] = map[string]any{"Amplitude": false}
 
-		available, excluded := proc.classifyDestinations(event, sourceID, "")
+		available, excluded := proc.classifyDestinations(event, proc.getSourceDestinations(sourceID), sourceID, "")
 
 		require.Empty(t, available)
 		require.Len(t, excluded, 1)
@@ -6699,7 +6699,7 @@ func TestClassifyDestinations(t *testing.T) {
 		}
 		proc := newClassifyTestHandle(sourceID, dests)
 
-		available, excluded := proc.classifyDestinations(deniedConsentEvent(), sourceID, "")
+		available, excluded := proc.classifyDestinations(deniedConsentEvent(), proc.getSourceDestinations(sourceID), sourceID, "")
 
 		require.Equal(t, []string{"dest-2", "dest-3"}, availableIDs(available))
 		require.Equal(t, []string{"dest-1"}, excludedIDs(excluded))
@@ -6714,7 +6714,7 @@ func TestClassifyDestinations(t *testing.T) {
 		}
 		proc := newClassifyTestHandle(sourceID, dests)
 
-		available, excluded := proc.classifyDestinations(types.SingularEventT{}, sourceID, "dest-2")
+		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "dest-2")
 
 		require.Equal(t, []string{"dest-2"}, availableIDs(available))
 		require.Empty(t, excluded)
@@ -6728,7 +6728,7 @@ func TestClassifyDestinations(t *testing.T) {
 		}
 		proc := newClassifyTestHandle(sourceID, dests)
 
-		available, excluded := proc.classifyDestinations(deniedConsentEvent(), sourceID, "dest-1")
+		available, excluded := proc.classifyDestinations(deniedConsentEvent(), proc.getSourceDestinations(sourceID), sourceID, "dest-1")
 
 		require.Empty(t, available)
 		require.Len(t, excluded, 1)
@@ -6741,7 +6741,7 @@ func TestClassifyDestinations(t *testing.T) {
 		dests := []backendconfig.DestinationT{webhookDest()}
 		proc := newClassifyTestHandle(sourceID, dests)
 
-		available, excluded := proc.classifyDestinations(types.SingularEventT{}, sourceID, "dest-not-connected")
+		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "dest-not-connected")
 
 		require.Empty(t, available)
 		require.Empty(t, excluded)
@@ -6755,7 +6755,7 @@ func TestClassifyDestinations(t *testing.T) {
 		}
 		proc := newClassifyTestHandle(sourceID, dests)
 
-		available, excluded := proc.classifyDestinations(integrationsExcludingAmplitude(), sourceID, "dest-2")
+		available, excluded := proc.classifyDestinations(integrationsExcludingAmplitude(), proc.getSourceDestinations(sourceID), sourceID, "dest-2")
 
 		require.Empty(t, available)
 		require.Len(t, excluded, 1)
@@ -6767,9 +6767,21 @@ func TestClassifyDestinations(t *testing.T) {
 		sourceID := "source-1"
 		proc := newClassifyTestHandle(sourceID, nil)
 
-		available, excluded := proc.classifyDestinations(types.SingularEventT{}, sourceID, "")
+		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "")
 
 		require.Empty(t, available)
+		require.Empty(t, excluded)
+	})
+
+	t.Run("a disabled destination is not a candidate and appears in neither slice", func(t *testing.T) {
+		sourceID := "source-1"
+		disabled := amplitudeDest("dest-2")
+		disabled.Enabled = false
+		proc := newClassifyTestHandle(sourceID, []backendconfig.DestinationT{webhookDest(), disabled})
+
+		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "")
+
+		require.Equal(t, []string{"dest-1"}, availableIDs(available))
 		require.Empty(t, excluded)
 	})
 
@@ -6781,7 +6793,7 @@ func TestClassifyDestinations(t *testing.T) {
 		event := types.SingularEventT{
 			"integrations": map[string]any{"All": "not-a-bool"},
 		}
-		available, excluded := proc.classifyDestinations(event, sourceID, "")
+		available, excluded := proc.classifyDestinations(event, proc.getSourceDestinations(sourceID), sourceID, "")
 
 		require.Empty(t, available)
 		require.ElementsMatch(t, []string{"dest-1", "dest-2"}, excludedIDs(excluded))
@@ -6857,7 +6869,7 @@ func TestClassifyDestinations(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				proc := newClassifyTestHandle(sourceID, tc.dests)
 
-				available, _ := proc.classifyDestinations(tc.event, sourceID, tc.specificDestID)
+				available, _ := proc.classifyDestinations(tc.event, proc.getSourceDestinations(sourceID), sourceID, tc.specificDestID)
 				got := len(available) > 0
 				want := proc.isDestinationAvailable(tc.event, sourceID, tc.specificDestID)
 

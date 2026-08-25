@@ -1004,6 +1004,35 @@ func (proc *Handle) getBackendEnabledDestinationTypes(sourceId string) map[strin
 	return enabledDestinationTypes
 }
 
+// sourceDestinations is a snapshot of a source's enabled destinations, taken once per source
+// so that per-event classification doesn't re-scan the config under lock for every event.
+type sourceDestinations struct {
+	// destTypes maps DestinationDefinition.DisplayName -> definition, the shape
+	// integrations.FilterClientIntegrations consumes.
+	destTypes map[string]backendconfig.DestinationDefinitionT
+	// byTypeName maps DestinationDefinition.Name -> enabled destinations, preserving
+	// backend-config order within each type.
+	byTypeName map[string][]backendconfig.DestinationT
+}
+
+func (proc *Handle) getSourceDestinations(sourceId string) sourceDestinations {
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+	srcDests := sourceDestinations{
+		destTypes:  make(map[string]backendconfig.DestinationDefinitionT),
+		byTypeName: make(map[string][]backendconfig.DestinationT),
+	}
+	for i := range proc.config.sourceIdDestinationMap[sourceId] {
+		dest := &proc.config.sourceIdDestinationMap[sourceId][i]
+		if !dest.Enabled {
+			continue
+		}
+		srcDests.destTypes[dest.DestinationDefinition.DisplayName] = dest.DestinationDefinition
+		srcDests.byTypeName[dest.DestinationDefinition.Name] = append(srcDests.byTypeName[dest.DestinationDefinition.Name], *dest)
+	}
+	return srcDests
+}
+
 // stripActivationMetadata removes the context.activation fields that MAR metering
 // stamps on reverse-ETL events (fingerprint and origin), so these internal metering
 // values never leak to a destination. If that leaves context.activation empty, the
@@ -2435,16 +2464,17 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 
 	// The below part further segregates events by sourceID and DestinationID.
 	for sourceIdT, eventList := range validatedEventsBySourceId {
+		sourceId := string(sourceIdT)
+		srcDests := proc.getSourceDestinations(sourceId)
 		for idx := range eventList {
 			event := &eventList[idx]
-			sourceId := string(sourceIdT)
 			singularEvent := event.Message
 
 			workspaceID := event.Metadata.WorkspaceID
 			workspaceLibraries := proc.getWorkspaceLibraries(workspaceID)
 
 			specificDestID := preTrans.jobIDToSpecificDestMapOnly[event.Metadata.JobID]
-			availableDestinations, excludedDestinations := proc.classifyDestinations(singularEvent, sourceId, specificDestID)
+			availableDestinations, excludedDestinations := proc.classifyDestinations(singularEvent, srcDests, sourceId, specificDestID)
 
 			// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - START
 			// With Processor.earlyDestinationFilter off, the destination filter runs here at
@@ -4298,7 +4328,10 @@ type excludedDestination struct {
 // then consent filtering. When specificDestID is set (RETL), the candidate set is narrowed to that
 // single destination before classification — sibling destinations are never candidates and produce
 // no rows, since each sibling connection sends its own copy of the event.
-func (proc *Handle) classifyDestinations(event types.SingularEventT, sourceId, specificDestID string,
+//
+// srcDests must be the source's destination snapshot (getSourceDestinations(sourceId)) — passed
+// in so callers looping over a source's events build it once instead of per event.
+func (proc *Handle) classifyDestinations(event types.SingularEventT, srcDests sourceDestinations, sourceId, specificDestID string,
 ) (available []backendconfig.DestinationT, excluded []excludedDestination) {
 	narrow := func(dests []backendconfig.DestinationT) []backendconfig.DestinationT {
 		if specificDestID == "" {
@@ -4309,17 +4342,16 @@ func (proc *Handle) classifyDestinations(event types.SingularEventT, sourceId, s
 		})
 	}
 
-	backendEnabledDestTypes := proc.getBackendEnabledDestinationTypes(sourceId)
-	enabledDestTypeNames := integrations.FilterClientIntegrations(event, backendEnabledDestTypes)
+	enabledDestTypeNames := integrations.FilterClientIntegrations(event, srcDests.destTypes)
 	enabledDestTypeNameSet := lo.SliceToMap(enabledDestTypeNames, func(name string) (string, struct{}) {
 		return name, struct{}{}
 	})
 
-	for _, destDef := range backendEnabledDestTypes {
+	for _, destDef := range srcDests.destTypes {
 		if _, ok := enabledDestTypeNameSet[destDef.Name]; ok {
 			continue
 		}
-		for _, dest := range narrow(proc.getEnabledDestinations(sourceId, destDef.Name)) {
+		for _, dest := range narrow(srcDests.byTypeName[destDef.Name]) {
 			excluded = append(excluded, excludedDestination{
 				destination: &dest,
 				reason:      reportingtypes.FilteredIntegrationStatus,
@@ -4329,7 +4361,7 @@ func (proc *Handle) classifyDestinations(event types.SingularEventT, sourceId, s
 	}
 
 	for _, destType := range enabledDestTypeNames {
-		candidates := narrow(proc.getEnabledDestinations(sourceId, destType))
+		candidates := narrow(srcDests.byTypeName[destType])
 		survivors := proc.getConsentFilteredDestinations(event, sourceId, candidates)
 		survivorIDs := lo.SliceToMap(survivors, func(dest backendconfig.DestinationT) (string, struct{}) {
 			return dest.ID, struct{}{}
