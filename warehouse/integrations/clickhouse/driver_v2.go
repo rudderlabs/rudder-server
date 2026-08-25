@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -13,6 +14,9 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
+
+// unknownDatabase is ClickHouse's UNKNOWN_DATABASE error code.
+const unknownDatabase = 81
 
 // connect opens a connection and wraps it in the shared middleware.
 // includeDatabase is false when connecting in order to create the database.
@@ -83,4 +87,14 @@ func (ch *ClickhouseV2) tlsConfig() (*tls.Config, error) {
 	}
 	conf.RootCAs = caCertPool
 	return conf, nil
+}
+
+// isUnknownDatabase reports whether err is ClickHouse's UNKNOWN_DATABASE, which
+// FetchSchema treats as an empty schema rather than a failure.
+func isUnknownDatabase(err error) bool {
+	var chErr *clickhouse.Exception
+	if errors.As(err, &chErr) {
+		return chErr.Code == unknownDatabase
+	}
+	return false
 }
