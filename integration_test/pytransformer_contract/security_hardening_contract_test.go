@@ -389,7 +389,8 @@ def transformEvent(event, metadata):
 
 	t.Run("write to a module object is blocked", func(t *testing.T) {
 		// `json.loads = None` is an attribute STORE, so it routes through guarded_write, not guarded_setattr:
-		// SecurityViolationError("Modifying an attribute on a non-user-owned module is not allowed")
+		// SecurityViolationError("Modifying a non-user-owned module is not allowed"). guarded_write names no
+		// attribute because RestrictedPython routes subscript stores through it too and it only sees the target.
 		assertBlockedOnCandidate(t, env, moduleWriteVID, "not allowed", "non-user-owned")
 	})
 
@@ -411,6 +412,102 @@ def transformEvent(event, metadata):
 				map[string]string{"transformation_id": vid}, 1,
 				"the write-guard counter must fire under enforce too, not only in shadow")
 		}
+	})
+}
+
+// TestWriteGuardLibraryOwnershipContract pins the half of the write guard that must NOT fire.
+//
+// Every other write-guard test proves the guard sees something. This one proves it stays quiet, and it is the more
+// load-bearing direction of the two: the enforce flip is decided by reading
+// transformer_write_guard_unsafe_total, so a FALSE POSITIVE on ordinary user code does not just annoy someone, it
+// makes the number unreadable and the flip undecidable.
+//
+// A compiled library is the transformation's own code. `import mylib; mylib.api_key = ...` targets a
+// types.ModuleType exactly like `json` does, and a class defined inside the library is a class like
+// requests.exceptions.HTTPError is — so the only thing separating "user write" from "module poisoning" is the
+// identity registry the import hook and the __metaclass__ chokepoint fill (imports.py user_modules,
+// builtins.py user_classes). Those registries live entirely inside the worker subprocess; nothing about them is
+// observable from the parent except the absence of samples, which is what this test reads.
+//
+// Both modes are exercised on purpose. Shadow proves the counter stays at zero; enforce proves the transformation
+// still RUNS — a registry that failed to register would surface as a 400 there, and as silently inflated shadow
+// numbers here.
+//
+// CANDIDATE-ONLY: user_modules is new, so no released baseline image has it.
+func TestWriteGuardLibraryOwnershipContract(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
+
+	const (
+		libOwnershipVID = "hardening-write-guard-library-ownership-v1"
+		libVID          = "hardening-write-guard-library-v1"
+	)
+
+	// Writes to BOTH shapes the registries cover: the library module object itself (user_modules) and a class the
+	// library defined (user_classes). One transformation covers both so a single zero-assertion per kind is enough.
+	libCode := `
+API_KEY = ''
+
+class Helper:
+    tag = 'initial'
+`
+	code := `
+import mylib
+
+def transformEvent(event, metadata):
+    mylib.API_KEY = 'set-by-transformation'
+    mylib.Helper.tag = 'set-by-transformation'
+    return {'key': mylib.API_KEY, 'tag': mylib.Helper.tag}
+`
+
+	configBackend := newContractConfigBackend(t, map[string]configBackendEntry{
+		libOwnershipVID: {
+			code: code,
+			libraries: []contractLibrary{
+				{versionID: libVID, importName: "mylib", code: libCode},
+			},
+		},
+	})
+	defer configBackend.Close()
+	t.Logf("Config backend at %s", configBackend.URL)
+
+	want := map[string]interface{}{"key": "set-by-transformation", "tag": "set-by-transformation"}
+
+	runOnce := func(t *testing.T, metricsURL, pyURL string) {
+		t.Helper()
+		status, _, items := sendRawTransform(t, pyURL,
+			makeEvents(libOwnershipVID, 1, libVID))
+		require.Equal(t, http.StatusOK, status)
+		require.Len(t, items, 1)
+		require.Equalf(t, http.StatusOK, items[0].StatusCode,
+			"a transformation configuring its own library is an ordinary user write (error=%s)", items[0].Error)
+		require.Equal(t, want, items[0].Output, "both writes must have landed")
+
+		// The assertion that matters: not one sample, under any kind. `module` would mean user_modules missed the
+		// library; `foreign_class` would mean the __metaclass__ chokepoint missed a class the library defined.
+		for _, kind := range []string{"module", "foreign_class", "restricted_name"} {
+			requireMetricEquals(t, metricsURL, "transformer_write_guard_unsafe_total",
+				map[string]string{"kind": kind, "transformation_id": libOwnershipVID}, 0,
+				"a write to the transformation's OWN library must never be flagged — a false positive here "+
+					"inflates the very series the enforce flip is decided from")
+		}
+		requireMetricEquals(t, metricsURL, "transformer_security_violations_total",
+			map[string]string{"transformation_id": libOwnershipVID}, 0,
+			"nothing was refused, so nothing is a security violation")
+	}
+
+	t.Run("shadow records nothing for a write to the transformation's own library", func(t *testing.T) {
+		pyURL, metricsURL := startRudderPytransformerWithMetrics(t, pool, configBackend.URL)
+		runOnce(t, metricsURL, pyURL)
+	})
+
+	// The flip is the real question: shadow staying at zero is only reassuring if enforce also lets the code run.
+	// If ownership were decided by anything the registry cannot see, this subtest is where it turns into a 400.
+	t.Run("enforce still allows it", func(t *testing.T) {
+		pyURL, metricsURL := startRudderPytransformerWithMetrics(
+			t, pool, configBackend.URL, "SANDBOX_WRITE_GUARD_ENFORCE=true")
+		runOnce(t, metricsURL, pyURL)
 	})
 }
 
@@ -533,6 +630,14 @@ def transformEvent(event, metadata):
 		requireMetricAtLeast(t, metricsURL, "transformer_write_guard_unsafe_total",
 			map[string]string{"kind": "restricted_name", "transformation_id": enforceDelattrVID}, 1,
 			"the counter must fire under enforce too, not only in shadow")
+
+		// This block raises AttributeError, not SecurityViolationError — but it is still a write the guard
+		// refused, so it must reach the security series exactly like the module and foreign_class kinds do.
+		// Without this the name rule would be the one refused write invisible to the alerting every other block
+		// lands on, and the three kinds would disagree about what a block means.
+		requireMetricAtLeast(t, metricsURL, "transformer_security_violations_total",
+			map[string]string{"transformation_id": enforceDelattrVID}, 1,
+			"a refused reserved-name delete is a block, so it belongs on the shared security counter")
 	})
 }
 
@@ -557,9 +662,11 @@ func TestTestFlowSecurityMetricsContract(t *testing.T) {
 	pool.MaxWait = 2 * time.Minute
 
 	const (
-		previewWriteGuardVID = "hardening-test-flow-write-guard-v1"
-		previewCompileVID    = "hardening-test-flow-compile-violation-v1"
-		previewCleanVID      = "hardening-test-flow-clean-v1"
+		previewWriteGuardVID   = "hardening-test-flow-write-guard-v1"
+		previewForeignClassVID = "hardening-test-flow-foreign-class-v1"
+		previewCompileVID      = "hardening-test-flow-compile-violation-v1"
+		previewCleanVID        = "hardening-test-flow-clean-v1"
+		previewTestRunVID      = "hardening-test-flow-testrun-v1"
 	)
 
 	// The inline flow ships the code in the request body, so the config backend is only needed to stand the
@@ -584,6 +691,52 @@ def transformEvent(event, metadata):
 		requireMetricEquals(t, metricsURL, "transformer_write_guard_unsafe_total",
 			map[string]string{"kind": "module", "transformation_id": previewWriteGuardVID}, 0,
 			"preview traffic must not inflate the production series the enforce flip is decided from")
+	})
+
+	// The sibling above covers kind=module only. Without this one, a regression that replayed just that kind onto
+	// the twin — dropping foreign_class and restricted_name — would leave every assertion in this test passing
+	// while two thirds of the preview signal silently vanished.
+	t.Run("a second write-guard kind reaches the twin under its own label", func(t *testing.T) {
+		status, body := sendInlineTest(t, pyURL, previewForeignClassVID, `
+def transformEvent(event, metadata):
+    import requests
+    setattr(requests.exceptions.HTTPError, 'x', 1)
+    return {'ok': True}
+`)
+		require.Equal(t, http.StatusOK, status, "shadow must allow the write in the preview flow too: %s", body)
+
+		requireMetricAtLeast(t, metricsURL, "transformer_test_flow_write_guard_unsafe_total",
+			map[string]string{"kind": "foreign_class", "transformation_id": previewForeignClassVID}, 1,
+			"the twin must carry every kind, not just the one the sibling test happens to exercise")
+		requireMetricEquals(t, metricsURL, "transformer_test_flow_write_guard_unsafe_total",
+			map[string]string{"kind": "module", "transformation_id": previewForeignClassVID}, 0,
+			"the kinds must stay distinct on the twin, exactly as they are on the production series")
+		requireMetricEquals(t, metricsURL, "transformer_write_guard_unsafe_total",
+			map[string]string{"kind": "foreign_class", "transformation_id": previewForeignClassVID}, 0,
+			"preview traffic must not inflate the production series the enforce flip is decided from")
+	})
+
+	// /testRun is the other half of the inline flow and shares _run_inline — and therefore shares the one call
+	// that replays these counters. It differs only in how the request decodes ("codeRevision"/"input" instead of
+	// "trRevCode"/"events"), and a drift there decodes to an EMPTY body rather than an error, which would run no
+	// code and record nothing while still answering 200.
+	t.Run("the /testRun endpoint replays onto the twins too", func(t *testing.T) {
+		status, body := sendInlinePreview(t, pyURL, "/testRun", previewTestRunVID, `
+def transformEvent(event, metadata):
+    import json
+    json.loads = None
+    return {'ok': True}
+`)
+		require.Equal(t, http.StatusOK, status, "shadow must allow the write on /testRun as well: %s", body)
+		require.Contains(t, body, "transformedEvent",
+			"the code must actually have run — an empty decode would answer 200 having done nothing")
+
+		requireMetricAtLeast(t, metricsURL, "transformer_test_flow_write_guard_unsafe_total",
+			map[string]string{"kind": "module", "transformation_id": previewTestRunVID}, 1,
+			"/testRun previews must be as visible as /test previews")
+		requireMetricEquals(t, metricsURL, "transformer_write_guard_unsafe_total",
+			map[string]string{"kind": "module", "transformation_id": previewTestRunVID}, 0,
+			"/testRun is preview traffic too, so it must stay off the production series")
 	})
 
 	t.Run("a compile-time block in a preview is still recorded", func(t *testing.T) {
@@ -638,26 +791,44 @@ def transformEvent(event, metadata):
 // possible.
 func sendInlineTest(t *testing.T, baseURL, transformationID, code string) (int, string) {
 	t.Helper()
-	payload := map[string]any{
-		"trRevCode": map[string]any{
-			"code":        code,
-			"codeVersion": "1",
-			"language":    "python",
-		},
-		"events": []any{
-			map[string]any{
-				"message": map[string]any{"messageId": "m1"},
-				"metadata": map[string]any{
-					"messageId":        "m1",
-					"transformationId": transformationID,
-				},
-			},
+	return sendInlinePreview(t, baseURL, "/test", transformationID, code)
+}
+
+// sendInlinePreview posts one event to either inline preview endpoint.
+//
+// The two differ on the wire in both directions — /test carries the draft under "trRevCode" with the events under
+// "events", /testRun uses "codeRevision" and "input" — but they share _run_inline, and therefore share the single
+// call that replays the security counters. Covering only one would leave the other's decode path free to drift
+// (a rename on either key decodes to an empty body, not an error) while every metrics assertion still passed.
+func sendInlinePreview(t *testing.T, baseURL, path, transformationID, code string) (int, string) {
+	t.Helper()
+	event := map[string]any{
+		"message": map[string]any{"messageId": "m1"},
+		"metadata": map[string]any{
+			"messageId":        "m1",
+			"transformationId": transformationID,
 		},
 	}
+	revision := map[string]any{
+		"code":        code,
+		"codeVersion": "1",
+		"language":    "python",
+	}
+
+	var payload map[string]any
+	switch path {
+	case "/test":
+		payload = map[string]any{"trRevCode": revision, "events": []any{event}}
+	case "/testRun":
+		payload = map[string]any{"codeRevision": revision, "input": []any{event}}
+	default:
+		t.Fatalf("unknown inline preview path %q", path)
+	}
+
 	body, err := jsonrs.Marshal(payload)
 	require.NoError(t, err)
 
-	req, err := http.NewRequest(http.MethodPost, baseURL+"/test", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, baseURL+path, bytes.NewReader(body))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 
