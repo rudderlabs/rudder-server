@@ -289,7 +289,7 @@ def transformEvent(event, metadata):
 		require.Len(t, items, 1)
 		require.Equalf(t, http.StatusOK, items[0].StatusCode,
 			"shadow must ALLOW the write, not block it (error=%s)", items[0].Error)
-		require.Equal(t, map[string]interface{}{"ok": true}, items[0].Output,
+		require.Equal(t, map[string]any{"ok": true}, items[0].Output,
 			"the transformation must run to completion in shadow")
 	}
 
@@ -494,7 +494,7 @@ def transformEvent(event, metadata):
 		require.Len(t, items, 1)
 		require.Equalf(t, http.StatusOK, items[0].StatusCode,
 			"the class statement must not fail and the write must be allowed (error=%s)", items[0].Error)
-		require.Equal(t, map[string]interface{}{"tag": "landed"}, items[0].Output)
+		require.Equal(t, map[string]any{"tag": "landed"}, items[0].Output)
 
 		for _, kind := range []string{"module", "foreign_class", "restricted_name"} {
 			requireMetricEquals(t, metricsURL, "transformer_write_guard_unsafe_total",
@@ -577,7 +577,7 @@ def transformEvent(event, metadata):
 		require.Len(t, items, 1)
 		require.Equalf(t, http.StatusOK, items[0].StatusCode,
 			"a caught write must not fail the transformation (error=%s)", items[0].Error)
-		require.Equal(t, map[string]interface{}{"ok": true}, items[0].Output)
+		require.Equal(t, map[string]any{"ok": true}, items[0].Output)
 	}
 
 	t.Run("shadow counts the write and the transformation succeeds", func(t *testing.T) {
@@ -665,7 +665,7 @@ def transformEvent(event, metadata):
 	defer configBackend.Close()
 	t.Logf("Config backend at %s", configBackend.URL)
 
-	want := map[string]interface{}{"key": "set-by-transformation", "tag": "set-by-transformation"}
+	want := map[string]any{"key": "set-by-transformation", "tag": "set-by-transformation"}
 
 	runOnce := func(t *testing.T, metricsURL, pyURL string) {
 		t.Helper()
@@ -778,7 +778,7 @@ def transformEvent(event, metadata):
 		require.Equalf(t, http.StatusOK, items[0].StatusCode,
 			"shadow must let a reserved-name delattr through, exactly as raw CPython did (error=%s)",
 			items[0].Error)
-		require.Equal(t, map[string]interface{}{"ok": true}, items[0].Output)
+		require.Equal(t, map[string]any{"ok": true}, items[0].Output)
 
 		requireMetricAtLeast(t, metricsURL, "transformer_write_guard_unsafe_total",
 			map[string]string{"kind": "restricted_name", "transformation_id": shadowDelattrVID}, 1,
