@@ -1450,12 +1450,23 @@ func testIntegration(t *testing.T, useV2 bool) {
 			).Scan(&columnType))
 			require.Equal(t, "SimpleAggregateFunction(anyLast, Nullable(JSON))", columnType)
 
+			// The v2 driver rejects a plain INSERT through Exec - it only takes
+			// them in batch mode - so each write is its own transaction. That
+			// also lands them in separate parts, which is the state the merge
+			// below is meant to collapse.
 			for _, city := range []string{"Bengaluru", "Mumbai"} {
-				_, err := db.ExecContext(ctx, fmt.Sprintf(
-					`INSERT INTO %q.%q (id, received_at, context_traits_address) VALUES ('user-1', now(), '{"city":"%s"}')`,
-					namespace, whutils.UsersTable, city,
+				scope, err := db.Begin()
+				require.NoError(t, err)
+
+				batch, err := scope.Prepare(fmt.Sprintf(
+					`INSERT INTO %q.%q (id, received_at, context_traits_address) VALUES (?, ?, ?)`,
+					namespace, whutils.UsersTable,
 				))
 				require.NoError(t, err)
+
+				_, err = batch.Exec("user-1", time.Now(), fmt.Sprintf(`{"city":%q}`, city))
+				require.NoError(t, err)
+				require.NoError(t, scope.Commit())
 			}
 
 			_, err := db.ExecContext(ctx, fmt.Sprintf(`OPTIMIZE TABLE %q.%q FINAL`, namespace, whutils.UsersTable))
