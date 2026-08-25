@@ -415,6 +415,199 @@ def transformEvent(event, metadata):
 	})
 }
 
+// TestWriteGuardOwnershipRegistryContract pins the two shapes that decide whether the ownership registry can be
+// attacked or accidentally tripped, across the container boundary.
+//
+// The registry is keyed by object IDENTITY, and both properties below follow from that rather than from a rule
+// written anywhere:
+//
+//   - a class whose metaclass makes it UNHASHABLE, or gives it a __hash__ that raises, must still be registered
+//     and still be writable. A hash-keyed registry raises out of the class STATEMENT, so a transformation that
+//     compiles and runs on a build with no write guard would 400 at the shipping default — the one thing this
+//     release may not do, and not something any flag could turn off.
+//   - a class whose metaclass claims __eq__ with everything must NOT launder ownership onto a foreign class. A
+//     hash-keyed registry reads the forged class back as user-owned and enforce waves the write through, which is
+//     a complete bypass of the guard.
+//
+// Both are executed in the real container because the registry lives entirely inside the worker and neither
+// property is visible from the parent except through behaviour.
+//
+// CANDIDATE-ONLY: the registry is new, so no released baseline image has it.
+func TestWriteGuardOwnershipRegistryContract(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
+
+	const (
+		unhashableVID = "hardening-write-guard-unhashable-class-v1"
+		forgedVID     = "hardening-write-guard-forged-ownership-v1"
+	)
+
+	// Meta defines __eq__ without __hash__, so CPython sets Base.__hash__ = None: Base and every subclass of it
+	// are unhashable. Child goes through the __metaclass__ chokepoint like any class statement.
+	unhashableCode := `
+class Meta(type):
+    def __eq__(self, other):
+        return True
+
+Base = Meta('Base', (), {})
+
+def transformEvent(event, metadata):
+    class Child(Base):
+        pass
+    Child.tag = 'landed'
+    return {'tag': Child.tag}
+`
+
+	// Own is registered through the chokepoint, and its metaclass claims it hashes and compares equal to
+	// requests.exceptions.HTTPError. A hash-keyed registry would then read HTTPError back as user-owned.
+	forgedCode := `
+def transformEvent(event, metadata):
+    import requests
+    target = requests.exceptions.HTTPError
+    Meta = type('Meta', (type,), {
+        '__hash__': lambda self: hash(target),
+        '__eq__': lambda self, other: True,
+    })
+    Anchor = Meta('Anchor', (), {})
+    class Own(Anchor):
+        pass
+    setattr(target, 'pwned', 'FORGED')
+    return {'pwned': target.pwned}
+`
+
+	configBackend := newContractConfigBackend(t, map[string]configBackendEntry{
+		unhashableVID: {code: unhashableCode},
+		forgedVID:     {code: forgedCode},
+	})
+	defer configBackend.Close()
+
+	// Enforce, deliberately: both properties are strictest with the flag on. The unhashable class must still be
+	// OWNED (so the write is allowed), and the forged one must still be FOREIGN (so the write is refused).
+	pyURL, metricsURL := startRudderPytransformerWithMetrics(
+		t, pool, configBackend.URL, "SANDBOX_WRITE_GUARD_ENFORCE=true")
+
+	t.Run("an unhashable class is registered and stays writable", func(t *testing.T) {
+		status, _, items := sendRawTransform(t, pyURL,
+			[]types.TransformerEvent{makeEvent(unhashableVID+"-msg", unhashableVID)})
+		require.Equal(t, http.StatusOK, status)
+		require.Len(t, items, 1)
+		require.Equalf(t, http.StatusOK, items[0].StatusCode,
+			"the class statement must not fail and the write must be allowed (error=%s)", items[0].Error)
+		require.Equal(t, map[string]interface{}{"tag": "landed"}, items[0].Output)
+
+		for _, kind := range []string{"module", "foreign_class", "restricted_name"} {
+			requireMetricEquals(t, metricsURL, "transformer_write_guard_unsafe_total",
+				map[string]string{"kind": kind, "transformation_id": unhashableVID}, 0,
+				"a class the sandbox built is not a flagged write target, whatever its metaclass does")
+		}
+	})
+
+	t.Run("a forged __hash__/__eq__ cannot launder ownership of a foreign class", func(t *testing.T) {
+		status, _, items := sendRawTransform(t, pyURL,
+			[]types.TransformerEvent{makeEvent(forgedVID+"-msg", forgedVID)})
+		require.Equal(t, http.StatusOK, status)
+		require.Len(t, items, 1)
+		require.Equalf(t, http.StatusBadRequest, items[0].StatusCode,
+			"ownership was forged and enforce allowed the write: output=%v", items[0].Output)
+		require.Contains(t, items[0].Error, "not allowed")
+
+		requireMetricAtLeast(t, metricsURL, "transformer_write_guard_unsafe_total",
+			map[string]string{"kind": "foreign_class", "transformation_id": forgedVID}, 1,
+			"the refused write must be counted under its real kind")
+		requireMetricAtLeast(t, metricsURL, "transformer_security_violations_total",
+			map[string]string{"transformation_id": forgedVID}, 1,
+			"a refused write is a security violation like any other")
+	})
+}
+
+// TestWriteGuardCounterUnitContract pins what a transformer_write_guard_unsafe_total sample MEANS, at the
+// boundary rudder-server actually reads it from.
+//
+// The unit is REFUSED WRITES, not failed transformations, and the two are not the same number.
+// SecurityViolationError subclasses Exception, so a transformation that wraps a flagged write in try/except is
+// refused the write under enforce and then returns a perfectly ordinary 200. That is a sample with no failure
+// behind it. It is not a defect: shadow raises nothing, so there is no exception for a handler to catch and no
+// way for the guard to know the difference — the counter is exact about the refusal and silent about the outcome
+// on purpose.
+//
+// This matters here rather than only in a unit test because the flip decision is made by reading this series off
+// /metrics. Anyone reading it as "transformations that will break" over-counts by exactly the transformations
+// that catch, and would either hold the flip back for no reason or, worse, stop trusting the number. Pinning the
+// meaning at the container boundary is what stops the two readings from drifting apart.
+//
+// Both modes, same code, same versionId shape: the counter moves in both, and in NEITHER does the request fail.
+//
+// CANDIDATE-ONLY: the write guard is new, so no released baseline image has this counter at all.
+func TestWriteGuardCounterUnitContract(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
+
+	const (
+		shadowVID  = "hardening-write-guard-caught-shadow-v1"
+		enforceVID = "hardening-write-guard-caught-enforce-v1"
+	)
+
+	// The write is flagged (kind=module) and the transformation swallows the refusal. Under enforce json.loads is
+	// left intact and the event still succeeds; in shadow nothing is raised, so the except never runs and the
+	// write lands. Either way the transformation returns {'ok': True}.
+	caughtWriteCode := `
+def transformEvent(event, metadata):
+    import json
+    try:
+        json.loads = None
+    except Exception:
+        pass
+    return {'ok': True}
+`
+
+	configBackend := newContractConfigBackend(t, map[string]configBackendEntry{
+		shadowVID:  {code: caughtWriteCode},
+		enforceVID: {code: caughtWriteCode},
+	})
+	defer configBackend.Close()
+	t.Logf("Config backend at %s", configBackend.URL)
+
+	assertSucceeds := func(t *testing.T, pyURL, versionID string) {
+		t.Helper()
+		status, _, items := sendRawTransform(t, pyURL,
+			[]types.TransformerEvent{makeEvent(versionID+"-msg", versionID)})
+		require.Equal(t, http.StatusOK, status)
+		require.Len(t, items, 1)
+		require.Equalf(t, http.StatusOK, items[0].StatusCode,
+			"a caught write must not fail the transformation (error=%s)", items[0].Error)
+		require.Equal(t, map[string]interface{}{"ok": true}, items[0].Output)
+	}
+
+	t.Run("shadow counts the write and the transformation succeeds", func(t *testing.T) {
+		pyURL, metricsURL := startRudderPytransformerWithMetrics(t, pool, configBackend.URL)
+		assertSucceeds(t, pyURL, shadowVID)
+		requireMetricAtLeast(t, metricsURL, "transformer_write_guard_unsafe_total",
+			map[string]string{"kind": "module", "transformation_id": shadowVID}, 1,
+			"the flagged write must be recorded even though nothing was refused")
+		requireMetricEquals(t, metricsURL, "transformer_security_violations_total",
+			map[string]string{"transformation_id": shadowVID}, 0,
+			"shadow refuses nothing, so nothing is a security violation")
+	})
+
+	t.Run("enforce refuses the write and the transformation STILL succeeds", func(t *testing.T) {
+		pyURL, metricsURL := startRudderPytransformerWithMetrics(
+			t, pool, configBackend.URL, "SANDBOX_WRITE_GUARD_ENFORCE=true")
+		// This is the whole point of the test: a sample on this transformation_id, a refused write behind it, and
+		// a 200 in front of it. Reading the counter as "these will break" is wrong by exactly this case.
+		assertSucceeds(t, pyURL, enforceVID)
+		requireMetricAtLeast(t, metricsURL, "transformer_write_guard_unsafe_total",
+			map[string]string{"kind": "module", "transformation_id": enforceVID}, 1,
+			"the refused write must be counted even though the transformation caught the refusal")
+		// A refused write stays visible to alerting however user code reacts to it — the counter's silence about
+		// the OUTCOME must never become silence about the REFUSAL.
+		requireMetricAtLeast(t, metricsURL, "transformer_security_violations_total",
+			map[string]string{"transformation_id": enforceVID}, 1,
+			"a swallowed block is still a block and must reach the security series")
+	})
+}
+
 // TestWriteGuardLibraryOwnershipContract pins the half of the write guard that must NOT fire.
 //
 // Every other write-guard test proves the guard sees something. This one proves it stays quiet, and it is the more
@@ -667,6 +860,8 @@ func TestTestFlowSecurityMetricsContract(t *testing.T) {
 		previewCompileVID      = "hardening-test-flow-compile-violation-v1"
 		previewCleanVID        = "hardening-test-flow-clean-v1"
 		previewTestRunVID      = "hardening-test-flow-testrun-v1"
+		previewReservedNameVID = "hardening-test-flow-restricted-name-v1"
+		previewRuntimeBlockVID = "hardening-test-flow-runtime-block-v1"
 	)
 
 	// The inline flow ships the code in the request body, so the config backend is only needed to stand the
@@ -759,6 +954,53 @@ def transformEvent(event, metadata):
 			"a customer pasting probing code into the preview box must not page on-call")
 	})
 
+	// The third kind. module and foreign_class are covered above; without this one restricted_name appears in this
+	// test only inside the all-kinds-zero loop below, so a regression that dropped it from the preview replay would
+	// leave every assertion here passing.
+	t.Run("the restricted_name kind reaches the twin from a preview too", func(t *testing.T) {
+		status, body := sendInlineTest(t, pyURL, previewReservedNameVID, `
+def transformEvent(event, metadata):
+    import requests
+    r = requests.Response()
+    delattr(r, '_content')
+    return {'ok': True}
+`)
+		// A 200 alone proves nothing here: /test returns 200 for a REFUSED event too, carrying the error inside
+		// transformedEvents (TestTestFlowEnforceContract relies on exactly that). The body assertion is what makes
+		// this the shadow half.
+		require.Equal(t, http.StatusOK, status, "the preview request must succeed: %s", body)
+		require.NotContains(t, body, "not allowed",
+			"shadow must ALLOW the delete, not refuse it: %s", body)
+
+		requireMetricAtLeast(t, metricsURL, "transformer_test_flow_write_guard_unsafe_total",
+			map[string]string{"kind": "restricted_name", "transformation_id": previewReservedNameVID}, 1,
+			"the name rule's kind must reach the preview twin under its own label")
+		requireMetricEquals(t, metricsURL, "transformer_write_guard_unsafe_total",
+			map[string]string{"kind": "restricted_name", "transformation_id": previewReservedNameVID}, 0,
+			"preview traffic must not inflate the production series")
+	})
+
+	// The security twin has positive coverage only for a COMPILE-time violation below. A runtime block takes a
+	// different path through _run_inline — the worker returns STATUS_OK with a per-event error — so it is a
+	// separate assertion, and it is the shape a customer actually hits while iterating in the preview box.
+	t.Run("a runtime block in a preview reaches the security twin", func(t *testing.T) {
+		status, body := sendInlineTest(t, pyURL, previewRuntimeBlockVID, `
+def transformEvent(event, metadata):
+    import requests
+    return {'v': str(requests.utils.os)}
+`)
+		require.Equal(t, http.StatusOK, status,
+			"a runtime guard hit is a per-event error inside a 200, not a whole-execution failure: %s", body)
+		require.Contains(t, body, "not allowed", "the event must carry the guard's refusal")
+
+		requireMetricAtLeast(t, metricsURL, "transformer_test_flow_security_violations_total",
+			map[string]string{"transformation_id": previewRuntimeBlockVID}, 1,
+			"a runtime block previewed through /test must be as visible as a compile-time one")
+		requireMetricEquals(t, metricsURL, "transformer_security_violations_total",
+			map[string]string{"transformation_id": previewRuntimeBlockVID}, 0,
+			"a customer probing the sandbox from the preview box must not page on-call")
+	})
+
 	// The unhappy-path twin. Without it every assertion above would still pass if the replay fired
 	// unconditionally, on every preview, guard or no guard.
 	t.Run("a clean preview moves nothing at all", func(t *testing.T) {
@@ -781,6 +1023,64 @@ def transformEvent(event, metadata):
 				map[string]string{"kind": kind, "transformation_id": previewCleanVID}, 0,
 				"no flagged write happened, so no kind may be recorded")
 		}
+	})
+}
+
+// TestTestFlowEnforceContract is the preview flow's enforce half — the one mode combination every other inline
+// test leaves uncovered.
+//
+// TestTestFlowSecurityMetricsContract runs the preview endpoints at the shipping default, so nothing pinned what
+// the flip does to a preview. It has to do three things at once, and they pull against each other: refuse the write
+// as a per-event error inside a 200 (the preview UI shows the customer their own error, it is not a request
+// failure), record BOTH twins so an operator watching preview traffic can see the refusal, and leave both
+// production series at zero so a customer previewing a draft neither pages on-call nor moves the number the flip is
+// decided from.
+//
+// This is also where a customer meets the flip first: they paste code into the preview box long before it is
+// deployed. Covering only shadow here would mean the endpoint most likely to show a refusal is the one endpoint
+// whose refusal behaviour nobody had executed.
+//
+// CANDIDATE-ONLY: the flag and both twins are new, so no released baseline image has them.
+func TestTestFlowEnforceContract(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
+
+	const previewEnforceVID = "hardening-test-flow-enforce-v1"
+
+	configBackend := newContractConfigBackend(t, map[string]configBackendEntry{})
+	defer configBackend.Close()
+
+	pyURL, metricsURL := startRudderPytransformerWithMetrics(
+		t, pool, configBackend.URL, "SANDBOX_WRITE_GUARD_ENFORCE=true")
+
+	status, body := sendInlineTest(t, pyURL, previewEnforceVID, `
+def transformEvent(event, metadata):
+    import json
+    json.loads = None
+    return {'ok': True}
+`)
+	// A runtime refusal is a per-event error, so the request itself still succeeds — the same shape /customTransform
+	// uses, and the reason this cannot be asserted as a 400.
+	require.Equal(t, http.StatusOK, status, "a refused write is a per-event error, not a failed request: %s", body)
+	require.Contains(t, body, "not allowed", "the previewed event must carry the guard's refusal: %s", body)
+
+	t.Run("both preview twins record the refusal", func(t *testing.T) {
+		requireMetricAtLeast(t, metricsURL, "transformer_test_flow_write_guard_unsafe_total",
+			map[string]string{"kind": "module", "transformation_id": previewEnforceVID}, 1,
+			"the refused write must still be counted under enforce, not only in shadow")
+		requireMetricAtLeast(t, metricsURL, "transformer_test_flow_security_violations_total",
+			map[string]string{"transformation_id": previewEnforceVID}, 1,
+			"a refused write is a block, and a block in a preview must be visible on the preview twin")
+	})
+
+	t.Run("neither production series moves", func(t *testing.T) {
+		requireMetricEquals(t, metricsURL, "transformer_write_guard_unsafe_total",
+			map[string]string{"kind": "module", "transformation_id": previewEnforceVID}, 0,
+			"preview traffic must not reach the series the flip is decided from, in either mode")
+		requireMetricEquals(t, metricsURL, "transformer_security_violations_total",
+			map[string]string{"transformation_id": previewEnforceVID}, 0,
+			"a refused preview must not page on-call, in either mode")
 	})
 }
 
