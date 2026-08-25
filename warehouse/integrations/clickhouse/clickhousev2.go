@@ -62,34 +62,34 @@ func NewV2(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse
 	ch.logger = log.Child("integrations").Child("clickhouse").Child("v2")
 	ch.stats = stat
 
-	ch.config.queryDebugLogs = conf.GetBoolVar(false, "Warehouse.clickhouse.queryDebugLogs")
+	ch.config.queryDebugLogs = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.queryDebugLogs")
 	// commitEvery is the number of rows between commits, which is what bounds
 	// how much of an upload is held client-side at once.
 	// Floored at 1: at zero or below, the block loop never runs a single row, so
 	// insertBlock returns nothing, the caller never sees a short block, and the
 	// load spins forever committing empty batches. One is enough to rule that
 	// out, and keeping the floor there leaves small values usable in tests.
-	ch.config.commitEvery = max(conf.GetIntVar(1000000, 1, "Warehouse.clickhouse.commitEvery"), 1)
-	ch.config.poolSize = conf.GetIntVar(100, 1, "Warehouse.clickhouse.poolSize")
-	ch.config.readTimeout = conf.GetDurationVar(300, time.Second, "Warehouse.clickhouse.readTimeout")
-	ch.config.compress = conf.GetBoolVar(false, "Warehouse.clickhouse.compress")
-	ch.config.disableNullable = conf.GetBoolVar(false, "Warehouse.clickhouse.disableNullable")
-	ch.config.numWorkersDownloadLoadFiles = conf.GetIntVar(8, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
-	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSliceVar(nil, "Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs")
-	ch.config.slowQueryThreshold = conf.GetDurationVar(5, time.Minute, "Warehouse.clickhouse.slowQueryThreshold")
+	ch.config.commitEvery = max(conf.GetIntVar(1000000, 1, "Warehouse.clickhouse.v2.commitEvery"), 1)
+	ch.config.poolSize = conf.GetIntVar(100, 1, "Warehouse.clickhouse.v2.poolSize")
+	ch.config.readTimeout = conf.GetDurationVar(300, time.Second, "Warehouse.clickhouse.v2.readTimeout")
+	ch.config.compress = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.compress")
+	ch.config.disableNullable = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.disableNullable")
+	ch.config.numWorkersDownloadLoadFiles = conf.GetIntVar(8, 1, "Warehouse.clickhouse.v2.numWorkersDownloadLoadFiles")
+	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSliceVar(nil, "Warehouse.clickhouse.v2.s3EngineEnabledWorkspaceIDs")
+	ch.config.slowQueryThreshold = conf.GetDurationVar(5, time.Minute, "Warehouse.clickhouse.v2.slowQueryThreshold")
 	ch.config.disableLoadTableStats = func(workspaceID string) bool {
 		return conf.GetBoolVar(
 			false,
-			fmt.Sprintf("Warehouse.clickhouse.%s.disableLoadTableStats", workspaceID),
-			"Warehouse.clickhouse.disableLoadTableStats",
+			fmt.Sprintf("Warehouse.clickhouse.v2.%s.disableLoadTableStats", workspaceID),
+			"Warehouse.clickhouse.v2.disableLoadTableStats",
 		)
 	}
 	ch.config.randomLoadDelay = func(workspaceID string) time.Duration {
 		maxDelay := conf.GetDurationVar(
 			0,
 			time.Second,
-			fmt.Sprintf("Warehouse.clickhouse.%s.maxLoadDelay", workspaceID),
-			"Warehouse.clickhouse.maxLoadDelay",
+			fmt.Sprintf("Warehouse.clickhouse.v2.%s.maxLoadDelay", workspaceID),
+			"Warehouse.clickhouse.v2.maxLoadDelay",
 		)
 		return time.Duration(float64(maxDelay) * (1 - rand.Float64()))
 	}
