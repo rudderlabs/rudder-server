@@ -88,6 +88,20 @@ func (r *Locker) TryLockWithCtx(ctx context.Context) bool {
 	return false
 }
 
+// TryLock tries to acquire a lock without blocking and returns false if the lock is already held,
+// by a reader or a writer, otherwise returns true.
+func (r *Locker) TryLock() bool {
+	start := time.Now()
+	if r.m.TryLock() {
+		acquired := time.Now()
+		r.writeLockWait.Since(start)
+		r.tryLockStart = start
+		r.tryLockAcquired = acquired
+		return true
+	}
+	return false
+}
+
 // Unlock releases a lock
 func (r *Locker) Unlock() {
 	r.m.Unlock()
