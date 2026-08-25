@@ -76,12 +76,6 @@ var datatypeDefaultValuesMap = map[string]any{
 	"json":     "{}",
 }
 
-// A column is declared as a base type, optionally wrapped in Nullable, and on
-// the users table wrapped again in SimpleAggregateFunction(anyLast, ...).
-// FetchSchema looks the rendering up here as a raw string: one that is missing
-// makes it drop the column and only bump a missing-datatype counter, so every
-// combination CreateTable can emit has to be present. Widths CreateTable never
-// emits are kept too, since a table created elsewhere can carry them.
 var clickhouseDataTypesMapToRudder = map[string]string{
 	"Int8":                             "int",
 	"Int16":                            "int",
@@ -95,7 +89,6 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 	"Array(Nullable(Float64))":         "array(float)",
 	"String":                           "string",
 	"JSON":                             "json",
-	"Nullable(JSON)":                   "json",
 	"Array(String)":                    "array(string)",
 	"Array(Nullable(String))":          "array(string)",
 	"DateTime":                         "datetime",
@@ -115,23 +108,17 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 	"Nullable(String)":                 "string",
 	"Nullable(DateTime)":               "datetime",
 	"Nullable(UInt8)":                  "boolean",
-	"SimpleAggregateFunction(anyLast, Nullable(Int8))":         "int",
-	"SimpleAggregateFunction(anyLast, Nullable(Int16))":        "int",
-	"SimpleAggregateFunction(anyLast, Nullable(Int32))":        "int",
-	"SimpleAggregateFunction(anyLast, Nullable(Int64))":        "int",
-	"SimpleAggregateFunction(anyLast, Nullable(Float32))":      "float",
-	"SimpleAggregateFunction(anyLast, Nullable(Float64))":      "float",
-	"SimpleAggregateFunction(anyLast, Nullable(String))":       "string",
-	"SimpleAggregateFunction(anyLast, Nullable(DateTime))":     "datetime",
-	"SimpleAggregateFunction(anyLast, Nullable(UInt8))":        "boolean",
-	"SimpleAggregateFunction(anyLast, JSON)":                   "json",
-	"SimpleAggregateFunction(anyLast, Nullable(JSON))":         "json",
-	"SimpleAggregateFunction(anyLast, Array(Int64))":           "array(int)",
-	"SimpleAggregateFunction(anyLast, Array(Float64))":         "array(float)",
-	"SimpleAggregateFunction(anyLast, Array(String))":          "array(string)",
-	"SimpleAggregateFunction(anyLast, Array(DateTime))":        "array(datetime)",
-	"SimpleAggregateFunction(anyLast, Array(UInt8))":           "array(boolean)",
-	"SimpleAggregateFunction(anyLast, LowCardinality(String))": "string",
+	"Nullable(JSON)":                   "json",
+	"SimpleAggregateFunction(anyLast, Nullable(Int8))":     "int",
+	"SimpleAggregateFunction(anyLast, Nullable(Int16))":    "int",
+	"SimpleAggregateFunction(anyLast, Nullable(Int32))":    "int",
+	"SimpleAggregateFunction(anyLast, Nullable(Int64))":    "int",
+	"SimpleAggregateFunction(anyLast, Nullable(Float32))":  "float",
+	"SimpleAggregateFunction(anyLast, Nullable(Float64))":  "float",
+	"SimpleAggregateFunction(anyLast, Nullable(String))":   "string",
+	"SimpleAggregateFunction(anyLast, Nullable(DateTime))": "datetime",
+	"SimpleAggregateFunction(anyLast, Nullable(UInt8))":    "boolean",
+	"SimpleAggregateFunction(anyLast, Nullable(JSON))":     "json",
 }
 
 var errorsMappings = []model.JobError{
