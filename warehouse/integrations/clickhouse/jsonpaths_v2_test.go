@@ -186,34 +186,50 @@ func TestJSONTypeMappingsV2(t *testing.T) {
 
 // FetchSchema looks a rendering up in clickhouseDataTypesMapToRudder as a raw
 // string, and a miss drops the column while only bumping a counter. So every
-// rendering CreateTable can produce, for every datatype and every table shape,
-// has to map back. Restricting this to json is what let
-// SimpleAggregateFunction(anyLast, Array(...)) go missing.
+// rendering CreateTable can produce - for every datatype, every table shape,
+// both nullable modes, and both column-name treatments - has to map back.
+// Restricting this to one json column is what let the aggregate wrappers over
+// Array(...) and LowCardinality(String) go missing.
 func TestEveryRenderingMapsBackV2(t *testing.T) {
 	tables := []string{"product_track", warehouseutils.UsersTable, warehouseutils.IdentifiesTable}
+	// event and event_text are rewritten to LowCardinality(String) by name, so
+	// they exercise renderings an ordinary column never reaches.
+	columns := []string{jsonColumn, "event"}
 
 	for _, disableNullable := range []bool{false, true} {
 		for dataType := range rudderDataTypesMapToClickHouse {
 			for _, tableName := range tables {
-				name := fmt.Sprintf("%s/%s/disableNullable=%t", tableName, dataType, disableNullable)
+				for _, columnName := range columns {
+					name := fmt.Sprintf("%s/%s/%s/disableNullable=%t", tableName, columnName, dataType, disableNullable)
 
-				t.Run(name, func(t *testing.T) {
-					conf := config.New()
-					conf.Set("Warehouse.clickhouse.v2.disableNullable", disableNullable)
+					t.Run(name, func(t *testing.T) {
+						conf := config.New()
+						conf.Set("Warehouse.clickhouse.v2.disableNullable", disableNullable)
 
-					ch := NewV2(conf, logger.NOP, stats.NOP)
-					declared := ch.ColumnsWithDataTypes(tableName, model.TableSchema{jsonColumn: dataType}, nil)
-					columnType := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(declared), `"`+jsonColumn+`"`))
+						ch := NewV2(conf, logger.NOP, stats.NOP)
+						declared := ch.ColumnsWithDataTypes(tableName, model.TableSchema{columnName: dataType}, nil)
+						columnType := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(declared), `"`+columnName+`"`))
 
-					// ColumnsWithDataTypes appends a codec for datetime, but
-					// system.columns.type carries the type alone, so that is
-					// what FetchSchema looks up.
-					columnType, _, _ = strings.Cut(columnType, " Codec(")
-					columnType = strings.TrimSpace(columnType)
+						// ColumnsWithDataTypes appends a codec for datetime, but
+						// system.columns.type carries the type alone, so that is
+						// what FetchSchema looks up.
+						columnType, _, _ = strings.Cut(columnType, " Codec(")
+						columnType = strings.TrimSpace(columnType)
 
-					require.Equal(t, dataType, clickhouseDataTypesMapToRudder[columnType],
-						"no reverse mapping for %q", columnType)
-				})
+						// A name in clickhouseSpecificColumnNameMappings is forced
+						// to LowCardinality(String) whatever the schema said, so it
+						// reads back as a string. Arrays return before that rewrite
+						// and keep their own type.
+						want := dataType
+						_, renamed := clickhouseSpecificColumnNameMappings[columnName]
+						if renamed && !strings.Contains(rudderDataTypesMapToClickHouse[dataType], "Array") {
+							want = model.StringDataType
+						}
+
+						require.Equal(t, want, clickhouseDataTypesMapToRudder[columnType],
+							"no reverse mapping for %q", columnType)
+					})
+				}
 			}
 		}
 	}
