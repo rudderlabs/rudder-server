@@ -1302,7 +1302,6 @@ func testIntegration(t *testing.T, useV2 bool) {
 		ctx := context.Background()
 		namespace := "test_namespace_json"
 		tableName := "json_paths_test_table"
-		notNullableTable := "json_paths_not_nullable_table"
 		region := "us-east-1"
 
 		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
@@ -1311,8 +1310,11 @@ func testIntegration(t *testing.T, useV2 bool) {
 		db := connectClickhouseDB(t, ctx, dsn)
 		defer func() { _ = db.Close() }()
 
+		// received_at has to be here: CreateTable always sorts by
+		// ("received_at", "id"), so a schema without it fails to create.
 		tableSchema := model.TableSchema{
 			"id":            "string",
+			"received_at":   "datetime",
 			"context_props": "json",
 		}
 
@@ -1388,7 +1390,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 			require.NoError(t, db.QueryRowContext(ctx,
 				fmt.Sprintf("SELECT count(*) FROM %q.%q", namespace, tableName),
 			).Scan(&rows))
-			require.EqualValues(t, 3, rows)
+			require.EqualValues(t, 4, rows)
 		})
 
 		t.Run("payload round trips", func(t *testing.T) {
@@ -1402,12 +1404,17 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 		// An empty cell is not valid JSON, so it resolves to null exactly as a
 		// cell that fails to parse does for every other type.
+		// An empty cell is not valid JSON, so it resolves to null exactly as a
+		// cell that fails to parse does for every other type. A cell holding
+		// only whitespace is the same case: it is trimmed before the check.
 		t.Run("an empty cell is stored as null", func(t *testing.T) {
-			var isNull bool
-			require.NoError(t, db.QueryRowContext(ctx,
-				fmt.Sprintf("SELECT context_props IS NULL FROM %q.%q WHERE id = 'row-2'", namespace, tableName),
-			).Scan(&isNull))
-			require.True(t, isNull)
+			for _, id := range []string{"row-2", "row-4"} {
+				var isNull bool
+				require.NoError(t, db.QueryRowContext(ctx,
+					fmt.Sprintf("SELECT context_props IS NULL FROM %q.%q WHERE id = ?", namespace, tableName), id,
+				).Scan(&isNull))
+				require.True(t, isNull, "%s should be null", id)
+			}
 		})
 
 		// Reading a path out of the column is what separates a real JSON column
@@ -1491,56 +1498,81 @@ func testIntegration(t *testing.T, useV2 bool) {
 			require.True(t, isNull)
 		})
 
-		// disableNullable is the other half of the matrix. The column is declared
-		// bare, so an empty cell has no null to fall back to and resolves to the
-		// type's entry in datatypeDefaultValuesMap instead.
+		// disableNullable is the other half of the matrix, and it gets its own
+		// namespace so it can hold a users table of its own: CreateTable is
+		// IF NOT EXISTS, so sharing one would silently assert the shape the
+		// nullable run already created.
 		t.Run("nullable disabled", func(t *testing.T) {
 			conf := config.New()
 			conf.Set(configKey("disableNullable"), true)
 
+			nnNamespace := namespace + "_not_nullable"
+			nnWarehouse := warehouse
+			nnWarehouse.Namespace = nnNamespace
+
 			chNotNullable := newClickhouse(conf)
-			require.NoError(t, chNotNullable.Setup(ctx, warehouse, mockUploader))
-			require.NoError(t, chNotNullable.CreateTable(ctx, notNullableTable, tableSchema))
+			require.NoError(t, chNotNullable.Setup(ctx, nnWarehouse, mockUploader))
+			require.NoError(t, chNotNullable.CreateSchema(ctx))
+			require.NoError(t, chNotNullable.CreateTable(ctx, tableName, tableSchema))
 
-			var columnType string
-			require.NoError(t, db.QueryRowContext(ctx,
-				"SELECT type FROM system.columns WHERE database = ? AND table = ? AND name = 'context_props'",
-				namespace, notNullableTable,
-			).Scan(&columnType))
-			require.Equal(t, "JSON", columnType)
+			columnTypeOf := func(table, column string) string {
+				var columnType string
+				require.NoError(t, db.QueryRowContext(ctx,
+					"SELECT type FROM system.columns WHERE database = ? AND table = ? AND name = ?",
+					nnNamespace, table, column,
+				).Scan(&columnType))
+				return columnType
+			}
 
-			_, err := chNotNullable.LoadTable(ctx, notNullableTable)
+			require.Equal(t, "JSON", columnTypeOf(tableName, "context_props"))
+
+			_, err := chNotNullable.LoadTable(ctx, tableName)
 			require.NoError(t, err)
 
-			// The empty cell is the whole point of this mode: it has to land as
-			// {} rather than null, and rows must stay countable.
-			var isNull bool
-			var payload string
-			require.NoError(t, db.QueryRowContext(ctx,
-				fmt.Sprintf(`SELECT context_props IS NULL, toString(context_props) FROM %q.%q WHERE id = 'row-2'`, namespace, notNullableTable),
-			).Scan(&isNull, &payload))
-			require.False(t, isNull)
-			require.Equal(t, "{}", payload)
+			// The whole point of this mode: with no null to fall back to, an
+			// empty or whitespace-only cell takes the typed default instead.
+			for _, id := range []string{"row-2", "row-4"} {
+				var isNull bool
+				var payload string
+				require.NoError(t, db.QueryRowContext(ctx,
+					fmt.Sprintf(`SELECT context_props IS NULL, toString(context_props) FROM %q.%q WHERE id = ?`, nnNamespace, tableName), id,
+				).Scan(&isNull, &payload))
+				require.False(t, isNull, "%s should not be null", id)
+				require.Equal(t, "{}", payload, "%s should hold the typed default", id)
+			}
 
 			// A populated cell is unaffected by the mode.
 			var revenue string
 			require.NoError(t, db.QueryRowContext(ctx,
-				fmt.Sprintf(`SELECT toString(context_props.revenue) FROM %q.%q WHERE id = 'row-1'`, namespace, notNullableTable),
+				fmt.Sprintf(`SELECT toString(context_props.revenue) FROM %q.%q WHERE id = 'row-1'`, nnNamespace, tableName),
 			).Scan(&revenue))
 			require.Equal(t, "10", revenue)
 
-			// identifies is exempt from disableNullable, for json as for
-			// every other type.
+			// identifies is exempt from disableNullable, for json as for every
+			// other type, so it keeps the wrapper here.
 			require.NoError(t, chNotNullable.CreateTable(ctx, whutils.IdentifiesTable, model.TableSchema{
 				"id":            "string",
 				"received_at":   "datetime",
 				"context_props": "json",
 			}))
-			require.NoError(t, db.QueryRowContext(ctx,
-				"SELECT type FROM system.columns WHERE database = ? AND table = ? AND name = 'context_props'",
-				namespace, whutils.IdentifiesTable,
-			).Scan(&columnType))
-			require.Equal(t, "Nullable(JSON)", columnType)
+			require.Equal(t, "Nullable(JSON)", columnTypeOf(whutils.IdentifiesTable, "context_props"))
+
+			// users is not exempt: disableNullable short circuits before the
+			// users branch, so the aggregate wrapper is dropped entirely.
+			require.NoError(t, chNotNullable.CreateTable(ctx, whutils.UsersTable, model.TableSchema{
+				"id":                     "string",
+				"received_at":            "datetime",
+				"context_traits_address": "json",
+			}))
+			require.Equal(t, "JSON", columnTypeOf(whutils.UsersTable, "context_traits_address"))
+
+			// Both renderings this namespace produced have to survive the round
+			// trip too, not just the ones the nullable run created.
+			schema, err := chNotNullable.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Equal(t, model.JSONDataType, schema[tableName]["context_props"], "JSON")
+			require.Equal(t, model.JSONDataType, schema[whutils.IdentifiesTable]["context_props"], "Nullable(JSON) in identifies")
+			require.Equal(t, model.JSONDataType, schema[whutils.UsersTable]["context_traits_address"], "JSON in users")
 		})
 
 		// FetchSchema looks the rendered type up as a raw string, so a rendering
@@ -1552,9 +1584,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 			require.Equal(t, model.JSONDataType, schema[tableName]["context_props"], "Nullable(JSON)")
 			require.Equal(t, model.JSONDataType, schema[tableName]["context_extra"], "Nullable(JSON) added by ALTER")
-			require.Equal(t, model.JSONDataType, schema[notNullableTable]["context_props"], "JSON")
 			require.Equal(t, model.JSONDataType, schema[whutils.UsersTable]["context_traits_address"], "SimpleAggregateFunction(anyLast, Nullable(JSON))")
-			require.Equal(t, model.JSONDataType, schema[whutils.IdentifiesTable]["context_props"], "Nullable(JSON) in identifies")
 		})
 	})
 
