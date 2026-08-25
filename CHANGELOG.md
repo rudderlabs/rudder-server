@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.84.0](https://github.com/rudderlabs/rudder-server/compare/v1.83.0...v1.84.0) (2026-08-24)
+
+
+### Features
+
+* add AGENTS.md for agent management and reference ([#7290](https://github.com/rudderlabs/rudder-server/issues/7290)) ([2d28b32](https://github.com/rudderlabs/rudder-server/commit/2d28b3265c92995a9a70da18d8d9046bd589eb57))
+* **processor:** report duplicate events as dedup/filtered metrics ([#7280](https://github.com/rudderlabs/rudder-server/issues/7280)) ([f2655fb](https://github.com/rudderlabs/rudder-server/commit/f2655fbbe2260deb4e01c2a54da1a827291713bb))
+* **warehouse:** add clickhouse driver interface ([#7296](https://github.com/rudderlabs/rudder-server/issues/7296)) ([239d9a4](https://github.com/rudderlabs/rudder-server/commit/239d9a4dd32cad05db39322118ec4638eace5ccc))
+
+
+### Bug Fixes
+
+* **processor:** proc destination hydration omitted destination's original id ([#7297](https://github.com/rudderlabs/rudder-server/issues/7297)) ([f389df4](https://github.com/rudderlabs/rudder-server/commit/f389df49bbac0af74898e0b6c41bedb769571480))
+* **warehouse:** close load file descriptor in identity uploadFile ([#7186](https://github.com/rudderlabs/rudder-server/issues/7186)) ([bfd8bc9](https://github.com/rudderlabs/rudder-server/commit/bfd8bc9d20c3e3a7ec773a6f5ce6a98f2074bf41))
+
+
+### Miscellaneous
+
+* handle oversized reporting payloads ([#7293](https://github.com/rudderlabs/rudder-server/issues/7293)) ([7a83281](https://github.com/rudderlabs/rudder-server/commit/7a83281269e2d78fe41b05ca0ea37af17b1bda1e))
+* pyt security hardening ([#7272](https://github.com/rudderlabs/rudder-server/issues/7272)) ([e13b731](https://github.com/rudderlabs/rudder-server/commit/e13b7315d420c35abb65e6687f62acea3725b858))
+
 ## [1.83.0](https://github.com/rudderlabs/rudder-server/compare/v1.82.0...v1.83.0) (2026-08-17)
 
 
