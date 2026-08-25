@@ -18,9 +18,9 @@ import (
 const jsonColumn = "context_props"
 
 // How every type is declared, across the tables and flags that change it. JSON
-// is not a new exception: it joins arrays as a type that is never Nullable. The
-// rest of the matrix is here so a change to the JSON path cannot quietly move
-// another type.
+// is not an exception: it takes the Nullable wrapper and the users aggregate
+// exactly like the scalars. The rest of the matrix is here so a change to the
+// JSON path cannot quietly move another type.
 func TestColumnTypesV2(t *testing.T) {
 	testCases := []struct {
 		name               string
@@ -30,18 +30,21 @@ func TestColumnTypesV2(t *testing.T) {
 		notNullableColumns []string
 		want               string
 	}{
-		// json: never Nullable, in any table or mode
-		{name: "json", dataType: model.JSONDataType, tableName: "product_track", want: "JSON"},
-		{name: "json in users takes the aggregate", dataType: model.JSONDataType, tableName: warehouseutils.UsersTable, want: "SimpleAggregateFunction(anyLast, JSON)"},
-		{name: "json in identifies", dataType: model.JSONDataType, tableName: warehouseutils.IdentifiesTable, want: "JSON"},
+		// json takes the Nullable wrapper like any scalar: ClickHouse has
+		// allowed Nullable(JSON) since 25.3, and it merges identically to the
+		// bare type under both ReplacingMergeTree and AggregatingMergeTree
+		{name: "json", dataType: model.JSONDataType, tableName: "product_track", want: "Nullable(JSON)"},
+		{name: "json in users takes the aggregate", dataType: model.JSONDataType, tableName: warehouseutils.UsersTable, want: "SimpleAggregateFunction(anyLast, Nullable(JSON))"},
+		{name: "json in identifies", dataType: model.JSONDataType, tableName: warehouseutils.IdentifiesTable, want: "Nullable(JSON)"},
 		{name: "json with nullable disabled", dataType: model.JSONDataType, tableName: "product_track", disableNullable: true, want: "JSON"},
-		{name: "json in identifies with nullable disabled", dataType: model.JSONDataType, tableName: warehouseutils.IdentifiesTable, disableNullable: true, want: "JSON"},
+		{name: "json in identifies keeps nullable when disabled", dataType: model.JSONDataType, tableName: warehouseutils.IdentifiesTable, disableNullable: true, want: "Nullable(JSON)"},
 		{name: "json marked not nullable", dataType: model.JSONDataType, tableName: "product_track", notNullableColumns: []string{jsonColumn}, want: "JSON"},
 		// nullable disabled short circuits before the users branch, so the
 		// aggregate wrapper is dropped for every type, json included
 		{name: "json in users with nullable disabled", dataType: model.JSONDataType, tableName: warehouseutils.UsersTable, disableNullable: true, want: "JSON"},
 
-		// arrays: the other never-Nullable type, unchanged by the json work
+		// arrays: the only never-Nullable type, since ClickHouse rejects
+		// Nullable(Array(...)) outright
 		{name: "array", dataType: "array(string)", tableName: "product_track", want: "Array(String)"},
 		{name: "array in users takes the aggregate", dataType: "array(string)", tableName: warehouseutils.UsersTable, want: "SimpleAggregateFunction(anyLast, Array(String))"},
 		{name: "array with nullable disabled", dataType: "array(string)", tableName: "product_track", disableNullable: true, want: "Array(String)"},
@@ -121,10 +124,12 @@ func TestBindValueV2(t *testing.T) {
 		{name: "json with embedded quotes", dataType: model.JSONDataType, data: `{"q":"say \"hi\""}`, want: `{"q":"say \"hi\""}`},
 		// surrounding whitespace is left alone: only the emptiness check trims
 		{name: "json padded", dataType: model.JSONDataType, data: ` {"a":1} `, want: ` {"a":1} `},
-		// an empty cell does not parse, and the column is never declared Nullable
-		{name: "json empty", dataType: model.JSONDataType, data: "", want: "{}"},
-		{name: "json whitespace", dataType: model.JSONDataType, data: "   ", want: "{}"},
+		// an empty cell is not valid JSON, so it takes the same fallback as a
+		// failed parse: null, or the typed default when nullable is off
+		{name: "json empty", dataType: model.JSONDataType, data: "", want: nil},
+		{name: "json whitespace", dataType: model.JSONDataType, data: "   ", want: nil},
 		{name: "json empty with nullable disabled", dataType: model.JSONDataType, data: "", disableNullable: true, want: "{}"},
+		{name: "json whitespace with nullable disabled", dataType: model.JSONDataType, data: "   ", disableNullable: true, want: "{}"},
 
 		// strings keep an empty cell as an empty string, unlike json
 		{name: "string", dataType: model.StringDataType, data: "RudderStack", want: "RudderStack"},
@@ -182,7 +187,7 @@ func TestJSONTypeMappingsV2(t *testing.T) {
 	require.Equal(t, "String", rudderDataTypesMapToClickHouse[model.StringDataType])
 	require.Equal(t, model.StringDataType, clickhouseDataTypesMapToRudder["Nullable(String)"])
 
-	// json has no entry here: it never reaches the parse failure path
-	_, ok := datatypeDefaultValuesMap[model.JSONDataType]
-	require.False(t, ok)
+	// json carries a typed default like every other non-array type, used when
+	// nullable columns are disabled and there is no null to fall back to
+	require.Equal(t, "{}", datatypeDefaultValuesMap[model.JSONDataType])
 }

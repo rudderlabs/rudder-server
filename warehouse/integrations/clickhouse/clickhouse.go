@@ -73,6 +73,7 @@ var datatypeDefaultValuesMap = map[string]any{
 	"float":    0.0,
 	"boolean":  0,
 	"datetime": clickhouseDefaultDateTime,
+	"json":     "{}",
 }
 
 var clickhouseDataTypesMapToRudder = map[string]string{
@@ -382,9 +383,7 @@ func (ch *Clickhouse) getClickHouseCodecForColumnType(columnType, tableName stri
 
 func getClickhouseColumnTypeForSpecificColumn(columnName, columnType string, isNullable bool) string {
 	specificColumnType := columnType
-	// Neither takes a Nullable wrapper: ClickHouse rejects Nullable(Array(...)),
-	// and Nullable(JSON) is accepted but stops rows collapsing on merge.
-	if strings.Contains(specificColumnType, "Array") || specificColumnType == "JSON" {
+	if strings.Contains(specificColumnType, "Array") {
 		return specificColumnType
 	}
 	if isNullable {

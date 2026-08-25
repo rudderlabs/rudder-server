@@ -1302,6 +1302,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 		ctx := context.Background()
 		namespace := "test_namespace_json"
 		tableName := "json_paths_test_table"
+		notNullableTable := "json_paths_not_nullable_table"
 		region := "us-east-1"
 
 		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
@@ -1374,8 +1375,9 @@ func testIntegration(t *testing.T, useV2 bool) {
 				namespace, tableName,
 			).Scan(&columnType))
 
-			// Never Nullable: Nullable(JSON) stops rows collapsing on merge.
-			require.Equal(t, "JSON", columnType)
+			// Nullable like any other scalar column: ClickHouse has allowed
+			// Nullable(JSON) since 25.3.
+			require.Equal(t, "Nullable(JSON)", columnType)
 		})
 
 		t.Run("load", func(t *testing.T) {
@@ -1398,12 +1400,14 @@ func testIntegration(t *testing.T, useV2 bool) {
 			require.Contains(t, payload, "10")
 		})
 
-		t.Run("an empty cell is stored as an empty object", func(t *testing.T) {
-			var payload string
+		// An empty cell is not valid JSON, so it resolves to null exactly as a
+		// cell that fails to parse does for every other type.
+		t.Run("an empty cell is stored as null", func(t *testing.T) {
+			var isNull bool
 			require.NoError(t, db.QueryRowContext(ctx,
-				fmt.Sprintf("SELECT toString(context_props) FROM %q.%q WHERE id = 'row-2'", namespace, tableName),
-			).Scan(&payload))
-			require.Equal(t, "{}", payload)
+				fmt.Sprintf("SELECT context_props IS NULL FROM %q.%q WHERE id = 'row-2'", namespace, tableName),
+			).Scan(&isNull))
+			require.True(t, isNull)
 		})
 
 		// Reading a path out of the column is what separates a real JSON column
@@ -1437,7 +1441,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 				"SELECT type FROM system.columns WHERE database = ? AND table = ? AND name = 'context_traits_address'",
 				namespace, whutils.UsersTable,
 			).Scan(&columnType))
-			require.Equal(t, "SimpleAggregateFunction(anyLast, JSON)", columnType)
+			require.Equal(t, "SimpleAggregateFunction(anyLast, Nullable(JSON))", columnType)
 
 			for _, city := range []string{"Bengaluru", "Mumbai"} {
 				_, err := db.ExecContext(ctx, fmt.Sprintf(
@@ -1476,21 +1480,81 @@ func testIntegration(t *testing.T, useV2 bool) {
 				"SELECT type FROM system.columns WHERE database = ? AND table = ? AND name = 'context_extra'",
 				namespace, tableName,
 			).Scan(&columnType))
-			require.Equal(t, "JSON", columnType)
+			require.Equal(t, "Nullable(JSON)", columnType)
 
-			// Rows written before the column existed read back as an empty object
-			// rather than null, since the column is not declared Nullable.
-			var backfilled string
+			// Rows written before the column existed read back as null, the same
+			// backfill every other Nullable column gets from ALTER TABLE.
+			var isNull bool
 			require.NoError(t, db.QueryRowContext(ctx,
-				fmt.Sprintf(`SELECT toString(context_extra) FROM %q.%q WHERE id = 'row-1'`, namespace, tableName),
-			).Scan(&backfilled))
-			require.Equal(t, "{}", backfilled)
+				fmt.Sprintf(`SELECT context_extra IS NULL FROM %q.%q WHERE id = 'row-1'`, namespace, tableName),
+			).Scan(&isNull))
+			require.True(t, isNull)
 		})
 
-		t.Run("fetched schema reports it as json", func(t *testing.T) {
+		// disableNullable is the other half of the matrix. The column is declared
+		// bare, so an empty cell has no null to fall back to and resolves to the
+		// type's entry in datatypeDefaultValuesMap instead.
+		t.Run("nullable disabled", func(t *testing.T) {
+			conf := config.New()
+			conf.Set(configKey("disableNullable"), true)
+
+			chNotNullable := newClickhouse(conf)
+			require.NoError(t, chNotNullable.Setup(ctx, warehouse, mockUploader))
+			require.NoError(t, chNotNullable.CreateTable(ctx, notNullableTable, tableSchema))
+
+			var columnType string
+			require.NoError(t, db.QueryRowContext(ctx,
+				"SELECT type FROM system.columns WHERE database = ? AND table = ? AND name = 'context_props'",
+				namespace, notNullableTable,
+			).Scan(&columnType))
+			require.Equal(t, "JSON", columnType)
+
+			_, err := chNotNullable.LoadTable(ctx, notNullableTable)
+			require.NoError(t, err)
+
+			// The empty cell is the whole point of this mode: it has to land as
+			// {} rather than null, and rows must stay countable.
+			var isNull bool
+			var payload string
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf(`SELECT context_props IS NULL, toString(context_props) FROM %q.%q WHERE id = 'row-2'`, namespace, notNullableTable),
+			).Scan(&isNull, &payload))
+			require.False(t, isNull)
+			require.Equal(t, "{}", payload)
+
+			// A populated cell is unaffected by the mode.
+			var revenue string
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf(`SELECT toString(context_props.revenue) FROM %q.%q WHERE id = 'row-1'`, namespace, notNullableTable),
+			).Scan(&revenue))
+			require.Equal(t, "10", revenue)
+
+			// identifies is exempt from disableNullable, for json as for
+			// every other type.
+			require.NoError(t, chNotNullable.CreateTable(ctx, whutils.IdentifiesTable, model.TableSchema{
+				"id":            "string",
+				"received_at":   "datetime",
+				"context_props": "json",
+			}))
+			require.NoError(t, db.QueryRowContext(ctx,
+				"SELECT type FROM system.columns WHERE database = ? AND table = ? AND name = 'context_props'",
+				namespace, whutils.IdentifiesTable,
+			).Scan(&columnType))
+			require.Equal(t, "Nullable(JSON)", columnType)
+		})
+
+		// FetchSchema looks the rendered type up as a raw string, so a rendering
+		// with no reverse mapping is dropped silently and only bumps a counter.
+		// Every shape this block created has to survive the round trip.
+		t.Run("fetched schema reports every rendering as json", func(t *testing.T) {
 			schema, err := ch.FetchSchema(ctx)
 			require.NoError(t, err)
-			require.Equal(t, model.JSONDataType, schema[tableName]["context_props"])
+
+			require.Equal(t, model.JSONDataType, schema[tableName]["context_props"], "Nullable(JSON)")
+			require.Equal(t, model.JSONDataType, schema[tableName]["context_extra"], "Nullable(JSON) added by ALTER")
+			require.Equal(t, model.JSONDataType, schema[notNullableTable]["context_props"], "JSON")
+			require.Equal(t, model.JSONDataType, schema[whutils.UsersTable]["context_traits_address"], "SimpleAggregateFunction(anyLast, Nullable(JSON))")
+			require.Equal(t, model.JSONDataType, schema[whutils.IdentifiesTable]["context_props"], "Nullable(JSON) in identifies")
 		})
 	})
 
