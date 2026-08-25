@@ -1251,6 +1251,27 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 // connectClickhouseDBV2 opens a connection through the v2 fork, for the cases
 // that touch a type v1 cannot represent.
+// clickhouseExceptionCode returns the server error code from whichever driver
+// raised it. The two surface a server exception as different concrete types -
+// v1 as *clickhouse-go.Exception, v2 as the fork's alias of its proto one - so
+// matching on either alone fails under the other. Both carry an int32 Code.
+func clickhouseExceptionCode(t testing.TB, err error) int32 {
+	t.Helper()
+
+	var v1Err *clickhousestd.Exception
+	if errors.As(err, &v1Err) {
+		return v1Err.Code
+	}
+
+	var v2Err *clickhousev2.Exception
+	if errors.As(err, &v2Err) {
+		return v2Err.Code
+	}
+
+	require.Failf(t, "not a clickhouse server exception", "%T: %v", err, err)
+	return 0
+}
+
 func connectClickhouseDBV2(t testing.TB, host string, port int, database, user, password string) *sql.DB {
 	t.Helper()
 
@@ -1505,9 +1526,7 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 			})
 			require.Error(t, err)
 
-			var clickhouseErr *clickhousestd.Exception
-			require.ErrorAs(t, err, &clickhouseErr)
-			require.Equal(t, int32(253), clickhouseErr.Code)
+			require.EqualValues(t, 253, clickhouseExceptionCode(t, err))
 		})
 	})
 	// Alter columns to all the cluster tables
