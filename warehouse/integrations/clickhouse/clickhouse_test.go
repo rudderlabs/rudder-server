@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	clickhousev2 "github.com/rudderlabs/clickhouse-go/v2"
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -40,15 +42,19 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
-// TestIntegration runs the suite against the v1 ClickHouse implementation, and
-// TestIntegrationV2 runs the same suite against v2. Every subtest is shared, so
-// coverage cannot drift between the two.
+// TestIntegration runs the suite against one ClickHouse implementation, chosen
+// by CLICKHOUSE_USE_V2. Every subtest is shared, so coverage cannot drift
+// between the two, and CI runs the package once per value so each gets its own
+// job. Unset means v1, which is what a bare `go test` gets.
 func TestIntegration(t *testing.T) {
-	testIntegration(t, false)
-}
+	var useV2 bool
+	if v := os.Getenv("CLICKHOUSE_USE_V2"); v != "" {
+		parsed, err := strconv.ParseBool(v)
+		require.NoError(t, err, "CLICKHOUSE_USE_V2 must be a boolean")
+		useV2 = parsed
+	}
 
-func TestIntegrationV2(t *testing.T) {
-	testIntegration(t, true)
+	testIntegration(t, useV2)
 }
 
 func testIntegration(t *testing.T, useV2 bool) {
@@ -100,6 +106,22 @@ func testIntegration(t *testing.T, useV2 bool) {
 	bucketName := "testbucket"
 	accessKeyID := "MYACCESSKEY"
 	secretAccessKey := "MYSECRETKEY"
+
+	// Verification connects with the driver under test. v1 has no JSON type, so
+	// a v1 handle cannot represent everything v2 can create: reads pass because
+	// the queries coerce to String, but a write fails inside the driver rather
+	// than at the server, which leaves v2-only types unverifiable.
+	connectDB := func(t testing.TB, ctx context.Context, port int) *sql.DB {
+		t.Helper()
+
+		if useV2 {
+			return connectClickhouseDBV2(t, host, port, database, user, password)
+		}
+		return connectClickhouseDB(t, ctx, fmt.Sprintf(
+			"tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
+			host, port, database, password, user,
+		))
+	}
 
 	expectedSchema := model.Schema{
 		"screens":       {"context_source_id": "Nullable(String)", "user_id": "Nullable(String)", "sent_at": "Nullable(DateTime)", "context_request_ip": "Nullable(String)", "original_timestamp": "Nullable(DateTime)", "url": "Nullable(String)", "context_source_type": "Nullable(String)", "between": "Nullable(String)", "timestamp": "Nullable(DateTime)", "context_ip": "Nullable(String)", "context_destination_type": "Nullable(String)", "received_at": "DateTime", "title": "Nullable(String)", "uuid_ts": "Nullable(DateTime)", "context_destination_id": "Nullable(String)", "name": "Nullable(String)", "id": "String", "as": "Nullable(String)"},
@@ -216,10 +238,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 				setupDB := func(t testing.TB, ctx context.Context) *sql.DB {
 					t.Helper()
-					dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-						host, clickhousePort, database, password, user,
-					)
-					return connectClickhouseDB(t, ctx, dsn)
+					return connectDB(t, ctx, clickhousePort)
 				}
 
 				verifySchema := func(t *testing.T, db *sql.DB, namespace string) {
@@ -398,10 +417,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 				name: "Cluster Mode Setup",
 				setupDB: func(t testing.TB, ctx context.Context) *sql.DB {
 					t.Helper()
-					dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-						host, clickhouseClusterPort1, database, password, user,
-					)
-					return connectClickhouseDB(t, ctx, dsn)
+					return connectDB(t, ctx, clickhouseClusterPort1)
 				},
 				warehouseEvents2: whth.EventsCountMap{
 					"identifies": 8, "users": 2, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "groups": 8,
@@ -411,13 +427,10 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 					clusterPorts := []int{clickhouseClusterPort2, clickhouseClusterPort3, clickhouseClusterPort4}
 					dbs := lo.Map(clusterPorts, func(port, _ int) *sql.DB {
-						dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-							host, port, database, password, user,
-						)
-						return connectClickhouseDB(t, ctx, dsn)
+						return connectDB(t, ctx, port)
 					})
 					tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-					initializeClickhouseClusterMode(t, dbs, tables, clickhouseClusterPort1)
+					initializeClickhouseClusterMode(t, dbs, tables, clickhouseClusterPort1, connectDB)
 				},
 				eventFilePrefix: "../testdata/upload-job",
 				configOverride: map[string]any{
@@ -627,10 +640,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 		namespace := "test_namespace"
 		table := "test_table"
 
-		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, clickhousePort, database, password, user,
-		)
-		db := connectClickhouseDB(t, ctx, dsn)
+		db := connectDB(t, ctx, clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		t.Run("Success", func(t *testing.T) {
@@ -802,10 +812,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 		region := "us-east-1"
 		table := "test_table"
 
-		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, clickhousePort, database, password, user,
-		)
-		db := connectClickhouseDB(t, context.Background(), dsn)
+		db := connectDB(t, context.Background(), clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -1079,10 +1086,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 		namespace := "test_namespace"
 		timeout := 5 * time.Second
 
-		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, clickhousePort, database, password, user,
-		)
-		db := connectClickhouseDB(t, context.Background(), dsn)
+		db := connectDB(t, context.Background(), clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -1176,10 +1180,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 			"val": "RudderStack",
 		}
 
-		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, clickhousePort, database, password, user,
-		)
-		db := connectClickhouseDB(t, context.Background(), dsn)
+		db := connectDB(t, context.Background(), clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -1244,6 +1245,36 @@ func testIntegration(t *testing.T, useV2 bool) {
 	})
 }
 
+// connectClickhouseDBV2 opens a connection through the v2 fork, for the cases
+// that touch a type v1 cannot represent.
+func connectClickhouseDBV2(t testing.TB, host string, port int, database, user, password string) *sql.DB {
+	t.Helper()
+
+	db := clickhousev2.OpenDB(&clickhousev2.Options{
+		Addr: []string{net.JoinHostPort(host, strconv.Itoa(port))},
+		Auth: clickhousev2.Auth{
+			Database: database,
+			Username: user,
+			Password: password,
+		},
+		Protocol: clickhousev2.Native,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	require.Eventually(t, func() bool {
+		if err := db.PingContext(ctx); err != nil {
+			t.Log("Ping failed:", err)
+			return false
+		}
+		return true
+	}, time.Minute, time.Second)
+
+	t.Cleanup(func() { _ = db.Close() })
+
+	return db
+}
+
 func connectClickhouseDB(t testing.TB, ctx context.Context, dsn string) *sql.DB {
 	t.Helper()
 
@@ -1265,7 +1296,9 @@ func connectClickhouseDB(t testing.TB, ctx context.Context, dsn string) *sql.DB 
 	return db
 }
 
-func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables []string, clusterPost int) {
+// connect comes from the suite so the DDL below runs over the driver under
+// test, rather than always over v1.
+func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables []string, clusterPost int, connect func(testing.TB, context.Context, int) *sql.DB) {
 	t.Helper()
 
 	type columnInfo struct {
@@ -1400,9 +1433,7 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 	}
 
 	t.Run("Create Drop Create", func(t *testing.T) {
-		clusterDB := connectClickhouseDB(t, context.Background(), fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			"localhost", clusterPost, "rudderdb", "rudder-password", "rudder",
-		))
+		clusterDB := connect(t, context.Background(), clusterPost)
 		defer func() {
 			_ = clusterDB.Close()
 		}()
