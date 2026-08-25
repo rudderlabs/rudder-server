@@ -342,8 +342,8 @@ type jobParameters struct {
 	jobRunID string
 	recordID string
 	// captureError is the per-connection opt-in for capturing the final recorded
-	// error text, stamped by rudder-sources on the event context and carried here
-	// through the gateway and the processor.
+	// error text, sent by rudder-sources as the X-Rudder-Capture-Error-Detail
+	// request header and carried here through the gateway and the processor.
 	captureError bool
 	target       JobTargetKey
 }

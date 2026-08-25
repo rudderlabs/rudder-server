@@ -316,9 +316,9 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		// tracing
 		traceParent = req.traceParent
 
-		// rETL opt-in flag read from the first event's context.sources.capture_error;
+		// rETL opt-in flag delivered via the X-Rudder-Capture-Error-Detail request header;
 		// only honored (see params below) when the request turns out to carry a job run id.
-		captureErrorRequested bool
+		captureErrorRequested = req.authContext.CaptureErrorDetail
 	)
 
 	fillMessageID := func(event map[string]any) {
@@ -394,9 +394,6 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 				if v, _ := misc.MapLookup(eventContext, "sources", "task_run_id").(string); v != "" {
 					sourcesTaskRunID = v
 				}
-				// only a real JSON boolean `true` counts; strings/numbers/absent all fall back to false
-				captureErrorRequested, _ = misc.MapLookup(eventContext, "sources", "capture_error").(bool)
-
 				// calculate version
 				firstSDKName, _ := misc.MapLookup(
 					eventContext,
@@ -415,12 +412,6 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 				if firstSDKName != "" || firstSDKVersion != "" {
 					jobData.version = firstSDKName + "/" + firstSDKVersion
 				}
-			}
-
-			// capture_error is an internal gateway<->processor opt-in signal; it must never reach the
-			// destination payload, so strip it from every event's context.sources, regardless of idx.
-			if sources, sok := misc.MapLookup(eventContext, "sources").(map[string]any); sok {
-				delete(sources, "capture_error")
 			}
 
 			userAgent, _ := misc.MapLookup(

@@ -1,9 +1,9 @@
 package gateway
 
 import (
-	"bytes"
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -99,8 +99,9 @@ func newCaptureErrorTestGateway(t *testing.T) *Handle {
 	return gw
 }
 
-// captureErrorAuthContext returns an AuthRequestContext with no pre-authenticated job run id, so
-// tests control rETL-ness purely through the payload's context.sources.job_run_id.
+// captureErrorAuthContext returns an AuthRequestContext with no pre-authenticated job run id and
+// no capture opt-in; tests opt in by setting CaptureErrorDetail (the value
+// augmentAuthRequestContext seeds from the X-Rudder-Capture-Error-Detail header).
 func captureErrorAuthContext() *gwtypes.AuthRequestContext {
 	return &gwtypes.AuthRequestContext{
 		WriteKey:    "capture-error-write-key",
@@ -126,24 +127,23 @@ func buildCaptureErrorRequest(t *testing.T, authCtx *gwtypes.AuthRequestContext,
 	}
 }
 
-// A3.1: rETL batch (context.sources.job_run_id set) whose first event has
-// context.sources.capture_error: true. params["capture_error"] must be a real JSON boolean true.
+// A3.1: rETL request whose auth context carries the header opt-in (CaptureErrorDetail) and a job
+// run id. params["capture_error"] must be a real JSON boolean true.
 func TestGetJobDataFromRequest_CaptureError_HonoredOnRETL(t *testing.T) {
 	gw := newCaptureErrorTestGateway(t)
+
+	authCtx := captureErrorAuthContext()
+	authCtx.SourceJobRunID = "run-1"
+	authCtx.SourceTaskRunID = "task-run-1"
+	authCtx.CaptureErrorDetail = true
 
 	events := []map[string]any{
 		{
 			"type":   "track",
 			"userId": "user-1",
-			"context": map[string]any{
-				"sources": map[string]any{
-					"job_run_id":    "run-1",
-					"capture_error": true,
-				},
-			},
 		},
 	}
-	req := buildCaptureErrorRequest(t, captureErrorAuthContext(), events)
+	req := buildCaptureErrorRequest(t, authCtx, events)
 
 	jobData, err := gw.getJobDataFromRequest(req)
 	require.NoError(t, err)
@@ -155,9 +155,38 @@ func TestGetJobDataFromRequest_CaptureError_HonoredOnRETL(t *testing.T) {
 	require.True(t, captureError.Bool())
 }
 
-// A3.2: same shape, >=2 events, EVERY event carries capture_error. The stored EventPayload must
-// contain no capture_error anywhere, while job_run_id (a sibling key) must survive untouched.
-func TestGetJobDataFromRequest_CaptureError_StrippedFromEveryEvent(t *testing.T) {
+// A3.1b: the opt-in also combines with a job run id read from the first event's payload (the
+// legacy job_run_id delivery), not only the pre-authenticated header value.
+func TestGetJobDataFromRequest_CaptureError_HonoredWithPayloadJobRunID(t *testing.T) {
+	gw := newCaptureErrorTestGateway(t)
+
+	authCtx := captureErrorAuthContext()
+	authCtx.CaptureErrorDetail = true
+
+	events := []map[string]any{
+		{
+			"type":   "track",
+			"userId": "user-1",
+			"context": map[string]any{
+				"sources": map[string]any{
+					"job_run_id": "run-1",
+				},
+			},
+		},
+	}
+	req := buildCaptureErrorRequest(t, authCtx, events)
+
+	jobData, err := gw.getJobDataFromRequest(req)
+	require.NoError(t, err)
+	require.Len(t, jobData.jobs, 1)
+
+	require.True(t, gjson.GetBytes(jobData.jobs[0].Parameters, "capture_error").Bool())
+}
+
+// A3.2: the opt-in rides the request header only. A context.sources.capture_error field inside the
+// payload is user data: it must not switch capture on, and the gateway must not mutate it away --
+// the stored payload keeps the field byte-for-byte.
+func TestGetJobDataFromRequest_CaptureError_PayloadFlagIgnoredAndUntouched(t *testing.T) {
 	gw := newCaptureErrorTestGateway(t)
 
 	events := []map[string]any{
@@ -188,37 +217,33 @@ func TestGetJobDataFromRequest_CaptureError_StrippedFromEveryEvent(t *testing.T)
 	require.Len(t, jobData.jobs, 2)
 
 	for i, job := range jobData.jobs {
-		require.Falsef(t, gjson.GetBytes(job.EventPayload, "batch.0.context.sources.capture_error").Exists(),
-			"job %d: capture_error must be stripped from the stored payload", i)
-		require.Falsef(t, bytes.Contains(job.EventPayload, []byte("capture_error")),
-			"job %d: capture_error string must not appear anywhere in the payload bytes", i)
+		require.Falsef(t, gjson.GetBytes(job.Parameters, "capture_error").Exists(),
+			"job %d: a payload capture_error must not be honored", i)
+		require.Truef(t, gjson.GetBytes(job.EventPayload, "batch.0.context.sources.capture_error").Exists(),
+			"job %d: the payload field is user data and must pass through unmodified", i)
 	}
 
-	// job_run_id is a sibling key under context.sources on the first event only; it must survive
-	// the strip, proving delete() removed a single key rather than clobbering the whole map.
 	jobRunID := gjson.GetBytes(jobData.jobs[0].EventPayload, "batch.0.context.sources.job_run_id")
 	require.True(t, jobRunID.Exists())
 	require.Equal(t, "run-2", jobRunID.String())
 }
 
-// A3.3: capture_error: true but no job_run_id anywhere (not on the event, not pre-authenticated) -
-// non-rETL traffic. The key must be absent from params even though the flag was requested.
+// A3.3: header opt-in set but no job run id anywhere (neither pre-authenticated nor in the
+// payload) - non-rETL traffic. The key must be absent from params even though the flag was
+// requested.
 func TestGetJobDataFromRequest_CaptureError_AbsentWithoutJobRunID(t *testing.T) {
 	gw := newCaptureErrorTestGateway(t)
+
+	authCtx := captureErrorAuthContext()
+	authCtx.CaptureErrorDetail = true
+	require.Empty(t, authCtx.SourceJobRunID, "test assumes no pre-authenticated job run id")
 
 	events := []map[string]any{
 		{
 			"type":   "track",
 			"userId": "user-3",
-			"context": map[string]any{
-				"sources": map[string]any{
-					"capture_error": true,
-				},
-			},
 		},
 	}
-	authCtx := captureErrorAuthContext()
-	require.Empty(t, authCtx.SourceJobRunID, "test assumes no pre-authenticated job run id")
 	req := buildCaptureErrorRequest(t, authCtx, events)
 
 	jobData, err := gw.getJobDataFromRequest(req)
@@ -227,85 +252,41 @@ func TestGetJobDataFromRequest_CaptureError_AbsentWithoutJobRunID(t *testing.T) 
 
 	require.False(t, gjson.GetBytes(jobData.jobs[0].Parameters, "capture_error").Exists(),
 		"capture_error must not be honored on non-rETL traffic")
-	require.False(t, gjson.GetBytes(jobData.jobs[0].EventPayload, "batch.0.context.sources.capture_error").Exists(),
-		"capture_error must still be stripped from the payload even when not honored")
 }
 
-// A3.4: capture_error delivered as the JSON string "true" (not a boolean) must be rejected - only
-// a real JSON boolean true counts.
-func TestGetJobDataFromRequest_CaptureError_RejectsStringTrue(t *testing.T) {
-	gw := newCaptureErrorTestGateway(t)
-
-	events := []map[string]any{
-		{
-			"type":   "track",
-			"userId": "user-4",
-			"context": map[string]any{
-				"sources": map[string]any{
-					"job_run_id":    "run-4",
-					"capture_error": "true",
-				},
-			},
-		},
-	}
-	req := buildCaptureErrorRequest(t, captureErrorAuthContext(), events)
-
-	jobData, err := gw.getJobDataFromRequest(req)
-	require.NoError(t, err)
-	require.Len(t, jobData.jobs, 1)
-
-	require.False(t, gjson.GetBytes(jobData.jobs[0].Parameters, "capture_error").Exists(),
-		"a string \"true\" must not enable capture_error")
-	require.False(t, gjson.GetBytes(jobData.jobs[0].EventPayload, "batch.0.context.sources.capture_error").Exists(),
-		"capture_error must still be stripped from the payload even when rejected")
-}
-
-// Regression: requests that never mention capture_error, or whose context.sources isn't shaped as
-// expected, must not panic and must never gain a capture_error parameter.
-func TestGetJobDataFromRequest_CaptureError_RegressionNoPanic(t *testing.T) {
-	gw := newCaptureErrorTestGateway(t)
-
+// A3.4: only the exact header value "true" opts in - case variants, "1", garbage and absence all
+// fall back to false.
+func TestAugmentAuthRequestContext_CaptureErrorDetail(t *testing.T) {
 	tests := []struct {
-		name  string
-		event map[string]any
+		name   string
+		header *string
+		want   bool
 	}{
-		{
-			name: "no context key at all",
-			event: map[string]any{
-				"type":   "track",
-				"userId": "user-5",
-			},
-		},
-		{
-			name: "context present without sources",
-			event: map[string]any{
-				"type":   "track",
-				"userId": "user-6",
-				"context": map[string]any{
-					"library": map[string]any{"name": "sdk", "version": "1.0.0"},
-				},
-			},
-		},
-		{
-			name: "context.sources is a string, not a map",
-			event: map[string]any{
-				"type":   "track",
-				"userId": "user-7",
-				"context": map[string]any{
-					"sources": "not-a-map",
-				},
-			},
-		},
+		{name: "exact true", header: strPtr("true"), want: true},
+		{name: "uppercase TRUE", header: strPtr("TRUE"), want: false},
+		{name: "numeric 1", header: strPtr("1"), want: false},
+		{name: "empty value", header: strPtr(""), want: false},
+		{name: "garbage", header: strPtr("yes"), want: false},
+		{name: "absent", header: nil, want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := buildCaptureErrorRequest(t, captureErrorAuthContext(), []map[string]any{tt.event})
+			r := httptest.NewRequest(http.MethodPost, "/internal/v1/retl", nil)
+			r.Header.Set("X-Rudder-Job-Run-Id", "run-4")
+			r.Header.Set("X-Rudder-Task-Run-Id", "task-run-4")
+			if tt.header != nil {
+				r.Header.Set("X-Rudder-Capture-Error-Detail", *tt.header)
+			}
 
-			jobData, err := gw.getJobDataFromRequest(req)
-			require.NoError(t, err)
-			require.Len(t, jobData.jobs, 1)
-			require.False(t, gjson.GetBytes(jobData.jobs[0].Parameters, "capture_error").Exists())
+			arctx := &gwtypes.AuthRequestContext{}
+			augmentAuthRequestContext(arctx, r)
+
+			require.Equal(t, tt.want, arctx.CaptureErrorDetail)
+			require.Equal(t, "run-4", arctx.SourceJobRunID, "job run id seeding must be unaffected")
+			require.Equal(t, "task-run-4", arctx.SourceTaskRunID, "task run id seeding must be unaffected")
 		})
 	}
 }
+
+func strPtr(s string) *string { return &s }

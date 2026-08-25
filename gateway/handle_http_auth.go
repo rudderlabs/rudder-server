@@ -198,10 +198,13 @@ func (gw *Handle) sourceDestIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	return gw.sourceIDAuth(gw.authDestIDForSource(delegate))
 }
 
-// augmentAuthRequestContext adds source job run id and task run id from the request to the authentication context.
+// augmentAuthRequestContext adds source job run id, task run id and the rETL error-capture
+// opt-in from the request headers to the authentication context.
 func augmentAuthRequestContext(arctx *gwtypes.AuthRequestContext, r *http.Request) {
 	arctx.SourceJobRunID = r.Header.Get("X-Rudder-Job-Run-Id")
 	arctx.SourceTaskRunID = r.Header.Get("X-Rudder-Task-Run-Id")
+	// only the exact value "true" counts; anything else falls back to false
+	arctx.CaptureErrorDetail = r.Header.Get("X-Rudder-Capture-Error-Detail") == "true"
 }
 
 // authRequestContextForSourceID gets request context for a given sourceID. If the sourceID is invalid, returns nil.
