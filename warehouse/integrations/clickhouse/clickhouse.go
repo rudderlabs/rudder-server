@@ -76,66 +76,62 @@ var datatypeDefaultValuesMap = map[string]any{
 	"json":     "{}",
 }
 
-// A column is declared as one of these, optionally wrapped in Nullable, and on
+// A column is declared as a base type, optionally wrapped in Nullable, and on
 // the users table wrapped again in SimpleAggregateFunction(anyLast, ...).
-// Widths CreateTable never emits are here too, since a table created outside
-// the warehouse can still carry them.
-var (
-	// Scalars, which are the types that take a Nullable wrapper.
-	clickhouseScalarTypesMapToRudder = map[string]string{
-		"Int8":     "int",
-		"Int16":    "int",
-		"Int32":    "int",
-		"Int64":    "int",
-		"Float32":  "float",
-		"Float64":  "float",
-		"String":   "string",
-		"DateTime": "datetime",
-		"UInt8":    "boolean",
-		"JSON":     "json",
-	}
-
-	// The rest never take one: ClickHouse rejects Nullable(Array(...)), and
-	// LowCardinality carries its own nullability inside the wrapper.
-	clickhouseCompositeTypesMapToRudder = map[string]string{
-		"Array(Int64)":                     "array(int)",
-		"Array(Nullable(Int64))":           "array(int)",
-		"Array(Float64)":                   "array(float)",
-		"Array(Nullable(Float64))":         "array(float)",
-		"Array(String)":                    "array(string)",
-		"Array(Nullable(String))":          "array(string)",
-		"Array(DateTime)":                  "array(datetime)",
-		"Array(Nullable(DateTime))":        "array(datetime)",
-		"Array(UInt8)":                     "array(boolean)",
-		"Array(Nullable(UInt8))":           "array(boolean)",
-		"LowCardinality(String)":           "string",
-		"LowCardinality(Nullable(String))": "string",
-	}
-)
-
-// clickhouseDataTypesMapToRudder is the reverse of the declaration above, and
-// FetchSchema looks a rendering up in it as a raw string. A rendering that is
-// missing makes FetchSchema drop the column and only bump a missing-datatype
-// counter, so the combinations are generated rather than written out: a
-// hand-maintained cross product grows holes as wrappers are added, which is
-// how SimpleAggregateFunction(anyLast, Array(...)) came to be missing.
-var clickhouseDataTypesMapToRudder = buildClickhouseDataTypesMapToRudder()
-
-func buildClickhouseDataTypesMapToRudder() map[string]string {
-	mapping := make(map[string]string, 4*len(clickhouseScalarTypesMapToRudder)+2*len(clickhouseCompositeTypesMapToRudder))
-
-	add := func(columnType, dataType string) {
-		mapping[columnType] = dataType
-		mapping[fmt.Sprintf("SimpleAggregateFunction(anyLast, %s)", columnType)] = dataType
-	}
-	for columnType, dataType := range clickhouseScalarTypesMapToRudder {
-		add(columnType, dataType)
-		add(fmt.Sprintf("Nullable(%s)", columnType), dataType)
-	}
-	for columnType, dataType := range clickhouseCompositeTypesMapToRudder {
-		add(columnType, dataType)
-	}
-	return mapping
+// FetchSchema looks the rendering up here as a raw string: one that is missing
+// makes it drop the column and only bump a missing-datatype counter, so every
+// combination CreateTable can emit has to be present. Widths CreateTable never
+// emits are kept too, since a table created elsewhere can carry them.
+var clickhouseDataTypesMapToRudder = map[string]string{
+	"Int8":                             "int",
+	"Int16":                            "int",
+	"Int32":                            "int",
+	"Int64":                            "int",
+	"Array(Int64)":                     "array(int)",
+	"Array(Nullable(Int64))":           "array(int)",
+	"Float32":                          "float",
+	"Float64":                          "float",
+	"Array(Float64)":                   "array(float)",
+	"Array(Nullable(Float64))":         "array(float)",
+	"String":                           "string",
+	"JSON":                             "json",
+	"Nullable(JSON)":                   "json",
+	"Array(String)":                    "array(string)",
+	"Array(Nullable(String))":          "array(string)",
+	"DateTime":                         "datetime",
+	"Array(DateTime)":                  "array(datetime)",
+	"Array(Nullable(DateTime))":        "array(datetime)",
+	"UInt8":                            "boolean",
+	"Array(UInt8)":                     "array(boolean)",
+	"Array(Nullable(UInt8))":           "array(boolean)",
+	"LowCardinality(String)":           "string",
+	"LowCardinality(Nullable(String))": "string",
+	"Nullable(Int8)":                   "int",
+	"Nullable(Int16)":                  "int",
+	"Nullable(Int32)":                  "int",
+	"Nullable(Int64)":                  "int",
+	"Nullable(Float32)":                "float",
+	"Nullable(Float64)":                "float",
+	"Nullable(String)":                 "string",
+	"Nullable(DateTime)":               "datetime",
+	"Nullable(UInt8)":                  "boolean",
+	"SimpleAggregateFunction(anyLast, Nullable(Int8))":         "int",
+	"SimpleAggregateFunction(anyLast, Nullable(Int16))":        "int",
+	"SimpleAggregateFunction(anyLast, Nullable(Int32))":        "int",
+	"SimpleAggregateFunction(anyLast, Nullable(Int64))":        "int",
+	"SimpleAggregateFunction(anyLast, Nullable(Float32))":      "float",
+	"SimpleAggregateFunction(anyLast, Nullable(Float64))":      "float",
+	"SimpleAggregateFunction(anyLast, Nullable(String))":       "string",
+	"SimpleAggregateFunction(anyLast, Nullable(DateTime))":     "datetime",
+	"SimpleAggregateFunction(anyLast, Nullable(UInt8))":        "boolean",
+	"SimpleAggregateFunction(anyLast, JSON)":                   "json",
+	"SimpleAggregateFunction(anyLast, Nullable(JSON))":         "json",
+	"SimpleAggregateFunction(anyLast, Array(Int64))":           "array(int)",
+	"SimpleAggregateFunction(anyLast, Array(Float64))":         "array(float)",
+	"SimpleAggregateFunction(anyLast, Array(String))":          "array(string)",
+	"SimpleAggregateFunction(anyLast, Array(DateTime))":        "array(datetime)",
+	"SimpleAggregateFunction(anyLast, Array(UInt8))":           "array(boolean)",
+	"SimpleAggregateFunction(anyLast, LowCardinality(String))": "string",
 }
 
 var errorsMappings = []model.JobError{
