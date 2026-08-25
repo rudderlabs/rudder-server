@@ -54,6 +54,12 @@ func TestIntegration(t *testing.T) {
 		useV2 = parsed
 	}
 
+	implementation := "v1"
+	if useV2 {
+		implementation = "v2"
+	}
+	t.Logf("running against the %s implementation", implementation)
+
 	testIntegration(t, useV2)
 }
 
@@ -137,7 +143,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 	userIDSQL := "SUBSTRING(user_id, 1, 17)"
 	uuidTSSQL := "formatDateTime(uuid_ts, '%Y-%m-%d')"
 
-	t.Run("Events flow (single mode)"+" - "+strconv.FormatBool(useV2)+" driver", func(t *testing.T) {
+	t.Run("Events flow (single mode)", func(t *testing.T) {
 		testCases := []struct {
 			name            string
 			configOverride  map[string]any
@@ -385,7 +391,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 		}
 	})
 
-	t.Run("Events flow (cluster mode)"+" - "+strconv.FormatBool(useV2)+" driver", func(t *testing.T) {
+	t.Run("Events flow (cluster mode)", func(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
@@ -588,7 +594,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 		}
 	})
 
-	t.Run("Validations"+" - "+strconv.FormatBool(useV2)+" driver", func(t *testing.T) {
+	t.Run("Validations", func(t *testing.T) {
 		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.minio.yml"}))
 		c.Start(context.Background())
 
@@ -629,7 +635,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 		whth.VerifyConfigurationTest(t, dest)
 	})
 
-	t.Run("Fetch schema"+" - "+strconv.FormatBool(useV2)+" driver", func(t *testing.T) {
+	t.Run("Fetch schema", func(t *testing.T) {
 		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
 		c.Start(context.Background())
 
@@ -800,7 +806,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 		})
 	})
 
-	t.Run("Load Table round trip"+" - "+strconv.FormatBool(useV2)+" driver", func(t *testing.T) {
+	t.Run("Load Table round trip", func(t *testing.T) {
 		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.minio.yml"}))
 		c.Start(context.Background())
 
@@ -1075,7 +1081,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 		}
 	})
 
-	t.Run("Test connection"+" - "+strconv.FormatBool(useV2)+" driver", func(t *testing.T) {
+	t.Run("Test connection", func(t *testing.T) {
 		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
 		c.Start(context.Background())
 
@@ -1161,7 +1167,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 		}
 	})
 
-	t.Run("Load test table"+" - "+strconv.FormatBool(useV2)+" driver", func(t *testing.T) {
+	t.Run("Load test table", func(t *testing.T) {
 		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
 		c.Start(context.Background())
 
