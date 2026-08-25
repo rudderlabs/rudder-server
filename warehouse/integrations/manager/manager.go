@@ -67,6 +67,19 @@ func New(destType string, conf *config.Config, logger logger.Logger, stats stats
 	return newStatsManager(m, stats), nil
 }
 
+// newClickhouse returns the ClickHouse implementation the flag selects. Both
+// implement the same interfaces, so nothing downstream changes.
+//
+// The factories only receive a destination type, so this resolves once at
+// construction: Warehouse.clickhouse.useV2Driver applies to the whole process,
+// which makes the rollout unit a deployment rather than a destination.
+func newClickhouse(conf *config.Config, log logger.Logger, stat stats.Stats) WarehouseOperations {
+	if conf.GetBoolVar(false, "Warehouse.clickhouse.useV2Driver") {
+		return clickhouse.NewV2(conf, log, stat)
+	}
+	return clickhouse.New(conf, log, stat)
+}
+
 func newManager(destType string, conf *config.Config, logger logger.Logger, stats stats.Stats) (Manager, error) {
 	switch destType {
 	case warehouseutils.RS:
@@ -78,7 +91,7 @@ func newManager(destType string, conf *config.Config, logger logger.Logger, stat
 	case warehouseutils.POSTGRES:
 		return postgres.New(conf, logger, stats), nil
 	case warehouseutils.CLICKHOUSE:
-		return clickhouse.New(conf, logger, stats), nil
+		return newClickhouse(conf, logger, stats), nil
 	case warehouseutils.MSSQL:
 		return mssql.New(conf, logger, stats), nil
 	case warehouseutils.AzureSynapse:
@@ -103,7 +116,7 @@ func NewWarehouseOperations(destType string, conf *config.Config, logger logger.
 	case warehouseutils.POSTGRES:
 		return postgres.New(conf, logger, stats), nil
 	case warehouseutils.CLICKHOUSE:
-		return clickhouse.New(conf, logger, stats), nil
+		return newClickhouse(conf, logger, stats), nil
 	case warehouseutils.MSSQL:
 		return mssql.New(conf, logger, stats), nil
 	case warehouseutils.AzureSynapse:

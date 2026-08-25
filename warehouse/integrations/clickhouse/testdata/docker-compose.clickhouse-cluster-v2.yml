@@ -1,0 +1,61 @@
+version: "3.9"
+
+# clickhouse-go v2 declares MinSupportedVersion 25.8.0 (resources/meta.go) and
+# warns "unsupported clickhouse version" below it, so the v2 runs need a newer
+# server than the 21.x the v1 files pin. Native JSON needs 24.8+ as well, so
+# this is also the floor for the jsonPaths work.
+services:
+  zookeeper:
+    image: zookeeper:3.5
+    healthcheck:
+      test: nc -z localhost 2181 || exit 1
+      interval: 1s
+      retries: 25
+  clickhouse01:
+    image: clickhouse/clickhouse-server:25.8-alpine
+    ports:
+      - "9000"
+    volumes:
+      - ./cluster/clickhouse01:/etc/clickhouse-server
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://0.0.0.0:8123/ping || exit 1
+      interval: 1s
+      retries: 25
+  clickhouse02:
+    image: clickhouse/clickhouse-server:25.8-alpine
+    ports:
+      - "9000"
+    volumes:
+      - ./cluster/clickhouse02:/etc/clickhouse-server
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://0.0.0.0:8123/ping || exit 1
+      interval: 1s
+      retries: 25
+  clickhouse03:
+    image: clickhouse/clickhouse-server:25.8-alpine
+    ports:
+      - "9000"
+    volumes:
+      - ./cluster/clickhouse03:/etc/clickhouse-server
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://0.0.0.0:8123/ping || exit 1
+      interval: 1s
+      retries: 25
+  clickhouse04:
+    image: clickhouse/clickhouse-server:25.8-alpine
+    ports:
+      - "9000"
+    volumes:
+      - ./cluster/clickhouse04:/etc/clickhouse-server
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://0.0.0.0:8123/ping || exit 1
+      interval: 1s
+      retries: 25
