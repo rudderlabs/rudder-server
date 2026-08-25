@@ -77,7 +77,7 @@ func newV2ConfigFetcher(nc *namespaceConfig) (*v2ConfigFetcher, error) {
 	return &v2ConfigFetcher{
 		logger:                   nc.logger.Withn(logger.NewStringField("configVersion", "v2")),
 		client:                   client,
-		mapper:                   &stubMapper{},
+		mapper:                   newConfigMapper(nc.logger),
 		cpRouterURL:              nc.cpRouterURL,
 		incrementalConfigUpdates: nc.incrementalConfigUpdates,
 		memo:                     make(map[string]v2MemoEntry),
