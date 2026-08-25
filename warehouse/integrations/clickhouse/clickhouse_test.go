@@ -98,10 +98,6 @@ func testIntegration(t *testing.T, useV2 bool) {
 		}
 		return "Warehouse.clickhouse." + key
 	}
-	envKey := func(key string) string {
-		return config.ConfigKeyToEnv(config.DefaultEnvPrefix, configKey(key))
-	}
-
 	destType := whutils.CLICKHOUSE
 
 	host := "localhost"
@@ -313,9 +309,9 @@ func testIntegration(t *testing.T, useV2 bool) {
 					Build()
 
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
-				t.Setenv(envKey("slowQueryThreshold"), "0s")
+				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
 				if useV2 {
-					t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_USEV2DRIVER", "true")
+					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
 				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
@@ -515,9 +511,9 @@ func testIntegration(t *testing.T, useV2 bool) {
 					Build()
 
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
-				t.Setenv(envKey("slowQueryThreshold"), "0s")
+				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
 				if useV2 {
-					t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_USEV2DRIVER", "true")
+					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
 				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
@@ -630,7 +626,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 			RevisionID: "29eeuTnqbBKn0XVTj5z9XQIbaru",
 		}
 		if useV2 {
-			t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_USEV2DRIVER", "true")
+			t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
 		}
 		whth.VerifyConfigurationTest(t, dest)
 	})
