@@ -207,6 +207,8 @@ type Handle struct {
 		forkRsourcesTrackedJobs                   bool
 		reportingDedupMetricsEnabled              config.ValueLoader[bool]
 		earlyDestinationFilter                    config.ValueLoader[bool]
+
+		dropEventsForDisabledDestAtProcRebuild config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -855,6 +857,9 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
 	proc.config.reportingDedupMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.dedupMetrics.enabled")
 	proc.config.earlyDestinationFilter = proc.conf.GetReloadableBoolVar(true, "Processor.earlyDestinationFilter")
+	// Opt-in early drop at the proc rebuild stage for destinations disabled since fan-out;
+	// by default such events keep flowing so the router/batchrouter aborts them with reporting.
+	proc.config.dropEventsForDisabledDestAtProcRebuild = proc.conf.GetReloadableBoolVar(false, "Processor.DestinationIsolation.dropEventsForDisabledDestAtProcRebuild")
 }
 
 type connection struct {
