@@ -141,12 +141,6 @@ type Handle struct {
 	drainingPartitions   map[string]struct{} // keeps track of router partitions which are currently draining
 }
 
-// deliveredWithWarningsEnabled reports whether the destination definition allows preserving a 296
-// (Delivered with Warning) status.
-func (rt *Handle) deliveredWithWarningsEnabled() bool {
-	return rt.supportsDeliveredWithWarnings.Load()
-}
-
 // activePartitions returns the list of active partitions, depending on the active isolation strategy
 func (rt *Handle) activePartitions(ctx context.Context) []string {
 	statTags := map[string]string{"destType": rt.destType}

@@ -824,7 +824,7 @@ func (w *worker) hydrateRespStatusCodes(destinationJob types.DestinationJobT, re
 // gateDeliveredWithWarning downgrades 296 (Delivered with Warning) to 200 when
 // the destination definition has not enabled support for this status.
 func (w *worker) gateDeliveredWithWarning(destinationJob types.DestinationJobT, respStatusCodes map[int64]int) {
-	if w.rt.deliveredWithWarningsEnabled() {
+	if w.rt.supportsDeliveredWithWarnings.Load() {
 		return
 	}
 	for _, metadata := range destinationJob.JobMetadataArray {

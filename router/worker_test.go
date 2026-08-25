@@ -59,22 +59,6 @@ func createTestWorker(destType string, transformProxy bool, stat stats.Stats) *w
 	}
 }
 
-func TestDeliveredWithWarningsEnabled(t *testing.T) {
-	newHandle := func(destDefSupports bool) *Handle {
-		rt := &Handle{}
-		rt.supportsDeliveredWithWarnings.Store(destDefSupports)
-		return rt
-	}
-
-	t.Run("destination definition supports it", func(t *testing.T) {
-		require.True(t, newHandle(true).deliveredWithWarningsEnabled())
-	})
-
-	t.Run("destination definition does not support it", func(t *testing.T) {
-		require.False(t, newHandle(false).deliveredWithWarningsEnabled())
-	})
-}
-
 func TestGateDeliveredWithWarning(t *testing.T) {
 	const (
 		gateDestType    = "BRAZE"
