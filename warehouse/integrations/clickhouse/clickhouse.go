@@ -60,6 +60,7 @@ var rudderDataTypesMapToClickHouse = map[string]string{
 	"array(datetime)": "Array(DateTime)",
 	"boolean":         "UInt8",
 	"array(boolean)":  "Array(UInt8)",
+	"json":            "JSON", // needs ClickHouse 25.3 or newer, so only v2 destinations get json columns
 }
 
 var clickhouseSpecificColumnNameMappings = map[string]string{
@@ -86,6 +87,8 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 	"Array(Float64)":                   "array(float)",
 	"Array(Nullable(Float64))":         "array(float)",
 	"String":                           "string",
+	"JSON":                             "json",
+	"Nullable(JSON)":                   "json",
 	"Array(String)":                    "array(string)",
 	"Array(Nullable(String))":          "array(string)",
 	"DateTime":                         "datetime",
@@ -114,6 +117,8 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 	"SimpleAggregateFunction(anyLast, Nullable(String))":   "string",
 	"SimpleAggregateFunction(anyLast, Nullable(DateTime))": "datetime",
 	"SimpleAggregateFunction(anyLast, Nullable(UInt8))":    "boolean",
+	"SimpleAggregateFunction(anyLast, JSON)":               "json",
+	"SimpleAggregateFunction(anyLast, Nullable(JSON))":     "json",
 }
 
 var errorsMappings = []model.JobError{
@@ -377,7 +382,9 @@ func (ch *Clickhouse) getClickHouseCodecForColumnType(columnType, tableName stri
 
 func getClickhouseColumnTypeForSpecificColumn(columnName, columnType string, isNullable bool) string {
 	specificColumnType := columnType
-	if strings.Contains(specificColumnType, "Array") {
+	// Neither takes a Nullable wrapper: ClickHouse rejects Nullable(Array(...)),
+	// and Nullable(JSON) is accepted but stops rows collapsing on merge.
+	if strings.Contains(specificColumnType, "Array") || specificColumnType == "JSON" {
 		return specificColumnType
 	}
 	if isNullable {

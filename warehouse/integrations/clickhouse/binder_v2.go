@@ -32,6 +32,15 @@ func (ch *ClickhouseV2) bindValue(data, dataType string) any {
 		value, err = strconv.ParseFloat(data, 64)
 	case model.DateTimeDataType:
 		value, err = time.Parse(time.RFC3339, data)
+	case model.JSONDataType:
+		// The driver serialises a JSON column from a string, so the payload goes
+		// through as written. An empty cell is not valid JSON, and the column is
+		// never declared Nullable, so there is no null to fall back to: it
+		// becomes an empty object.
+		if strings.TrimSpace(data) == "" {
+			return "{}"
+		}
+		return data
 	case model.BooleanDataType:
 		var b bool
 		if b, err = strconv.ParseBool(data); b {
