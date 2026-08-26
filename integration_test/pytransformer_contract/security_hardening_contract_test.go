@@ -1140,3 +1140,70 @@ func sendInlinePreview(t *testing.T, baseURL, path, transformationID, code strin
 	require.NoError(t, err)
 	return resp.StatusCode, string(respBody)
 }
+
+// TestFactoryReprRiskContract pins the shadow-only telemetry that will size the future __module__ hardening: a
+// transformation that BOTH builds a factory-made class (namedtuple / three-argument type()) AND renders it to text
+// is the exact shape that hardening could change, and it must surface on transformer_factory_class_repr_risk_total —
+// while a factory class that is never rendered must not. The signal changes no behaviour, so it runs at the shadow
+// default with no env flag.
+//
+// CANDIDATE-ONLY: the metric is new, so there is no released baseline image that exports it.
+func TestFactoryReprRiskContract(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
+
+	const (
+		riskyVID = "hardening-factory-repr-risk-v1"
+		cleanVID = "hardening-factory-repr-risk-clean-v1"
+	)
+
+	// Builds a namedtuple AND renders it with str() — the __module__ stamp would change that string.
+	riskyCode := `
+def transformEvent(event, metadata):
+    import collections
+    P = collections.namedtuple('P', ['x'])
+    return {'t': str(P)}
+`
+	// Builds a namedtuple but never renders text, so the stamp could not affect it — must stay quiet.
+	cleanCode := `
+def transformEvent(event, metadata):
+    import collections
+    P = collections.namedtuple('P', ['x'])
+    return {'x': P(1).x}
+`
+
+	configBackend := newContractConfigBackend(t, map[string]configBackendEntry{
+		riskyVID: {code: riskyCode},
+		cleanVID: {code: cleanCode},
+	})
+	defer configBackend.Close()
+	t.Logf("Config backend at %s", configBackend.URL)
+
+	pyURL, metricsURL := startRudderPytransformerWithMetrics(t, pool, configBackend.URL)
+
+	t.Run("factory build plus text render fires the shadow signal", func(t *testing.T) {
+		status, _, items := sendRawTransform(t, pyURL,
+			[]types.TransformerEvent{makeEvent(riskyVID+"-msg", riskyVID)})
+		require.Equal(t, http.StatusOK, status)
+		require.Len(t, items, 1)
+		require.Equal(t, http.StatusOK, items[0].StatusCode)
+
+		requireMetricAtLeast(t, metricsURL, "transformer_factory_class_repr_risk_total",
+			map[string]string{"transformation_id": riskyVID}, 1,
+			"a transformation that builds a namedtuple and renders it must be flagged so the __module__ blast "+
+				"radius is measurable before the flip")
+	})
+
+	t.Run("factory build without text render stays quiet", func(t *testing.T) {
+		status, _, items := sendRawTransform(t, pyURL,
+			[]types.TransformerEvent{makeEvent(cleanVID+"-msg", cleanVID)})
+		require.Equal(t, http.StatusOK, status)
+		require.Len(t, items, 1)
+		require.Equal(t, http.StatusOK, items[0].StatusCode)
+
+		requireMetricEquals(t, metricsURL, "transformer_factory_class_repr_risk_total",
+			map[string]string{"transformation_id": cleanVID}, 0,
+			"a factory class that is never rendered to text cannot be affected by the __module__ stamp")
+	})
+}
