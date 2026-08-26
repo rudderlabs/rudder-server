@@ -127,8 +127,17 @@ var errorsMappings = []model.JobError{
 	},
 }
 
+type clickhouseDriver interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryContext(context.Context, string, ...any) (*sqlmw.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sqlmw.Row
+	BeginTx(context.Context, *sql.TxOptions) (*sqlmw.Tx, error)
+	PingContext(context.Context) error
+	Close() error
+}
+
 type Clickhouse struct {
-	DB                 *sqlmw.DB
+	DB                 clickhouseDriver
 	Namespace          string
 	ObjectStorage      string
 	Warehouse          model.Warehouse

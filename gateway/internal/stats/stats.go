@@ -6,6 +6,8 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 )
 
 type SourceStat struct {
@@ -19,7 +21,8 @@ type SourceStat struct {
 	Version       string
 	SourceDefName string
 
-	reason string
+	reason        gwtypes.StatReason
+	droppedReason gwtypes.StatReason
 
 	requests struct {
 		total int
@@ -44,10 +47,11 @@ func (ss *SourceStat) RequestSucceeded() {
 	ss.requests.succeeded++
 }
 
-// RequestDropped increments the requests total & dropped counters by one
-func (ss *SourceStat) RequestDropped() {
+// RequestDropped increments the requests total & dropped counters by one, and records why the request was dropped
+func (ss *SourceStat) RequestDropped(reason gwtypes.StatReason) {
 	ss.requests.total++
 	ss.requests.dropped++
+	ss.droppedReason = reason
 }
 
 // RequestSuppressed increments the requests total & suppressed counters by one
@@ -57,7 +61,7 @@ func (ss *SourceStat) RequestSuppressed() {
 }
 
 // RequestFailed increments the requests total & failed counters by one
-func (ss *SourceStat) RequestFailed(reason string) {
+func (ss *SourceStat) RequestFailed(reason gwtypes.StatReason) {
 	ss.requests.total++
 	ss.requests.failed++
 	ss.reason = reason
@@ -72,7 +76,7 @@ func (ss *SourceStat) RequestEventsSucceeded(num int) {
 }
 
 // RequestEventsFailed increments the requests total & failed counters by one, and the events total & failed counters by num
-func (ss *SourceStat) RequestEventsFailed(num int, reason string) {
+func (ss *SourceStat) RequestEventsFailed(num int, reason gwtypes.StatReason) {
 	ss.requests.total++
 	ss.requests.failed++
 	ss.events.failed += num
@@ -87,7 +91,7 @@ func (ss *SourceStat) EventsSuccess(num int) {
 }
 
 // EventsFailed increments the events total & failed counters by num
-func (ss *SourceStat) EventsFailed(num int, reason string) {
+func (ss *SourceStat) EventsFailed(num int, reason gwtypes.StatReason) {
 	ss.events.failed += num
 	ss.events.total += num
 	ss.reason = reason
@@ -111,14 +115,18 @@ func (ss *SourceStat) Report(s stats.Stats) {
 	}
 
 	failedTags := lo.Assign(tags)
-	if ss.reason != "" {
-		failedTags["reason"] = ss.reason
+	if ss.reason != nil {
+		failedTags["reason"] = ss.reason.Value()
+	}
+	droppedTags := lo.Assign(tags)
+	if ss.droppedReason != nil {
+		droppedTags["reason"] = ss.droppedReason.Value()
 	}
 	if ss.requests.total > 0 {
 		s.NewTaggedStat("gateway.write_key_requests", stats.CountType, tags).Count(ss.requests.total)
 		s.NewTaggedStat("gateway.write_key_successful_requests", stats.CountType, tags).Count(ss.requests.succeeded)
 		s.NewTaggedStat("gateway.write_key_failed_requests", stats.CountType, failedTags).Count(ss.requests.failed)
-		s.NewTaggedStat("gateway.write_key_dropped_requests", stats.CountType, tags).Count(ss.requests.dropped)
+		s.NewTaggedStat("gateway.write_key_dropped_requests", stats.CountType, droppedTags).Count(ss.requests.dropped)
 		s.NewTaggedStat("gateway.write_key_suppressed_requests", stats.CountType, tags).Count(ss.requests.suppressed)
 	}
 	if ss.events.total > 0 {

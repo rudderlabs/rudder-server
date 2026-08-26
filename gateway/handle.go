@@ -226,13 +226,25 @@ func (gw *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWebReque
 				switch {
 				case errors.Is(err, errRequestDropped):
 					req.done <- response.TooManyRequests
-					sourceStats[sourceTag].RequestDropped()
+					sourceStats[sourceTag].RequestDropped(gwtypes.ReasonRateLimit)
 				case errors.Is(err, errRequestSuppressed):
 					req.done <- "" // no error
 					sourceStats[sourceTag].RequestSuppressed()
 				default:
+					// Most of these errors are built as errors.New(response.X), so the message is already a bounded
+					// identifier and resolves to the reason declared for it. Anything else reports the catch-all and
+					// has its text logged, where it stays searchable without becoming an unbounded label.
+					reason, known := gwtypes.StatReasonForMessage(err.Error())
+					if !known {
+						reason = gwtypes.ReasonRequestProcessingFailed
+						gw.logger.Errorn("building job data from request",
+							obskit.SourceID(arctx.SourceID),
+							obskit.WorkspaceID(arctx.WorkspaceID),
+							obskit.Error(err),
+						)
+					}
 					req.done <- err.Error()
-					sourceStats[sourceTag].RequestEventsFailed(jobData.numEvents, err.Error())
+					sourceStats[sourceTag].RequestEventsFailed(jobData.numEvents, reason)
 				}
 				continue
 			}
@@ -251,7 +263,7 @@ func (gw *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWebReque
 				}
 			} else {
 				req.done <- response.EmptyBatchPayload
-				sourceStats[sourceTag].RequestFailed(response.EmptyBatchPayload)
+				sourceStats[sourceTag].RequestFailed(gwtypes.ReasonEmptyBatchPayload)
 			}
 		}
 
@@ -268,7 +280,7 @@ func (gw *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWebReque
 			err, found := errorMessagesMap[batch[0].UUID]
 			sourceTag := jobSourceTagMap[batch[0].UUID]
 			if found {
-				sourceStats[sourceTag].RequestEventsFailed(len(batch), "storeFailed")
+				sourceStats[sourceTag].RequestEventsFailed(len(batch), gwtypes.ReasonStoreFailed)
 				jobIDReqMap[batch[0].UUID].errors = append(jobIDReqMap[batch[0].UUID].errors, err)
 			} else {
 				sourceStats[sourceTag].RequestEventsSucceeded(len(batch))
@@ -643,7 +655,7 @@ func (gw *Handle) getPayload(arctx *gwtypes.AuthRequestContext, r *http.Request,
 			WorkspaceID: arctx.WorkspaceID,
 			SourceType:  arctx.SourceCategory,
 		}
-		stat.RequestFailed("requestBodyReadFailed")
+		stat.RequestFailed(gwtypes.ReasonRequestBodyReadFailed)
 		stat.Report(gw.stats)
 
 		return nil, err
@@ -751,7 +763,7 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 
 		body, err = gw.getPayloadFromRequest(r)
 		if err != nil {
-			stat.RequestFailed("requestBodyReadFailed")
+			stat.RequestFailed(gwtypes.ReasonRequestBodyReadFailed)
 			stat.Report(gw.stats)
 			goto requestError
 		}
@@ -766,10 +778,10 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			})
 			if err = gw.storeJobs(ctx, jobs); err != nil {
 				for _, jwm := range jobsWithMetadata {
-					jwm.stat.EventsFailed(1, "storeFailed")
+					jwm.stat.EventsFailed(1, gwtypes.ReasonStoreFailed)
 					jwm.stat.Report(gw.stats)
 				}
-				stat.RequestFailed("storeFailed")
+				stat.RequestFailed(gwtypes.ReasonStoreFailed)
 				stat.Report(gw.stats)
 				goto requestError
 			}
@@ -880,7 +892,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 	err = jsonrs.Unmarshal(body, &messages)
 	if err != nil {
-		stat.RequestFailed(response.InvalidJSON)
+		stat.RequestFailed(gwtypes.ReasonInvalidJSON)
 		stat.Report(gw.stats)
 		gw.logger.Errorn("invalid json in request", obskit.Error(err))
 		return nil, errors.New((response.InvalidJSON))
@@ -888,7 +900,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	gw.requestSizeStat.Observe(float64(len(body)))
 
 	if len(messages) == 0 {
-		stat.RequestFailed(response.NotRudderEvent)
+		stat.RequestFailed(gwtypes.ReasonNotRudderEvent)
 		stat.Report(gw.stats)
 		gw.logger.Errorn("no messages in request")
 		return nil, errors.New((response.NotRudderEvent))
@@ -918,7 +930,11 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			loggerFields = append(loggerFields, obskit.Error(err))
 			gw.logger.Errorn("invalid message in request",
 				loggerFields...)
-			stat.RequestEventsFailed(1, errMsg)
+			reason, known := gwtypes.StatReasonForMessage(errMsg)
+			if !known {
+				reason = gwtypes.ReasonValidationFailed
+			}
+			stat.RequestEventsFailed(1, reason)
 			stat.Report(gw.stats)
 			return nil, errors.New(response.NotRudderEvent)
 		}
@@ -1019,7 +1035,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		payload, err = jsonrs.Marshal(eventBatch)
 		if err != nil {
 			err = fmt.Errorf("marshalling event batch: %w", err)
-			stat.RequestEventsFailed(1, err.Error())
+			stat.RequestEventsFailed(1, gwtypes.ReasonMarshalEventBatchFailed)
 			stat.Report(gw.stats)
 			loggerFields := msg.Properties.LoggerFields()
 			loggerFields = append(loggerFields, obskit.Error(err))
