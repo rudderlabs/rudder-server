@@ -278,28 +278,15 @@ type DgSourceTrackingPlanConfigT struct {
 	SourceId            string                    `json:"sourceId"`
 	SourceConfigVersion int                       `json:"version"`
 	Config              map[string]map[string]any `json:"config"`
-	MergedConfig        map[string]any            `json:"mergedConfig"`
 	Deleted             bool                      `json:"deleted"`
 	TrackingPlan        TrackingPlanT             `json:"trackingPlan"`
 }
 
+// GetMergedConfig returns the tracking plan config that applies to an event type: the global
+// config with the event type's own config layered over it. Either may be absent, and the result is
+// always a non nil map.
 func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType string) map[string]any {
-	if dgSourceTPConfigT.MergedConfig == nil {
-		globalConfig := dgSourceTPConfigT.fetchEventConfig(GlobalEventType)
-		eventSpecificConfig := dgSourceTPConfigT.fetchEventConfig(eventType)
-		outputConfig := lo.Assign(globalConfig, eventSpecificConfig)
-		dgSourceTPConfigT.MergedConfig = outputConfig
-	}
-	return dgSourceTPConfigT.MergedConfig
-}
-
-func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) fetchEventConfig(eventType string) map[string]any {
-	emptyMap := map[string]any{}
-	_, eventSpecificConfigPresent := dgSourceTPConfigT.Config[eventType]
-	if !eventSpecificConfigPresent {
-		return emptyMap
-	}
-	return dgSourceTPConfigT.Config[eventType]
+	return lo.Assign(dgSourceTPConfigT.Config[GlobalEventType], dgSourceTPConfigT.Config[eventType])
 }
 
 type TrackingPlanT struct {
