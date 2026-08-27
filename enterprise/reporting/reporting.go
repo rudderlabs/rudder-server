@@ -74,8 +74,7 @@ type DefaultReporter struct {
 	eventSamplingDuration config.ValueLoader[time.Duration]
 	eventSampler          event_sampler.EventSampler
 
-	requestEntityTooLargeHandling config.ValueLoader[bool]
-	maxSampleEventSizeBytes       config.ValueLoader[int64]
+	maxSampleEventSizeBytes config.ValueLoader[int64]
 
 	eventNamePrefixLength config.ValueLoader[int]
 	eventNameSuffixLength config.ValueLoader[int]
@@ -97,7 +96,6 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
 	maxReportsCountInARequest := conf.GetReloadableIntVar(10, 1, "Reporting.maxReportsCountInARequest")
-	requestEntityTooLargeHandling := conf.GetReloadableBoolVar(false, "Reporting.requestEntityTooLargeHandling")
 	maxSampleEventSizeBytes := conf.GetReloadableInt64Var(80*bytesize.MB, 1, "Reporting.maxSampleEventSizeBytes")
 	eventSamplingEnabled := conf.GetReloadableBoolVar(false, "Reporting.eventSampling.enabled")
 	eventSamplingDuration := conf.GetReloadableDurationVar(60, time.Minute, "Reporting.eventSampling.durationInMinutes")
@@ -142,7 +140,6 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		eventSamplingEnabled:                 eventSamplingEnabled,
 		eventSamplingDuration:                eventSamplingDuration,
 		eventSampler:                         eventSampler,
-		requestEntityTooLargeHandling:        requestEntityTooLargeHandling,
 		maxSampleEventSizeBytes:              maxSampleEventSizeBytes,
 		eventNamePrefixLength:                eventNamePrefixLength,
 		eventNameSuffixLength:                eventNameSuffixLength,
@@ -764,10 +761,6 @@ func (r *DefaultReporter) Stop() {
 }
 
 func (r *DefaultReporter) sendMetric(ctx context.Context, metric *types.Metric) error {
-	if !r.requestEntityTooLargeHandling.Load() {
-		return r.commonClient.SendWithoutFailFast(ctx, metric)
-	}
-
 	err := r.commonClient.Send(ctx, metric)
 	if !errors.Is(err, client.ErrPayloadTooLarge) {
 		return err
