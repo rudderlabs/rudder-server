@@ -30,9 +30,6 @@ type AuthRequestContext struct {
 	ReplaySource    bool
 	SourceJobRunID  string
 	SourceTaskRunID string
-	// CaptureErrorDetail carries the rETL error-capture opt-in delivered via the
-	// X-Rudder-Capture-Error-Detail request header (see augmentAuthRequestContext).
-	CaptureErrorDetail bool
 	// deprecated in favor of SourceDetails
 	Source backendconfig.SourceT
 	// DestinationID is optional param, destination id will be present for rETL Request

@@ -145,6 +145,7 @@ type Handle struct {
 	utSamplingFileManager      filemanager.FileManager
 	storeSamplingFileManager   filemanager.FileManager
 	mirrorFilteredCache        *cachettl.Cache[string, bool]
+	captureOptInPins           *captureOptInPins
 	destinationIsolationMu     sync.RWMutex
 	destinationIsolationCache  map[string]bool
 	rsourcesService            rsources.JobService
@@ -486,6 +487,7 @@ func (proc *Handle) Setup(
 	}
 
 	proc.mirrorFilteredCache = cachettl.New[string, bool](cachettl.WithNoRefreshTTL)
+	proc.captureOptInPins = newCaptureOptInPins()
 
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
@@ -1084,7 +1086,6 @@ func (proc *Handle) singularEventMetadata(singularEvent types.SingularEventT, us
 	commonMetadata.SourceJobRunID = eventParams.SourceJobRunId
 	commonMetadata.SourceTaskRunID = eventParams.SourceTaskRunId
 	commonMetadata.RecordID = misc.MapLookup(singularEvent, "recordId")
-	commonMetadata.CaptureError = eventParams.CaptureError
 
 	// other metadata
 	commonMetadata.InstanceID = proc.instanceID
@@ -1233,7 +1234,6 @@ func (proc *Handle) getTransformerEvents(
 		eventMetadata.SourceJobRunID = userTransformedEvent.Metadata.SourceJobRunID
 		eventMetadata.SourceTaskRunID = userTransformedEvent.Metadata.SourceTaskRunID
 		eventMetadata.RecordID = userTransformedEvent.Metadata.RecordID
-		eventMetadata.CaptureError = userTransformedEvent.Metadata.CaptureError
 
 		// other metadata
 		eventMetadata.TraceParent = userTransformedEvent.Metadata.TraceParent
@@ -3693,7 +3693,9 @@ func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilt
 			sourceCategory := metadata.SourceCategory
 			workspaceID := metadata.WorkspaceID
 			partitionID := metadata.PartitionID
-			captureError := metadata.CaptureError
+			// resolved server-side from the connection's backend config and pinned per job run:
+			// nothing the client sent takes part in this decision (see error_capture_optin.go)
+			captureError := proc.captureErrorForRun(sourceID, destID, sourceJobRunId)
 			// If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			// This is done to respect findWorker logic in router.
 			if rudderID == "" {

@@ -315,10 +315,6 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 		// tracing
 		traceParent = req.traceParent
-
-		// rETL opt-in flag delivered via the X-Rudder-Capture-Error-Detail request header;
-		// only honored (see params below) when the request turns out to carry a job run id.
-		captureErrorRequested = req.authContext.CaptureErrorDetail
 	)
 
 	fillMessageID := func(event map[string]any) {
@@ -493,12 +489,6 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	}
 	if len(destinationID) != 0 {
 		params["destination_id"] = destinationID
-	}
-	// Only honor capture_error on authenticated rETL traffic (a non-empty job run id). sourcesJobRunID
-	// may have been overridden by the first event above, so this must be evaluated here rather than in
-	// the loop. When absent/false/non-rETL, the key must be omitted entirely (old-server leak guard).
-	if sourcesJobRunID != "" && captureErrorRequested {
-		params["capture_error"] = true
 	}
 	marshalledParams, err = jsonrs.Marshal(params)
 	if err != nil {
