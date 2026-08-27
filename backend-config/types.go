@@ -2,6 +2,7 @@ package backendconfig
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/samber/lo"
@@ -54,6 +55,33 @@ type SourceDefinitionT struct {
 type SourceDefinitionOptions struct {
 	Hydration struct {
 		Enabled bool
+	}
+}
+
+// sourceTypeOf is the source type a destination's config is filtered for. A destination connected
+// to several sources carries a different config under each source type, so this is what tells two
+// instances of the same destination apart.
+//
+// A port of the control plane's ServiceUtil.getSourceType. Note the default: a source type it does
+// not know is "cloud", not the lowercased definition name.
+func sourceTypeOf(definitionName, category string) string {
+	switch category {
+	case "cloud", "singer":
+		return "cloudSource"
+	case "warehouse":
+		return "warehouse"
+	}
+	switch name := strings.ToLower(definitionName); name {
+	case "javascript":
+		return "web"
+	case "android_kotlin":
+		return "androidKotlin"
+	case "ios_swift":
+		return "iosSwift"
+	case "android", "ios", "unity", "reactnative", "amp", "flutter", "cordova", "shopify":
+		return name
+	default:
+		return "cloud"
 	}
 }
 
