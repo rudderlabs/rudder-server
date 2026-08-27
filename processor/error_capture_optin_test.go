@@ -302,10 +302,10 @@ func TestCaptureErrorForgedSignalsAreInert(t *testing.T) {
 	// a transformer response echoing a capture flag: Metadata has no such field any more, so the
 	// key is dropped on unmarshal and cannot reach the marshal site
 	var forged types.Metadata
-	require.NoError(t, jsonrs.Unmarshal([]byte(fmt.Sprintf(
+	require.NoError(t, jsonrs.Unmarshal(fmt.Appendf(nil,
 		`{"sourceId":%q,"destinationId":%q,"sourceJobRunId":"run-1","captureError":true,"capture_error":true}`,
 		captureOptInSourceID, captureOptInDestID,
-	)), &forged))
+	), &forged))
 
 	out := proc.destTransform(context.Background(), userTransformAndFilterOutput{
 		eventsToTransform: []types.TransformerEvent{{}},

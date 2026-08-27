@@ -50,7 +50,7 @@ func TestCaptureOptInPinsLifecycle(t *testing.T) {
 		pins.now = func() time.Time { return now }
 
 		require.True(t, pins.pin("run-1", true))
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			now = now.Add(pins.ttl / 3)
 			pins.lookup("run-1")
 		}
@@ -63,7 +63,7 @@ func TestCaptureOptInPinsLifecycle(t *testing.T) {
 		pins := newCaptureOptInPins()
 		pins.now = func() time.Time { return now }
 
-		for i := 0; i < 1_000; i++ {
+		for i := range 1_000 {
 			pins.pin(fmt.Sprintf("run-%d", i), true)
 		}
 		require.Equal(t, 1_000, pins.size())
@@ -98,7 +98,7 @@ func TestCaptureOptInPinsLifecycle(t *testing.T) {
 		pins := newCaptureOptInPins()
 		pins.maxPins = 3
 
-		for i := 0; i < 50; i++ {
+		for i := range 50 {
 			require.True(t, pins.pin(fmt.Sprintf("run-%d", i), true),
 				"a run that cannot be pinned must still get its resolved answer")
 		}
@@ -117,7 +117,7 @@ func TestCaptureOptInPinsLifecycle(t *testing.T) {
 		results := make([]bool, goroutines)
 		var wg sync.WaitGroup
 		start := make(chan struct{})
-		for i := 0; i < goroutines; i++ {
+		for i := range goroutines {
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
