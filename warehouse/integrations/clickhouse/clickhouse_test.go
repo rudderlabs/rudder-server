@@ -1,13 +1,18 @@
 package clickhouse_test
 
 import (
+	"compress/gzip"
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"log"
 	"maps"
+	"net"
 	"os"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	clickhousev2 "github.com/rudderlabs/clickhouse-go/v2"
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -32,6 +38,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -39,7 +46,28 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
+// TestIntegration runs the suite against one ClickHouse implementation, chosen
+// by CLICKHOUSE_USE_V2. Every subtest is shared, so coverage cannot drift
+// between the two, and CI runs the package once per value so each gets its own
+// job. Unset means v1, which is what a bare `go test` gets.
 func TestIntegration(t *testing.T) {
+	var useV2 bool
+	if v := os.Getenv("CLICKHOUSE_USE_V2"); v != "" {
+		parsed, err := strconv.ParseBool(v)
+		require.NoError(t, err, "CLICKHOUSE_USE_V2 must be a boolean")
+		useV2 = parsed
+	}
+
+	implementation := "v1"
+	if useV2 {
+		implementation = "v2"
+	}
+	t.Logf("running against the %s implementation", implementation)
+
+	testIntegration(t, useV2)
+}
+
+func testIntegration(t *testing.T, useV2 bool) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
@@ -48,6 +76,34 @@ func TestIntegration(t *testing.T) {
 	validations.Init()
 	whutils.Init()
 
+	// The single node server is newer for v2 because native JSON needs 25.3+.
+	// The driver itself does not require it: MinSupportedVersion only makes it
+	// log "unsupported clickhouse version" and it connects regardless. So the
+	// cluster keeps the 21.x server both implementations have always used,
+	// along with the node configs written for it.
+	clickhouseCompose := "testdata/docker-compose.clickhouse.yml"
+	clusterCompose := "testdata/docker-compose.clickhouse-cluster.yml"
+	if useV2 {
+		clickhouseCompose = "testdata/docker-compose.clickhouse-v2.yml"
+	}
+
+	// Both implementations satisfy the same interface, so the subtests below only
+	// differ in which one they construct.
+	newClickhouse := func(conf *config.Config) manager.WarehouseOperations {
+		if useV2 {
+			return clickhouse.NewV2(conf, logger.NOP, stats.NOP)
+		}
+		return clickhouse.New(conf, logger.NOP, stats.NOP)
+	}
+
+	// v2 reads its own Warehouse.clickhouse.v2.* namespace, so every key the
+	// suite sets has to follow the implementation under test.
+	configKey := func(key string) string {
+		if useV2 {
+			return "Warehouse.clickhouse.v2." + key
+		}
+		return "Warehouse.clickhouse." + key
+	}
 	destType := whutils.CLICKHOUSE
 
 	host := "localhost"
@@ -58,6 +114,22 @@ func TestIntegration(t *testing.T) {
 	bucketName := "testbucket"
 	accessKeyID := "MYACCESSKEY"
 	secretAccessKey := "MYSECRETKEY"
+
+	// Verification connects with the driver under test. v1 has no JSON type, so
+	// a v1 handle cannot represent everything v2 can create: reads pass because
+	// the queries coerce to String, but a write fails inside the driver rather
+	// than at the server, which leaves v2-only types unverifiable.
+	connectDB := func(t testing.TB, ctx context.Context, port int) *sql.DB {
+		t.Helper()
+
+		if useV2 {
+			return connectClickhouseDBV2(t, host, port, database, user, password)
+		}
+		return connectClickhouseDB(t, ctx, fmt.Sprintf(
+			"tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
+			host, port, database, password, user,
+		))
+	}
 
 	expectedSchema := model.Schema{
 		"screens":       {"context_source_id": "Nullable(String)", "user_id": "Nullable(String)", "sent_at": "Nullable(DateTime)", "context_request_ip": "Nullable(String)", "original_timestamp": "Nullable(DateTime)", "url": "Nullable(String)", "context_source_type": "Nullable(String)", "between": "Nullable(String)", "timestamp": "Nullable(DateTime)", "context_ip": "Nullable(String)", "context_destination_type": "Nullable(String)", "received_at": "DateTime", "title": "Nullable(String)", "uuid_ts": "Nullable(DateTime)", "context_destination_id": "Nullable(String)", "name": "Nullable(String)", "id": "String", "as": "Nullable(String)"},
@@ -159,7 +231,7 @@ func TestIntegration(t *testing.T) {
 				httpPort, err := kithelper.GetFreePort()
 				require.NoError(t, err)
 
-				c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
+				c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 				c.Start(context.Background())
 
 				workspaceID := whutils.RandHex()
@@ -174,10 +246,7 @@ func TestIntegration(t *testing.T) {
 
 				setupDB := func(t testing.TB, ctx context.Context) *sql.DB {
 					t.Helper()
-					dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-						host, clickhousePort, database, password, user,
-					)
-					return connectClickhouseDB(t, ctx, dsn)
+					return connectDB(t, ctx, clickhousePort)
 				}
 
 				verifySchema := func(t *testing.T, db *sql.DB, namespace string) {
@@ -247,6 +316,9 @@ func TestIntegration(t *testing.T) {
 
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
+				if useV2 {
+					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
+				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
@@ -325,7 +397,7 @@ func TestIntegration(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse-cluster.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{clusterCompose, "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -353,10 +425,7 @@ func TestIntegration(t *testing.T) {
 				name: "Cluster Mode Setup",
 				setupDB: func(t testing.TB, ctx context.Context) *sql.DB {
 					t.Helper()
-					dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-						host, clickhouseClusterPort1, database, password, user,
-					)
-					return connectClickhouseDB(t, ctx, dsn)
+					return connectDB(t, ctx, clickhouseClusterPort1)
 				},
 				warehouseEvents2: whth.EventsCountMap{
 					"identifies": 8, "users": 2, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "groups": 8,
@@ -366,13 +435,10 @@ func TestIntegration(t *testing.T) {
 
 					clusterPorts := []int{clickhouseClusterPort2, clickhouseClusterPort3, clickhouseClusterPort4}
 					dbs := lo.Map(clusterPorts, func(port, _ int) *sql.DB {
-						dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-							host, port, database, password, user,
-						)
-						return connectClickhouseDB(t, ctx, dsn)
+						return connectDB(t, ctx, port)
 					})
 					tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-					initializeClickhouseClusterMode(t, dbs, tables, clickhouseClusterPort1)
+					initializeClickhouseClusterMode(t, dbs, tables, clickhouseClusterPort1, connectDB)
 				},
 				eventFilePrefix: "../testdata/upload-job",
 				configOverride: map[string]any{
@@ -452,6 +518,9 @@ func TestIntegration(t *testing.T) {
 
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
+				if useV2 {
+					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
+				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
@@ -528,7 +597,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validations", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "../testdata/docker-compose.minio.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.minio.yml"}))
 		c.Start(context.Background())
 
 		clickhousePort := c.Port("clickhouse", 9000)
@@ -562,11 +631,14 @@ func TestIntegration(t *testing.T) {
 			Enabled:    true,
 			RevisionID: "29eeuTnqbBKn0XVTj5z9XQIbaru",
 		}
+		if useV2 {
+			t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
+		}
 		whth.VerifyConfigurationTest(t, dest)
 	})
 
 	t.Run("Fetch schema", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -576,14 +648,11 @@ func TestIntegration(t *testing.T) {
 		namespace := "test_namespace"
 		table := "test_table"
 
-		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, clickhousePort, database, password, user,
-		)
-		db := connectClickhouseDB(t, ctx, dsn)
+		db := connectDB(t, ctx, clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		t.Run("Success", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_success", namespace),
@@ -627,7 +696,7 @@ func TestIntegration(t *testing.T) {
 		})
 
 		t.Run("Invalid host", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_invalid_host", namespace),
@@ -652,7 +721,7 @@ func TestIntegration(t *testing.T) {
 		})
 
 		t.Run("Invalid database", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_invalid_database", namespace),
@@ -677,7 +746,7 @@ func TestIntegration(t *testing.T) {
 		})
 
 		t.Run("Empty schema", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_empty_schema", namespace),
@@ -705,7 +774,7 @@ func TestIntegration(t *testing.T) {
 		})
 
 		t.Run("Unrecognized schema", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_unrecognized_schema", namespace),
@@ -727,7 +796,7 @@ func TestIntegration(t *testing.T) {
 			err = ch.CreateSchema(ctx)
 			require.NoError(t, err)
 
-			_, err = ch.DB.ExecContext(ctx, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog;",
+			_, err = db.ExecContext(ctx, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog;",
 				warehouse.Namespace,
 				table,
 			))
@@ -740,7 +809,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Load Table round trip", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "../testdata/docker-compose.minio.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.minio.yml"}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -751,10 +820,7 @@ func TestIntegration(t *testing.T) {
 		region := "us-east-1"
 		table := "test_table"
 
-		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, clickhousePort, database, password, user,
-		)
-		db := connectClickhouseDB(t, context.Background(), dsn)
+		db := connectDB(t, context.Background(), clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -763,6 +829,12 @@ func TestIntegration(t *testing.T) {
 			S3EngineEnabledWorkspaceIDs []string
 			disableNullable             bool
 			disableLoadTableStats       bool
+
+			// commitEvery only changes behaviour on v2, which drives the commit
+			// cadence itself; v1 hands block_size to the driver and ignores it.
+			// The cases still run on both, which makes v1 the control: the same
+			// load has to produce the same rows however it was committed.
+			commitEvery int
 		}{
 			{
 				name:                  "normal loading using downloading of load files",
@@ -793,16 +865,38 @@ func TestIntegration(t *testing.T) {
 				fileName:              "testdata/load.csv.gz",
 				disableLoadTableStats: true,
 			},
+			{
+				// load.csv.gz holds 16 rows, so this commits four blocks and
+				// exercises a mid-file commit boundary.
+				name:        "loading in blocks smaller than the file",
+				fileName:    "testdata/load.csv.gz",
+				commitEvery: 5,
+			},
+			{
+				// 16 rows in blocks of 8 ends exactly on a boundary, which is
+				// the case that costs one extra call to learn the stream ended.
+				name:        "row count an exact multiple of the block size",
+				fileName:    "testdata/load.csv.gz",
+				commitEvery: 8,
+			},
+			{
+				name:        "one row per block",
+				fileName:    "testdata/load.csv.gz",
+				commitEvery: 1,
+			},
 		}
 
 		for i, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				conf := config.New()
-				conf.Set("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", tc.S3EngineEnabledWorkspaceIDs)
-				conf.Set("Warehouse.clickhouse.disableNullable", tc.disableNullable)
-				conf.Set("Warehouse.clickhouse.disableLoadTableStats", tc.disableLoadTableStats)
+				conf.Set(configKey("s3EngineEnabledWorkspaceIDs"), tc.S3EngineEnabledWorkspaceIDs)
+				conf.Set(configKey("disableNullable"), tc.disableNullable)
+				conf.Set(configKey("disableLoadTableStats"), tc.disableLoadTableStats)
+				if tc.commitEvery > 0 {
+					conf.Set(configKey("commitEvery"), tc.commitEvery)
+				}
 
-				ch := clickhouse.New(conf, logger.NOP, stats.NOP)
+				ch := newClickhouse(conf)
 
 				warehouse := model.Warehouse{
 					Namespace:   fmt.Sprintf("test_namespace_%d", i),
@@ -927,7 +1021,7 @@ func TestIntegration(t *testing.T) {
 
 				t.Log("verifying if columns are not like Nullable(T) if disableNullable set to true")
 				if tc.disableNullable {
-					rows, err := ch.DB.QueryContext(ctx, fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, warehouse.Namespace))
+					rows, err := db.QueryContext(ctx, fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, warehouse.Namespace))
 					require.NoError(t, err)
 
 					defer func() { _ = rows.Close() }()
@@ -987,10 +1081,124 @@ func TestIntegration(t *testing.T) {
 				require.Empty(t, schema)
 			})
 		}
+
+		// The v2 loader concatenates the load files into one gzip stream, so a
+		// block ends after commitEvery rows rather than at a file boundary.
+		// Three copies of a sixteen-row file committed every 5 puts a commit
+		// inside every file and a block across every boundary. v1 runs this too
+		// as a control: it commits once at the end and has to produce the same
+		// rows.
+		t.Run("blocks spanning multiple load files", func(t *testing.T) {
+			const (
+				loadFileCount = 3
+				commitEvery   = 5
+			)
+
+			conf := config.New()
+			conf.Set(configKey("commitEvery"), commitEvery)
+
+			ch := newClickhouse(conf)
+
+			warehouse := model.Warehouse{
+				Namespace:   "test_namespace_multiple_load_files",
+				WorkspaceID: workspaceID,
+				Destination: backendconfig.DestinationT{
+					Config: map[string]any{
+						"bucketProvider":  whutils.MINIO,
+						"host":            host,
+						"port":            strconv.Itoa(clickhousePort),
+						"database":        database,
+						"user":            user,
+						"password":        password,
+						"bucketName":      bucketName,
+						"accessKeyID":     accessKeyID,
+						"secretAccessKey": secretAccessKey,
+						"endPoint":        minioEndpoint,
+					},
+				},
+			}
+
+			tableSchema := model.TableSchema{
+				"alter_test_bool":     "boolean",
+				"alter_test_datetime": "datetime",
+				"alter_test_float":    "float",
+				"alter_test_int":      "int",
+				"alter_test_string":   "string",
+				"id":                  "string",
+				"received_at":         "datetime",
+				"test_array_bool":     "array(boolean)",
+				"test_array_datetime": "array(datetime)",
+				"test_array_float":    "array(float)",
+				"test_array_int":      "array(int)",
+				"test_array_string":   "array(string)",
+				"test_bool":           "boolean",
+				"test_datetime":       "datetime",
+				"test_float":          "float",
+				"test_int":            "int",
+				"test_string":         "string",
+			}
+
+			fm, err := filemanager.New(&filemanager.Settings{
+				Provider: whutils.MINIO,
+				Config: map[string]any{
+					"bucketName":      bucketName,
+					"accessKeyID":     accessKeyID,
+					"secretAccessKey": secretAccessKey,
+					"endPoint":        minioEndpoint,
+					"forcePathStyle":  true,
+					"disableSSL":      true,
+					"region":          region,
+					"enableSSE":       false,
+				},
+				Conf: config.Default,
+			})
+			require.NoError(t, err)
+
+			ctx := context.Background()
+
+			t.Log("Preparing load files metadata")
+			var expectedRows int
+			loadFiles := make([]whutils.LoadFile, 0, loadFileCount)
+			for n := range loadFileCount {
+				path, rows := loadFileWithUniqueIDs(t, tableSchema, fmt.Sprintf("copy-%d", n))
+				expectedRows += rows
+
+				f, err := os.Open(path)
+				require.NoError(t, err)
+
+				uploadOutput, err := fm.Upload(ctx, f, fmt.Sprintf("test_prefix_multiple_load_files_%d", n))
+				_ = f.Close()
+				require.NoError(t, err)
+
+				loadFiles = append(loadFiles, whutils.LoadFile{Location: uploadOutput.Location})
+			}
+
+			mockUploader := newMockUploader(t, strconv.Itoa(minioPort), tableSchema, loadFiles)
+
+			t.Log("Setting up clickhouse")
+			require.NoError(t, ch.Setup(ctx, warehouse, mockUploader))
+			require.NoError(t, ch.CreateSchema(ctx))
+			require.NoError(t, ch.CreateTable(ctx, table, tableSchema))
+
+			t.Log("Loading data from every load file")
+			loadTableStats, err := ch.LoadTable(ctx, table)
+			require.NoError(t, err)
+			require.EqualValues(t, expectedRows, loadTableStats.RowsInserted)
+
+			// uniqExact rather than count: a block sent twice would still be
+			// counted by RowsInserted, but it cannot invent new ids. Every row
+			// was given a unique id, so this is the count that shows each of
+			// them landed exactly once.
+			var distinctIDs uint64
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf(`SELECT uniqExact(id) FROM %q.%q`, warehouse.Namespace, table),
+			).Scan(&distinctIDs))
+			require.EqualValues(t, expectedRows, distinctIDs)
+		})
 	})
 
 	t.Run("Test connection", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -1000,10 +1208,7 @@ func TestIntegration(t *testing.T) {
 		namespace := "test_namespace"
 		timeout := 5 * time.Second
 
-		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, clickhousePort, database, password, user,
-		)
-		db := connectClickhouseDB(t, context.Background(), dsn)
+		db := connectDB(t, context.Background(), clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -1036,7 +1241,7 @@ func TestIntegration(t *testing.T) {
 
 		for i, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+				ch := newClickhouse(config.New())
 
 				host := host
 				if tc.host != "" {
@@ -1079,7 +1284,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Load test table", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -1097,10 +1302,7 @@ func TestIntegration(t *testing.T) {
 			"val": "RudderStack",
 		}
 
-		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, clickhousePort, database, password, user,
-		)
-		db := connectClickhouseDB(t, context.Background(), dsn)
+		db := connectDB(t, context.Background(), clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -1122,7 +1324,7 @@ func TestIntegration(t *testing.T) {
 
 		for i, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+				ch := newClickhouse(config.New())
 
 				warehouse := model.Warehouse{
 					Namespace:   namespace,
@@ -1165,6 +1367,57 @@ func TestIntegration(t *testing.T) {
 	})
 }
 
+// connectClickhouseDBV2 opens a connection through the v2 fork, for the cases
+// that touch a type v1 cannot represent.
+// clickhouseExceptionCode returns the server error code from whichever driver
+// raised it. The two surface a server exception as different concrete types -
+// v1 as *clickhouse-go.Exception, v2 as the fork's alias of its proto one - so
+// matching on either alone fails under the other. Both carry an int32 Code.
+func clickhouseExceptionCode(t testing.TB, err error) int32 {
+	t.Helper()
+
+	var v1Err *clickhousestd.Exception
+	if errors.As(err, &v1Err) {
+		return v1Err.Code
+	}
+
+	var v2Err *clickhousev2.Exception
+	if errors.As(err, &v2Err) {
+		return v2Err.Code
+	}
+
+	require.Failf(t, "not a clickhouse server exception", "%T: %v", err, err)
+	return 0
+}
+
+func connectClickhouseDBV2(t testing.TB, host string, port int, database, user, password string) *sql.DB {
+	t.Helper()
+
+	db := clickhousev2.OpenDB(&clickhousev2.Options{
+		Addr: []string{net.JoinHostPort(host, strconv.Itoa(port))},
+		Auth: clickhousev2.Auth{
+			Database: database,
+			Username: user,
+			Password: password,
+		},
+		Protocol: clickhousev2.Native,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	require.Eventually(t, func() bool {
+		if err := db.PingContext(ctx); err != nil {
+			t.Log("Ping failed:", err)
+			return false
+		}
+		return true
+	}, time.Minute, time.Second)
+
+	t.Cleanup(func() { _ = db.Close() })
+
+	return db
+}
+
 func connectClickhouseDB(t testing.TB, ctx context.Context, dsn string) *sql.DB {
 	t.Helper()
 
@@ -1186,7 +1439,9 @@ func connectClickhouseDB(t testing.TB, ctx context.Context, dsn string) *sql.DB 
 	return db
 }
 
-func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables []string, clusterPost int) {
+// connect comes from the suite so the DDL below runs over the driver under
+// test, rather than always over v1.
+func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables []string, clusterPost int, connect func(testing.TB, context.Context, int) *sql.DB) {
 	t.Helper()
 
 	type columnInfo struct {
@@ -1321,9 +1576,7 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 	}
 
 	t.Run("Create Drop Create", func(t *testing.T) {
-		clusterDB := connectClickhouseDB(t, context.Background(), fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			"localhost", clusterPost, "rudderdb", "rudder-password", "rudder",
-		))
+		clusterDB := connect(t, context.Background(), clusterPost)
 		defer func() {
 			_ = clusterDB.Close()
 		}()
@@ -1391,9 +1644,7 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 			})
 			require.Error(t, err)
 
-			var clickhouseErr *clickhousestd.Exception
-			require.ErrorAs(t, err, &clickhouseErr)
-			require.Equal(t, int32(253), clickhouseErr.Code)
+			require.EqualValues(t, 253, clickhouseExceptionCode(t, err))
 		})
 	})
 	// Alter columns to all the cluster tables
@@ -1442,4 +1693,47 @@ func newMockUploader(
 	u.EXPECT().IsWarehouseSchemaEmpty().Return(true).AnyTimes()
 
 	return u
+}
+
+// loadFileWithUniqueIDs writes a copy of testdata/load.csv.gz into a temp dir
+// with every id rewritten to be unique, and returns its path and row count.
+//
+// The fixture reuses just two ids across its sixteen rows, and the load table
+// is a ReplacingMergeTree ordered by (received_at, id). Loaded as-is, the rows
+// sharing a sort key are collapsed on merge and the table ends up holding one
+// row per distinct id rather than one per row loaded.
+func loadFileWithUniqueIDs(t testing.TB, schema model.TableSchema, tag string) (string, int) {
+	t.Helper()
+
+	idIndex := slices.Index(whutils.SortColumnKeysFromColumnMap(schema), "id")
+	require.GreaterOrEqual(t, idIndex, 0, "schema has no id column")
+
+	f, err := os.Open("testdata/load.csv.gz")
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+
+	gzr, err := gzip.NewReader(f)
+	require.NoError(t, err)
+	defer func() { _ = gzr.Close() }()
+
+	records, err := csv.NewReader(gzr).ReadAll()
+	require.NoError(t, err)
+
+	dst := filepath.Join(t.TempDir(), "load.csv.gz")
+	out, err := os.Create(dst)
+	require.NoError(t, err)
+
+	gzw := gzip.NewWriter(out)
+	w := csv.NewWriter(gzw)
+	for i, record := range records {
+		require.Greater(t, len(record), idIndex, "load file has fewer columns than the schema")
+		record[idIndex] = fmt.Sprintf("%s-%s-%d", tag, record[idIndex], i)
+		require.NoError(t, w.Write(record))
+	}
+	w.Flush()
+	require.NoError(t, w.Error())
+	require.NoError(t, gzw.Close())
+	require.NoError(t, out.Close())
+
+	return dst, len(records)
 }
