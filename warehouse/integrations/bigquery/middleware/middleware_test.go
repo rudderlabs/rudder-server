@@ -1,8 +1,7 @@
-package middleware_test
+package middleware
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -13,29 +12,12 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
-	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
 
 func TestQueryWrapper(t *testing.T) {
-	if _, exists := os.LookupEnv(bqHelper.TestKey); !exists {
-		if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
-			t.Fatalf("%s environment variable not set", bqHelper.TestKey)
-		}
-		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHelper.TestKey)
-	}
-
-	bqTestCredentials, err := bqHelper.GetBQTestCredentials()
-	require.NoError(t, err)
-
 	ctx := context.Background()
-
-	db, err := bigquery.NewClient(
-		ctx,
-		bqTestCredentials.ProjectID,
-		option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(bqTestCredentials.Credentials)),
-	)
+	db, err := bigquery.NewClient(ctx, "test-project", option.WithoutAuthentication())
 	require.NoError(t, err)
 
 	testCases := []struct {
@@ -67,14 +49,22 @@ func TestQueryWrapper(t *testing.T) {
 
 			mockLogger := mock_logger.NewMockLogger(mockCtrl)
 
-			qw := middleware.New(
-				db,
-				middleware.WithSlowQueryThreshold(queryThreshold),
-				middleware.WithLogger(mockLogger),
-				middleware.WithKeyAndValues(keysAndValues...),
-				middleware.WithSince(func(time.Time) time.Duration {
+			qw := New(
+				nil,
+				WithSlowQueryThreshold(queryThreshold),
+				WithLogger(mockLogger),
+				WithKeyAndValues(keysAndValues...),
+				WithSince(func(time.Time) time.Duration {
 					return tc.executionTime
 				}),
+				func(client *Client) {
+					client.runQuery = func(context.Context, *bigquery.Query) (*bigquery.Job, error) {
+						return nil, nil
+					}
+					client.readQuery = func(context.Context, *bigquery.Query) (*bigquery.RowIterator, error) {
+						return nil, nil
+					}
+				},
 			)
 
 			queryStatement := "SELECT 1;"

@@ -22,6 +22,8 @@ type Client struct {
 	logger             loggerMW
 	keysAndValues      []any
 	slowQueryThreshold time.Duration
+	runQuery           func(context.Context, *bigquery.Query) (*bigquery.Job, error)
+	readQuery          func(context.Context, *bigquery.Query) (*bigquery.RowIterator, error)
 }
 
 func WithLogger(logger loggerMW) Opt {
@@ -53,6 +55,12 @@ func New(client *bigquery.Client, opts ...Opt) *Client {
 		Client:             client,
 		since:              time.Since,
 		slowQueryThreshold: 300 * time.Second,
+		runQuery: func(ctx context.Context, query *bigquery.Query) (*bigquery.Job, error) {
+			return query.Run(ctx)
+		},
+		readQuery: func(ctx context.Context, query *bigquery.Query) (*bigquery.RowIterator, error) {
+			return query.Read(ctx)
+		},
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -62,14 +70,14 @@ func New(client *bigquery.Client, opts ...Opt) *Client {
 
 func (client *Client) Run(ctx context.Context, query *bigquery.Query) (*bigquery.Job, error) {
 	startedAt := time.Now()
-	job, err := query.Run(ctx)
+	job, err := client.runQuery(ctx, query)
 	client.logQuery(query, client.since(startedAt))
 	return job, err
 }
 
 func (client *Client) Read(ctx context.Context, query *bigquery.Query) (it *bigquery.RowIterator, err error) {
 	startedAt := time.Now()
-	it, err = query.Read(ctx)
+	it, err = client.readQuery(ctx, query)
 	client.logQuery(query, client.since(startedAt))
 	return it, err
 }
