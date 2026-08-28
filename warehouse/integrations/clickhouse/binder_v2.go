@@ -1,6 +1,7 @@
 package clickhouse
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
+
+var errEmptyJSONCell = errors.New("empty json cell")
 
 // bindValue converts one raw CSV cell into the exact Go type the column needs.
 //
@@ -32,6 +35,15 @@ func (ch *ClickhouseV2) bindValue(data, dataType string) any {
 		value, err = strconv.ParseFloat(data, 64)
 	case model.DateTimeDataType:
 		value, err = time.Parse(time.RFC3339, data)
+	case model.JSONDataType:
+		// The driver serialises a JSON column from the string as written, so the
+		// payload goes through untouched. An empty cell is the one value that
+		// cannot: it is not valid JSON. Treating it as a parse failure resolves
+		// it through the same fallback every other type uses.
+		value = data
+		if strings.TrimSpace(data) == "" {
+			err = errEmptyJSONCell
+		}
 	case model.BooleanDataType:
 		var b bool
 		if b, err = strconv.ParseBool(data); b {
