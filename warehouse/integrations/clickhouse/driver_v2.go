@@ -18,6 +18,16 @@ import (
 // unknownDatabase is ClickHouse's UNKNOWN_DATABASE error code.
 const unknownDatabase = 81
 
+// s3CredentialsRegex masks the access key and secret that loadByCopyCommand
+// passes to the s3 table function. Without it the middleware logs the statement
+// verbatim once it crosses the slow query threshold, which a full table copy
+// does routinely. The credentials are positional single-quoted arguments rather
+// than named ones, so the pattern anchors on s3( and the location that precedes
+// them.
+var s3CredentialsRegex = map[string]string{
+	`(s3\(\s*'[^']*',\s*)'[^']*',\s*'[^']*'`: `${1}'***', '***'`,
+}
+
 // connect opens a connection and wraps it in the shared middleware.
 // includeDatabase is false when connecting in order to create the database.
 func (ch *ClickhouseV2) connect(includeDatabase bool) (*sqlmw.DB, error) {
@@ -67,6 +77,7 @@ func (ch *ClickhouseV2) connect(includeDatabase bool) (*sqlmw.DB, error) {
 		),
 		sqlmw.WithQueryTimeout(ch.connectTimeout),
 		sqlmw.WithSlowQueryThreshold(ch.config.slowQueryThreshold),
+		sqlmw.WithSecretsRegex(s3CredentialsRegex),
 	), nil
 }
 
