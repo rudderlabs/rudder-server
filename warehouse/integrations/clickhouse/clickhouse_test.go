@@ -1084,13 +1084,13 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 		// The v2 loader concatenates the load files into one gzip stream, so a
 		// block ends after commitEvery rows rather than at a file boundary.
-		// Three files of 16 rows committed every 5 puts a commit inside every
-		// file and a block across every boundary. v1 runs this too as a
-		// control: it commits once at the end and has to produce the same rows.
+		// Three copies of a sixteen-row file committed every 5 puts a commit
+		// inside every file and a block across every boundary. v1 runs this too
+		// as a control: it commits once at the end and has to produce the same
+		// rows.
 		t.Run("blocks spanning multiple load files", func(t *testing.T) {
 			const (
 				loadFileCount = 3
-				rowsPerFile   = 16
 				commitEvery   = 5
 			)
 
@@ -1157,9 +1157,11 @@ func testIntegration(t *testing.T, useV2 bool) {
 			ctx := context.Background()
 
 			t.Log("Preparing load files metadata")
+			var expectedRows int
 			loadFiles := make([]whutils.LoadFile, 0, loadFileCount)
 			for n := range loadFileCount {
-				path := loadFileWithSuffixedIDs(t, "testdata/load.csv.gz", tableSchema, fmt.Sprintf("-copy-%d", n))
+				path, rows := loadFileWithUniqueIDs(t, tableSchema, fmt.Sprintf("copy-%d", n))
+				expectedRows += rows
 
 				f, err := os.Open(path)
 				require.NoError(t, err)
@@ -1181,17 +1183,17 @@ func testIntegration(t *testing.T, useV2 bool) {
 			t.Log("Loading data from every load file")
 			loadTableStats, err := ch.LoadTable(ctx, table)
 			require.NoError(t, err)
-			require.EqualValues(t, loadFileCount*rowsPerFile, loadTableStats.RowsInserted)
+			require.EqualValues(t, expectedRows, loadTableStats.RowsInserted)
 
 			// uniqExact rather than count: a block sent twice would still be
-			// counted by RowsInserted, but it cannot invent new ids. Every id
-			// is unique across the files, so this is the count that shows each
-			// row landed exactly once.
+			// counted by RowsInserted, but it cannot invent new ids. Every row
+			// was given a unique id, so this is the count that shows each of
+			// them landed exactly once.
 			var distinctIDs uint64
 			require.NoError(t, db.QueryRowContext(ctx,
 				fmt.Sprintf(`SELECT uniqExact(id) FROM %q.%q`, warehouse.Namespace, table),
 			).Scan(&distinctIDs))
-			require.EqualValues(t, loadFileCount*rowsPerFile, distinctIDs)
+			require.EqualValues(t, expectedRows, distinctIDs)
 		})
 	})
 
@@ -1693,18 +1695,20 @@ func newMockUploader(
 	return u
 }
 
-// loadFileWithSuffixedIDs writes a copy of a gzipped load file into a temp dir
-// with suffix appended to every id, and returns its path. Loading the same file
-// more than once would otherwise produce rows sharing (received_at, id) — the
-// load table's sort key — which a background merge is free to collapse, making
-// a row count racy.
-func loadFileWithSuffixedIDs(t testing.TB, src string, schema model.TableSchema, suffix string) string {
+// loadFileWithUniqueIDs writes a copy of testdata/load.csv.gz into a temp dir
+// with every id rewritten to be unique, and returns its path and row count.
+//
+// The fixture reuses just two ids across its sixteen rows, and the load table
+// is a ReplacingMergeTree ordered by (received_at, id). Loaded as-is, the rows
+// sharing a sort key are collapsed on merge and the table ends up holding one
+// row per distinct id rather than one per row loaded.
+func loadFileWithUniqueIDs(t testing.TB, schema model.TableSchema, tag string) (string, int) {
 	t.Helper()
 
 	idIndex := slices.Index(whutils.SortColumnKeysFromColumnMap(schema), "id")
 	require.GreaterOrEqual(t, idIndex, 0, "schema has no id column")
 
-	f, err := os.Open(src)
+	f, err := os.Open("testdata/load.csv.gz")
 	require.NoError(t, err)
 	defer func() { _ = f.Close() }()
 
@@ -1721,9 +1725,9 @@ func loadFileWithSuffixedIDs(t testing.TB, src string, schema model.TableSchema,
 
 	gzw := gzip.NewWriter(out)
 	w := csv.NewWriter(gzw)
-	for _, record := range records {
+	for i, record := range records {
 		require.Greater(t, len(record), idIndex, "load file has fewer columns than the schema")
-		record[idIndex] += suffix
+		record[idIndex] = fmt.Sprintf("%s-%s-%d", tag, record[idIndex], i)
 		require.NoError(t, w.Write(record))
 	}
 	w.Flush()
@@ -1731,5 +1735,5 @@ func loadFileWithSuffixedIDs(t testing.TB, src string, schema model.TableSchema,
 	require.NoError(t, gzw.Close())
 	require.NoError(t, out.Close())
 
-	return dst
+	return dst, len(records)
 }
