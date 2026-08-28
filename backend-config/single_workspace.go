@@ -29,7 +29,6 @@ type singleWorkspaceConfig struct {
 	configBackendURL *url.URL
 	configJSONPath   string
 	configEnvHandler types.ConfigEnvI
-	region           string
 
 	workspaceIDOnce sync.Once
 	workspaceID     string
@@ -180,11 +179,6 @@ func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string
 
 	req.SetBasicAuth(wc.token, "")
 	req.Header.Set("Content-Type", "application/json")
-	if wc.region != "" {
-		q := req.URL.Query()
-		q.Add("region", wc.region)
-		req.URL.RawQuery = q.Encode()
-	}
 
 	defer wc.httpCallsStat.Increment()
 
