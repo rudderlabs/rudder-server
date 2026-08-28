@@ -59,10 +59,10 @@ func TestQueryWrapper(t *testing.T) {
 				}),
 				func(client *Client) {
 					client.runQuery = func(context.Context, *bigquery.Query) (*bigquery.Job, error) {
-						return nil, nil
+						return &bigquery.Job{}, nil
 					}
 					client.readQuery = func(context.Context, *bigquery.Query) (*bigquery.RowIterator, error) {
-						return nil, nil
+						return &bigquery.RowIterator{}, nil
 					}
 				},
 			)
