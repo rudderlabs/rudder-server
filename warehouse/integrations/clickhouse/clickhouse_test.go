@@ -1158,7 +1158,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 			t.Log("Preparing load files metadata")
 			loadFiles := make([]whutils.LoadFile, 0, loadFileCount)
-			for n := 0; n < loadFileCount; n++ {
+			for n := range loadFileCount {
 				path := loadFileWithSuffixedIDs(t, "testdata/load.csv.gz", tableSchema, fmt.Sprintf("-copy-%d", n))
 
 				f, err := os.Open(path)

@@ -157,14 +157,13 @@ func TestClickhouseSelector(t *testing.T) {
 			"TestConnection": true,
 		}
 
-		iface := reflect.TypeOf((*WarehouseOperations)(nil)).Elem()
-		warehouseType := reflect.TypeOf(model.Warehouse{})
+		iface := reflect.TypeFor[WarehouseOperations]()
+		warehouseType := reflect.TypeFor[model.Warehouse]()
 
 		carrying := make(map[string]bool)
-		for i := 0; i < iface.NumMethod(); i++ {
-			method := iface.Method(i)
-			for j := 0; j < method.Type.NumIn(); j++ {
-				if method.Type.In(j) == warehouseType {
+		for method := range iface.Methods() {
+			for in := range method.Type.Ins() {
+				if in == warehouseType {
 					carrying[method.Name] = true
 					break
 				}
