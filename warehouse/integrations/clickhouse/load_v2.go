@@ -365,11 +365,15 @@ func (ch *ClickhouseV2) insertBlock(
 ) (int, error) {
 	var inserted int
 
-	err := ch.DB.WithTx(ctx, func(txn *sqlmw.Tx) error {
+	err := ch.DB.WithTx(ctx, func(txCtx context.Context, txn *sqlmw.Tx) error {
 		// A *sql.Stmt belongs to its transaction, and sending a batch is what
 		// ends one, so every block prepares the same SQL again on a fresh
 		// transaction.
-		stmt, err := txn.PrepareContext(ctx, insertSQL)
+		//
+		// txCtx rather than ctx: the driver captures this context on the batch,
+		// and it is the only one batch.Send can observe. Whatever deadline it
+		// carries is what bounds the write.
+		stmt, err := txn.PrepareContext(txCtx, insertSQL)
 		if err != nil {
 			return fmt.Errorf("preparing statement %s: %w", insertSQL, err)
 		}
@@ -393,7 +397,7 @@ func (ch *ClickhouseV2) insertBlock(
 			for index, value := range record {
 				values = append(values, ch.bindValue(value, schema[columnKeys[index]]))
 			}
-			if _, err := stmt.ExecContext(ctx, values...); err != nil {
+			if _, err := stmt.ExecContext(txCtx, values...); err != nil {
 				return fmt.Errorf("executing statement: %w", err)
 			}
 			inserted++
