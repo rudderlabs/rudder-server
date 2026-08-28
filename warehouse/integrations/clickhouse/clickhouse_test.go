@@ -596,6 +596,155 @@ func testIntegration(t *testing.T, useV2 bool) {
 		}
 	})
 
+	// jsonPaths is what makes the transformer emit a json column for ClickHouse
+	// instead of flattening the object, and the loader then has to carry that
+	// through to a native JSON column. The other blocks exercise one half or
+	// the other: this one puts events in at the gateway and reads the column
+	// type back out of ClickHouse.
+	t.Run("Events flow (JSON paths)", func(t *testing.T) {
+		if !useV2 {
+			// dataTypeOverride emits json for every ClickHouse destination, but
+			// clickhouse-go v1 cannot bind a JSON value, so a v1 destination
+			// with jsonPaths set fails at load rather than here.
+			t.Skip("jsonPaths on clickhouse needs the v2 driver")
+		}
+
+		httpPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
+		c.Start(context.Background())
+
+		workspaceID := whutils.RandHex()
+		sourceID := whutils.RandHex()
+		destinationID := whutils.RandHex()
+		writeKey := whutils.RandHex()
+		jobsDBPort := c.Port("jobsDb", 5432)
+		clickhousePort := c.Port("clickhouse", 9000)
+		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
+
+		// upload-job with one nested object added to the Product Track
+		// properties, so the event counts stay at the suite defaults and the
+		// json column is the only thing new about the schema.
+		eventFilePrefix := "testdata/upload-job-json-paths"
+
+		jobsDB := whth.JobsDB(t, jobsDBPort)
+
+		destination := backendconfigtest.NewDestinationBuilder(destType).
+			WithID(destinationID).
+			WithRevisionID(destinationID).
+			WithConfigOption("host", host).
+			WithConfigOption("database", database).
+			WithConfigOption("user", user).
+			WithConfigOption("password", password).
+			WithConfigOption("port", strconv.Itoa(clickhousePort)).
+			WithConfigOption("bucketProvider", whutils.MINIO).
+			WithConfigOption("bucketName", bucketName).
+			WithConfigOption("accessKeyID", accessKeyID).
+			WithConfigOption("secretAccessKey", secretAccessKey).
+			WithConfigOption("useSSL", false).
+			WithConfigOption("secure", false).
+			WithConfigOption("endPoint", minioEndpoint).
+			WithConfigOption("useRudderStorage", false).
+			WithConfigOption("syncFrequency", "30").
+			WithConfigOption("allowUsersContextTraits", true).
+			WithConfigOption("underscoreDivideNumbers", true).
+			WithConfigOption("cleanupObjectStorageFiles", true).
+			// extractDestOpts splits this on commas, and only reads it at all
+			// because CLICKHOUSE is now in destinationSupportJSONPathAsPartOfConfig.
+			WithConfigOption("jsonPaths", "track.properties.review_meta").
+			Build()
+
+		workspaceConfig := backendconfigtest.NewConfigBuilder().
+			WithSource(
+				backendconfigtest.NewSourceBuilder().
+					WithID(sourceID).
+					WithWriteKey(writeKey).
+					WithWorkspaceID(workspaceID).
+					WithConnection(destination).
+					Build(),
+			).
+			WithWorkspaceID(workspaceID).
+			Build()
+
+		t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
+		t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
+
+		whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
+
+		ctx := context.Background()
+		db := connectDB(t, ctx, clickhousePort)
+		t.Cleanup(func() { _ = db.Close() })
+
+		conf := map[string]any{
+			"bucketProvider":   whutils.MINIO,
+			"bucketName":       bucketName,
+			"accessKeyID":      accessKeyID,
+			"secretAccessKey":  secretAccessKey,
+			"useSSL":           false,
+			"endPoint":         minioEndpoint,
+			"useRudderStorage": false,
+		}
+		tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+
+		for _, eventsFile := range []string{eventFilePrefix + ".events-1.json", eventFilePrefix + ".events-2.json"} {
+			t.Logf("sending %s", eventsFile)
+			ts := whth.TestConfig{
+				WriteKey:        writeKey,
+				Schema:          database,
+				Tables:          tables,
+				SourceID:        sourceID,
+				DestinationID:   destinationID,
+				Config:          conf,
+				WorkspaceID:     workspaceID,
+				DestinationType: destType,
+				JobsDB:          jobsDB,
+				HTTPPort:        httpPort,
+				Client:          &client.Client{SQL: db, Type: client.SQLClient},
+				UserID:          whth.GetUserId(destType),
+				EventsFilePath:  eventsFile,
+				TransformerURL:  transformerURL,
+				Destination:     destination,
+			}
+			ts.VerifyEvents(t)
+		}
+
+		t.Log("verifying the matched path became a json column")
+		var columnType string
+		require.NoError(t, db.QueryRowContext(ctx,
+			"SELECT type FROM system.columns WHERE database = ? AND table = 'product_track' AND name = 'review_meta'",
+			database,
+		).Scan(&columnType))
+		require.Equal(t, "Nullable(JSON)", columnType)
+
+		t.Log("verifying the rest of the schema is untouched")
+		// Only product_track gains a column: the path matches
+		// track_properties_review_meta, and tracks carries no properties.
+		expected := maps.Clone(expectedSchema)
+		expected["product_track"] = maps.Clone(expectedSchema["product_track"])
+		expected["product_track"]["review_meta"] = "Nullable(JSON)"
+		schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, database))
+		require.Equal(t, expected, whth.ConvertRecordsToSchema(schema))
+
+		t.Log("verifying the object round trips")
+		var payload string
+		require.NoError(t, db.QueryRowContext(ctx,
+			fmt.Sprintf(`SELECT toString(review_meta) FROM %q.%q LIMIT 1`, database, "product_track"),
+		).Scan(&payload))
+		require.JSONEq(t, `{"verified": true, "channel": "web"}`, payload)
+
+		// Reading a path out of the column is what separates a real JSON column
+		// from text holding the same bytes.
+		t.Log("verifying a path inside the column is queryable")
+		var channel string
+		require.NoError(t, db.QueryRowContext(ctx,
+			fmt.Sprintf(`SELECT toString(review_meta.channel) FROM %q.%q LIMIT 1`, database, "product_track"),
+		).Scan(&channel))
+		require.Contains(t, channel, "web")
+	})
+
 	t.Run("Validations", func(t *testing.T) {
 		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.minio.yml"}))
 		c.Start(context.Background())
@@ -1403,8 +1552,6 @@ func testIntegration(t *testing.T, useV2 bool) {
 			require.Contains(t, payload, "10")
 		})
 
-		// An empty cell is not valid JSON, so it resolves to null exactly as a
-		// cell that fails to parse does for every other type.
 		// An empty cell is not valid JSON, so it resolves to null exactly as a
 		// cell that fails to parse does for every other type. A cell holding
 		// only whitespace is the same case: it is trimmed before the check.
