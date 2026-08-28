@@ -1,14 +1,18 @@
 package clickhouse_test
 
 import (
+	"compress/gzip"
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"log"
 	"maps"
 	"net"
 	"os"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -1077,6 +1081,118 @@ func testIntegration(t *testing.T, useV2 bool) {
 				require.Empty(t, schema)
 			})
 		}
+
+		// The v2 loader concatenates the load files into one gzip stream, so a
+		// block ends after commitEvery rows rather than at a file boundary.
+		// Three files of 16 rows committed every 5 puts a commit inside every
+		// file and a block across every boundary. v1 runs this too as a
+		// control: it commits once at the end and has to produce the same rows.
+		t.Run("blocks spanning multiple load files", func(t *testing.T) {
+			const (
+				loadFileCount = 3
+				rowsPerFile   = 16
+				commitEvery   = 5
+			)
+
+			conf := config.New()
+			conf.Set(configKey("commitEvery"), commitEvery)
+
+			ch := newClickhouse(conf)
+
+			warehouse := model.Warehouse{
+				Namespace:   "test_namespace_multiple_load_files",
+				WorkspaceID: workspaceID,
+				Destination: backendconfig.DestinationT{
+					Config: map[string]any{
+						"bucketProvider":  whutils.MINIO,
+						"host":            host,
+						"port":            strconv.Itoa(clickhousePort),
+						"database":        database,
+						"user":            user,
+						"password":        password,
+						"bucketName":      bucketName,
+						"accessKeyID":     accessKeyID,
+						"secretAccessKey": secretAccessKey,
+						"endPoint":        minioEndpoint,
+					},
+				},
+			}
+
+			tableSchema := model.TableSchema{
+				"alter_test_bool":     "boolean",
+				"alter_test_datetime": "datetime",
+				"alter_test_float":    "float",
+				"alter_test_int":      "int",
+				"alter_test_string":   "string",
+				"id":                  "string",
+				"received_at":         "datetime",
+				"test_array_bool":     "array(boolean)",
+				"test_array_datetime": "array(datetime)",
+				"test_array_float":    "array(float)",
+				"test_array_int":      "array(int)",
+				"test_array_string":   "array(string)",
+				"test_bool":           "boolean",
+				"test_datetime":       "datetime",
+				"test_float":          "float",
+				"test_int":            "int",
+				"test_string":         "string",
+			}
+
+			fm, err := filemanager.New(&filemanager.Settings{
+				Provider: whutils.MINIO,
+				Config: map[string]any{
+					"bucketName":      bucketName,
+					"accessKeyID":     accessKeyID,
+					"secretAccessKey": secretAccessKey,
+					"endPoint":        minioEndpoint,
+					"forcePathStyle":  true,
+					"disableSSL":      true,
+					"region":          region,
+					"enableSSE":       false,
+				},
+				Conf: config.Default,
+			})
+			require.NoError(t, err)
+
+			ctx := context.Background()
+
+			t.Log("Preparing load files metadata")
+			loadFiles := make([]whutils.LoadFile, 0, loadFileCount)
+			for n := 0; n < loadFileCount; n++ {
+				path := loadFileWithSuffixedIDs(t, "testdata/load.csv.gz", tableSchema, fmt.Sprintf("-copy-%d", n))
+
+				f, err := os.Open(path)
+				require.NoError(t, err)
+
+				uploadOutput, err := fm.Upload(ctx, f, fmt.Sprintf("test_prefix_multiple_load_files_%d", n))
+				_ = f.Close()
+				require.NoError(t, err)
+
+				loadFiles = append(loadFiles, whutils.LoadFile{Location: uploadOutput.Location})
+			}
+
+			mockUploader := newMockUploader(t, strconv.Itoa(minioPort), tableSchema, loadFiles)
+
+			t.Log("Setting up clickhouse")
+			require.NoError(t, ch.Setup(ctx, warehouse, mockUploader))
+			require.NoError(t, ch.CreateSchema(ctx))
+			require.NoError(t, ch.CreateTable(ctx, table, tableSchema))
+
+			t.Log("Loading data from every load file")
+			loadTableStats, err := ch.LoadTable(ctx, table)
+			require.NoError(t, err)
+			require.EqualValues(t, loadFileCount*rowsPerFile, loadTableStats.RowsInserted)
+
+			// uniqExact rather than count: a block sent twice would still be
+			// counted by RowsInserted, but it cannot invent new ids. Every id
+			// is unique across the files, so this is the count that shows each
+			// row landed exactly once.
+			var distinctIDs uint64
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf(`SELECT uniqExact(id) FROM %q.%q`, warehouse.Namespace, table),
+			).Scan(&distinctIDs))
+			require.EqualValues(t, loadFileCount*rowsPerFile, distinctIDs)
+		})
 	})
 
 	t.Run("Test connection", func(t *testing.T) {
@@ -1575,4 +1691,45 @@ func newMockUploader(
 	u.EXPECT().IsWarehouseSchemaEmpty().Return(true).AnyTimes()
 
 	return u
+}
+
+// loadFileWithSuffixedIDs writes a copy of a gzipped load file into a temp dir
+// with suffix appended to every id, and returns its path. Loading the same file
+// more than once would otherwise produce rows sharing (received_at, id) — the
+// load table's sort key — which a background merge is free to collapse, making
+// a row count racy.
+func loadFileWithSuffixedIDs(t testing.TB, src string, schema model.TableSchema, suffix string) string {
+	t.Helper()
+
+	idIndex := slices.Index(whutils.SortColumnKeysFromColumnMap(schema), "id")
+	require.GreaterOrEqual(t, idIndex, 0, "schema has no id column")
+
+	f, err := os.Open(src)
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+
+	gzr, err := gzip.NewReader(f)
+	require.NoError(t, err)
+	defer func() { _ = gzr.Close() }()
+
+	records, err := csv.NewReader(gzr).ReadAll()
+	require.NoError(t, err)
+
+	dst := filepath.Join(t.TempDir(), "load.csv.gz")
+	out, err := os.Create(dst)
+	require.NoError(t, err)
+
+	gzw := gzip.NewWriter(out)
+	w := csv.NewWriter(gzw)
+	for _, record := range records {
+		require.Greater(t, len(record), idIndex, "load file has fewer columns than the schema")
+		record[idIndex] += suffix
+		require.NoError(t, w.Write(record))
+	}
+	w.Flush()
+	require.NoError(t, w.Error())
+	require.NoError(t, gzw.Close())
+	require.NoError(t, out.Close())
+
+	return dst
 }
