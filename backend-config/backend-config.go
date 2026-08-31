@@ -139,11 +139,18 @@ func filterProcessorEnabledWorkspaceConfig(config map[string]ConfigT) map[string
 	return filterConfig
 }
 
+// filterProcessorEnabledDestinations trims a workspace config down to the destinations the
+// processor should see. Destination filtering is this function's ONLY transformation, so it
+// starts from the complete config and every other field survives verbatim. It used to be
+// written the other way round — start from an empty ConfigT and copy an allowlist of fields —
+// which silently dropped every field added to ConfigT after the allowlist was written:
+// Connections (added with #5753) never reached TopicProcessConfig, so the processor's rETL
+// error-capture opt-in (processor/error_capture_optin.go) resolved against an empty map and
+// failed closed for every connection, with no error anywhere. The field-preservation contract
+// is pinned by TestFilterProcessorEnabledDestinationsPreservesFields.
 func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
-	var modifiedConfig ConfigT
-	modifiedConfig.Libraries = config.Libraries
-	modifiedConfig.Sources = make([]SourceT, 0)
-	modifiedConfig.Credentials = config.Credentials
+	modifiedConfig := config
+	modifiedConfig.Sources = make([]SourceT, 0, len(config.Sources))
 	for _, source := range config.Sources {
 		var destinations []DestinationT
 		for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
@@ -158,7 +165,6 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 		source.Destinations = destinations
 		modifiedConfig.Sources = append(modifiedConfig.Sources, source)
 	}
-	modifiedConfig.Settings = config.Settings
 	return modifiedConfig
 }
 

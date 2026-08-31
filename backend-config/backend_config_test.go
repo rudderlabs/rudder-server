@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -116,8 +117,11 @@ var sampleConfigWithConnection = ConfigT{
 	},
 }
 
-// This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
+// sampleFilteredSources is sampleBackendConfig as it appears on TopicProcessConfig: destination
+// filtering is the filter's only transformation, so every other field survives verbatim (see
+// TestFilterProcessorEnabledDestinationsPreservesFields).
 var sampleFilteredSources = ConfigT{
+	WorkspaceID: sampleWorkspaceID,
 	Sources: []SourceT{
 		{
 			ID:             "1",
@@ -355,7 +359,11 @@ func TestConfigUpdate(t *testing.T) {
 
 		bc.configUpdate(ctx)
 		require.True(t, bc.initialized)
-		require.Equal(t, (<-chProcess).Data, map[string]ConfigT{workspaces: sampleFilteredSources})
+		// Connections ride TopicProcessConfig unfiltered: the processor's rETL error-capture
+		// opt-in resolves off them (processor/error_capture_optin.go).
+		filteredWithConnections := sampleFilteredSources
+		filteredWithConnections.Connections = sampleConfigWithConnection.Connections
+		require.Equal(t, (<-chProcess).Data, map[string]ConfigT{workspaces: filteredWithConnections})
 		require.Equal(t, (<-chBackend).Data, map[string]ConfigT{workspaces: sampleConfigWithConnection})
 		require.Equal(t, bc.curSourceJSON[workspaces].Connections, sampleConfigWithConnection.Connections)
 	})
@@ -663,3 +671,63 @@ type mockIdentifier struct {
 func (m *mockIdentifier) ID() string                  { return m.key }
 func (m *mockIdentifier) BasicAuth() (string, string) { return m.token, "" }
 func (*mockIdentifier) Type() deployment.Type         { return "mockType" }
+
+// TestFilterProcessorEnabledDestinationsPreservesFields pins the contract that destination
+// filtering is filterProcessorEnabledDestinations' ONLY transformation. The function used to
+// rebuild ConfigT from an allowlist of fields, which silently dropped every field added after
+// the allowlist was written — Connections never reached TopicProcessConfig, so the processor's
+// rETL error-capture opt-in resolved against an empty map and failed closed for every
+// connection. The reflection sweep forces this fixture to grow with the struct: add a field to
+// ConfigT without setting it here and the test fails, demanding a conscious decision instead
+// of a silent drop.
+func TestFilterProcessorEnabledDestinationsPreservesFields(t *testing.T) {
+	config := ConfigT{
+		EnableMetrics: true,
+		WorkspaceID:   "ws-1",
+		Sources: []SourceT{{
+			ID: "src-1",
+			Destinations: []DestinationT{
+				{ID: "dest-enabled", IsProcessorEnabled: true},
+				{ID: "dest-disabled", IsProcessorEnabled: false},
+			},
+		}},
+		EventReplays: map[string]EventReplayConfig{"replay-1": {}},
+		Libraries:    LibrariesT{{VersionID: "lib-1"}},
+		ConnectionFlags: ConnectionFlags{
+			URL:      "https://cp-router.example",
+			Services: map[string]bool{"warehouse": true},
+		},
+		Settings:    Settings{EventAuditEnabled: true},
+		UpdatedAt:   time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC),
+		Credentials: map[string]Credential{"cred-1": {Key: "k", Value: "v"}},
+		Connections: map[string]Connection{"conn-1": {
+			SourceID:      "src-1",
+			DestinationID: "dest-enabled",
+			Enabled:       true,
+			Config: map[string]any{"source": map[string]any{"syncSettings": map[string]any{
+				"errorDetailsConfig": map[string]any{"enabled": true},
+			}}},
+		}},
+		Accounts:           map[string]Account{"acct-1": {ID: "acct-1"}},
+		AccountDefinitions: map[string]AccountDefinition{"acctdef-1": {Name: "acctdef-1"}},
+	}
+
+	cv := reflect.ValueOf(config)
+	for i := 0; i < cv.NumField(); i++ {
+		require.Falsef(t, cv.Field(i).IsZero(),
+			"fixture leaves ConfigT.%s at its zero value; set it above and decide whether filterProcessorEnabledDestinations must preserve it",
+			cv.Type().Field(i).Name)
+	}
+
+	got := filterProcessorEnabledDestinations(config)
+
+	// The one intended transformation: processor-disabled destinations are dropped.
+	require.Len(t, got.Sources, 1)
+	require.Len(t, got.Sources[0].Destinations, 1)
+	require.Equal(t, "dest-enabled", got.Sources[0].Destinations[0].ID)
+
+	// Everything else survives verbatim.
+	want := config
+	want.Sources = got.Sources
+	require.Equal(t, want, got)
+}
