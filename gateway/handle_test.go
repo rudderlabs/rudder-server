@@ -21,8 +21,11 @@ import (
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/gateway/validator"
 	mocks_gateway "github.com/rudderlabs/rudder-server/mocks/gateway"
+	mock_types "github.com/rudderlabs/rudder-server/mocks/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // createTestGateway creates a minimal Handle instance for testing event blocking
@@ -697,6 +700,174 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 			}
 		})
 	}
+}
+
+// createTestGatewayWithSuppression is an option-style variant of createTestGateway: it wraps a
+// freshly built gateway (so the shared event-blocking tests keep their current wiring) and seeds
+// gw.conf.storeUserSuppressedEvents plus enableSuppressUserFeature/suppressUserHandler, which
+// gw.conf.storeUserSuppressedEvents.Load() (handle.go:1034) and gw.isUserSuppressed (handle.go:651)
+// need to avoid a nil-pointer panic / to actually route a message down the suppression branch.
+func createTestGatewayWithSuppression(
+	t *testing.T,
+	eventBlockingSettings backendconfig.EventBlocking,
+	storeUserSuppressedEvents bool,
+	suppressedUserIDs map[string]bool,
+) *Handle {
+	gw := createTestGateway(t, eventBlockingSettings)
+	gw.conf.enableSuppressUserFeature = true
+	gw.conf.storeUserSuppressedEvents = config.SingleValueLoader(storeUserSuppressedEvents)
+
+	mockCtrl := gomock.NewController(t)
+	t.Cleanup(mockCtrl.Finish)
+	mockSuppression := mock_types.NewMockUserSuppression(mockCtrl)
+	mockSuppression.EXPECT().
+		GetSuppressedUser(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_, userID, _ string) *model.Metadata {
+			if suppressedUserIDs[userID] {
+				return &model.Metadata{}
+			}
+			return nil
+		}).AnyTimes()
+	gw.suppressUserHandler = mockSuppression
+
+	return gw
+}
+
+func TestExtractJobsFromInternalBatchPayload_UserSuppression(t *testing.T) {
+	suppressedMessage := func(userID, sourceID string) stream.Message {
+		return stream.Message{
+			Properties: stream.MessageProperties{
+				RequestType: "track",
+				RoutingKey:  "routing-key-" + userID,
+				WorkspaceID: "workspace1",
+				SourceID:    sourceID,
+				UserID:      userID,
+				ReceivedAt:  time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				RequestIP:   "1.1.1.1",
+			},
+			Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"` + userID + `",` +
+				`"anonymousId":"anon-1","context":{"traits":{"email":"user@example.com"}},"traits":{"plan":"pro"},` +
+				`"properties":{"amount":10},"request_ip":"1.2.3.4","rudderId":"some-rudder-id",` +
+				`"receivedAt":"2024-01-01T00:00:00Z"}`),
+		}
+	}
+
+	t.Run("flag off: a suppressed event is dropped and produces no job", func(t *testing.T) {
+		gw := createTestGatewayWithSuppression(t, backendconfig.EventBlocking{}, false, map[string]bool{"user1": true})
+
+		jobs, err := gw.extractJobsFromInternalBatchPayload("batch", mustMarshal(t, []stream.Message{suppressedMessage("user1", "source-id-1")}))
+		require.NoError(t, err)
+		require.Empty(t, jobs, "a suppressed event with the flag off must not produce a job")
+
+		metrics := gw.stats.(*memstats.Store).GetByName("gateway.write_key_suppressed_events")
+		require.NotEmpty(t, metrics, "the suppressed-events stat must still increment regardless of the flag")
+	})
+
+	t.Run("flag on: a suppressed event produces a job with is_user_suppressed true", func(t *testing.T) {
+		gw := createTestGatewayWithSuppression(t, backendconfig.EventBlocking{}, true, map[string]bool{"user1": true})
+
+		jobs, err := gw.extractJobsFromInternalBatchPayload("batch", mustMarshal(t, []stream.Message{suppressedMessage("user1", "source-id-1")}))
+		require.NoError(t, err)
+		require.Len(t, jobs, 1)
+
+		params := unmarshalParams(t, jobs[0].job.Parameters)
+		require.Equal(t, true, params["is_user_suppressed"])
+	})
+
+	t.Run("flag on: the stored payload retains only messageId, type, event and receivedAt", func(t *testing.T) {
+		gw := createTestGatewayWithSuppression(t, backendconfig.EventBlocking{}, true, map[string]bool{"user1": true})
+
+		jobs, err := gw.extractJobsFromInternalBatchPayload("batch", mustMarshal(t, []stream.Message{suppressedMessage("user1", "source-id-1")}))
+		require.NoError(t, err)
+		require.Len(t, jobs, 1)
+
+		var eventBatch struct {
+			Batch []map[string]any `json:"batch"`
+		}
+		require.NoError(t, jsonrs.Unmarshal(jobs[0].job.EventPayload, &eventBatch))
+		require.Len(t, eventBatch.Batch, 1)
+
+		keys := make([]string, 0, len(eventBatch.Batch[0]))
+		for k := range eventBatch.Batch[0] {
+			keys = append(keys, k)
+		}
+		require.ElementsMatch(t, []string{"messageId", "type", "event", "receivedAt"}, keys)
+	})
+
+	t.Run("flag on: receivedAt is the message property formatted as RFC3339Milli", func(t *testing.T) {
+		gw := createTestGatewayWithSuppression(t, backendconfig.EventBlocking{}, true, map[string]bool{"user1": true})
+		msg := suppressedMessage("user1", "source-id-1")
+
+		jobs, err := gw.extractJobsFromInternalBatchPayload("batch", mustMarshal(t, []stream.Message{msg}))
+		require.NoError(t, err)
+		require.Len(t, jobs, 1)
+
+		var eventBatch struct {
+			Batch []map[string]any `json:"batch"`
+		}
+		require.NoError(t, jsonrs.Unmarshal(jobs[0].job.EventPayload, &eventBatch))
+		require.Equal(t, msg.Properties.ReceivedAt.Format(misc.RFC3339Milli), eventBatch.Batch[0]["receivedAt"])
+	})
+
+	t.Run("flag on: skipLiveEventRecording is set for a suppressed event", func(t *testing.T) {
+		gw := createTestGatewayWithSuppression(t, backendconfig.EventBlocking{}, true, map[string]bool{"user1": true})
+
+		jobs, err := gw.extractJobsFromInternalBatchPayload("batch", mustMarshal(t, []stream.Message{suppressedMessage("user1", "source-id-1")}))
+		require.NoError(t, err)
+		require.Len(t, jobs, 1)
+		require.True(t, jobs[0].skipLiveEventRecording)
+	})
+
+	t.Run("flag on: a suppressed event whose name is blocked is not also marked is_event_blocked", func(t *testing.T) {
+		gw := createTestGatewayWithSuppression(t, backendconfig.EventBlocking{
+			Events: map[string][]string{"track": {"Purchase"}},
+		}, true, map[string]bool{"user1": true})
+
+		jobs, err := gw.extractJobsFromInternalBatchPayload("batch", mustMarshal(t, []stream.Message{suppressedMessage("user1", "source-id-1")}))
+		require.NoError(t, err)
+		require.Len(t, jobs, 1)
+
+		params := unmarshalParams(t, jobs[0].job.Parameters)
+		require.Equal(t, true, params["is_user_suppressed"])
+		_, blockedPresent := params["is_event_blocked"]
+		require.False(t, blockedPresent, "a suppressed event must not also be marked is_event_blocked")
+	})
+
+	t.Run("flag on: non-suppressed events in the same batch are untouched", func(t *testing.T) {
+		gw := createTestGatewayWithSuppression(t, backendconfig.EventBlocking{}, true, map[string]bool{"user1": true})
+		normalMessage := suppressedMessage("user2", "source-id-1")
+
+		jobs, err := gw.extractJobsFromInternalBatchPayload("batch", mustMarshal(t, []stream.Message{
+			suppressedMessage("user1", "source-id-1"),
+			normalMessage,
+		}))
+		require.NoError(t, err)
+		require.Len(t, jobs, 2)
+
+		normalParams := unmarshalParams(t, jobs[1].job.Parameters)
+		_, present := normalParams["is_user_suppressed"]
+		require.False(t, present, "a non-suppressed sibling must not carry is_user_suppressed")
+
+		var eventBatch struct {
+			Batch []map[string]any `json:"batch"`
+		}
+		require.NoError(t, jsonrs.Unmarshal(jobs[1].job.EventPayload, &eventBatch))
+		require.Contains(t, eventBatch.Batch[0], "traits", "the non-suppressed sibling's full payload must survive untouched")
+	})
+}
+
+func mustMarshal(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := jsonrs.Marshal(v)
+	require.NoError(t, err)
+	return b
+}
+
+func unmarshalParams(t *testing.T, raw []byte) map[string]any {
+	t.Helper()
+	var params map[string]any
+	require.NoError(t, jsonrs.Unmarshal(raw, &params))
+	return params
 }
 
 func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {

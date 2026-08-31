@@ -12,6 +12,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,12 +22,14 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -780,6 +783,150 @@ func TestReportingDroppedEvents(t *testing.T) {
 		_ = wg.Wait()
 	})
 
+	// Phase 3 of the pipeline inspector: suppressed users become dummy jobs that ride the normal
+	// gateway -> jobsdb -> processor path and are reported and dropped at the top of the
+	// processor's preprocess loop. A single server processes two batches for the same suppressed
+	// user with the (reloadable) Gateway.storeUserSuppressedEvents flag flipped between them:
+	//
+	//	1. flag off (default) -> nothing is stored at all, the request is short-circuited
+	//	2. flag on            -> one dummy gw job per suppressed event, dropped at the processor
+	//	                         with a user_suppression/filtered/298 row and nothing else
+	//
+	// Report rows are committed in the same transaction as the gateway job statuses, so "exactly
+	// N gw jobs succeeded" is both the barrier for the second batch and the proof that the first
+	// batch stored nothing.
+	t.Run("Events dropped in user suppression stage", func(t *testing.T) {
+		config.Reset()
+		defer config.Reset()
+
+		const (
+			eventsPerBatch = 10
+			workspaceID    = "workspace-1"
+			suppressedUser = "suppressed-user-1"
+		)
+
+		workspaceConfig := backendconfigtest.NewConfigBuilder().
+			WithWorkspaceID(workspaceID).
+			WithSource(
+				backendconfigtest.NewSourceBuilder().
+					WithID("source-1").
+					WithWriteKey("writekey-1").
+					WithWorkspaceID(workspaceID).
+					WithConnection(newDestinationOfType("WEBHOOK", "destination-1")).
+					Build(),
+			).
+			Build()
+
+		// a single suppression with no sourceIds, i.e. the user is suppressed for every source of
+		// the workspace
+		cpserver, suppressionsServed := newControlPlaneServer(workspaceConfig, []model.Suppression{{
+			WorkspaceID: workspaceID,
+			UserID:      suppressedUser,
+		}})
+		defer cpserver.Close()
+
+		trServer := transformertest.NewBuilder().Build()
+		defer trServer.Close()
+
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+		postgresContainer, err := postgres.Setup(pool, t)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		wg, ctx := errgroup.WithContext(ctx)
+		gwPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+		wg.Go(func() error {
+			err := runRudderServer(ctx, cancel, gwPort, postgresContainer, cpserver.URL, trServer.URL, t.TempDir(), map[string]any{
+				"Gateway.enableSuppressUserFeature": true,
+				// the in-memory suppression repository: no badger, no backup service seeding
+				"BackendConfig.Regulations.useBadgerDB":  false,
+				"BackendConfig.Regulations.pollInterval": "1s",
+				"SUPPRESS_USER_BACKEND_URL":              cpserver.URL,
+				"Gateway.storeUserSuppressedEvents":      false,
+				"Router.toAbortDestinationIDs":           "destination-1",
+			})
+			if err != nil {
+				t.Logf("rudder-server exited with error: %v", err)
+			}
+			return err
+		})
+		url := fmt.Sprintf("http://localhost:%d", gwPort)
+		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
+
+		// reportCount sums the reports rows matching where, returning -1 on any query error so
+		// that it can be used inside a require.Eventually callback without asserting there.
+		reportCount := func(where string) int64 {
+			var count sql.NullInt64
+			if err := postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE " + where).Scan(&count); err != nil {
+				return -1
+			}
+			return count.Int64
+		}
+		gatewayJobCount := func() int64 {
+			var count int64
+			if err := postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('gw',1)").Scan(&count); err != nil {
+				return -1
+			}
+			return count
+		}
+
+		// The sync loop is started asynchronously and Setup returns immediately, so events sent
+		// before the first page has been added to the repository would not be suppressed at all.
+		// Waiting for the *second* request is what makes this a barrier rather than a race: the
+		// second sync can only start after the first page was added to the repository.
+		require.Eventually(t, func() bool {
+			return suppressionsServed.Load() >= 2
+		}, 60*time.Second, 100*time.Millisecond, "the suppression list should have been synced")
+
+		t.Run("flag off (default): the suppressed events are dropped at the gateway", func(t *testing.T) {
+			require.NoError(t, sendEventsForUser(eventsPerBatch, suppressedUser, "identify", "writekey-1", url))
+
+			require.Never(t, func() bool {
+				return gatewayJobCount() != 0
+			}, 5*time.Second, 500*time.Millisecond, "nothing should be stored while Gateway.storeUserSuppressedEvents is off")
+		})
+
+		t.Run("flag on: the suppressed events are stored as dummy jobs and dropped at the processor", func(t *testing.T) {
+			config.Set("Gateway.storeUserSuppressedEvents", true)
+
+			require.NoError(t, sendEventsForUser(eventsPerBatch, suppressedUser, "identify", "writekey-1", url))
+
+			// exactly one gw job per event of this batch: the flag-off batch contributed none
+			require.Eventually(t, func() bool {
+				var jobsCount int
+				if err := postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('gw',1) WHERE job_state = 'succeeded'").Scan(&jobsCount); err != nil {
+					return false
+				}
+				t.Logf("gw processedJobCount: %d (expecting %d)", jobsCount, eventsPerBatch)
+				return jobsCount == eventsPerBatch
+			}, 60*time.Second, 500*time.Millisecond, "all suppressed dummy jobs should be successfully processed")
+
+			require.Eventually(t, func() bool {
+				return reportCount("source_id = 'source-1' and destination_id = '' and pu = 'user_suppression' and status = 'filtered' and status_code = 298 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "every suppressed event should get a user_suppression filtered row")
+
+			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
+			require.EqualValues(t, eventsPerBatch, reportCount("pu = 'user_suppression'"),
+				"no user_suppression rows other than the filtered ones")
+			require.EqualValues(t, eventsPerBatch, gatewayJobCount(),
+				"the flag-off batch must not have stored any job")
+
+			// the drop happens before the GATEWAY billing metric and before any fan-out
+			require.EqualValues(t, 0, reportCount("pu = 'gateway'"),
+				"suppressed events must never reach the gateway billing metric")
+			for _, pu := range []string{"destination_filter", "user_transformer", "router"} {
+				require.EqualValues(t, 0, reportCount("source_id = 'source-1' and pu = '"+pu+"'"),
+					"the suppressed events died at preprocess and should have no %s rows", pu)
+			}
+		})
+
+		cancel()
+		_ = wg.Wait()
+	})
+
 	t.Run("Events dropped in batch router delivery stage", func(t *testing.T) {
 		t.Run("destination id included in BatchRouter.toAbortDestinationIDs", func(t *testing.T) {
 			config.Reset()
@@ -1090,6 +1237,82 @@ func sendEventsWithDeniedConsent(num int, deniedConsentIDs, eventType, writeKey,
 	}
 
 	return nil
+}
+
+// sendEventsForUser sends num events all carrying the same userId, which is what the gateway's
+// suppression check is keyed on (unlike sendEvents, which randomises it).
+func sendEventsForUser(num int, userID, eventType, writeKey, url string) error { // nolint:unparam
+	for range num {
+		payload := fmt.Appendf(nil, `{"batch": [{
+			"userId": %[1]q,
+			"type": %[2]q,
+			"context":
+			{
+				"traits":
+				{
+					"trait1": "new-val"
+				},
+				"ip": "14.5.67.21",
+				"library":
+				{
+					"name": "http"
+				}
+			},
+			"timestamp": "2020-02-02T00:23:09.544Z"
+			}]}`,
+			userID,
+			eventType)
+		req, err := http.NewRequest("POST", url+"/v1/batch", bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+		req.SetBasicAuth(writeKey, "password")
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("failed to send event to rudder server, status code: %d: %s", resp.StatusCode, string(b))
+		}
+		func() { kithttputil.CloseResponse(resp) }()
+	}
+
+	return nil
+}
+
+// newControlPlaneServer serves both the workspace config and the data-regulation suppressions
+// endpoint from a single mux, so that a test can point CONFIG_BACKEND_URL and
+// SUPPRESS_USER_BACKEND_URL at the same server (backendconfigtest's server only knows about the
+// former).
+//
+// The suppressions endpoint hands out the given suppressions on its first call and an empty page
+// afterwards, which is what tells the syncer that the sync is complete. The returned counter
+// records how many times that endpoint has been hit, so that a test can wait for the suppression
+// list to be loaded instead of relying on the poll interval.
+func newControlPlaneServer(workspaceConfig backendconfig.ConfigT, suppressions []model.Suppression) (*httptest.Server, *atomic.Int64) {
+	var served atomic.Int64
+	mux := http.NewServeMux()
+	mux.HandleFunc("/workspaceConfig", func(w http.ResponseWriter, _ *http.Request) {
+		response, _ := jsonrs.Marshal(workspaceConfig)
+		_, _ = w.Write(response)
+	})
+	mux.HandleFunc(
+		fmt.Sprintf("/dataplane/workspaces/%s/regulations/suppressions", workspaceConfig.WorkspaceID),
+		func(w http.ResponseWriter, _ *http.Request) {
+			items := []model.Suppression{}
+			if served.Add(1) == 1 {
+				items = suppressions
+			}
+			response, _ := jsonrs.Marshal(struct {
+				Items []model.Suppression `json:"items"`
+				Token string              `json:"token"`
+			}{Items: items, Token: "suppression-token"})
+			_, _ = w.Write(response)
+		},
+	)
+	return httptest.NewServer(mux), &served
 }
 
 // newDestinationOfType builds a destination whose definition display name is set alongside its
