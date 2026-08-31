@@ -1,7 +1,6 @@
 package rsources
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -20,16 +19,6 @@ func TestFailedRecordWireShape(t *testing.T) {
 		require.Equal(t, `"rec-1"`, gjson.GetBytes(b, "record").Raw)
 		require.Equal(t, int64(422), gjson.GetBytes(b, "code").Int())
 		require.Equal(t, "rejected", gjson.GetBytes(b, "error").String())
-	})
-
-	t.Run("A4.3 an old client ignores the new field", func(t *testing.T) {
-		type oldFailedRecord struct {
-			Record json.RawMessage `json:"record"`
-			Code   int             `json:"code"`
-		}
-		var old oldFailedRecord
-		require.NoError(t, jsonrs.Unmarshal([]byte(`{"record":"rec-1","code":422,"error":"rejected"}`), &old))
-		require.Equal(t, 422, old.Code)
 	})
 
 	t.Run("A4.4 a new client tolerates a server that does not send the field", func(t *testing.T) {

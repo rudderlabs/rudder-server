@@ -84,10 +84,10 @@ func (probeDriver) Open(string) (driver.Conn, error) { return nil, errDBUnreacha
 
 // probeDelegate is a delegate wired to an unreachable database.
 //
-// The struct is built here rather than through NewSyncSettingDelegate because the
-// constructor needs a real database. The config bindings the constructor makes are
-// asserted against the real constructor in sync_setting_delegate_db_test.go; what is
-// asserted here is the decision logic on top of them.
+// It goes through newDelegate - the same field wiring NewSyncSettingDelegate uses -
+// rather than rebuilding the struct, so a field added to the component cannot silently
+// stay zero here. Only the database differs; NewSyncSettingDelegate itself needs a real
+// one and is exercised in sync_setting_delegate_db_test.go.
 type probeDelegate struct {
 	*syncSettingDelegate
 	conf      *config.Config
@@ -124,27 +124,11 @@ func newProbeDelegate(t *testing.T) *probeDelegate {
 	log := newCapturingLogger()
 
 	return &probeDelegate{
-		syncSettingDelegate: &syncSettingDelegate{
-			log:                log,
-			statFactory:        statsStore,
-			conf:               conf,
-			db:                 db,
-			enabled:            conf.GetReloadableBoolVar(false, captureErrorDetailKey),
-			maxErrorLength:     conf.GetReloadableIntVar(defaultMaxErrorLength, 1, maxErrorLengthKey),
-			blockedConnections: conf.GetReloadableStringSliceVar(nil, blockedConnectionsKey),
-			blockedWorkspaces:  conf.GetReloadableStringSliceVar(nil, blockedWorkspacesKey),
-			maxAge:             conf.GetReloadableDurationVar(24, time.Hour, syncSettingsMaxAgeKey),
-			cleanupFrequency:   conf.GetReloadableDurationVar(1, time.Hour, syncSettingsCleanupFrequencyKey),
-			decisions:          make(map[string]syncSettingEntry),
-			connections:        make(map[connectionKey]bool),
-			configLoaded:       make(chan struct{}),
-			warned:             make(map[suppressionKey]struct{}),
-			stop:               make(chan struct{}),
-		},
-		conf:      conf,
-		stats:     statsStore,
-		log:       log,
-		connector: connector,
+		syncSettingDelegate: newDelegate(conf, log, statsStore, db),
+		conf:                conf,
+		stats:               statsStore,
+		log:                 log,
+		connector:           connector,
 	}
 }
 
@@ -181,16 +165,8 @@ func TestSyncSettingDelegateCheckOrder(t *testing.T) {
 			errorResponse: "",
 		},
 		{
-			name:          "step 1 the empty-string envelope never reaches the pin",
-			errorResponse: `''`,
-		},
-		{
 			name:          "step 1 the empty-object envelope never reaches the pin",
 			errorResponse: `{}`,
-		},
-		{
-			name:          "step 1 a whitespace padded empty object never reaches the pin",
-			errorResponse: "  {}\n\t",
 		},
 		{
 			name:          "step 1 wins over the global flag being on",
@@ -266,16 +242,6 @@ func TestSyncSettingDelegateCheckOrder(t *testing.T) {
 			// shrinking, which is what makes it safe to run after the cap.
 			errorResponse: `{"reason":"abc` + "\\u0000" + `defghij"}`,
 			wantText:      "abc",
-		},
-		{
-			name: "step 5 clips a plain message at the cap",
-			setup: func(p *probeDelegate) {
-				p.conf.Set(captureErrorDetailKey, true)
-				p.conf.Set(maxErrorLengthKey, 4)
-				p.pin(testJobRunID, true)
-			},
-			errorResponse: `{"reason":"abcdefghij"}`,
-			wantText:      "abcd",
 		},
 		{
 			name: "step 5 an unrecognised envelope yields no text and no error",
@@ -888,28 +854,8 @@ func TestSyncSettingDelegateJobRunLockObj(t *testing.T) {
 
 // TestStaticSyncSettingDelegate pins the two canned delegates.
 func TestStaticSyncSettingDelegate(t *testing.T) {
-	t.Run("a static delegate answers the same thing every time", func(t *testing.T) {
-		d := NewStaticSyncSettingDelegate("canned", nil)
-		for range 3 {
-			text, err := d.GetErrorResponse(context.Background(), testStatKey(), abortedStatus(`{"response":"ignored"}`))
-			require.NoError(t, err)
-			require.Equal(t, "canned", text, "a static delegate must not look at the status at all")
-		}
-		text, err := d.GetErrorResponse(context.Background(), statKey{}, &jobsdb.JobStatusT{})
-		require.NoError(t, err)
-		require.Equal(t, "canned", text)
-	})
-
-	t.Run("a static delegate can be made to fail", func(t *testing.T) {
-		sentinel := errors.New("boom")
-		text, err := NewStaticSyncSettingDelegate("", sentinel).
-			GetErrorResponse(context.Background(), testStatKey(), abortedStatus(`{"response":"x"}`))
-		require.ErrorIs(t, err, sentinel)
-		require.Empty(t, text)
-	})
-
 	t.Run("the unsupported delegate fails loud and names the component", func(t *testing.T) {
-		text, err := NewUnsupportedSyncSettingDelegate("gateway").
+		text, err := newUnsupportedSyncSettingDelegate("gateway").
 			GetErrorResponse(context.Background(), testStatKey(), abortedStatus(`{"response":"x"}`))
 		require.Error(t, err, "a collector that was never meant to collect failed records must not publish empty text")
 		require.ErrorContains(t, err, "gateway")

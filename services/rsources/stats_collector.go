@@ -100,13 +100,8 @@ func newStatsCollector(jobservice JobService, component string, statFactory stat
 		statsIndex:            map[statKey]*Stats{},
 		failedRecordsIndex:    map[statKey][]FailedRecord{},
 		parametersParser:      defaultParametersParser,
-		// Never nil. A collector built without WithSyncSettingDelegate gets a delegate
-		// that FAILS rather than one that quietly answers "": if such a collector ever
-		// reaches CollectFailedRecords, the first aborted rETL record returns an error
-		// naming the component, and the strict propagation path makes that impossible
-		// to miss. The alternative - defaulting to "no capture" - would publish durable
-		// failed records with a silently empty error_response.
-		syncSettings: NewUnsupportedSyncSettingDelegate(component),
+		// Never nil, and fail-loud rather than silently "" - see the constructor's doc.
+		syncSettings: newUnsupportedSyncSettingDelegate(component),
 		statFactory:  statFactory,
 	}
 	for _, opt := range opts {

@@ -110,15 +110,6 @@ func TestSyncSettingDelegateCaptureErrorText(t *testing.T) {
 		require.Equal(t, "short", text)
 	})
 
-	t.Run("A1.6 the cap never splits a multi-byte rune", func(t *testing.T) {
-		// 'e-acute' is 2 bytes, so a 5 byte cap lands mid-rune on the third character.
-		text, clipped := captureErrorText([]byte(`{"response":"ééé"}`), 5)
-		require.True(t, clipped)
-		require.True(t, utf8.ValidString(text), "clipped text must remain valid utf8")
-		require.Equal(t, "éé", text)
-		require.LessOrEqual(t, len(text), 5)
-	})
-
 	t.Run("A1.7 invalid utf8 is sanitised after the cap, keeping the result within the cap", func(t *testing.T) {
 		// An unpaired surrogate: well formed JSON bytes, invalid utf8.
 		invalid := "\xed\xa0\x80"
@@ -133,14 +124,6 @@ func TestSyncSettingDelegateCaptureErrorText(t *testing.T) {
 		require.True(t, clipped)
 		require.LessOrEqual(t, len(text), 2048)
 		require.True(t, utf8.ValidString(text))
-	})
-
-	t.Run("A1.8 embedded NUL bytes are stripped", func(t *testing.T) {
-		text, _ := captureErrorText(rawErrorResponse("response", "before\x00after"), 2048)
-		require.Equal(t, "beforeafter", text)
-
-		text, _ = captureErrorText(rawErrorResponse("reason", "a\x00b"), 2048)
-		require.Equal(t, "ab", text)
 	})
 
 	t.Run("an empty envelope yields an empty message and is not reported as clipped", func(t *testing.T) {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/google/uuid"
@@ -31,6 +30,9 @@ type recordingDelegate struct {
 	calls    []recordedCall
 	response string
 	err      error
+	// failAfter, when non-zero, answers "resolved" until the failAfter'th call and
+	// fails from there on - a failure landing in the middle of a batch.
+	failAfter int
 }
 
 type recordedCall struct {
@@ -42,6 +44,9 @@ func (d *recordingDelegate) GetErrorResponse(_ context.Context, key statKey, sta
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.calls = append(d.calls, recordedCall{key: key, status: *status})
+	if d.failAfter > 0 && len(d.calls) < d.failAfter {
+		return "resolved", nil
+	}
 	return d.response, d.err
 }
 
@@ -193,7 +198,7 @@ func TestCollectFailedRecordsPropagatesDelegateErrors(t *testing.T) {
 		// handed in. Records already resolved before the failure stay in the index:
 		// the contract is that the caller must not publish a collector whose
 		// CollectFailedRecords returned an error.
-		delegate := &failOnNthDelegate{failAt: 2, err: sentinel}
+		delegate := &recordingDelegate{failAfter: 2, err: sentinel}
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 		js := NewMockJobService(gomock.NewController(t))
@@ -210,23 +215,8 @@ func TestCollectFailedRecordsPropagatesDelegateErrors(t *testing.T) {
 
 		require.ErrorIs(t, err, sentinel)
 		require.ErrorContains(t, err, "job 2")
-		require.Equal(t, int64(2), delegate.calls.Load(), "the batch must stop at the failure, not carry on")
+		require.Len(t, delegate.recorded(), 2, "the batch must stop at the failure, not carry on")
 	})
-}
-
-// failOnNthDelegate succeeds until the nth call and then fails, to exercise a failure
-// landing in the middle of a status-update batch.
-type failOnNthDelegate struct {
-	calls  atomic.Int64
-	failAt int64
-	err    error
-}
-
-func (d *failOnNthDelegate) GetErrorResponse(context.Context, statKey, *jobsdb.JobStatusT) (string, error) {
-	if n := d.calls.Add(1); n >= d.failAt {
-		return "", d.err
-	}
-	return "resolved", nil
 }
 
 // TestCollectFailedRecordsDelegateSkipsStatusesThatCannotProduceARecord pins that the

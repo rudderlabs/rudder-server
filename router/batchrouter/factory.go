@@ -23,6 +23,11 @@ type Factory struct {
 }
 
 func (f *Factory) New(destType string) *Handle {
+	if f.SyncSettings == nil {
+		// Dropping this field would not break the build, and the batch router would
+		// then decide error capture per record at runtime instead - so fail here.
+		panic("batchrouter: Factory.SyncSettings is required")
+	}
 	r := &Handle{
 		adaptiveLimit: f.AdaptiveLimit,
 	}

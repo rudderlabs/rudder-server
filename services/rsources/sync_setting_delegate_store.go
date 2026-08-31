@@ -217,8 +217,7 @@ func (d *syncSettingDelegate) cachedDecision(jobRunID string) (syncSettingEntry,
 //
 // The cache is not size-capped: it holds one small entry per rETL sync of the last
 // maxAge, bounded by the same retention as the table, and the cleanup sweep evicts by
-// age. Capping it would mean either evicting live runs or refusing to cache them, and
-// both cost a database round trip per record for the runs that lost the race.
+// age.
 func (d *syncSettingDelegate) cacheDecision(jobRunID string, entry syncSettingEntry) {
 	d.decisionsMu.Lock()
 	defer d.decisionsMu.Unlock()
@@ -238,9 +237,6 @@ func (d *syncSettingDelegate) CleanupRoutine(ctx context.Context) error {
 	}
 	defer d.wg.Done()
 	for {
-		if d.stopping() {
-			return nil
-		}
 		maxAge := d.maxAge.Load()
 		if _, err := d.db.ExecContext(ctx,
 			`DELETE FROM `+syncSettingsTable+` WHERE created_at < $1`,

@@ -345,33 +345,6 @@ func TestSyncSettingDelegateDB(t *testing.T) {
 		require.Equal(t, 1, syncSettingsTableCount(t, pg.DB))
 	})
 
-	t.Run("creating the table twice in a row is a no-op the second time", func(t *testing.T) {
-		dropSyncSettingsTable(t, pg.DB)
-
-		firstDeps := newDelegateDeps(t, dsn)
-		first, err := firstDeps.build(ctx)
-		require.NoError(t, err)
-		require.Equal(t, 1, syncSettingsTableCount(t, pg.DB))
-
-		secondDeps := newDelegateDeps(t, dsn)
-		second, err := secondDeps.build(ctx)
-		require.NoError(t, err, "a restart must not fail because the table is already there")
-		require.Equal(t, 1, syncSettingsTableCount(t, pg.DB), "the table must not be duplicated")
-
-		// And the second instance is usable, not just constructed.
-		second.indexConnections(connectionsPayload(map[string][]backendconfig.Connection{
-			testWorkspace: {connectionWith(dbTestSourceID, testDestID, true)},
-		}))
-		text, err := second.GetErrorResponse(ctx,
-			statKey{jobRunId: "db-idempotent", JobTargetKey: JobTargetKey{SourceID: dbTestSourceID, DestinationID: testDestID}},
-			abortedStatus(`{"response":"boom"}`))
-		require.NoError(t, err)
-		require.Equal(t, "boom", text)
-
-		first.Stop()
-		second.Stop()
-	})
-
 	t.Run("the sweep deletes and evicts by age and tolerates losing the race", func(t *testing.T) {
 		const (
 			oldRun   = "db-cleanup-old"

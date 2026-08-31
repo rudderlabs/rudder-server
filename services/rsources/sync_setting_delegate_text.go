@@ -13,9 +13,6 @@ import (
 
 // The extraction mechanics of the sync setting delegate: given a job status'
 // ErrorResponse envelope, produce the text stored in `error_response`.
-//
-// Split out of sync_setting_delegate.go for file size only - this is the tail end of
-// the delegate's step 5 and has no other caller.
 
 // errorResponseEnvelopeKeys lists, in resolution order, the keys under which the
 // pipeline wraps the final recorded error on a job status' ErrorResponse:

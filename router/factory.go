@@ -32,6 +32,11 @@ type Factory struct {
 }
 
 func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
+	if f.SyncSettings == nil {
+		// Dropping this field would not break the build, and the router would then
+		// decide error capture per record at runtime instead - so fail at construction.
+		panic("router: Factory.SyncSettings is required")
+	}
 	r := &Handle{
 		Reporting:     f.Reporting,
 		adaptiveLimit: f.AdaptiveLimit,
