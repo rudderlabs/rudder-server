@@ -548,6 +548,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 	//	2. reorder on                -> one succeeded/200 destination_enter row per candidate
 	//	3. reorder on, part. exclude -> filtered_integration/298 per destination, no source-level row
 	//	4. reorder on, zero cands    -> filtered_no_destination/298 with an empty destination_id
+	//	5. reorder on, consent deny  -> filtered_consent/298 per destination, no source-level row
 	//
 	// Batches are drained before the flag is flipped: report rows are committed in the same
 	// transaction as the gateway job statuses, so "all gw jobs succeeded" is a safe barrier.
@@ -576,6 +577,16 @@ func TestReportingDroppedEvents(t *testing.T) {
 							WithWriteKey("writekey-2").
 							Build(),
 					).
+					WithSource(
+						// destination-5 is consent-gated on "cat-1"; the other two are not
+						backendconfigtest.NewSourceBuilder().
+							WithID("source-3").
+							WithWriteKey("writekey-3").
+							WithConnection(newDestinationOfType("WEBHOOK", "destination-4")).
+							WithConnection(newConsentGatedDestinationOfType("AM", "destination-5", "cat-1")).
+							WithConnection(newDestinationOfType("GA", "destination-6")).
+							Build(),
+					).
 					Build(),
 			).
 			Build()
@@ -597,7 +608,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 		wg.Go(func() error {
 			err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir(), map[string]any{
 				// keep the router from retrying against the mirrored (undeliverable) payloads
-				"Router.toAbortDestinationIDs": "destination-1,destination-2,destination-3",
+				"Router.toAbortDestinationIDs": "destination-1,destination-2,destination-3,destination-4,destination-5,destination-6",
 			})
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
@@ -724,6 +735,45 @@ func TestReportingDroppedEvents(t *testing.T) {
 				"no new plain filtered rows should be emitted for source-2")
 			require.EqualValues(t, 0, reportCount("source_id = 'source-2' and pu = 'destination_enter'"),
 				"a source without destinations has no candidates to enter")
+		})
+
+		t.Run("reorder on: consent excludes one destination as filtered_consent instead of the source level row", func(t *testing.T) {
+			config.Set("Processor.earlyDestinationFilter", false)
+
+			// destination-5 is gated on "cat-1", which these events deny; destination-4 and
+			// destination-6 carry no consent configuration and still deliver
+			require.NoError(t, sendEventsWithDeniedConsent(eventsPerBatch, `["cat-1"]`, "identify", "writekey-3", url))
+			drainGateway(5 * eventsPerBatch)
+
+			require.Eventually(t, func() bool {
+				return reportCount("source_id = 'source-3' and destination_id = 'destination-5' and pu = 'destination_filter' and status = 'filtered_consent' and status_code = 298 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "the consent-denied destination should get a filtered_consent row")
+
+			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
+			// a consent-denied destination is still a candidate, so all three keep entering
+			require.EqualValues(t, 3*eventsPerBatch,
+				reportCount("source_id = 'source-3' and pu = 'destination_enter' and status = 'succeeded' and status_code = 200 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''"),
+				"every candidate destination, including the consent-denied one, should get a destination_enter row")
+			for _, destinationID := range []string{"destination-4", "destination-5", "destination-6"} {
+				require.EqualValues(t, eventsPerBatch,
+					reportCount("source_id = 'source-3' and pu = 'destination_enter' and destination_id = '"+destinationID+"'"),
+					"destination_enter rows should be attributed to %s", destinationID)
+			}
+			require.EqualValues(t, eventsPerBatch,
+				reportCount("source_id = 'source-3' and pu = 'destination_filter' and status like 'filtered_%'"),
+				"only destination-5 should be filtered")
+			// the cutover: the old source-level row is gone for this source
+			require.EqualValues(t, 0,
+				reportCount("source_id = 'source-3' and destination_id = '' and pu = 'destination_filter'"),
+				"the source-level filtered row must not be emitted once per-destination metrics are on")
+
+			// consent denial is a reporting outcome for one destination only: the other two are
+			// still routed to
+			require.Eventually(t, func() bool {
+				return routerJobCount("destination-4") == eventsPerBatch && routerJobCount("destination-6") == eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "the consented destinations should still be routed to")
+			require.EqualValues(t, 0, routerJobCount("destination-5"),
+				"the consent-denied destination should not have received this batch")
 		})
 
 		cancel()
@@ -993,6 +1043,55 @@ func sendEventsWithIntegrations(num int, integrations, eventType, writeKey, url 
 	return nil
 }
 
+// sendEventsWithDeniedConsent sends num events whose `context.consentManagement.deniedConsentIds`
+// denies the given consent ids, which is what the processor's consent filter matches against a
+// destination's oneTrustCookieCategories.
+func sendEventsWithDeniedConsent(num int, deniedConsentIDs, eventType, writeKey, url string) error { // nolint:unparam
+	for range num {
+		payload := fmt.Appendf(nil, `{"batch": [{
+			"userId": %[1]q,
+			"type": %[2]q,
+			"context":
+			{
+				"traits":
+				{
+					"trait1": "new-val"
+				},
+				"consentManagement":
+				{
+					"deniedConsentIds": %[3]s
+				},
+				"ip": "14.5.67.21",
+				"library":
+				{
+					"name": "http"
+				}
+			},
+			"timestamp": "2020-02-02T00:23:09.544Z"
+			}]}`,
+			rand.String(10),
+			eventType,
+			deniedConsentIDs)
+		req, err := http.NewRequest("POST", url+"/v1/batch", bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+		req.SetBasicAuth(writeKey, "password")
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("failed to send event to rudder server, status code: %d: %s", resp.StatusCode, string(b))
+		}
+		func() { kithttputil.CloseResponse(resp) }()
+	}
+
+	return nil
+}
+
 // newDestinationOfType builds a destination whose definition display name is set alongside its
 // name. The processor keys enabled destination types by DestinationDefinition.DisplayName (and the
 // client `integrations` object is matched against those same keys), but backendconfigtest's
@@ -1000,6 +1099,21 @@ func sendEventsWithIntegrations(num int, integrations, eventType, writeKey, url 
 // types would all collapse into a single "" type.
 func newDestinationOfType(destType, id string) backendconfig.DestinationT {
 	destination := backendconfigtest.NewDestinationBuilder(destType).WithID(id).Build()
+	destination.DestinationDefinition.DisplayName = destType
+	return destination
+}
+
+// newConsentGatedDestinationOfType builds a destination of the given type that is gated on a
+// single legacy (oneTrust) consent category: an event denying that category excludes this
+// destination in the processor's consent filter. Mirrors the destination config shape
+// TestClassifyDestinations' consentDeniedDest helper uses.
+func newConsentGatedDestinationOfType(destType, id, consentCategory string) backendconfig.DestinationT {
+	destination := backendconfigtest.NewDestinationBuilder(destType).
+		WithID(id).
+		WithConfigOption("oneTrustCookieCategories", []any{
+			map[string]any{"oneTrustCookieCategory": consentCategory},
+		}).
+		Build()
 	destination.DestinationDefinition.DisplayName = destType
 	return destination
 }
