@@ -47,6 +47,7 @@ func (rt *Handle) Setup(
 	jobsDB jobsdb.JobsDB,
 	transientSources transientsource.Service,
 	rsourcesService rsources.JobService,
+	syncSettings rsources.SyncSettingDelegate,
 	transformerFeaturesService transformerFeaturesService.FeaturesService,
 	debugger destinationdebugger.DestinationDebugger,
 	throttlerFactory throttler.Factory,
@@ -61,6 +62,7 @@ func (rt *Handle) Setup(
 
 	rt.transientSources = transientSources
 	rt.rsourcesService = rsourcesService
+	rt.syncSettings = syncSettings
 	rt.transformerFeaturesService = transformerFeaturesService
 
 	rt.jobsDB = jobsDB

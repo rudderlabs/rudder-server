@@ -62,6 +62,7 @@ type Handle struct {
 	fileManagerFactory filemanager.Factory
 	transientSources   transientsource.Service
 	rsourcesService    rsources.JobService
+	syncSettings       rsources.SyncSettingDelegate
 	warehouseClient    *client.Warehouse
 	debugger           destinationdebugger.DestinationDebugger
 	Diagnostics        diagnostics.DiagnosticsI

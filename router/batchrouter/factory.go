@@ -17,6 +17,7 @@ type Factory struct {
 	RouterDB         jobsdb.JobsDB
 	TransientSources transientsource.Service
 	RsourcesService  rsources.JobService
+	SyncSettings     rsources.SyncSettingDelegate
 	Debugger         destinationdebugger.DestinationDebugger
 	AdaptiveLimit    func(int64) int64
 }
@@ -33,6 +34,7 @@ func (f *Factory) New(destType string) *Handle {
 		f.Reporting,
 		f.TransientSources,
 		f.RsourcesService,
+		f.SyncSettings,
 		f.Debugger,
 		config.Default,
 	)

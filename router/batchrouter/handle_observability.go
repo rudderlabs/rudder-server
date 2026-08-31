@@ -281,10 +281,13 @@ func (brt *Handle) updateRudderSourcesStats(
 	jobs []*jobsdb.JobT,
 	jobStatuses []*jobsdb.JobStatusT,
 ) error {
-	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService, "brt", stats.Default)
+	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService, "brt", stats.Default,
+		rsources.WithSyncSettingDelegate(brt.syncSettings))
 	rsourcesStats.BeginProcessing(jobs)
 	rsourcesStats.CollectStats(jobStatuses)
-	rsourcesStats.CollectFailedRecords(jobStatuses)
+	if err := rsourcesStats.CollectFailedRecords(ctx, jobStatuses); err != nil {
+		return fmt.Errorf("collecting rsources failed records: %w", err)
+	}
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		return fmt.Errorf("publishing rsources stats: %w", err)

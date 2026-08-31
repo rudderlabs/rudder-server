@@ -24,6 +24,7 @@ type Factory struct {
 	RouterDB                   jobsdb.JobsDB
 	TransientSources           transientsource.Service
 	RsourcesService            rsources.JobService
+	SyncSettings               rsources.SyncSettingDelegate
 	TransformerFeaturesService transformerFeaturesService.FeaturesService
 	ThrottlerFactory           throttler.Factory
 	Debugger                   destinationdebugger.DestinationDebugger
@@ -43,6 +44,7 @@ func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 		f.RouterDB,
 		f.TransientSources,
 		f.RsourcesService,
+		f.SyncSettings,
 		f.TransformerFeaturesService,
 		f.Debugger,
 		f.ThrottlerFactory,

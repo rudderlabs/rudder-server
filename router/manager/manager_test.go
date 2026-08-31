@@ -137,6 +137,7 @@ func TestRouterManager(t *testing.T) {
 		RouterDB:                   mockRtDB,
 		TransientSources:           transientsource.NewEmptyService(),
 		RsourcesService:            mockRsourcesService,
+		SyncSettings:               rsources.NewStaticSyncSettingDelegate("", nil),
 		ThrottlerFactory:           throttler.NewNoOpThrottlerFactory(),
 		TransformerFeaturesService: transformer.NewNoOpService(),
 	}
@@ -146,6 +147,7 @@ func TestRouterManager(t *testing.T) {
 		RouterDB:         brtDB,
 		TransientSources: transientsource.NewEmptyService(),
 		RsourcesService:  mockRsourcesService,
+		SyncSettings:     rsources.NewStaticSyncSettingDelegate("", nil),
 	}
 	r := New(rtFactory, brtFactory, mockBackendConfig, logger.NewLogger())
 
