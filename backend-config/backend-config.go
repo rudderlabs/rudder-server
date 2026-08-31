@@ -144,10 +144,10 @@ func filterProcessorEnabledWorkspaceConfig(config map[string]ConfigT) map[string
 // starts from the complete config and every other field survives verbatim. It used to be
 // written the other way round — start from an empty ConfigT and copy an allowlist of fields —
 // which silently dropped every field added to ConfigT after the allowlist was written:
-// Connections (added with #5753) never reached TopicProcessConfig, so the processor's rETL
-// error-capture opt-in (processor/error_capture_optin.go) resolved against an empty map and
-// failed closed for every connection, with no error anywhere. The field-preservation contract
-// is pinned by TestFilterProcessorEnabledDestinationsPreservesFields.
+// Connections (added with #5753) never reached TopicProcessConfig, so the rETL error-capture
+// opt-in resolved by the sync setting delegate (services/rsources/sync_setting_delegate_config.go)
+// resolved against an empty map and failed closed for every connection, with no error anywhere.
+// The field-preservation contract is pinned by TestFilterProcessorEnabledDestinationsPreservesFields.
 func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	modifiedConfig := config
 	modifiedConfig.Sources = make([]SourceT, 0, len(config.Sources))
