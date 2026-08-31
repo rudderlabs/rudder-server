@@ -59,7 +59,16 @@ type StatsCollector interface {
 	// A call to BeginProcessing must precede a call to this method,
 	// so that all necessary indices can be created, since a JobStatus
 	// doesn't carry all necessary job metadata such as jobRunId, taskRunId, etc.
-	CollectFailedRecords(jobStatuses []*jobsdb.JobStatusT)
+	//
+	// It returns an error when the SyncSettingDelegate cannot answer whether the run
+	// captures error responses. The batch is aborted rather than published without the
+	// messages: the failed record row is durable and a silently empty error_response
+	// is indistinguishable from "the destination said nothing".
+	//
+	// On error the collector is left holding the records it had already resolved, so a
+	// caller MUST NOT go on to Publish it - doing so would store a truncated set of
+	// failed records. Both callers return the error instead.
+	CollectFailedRecords(ctx context.Context, jobStatuses []*jobsdb.JobStatusT) error
 }
 
 // FailedJobsStatsCollector collects stats for failed jobs
@@ -68,7 +77,12 @@ type FailedJobsStatsCollector interface {
 	JobsDropped(jobs []*jobsdb.JobT)
 }
 
-// NewStatsCollector creates a new stats collector
+// NewStatsCollector creates a new stats collector.
+//
+// Collectors that publish failed records must supply a SyncSettingDelegate with
+// WithSyncSettingDelegate. Those that do not - the gateway's and the processor's, which
+// only ever report Stats - can leave it out: see newStatsCollector for what they get
+// instead.
 func NewStatsCollector(jobservice JobService, component string, statFactory stats.Stats, opts ...OptFunc) StatsCollector {
 	return newStatsCollector(jobservice, component, statFactory, opts...)
 }
@@ -86,8 +100,14 @@ func newStatsCollector(jobservice JobService, component string, statFactory stat
 		statsIndex:            map[statKey]*Stats{},
 		failedRecordsIndex:    map[statKey][]FailedRecord{},
 		parametersParser:      defaultParametersParser,
-		errorCapture:          sharedErrorCaptureSettings(),
-		statFactory:           statFactory,
+		// Never nil. A collector built without WithSyncSettingDelegate gets a delegate
+		// that FAILS rather than one that quietly answers "": if such a collector ever
+		// reaches CollectFailedRecords, the first aborted rETL record returns an error
+		// naming the component, and the strict propagation path makes that impossible
+		// to miss. The alternative - defaulting to "no capture" - would publish durable
+		// failed records with a silently empty error_response.
+		syncSettings: NewUnsupportedSyncSettingDelegate(component),
+		statFactory:  statFactory,
 	}
 	for _, opt := range opts {
 		opt(sc)
@@ -115,15 +135,11 @@ type statsCollector struct {
 	statsIndex            map[statKey]*Stats
 	failedRecordsIndex    map[statKey][]FailedRecord
 	parametersParser      parametersParser
-	// captureErrorJobIds holds the job ids whose connection opted in to error
-	// capture. Lazily allocated: nil while the feature is unused.
-	captureErrorJobIds map[int64]struct{}
-	errorCapture       errorCaptureSettings
-	// errorCaptureIndex accumulates the per-connection capture outcome, reported
-	// once per publish. Lazily allocated.
-	errorCaptureIndex map[statKey]*errorCaptureCounters
-	statFactory       stats.Stats
-	stats             struct {
+	// syncSettings decides, per aborted record, whether the final recorded error text
+	// is kept and what that text is. The collector holds no capture policy of its own.
+	syncSettings SyncSettingDelegate
+	statFactory  stats.Stats
+	stats        struct {
 		publishTime stats.Timer
 	}
 }
@@ -224,17 +240,14 @@ func (r *statsCollector) CollectStats(jobStatuses []*jobsdb.JobStatusT) {
 	}
 }
 
-func (r *statsCollector) CollectFailedRecords(jobStatuses []*jobsdb.JobStatusT) {
+func (r *statsCollector) CollectFailedRecords(ctx context.Context, jobStatuses []*jobsdb.JobStatusT) error {
 	if !r.processing {
 		panic(fmt.Errorf("cannot update job statuses without having previously called BeginProcessing"))
 	}
 
 	if len(r.jobIdsToRecordIdIndex) == 0 || len(r.jobIdsToStatKeyIndex) == 0 {
-		return
+		return nil
 	}
-	// One snapshot per batch: every record is judged by the same settings, and a
-	// blacklist edit takes effect on the next batch without a restart.
-	gate := r.errorCapture.snapshot()
 	for i := range jobStatuses {
 		jobStatus := jobStatuses[i]
 		statKey, statKeyOk := r.jobIdsToStatKeyIndex[jobStatus.JobID]
@@ -248,13 +261,18 @@ func (r *statsCollector) CollectFailedRecords(jobStatuses []*jobsdb.JobStatusT) 
 		if jobStatus.JobState != jobsdb.Aborted.State {
 			continue
 		}
+		errorResponse, err := r.syncSettings.GetErrorResponse(ctx, statKey, jobStatus)
+		if err != nil {
+			return fmt.Errorf("resolving the error response for job %d: %w", jobStatus.JobID, err)
+		}
 		code, _ := strconv.Atoi(jobStatus.ErrorCode)
 		r.failedRecordsIndex[statKey] = append(r.failedRecordsIndex[statKey], FailedRecord{
 			Record:        recordId,
 			Code:          code,
-			ErrorResponse: r.captureErrorResponse(gate, statKey, jobStatus),
+			ErrorResponse: errorResponse,
 		})
 	}
+	return nil
 }
 
 func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
@@ -288,7 +306,6 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 		if err != nil {
 			return fmt.Errorf("failed to add failed records for job %s: %w", k.String(), err)
 		}
-		r.reportErrorCapture(k)
 	}
 	r.stats.publishTime.SendTiming(time.Since(startTime))
 
@@ -321,14 +338,6 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 				recordIdJson := json.RawMessage(p.recordID)
 				if json.Valid(recordIdJson) {
 					r.jobIdsToRecordIdIndex[job.JobID] = recordIdJson
-					if p.captureError {
-						// Sparse on purpose: nothing is allocated while the
-						// feature is off or the connection has not opted in.
-						if r.captureErrorJobIds == nil {
-							r.captureErrorJobIds = make(map[int64]struct{})
-						}
-						r.captureErrorJobIds[job.JobID] = struct{}{}
-					}
 				}
 			}
 		}
@@ -341,17 +350,26 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 type jobParameters struct {
 	jobRunID string
 	recordID string
-	// captureError is the per-connection opt-in for capturing the final recorded
-	// error text. It is resolved server-side by the processor from the connection's
-	// backend config (pinned per job run) and reaches us on the job's parameters;
-	// no client-supplied header or payload field feeds it.
-	captureError bool
-	target       JobTargetKey
+	target   JobTargetKey
 }
 
 type parametersParser func(jp json.RawMessage) jobParameters
 
 type OptFunc func(*statsCollector)
+
+// WithSyncSettingDelegate supplies the authority that decides, per aborted record,
+// whether the final recorded error text is kept and what that text is.
+//
+// Required for any collector whose CollectFailedRecords is called - today the router's
+// and the batch router's. A nil delegate is ignored rather than installed, so this can
+// never be the thing that reintroduces a silent nil.
+func WithSyncSettingDelegate(syncSettings SyncSettingDelegate) OptFunc {
+	return func(r *statsCollector) {
+		if syncSettings != nil {
+			r.syncSettings = syncSettings
+		}
+	}
+}
 
 // IgnoreDestinationID ignores the destinationID parameter of the job and while capturing statistics
 func IgnoreDestinationID() OptFunc {
@@ -367,9 +385,8 @@ func IgnoreDestinationID() OptFunc {
 func defaultParametersParser(jobParams json.RawMessage) jobParameters {
 	var p jobParameters
 	// One decrement per key below; the ForEach stops as soon as all of them have
-	// been seen. capture_error is marshalled with omitempty, so it is only present
-	// on opted-in rETL jobs - exactly the traffic that benefits from the early exit.
-	remaining := 6
+	// been seen.
+	remaining := 5
 	jp := gjson.ParseBytes(jobParams)
 	jp.ForEach(func(key, value gjson.Result) bool {
 		switch key.Str {
@@ -387,10 +404,6 @@ func defaultParametersParser(jobParams json.RawMessage) jobParameters {
 			remaining--
 		case "record_id":
 			p.recordID = value.Raw
-			remaining--
-		case "capture_error":
-			// Strictly a JSON bool: the string "true" is a rejected shape.
-			p.captureError = value.Type == gjson.True
 			remaining--
 		}
 		return remaining != 0
