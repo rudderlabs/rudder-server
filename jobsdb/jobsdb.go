@@ -27,7 +27,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -148,8 +147,9 @@ type JobsDB interface {
 	// On single-consumer handles it behaves per-job. Used by partition migration.
 	GetPendingConsumerJobs(ctx context.Context, states []string, params GetQueryParams) (JobsResult, error)
 
-	// GetPileUpCounts returns statistics of incomplete jobs grouped by workspace ID,
-	// custom value, and destination ID.
+	// GetPileUpCounts returns statistics of the jobs that were incomplete as of cutoffTime, grouped
+	// by workspace ID, custom value, and destination ID. Jobs created after the cutoff, along with
+	// statuses recorded after it, are excluded from the counts.
 	GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) (err error)
 
 	// GetDistinctParameterValues returns the list of distinct parameter("source_id", "destination_id", "workspace_id") values inside the jobs tables filtering for the passed customVal
@@ -348,8 +348,11 @@ type Handle struct {
 
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TriggerAddNewDS, TriggerCompaction is useful for triggering addNewDS to run from tests.
-	TriggerAddNewDS   func() <-chan time.Time
-	compactionPaused  atomic.Bool
+	TriggerAddNewDS func() <-chan time.Time
+	// compactionLock guards the datasets against compaction: compaction takes it exclusively and
+	// skips the round if it is already taken, while operations that need the datasets to stay put
+	// for their whole duration, e.g. [Handle.GetPileUpCounts], take it for reading.
+	compactionLock    *lock.Locker
 	TriggerCompaction func() <-chan time.Time
 	TriggerRefreshDS  func() <-chan time.Time
 

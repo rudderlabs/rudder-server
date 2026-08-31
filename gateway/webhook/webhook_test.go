@@ -388,7 +388,7 @@ func TestRecordWebhookErrors(t *testing.T) {
 		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1", SourceID: "sourceID1", WorkspaceID: "workspaceID1", SourceCategory: "webhook1"}},
 	}
 
-	webhookHandler.recordWebhookErrors("cio", "err1", reqs, 400)
+	webhookHandler.recordWebhookErrors("cio", gwtypes.ReasonBatchResponseError, reqs, 400)
 
 	m := statsStore.Get("webhook_num_errors", stats.Tags{
 		"writeKey":    "w1",
@@ -396,7 +396,7 @@ func TestRecordWebhookErrors(t *testing.T) {
 		"sourceID":    "sourceID1",
 		"statusCode":  "400",
 		"sourceType":  "cio",
-		"reason":      "err1",
+		"reason":      gwtypes.ReasonBatchResponseError.Value(),
 	})
 	require.EqualValues(t, m.LastValue(), 3)
 	m = statsStore.Get("webhook_num_errors", stats.Tags{
@@ -405,7 +405,7 @@ func TestRecordWebhookErrors(t *testing.T) {
 		"sourceID":    "sourceID2",
 		"statusCode":  "400",
 		"sourceType":  "cio",
-		"reason":      "err1",
+		"reason":      gwtypes.ReasonBatchResponseError.Value(),
 	})
 	require.EqualValues(t, m.LastValue(), 2)
 	m = statsStore.Get("webhook_num_errors", stats.Tags{
@@ -414,7 +414,7 @@ func TestRecordWebhookErrors(t *testing.T) {
 		"sourceID":    "sourceID3",
 		"statusCode":  "400",
 		"sourceType":  "cio",
-		"reason":      "err1",
+		"reason":      gwtypes.ReasonBatchResponseError.Value(),
 	})
 	require.EqualValues(t, m.LastValue(), 1)
 }

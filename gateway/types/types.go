@@ -57,7 +57,11 @@ func (arctx *AuthRequestContext) SourceTag() string {
 
 type StatReporter interface {
 	Report(s stats.Stats)
-	RequestFailed(errMsg string)
-	RequestDropped()
+	// RequestFailed reports a request that broke, with the reason it broke. The reason is a closed set (see
+	// StatReason) so that an implementation can switch over it rather than match strings.
+	RequestFailed(reason StatReason)
+	// RequestDropped reports a request that was turned away deliberately, with the reason it was turned away - a rate
+	// limit, say, which an implementation may want to tell apart from a failure.
+	RequestDropped(reason StatReason)
 	RequestSucceeded()
 }

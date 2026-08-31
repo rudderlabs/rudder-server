@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +29,7 @@ import (
 const (
 	StatRequestTotalBytes      = "reporting_client_http_request_total_bytes"
 	StatRequestCompressedBytes = "reporting_client_http_request_compressed_bytes"
+	StatRequestPayloadBytes    = "reporting_client_http_request_payload_bytes"
 	StatTotalDurationsSeconds  = "reporting_client_http_total_duration_seconds"
 	StatRequestLatency         = "reporting_client_http_request_latency"
 	StatHttpRequest            = "reporting_client_http_request"
@@ -39,6 +41,9 @@ const (
 	RouteTrackedUsers      Route = "/trackedUser"
 	RouteActivationRecords Route = "/activationRecords"
 )
+
+// ErrPayloadTooLarge indicates that the reporting service rejected a payload as too large.
+var ErrPayloadTooLarge = errors.New("payload too large")
 
 // Route contains the HTTP path and query string for the service.
 type Route string
@@ -81,6 +86,12 @@ type Client struct {
 	compressionLevel config.ValueLoader[int]
 
 	conf *config.Config
+
+	payloadBytes    stats.Measurement
+	latency         stats.Measurement
+	totalBytes      stats.Measurement
+	compressedBytes stats.Measurement
+	totalDuration   stats.Measurement
 }
 
 func backoffOptsFromConfig(conf *config.Config) (opts []backoff.RetryOption) {
@@ -92,11 +103,11 @@ func backoffOptsFromConfig(conf *config.Config) (opts []backoff.RetryOption) {
 }
 
 // New creates a new reporting client
-func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) *Client {
+func New(path Route, conf *config.Config, log logger.Logger, statsInstance stats.Stats) *Client {
 	reportingServiceURL := conf.GetStringVar("https://reporting.dev.rudderlabs.com", "REPORTING_URL")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 
-	return &Client{
+	c := &Client{
 		httpClient: &http.Client{
 			Timeout:   conf.GetDurationVar(60, time.Second, "Reporting.httpClient.timeout", "HttpClient.reporting.timeout"),
 			Transport: &http.Transport{},
@@ -109,13 +120,32 @@ func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) 
 		moduleName:          conf.GetStringVar("", "clientName"),
 		compress:            conf.GetReloadableBoolVar(false, "Reporting.httpClient.compression.enabled"),
 		compressionLevel:    conf.GetReloadableIntVar(gzip.DefaultCompression, 1, "Reporting.httpClient.compression.level"),
-		stats:               stats,
+		stats:               statsInstance,
 		log:                 log,
 		conf:                conf,
 	}
+
+	tags := c.getTags()
+	c.payloadBytes = statsInstance.NewTaggedStat(StatRequestPayloadBytes, stats.HistogramType, tags)
+	c.latency = statsInstance.NewTaggedStat(StatRequestLatency, stats.TimerType, tags)
+	c.totalBytes = statsInstance.NewTaggedStat(StatRequestTotalBytes, stats.CountType, tags)
+	c.compressedBytes = statsInstance.NewTaggedStat(StatRequestCompressedBytes, stats.CountType, tags)
+	c.totalDuration = statsInstance.NewTaggedStat(StatTotalDurationsSeconds, stats.CountType, tags)
+
+	return c
 }
 
 func (c *Client) Send(ctx context.Context, payload any) error {
+	return c.send(ctx, payload, true)
+}
+
+// SendWithoutFailFast sends a payload with 413 fail-fast disabled: a 413 is
+// retried like any other non-2xx response.
+func (c *Client) SendWithoutFailFast(ctx context.Context, payload any) error {
+	return c.send(ctx, payload, false)
+}
+
+func (c *Client) send(ctx context.Context, payload any, failFastOnLargePayload bool) error {
 	payloadBytes, err := jsonrs.Marshal(payload)
 	if err != nil {
 		return err
@@ -139,6 +169,8 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 		return fmt.Errorf("constructing URL for service endpoint (%q, %q): %w", c.route, c.reportingServiceURL, err)
 	}
 
+	c.payloadBytes.Observe(float64(uncompressedBytes))
+
 	o := func() error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(bodyBytes))
 		if err != nil {
@@ -155,20 +187,19 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 			return err
 		}
 
-		tags := c.getTags()
 		duration := time.Since(httpRequestStart)
 
-		c.stats.NewTaggedStat(StatRequestLatency, stats.TimerType, tags).Since(httpRequestStart)
+		c.latency.Since(httpRequestStart)
 
-		httpStatTags := lo.Assign(tags, map[string]string{"status": strconv.Itoa(resp.StatusCode)})
+		httpStatTags := lo.Assign(c.getTags(), map[string]string{"status": strconv.Itoa(resp.StatusCode)})
 		c.stats.NewTaggedStat(StatHttpRequest, stats.CountType, httpStatTags).Count(1)
 
 		// Record total (uncompressed) bytes and the bytes actually sent on the wire
-		c.stats.NewTaggedStat(StatRequestTotalBytes, stats.CountType, tags).Count(uncompressedBytes)
-		c.stats.NewTaggedStat(StatRequestCompressedBytes, stats.CountType, tags).Count(len(bodyBytes))
+		c.totalBytes.Count(uncompressedBytes)
+		c.compressedBytes.Count(len(bodyBytes))
 
 		// Record request duration
-		c.stats.NewTaggedStat(StatTotalDurationsSeconds, stats.CountType, tags).Count(int(duration.Seconds()))
+		c.totalDuration.Count(int(duration.Seconds()))
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
@@ -177,6 +208,9 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 		}
 
 		if !c.isHTTPRequestSuccessful(resp.StatusCode) {
+			if resp.StatusCode == http.StatusRequestEntityTooLarge && failFastOnLargePayload {
+				return backoff.Permanent(ErrPayloadTooLarge)
+			}
 			err = fmt.Errorf("received unexpected response: %q: statusCode: %d body: %v", c.route, resp.StatusCode, string(respBody))
 		}
 		return err
@@ -216,11 +250,14 @@ func (c *Client) gzipCompress(b []byte) ([]byte, error) {
 
 // getTags returns the common tags for reporting metrics
 func (c *Client) getTags() stats.Tags {
-	serverURL, _ := url.Parse(c.reportingServiceURL)
+	var endpoint string
+	if serverURL, err := url.Parse(c.reportingServiceURL); err == nil {
+		endpoint = serverURL.Host
+	}
 	return stats.Tags{
 		"module":     c.moduleName,
 		"instanceId": c.instanceID,
-		"endpoint":   serverURL.Host,
+		"endpoint":   endpoint,
 		"path":       string(c.route),
 	}
 }

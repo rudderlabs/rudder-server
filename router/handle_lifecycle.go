@@ -183,10 +183,6 @@ func (rt *Handle) Setup(
 	rt.eventOrderingDisabledForDestination = func(destinationID string) bool {
 		return slices.Contains(orderingDisabledDestinationIDs.Load(), destinationID)
 	}
-	deliveredWithWarningsEnabledWorkspaceIDs := config.GetReloadableStringSliceVar(nil, getRouterConfigKeys("deliveredWithWarningsEnabledWorkspaceIDs", destType)...)
-	rt.deliveredWithWarningsEnabledForWorkspace = func(workspaceID string) bool {
-		return slices.Contains(deliveredWithWarningsEnabledWorkspaceIDs.Load(), workspaceID)
-	}
 	orderingPanicOnIllegalSequence := config.GetReloadableBoolVar(true, getRouterConfigKeys("orderingPanicOnIllegalSequence", destType)...)
 	illegalJobSequenceStats := map[string]stats.Measurement{}
 	for _, location := range []string{"enter", "wait", "job_failed"} {

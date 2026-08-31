@@ -23,14 +23,15 @@ func (gw *Handle) writeKeyAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 		var errorMessage string
+		var reason gwtypes.StatReason
 		var arctx *gwtypes.AuthRequestContext
 		defer func() {
 			gw.handleHttpError(w, r, errorMessage)
-			gw.handleFailureStats(errorMessage, reqType, arctx)
+			gw.handleFailureStats(errorMessage, reason, reqType, arctx)
 		}()
 		writeKey, _, ok := r.BasicAuth()
 		if !ok || writeKey == "" {
-			errorMessage = response.NoWriteKeyInBasicAuth
+			errorMessage, reason = response.NoWriteKeyInBasicAuth, gwtypes.ReasonNoWriteKeyInBasicAuth
 			return
 		}
 		arctx = gw.authRequestContextForWriteKey(writeKey)
@@ -41,13 +42,13 @@ func (gw *Handle) writeKeyAuth(delegate http.HandlerFunc) http.HandlerFunc {
 				WriteKey: writeKey,
 				ReqType:  reqType,
 			}
-			stat.RequestFailed("invalidWriteKey")
+			stat.RequestFailed(gwtypes.ReasonWriteKeyNotFound)
 			stat.Report(gw.stats)
-			errorMessage = response.InvalidWriteKey
+			errorMessage, reason = response.InvalidWriteKey, gwtypes.ReasonInvalidWriteKey
 			return
 		}
 		if !arctx.SourceEnabled {
-			errorMessage = response.SourceDisabled
+			errorMessage, reason = response.SourceDisabled, gwtypes.ReasonSourceDisabled
 			return
 		}
 		augmentAuthRequestContext(arctx, r)
@@ -64,9 +65,10 @@ func (gw *Handle) webhookAuth(delegate http.HandlerFunc) http.HandlerFunc {
 		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 		var arctx *gwtypes.AuthRequestContext
 		var errorMessage string
+		var reason gwtypes.StatReason
 		defer func() {
 			gw.handleHttpError(w, r, errorMessage)
-			gw.handleFailureStats(errorMessage, reqType, arctx)
+			gw.handleFailureStats(errorMessage, reason, reqType, arctx)
 		}()
 
 		var writeKey string
@@ -76,16 +78,16 @@ func (gw *Handle) webhookAuth(delegate http.HandlerFunc) http.HandlerFunc {
 			writeKey, _, _ = r.BasicAuth()
 		}
 		if writeKey == "" {
-			errorMessage = response.NoWriteKeyInQueryParams
+			errorMessage, reason = response.NoWriteKeyInQueryParams, gwtypes.ReasonNoWriteKeyInQueryParams
 			return
 		}
 		arctx = gw.authRequestContextForWriteKey(writeKey)
 		if arctx == nil || arctx.SourceCategory != "webhook" {
-			errorMessage = response.InvalidWriteKey
+			errorMessage, reason = response.InvalidWriteKey, gwtypes.ReasonInvalidWriteKey
 			return
 		}
 		if !arctx.SourceEnabled {
-			errorMessage = response.SourceDisabled
+			errorMessage, reason = response.SourceDisabled, gwtypes.ReasonSourceDisabled
 			return
 		}
 		augmentAuthRequestContext(arctx, r)
@@ -100,23 +102,24 @@ func (gw *Handle) sourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 		var errorMessage string
+		var reason gwtypes.StatReason
 		var arctx *gwtypes.AuthRequestContext
 		defer func() {
 			gw.handleHttpError(w, r, errorMessage)
-			gw.handleFailureStats(errorMessage, reqType, arctx)
+			gw.handleFailureStats(errorMessage, reason, reqType, arctx)
 		}()
 		sourceID := r.Header.Get("X-Rudder-Source-Id")
 		if sourceID == "" {
-			errorMessage = response.NoSourceIdInHeader
+			errorMessage, reason = response.NoSourceIdInHeader, gwtypes.ReasonNoSourceIDInHeader
 			return
 		}
 		arctx = gw.authRequestContextForSourceID(sourceID)
 		if arctx == nil {
-			errorMessage = response.InvalidSourceID
+			errorMessage, reason = response.InvalidSourceID, gwtypes.ReasonInvalidSourceID
 			return
 		}
 		if !arctx.SourceEnabled {
-			errorMessage = response.SourceDisabled
+			errorMessage, reason = response.SourceDisabled, gwtypes.ReasonSourceDisabled
 			return
 		}
 		augmentAuthRequestContext(arctx, r)
@@ -133,19 +136,20 @@ func (gw *Handle) sourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 func (gw *Handle) authDestIDForSource(delegate http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var errorMessage, reqType string
+		var reason gwtypes.StatReason
 		var arctx *gwtypes.AuthRequestContext
 		defer func() {
 			gw.handleHttpError(w, r, errorMessage)
-			gw.handleFailureStats(errorMessage, reqType, arctx)
+			gw.handleFailureStats(errorMessage, reason, reqType, arctx)
 		}()
 		reqType, ok := gwCtx.GetRequestTypeFromCtx(r.Context())
 		if !ok {
-			errorMessage = "unable to get request type from context"
+			errorMessage, reason = "unable to get request type from context", gwtypes.ReasonInvalidRequestContext
 			return
 		}
 		arctx, ok = gwCtx.GetAuthRequestFromCtx(r.Context())
 		if !ok {
-			errorMessage = "unable to get AuthRequest from context"
+			errorMessage, reason = "unable to get AuthRequest from context", gwtypes.ReasonInvalidRequestContext
 			return
 		}
 
@@ -156,18 +160,18 @@ func (gw *Handle) authDestIDForSource(delegate http.HandlerFunc) http.HandlerFun
 				delegate.ServeHTTP(w, r)
 				return
 			}
-			errorMessage = response.NoDestinationIDInHeader
+			errorMessage, reason = response.NoDestinationIDInHeader, gwtypes.ReasonNoDestinationIDInHeader
 			return
 		}
 		destination, found := lo.Find(arctx.Source.Destinations, func(dest backendconfig.DestinationT) bool {
 			return dest.ID == destinationID
 		})
 		if !found {
-			errorMessage = response.InvalidDestinationID
+			errorMessage, reason = response.InvalidDestinationID, gwtypes.ReasonInvalidDestinationID
 			return
 		}
 		if !destination.Enabled {
-			errorMessage = response.DestinationDisabled
+			errorMessage, reason = response.DestinationDisabled, gwtypes.ReasonDestinationDisabled
 			return
 		}
 		arctx.DestinationID = destinationID
@@ -184,7 +188,7 @@ func (gw *Handle) replaySourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc
 		s, ok := gw.sourceIDSourceMap[arctx.SourceID]
 		if !ok || !s.IsReplaySource() {
 			gw.handleHttpError(w, r, response.InvalidReplaySource)
-			gw.handleFailureStats(response.InvalidReplaySource, "replay", arctx)
+			gw.handleFailureStats(response.InvalidReplaySource, gwtypes.ReasonInvalidReplaySource, "replay", arctx)
 			return
 		}
 		delegate.ServeHTTP(w, r)
@@ -267,7 +271,7 @@ func (gw *Handle) handleHttpError(w http.ResponseWriter, r *http.Request, errorM
 	}
 }
 
-func (gw *Handle) handleFailureStats(errorMessage, reqType string, arctx *gwtypes.AuthRequestContext) {
+func (gw *Handle) handleFailureStats(errorMessage string, reason gwtypes.StatReason, reqType string, arctx *gwtypes.AuthRequestContext) {
 	if errorMessage != "" {
 		var stat gwstats.SourceStat
 		switch errorMessage {
@@ -310,7 +314,7 @@ func (gw *Handle) handleFailureStats(errorMessage, reqType string, arctx *gwtype
 				SourceDefName: arctx.SourceDefName,
 			}
 		}
-		stat.RequestFailed(response.GetStatus(errorMessage))
+		stat.RequestFailed(reason)
 		stat.Report(gw.stats)
 	}
 }
