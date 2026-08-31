@@ -209,7 +209,6 @@ func newLargePayloadTestFlusher(t *testing.T, serverURL string, maxRetries, batc
 	t.Helper()
 	conf := config.New()
 	conf.Set("REPORTING_URL", serverURL)
-	conf.Set("Reporting.flusher.requestEntityTooLargeHandling", true)
 	conf.Set("Reporting.httpClient.backoff.maxRetries", maxRetries)
 	conf.Set("Reporting.flusher.batchSizeToReporting", batchSize)
 	conf.Set("Reporting.flusher.minConcurrentRequests", 1)
