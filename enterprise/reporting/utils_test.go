@@ -160,11 +160,10 @@ func newLargePayloadTestReporter(t *testing.T, commonClient *client.Client) (*De
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
 	return &DefaultReporter{
-		commonClient:                  commonClient,
-		stats:                         statsStore,
-		log:                           logger.NOP,
-		requestEntityTooLargeHandling: config.SingleValueLoader(true),
-		maxSampleEventSizeBytes:       config.SingleValueLoader(maxSampleEventSizeBytesForTest),
+		commonClient:            commonClient,
+		stats:                   statsStore,
+		log:                     logger.NOP,
+		maxSampleEventSizeBytes: config.SingleValueLoader(maxSampleEventSizeBytesForTest),
 	}, statsStore
 }
 
@@ -174,12 +173,11 @@ func newLargePayloadTestEDReporter(t *testing.T, commonClient *client.Client) (*
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
 	return &ErrorDetailReporter{
-		commonClient:                  commonClient,
-		stats:                         statsStore,
-		log:                           logger.NOP,
-		statsManager:                  NewErrorReportingStats(statsStore),
-		requestEntityTooLargeHandling: config.SingleValueLoader(true),
-		maxSampleEventSizeBytes:       config.SingleValueLoader(maxSampleEventSizeBytesForTest),
+		commonClient:            commonClient,
+		stats:                   statsStore,
+		log:                     logger.NOP,
+		statsManager:            NewErrorReportingStats(statsStore),
+		maxSampleEventSizeBytes: config.SingleValueLoader(maxSampleEventSizeBytesForTest),
 	}, statsStore
 }
 

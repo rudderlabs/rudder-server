@@ -101,8 +101,7 @@ type ErrorDetailReporter struct {
 	maxOpenConnections    int
 	vacuumFull            config.ValueLoader[bool]
 
-	requestEntityTooLargeHandling config.ValueLoader[bool]
-	maxSampleEventSizeBytes       config.ValueLoader[int64]
+	maxSampleEventSizeBytes config.ValueLoader[int64]
 
 	errorDetailExtractor *ExtractorHandle
 	errorNormalizer      ErrorNormalizer
@@ -138,7 +137,6 @@ func NewErrorDetailReporter(
 	eventSamplingDuration := conf.GetReloadableDurationVar(60, time.Minute, "Reporting.eventSampling.durationInMinutes")
 	eventSamplerType := conf.GetReloadableStringVar("badger", "Reporting.eventSampling.type")
 	eventSamplingCardinality := conf.GetReloadableIntVar(100000, 1, "Reporting.eventSampling.cardinality")
-	requestEntityTooLargeHandling := conf.GetReloadableBoolVar(false, "Reporting.errorReporting.requestEntityTooLargeHandling", "Reporting.requestEntityTooLargeHandling")
 	maxSampleEventSizeBytes := conf.GetReloadableInt64Var(50*bytesize.MB, 1, "Reporting.errorReporting.maxSampleEventSizeBytes", "Reporting.maxSampleEventSizeBytes")
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
@@ -160,17 +158,15 @@ func NewErrorDetailReporter(
 	}
 
 	return &ErrorDetailReporter{
-		ctx:                   ctx,
-		cancel:                cancel,
-		g:                     g,
-		log:                   log,
-		sleepInterval:         sleepInterval,
-		mainLoopSleepInterval: mainLoopSleepInterval,
-		maxConcurrentRequests: maxConcurrentRequests,
-		vacuumFull:            conf.GetReloadableBoolVar(true, "Reporting.errorReporting.vacuumFull", "Reporting.vacuumFull"),
-
-		requestEntityTooLargeHandling: requestEntityTooLargeHandling,
-		maxSampleEventSizeBytes:       maxSampleEventSizeBytes,
+		ctx:                     ctx,
+		cancel:                  cancel,
+		g:                       g,
+		log:                     log,
+		sleepInterval:           sleepInterval,
+		mainLoopSleepInterval:   mainLoopSleepInterval,
+		maxConcurrentRequests:   maxConcurrentRequests,
+		vacuumFull:              conf.GetReloadableBoolVar(true, "Reporting.errorReporting.vacuumFull", "Reporting.vacuumFull"),
+		maxSampleEventSizeBytes: maxSampleEventSizeBytes,
 
 		eventSamplingEnabled:  eventSamplingEnabled,
 		eventSamplingDuration: eventSamplingDuration,
@@ -838,10 +834,6 @@ func (edr *ErrorDetailReporter) Stop() {
 }
 
 func (edr *ErrorDetailReporter) sendEDMetric(ctx context.Context, metric *types.EDMetric) error {
-	if !edr.requestEntityTooLargeHandling.Load() {
-		return edr.commonClient.SendWithoutFailFast(ctx, metric)
-	}
-
 	err := edr.commonClient.Send(ctx, metric)
 	if !errors.Is(err, client.ErrPayloadTooLarge) {
 		return err
