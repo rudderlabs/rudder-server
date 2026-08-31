@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.85.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.84.0...v1.85.0-rc.1) (2026-08-31)
+
+
+### Features
+
+* backend config v2 resolver with stub mapper ([#7275](https://github.com/rudderlabs/rudder-server/issues/7275)) ([267b973](https://github.com/rudderlabs/rudder-server/commit/267b9735dbd8f8ad84a40121ce6818063161e61e))
+* **warehouse:** clickhouse v2 connection and schema ([#7301](https://github.com/rudderlabs/rudder-server/issues/7301)) ([2eb1fa6](https://github.com/rudderlabs/rudder-server/commit/2eb1fa69c64455dd7213fc06ff0f37d83a1e426b))
+* **warehouse:** clickhouse v2 ddl operations ([#7302](https://github.com/rudderlabs/rudder-server/issues/7302)) ([f2887c5](https://github.com/rudderlabs/rudder-server/commit/f2887c56b62f143578e312c73f1e1afdb738d13f))
+* **warehouse:** clickhouse v2 loading ([#7303](https://github.com/rudderlabs/rudder-server/issues/7303)) ([3e48618](https://github.com/rudderlabs/rudder-server/commit/3e48618d6bdc74af2893dd30124678b02795627f))
+* **warehouse:** enable the clickhouse v2 driver behind a flag ([#7311](https://github.com/rudderlabs/rudder-server/issues/7311)) ([3ce1da5](https://github.com/rudderlabs/rudder-server/commit/3ce1da58c141b0513b3df2cab88d3d9c820317fb))
+
+
+### Bug Fixes
+
+* race conditions while counting initial pending events can cause wrong counting ([#7292](https://github.com/rudderlabs/rudder-server/issues/7292)) ([3efa718](https://github.com/rudderlabs/rudder-server/commit/3efa7182606b574ef45d9fd530ac2ff99fff2e51))
+* replay destinations not using the config corresponding to their connected source type ([#7307](https://github.com/rudderlabs/rudder-server/issues/7307)) ([ee7aa93](https://github.com/rudderlabs/rudder-server/commit/ee7aa9386b40e0930cc0d66b7db1445c37ad8fdc))
+* **router:** abort router-transform on proactive invalid_grant instead of retrying (INT-6779) ([#7175](https://github.com/rudderlabs/rudder-server/issues/7175)) ([4d7348d](https://github.com/rudderlabs/rudder-server/commit/4d7348d83aba19034c218cb3eda121698ec0262a))
+* tracking plan merged config is cached without its event type ([#7314](https://github.com/rudderlabs/rudder-server/issues/7314)) ([624dd5c](https://github.com/rudderlabs/rudder-server/commit/624dd5c0f6eb9302260d1edc7713e203b94a49aa))
+
+
+### Miscellaneous
+
+* setattr/delattr hardening ([#7291](https://github.com/rudderlabs/rudder-server/issues/7291)) ([2855af4](https://github.com/rudderlabs/rudder-server/commit/2855af40303240b6c3cbe9310508eb1b9d67a7e6))
+* sync release v1.84.0 to main branch ([#7306](https://github.com/rudderlabs/rudder-server/issues/7306)) ([fa102b7](https://github.com/rudderlabs/rudder-server/commit/fa102b798e81e2e5da889104fedd672545a3b99f))
+* webhook reasons ([#7294](https://github.com/rudderlabs/rudder-server/issues/7294)) ([c298d59](https://github.com/rudderlabs/rudder-server/commit/c298d596af91b187c01aa356312e7f40d1bef1af))
+
 ## [1.84.0](https://github.com/rudderlabs/rudder-server/compare/v1.83.0...v1.84.0) (2026-08-24)
 
 
