@@ -4331,8 +4331,9 @@ type excludedDestination struct {
 // survive filtering (available) and the ones excluded, with reason and status code, in the same
 // order and applying the same filters the fan-out uses today: client-integration filtering first,
 // then consent filtering. When specificDestID is set (RETL), the candidate set is narrowed to that
-// single destination before classification — sibling destinations are never candidates and produce
-// no rows, since each sibling connection sends its own copy of the event.
+// single destination before classification: rudder-sources runs one job per (source, destination)
+// connection, so each connection sends its own copy of the event stamped with its destination ID —
+// the source's other destinations are never candidates for this copy and produce no rows.
 //
 // srcDests must be the source's destination snapshot (getSourceDestinations(sourceId)) — passed
 // in so callers looping over a source's events build it once instead of per event.

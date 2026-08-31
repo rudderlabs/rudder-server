@@ -6482,7 +6482,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.Equal(t, "", rows[0].InPU)
 	})
 
-	t.Run("a RETL event whose stamped destination is unavailable emits filtered_no_destination and no rows at all for sibling destinations", func(t *testing.T) {
+	t.Run("a RETL event whose stamped destination is unavailable emits filtered_no_destination and no rows for the source's other destinations", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
 		conf.Set("Processor.earlyDestinationFilter", false)
@@ -6495,10 +6495,10 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.Equal(t, reportingtypes.FilteredNoDestinationStatus, rows[0].StatusDetail.Status)
 		require.Empty(t, perDestFilterRows(msg.reportMetrics))
 		require.Empty(t, destEnterRows(msg.reportMetrics))
-		require.Empty(t, msg.groupedEvents, "siblings A, B, C must not produce rows or clones for this copy")
+		require.Empty(t, msg.groupedEvents, "the source's other destinations A, B, C must not produce rows or clones for this copy")
 	})
 
-	t.Run("a RETL event stamped for an available destination emits exactly one destination_enter row and none for siblings", func(t *testing.T) {
+	t.Run("a RETL event stamped for an available destination emits exactly one destination_enter row and none for the source's other destinations", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
 		conf.Set("Processor.earlyDestinationFilter", false)
@@ -6705,7 +6705,7 @@ func TestClassifyDestinations(t *testing.T) {
 		require.Equal(t, []string{"dest-1"}, excludedIDs(excluded))
 	})
 
-	t.Run("specificDestID narrows the candidate set to the stamped destination and siblings appear in neither slice", func(t *testing.T) {
+	t.Run("specificDestID narrows the candidate set to the stamped destination and the source's other destinations appear in neither slice", func(t *testing.T) {
 		sourceID := "source-1"
 		dests := []backendconfig.DestinationT{
 			webhookDest(),
@@ -6841,7 +6841,7 @@ func TestClassifyDestinations(t *testing.T) {
 				event: types.SingularEventT{},
 			},
 			{
-				name:           "RETL narrowed to available sibling",
+				name:           "RETL narrowed to available stamped destination",
 				dests:          []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")},
 				event:          types.SingularEventT{},
 				specificDestID: "dest-2",

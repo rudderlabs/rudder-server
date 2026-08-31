@@ -169,16 +169,19 @@ func (proc *Handle) procStoreStage(partition string, pipelineIndex int, in *stor
 // pool (preprocess/fan-out) and the proc job is only stored for the destinations that
 // passed them.
 //
-// Config drift between fan-out and consume: a destination deleted from the config
-// cannot be re-hydrated (its type and config are gone, so there isn't even a router
-// queue to store to) and is dropped to a terminal status. A destination merely
-// disabled keeps flowing through the pipeline so it reaches the router/batchrouter
-// queue and is aborted there with the usual drain reporting — DESTINATION_ENTER was
-// already recorded at fan-out, so dropping here would leave the reporting chain
-// dangling. Processor.DestinationIsolation.dropEventsForDisabledDestAtProcRebuild opts back
+// Config drift between fan-out and consume: in practice destinations are soft-deleted,
+// never hard-deleted, and a soft-deleted destination arrives in backendConfig as
+// disabled — so the real drift case is a disabled destination, which keeps flowing
+// through the pipeline so it reaches the router/batchrouter queue and is aborted there
+// with the usual drain reporting — DESTINATION_ENTER was already recorded at fan-out,
+// so dropping here would leave the reporting chain dangling.
+// Processor.DestinationIsolation.dropEventsForDisabledDestAtProcRebuild opts back
 // into dropping disabled destinations here, e.g. to drain a proc-table backlog quickly
-// after the user disables a misbehaving destination. Surviving events are grouped per
-// (source,destination) so the reused transform stages operate on them unchanged.
+// after the user disables a misbehaving destination. As a defensive fallback, a
+// destination missing from the config entirely cannot be re-hydrated (its type and
+// config are gone, so there isn't even a router queue to store to) and is dropped to a
+// terminal status. Surviving events are grouped per (source,destination) so the reused
+// transform stages operate on them unchanged.
 func (proc *Handle) procRebuildStage(destinationID string, in subJob) (*transformationMessage, error) { //nolint: unparam
 	s := time.Now()
 	defer func() {
@@ -204,10 +207,11 @@ func (proc *Handle) procRebuildStage(destinationID string, in subJob) (*transfor
 		totalEvents++
 		sourceID := payload.Metadata.SourceID
 
-		// Re-hydrate the destination from live config. Config drift: a destination
-		// deleted since fan-out cannot be re-hydrated and is dropped to a terminal
-		// status; a disabled one keeps flowing (aborted with reporting at the
-		// router/batchrouter) unless dropEventsForDisabledDestAtProcRebuild is set.
+		// Re-hydrate the destination from live config. Config drift: a disabled
+		// (incl. soft-deleted) destination keeps flowing (aborted with reporting at
+		// the router/batchrouter) unless dropEventsForDisabledDestAtProcRebuild is
+		// set; a destination missing from the config entirely (not expected in
+		// practice) is dropped to a terminal status as a defensive fallback.
 		dest, ok := proc.getDestinationByID(sourceID, destinationID)
 		if !ok {
 			statusList = append(statusList, procJobStatus(job, destinationID, jobsdb.Filtered.State, `{"reason":"destination not found"}`))
