@@ -145,7 +145,6 @@ type Handle struct {
 	utSamplingFileManager      filemanager.FileManager
 	storeSamplingFileManager   filemanager.FileManager
 	mirrorFilteredCache        *cachettl.Cache[string, bool]
-	captureOptInPins           *captureOptInPins
 	destinationIsolationMu     sync.RWMutex
 	destinationIsolationCache  map[string]bool
 	rsourcesService            rsources.JobService
@@ -282,7 +281,6 @@ type ParametersT struct {
 	WorkspaceId             string `json:"workspaceId"`
 	TraceParent             string `json:"traceparent"`
 	ConnectionID            string `json:"connection_id"`
-	CaptureError            bool   `json:"capture_error,omitempty"`
 }
 
 type MetricMetadata struct {
@@ -487,7 +485,6 @@ func (proc *Handle) Setup(
 	}
 
 	proc.mirrorFilteredCache = cachettl.New[string, bool](cachettl.WithNoRefreshTTL)
-	proc.captureOptInPins = newCaptureOptInPins()
 
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
@@ -3693,9 +3690,6 @@ func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilt
 			sourceCategory := metadata.SourceCategory
 			workspaceID := metadata.WorkspaceID
 			partitionID := metadata.PartitionID
-			// resolved server-side from the connection's backend config and pinned per job run:
-			// nothing the client sent takes part in this decision (see error_capture_optin.go)
-			captureError := proc.captureErrorForRun(sourceID, destID, sourceJobRunId)
 			// If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			// This is done to respect findWorker logic in router.
 			if rudderID == "" {
@@ -3722,7 +3716,6 @@ func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilt
 				WorkspaceId:             workspaceID,
 				TraceParent:             metadata.TraceParent,
 				ConnectionID:            generateConnectionID(sourceID, destID),
-				CaptureError:            captureError,
 			}
 			marshalledParams, err := jsonrs.Marshal(params)
 			if err != nil {
