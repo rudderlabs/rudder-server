@@ -6149,7 +6149,7 @@ func TestUserSuppressionReporting(t *testing.T) {
 	// newSuppressionProcessor builds the shared fixture, modelled on newDedupProcessor
 	// (TestDedupReporting, :5887): a Handle with reporting and (optionally) dedup/archival/
 	// event-schema-v2 wired up, backed by a config.Config the test can mutate.
-	newSuppressionProcessor := func(t *testing.T, opts suppressionProcessorOpts) (*Handle, *config.Config, *testContext) {
+	newSuppressionProcessor := func(t *testing.T, opts suppressionProcessorOpts) (*Handle, *testContext) {
 		t.Helper()
 		conf := config.New()
 		c := &testContext{}
@@ -6188,7 +6188,7 @@ func TestUserSuppressionReporting(t *testing.T) {
 			c.MockDedup.EXPECT().Allowed(gomock.Any()).DoAndReturn(allowedFn).AnyTimes()
 		}
 
-		return processor, conf, c
+		return processor, c
 	}
 
 	// runSuppressionPipeline drives preprocessStage -> srcHydrationStage -> pretransformStage,
@@ -6234,7 +6234,7 @@ func TestUserSuppressionReporting(t *testing.T) {
 	twinEvent := []mockEventData{{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
 
 	t.Run("should emit exactly one user_suppression filtered row for a suppressed event", func(t *testing.T) {
-		processor, _, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		processor, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
 		defer c.Finish()
 
 		jobs := []*jobsdb.JobT{job(1, "", createSuppressionParameters(SourceIDEnabled), oneEvent)}
@@ -6254,7 +6254,7 @@ func TestUserSuppressionReporting(t *testing.T) {
 	})
 
 	t.Run("should not emit a gateway row for the suppressed event", func(t *testing.T) {
-		processor, _, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		processor, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
 		defer c.Finish()
 
 		jobs := []*jobsdb.JobT{
@@ -6270,7 +6270,7 @@ func TestUserSuppressionReporting(t *testing.T) {
 	})
 
 	t.Run("should drop the event but emit no row when reporting is disabled", func(t *testing.T) {
-		processor, _, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: false})
+		processor, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: false})
 		defer c.Finish()
 
 		jobs := []*jobsdb.JobT{job(1, "", createSuppressionParameters(SourceIDEnabled), oneEvent)}
@@ -6294,7 +6294,7 @@ func TestUserSuppressionReporting(t *testing.T) {
 			}
 			return allowed, nil
 		}
-		processor, _, c := newSuppressionProcessor(t, suppressionProcessorOpts{
+		processor, c := newSuppressionProcessor(t, suppressionProcessorOpts{
 			enableReporting: true, enableDedup: true, dedupAllowedFn: dedupAllowedFn,
 		})
 		defer c.Finish()
@@ -6342,7 +6342,7 @@ func TestUserSuppressionReporting(t *testing.T) {
 	})
 
 	t.Run("should take precedence over bot management for an event carrying both parameters", func(t *testing.T) {
-		processor, _, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		processor, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
 		defer c.Finish()
 
 		jobs := []*jobsdb.JobT{job(1, "", createSuppressedBotParameters(SourceIDEnabled), oneEvent)}
@@ -6355,7 +6355,7 @@ func TestUserSuppressionReporting(t *testing.T) {
 	})
 
 	t.Run("should not archive or event-schema a suppressed event", func(t *testing.T) {
-		processor, _, c := newSuppressionProcessor(t, suppressionProcessorOpts{
+		processor, c := newSuppressionProcessor(t, suppressionProcessorOpts{
 			enableReporting:      true,
 			archivalEnabled:      true,
 			eventSchemaV2Enabled: true,
@@ -6399,7 +6399,7 @@ func TestUserSuppressionReporting(t *testing.T) {
 	})
 
 	t.Run("should aggregate multiple suppressed events from one source into a single row", func(t *testing.T) {
-		processor, _, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		processor, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
 		defer c.Finish()
 
 		threeEvents := []mockEventData{
@@ -6420,11 +6420,11 @@ func TestUserSuppressionReporting(t *testing.T) {
 			return []*jobsdb.JobT{job(1, "", createBatchParameters(SourceIDEnabled), oneEvent)}
 		}
 
-		processor1, _, c1 := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		processor1, c1 := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
 		defer c1.Finish()
 		run1 := runSuppressionPipeline(t, processor1, buildJobs())
 
-		processor2, _, c2 := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		processor2, c2 := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
 		defer c2.Finish()
 		run2 := runSuppressionPipeline(t, processor2, buildJobs())
 

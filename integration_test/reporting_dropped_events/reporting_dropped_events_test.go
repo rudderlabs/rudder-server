@@ -785,12 +785,16 @@ func TestReportingDroppedEvents(t *testing.T) {
 
 	// Phase 3 of the pipeline inspector: suppressed users become dummy jobs that ride the normal
 	// gateway -> jobsdb -> processor path and are reported and dropped at the top of the
-	// processor's preprocess loop. A single server processes two batches for the same suppressed
-	// user with the (reloadable) Gateway.storeUserSuppressedEvents flag flipped between them:
+	// processor's preprocess loop. This is an internal-batch-only behaviour: the public
+	// (/v1/batch) path drops suppressed events outright, whatever the flag says. A single server
+	// processes three batches for the same suppressed user, with the (reloadable)
+	// Gateway.storeUserSuppressedEvents flag flipped between the first two:
 	//
-	//	1. flag off (default) -> nothing is stored at all, the request is short-circuited
-	//	2. flag on            -> one dummy gw job per suppressed event, dropped at the processor
-	//	                         with a user_suppression/filtered/298 row and nothing else
+	//	1. internal batch, flag off (default) -> nothing is stored at all
+	//	2. internal batch, flag on            -> one dummy gw job per suppressed event, dropped at
+	//	                                         the processor with a user_suppression/filtered/298
+	//	                                         row and nothing else
+	//	3. public batch, flag on              -> still nothing is stored
 	//
 	// Report rows are committed in the same transaction as the gateway job statuses, so "exactly
 	// N gw jobs succeeded" is both the barrier for the second batch and the proof that the first
@@ -881,8 +885,12 @@ func TestReportingDroppedEvents(t *testing.T) {
 			return suppressionsServed.Load() >= 2
 		}, 60*time.Second, 100*time.Millisecond, "the suppression list should have been synced")
 
+		sendInternalBatch := func() error {
+			return sendInternalBatchEventsForUser(eventsPerBatch, workspaceID, "source-1", suppressedUser, "identify", "writekey-1", url)
+		}
+
 		t.Run("flag off (default): the suppressed events are dropped at the gateway", func(t *testing.T) {
-			require.NoError(t, sendEventsForUser(eventsPerBatch, suppressedUser, "identify", "writekey-1", url))
+			require.NoError(t, sendInternalBatch())
 
 			require.Never(t, func() bool {
 				return gatewayJobCount() != 0
@@ -892,7 +900,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 		t.Run("flag on: the suppressed events are stored as dummy jobs and dropped at the processor", func(t *testing.T) {
 			config.Set("Gateway.storeUserSuppressedEvents", true)
 
-			require.NoError(t, sendEventsForUser(eventsPerBatch, suppressedUser, "identify", "writekey-1", url))
+			require.NoError(t, sendInternalBatch())
 
 			// exactly one gw job per event of this batch: the flag-off batch contributed none
 			require.Eventually(t, func() bool {
@@ -921,6 +929,18 @@ func TestReportingDroppedEvents(t *testing.T) {
 				require.EqualValues(t, 0, reportCount("source_id = 'source-1' and pu = '"+pu+"'"),
 					"the suppressed events died at preprocess and should have no %s rows", pu)
 			}
+		})
+
+		t.Run("flag on: the public path still drops suppressed events outright", func(t *testing.T) {
+			require.NoError(t, sendEventsForUser(eventsPerBatch, suppressedUser, "identify", "writekey-1", url))
+
+			// the dummy-job behaviour is internal-batch only: the public path drops suppressed
+			// events regardless of the flag, so the internal batch's jobs stay the whole story
+			require.Never(t, func() bool {
+				return gatewayJobCount() != eventsPerBatch
+			}, 5*time.Second, 500*time.Millisecond, "the public path must not store suppressed events even with the flag on")
+			require.EqualValues(t, eventsPerBatch, reportCount("pu = 'user_suppression'"),
+				"the public path drops before the processor, so it adds no user_suppression rows")
 		})
 
 		cancel()
@@ -1279,6 +1299,54 @@ func sendEventsForUser(num int, userID, eventType, writeKey, url string) error {
 		func() { kithttputil.CloseResponse(resp) }()
 	}
 
+	return nil
+}
+
+// sendInternalBatchEventsForUser sends num events for the given user in a single request to the
+// gateway's internal batch endpoint. That path reads the suppression key off the message
+// properties (workspaceID/userID/sourceID) rather than off the event payload, so both are set to
+// the same user here. Request shape mirrors processor/processor_event_dropping_test.go.
+func sendInternalBatchEventsForUser(num int, workspaceID, sourceID, userID, eventType, writeKey, url string) error { // nolint:unparam
+	messages := make([]string, 0, num)
+	for i := range num {
+		messages = append(messages, fmt.Sprintf(`{
+			"properties": {
+				"routingKey": "a1",
+				"requestType": %[1]q,
+				"workspaceID": %[2]q,
+				"userID": %[3]q,
+				"sourceID": %[4]q,
+				"requestIP": "1.2.3.4",
+				"receivedAt": "2024-01-01T01:01:01.000000001Z"
+			},
+			"payload": {
+				"userId": %[3]q,
+				"anonymousId": %[3]q,
+				"type": %[1]q,
+				"messageId": %[5]q,
+				"request_ip": "1.2.3.4",
+				"rudderId": "rudder-id-1",
+				"receivedAt": "2024-01-01T01:01:01.000000001Z"
+			}
+		}`, eventType, workspaceID, userID, sourceID, fmt.Sprintf("message-id-%d", i)))
+	}
+	payload := fmt.Appendf(nil, "[%s]", strings.Join(messages, ",\n"))
+
+	req, err := http.NewRequest("POST", url+"/internal/v1/batch", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(writeKey, "password")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { kithttputil.CloseResponse(resp) }()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to send internal batch to rudder server, status code: %d: %s", resp.StatusCode, string(b))
+	}
 	return nil
 }
 
