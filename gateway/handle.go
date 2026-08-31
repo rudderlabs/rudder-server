@@ -390,6 +390,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 				if v, _ := misc.MapLookup(eventContext, "sources", "task_run_id").(string); v != "" {
 					sourcesTaskRunID = v
 				}
+
 				// calculate version
 				firstSDKName, _ := misc.MapLookup(
 					eventContext,
