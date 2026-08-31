@@ -7044,7 +7044,7 @@ func TestClassifyDestinations(t *testing.T) {
 		}
 	})
 
-	t.Run("a consent-denied destination is excluded with reason filtered_consent and code 297", func(t *testing.T) {
+	t.Run("a consent-denied destination is excluded with reason filtered_consent and code 298", func(t *testing.T) {
 		sourceID := "source-1"
 		dests := []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))}
 		proc := newClassifyTestHandle(sourceID, dests)
@@ -7055,7 +7055,7 @@ func TestClassifyDestinations(t *testing.T) {
 		require.Len(t, excluded, 1)
 		require.Equal(t, "dest-1", excluded[0].destination.ID)
 		require.Equal(t, reportingtypes.FilteredConsentStatus, excluded[0].reason)
-		require.Equal(t, reportingtypes.ConsentDeniedEventCode, excluded[0].statusCode)
+		require.Equal(t, reportingtypes.FilterEventCode, excluded[0].statusCode)
 	})
 
 	t.Run("a destination excluded by integrations and also consent-denied yields exactly one entry, with reason filtered_integration", func(t *testing.T) {
