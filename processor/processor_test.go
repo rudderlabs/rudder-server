@@ -6412,7 +6412,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	// the candidate-semantics invariant subtest that follows it.
 	var sharedConsentRun *transformationMessage
 
-	t.Run("consent excluding one of three destinations yields three enter rows, exactly one filtered_consent/297 row, and clones to the other two", func(t *testing.T) {
+	t.Run("consent excluding one of three destinations yields three enter rows, exactly one filtered_consent/298 row, and clones to the other two", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
 		conf.Set("Processor.earlyDestinationFilter", false)
@@ -6429,7 +6429,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.Len(t, filterRows, 1)
 		require.Equal(t, DestinationIDEnabledB, filterRows[0].DestinationID)
 		require.Equal(t, reportingtypes.FilteredConsentStatus, filterRows[0].StatusDetail.Status)
-		require.Equal(t, reportingtypes.ConsentDeniedEventCode, filterRows[0].StatusDetail.StatusCode)
+		require.Equal(t, reportingtypes.FilterEventCode, filterRows[0].StatusDetail.StatusCode)
 		require.Equal(t, "", filterRows[0].InPU)
 
 		require.ElementsMatch(t, []string{
@@ -6660,7 +6660,7 @@ func TestClassifyDestinations(t *testing.T) {
 		}
 	})
 
-	t.Run("a consent-denied destination is excluded with reason filtered_consent and code 297", func(t *testing.T) {
+	t.Run("a consent-denied destination is excluded with reason filtered_consent and code 298", func(t *testing.T) {
 		sourceID := "source-1"
 		dests := []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))}
 		proc := newClassifyTestHandle(sourceID, dests)
@@ -6671,7 +6671,7 @@ func TestClassifyDestinations(t *testing.T) {
 		require.Len(t, excluded, 1)
 		require.Equal(t, "dest-1", excluded[0].destination.ID)
 		require.Equal(t, reportingtypes.FilteredConsentStatus, excluded[0].reason)
-		require.Equal(t, reportingtypes.ConsentDeniedEventCode, excluded[0].statusCode)
+		require.Equal(t, reportingtypes.FilterEventCode, excluded[0].statusCode)
 	})
 
 	t.Run("a destination excluded by integrations and also consent-denied yields exactly one entry, with reason filtered_integration", func(t *testing.T) {

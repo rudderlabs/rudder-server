@@ -4320,7 +4320,8 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId,
 }
 
 // excludedDestination is a candidate destination classifyDestinations excluded, along with the
-// reason and reporting status code (filtered_integration/298, filtered_consent/297).
+// reason and reporting status code (filtered_integration/298, filtered_consent/298 — the
+// status string, not the code, is the discriminator within the filtered_* family).
 type excludedDestination struct {
 	destination *backendconfig.DestinationT
 	reason      string
@@ -4379,7 +4380,7 @@ func (proc *Handle) classifyDestinations(event types.SingularEventT, srcDests so
 				excluded = append(excluded, excludedDestination{
 					destination: &dest,
 					reason:      reportingtypes.FilteredConsentStatus,
-					statusCode:  reportingtypes.ConsentDeniedEventCode,
+					statusCode:  reportingtypes.FilterEventCode,
 				})
 			}
 		}
