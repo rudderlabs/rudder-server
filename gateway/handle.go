@@ -362,10 +362,6 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	type jobObject struct {
 		userID string
 		events []map[string]any
-		// params overrides the shared, request-level marshalledParams for this job. Only set for
-		// suppressed-user dummy jobs, which need is_user_suppressed:true stamped on their own
-		// parameters rather than the request's.
-		params []byte
 	}
 
 	var (
@@ -439,48 +435,6 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 		if isUserSuppressed(workspaceId, userIDFromReq, sourceID) {
 			suppressed = true
-			if !gw.conf.storeUserSuppressedEvents.Load() {
-				continue
-			}
-
-			fillMessageID(toSet)
-			messageID, _ := toSet["messageId"].(string)
-			eventName, _ := misc.MapLookup(toSet, "event").(string)
-			receivedAt, ok := toSet["receivedAt"].(string)
-			if !ok || receivedAt == "" {
-				receivedAt = gw.now().Format(misc.RFC3339Milli)
-			}
-			dummyEvent := buildSuppressedEventPayload(messageID, eventTypeFromReq, eventName, receivedAt)
-
-			suppressedParams := map[string]any{
-				"source_id":          sourceID,
-				"source_job_run_id":  sourcesJobRunID,
-				"source_task_run_id": sourcesTaskRunID,
-				"traceparent":        traceParent,
-				"source_category":    sourceCategory,
-				"is_user_suppressed": true,
-			}
-			if len(destinationID) != 0 {
-				suppressedParams["destination_id"] = destinationID
-			}
-			marshalledSuppressedParams, mErr := jsonrs.Marshal(suppressedParams)
-			if mErr != nil {
-				gw.logger.Errorn("[Gateway] Failed to marshal suppressed user parameters map",
-					obskit.SourceID(sourceID),
-					obskit.DestinationID(destinationID),
-					obskit.Error(mErr),
-				)
-				marshalledSuppressedParams = []byte(
-					`{"error": "rudder-server gateway failed to marshal params"}`,
-				)
-			}
-
-			userID := buildUserID(userIDHeader, anonIDFromReq, userIDFromReq)
-			out = append(out, jobObject{
-				userID: userID,
-				events: []map[string]any{dummyEvent},
-				params: marshalledSuppressedParams,
-			})
 			continue
 		}
 
@@ -596,14 +550,10 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			eventCount = len(userEvent.events)
 		}
 
-		jobParameters := marshalledParams
-		if userEvent.params != nil {
-			jobParameters = userEvent.params
-		}
 		jobs = append(jobs, &jobsdb.JobT{
 			UUID:         uuid.New(),
 			UserID:       userEvent.userID,
-			Parameters:   jobParameters,
+			Parameters:   marshalledParams,
 			CustomVal:    customVal,
 			EventPayload: payload,
 			EventCount:   eventCount,

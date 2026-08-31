@@ -388,6 +388,11 @@ var _ = Describe("Gateway Enterprise", func() {
 			Expect(stat).To(BeNil())
 		})
 
+		// Context("Gateway.storeUserSuppressedEvents") pins the (user-decided) final contract: the
+		// public path never stored dummy jobs for suppressed events and, after the flag was added
+		// and then walked back, it still doesn't — regardless of the flag's value. The dummy-job
+		// behaviour now lives exclusively on the internal batch path
+		// (extractJobsFromInternalBatchPayload, covered in handle_test.go).
 		Context("Gateway.storeUserSuppressedEvents", func() {
 			It("flag off: a fully suppressed request still returns via errRequestSuppressed and stores nothing", func() {
 				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(0)
@@ -401,215 +406,21 @@ var _ = Describe("Gateway Enterprise", func() {
 				)
 			})
 
-			It("flag on: a fully suppressed request returns 200 and stores one dummy job per suppressed event", func() {
+			It("flag on: the public path still drops via errRequestSuppressed and stores nothing", func() {
+				// Guards against the flag ever leaking back into the public path: even with it
+				// explicitly enabled, a fully suppressed request must behave exactly as if the
+				// flag didn't exist here.
 				conf.Set("Gateway.storeUserSuppressedEvents", true)
 
-				var storedJobs []*jobsdb.JobT
-				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).
-					Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
-						_ = f(jobsdb.EmptyStoreSafeTx())
-					}).Return(nil)
-				tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job")
-				c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-					Do(func(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-						storedJobs = jobs
-						tFunc()
-					}).Return(nil)
+				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(0)
+				c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 
-				suppressedBatch := fmt.Sprintf(
-					`{"batch":[{"userId":%[1]q,"messageId":"sup-msg-1"},{"userId":%[1]q,"messageId":"sup-msg-2"}]}`,
-					SuppressedUserID,
-				)
+				suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, SuppressedUserID)
 				expectHandlerResponse(
 					gateway.webBatchHandler(),
-					authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedBatch)),
+					authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)),
 					http.StatusOK, "ok", "batch",
 				)
-
-				Eventually(func() int { return len(storedJobs) }, 1*time.Second).Should(Equal(2))
-			})
-
-			It("flag on: the suppressed stats still increment alongside the success stats", func() {
-				conf.Set("Gateway.storeUserSuppressedEvents", true)
-
-				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).
-					Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
-						_ = f(jobsdb.EmptyStoreSafeTx())
-					}).Return(nil)
-				tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job")
-				c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-					Do(func(context.Context, any, any) { tFunc() }).Return(nil)
-
-				mixedBatch := fmt.Sprintf(
-					`{"batch":[{"userId":%[1]q,%[3]s},{"userId":%[2]q,"messageId":"normal-msg-1"}]}`,
-					NormalUserID, SuppressedUserID, sdkContext,
-				)
-				expectHandlerResponse(
-					gateway.webBatchHandler(),
-					authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(mixedBatch)),
-					http.StatusOK, "ok", "batch",
-				)
-
-				Eventually(func() bool {
-					stat := statsStore.Get("gateway.write_key_successful_requests", map[string]string{
-						"source":        rCtxEnabled.SourceTag(),
-						"sourceID":      rCtxEnabled.SourceID,
-						"workspaceId":   rCtxEnabled.WorkspaceID,
-						"writeKey":      rCtxEnabled.WriteKey,
-						"reqType":       "batch",
-						"sourceType":    rCtxEnabled.SourceCategory,
-						"sdkVersion":    sdkStatTag,
-						"sourceDefName": rCtxEnabled.SourceDefName,
-					})
-					return stat != nil && stat.LastValue() == float64(1)
-				}, 1*time.Second).Should(BeTrue(), "the success stat must still fire for the normal twin")
-
-				// gateway.user_suppression_age is the public-path suppression signal (handle.go:657),
-				// emitted by isUserSuppressed regardless of storeUserSuppressedEvents; it must keep
-				// firing for the suppressed twin even though the request as a whole now succeeds.
-				metrics := statsStore.GetByName("gateway.user_suppression_age")
-				Expect(metrics).ToNot(BeEmpty(), "the suppressed-events stat must fire alongside the success stat")
-			})
-		})
-
-		// Context("getJobDataFromRequest direct calls") exercises the per-job params override
-		// (handle.go:455-478, applied at :599-602) and the stripped-payload construction
-		// (handle.go:443-452) directly against gateway.getJobDataFromRequest, rather than through
-		// the full userWebRequestBatcher/dbWriterWorkerProcess goroutine machinery the HTTP-level
-		// Its above exercise. Both paths run the same production code; this is cheaper for
-		// asserting on per-field shape of the built jobs.
-		Context("getJobDataFromRequest direct calls", func() {
-			buildReq := func(payload string, destinationID string) *webRequestT {
-				return &webRequestT{
-					reqType:        "batch",
-					requestPayload: []byte(payload),
-					ipAddr:         "1.2.3.4",
-					traceParent:    "trace-1",
-					ctx:            context.Background(),
-					authContext: &gwtypes.AuthRequestContext{
-						SourceID:        SourceIDEnabled,
-						WorkspaceID:     WorkspaceID,
-						SourceCategory:  sourceType2,
-						SourceJobRunID:  "job-run-1",
-						SourceTaskRunID: "task-run-1",
-						DestinationID:   destinationID,
-					},
-				}
-			}
-
-			BeforeEach(func() {
-				conf.Set("Gateway.storeUserSuppressedEvents", true)
-			})
-
-			It("flag on: the dummy job's parameters carry is_user_suppressed and the request's source ids", func() {
-				payload := fmt.Sprintf(`{"batch":[{"userId":%q,"messageId":"m1"}]}`, SuppressedUserID)
-				jobData, err := gateway.getJobDataFromRequest(buildReq(payload, ""))
-				Expect(err).To(BeNil())
-				Expect(jobData.jobs).To(HaveLen(1))
-
-				var params map[string]any
-				Expect(jsonrs.Unmarshal(jobData.jobs[0].Parameters, &params)).To(Succeed())
-				Expect(params["is_user_suppressed"]).To(Equal(true))
-				Expect(params["source_id"]).To(Equal(SourceIDEnabled))
-				Expect(params["source_job_run_id"]).To(Equal("job-run-1"))
-				Expect(params["source_task_run_id"]).To(Equal("task-run-1"))
-				Expect(params["source_category"]).To(Equal(sourceType2))
-				Expect(params).To(HaveKey("traceparent"))
-			})
-
-			It("flag on: a mixed request does not stamp is_user_suppressed on the normal job", func() {
-				payload := fmt.Sprintf(
-					`{"batch":[{"userId":%q,"messageId":"sup-1"},{"userId":%q,"messageId":"norm-1"}]}`,
-					SuppressedUserID, NormalUserID,
-				)
-				jobData, err := gateway.getJobDataFromRequest(buildReq(payload, ""))
-				Expect(err).To(BeNil())
-				Expect(jobData.jobs).To(HaveLen(2))
-
-				var suppressedParams, normalParams map[string]any
-				Expect(jsonrs.Unmarshal(jobData.jobs[0].Parameters, &suppressedParams)).To(Succeed())
-				Expect(jsonrs.Unmarshal(jobData.jobs[1].Parameters, &normalParams)).To(Succeed())
-
-				Expect(suppressedParams["is_user_suppressed"]).To(Equal(true))
-				Expect(normalParams).ToNot(HaveKey("is_user_suppressed"))
-				Expect(normalParams["source_id"]).To(Equal(SourceIDEnabled))
-			})
-
-			It("flag on: the dummy event payload retains only messageId, type, event and receivedAt", func() {
-				payload := fmt.Sprintf(
-					`{"batch":[{"userId":%q,"messageId":"m1","type":"track","event":"Purchase",`+
-						`"anonymousId":"anon-1","context":{"traits":{"email":"a@b.com"}},"traits":{"plan":"pro"},`+
-						`"properties":{"amount":1},"receivedAt":"2024-01-01T00:00:00.000Z"}]}`,
-					SuppressedUserID,
-				)
-				jobData, err := gateway.getJobDataFromRequest(buildReq(payload, ""))
-				Expect(err).To(BeNil())
-				Expect(jobData.jobs).To(HaveLen(1))
-
-				var eventBatch struct {
-					Batch []map[string]any `json:"batch"`
-				}
-				Expect(jsonrs.Unmarshal(jobData.jobs[0].EventPayload, &eventBatch)).To(Succeed())
-				Expect(eventBatch.Batch).To(HaveLen(1))
-
-				keys := make([]string, 0, len(eventBatch.Batch[0]))
-				for k := range eventBatch.Batch[0] {
-					keys = append(keys, k)
-				}
-				Expect(keys).To(ConsistOf("messageId", "type", "event", "receivedAt"))
-			})
-
-			It("flag on: receivedAt falls back to gw.now() when the event carries none", func() {
-				payload := fmt.Sprintf(`{"batch":[{"userId":%q,"messageId":"m1"}]}`, SuppressedUserID)
-				jobData, err := gateway.getJobDataFromRequest(buildReq(payload, ""))
-				Expect(err).To(BeNil())
-				Expect(jobData.jobs).To(HaveLen(1))
-
-				var eventBatch struct {
-					Batch []map[string]any `json:"batch"`
-				}
-				Expect(jsonrs.Unmarshal(jobData.jobs[0].EventPayload, &eventBatch)).To(Succeed())
-				receivedAt, _ := eventBatch.Batch[0]["receivedAt"].(string)
-				_, parseErr := time.Parse(misc.RFC3339Milli, receivedAt)
-				Expect(parseErr).To(BeNil())
-			})
-
-			It("flag on: messageId is generated when absent and preserved when present", func() {
-				payload := fmt.Sprintf(
-					`{"batch":[{"userId":%[1]q},{"userId":%[1]q,"messageId":"explicit-message-id"}]}`,
-					SuppressedUserID,
-				)
-				jobData, err := gateway.getJobDataFromRequest(buildReq(payload, ""))
-				Expect(err).To(BeNil())
-				Expect(jobData.jobs).To(HaveLen(2))
-
-				var batch0, batch1 struct {
-					Batch []map[string]any `json:"batch"`
-				}
-				Expect(jsonrs.Unmarshal(jobData.jobs[0].EventPayload, &batch0)).To(Succeed())
-				Expect(jsonrs.Unmarshal(jobData.jobs[1].EventPayload, &batch1)).To(Succeed())
-
-				generatedID, _ := batch0.Batch[0]["messageId"].(string)
-				Expect(generatedID).ToNot(BeEmpty())
-				Expect(batch1.Batch[0]["messageId"]).To(Equal("explicit-message-id"))
-			})
-
-			It("flag on: destination_id is stamped only when the request carries one", func() {
-				payload := fmt.Sprintf(`{"batch":[{"userId":%q,"messageId":"m1"}]}`, SuppressedUserID)
-
-				withoutDest, err := gateway.getJobDataFromRequest(buildReq(payload, ""))
-				Expect(err).To(BeNil())
-				Expect(withoutDest.jobs).To(HaveLen(1))
-				var paramsWithout map[string]any
-				Expect(jsonrs.Unmarshal(withoutDest.jobs[0].Parameters, &paramsWithout)).To(Succeed())
-				Expect(paramsWithout).ToNot(HaveKey("destination_id"))
-
-				withDest, err := gateway.getJobDataFromRequest(buildReq(payload, "dest-1"))
-				Expect(err).To(BeNil())
-				Expect(withDest.jobs).To(HaveLen(1))
-				var paramsWith map[string]any
-				Expect(jsonrs.Unmarshal(withDest.jobs[0].Parameters, &paramsWith)).To(Succeed())
-				Expect(paramsWith["destination_id"]).To(Equal("dest-1"))
 			})
 		})
 	})
