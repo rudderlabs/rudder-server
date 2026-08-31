@@ -458,12 +458,7 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 
 				// START: request to destination endpoint
 				workspaceID := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
-				deliveryLatencyStat := stats.Default.NewTaggedStat("delivery_latency", stats.TimerType, stats.Tags{
-					"module":      "router",
-					"destType":    w.rt.destType,
-					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
-					"workspaceId": workspaceID,
-				})
+				deliveryLatencyStat := stats.Default.NewTaggedStat("delivery_latency", stats.TimerType, routerDeliveryLatencyTags(w.rt.destType, destinationJob.Destination.ID, workspaceID))
 				startedAt := time.Now()
 
 				// TODO: remove trackStuckDelivery once we verify it is not needed,
@@ -1083,54 +1078,81 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 	}
 }
 
+func routerDeliveryLatencyTags(destType, destinationID, workspaceID string) stats.Tags {
+	return stats.Tags{
+		"module":      "router",
+		"destType":    destType,
+		"destId":      destinationID,
+		"workspaceId": workspaceID,
+	}
+}
+
+func routerResponseCountTags(destType, statusCode, destinationID, workspaceID string, alert bool, errorAt string, retry bool) stats.Tags {
+	return stats.Tags{
+		"destType":       destType,
+		"respStatusCode": statusCode,
+		"destId":         destinationID,
+		"workspaceId":    workspaceID,
+		// To indicate if the failure should be alerted for router-aborted-count
+		"alert": strconv.FormatBool(alert),
+		// To specify at which point failure happened
+		"errorAt": errorAt,
+		"retry":   strconv.FormatBool(retry),
+	}
+}
+
+func routerEventDeliveryTags(destType, destinationID, workspaceID, sourceID string) stats.Tags {
+	return stats.Tags{
+		"module":      "router",
+		"destType":    destType,
+		"destID":      destinationID,
+		"workspaceId": workspaceID,
+		"source":      sourceID,
+	}
+}
+
+func routerEventDeliveryTimeTags(destType, destinationID, workspaceID, sourceID, sourceCategory string) stats.Tags {
+	return stats.Tags{
+		"module":         "router",
+		"destType":       destType,
+		"destID":         destinationID,
+		"workspaceId":    workspaceID,
+		"sourceId":       sourceID,
+		"sourceCategory": sourceCategory,
+	}
+}
+
 func (w *worker) sendRouterResponseCountStat(status *jobsdb.JobStatusT, destination *backendconfig.DestinationT, errorAt string) {
-	destinationTag := misc.GetTagName(destination.ID, destination.Name)
 	var alert bool
 	alert = w.allowRouterAbortedAlert(errorAt)
 	if status.JobState == jobsdb.Succeeded.State || status.JobState == jobsdb.Filtered.State {
 		alert = !w.rt.reloadableConfig.skipRtAbortAlertForTransformation.Load() || !w.rt.reloadableConfig.skipRtAbortAlertForDelivery.Load()
 		errorAt = ""
 	}
-	routerResponseStat := stats.Default.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
-		"destType":       w.rt.destType,
-		"respStatusCode": status.ErrorCode,
-		"destination":    destinationTag,
-		"destId":         destination.ID,
-		"workspaceId":    status.WorkspaceId,
-		// To indicate if the failure should be alerted for router-aborted-count
-		"alert": strconv.FormatBool(alert),
-		// To specify at which point failure happened
-		"errorAt": errorAt,
-		"retry":   strconv.FormatBool(status.AttemptNum > 1),
-	})
+	routerResponseStat := stats.Default.NewTaggedStat(
+		"router_response_counts",
+		stats.CountType,
+		routerResponseCountTags(w.rt.destType, status.ErrorCode, destination.ID, status.WorkspaceId, alert, errorAt, status.AttemptNum > 1),
+	)
 	routerResponseStat.Count(1)
 }
 
 func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, destination *backendconfig.DestinationT) {
-	destinationTag := misc.GetTagName(destination.ID, destination.Name)
 	if status.JobState == jobsdb.Succeeded.State {
-		eventsDeliveredStat := stats.Default.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
-			"module":      "router",
-			"destType":    w.rt.destType,
-			"destID":      destination.ID,
-			"destination": destinationTag,
-			"workspaceId": status.WorkspaceId,
-			"source":      destinationJobMetadata.SourceID,
-		})
+		eventsDeliveredStat := stats.Default.NewTaggedStat(
+			"event_delivery",
+			stats.CountType,
+			routerEventDeliveryTags(w.rt.destType, destination.ID, status.WorkspaceId, destinationJobMetadata.SourceID),
+		)
 		eventsDeliveredStat.Count(1)
 		if destinationJobMetadata.ReceivedAt != "" {
 			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
 			if err == nil {
 				eventsDeliveryTimeStat := stats.Default.NewTaggedStat(
-					"event_delivery_time", stats.TimerType, map[string]string{
-						"module":         "router",
-						"destType":       w.rt.destType,
-						"destID":         destination.ID,
-						"destination":    destinationTag,
-						"workspaceId":    status.WorkspaceId,
-						"sourceId":       destinationJobMetadata.SourceID,
-						"sourceCategory": destinationJobMetadata.SourceCategory,
-					})
+					"event_delivery_time",
+					stats.TimerType,
+					routerEventDeliveryTimeTags(w.rt.destType, destination.ID, status.WorkspaceId, destinationJobMetadata.SourceID, destinationJobMetadata.SourceCategory),
+				)
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 			}

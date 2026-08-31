@@ -59,6 +59,71 @@ func createTestWorker(destType string, transformProxy bool, stat stats.Stats) *w
 	}
 }
 
+func TestRouterMetricTagsUseRawDestinationID(t *testing.T) {
+	destination := &backendconfig.DestinationT{
+		ID:   "dest-full-id-abcdef",
+		Name: "Human Readable Destination",
+	}
+	workspaceID := "workspace-123"
+	destType := "WEBHOOK"
+
+	t.Run("delivery latency tags include raw destination ID without derived destination label", func(t *testing.T) {
+		tags := routerDeliveryLatencyTags(destType, destination.ID, workspaceID)
+		require.Equal(t, destination.ID, tags["destId"])
+		_, hasDerivedDestinationTag := tags["destination"]
+		require.False(t, hasDerivedDestinationTag)
+	})
+
+	t.Run("router response count tags include raw destination ID without derived destination label", func(t *testing.T) {
+		statsStore := replaceDefaultStatsWithMemStats(t)
+		worker := &worker{rt: &Handle{destType: destType}}
+		status := &jobsdb.JobStatusT{
+			JobState:    jobsdb.Failed.State,
+			ErrorCode:   "500",
+			WorkspaceId: workspaceID,
+			AttemptNum:  2,
+		}
+
+		worker.sendRouterResponseCountStat(status, destination, "custom")
+
+		metrics := statsStore.GetByName("router_response_counts")
+		require.Len(t, metrics, 1)
+		require.Equal(t, destination.ID, metrics[0].Tags["destId"])
+		_, hasDerivedDestinationTag := metrics[0].Tags["destination"]
+		require.False(t, hasDerivedDestinationTag)
+	})
+
+	t.Run("event delivery tags include raw destination ID without derived destination label", func(t *testing.T) {
+		statsStore := replaceDefaultStatsWithMemStats(t)
+		worker := &worker{rt: &Handle{destType: destType}}
+		status := &jobsdb.JobStatusT{
+			JobState:    jobsdb.Succeeded.State,
+			WorkspaceId: workspaceID,
+		}
+		metadata := &types.JobMetadataT{
+			ReceivedAt:     time.Now().Add(-time.Minute).UTC().Format("2006-01-02T15:04:05.000Z"),
+			SourceID:       "source-123",
+			SourceCategory: "webhook",
+			DestinationID:  destination.ID,
+			WorkspaceID:    workspaceID,
+		}
+
+		worker.sendEventDeliveryStat(metadata, status, destination)
+
+		eventDeliveryMetrics := statsStore.GetByName("event_delivery")
+		require.Len(t, eventDeliveryMetrics, 1)
+		require.Equal(t, destination.ID, eventDeliveryMetrics[0].Tags["destID"])
+		_, hasDerivedDestinationTag := eventDeliveryMetrics[0].Tags["destination"]
+		require.False(t, hasDerivedDestinationTag)
+
+		eventDeliveryTimeMetrics := statsStore.GetByName("event_delivery_time")
+		require.Len(t, eventDeliveryTimeMetrics, 1)
+		require.Equal(t, destination.ID, eventDeliveryTimeMetrics[0].Tags["destID"])
+		_, hasDerivedDestinationTag = eventDeliveryTimeMetrics[0].Tags["destination"]
+		require.False(t, hasDerivedDestinationTag)
+	})
+}
+
 func TestGateDeliveredWithWarning(t *testing.T) {
 	const (
 		gateDestType    = "BRAZE"
