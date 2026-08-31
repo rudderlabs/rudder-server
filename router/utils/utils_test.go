@@ -52,6 +52,22 @@ func TestUpdateProcessedEventsMetrics(t *testing.T) {
 			SourceID:      sourceID1,
 			DestinationID: destinationID3,
 		},
+		9: {
+			SourceID:      sourceID1,
+			DestinationID: destinationID3,
+		},
+		10: {
+			SourceID:      sourceID1,
+			DestinationID: destinationID3,
+		},
+		11: {
+			SourceID:      sourceID1,
+			DestinationID: destinationID3,
+		},
+		12: {
+			SourceID:      sourceID1,
+			DestinationID: destinationID3,
+		},
 	}
 
 	var routerStatusList []*jobsdb.JobStatusT
@@ -89,13 +105,33 @@ func TestUpdateProcessedEventsMetrics(t *testing.T) {
 		JobID:     8,
 		JobState:  jobsdb.Aborted.State,
 		ErrorCode: "404",
+	}, &jobsdb.JobStatusT{
+		JobID:         9,
+		JobState:      jobsdb.Aborted.State,
+		ErrorCode:     routerutils.DRAIN_ERROR_CODE,
+		ErrorResponse: []byte(`{"reason":"cancelled jobRunID"}`),
+	}, &jobsdb.JobStatusT{
+		JobID:         10,
+		JobState:      jobsdb.Aborted.State,
+		ErrorCode:     routerutils.DRAIN_ERROR_CODE,
+		ErrorResponse: []byte(`{"reason":"job expired"}`),
+	}, &jobsdb.JobStatusT{
+		JobID:         11,
+		JobState:      jobsdb.Aborted.State,
+		ErrorCode:     routerutils.DRAIN_ERROR_CODE,
+		ErrorResponse: []byte(`{"error":"upstream 500s exhausted retries"}`),
+	}, &jobsdb.JobStatusT{
+		JobID:         12,
+		JobState:      jobsdb.Aborted.State,
+		ErrorCode:     routerutils.DRAIN_ERROR_CODE,
+		ErrorResponse: []byte(`{"reason":"destination is disabled"}`),
 	},
 	)
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
 	routerutils.UpdateProcessedEventsMetrics(statsStore, "router", destType1, routerStatusList, jobIDConnectionDetailsMap)
 	routerutils.UpdateProcessedEventsMetrics(statsStore, "batch_router", destType2, batchRouterStatusList, jobIDConnectionDetailsMap)
-	require.Equal(t, 7, len(statsStore.GetAll()))
+	require.Equal(t, 11, len(statsStore.GetAll()))
 	require.Equal(t, 1.0, statsStore.Get("pipeline_processed_events", map[string]string{
 		"module":        "router",
 		"destType":      destType1,
@@ -151,5 +187,45 @@ func TestUpdateProcessedEventsMetrics(t *testing.T) {
 		"code":          "404",
 		"sourceId":      sourceID1,
 		"destinationId": destinationID3,
+	}).LastValue())
+	require.Equal(t, 1.0, statsStore.Get("pipeline_processed_events", map[string]string{
+		"module":         "batch_router",
+		"destType":       destType2,
+		"state":          jobsdb.Aborted.State,
+		"code":           routerutils.DRAIN_ERROR_CODE,
+		"sourceId":       sourceID1,
+		"destinationId":  destinationID3,
+		"reasonCategory": "cancelled_job_run",
+		"reason":         routerutils.DrainReasonJobRunIDCancelled,
+	}).LastValue())
+	require.Equal(t, 1.0, statsStore.Get("pipeline_processed_events", map[string]string{
+		"module":         "batch_router",
+		"destType":       destType2,
+		"state":          jobsdb.Aborted.State,
+		"code":           routerutils.DRAIN_ERROR_CODE,
+		"sourceId":       sourceID1,
+		"destinationId":  destinationID3,
+		"reasonCategory": "expired",
+		"reason":         routerutils.DrainReasonJobExpired,
+	}).LastValue())
+	require.Equal(t, 1.0, statsStore.Get("pipeline_processed_events", map[string]string{
+		"module":         "batch_router",
+		"destType":       destType2,
+		"state":          jobsdb.Aborted.State,
+		"code":           routerutils.DRAIN_ERROR_CODE,
+		"sourceId":       sourceID1,
+		"destinationId":  destinationID3,
+		"reasonCategory": "retry_limit",
+		"reason":         "retry limit reached",
+	}).LastValue())
+	require.Equal(t, 1.0, statsStore.Get("pipeline_processed_events", map[string]string{
+		"module":         "batch_router",
+		"destType":       destType2,
+		"state":          jobsdb.Aborted.State,
+		"code":           routerutils.DRAIN_ERROR_CODE,
+		"sourceId":       sourceID1,
+		"destinationId":  destinationID3,
+		"reasonCategory": "configuration",
+		"reason":         routerutils.DrainReasonDestDisabled,
 	}).LastValue())
 }

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -43,6 +44,15 @@ type DrainStats struct {
 	Count     int
 	Reasons   []string
 	Workspace string
+}
+
+type processedEventsMetricKey struct {
+	sourceID       string
+	destinationID  string
+	state          string
+	code           string
+	reasonCategory string
+	reason         string
 }
 
 type SendPostResponse struct {
@@ -180,42 +190,69 @@ func (d *drainer) getRetentionTimeForDestination(destID string) time.Duration {
 }
 
 func UpdateProcessedEventsMetrics(statsHandle stats.Stats, module, destType string, statusList []*jobsdb.JobStatusT, jobIDConnectionDetailsMap map[int64]jobsdb.ConnectionID) {
-	eventsPerConnectionInfoAndStateAndCode := map[string]map[string]map[string]int{}
+	eventsByKey := map[processedEventsMetricKey]int{}
 	for i := range statusList {
-		sourceID := jobIDConnectionDetailsMap[statusList[i].JobID].SourceID
-		destinationID := jobIDConnectionDetailsMap[statusList[i].JobID].DestinationID
-		connectionKey := strings.Join([]string{sourceID, destinationID}, ",")
-		state := statusList[i].JobState
-		code := statusList[i].ErrorCode
-		if _, ok := eventsPerConnectionInfoAndStateAndCode[connectionKey]; !ok {
-			eventsPerConnectionInfoAndStateAndCode[connectionKey] = map[string]map[string]int{}
-			eventsPerStateAndCode := eventsPerConnectionInfoAndStateAndCode[connectionKey]
-			eventsPerStateAndCode[state] = map[string]int{}
-			eventsPerStateAndCode[state][code]++
-
-		} else {
-			eventsPerStateAndCode := eventsPerConnectionInfoAndStateAndCode[connectionKey]
-			if _, ok := eventsPerStateAndCode[state]; !ok {
-				eventsPerStateAndCode[state] = map[string]int{}
-			}
-			eventsPerStateAndCode[state][code]++
+		connection := jobIDConnectionDetailsMap[statusList[i].JobID]
+		key := processedEventsMetricKey{
+			sourceID:      connection.SourceID,
+			destinationID: connection.DestinationID,
+			state:         statusList[i].JobState,
+			code:          statusList[i].ErrorCode,
 		}
-
+		if isDrainStatus(statusList[i]) {
+			key.reasonCategory, key.reason = drainReasonLabels(statusList[i])
+		}
+		eventsByKey[key]++
 	}
-	for connectionKey, eventsPerStateAndCode := range eventsPerConnectionInfoAndStateAndCode {
-		sourceID := strings.Split(connectionKey, ",")[0]
-		destinationID := strings.Split(connectionKey, ",")[1]
-		for state, codes := range eventsPerStateAndCode {
-			for code, count := range codes {
-				statsHandle.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
-					"module":        module,
-					"destType":      destType,
-					"state":         state,
-					"code":          code,
-					"sourceId":      sourceID,
-					"destinationId": destinationID,
-				}).Count(count)
-			}
+
+	for key, count := range eventsByKey {
+		tags := stats.Tags{
+			"module":        module,
+			"destType":      destType,
+			"state":         key.state,
+			"code":          key.code,
+			"sourceId":      key.sourceID,
+			"destinationId": key.destinationID,
 		}
+		if key.reasonCategory != "" {
+			tags["reasonCategory"] = key.reasonCategory
+			tags["reason"] = key.reason
+		}
+		statsHandle.NewTaggedStat(`pipeline_processed_events`, stats.CountType, tags).Count(count)
+	}
+}
+
+func isDrainStatus(status *jobsdb.JobStatusT) bool {
+	return status.JobState == jobsdb.Aborted.State && status.ErrorCode == DRAIN_ERROR_CODE
+}
+
+func drainReasonLabels(status *jobsdb.JobStatusT) (reasonCategory, reason string) {
+	drainReason := strings.TrimSpace(gjson.GetBytes(status.ErrorResponse, "reason").String())
+	if drainReason == "" {
+		drainReason = strings.TrimSpace(gjson.GetBytes(status.JobParameters, "reason").String())
+	}
+	if drainReason == "" && strings.TrimSpace(gjson.GetBytes(status.ErrorResponse, "error").String()) != "" {
+		return "retry_limit", "retry limit reached"
+	}
+
+	switch drainReason {
+	case DrainReasonJobRunIDCancelled:
+		return "cancelled_job_run", DrainReasonJobRunIDCancelled
+	case DrainReasonJobExpired:
+		return "expired", DrainReasonJobExpired
+	case DrainReasonDestNotFound:
+		return "configuration", DrainReasonDestNotFound
+	case DrainReasonDestDisabled:
+		return "configuration", DrainReasonDestDisabled
+	case DrainReasonDestAbort:
+		return "configuration", DrainReasonDestAbort
+	case "source_not_found":
+		return "configuration", "source_not_found"
+	case "retry limit reached":
+		return "retry_limit", "retry limit reached"
+	case "":
+		return "unknown", "unknown"
+	default:
+		return "retry_limit", "retry limit reached"
 	}
 }
