@@ -208,6 +208,7 @@ func (w *gwPipelineWorker) start() {
 			if firstSubJob {
 				mergedJob = &storeMessage{
 					ctx:                   subJob.ctx,
+					pipeline:              subJob.pipeline,
 					rsourcesStats:         subJob.rsourcesStats,
 					dedupKeys:             make(map[string]struct{}),
 					procErrorJobsByDestID: make(map[string][]procErrorJob),

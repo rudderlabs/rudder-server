@@ -264,6 +264,7 @@ func (proc *Handle) procRebuildStage(destinationID string, in subJob) (*transfor
 
 	return &transformationMessage{
 		ctx:                          in.ctx,
+		pipeline:                     pipelineTypeProc,
 		groupedEvents:                groupedEvents,
 		srcPipelineSteps:             srcPipelineSteps,
 		eventsByMessageID:            eventsByMessageID,
