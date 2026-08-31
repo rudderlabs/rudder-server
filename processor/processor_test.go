@@ -7089,7 +7089,7 @@ func TestClassifyDestinations(t *testing.T) {
 		require.Equal(t, []string{"dest-1"}, excludedIDs(excluded))
 	})
 
-	t.Run("specificDestID narrows the candidate set to the stamped destination and siblings appear in neither slice", func(t *testing.T) {
+	t.Run("specificDestID narrows the candidate set to the stamped destination and the source's other destinations appear in neither slice", func(t *testing.T) {
 		sourceID := "source-1"
 		dests := []backendconfig.DestinationT{
 			webhookDest(),
@@ -7225,7 +7225,7 @@ func TestClassifyDestinations(t *testing.T) {
 				event: types.SingularEventT{},
 			},
 			{
-				name:           "RETL narrowed to available sibling",
+				name:           "RETL narrowed to available stamped destination",
 				dests:          []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")},
 				event:          types.SingularEventT{},
 				specificDestID: "dest-2",
