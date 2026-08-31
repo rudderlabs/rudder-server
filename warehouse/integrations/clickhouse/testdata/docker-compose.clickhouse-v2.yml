@@ -1,0 +1,19 @@
+version: "3.9"
+
+# clickhouse-go v2 declares MinSupportedVersion 25.8.0 (resources/meta.go) and
+# warns "unsupported clickhouse version" below it, so the v2 runs need a newer
+# server than the 21.x the v1 files pin. Native JSON needs 24.8+ as well, so
+# this is also the floor for the jsonPaths work.
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8-alpine
+    environment:
+      - CLICKHOUSE_DB=rudderdb
+      - CLICKHOUSE_PASSWORD=rudder-password
+      - CLICKHOUSE_USER=rudder
+    ports:
+      - "9000"
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://0.0.0.0:8123/ping || exit 1
+      interval: 1s
+      retries: 25

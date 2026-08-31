@@ -127,3 +127,43 @@ func TestDestinationT_Version(t *testing.T) {
 		require.Equal(t, 2, cfg.Sources[0].Destinations[0].Version)
 	})
 }
+
+func TestGetMergedConfig(t *testing.T) {
+	plan := DgSourceTrackingPlanConfigT{
+		Config: map[string]map[string]any{
+			"global":   {"allowUnplannedEvents": true, "unplannedProperties": "drop"},
+			"track":    {"unplannedProperties": "forward", "propertiesRule": "track-rules"},
+			"identify": {"traitsRule": "identify-rules"},
+		},
+	}
+
+	t.Run("the event type's config is layered over the global one", func(t *testing.T) {
+		require.Equal(t, map[string]any{
+			"allowUnplannedEvents": true,
+			"unplannedProperties":  "forward", // the event type wins
+			"propertiesRule":       "track-rules",
+		}, plan.GetMergedConfig("track"))
+	})
+
+	t.Run("every event type gets its own, however many are asked for", func(t *testing.T) {
+		// the merge used to be memoised in a field with no room for the event type, so the first
+		// caller's answer was handed to every later one
+		require.Equal(t, "track-rules", plan.GetMergedConfig("track")["propertiesRule"])
+		require.Equal(t, "identify-rules", plan.GetMergedConfig("identify")["traitsRule"])
+		require.NotContains(t, plan.GetMergedConfig("identify"), "propertiesRule")
+		require.Equal(t, "drop", plan.GetMergedConfig("page")["unplannedProperties"],
+			"an event type with no config of its own gets the global one")
+	})
+
+	t.Run("mutating the result leaves the config alone", func(t *testing.T) {
+		merged := plan.GetMergedConfig("track")
+		merged["propertiesRule"] = "mutated"
+		require.Equal(t, "track-rules", plan.GetMergedConfig("track")["propertiesRule"])
+	})
+
+	t.Run("a plan with no config at all", func(t *testing.T) {
+		var empty DgSourceTrackingPlanConfigT
+		require.NotNil(t, empty.GetMergedConfig("track"))
+		require.Empty(t, empty.GetMergedConfig("track"))
+	})
+}

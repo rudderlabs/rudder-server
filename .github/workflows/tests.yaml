@@ -84,12 +84,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        destination: [ bigquery, clickhouse, datalake, deltalake, mssql, azure-synapse, postgres, redshift, snowflake ]
+        destination: [ bigquery, clickhouse, clickhouse-v2, datalake, deltalake, mssql, azure-synapse, postgres, redshift, snowflake ]
         include:
           - package: warehouse/integrations/bigquery
             destination: bigquery
+          # The clickhouse suite runs once per implementation, so v1 and v2 get
+          # a job each rather than sharing one.
           - package: warehouse/integrations/clickhouse
             destination: clickhouse
+          - package: warehouse/integrations/clickhouse
+            destination: clickhouse-v2
+            useV2: "true"
           - package: warehouse/integrations/datalake
             destination: datalake
           - package: warehouse/integrations/deltalake
@@ -165,6 +170,7 @@ jobs:
           SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS }}
           SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS }}
           RSERVER_FILE_MANAGER_USE_AWS_SDK_V2: "true"
+          CLICKHOUSE_USE_V2: ${{ matrix.useV2 }}
           DOCKERHUB_REGISTRY_MIRROR: 422074288268.dkr.ecr.us-east-1.amazonaws.com/docker-hub
           DOCKERHUB_REGISTRY_MIRROR_USERNAME: ${{ steps.login-ecr.outputs.docker_username_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
           DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
