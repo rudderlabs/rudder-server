@@ -1214,14 +1214,29 @@ var _ = Describe("Using sources handler", func() {
 			}
 		})
 
+		// startMonitor runs Monitor in the background and returns a stop function that
+		// waits for it to have returned before resetting the config. Monitor re-reads
+		// the global config on every tick, so resetting it while the goroutine is still
+		// alive is a data race.
+		startMonitor := func(lagGauge, replicationSlotGauge Gauger) func() {
+			config.Set("Rsources.stats.monitoringInterval", 10*time.Millisecond)
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				serviceA.Monitor(ctx, lagGauge, replicationSlotGauge)
+			}()
+			return func() {
+				cancel()
+				<-done
+				config.Reset()
+			}
+		}
+
 		It("should be able to monitor lag when shared db is configured", func() {
 			lagGauge := new(mockGauge)
 			replicationSlotGauge := new(mockGauge)
-			config.Set("Rsources.stats.monitoringInterval", 10*time.Millisecond)
-			defer config.Reset()
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			go serviceA.Monitor(ctx, lagGauge, replicationSlotGauge)
+			defer startMonitor(lagGauge, replicationSlotGauge)()
 
 			Eventually(func() bool {
 				return replicationSlotGauge.value() == int64(1) && lagGauge.wasGauged()
@@ -1229,16 +1244,13 @@ var _ = Describe("Using sources handler", func() {
 		})
 
 		It("unavailability of shared db is handled via -1 replication slot gauge", func() {
+			// kill shared db
 			pgB.resource.Close()
 
 			lagGauge := new(mockGauge)
 			replicationSlotGauge := new(mockGauge)
-			// kill shared db
-			config.Set("Rsources.stats.monitoringInterval", 10*time.Millisecond)
-			defer config.Reset()
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			go serviceA.Monitor(ctx, lagGauge, replicationSlotGauge)
+			defer startMonitor(lagGauge, replicationSlotGauge)()
+
 			Eventually(func() bool {
 				return lagGauge.value() == float64(-1)
 			}, "30s", "100ms").Should(BeTrue(), "should have -1 replication slot")
@@ -1252,21 +1264,32 @@ func mustMarshal[T any](v T) []byte {
 }
 
 // mock Gauges
+//
+// Monitor gauges from its own goroutine while the Eventually poller reads, so the
+// fields have to be guarded: without the mutex the two monitoring specs report a data
+// race under -race.
 type mockGauge struct {
+	mu     sync.Mutex
 	gauge  any
 	gauged bool
 }
 
 func (g *mockGauge) Gauge(value any) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.gauge = value
 	g.gauged = true
 }
 
 func (g *mockGauge) value() any {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	return g.gauge
 }
 
 func (g *mockGauge) wasGauged() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	return g.gauged
 }
 
