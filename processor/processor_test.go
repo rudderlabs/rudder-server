@@ -6051,6 +6051,343 @@ func TestDedupReporting(t *testing.T) {
 	})
 }
 
+// TestUserSuppressionReporting exercises the USER_SUPPRESSION reporting added at the very top
+// of the preprocess loop (processor.go:2055-2079): a job whose parsed EventParams.IsUserSuppressed
+// is true emits a filtered/298 row under CreatePUDetails("", USER_SUPPRESSION, false, false) when
+// reporting is enabled, and is unconditionally dropped before bot management, event blocking,
+// dedup, event schemas, archival and the GATEWAY billing metric. Modelled directly on
+// TestDedupReporting.
+func TestUserSuppressionReporting(t *testing.T) {
+	userSuppressionRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.USER_SUPPRESSION
+		})
+	}
+	gatewayRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.GATEWAY
+		})
+	}
+	dedupRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.DEDUP
+		})
+	}
+	botManagementRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.BOT_MANAGEMENT
+		})
+	}
+
+	// createSuppressionParameters is a sibling of createBatchParameters (:5234), built as raw
+	// JSON so the fixture pins the "is_user_suppressed" wire tag rather than going through a
+	// Go types.EventParams literal (which would still pass even if the tag were misspelled).
+	createSuppressionParameters := func(sourceID string) []byte {
+		return fmt.Appendf(nil, `{"source_id":%q,"is_user_suppressed":true}`, sourceID)
+	}
+	createSuppressedBotParameters := func(sourceID string) []byte {
+		return fmt.Appendf(nil, `{"source_id":%q,"is_user_suppressed":true,"is_bot":true}`, sourceID)
+	}
+
+	type suppressionProcessorOpts struct {
+		enableDedup          bool
+		enableReporting      bool
+		archivalEnabled      bool
+		eventSchemaV2Enabled bool
+		// dedupAllowedFn, when set, overrides the default "allow everything" MockDedup.Allowed
+		// behaviour. Used by the ordering test, which needs the suppressed event's own dedup key
+		// to come back denied so that a broken ordering (suppression checked after dedup) would
+		// be caught as a spurious DEDUP row/stat for a job that should have already been dropped.
+		dedupAllowedFn func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error)
+	}
+
+	// newSuppressionProcessor builds the shared fixture, modelled on newDedupProcessor
+	// (TestDedupReporting, :5887): a Handle with reporting and (optionally) dedup/archival/
+	// event-schema-v2 wired up, backed by a config.Config the test can mutate.
+	newSuppressionProcessor := func(t *testing.T, opts suppressionProcessorOpts) (*Handle, *config.Config, *testContext) {
+		t.Helper()
+		conf := config.New()
+		c := &testContext{}
+		c.Setup(t)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
+
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		require.NoError(t, err)
+
+		processor := NewHandle(conf, transformer.NewSimpleClients())
+		processor.isolationStrategy = isolationStrategy
+		processor.config.archivalEnabled = config.SingleValueLoader(opts.archivalEnabled)
+		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+		if opts.eventSchemaV2Enabled {
+			processor.config.eventSchemaV2Enabled = true
+		}
+
+		Setup(processor, c, opts.enableDedup, opts.enableReporting, t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+
+		if opts.enableDedup {
+			processor.dedup = c.MockDedup
+			allowedFn := opts.dedupAllowedFn
+			if allowedFn == nil {
+				allowedFn = func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+					allowed := make(map[dedup.BatchKey]bool, len(keys))
+					for _, k := range keys {
+						allowed[k] = true
+					}
+					return allowed, nil
+				}
+			}
+			c.MockDedup.EXPECT().Allowed(gomock.Any()).DoAndReturn(allowedFn).AnyTimes()
+		}
+
+		return processor, conf, c
+	}
+
+	// runSuppressionPipeline drives preprocessStage -> srcHydrationStage -> pretransformStage,
+	// the same three stages runDedupPipeline (TestDedupReporting) drives.
+	runSuppressionPipeline := func(t *testing.T, processor *Handle, jobs []*jobsdb.JobT) *transformationMessage {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		srcHydrationMsg, err := processor.preprocessStage("", subJob{ctx: ctx, subJobs: jobs}, 0)
+		require.NoError(t, err)
+
+		preTransMsg, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
+
+		transMsg, err := processor.pretransformStage("", preTransMsg)
+		require.NoError(t, err)
+		return transMsg
+	}
+
+	// job builds a single gateway job carrying one or more singular events for sourceID,
+	// stamped with params (raw JSON job Parameters, e.g. from createSuppressionParameters).
+	job := func(jobID int64, workspaceID string, params []byte, events []mockEventData) *jobsdb.JobT {
+		return &jobsdb.JobT{
+			UUID:      uuid.New(),
+			JobID:     jobID,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabled,
+				"2001-01-02T02:23:45.000Z",
+				events,
+				createMessagePayloadWithoutSources,
+			),
+			EventCount:  len(events),
+			Parameters:  params,
+			WorkspaceId: workspaceID,
+		}
+	}
+
+	oneEvent := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+	twinEvent := []mockEventData{{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+
+	t.Run("should emit exactly one user_suppression filtered row for a suppressed event", func(t *testing.T) {
+		processor, _, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		defer c.Finish()
+
+		jobs := []*jobsdb.JobT{job(1, "", createSuppressionParameters(SourceIDEnabled), oneEvent)}
+		transMsg := runSuppressionPipeline(t, processor, jobs)
+
+		rows := userSuppressionRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		row := rows[0]
+		require.Equal(t, reportingtypes.USER_SUPPRESSION, row.PU)
+		require.Equal(t, "", row.InPU)
+		require.False(t, row.TerminalPU)
+		require.False(t, row.InitialPU)
+		require.Equal(t, jobsdb.Filtered.State, row.StatusDetail.Status)
+		require.Equal(t, reportingtypes.FilterEventCode, row.StatusDetail.StatusCode)
+		require.EqualValues(t, 1, row.StatusDetail.Count)
+		require.Equal(t, SourceIDEnabled, row.SourceID)
+	})
+
+	t.Run("should not emit a gateway row for the suppressed event", func(t *testing.T) {
+		processor, _, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		defer c.Finish()
+
+		jobs := []*jobsdb.JobT{
+			job(1, "", createSuppressionParameters(SourceIDEnabled), oneEvent),
+			job(2, "", createBatchParameters(SourceIDEnabled), twinEvent),
+		}
+		transMsg := runSuppressionPipeline(t, processor, jobs)
+
+		require.Len(t, userSuppressionRows(transMsg.reportMetrics), 1)
+		rows := gatewayRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1, "only the non-suppressed twin should produce a gateway row")
+		require.EqualValues(t, 1, rows[0].StatusDetail.Count, "the suppressed twin must not be counted in the gateway row")
+	})
+
+	t.Run("should drop the event but emit no row when reporting is disabled", func(t *testing.T) {
+		processor, _, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: false})
+		defer c.Finish()
+
+		jobs := []*jobsdb.JobT{job(1, "", createSuppressionParameters(SourceIDEnabled), oneEvent)}
+		transMsg := runSuppressionPipeline(t, processor, jobs)
+
+		require.Empty(t, userSuppressionRows(transMsg.reportMetrics))
+		require.Empty(t, gatewayRows(transMsg.reportMetrics))
+		require.Empty(t, transMsg.groupedEvents, "a reporting-disabled but still-suppressed event must not survive into groupedEvents")
+		require.Zero(t, transMsg.totalEvents, "the suppressed event must still be dropped (not counted) when reporting is disabled")
+	})
+
+	t.Run("should not create a dedup row or duplicate stat for a suppressed event", func(t *testing.T) {
+		// The suppressed event's own dedup key (index 0) comes back denied, as if dedup considered
+		// it a duplicate. This is the discriminating part of the test: if suppression were checked
+		// after dedup, this denial would produce a spurious DEDUP row/stat for a job that should
+		// already have been dropped for suppression before ever reaching the dedup gate.
+		dedupAllowedFn := func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+			allowed := make(map[dedup.BatchKey]bool, len(keys))
+			for _, k := range keys {
+				allowed[k] = k.Index != 0
+			}
+			return allowed, nil
+		}
+		processor, _, c := newSuppressionProcessor(t, suppressionProcessorOpts{
+			enableReporting: true, enableDedup: true, dedupAllowedFn: dedupAllowedFn,
+		})
+		defer c.Finish()
+
+		sameMessageIDEvents := []mockEventData{
+			{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+			{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+		}
+		suppressedJob := &jobsdb.JobT{
+			UUID:      uuid.New(),
+			JobID:     1,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabled,
+				"2001-01-02T02:23:45.000Z",
+				[]mockEventData{sameMessageIDEvents[0]},
+				createMessagePayloadWithSameMessageId,
+			),
+			EventCount: 1,
+			Parameters: createSuppressionParameters(SourceIDEnabled),
+		}
+		normalJob := &jobsdb.JobT{
+			UUID:      uuid.New(),
+			JobID:     2,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabled,
+				"2001-01-02T02:23:45.000Z",
+				[]mockEventData{sameMessageIDEvents[1]},
+				createMessagePayloadWithSameMessageId,
+			),
+			EventCount: 1,
+			Parameters: createBatchParameters(SourceIDEnabled),
+		}
+
+		transMsg := runSuppressionPipeline(t, processor, []*jobsdb.JobT{suppressedJob, normalJob})
+
+		require.Len(t, userSuppressionRows(transMsg.reportMetrics), 1)
+		require.Empty(t, dedupRows(transMsg.reportMetrics))
+		require.Empty(t, transMsg.sourceDupStats)
+	})
+
+	t.Run("should take precedence over bot management for an event carrying both parameters", func(t *testing.T) {
+		processor, _, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		defer c.Finish()
+
+		jobs := []*jobsdb.JobT{job(1, "", createSuppressedBotParameters(SourceIDEnabled), oneEvent)}
+		transMsg := runSuppressionPipeline(t, processor, jobs)
+
+		rows := userSuppressionRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		require.Equal(t, reportingtypes.USER_SUPPRESSION, rows[0].PU)
+		require.Empty(t, botManagementRows(transMsg.reportMetrics))
+	})
+
+	t.Run("should not archive or event-schema a suppressed event", func(t *testing.T) {
+		processor, _, c := newSuppressionProcessor(t, suppressionProcessorOpts{
+			enableReporting:      true,
+			archivalEnabled:      true,
+			eventSchemaV2Enabled: true,
+		})
+		defer c.Finish()
+
+		var archivedJobs, schemaJobs []*jobsdb.JobT
+		c.mockArchivalDB.EXPECT().
+			WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).
+			Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+		c.mockArchivalDB.EXPECT().
+			StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+			Times(1).
+			Do(func(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
+				archivedJobs = jobs
+			})
+		c.mockEventSchemasDB.EXPECT().
+			WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).
+			Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+		c.mockEventSchemasDB.EXPECT().
+			StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+			Times(1).
+			Do(func(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
+				schemaJobs = jobs
+			})
+
+		jobs := []*jobsdb.JobT{
+			job(1, sampleWorkspaceID, createSuppressionParameters(SourceIDEnabled), oneEvent),
+			job(2, sampleWorkspaceID, createBatchParameters(SourceIDEnabled), twinEvent),
+		}
+		_ = runSuppressionPipeline(t, processor, jobs)
+
+		require.Len(t, archivedJobs, 1)
+		require.Equal(t, jobs[1].UUID, archivedJobs[0].UUID, "only the non-suppressed twin should reach archival")
+		require.Len(t, schemaJobs, 1)
+		require.Equal(t, jobs[1].UUID, schemaJobs[0].UUID, "only the non-suppressed twin should reach event schemas")
+	})
+
+	t.Run("should aggregate multiple suppressed events from one source into a single row", func(t *testing.T) {
+		processor, _, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		defer c.Finish()
+
+		threeEvents := []mockEventData{
+			{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+			{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+			{id: "3", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+		}
+		jobs := []*jobsdb.JobT{job(1, "", createSuppressionParameters(SourceIDEnabled), threeEvents)}
+		transMsg := runSuppressionPipeline(t, processor, jobs)
+
+		rows := userSuppressionRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		require.EqualValues(t, 3, rows[0].StatusDetail.Count)
+	})
+
+	t.Run("should leave a batch with no suppressed events unchanged", func(t *testing.T) {
+		buildJobs := func() []*jobsdb.JobT {
+			return []*jobsdb.JobT{job(1, "", createBatchParameters(SourceIDEnabled), oneEvent)}
+		}
+
+		processor1, _, c1 := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		defer c1.Finish()
+		run1 := runSuppressionPipeline(t, processor1, buildJobs())
+
+		processor2, _, c2 := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		defer c2.Finish()
+		run2 := runSuppressionPipeline(t, processor2, buildJobs())
+
+		require.Empty(t, userSuppressionRows(run1.reportMetrics))
+		require.Equal(t, run1.reportMetrics, run2.reportMetrics)
+	})
+}
+
 // TestDestinationVisibilityReporting exercises the fan-out reporting added for
 // per-destination visibility (destination_enter / destination_filter), see processor.go:2450-2505,
 // plus the earlyDestinationFilter reorder (processor.go:2211). The rows introduced here carry an

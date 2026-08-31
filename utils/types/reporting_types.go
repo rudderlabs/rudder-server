@@ -29,6 +29,7 @@ const (
 	// Module names
 	BOT_MANAGEMENT         = "bot_management"
 	EVENT_BLOCKING         = "event_blocking"
+	USER_SUPPRESSION       = "user_suppression"
 	DEDUP                  = "dedup"
 	GATEWAY                = "gateway"
 	DESTINATION_ENTER      = "destination_enter"

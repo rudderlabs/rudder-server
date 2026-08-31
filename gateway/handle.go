@@ -62,6 +62,7 @@ type handleConfig struct {
 	internalBatchThrottleEvents          config.ValueLoader[int]
 	internalBatchThrottleWindow          config.ValueLoader[time.Duration]
 	enableSuppressUserFeature            bool
+	storeUserSuppressedEvents            config.ValueLoader[bool]
 	diagnosisTickerTime                  time.Duration
 	ReadTimeout                          time.Duration
 	ReadHeaderTimeout                    time.Duration
@@ -361,6 +362,10 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	type jobObject struct {
 		userID string
 		events []map[string]any
+		// params overrides the shared, request-level marshalledParams for this job. Only set for
+		// suppressed-user dummy jobs, which need is_user_suppressed:true stamped on their own
+		// parameters rather than the request's.
+		params []byte
 	}
 
 	var (
@@ -434,6 +439,48 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 		if isUserSuppressed(workspaceId, userIDFromReq, sourceID) {
 			suppressed = true
+			if !gw.conf.storeUserSuppressedEvents.Load() {
+				continue
+			}
+
+			fillMessageID(toSet)
+			messageID, _ := toSet["messageId"].(string)
+			eventName, _ := misc.MapLookup(toSet, "event").(string)
+			receivedAt, ok := toSet["receivedAt"].(string)
+			if !ok || receivedAt == "" {
+				receivedAt = gw.now().Format(misc.RFC3339Milli)
+			}
+			dummyEvent := buildSuppressedEventPayload(messageID, eventTypeFromReq, eventName, receivedAt)
+
+			suppressedParams := map[string]any{
+				"source_id":          sourceID,
+				"source_job_run_id":  sourcesJobRunID,
+				"source_task_run_id": sourcesTaskRunID,
+				"traceparent":        traceParent,
+				"source_category":    sourceCategory,
+				"is_user_suppressed": true,
+			}
+			if len(destinationID) != 0 {
+				suppressedParams["destination_id"] = destinationID
+			}
+			marshalledSuppressedParams, mErr := jsonrs.Marshal(suppressedParams)
+			if mErr != nil {
+				gw.logger.Errorn("[Gateway] Failed to marshal suppressed user parameters map",
+					obskit.SourceID(sourceID),
+					obskit.DestinationID(destinationID),
+					obskit.Error(mErr),
+				)
+				marshalledSuppressedParams = []byte(
+					`{"error": "rudder-server gateway failed to marshal params"}`,
+				)
+			}
+
+			userID := buildUserID(userIDHeader, anonIDFromReq, userIDFromReq)
+			out = append(out, jobObject{
+				userID: userID,
+				events: []map[string]any{dummyEvent},
+				params: marshalledSuppressedParams,
+			})
 			continue
 		}
 
@@ -549,10 +596,14 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			eventCount = len(userEvent.events)
 		}
 
+		jobParameters := marshalledParams
+		if userEvent.params != nil {
+			jobParameters = userEvent.params
+		}
 		jobs = append(jobs, &jobsdb.JobT{
 			UUID:         uuid.New(),
 			UserID:       userEvent.userID,
-			Parameters:   marshalledParams,
+			Parameters:   jobParameters,
 			CustomVal:    customVal,
 			EventPayload: payload,
 			EventCount:   eventCount,
@@ -856,6 +907,19 @@ type jobParams struct {
 	BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser,omitempty"`
 	BotAction           string `json:"bot_action,omitempty"`
 	IsEventBlocked      bool   `json:"is_event_blocked,omitempty"`
+	IsUserSuppressed    bool   `json:"is_user_suppressed,omitempty"`
+}
+
+// buildSuppressedEventPayload strips a suppressed user's event down to the fields jobsdb and
+// reporting need to route and count it: messageId, type, event name and receivedAt. No
+// properties, traits, context or other user-identifying data survive suppression.
+func buildSuppressedEventPayload(messageID, eventType, eventName, receivedAt string) map[string]any {
+	return map[string]any{
+		"messageId":  messageID,
+		"type":       eventType,
+		"event":      eventName,
+		"receivedAt": receivedAt,
+	}
 }
 
 func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byte) (
@@ -955,6 +1019,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		stat.SourceDefName = sourceDefName
 		stat.SourceType = sourceType
 
+		isUserSuppressedEvent := false
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
 			gw.logger.Infon("suppressed event",
 				obskit.SourceID(msg.Properties.SourceID),
@@ -966,7 +1031,10 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 				stats.CountType,
 				gw.newSourceStatTagsWithReason(msg.Properties, reqType, errEventSuppressed.Error(), writeKey, sourceName),
 			).Increment()
-			continue
+			if !gw.conf.storeUserSuppressedEvents.Load() {
+				continue
+			}
+			isUserSuppressedEvent = true
 		}
 
 		gw.stats.NewTaggedStat("gateway.event_pickup_lag_seconds", stats.TimerType, stats.Tags{
@@ -998,7 +1066,22 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 		eventName := jsonparser.GetStringOrEmpty(msg.Payload, "event")
 		eventType := jsonparser.GetStringOrEmpty(msg.Payload, "type")
-		if isEventBlocked(msg.Properties.WorkspaceID, msg.Properties.SourceID, eventType, eventName) {
+		if isUserSuppressedEvent {
+			jobsDBParams.IsUserSuppressed = true
+			suppressedMessageID := jsonparser.GetStringOrEmpty(msg.Payload, "messageId")
+			dummyEvent := buildSuppressedEventPayload(suppressedMessageID, eventType, eventName, msg.Properties.ReceivedAt.Format(misc.RFC3339Milli))
+			dummyPayload, mErr := jsonrs.Marshal(dummyEvent)
+			if mErr != nil {
+				// drop the event instead of storing the original payload: no suppressed user
+				// data may survive suppression
+				gw.logger.Errorn("marshalling suppressed user event payload",
+					obskit.SourceID(msg.Properties.SourceID),
+					obskit.Error(mErr),
+				)
+				continue
+			}
+			msg.Payload = dummyPayload
+		} else if isEventBlocked(msg.Properties.WorkspaceID, msg.Properties.SourceID, eventType, eventName) {
 			jobsDBParams.IsEventBlocked = true
 		}
 
@@ -1046,7 +1129,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		jobUUID := uuid.New()
 		res = append(res, jobWithMetadata{
 			stat:                   stat,
-			skipLiveEventRecording: (jobsDBParams.IsEventBlocked || (jobsDBParams.IsBot && jobsDBParams.BotAction == types.DropBotEventAction)),
+			skipLiveEventRecording: (jobsDBParams.IsEventBlocked || jobsDBParams.IsUserSuppressed || (jobsDBParams.IsBot && jobsDBParams.BotAction == types.DropBotEventAction)),
 			job: &jobsdb.JobT{
 				UUID:         jobUUID,
 				UserID:       msg.Properties.RoutingKey,
