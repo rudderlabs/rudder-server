@@ -991,6 +991,51 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 		{
+			// Hydration-enabled and tracking-plan-enabled: gives
+			// TestDestinationVisibilityReporting a source that exercises the
+			// source_hydration arm of the tracking-plan inPU selection, which
+			// SourceIDEnabledTp (no hydration) and fblaSourceId (no TP, no
+			// destinations) cannot reach on their own.
+			ID:       SourceIDHydrationTp,
+			Name:     SourceIDHydrationTpName,
+			WriteKey: WriteKeyHydrationTp,
+			Enabled:  true,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Category: "webhook",
+				Options: backendconfig.SourceDefinitionOptions{
+					Hydration: struct {
+						Enabled bool
+					}{Enabled: true},
+				},
+			},
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 DestinationIDEnabledA,
+					Name:               "A",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "enabled-destination-a-definition-id",
+						Name:        "enabled-destination-a-definition-name",
+						DisplayName: "enabled-destination-a-definition-display-name",
+						Config:      map[string]any{},
+					},
+					Transformations: []backendconfig.TransformationT{
+						{
+							VersionID: "hydration-tp-transformation-version-id",
+						},
+					},
+				},
+			},
+			DgSourceTrackingPlanConfig: backendconfig.DgSourceTrackingPlanConfigT{
+				SourceId: SourceIDHydrationTp,
+				TrackingPlan: backendconfig.TrackingPlanT{
+					Id:      "tracking-plan-id",
+					Version: 100,
+				},
+			},
+		},
+		{
 			ID:      fblaSourceId,
 			Enabled: true,
 			SourceDefinition: backendconfig.SourceDefinitionT{
