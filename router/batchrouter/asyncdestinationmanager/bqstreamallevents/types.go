@@ -45,10 +45,13 @@ type (
 		now func() time.Time
 
 		config struct {
-			maxBufferCapacity config.ValueLoader[int64]
-			tableWorkers      config.ValueLoader[int]
-			maxChunkBytes     config.ValueLoader[int64]
-			schemaCacheTTL    config.ValueLoader[time.Duration]
+			maxBufferCapacity            config.ValueLoader[int64]
+			tableWorkers                 config.ValueLoader[int]
+			maxChunkBytes                config.ValueLoader[int64]
+			schemaCacheTTL               config.ValueLoader[time.Duration]
+			streamAppendTimeout          config.ValueLoader[time.Duration]
+			streamAppendRetryDelay       config.ValueLoader[time.Duration]
+			streamAppendRetryMaxAttempts config.ValueLoader[int]
 		}
 
 		stats struct {
