@@ -852,7 +852,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 				WorkspaceID: workspaceID,
 				Destination: backendconfig.DestinationT{
 					Config: map[string]any{
-						"host":     "clickhouse.invalid",
+						"host":     "clickhouse",
 						"port":     strconv.Itoa(clickhousePort),
 						"database": database,
 						"user":     user,
@@ -865,7 +865,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 			require.NoError(t, err)
 
 			schema, err := ch.FetchSchema(ctx)
-			requireInvalidHostError(t, err, errors.New("dial tcp: lookup clickhouse.invalid").Error())
+			require.ErrorContains(t, err, errors.New("dial tcp: lookup clickhouse").Error())
 			require.Empty(t, schema)
 		})
 
@@ -1383,8 +1383,8 @@ func testIntegration(t *testing.T, useV2 bool) {
 			{
 				name:      "No such host",
 				timeout:   timeout,
-				wantError: errors.New(`dial tcp: lookup clickhouse.invalid`),
-				host:      "clickhouse.invalid",
+				wantError: errors.New(`dial tcp: lookup clickhouse`),
+				host:      "clickhouse",
 			},
 		}
 
@@ -1424,7 +1424,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 				err = ch.TestConnection(ctx, warehouse)
 				if tc.wantError != nil {
-					requireInvalidHostError(t, err, tc.wantError.Error())
+					require.ErrorContains(t, err, tc.wantError.Error())
 					return
 				}
 				require.NoError(t, err)
@@ -1830,18 +1830,8 @@ func testIntegration(t *testing.T, useV2 bool) {
 	})
 }
 
-func requireInvalidHostError(t testing.TB, err error, lookupError string) {
-	t.Helper()
-	require.Error(t, err)
-	errMessage := err.Error()
-	require.Truef(t,
-		strings.Contains(errMessage, lookupError) || strings.Contains(errMessage, "i/o timeout"),
-		"expected invalid host error containing %q or i/o timeout, got %v",
-		lookupError,
-		err,
-	)
-}
-
+// connectClickhouseDBV2 opens a connection through the v2 fork, for the cases
+// that touch a type v1 cannot represent.
 // clickhouseExceptionCode returns the server error code from whichever driver
 // raised it. The two surface a server exception as different concrete types -
 // v1 as *clickhouse-go.Exception, v2 as the fork's alias of its proto one - so
@@ -1863,8 +1853,6 @@ func clickhouseExceptionCode(t testing.TB, err error) int32 {
 	return 0
 }
 
-// connectClickhouseDBV2 opens a connection through the v2 fork, for the cases
-// that touch a type v1 cannot represent.
 func connectClickhouseDBV2(t testing.TB, host string, port int, database, user, password string) *sql.DB {
 	t.Helper()
 
