@@ -105,12 +105,15 @@ func TestV2NamespaceConfigUnmarshal(t *testing.T) {
 
 		destination := conf.DestinationDefinitions["WEBHOOK"]
 		require.Empty(t, destination.Name, "no name on the wire")
+		mapped, major, err := destination.toV1("WEBHOOK", nil)
+		require.NoError(t, err)
+		require.Equal(t, defaultDefinitionMajor, major, "an absent version means the first major")
 		require.Equal(t, DestinationDefinitionT{
 			ID:          "1aIXqM806xAVm7BwUXYh6IeM7uP",
 			Name:        "WEBHOOK",
 			DisplayName: "Webhook",
 			Config:      destination.Config,
-		}, destination.toV1("WEBHOOK"))
+		}, mapped)
 
 		// account definitions do carry a name, and the key stays authoritative
 		account := conf.AccountDefinitions["DESTINATION_SALESFORCE_OAUTH"]
