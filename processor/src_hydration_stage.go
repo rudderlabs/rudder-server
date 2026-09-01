@@ -37,6 +37,7 @@ type srcHydrationMessage struct {
 	eventBlockingStatusDetailsMap   map[string]map[string]*reportingtypes.StatusDetail
 	userSuppressionStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
 	dedupStatusDetailsMap           map[string]map[string]*reportingtypes.StatusDetail
+	gatewayIngestedStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
 	destFilterStatusDetailMap       map[string]map[string]*reportingtypes.StatusDetail
 	reportMetrics                   []*reportingtypes.PUReportedMetric
 	totalEvents                     int
@@ -176,6 +177,7 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 		eventBlockingStatusDetailsMap:   message.eventBlockingStatusDetailsMap,
 		userSuppressionStatusDetailsMap: message.userSuppressionStatusDetailsMap,
 		dedupStatusDetailsMap:           message.dedupStatusDetailsMap,
+		gatewayIngestedStatusDetailsMap: message.gatewayIngestedStatusDetailsMap,
 		destFilterStatusDetailMap:       message.destFilterStatusDetailMap,
 		reportMetrics:                   message.reportMetrics,
 		totalEvents:                     message.totalEvents,
