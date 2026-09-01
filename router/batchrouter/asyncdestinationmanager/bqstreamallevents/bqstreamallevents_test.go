@@ -51,18 +51,14 @@ func (m *mockIntegrationManager) CreateSchema(_ context.Context) error {
 
 func (m *mockIntegrationManager) CreateTable(_ context.Context, tableName string, _ whutils.ModelTableSchema) error {
 	if m.createTableOutputMap != nil {
-		if output, ok := m.createTableOutputMap[tableName]; ok {
-			return output()
-		}
+		return m.createTableOutputMap[tableName]()
 	}
 	return nil
 }
 
 func (m *mockIntegrationManager) AddColumns(_ context.Context, tableName string, _ []whutils.ColumnInfo) error {
 	if m.addColumnsOutputMap != nil {
-		if output, ok := m.addColumnsOutputMap[tableName]; ok {
-			return output()
-		}
+		return m.addColumnsOutputMap[tableName]()
 	}
 	return nil
 }
@@ -781,72 +777,6 @@ func TestBQStreamAllEvents(t *testing.T) {
 		require.Equal(t, 2, output.FailedCount)
 		require.Contains(t, output.FailedReason, "failed to get result of products rows")
 		require.ElementsMatch(t, []int64{1001, 1003}, output.SucceededJobIDs)
-	})
-
-	t.Run("Upload: retries recoverable stream append error after recreating table", func(t *testing.T) {
-		statsStore, err := memstats.New()
-		require.NoError(t, err)
-
-		conf := config.New()
-		conf.Set("BQStreamAllEvents.streamAppendRetryDelay", 0*time.Second)
-		conf.Set("BQStreamAllEvents.streamAppendRetryMaxAttempts", 2)
-
-		now := timeutil.Now()
-		sm := newManager(conf, logger.NOP, statsStore, destination)
-		sm.schemaCache.Set("users", whutils.ModelTableSchema{"id": "int", "name": "string", "age": "int", "received_at": "datetime"}, now)
-		sm.schemaCache.Set("products", whutils.ModelTableSchema{"id": "int", "product_id": "string", "price": "float", "in_stock": "boolean", "received_at": "datetime"}, now)
-
-		createProductsTableCalls := atomic.Int64{}
-		var createProductsTableErr error
-		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
-			return &mockIntegrationManager{
-				createTableOutputMap: map[string]func() error{
-					"products": func() error {
-						createProductsTableCalls.Add(1)
-						return createProductsTableErr
-					},
-				},
-			}, nil
-		}
-
-		productAppendCalls := atomic.Int64{}
-		productWriterCalls := atomic.Int64{}
-		var productWriterErr error
-		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
-				"users":           noOpStreamWriterFn,
-				"rudder_discards": noOpStreamWriterFn,
-				"products": func(_ context.Context, _ destConfig, _ string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) {
-					productWriterCalls.Add(1)
-					output := &mockStreamWriter{
-						appendRowsOutput: func(ctx context.Context, data [][]byte) (AppendResult, error) {
-							outputResult := &mockAppendResult{
-								getResultOutput: func(ctx context.Context) (int64, error) {
-									if productAppendCalls.Add(1) == 1 {
-										return 0, status.Error(codes.NotFound, "table deleted")
-									}
-									return 0, nil
-								},
-							}
-							return outputResult, nil
-						},
-					}
-					return &tableStreamWriter{writer: output, descriptor: requireDescriptorForSchema(t, tableSchema)}, productWriterErr
-				},
-			},
-		}
-
-		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
-			ImportingJobIDs: []int64{1},
-			Destination:     destination,
-			FileName:        "testdata/successful_records.txt",
-		})
-		require.Empty(t, output.FailedJobIDs)
-		require.Equal(t, 0, output.FailedCount)
-		require.ElementsMatch(t, []int64{1001, 1002, 1003, 1004}, output.SucceededJobIDs)
-		require.EqualValues(t, 1, createProductsTableCalls.Load())
-		require.EqualValues(t, 2, productAppendCalls.Load())
-		require.EqualValues(t, 2, productWriterCalls.Load())
 	})
 
 	t.Run("Upload: duplicate ids found in the events", func(t *testing.T) {

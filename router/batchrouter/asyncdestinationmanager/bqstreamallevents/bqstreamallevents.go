@@ -11,8 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -34,12 +32,6 @@ import (
 // retry, so stay well under the limit (row sizes are accounted as conservative
 // upper bounds, leaving additional headroom).
 const defaultChunkSizeBytes int64 = 8 * bytesize.MB
-
-const (
-	defaultStreamAppendTimeoutSeconds    = 30
-	defaultStreamAppendRetryDelaySeconds = 5
-	defaultStreamAppendRetryMaxAttempts  = 20
-)
 
 // errWriterClosed is returned when an append is attempted on a stream writer a
 // concurrent worker has already evicted/closed; the caller fails the affected
@@ -94,9 +86,6 @@ func newManager(
 	m.config.tableWorkers = conf.GetReloadableIntVar(25, 1, "BQStreamAllEvents.tableWorkers")
 	m.config.maxChunkBytes = conf.GetReloadableInt64Var(defaultChunkSizeBytes, bytesize.B, "BQStreamAllEvents.maxChunkBytes")
 	m.config.schemaCacheTTL = conf.GetReloadableDurationVar(5, time.Minute, "BQStreamAllEvents.schemaCacheTTL")
-	m.config.streamAppendTimeout = conf.GetReloadableDurationVar(defaultStreamAppendTimeoutSeconds, time.Second, "BQStreamAllEvents.streamAppendTimeout")
-	m.config.streamAppendRetryDelay = conf.GetReloadableDurationVar(defaultStreamAppendRetryDelaySeconds, time.Second, "BQStreamAllEvents.streamAppendRetryDelay")
-	m.config.streamAppendRetryMaxAttempts = conf.GetReloadableIntVar(defaultStreamAppendRetryMaxAttempts, 1, "BQStreamAllEvents.streamAppendRetryMaxAttempts")
 	m.schemaCache = NewTableSchemaCache(m.config.schemaCacheTTL.Load())
 
 	tags := stats.Tags{
@@ -423,7 +412,7 @@ func (m *Manager) processTable(ctx context.Context, cfg destConfig, integrationM
 		m.stats.discards.Count(len(discardedRecords))
 	}
 
-	streamResult := m.streamEventBatches(ctx, cfg, integrationManagerCreator, tableName, warehouseEventsSchema, tableEventsList)
+	streamResult := m.streamEventBatches(ctx, cfg, tableName, warehouseEventsSchema, tableEventsList)
 
 	m.logger.Infon("Processed table",
 		logger.NewStringField("namespace", cfg.Namespace),
@@ -459,21 +448,27 @@ func (m *Manager) processTable(ctx context.Context, cfg destConfig, integrationM
 // re-appending (and duplicating) the chunks that landed. The writer and schema
 // cache are evicted on any failure so a retry rebuilds them against the current
 // table schema.
-func (m *Manager) streamEventBatches(ctx context.Context, cfg destConfig, integrationManagerCreator IntegrationManagerCreator, tableName string, schema whutils.ModelTableSchema, tableEventsList []tableEvents) streamEventBatchesResult {
+func (m *Manager) streamEventBatches(ctx context.Context, cfg destConfig, tableName string, schema whutils.ModelTableSchema, tableEventsList []tableEvents) streamEventBatchesResult {
+	tableStreamWriter, err := m.writerForTable(ctx, cfg, tableName, schema)
+	if err != nil {
+		m.invalidateTableCacheAndStreamWriter(cfg, tableName)
+		return streamEventBatchesResult{
+			failedIDs:   jobIDsFromTableEvents(tableEventsList),
+			failedError: fmt.Errorf("streaming events rows: creating stream writer: %w", err),
+		}
+	}
+
 	var result streamEventBatchesResult
-	for i, tableEvents := range tableEventsList {
+	defer func() {
+		if result.failedError != nil {
+			m.invalidateTableCacheAndStreamWriter(cfg, tableName)
+		}
+	}()
+
+	for _, tableEvents := range tableEventsList {
 		rows := lo.Map(tableEvents.events, func(event *event, _ int) Row {
 			return event.Message.Data
 		})
-
-		tableStreamWriter, err := m.writerForTable(ctx, cfg, tableName, schema)
-		if err != nil {
-			m.invalidateTableCacheAndStreamWriter(cfg, tableName)
-			return streamEventBatchesResult{
-				failedIDs:   append(result.failedIDs, jobIDsFromTableEvents(tableEventsList[i:])...),
-				failedError: errors.Join(result.failedError, fmt.Errorf("streaming events rows: creating stream writer: %w", err)),
-			}
-		}
 
 		encodedRows, err := encodeRows(rows, tableStreamWriter.descriptor, schema)
 		if err != nil {
@@ -482,80 +477,15 @@ func (m *Manager) streamEventBatches(ctx context.Context, cfg destConfig, integr
 			continue
 		}
 
-		if err := m.appendEventBatchWithRecovery(ctx, cfg, integrationManagerCreator, tableName, schema, encodedRows); err != nil {
+		if err := tableStreamWriter.AppendRows(ctx, encodedRows); err != nil {
 			result.failedIDs = append(result.failedIDs, tableEvents.jobIDs...)
-			result.failedError = errors.Join(result.failedError, err)
+			result.failedError = errors.Join(result.failedError, fmt.Errorf("appending rows: %w", err))
 			continue
 		}
 
 		result.succeededIDs = append(result.succeededIDs, tableEvents.jobIDs...)
 	}
 	return result
-}
-
-func (m *Manager) appendEventBatchWithRecovery(ctx context.Context, cfg destConfig, integrationManagerCreator IntegrationManagerCreator, tableName string, schema whutils.ModelTableSchema, encodedRows [][]byte) error {
-	maxAttempts := m.config.streamAppendRetryMaxAttempts.Load()
-	var appendErr error
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		tableStreamWriter, err := m.writerForTable(ctx, cfg, tableName, schema)
-		if err != nil {
-			m.invalidateTableCacheAndStreamWriter(cfg, tableName)
-			return fmt.Errorf("streaming events rows: creating stream writer: %w", err)
-		}
-
-		appendCtx, cancel := context.WithTimeout(ctx, m.config.streamAppendTimeout.Load())
-		appendErr = tableStreamWriter.AppendRows(appendCtx, encodedRows)
-		cancel()
-		if appendErr == nil {
-			return nil
-		}
-
-		m.invalidateTableCacheAndStreamWriter(cfg, tableName)
-		if !isRecoverableStreamAppendError(appendErr) || attempt == maxAttempts {
-			return fmt.Errorf("appending rows: %w", appendErr)
-		}
-
-		m.logger.Warnn("Retrying stream append after refreshing table schema and writer",
-			logger.NewStringField("namespace", cfg.Namespace),
-			logger.NewStringField("table", tableName),
-			logger.NewIntField("attempt", int64(attempt)),
-			obskit.Error(appendErr),
-		)
-
-		if err := m.createTableAndAddColumnsIfNeeded(ctx, cfg, integrationManagerCreator, tableName, schema); err != nil {
-			return fmt.Errorf("appending rows: %w; refreshing table schema: %w", appendErr, err)
-		}
-		if err := sleepWithContext(ctx, m.config.streamAppendRetryDelay.Load()); err != nil {
-			return fmt.Errorf("appending rows: %w; waiting to retry stream append: %w", appendErr, err)
-		}
-	}
-	return fmt.Errorf("appending rows: %w", appendErr)
-}
-
-func isRecoverableStreamAppendError(err error) bool {
-	if errors.Is(err, errWriterClosed) || errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	switch status.Code(err) {
-	case codes.NotFound, codes.DeadlineExceeded:
-		return true
-	default:
-		return false
-	}
-}
-
-func sleepWithContext(ctx context.Context, delay time.Duration) error {
-	if delay <= 0 {
-		return nil
-	}
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
 }
 
 // streamDiscardedEvents encodes the discarded rows and appends them through the
