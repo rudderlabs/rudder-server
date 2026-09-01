@@ -244,6 +244,28 @@ func TestApplyReplaySourcesDestinationConfig(t *testing.T) {
 		require.Equal(t, "web", replayed(t, c).Config["filteredFor"])
 	})
 
+	t.Run("the fallback instance loses its source-type-specific config keys", func(t *testing.T) {
+		// d-1 lives under a cloud source only; the replayed source is web, so the cloud instance is
+		// the fallback
+		c := config("")
+		c.Sources[0].Destinations[0].Config = map[string]any{
+			"filteredFor":              "cloud",
+			"connectionMode":           map[string]any{"cloud": "cloud"},
+			"consentManagement":        []any{map[string]any{"provider": "oneTrust"}},
+			"oneTrustCookieCategories": []any{"C0001"},
+			"ketchConsentPurposes":     []any{"analytics"},
+		}
+		c.Sources = append(c.Sources, SourceT{
+			ID:               "s-replayed",
+			SourceDefinition: SourceDefinitionT{Name: "Javascript"},
+		})
+		destination := replayed(t, c)
+
+		require.Equal(t, map[string]any{"filteredFor": "cloud"}, destination.Config)
+		require.Len(t, c.Sources[0].Destinations[0].Config, 5,
+			"the replay destination is a copy: stripping must not touch the original config")
+	})
+
 	t.Run("falls back to the first source type in order, and keeps falling back to the same one", func(t *testing.T) {
 		for range 20 { // the failure this guards against is a map iteration order flake
 			// d-1 is on a web and a cloud source; the replayed source is neither
