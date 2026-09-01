@@ -797,12 +797,13 @@ func TestBQStreamAllEvents(t *testing.T) {
 		sm.schemaCache.Set("products", whutils.ModelTableSchema{"id": "int", "product_id": "string", "price": "float", "in_stock": "boolean", "received_at": "datetime"}, now)
 
 		createProductsTableCalls := atomic.Int64{}
+		var createProductsTableErr error
 		sm.integrationManagerCreator = func(ctx context.Context, cfg destConfig) (IntegrationManager, error) {
 			return &mockIntegrationManager{
 				createTableOutputMap: map[string]func() error{
 					"products": func() error {
 						createProductsTableCalls.Add(1)
-						return nil
+						return createProductsTableErr
 					},
 				},
 			}, nil
@@ -810,6 +811,7 @@ func TestBQStreamAllEvents(t *testing.T) {
 
 		productAppendCalls := atomic.Int64{}
 		productWriterCalls := atomic.Int64{}
+		var productWriterErr error
 		sm.streamWriterFactory = &mockStreamWriterFactory{
 			newTableStreamWriterOutputMap: map[string]func(_ context.Context, _ destConfig, _ string, _ whutils.ModelTableSchema) (*tableStreamWriter, error){
 				"users":           noOpStreamWriterFn,
@@ -829,7 +831,7 @@ func TestBQStreamAllEvents(t *testing.T) {
 							return outputResult, nil
 						},
 					}
-					return &tableStreamWriter{writer: output, descriptor: requireDescriptorForSchema(t, tableSchema)}, nil
+					return &tableStreamWriter{writer: output, descriptor: requireDescriptorForSchema(t, tableSchema)}, productWriterErr
 				},
 			},
 		}
