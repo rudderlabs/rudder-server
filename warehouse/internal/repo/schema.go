@@ -16,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/stringify"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -26,6 +25,9 @@ import (
 )
 
 const whSchemaTableName = warehouseutils.WarehouseSchemasTable
+
+// maxSchemaDiffLogSize caps the schema diff included in the mismatch warning.
+const maxSchemaDiffLogSize = 4 << 10
 
 const whSchemaTableColumns = `
 	id,
@@ -280,13 +282,19 @@ func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace strin
 	}
 	diff := cmp.Diff(originalSchema.Schema, tableLevelSchemas)
 	if len(diff) > 0 {
+		// Never log the schemas themselves: wide warehouses produce multi-MB
+		// lines that log collectors drop. Bound the diff for the same reason.
+		if len(diff) > maxSchemaDiffLogSize {
+			diff = diff[:maxSchemaDiffLogSize] + "...(truncated)"
+		}
 		sh.log.Warnn("Parent schema does not match",
 			obskit.Namespace(namespace),
 			obskit.DestinationID(destID),
-			logger.NewStringField("schema", stringify.Any(originalSchema.Schema)),
-			logger.NewStringField("tableLevelSchemas", stringify.Any(tableLevelSchemas)),
+			logger.NewIntField("parentTables", int64(len(originalSchema.Schema))),
+			logger.NewIntField("tableLevelTables", int64(len(tableLevelSchemas))),
+			logger.NewStringField("diff", diff),
 		)
-		return model.WHSchema{}, fmt.Errorf("parent schema does not match: %s", diff)
+		return model.WHSchema{}, errors.New("parent schema does not match")
 	}
 	return originalSchema, nil
 }
