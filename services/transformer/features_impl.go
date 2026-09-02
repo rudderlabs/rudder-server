@@ -64,6 +64,13 @@ func (t *featuresService) RouterTransform(destType string) bool {
 	return gjson.GetBytes(t.features, "routerTransform."+destType).Bool()
 }
 
+// TransformerProxy reports whether the transformer declares destType deliverable via the proxy.
+// Absent from older transformer images, in which case this is false and the caller falls back to
+// the Router.<DEST>.transformerProxy config.
+func (t *featuresService) TransformerProxy(destType string) bool {
+	return gjson.GetBytes(t.features, "transformerProxy."+destType).Bool()
+}
+
 func (t *featuresService) Regulations() []string {
 	regulationFeatures := gjson.GetBytes(t.features, "regulations")
 	if regulationFeatures.Exists() && regulationFeatures.IsArray() {

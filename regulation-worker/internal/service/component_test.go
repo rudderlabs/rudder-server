@@ -320,6 +320,10 @@ func (m *mockTransformerFeaturesService) RouterTransform(destType string) bool {
 	return false
 }
 
+func (m *mockTransformerFeaturesService) TransformerProxy(destType string) bool {
+	return false
+}
+
 func (m *mockTransformerFeaturesService) TransformerProxyVersion() string {
 	return "v0"
 }

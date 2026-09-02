@@ -30,6 +30,10 @@ type FeaturesService interface {
 	Regulations() []string
 	SourceTransformerVersion() string
 	RouterTransform(destType string) bool
+	// TransformerProxy reports whether the transformer declares destType deliverable through the
+	// transformer proxy. Distinct from TransformerProxyVersion, which reports the proxy protocol
+	// the transformer speaks.
+	TransformerProxy(destType string) bool
 	TransformerProxyVersion() string
 	SupportDestTransformCompactedPayloadV1() bool
 	Wait() chan struct{}
@@ -93,6 +97,10 @@ func (*noopService) Wait() chan struct{} {
 }
 
 func (*noopService) RouterTransform(_ string) bool {
+	return false
+}
+
+func (*noopService) TransformerProxy(_ string) bool {
 	return false
 }
 

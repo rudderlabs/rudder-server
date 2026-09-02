@@ -219,5 +219,38 @@ var _ = Describe("Transformer features", func() {
 
 			Expect(featuresService.Regulations()).To(Equal([]string{"AM"}))
 		})
+
+		It("TransformerProxy should be true for a destination the transformer declares", func() {
+			featuresService := &featuresService{
+				features: json.RawMessage(`{
+					"transformerProxy": {"CUSTOMERIO": true}
+				}`),
+			}
+
+			Expect(featuresService.TransformerProxy("CUSTOMERIO")).To(BeTrue())
+			Expect(featuresService.TransformerProxy("MONDAY")).To(BeFalse())
+		})
+
+		It("TransformerProxy should be false when the transformer image predates the capability", func() {
+			featuresService := &featuresService{
+				features: json.RawMessage(`{
+					"routerTransform": {"CUSTOMERIO": true}
+				}`),
+			}
+
+			Expect(featuresService.TransformerProxy("CUSTOMERIO")).To(BeFalse())
+		})
+
+		It("TransformerProxy should not confuse the capability map with the proxy protocol version", func() {
+			featuresService := &featuresService{
+				features: json.RawMessage(`{
+					"supportTransformerProxyV1": true,
+					"transformerProxy": {}
+				}`),
+			}
+
+			Expect(featuresService.TransformerProxy("CUSTOMERIO")).To(BeFalse())
+			Expect(featuresService.TransformerProxyVersion()).To(Equal(V1))
+		})
 	})
 })

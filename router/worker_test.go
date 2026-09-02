@@ -46,6 +46,8 @@ func createTestWorker(destType string, transformProxy bool, stat stats.Stats) *w
 	return &worker{
 		rt: &Handle{
 			destType: destType,
+			// the noop service declares nothing, so Router.<DEST>.transformerProxy decides
+			transformerFeaturesService: transformerFeaturesService.NewNoOpService(),
 			reloadableConfig: &reloadableConfig{
 				transformerProxy: config.SingleValueLoader(transformProxy),
 			},
