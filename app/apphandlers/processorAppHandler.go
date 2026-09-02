@@ -34,7 +34,6 @@ import (
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
-	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -155,6 +154,12 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 	if err != nil {
 		return err
 	}
+
+	rsourcesSyncSettings, stopRsourcesSyncSettings, err := NewRsourcesSyncSettings(ctx, g, a.log.Child("rsources-sync-settings"), statsFactory)
+	if err != nil {
+		return err
+	}
+	defer stopRsourcesSyncSettings()
 
 	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
 		PollInterval:             config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
@@ -352,18 +357,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		return drainConfigManager.CleanupRoutine(ctx)
 	}))
 
-	syncSettings, err := rsources.NewSyncSettingDelegate(ctx, config, a.log.Child("rsources-sync-settings"), statsFactory, backendconfig.DefaultBackendConfig)
-	if err != nil {
-		return fmt.Errorf("rsources sync settings setup: %w", err)
-	}
-	defer syncSettings.Stop()
-	g.Go(crash.Wrapper(func() (err error) {
-		return syncSettings.ConfigSubscriberRoutine(ctx)
-	}))
-	g.Go(crash.Wrapper(func() (err error) {
-		return syncSettings.CleanupRoutine(ctx)
-	}))
-
 	p := proc.New(
 		ctx,
 		&options.ClearDB,
@@ -401,7 +394,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		),
 		TransientSources:           transientSources,
 		RsourcesService:            rsourcesService,
-		SyncSettings:               syncSettings,
+		RsourcesSyncSettings:       rsourcesSyncSettings,
 		TransformerFeaturesService: transformerFeaturesService,
 		ThrottlerFactory:           throttlerFactory,
 		Debugger:                   destinationHandle,
@@ -414,11 +407,11 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
 			brtRWDB,
 		),
-		TransientSources: transientSources,
-		RsourcesService:  rsourcesService,
-		SyncSettings:     syncSettings,
-		Debugger:         destinationHandle,
-		AdaptiveLimit:    adaptiveLimit,
+		TransientSources:     transientSources,
+		RsourcesService:      rsourcesService,
+		RsourcesSyncSettings: rsourcesSyncSettings,
+		Debugger:             destinationHandle,
+		AdaptiveLimit:        adaptiveLimit,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig, logger.NewLogger())
 

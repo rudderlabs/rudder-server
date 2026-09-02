@@ -60,15 +60,11 @@ type StatsCollector interface {
 	// so that all necessary indices can be created, since a JobStatus
 	// doesn't carry all necessary job metadata such as jobRunId, taskRunId, etc.
 	//
-	// It returns an error when the SyncSettingDelegate cannot answer whether the run
-	// captures error responses. The batch is aborted rather than published without the
-	// messages: the failed record row is durable and a silently empty error_response
-	// is indistinguishable from "the destination said nothing".
 	//
-	// On error the collector is left holding the records it had already resolved, so a
-	// caller MUST NOT go on to Publish it - doing so would store a truncated set of
-	// failed records. Both callers return the error instead.
-	CollectFailedRecords(ctx context.Context, jobStatuses []*jobsdb.JobStatusT) error
+	// It returns an error when the SyncSettingDelegate cannot answer whether the run
+	// captures error responses. On error the collector is left holding the records it had already resolved, so a
+	// caller MUST propagate the error instead of proceeding to Publish it
+	CollectFailedRecords(ctx context.Context, delegate SyncSettingDelegate, jobStatuses []*jobsdb.JobStatusT) error
 }
 
 // FailedJobsStatsCollector collects stats for failed jobs
@@ -77,12 +73,7 @@ type FailedJobsStatsCollector interface {
 	JobsDropped(jobs []*jobsdb.JobT)
 }
 
-// NewStatsCollector creates a new stats collector.
-//
-// Collectors that publish failed records must supply a SyncSettingDelegate with
-// WithSyncSettingDelegate. Those that do not - the gateway's and the processor's, which
-// only ever report Stats - can leave it out: see newStatsCollector for what they get
-// instead.
+// NewStatsCollector creates a new stats collector
 func NewStatsCollector(jobservice JobService, component string, statFactory stats.Stats, opts ...OptFunc) StatsCollector {
 	return newStatsCollector(jobservice, component, statFactory, opts...)
 }
@@ -100,9 +91,8 @@ func newStatsCollector(jobservice JobService, component string, statFactory stat
 		statsIndex:            map[statKey]*Stats{},
 		failedRecordsIndex:    map[statKey][]FailedRecord{},
 		parametersParser:      defaultParametersParser,
-		// Never nil, and fail-loud rather than silently "" - see the constructor's doc.
-		syncSettings: newUnsupportedSyncSettingDelegate(component),
-		statFactory:  statFactory,
+		component:             component,
+		statFactory:           statFactory,
 	}
 	for _, opt := range opts {
 		opt(sc)
@@ -130,11 +120,11 @@ type statsCollector struct {
 	statsIndex            map[statKey]*Stats
 	failedRecordsIndex    map[statKey][]FailedRecord
 	parametersParser      parametersParser
-	// syncSettings decides, per aborted record, whether the final recorded error text
-	// is kept and what that text is. The collector holds no capture policy of its own.
-	syncSettings SyncSettingDelegate
-	statFactory  stats.Stats
-	stats        struct {
+	// component names the collector in errors; the delegate arrives per call, so a
+	// caller that forgot one has to be identifiable from the error alone.
+	component   string
+	statFactory stats.Stats
+	stats       struct {
 		publishTime stats.Timer
 	}
 }
@@ -235,7 +225,7 @@ func (r *statsCollector) CollectStats(jobStatuses []*jobsdb.JobStatusT) {
 	}
 }
 
-func (r *statsCollector) CollectFailedRecords(ctx context.Context, jobStatuses []*jobsdb.JobStatusT) error {
+func (r *statsCollector) CollectFailedRecords(ctx context.Context, delegate SyncSettingDelegate, jobStatuses []*jobsdb.JobStatusT) error {
 	if !r.processing {
 		panic(fmt.Errorf("cannot update job statuses without having previously called BeginProcessing"))
 	}
@@ -256,15 +246,18 @@ func (r *statsCollector) CollectFailedRecords(ctx context.Context, jobStatuses [
 		if jobStatus.JobState != jobsdb.Aborted.State {
 			continue
 		}
-		errorResponse, err := r.syncSettings.GetErrorResponse(ctx, statKey, jobStatus)
+		if delegate == nil {
+			return fmt.Errorf("no sync setting delegate provided to the %q stats collector", r.component)
+		}
+		errorResponse, err := delegate.GetErrorResponse(ctx, statKey, jobStatus)
 		if err != nil {
 			return fmt.Errorf("resolving the error response for job %d: %w", jobStatus.JobID, err)
 		}
 		code, _ := strconv.Atoi(jobStatus.ErrorCode)
 		r.failedRecordsIndex[statKey] = append(r.failedRecordsIndex[statKey], FailedRecord{
-			Record:        recordId,
-			Code:          code,
-			ErrorResponse: errorResponse,
+			Record: recordId,
+			Code:   code,
+			Error:  errorResponse,
 		})
 	}
 	return nil
@@ -351,20 +344,6 @@ type jobParameters struct {
 type parametersParser func(jp json.RawMessage) jobParameters
 
 type OptFunc func(*statsCollector)
-
-// WithSyncSettingDelegate supplies the authority that decides, per aborted record,
-// whether the final recorded error text is kept and what that text is.
-//
-// Required for any collector whose CollectFailedRecords is called - today the router's
-// and the batch router's. A nil delegate is ignored rather than installed, so this can
-// never be the thing that reintroduces a silent nil.
-func WithSyncSettingDelegate(syncSettings SyncSettingDelegate) OptFunc {
-	return func(r *statsCollector) {
-		if syncSettings != nil {
-			r.syncSettings = syncSettings
-		}
-	}
-}
 
 // IgnoreDestinationID ignores the destinationID parameter of the job and while capturing statistics
 func IgnoreDestinationID() OptFunc {

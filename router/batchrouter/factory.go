@@ -12,22 +12,17 @@ import (
 )
 
 type Factory struct {
-	Reporting        types.Reporting
-	BackendConfig    backendconfig.BackendConfig
-	RouterDB         jobsdb.JobsDB
-	TransientSources transientsource.Service
-	RsourcesService  rsources.JobService
-	SyncSettings     rsources.SyncSettingDelegate
-	Debugger         destinationdebugger.DestinationDebugger
-	AdaptiveLimit    func(int64) int64
+	Reporting            types.Reporting
+	BackendConfig        backendconfig.BackendConfig
+	RouterDB             jobsdb.JobsDB
+	TransientSources     transientsource.Service
+	RsourcesService      rsources.JobService
+	RsourcesSyncSettings rsources.SyncSettingDelegate
+	Debugger             destinationdebugger.DestinationDebugger
+	AdaptiveLimit        func(int64) int64
 }
 
 func (f *Factory) New(destType string) *Handle {
-	if f.SyncSettings == nil {
-		// Dropping this field would not break the build, and the batch router would
-		// then decide error capture per record at runtime instead - so fail here.
-		panic("batchrouter: Factory.SyncSettings is required")
-	}
 	r := &Handle{
 		adaptiveLimit: f.AdaptiveLimit,
 	}
@@ -39,7 +34,7 @@ func (f *Factory) New(destType string) *Handle {
 		f.Reporting,
 		f.TransientSources,
 		f.RsourcesService,
-		f.SyncSettings,
+		f.RsourcesSyncSettings,
 		f.Debugger,
 		config.Default,
 	)

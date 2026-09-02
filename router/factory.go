@@ -24,7 +24,7 @@ type Factory struct {
 	RouterDB                   jobsdb.JobsDB
 	TransientSources           transientsource.Service
 	RsourcesService            rsources.JobService
-	SyncSettings               rsources.SyncSettingDelegate
+	RsourcesSyncSettings       rsources.SyncSettingDelegate
 	TransformerFeaturesService transformerFeaturesService.FeaturesService
 	ThrottlerFactory           throttler.Factory
 	Debugger                   destinationdebugger.DestinationDebugger
@@ -32,11 +32,6 @@ type Factory struct {
 }
 
 func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
-	if f.SyncSettings == nil {
-		// Dropping this field would not break the build, and the router would then
-		// decide error capture per record at runtime instead - so fail at construction.
-		panic("router: Factory.SyncSettings is required")
-	}
 	r := &Handle{
 		Reporting:     f.Reporting,
 		adaptiveLimit: f.AdaptiveLimit,
@@ -49,7 +44,7 @@ func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 		f.RouterDB,
 		f.TransientSources,
 		f.RsourcesService,
-		f.SyncSettings,
+		f.RsourcesSyncSettings,
 		f.TransformerFeaturesService,
 		f.Debugger,
 		f.ThrottlerFactory,

@@ -29,6 +29,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 		droppedJobsCollector    FailedJobsStatsCollector
 		sourceOnlyStatCollector FailedJobsStatsCollector
 		statsStore              *memstats.Store
+		syncSettings            SyncSettingDelegate
 		statsTag                stats.Tags
 		droppedStatsTag         stats.Tags
 		srcOnlyStatsTag         stats.Tags
@@ -46,10 +47,10 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 		// A delegate that captures nothing: this suite is about the stats and the
 		// record ids, not about the error text. The delegate seam itself is covered in
 		// stats_collector_delegate_test.go.
-		syncSettings := NewStaticSyncSettingDelegate("", nil)
-		statsCollector = NewStatsCollector(js, statsTag["module"], statsStore, WithSyncSettingDelegate(syncSettings))
-		droppedJobsCollector = NewDroppedJobsCollector(js, droppedStatsTag["module"], statsStore, WithSyncSettingDelegate(syncSettings))
-		sourceOnlyStatCollector = NewDroppedJobsCollector(js, srcOnlyStatsTag["module"], statsStore, WithSyncSettingDelegate(syncSettings), IgnoreDestinationID())
+		syncSettings = NewStaticSyncSettingDelegate("", nil)
+		statsCollector = NewStatsCollector(js, statsTag["module"], statsStore)
+		droppedJobsCollector = NewDroppedJobsCollector(js, droppedStatsTag["module"], statsStore)
+		sourceOnlyStatCollector = NewDroppedJobsCollector(js, srcOnlyStatsTag["module"], statsStore, IgnoreDestinationID())
 		jobs = []*jobsdb.JobT{}
 		jobErrors = map[uuid.UUID]string{}
 		jobStatuses = []*jobsdb.JobStatusT{}
@@ -310,7 +311,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 				Context("it calls CollectStats and CollectFailedRecords", func() {
 					BeforeEach(func() {
 						statsCollector.CollectStats(jobStatuses)
-						Expect(statsCollector.CollectFailedRecords(context.TODO(), jobStatuses)).To(Succeed())
+						Expect(statsCollector.CollectFailedRecords(context.TODO(), syncSettings, jobStatuses)).To(Succeed())
 					})
 
 					It("can publish without error all statuses but with updating half stats as Failed stats and adding failed records", func() {

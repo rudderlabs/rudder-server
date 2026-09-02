@@ -54,7 +54,7 @@ type Handle struct {
 	Reporting                  reporter
 	transientSources           transientsource.Service
 	rsourcesService            rsources.JobService
-	syncSettings               rsources.SyncSettingDelegate
+	rsourcesSyncSettings       rsources.SyncSettingDelegate
 	transformerFeaturesService transformerFeaturesService.FeaturesService
 	debugger                   destinationdebugger.DestinationDebugger
 	adaptiveLimit              func(int64) int64

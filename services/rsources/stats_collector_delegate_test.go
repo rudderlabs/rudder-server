@@ -81,8 +81,14 @@ func newCollectorHarness(t *testing.T, delegate *recordingDelegate) *collectorHa
 	js.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil).AnyTimes()
 
-	h.collector = NewStatsCollector(js, "test", statsStore, WithSyncSettingDelegate(delegate))
+	h.collector = NewStatsCollector(js, "test", statsStore)
 	return h
+}
+
+// collect runs the collector against the harness' delegate, which now travels as a
+// method argument rather than as a constructor option.
+func (h *collectorHarness) collect(statuses ...*jobsdb.JobStatusT) error {
+	return h.collector.CollectFailedRecords(context.Background(), h.delegate, statuses)
 }
 
 // retlJob builds an rETL job whose parameters carry the numeric record id (the
@@ -135,12 +141,12 @@ func TestCollectFailedRecordsUsesTheDelegateVerbatim(t *testing.T) {
 			h := newCollectorHarness(t, delegate)
 
 			h.collector.BeginProcessing([]*jobsdb.JobT{retlJob(t, 1, true)})
-			require.NoError(t, h.collector.CollectFailedRecords(context.Background(),
-				[]*jobsdb.JobStatusT{statusFor(1, jobsdb.Aborted.State, "422", `{"response":"ignored by the harness"}`)}))
+			require.NoError(t, h.collect(
+				statusFor(1, jobsdb.Aborted.State, "422", `{"response":"ignored by the harness"}`)))
 			require.NoError(t, h.collector.Publish(context.Background(), nil))
 
 			require.Len(t, h.records, 1)
-			require.Equal(t, response, h.records[0].ErrorResponse,
+			require.Equal(t, response, h.records[0].Error,
 				"the collector must store the delegate's answer byte for byte")
 			require.Equal(t, 422, h.records[0].Code, "the code is read off the status, not the delegate")
 			require.Equal(t, `1`, string(h.records[0].Record))
@@ -152,7 +158,7 @@ func TestCollectFailedRecordsUsesTheDelegateVerbatim(t *testing.T) {
 		h := newCollectorHarness(t, delegate)
 		h.collector.BeginProcessing([]*jobsdb.JobT{retlJob(t, 7, true)})
 		status := statusFor(7, jobsdb.Aborted.State, "410", `{"reason":"job expired"}`)
-		require.NoError(t, h.collector.CollectFailedRecords(context.Background(), []*jobsdb.JobStatusT{status}))
+		require.NoError(t, h.collect(status))
 
 		calls := delegate.recorded()
 		require.Len(t, calls, 1)
@@ -176,8 +182,7 @@ func TestCollectFailedRecordsPropagatesDelegateErrors(t *testing.T) {
 		h := newCollectorHarness(t, delegate)
 		h.collector.BeginProcessing([]*jobsdb.JobT{retlJob(t, 42, true)})
 
-		err := h.collector.CollectFailedRecords(context.Background(),
-			[]*jobsdb.JobStatusT{statusFor(42, jobsdb.Aborted.State, "422", `{"response":"rejected"}`)})
+		err := h.collect(statusFor(42, jobsdb.Aborted.State, "422", `{"response":"rejected"}`))
 
 		require.Error(t, err)
 		require.ErrorIs(t, err, sentinel, "the delegate's error must stay unwrappable")
@@ -204,10 +209,10 @@ func TestCollectFailedRecordsPropagatesDelegateErrors(t *testing.T) {
 		js := NewMockJobService(gomock.NewController(t))
 		js.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(nil).AnyTimes()
-		sc := newStatsCollector(js, "test", statsStore, WithSyncSettingDelegate(delegate))
+		sc := newStatsCollector(js, "test", statsStore)
 
 		sc.BeginProcessing([]*jobsdb.JobT{retlJob(t, 1, true), retlJob(t, 2, true), retlJob(t, 3, true)})
-		err = sc.CollectFailedRecords(context.Background(), []*jobsdb.JobStatusT{
+		err = sc.CollectFailedRecords(context.Background(), delegate, []*jobsdb.JobStatusT{
 			statusFor(1, jobsdb.Aborted.State, "422", `{"response":"one"}`),
 			statusFor(2, jobsdb.Aborted.State, "422", `{"response":"two"}`),
 			statusFor(3, jobsdb.Aborted.State, "422", `{"response":"three"}`),
@@ -232,8 +237,7 @@ func TestCollectFailedRecordsDelegateSkipsStatusesThatCannotProduceARecord(t *te
 				delegate := &recordingDelegate{response: "must never be stored"}
 				h := newCollectorHarness(t, delegate)
 				h.collector.BeginProcessing([]*jobsdb.JobT{retlJob(t, 1, true)})
-				require.NoError(t, h.collector.CollectFailedRecords(context.Background(),
-					[]*jobsdb.JobStatusT{statusFor(1, state, "200", `{"response":"should never be captured"}`)}))
+				require.NoError(t, h.collect(statusFor(1, state, "200", `{"response":"should never be captured"}`)))
 				require.NoError(t, h.collector.Publish(context.Background(), nil))
 
 				require.Empty(t, delegate.recorded(), "state %s must not reach the delegate", state)
@@ -247,10 +251,10 @@ func TestCollectFailedRecordsDelegateSkipsStatusesThatCannotProduceARecord(t *te
 		h := newCollectorHarness(t, delegate)
 		// job 1 has a record id, job 2 does not: both are aborted.
 		h.collector.BeginProcessing([]*jobsdb.JobT{retlJob(t, 1, true), retlJob(t, 2, false)})
-		require.NoError(t, h.collector.CollectFailedRecords(context.Background(), []*jobsdb.JobStatusT{
+		require.NoError(t, h.collect(
 			statusFor(1, jobsdb.Aborted.State, "422", `{"response":"kept"}`),
 			statusFor(2, jobsdb.Aborted.State, "422", `{"response":"no record id"}`),
-		}))
+		))
 		require.NoError(t, h.collector.Publish(context.Background(), nil))
 
 		calls := delegate.recorded()
@@ -263,9 +267,7 @@ func TestCollectFailedRecordsDelegateSkipsStatusesThatCannotProduceARecord(t *te
 		delegate := &recordingDelegate{response: "must never be stored"}
 		h := newCollectorHarness(t, delegate)
 		h.collector.BeginProcessing([]*jobsdb.JobT{retlJob(t, 1, true)})
-		require.NoError(t, h.collector.CollectFailedRecords(context.Background(), []*jobsdb.JobStatusT{
-			statusFor(999, jobsdb.Aborted.State, "422", `{"response":"unknown job"}`),
-		}))
+		require.NoError(t, h.collect(statusFor(999, jobsdb.Aborted.State, "422", `{"response":"unknown job"}`)))
 		require.Empty(t, delegate.recorded())
 		require.NoError(t, h.collector.Publish(context.Background(), nil))
 		require.Empty(t, h.records)
@@ -276,8 +278,7 @@ func TestCollectFailedRecordsDelegateSkipsStatusesThatCannotProduceARecord(t *te
 		h := newCollectorHarness(t, delegate)
 		// No source_job_run_id: nothing is indexed, so the whole call short-circuits.
 		h.collector.BeginProcessing([]*jobsdb.JobT{{JobID: 1, UUID: uuid.New(), Parameters: []byte(`{}`)}})
-		require.NoError(t, h.collector.CollectFailedRecords(context.Background(),
-			[]*jobsdb.JobStatusT{statusFor(1, jobsdb.Aborted.State, "422", `{"response":"x"}`)}),
+		require.NoError(t, h.collect(statusFor(1, jobsdb.Aborted.State, "422", `{"response":"x"}`)),
 			"an empty index must not be an error, and must not consult the delegate")
 		require.Empty(t, delegate.recorded())
 	})
@@ -288,21 +289,18 @@ func TestCollectFailedRecordsDelegateSkipsStatusesThatCannotProduceARecord(t *te
 func TestCollectFailedRecordsDelegateRequiresBeginProcessing(t *testing.T) {
 	h := newCollectorHarness(t, &recordingDelegate{})
 	require.Panics(t, func() {
-		_ = h.collector.CollectFailedRecords(context.Background(), []*jobsdb.JobStatusT{
-			statusFor(1, jobsdb.Aborted.State, "422", `{"response":"x"}`),
-		})
+		_ = h.collect(statusFor(1, jobsdb.Aborted.State, "422", `{"response":"x"}`))
 	})
 }
 
 // TestCollectFailedRecordsWithoutADelegateFailsLoud pins the safety net behind the
-// optional delegate.
+// delegate being a plain argument.
 //
-// WithSyncSettingDelegate is an option, so forgetting it is a compilable mistake. The
-// gateway's and the processor's collectors legitimately never pass one, which is why it
-// has to stay optional - but a collector that never got one and then DOES reach
-// CollectFailedRecords must fail, loudly, on the very first aborted rETL record.
-// Answering "" instead would publish durable failed records with a silently empty
-// error_response, indistinguishable from "the destination said nothing".
+// The delegate is passed per call, so a caller that has none - the gateway's and the
+// processor's collectors legitimately never build one - can hand in nil and still
+// compile. If such a collector then DOES reach an aborted rETL record it must fail,
+// loudly, on the first one: answering "" instead would publish durable failed records
+// with a silently empty error, indistinguishable from "the destination said nothing".
 func TestCollectFailedRecordsWithoutADelegateFailsLoud(t *testing.T) {
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
@@ -312,53 +310,41 @@ func TestCollectFailedRecordsWithoutADelegateFailsLoud(t *testing.T) {
 
 	// Built exactly the way the gateway and the processor build theirs.
 	collector := NewStatsCollector(js, "gw", statsStore)
-	job := retlJob(t, 1, true)
-	collector.BeginProcessing([]*jobsdb.JobT{job})
+	collector.BeginProcessing([]*jobsdb.JobT{retlJob(t, 1, true)})
 
-	err = collector.CollectFailedRecords(context.Background(), []*jobsdb.JobStatusT{
-		statusFor(1, jobsdb.Aborted.State, "422", `{"response":"boom"}`),
-	})
+	require.NotPanics(t, func() {
+		err = collector.CollectFailedRecords(context.Background(), nil, []*jobsdb.JobStatusT{
+			statusFor(1, jobsdb.Aborted.State, "422", `{"response":"boom"}`),
+		})
+	}, "a missing delegate is a wiring error to report, not a crash on the router's hot path")
 
 	require.Error(t, err, "a delegate-less collector must not silently drop the error text")
-	require.ErrorContains(t, err, `the "gw" stats collector was built without a sync setting delegate`,
+	require.ErrorContains(t, err, `no sync setting delegate provided to the "gw" stats collector`,
 		"the error must name the component so the miswiring is obvious")
-	require.ErrorContains(t, err, "job 1", "the error must name the record it failed on")
 
-	// The failure is an error, not a panic, and not a partial publish.
+	// The failure is an error, not a partial publish.
 	require.Empty(t, collector.(*statsCollector).failedRecordsIndex,
 		"no record may be collected once the delegate has failed")
+	require.NoError(t, collector.Publish(context.Background(), nil))
 }
 
-// TestNewStatsCollectorDelegateDefaultIsOverridable pins that the fail-loud default is
-// exactly that - a default - and that a nil option can never reinstate a silent nil.
-func TestNewStatsCollectorDelegateDefaultIsOverridable(t *testing.T) {
+// TestCollectFailedRecordsWithoutADelegateIgnoresRecordsItCouldNotStore pins the other
+// half of the nil-delegate contract: nil is only fatal for a record that actually needs
+// a decision. A non-rETL batch, or one with nothing aborted, must go through untouched -
+// otherwise every gateway and processor collector in the process would start erroring.
+func TestCollectFailedRecordsWithoutADelegateIgnoresRecordsItCouldNotStore(t *testing.T) {
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
 	js := NewMockJobService(gomock.NewController(t))
 
-	t.Run("the default is the unsupported delegate", func(t *testing.T) {
-		for _, sc := range []*statsCollector{
-			newStatsCollector(js, "test", statsStore),
-			newStatsCollector(js, "dropped", statsStore, IgnoreDestinationID()),
-		} {
-			_, err := sc.syncSettings.GetErrorResponse(context.Background(), statKey{}, &jobsdb.JobStatusT{})
-			require.Error(t, err)
-		}
-	})
+	collector := NewStatsCollector(js, "gw", statsStore)
+	collector.BeginProcessing([]*jobsdb.JobT{retlJob(t, 1, true), retlJob(t, 2, false)})
 
-	t.Run("WithSyncSettingDelegate replaces it", func(t *testing.T) {
-		sc := newStatsCollector(js, "test", statsStore, WithSyncSettingDelegate(NewStaticSyncSettingDelegate("kept", nil)))
-		got, err := sc.syncSettings.GetErrorResponse(context.Background(), statKey{}, &jobsdb.JobStatusT{})
-		require.NoError(t, err)
-		require.Equal(t, "kept", got)
-	})
-
-	t.Run("a nil delegate is refused, leaving the fail-loud default in place", func(t *testing.T) {
-		sc := newStatsCollector(js, "test", statsStore, WithSyncSettingDelegate(nil))
-		require.NotNil(t, sc.syncSettings)
-		_, err := sc.syncSettings.GetErrorResponse(context.Background(), statKey{}, &jobsdb.JobStatusT{})
-		require.Error(t, err)
-	})
+	require.NoError(t, collector.CollectFailedRecords(context.Background(), nil, []*jobsdb.JobStatusT{
+		statusFor(1, jobsdb.Succeeded.State, "200", `{}`),         // not aborted
+		statusFor(2, jobsdb.Aborted.State, "422", `{"a":"boom"}`), // aborted, but carries no record id
+	}))
+	require.Empty(t, collector.(*statsCollector).failedRecordsIndex)
 }
 
 // TestDefaultParametersParser pins how the collector reads the job parameters it

@@ -15,9 +15,11 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/validators"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
@@ -83,6 +85,29 @@ func NewRsourcesService(ctx context.Context, deploymentType deployment.Type, sho
 	rsourcesConfig.ShouldSetupSharedDB = shouldSetupSharedDB
 
 	return rsources.NewJobService(ctx, rsourcesConfig, stats)
+}
+
+// NewRsourcesSyncSettings creates the rETL sync setting delegate and starts its routines on g.
+//
+// The component is disabled - not merely idle - when Router.failedKeysEnabled is false: it opens
+// no database connection, runs no migration and starts no goroutine. Callers get a delegate that
+// answers "no capture" for everything, so no call site needs to know.
+func NewRsourcesSyncSettings(
+	ctx context.Context,
+	g *errgroup.Group,
+	log logger.Logger,
+	statsFactory stats.Stats,
+) (rsources.SyncSettingDelegate, func(), error) {
+	if !config.GetBoolVar(true, "Router.failedKeysEnabled") {
+		return rsources.NewStaticSyncSettingDelegate("", nil), func() {}, nil
+	}
+	delegate, err := rsources.NewSyncSettingDelegate(ctx, config.Default, log, statsFactory, backendconfig.DefaultBackendConfig)
+	if err != nil {
+		return nil, nil, fmt.Errorf("rsources sync settings setup: %w", err)
+	}
+	g.Go(crash.Wrapper(func() error { return delegate.ConfigSubscriberRoutine(ctx) }))
+	g.Go(crash.Wrapper(func() error { return delegate.CleanupRoutine(ctx) }))
+	return delegate, delegate.Stop, nil
 }
 
 func resolveModeProvider(log logger.Logger, deploymentType deployment.Type) (cluster.ChangeEventProvider, error) {

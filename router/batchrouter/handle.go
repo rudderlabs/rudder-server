@@ -53,22 +53,22 @@ type Handle struct {
 	destType string
 	// dependencies
 
-	conf               *config.Config
-	logger             logger.Logger
-	netHandle          *http.Client
-	jobsDB             jobsdb.JobsDB
-	reporting          types.Reporting
-	backendConfig      backendconfig.BackendConfig
-	fileManagerFactory filemanager.Factory
-	transientSources   transientsource.Service
-	rsourcesService    rsources.JobService
-	syncSettings       rsources.SyncSettingDelegate
-	warehouseClient    *client.Warehouse
-	debugger           destinationdebugger.DestinationDebugger
-	Diagnostics        diagnostics.DiagnosticsI
-	adaptiveLimit      func(int64) int64
-	isolationStrategy  isolation.Strategy
-	now                func() time.Time
+	conf                 *config.Config
+	logger               logger.Logger
+	netHandle            *http.Client
+	jobsDB               jobsdb.JobsDB
+	reporting            types.Reporting
+	backendConfig        backendconfig.BackendConfig
+	fileManagerFactory   filemanager.Factory
+	transientSources     transientsource.Service
+	rsourcesService      rsources.JobService
+	rsourcesSyncSettings rsources.SyncSettingDelegate
+	warehouseClient      *client.Warehouse
+	debugger             destinationdebugger.DestinationDebugger
+	Diagnostics          diagnostics.DiagnosticsI
+	adaptiveLimit        func(int64) int64
+	isolationStrategy    isolation.Strategy
+	now                  func() time.Time
 
 	// configuration
 

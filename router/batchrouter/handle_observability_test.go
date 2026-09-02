@@ -307,9 +307,9 @@ func TestUpdateRudderSourcesStats_PropagatesSyncSettingError(t *testing.T) {
 	job, status := retlJobAndStatus(1)
 
 	brt := &Handle{
-		logger:          logger.NOP,
-		rsourcesService: rsources.NewNoOpService(),
-		syncSettings:    rsources.NewStaticSyncSettingDelegate("", boom),
+		logger:               logger.NOP,
+		rsourcesService:      rsources.NewNoOpService(),
+		rsourcesSyncSettings: rsources.NewStaticSyncSettingDelegate("", boom),
 	}
 
 	err := brt.updateRudderSourcesStats(
@@ -332,9 +332,9 @@ func TestUpdateRudderSourcesStats_CapturesErrorResponse(t *testing.T) {
 	jobService := &capturingJobService{}
 
 	brt := &Handle{
-		logger:          logger.NOP,
-		rsourcesService: jobService,
-		syncSettings:    rsources.NewStaticSyncSettingDelegate("captured-text", nil),
+		logger:               logger.NOP,
+		rsourcesService:      jobService,
+		rsourcesSyncSettings: rsources.NewStaticSyncSettingDelegate("captured-text", nil),
 	}
 
 	err := brt.updateRudderSourcesStats(
@@ -346,5 +346,5 @@ func TestUpdateRudderSourcesStats_CapturesErrorResponse(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, jobService.failedRecords, 1)
-	require.Equal(t, "captured-text", jobService.failedRecords[0].ErrorResponse)
+	require.Equal(t, "captured-text", jobService.failedRecords[0].Error)
 }
