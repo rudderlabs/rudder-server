@@ -969,7 +969,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		stat.SourceDefName = sourceDefName
 		stat.SourceType = sourceType
 
-		isUserSuppressedEvent := false
+		var isUserSuppressedEvent bool
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
 			gw.logger.Infon("suppressed event",
 				obskit.SourceID(msg.Properties.SourceID),
