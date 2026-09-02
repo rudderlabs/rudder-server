@@ -113,7 +113,7 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 		)
 		if err != nil {
 			log.Errorn("Failed to update related schemas",
-				logger.NewStringField("schema", string(schemaPayload)),
+				logger.NewIntField("tables", int64(len(whSchema.Schema))),
 				obskit.Error(err),
 			)
 			return fmt.Errorf("updating related schemas: %w", err)
@@ -202,8 +202,8 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 				if err != nil {
 					log.Errorn("Failed to update table-level related schemas",
 						logger.NewStringField("tableName", tableName),
-						logger.NewStringField("schema", string(schemaPayload)),
-						logger.NewStringField("tableLevelSchema", string(tableSchemaPayload)),
+						logger.NewIntField("tables", int64(len(whSchema.Schema))),
+						logger.NewIntField("columns", int64(len(tableSchema))),
 						obskit.Error(err),
 					)
 					return fmt.Errorf("updating other table-level schemas for table %s: %w", tableName, err)
