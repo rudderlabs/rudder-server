@@ -165,7 +165,7 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 			ids = append(ids, id)
 			recordIDs = append(recordIDs, string(rec.Record))
 			codes = append(codes, int64(rec.Code))
-			errorResponses = append(errorResponses, rec.ErrorResponse)
+			errorResponses = append(errorResponses, rec.Error)
 		}
 
 		if _, err := tx.ExecContext(ctx,
@@ -263,9 +263,9 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			return JobFailedRecordsV2{ID: jobRunId}, err
 		}
 		failedRecordsMap[key] = append(failedRecordsMap[key], FailedRecord{
-			Record:        json.RawMessage(nextPageToken.RecordID),
-			Code:          code,
-			ErrorResponse: errorResponse,
+			Record: json.RawMessage(nextPageToken.RecordID),
+			Code:   code,
+			Error:  errorResponse,
 		})
 		queryResultSize++
 	}
@@ -462,6 +462,22 @@ func (sh *sourcesHandler) init(ctx context.Context) error {
 
 	const lockID = 100020001
 
+	// The shared tables are upgraded before the local ones. Logical replication
+	// streams local -> shared, so a column added locally first would have nowhere to
+	// land and replication would stay broken for as long as the two schemas disagree.
+	if sh.config.ShouldSetupSharedDB && sh.sharedDB != nil {
+		if err := withAdvisoryLock(ctx, sh.sharedDB, lockID, func(_ *sql.Tx) error {
+			sh.log.Debugn("setting up rsources tables for shared db", logger.NewStringField("sharedConn", sh.config.SharedConn))
+			if err := setupTables(ctx, sh.sharedDB, "shared", sh.log); err != nil {
+				return err
+			}
+			sh.log.Debugn("rsources tables for shared db setup successfully", logger.NewStringField("sharedConn", sh.config.SharedConn))
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+
 	if err := withAdvisoryLock(ctx, sh.localDB, lockID, func(tx *sql.Tx) error {
 		sh.log.Debugn("setting up rsources tables", logger.NewStringField("hostname", sh.config.LocalHostname))
 		if err := setupTables(ctx, sh.localDB, sh.config.LocalHostname, sh.log); err != nil {
@@ -473,14 +489,10 @@ func (sh *sourcesHandler) init(ctx context.Context) error {
 		return err
 	}
 
+	// Replication is set up last: the publication it creates is on the local tables,
+	// so it cannot run before those exist.
 	if sh.config.ShouldSetupSharedDB && sh.sharedDB != nil {
 		if err := withAdvisoryLock(ctx, sh.sharedDB, lockID, func(_ *sql.Tx) error {
-			sh.log.Debugn("setting up rsources tables for shared db", logger.NewStringField("sharedConn", sh.config.SharedConn))
-			if err := setupTables(ctx, sh.sharedDB, "shared", sh.log); err != nil {
-				return err
-			}
-			sh.log.Debugn("rsources tables for shared db setup successfully", logger.NewStringField("sharedConn", sh.config.SharedConn))
-
 			sh.log.Debugn("setting up rsources logical replication", logger.NewStringField("hostname", sh.config.LocalHostname))
 			if err := sh.setupLogicalReplication(ctx); err != nil {
 				return fmt.Errorf("logical replication in %q: %w", sh.config.LocalHostname, err)
@@ -537,9 +549,6 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string,
 	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2_records add column if not exists code numeric(4) not null default 0`); err != nil {
 		return err
 	}
-	// The final error text RudderStack recorded for the record. Stays TEXT: the cap
-	// is enforced in code before the insert, since a varchar(n) constraint would
-	// error the whole batch instead of clipping the one oversized message.
 	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2_records add column if not exists error_response text not null default ''`); err != nil {
 		return err
 	}
