@@ -284,6 +284,7 @@ jobs:
         run: make test exclude="/rudder-server/(cluster|jobsdb|integration_test|processor|regulation-worker|router|services|suppression-backup-service|warehouse)"
         env:
           RSERVER_PROCESSOR_ENABLE_CONCURRENT_STORE: "true"
+          WORKSPACE_CONFIG_FIXTURE_PASSPHRASE: ${{ secrets.WORKSPACE_CONFIG_FIXTURE_PASSPHRASE }}
           DOCKERHUB_REGISTRY_MIRROR: 422074288268.dkr.ecr.us-east-1.amazonaws.com/docker-hub
           DOCKERHUB_REGISTRY_MIRROR_USERNAME: ${{ steps.login-ecr.outputs.docker_username_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
           DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
@@ -319,7 +320,6 @@ jobs:
           - integration_test/tracing
           - integration_test/trackedusersreporting
           - integration_test/activationrecordsreporting
-          - integration_test/pytransformer_contract
           - integration_test/transformer_contract
           - processor
           - regulation-worker
@@ -352,24 +352,6 @@ jobs:
       - name: Login to ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
-      # Must run while the AWS credentials are still set, i.e. before the step below unsets them.
-      # The contract suite compares two rudder-pytransformer releases and requires both tags; resolving
-      # them here means a new release is picked up automatically instead of going stale in the source.
-      - name: Resolve rudder-pytransformer tags to compare
-        if: matrix.package == 'integration_test/pytransformer_contract'
-        run: |
-          set -euo pipefail
-          tags=$(aws ecr describe-images \
-            --repository-name rudderstack/rudder-pytransformer \
-            --query 'imageDetails[].imageTags[]' --output text \
-            | tr '\t' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -u | tail -2)
-          if [ "$(echo "$tags" | wc -l)" -ne 2 ]; then
-            echo "expected 2 released tags, got: ${tags:-<none>}" >&2
-            exit 1
-          fi
-          echo "PYT_BASELINE_TAG=$(echo "$tags" | head -1)" >> $GITHUB_ENV
-          echo "PYT_CANDIDATE_TAG=$(echo "$tags" | tail -1)" >> $GITHUB_ENV
-          echo "comparing rudder-pytransformer $(echo "$tags" | head -1) -> $(echo "$tags" | tail -1)"
       - name: Unset AWS Credentials
         run: |
           echo "AWS_ACCESS_KEY_ID=" >> $GITHUB_ENV

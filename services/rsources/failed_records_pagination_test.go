@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/segmentio/ksuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -68,6 +69,55 @@ func TestFailedRecords(t *testing.T) {
 		_, err := service.GetFailedRecords(context.Background(), "1", JobFilter{}, PagingInfo{Size: 1, NextPageToken: "invalid"})
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrInvalidPaginationToken)
+	})
+	t.Run("paging across multiple failed keys", func(t *testing.T) {
+		// Two failed keys under one job run, with KSUID ids as AddFailedRecords
+		// generates them, holding distinct record ids. Record ids are not ordered
+		// with respect to the keys: the first key's records
+		// ("record-011".."record-020") sort ABOVE the second key's
+		// ("record-001".."record-010"), so a page boundary inside the first key
+		// produces a cursor whose record_id sorts after everything in the second key.
+		// A cursor predicate that is not a proper row-value comparison then silently
+		// drops the whole second key.
+		firstKey, secondKey := ksuid.New().String(), ksuid.New().String()
+		// order the keys the way the paging query will: text ordering is collation-dependent
+		require.NoError(t, postgresContainer.DB.QueryRow(
+			`SELECT least($1::text, $2::text), greatest($1::text, $2::text)`, firstKey, secondKey,
+		).Scan(&firstKey, &secondKey))
+		_, err := postgresContainer.DB.Exec(`INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id) VALUES
+			($1, '42', '1', '1', '1'),
+			($2, '42', '1', '1', '2')`, firstKey, secondKey)
+		require.NoError(t, err)
+		_, err = postgresContainer.DB.Exec(`INSERT INTO rsources_failed_keys_v2_records (id, record_id)
+			SELECT $1, to_json('record-'||lpad(s.id::text, 3, '0')) FROM generate_series(11, 20) as s(id)`, firstKey)
+		require.NoError(t, err)
+		_, err = postgresContainer.DB.Exec(`INSERT INTO rsources_failed_keys_v2_records (id, record_id)
+			SELECT $1, to_json('record-'||lpad(s.id::text, 3, '0')) FROM generate_series(1, 10) as s(id)`, secondKey)
+		require.NoError(t, err)
+
+		seen := map[string]struct{}{}
+		paging := PagingInfo{Size: 3}
+		for page := 0; ; page++ {
+			require.Less(t, page, 20, "paging did not terminate")
+			r, err := service.GetFailedRecords(context.Background(), "42", JobFilter{}, paging)
+			require.NoError(t, err)
+			for _, task := range r.Tasks {
+				for _, source := range task.Sources {
+					for _, destination := range source.Destinations {
+						for _, record := range destination.Records {
+							_, duplicate := seen[string(record.Record)]
+							require.False(t, duplicate, "record %s returned twice", record.Record)
+							seen[string(record.Record)] = struct{}{}
+						}
+					}
+				}
+			}
+			if r.Paging == nil {
+				break
+			}
+			paging = PagingInfo{Size: 3, NextPageToken: r.Paging.NextPageToken}
+		}
+		require.Len(t, seen, 20, "every record of both failed keys should be returned across pages")
 	})
 }
 

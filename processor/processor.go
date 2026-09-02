@@ -228,16 +228,16 @@ type Handle struct {
 }
 type processorStats struct {
 	statGatewayDBR                func(partition string) stats.Measurement
-	statGatewayDBW                func(partition string) stats.Measurement
+	statGatewayDBW                func(partition, pipeline string) stats.Measurement
 	statDBR                       func(partition string) stats.Measurement
-	statDBW                       func(partition string) stats.Measurement
+	statDBW                       func(partition, pipeline string) stats.Measurement
 	validateEventsTime            func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
 	statNumRequests               func(partition string) stats.Measurement
 	statNumEvents                 func(partition string) stats.Measurement
-	statDBWriteRouterPayloadBytes func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
-	statDBWriteBatchPayloadBytes  func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
-	statDestNumOutputEvents       func(partition string) stats.Measurement
-	statBatchDestNumOutputEvents  func(partition string) stats.Measurement
+	statDBWriteRouterPayloadBytes func(partition, pipeline string) stats.Measurement // TODO: stop using it in dashboards and delete
+	statDBWriteBatchPayloadBytes  func(partition, pipeline string) stats.Measurement // TODO: stop using it in dashboards and delete
+	statDestNumOutputEvents       func(partition, pipeline string) stats.Measurement
+	statBatchDestNumOutputEvents  func(partition, pipeline string) stats.Measurement
 	trackedUsersReportGeneration  func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
 	statSrcToDestFanout           stats.Histogram
 	statMaxSrcToDestFanout        stats.Gauge
@@ -246,9 +246,9 @@ type processorStats struct {
 	statPretransformStageCount func(partition string) stats.Measurement
 	statPreprocessStageCount   func(partition string) stats.Measurement
 	statSrcHydrationStageCount func(partition string) stats.Measurement
-	statUtransformStageCount   func(partition string) stats.Measurement
-	statDtransformStageCount   func(partition string) stats.Measurement
-	statStoreStageCount        func(partition string) stats.Measurement
+	statUtransformStageCount   func(partition, pipeline string) stats.Measurement
+	statDtransformStageCount   func(partition, pipeline string) stats.Measurement
+	statStoreStageCount        func(partition, pipeline string) stats.Measurement
 
 	utMirroringEqualResponses            func(partition, transformationID string) stats.Measurement
 	utMirroringDifferentResponses        func(partition, transformationID string) stats.Measurement
@@ -505,9 +505,10 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.statGatewayDBW = func(partition string) stats.Measurement {
+	proc.stats.statGatewayDBW = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_gateway_db_write", stats.CountType, stats.Tags{
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
 	proc.stats.statDBR = func(partition string) stats.Measurement {
@@ -515,9 +516,10 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.statDBW = func(partition string) stats.Measurement {
+	proc.stats.statDBW = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_gateway_db_write_time", stats.TimerType, stats.Tags{
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
 	proc.stats.validateEventsTime = func(partition string) stats.Measurement {
@@ -535,28 +537,32 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.statDBWriteRouterPayloadBytes = func(partition string) stats.Measurement {
+	proc.stats.statDBWriteRouterPayloadBytes = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_db_write_payload_bytes", stats.HistogramType, stats.Tags{
 			"module":    "router",
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
-	proc.stats.statDBWriteBatchPayloadBytes = func(partition string) stats.Measurement {
+	proc.stats.statDBWriteBatchPayloadBytes = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_db_write_payload_bytes", stats.HistogramType, stats.Tags{
 			"module":    "batch_router",
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
-	proc.stats.statDestNumOutputEvents = func(partition string) stats.Measurement {
+	proc.stats.statDestNumOutputEvents = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_num_output_events", stats.CountType, stats.Tags{
 			"module":    "router",
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
-	proc.stats.statBatchDestNumOutputEvents = func(partition string) stats.Measurement {
+	proc.stats.statBatchDestNumOutputEvents = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_num_output_events", stats.CountType, stats.Tags{
 			"module":    "batch_router",
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
 	proc.stats.trackedUsersReportGeneration = func(partition string) stats.Measurement {
@@ -587,19 +593,22 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.statUtransformStageCount = func(partition string) stats.Measurement {
+	proc.stats.statUtransformStageCount = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("proc_utransform_jobs", stats.CountType, stats.Tags{
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
-	proc.stats.statDtransformStageCount = func(partition string) stats.Measurement {
+	proc.stats.statDtransformStageCount = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("proc_dtransform_jobs", stats.CountType, stats.Tags{
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
-	proc.stats.statStoreStageCount = func(partition string) stats.Measurement {
+	proc.stats.statStoreStageCount = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("proc_store_jobs", stats.CountType, stats.Tags{
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
 	proc.stats.utMirroringEqualResponses = func(partition, transformationID string) stats.Measurement {
@@ -664,7 +673,10 @@ func (proc *Handle) Setup(
 			case <-ctx.Done():
 				return nil
 			case <-time.After(15 * time.Second):
-				proc.stats.statGatewayDBW("").Count(0)
+				proc.stats.statGatewayDBW("", pipelineTypeGw).Count(0)
+				if proc.procDB != nil {
+					proc.stats.statGatewayDBW("", pipelineTypeProc).Count(0)
+				}
 			}
 		}
 	}))
@@ -2666,6 +2678,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 
 	return &transformationMessage{
 		ctx:                          preTrans.subJobs.ctx,
+		pipeline:                     pipelineTypeGw,
 		groupedEvents:                groupedEvents,
 		forkedJobs:                   forkedJobs,
 		srcPipelineSteps:             sourcePipelineSteps,
@@ -2735,9 +2748,20 @@ type SourcePipelineSteps struct {
 }
 type sourceIDPipelineSteps map[SourceIDT]SourcePipelineSteps
 
+// pipeline tag values used to attribute stats emitted by stages shared between
+// the gw pool and the proc pool ([gwPipelineWorker] and [procPipelineWorker]).
+const (
+	pipelineTypeGw   = "gw"
+	pipelineTypeProc = "proc"
+)
+
 type transformationMessage struct {
 	ctx           context.Context
 	groupedEvents map[string][]types.TransformerEvent
+
+	// pipeline identifies which pipeline produced this message (pipelineTypeGw or
+	// pipelineTypeProc); it travels through the shared stages for stats attribution.
+	pipeline string
 
 	// forkedJobs are intermediate (proc) jobs siphoned at fan-out; they bypass the gw
 	// pool's transform stages and are committed to procDB atomically with the gateway
@@ -2763,6 +2787,7 @@ type transformationMessage struct {
 
 type userTransformData struct {
 	ctx                           context.Context
+	pipeline                      string // see transformationMessage.pipeline
 	userTransformAndFilterOutputs map[string]userTransformAndFilterOutput
 	forkedJobs                    []*jobsdb.JobT
 	reportMetrics                 []*reportingtypes.PUReportedMetric
@@ -2787,7 +2812,7 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 
 	if proc.limiter.utransform != nil {
 		defer proc.limiter.utransform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
-		defer proc.stats.statUtransformStageCount(partition).Count(len(in.statusList))
+		defer proc.stats.statUtransformStageCount(partition, in.pipeline).Count(len(in.statusList))
 	}
 	// Now do the actual transformation. We call it in batches, once
 	// for each destination ID
@@ -2855,6 +2880,7 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 
 	return &userTransformData{
 		ctx:                           in.ctx,
+		pipeline:                      in.pipeline,
 		userTransformAndFilterOutputs: userTransformAndFilterOutputs,
 		forkedJobs:                    in.forkedJobs,
 		reportMetrics:                 in.reportMetrics,
@@ -2877,7 +2903,7 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 
 	if proc.limiter.dtransform != nil {
 		defer proc.limiter.dtransform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
-		defer proc.stats.statDtransformStageCount(partition).Count(len(in.statusList))
+		defer proc.stats.statDtransformStageCount(partition, in.pipeline).Count(len(in.statusList))
 	}
 
 	procErrorJobsByDestID := make(map[string][]procErrorJob)
@@ -2933,6 +2959,7 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 
 	return &storeMessage{
 		ctx:                      in.ctx,
+		pipeline:                 in.pipeline,
 		forkedJobs:               in.forkedJobs,
 		trackedUsersReports:      in.trackedUsersReports,
 		activationRecordsReports: in.activationRecordsReports,
@@ -2955,6 +2982,7 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 
 type storeMessage struct {
 	ctx                 context.Context
+	pipeline            string // see transformationMessage.pipeline
 	forkedJobs          []*jobsdb.JobT
 	trackedUsersReports []*trackedusers.UsersReport
 
@@ -3086,7 +3114,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 
 	if proc.limiter.store != nil {
 		defer proc.limiter.store.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
-		defer proc.stats.statStoreStageCount(partition).Count(len(in.statusList))
+		defer proc.stats.statStoreStageCount(partition, in.pipeline).Count(len(in.statusList))
 	}
 
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
@@ -3149,8 +3177,8 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 				return err
 			}
 			proc.logger.Debugn("[Processor] Total jobs written to batch router", logger.NewIntField("jobCount", int64(len(batchDestJobs))))
-			proc.stats.statBatchDestNumOutputEvents(partition).Count(len(batchDestJobs))
-			proc.stats.statDBWriteBatchPayloadBytes(partition).Observe(
+			proc.stats.statBatchDestNumOutputEvents(partition, in.pipeline).Count(len(batchDestJobs))
+			proc.stats.statDBWriteBatchPayloadBytes(partition, in.pipeline).Observe(
 				float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
 			)
 			return nil
@@ -3190,8 +3218,8 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 				return err
 			}
 			proc.logger.Debugn("[Processor] Total jobs written to router", logger.NewIntField("jobCount", int64(len(destJobs))))
-			proc.stats.statDestNumOutputEvents(partition).Count(len(destJobs))
-			proc.stats.statDBWriteRouterPayloadBytes(partition).Observe(
+			proc.stats.statDestNumOutputEvents(partition, in.pipeline).Count(len(destJobs))
+			proc.stats.statDBWriteRouterPayloadBytes(partition, in.pipeline).Observe(
 				float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
 			)
 			return nil
@@ -3291,9 +3319,9 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 	if len(in.procErrorJobsByDestID) > 0 {
 		proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
 	}
-	proc.stats.statDBW(partition).Since(beforeStoreStatus)
+	proc.stats.statDBW(partition, in.pipeline).Since(beforeStoreStatus)
 	proc.logger.Debugn("Processor GW DB Write Complete", logger.NewIntField("totalProcessed", int64(len(statusList))))
-	proc.stats.statGatewayDBW(partition).Count(len(statusList))
+	proc.stats.statGatewayDBW(partition, in.pipeline).Count(len(statusList))
 }
 
 func getStoreSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
