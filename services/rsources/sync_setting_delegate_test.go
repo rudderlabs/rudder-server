@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,8 +31,8 @@ import (
 // on an absence. The check-order test leans on that: steps 1 and 2 must answer
 // ("", nil) even though any database access from this delegate would fail.
 //
-// The DB-backed half - the pin, the advisory lock, the sweep - and the real
-// constructor's config bindings live in sync_setting_delegate_db_test.go.
+// The DB-backed half - the pinning upsert and the sweep - and the real constructor's
+// migration and config bindings live in sync_setting_delegate_db_test.go.
 
 const (
 	testJobRunID  = "job-run-1"
@@ -132,10 +131,16 @@ func newProbeDelegate(t *testing.T) *probeDelegate {
 	}
 }
 
-// pin seeds the cache the way a database read would, so that step 3 answers without
-// a round trip.
+// pin seeds the cache the way a database read would - a row that was just created, so
+// it gets the full maxAge as its TTL - so that step 3 answers without a round trip.
 func (p *probeDelegate) pin(jobRunID string, store bool) {
-	p.cacheDecision(jobRunID, syncSettingEntry{storeErrorResponses: store, createdAt: time.Now()})
+	p.cacheDecision(jobRunID, store, time.Now(), p.maxAge.Load())
+}
+
+// cached is the cache lookup the delegate itself no longer needs: a hit returns the
+// entry, a miss (or an expired entry) returns nil.
+func (p *probeDelegate) cached(jobRunID string) *syncSettingEntry {
+	return p.decisions.Get(jobRunID)
 }
 
 // configPushed marks the first backend-config push as having landed, so that
@@ -265,14 +270,15 @@ func TestSyncSettingDelegateCheckOrder(t *testing.T) {
 			if tc.setup != nil {
 				tc.setup(p)
 			}
-			pinsBefore := maps.Clone(p.decisions)
+			pinBefore := p.cached(testJobRunID)
 
 			text, err := p.GetErrorResponse(context.Background(), testStatKey(), abortedStatus(tc.errorResponse))
 
 			require.NoError(t, err)
 			require.Equal(t, tc.wantText, text)
 			require.Zero(t, p.dials(), "this step must not reach the database")
-			require.Equal(t, pinsBefore, p.decisions, "no step of the check order may mutate the pin cache")
+			require.True(t, pinBefore == p.cached(testJobRunID),
+				"no step of the check order may replace the run's cached decision")
 			if tc.alsoAssert != nil {
 				tc.alsoAssert(t, p)
 			}
@@ -293,7 +299,7 @@ func TestSyncSettingDelegatePropagatesDatabaseErrors(t *testing.T) {
 	require.ErrorIs(t, err, errDBUnreachable)
 	require.Empty(t, text)
 	require.Positive(t, p.dials(), "the pin lookup must actually have tried the database")
-	require.Empty(t, p.decisions, "a failed lookup must not cache anything")
+	require.Nil(t, p.cached(testJobRunID), "a failed lookup must not cache anything")
 }
 
 // TestSyncSettingDelegateWaitsForTheFirstConfigPush pins the startup-window guard: a
@@ -312,7 +318,7 @@ func TestSyncSettingDelegateWaitsForTheFirstConfigPush(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	require.Empty(t, text)
 	require.Zero(t, p.dials(), "no pin may be computed against an empty connection index")
-	require.Empty(t, p.decisions)
+	require.Nil(t, p.cached(testJobRunID))
 }
 
 // TestSyncSettingDelegateEmptyErrorResponse pins the shapes the pipeline writes for "no detail recorded".
@@ -643,7 +649,7 @@ func TestSyncSettingDelegateTelemetry(t *testing.T) {
 			"the operator has to be able to see the misconfiguration")
 	})
 
-	t.Run("an unrecognised envelope emits no counter at all", func(t *testing.T) {
+	t.Run("an unrecognised envelope counts nothing at all", func(t *testing.T) {
 		p := newProbeDelegate(t)
 		p.configPushed()
 		p.conf.Set(captureErrorDetailKey, true)
@@ -653,7 +659,12 @@ func TestSyncSettingDelegateTelemetry(t *testing.T) {
 			abortedStatus(`{"firstAttemptedAt":"2026-08-20T00:00:00.000Z"}`))
 		require.NoError(t, err)
 		require.Empty(t, text)
-		require.Empty(t, p.stats.GetAll(), "nothing captured and nothing clipped means nothing to count")
+		// The suppression counters are created up front, so the series exist from
+		// construction; what must not exist is a count on any of them.
+		for _, m := range p.stats.GetAll() {
+			require.Zerof(t, m.Value, "%s%v was counted, but nothing was captured, clipped or suppressed",
+				m.Name, m.Tags)
+		}
 	})
 
 	t.Run("suppression is counted per record on the scope tag", func(t *testing.T) {
@@ -779,9 +790,9 @@ func TestSyncSettingDelegateSuppressionWarnThrottle(t *testing.T) {
 		}
 		require.Len(t, p.log.blockedWarns(), 1)
 
-		// A sweep that evicts nothing still has to reset the throttle, otherwise a
+		// A sweep that deletes nothing still has to reset the throttle, otherwise a
 		// connection blacklisted for days goes quiet forever after its first line.
-		p.evictExpired(time.Now().Add(-24 * time.Hour))
+		p.resetWarnThrottle()
 		require.Empty(t, p.warned)
 
 		for range 20 {
@@ -812,54 +823,67 @@ func TestSyncSettingDelegateSuppressionWarnThrottle(t *testing.T) {
 	})
 }
 
-// TestSyncSettingDelegateEvictExpired pins the in-memory half of the cleanup sweep: age based, never
-// "the rows I just deleted", because another pod may have won the DELETE.
-func TestSyncSettingDelegateEvictExpired(t *testing.T) {
-	p := newProbeDelegate(t)
-	now := time.Now()
-	p.cacheDecision("old", syncSettingEntry{storeErrorResponses: true, createdAt: now.Add(-48 * time.Hour)})
-	p.cacheDecision("borderline", syncSettingEntry{storeErrorResponses: true, createdAt: now.Add(-24 * time.Hour)})
-	p.cacheDecision("fresh", syncSettingEntry{storeErrorResponses: false, createdAt: now})
+// TestSyncSettingDelegateCacheDecision pins how a decision ages out of memory.
+//
+// There is no sweep over the cache any more: each entry is given the row's own
+// remaining lifetime as its TTL, so it disappears from memory at the moment the row
+// itself becomes eligible for the cleanup DELETE. A row already past maxAge - which
+// every startup loadAll can see, since another pod may not have swept yet - must not be
+// cached at all, or a pod could keep answering from a decision that no longer exists.
+func TestSyncSettingDelegateCacheDecision(t *testing.T) {
+	const maxAge = time.Hour
 
-	p.evictExpired(now.Add(-24 * time.Hour))
+	t.Run("a row inside the retention window is cached", func(t *testing.T) {
+		p := newProbeDelegate(t)
+		p.cacheDecision("fresh", true, time.Now(), maxAge)
+		entry := p.cached("fresh")
+		require.NotNil(t, entry)
+		require.True(t, entry.storeErrorResponses)
 
-	_, ok := p.cachedDecision("old")
-	require.False(t, ok, "a decision older than the cutoff must be evicted")
-	entry, ok := p.cachedDecision("borderline")
-	require.True(t, ok, "the cutoff is exclusive: exactly-at-cutoff survives one more sweep")
-	require.True(t, entry.storeErrorResponses)
-	entry, ok = p.cachedDecision("fresh")
-	require.True(t, ok)
-	require.False(t, entry.storeErrorResponses)
+		p.cacheDecision("fresh-false", false, time.Now().Add(-maxAge/2), maxAge)
+		entry = p.cached("fresh-false")
+		require.NotNil(t, entry, "half way through the window the row is still live")
+		require.False(t, entry.storeErrorResponses, "a decision of false is cached, not treated as a miss")
+	})
 
-	// A sweep on an empty cache is a no-op, not a panic.
-	p.evictExpired(time.Now())
-	p.evictExpired(time.Now())
-	require.Empty(t, p.decisions)
+	t.Run("a row already past maxAge is never cached", func(t *testing.T) {
+		p := newProbeDelegate(t)
+		p.cacheDecision("expired", true, time.Now().Add(-2*maxAge), maxAge)
+		require.Nil(t, p.cached("expired"))
+
+		// Exactly at the cutoff the remaining lifetime is zero, which is not a TTL.
+		p.cacheDecision("borderline", true, time.Now().Add(-maxAge), maxAge)
+		require.Nil(t, p.cached("borderline"))
+	})
+
+	t.Run("the entry expires with the row rather than on its own clock", func(t *testing.T) {
+		p := newProbeDelegate(t)
+		// A row created maxAge-ago-plus-a-moment: it has only that moment left in the
+		// table, so it may only have that moment in memory.
+		p.cacheDecision("expiring", true, time.Now().Add(-maxAge+50*time.Millisecond), maxAge)
+		require.NotNil(t, p.cached("expiring"), "the row is still inside the window here")
+		require.Eventually(t, func() bool { return p.cached("expiring") == nil },
+			30*time.Second, 5*time.Millisecond,
+			"the entry must not outlive the row's own retention")
+	})
 }
 
-// TestSyncSettingDelegateJobRunLockObj pins the advisory lock object id derivation.
-func TestSyncSettingDelegateJobRunLockObj(t *testing.T) {
-	ids := []string{"", "job-run-1", "job-run-2", strings.Repeat("x", 4096), "…unicode…", "0"}
-	for _, id := range ids {
-		obj := jobRunLockObj(id)
-		require.GreaterOrEqual(t, obj, int32(0), "postgres takes an int4; a negative id is still a valid lock but the mask must hold for %q", id)
-		require.NotEqual(t, syncSettingsSetupLockObj, obj,
-			"a run id must never collide with the table-setup lock (%q)", id)
-		require.Equal(t, obj, jobRunLockObj(id), "the derivation must be deterministic")
-	}
-	require.NotEqual(t, jobRunLockObj("job-run-1"), jobRunLockObj("job-run-2"),
-		"distinct ids should normally land on distinct objects")
-}
-
-// TestStaticSyncSettingDelegate pins the two canned delegates.
+// TestStaticSyncSettingDelegate pins the canned delegate the tests and the
+// feature-disabled deployments use.
 func TestStaticSyncSettingDelegate(t *testing.T) {
-	t.Run("the unsupported delegate fails loud and names the component", func(t *testing.T) {
-		text, err := newUnsupportedSyncSettingDelegate("gateway").
+	t.Run("it answers with its canned text", func(t *testing.T) {
+		text, err := NewStaticSyncSettingDelegate("canned", nil).
+			GetErrorResponse(context.Background(), testStatKey(), abortedStatus(`{"response":"ignored"}`))
+		require.NoError(t, err)
+		require.Equal(t, "canned", text)
+	})
+
+	t.Run("it answers with its canned error, which the collector must propagate", func(t *testing.T) {
+		sentinel := errors.New("canned failure")
+		text, err := NewStaticSyncSettingDelegate("unused", sentinel).
 			GetErrorResponse(context.Background(), testStatKey(), abortedStatus(`{"response":"x"}`))
-		require.Error(t, err, "a collector that was never meant to collect failed records must not publish empty text")
-		require.ErrorContains(t, err, "gateway")
-		require.Empty(t, text)
+		require.ErrorIs(t, err, sentinel)
+		require.Equal(t, "unused", text)
 	})
 }
 

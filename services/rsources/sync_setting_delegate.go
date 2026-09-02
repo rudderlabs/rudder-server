@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/cachettl"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -80,7 +81,6 @@ const (
 type syncSettingDelegate struct {
 	log         logger.Logger
 	statFactory stats.Stats
-	conf        *config.Config
 	db          *sql.DB
 
 	// Reloadable knobs, read with .Load() at the point of use.
@@ -95,22 +95,29 @@ type syncSettingDelegate struct {
 	maxAge           config.ValueLoader[time.Duration]
 	cleanupFrequency config.ValueLoader[time.Duration]
 
-	// decisions caches rows of rsources_sync_settings. It only ever holds rows that
+	// decisions caches rows of rsources_sync_settings, each expiring when the row
+	// itself becomes eligible for the cleanup DELETE. It only ever holds rows that
 	// exist in the database - absence is never cached, so a pod that started before
 	// another pod pinned a run adopts that pod's row on its first miss rather than
-	// re-deriving the decision from its own view of the config.
-	decisionsMu sync.RWMutex
-	decisions   map[string]syncSettingEntry
+	// deriving the decision from its own view of the config.
+	decisions *cachettl.Cache[string, *syncSettingEntry]
 
 	// connections is the {sourceID, destinationID} -> enabled index built from this
 	// component's own backend-config subscription, rebuilt wholesale on every push.
+	// captureStats holds that index's pre-created counters, so the hot path never
+	// calls NewTaggedStat.
 	connectionsMu sync.RWMutex
 	connections   map[connectionKey]bool
+	captureStats  map[connectionKey]*captureCounters
 	// configLoaded is closed once the first backend-config push has been indexed, so
 	// that a decision is never computed - and pinned for maxAge - against an empty
 	// index during the startup window.
 	configLoaded     chan struct{}
 	configLoadedOnce sync.Once
+
+	// suppressedStats are the two possible suppression counters, one per scope. The
+	// scope set is closed, so they are all created up front.
+	suppressedStats map[string]stats.Counter
 
 	// warned throttles the blacklist suppression log to once per {jobRunID, scope}.
 	// A storm is exactly when this fires, so per-record logging would be a
@@ -130,15 +137,25 @@ type syncSettingDelegate struct {
 	wg      sync.WaitGroup
 }
 
-// syncSettingEntry is one cached row. createdAt is the database's value, so that the
-// local cache sweep uses the same clock and the same retention as the DELETE.
+// syncSettingEntry is one cached row. Held by pointer so that a cache miss - which
+// must go to the database - is distinguishable from a cached false.
 type syncSettingEntry struct {
 	storeErrorResponses bool
-	createdAt           time.Time
 }
 
 type connectionKey struct {
 	sourceID, destinationID string
+}
+
+// captureCounters are one connection's capture counters, created once per config push
+// rather than per record: NewTaggedStat takes a lock and builds a tag map, and this
+// runs on the router's status-update path for every aborted rETL record.
+//
+// Counts, identifiers and the outcome only: a captured error may echo customer PII and
+// occasionally a secret, so the message body is never logged or tagged.
+type captureCounters struct {
+	captured stats.Counter
+	clipped  stats.Counter
 }
 
 type suppressionKey struct {
@@ -161,7 +178,6 @@ func newDelegate(conf *config.Config, log logger.Logger, statFactory stats.Stats
 	return &syncSettingDelegate{
 		log:                log,
 		statFactory:        statFactory,
-		conf:               conf,
 		db:                 db,
 		enabled:            conf.GetReloadableBoolVar(false, captureErrorDetailKey),
 		maxErrorLength:     conf.GetReloadableIntVar(defaultMaxErrorLength, 1, maxErrorLengthKey),
@@ -169,11 +185,18 @@ func newDelegate(conf *config.Config, log logger.Logger, statFactory stats.Stats
 		blockedWorkspaces:  conf.GetReloadableStringSliceVar(nil, blockedWorkspacesKey),
 		maxAge:             conf.GetReloadableDurationVar(24, time.Hour, syncSettingsMaxAgeKey),
 		cleanupFrequency:   conf.GetReloadableDurationVar(1, time.Hour, syncSettingsCleanupFrequencyKey),
-		decisions:          make(map[string]syncSettingEntry),
+		decisions:          cachettl.New[string, *syncSettingEntry](cachettl.WithNoRefreshTTL),
 		connections:        make(map[connectionKey]bool),
+		captureStats:       make(map[connectionKey]*captureCounters),
 		configLoaded:       make(chan struct{}),
 		warned:             make(map[suppressionKey]struct{}),
 		stop:               make(chan struct{}),
+		suppressedStats: map[string]stats.Counter{
+			blockedScopeConnection: statFactory.NewTaggedStat(rsourcesErrorSuppressed, stats.CountType,
+				stats.Tags{"scope": blockedScopeConnection}),
+			blockedScopeWorkspace: statFactory.NewTaggedStat(rsourcesErrorSuppressed, stats.CountType,
+				stats.Tags{"scope": blockedScopeWorkspace}),
+		},
 	}
 }
 
@@ -201,7 +224,7 @@ func NewSyncSettingDelegate(
 		return nil, fmt.Errorf("rsources sync settings: db setup: %w", err)
 	}
 	d := newDelegate(conf, log, statFactory, db)
-	if err := d.setupTable(ctx); err != nil {
+	if err := d.migrate(conf); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("rsources sync settings: %w", err)
 	}
@@ -281,25 +304,45 @@ func (d *syncSettingDelegate) blocked(sourceID, destinationID, workspaceID strin
 }
 
 // reportCaptured counts one capture outcome. Prometheus aggregates, so a Count(1) per
-// record is the cheapest correct thing to do here and removes the per-publish
-// bookkeeping the collector used to carry.
-//
-// Counts, identifiers and the outcome only: a captured error may echo customer PII and
-// occasionally a secret, so the message body is never logged or tagged.
+// record is the cheapest correct thing to do here.
 func (d *syncSettingDelegate) reportCaptured(key statKey, workspaceID string, captured, clipped bool) {
 	if !captured && !clipped {
 		return
 	}
-	tags := stats.Tags{
-		"sourceId":      key.SourceID,
-		"destinationId": key.DestinationID,
-		"workspaceId":   workspaceID,
-	}
+	c := d.counters(key.SourceID, key.DestinationID, workspaceID)
 	if captured {
-		d.statFactory.NewTaggedStat(rsourcesErrorCaptured, stats.CountType, tags).Count(1)
+		c.captured.Count(1)
 	}
 	if clipped {
-		d.statFactory.NewTaggedStat(rsourcesErrorClipped, stats.CountType, tags).Count(1)
+		c.clipped.Count(1)
+	}
+}
+
+// counters returns the connection's pre-created counters.
+//
+// The miss path only runs for a connection that is not in the current config index -
+// which cannot capture anything in the first place, since step 3 resolved from that
+// same index - so it is a safety net rather than a hot path.
+func (d *syncSettingDelegate) counters(sourceID, destinationID, workspaceID string) *captureCounters {
+	k := connectionKey{sourceID: sourceID, destinationID: destinationID}
+	d.connectionsMu.RLock()
+	c, ok := d.captureStats[k]
+	d.connectionsMu.RUnlock()
+	if ok {
+		return c
+	}
+	return d.newCounters(sourceID, destinationID, workspaceID)
+}
+
+func (d *syncSettingDelegate) newCounters(sourceID, destinationID, workspaceID string) *captureCounters {
+	tags := stats.Tags{
+		"sourceId":      sourceID,
+		"destinationId": destinationID,
+		"workspaceId":   workspaceID,
+	}
+	return &captureCounters{
+		captured: d.statFactory.NewTaggedStat(rsourcesErrorCaptured, stats.CountType, tags),
+		clipped:  d.statFactory.NewTaggedStat(rsourcesErrorClipped, stats.CountType, tags),
 	}
 }
 
@@ -307,9 +350,7 @@ func (d *syncSettingDelegate) reportCaptured(key statKey, workspaceID string, ca
 // {job run, scope} - the blacklist is reached for during a storm, and the log must not
 // scale with the storm.
 func (d *syncSettingDelegate) reportSuppressed(key statKey, workspaceID, scope string) {
-	d.statFactory.NewTaggedStat(rsourcesErrorSuppressed, stats.CountType, stats.Tags{
-		"scope": scope,
-	}).Count(1)
+	d.suppressedStats[scope].Count(1)
 	if !d.shouldWarn(key.jobRunId, scope) {
 		return
 	}
@@ -338,6 +379,9 @@ func (d *syncSettingDelegate) shouldWarn(jobRunID, scope string) bool {
 // It does not need the routines' context to have been cancelled first: closing d.stop
 // wakes them out of their sleep, so Stop returns promptly rather than after a whole
 // cleanup interval. Safe to call more than once.
+//
+// The database closes LAST: the routines run queries against it, so closing it while
+// they are still in flight would fail them on the way out.
 func (d *syncSettingDelegate) Stop() {
 	d.stopMu.Lock()
 	if !d.stopped {
@@ -346,8 +390,8 @@ func (d *syncSettingDelegate) Stop() {
 	}
 	d.stopMu.Unlock()
 
-	_ = d.db.Close()
 	d.wg.Wait()
+	_ = d.db.Close()
 }
 
 // routineStarted registers a background routine with the shutdown WaitGroup, reporting
@@ -416,16 +460,22 @@ func (d *syncSettingDelegate) ConfigSubscriberRoutine(ctx context.Context) error
 // many workspaces, and the connection identity is already globally unique.
 func (d *syncSettingDelegate) indexConnections(workspaces map[string]backendconfig.ConfigT) {
 	index := make(map[connectionKey]bool)
-	for _, wConfig := range workspaces {
+	counters := make(map[connectionKey]*captureCounters)
+	for workspaceID, wConfig := range workspaces {
 		for _, conn := range wConfig.Connections {
 			enabled, _ := misc.MapLookup(
 				conn.Config, "source", "syncSettings", "errorDetailsConfig", "enabled",
 			).(bool)
-			index[connectionKey{sourceID: conn.SourceID, destinationID: conn.DestinationID}] = enabled
+			k := connectionKey{sourceID: conn.SourceID, destinationID: conn.DestinationID}
+			index[k] = enabled
+			// Built here, with the workspace the control plane says owns the
+			// connection, so that the record path never calls NewTaggedStat.
+			counters[k] = d.newCounters(conn.SourceID, conn.DestinationID, workspaceID)
 		}
 	}
 	d.connectionsMu.Lock()
 	d.connections = index
+	d.captureStats = counters
 	d.connectionsMu.Unlock()
 	d.configLoadedOnce.Do(func() { close(d.configLoaded) })
 }
@@ -470,9 +520,9 @@ func (d *syncSettingDelegate) awaitConfig(ctx context.Context) error {
 // staticSyncSettingDelegate answers every question the same way.
 //
 // The SyncSettingDelegate interface takes an unexported type on purpose, so the only
-// real implementation is the one in this package; this is the stand-in for the two
-// cases that do not need it - tests, and the collectors that never collect failed
-// records at all.
+// real implementation is the one in this package; this is the stand-in for callers
+// that need a delegate which decides nothing - tests, and deployments where the
+// feature is switched off entirely.
 type staticSyncSettingDelegate struct {
 	errorResponse string
 	err           error
@@ -482,28 +532,6 @@ type staticSyncSettingDelegate struct {
 // errorResponse and err. Intended for tests.
 func NewStaticSyncSettingDelegate(errorResponse string, err error) SyncSettingDelegate {
 	return &staticSyncSettingDelegate{errorResponse: errorResponse, err: err}
-}
-
-// newUnsupportedSyncSettingDelegate returns the delegate every collector starts with
-// until WithSyncSettingDelegate replaces it.
-//
-// The gateway's collectors and the processor's only ever report Stats, so requiring
-// them to name a delegate would have meant either a compile-time parameter at every
-// call site or a real component - a database connection, a table and a cleanup routine
-// - in processes (the gateway-only pod) that have no use for any of it. Instead they
-// build a collector the ordinary way and get this.
-//
-// It fails loud rather than quiet: if such a collector ever does reach
-// CollectFailedRecords, the very first aborted rETL record returns this error, naming
-// the component, and the strict propagation path aborts the batch - instead of
-// publishing durable failed records with a silently empty error_response.
-func newUnsupportedSyncSettingDelegate(component string) SyncSettingDelegate {
-	return &staticSyncSettingDelegate{
-		err: fmt.Errorf(
-			"the %q stats collector was built without a sync setting delegate and cannot collect failed records",
-			component,
-		),
-	}
 }
 
 func (s *staticSyncSettingDelegate) GetErrorResponse(_ context.Context, _ statKey, _ *jobsdb.JobStatusT) (string, error) {

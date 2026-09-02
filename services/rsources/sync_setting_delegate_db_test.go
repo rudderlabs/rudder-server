@@ -30,8 +30,9 @@ import (
 // answer the same question the same way".
 //
 // The subtests share one container and one table on purpose (a container per case
-// would dominate the runtime); each one uses its own job run ids, and the two
-// table-creation cases drop the table first and rebuild it themselves.
+// would dominate the runtime) and each one uses its own job run ids. The migration
+// case runs first, on the genuinely empty database, and rebuilds the table for the
+// rest.
 
 const dbTestSourceID = "db-src"
 
@@ -64,8 +65,8 @@ func newDelegateDepsWith(
 	conf := config.New()
 	conf.Set("SharedDB.dsn", dsn)
 	conf.Set(captureErrorDetailKey, true)
-	// The advisory lock is only exercised if several racers can hold a connection at
-	// once; the production default of 2 would serialise them in the pool instead.
+	// The upsert race is only real if several racers can be in the database at once;
+	// the production default of 2 would serialise them in the connection pool instead.
 	conf.Set(syncSettingsMaxOpenConnsKey, 12)
 	for _, tweak := range tweaks {
 		tweak(conf)
@@ -81,7 +82,7 @@ func newDelegateDepsWith(
 	return &delegateDeps{conf: conf, stats: statsStore, log: newCapturingLogger(), bc: bc}
 }
 
-// build runs the real constructor: table setup, load-all and the subscription.
+// build runs the real constructor: migration, load-all and the subscription.
 func (deps *delegateDeps) build(ctx context.Context) (*syncSettingDelegate, error) {
 	return NewSyncSettingDelegate(ctx, deps.conf, deps.log, deps.stats, deps.bc)
 }
@@ -91,8 +92,8 @@ type dbDelegate struct {
 	deps *delegateDeps
 }
 
-// The accessors are named away from the embedded struct's own `conf` and `log` fields
-// so that a reader never has to work out which one a selector resolves to.
+// The accessors are named away from the embedded struct's own `log` field so that a
+// reader never has to work out which one a selector resolves to.
 func (d *dbDelegate) cfg() *config.Config         { return d.deps.conf }
 func (d *dbDelegate) logs() *capturingLogger      { return d.deps.log }
 func (d *dbDelegate) statsStore() *memstats.Store { return d.deps.stats }
@@ -117,6 +118,20 @@ func (d *dbDelegate) index(enabled bool) {
 // ask runs the whole check order for one aborted record of the given run.
 func (d *dbDelegate) ask(ctx context.Context, jobRunID string) (string, error) {
 	return d.GetErrorResponse(ctx, d.key(jobRunID), abortedStatus(`{"response":"boom"}`))
+}
+
+// cached is the pin cache lookup: a hit returns the entry, a miss or an entry whose
+// row has aged out returns nil.
+func (d *dbDelegate) cached(jobRunID string) *syncSettingEntry {
+	return d.decisions.Get(jobRunID)
+}
+
+// warnedKeys counts the throttled suppression keys, under the lock the cleanup
+// routine also takes - this is read while that routine is running.
+func (d *dbDelegate) warnedKeys() int {
+	d.warnedMu.Lock()
+	defer d.warnedMu.Unlock()
+	return len(d.warned)
 }
 
 func newDBDelegate(t *testing.T, dsn string, tweaks ...func(*config.Config)) *dbDelegate {
@@ -148,20 +163,29 @@ func rowsFor(t *testing.T, db *sql.DB, jobRunID string) int {
 	return n
 }
 
-func syncSettingsTableCount(t *testing.T, db *sql.DB) int {
+func tableCount(t *testing.T, db *sql.DB, table string) int {
 	t.Helper()
 	var n int
 	require.NoError(t, db.QueryRow(
 		`SELECT count(*) FROM information_schema.tables
-		 WHERE table_schema = current_schema() AND table_name = $1`, syncSettingsTable).Scan(&n))
+		 WHERE table_schema = current_schema() AND table_name = $1`, table).Scan(&n))
 	return n
 }
 
-func dropSyncSettingsTable(t *testing.T, db *sql.DB) {
+// insertPinned writes a row the way another pod would have, at an explicit age.
+//
+// created_at is supplied from this process' clock rather than the database's NOW(), so
+// that the row's age, the cleanup cutoff (computed in Go) and the cache TTL (also
+// computed in Go) are all on one clock and the case does not depend on the container's.
+func insertPinned(t *testing.T, db *sql.DB, jobRunID string, store bool, createdAt time.Time) {
 	t.Helper()
-	_, err := db.Exec(`DROP TABLE IF EXISTS ` + syncSettingsTable)
+	_, err := db.Exec(
+		`INSERT INTO `+syncSettingsTable+` (job_run_id, store_error_responses, created_at)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (job_run_id) DO UPDATE
+		 SET store_error_responses = EXCLUDED.store_error_responses, created_at = EXCLUDED.created_at`,
+		jobRunID, store, createdAt)
 	require.NoError(t, err)
-	require.Zero(t, syncSettingsTableCount(t, db))
 }
 
 func TestSyncSettingDelegateDB(t *testing.T) {
@@ -171,6 +195,51 @@ func TestSyncSettingDelegateDB(t *testing.T) {
 	require.NoError(t, err)
 	dsn := pg.DBDsn
 	ctx := context.Background()
+
+	// First, on the empty database: a deploy rolls many pods at once and they all
+	// migrate against it simultaneously. services/sql-migrator owns that serialisation
+	// (golang-migrate takes a postgres advisory lock keyed on the migrations table), but
+	// nothing in this repository exercises several migrators of one set at once, and the
+	// component would be unbootable if that ever regressed - so this stays, minimal:
+	// build the real constructor concurrently and require every instance to come up.
+	t.Run("instances created concurrently against an empty database all start", func(t *testing.T) {
+		for _, table := range []string{syncSettingsTable, syncSettingsMigrationsTable} {
+			_, err := pg.DB.Exec(`DROP TABLE IF EXISTS ` + table)
+			require.NoError(t, err)
+			require.Zero(t, tableCount(t, pg.DB, table))
+		}
+
+		const instances = 6
+		deps := make([]*delegateDeps, instances)
+		for i := range deps {
+			deps[i] = newDelegateDeps(t, dsn)
+		}
+		built := make([]*syncSettingDelegate, instances)
+		errs := make([]error, instances)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := range instances {
+			wg.Go(func() {
+				<-start
+				built[i], errs[i] = deps[i].build(ctx)
+			})
+		}
+		close(start)
+		wg.Wait()
+
+		for i := range instances {
+			require.NoErrorf(t, errs[i], "instance %d failed to start on a fresh database", i)
+			require.NotNilf(t, built[i], "instance %d", i)
+			built[i].Stop()
+		}
+		require.Equal(t, 1, tableCount(t, pg.DB, syncSettingsTable))
+
+		// The migrated schema is the one the component actually uses.
+		insertPinned(t, pg.DB, "db-migrated", true, time.Now())
+		value, found := storedDecision(t, pg.DB, "db-migrated")
+		require.True(t, found)
+		require.True(t, value)
+	})
 
 	t.Run("a pinned decision survives a restart and is not re-derived", func(t *testing.T) {
 		const jobRunID = "db-restart"
@@ -194,8 +263,8 @@ func TestSyncSettingDelegateDB(t *testing.T) {
 		require.False(t, second.connectionEnabled(dbTestSourceID, testDestID),
 			"the second instance's own index must genuinely disagree")
 
-		entry, cached := second.cachedDecision(jobRunID)
-		require.True(t, cached, "the pin must be loaded at startup, not on first use")
+		entry := second.cached(jobRunID)
+		require.NotNil(t, entry, "the pin must be loaded at startup, not on first use")
 		require.True(t, entry.storeErrorResponses)
 
 		text, err = second.ask(ctx, jobRunID)
@@ -234,6 +303,9 @@ func TestSyncSettingDelegateDB(t *testing.T) {
 	})
 
 	t.Run("concurrent misses on one instance pin exactly once", func(t *testing.T) {
+		// Nothing serialises these any more: every goroutine runs the same single
+		// INSERT ... ON CONFLICT DO UPDATE ... RETURNING, so postgres has to be the one
+		// that ends up with one row and one answer for all of them.
 		const goroutines = 8
 		d := newDBDelegate(t, dsn)
 		d.index(true)
@@ -258,14 +330,20 @@ func TestSyncSettingDelegateDB(t *testing.T) {
 				require.Equalf(t, "boom", texts[i], "goroutine %d saw a different answer", i)
 			}
 			require.Equal(t, 1, rowsFor(t, pg.DB, jobRunID), "round %d must have pinned exactly one row", round)
+			entry := d.cached(jobRunID)
+			require.NotNilf(t, entry, "round %d: the decision must be cached once resolved", round)
+			require.Truef(t, entry.storeErrorResponses, "round %d", round)
 		}
 	})
 
 	t.Run("two instances racing one new run agree on one stored answer", func(t *testing.T) {
 		// The production-normal case: two pods, one database, a brand new job run, and
-		// control-plane views that disagree. Only the advisory lock makes this come out
-		// with a single row and a single answer - a primary key alone would give the
-		// loser a unique violation.
+		// control-plane views that disagree. The upsert is what has to make this come out
+		// with a single row and a single answer - the no-op `DO UPDATE SET job_run_id =
+		// EXCLUDED.job_run_id` touches the conflicting row precisely so that RETURNING
+		// yields the STORED values to the loser instead of nothing. A plain DO NOTHING
+		// would hand the loser an empty result, and no upsert at all would hand it a
+		// unique violation.
 		on := newDBDelegate(t, dsn)
 		on.index(true)
 		off := newDBDelegate(t, dsn)
@@ -304,69 +382,41 @@ func TestSyncSettingDelegateDB(t *testing.T) {
 			}
 			require.Equalf(t, want, texts[0], "round %d: the answer must be the stored one", round)
 
-			// Both caches must now hold that one stored decision.
+			// Both caches must now hold that one stored decision - including the loser's,
+			// which cached what it read back rather than what it had computed.
 			for name, d := range map[string]*dbDelegate{"on": on, "off": off} {
-				entry, cached := d.cachedDecision(jobRunID)
-				require.Truef(t, cached, "round %d: the %s instance did not cache the decision", round, name)
+				entry := d.cached(jobRunID)
+				require.NotNilf(t, entry, "round %d: the %s instance did not cache the decision", round, name)
 				require.Equalf(t, value, entry.storeErrorResponses,
 					"round %d: the %s instance cached something other than the stored row", round, name)
 			}
 		}
 	})
 
-	t.Run("two instances created concurrently against an empty database both start", func(t *testing.T) {
-		// A deploy rolls many pods at once and they all run CREATE TABLE IF NOT EXISTS
-		// against the same database. That statement is not race free in postgres.
-		dropSyncSettingsTable(t, pg.DB)
-
-		const instances = 6
-		deps := make([]*delegateDeps, instances)
-		for i := range deps {
-			deps[i] = newDelegateDeps(t, dsn)
-		}
-		built := make([]*syncSettingDelegate, instances)
-		errs := make([]error, instances)
-		start := make(chan struct{})
-		var wg sync.WaitGroup
-		for i := range instances {
-			wg.Go(func() {
-				<-start
-				built[i], errs[i] = deps[i].build(ctx)
-			})
-		}
-		close(start)
-		wg.Wait()
-
-		for i := range instances {
-			require.NoErrorf(t, errs[i], "instance %d failed to start on a fresh database", i)
-			require.NotNilf(t, built[i], "instance %d", i)
-			built[i].Stop()
-		}
-		require.Equal(t, 1, syncSettingsTableCount(t, pg.DB))
-	})
-
-	t.Run("the sweep deletes and evicts by age and tolerates losing the race", func(t *testing.T) {
+	t.Run("the sweep deletes by age, and cache entries expire with their rows", func(t *testing.T) {
 		const (
-			oldRun   = "db-cleanup-old"
-			freshRun = "db-cleanup-fresh"
+			oldRun      = "db-cleanup-old"
+			expiringRun = "db-cleanup-expiring"
+			freshRun    = "db-cleanup-fresh"
 		)
-		// A row pinned two days ago by some other pod, inserted the way that pod would
-		// have: the sweep's cutoff is the database's clock, not this process'.
-		_, err := pg.DB.Exec(
-			`INSERT INTO `+syncSettingsTable+` (job_run_id, store_error_responses, created_at)
-			 VALUES ($1, true, NOW() - INTERVAL '48 hours')
-			 ON CONFLICT (job_run_id) DO UPDATE SET created_at = EXCLUDED.created_at`, oldRun)
-		require.NoError(t, err)
+		const maxAge = 24 * time.Hour
+		now := time.Now()
+		// Two rows pinned by some other pod: one long past the retention, one with a
+		// couple of seconds of life left in it.
+		insertPinned(t, pg.DB, oldRun, true, now.Add(-2*maxAge))
+		insertPinned(t, pg.DB, expiringRun, true, now.Add(-maxAge+2*time.Second))
 
 		d := newDBDelegate(t, dsn, func(c *config.Config) {
-			c.Set(syncSettingsMaxAgeKey, "24h")
+			c.Set(syncSettingsMaxAgeKey, "24h") // == maxAge; the config reads durations as strings
 			c.Set(syncSettingsCleanupFrequencyKey, "10ms")
 		})
 		d.index(true)
-		// loadAll ran before the out-of-band insert, so adopt it the way a miss would.
+		// loadAll ran before the out-of-band inserts, so adopt them the way a startup
+		// would.
 		require.NoError(t, d.loadAll(ctx))
-		_, cached := d.cachedDecision(oldRun)
-		require.True(t, cached, "the expired row must be in the cache for the eviction to be observable")
+		require.Nil(t, d.cached(oldRun),
+			"a row the sweep is about to delete must not be adopted into memory at all")
+		require.NotNil(t, d.cached(expiringRun), "a row still inside the window is adopted")
 
 		text, err := d.ask(ctx, freshRun)
 		require.NoError(t, err)
@@ -385,24 +435,28 @@ func TestSyncSettingDelegateDB(t *testing.T) {
 			}
 			return n
 		}
+		require.Eventually(t, func() bool { return countRows(oldRun) == 0 },
+			30*time.Second, 10*time.Millisecond, "a row past maxAge must be deleted by the sweep")
 		require.Eventually(t, func() bool {
-			if countRows(oldRun) != 0 {
-				return false
-			}
-			_, stillCached := d.cachedDecision(oldRun)
-			return !stillCached
-		}, 30*time.Second, 10*time.Millisecond, "the expired decision must leave both the table and the cache")
+			return countRows(expiringRun) == 0 && d.cached(expiringRun) == nil
+		}, 30*time.Second, 10*time.Millisecond,
+			"a row must leave the table as it ages past maxAge, and its cache entry must expire with it")
 
 		require.Equal(t, 1, rowsFor(t, pg.DB, freshRun), "a decision inside maxAge must survive the sweep")
-		entry, cached := d.cachedDecision(freshRun)
-		require.True(t, cached, "a decision inside maxAge must survive the cache eviction")
+		entry := d.cached(freshRun)
+		require.NotNil(t, entry, "a decision inside maxAge must stay cached")
 		require.True(t, entry.storeErrorResponses)
 
-		// Another pod (here: this test) deletes the rows out of band. The sweep runs
-		// every 10ms and must keep going without complaining.
+		// Another pod (here: this test) deletes the rows out of band. The sweep must keep
+		// going without complaining. Its other job - resetting the suppression-log
+		// throttle - is what makes a completed iteration observable, so a warn key is
+		// planted and its disappearance is waited for rather than slept through.
 		_, err = pg.DB.Exec(`DELETE FROM ` + syncSettingsTable)
 		require.NoError(t, err)
-		time.Sleep(100 * time.Millisecond) // several more sweeps over an empty table
+		require.True(t, d.shouldWarn("db-cleanup-probe", blockedScopeConnection))
+		require.Eventually(t, func() bool { return d.warnedKeys() == 0 },
+			30*time.Second, 10*time.Millisecond,
+			"the sweep must keep iterating over a table it finds empty")
 
 		cancelSweep()
 		require.NoError(t, <-swept)
@@ -416,8 +470,7 @@ func TestSyncSettingDelegateDB(t *testing.T) {
 		// A is already running and its control plane view says capture is off.
 		a := newDBDelegate(t, dsn)
 		a.index(false)
-		_, cached := a.cachedDecision(jobRunID)
-		require.False(t, cached, "the run must be unknown to A at this point")
+		require.Nil(t, a.cached(jobRunID), "the run must be unknown to A at this point")
 
 		// B starts later - or simply gets the first record - and pins the run to true.
 		b := newDBDelegate(t, dsn)
@@ -431,8 +484,8 @@ func TestSyncSettingDelegateDB(t *testing.T) {
 		text, err = a.ask(ctx, jobRunID)
 		require.NoError(t, err)
 		require.Equal(t, "boom", text, "A must adopt the stored decision, not re-derive it from its own index")
-		entry, cached := a.cachedDecision(jobRunID)
-		require.True(t, cached)
+		entry := a.cached(jobRunID)
+		require.NotNil(t, entry)
 		require.True(t, entry.storeErrorResponses)
 		require.Equal(t, 1, rowsFor(t, pg.DB, jobRunID))
 	})
@@ -534,9 +587,10 @@ func TestSyncSettingDelegateDB(t *testing.T) {
 
 		text, err := d.ask(ctx, "db-after-stop")
 		require.Error(t, err, "a shut down pod must not report an empty capture as success")
-		require.ErrorContains(t, err, "begin transaction",
+		require.ErrorContains(t, err, "pin decision",
 			"the failure must be attributed to the pin lookup, not swallowed into an empty text")
 		require.Empty(t, text)
+		require.Nil(t, d.cached("db-after-stop"), "a failed lookup must not cache anything")
 		require.Zero(t, rowsFor(t, pg.DB, "db-after-stop"), "a failed lookup must not have pinned anything")
 	})
 }
