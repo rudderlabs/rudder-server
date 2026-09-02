@@ -140,14 +140,12 @@ func filterProcessorEnabledWorkspaceConfig(config map[string]ConfigT) map[string
 }
 
 // filterProcessorEnabledDestinations trims a workspace config down to the destinations the
-// processor should see. Destination filtering is this function's ONLY transformation, so it
-// starts from the complete config and every other field survives verbatim. It used to be
-// written the other way round — start from an empty ConfigT and copy an allowlist of fields —
-// which silently dropped every field added to ConfigT after the allowlist was written:
-// Connections (added with #5753) never reached TopicProcessConfig, so the rETL error-capture
-// opt-in resolved by the sync setting delegate (services/rsources/sync_setting_delegate_config.go)
-// resolved against an empty map and failed closed for every connection, with no error anywhere.
-// The field-preservation contract is pinned by TestFilterProcessorEnabledDestinationsPreservesFields.
+// processor should see.
+//
+// Destination filtering is this function's ONLY transformation: it starts from the complete
+// config and every other field survives verbatim, so a field added to ConfigT reaches
+// TopicProcessConfig without being listed here. The contract is pinned by
+// TestFilterProcessorEnabledDestinationsPreservesFields.
 func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	modifiedConfig := config
 	modifiedConfig.Sources = make([]SourceT, 0, len(config.Sources))

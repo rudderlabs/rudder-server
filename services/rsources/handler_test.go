@@ -75,11 +75,19 @@ var _ = Describe("Using sources handler", func() {
 		})
 
 		It("should be able to add and get failed records", func() {
+			// The captured error messages round-trip through the error_response column
+			// verbatim: a structured message stays a string, a message at the cap the
+			// delegate enforces is not truncated any further by the column, and sql
+			// metacharacters land as data because they travel as bind parameters.
+			// A record the delegate captured nothing for reads back as an empty message.
+			records := []FailedRecord{
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 422, Error: `{"message":"invalid email"}`},
+				{Record: []byte(`{"record-2": "id-2"}`), Code: 410, Error: `'; DROP TABLE rsources_failed_keys_v2_records; -- \`},
+				{Record: []byte(`{"record-3": "id-3"}`), Code: 500, Error: strings.Repeat("x", defaultMaxErrorLength)},
+				{Record: []byte(`{"record-4": "id-4"}`), Code: 500},
+			}
 			jobRunId := newJobRunId()
-			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
-				{Record: []byte(`{"record-1": "id-1"}`)},
-				{Record: []byte(`{"record-2": "id-2"}`)},
-			})
+			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, records)
 			jobFilters := JobFilter{
 				SourceID:  []string{"source_id"},
 				TaskRunID: []string{"task_run_id"},
@@ -94,16 +102,36 @@ var _ = Describe("Using sources handler", func() {
 					Sources: []SourceFailedRecords[FailedRecord]{{
 						ID: "source_id",
 						Destinations: []DestinationFailedRecords[FailedRecord]{{
-							ID: "destination_id",
-							Records: []FailedRecord{
-								{Record: []byte(`{"record-1": "id-1"}`)},
-								{Record: []byte(`{"record-2": "id-2"}`)},
-							},
+							ID:      "destination_id",
+							Records: records,
 						}},
 					}},
 				}},
 			}
 			Expect(failedRecords).To(Equal(expcetedRecords), "it should be able to get failed records")
+		})
+
+		It("should read records written before the error_response column as having no message", func() {
+			// During a rolling deploy the other pods still run the previous binary,
+			// whose insert does not mention the column at all. Those rows have to come
+			// back as "no message captured" rather than failing the read.
+			jobRunId := newJobRunId()
+			_, err := resource.db.Exec(
+				`INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id)
+				 VALUES ($1, $2, $3, $4, $5)`,
+				"legacy-id", jobRunId, defaultJobTargetKey.TaskRunID,
+				defaultJobTargetKey.SourceID, defaultJobTargetKey.DestinationID)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = resource.db.Exec(
+				`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code) VALUES ($1, $2, $3)`,
+				"legacy-id", `"rec-old"`, 422)
+			Expect(err).NotTo(HaveOccurred())
+
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, JobFilter{}, noPaging)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failedRecords.Tasks[0].Sources[0].Destinations[0].Records).To(Equal([]FailedRecord{
+				{Record: []byte(`"rec-old"`), Code: 422, Error: ""},
+			}))
 		})
 
 		It("should be able to add and get failed records using pagination", func() {
@@ -163,8 +191,11 @@ var _ = Describe("Using sources handler", func() {
 			expectedRecords := make([]FailedRecord, 7)
 			for i := range records {
 				record := fmt.Appendf(nil, `{"record-%d": "id-%d"}`, i+1, i+1)
-				records[i] = FailedRecord{Record: record, Code: i + 1}
-				expectedRecords[i] = FailedRecord{Record: record, Code: i + 1}
+				// Each record carries its own message, so a batch boundary that lost or
+				// shifted one would be visible rather than silently uniform.
+				message := fmt.Sprintf("message %d", i+1)
+				records[i] = FailedRecord{Record: record, Code: i + 1, Error: message}
+				expectedRecords[i] = FailedRecord{Record: record, Code: i + 1, Error: message}
 			}
 			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, records)
 
@@ -190,13 +221,15 @@ var _ = Describe("Using sources handler", func() {
 		})
 
 		It("should dedup records with same record ids within a single batch", func() {
+			// The duplicates carry different messages, so the dedup's tie-break is
+			// observable: the first occurrence is the one that is stored.
 			jobRunId := newJobRunId()
 			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
-				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
-				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
-				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
-				{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
-				{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1, Error: "first wins"},
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1, Error: "second is dropped"},
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1, Error: "third is dropped"},
+				{Record: []byte(`{"record-2": "id-2"}`), Code: 2, Error: "other message"},
+				{Record: []byte(`{"record-2": "id-2"}`), Code: 2, Error: "other, dropped"},
 			})
 			jobFilters := JobFilter{
 				SourceID:  []string{defaultJobTargetKey.SourceID},
@@ -213,13 +246,13 @@ var _ = Describe("Using sources handler", func() {
 						Destinations: []DestinationFailedRecords[FailedRecord]{{
 							ID: defaultJobTargetKey.DestinationID,
 							Records: []FailedRecord{
-								{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
-								{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
+								{Record: []byte(`{"record-1": "id-1"}`), Code: 1, Error: "first wins"},
+								{Record: []byte(`{"record-2": "id-2"}`), Code: 2, Error: "other message"},
 							},
 						}},
 					}},
 				}},
-			}), "it should return only the unique records once")
+			}), "it should return only the unique records once, keeping the first message")
 		})
 
 		It("should dedup records with same record ids spanning multiple batches", func() {

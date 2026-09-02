@@ -179,14 +179,7 @@ type DestinationFailedRecords[R any] struct {
 type FailedRecord struct {
 	Record json.RawMessage `json:"record"`
 	Code   int             `json:"code"`
-	// ErrorResponse is the final error text RudderStack recorded for the record:
-	// the destination's reply when the destination replied, our own abort reason
-	// otherwise. Empty unless error capture is enabled and the connection opted in.
-	//
-	// The JSON key is `error` - the shared wire contract of the internal v2
-	// failed-records API, which rudder-sources consumes. The column backing it is
-	// named `error_response`.
-	ErrorResponse string `json:"error,omitempty"`
+	Error  string          `json:"error,omitempty"`
 }
 
 // ErrStatusNotFound sentinel error indicating that status cannot be found
