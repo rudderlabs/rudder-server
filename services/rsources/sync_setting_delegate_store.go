@@ -27,19 +27,23 @@ const (
 	syncSettingsCleanupFrequencyKey = "Rsources.syncSettings.cleanupFrequency"
 )
 
-// setupSyncSettingsDBConn opens the component's own connection: the shared database
-// when the deployment has one (the pin has to be visible to every pod of the tenant),
-// the local one otherwise.
-func setupSyncSettingsDBConn(conf *config.Config, statFactory stats.Stats) (*sql.DB, error) {
-	psqlInfo := misc.GetConnectionString(conf, "rsources-sync-settings")
-	if conf.IsSet("SharedDB.dsn") {
-		var err error
-		psqlInfo, err = misc.SetAppNameInDBConnURL(conf.GetStringVar("", "SharedDB.dsn"), "rsources-sync-settings")
-		if err != nil {
-			return nil, fmt.Errorf("setting application name in db conn url: %w", err)
-		}
+// syncSettingsDSN resolves the component's connection string: the shared database when
+// the deployment has one (the pin has to be visible to every pod of the tenant), the
+// local one otherwise.
+func syncSettingsDSN(conf *config.Config) (string, error) {
+	if !conf.IsSet("SharedDB.dsn") {
+		return misc.GetConnectionString(conf, "rsources-sync-settings"), nil
 	}
-	db, err := sql.Open("postgres", psqlInfo)
+	dsn, err := misc.SetAppNameInDBConnURL(conf.GetStringVar("", "SharedDB.dsn"), "rsources-sync-settings")
+	if err != nil {
+		return "", fmt.Errorf("setting application name in db conn url: %w", err)
+	}
+	return dsn, nil
+}
+
+// setupSyncSettingsDBConn opens the component's long-lived pool.
+func setupSyncSettingsDBConn(conf *config.Config, dsn string, statFactory stats.Stats) (*sql.DB, error) {
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("db open: %w", err)
 	}
@@ -52,12 +56,25 @@ func setupSyncSettingsDBConn(conf *config.Config, statFactory stats.Stats) (*sql
 	return db, nil
 }
 
-// migrate creates the component's table through the shared sql-migrator, which already
-// serialises concurrent migrators of the same set - a deploy rolls many pods at once
-// against one database.
-func (d *syncSettingDelegate) migrate(conf *config.Config) error {
+// migrateSyncSettings creates the component's table through the shared sql-migrator,
+// which already serialises concurrent migrators of the same set - a deploy rolls many
+// pods at once against one database.
+//
+// It runs on a throwaway pool of its own, closed before the long-lived one is opened.
+// golang-migrate's postgres driver checks out a dedicated *sql.Conn and only returns it
+// when the migration is Closed; sharing the serving pool would therefore park one of
+// its (two) connections for the process's whole life, leaving the cleanup DELETE and
+// every pin upsert to contend for the survivor.
+func migrateSyncSettings(conf *config.Config, dsn string) error {
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		return fmt.Errorf("db open for migration: %w", err)
+	}
+	defer func() { _ = db.Close() }()
+	db.SetMaxOpenConns(1)
+
 	m := &migrator.Migrator{
-		Handle:                     d.db,
+		Handle:                     db,
 		MigrationsTable:            syncSettingsMigrationsTable,
 		ShouldForceSetLowerVersion: conf.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion"),
 	}
@@ -76,7 +93,7 @@ func (d *syncSettingDelegate) migrate(conf *config.Config) error {
 // is the assumption that breaks.
 func (d *syncSettingDelegate) loadAll(ctx context.Context) error {
 	rows, err := d.db.QueryContext(ctx,
-		`SELECT job_run_id, store_error_responses, created_at FROM `+syncSettingsTable)
+		`SELECT job_run_id, store_error_responses, EXTRACT(EPOCH FROM (NOW() - created_at)) FROM `+syncSettingsTable)
 	if err != nil {
 		return fmt.Errorf("load pinned decisions: %w", err)
 	}
@@ -85,14 +102,14 @@ func (d *syncSettingDelegate) loadAll(ctx context.Context) error {
 	maxAge := d.maxAge.Load()
 	for rows.Next() {
 		var (
-			jobRunID  string
-			store     bool
-			createdAt time.Time
+			jobRunID   string
+			store      bool
+			ageSeconds float64
 		)
-		if err := rows.Scan(&jobRunID, &store, &createdAt); err != nil {
+		if err := rows.Scan(&jobRunID, &store, &ageSeconds); err != nil {
 			return fmt.Errorf("scan pinned decision: %w", err)
 		}
-		d.cacheDecision(jobRunID, store, createdAt, maxAge)
+		d.cacheDecision(jobRunID, store, ageSeconds, maxAge)
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("load pinned decisions: %w", err)
@@ -115,11 +132,11 @@ func (d *syncSettingDelegate) storeErrorResponses(ctx context.Context, key statK
 	if err := d.awaitConfig(ctx); err != nil {
 		return false, err
 	}
-	store, createdAt, err := d.pinDecision(ctx, key)
+	store, ageSeconds, err := d.pinDecision(ctx, key)
 	if err != nil {
 		return false, err
 	}
-	d.cacheDecision(key.jobRunId, store, createdAt, d.maxAge.Load())
+	d.cacheDecision(key.jobRunId, store, ageSeconds, d.maxAge.Load())
 	return store, nil
 }
 
@@ -134,33 +151,39 @@ func (d *syncSettingDelegate) storeErrorResponses(ctx context.Context, key statK
 const syncSettingsUpsert = `INSERT INTO ` + syncSettingsTable + ` (job_run_id, store_error_responses)
 VALUES ($1, $2)
 ON CONFLICT (job_run_id) DO UPDATE SET job_run_id = EXCLUDED.job_run_id
-RETURNING store_error_responses, created_at`
+RETURNING store_error_responses, EXTRACT(EPOCH FROM (NOW() - created_at))`
 
 // pinDecision resolves the run against the current connection index and pins it,
 // unless it is already pinned - in which case the stored decision wins and the value
-// computed here is discarded. created_at comes back from the database so the cache
-// ages entries on the same clock the cleanup DELETE uses.
-func (d *syncSettingDelegate) pinDecision(ctx context.Context, key statKey) (bool, time.Time, error) {
+// computed here is discarded.
+//
+// The row's AGE comes back rather than its timestamp: the cache TTL is then derived
+// from the database's clock, the same one the cleanup cutoff uses, so a cached entry
+// cannot outlive its row (or expire early) because two machines disagree about now.
+func (d *syncSettingDelegate) pinDecision(ctx context.Context, key statKey) (bool, float64, error) {
 	var (
-		store     bool
-		createdAt time.Time
+		store      bool
+		ageSeconds float64
 	)
 	if err := d.db.QueryRowContext(ctx, syncSettingsUpsert,
 		key.jobRunId, d.connectionEnabled(key.SourceID, key.DestinationID),
-	).Scan(&store, &createdAt); err != nil {
-		return false, time.Time{}, fmt.Errorf("pin decision: %w", err)
+	).Scan(&store, &ageSeconds); err != nil {
+		return false, 0, fmt.Errorf("pin decision: %w", err)
 	}
-	return store, createdAt, nil
+	return store, ageSeconds, nil
 }
 
 // cacheDecision stores a decision that is known to exist in the database, expiring it
 // when the row itself becomes eligible for the cleanup DELETE. A row already past
 // maxAge is not cached at all.
 //
+// ageSeconds is the row's age according to the DATABASE, so the entry's lifetime and
+// the row's lifetime are measured against the same clock.
+//
 // The cache is not size-capped: it holds one small entry per rETL sync of the last
 // maxAge, bounded by the same retention as the table.
-func (d *syncSettingDelegate) cacheDecision(jobRunID string, store bool, createdAt time.Time, maxAge time.Duration) {
-	ttl := maxAge - time.Since(createdAt)
+func (d *syncSettingDelegate) cacheDecision(jobRunID string, store bool, ageSeconds float64, maxAge time.Duration) {
+	ttl := maxAge - time.Duration(ageSeconds*float64(time.Second))
 	if ttl <= 0 {
 		return
 	}
@@ -182,8 +205,10 @@ func (d *syncSettingDelegate) CleanupRoutine(ctx context.Context) error {
 	defer d.wg.Done()
 	for {
 		if _, err := d.db.ExecContext(ctx,
-			`DELETE FROM `+syncSettingsTable+` WHERE created_at < $1`,
-			time.Now().Add(-d.maxAge.Load()),
+			// The cutoff is computed by the database, not this process: the cache TTL
+			// is derived from the same clock, so the two cannot drift apart.
+			`DELETE FROM `+syncSettingsTable+` WHERE created_at < NOW() - make_interval(secs => $1)`,
+			d.maxAge.Load().Seconds(),
 		); err != nil {
 			if ctx.Err() != nil || d.stopping() {
 				return nil

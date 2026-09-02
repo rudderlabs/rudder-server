@@ -108,7 +108,7 @@ type syncSettingDelegate struct {
 	// calls NewTaggedStat.
 	connectionsMu sync.RWMutex
 	connections   map[connectionKey]bool
-	captureStats  map[connectionKey]*captureCounters
+	captureStats  map[captureStatKey]*captureCounters
 	// configLoaded is closed once the first backend-config push has been indexed, so
 	// that a decision is never computed - and pinned for maxAge - against an empty
 	// index during the startup window.
@@ -145,6 +145,14 @@ type syncSettingEntry struct {
 
 type connectionKey struct {
 	sourceID, destinationID string
+}
+
+// captureStatKey is the identity of one capture counter series. It carries the
+// workspace as well as the connection so that the tags can only ever be derived from
+// the key - the eager and the lazy path cannot disagree about a series' labels.
+type captureStatKey struct {
+	connectionKey
+	workspaceID string
 }
 
 // captureCounters are one connection's capture counters, created once per config push
@@ -187,7 +195,7 @@ func newDelegate(conf *config.Config, log logger.Logger, statFactory stats.Stats
 		cleanupFrequency:   conf.GetReloadableDurationVar(1, time.Hour, syncSettingsCleanupFrequencyKey),
 		decisions:          cachettl.New[string, *syncSettingEntry](cachettl.WithNoRefreshTTL),
 		connections:        make(map[connectionKey]bool),
-		captureStats:       make(map[connectionKey]*captureCounters),
+		captureStats:       make(map[captureStatKey]*captureCounters),
 		configLoaded:       make(chan struct{}),
 		warned:             make(map[suppressionKey]struct{}),
 		stop:               make(chan struct{}),
@@ -219,15 +227,20 @@ func NewSyncSettingDelegate(
 	statFactory stats.Stats,
 	backendConfig backendconfig.BackendConfig,
 ) (*syncSettingDelegate, error) {
-	db, err := setupSyncSettingsDBConn(conf, statFactory)
+	dsn, err := syncSettingsDSN(conf)
+	if err != nil {
+		return nil, fmt.Errorf("rsources sync settings: %w", err)
+	}
+	// Migration runs and finishes on its own pool before the serving one is opened, so
+	// no connection of the serving pool is ever parked by the migrator.
+	if err := migrateSyncSettings(conf, dsn); err != nil {
+		return nil, fmt.Errorf("rsources sync settings: %w", err)
+	}
+	db, err := setupSyncSettingsDBConn(conf, dsn, statFactory)
 	if err != nil {
 		return nil, fmt.Errorf("rsources sync settings: db setup: %w", err)
 	}
 	d := newDelegate(conf, log, statFactory, db)
-	if err := d.migrate(conf); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("rsources sync settings: %w", err)
-	}
 	if err := d.loadAll(ctx); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("rsources sync settings: %w", err)
@@ -309,7 +322,10 @@ func (d *syncSettingDelegate) reportCaptured(key statKey, workspaceID string, ca
 	if !captured && !clipped {
 		return
 	}
-	c := d.counters(key.SourceID, key.DestinationID, workspaceID)
+	c := d.counters(captureStatKey{
+		connectionKey: connectionKey{sourceID: key.SourceID, destinationID: key.DestinationID},
+		workspaceID:   workspaceID,
+	})
 	if captured {
 		c.captured.Count(1)
 	}
@@ -318,31 +334,42 @@ func (d *syncSettingDelegate) reportCaptured(key statKey, workspaceID string, ca
 	}
 }
 
-// counters returns the connection's pre-created counters.
+// counters returns the connection's counters, creating and memoising them on a miss.
 //
-// The miss path only runs for a connection that is not in the current config index -
-// which cannot capture anything in the first place, since step 3 resolved from that
-// same index - so it is a safety net rather than a hot path.
-func (d *syncSettingDelegate) counters(sourceID, destinationID, workspaceID string) *captureCounters {
-	k := connectionKey{sourceID: sourceID, destinationID: destinationID}
+// A miss happens for a connection this pod's config index does not carry - a run whose
+// pin was adopted from another pod, for instance. That is exactly a storm's shape, so
+// the miss must not call NewTaggedStat per record: it is memoised into the same map
+// under the write lock.
+func (d *syncSettingDelegate) counters(k captureStatKey) *captureCounters {
 	d.connectionsMu.RLock()
 	c, ok := d.captureStats[k]
 	d.connectionsMu.RUnlock()
 	if ok {
 		return c
 	}
-	return d.newCounters(sourceID, destinationID, workspaceID)
+
+	d.connectionsMu.Lock()
+	defer d.connectionsMu.Unlock()
+	if c, ok := d.captureStats[k]; ok { // lost the race to another record
+		return c
+	}
+	c = newCaptureCounters(d.statFactory, k)
+	d.captureStats[k] = c
+	return c
 }
 
-func (d *syncSettingDelegate) newCounters(sourceID, destinationID, workspaceID string) *captureCounters {
+// newCaptureCounters builds one series. The tags come from the key and nowhere else,
+// so a counter created eagerly from the config push and one created lazily from a job
+// status can never end up as two differently-labelled series for the same identity.
+func newCaptureCounters(statFactory stats.Stats, k captureStatKey) *captureCounters {
 	tags := stats.Tags{
-		"sourceId":      sourceID,
-		"destinationId": destinationID,
-		"workspaceId":   workspaceID,
+		"sourceId":      k.sourceID,
+		"destinationId": k.destinationID,
+		"workspaceId":   k.workspaceID,
 	}
 	return &captureCounters{
-		captured: d.statFactory.NewTaggedStat(rsourcesErrorCaptured, stats.CountType, tags),
-		clipped:  d.statFactory.NewTaggedStat(rsourcesErrorClipped, stats.CountType, tags),
+		captured: statFactory.NewTaggedStat(rsourcesErrorCaptured, stats.CountType, tags),
+		clipped:  statFactory.NewTaggedStat(rsourcesErrorClipped, stats.CountType, tags),
 	}
 }
 
@@ -460,7 +487,7 @@ func (d *syncSettingDelegate) ConfigSubscriberRoutine(ctx context.Context) error
 // many workspaces, and the connection identity is already globally unique.
 func (d *syncSettingDelegate) indexConnections(workspaces map[string]backendconfig.ConfigT) {
 	index := make(map[connectionKey]bool)
-	counters := make(map[connectionKey]*captureCounters)
+	counters := make(map[captureStatKey]*captureCounters)
 	for workspaceID, wConfig := range workspaces {
 		for _, conn := range wConfig.Connections {
 			enabled, _ := misc.MapLookup(
@@ -468,9 +495,14 @@ func (d *syncSettingDelegate) indexConnections(workspaces map[string]backendconf
 			).(bool)
 			k := connectionKey{sourceID: conn.SourceID, destinationID: conn.DestinationID}
 			index[k] = enabled
-			// Built here, with the workspace the control plane says owns the
-			// connection, so that the record path never calls NewTaggedStat.
-			counters[k] = d.newCounters(conn.SourceID, conn.DestinationID, workspaceID)
+			if !enabled {
+				// A connection that captures nothing would only ever contribute
+				// zero-valued series - one per connection, per pod, per push.
+				continue
+			}
+			// Built ahead of the records so the hot path never calls NewTaggedStat.
+			sk := captureStatKey{connectionKey: k, workspaceID: workspaceID}
+			counters[sk] = newCaptureCounters(d.statFactory, sk)
 		}
 	}
 	d.connectionsMu.Lock()

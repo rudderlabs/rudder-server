@@ -131,10 +131,10 @@ func newProbeDelegate(t *testing.T) *probeDelegate {
 	}
 }
 
-// pin seeds the cache the way a database read would - a row that was just created, so
-// it gets the full maxAge as its TTL - so that step 3 answers without a round trip.
+// pin seeds the cache the way a database read would - a row of age zero, so it gets the
+// full maxAge as its TTL - so that step 3 answers without a round trip.
 func (p *probeDelegate) pin(jobRunID string, store bool) {
-	p.cacheDecision(jobRunID, store, time.Now(), p.maxAge.Load())
+	p.cacheDecision(jobRunID, store, 0, p.maxAge.Load())
 }
 
 // cached is the cache lookup the delegate itself no longer needs: a hit returns the
@@ -835,12 +835,12 @@ func TestSyncSettingDelegateCacheDecision(t *testing.T) {
 
 	t.Run("a row inside the retention window is cached", func(t *testing.T) {
 		p := newProbeDelegate(t)
-		p.cacheDecision("fresh", true, time.Now(), maxAge)
+		p.cacheDecision("fresh", true, 0, maxAge)
 		entry := p.cached("fresh")
 		require.NotNil(t, entry)
 		require.True(t, entry.storeErrorResponses)
 
-		p.cacheDecision("fresh-false", false, time.Now().Add(-maxAge/2), maxAge)
+		p.cacheDecision("fresh-false", false, (maxAge / 2).Seconds(), maxAge)
 		entry = p.cached("fresh-false")
 		require.NotNil(t, entry, "half way through the window the row is still live")
 		require.False(t, entry.storeErrorResponses, "a decision of false is cached, not treated as a miss")
@@ -848,19 +848,19 @@ func TestSyncSettingDelegateCacheDecision(t *testing.T) {
 
 	t.Run("a row already past maxAge is never cached", func(t *testing.T) {
 		p := newProbeDelegate(t)
-		p.cacheDecision("expired", true, time.Now().Add(-2*maxAge), maxAge)
+		p.cacheDecision("expired", true, (2 * maxAge).Seconds(), maxAge)
 		require.Nil(t, p.cached("expired"))
 
 		// Exactly at the cutoff the remaining lifetime is zero, which is not a TTL.
-		p.cacheDecision("borderline", true, time.Now().Add(-maxAge), maxAge)
+		p.cacheDecision("borderline", true, maxAge.Seconds(), maxAge)
 		require.Nil(t, p.cached("borderline"))
 	})
 
 	t.Run("the entry expires with the row rather than on its own clock", func(t *testing.T) {
 		p := newProbeDelegate(t)
-		// A row created maxAge-ago-plus-a-moment: it has only that moment left in the
-		// table, so it may only have that moment in memory.
-		p.cacheDecision("expiring", true, time.Now().Add(-maxAge+50*time.Millisecond), maxAge)
+		// A row that is a moment short of maxAge old: it has only that moment left in
+		// the table, so it may only have that moment in memory.
+		p.cacheDecision("expiring", true, (maxAge - 50*time.Millisecond).Seconds(), maxAge)
 		require.NotNil(t, p.cached("expiring"), "the row is still inside the window here")
 		require.Eventually(t, func() bool { return p.cached("expiring") == nil },
 			30*time.Second, 5*time.Millisecond,

@@ -202,6 +202,53 @@ func TestSyncSettingDelegateDB(t *testing.T) {
 	// nothing in this repository exercises several migrators of one set at once, and the
 	// component would be unbootable if that ever regressed - so this stays, minimal:
 	// build the real constructor concurrently and require every instance to come up.
+	// The migrator must not keep a connection out of the serving pool. golang-migrate's
+	// postgres driver checks out a dedicated *sql.Conn and only releases it when the
+	// migration is closed, so running it on the serving pool would park one of its two
+	// connections for the process's whole life - leaving the cleanup DELETE and every
+	// pin upsert to fight over the survivor, and failing router status batches on the
+	// strict path whenever a sweep ran long.
+	t.Run("construction leaves the serving pool fully available", func(t *testing.T) {
+		deps := newDelegateDeps(t, dsn, func(c *config.Config) {
+			c.Set(syncSettingsMaxOpenConnsKey, 2) // the production default
+		})
+		d, err := deps.build(ctx)
+		require.NoError(t, err)
+		t.Cleanup(d.Stop)
+
+		require.Zero(t, d.db.Stats().InUse,
+			"the migrator must not still be holding a connection after construction")
+
+		// Both connections must be usable at once: two queries that overlap in time.
+		release := make(chan struct{})
+		errs := make(chan error, 2)
+		for range 2 {
+			go func() {
+				qctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+				conn, err := d.db.Conn(qctx)
+				if err != nil {
+					errs <- err
+					return
+				}
+				defer func() { _ = conn.Close() }()
+				if _, err := conn.ExecContext(qctx, `SELECT 1`); err != nil {
+					errs <- err
+					return
+				}
+				<-release // hold the connection until both have one
+				errs <- nil
+			}()
+		}
+		require.Eventually(t, func() bool { return d.db.Stats().InUse == 2 },
+			30*time.Second, 10*time.Millisecond,
+			"both pooled connections must be checked out at once, so neither is parked by the migrator")
+		close(release)
+		for range 2 {
+			require.NoError(t, <-errs)
+		}
+	})
+
 	t.Run("instances created concurrently against an empty database all start", func(t *testing.T) {
 		for _, table := range []string{syncSettingsTable, syncSettingsMigrationsTable} {
 			_, err := pg.DB.Exec(`DROP TABLE IF EXISTS ` + table)
