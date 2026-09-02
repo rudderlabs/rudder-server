@@ -1,7 +1,6 @@
 package backendconfig
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -61,18 +59,9 @@ func TestV2MapperAgainstFixtures(t *testing.T) {
 			t.Logf("sources %d, destinations %d, connections %d",
 				len(actual.Sources), countDestinations(actual), len(actual.Connections))
 
-			// source enrichment is a rudder-sources concern and is not ported (D2), so the config
-			// of an enrichment category source differs by design: the control plane resolves
-			// account credentials into it, we pass the stored config through. Compared for the
-			// categories that are ported, blanked for the rest - an allowlist, because enrichment
-			// dispatches on a mix of category and definition name
-			// before the source configs are blanked: this one reads origin out of them
-			blankProfilesTableConnectionConfigs(expected)
-			blankProfilesTableConnectionConfigs(&actual)
-			blankUnportedSourceConfigs(expected)
-			blankUnportedSourceConfigs(&actual)
-
-			if diff := cmp.Diff(*expected, actual, fixtureCmpOptions()...); diff != "" {
+			// normalized exactly as the live shadow comparison normalizes, which also makes this
+			// the one place shadowNormalize meets production shaped data
+			if diff := cmp.Diff(shadowNormalize(*expected), shadowNormalize(actual), configCmpOptions()...); diff != "" {
 				t.Errorf("mapped config differs from the v1 capture (-v1 +v2):\n%s", diff)
 			}
 		})
@@ -114,68 +103,10 @@ func fixture(t *testing.T, version string) []byte {
 	return body
 }
 
-// portedSourceCategories are the source categories whose Config the mapper reproduces. Everything
-// else reaches rudder-server enriched by the control plane.
-var portedSourceCategories = map[string]struct{}{"": {}, "webhook": {}}
-
-// blankUnportedSourceConfigs clears the config of every source whose category is not ported. It
-// works on the slice the caller owns, which is fine here: these ConfigT values are the test's own.
-// The shadow mode equivalent must copy first - there the value is the live config.
-func blankUnportedSourceConfigs(config *ConfigT) {
-	for i := range config.Sources {
-		if _, ok := portedSourceCategories[config.Sources[i].SourceDefinition.Category]; !ok {
-			config.Sources[i].Config = nil
-		}
-	}
-}
-
-// blankProfilesTableConnectionConfigs clears the config of connections whose source is a profiles
-// table. B7's clause for those is enrichment dependent and is not ported, so the control plane
-// writes the source's table into them and we do not.
-func blankProfilesTableConnectionConfigs(config *ConfigT) {
-	profilesTableSources := make(map[string]struct{})
-	for _, source := range config.Sources {
-		if jsonparser.GetStringOrEmpty(source.Config, "origin") == "profiles-table" {
-			profilesTableSources[source.ID] = struct{}{}
-		}
-	}
-	for id, connection := range config.Connections {
-		if _, ok := profilesTableSources[connection.SourceID]; ok {
-			connection.Config = nil
-			config.Connections[id] = connection
-		}
-	}
-}
-
 func countDestinations(config ConfigT) int {
 	var count int
 	for _, source := range config.Sources {
 		count += len(source.Destinations)
 	}
 	return count
-}
-
-// fixtureCmpOptions compares the two documents by value rather than by bytes: v1's raw fields
-// arrive as the control plane serialized them, v2's are produced here, so identical configs are
-// almost never identical bytes. Slice order is nondeterministic on both sides, since the mapper
-// builds them by ranging Go maps.
-func fixtureCmpOptions() cmp.Options {
-	return cmp.Options{
-		cmp.Transformer("rawJSON", func(raw json.RawMessage) any {
-			if len(raw) == 0 {
-				return nil
-			}
-			var value any
-			if err := jsonrs.Unmarshal(raw, &value); err != nil {
-				return string(raw)
-			}
-			return value
-		}),
-		cmpopts.SortSlices(func(a, b SourceT) bool { return a.ID < b.ID }),
-		cmpopts.SortSlices(func(a, b DestinationT) bool { return a.ID < b.ID }),
-		cmpopts.SortSlices(func(a, b TransformationT) bool { return a.ID < b.ID }),
-		// A12: the account definition catalogue is namespace global and is handed over whole,
-		// where v1 prunes it to what each workspace references purely to keep its copy small
-		cmpopts.IgnoreFields(ConfigT{}, "AccountDefinitions"),
-	}
 }
