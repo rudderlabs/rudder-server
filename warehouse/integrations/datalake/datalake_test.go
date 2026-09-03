@@ -156,9 +156,7 @@ func TestIntegration(t *testing.T) {
 					}
 
 					userIDFormat := "userId_s3_datalake"
-					uuidFormat := "2023-01-01"
-
-					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat, uuidFormat)
+					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat)
 
 					require.ElementsMatch(t, er["identifies"], whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
 					require.ElementsMatch(t, er["users"], whth.UploadJobUsersRecordsForDatalake(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
@@ -230,9 +228,7 @@ func TestIntegration(t *testing.T) {
 					}
 
 					userIDFormat := "userId_gcs_datalake"
-					uuidFormat := "2023-01-01"
-
-					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat, uuidFormat)
+					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat)
 
 					require.ElementsMatch(t, er["identifies"], whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
 					require.ElementsMatch(t, er["users"], whth.UploadJobUsersRecordsForDatalake(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
@@ -335,9 +331,7 @@ func TestIntegration(t *testing.T) {
 					}
 
 					userIDFormat := "userId_azure_datalake"
-					uuidFormat := "2023-01-01"
-
-					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat, uuidFormat)
+					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat)
 
 					require.ElementsMatch(t, er["identifies"], whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
 					require.ElementsMatch(t, er["users"], whth.UploadJobUsersRecordsForDatalake(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
@@ -1110,7 +1104,7 @@ func verifyGCSJsonPathsRecords(t *testing.T, fm filemanager.FileManager, sourceI
 		"product_track": {"Context_traits", "Metadata"},
 	}
 
-	er := eventRecords(t, fm, namespace, outputFormat, "userId_gcs_datalake", "2023-01-01")
+	er := eventRecords(t, fm, namespace, outputFormat, "userId_gcs_datalake")
 
 	require.ElementsMatch(t, [][]string{
 		{`{"email":"rhedricks@example.com","logins":2,"name":"Richard Hendricks"}`},
@@ -1123,8 +1117,10 @@ func verifyGCSJsonPathsRecords(t *testing.T, fm filemanager.FileManager, sourceI
 	}, er["product_track"])
 }
 
-func eventRecords(t testing.TB, fm filemanager.FileManager, namespace string, outputFormat map[string][]string, userIDFormat, uuidFormat string) map[string][][]string {
+func eventRecords(t testing.TB, fm filemanager.FileManager, namespace string, outputFormat map[string][]string, userIDFormat string) map[string][][]string {
 	t.Helper()
+
+	const uuidFormat = "2023-01-01"
 
 	prefix := "rudder-datalake/" + namespace + "/"
 	ctx := context.Background()
