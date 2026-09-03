@@ -1215,7 +1215,7 @@ func eventRecords(t testing.TB, fm filemanager.FileManager, namespace string, ou
 		// Reorder the data based on the output format
 		outputData := make([][]string, len(data))
 		for i := range data {
-			outputData[i] = make([]string, len(data[i]))
+			outputData[i] = make([]string, len(outputFormat[tableName]))
 		}
 
 		// Find the index of the field in the schema and assign the data to the output data
