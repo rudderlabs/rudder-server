@@ -18,6 +18,7 @@ import (
 	bindata "github.com/golang-migrate/migrate/v4/source/go_bindata"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/sql/migrations"
@@ -182,8 +183,10 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context any) error 
 }
 
 // migrationTimeout bounds each phase of a migration - the connection checkout, the
-// driver setup, and every individual statement.
-const migrationTimeout = time.Minute
+// driver setup, and every individual statement. Overridable through config.
+func migrationTimeout() time.Duration {
+	return config.GetDurationVar(1, time.Minute, "SQLMigrator.timeout")
+}
 
 // getDestinationDriver checks a single connection out of the handle and builds the
 // postgres driver on top of it. Callers MUST Close the returned driver, which is what
@@ -200,7 +203,8 @@ func (m *Migrator) getDestinationDriver() (database.Driver, error) {
 	// timeout instead of hanging it. Safe to cancel on return: the driver does not
 	// retain this context - later statements get their own, derived per call from
 	// StatementTimeout.
-	ctx, cancel := context.WithTimeout(context.Background(), migrationTimeout)
+	timeout := migrationTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	conn, err := m.Handle.Conn(ctx)
 	if err != nil {
@@ -208,7 +212,7 @@ func (m *Migrator) getDestinationDriver() (database.Driver, error) {
 	}
 	driver, err := postgres.WithConnection(ctx, conn, &postgres.Config{
 		MigrationsTable:  m.MigrationsTable,
-		StatementTimeout: migrationTimeout,
+		StatementTimeout: timeout,
 	})
 	if err != nil {
 		_ = conn.Close()
