@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"text/template"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
@@ -180,6 +181,10 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context any) error 
 	return nil
 }
 
+// migrationTimeout bounds each phase of a migration - the connection checkout, the
+// driver setup, and every individual statement.
+const migrationTimeout = time.Minute
+
 // getDestinationDriver checks a single connection out of the handle and builds the
 // postgres driver on top of it. Callers MUST Close the returned driver, which is what
 // returns that connection to the pool.
@@ -190,11 +195,21 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context any) error 
 // life of the process. Building from an explicit connection leaves the driver's `db`
 // nil, so Close releases the connection and nothing else.
 func (m *Migrator) getDestinationDriver() (database.Driver, error) {
-	conn, err := m.Handle.Conn(context.Background())
+	// Bounds the checkout and the driver's setup; StatementTimeout below bounds every
+	// statement the driver runs later. A wedged database fails the caller within the
+	// timeout instead of hanging it. Safe to cancel on return: the driver does not
+	// retain this context - later statements get their own, derived per call from
+	// StatementTimeout.
+	ctx, cancel := context.WithTimeout(context.Background(), migrationTimeout)
+	defer cancel()
+	conn, err := m.Handle.Conn(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("checking out a connection for the migrator: %w", err)
 	}
-	driver, err := postgres.WithConnection(context.Background(), conn, &postgres.Config{MigrationsTable: m.MigrationsTable})
+	driver, err := postgres.WithConnection(ctx, conn, &postgres.Config{
+		MigrationsTable:  m.MigrationsTable,
+		StatementTimeout: migrationTimeout,
+	})
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
