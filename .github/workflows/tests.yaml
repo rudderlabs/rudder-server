@@ -284,6 +284,7 @@ jobs:
         run: make test exclude="/rudder-server/(cluster|jobsdb|integration_test|processor|regulation-worker|router|services|suppression-backup-service|warehouse)"
         env:
           RSERVER_PROCESSOR_ENABLE_CONCURRENT_STORE: "true"
+          WORKSPACE_CONFIG_FIXTURE_PASSPHRASE: ${{ secrets.WORKSPACE_CONFIG_FIXTURE_PASSPHRASE }}
           DOCKERHUB_REGISTRY_MIRROR: 422074288268.dkr.ecr.us-east-1.amazonaws.com/docker-hub
           DOCKERHUB_REGISTRY_MIRROR_USERNAME: ${{ steps.login-ecr.outputs.docker_username_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
           DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}

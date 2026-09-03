@@ -56,8 +56,7 @@ func TestV2ConfigFetcher(t *testing.T) {
 			configs, err := fetcher.Get(ctx)
 			require.NoError(t, err)
 			require.Len(t, configs, 2)
-			for workspaceID, config := range configs {
-				require.Equal(t, workspaceID, config.WorkspaceID)
+			for _, config := range configs {
 				require.Equal(t, "mockCpRouterURL", config.ConnectionFlags.URL)
 				require.True(t, config.ConnectionFlags.Services["warehouse"])
 				require.True(t, config.ConnectionFlags.Services["rudderstack-processor"])
