@@ -2,7 +2,6 @@ package rsources
 
 import (
 	"encoding/json"
-	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -38,24 +37,14 @@ var errorResponseEnvelopeKeys = [...]string{"reason", "response", "Error", "erro
 // (firstAttemptedAt, dontBatch, ...) as if it were the customer's error would be
 // worse than storing nothing.
 func unwrapErrorResponse(errorResponse json.RawMessage) string {
-	if len(errorResponse) == 0 {
-		return ""
-	}
 	parsed := gjson.ParseBytes(errorResponse)
 	if !parsed.IsObject() {
 		return ""
 	}
-	var found [len(errorResponseEnvelopeKeys)]string
-	parsed.ForEach(func(key, value gjson.Result) bool {
-		// An exact switch on the key rather than gjson path lookups: gjson falls
-		// back to a case-insensitive match, which would conflate `Error`/`error`.
-		if i := slices.Index(errorResponseEnvelopeKeys[:], key.Str); i >= 0 {
-			found[i] = value.String()
-		}
-		return true
-	})
-	for _, v := range found {
-		if v != "" {
+	// gjson path lookups are case-sensitive, so `Error` and `error` stay distinct
+	// keys; precedence between them is the order of errorResponseEnvelopeKeys.
+	for _, key := range errorResponseEnvelopeKeys {
+		if v := parsed.Get(key).String(); v != "" {
 			return v
 		}
 	}
