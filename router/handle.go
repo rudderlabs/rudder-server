@@ -528,7 +528,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 				}
 
 				rt.telemetry.failureMetricLock.Lock()
-				if _, ok := rt.telemetry.failuresMetric[event][string(workerJobStatus.status.ErrorResponse)]; !ok {
+				if _, ok := rt.telemetry.failuresMetric[event]; !ok {
 					rt.telemetry.failuresMetric[event] = make(map[string]int)
 				}
 				rt.telemetry.failuresMetric[event][string(workerJobStatus.status.ErrorResponse)] += 1
