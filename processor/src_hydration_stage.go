@@ -46,6 +46,10 @@ type srcHydrationMessage struct {
 	jobList                       []*jobsdb.JobT
 	sourceDupStats                map[dupStatKey]int
 	dedupKeys                     map[string]struct{}
+	// earlyDestinationFilter is a per-batch snapshot of Processor.earlyDestinationFilter taken
+	// once in preprocessStage, so that every stage this batch passes through observes the same
+	// value even if the reloadable config flips mid-flight.
+	earlyDestinationFilter bool
 }
 
 func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMessage) (*preTransformationMessage, error) {
@@ -181,6 +185,7 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 		sourceDupStats:                message.sourceDupStats,
 		dedupKeys:                     message.dedupKeys,
 		srcHydrationEnabledMap:        srcHydrationEnabledMap,
+		earlyDestinationFilter:        message.earlyDestinationFilter,
 	}, nil
 }
 

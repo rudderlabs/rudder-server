@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	kitjsonparser "github.com/rudderlabs/rudder-go-kit/jsonparser"
@@ -77,16 +78,45 @@ func (d v2SourceDefinition) toV1(name string) SourceDefinitionT {
 }
 
 // v2DestinationDefinition is an entry of the destinationDefinitions catalogue.
+//
+// The embedded Config is the definition as it stands today - destConfig, secretKeys, includeKeys
+// and the rest. Versions holds the majors it has moved on from, keyed by major number, each with
+// the Config of its own day; a destination pinned to one of those is given that Config instead.
+//
+// Both Version and Versions are read only to make that choice: toV1 leaves them behind, exactly as
+// the control plane does with the definition it delivers.
 type v2DestinationDefinition struct {
 	DestinationDefinitionT
 	v2DefinitionMeta
+	Version  string                              `json:"version"`
+	Versions map[string]v2DefinitionArchiveEntry `json:"versions"`
 }
 
-// toV1 returns the definition as v1 spells it, named after the key it is catalogued under.
-func (d v2DestinationDefinition) toV1(name string) DestinationDefinitionT {
+// v2DefinitionArchiveEntry is one superseded major of a destination definition.
+type v2DefinitionArchiveEntry struct {
+	Config map[string]any `json:"config"`
+}
+
+// toV1 returns the definition as v1 spells it, for a destination pinned to the given version:
+// named after the key it is catalogued under, and carrying the config of the major that version
+// resolves to rather than whichever the definition is on now. errUnknownVersion says the pinned
+// major has no config to serve, which is the caller's cue to drop the destination.
+//
+// The major it resolved to comes back with it, error or not: it is what the destination itself is
+// stamped with, and the two must name the same one.
+//
+// The config is copied, since the catalogue it came from is mapped against on every re-map and a
+// consumer writing a key into it would be writing into the cache. Nested members still alias it.
+func (d v2DestinationDefinition) toV1(name string, version *int) (DestinationDefinitionT, int, error) {
+	major := resolveDefinitionMajor(version)
+	config, err := d.configFor(major)
+	if err != nil {
+		return DestinationDefinitionT{}, major, err
+	}
 	definition := d.DestinationDefinitionT
 	definition.Name = name
-	return definition
+	definition.Config = maps.Clone(config)
+	return definition, major, nil
 }
 
 // v2AccountDefinition is an entry of the accountDefinitions catalogue. Unlike the other two,
@@ -96,10 +126,13 @@ type v2AccountDefinition struct {
 	v2DefinitionMeta
 }
 
-// toV1 returns the definition as v1 spells it, named after the key it is catalogued under.
+// toV1 returns the definition as v1 spells it, named after the key it is catalogued under. Its
+// config is copied: the same catalogue entry is handed out on every re-map, so a consumer writing
+// a key into it would be writing into the cache.
 func (d v2AccountDefinition) toV1(name string) AccountDefinition {
 	definition := d.AccountDefinition
 	definition.Name = name
+	definition.Config = maps.Clone(definition.Config)
 	return definition
 }
 

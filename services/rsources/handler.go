@@ -221,7 +221,8 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 	params := []any{pq.Array(ids)}
 	var limit string
 	if paging.Size > 0 {
-		filters = filters + fmt.Sprintf(` AND r.id >= $%[1]d AND r.record_id > $%[2]d`, len(params)+1, len(params)+2)
+		// row-value comparison: everything strictly after the cursor in (id, record_id) order
+		filters = filters + fmt.Sprintf(` AND (r.id, r.record_id) > ($%[1]d, $%[2]d)`, len(params)+1, len(params)+2)
 		params = append(params, nextPageToken.ID, nextPageToken.RecordID)
 		limit = fmt.Sprintf(`LIMIT %d`, paging.Size)
 	}

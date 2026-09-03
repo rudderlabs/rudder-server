@@ -113,7 +113,9 @@ func (c *ConfigT) destinationsBySourceType() map[string]map[string]*DestinationT
 // A replay does not have to name a source and a destination that were ever connected, so the
 // instance for that exact source may not exist. In that case the first source type in ascending
 // order is taken: an arbitrary choice, but a fixed one, where reading the destination out of a map
-// keyed by id alone would return whichever instance the map happened to hold.
+// keyed by id alone would return whichever instance the map happened to hold. Since that instance
+// was filtered for a different source type, some source-type-specific config keys are stripped from
+// a copy, so that we can operate against a "safe" config.
 func destinationForSourceType(byType map[string]*DestinationT, sourceType string) (*DestinationT, bool) {
 	if destination, ok := byType[sourceType]; ok {
 		return destination, true
@@ -127,5 +129,21 @@ func destinationForSourceType(byType map[string]*DestinationT, sourceType string
 			fallbackType, fallback = candidate, destination
 		}
 	}
-	return fallback, fallback != nil
+	if fallback == nil {
+		return nil, false
+	}
+	stripped := *fallback
+	stripped.Config = lo.OmitByKeys(fallback.Config, sourceTypeSpecificConfigKeys)
+	return &stripped, true
+}
+
+// sourceTypeSpecificConfigKeys are config keys whose values are specific to the source type the
+// destination instance was filtered for, so they are stripped from a fallback instance of a
+// different source type: when the replay is for a connection that never existed, we assume no
+// consent management filtering or event filtering based on connection mode should happen.
+var sourceTypeSpecificConfigKeys = []string{
+	"connectionMode",
+	"consentManagement",
+	"oneTrustCookieCategories",
+	"ketchConsentPurposes",
 }
