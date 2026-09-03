@@ -2,6 +2,7 @@ package migrator
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -53,6 +54,7 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 	if err != nil {
 		return fmt.Errorf("destination driver for %q migrator: %w", migrationsDir, err)
 	}
+	defer func() { _ = destinationDriver.Close() }()
 
 	sourceDriver, err := iofs.New(migrations.FS, migrationsDir)
 	if err != nil {
@@ -146,6 +148,7 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context any) error 
 	if err != nil {
 		return fmt.Errorf("create migration destination: %w", err)
 	}
+	defer func() { _ = destinationDriver.Close() }()
 
 	// run the migration scripts
 	migration, err := migrate.NewWithInstance("go-bindata", sourceDriver, "postgres", destinationDriver)
@@ -177,8 +180,26 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context any) error 
 	return nil
 }
 
+// getDestinationDriver checks a single connection out of the handle and builds the
+// postgres driver on top of it. Callers MUST Close the returned driver, which is what
+// returns that connection to the pool.
+//
+// postgres.WithInstance would do the checkout itself, but it also stores the *sql.DB on
+// the driver, and the driver's Close then closes the caller's whole pool - so nobody
+// could safely close it, and the connection it had checked out stayed InUse for the
+// life of the process. Building from an explicit connection leaves the driver's `db`
+// nil, so Close releases the connection and nothing else.
 func (m *Migrator) getDestinationDriver() (database.Driver, error) {
-	return postgres.WithInstance(m.Handle, &postgres.Config{MigrationsTable: m.MigrationsTable})
+	conn, err := m.Handle.Conn(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("checking out a connection for the migrator: %w", err)
+	}
+	driver, err := postgres.WithConnection(context.Background(), conn, &postgres.Config{MigrationsTable: m.MigrationsTable})
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return driver, nil
 }
 
 func latestSourceVersion(sourceDriver source.Driver) (int, error) {

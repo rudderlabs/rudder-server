@@ -56,25 +56,13 @@ func setupSyncSettingsDBConn(conf *config.Config, dsn string, statFactory stats.
 	return db, nil
 }
 
-// migrateSyncSettings creates the component's table through the shared sql-migrator,
-// which already serialises concurrent migrators of the same set - a deploy rolls many
-// pods at once against one database.
-//
-// It runs on a throwaway pool of its own, closed before the long-lived one is opened.
-// golang-migrate's postgres driver checks out a dedicated *sql.Conn and only returns it
-// when the migration is Closed; sharing the serving pool would therefore park one of
-// its (two) connections for the process's whole life, leaving the cleanup DELETE and
-// every pin upsert to contend for the survivor.
-func migrateSyncSettings(conf *config.Config, dsn string) error {
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		return fmt.Errorf("db open for migration: %w", err)
-	}
-	defer func() { _ = db.Close() }()
-	db.SetMaxOpenConns(1)
-
+// migrate creates the component's table through the shared sql-migrator, which already
+// serialises concurrent migrators of the same set - a deploy rolls many pods at once
+// against one database - and which releases the connection it borrows as soon as the
+// migration is done.
+func (d *syncSettingDelegate) migrate(conf *config.Config) error {
 	m := &migrator.Migrator{
-		Handle:                     db,
+		Handle:                     d.db,
 		MigrationsTable:            syncSettingsMigrationsTable,
 		ShouldForceSetLowerVersion: conf.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion"),
 	}
