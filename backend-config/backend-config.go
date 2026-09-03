@@ -139,15 +139,19 @@ func filterProcessorEnabledWorkspaceConfig(config map[string]ConfigT) map[string
 	return filterConfig
 }
 
-// filterProcessorEnabledDestinations trims a workspace config down to the destinations the
-// processor should see.
+// filterProcessorEnabledDestinations trims a workspace config down to what the processor
+// should see: destinations and connections that are processor-enabled.
 //
-// Destination filtering is this function's ONLY transformation: it starts from the complete
-// config and every other field survives verbatim, so a field added to ConfigT reaches
-// TopicProcessConfig without being listed here. The contract is pinned by
-// TestFilterProcessorEnabledDestinationsPreservesFields.
+// It starts from the complete config and copies it, so a field added to ConfigT reaches
+// TopicProcessConfig without being listed here; only the two fields filtered below are
+// transformed. The contract is pinned by TestFilterProcessorEnabledDestinationsPreservesFields.
 func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	modifiedConfig := config
+	if config.Connections != nil { // lo.OmitBy would turn a nil map into an empty one
+		modifiedConfig.Connections = lo.OmitBy(config.Connections, func(_ string, connection Connection) bool {
+			return !connection.ProcessorEnabled
+		})
+	}
 	modifiedConfig.Sources = make([]SourceT, 0, len(config.Sources))
 	for _, source := range config.Sources {
 		var destinations []DestinationT

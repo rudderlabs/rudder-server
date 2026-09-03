@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -363,10 +364,13 @@ func TestConfigUpdate(t *testing.T) {
 
 		bc.configUpdate(ctx)
 		require.True(t, bc.initialized)
-		// Connections ride TopicProcessConfig unfiltered: the processor's rETL error-capture
-		// opt-in resolves off them (processor/error_capture_optin.go).
+		// Connections ride TopicProcessConfig filtered by ProcessorEnabled, the same way
+		// destinations are: the processor only ever acts on the ones it processes.
 		filteredWithConnections := sampleFilteredSources
-		filteredWithConnections.Connections = sampleConfigWithConnection.Connections
+		filteredWithConnections.Connections = lo.OmitBy(sampleConfigWithConnection.Connections,
+			func(_ string, c Connection) bool { return !c.ProcessorEnabled })
+		require.Len(t, filteredWithConnections.Connections, 1,
+			"the fixture must carry both a processor-enabled and a processor-disabled connection")
 		require.Equal(t, (<-chProcess).Data, map[string]ConfigT{workspaces: filteredWithConnections})
 		require.Equal(t, (<-chBackend).Data, map[string]ConfigT{workspaces: sampleConfigWithConnection})
 		require.Equal(t, bc.curSourceJSON[workspaces].Connections, sampleConfigWithConnection.Connections)
@@ -676,14 +680,14 @@ func (m *mockIdentifier) ID() string                  { return m.key }
 func (m *mockIdentifier) BasicAuth() (string, string) { return m.token, "" }
 func (*mockIdentifier) Type() deployment.Type         { return "mockType" }
 
-// TestFilterProcessorEnabledDestinationsPreservesFields pins the contract that destination
-// filtering is filterProcessorEnabledDestinations' ONLY transformation. The function used to
-// rebuild ConfigT from an allowlist of fields, which silently dropped every field added after
-// the allowlist was written — Connections never reached TopicProcessConfig, so the processor's
-// rETL error-capture opt-in resolved against an empty map and failed closed for every
-// connection. The reflection sweep forces this fixture to grow with the struct: add a field to
-// ConfigT without setting it here and the test fails, demanding a conscious decision instead
-// of a silent drop.
+// TestFilterProcessorEnabledDestinationsPreservesFields pins which fields
+// filterProcessorEnabledDestinations transforms and which it must pass through untouched.
+// Exactly two are transformed - Sources' destinations and Connections, both filtered by their
+// processor-enabled flag; everything else survives verbatim.
+//
+// The reflection sweep forces this fixture to grow with the struct: add a field to ConfigT
+// without setting it here and the test fails, demanding a conscious decision instead of a
+// silent drop.
 func TestFilterProcessorEnabledDestinationsPreservesFields(t *testing.T) {
 	config := ConfigT{
 		EnableMetrics: true,
@@ -704,14 +708,23 @@ func TestFilterProcessorEnabledDestinationsPreservesFields(t *testing.T) {
 		Settings:    Settings{EventAuditEnabled: true},
 		UpdatedAt:   time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC),
 		Credentials: map[string]Credential{"cred-1": {Key: "k", Value: "v"}},
-		Connections: map[string]Connection{"conn-1": {
-			SourceID:      "src-1",
-			DestinationID: "dest-enabled",
-			Enabled:       true,
-			Config: map[string]any{"source": map[string]any{"syncSettings": map[string]any{
-				"errorDetailsConfig": map[string]any{"enabled": true},
-			}}},
-		}},
+		Connections: map[string]Connection{
+			"conn-enabled": {
+				SourceID:      "src-1",
+				DestinationID: "dest-enabled",
+				Enabled:       true,
+				Config: map[string]any{"source": map[string]any{"syncSettings": map[string]any{
+					"errorDetailsConfig": map[string]any{"enabled": true},
+				}}},
+				ProcessorEnabled: true,
+			},
+			"conn-disabled": {
+				SourceID:         "src-1",
+				DestinationID:    "dest-disabled",
+				Enabled:          true,
+				ProcessorEnabled: false,
+			},
+		},
 		Accounts:           map[string]Account{"acct-1": {ID: "acct-1"}},
 		AccountDefinitions: map[string]AccountDefinition{"acctdef-1": {Name: "acctdef-1"}},
 	}
@@ -725,13 +738,53 @@ func TestFilterProcessorEnabledDestinationsPreservesFields(t *testing.T) {
 
 	got := filterProcessorEnabledDestinations(config)
 
-	// The one intended transformation: processor-disabled destinations are dropped.
+	// Transformation 1: processor-disabled destinations are dropped.
 	require.Len(t, got.Sources, 1)
 	require.Len(t, got.Sources[0].Destinations, 1)
 	require.Equal(t, "dest-enabled", got.Sources[0].Destinations[0].ID)
 
+	// Transformation 2: processor-disabled connections are dropped.
+	require.Len(t, got.Connections, 1)
+	require.Contains(t, got.Connections, "conn-enabled")
+	require.NotContains(t, got.Connections, "conn-disabled")
+
+	// The input is not mutated: filtering builds new collections.
+	require.Len(t, config.Connections, 2, "the caller's config must not be filtered in place")
+	require.Len(t, config.Sources[0].Destinations, 2)
+
 	// Everything else survives verbatim.
 	want := config
 	want.Sources = got.Sources
+	want.Connections = got.Connections
 	require.Equal(t, want, got)
+}
+
+// TestFilterProcessorEnabledConnections is the behaviour half of the connection filter:
+// the processor must see the connections it processes and none of the others.
+func TestFilterProcessorEnabledConnections(t *testing.T) {
+	t.Run("enabled connections are kept, disabled ones dropped", func(t *testing.T) {
+		got := filterProcessorEnabledDestinations(ConfigT{
+			Connections: map[string]Connection{
+				"keep": {SourceID: "s1", DestinationID: "d1", ProcessorEnabled: true},
+				"drop": {SourceID: "s2", DestinationID: "d2", ProcessorEnabled: false},
+			},
+		})
+		require.Equal(t, map[string]Connection{
+			"keep": {SourceID: "s1", DestinationID: "d1", ProcessorEnabled: true},
+		}, got.Connections)
+	})
+
+	t.Run("a nil connections map stays nil rather than becoming empty", func(t *testing.T) {
+		// Only so that a config carrying no connections at all round-trips unchanged
+		// through every whole-struct comparison in this package.
+		require.Nil(t, filterProcessorEnabledDestinations(ConfigT{}).Connections)
+	})
+
+	t.Run("every connection disabled yields an empty map, not nil", func(t *testing.T) {
+		got := filterProcessorEnabledDestinations(ConfigT{
+			Connections: map[string]Connection{"drop": {ProcessorEnabled: false}},
+		})
+		require.NotNil(t, got.Connections)
+		require.Empty(t, got.Connections)
+	})
 }
