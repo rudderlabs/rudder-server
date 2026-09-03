@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
@@ -330,8 +329,9 @@ func (rt *Handle) Setup(
 		rt.adaptiveLimit = func(limit int64) int64 { return limit }
 	}
 
-	rruntime.Go(func() {
+	rt.backgroundGroup.Go(func() error {
 		rt.backendConfigSubscriber()
+		return nil
 	})
 }
 
@@ -464,7 +464,7 @@ func (rt *Handle) statusInsertLoop() {
 }
 
 func (rt *Handle) backendConfigSubscriber() {
-	ch := rt.backendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
+	ch := rt.backendConfig.Subscribe(rt.backgroundCtx, backendconfig.TopicBackendConfig)
 	for configEvent := range ch {
 		destinationsMap := map[string]*routerutils.DestinationWithSources{}
 		connectionsMap := map[types.SourceDest]types.ConnectionWithID{}
