@@ -28,7 +28,11 @@ var (
 	rudderIsolatedTables                     = sliceToMap([]string{"users", "identifies"})
 	sourceCategoriesToUseRecordID            = sliceToMap([]string{"cloud", "singer-protocol"})
 	identityEnabledWarehouses                = sliceToMap([]string{whutils.SNOWFLAKE, whutils.BQ})
-	destinationSupportJSONPathAsPartOfConfig = sliceToMap([]string{whutils.POSTGRES, whutils.RS, whutils.SNOWFLAKE, whutils.SnowpipeStreaming, whutils.BQ, whutils.BQStreamAllEvents, whutils.CLICKHOUSE})
+	destinationSupportJSONPathAsPartOfConfig = sliceToMap([]string{
+		whutils.POSTGRES, whutils.RS, whutils.SNOWFLAKE, whutils.SnowpipeStreaming,
+		whutils.BQ, whutils.BQStreamAllEvents, whutils.CLICKHOUSE,
+		whutils.GCSDatalake, whutils.S3Datalake, whutils.AzureDatalake,
+	})
 
 	supportedJSONPathPrefixes     = []string{"track.", "identify.", "page.", "screen.", "alias.", "group.", "extract."}
 	fullEventColumnTypeByDestType = map[string]string{
