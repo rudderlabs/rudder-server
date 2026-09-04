@@ -2,7 +2,6 @@ package transformer
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -14,17 +13,34 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
+func newTestFeaturesService(features *featuresPayload) *featuresService {
+	handler := &featuresService{
+		logger:   logger.NewLogger(),
+		waitChan: make(chan struct{}),
+		options: FeaturesServiceOptions{
+			PollInterval:             time.Duration(1),
+			FeaturesRetryMaxAttempts: 1,
+		},
+		client: &http.Client{},
+	}
+	handler.features.Store(features)
+	return handler
+}
+
+func parseTestFeatures(rawFeatures string) *featuresPayload {
+	features, err := parseFeatures([]byte(rawFeatures))
+	Expect(err).ToNot(HaveOccurred())
+	return features
+}
+
 var _ = Describe("Transformer features", func() {
 	Context("Transformer features service", func() {
+		It("defaultTransformerFeatures must advertise a non-deprecated source transformer version", func() {
+			Expect(defaultTransformerFeatures.sourceTransformerVersion()).To(Equal(V2))
+		})
+
 		It("handler should wait till features are not fetched", func() {
-			handler := &featuresService{
-				logger:   logger.NewLogger(),
-				waitChan: make(chan struct{}),
-				options: FeaturesServiceOptions{
-					PollInterval:             time.Duration(1),
-					FeaturesRetryMaxAttempts: 1,
-				},
-			}
+			handler := newTestFeaturesService(defaultTransformerFeatures)
 
 			Consistently(func() bool {
 				select {
@@ -37,43 +53,19 @@ var _ = Describe("Transformer features", func() {
 		})
 
 		It("before features are fetched, SourceTransformerVersion should return v2(default)", func() {
-			handler := &featuresService{
-				features: json.RawMessage(defaultTransformerFeatures),
-				logger:   logger.NewLogger(),
-				waitChan: make(chan struct{}),
-				options: FeaturesServiceOptions{
-					PollInterval:             time.Duration(1),
-					FeaturesRetryMaxAttempts: 1,
-				},
-			}
+			handler := newTestFeaturesService(defaultTransformerFeatures)
 
 			Expect(handler.SourceTransformerVersion()).To(Equal(V2))
 		})
 
 		It("before features are fetched, TransformerProxyVersion should return v0", func() {
-			handler := &featuresService{
-				features: json.RawMessage(defaultTransformerFeatures),
-				logger:   logger.NewLogger(),
-				waitChan: make(chan struct{}),
-				options: FeaturesServiceOptions{
-					PollInterval:             time.Duration(1),
-					FeaturesRetryMaxAttempts: 1,
-				},
-			}
+			handler := newTestFeaturesService(defaultTransformerFeatures)
 
 			Expect(handler.TransformerProxyVersion()).To(Equal(V0))
 		})
 
 		It("before features are fetched, defaultTransformerFeatures must be served", func() {
-			handler := &featuresService{
-				features: json.RawMessage(defaultTransformerFeatures),
-				logger:   logger.NewLogger(),
-				waitChan: make(chan struct{}),
-				options: FeaturesServiceOptions{
-					PollInterval:             time.Duration(1),
-					FeaturesRetryMaxAttempts: 1,
-				},
-			}
+			handler := newTestFeaturesService(defaultTransformerFeatures)
 
 			Expect(handler.RouterTransform("MARKETO")).To(BeTrue())
 			Expect(handler.RouterTransform("HS")).To(BeTrue())
@@ -83,38 +75,59 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.SourceTransformerVersion()).To(Equal(V2))
 		})
 
-		It("if transformer returns 404, features should be same as defaultTransformerFeatures", func() {
-			transformerServer := httptest.NewServer(
-				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					http.Error(w, "not found error", http.StatusNotFound)
-				}))
+		It("if transformer returns a non-200 status (404 included), features should not be considered fetched", func() {
+			for _, status := range []int{http.StatusNotFound, http.StatusInternalServerError} {
+				transformerServer := httptest.NewServer(
+					http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						http.Error(w, "error", status)
+					}))
+				DeferCleanup(transformerServer.Close)
 
-			handler := NewFeaturesService(context.TODO(), config.Default, FeaturesServiceOptions{
-				PollInterval:             time.Duration(1),
-				TransformerURL:           transformerServer.URL,
-				FeaturesRetryMaxAttempts: 1,
-			})
+				handler := newTestFeaturesService(defaultTransformerFeatures)
+				handler.options.TransformerURL = transformerServer.URL
 
-			<-handler.Wait()
+				Expect(handler.makeFeaturesFetchCall()).To(MatchError(ContainSubstring("unexpected response status")))
 
-			Expect(handler.RouterTransform("MARKETO")).To(BeTrue())
-			Expect(handler.RouterTransform("HS")).To(BeTrue())
-			Expect(handler.RouterTransform("ACTIVE_CAMPAIGN")).To(BeFalse())
-			Expect(handler.RouterTransform("ALGOLIA")).To(BeFalse())
-			Expect(handler.SourceTransformerVersion()).To(Equal(V2))
+				ctx, cancel := context.WithCancel(context.Background())
+				DeferCleanup(cancel)
+				go handler.syncTransformerFeatureJson(ctx)
+
+				Consistently(func() bool {
+					select {
+					case <-handler.Wait():
+						return true
+					default:
+						return false
+					}
+				}, 500*time.Millisecond, 10*time.Millisecond).Should(BeFalse())
+				Expect(handler.RouterTransform("MARKETO")).To(BeTrue()) // still serving defaults
+			}
 		})
 
-		It("If source transform is not v1 or v2, it should panic as v0 is deprecated", func() {
+		It("should not swap the features snapshot when the fetched body is unchanged", func() {
+			mockTransformerResp := `{"supportSourceTransformV1": true}`
+			transformerServer := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					_, _ = w.Write([]byte(mockTransformerResp))
+				}))
+			DeferCleanup(transformerServer.Close)
+
+			handler := newTestFeaturesService(defaultTransformerFeatures)
+			handler.options.TransformerURL = transformerServer.URL
+
+			Expect(handler.makeFeaturesFetchCall()).To(Succeed())
+			firstSnapshot := handler.features.Load()
+			Expect(handler.makeFeaturesFetchCall()).To(Succeed())
+			Expect(handler.features.Load()).To(BeIdenticalTo(firstSnapshot))
+		})
+
+		It("If source transform is not v1 or v2, it should panic on the first poll, before Wait() releases", func() {
+			handler := newTestFeaturesService(defaultTransformerFeatures)
+
 			defer func() {
-				if r := recover(); r == nil {
-					Fail("The function `SourceTransformerVersion()` is supposed to panic. It did not.")
-				} else {
-					if err, ok := r.(error); ok {
-						Expect(err.Error()).To(Equal("Webhook source v0 version has been deprecated. This is a breaking change. Upgrade transformer version to greater than 1.50.0 for v1"))
-					} else {
-						Expect(r).To(Equal("Webhook source v0 version has been deprecated. This is a breaking change. Upgrade transformer version to greater than 1.50.0 for v1"))
-					}
-				}
+				r := recover()
+				Expect(r).To(Equal("Webhook source v0 version has been deprecated. This is a breaking change. Upgrade transformer version to greater than 1.50.0 for v1"))
+				Expect(handler.isInitialized()).To(BeFalse())
 			}()
 
 			mockTransformerResp := `{
@@ -130,33 +143,10 @@ var _ = Describe("Transformer features", func() {
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					_, _ = w.Write([]byte(mockTransformerResp))
 				}))
+			DeferCleanup(transformerServer.Close)
 
-			featConfig := FeaturesServiceOptions{
-				PollInterval:             time.Duration(1),
-				TransformerURL:           transformerServer.URL,
-				FeaturesRetryMaxAttempts: 1,
-			}
-
-			handler := &featuresService{
-				features: json.RawMessage(defaultTransformerFeatures),
-				logger:   logger.NewLogger().Child("transformer-features"),
-				waitChan: make(chan struct{}),
-				options:  featConfig,
-				client: &http.Client{
-					Transport: &http.Transport{
-						DisableKeepAlives:   config.Default.GetBoolVar(true, "Transformer.Client.disableKeepAlives"),
-						MaxConnsPerHost:     config.Default.GetIntVar(100, 1, "Transformer.Client.maxHTTPConnections"),
-						MaxIdleConnsPerHost: config.Default.GetIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections"),
-						IdleConnTimeout:     config.Default.GetDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration"),
-					},
-					Timeout: config.Default.GetDurationVar(30, time.Second, "HttpClient.processor.timeout"),
-				},
-			}
+			handler.options.TransformerURL = transformerServer.URL
 			handler.syncTransformerFeatureJson(context.TODO())
-
-			<-handler.Wait()
-
-			handler.SourceTransformerVersion()
 		})
 
 		It("Get should return features fetched from transformer", func() {
@@ -174,6 +164,7 @@ var _ = Describe("Transformer features", func() {
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					_, _ = w.Write([]byte(mockTransformerResp))
 				}))
+			DeferCleanup(transformerServer.Close)
 
 			handler := NewFeaturesService(context.TODO(), config.Default, FeaturesServiceOptions{
 				PollInterval:             time.Duration(1),
@@ -193,31 +184,52 @@ var _ = Describe("Transformer features", func() {
 		})
 
 		It("Get should return empty array when features doesn't have regulations", func() {
-			featuresService := &featuresService{
-				features: json.RawMessage(`{}`),
-			}
+			featuresService := newTestFeaturesService(parseTestFeatures(`{}`))
 
 			Expect(featuresService.Regulations()).To(Equal([]string{}))
 		})
 
 		It("Get should return empty array when features has empty regulations", func() {
-			featuresService := &featuresService{
-				features: json.RawMessage(`{
-					"regulations": []
-				}`),
-			}
+			featuresService := newTestFeaturesService(parseTestFeatures(`{
+				"regulations": []
+			}`))
 
 			Expect(featuresService.Regulations()).To(Equal([]string{}))
 		})
 
 		It("Get should return regulations when feature has regultions", func() {
-			featuresService := &featuresService{
-				features: json.RawMessage(`{
-					"regulations": ["AM"]
-				}`),
-			}
+			featuresService := newTestFeaturesService(parseTestFeatures(`{
+				"regulations": ["AM"]
+			}`))
 
 			Expect(featuresService.Regulations()).To(Equal([]string{"AM"}))
+		})
+
+		It("TransformerProxy should be true for a destination the transformer declares", func() {
+			featuresService := newTestFeaturesService(parseTestFeatures(`{
+				"transformerProxy": {"CUSTOMERIO": true}
+			}`))
+
+			Expect(featuresService.TransformerProxy("CUSTOMERIO")).To(BeTrue())
+			Expect(featuresService.TransformerProxy("MONDAY")).To(BeFalse())
+		})
+
+		It("TransformerProxy should be false when the transformer image predates the capability", func() {
+			featuresService := newTestFeaturesService(parseTestFeatures(`{
+				"routerTransform": {"CUSTOMERIO": true}
+			}`))
+
+			Expect(featuresService.TransformerProxy("CUSTOMERIO")).To(BeFalse())
+		})
+
+		It("TransformerProxy should not confuse the capability map with the proxy protocol version", func() {
+			featuresService := newTestFeaturesService(parseTestFeatures(`{
+				"supportTransformerProxyV1": true,
+				"transformerProxy": {}
+			}`))
+
+			Expect(featuresService.TransformerProxy("CUSTOMERIO")).To(BeFalse())
+			Expect(featuresService.TransformerProxyVersion()).To(Equal(V1))
 		})
 	})
 })

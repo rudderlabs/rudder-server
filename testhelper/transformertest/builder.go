@@ -18,6 +18,7 @@ import (
 func NewBuilder() *Builder {
 	b := &Builder{
 		routerTransforms:      map[string]struct{}{},
+		transformerProxies:    map[string]struct{}{},
 		destTransformHandlers: map[string]http.HandlerFunc{},
 		srcHydrationHandlers:  map[string]http.HandlerFunc{},
 	}
@@ -27,6 +28,7 @@ func NewBuilder() *Builder {
 // Builder is a builder for a test transformer server
 type Builder struct {
 	routerTransforms            map[string]struct{}
+	transformerProxies          map[string]struct{}
 	userTransformHandler        http.HandlerFunc
 	destTransformHandlers       map[string]http.HandlerFunc
 	trackingPlanHandler         http.HandlerFunc
@@ -111,6 +113,13 @@ func (b *Builder) WithRouterTransform(destType string) *Builder {
 	return b
 }
 
+// WithTransformerProxy declares a destination type generally available for proxy delivery, as a
+// transformer image that has GA'd it would
+func (b *Builder) WithTransformerProxy(destType string) *Builder {
+	b.transformerProxies[destType] = struct{}{}
+	return b
+}
+
 // Build builds the test tranformer server
 func (b *Builder) Build() *httptest.Server {
 	// user/custom transformation
@@ -161,9 +170,12 @@ func (b *Builder) Build() *httptest.Server {
 	mux.HandleFunc("/batch", b.routerBatchTransformHandler)
 
 	// features
-	features := []byte(`{"routerTransform": {}, "supportSourceTransformV1": true, "upgradedToSourceTransformV2": true}`)
+	features := []byte(`{"routerTransform": {}, "transformerProxy": {}, "supportSourceTransformV1": true, "upgradedToSourceTransformV2": true}`)
 	for destType := range b.routerTransforms {
 		features, _ = sjson.SetBytes(features, "routerTransform."+destType, true)
+	}
+	for destType := range b.transformerProxies {
+		features, _ = sjson.SetBytes(features, "transformerProxy."+destType, true)
 	}
 	mux.HandleFunc("/features", func(w http.ResponseWriter, r *http.Request) {
 		if b.featuresHandler != nil {

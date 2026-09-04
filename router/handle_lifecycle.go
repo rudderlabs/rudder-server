@@ -193,7 +193,7 @@ func (rt *Handle) Setup(
 		return eventorder.NewBarrier(eventorder.WithMetadata(map[string]string{
 			"destType":         rt.destType,
 			"batching":         strconv.FormatBool(rt.enableBatching),
-			"transformerProxy": strconv.FormatBool(rt.reloadableConfig.transformerProxy.Load()),
+			"transformerProxy": strconv.FormatBool(rt.transformerProxyEnabled()),
 		}),
 			eventorder.WithEventOrderKeyThreshold(rt.eventOrderKeyThreshold),
 			eventorder.WithDisabledStateDuration(rt.eventOrderDisabledStateDuration),

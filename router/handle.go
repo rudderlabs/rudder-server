@@ -758,6 +758,22 @@ func (rt *Handle) drainOrRetryLimitReached(createdAt time.Time, destID, sourceJo
 	return false, ""
 }
 
+// transformerProxyEnabled reports whether jobs for this destination type should be delivered
+// through the transformer proxy.
+//
+// The transformer's declaration wins: a destination it declares is proxied without consulting the
+// environment. Router.<DEST>.transformerProxy is the fallback for destinations it does not declare.
+//
+// It reads the features service on each call rather than caching, as RouterTransform and
+// Regulations do, so that upgrading the transformer to an image which newly declares (or stops
+// declaring) a destination takes effect on the next features poll rather than at the next restart.
+func (rt *Handle) transformerProxyEnabled() bool {
+	if rt.transformerFeaturesService.TransformerProxy(rt.destType) {
+		return true
+	}
+	return rt.reloadableConfig.transformerProxy.Load()
+}
+
 func (rt *Handle) retryLimitReached(status *jobsdb.JobStatusT) bool {
 	respStatusCode, _ := strconv.Atoi(status.ErrorCode)
 	switch respStatusCode {

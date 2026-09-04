@@ -4,7 +4,6 @@ package transformer
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -30,24 +29,28 @@ type FeaturesService interface {
 	Regulations() []string
 	SourceTransformerVersion() string
 	RouterTransform(destType string) bool
+	// TransformerProxy reports whether the transformer declares destType deliverable through the
+	// transformer proxy. Distinct from TransformerProxyVersion, which reports the proxy protocol
+	// the transformer speaks.
+	TransformerProxy(destType string) bool
 	TransformerProxyVersion() string
 	SupportDestTransformCompactedPayloadV1() bool
 	Wait() chan struct{}
 }
 
-var defaultTransformerFeatures = `{
-	"routerTransform": {
-	  "MARKETO": true,
-	  "HS": true
+// defaultTransformerFeatures is the feature set served before the first successful /features fetch.
+var defaultTransformerFeatures = &featuresPayload{
+	RouterTransform: map[string]bool{
+		"MARKETO": true,
+		"HS":      true,
 	},
-	"regulations": ["AM"],
-	"supportSourceTransformV1": true,
-	"upgradedToSourceTransformV2": true,
-  }`
+	Regulations:                 []string{"AM"},
+	SupportSourceTransformV1:    true,
+	UpgradedToSourceTransformV2: true,
+}
 
 func NewFeaturesService(ctx context.Context, config *config.Config, featConfig FeaturesServiceOptions) FeaturesService {
 	handler := &featuresService{
-		features: json.RawMessage(defaultTransformerFeatures),
 		logger:   logger.NewLogger().Child("transformer-features"),
 		waitChan: make(chan struct{}),
 		options:  featConfig,
@@ -61,6 +64,7 @@ func NewFeaturesService(ctx context.Context, config *config.Config, featConfig F
 			Timeout: config.GetDurationVar(30, time.Second, "HttpClient.processor.timeout"),
 		},
 	}
+	handler.features.Store(defaultTransformerFeatures)
 
 	rruntime.Go(func() { handler.syncTransformerFeatureJson(ctx) })
 
@@ -93,6 +97,10 @@ func (*noopService) Wait() chan struct{} {
 }
 
 func (*noopService) RouterTransform(_ string) bool {
+	return false
+}
+
+func (*noopService) TransformerProxy(_ string) bool {
 	return false
 }
 
