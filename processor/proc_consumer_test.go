@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -26,6 +27,7 @@ func newTestProcHandle() *Handle {
 	proc.config.connectionConfigMap = map[connection]backendconfig.Connection{}
 	proc.config.workspaceLibrariesMap = map[string]backendconfig.LibrariesT{}
 	proc.config.credentialsMap = map[string][]types.Credential{}
+	proc.config.dropEventsForDisabledDestAtProcRebuild = config.SingleValueLoader(false)
 	return proc
 }
 
@@ -135,8 +137,25 @@ func TestProcRebuildStage(t *testing.T) {
 		require.Equal(t, "defID-"+dstID, ev.Metadata.DestinationDefinitionID)
 	})
 
-	t.Run("config drift: disabled destination is dropped (filtered), not paniced", func(t *testing.T) {
+	t.Run("config drift: disabled destination keeps flowing by default, to be aborted with reporting at the router", func(t *testing.T) {
 		proc := newTestProcHandle()
+		proc.config.sourceIdDestinationMap[srcID] = []backendconfig.DestinationT{testDestination(dstID, "my-webhook", false)}
+
+		job := newProcJob(1, procJobPayload{Metadata: types.Metadata{SourceID: srcID, MessageID: "msg-1"}})
+		out, err := proc.procRebuildStage(dstID, procRebuildInput(job))
+		require.NoError(t, err)
+
+		key := getKeyFromSourceAndDest(srcID, dstID)
+		require.Len(t, out.groupedEvents[key], 1)
+		require.False(t, out.groupedEvents[key][0].Destination.Enabled, "the disabled destination is re-hydrated as-is")
+		require.Len(t, out.statusList, 1)
+		require.Equal(t, jobsdb.Succeeded.State, out.statusList[0].JobState)
+		require.Equal(t, dstID, out.statusList[0].Consumer)
+	})
+
+	t.Run("config drift: disabled destination is dropped (filtered) when dropEventsForDisabledDestAtProcRebuild is set", func(t *testing.T) {
+		proc := newTestProcHandle()
+		proc.config.dropEventsForDisabledDestAtProcRebuild = config.SingleValueLoader(true)
 		proc.config.sourceIdDestinationMap[srcID] = []backendconfig.DestinationT{testDestination(dstID, "my-webhook", false)}
 
 		job := newProcJob(1, procJobPayload{Metadata: types.Metadata{SourceID: srcID, MessageID: "msg-1"}})

@@ -167,9 +167,21 @@ func (proc *Handle) procStoreStage(partition string, pipelineIndex int, in *stor
 // re-hydrates Destination/Connection/Libraries/Credentials from live backendConfig.
 // Dest-filter and consent are NOT re-applied here — they were already decided in gw
 // pool (preprocess/fan-out) and the proc job is only stored for the destinations that
-// passed them. A destination deleted/disabled between fan-out and consume is dropped
-// gracefully to a terminal status. Surviving events are grouped per (source,destination)
-// so the reused transform stages operate on them unchanged.
+// passed them.
+//
+// Config drift between fan-out and consume: in practice destinations are soft-deleted,
+// never hard-deleted, and a soft-deleted destination arrives in backendConfig as
+// disabled — so the real drift case is a disabled destination, which keeps flowing
+// through the pipeline so it reaches the router/batchrouter queue and is aborted there
+// with the usual drain reporting — DESTINATION_ENTER was already recorded at fan-out,
+// so dropping here would leave the reporting chain dangling.
+// Processor.DestinationIsolation.dropEventsForDisabledDestAtProcRebuild opts back
+// into dropping disabled destinations here, e.g. to drain a proc-table backlog quickly
+// after the user disables a misbehaving destination. As a defensive fallback, a
+// destination missing from the config entirely cannot be re-hydrated (its type and
+// config are gone, so there isn't even a router queue to store to) and is dropped to a
+// terminal status. Surviving events are grouped per (source,destination) so the reused
+// transform stages operate on them unchanged.
 func (proc *Handle) procRebuildStage(destinationID string, in subJob) (*transformationMessage, error) { //nolint: unparam
 	s := time.Now()
 	defer func() {
@@ -183,6 +195,7 @@ func (proc *Handle) procRebuildStage(destinationID string, in subJob) (*transfor
 	statusList := make([]*jobsdb.JobStatusT, 0, len(in.subJobs))
 	var reportMetrics []*reportingtypes.PUReportedMetric
 	var totalEvents int
+	dropDisabled := proc.config.dropEventsForDisabledDestAtProcRebuild.Load()
 
 	for _, job := range in.subJobs {
 		var payload procJobPayload
@@ -194,11 +207,18 @@ func (proc *Handle) procRebuildStage(destinationID string, in subJob) (*transfor
 		totalEvents++
 		sourceID := payload.Metadata.SourceID
 
-		// Hydrate the destination from live config. Config drift: a destination
-		// deleted/disabled since fan-out is dropped gracefully to a terminal status.
-		dest, ok := proc.getEnabledDestinationByID(sourceID, destinationID)
+		// Re-hydrate the destination from live config. Config drift: a disabled
+		// (incl. soft-deleted) destination keeps flowing (aborted with reporting at
+		// the router/batchrouter) unless dropEventsForDisabledDestAtProcRebuild is
+		// set; a destination missing from the config entirely (not expected in
+		// practice) is dropped to a terminal status as a defensive fallback.
+		dest, ok := proc.getDestinationByID(sourceID, destinationID)
 		if !ok {
-			statusList = append(statusList, procJobStatus(job, destinationID, jobsdb.Filtered.State, `{"reason":"destination not found or disabled"}`))
+			statusList = append(statusList, procJobStatus(job, destinationID, jobsdb.Filtered.State, `{"reason":"destination not found"}`))
+			continue
+		}
+		if !dest.Enabled && dropDisabled {
+			statusList = append(statusList, procJobStatus(job, destinationID, jobsdb.Filtered.State, `{"reason":"destination disabled"}`))
 			continue
 		}
 
@@ -244,6 +264,7 @@ func (proc *Handle) procRebuildStage(destinationID string, in subJob) (*transfor
 
 	return &transformationMessage{
 		ctx:                          in.ctx,
+		pipeline:                     pipelineTypeProc,
 		groupedEvents:                groupedEvents,
 		srcPipelineSteps:             srcPipelineSteps,
 		eventsByMessageID:            eventsByMessageID,
@@ -259,14 +280,14 @@ func (proc *Handle) procRebuildStage(destinationID string, in subJob) (*transfor
 	}, nil
 }
 
-// getEnabledDestinationByID returns the live, enabled destination for the given
-// (source, destination) connection, or false when it no longer exists / is disabled.
-func (proc *Handle) getEnabledDestinationByID(sourceID, destinationID string) (backendconfig.DestinationT, bool) {
+// getDestinationByID returns the live destination for the given (source, destination)
+// connection — enabled or not — or false when it no longer exists in the config.
+func (proc *Handle) getDestinationByID(sourceID, destinationID string) (backendconfig.DestinationT, bool) {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 	for i := range proc.config.sourceIdDestinationMap[sourceID] {
 		dest := &proc.config.sourceIdDestinationMap[sourceID][i]
-		if dest.ID == destinationID && dest.Enabled {
+		if dest.ID == destinationID {
 			return *dest, true
 		}
 	}

@@ -63,8 +63,9 @@ type StatusRequestParams struct {
 }
 
 type OAuthInterceptorResponse struct {
-	StatusCode int    `json:"statusCode"`         // This is non-zero when the OAuth interceptor, upon completing its functions, intends to pass on the status code to the caller.
-	Response   string `json:"response,omitempty"` // This is non-empty when the OAuth interceptor, upon completing its functions, intends to pass on the response body to the caller.
+	StatusCode int    `json:"statusCode"`          // This is non-zero when the OAuth interceptor, upon completing its functions, intends to pass on the status code to the caller.
+	Response   string `json:"response,omitempty"`  // This is non-empty when the OAuth interceptor, upon completing its functions, intends to pass on the response body to the caller.
+	ErrorType  string `json:"errorType,omitempty"` // This is non-empty when the failure carries an error type (e.g. common.RefTokenInvalidGrant), letting callers act on the specific error rather than inferring it from the status code.
 }
 
 type TransportResponse struct {
