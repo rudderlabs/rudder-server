@@ -10,12 +10,74 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
+
+func replaceDefaultStatsWithMemStats(t *testing.T) *memstats.Store {
+	t.Helper()
+
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+
+	originalStats := stats.Default
+	stats.Default = statsStore
+	t.Cleanup(func() {
+		stats.Default = originalStats
+	})
+
+	return statsStore
+}
+
+func TestBatchRouterMetricTagsUseRawDestinationID(t *testing.T) {
+	destination := Connection{
+		Source: backendconfig.SourceT{
+			ID:          "source-full-id-123456",
+			Name:        "Readable Source",
+			WorkspaceID: "workspace-123",
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Category: "cloud",
+			},
+		},
+		Destination: backendconfig.DestinationT{
+			ID:   "dest-full-id-abcdef",
+			Name: "Readable Destination",
+		},
+	}
+	destType := "S3"
+
+	t.Run("destination status tags include raw destinationId", func(t *testing.T) {
+		tags := batchRouterDestinationStatusTags(&destination, destType, true)
+		require.Equal(t, destination.Destination.ID, tags["destinationId"])
+		require.NotContains(t, tags["destinationId"], destination.Destination.Name)
+	})
+
+	t.Run("upload stats tags include raw destination ID without derived destination label", func(t *testing.T) {
+		statsStore := replaceDefaultStatsWithMemStats(t)
+		brt := &Handle{destType: destType}
+
+		brt.recordUploadStats(destination, UploadResult{
+			FirstEventAt: time.Now().Add(-time.Minute).UTC().Format(misc.RFC3339Milli),
+			TotalEvents:  2,
+		})
+
+		eventDeliveryMetrics := statsStore.GetByName("event_delivery")
+		require.Len(t, eventDeliveryMetrics, 1)
+		require.Equal(t, destination.Destination.ID, eventDeliveryMetrics[0].Tags["destID"])
+		_, hasDerivedDestinationTag := eventDeliveryMetrics[0].Tags["destination"]
+		require.False(t, hasDerivedDestinationTag)
+
+		eventDeliveryTimeMetrics := statsStore.GetByName("event_delivery_time")
+		require.Len(t, eventDeliveryTimeMetrics, 1)
+		require.Equal(t, destination.Destination.ID, eventDeliveryTimeMetrics[0].Tags["destID"])
+		_, hasDerivedDestinationTag = eventDeliveryTimeMetrics[0].Tags["destination"]
+		require.False(t, hasDerivedDestinationTag)
+	})
+}
 
 func TestEmitAsyncEventDeliveryTimeMetrics_NoAsyncDestinationStruct(t *testing.T) {
 	brt := &Handle{

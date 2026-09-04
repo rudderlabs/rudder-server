@@ -57,14 +57,39 @@ func (brt *Handle) collectMetrics(ctx context.Context) {
 	}
 }
 
-func sendDestStatusStats(batchDestination *Connection, jobStateCounts map[string]int, destType string, isWarehouse bool) {
-	tags := map[string]string{
+func batchRouterDestinationStatusTags(batchDestination *Connection, destType string, isWarehouse bool) map[string]string {
+	return map[string]string{
 		"module":        "batch_router",
 		"destType":      destType,
 		"isWarehouse":   fmt.Sprintf("%t", isWarehouse),
-		"destinationId": misc.GetTagName(batchDestination.Destination.ID, batchDestination.Destination.Name),
+		"destinationId": batchDestination.Destination.ID,
 		"sourceId":      misc.GetTagName(batchDestination.Source.ID, batchDestination.Source.Name),
 	}
+}
+
+func batchRouterEventDeliveryTags(destination Connection, destType string) map[string]string {
+	return map[string]string{
+		"module":      "batch_router",
+		"destType":    destType,
+		"destID":      destination.Destination.ID,
+		"workspaceId": destination.Source.WorkspaceID,
+		"source":      destination.Source.ID,
+	}
+}
+
+func batchRouterEventDeliveryTimeTags(destination Connection, destType string) map[string]string {
+	return map[string]string{
+		"module":         "batch_router",
+		"destType":       destType,
+		"workspaceId":    destination.Source.WorkspaceID,
+		"sourceId":       destination.Source.ID,
+		"destID":         destination.Destination.ID,
+		"sourceCategory": destination.Source.SourceDefinition.Category,
+	}
+}
+
+func sendDestStatusStats(batchDestination *Connection, jobStateCounts map[string]int, destType string, isWarehouse bool) {
+	tags := batchRouterDestinationStatusTags(batchDestination, destType, isWarehouse)
 
 	for jobState, count := range jobStateCounts {
 		tags["job_state"] = jobState
@@ -241,26 +266,11 @@ func (brt *Handle) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) {
 }
 
 func (brt *Handle) recordUploadStats(destination Connection, output UploadResult) {
-	destinationTag := misc.GetTagName(destination.Destination.ID, destination.Destination.Name)
-	eventDeliveryStat := stats.Default.NewTaggedStat("event_delivery", stats.CountType, map[string]string{
-		"module":      "batch_router",
-		"destType":    brt.destType,
-		"destination": destinationTag,
-		"workspaceId": destination.Source.WorkspaceID,
-		"source":      destination.Source.ID,
-	})
+	eventDeliveryStat := stats.Default.NewTaggedStat("event_delivery", stats.CountType, batchRouterEventDeliveryTags(destination, brt.destType))
 	eventDeliveryStat.Count(output.TotalEvents)
 
 	if receivedTime, err := time.Parse(misc.RFC3339Milli, output.FirstEventAt); err == nil {
-		eventDeliveryTimeStat := stats.Default.NewTaggedStat("event_delivery_time", stats.TimerType, map[string]string{
-			"module":         "batch_router",
-			"destType":       brt.destType,
-			"destination":    destinationTag,
-			"workspaceId":    destination.Source.WorkspaceID,
-			"sourceId":       destination.Source.ID,
-			"destID":         destination.Destination.ID,
-			"sourceCategory": destination.Source.SourceDefinition.Category,
-		})
+		eventDeliveryTimeStat := stats.Default.NewTaggedStat("event_delivery_time", stats.TimerType, batchRouterEventDeliveryTimeTags(destination, brt.destType))
 		eventDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 	}
 }
