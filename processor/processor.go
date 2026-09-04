@@ -206,6 +206,7 @@ type Handle struct {
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		forkRsourcesTrackedJobs                   bool
 		reportingDedupMetricsEnabled              config.ValueLoader[bool]
+		reportingGatewayIngestedMetricsEnabled    config.ValueLoader[bool]
 		earlyDestinationFilter                    config.ValueLoader[bool]
 
 		dropEventsForDisabledDestAtProcRebuild config.ValueLoader[bool]
@@ -868,6 +869,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.userTransformationMirroringBlockedIDs = proc.conf.GetReloadableStringSliceVar(nil, "Processor.userTransformationMirroring.blockedTransformationIDs")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
 	proc.config.reportingDedupMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.dedupMetrics.enabled")
+	proc.config.reportingGatewayIngestedMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.gatewayIngestedMetrics.enabled")
 	proc.config.earlyDestinationFilter = proc.conf.GetReloadableBoolVar(true, "Processor.earlyDestinationFilter")
 	// Opt-in early drop at the proc rebuild stage for destinations disabled since fan-out;
 	// by default such events keep flowing so the router/batchrouter aborts them with reporting.
@@ -1810,6 +1812,7 @@ type preTransformationMessage struct {
 	eventBlockingStatusDetailsMap   map[string]map[string]*reportingtypes.StatusDetail
 	userSuppressionStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
 	dedupStatusDetailsMap           map[string]map[string]*reportingtypes.StatusDetail
+	gatewayIngestedStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
 	destFilterStatusDetailMap       map[string]map[string]*reportingtypes.StatusDetail
 	reportMetrics                   []*reportingtypes.PUReportedMetric
 	totalEvents                     int
@@ -1879,6 +1882,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 	eventBlockingStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	userSuppressionStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	dedupStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+	gatewayIngestedStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	// map of jobID to destinationID: for messages that needs to be delivered to a specific destinations only
 	jobIDToSpecificDestMapOnly := make(map[int64]string)
 
@@ -2063,6 +2067,28 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		// dummy event for metrics purposes only
 		reportingEvent := &types.TransformerResponse{}
 		reportingEvent.Metadata = *singularEventMetadata
+
+		// REPORTING - GATEWAY_INGESTED metrics - START
+		if proc.isReportingEnabled() && proc.config.reportingGatewayIngestedMetricsEnabled.Load() {
+			reportingEvent.StatusCode = reportingtypes.SuccessEventCode
+
+			proc.updateMetricMaps(
+				nil,
+				nil,
+				connectionDetailsMap,
+				gatewayIngestedStatusDetailsMap,
+				reportingEvent,
+				jobsdb.Succeeded.State,
+				reportingtypes.GATEWAY_INGESTED,
+				func() json.RawMessage {
+					return nil
+				},
+				nil,
+			)
+			// reset status code to 0 because transformerEvent is reused for other metrics
+			reportingEvent.StatusCode = 0
+		}
+		// REPORTING - GATEWAY_INGESTED metrics - END
 
 		if event.eventParams.IsUserSuppressed {
 			// REPORTING - USER_SUPPRESSION metrics - START
@@ -2355,6 +2381,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		eventBlockingStatusDetailsMap:   eventBlockingStatusDetailsMap,
 		userSuppressionStatusDetailsMap: userSuppressionStatusDetailsMap,
 		dedupStatusDetailsMap:           dedupStatusDetailsMap,
+		gatewayIngestedStatusDetailsMap: gatewayIngestedStatusDetailsMap,
 		reportMetrics:                   reportMetrics,
 		destFilterStatusDetailMap:       destFilterStatusDetailMap,
 		totalEvents:                     totalEvents,
@@ -2429,6 +2456,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.eventBlockingStatusDetailsMap)
 		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.userSuppressionStatusDetailsMap)
 		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.dedupStatusDetailsMap)
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.gatewayIngestedStatusDetailsMap)
 		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.enricherStatusDetailsMap)
 
 		for k, cd := range preTrans.connectionDetailsMap {
@@ -2460,6 +2488,14 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
 					ConnectionDetails: *cd,
 					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DEDUP, false, false),
+					StatusDetail:      sd,
+				})
+			}
+
+			for _, sd := range preTrans.gatewayIngestedStatusDetailsMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.GATEWAY_INGESTED, false, false),
 					StatusDetail:      sd,
 				})
 			}

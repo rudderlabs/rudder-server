@@ -503,6 +503,8 @@ func TestReportingDroppedEvents(t *testing.T) {
 				"Dedup.enableDedup":              true,
 				"RUDDER_TMPDIR":                  dedupTmpDir,
 				"Reporting.dedupMetrics.enabled": true,
+
+				"Reporting.gatewayIngestedMetrics.enabled": true,
 			})
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
@@ -537,6 +539,32 @@ func TestReportingDroppedEvents(t *testing.T) {
 			t.Logf("gateway count: %d", gatewayCount.Int64)
 			return gatewayCount.Int64 == 1
 		}, 10*time.Second, 1*time.Second, "only the surviving event should be counted in the gateway stage")
+
+		// Phase 4 of the pipeline inspector: the GATEWAY_INGESTED side PU counts every event the
+		// preprocess loop iterates over, before any of the drop checks. This batch is the algebra
+		// in a single table: 3 ingested - 2 deduped = 1 gateway.
+		//
+		// reportCount sums the reports rows matching where, returning -1 on any query error so that
+		// it can be used inside a require.Eventually callback without asserting there.
+		reportCount := func(where string) int64 {
+			var count sql.NullInt64
+			if err := postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE " + where).Scan(&count); err != nil {
+				return -1
+			}
+			return count.Int64
+		}
+		require.Eventually(t, func() bool {
+			ingested := reportCount("source_id = 'source-1' and destination_id = '' and pu = 'gateway_ingested'")
+			// the full row shape is pinned here and nowhere else: in_pu written as NULL, or
+			// initial_state flipping to true, has to fail this assertion
+			matching := reportCount("source_id = 'source-1' and destination_id = '' and pu = 'gateway_ingested' and status = 'succeeded' and status_code = 200 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''")
+			// the GATEWAY_INGESTED status code must not leak into the gateway billing row, which
+			// master writes with status_code 0
+			gatewayWithStatusCode := reportCount("source_id = 'source-1' and destination_id = '' and pu = 'gateway' and status_code = 200")
+			t.Logf("gateway_ingested count: %d (matching: %d), gateway rows carrying status_code 200: %d", ingested, matching, gatewayWithStatusCode)
+			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
+			return ingested == 3 && matching == 3 && gatewayWithStatusCode == 0
+		}, 10*time.Second, 1*time.Second, "every ingested event, duplicates included, should get a gateway_ingested row")
 
 		cancel()
 		_ = wg.Wait()
