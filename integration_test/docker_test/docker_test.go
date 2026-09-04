@@ -27,7 +27,6 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kafkaClient "github.com/rudderlabs/rudder-go-kit/kafkaclient"
@@ -312,37 +311,27 @@ func setupMainFlow(svcCtx context.Context, cancel context.CancelFunc, t *testing
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	containersGroup, containersCtx := errgroup.WithContext(context.TODO())
-	containersGroup.Go(func() (err error) {
-		kafkaContainer, err = kafka.Setup(pool, t, kafka.WithBrokers(1))
-		if err != nil {
-			return err
-		}
-		kafkaCtx, kafkaCancel := context.WithTimeout(containersCtx, 3*time.Minute)
-		defer kafkaCancel()
-		return waitForKafka(kafkaCtx, t, kafkaContainer.Brokers[0])
-	})
-	containersGroup.Go(func() (err error) {
-		redisContainer, err = redis.Setup(containersCtx, pool, t)
-		return err
-	})
-	containersGroup.Go(func() (err error) {
-		postgresContainer, err = pgdocker.Setup(pool, t)
-		if err != nil {
-			return err
-		}
-		db = postgresContainer.DB
-		return nil
-	})
-	containersGroup.Go(func() (err error) {
-		transformerContainer, err = transformertest.Setup(pool, t)
-		return err
-	})
-	containersGroup.Go(func() (err error) {
-		minioContainer, err = minio.Setup(pool, t)
-		return err
-	})
-	require.NoError(t, containersGroup.Wait())
+	// Kafka reserves host ports before container creation for advertised listeners.
+	// Start dependencies sequentially so Docker's dynamic port bindings cannot
+	// claim those ports in the gap.
+	kafkaContainer, err = kafka.Setup(pool, t, kafka.WithBrokers(1))
+	require.NoError(t, err)
+	kafkaCtx, kafkaCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer kafkaCancel()
+	require.NoError(t, waitForKafka(kafkaCtx, t, kafkaContainer.Brokers[0]))
+
+	redisContainer, err = redis.Setup(context.Background(), pool, t)
+	require.NoError(t, err)
+
+	postgresContainer, err = pgdocker.Setup(pool, t)
+	require.NoError(t, err)
+	db = postgresContainer.DB
+
+	transformerContainer, err = transformertest.Setup(pool, t)
+	require.NoError(t, err)
+
+	minioContainer, err = minio.Setup(pool, t)
+	require.NoError(t, err)
 
 	if err := godotenv.Load("../../testhelper/.env"); err != nil {
 		t.Log("INFO: No .env file found.")
