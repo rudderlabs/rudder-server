@@ -26,26 +26,27 @@ import (
 )
 
 type srcHydrationMessage struct {
-	partition                     string
-	subJobs                       subJob
-	archivalJobs                  []*jobsdb.JobT
-	eventSchemaJobsBySourceId     map[SourceIDT][]*jobsdb.JobT
-	connectionDetailsMap          map[string]*reportingtypes.ConnectionDetails
-	statusDetailsMap              map[string]map[string]*reportingtypes.StatusDetail
-	enricherStatusDetailsMap      map[string]map[string]*reportingtypes.StatusDetail
-	botManagementStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
-	eventBlockingStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
-	dedupStatusDetailsMap         map[string]map[string]*reportingtypes.StatusDetail
-	destFilterStatusDetailMap     map[string]map[string]*reportingtypes.StatusDetail
-	reportMetrics                 []*reportingtypes.PUReportedMetric
-	totalEvents                   int
-	groupedEventsBySourceId       map[SourceIDT][]types.TransformerEvent
-	eventsByMessageID             map[string]types.SingularEventWithReceivedAt
-	jobIDToSpecificDestMapOnly    map[int64]string
-	statusList                    []*jobsdb.JobStatusT
-	jobList                       []*jobsdb.JobT
-	sourceDupStats                map[dupStatKey]int
-	dedupKeys                     map[string]struct{}
+	partition                       string
+	subJobs                         subJob
+	archivalJobs                    []*jobsdb.JobT
+	eventSchemaJobsBySourceId       map[SourceIDT][]*jobsdb.JobT
+	connectionDetailsMap            map[string]*reportingtypes.ConnectionDetails
+	statusDetailsMap                map[string]map[string]*reportingtypes.StatusDetail
+	enricherStatusDetailsMap        map[string]map[string]*reportingtypes.StatusDetail
+	botManagementStatusDetailsMap   map[string]map[string]*reportingtypes.StatusDetail
+	eventBlockingStatusDetailsMap   map[string]map[string]*reportingtypes.StatusDetail
+	userSuppressionStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
+	dedupStatusDetailsMap           map[string]map[string]*reportingtypes.StatusDetail
+	destFilterStatusDetailMap       map[string]map[string]*reportingtypes.StatusDetail
+	reportMetrics                   []*reportingtypes.PUReportedMetric
+	totalEvents                     int
+	groupedEventsBySourceId         map[SourceIDT][]types.TransformerEvent
+	eventsByMessageID               map[string]types.SingularEventWithReceivedAt
+	jobIDToSpecificDestMapOnly      map[int64]string
+	statusList                      []*jobsdb.JobStatusT
+	jobList                         []*jobsdb.JobT
+	sourceDupStats                  map[dupStatKey]int
+	dedupKeys                       map[string]struct{}
 	// earlyDestinationFilter is a per-batch snapshot of Processor.earlyDestinationFilter taken
 	// once in preprocessStage, so that every stage this batch passes through observes the same
 	// value even if the reloadable config flips mid-flight.
@@ -164,28 +165,29 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 	}
 
 	return &preTransformationMessage{
-		partition:                     message.partition,
-		subJobs:                       message.subJobs,
-		archivalJobs:                  message.archivalJobs,
-		eventSchemaJobsBySourceId:     message.eventSchemaJobsBySourceId,
-		connectionDetailsMap:          message.connectionDetailsMap,
-		statusDetailsMap:              message.statusDetailsMap,
-		enricherStatusDetailsMap:      message.enricherStatusDetailsMap,
-		botManagementStatusDetailsMap: message.botManagementStatusDetailsMap,
-		eventBlockingStatusDetailsMap: message.eventBlockingStatusDetailsMap,
-		dedupStatusDetailsMap:         message.dedupStatusDetailsMap,
-		destFilterStatusDetailMap:     message.destFilterStatusDetailMap,
-		reportMetrics:                 message.reportMetrics,
-		totalEvents:                   message.totalEvents,
-		groupedEventsBySourceId:       message.groupedEventsBySourceId,
-		eventsByMessageID:             message.eventsByMessageID,
-		jobIDToSpecificDestMapOnly:    message.jobIDToSpecificDestMapOnly,
-		statusList:                    message.statusList,
-		jobList:                       message.jobList,
-		sourceDupStats:                message.sourceDupStats,
-		dedupKeys:                     message.dedupKeys,
-		srcHydrationEnabledMap:        srcHydrationEnabledMap,
-		earlyDestinationFilter:        message.earlyDestinationFilter,
+		partition:                       message.partition,
+		subJobs:                         message.subJobs,
+		archivalJobs:                    message.archivalJobs,
+		eventSchemaJobsBySourceId:       message.eventSchemaJobsBySourceId,
+		connectionDetailsMap:            message.connectionDetailsMap,
+		statusDetailsMap:                message.statusDetailsMap,
+		enricherStatusDetailsMap:        message.enricherStatusDetailsMap,
+		botManagementStatusDetailsMap:   message.botManagementStatusDetailsMap,
+		eventBlockingStatusDetailsMap:   message.eventBlockingStatusDetailsMap,
+		userSuppressionStatusDetailsMap: message.userSuppressionStatusDetailsMap,
+		dedupStatusDetailsMap:           message.dedupStatusDetailsMap,
+		destFilterStatusDetailMap:       message.destFilterStatusDetailMap,
+		reportMetrics:                   message.reportMetrics,
+		totalEvents:                     message.totalEvents,
+		groupedEventsBySourceId:         message.groupedEventsBySourceId,
+		eventsByMessageID:               message.eventsByMessageID,
+		jobIDToSpecificDestMapOnly:      message.jobIDToSpecificDestMapOnly,
+		statusList:                      message.statusList,
+		jobList:                         message.jobList,
+		sourceDupStats:                  message.sourceDupStats,
+		dedupKeys:                       message.dedupKeys,
+		srcHydrationEnabledMap:          srcHydrationEnabledMap,
+		earlyDestinationFilter:          message.earlyDestinationFilter,
 	}, nil
 }
 
