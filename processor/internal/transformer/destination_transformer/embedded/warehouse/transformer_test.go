@@ -320,6 +320,40 @@ func TestTransformer(t *testing.T) {
 			},
 		},
 		{
+			name:         "GCS Datalake jsonPaths stores nested objects as JSON strings",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311","metadata":{"campaign":{"name":"spring","variant":"blue"},"source":"web"}},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+			metadata:     getMetadata("track", "GCS_DATALAKE"),
+			destination: getDestination("GCS_DATALAKE", map[string]any{
+				"jsonPaths": "track.context.traits,track.properties.metadata",
+			}),
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
+					{
+						Output: trackDefaultOutput().
+							SetDataField("context_destination_type", "GCS_DATALAKE").
+							RemoveDataFields("context_traits_email", "context_traits_logins", "context_traits_name").
+							RemoveColumnFields("context_traits_email", "context_traits_logins", "context_traits_name").
+							SetDataField("context_traits", `{"email":"rhedricks@example.com","logins":2,"name":"Richard Hendricks"}`).
+							SetColumnField("context_traits", "string"),
+						Metadata:   getMetadata("track", "GCS_DATALAKE"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output: trackEventDefaultOutput().
+							SetDataField("context_destination_type", "GCS_DATALAKE").
+							RemoveDataFields("context_traits_email", "context_traits_logins", "context_traits_name").
+							RemoveColumnFields("context_traits_email", "context_traits_logins", "context_traits_name").
+							SetDataField("context_traits", `{"email":"rhedricks@example.com","logins":2,"name":"Richard Hendricks"}`).
+							SetColumnField("context_traits", "string").
+							SetDataField("metadata", `{"campaign":{"name":"spring","variant":"blue"},"source":"web"}`).
+							SetColumnField("metadata", "string"),
+						Metadata:   getMetadata("track", "GCS_DATALAKE"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
 			name:         "Too many columns channel as sources",
 			eventPayload: testhelper.AddRandomColumns(`{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"sources","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},%s,"ip":"1.2.3.4"}}`, maxColumnsCount),
 			metadata:     getMetadata("track", "POSTGRES"),

@@ -1,0 +1,50 @@
+[
+  {
+    "message": {
+      "context": {
+        "ip": "1.2.3.4",
+        "traits": {
+          "email": "rhedricks@example.com",
+          "logins": 2,
+          "name": "Richard Hendricks"
+        }
+      },
+      "event": "Product Track",
+      "messageId": "json-paths-message-id",
+      "originalTimestamp": "2023-05-12T04:09:48.750+00:00",
+      "properties": {
+        "metadata": {
+          "campaign": {
+            "name": "spring",
+            "variant": "blue"
+          },
+          "source": "web"
+        },
+        "product_id": "1",
+        "rating": 3,
+        "review_body": "OK for the price. It works but the material feels flimsy.",
+        "review_id": "86ac1cd43"
+      },
+      "receivedAt": "2023-05-12T04:09:48.750+00:00",
+      "request_ip": "5.6.7.8",
+      "sentAt": "2023-05-12T04:09:48.750+00:00",
+      "timestamp": "2023-05-12T04:09:48.750+00:00",
+      "type": "track",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "json-paths-message-id",
+      "receivedAt": "2023-05-12T04:09:48.750+00:00",
+      "eventName": "Product Track",
+      "eventType": "track",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  }
+]
