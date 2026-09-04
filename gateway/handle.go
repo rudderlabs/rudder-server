@@ -924,7 +924,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 	for _, msg := range messages {
 		var (
-			messageID        string
 			marshalledParams []byte
 			payload          []byte
 		)
@@ -952,6 +951,9 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			stat.Report(gw.stats)
 			return nil, errors.New(response.NotRudderEvent)
 		}
+
+		// non-empty messageId in the payload is guaranteed by the messageID validator
+		messageID := jsonparser.GetStringOrEmpty(msg.Payload, "messageId")
 
 		writeKey, sourceDefName, sourceName, sourceType := "", "", "", ""
 		src, ok := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
@@ -1018,8 +1020,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		eventType := jsonparser.GetStringOrEmpty(msg.Payload, "type")
 		if isUserSuppressedEvent {
 			jobsDBParams.IsUserSuppressed = true
-			suppressedMessageID := jsonparser.GetStringOrEmpty(msg.Payload, "messageId")
-			dummyEvent := buildSuppressedEventPayload(suppressedMessageID, eventType, eventName, msg.Properties.ReceivedAt.Format(misc.RFC3339Milli))
+			dummyEvent := buildSuppressedEventPayload(messageID, eventType, eventName, msg.Properties.ReceivedAt.Format(misc.RFC3339Milli))
 			dummyPayload, mErr := jsonrs.Marshal(dummyEvent)
 			if mErr != nil {
 				// drop the event instead of storing the original payload: no suppressed user
