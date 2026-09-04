@@ -284,7 +284,9 @@ func (brt *Handle) updateRudderSourcesStats(
 	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService, "brt", stats.Default)
 	rsourcesStats.BeginProcessing(jobs)
 	rsourcesStats.CollectStats(jobStatuses)
-	rsourcesStats.CollectFailedRecords(jobStatuses)
+	if err := rsourcesStats.CollectFailedRecords(ctx, brt.rsourcesSyncSettings, jobStatuses); err != nil {
+		return fmt.Errorf("collecting rsources failed records: %w", err)
+	}
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		return fmt.Errorf("publishing rsources stats: %w", err)

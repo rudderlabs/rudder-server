@@ -2,12 +2,14 @@ package migrator
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"text/template"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
@@ -16,6 +18,7 @@ import (
 	bindata "github.com/golang-migrate/migrate/v4/source/go_bindata"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/sql/migrations"
@@ -53,6 +56,7 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 	if err != nil {
 		return fmt.Errorf("destination driver for %q migrator: %w", migrationsDir, err)
 	}
+	defer func() { _ = destinationDriver.Close() }()
 
 	sourceDriver, err := iofs.New(migrations.FS, migrationsDir)
 	if err != nil {
@@ -146,6 +150,7 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context any) error 
 	if err != nil {
 		return fmt.Errorf("create migration destination: %w", err)
 	}
+	defer func() { _ = destinationDriver.Close() }()
 
 	// run the migration scripts
 	migration, err := migrate.NewWithInstance("go-bindata", sourceDriver, "postgres", destinationDriver)
@@ -177,8 +182,43 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context any) error 
 	return nil
 }
 
+// migrationTimeout bounds each phase of a migration - the connection checkout, the
+// driver setup, and every individual statement. Overridable through config.
+func migrationTimeout() time.Duration {
+	return config.GetDurationVar(1, time.Minute, "SQLMigrator.timeout")
+}
+
+// getDestinationDriver checks a single connection out of the handle and builds the
+// postgres driver on top of it. Callers MUST Close the returned driver, which is what
+// returns that connection to the pool.
+//
+// postgres.WithInstance would do the checkout itself, but it also stores the *sql.DB on
+// the driver, and the driver's Close then closes the caller's whole pool - so nobody
+// could safely close it, and the connection it had checked out stayed InUse for the
+// life of the process. Building from an explicit connection leaves the driver's `db`
+// nil, so Close releases the connection and nothing else.
 func (m *Migrator) getDestinationDriver() (database.Driver, error) {
-	return postgres.WithInstance(m.Handle, &postgres.Config{MigrationsTable: m.MigrationsTable})
+	// Bounds the checkout and the driver's setup; StatementTimeout below bounds every
+	// statement the driver runs later. A wedged database fails the caller within the
+	// timeout instead of hanging it. Safe to cancel on return: the driver does not
+	// retain this context - later statements get their own, derived per call from
+	// StatementTimeout.
+	timeout := migrationTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	conn, err := m.Handle.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("checking out a connection for the migrator: %w", err)
+	}
+	driver, err := postgres.WithConnection(ctx, conn, &postgres.Config{
+		MigrationsTable:  m.MigrationsTable,
+		StatementTimeout: timeout,
+	})
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return driver, nil
 }
 
 func latestSourceVersion(sourceDriver source.Driver) (int, error) {

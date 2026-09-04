@@ -155,6 +155,12 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		return err
 	}
 
+	rsourcesSyncSettings, stopRsourcesSyncSettings, err := NewRsourcesSyncSettings(ctx, g, a.log.Child("rsources-sync-settings"), statsFactory)
+	if err != nil {
+		return err
+	}
+	defer stopRsourcesSyncSettings()
+
 	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
 		PollInterval:             config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
 		TransformerURL:           config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"),
@@ -388,6 +394,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		),
 		TransientSources:           transientSources,
 		RsourcesService:            rsourcesService,
+		RsourcesSyncSettings:       rsourcesSyncSettings,
 		TransformerFeaturesService: transformerFeaturesService,
 		ThrottlerFactory:           throttlerFactory,
 		Debugger:                   destinationHandle,
@@ -400,10 +407,11 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
 			brtRWDB,
 		),
-		TransientSources: transientSources,
-		RsourcesService:  rsourcesService,
-		Debugger:         destinationHandle,
-		AdaptiveLimit:    adaptiveLimit,
+		TransientSources:     transientSources,
+		RsourcesService:      rsourcesService,
+		RsourcesSyncSettings: rsourcesSyncSettings,
+		Debugger:             destinationHandle,
+		AdaptiveLimit:        adaptiveLimit,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig, logger.NewLogger())
 

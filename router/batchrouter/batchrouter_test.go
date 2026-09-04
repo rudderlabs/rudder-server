@@ -176,6 +176,7 @@ var _ = Describe("BatchRouter", func() {
 				nil,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
+				rsources.NewStaticSyncSettingDelegate("", nil),
 				destinationdebugger.NewNoOpService(),
 				config.Default,
 			)
@@ -198,6 +199,7 @@ var _ = Describe("BatchRouter", func() {
 				nil,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
+				rsources.NewStaticSyncSettingDelegate("", nil),
 				destinationdebugger.NewNoOpService(),
 				config.Default,
 			)
@@ -313,6 +315,7 @@ var _ = Describe("BatchRouter", func() {
 				nil,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
+				rsources.NewStaticSyncSettingDelegate("", nil),
 				destinationdebugger.NewNoOpService(),
 				config.New(),
 			)
@@ -613,6 +616,7 @@ func TestBatchRouter(t *testing.T) {
 		nil,
 		transientsource.NewEmptyService(),
 		rsources.NewNoOpService(),
+		rsources.NewStaticSyncSettingDelegate("", nil),
 		destinationdebugger.NewNoOpService(),
 		c,
 	)

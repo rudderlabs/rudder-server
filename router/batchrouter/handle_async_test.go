@@ -63,6 +63,7 @@ func defaultHandle(destType string) *Handle {
 	batchRouter.setupReloadableVars()
 	batchRouter.logger = logger.NOP
 	batchRouter.conf = config.Default
+	batchRouter.rsourcesSyncSettings = rsources.NewStaticSyncSettingDelegate("", nil)
 	batchRouter.adaptiveLimit = func(i int64) int64 {
 		return i
 	}

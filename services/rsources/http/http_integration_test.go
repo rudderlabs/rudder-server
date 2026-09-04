@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/ory/dockertest/v3"
@@ -105,7 +106,7 @@ func TestGetFailedRecordsIntegration(t *testing.T) {
 	t.Run("without pagination", func(t *testing.T) {
 		handler, service, dbResource := prepare(t, rsources_http.NewV2Handler)
 		addFailedRecords(t, service, dbResource.DB, []rsources.FailedRecord{
-			{Record: []byte(`"id-1"`)},
+			{Record: []byte(`"id-1"`), Code: 422, Error: "rejected: invalid email"},
 			{Record: []byte(`"id-2"`)},
 			{Record: []byte(`"id-3"`)},
 			{Record: []byte(`"id-4"`)},
@@ -117,30 +118,52 @@ func TestGetFailedRecordsIntegration(t *testing.T) {
 		require.Len(t, failedRecords.Tasks, 1)
 		require.Len(t, failedRecords.Tasks[0].Sources, 1)
 		require.Len(t, failedRecords.Tasks[0].Sources[0].Destinations, 1)
-		require.Len(t, failedRecords.Tasks[0].Sources[0].Destinations[0].Records, 4)
+		records := failedRecords.Tasks[0].Sources[0].Destinations[0].Records
+		require.Len(t, records, 4)
 		require.Nil(t, failedRecords.Paging, "no paging information should be present")
+
+		// The captured message survives the column, the response and the client's
+		// decode. The records that carry none are served without the field at all,
+		// which is exactly what a new client sees from an older server: an empty
+		// message, not a decode failure.
+		require.Equal(t, 422, records[0].Code)
+		require.Equal(t, "rejected: invalid email", records[0].Error)
+		for _, r := range records[1:] {
+			require.Empty(t, r.Error, "record %s", r.Record)
+		}
 	})
 
 	t.Run("with pagination", func(t *testing.T) {
 		handler, service, dbResource := prepare(t, rsources_http.NewV2Handler)
 		addFailedRecords(t, service, dbResource.DB, []rsources.FailedRecord{
-			{Record: []byte(`"id-1"`)},
-			{Record: []byte(`"id-2"`)},
-			{Record: []byte(`"id-3"`)},
-			{Record: []byte(`"id-4"`)},
+			{Record: []byte(`"id-1"`), Error: "message 1"},
+			{Record: []byte(`"id-2"`), Error: "message 2"},
+			{Record: []byte(`"id-3"`), Error: "message 3"},
+			{Record: []byte(`"id-4"`), Error: "message 4"},
 		})
 		pageSize := 2
 		pageToken := ""
-		for range 2 { // 2 pages are retrieved with 2 records each and where paging is present
+		for page := range 2 { // 2 pages are retrieved with 2 records each and where paging is present
 			failedRecords := getFailedRecords(t, handler, pageSize, pageToken)
 			require.NotNil(t, failedRecords)
 			require.Len(t, failedRecords.Tasks, 1)
 			require.Len(t, failedRecords.Tasks[0].Sources, 1)
 			require.Len(t, failedRecords.Tasks[0].Sources[0].Destinations, 1)
-			require.Len(t, failedRecords.Tasks[0].Sources[0].Destinations[0].Records, pageSize)
+			records := failedRecords.Tasks[0].Sources[0].Destinations[0].Records
+			require.Len(t, records, pageSize)
 			require.NotNil(t, failedRecords.Paging, "paging information should be present")
 			require.Equal(t, pageSize, failedRecords.Paging.Size)
 			pageToken = failedRecords.Paging.NextPageToken
+
+			// The message is carried by every page, and the cursor is still the
+			// record id: paging must not drop or reorder it.
+			for i, r := range records {
+				require.Equalf(t, strconv.Itoa(page*pageSize+i+1),
+					strings.TrimSuffix(strings.TrimPrefix(string(r.Record), `"id-`), `"`),
+					"page %d record %d is out of order", page, i)
+				require.Equalf(t, "message "+strconv.Itoa(page*pageSize+i+1), r.Error,
+					"page %d record %d lost its message", page, i)
+			}
 		}
 
 		// 3 page is retrieved with 0 records and where paging is not present

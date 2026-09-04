@@ -59,7 +59,12 @@ type StatsCollector interface {
 	// A call to BeginProcessing must precede a call to this method,
 	// so that all necessary indices can be created, since a JobStatus
 	// doesn't carry all necessary job metadata such as jobRunId, taskRunId, etc.
-	CollectFailedRecords(jobStatuses []*jobsdb.JobStatusT)
+	//
+	//
+	// It returns an error when the SyncSettingDelegate cannot answer whether the run
+	// captures error responses. On error the collector is left holding the records it had already resolved, so a
+	// caller MUST propagate the error instead of proceeding to Publish it
+	CollectFailedRecords(ctx context.Context, delegate SyncSettingDelegate, jobStatuses []*jobsdb.JobStatusT) error
 }
 
 // FailedJobsStatsCollector collects stats for failed jobs
@@ -70,23 +75,15 @@ type FailedJobsStatsCollector interface {
 
 // NewStatsCollector creates a new stats collector
 func NewStatsCollector(jobservice JobService, component string, statFactory stats.Stats, opts ...OptFunc) StatsCollector {
-	sc := &statsCollector{
-		jobService:            jobservice,
-		jobIdsToStatKeyIndex:  map[int64]statKey{},
-		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
-		statsIndex:            map[statKey]*Stats{},
-		failedRecordsIndex:    map[statKey][]FailedRecord{},
-		parametersParser:      defaultParametersParser,
-	}
-	for _, opt := range opts {
-		opt(sc)
-	}
-	sc.stats.publishTime = statFactory.NewTaggedStat(rsourcesPublishTime, stats.TimerType, stats.Tags{"module": component})
-	return sc
+	return newStatsCollector(jobservice, component, statFactory, opts...)
 }
 
 // NewDroppedJobsCollector creates a new stats collector for publishing failed job stats and records
 func NewDroppedJobsCollector(jobservice JobService, component string, statFactory stats.Stats, opts ...OptFunc) FailedJobsStatsCollector {
+	return newStatsCollector(jobservice, component, statFactory, opts...)
+}
+
+func newStatsCollector(jobservice JobService, component string, statFactory stats.Stats, opts ...OptFunc) *statsCollector {
 	sc := &statsCollector{
 		jobService:            jobservice,
 		jobIdsToStatKeyIndex:  map[int64]statKey{},
@@ -94,6 +91,8 @@ func NewDroppedJobsCollector(jobservice JobService, component string, statFactor
 		statsIndex:            map[statKey]*Stats{},
 		failedRecordsIndex:    map[statKey][]FailedRecord{},
 		parametersParser:      defaultParametersParser,
+		component:             component,
+		statFactory:           statFactory,
 	}
 	for _, opt := range opts {
 		opt(sc)
@@ -121,7 +120,11 @@ type statsCollector struct {
 	statsIndex            map[statKey]*Stats
 	failedRecordsIndex    map[statKey][]FailedRecord
 	parametersParser      parametersParser
-	stats                 struct {
+	// component names the collector in errors; the delegate arrives per call, so a
+	// caller that forgot one has to be identifiable from the error alone.
+	component   string
+	statFactory stats.Stats
+	stats       struct {
 		publishTime stats.Timer
 	}
 }
@@ -172,13 +175,13 @@ func (r *statsCollector) JobsStoredWithErrors(jobs []*jobsdb.JobT, failedJobs ma
 func (r *statsCollector) JobsForked(jobs []*jobsdb.JobT) {
 	for i := range jobs {
 		job := jobs[i]
-		jobRunId, _, jobTargetKey := r.parametersParser(job.Parameters)
-		if jobRunId == "" {
+		p := r.parametersParser(job.Parameters)
+		if p.jobRunID == "" {
 			continue
 		}
 		sk := statKey{
-			jobRunId:     jobRunId,
-			JobTargetKey: jobTargetKey,
+			jobRunId:     p.jobRunID,
+			JobTargetKey: p.target,
 		}
 		stats, ok := r.statsIndex[sk]
 		if !ok {
@@ -222,27 +225,42 @@ func (r *statsCollector) CollectStats(jobStatuses []*jobsdb.JobStatusT) {
 	}
 }
 
-func (r *statsCollector) CollectFailedRecords(jobStatuses []*jobsdb.JobStatusT) {
+func (r *statsCollector) CollectFailedRecords(ctx context.Context, delegate SyncSettingDelegate, jobStatuses []*jobsdb.JobStatusT) error {
 	if !r.processing {
 		panic(fmt.Errorf("cannot update job statuses without having previously called BeginProcessing"))
 	}
 
 	if len(r.jobIdsToRecordIdIndex) == 0 || len(r.jobIdsToStatKeyIndex) == 0 {
-		return
+		return nil
 	}
 	for i := range jobStatuses {
 		jobStatus := jobStatuses[i]
-		if statKey, statKeyOk := r.jobIdsToStatKeyIndex[jobStatus.JobID]; statKeyOk {
-			if recordId, recordIdOK := r.jobIdsToRecordIdIndex[jobStatus.JobID]; recordIdOK {
-				if jobStatus.JobState == jobsdb.Aborted.State {
-					if len(recordId) > 0 {
-						code, _ := strconv.Atoi(jobStatus.ErrorCode)
-						r.failedRecordsIndex[statKey] = append(r.failedRecordsIndex[statKey], FailedRecord{Record: recordId, Code: code})
-					}
-				}
-			}
+		statKey, statKeyOk := r.jobIdsToStatKeyIndex[jobStatus.JobID]
+		if !statKeyOk {
+			continue
 		}
+		recordId, recordIdOK := r.jobIdsToRecordIdIndex[jobStatus.JobID]
+		if !recordIdOK || len(recordId) == 0 {
+			continue
+		}
+		if jobStatus.JobState != jobsdb.Aborted.State {
+			continue
+		}
+		if delegate == nil {
+			return fmt.Errorf("no sync setting delegate provided to the %q stats collector", r.component)
+		}
+		errorResponse, err := delegate.GetErrorResponse(ctx, statKey, jobStatus)
+		if err != nil {
+			return fmt.Errorf("resolving the error response for job %d: %w", jobStatus.JobID, err)
+		}
+		code, _ := strconv.Atoi(jobStatus.ErrorCode)
+		r.failedRecordsIndex[statKey] = append(r.failedRecordsIndex[statKey], FailedRecord{
+			Record: recordId,
+			Code:   code,
+			Error:  errorResponse,
+		})
 	}
+	return nil
 }
 
 func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
@@ -288,11 +306,11 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 		if _, ok := failedJobs[job.UUID]; ok {
 			continue
 		}
-		jobRunId, recordId, jobTargetKey := r.parametersParser(job.Parameters)
-		if jobRunId != "" {
+		p := r.parametersParser(job.Parameters)
+		if p.jobRunID != "" {
 			sk := statKey{
-				jobRunId:     jobRunId,
-				JobTargetKey: jobTargetKey,
+				jobRunId:     p.jobRunID,
+				JobTargetKey: p.target,
 			}
 			var stats *Stats
 			stats, ok := r.statsIndex[sk]
@@ -304,8 +322,8 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 				stats.In++
 			}
 			r.jobIdsToStatKeyIndex[job.JobID] = sk
-			if recordId != "" && recordId != "null" && recordId != `""` {
-				recordIdJson := json.RawMessage(recordId)
+			if p.recordID != "" && p.recordID != "null" && p.recordID != `""` {
+				recordIdJson := json.RawMessage(p.recordID)
 				if json.Valid(recordIdJson) {
 					r.jobIdsToRecordIdIndex[job.JobID] = recordIdJson
 				}
@@ -314,46 +332,55 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 	}
 }
 
-type parametersParser func(jp json.RawMessage) (jobRunID, recordID string, target JobTargetKey)
+// jobParameters is the subset of a job's parameters the collector needs. It is a
+// struct rather than a tuple so that adding a parameter does not ripple through
+// every parser implementation and call site.
+type jobParameters struct {
+	jobRunID string
+	recordID string
+	target   JobTargetKey
+}
+
+type parametersParser func(jp json.RawMessage) jobParameters
 
 type OptFunc func(*statsCollector)
 
 // IgnoreDestinationID ignores the destinationID parameter of the job and while capturing statistics
 func IgnoreDestinationID() OptFunc {
 	return func(r *statsCollector) {
-		r.parametersParser = func(jobParams json.RawMessage) (jobRunID, recordID string, target JobTargetKey) {
-			jobRunID, recordID, target = defaultParametersParser(jobParams)
-			target.DestinationID = ""
-			return jobRunID, recordID, target
+		r.parametersParser = func(jobParams json.RawMessage) jobParameters {
+			p := defaultParametersParser(jobParams)
+			p.target.DestinationID = ""
+			return p
 		}
 	}
 }
 
-func defaultParametersParser(jobParams json.RawMessage) (jobRunID, recordID string, target JobTargetKey) {
-	var jobRunId string
-	var jobTargetKey JobTargetKey
-	var recordId string
+func defaultParametersParser(jobParams json.RawMessage) jobParameters {
+	var p jobParameters
+	// One decrement per key below; the ForEach stops as soon as all of them have
+	// been seen.
 	remaining := 5
 	jp := gjson.ParseBytes(jobParams)
 	jp.ForEach(func(key, value gjson.Result) bool {
 		switch key.Str {
 		case "source_job_run_id":
-			jobRunId = value.Str
+			p.jobRunID = value.Str
 			remaining--
 		case "source_task_run_id":
-			jobTargetKey.TaskRunID = value.Str
+			p.target.TaskRunID = value.Str
 			remaining--
 		case "source_id":
-			jobTargetKey.SourceID = value.Str
+			p.target.SourceID = value.Str
 			remaining--
 		case "destination_id":
-			jobTargetKey.DestinationID = value.Str
+			p.target.DestinationID = value.Str
 			remaining--
 		case "record_id":
-			recordId = value.Raw
+			p.recordID = value.Raw
 			remaining--
 		}
 		return remaining != 0
 	})
-	return jobRunId, recordId, jobTargetKey
+	return p
 }
