@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
@@ -46,7 +47,7 @@ func (f *featuresPayload) sourceTransformerVersion() string {
 
 func parseFeatures(body []byte) (*featuresPayload, error) {
 	var f featuresPayload
-	if err := json.Unmarshal(body, &f); err != nil {
+	if err := jsonrs.Unmarshal(body, &f); err != nil {
 		return nil, err
 	}
 	f.raw = body
