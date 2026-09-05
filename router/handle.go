@@ -73,7 +73,7 @@ type Handle struct {
 	drainConcurrencyLimit              config.ValueLoader[int]
 	maxNoOfJobsPerChannel              int // maximum capacity of each worker channel (hard capacity limit of the underlying go channel)
 	noOfJobsPerChannel                 int // requested capacity of each worker channel (important when job buffering is being calculated using the standard method)
-	saveDestinationResponse            bool
+	saveDestinationResponse            atomic.Bool
 	saveDestinationResponseOverride    config.ValueLoader[bool]
 	reportJobsdbPayload                config.ValueLoader[bool]
 	storeDeliveredWithWarningPayload   config.ValueLoader[bool]

@@ -97,7 +97,7 @@ func (rt *Handle) Setup(
 	rt.telemetry.diagnosisTicker = time.NewTicker(rt.diagnosisTickerTime)
 
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
-		rt.saveDestinationResponse = value
+		rt.saveDestinationResponse.Store(value)
 	}
 	if value, ok := destinationDefinition.Config["supportsDeliveredWithWarnings"].(bool); ok {
 		rt.supportsDeliveredWithWarnings.Store(value)
@@ -484,7 +484,7 @@ func (rt *Handle) backendConfigSubscriber() {
 						destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, *source)
 
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
-							rt.saveDestinationResponse = value
+							rt.saveDestinationResponse.Store(value)
 						}
 						if value, ok := destination.DestinationDefinition.Config["supportsDeliveredWithWarnings"].(bool); ok {
 							rt.supportsDeliveredWithWarnings.Store(value)
