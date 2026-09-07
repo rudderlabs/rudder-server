@@ -62,6 +62,7 @@ type handleConfig struct {
 	internalBatchThrottleEvents          config.ValueLoader[int]
 	internalBatchThrottleWindow          config.ValueLoader[time.Duration]
 	enableSuppressUserFeature            bool
+	storeUserSuppressedEvents            config.ValueLoader[bool]
 	diagnosisTickerTime                  time.Duration
 	ReadTimeout                          time.Duration
 	ReadHeaderTimeout                    time.Duration
@@ -856,6 +857,19 @@ type jobParams struct {
 	BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser,omitempty"`
 	BotAction           string `json:"bot_action,omitempty"`
 	IsEventBlocked      bool   `json:"is_event_blocked,omitempty"`
+	IsUserSuppressed    bool   `json:"is_user_suppressed,omitempty"`
+}
+
+// buildSuppressedEventPayload strips a suppressed user's event down to the fields jobsdb and
+// reporting need to route and count it: messageId, type, event name and receivedAt. No
+// properties, traits, context or other user-identifying data survive suppression.
+func buildSuppressedEventPayload(messageID, eventType, eventName, receivedAt string) map[string]any {
+	return map[string]any{
+		"messageId":  messageID,
+		"type":       eventType,
+		"event":      eventName,
+		"receivedAt": receivedAt,
+	}
 }
 
 func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byte) (
@@ -910,7 +924,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 	for _, msg := range messages {
 		var (
-			messageID        string
 			marshalledParams []byte
 			payload          []byte
 		)
@@ -939,6 +952,9 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			return nil, errors.New(response.NotRudderEvent)
 		}
 
+		// non-empty messageId in the payload is guaranteed by the messageID validator
+		messageID := jsonparser.GetStringOrEmpty(msg.Payload, "messageId")
+
 		writeKey, sourceDefName, sourceName, sourceType := "", "", "", ""
 		src, ok := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
 		if !ok {
@@ -955,6 +971,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		stat.SourceDefName = sourceDefName
 		stat.SourceType = sourceType
 
+		var isUserSuppressedEvent bool
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
 			gw.logger.Infon("suppressed event",
 				obskit.SourceID(msg.Properties.SourceID),
@@ -966,7 +983,10 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 				stats.CountType,
 				gw.newSourceStatTagsWithReason(msg.Properties, reqType, errEventSuppressed.Error(), writeKey, sourceName),
 			).Increment()
-			continue
+			if !gw.conf.storeUserSuppressedEvents.Load() {
+				continue
+			}
+			isUserSuppressedEvent = true
 		}
 
 		gw.stats.NewTaggedStat("gateway.event_pickup_lag_seconds", stats.TimerType, stats.Tags{
@@ -998,7 +1018,21 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 		eventName := jsonparser.GetStringOrEmpty(msg.Payload, "event")
 		eventType := jsonparser.GetStringOrEmpty(msg.Payload, "type")
-		if isEventBlocked(msg.Properties.WorkspaceID, msg.Properties.SourceID, eventType, eventName) {
+		if isUserSuppressedEvent {
+			jobsDBParams.IsUserSuppressed = true
+			dummyEvent := buildSuppressedEventPayload(messageID, eventType, eventName, msg.Properties.ReceivedAt.Format(misc.RFC3339Milli))
+			dummyPayload, mErr := jsonrs.Marshal(dummyEvent)
+			if mErr != nil {
+				// drop the event instead of storing the original payload: no suppressed user
+				// data may survive suppression
+				gw.logger.Errorn("marshalling suppressed user event payload",
+					obskit.SourceID(msg.Properties.SourceID),
+					obskit.Error(mErr),
+				)
+				continue
+			}
+			msg.Payload = dummyPayload
+		} else if isEventBlocked(msg.Properties.WorkspaceID, msg.Properties.SourceID, eventType, eventName) {
 			jobsDBParams.IsEventBlocked = true
 		}
 
@@ -1046,7 +1080,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		jobUUID := uuid.New()
 		res = append(res, jobWithMetadata{
 			stat:                   stat,
-			skipLiveEventRecording: (jobsDBParams.IsEventBlocked || (jobsDBParams.IsBot && jobsDBParams.BotAction == types.DropBotEventAction)),
+			skipLiveEventRecording: (jobsDBParams.IsEventBlocked || jobsDBParams.IsUserSuppressed || (jobsDBParams.IsBot && jobsDBParams.BotAction == types.DropBotEventAction)),
 			job: &jobsdb.JobT{
 				UUID:         jobUUID,
 				UserID:       msg.Properties.RoutingKey,

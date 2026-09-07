@@ -387,6 +387,42 @@ var _ = Describe("Gateway Enterprise", func() {
 			)
 			Expect(stat).To(BeNil())
 		})
+
+		// Context("Gateway.storeUserSuppressedEvents") pins the (user-decided) final contract: the
+		// public path never stored dummy jobs for suppressed events and, after the flag was added
+		// and then walked back, it still doesn't — regardless of the flag's value. The dummy-job
+		// behaviour now lives exclusively on the internal batch path
+		// (extractJobsFromInternalBatchPayload, covered in handle_test.go).
+		Context("Gateway.storeUserSuppressedEvents", func() {
+			It("flag off: a fully suppressed request still returns via errRequestSuppressed and stores nothing", func() {
+				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(0)
+				c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+				suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, SuppressedUserID)
+				expectHandlerResponse(
+					gateway.webBatchHandler(),
+					authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)),
+					http.StatusOK, "ok", "batch",
+				)
+			})
+
+			It("flag on: the public path still drops via errRequestSuppressed and stores nothing", func() {
+				// Guards against the flag ever leaking back into the public path: even with it
+				// explicitly enabled, a fully suppressed request must behave exactly as if the
+				// flag didn't exist here.
+				conf.Set("Gateway.storeUserSuppressedEvents", true)
+
+				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(0)
+				c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+				suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, SuppressedUserID)
+				expectHandlerResponse(
+					gateway.webBatchHandler(),
+					authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)),
+					http.StatusOK, "ok", "batch",
+				)
+			})
+		})
 	})
 })
 

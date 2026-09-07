@@ -334,6 +334,7 @@ type EventParams struct {
 	BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser,omitempty"`
 	BotAction           string `json:"bot_action,omitempty"`
 	IsEventBlocked      bool   `json:"is_event_blocked,omitempty"`
+	IsUserSuppressed    bool   `json:"is_user_suppressed,omitempty"`
 }
 
 type TransformerMetricLabels struct {
