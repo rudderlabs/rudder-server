@@ -533,6 +533,13 @@ func (ch *Clickhouse) UseS3CopyEngineForLoading() bool {
 	if !slices.Contains(ch.config.s3EngineEnabledWorkspaceIDs, ch.Warehouse.WorkspaceID) {
 		return false
 	}
+	// ObjectStorageType reports S3 for rudder storage, but that bucket is
+	// reached through the AWS SDK credential chain and the s3 table function
+	// only takes literal keys, which the destination config does not hold for
+	// it. Downloading the load files is the only path that can authenticate.
+	if ch.Uploader.UseRudderStorage() {
+		return false
+	}
 	return ch.ObjectStorage == warehouseutils.S3 || ch.ObjectStorage == warehouseutils.MINIO
 }
 
