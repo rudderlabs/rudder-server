@@ -6433,9 +6433,9 @@ func TestUserSuppressionReporting(t *testing.T) {
 	})
 }
 
-// TestGatewayIngestedReporting exercises the GATEWAY_INGESTED reporting added at the very top
+// TestGatewayIngestedReporting exercises the gw_ingested reporting added at the very top
 // of the preprocess loop (processor.go:2059-2079), above the IsUserSuppressed check: every event
-// accumulates a succeeded/200 row under CreatePUDetails("", GATEWAY_INGESTED, false, false),
+// accumulates a succeeded/200 row under CreatePUDetails("", gw_ingested, false, false),
 // gated by proc.isReportingEnabled() && Reporting.gatewayIngestedMetrics.enabled (default false),
 // regardless of whether it later survives suppression/bot/blocking/dedup. Modelled directly on
 // TestUserSuppressionReporting.
@@ -6604,7 +6604,7 @@ func TestGatewayIngestedReporting(t *testing.T) {
 
 	oneEvent := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
 
-	t.Run("should emit one gateway_ingested succeeded row for an ordinary event when the flag is on", func(t *testing.T) {
+	t.Run("should emit one gw_ingested succeeded row for an ordinary event when the flag is on", func(t *testing.T) {
 		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
 		defer c.Finish()
 		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
@@ -6625,7 +6625,7 @@ func TestGatewayIngestedReporting(t *testing.T) {
 		require.Equal(t, SourceIDEnabled, row.SourceID)
 	})
 
-	t.Run("should emit no gateway_ingested row when the flag is off, and produce identical reportMetrics across two such runs", func(t *testing.T) {
+	t.Run("should emit no gw_ingested row when the flag is off, and produce identical reportMetrics across two such runs", func(t *testing.T) {
 		// The flag defaults to false and is never set here. Running the same fixture twice and
 		// comparing reportMetrics byte-for-byte is the strongest flag-off assertion available
 		// short of a row-count check: it catches nondeterminism introduced by the new map (e.g. a
@@ -6647,7 +6647,7 @@ func TestGatewayIngestedReporting(t *testing.T) {
 		require.Equal(t, run1.reportMetrics, run2.reportMetrics)
 	})
 
-	t.Run("should emit no gateway_ingested row when reporting is disabled but the flag is on", func(t *testing.T) {
+	t.Run("should emit no gw_ingested row when reporting is disabled but the flag is on", func(t *testing.T) {
 		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: false})
 		defer c.Finish()
 		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
@@ -6662,7 +6662,7 @@ func TestGatewayIngestedReporting(t *testing.T) {
 		// One event of each drop kind (suppressed, dropped bot, blocked, deduped) plus two
 		// ordinary events. dedupAllowedFn denies only the duplicate job's event (index 3: the
 		// dedup index is assigned in job-list order, one per singular event, see
-		// processor.go:1996-2000). If the gateway_ingested emission ever drifts below one of the
+		// processor.go:1996-2000). If the gw_ingested emission ever drifts below one of the
 		// preprocess loop's `continue`s, sum(Count) here falls short of the total.
 		dedupAllowedFn := func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
 			allowed := make(map[dedup.BatchKey]bool, len(keys))
@@ -6696,7 +6696,7 @@ func TestGatewayIngestedReporting(t *testing.T) {
 		transMsg := runGatewayIngestedPipeline(t, processor, jobs)
 
 		require.EqualValues(t, 6, sumCount(gatewayIngestedRows(transMsg.reportMetrics)),
-			"every event, dropped or not, must be counted at the gateway_ingested site")
+			"every event, dropped or not, must be counted at the gw_ingested site")
 
 		gatewayIngestedTotal := sumCount(gatewayIngestedRows(transMsg.reportMetrics))
 		droppedTotal := sumCount(userSuppressionRows(transMsg.reportMetrics)) +
@@ -6706,13 +6706,13 @@ func TestGatewayIngestedReporting(t *testing.T) {
 				return m.StatusDetail.Status == jobsdb.Filtered.State
 			}))
 		require.EqualValues(t, gatewayIngestedTotal-droppedTotal, sumCount(gatewayRows(transMsg.reportMetrics)),
-			"gateway_ingested minus every drop-site count must equal the surviving gateway count")
+			"gw_ingested minus every drop-site count must equal the surviving gateway count")
 	})
 
 	t.Run("should leave the gateway billing row's StatusCode at 0 while the flag is on", func(t *testing.T) {
 		// The GATEWAY site is the only reporting call in the loop that never sets
 		// reportingEvent.StatusCode itself: it inherits whatever the shared struct holds. A
-		// missing reset at the gateway_ingested site would not mislabel the billing row, it would
+		// missing reset at the gw_ingested site would not mislabel the billing row, it would
 		// fork it into a second bucket keyed on the leaked StatusCode.
 		dedupAllowedFn := func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
 			allowed := make(map[dedup.BatchKey]bool, len(keys))
@@ -6759,10 +6759,10 @@ func TestGatewayIngestedReporting(t *testing.T) {
 
 		require.Len(t, userSuppressionRows(runOn.reportMetrics), 1)
 		require.Equal(t, reportingtypes.FilterEventCode, userSuppressionRows(runOn.reportMetrics)[0].StatusDetail.StatusCode,
-			"the set-then-reset at the gateway_ingested site must not corrupt the suppression row below it")
+			"the set-then-reset at the gw_ingested site must not corrupt the suppression row below it")
 		require.Len(t, dedupRows(runOn.reportMetrics), 1)
 		require.Equal(t, reportingtypes.FilterEventCode, dedupRows(runOn.reportMetrics)[0].StatusDetail.StatusCode,
-			"the set-then-reset at the gateway_ingested site must not corrupt the dedup row below it")
+			"the set-then-reset at the gw_ingested site must not corrupt the dedup row below it")
 	})
 
 	t.Run("should aggregate events of the same name and type from one source into a single row, and split rows by event type", func(t *testing.T) {
@@ -6794,7 +6794,7 @@ func TestGatewayIngestedReporting(t *testing.T) {
 		require.EqualValues(t, 2, byType["identify"])
 	})
 
-	t.Run("should count a flagged-but-not-dropped bot event exactly once in both gateway_ingested and gateway", func(t *testing.T) {
+	t.Run("should count a flagged-but-not-dropped bot event exactly once in both gw_ingested and gateway", func(t *testing.T) {
 		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
 		defer c.Finish()
 		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
@@ -6809,7 +6809,7 @@ func TestGatewayIngestedReporting(t *testing.T) {
 
 		// The bot-flag path also emits a second GATEWAY row from the enricher map
 		// (status "bot_flagged"), unrelated to this slice; isolate the billing row (status
-		// "succeeded") to check the gateway_ingested emission did not fork or duplicate it.
+		// "succeeded") to check the gw_ingested emission did not fork or duplicate it.
 		billingGwRows := lo.Filter(gatewayRows(transMsg.reportMetrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
 			return m.StatusDetail.Status == jobsdb.Succeeded.State
 		})
@@ -6817,8 +6817,8 @@ func TestGatewayIngestedReporting(t *testing.T) {
 		require.EqualValues(t, 1, billingGwRows[0].StatusDetail.Count)
 	})
 
-	t.Run("should emit a gateway_ingested row for a batch whose every event is dropped", func(t *testing.T) {
-		// Reporting.dedupMetrics.enabled stays at its default (off): the new gateway_ingested
+	t.Run("should emit a gw_ingested row for a batch whose every event is dropped", func(t *testing.T) {
+		// Reporting.dedupMetrics.enabled stays at its default (off): the new gw_ingested
 		// block is now the only thing creating a connectionDetailsMap entry for this source, and
 		// pretransformStage's build loop must still run over a connection key for which every
 		// other status-detail map is empty (AssertKeysSubset tolerates that; it is Subset, not
@@ -6846,7 +6846,7 @@ func TestGatewayIngestedReporting(t *testing.T) {
 		rows := gatewayIngestedRows(transMsg.reportMetrics)
 		require.Len(t, rows, 1)
 		require.EqualValues(t, 2, rows[0].StatusDetail.Count)
-		require.Empty(t, dedupRows(transMsg.reportMetrics), "dedup reporting is off; the drop is silent besides gateway_ingested")
+		require.Empty(t, dedupRows(transMsg.reportMetrics), "dedup reporting is off; the drop is silent besides gw_ingested")
 		require.Empty(t, gatewayRows(transMsg.reportMetrics))
 	})
 }
