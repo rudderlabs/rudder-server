@@ -79,9 +79,12 @@ func TestIntegration(t *testing.T) {
 			tables             []string
 			destType           string
 			conf               map[string]any
+			eventsFilePath     string
 			schemaTTLInMinutes int
 			prerequisite       func(t testing.TB, ctx context.Context)
 			configOverride     map[string]any
+			stagingEvents      whth.EventsCountMap
+			tableUploadEvents  whth.EventsCountMap
 			verifySchema       func(*testing.T, filemanager.FileManager, string)
 			verifyRecords      func(*testing.T, filemanager.FileManager, string, string, string)
 		}{
@@ -153,9 +156,7 @@ func TestIntegration(t *testing.T) {
 					}
 
 					userIDFormat := "userId_s3_datalake"
-					uuidFormat := "2023-01-01"
-
-					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat, uuidFormat)
+					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat)
 
 					require.ElementsMatch(t, er["identifies"], whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
 					require.ElementsMatch(t, er["users"], whth.UploadJobUsersRecordsForDatalake(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
@@ -227,9 +228,7 @@ func TestIntegration(t *testing.T) {
 					}
 
 					userIDFormat := "userId_gcs_datalake"
-					uuidFormat := "2023-01-01"
-
-					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat, uuidFormat)
+					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat)
 
 					require.ElementsMatch(t, er["identifies"], whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
 					require.ElementsMatch(t, er["users"], whth.UploadJobUsersRecordsForDatalake(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
@@ -240,6 +239,37 @@ func TestIntegration(t *testing.T) {
 					require.ElementsMatch(t, er["aliases"], whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
 					require.ElementsMatch(t, er["_groups"], whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
 				},
+			},
+			{
+				name:               "GCSDatalake JSON paths",
+				tables:             []string{"tracks", "product_track"},
+				destType:           whutils.GCSDatalake,
+				eventsFilePath:     "testdata/upload-job-json-paths.events.json",
+				schemaTTLInMinutes: 100,
+				conf: map[string]any{
+					"bucketName":    gcsBucketName,
+					"prefix":        "",
+					"endPoint":      gcsEndPoint,
+					"disableSSL":    true,
+					"jsonReads":     true,
+					"jsonPaths":     "track.context.traits,track.properties.metadata",
+					"syncFrequency": "30",
+				},
+				prerequisite: func(t testing.TB, ctx context.Context) {
+					t.Helper()
+					createGCSBucket(t, ctx, gcsEndPoint, gcsBucketName)
+				},
+				configOverride: map[string]any{
+					"bucketName": gcsBucketName,
+					"endPoint":   gcsEndPoint,
+					"disableSSL": true,
+					"jsonReads":  true,
+					"jsonPaths":  "track.context.traits,track.properties.metadata",
+				},
+				stagingEvents:     whth.EventsCountMap{"wh_staging_files": 2},
+				tableUploadEvents: whth.EventsCountMap{"tracks": 1, "product_track": 1},
+				verifySchema:      verifyGCSJsonPathsSchema,
+				verifyRecords:     verifyGCSJsonPathsRecords,
 			},
 			{
 				name:               "AzureDatalake",
@@ -301,9 +331,7 @@ func TestIntegration(t *testing.T) {
 					}
 
 					userIDFormat := "userId_azure_datalake"
-					uuidFormat := "2023-01-01"
-
-					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat, uuidFormat)
+					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat)
 
 					require.ElementsMatch(t, er["identifies"], whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
 					require.ElementsMatch(t, er["users"], whth.UploadJobUsersRecordsForDatalake(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
@@ -363,45 +391,54 @@ func TestIntegration(t *testing.T) {
 					tc.prerequisite(t, ctx)
 				}
 
+				eventsFilePath := tc.eventsFilePath
+				if eventsFilePath == "" {
+					eventsFilePath = "../testdata/upload-job.events-1.json"
+				}
+
 				t.Log("verifying test case 1")
 				ts1 := whth.TestConfig{
-					WriteKey:        writeKey,
-					Schema:          namespace,
-					Tables:          tc.tables,
-					SourceID:        sourceID,
-					DestinationID:   destinationID,
-					DestinationType: tc.destType,
-					Config:          tc.conf,
-					WorkspaceID:     workspaceID,
-					JobsDB:          jobsDB,
-					HTTPPort:        httpPort,
-					UserID:          whth.GetUserId(tc.destType),
-					SkipWarehouse:   true,
-					EventsFilePath:  "../testdata/upload-job.events-1.json",
-					TransformerURL:  transformerURL,
-					Destination:     destination,
+					WriteKey:              writeKey,
+					Schema:                namespace,
+					Tables:                tc.tables,
+					SourceID:              sourceID,
+					DestinationID:         destinationID,
+					DestinationType:       tc.destType,
+					Config:                tc.conf,
+					WorkspaceID:           workspaceID,
+					JobsDB:                jobsDB,
+					HTTPPort:              httpPort,
+					UserID:                whth.GetUserId(tc.destType),
+					SkipWarehouse:         true,
+					EventsFilePath:        eventsFilePath,
+					StagingFilesEventsMap: tc.stagingEvents,
+					TableUploadsEventsMap: tc.tableUploadEvents,
+					TransformerURL:        transformerURL,
+					Destination:           destination,
 				}
 				ts1.VerifyEvents(t)
 
-				t.Log("verifying test case 2")
-				ts2 := whth.TestConfig{
-					WriteKey:        writeKey,
-					Schema:          namespace,
-					Tables:          tc.tables,
-					SourceID:        sourceID,
-					DestinationID:   destinationID,
-					DestinationType: tc.destType,
-					Config:          tc.conf,
-					WorkspaceID:     workspaceID,
-					JobsDB:          jobsDB,
-					HTTPPort:        httpPort,
-					UserID:          whth.GetUserId(tc.destType),
-					SkipWarehouse:   true,
-					EventsFilePath:  "../testdata/upload-job.events-2.json",
-					TransformerURL:  transformerURL,
-					Destination:     destination,
+				if tc.eventsFilePath == "" {
+					t.Log("verifying test case 2")
+					ts2 := whth.TestConfig{
+						WriteKey:        writeKey,
+						Schema:          namespace,
+						Tables:          tc.tables,
+						SourceID:        sourceID,
+						DestinationID:   destinationID,
+						DestinationType: tc.destType,
+						Config:          tc.conf,
+						WorkspaceID:     workspaceID,
+						JobsDB:          jobsDB,
+						HTTPPort:        httpPort,
+						UserID:          whth.GetUserId(tc.destType),
+						SkipWarehouse:   true,
+						EventsFilePath:  "../testdata/upload-job.events-2.json",
+						TransformerURL:  transformerURL,
+						Destination:     destination,
+					}
+					ts2.VerifyEvents(t)
 				}
-				ts2.VerifyEvents(t)
 
 				storageProvider := whutils.ObjectStorageType(tc.destType, tc.conf, false)
 				fm, err := filemanager.New(&filemanager.Settings{
@@ -1025,8 +1062,65 @@ func filesSchema(t testing.TB, fm filemanager.FileManager, prefix string) map[st
 	return schemasMap
 }
 
-func eventRecords(t testing.TB, fm filemanager.FileManager, namespace string, outputFormat map[string][]string, userIDFormat, uuidFormat string) map[string][][]string {
+func verifyGCSJsonPathsSchema(t *testing.T, fm filemanager.FileManager, namespace string) {
 	t.Helper()
+
+	fs := filesSchema(t, fm, "rudder-datalake/"+namespace+"/")
+	require.Len(t, fs, 2)
+
+	seenTables := make(map[string]struct{}, len(fs))
+	for fileName, fileSchema := range fs {
+		fileNameSplits := strings.Split(fileName, "/")
+		require.GreaterOrEqual(t, len(fileNameSplits), 3)
+
+		tableName := fileNameSplits[2]
+		seenTables[tableName] = struct{}{}
+		schema := lo.SliceToMap(fileSchema, func(col []string) (string, string) {
+			return col[0], col[1]
+		})
+
+		require.Equal(t, "BYTE_ARRAY", schema["Context_traits"])
+		require.NotContains(t, schema, "Context_traits_email")
+		require.NotContains(t, schema, "Context_traits_logins")
+		require.NotContains(t, schema, "Context_traits_name")
+
+		if tableName == "product_track" {
+			require.Equal(t, "BYTE_ARRAY", schema["Metadata"])
+			require.NotContains(t, schema, "Metadata_campaign_name")
+			require.NotContains(t, schema, "Metadata_campaign_variant")
+			require.NotContains(t, schema, "Metadata_source")
+		}
+	}
+
+	require.Contains(t, seenTables, "tracks")
+	require.Contains(t, seenTables, "product_track")
+}
+
+func verifyGCSJsonPathsRecords(t *testing.T, fm filemanager.FileManager, sourceID, destinationID, namespace string) {
+	t.Helper()
+
+	outputFormat := map[string][]string{
+		"tracks":        {"Context_traits"},
+		"product_track": {"Context_traits", "Metadata"},
+	}
+
+	er := eventRecords(t, fm, namespace, outputFormat, "userId_gcs_datalake")
+
+	require.ElementsMatch(t, [][]string{
+		{`{"email":"rhedricks@example.com","logins":2,"name":"Richard Hendricks"}`},
+	}, er["tracks"])
+	require.ElementsMatch(t, [][]string{
+		{
+			`{"email":"rhedricks@example.com","logins":2,"name":"Richard Hendricks"}`,
+			`{"campaign":{"name":"spring","variant":"blue"},"source":"web"}`,
+		},
+	}, er["product_track"])
+}
+
+func eventRecords(t testing.TB, fm filemanager.FileManager, namespace string, outputFormat map[string][]string, userIDFormat string) map[string][][]string {
+	t.Helper()
+
+	const uuidFormat = "2023-01-01"
 
 	prefix := "rudder-datalake/" + namespace + "/"
 	ctx := context.Background()
@@ -1121,7 +1215,7 @@ func eventRecords(t testing.TB, fm filemanager.FileManager, namespace string, ou
 		// Reorder the data based on the output format
 		outputData := make([][]string, len(data))
 		for i := range data {
-			outputData[i] = make([]string, len(data[i]))
+			outputData[i] = make([]string, len(outputFormat[tableName]))
 		}
 
 		// Find the index of the field in the schema and assign the data to the output data
