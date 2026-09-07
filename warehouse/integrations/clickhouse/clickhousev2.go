@@ -50,6 +50,8 @@ type ClickhouseV2 struct {
 		queryDebugLogs              bool
 		commitEvery                 int
 		poolSize                    int
+		connMaxIdleTime             time.Duration
+		connMaxLifetime             time.Duration
 		readTimeout                 time.Duration
 		compress                    bool
 		disableNullable             bool
@@ -77,6 +79,11 @@ func NewV2(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse
 	// out, and keeping the floor there leaves small values usable in tests.
 	ch.config.commitEvery = max(conf.GetIntVar(1000000, 1, "Warehouse.clickhouse.v2.commitEvery"), 1)
 	ch.config.poolSize = conf.GetIntVar(100, 1, "Warehouse.clickhouse.v2.poolSize")
+	// Every block takes a connection out of the pool, so a connection the
+	// server closed while it sat idle has to be retired before a block picks
+	// it up.
+	ch.config.connMaxIdleTime = conf.GetDurationVar(5, time.Minute, "Warehouse.clickhouse.v2.connMaxIdleTime")
+	ch.config.connMaxLifetime = conf.GetDurationVar(30, time.Minute, "Warehouse.clickhouse.v2.connMaxLifetime")
 	ch.config.readTimeout = conf.GetDurationVar(300, time.Second, "Warehouse.clickhouse.v2.readTimeout")
 	ch.config.compress = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.compress")
 	ch.config.disableNullable = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.disableNullable")
