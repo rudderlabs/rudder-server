@@ -32,6 +32,7 @@ const (
 	USER_SUPPRESSION       = "user_suppression"
 	DEDUP                  = "dedup"
 	GATEWAY                = "gateway"
+	GATEWAY_INGESTED       = "gateway_ingested"
 	DESTINATION_ENTER      = "destination_enter"
 	DESTINATION_FILTER     = "destination_filter"
 	SOURCE_HYDRATION       = "source_hydration"
