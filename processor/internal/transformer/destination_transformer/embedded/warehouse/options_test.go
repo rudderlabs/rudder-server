@@ -205,6 +205,7 @@ func TestDestinationOptions(t *testing.T) {
 
 		require.Equal(t, []string{"path1", "path2"}, extractDestOpts(whutils.POSTGRES, destConfig).jsonPaths)
 		require.Equal(t, []string{"path1", "path2"}, extractDestOpts(whutils.CLICKHOUSE, destConfig).jsonPaths)
+		require.Equal(t, []string{"path1", "path2"}, extractDestOpts(whutils.GCSDatalake, destConfig).jsonPaths)
 		// A destination that does not read jsonPaths from its config still ignores them.
 		require.Empty(t, extractDestOpts(whutils.MSSQL, destConfig).jsonPaths)
 	})
