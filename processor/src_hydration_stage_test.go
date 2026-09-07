@@ -792,7 +792,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		// sorted by a stable key (PU + event name) rather than relying on append order/index.
 		expected := []*reportingtypes.PUReportedMetric{sentinel1, sentinel2, hydrationFailureRow}
 		metricKey := func(m *reportingtypes.PUReportedMetric) string {
-			return m.PUDetails.PU + "|" + m.StatusDetail.EventName
+			return m.PU + "|" + m.StatusDetail.EventName
 		}
 		sort.Slice(expected, func(i, j int) bool { return metricKey(expected[i]) < metricKey(expected[j]) })
 
