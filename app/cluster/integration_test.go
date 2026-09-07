@@ -150,15 +150,17 @@ func TestDynamicClusterManager(t *testing.T) {
 		RouterDB:                   rtDB,
 		TransientSources:           transientsource.NewEmptyService(),
 		RsourcesService:            mockRsourcesService,
+		RsourcesSyncSettings:       rsources.NewStaticSyncSettingDelegate("", nil),
 		TransformerFeaturesService: transformer.NewNoOpService(),
 		ThrottlerFactory:           throttler.NewNoOpThrottlerFactory(),
 	}
 	brtFactory := &batchrouter.Factory{
-		Reporting:        &reporting.NOOP{},
-		BackendConfig:    mockBackendConfig,
-		RouterDB:         brtDB,
-		TransientSources: transientsource.NewEmptyService(),
-		RsourcesService:  mockRsourcesService,
+		Reporting:            &reporting.NOOP{},
+		BackendConfig:        mockBackendConfig,
+		RouterDB:             brtDB,
+		TransientSources:     transientsource.NewEmptyService(),
+		RsourcesService:      mockRsourcesService,
+		RsourcesSyncSettings: rsources.NewStaticSyncSettingDelegate("", nil),
 	}
 	router := routermanager.New(rtFactory, brtFactory, mockBackendConfig, logger.NewLogger())
 

@@ -51,6 +51,7 @@ func (brt *Handle) Setup(
 	reporting types.Reporting,
 	transientSources transientsource.Service,
 	rsourcesService rsources.JobService,
+	rsourcesSyncSettings rsources.SyncSettingDelegate,
 	debugger destinationdebugger.DestinationDebugger,
 	conf *config.Config,
 ) {
@@ -67,6 +68,7 @@ func (brt *Handle) Setup(
 	brt.fileManagerFactory = filemanager.New
 	brt.transientSources = transientSources
 	brt.rsourcesService = rsourcesService
+	brt.rsourcesSyncSettings = rsourcesSyncSettings
 	if brt.warehouseClient == nil {
 		brt.warehouseClient = client.NewWarehouse(misc.GetWarehouseURL(), stats.Default, client.WithTimeout(
 			config.GetDurationVar(30, time.Second, "WarehouseClient.timeout"),
