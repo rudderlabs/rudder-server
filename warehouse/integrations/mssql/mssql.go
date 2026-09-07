@@ -849,7 +849,7 @@ func (ms *MSSQL) AddColumns(ctx context.Context, tableName string, columnsInfo [
 	)
 
 	if len(columnsInfo) == 1 {
-		queryBuilder.WriteString(fmt.Sprintf(`
+		fmt.Fprintf(&queryBuilder, `
 			IF NOT EXISTS (
 			  SELECT
 				1
@@ -861,20 +861,18 @@ func (ms *MSSQL) AddColumns(ctx context.Context, tableName string, columnsInfo [
 			)`,
 			ms.namespace,
 			tableName,
-			columnsInfo[0].Name,
-		))
+			columnsInfo[0].Name)
 	}
 
-	queryBuilder.WriteString(fmt.Sprintf(`
+	fmt.Fprintf(&queryBuilder, `
 		ALTER TABLE
 		  %s.%s
 		ADD`,
 		ms.namespace,
-		tableName,
-	))
+		tableName)
 
 	for _, columnInfo := range columnsInfo {
-		queryBuilder.WriteString(fmt.Sprintf(` %q %s,`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type]))
+		fmt.Fprintf(&queryBuilder, ` %q %s,`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type])
 	}
 
 	query = strings.TrimSuffix(queryBuilder.String(), ",")

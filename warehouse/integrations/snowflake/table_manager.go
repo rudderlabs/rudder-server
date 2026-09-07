@@ -51,16 +51,15 @@ func (m *standardTableManager) createTableQuery(schemaIdentifier, tableName stri
 
 func (m *standardTableManager) addColumnsQuery(schemaIdentifier, tableName string, columnsInfo []whutils.ColumnInfo) (string, error) {
 	var queryBuilder strings.Builder
-	queryBuilder.WriteString(fmt.Sprintf(`
+	fmt.Fprintf(&queryBuilder, `
 		ALTER TABLE
 		  %s.%q
 		ADD COLUMN`,
 		schemaIdentifier,
-		tableName,
-	))
+		tableName)
 
 	for _, columnInfo := range columnsInfo {
-		queryBuilder.WriteString(fmt.Sprintf(` IF NOT EXISTS %q %s,`, columnInfo.Name, m.dataTypesMap[columnInfo.Type]))
+		fmt.Fprintf(&queryBuilder, ` IF NOT EXISTS %q %s,`, columnInfo.Name, m.dataTypesMap[columnInfo.Type])
 	}
 	return strings.TrimSuffix(queryBuilder.String(), ",") + ";", nil
 }
@@ -101,19 +100,18 @@ func (m *icebergTableManager) createTableQuery(schemaIdentifier, tableName strin
 
 func (m *icebergTableManager) addColumnsQuery(schemaIdentifier, tableName string, columnsInfo []whutils.ColumnInfo) (string, error) {
 	var queryBuilder strings.Builder
-	queryBuilder.WriteString(fmt.Sprintf(`
+	fmt.Fprintf(&queryBuilder, `
 		ALTER ICEBERG TABLE
 		  %s.%q
 		ADD COLUMN`,
 		schemaIdentifier,
-		tableName,
-	))
+		tableName)
 	for _, columnInfo := range columnsInfo {
 		dataType, ok := m.dataTypesMap[columnInfo.Type]
 		if !ok {
 			return "", fmt.Errorf("invalid data type: %s", columnInfo.Type)
 		}
-		queryBuilder.WriteString(fmt.Sprintf(` IF NOT EXISTS %q %s,`, columnInfo.Name, dataType))
+		fmt.Fprintf(&queryBuilder, ` IF NOT EXISTS %q %s,`, columnInfo.Name, dataType)
 	}
 	return strings.TrimSuffix(queryBuilder.String(), ",") + ";", nil
 }

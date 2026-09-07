@@ -54,15 +54,13 @@ func ParseAWSError(err error) (statusCode int, respStatus, responseMessage strin
 	respStatus = "Failure"
 	responseMessage = err.Error()
 
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[smithy.APIError](err); ok {
 		responseMessage = apiErr.ErrorMessage()
 		respStatus = apiErr.ErrorCode()
 		fault := apiErr.ErrorFault()
 		statusCode = getStatusCodeFromFault(fault)
 	} else {
-		var opErr *smithy.OperationError
-		if errors.As(err, &opErr) {
+		if opErr, ok := errors.AsType[*smithy.OperationError](err); ok {
 			responseMessage = opErr.Unwrap().Error()
 			statusCode = mapErrorMessageToStatusCode(responseMessage, 400)
 			respStatus = "Failure"

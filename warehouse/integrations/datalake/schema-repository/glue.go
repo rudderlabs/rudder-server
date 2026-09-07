@@ -77,8 +77,7 @@ func (g *GlueSchemaRepository) CreateSchema(ctx context.Context) (err error) {
 			Name: &g.Namespace,
 		},
 	})
-	var alreadyExistsException *types.AlreadyExistsException
-	if errors.As(err, &alreadyExistsException) {
+	if _, ok := errors.AsType[*types.AlreadyExistsException](err); ok {
 		g.logger.Infon("Skipping database creation: database already exists", logger.NewStringField("database", g.Namespace))
 		err = nil
 	}
@@ -184,8 +183,7 @@ func (g *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName 
 		})
 
 		if err != nil {
-			var entityNotFoundException *types.EntityNotFoundException
-			if !errors.As(err, &entityNotFoundException) {
+			if _, ok := errors.AsType[*types.EntityNotFoundException](err); !ok {
 				return fmt.Errorf("get partition: %w", err)
 			}
 
@@ -234,8 +232,7 @@ func (g *GlueSchemaRepository) FetchSchema(ctx context.Context, warehouse model.
 
 		getTablesOutput, err = g.GlueClient.GetTables(ctx, getTablesInput)
 		if err != nil {
-			var entityNotFoundException *types.EntityNotFoundException
-			if errors.As(err, &entityNotFoundException) {
+			if _, ok := errors.AsType[*types.EntityNotFoundException](err); ok {
 				g.logger.Debugn("FetchSchema: database not found in glue. returning empty schema",
 					logger.NewStringField("database", warehouse.Namespace))
 				err = nil

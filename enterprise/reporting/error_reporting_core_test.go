@@ -412,13 +412,11 @@ func TestSendEDMetric(t *testing.T) {
 func testLargePayloadEDMetric() *types.EDMetric {
 	metric := testLargePayloadEDMetricWithOneError()
 	metric.Errors = append(metric.Errors, types.EDErrorDetails{
-		EDErrorDetailsKey: types.EDErrorDetailsKey{
-			StatusCode:   http.StatusBadRequest,
-			ErrorCode:    "ERR_2",
-			ErrorMessage: "error 2",
-			EventType:    "track",
-			EventName:    "event-2",
-		},
+		StatusCode:     http.StatusBadRequest,
+		ErrorCode:      "ERR_2",
+		ErrorMessage:   "error 2",
+		EventType:      "track",
+		EventName:      "event-2",
 		SampleResponse: "sample-response-2",
 		SampleEvent:    []byte(`{"event":"sample-2"}`),
 		ErrorCount:     2,
@@ -428,28 +426,20 @@ func testLargePayloadEDMetric() *types.EDMetric {
 
 func testLargePayloadEDMetricWithOneError() *types.EDMetric {
 	return &types.EDMetric{
-		EDInstanceDetails: types.EDInstanceDetails{
-			WorkspaceID: "workspace-1",
-			InstanceID:  "instance-1",
-		},
-		EDConnectionDetails: types.EDConnectionDetails{
-			SourceID:      "source-1",
-			DestinationID: "destination-1",
-		},
-		PU: "router",
-		ReportMetadata: types.ReportMetadata{
-			ReportedAt:        1000,
-			SampleEventBucket: 900,
-		},
+		WorkspaceID:       "workspace-1",
+		InstanceID:        "instance-1",
+		SourceID:          "source-1",
+		DestinationID:     "destination-1",
+		PU:                "router",
+		ReportedAt:        1000,
+		SampleEventBucket: 900,
 		Errors: []types.EDErrorDetails{
 			{
-				EDErrorDetailsKey: types.EDErrorDetailsKey{
-					StatusCode:   http.StatusBadRequest,
-					ErrorCode:    "ERR_1",
-					ErrorMessage: "error 1",
-					EventType:    "track",
-					EventName:    "event-1",
-				},
+				StatusCode:     http.StatusBadRequest,
+				ErrorCode:      "ERR_1",
+				ErrorMessage:   "error 1",
+				EventType:      "track",
+				EventName:      "event-1",
 				SampleResponse: "sample-response-1",
 				SampleEvent:    []byte(`{"event":"sample-1"}`),
 				ErrorCount:     1,

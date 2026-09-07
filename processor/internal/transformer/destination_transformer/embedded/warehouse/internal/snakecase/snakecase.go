@@ -63,11 +63,11 @@ var (
 				upper + "?" + lower + "+" + optContrLower + "(?=" + breakExp + "|" + upper + "|" + "$)",   // Regular words, lowercase letters followed by optional contractions
 				miscUpper + "+" + optContrUpper + "(?=" + breakExp + "|" + upper + miscLower + "|" + "$)", // Miscellaneous uppercase characters with optional contractions
 				upper + "?" + miscLower + "+" + optContrLower,                                             // Miscellaneous lowercase sequences with optional contractions
-				upper + "+" + optContrUpper, // All uppercase words with optional contractions (e.g., "THIS")
-				ordUpper,                    // Ordinals for uppercase (e.g., "1ST", "2ND")
-				ordLower,                    // Ordinals for lowercase (e.g., "1st", "2nd")
-				digit + "+",                 // Pure digits (e.g., "123")
-				emoji,                       // Emojis (e.g., 😀, ❤️)
+				upper + "+" + optContrUpper,                                                               // All uppercase words with optional contractions (e.g., "THIS")
+				ordUpper,                                                                                  // Ordinals for uppercase (e.g., "1ST", "2ND")
+				ordLower,                                                                                  // Ordinals for lowercase (e.g., "1st", "2nd")
+				digit + "+",                                                                               // Pure digits (e.g., "123")
+				emoji,                                                                                     // Emojis (e.g., 😀, ❤️)
 			},
 			"|",
 		),
@@ -83,11 +83,11 @@ var (
 				upper + "?" + lower + "+" + optContrLower + "(?=" + breakExp + "|" + upper + "|" + "$)",   // Regular words, lowercase letters followed by optional contractions
 				miscUpper + "+" + optContrUpper + "(?=" + breakExp + "|" + upper + miscLower + "|" + "$)", // Miscellaneous uppercase characters with optional contractions
 				upper + "?" + miscLower + "+" + optContrLower,                                             // Miscellaneous lowercase sequences with optional contractions
-				upper + "+" + optContrUpper, // All uppercase words with optional contractions (e.g., "THIS")
-				ordUpper,                    // Ordinals for uppercase (e.g., "1ST", "2ND")
-				ordLower,                    // Ordinals for lowercase (e.g., "1st", "2nd")
-				digit + "+",                 // Pure digits (e.g., "123")
-				emoji,                       // Emojis (e.g., 😀, ❤️)
+				upper + "+" + optContrUpper,                                                               // All uppercase words with optional contractions (e.g., "THIS")
+				ordUpper,                                                                                  // Ordinals for uppercase (e.g., "1ST", "2ND")
+				ordLower,                                                                                  // Ordinals for lowercase (e.g., "1st", "2nd")
+				digit + "+",                                                                               // Pure digits (e.g., "123")
+				emoji,                                                                                     // Emojis (e.g., 😀, ❤️)
 			},
 			"|",
 		),

@@ -57,26 +57,22 @@ func TestPUReportedMetricToEDReportsDB(t *testing.T) {
 
 	t.Run("metric with all fields populated", func(t *testing.T) {
 		original := &PUReportedMetric{
-			ConnectionDetails: ConnectionDetails{
-				SourceID:                "test-source",
-				DestinationID:           "test-destination",
-				SourceTaskRunID:         "task-run-123",
-				SourceJobID:             "job-123",
-				SourceJobRunID:          "job-run-123",
-				SourceDefinitionID:      "source-def-123",
-				DestinationDefinitionID: "dest-def-123",
-				SourceCategory:          "test-category",
-				TransformationID:        "transform-123",
-				TransformationVersionID: "transform-ver-123",
-				TrackingPlanID:          "tracking-123",
-				TrackingPlanVersion:     1,
-			},
-			PUDetails: PUDetails{
-				InPU:       "input-pu",
-				PU:         "processing-unit",
-				TerminalPU: true,
-				InitialPU:  false,
-			},
+			SourceID:                "test-source",
+			DestinationID:           "test-destination",
+			SourceTaskRunID:         "task-run-123",
+			SourceJobID:             "job-123",
+			SourceJobRunID:          "job-run-123",
+			SourceDefinitionID:      "source-def-123",
+			DestinationDefinitionID: "dest-def-123",
+			SourceCategory:          "test-category",
+			TransformationID:        "transform-123",
+			TransformationVersionID: "transform-ver-123",
+			TrackingPlanID:          "tracking-123",
+			TrackingPlanVersion:     1,
+			InPU:                    "input-pu",
+			PU:                      "processing-unit",
+			TerminalPU:              true,
+			InitialPU:               false,
 			StatusDetail: &StatusDetail{
 				Status:         "success",
 				Count:          100,
@@ -153,15 +149,11 @@ func TestPUReportedMetricToEDReportsDB(t *testing.T) {
 
 	t.Run("metric with nil StatusDetail", func(t *testing.T) {
 		original := &PUReportedMetric{
-			ConnectionDetails: ConnectionDetails{
-				SourceID:      "test-source",
-				DestinationID: "test-destination",
-			},
-			PUDetails: PUDetails{
-				InPU: "input-pu",
-				PU:   "processing-unit",
-			},
-			StatusDetail: nil,
+			SourceID:      "test-source",
+			DestinationID: "test-destination",
+			InPU:          "input-pu",
+			PU:            "processing-unit",
+			StatusDetail:  nil,
 		}
 
 		params := ErrorMetricParams{
@@ -190,14 +182,10 @@ func TestPUReportedMetricToEDReportsDB(t *testing.T) {
 
 	t.Run("modification isolation", func(t *testing.T) {
 		original := &PUReportedMetric{
-			ConnectionDetails: ConnectionDetails{
-				SourceID:      "original-source",
-				DestinationID: "original-destination",
-			},
-			PUDetails: PUDetails{
-				InPU: "original-input",
-				PU:   "original-pu",
-			},
+			SourceID:      "original-source",
+			DestinationID: "original-destination",
+			InPU:          "original-input",
+			PU:            "original-pu",
 			StatusDetail: &StatusDetail{
 				Status:         "original-status",
 				Count:          100,
@@ -246,9 +234,7 @@ func TestPUReportedMetricToEDReportsDB(t *testing.T) {
 
 	t.Run("ReportedAt timestamp", func(t *testing.T) {
 		metric := &PUReportedMetric{
-			PUDetails: PUDetails{
-				PU: "test-pu",
-			},
+			PU: "test-pu",
 		}
 		params := ErrorMetricParams{
 			WorkspaceID:             "test-workspace",

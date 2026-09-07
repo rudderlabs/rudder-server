@@ -925,9 +925,9 @@ func getSortKeyTuple(sortKeyFields []string) string {
 	tuple.WriteString("(")
 	for index, field := range sortKeyFields {
 		if index == len(sortKeyFields)-1 {
-			tuple.WriteString(fmt.Sprintf(`%q`, field))
+			fmt.Fprintf(&tuple, `%q`, field)
 		} else {
-			tuple.WriteString(fmt.Sprintf(`%q,`, field))
+			fmt.Fprintf(&tuple, `%q,`, field)
 		}
 	}
 	tuple.WriteString(")")
@@ -992,13 +992,12 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 		queryBuilder strings.Builder
 	)
 
-	queryBuilder.WriteString(fmt.Sprintf(`
+	fmt.Fprintf(&queryBuilder, `
 		ALTER TABLE
 		  %q.%q %s`,
 		ch.Namespace,
 		tableName,
-		ch.clusterClause(),
-	))
+		ch.clusterClause())
 
 	for _, columnInfo := range columnsInfo {
 		columnType := ch.getClickHouseColumnTypeForSpecificTable(
@@ -1007,7 +1006,7 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 			rudderDataTypesMapToClickHouse[columnInfo.Type],
 			false,
 		)
-		queryBuilder.WriteString(fmt.Sprintf(` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, columnType))
+		fmt.Fprintf(&queryBuilder, ` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, columnType)
 	}
 
 	query = strings.TrimSuffix(queryBuilder.String(), ",")

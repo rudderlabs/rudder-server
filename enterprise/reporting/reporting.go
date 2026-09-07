@@ -366,35 +366,27 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 		identifier := reportIdentifier(report)
 		if _, ok := metricsByGroup[identifier]; !ok || len(metricsByGroup[identifier].StatusDetails) >= maxReportsCountInARequest {
 			metricsByGroup[identifier] = &types.Metric{
-				InstanceDetails: types.InstanceDetails{
-					WorkspaceID: report.WorkspaceID,
-					Namespace:   report.Namespace,
-					InstanceID:  report.InstanceID,
-				},
-				ConnectionDetails: types.ConnectionDetails{
-					SourceDefinitionID:      report.SourceDefinitionID,
-					SourceCategory:          report.SourceCategory,
-					SourceID:                report.SourceID,
-					DestinationDefinitionID: report.DestinationDefinitionID,
-					DestinationID:           report.DestinationID,
-					SourceTaskRunID:         report.SourceTaskRunID,
-					SourceJobID:             report.SourceJobID,
-					SourceJobRunID:          report.SourceJobRunID,
-					TransformationID:        report.TransformationID,
-					TransformationVersionID: report.TransformationVersionID,
-					TrackingPlanID:          report.TrackingPlanID,
-					TrackingPlanVersion:     report.TrackingPlanVersion,
-				},
-				PUDetails: types.PUDetails{
-					InPU:       report.InPU,
-					PU:         report.PU,
-					TerminalPU: report.TerminalPU,
-					InitialPU:  report.InitialPU,
-				},
-				ReportMetadata: types.ReportMetadata{
-					ReportedAt:        report.ReportedAt * 60 * 1000, // send reportedAt in milliseconds
-					SampleEventBucket: sampleEventBucket * 60 * 1000,
-				},
+				WorkspaceID:             report.WorkspaceID,
+				Namespace:               report.Namespace,
+				InstanceID:              report.InstanceID,
+				SourceDefinitionID:      report.SourceDefinitionID,
+				SourceCategory:          report.SourceCategory,
+				SourceID:                report.SourceID,
+				DestinationDefinitionID: report.DestinationDefinitionID,
+				DestinationID:           report.DestinationID,
+				SourceTaskRunID:         report.SourceTaskRunID,
+				SourceJobID:             report.SourceJobID,
+				SourceJobRunID:          report.SourceJobRunID,
+				TransformationID:        report.TransformationID,
+				TransformationVersionID: report.TransformationVersionID,
+				TrackingPlanID:          report.TrackingPlanID,
+				TrackingPlanVersion:     report.TrackingPlanVersion,
+				InPU:                    report.InPU,
+				PU:                      report.PU,
+				TerminalPU:              report.TerminalPU,
+				InitialPU:               report.InitialPU,
+				ReportedAt:              report.ReportedAt * 60 * 1000, // send reportedAt in milliseconds
+				SampleEventBucket:       sampleEventBucket * 60 * 1000,
 			}
 			values = append(values, metricsByGroup[identifier])
 		}

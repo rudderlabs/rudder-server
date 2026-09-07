@@ -74,15 +74,11 @@ func TestErrorIndexReporter(t *testing.T) {
 				name: "without failed messages",
 				reports: []*types.PUReportedMetric{
 					{
-						ConnectionDetails: types.ConnectionDetails{
-							SourceID:         sourceID,
-							DestinationID:    destinationID,
-							TransformationID: transformationID,
-							TrackingPlanID:   trackingPlanID,
-						},
-						PUDetails: types.PUDetails{
-							PU: reportedBy,
-						},
+						SourceID:         sourceID,
+						DestinationID:    destinationID,
+						TransformationID: transformationID,
+						TrackingPlanID:   trackingPlanID,
+						PU:               reportedBy,
 						StatusDetail: &types.StatusDetail{
 							EventName: eventName,
 							EventType: eventType,
@@ -95,15 +91,11 @@ func TestErrorIndexReporter(t *testing.T) {
 				name: "filter with failed messages",
 				reports: []*types.PUReportedMetric{
 					{
-						ConnectionDetails: types.ConnectionDetails{
-							SourceID:         sourceID,
-							DestinationID:    destinationID,
-							TransformationID: transformationID,
-							TrackingPlanID:   trackingPlanID,
-						},
-						PUDetails: types.PUDetails{
-							PU: reportedBy,
-						},
+						SourceID:         sourceID,
+						DestinationID:    destinationID,
+						TransformationID: transformationID,
+						TrackingPlanID:   trackingPlanID,
+						PU:               reportedBy,
 						StatusDetail: &types.StatusDetail{
 							EventName: eventName,
 							EventType: eventType,
@@ -120,30 +112,22 @@ func TestErrorIndexReporter(t *testing.T) {
 						},
 					},
 					{
-						ConnectionDetails: types.ConnectionDetails{
-							SourceID:         sourceID,
-							DestinationID:    destinationID,
-							TransformationID: transformationID,
-							TrackingPlanID:   trackingPlanID,
-						},
-						PUDetails: types.PUDetails{
-							PU: reportedBy,
-						},
+						SourceID:         sourceID,
+						DestinationID:    destinationID,
+						TransformationID: transformationID,
+						TrackingPlanID:   trackingPlanID,
+						PU:               reportedBy,
 						StatusDetail: &types.StatusDetail{
 							EventName: eventName,
 							EventType: eventType,
 						},
 					},
 					{
-						ConnectionDetails: types.ConnectionDetails{
-							SourceID:         sourceID,
-							DestinationID:    destinationID,
-							TransformationID: transformationID,
-							TrackingPlanID:   trackingPlanID,
-						},
-						PUDetails: types.PUDetails{
-							PU: reportedBy,
-						},
+						SourceID:         sourceID,
+						DestinationID:    destinationID,
+						TransformationID: transformationID,
+						TrackingPlanID:   trackingPlanID,
+						PU:               reportedBy,
 						StatusDetail: &types.StatusDetail{
 							EventName: eventName,
 							EventType: eventType,
@@ -215,16 +199,12 @@ func TestErrorIndexReporter(t *testing.T) {
 				name: "ignore failed messages when source job run id is present",
 				reports: []*types.PUReportedMetric{
 					{
-						ConnectionDetails: types.ConnectionDetails{
-							SourceID:         sourceID,
-							DestinationID:    destinationID,
-							TransformationID: transformationID,
-							TrackingPlanID:   trackingPlanID,
-							SourceJobRunID:   "source-job-run-id",
-						},
-						PUDetails: types.PUDetails{
-							PU: reportedBy,
-						},
+						SourceID:         sourceID,
+						DestinationID:    destinationID,
+						TransformationID: transformationID,
+						TrackingPlanID:   trackingPlanID,
+						SourceJobRunID:   "source-job-run-id",
+						PU:               reportedBy,
 						StatusDetail: &types.StatusDetail{
 							EventName: eventName,
 							EventType: eventType,
@@ -372,15 +352,11 @@ func TestErrorIndexReporter(t *testing.T) {
 			tx := &Tx{Tx: sqlTx}
 			err = eir.Report(context.Background(), []*types.PUReportedMetric{
 				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:         sourceID,
-						DestinationID:    destinationID,
-						TransformationID: transformationID,
-						TrackingPlanID:   trackingPlanID,
-					},
-					PUDetails: types.PUDetails{
-						PU: reportedBy,
-					},
+					SourceID:         sourceID,
+					DestinationID:    destinationID,
+					TransformationID: transformationID,
+					TrackingPlanID:   trackingPlanID,
+					PU:               reportedBy,
 					StatusDetail: &types.StatusDetail{
 						EventName: eventName,
 						EventType: eventType,
@@ -438,15 +414,11 @@ func TestErrorIndexReporter(t *testing.T) {
 			tx := &Tx{Tx: sqlTx}
 			err = eir.Report(context.Background(), []*types.PUReportedMetric{
 				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:         sourceID,
-						DestinationID:    destinationID,
-						TransformationID: transformationID,
-						TrackingPlanID:   trackingPlanID,
-					},
-					PUDetails: types.PUDetails{
-						PU: reportedBy,
-					},
+					SourceID:         sourceID,
+					DestinationID:    destinationID,
+					TransformationID: transformationID,
+					TrackingPlanID:   trackingPlanID,
+					PU:               reportedBy,
 					StatusDetail: &types.StatusDetail{
 						EventName: eventName,
 						EventType: eventType,
@@ -472,15 +444,11 @@ func TestErrorIndexReporter(t *testing.T) {
 			tx := &Tx{Tx: sqlTx}
 			err = eir.Report(context.Background(), []*types.PUReportedMetric{
 				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:         sourceID,
-						DestinationID:    destinationID,
-						TransformationID: transformationID,
-						TrackingPlanID:   trackingPlanID,
-					},
-					PUDetails: types.PUDetails{
-						PU: reportedBy,
-					},
+					SourceID:         sourceID,
+					DestinationID:    destinationID,
+					TransformationID: transformationID,
+					TrackingPlanID:   trackingPlanID,
+					PU:               reportedBy,
 					StatusDetail: &types.StatusDetail{
 						EventName: eventName,
 						EventType: eventType,
@@ -512,15 +480,11 @@ func TestErrorIndexReporter(t *testing.T) {
 
 		reports := []*types.PUReportedMetric{
 			{
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:         sourceID,
-					DestinationID:    destinationID,
-					TransformationID: transformationID,
-					TrackingPlanID:   trackingPlanID,
-				},
-				PUDetails: types.PUDetails{
-					PU: reportedBy,
-				},
+				SourceID:         sourceID,
+				DestinationID:    destinationID,
+				TransformationID: transformationID,
+				TrackingPlanID:   trackingPlanID,
+				PU:               reportedBy,
 				StatusDetail: &types.StatusDetail{
 					EventName: eventName,
 					EventType: eventType,
@@ -537,15 +501,11 @@ func TestErrorIndexReporter(t *testing.T) {
 				},
 			},
 			{
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:         sourceID,
-					DestinationID:    destinationID,
-					TransformationID: transformationID,
-					TrackingPlanID:   trackingPlanID,
-				},
-				PUDetails: types.PUDetails{
-					PU: reportedBy,
-				},
+				SourceID:         sourceID,
+				DestinationID:    destinationID,
+				TransformationID: transformationID,
+				TrackingPlanID:   trackingPlanID,
+				PU:               reportedBy,
 				StatusDetail: &types.StatusDetail{
 					EventName: eventName,
 					EventType: eventType,

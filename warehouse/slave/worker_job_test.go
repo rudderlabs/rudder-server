@@ -46,31 +46,25 @@ func TestSlaveJobPayload(t *testing.T) {
 			{
 				name: "same staging and destination revision id",
 				job: &payloadV2{
-					basePayload: basePayload{
-						StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
-						DestinationRevisionID:        "1liYatjkkCEVkEMYUmSWOE9eZ4n",
-					},
+					StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
+					DestinationRevisionID:        "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 				},
 				expected: false,
 			},
 			{
 				name: "different staging and destination revision id",
 				job: &payloadV2{
-					basePayload: basePayload{
-						StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
-						DestinationRevisionID:        "2liYatjkkCEVkEMYUmSWOE9eZ4n",
-					},
+					StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
+					DestinationRevisionID:        "2liYatjkkCEVkEMYUmSWOE9eZ4n",
 				},
 				expected: false,
 			},
 			{
 				name: "different staging and destination revision id with staging config",
 				job: &payloadV2{
-					basePayload: basePayload{
-						StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
-						DestinationRevisionID:        "2liYatjkkCEVkEMYUmSWOE9eZ4n",
-						StagingDestinationConfig:     map[string]string{},
-					},
+					StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
+					DestinationRevisionID:        "2liYatjkkCEVkEMYUmSWOE9eZ4n",
+					StagingDestinationConfig:     map[string]string{},
 				},
 				expected: true,
 			},
@@ -195,14 +189,12 @@ func TestSlaveJob(t *testing.T) {
 		t.Run("download", func(t *testing.T) {
 			stagingFileID := int64(1001)
 			p := payloadV2{
-				basePayload: basePayload{
-					WorkspaceID:       workspaceID,
-					SourceID:          sourceID,
-					DestinationID:     destinationID,
-					DestinationName:   destinationName,
-					DestinationType:   destType,
-					DestinationConfig: conf,
-				},
+				WorkspaceID:       workspaceID,
+				SourceID:          sourceID,
+				DestinationID:     destinationID,
+				DestinationName:   destinationName,
+				DestinationType:   destType,
+				DestinationConfig: conf,
 				StagingFiles: []stagingFileInfo{
 					{
 						ID:       stagingFileID,
@@ -225,14 +217,12 @@ func TestSlaveJob(t *testing.T) {
 		t.Run("context cancelled", func(t *testing.T) {
 			stagingFileID := int64(1002)
 			p := payloadV2{
-				basePayload: basePayload{
-					WorkspaceID:       workspaceID,
-					SourceID:          sourceID,
-					DestinationID:     destinationID,
-					DestinationName:   destinationName,
-					DestinationType:   destType,
-					DestinationConfig: conf,
-				},
+				WorkspaceID:       workspaceID,
+				SourceID:          sourceID,
+				DestinationID:     destinationID,
+				DestinationName:   destinationName,
+				DestinationType:   destType,
+				DestinationConfig: conf,
 				StagingFiles: []stagingFileInfo{
 					{
 						ID:       stagingFileID,
@@ -266,17 +256,15 @@ func TestSlaveJob(t *testing.T) {
 		t.Run("download twice failed", func(t *testing.T) {
 			stagingFileID := int64(1003)
 			p := payloadV2{
-				basePayload: basePayload{
-					WorkspaceID:                  workspaceID,
-					SourceID:                     sourceID,
-					DestinationID:                destinationID,
-					DestinationName:              destinationName,
-					DestinationType:              destType,
-					DestinationConfig:            conf,
-					StagingDestinationConfig:     conf,
-					StagingDestinationRevisionID: uuid.New().String(),
-					DestinationRevisionID:        uuid.New().String(),
-				},
+				WorkspaceID:                  workspaceID,
+				SourceID:                     sourceID,
+				DestinationID:                destinationID,
+				DestinationName:              destinationName,
+				DestinationType:              destType,
+				DestinationConfig:            conf,
+				StagingDestinationConfig:     conf,
+				StagingDestinationRevisionID: uuid.New().String(),
+				DestinationRevisionID:        uuid.New().String(),
 				StagingFiles: []stagingFileInfo{
 					{
 						ID:       stagingFileID,
@@ -311,17 +299,15 @@ func TestSlaveJob(t *testing.T) {
 		t.Run("download twice succeeded", func(t *testing.T) {
 			stagingFileID := int64(1004)
 			p := payloadV2{
-				basePayload: basePayload{
-					WorkspaceID:                  workspaceID,
-					SourceID:                     sourceID,
-					DestinationID:                destinationID,
-					DestinationName:              destinationName,
-					DestinationType:              destType,
-					DestinationConfig:            map[string]any{},
-					StagingDestinationConfig:     conf,
-					StagingDestinationRevisionID: uuid.New().String(),
-					DestinationRevisionID:        uuid.New().String(),
-				},
+				WorkspaceID:                  workspaceID,
+				SourceID:                     sourceID,
+				DestinationID:                destinationID,
+				DestinationName:              destinationName,
+				DestinationType:              destType,
+				DestinationConfig:            map[string]any{},
+				StagingDestinationConfig:     conf,
+				StagingDestinationRevisionID: uuid.New().String(),
+				DestinationRevisionID:        uuid.New().String(),
 				StagingFiles: []stagingFileInfo{
 					{
 						ID:       stagingFileID,
@@ -350,13 +336,11 @@ func TestSlaveJob(t *testing.T) {
 
 		stagingFileID := int64(1005)
 		p := payloadV2{
-			basePayload: basePayload{
-				WorkspaceID:     workspaceID,
-				SourceID:        sourceID,
-				DestinationID:   destinationID,
-				DestinationName: destinationName,
-				DestinationType: destType,
-			},
+			WorkspaceID:     workspaceID,
+			SourceID:        sourceID,
+			DestinationID:   destinationID,
+			DestinationName: destinationName,
+			DestinationType: destType,
 			StagingFiles: []stagingFileInfo{
 				{
 					ID:       stagingFileID,
@@ -418,10 +402,8 @@ func TestSlaveJob(t *testing.T) {
 		discardWriter := &mockLoadFileWriter{}
 
 		p := payloadV2{
-			basePayload: basePayload{
-				DestinationType: warehouseutils.RS,
-				LoadFileType:    warehouseutils.LoadFileTypeCsv,
-			},
+			DestinationType: warehouseutils.RS,
+			LoadFileType:    warehouseutils.LoadFileTypeCsv,
 		}
 
 		now := time.Date(2020, 4, 27, 20, 0, 0, 0, time.UTC)
@@ -507,7 +489,10 @@ func TestSlaveJob(t *testing.T) {
 			{
 				name: "Invalid endpoint",
 				conf: map[string]any{
-					"endPoint": "http://localhost:1234",
+					// The endpoint carries a path, which minio rejects while building the client.
+					// A bare "http://localhost:1234" is no longer invalid: minio-go since v7.3.0 accepts
+					// a scheme-qualified endpoint, so it would reach the network instead.
+					"endPoint": "http://localhost:1234/some/path",
 				},
 				wantError:         errors.New("uploading load file to object storage: uploading load file: Endpoint url cannot have fully qualified paths."),
 				additionalWriters: 9,
@@ -560,22 +545,20 @@ func TestSlaveJob(t *testing.T) {
 				}
 
 				job := payloadV2{
-					basePayload: basePayload{
-						DestinationConfig:        conf,
-						UseRudderStorage:         false,
-						StagingDestinationConfig: conf,
-						StagingUseRudderStorage:  false,
-						WorkspaceID:              workspaceID,
-						DestinationID:            destinationID,
-						DestinationName:          destinationName,
-						SourceID:                 sourceID,
-						SourceName:               sourceName,
-						DestinationType:          destType,
-						LoadFilePrefix:           prefix,
-						UniqueLoadGenID:          uuid.New().String(),
-						DestinationNamespace:     namespace,
-						UploadID:                 uploadID,
-					},
+					DestinationConfig:        conf,
+					UseRudderStorage:         false,
+					StagingDestinationConfig: conf,
+					StagingUseRudderStorage:  false,
+					WorkspaceID:              workspaceID,
+					DestinationID:            destinationID,
+					DestinationName:          destinationName,
+					SourceID:                 sourceID,
+					SourceName:               sourceName,
+					DestinationType:          destType,
+					LoadFilePrefix:           prefix,
+					UniqueLoadGenID:          uuid.New().String(),
+					DestinationNamespace:     namespace,
+					UploadID:                 uploadID,
 					StagingFiles: []stagingFileInfo{
 						{
 							ID:       1001,

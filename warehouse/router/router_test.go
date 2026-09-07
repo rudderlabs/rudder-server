@@ -56,11 +56,9 @@ func TestRouter(t *testing.T) {
 		var stagingFiles []*model.StagingFileWithSchema
 		for range 10 {
 			stagingFile := &model.StagingFileWithSchema{
-				StagingFile: model.StagingFile{
-					WorkspaceID:   workspaceID,
-					SourceID:      sourceID,
-					DestinationID: destinationID,
-				},
+				WorkspaceID:   workspaceID,
+				SourceID:      sourceID,
+				DestinationID: destinationID,
 			}
 			stagingID, err := repoStaging.Insert(ctx, stagingFile)
 			require.NoError(t, err)

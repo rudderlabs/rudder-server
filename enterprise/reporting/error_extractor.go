@@ -180,7 +180,7 @@ func (ext *ExtractorHandle) handleKey(key string, value any) string {
 
 func handleError(valueStr string) string {
 	if !IsJSON(valueStr) {
-		firstLine := strings.Split(valueStr, "\n")[0]
+		firstLine, _, _ := strings.Cut(valueStr, "\n")
 		return firstLine
 	}
 	return ""

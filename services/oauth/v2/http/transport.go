@@ -123,8 +123,7 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 		// OriginalResponse preserves the raw error text for the callers that fall back to it.
 		message := scErr.Error()
 		var errorType string
-		var typeMessageError *v2.TypeMessageError
-		if errors.As(scErr, &typeMessageError) { // use the message from the underlying TypeMessageError if possible
+		if typeMessageError, ok := errors.AsType[*v2.TypeMessageError](scErr); ok { // use the message from the underlying TypeMessageError if possible
 			message = typeMessageError.Message
 			errorType = typeMessageError.Type
 		}
@@ -217,8 +216,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 		if scErr != nil {
 			interceptorResp.StatusCode = scErr.StatusCode()
 			interceptorResp.Response = scErr.Error()
-			var typeMessageError *v2.TypeMessageError
-			if errors.As(scErr, &typeMessageError) { // use the message from the underlying TypeMessageError if possible
+			if typeMessageError, ok := errors.AsType[*v2.TypeMessageError](scErr); ok { // use the message from the underlying TypeMessageError if possible
 				interceptorResp.Response = typeMessageError.Message
 			}
 			applyInterceptorRespToHttpResp()

@@ -380,8 +380,7 @@ func (bq *BigQuery) CreateSchema(ctx context.Context) (err error) {
 
 func checkAndIgnoreAlreadyExistError(err error) bool {
 	if err != nil {
-		var e *googleapi.Error
-		if errors.As(err, &e) {
+		if e, ok := errors.AsType[*googleapi.Error](err); ok {
 			// 409 is returned when we try to create a table that already exists
 			// 400 is returned for all kinds of invalid input - so we need to check the error message too
 			if e.Code == 409 || (e.Code == 400 && strings.Contains(e.Message, "already exists in schema")) {
@@ -1058,8 +1057,7 @@ func (bq *BigQuery) tableExists(ctx context.Context, tableName string) (exists b
 	if err == nil {
 		return true, nil
 	}
-	var e *googleapi.Error
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*googleapi.Error](err); ok {
 		if e.Code == 404 {
 			return false, nil
 		}

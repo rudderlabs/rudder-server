@@ -281,8 +281,7 @@ func handleServiceError(err error) (statusCode int, responseMessage string) {
 		return 504, responseMessage
 	}
 
-	var serviceErr *googleapi.Error
-	if errors.As(err, &serviceErr) {
+	if serviceErr, ok := errors.AsType[*googleapi.Error](err); ok {
 		return serviceErr.Code, serviceErr.Message
 	}
 	return statusCode, responseMessage
