@@ -62,6 +62,13 @@ func (ch *ClickhouseV2) connect(includeDatabase bool) (*sqlmw.DB, error) {
 	db := clickhouse.OpenDB(opts)
 	db.SetMaxOpenConns(ch.config.poolSize)
 	db.SetMaxIdleConns(ch.config.poolSize)
+	// A load commits one block per transaction, so every block takes a
+	// connection from the pool. Without a lifetime, a connection the server
+	// closed while it sat idle stays in the pool and the first write on it
+	// fails as driver: bad connection — which database/sql cannot retry once
+	// the connection is bound to a transaction.
+	db.SetConnMaxIdleTime(ch.config.connMaxIdleTime)
+	db.SetConnMaxLifetime(ch.config.connMaxLifetime)
 
 	return sqlmw.New(
 		db,
