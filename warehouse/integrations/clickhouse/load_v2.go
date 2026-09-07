@@ -27,6 +27,7 @@ import (
 var (
 	errObjectStorageNotSupported = errors.New("objectStorage not supported for loading using S3 engine")
 	errCSVColumnsMismatch        = errors.New("csv columns mismatch")
+	errMissingS3Credentials      = errors.New("no object storage credentials for the s3 engine")
 )
 
 func (ch *ClickhouseV2) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
@@ -140,37 +141,14 @@ func (ch *ClickhouseV2) loadByCopyCommand(ctx context.Context, tableName string,
 	loadFolderDir, _ := path.Split(csvObjectLocation)
 	loadFolder := loadFolderDir + "*.csv.gz"
 
-	accessKeyID, secretAccessKey, err := ch.credentials()
+	accessKeyID, secretAccessKey, sessionToken, err := ch.credentials()
 	if err != nil {
 		return fmt.Errorf("getting auth credentials: %w", err)
 	}
 
-	sqlStatement := fmt.Sprintf(`
-		INSERT INTO %[1]q.%[2]q (
-			%[3]s
-		)
-		SELECT
-		  *
-		FROM
-		  s3(
-			'%[4]s',
-		  	'%[5]s',
-		  	'%[6]s',
-			'CSV',
-			'%[7]s',
-			'gz'
-		  )
-			settings
-				date_time_input_format = 'best_effort',
-				input_format_csv_arrays_as_nested_csv = 1;
-		`,
-		ch.Namespace,                   // 1
-		tableName,                      // 2
-		sortedColumnNames,              // 3
-		loadFolder,                     // 4
-		accessKeyID,                    // 5
-		secretAccessKey,                // 6
-		sortedColumnNamesWithDataTypes, // 7
+	sqlStatement := copySQLStatement(
+		ch.Namespace, tableName, sortedColumnNames,
+		s3TableFunctionArgs(loadFolder, accessKeyID, secretAccessKey, sessionToken, sortedColumnNamesWithDataTypes),
 	)
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
@@ -179,6 +157,49 @@ func (ch *ClickhouseV2) loadByCopyCommand(ctx context.Context, tableName string,
 
 	log.Infon("Completed load by copy command")
 	return nil
+}
+
+// s3TableFunctionArgs returns the positional arguments the s3 table function
+// reads a folder of gzipped CSV with. The session token sits between the secret
+// and the format, and servers older than 24.1 do not know about it at all, so it
+// is left out entirely when there is none: a destination with static keys sends
+// exactly what it always sent.
+func s3TableFunctionArgs(loadFolder, accessKeyID, secretAccessKey, sessionToken, columnTypes string) []string {
+	args := []string{
+		fmt.Sprintf("'%s'", loadFolder),
+		fmt.Sprintf("'%s'", accessKeyID),
+		fmt.Sprintf("'%s'", secretAccessKey),
+	}
+	if sessionToken != "" {
+		args = append(args, fmt.Sprintf("'%s'", sessionToken))
+	}
+	return append(args,
+		"'CSV'",
+		fmt.Sprintf("'%s'", columnTypes),
+		"'gz'",
+	)
+}
+
+// copySQLStatement is the statement the copy engine runs. It is separate so the
+// masking test can build the real thing rather than a copy of it that drifts.
+func copySQLStatement(namespace, tableName, sortedColumnNames string, s3Args []string) string {
+	return fmt.Sprintf(`
+		INSERT INTO %[1]q.%[2]q (
+			%[3]s
+		)
+		SELECT
+		  *
+		FROM
+		  s3(%[4]s)
+			settings
+				date_time_input_format = 'best_effort',
+				input_format_csv_arrays_as_nested_csv = 1;
+		`,
+		namespace,                  // 1
+		tableName,                  // 2
+		sortedColumnNames,          // 3
+		strings.Join(s3Args, ", "), // 4
+	)
 }
 
 func (ch *ClickhouseV2) loadByDownloadingLoadFiles(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) error {
@@ -208,14 +229,36 @@ func (ch *ClickhouseV2) loadByDownloadingLoadFiles(ctx context.Context, tableNam
 	return nil
 }
 
-func (ch *ClickhouseV2) credentials() (accessKeyID, secretAccessKey string, err error) {
-	if ch.ObjectStorage == warehouseutils.S3 {
-		return ch.Warehouse.GetStringDestinationConfig(ch.conf, model.AWSAccessSecretSetting), ch.Warehouse.GetStringDestinationConfig(ch.conf, model.AWSAccessKeySetting), nil
+// credentials returns the literals the s3 table function authenticates with.
+// A session token comes back for aws, where they are always short-lived, and
+// never for minio.
+func (ch *ClickhouseV2) credentials() (accessKeyID, secretAccessKey, sessionToken string, err error) {
+	switch ch.ObjectStorage {
+	case warehouseutils.S3:
+		// An aws destination need not hold keys at all: rudder storage, a role
+		// and the shared copy user all authenticate through the SDK credential
+		// chain, and the s3 table function cannot, because it takes literals.
+		// So mint them, without asking which shape the destination is — the
+		// same thing redshift, snowflake and deltalake do for their own copy
+		// statements, and GetTemporaryS3Cred covers every shape including plain
+		// static keys.
+		accessKeyID, secretAccessKey, sessionToken, err = ch.TemporaryS3Cred(&ch.Warehouse.Destination)
+		if err != nil {
+			return "", "", "", fmt.Errorf("getting temporary s3 credentials: %w", err)
+		}
+	case warehouseutils.MINIO:
+		accessKeyID = ch.Warehouse.GetStringDestinationConfig(ch.conf, model.MinioAccessKeyIDSetting)
+		secretAccessKey = ch.Warehouse.GetStringDestinationConfig(ch.conf, model.MinioSecretAccessKeySetting)
+	default:
+		return "", "", "", errObjectStorageNotSupported
 	}
-	if ch.ObjectStorage == warehouseutils.MINIO {
-		return ch.Warehouse.GetStringDestinationConfig(ch.conf, model.MinioAccessKeyIDSetting), ch.Warehouse.GetStringDestinationConfig(ch.conf, model.MinioSecretAccessKeySetting), nil
+	// Empty keys would be interpolated into the statement as '' and come back
+	// as an access error from the server, which says nothing about where the
+	// keys were meant to come from.
+	if accessKeyID == "" || secretAccessKey == "" {
+		return "", "", "", errMissingS3Credentials
 	}
-	return "", "", errObjectStorageNotSupported
+	return accessKeyID, secretAccessKey, sessionToken, nil
 }
 
 func (ch *ClickhouseV2) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]any, _ string) error {
