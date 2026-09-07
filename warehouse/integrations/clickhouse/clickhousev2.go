@@ -49,6 +49,7 @@ type ClickhouseV2 struct {
 	config struct {
 		queryDebugLogs              bool
 		commitEvery                 int
+		blockRetries                int
 		poolSize                    int
 		readTimeout                 time.Duration
 		compress                    bool
@@ -76,6 +77,9 @@ func NewV2(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse
 	// load spins forever committing empty batches. One is enough to rule that
 	// out, and keeping the floor there leaves small values usable in tests.
 	ch.config.commitEvery = max(conf.GetIntVar(1000000, 1, "Warehouse.clickhouse.v2.commitEvery"), 1)
+	// A block that failed on a connection the pool handed over dead is worth
+	// repeating; anything the server rejected is not. Zero disables retries.
+	ch.config.blockRetries = conf.GetIntVar(3, 0, "Warehouse.clickhouse.v2.blockRetries")
 	ch.config.poolSize = conf.GetIntVar(100, 1, "Warehouse.clickhouse.v2.poolSize")
 	ch.config.readTimeout = conf.GetDurationVar(300, time.Second, "Warehouse.clickhouse.v2.readTimeout")
 	ch.config.compress = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.compress")
