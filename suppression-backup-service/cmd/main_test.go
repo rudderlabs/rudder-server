@@ -1,13 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -29,32 +29,47 @@ const (
 	tokenKey    = "__token__"
 )
 
-func makeHTTPRequest(t *testing.T, method, url string, payload io.Reader) (int, []byte) {
+func makeHTTPRequest(method, url string, payload io.Reader) (int, []byte, error) {
 	client := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
-	require.NoError(t, err)
+	if err != nil {
+		return 0, nil, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 
 	res, err := client.Do(req)
-	require.NoError(t, err, "should be able to make http request to "+method+" "+url)
+	if err != nil {
+		return 0, nil, err
+	}
 	defer func() { _ = res.Body.Close() }()
 
 	body, err := io.ReadAll(res.Body)
-	require.NoError(t, err, "should be able to read http response body from "+method+" "+url)
-	return res.StatusCode, body
+	if err != nil {
+		return 0, nil, err
+	}
+	return res.StatusCode, body, nil
 }
 
-func verifyBackup(t *testing.T, filePath, data string) {
+func backupHasSuppression(filePath string, data []byte) (bool, error) {
 	subDirName, err := os.MkdirTemp(filePath, "")
 	defer func() { _ = os.RemoveAll(subDirName) }()
-	require.NoError(t, err)
+	if err != nil {
+		return false, err
+	}
 	repo, err := suppression.NewBadgerRepository(subDirName, logger.NOP)
-	require.NoError(t, err)
-	err = repo.Restore(strings.NewReader(data))
-	require.NoError(t, err)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = repo.Stop() }()
+	err = repo.Restore(bytes.NewReader(data))
+	if err != nil {
+		return false, err
+	}
 	isSuppressed, err := repo.Suppressed("workspace-1", "user-1", "src-1")
-	require.NoError(t, err)
-	require.NotNil(t, isSuppressed)
+	if err != nil {
+		return false, err
+	}
+	return isSuppressed != nil, nil
 }
 
 func TestMain(t *testing.T) {
@@ -102,13 +117,31 @@ func TestMain(t *testing.T) {
 				return err == nil && res.StatusCode == http.StatusOK
 			}, 10*time.Second, 100*time.Millisecond, "server should start and be ready")
 
+			var lastErr error
 			require.Eventually(t, func() bool {
-				code, body := makeHTTPRequest(t, tt.method, fmt.Sprintf("http://localhost:%s%s", "8000", tt.endpoint), http.NoBody)
+				code, body, err := makeHTTPRequest(tt.method, fmt.Sprintf("http://localhost:%s%s", "8000", tt.endpoint), http.NoBody)
+				if err != nil {
+					lastErr = err
+					return false
+				}
+				if code != tt.expectedResponseCode {
+					lastErr = fmt.Errorf("unexpected response status %d", code)
+					return false
+				}
 				exportBaseDir, err := exportPath()
-				require.NoError(t, err)
-				verifyBackup(t, exportBaseDir, string(body))
-				return code == tt.expectedResponseCode
-			}, 10*time.Second, 1*time.Second, "should be able to get response from "+tt.endpoint)
+				if err != nil {
+					lastErr = err
+					return false
+				}
+				ok, err := backupHasSuppression(exportBaseDir, body)
+				if err != nil {
+					lastErr = err
+					return false
+				}
+				lastErr = nil
+				return ok
+			}, 10*time.Second, 1*time.Second, "should be able to get restorable response from "+tt.endpoint)
+			require.NoError(t, lastErr)
 		})
 	}
 	defer func() {

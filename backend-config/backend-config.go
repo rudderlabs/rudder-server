@@ -139,11 +139,20 @@ func filterProcessorEnabledWorkspaceConfig(config map[string]ConfigT) map[string
 	return filterConfig
 }
 
+// filterProcessorEnabledDestinations trims a workspace config down to what the processor
+// should see: destinations and connections that are processor-enabled.
+//
+// It starts from the complete config and copies it, so a field added to ConfigT reaches
+// TopicProcessConfig without being listed here; only the two fields filtered below are
+// transformed. The contract is pinned by TestFilterProcessorEnabledDestinationsPreservesFields.
 func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
-	var modifiedConfig ConfigT
-	modifiedConfig.Libraries = config.Libraries
-	modifiedConfig.Sources = make([]SourceT, 0)
-	modifiedConfig.Credentials = config.Credentials
+	modifiedConfig := config
+	if config.Connections != nil { // lo.OmitBy would turn a nil map into an empty one
+		modifiedConfig.Connections = lo.OmitBy(config.Connections, func(_ string, connection Connection) bool {
+			return !connection.ProcessorEnabled
+		})
+	}
+	modifiedConfig.Sources = make([]SourceT, 0, len(config.Sources))
 	for _, source := range config.Sources {
 		var destinations []DestinationT
 		for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
@@ -158,7 +167,6 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 		source.Destinations = destinations
 		modifiedConfig.Sources = append(modifiedConfig.Sources, source)
 	}
-	modifiedConfig.Settings = config.Settings
 	return modifiedConfig
 }
 
@@ -273,7 +281,7 @@ func (bc *backendConfigImpl) Subscribe(ctx context.Context, topic Topic) pubsub.
 	return bc.eb.Subscribe(ctx, string(topic))
 }
 
-func newForDeployment(deploymentType deployment.Type, region string, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
+func newForDeployment(deploymentType deployment.Type, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
 	backendConfig := &backendConfigImpl{
 		eb: pubsub.New(),
 	}
@@ -288,14 +296,12 @@ func newForDeployment(deploymentType deployment.Type, region string, configEnvHa
 			configJSONPath:   configJSONPath,
 			configBackendURL: parsedConfigBackendURL,
 			configEnvHandler: configEnvHandler,
-			region:           region,
 		}
 	case deployment.MultiTenantType:
 		backendConfig.workspaceConfig = &namespaceConfig{
 			configBackendURL:         parsedConfigBackendURL,
 			configEnvHandler:         configEnvHandler,
 			cpRouterURL:              cpRouterURL,
-			region:                   region,
 			incrementalConfigUpdates: incrementalConfigUpdates,
 		}
 	default:
@@ -308,12 +314,11 @@ func newForDeployment(deploymentType deployment.Type, region string, configEnvHa
 // Setup backend config
 func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 	deploymentType, err := deployment.GetFromEnv()
-	region := config.GetStringVar("", "region")
 	if err != nil {
 		return fmt.Errorf("deployment type from env: %w", err)
 	}
 
-	backendConfig, err := newForDeployment(deploymentType, region, configEnvHandler)
+	backendConfig, err := newForDeployment(deploymentType, configEnvHandler)
 	if err != nil {
 		return err
 	}

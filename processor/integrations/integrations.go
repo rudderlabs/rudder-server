@@ -1,7 +1,6 @@
 package integrations
 
 import (
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -22,30 +21,11 @@ type PostParametersT struct {
 	Files       map[string]any    `json:"files"`
 }
 
-type TransStatsT struct {
-	StatTags map[string]string `json:"statTags"`
-}
-
-func CollectDestErrorStats(input []byte) {
-	var integrationStat TransStatsT
-	err := jsonrs.Unmarshal(input, &integrationStat)
-	if err == nil {
-		if len(integrationStat.StatTags) > 0 {
-			stats.Default.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
-		}
+func CollectIntegrationFailureDetailedStats(statsStore stats.Stats, statTags map[string]string) {
+	if len(statTags) == 0 {
+		return
 	}
-}
-
-func CollectIntgTransformErrorStats(input []byte) {
-	var integrationStats []TransStatsT
-	err := jsonrs.Unmarshal(input, &integrationStats)
-	if err == nil {
-		for _, integrationStat := range integrationStats {
-			if len(integrationStat.StatTags) > 0 {
-				stats.Default.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
-			}
-		}
-	}
+	statsStore.NewTaggedStat("integration.failure_detailed", stats.CountType, statTags).Increment()
 }
 
 // FilterClientIntegrations parses the destination names from the

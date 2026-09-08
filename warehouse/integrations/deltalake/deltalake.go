@@ -44,6 +44,16 @@ const (
 	nonRudderStagingTableRegex = "^(?!rudder_staging_.*$).*" // matches tables that do not start with rudder_staging_
 )
 
+// Disable the databricks driver logs once for the process lifetime, before connect() can be
+// called concurrently. SetLogLevel mutates package-level state in the driver that its background
+// telemetry goroutines read without synchronization, so calling it more than once (or after
+// goroutines are already running) races with those goroutines.
+func init() {
+	if err := dbsqllog.SetLogLevel("disabled"); err != nil {
+		panic(fmt.Errorf("deltalake: setting databricks driver log level: %w", err))
+	}
+}
+
 // dataTypesMap maps rudder data types to delta lake data types
 var dataTypesMap = map[string]string{
 	"boolean":  "BOOLEAN",
@@ -225,10 +235,6 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating sqlconnect db: %w", err)
 	}
-	if err = dbsqllog.SetLogLevel("disabled"); err != nil {
-		return nil, fmt.Errorf("setting log level: %w", err)
-	}
-
 	middleware := sqlmiddleware.New(
 		sqlConnectDB.SqlDB(),
 		sqlmiddleware.WithStats(d.stats),

@@ -413,15 +413,20 @@ func prepareExpectedReports(t *testing.T, sourceId string, gwOnly bool, numEvent
 
 func requireReports(t *testing.T, ctx context.Context, db *sql.DB, expectedReports []reportRow) {
 	t.Helper()
+	// multiple rows can be recorded for the same report key, so aggregate their counts
 	query := `
 					SELECT
 					  workspace_id, instance_id, source_id, destination_id,
-					  in_pu, pu, status_code, status, count,
+					  in_pu, pu, status_code, status, SUM(count),
 					  terminal_state, initial_state, source_category, event_type
 					FROM
 					  reports
+					GROUP BY
+					  workspace_id, instance_id, source_id, destination_id,
+					  in_pu, pu, status_code, status,
+					  terminal_state, initial_state, source_category, event_type
 					ORDER BY
-					  source_id, id;
+					  source_id, MIN(id);
 				`
 	require.Eventuallyf(t, func() bool {
 		rows, err := db.QueryContext(ctx, query)
@@ -538,7 +543,7 @@ func runRudderServer(t testing.TB, ctx context.Context, cancel context.CancelFun
 	t.Setenv(configKeyToEnv("SourceDebugger.disableEventUploads"), "true")
 	t.Setenv(configKeyToEnv("TransformationDebugger.disableTransformationStatusUploads"), "true")
 	t.Setenv(configKeyToEnv("JobsDB.backup.enabled"), "false")
-	t.Setenv(configKeyToEnv("JobsDB.migrateDSLoopSleepDuration"), "60m")
+	t.Setenv(configKeyToEnv("JobsDB.compactionLoopSleepDuration"), "60m")
 	t.Setenv(configKeyToEnv("archival.Enabled"), "false")
 	t.Setenv(configKeyToEnv("Reporting.syncer.enabled"), "false")
 	t.Setenv(configKeyToEnv("BatchRouter.pingFrequency"), "1s")
@@ -549,7 +554,6 @@ func runRudderServer(t testing.TB, ctx context.Context, cancel context.CancelFun
 	t.Setenv(configKeyToEnv("recovery.enabled"), "false")
 	t.Setenv(configKeyToEnv("Profiler.Enabled"), "false")
 	t.Setenv(configKeyToEnv("Gateway.enableSuppressUserFeature"), "false")
-	t.Setenv(configKeyToEnv("Processor.archiveInPreProcess"), "true")
 	t.Setenv(configKeyToEnv("Processor.SourceHydration.maxRetry"), "2")
 	t.Setenv(configKeyToEnv("enableStats"), "false")
 	if minioResource != nil {

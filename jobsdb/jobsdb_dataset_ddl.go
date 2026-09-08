@@ -17,6 +17,11 @@ import (
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
+// Jobs and job status tables are append-only, so only insert-driven autovacuum ever fires on
+// them. Its default scale factor of 0.2 lets a table grow 20% between vacuums, leaving the
+// visibility map that stale and costing every index-only scan a heap fetch for those rows.
+const dsAutovacuumOptions = `WITH (autovacuum_vacuum_insert_scale_factor = 0.02)`
+
 func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 	var (
 		minJobCreatedAt sql.NullTime
@@ -162,7 +167,7 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		event_count INTEGER NOT NULL DEFAULT 1,
 		created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-		consumers TEXT[] NOT NULL DEFAULT '{""}');`, newDS.JobTable)); err != nil {
+		consumers TEXT[] NOT NULL DEFAULT '{""}') `+dsAutovacuumOptions+`;`, newDS.JobTable)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobTable, err)
 	}
 
@@ -176,7 +181,7 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		error_code VARCHAR(32),
 		error_response JSONB DEFAULT '{}'::JSONB,
 		parameters JSONB DEFAULT '{}'::JSONB,
-		consumer TEXT NOT NULL DEFAULT '');`, newDS.JobStatusTable)); err != nil {
+		consumer TEXT NOT NULL DEFAULT '') `+dsAutovacuumOptions+`;`, newDS.JobStatusTable)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobStatusTable, err)
 	}
 
@@ -222,6 +227,13 @@ func (jd *Handle) createDSJobIndicesInTx(ctx context.Context, tx *Tx, newDS data
 	if jd.conf.multiConsumer {
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_consumers" ON %[1]q USING GIN (consumers)`, newDS.JobTable)); err != nil {
 			return fmt.Errorf("creating consumers GIN index: %w", err)
+		}
+		// Serves the compaction probe (checkIfCompactDS), which joins the jobs table only to
+		// evaluate array_length(consumers, 1) per job. INCLUDE keeps consumers as a real column,
+		// so that join side stays index-only and skips the heap entirely, roughly halving its
+		// cost. Single-consumer probes don't join the jobs table, hence multiConsumer only.
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_c" ON %[1]q (job_id) INCLUDE (consumers)`, newDS.JobTable)); err != nil {
+			return fmt.Errorf("creating job_id/consumers covering index: %w", err)
 		}
 	}
 	return nil

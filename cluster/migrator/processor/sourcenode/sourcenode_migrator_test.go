@@ -748,6 +748,100 @@ func TestMigrator(t *testing.T) {
 			require.Empty(t, rtExcluded, "read exclusions should be removed from rt after migration")
 		})
 
+		t.Run("jobsdb fan-out: job scoped to a single jobsdb only moves that jobsdb", func(t *testing.T) {
+			env := newRunEnv(t)
+
+			// Generate jobs in source db (both jobsdbs)
+			require.NoError(t, env.sourceGWJobsDB.Store(t.Context(), generateJobs(t, "partition-1", 100)))
+			require.NoError(t, env.sourceGWJobsDB.Store(t.Context(), generateJobs(t, "partition-2", 100)))
+			require.NoError(t, env.sourceRTJobsDB.Store(t.Context(), generateJobs(t, "partition-1", 100)))
+			require.NoError(t, env.sourceRTJobsDB.Store(t.Context(), generateJobs(t, "partition-2", 100)))
+
+			// Create a migration job scoped to the gw jobsdb only (fan-out mode)
+			migrationJob := &etcdtypes.PartitionMigrationJob{
+				PartitionMigrationJobHeader: etcdtypes.PartitionMigrationJobHeader{
+					JobID:      "job-1",
+					SourceNode: 0, // this node
+					TargetNode: 1,
+					Partitions: []string{"partition-1", "partition-2"},
+					JobsDB:     "gw",
+				},
+				MigrationID: "migration-1",
+				Status:      etcdtypes.PartitionMigrationJobStatusNew,
+			}
+			jobKey := "/" + env.namespace + "/migration/job/" + migrationJob.JobID
+			jobValue, err := jsonrs.Marshal(migrationJob)
+			require.NoError(t, err)
+			_, err = env.etcdClient.Put(t.Context(), jobKey, string(jobValue))
+			require.NoError(t, err)
+
+			// Create a migration (for Handle)
+			migration := &etcdtypes.PartitionMigration{
+				ID:     "migration-1",
+				Status: etcdtypes.PartitionMigrationStatusNew,
+				Jobs: []*etcdtypes.PartitionMigrationJobHeader{
+					&migrationJob.PartitionMigrationJobHeader,
+				},
+			}
+
+			// Create migrator
+			m, err := NewMigratorBuilder(0, "test-node").
+				WithConfig(env.conf).
+				WithReaderJobsDBs([]jobsdb.JobsDB{env.sourceGWJobsDB, env.sourceRTJobsDB}).
+				WithShutdown(func() {}).
+				WithTargetURLProvider(func(targetNodeIndex int) (string, error) {
+					return env.targetAddr, nil
+				}).
+				WithEtcdClient(env.etcdClient).
+				Build()
+			require.NoError(t, err)
+
+			// Call Handle for the migration (marks partitions as read-excluded in both jobsdbs)
+			err = m.Handle(t.Context(), migration)
+			require.NoError(t, err)
+
+			// Call Run
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			wg, ctx := errgroup.WithContext(ctx)
+			err = m.Run(ctx, wg)
+			require.NoError(t, err)
+
+			// Wait for the gw-scoped job to complete (job status changes to "moved")
+			require.Eventually(t, func() bool {
+				resp, err := env.etcdClient.Get(t.Context(), jobKey)
+				if err != nil || len(resp.Kvs) == 0 {
+					return false
+				}
+				var job etcdtypes.PartitionMigrationJob
+				if err := jsonrs.Unmarshal(resp.Kvs[0].Value, &job); err != nil {
+					return false
+				}
+				return job.Status == etcdtypes.PartitionMigrationJobStatusMoved
+			}, 30*time.Second, 100*time.Millisecond, "job status should be marked as moved")
+
+			// Cancel context to stop watcher
+			cancel()
+			require.NoError(t, wg.Wait(), "Run should complete without error")
+
+			// Verify that only gw data was moved to target
+			require.Equal(t, 100, countJobsForPartition(t, env.targetDB, "gw", "partition-1"), "gw jobs for partition-1 should be migrated")
+			require.Equal(t, 100, countJobsForPartition(t, env.targetDB, "gw", "partition-2"), "gw jobs for partition-2 should be migrated")
+			require.Equal(t, 0, countJobsForPartition(t, env.targetDB, "rt", "partition-1"), "rt jobs should not be migrated: no job targeted rt")
+			require.Equal(t, 0, countJobsForPartition(t, env.targetDB, "rt", "partition-2"), "rt jobs should not be migrated: no job targeted rt")
+
+			// Verify that only gw jobs were removed from source, rt is untouched
+			require.Equal(t, 0, countJobsForPartition(t, env.sourceDB, "gw", "partition-1"), "gw jobs for partition-1 should be removed from source")
+			require.Equal(t, 0, countJobsForPartition(t, env.sourceDB, "gw", "partition-2"), "gw jobs for partition-2 should be removed from source")
+			require.Equal(t, 100, countJobsForPartition(t, env.sourceDB, "rt", "partition-1"), "rt jobs should remain in source: no job targeted rt")
+			require.Equal(t, 100, countJobsForPartition(t, env.sourceDB, "rt", "partition-2"), "rt jobs should remain in source: no job targeted rt")
+
+			// Verify that only gw's read exclusion was removed; rt's remains since no job targeted it
+			require.Empty(t, getReadExcludedPartitions(t, env.sourceDB, "gw"), "gw read exclusions should be removed after migration")
+			require.ElementsMatch(t, []string{"partition-1", "partition-2"}, getReadExcludedPartitions(t, env.sourceDB, "rt"),
+				"rt read exclusions should remain: no job targeted rt")
+		})
+
 		t.Run("etcd client intermittent failures", func(t *testing.T) {
 			env := newRunEnv(t)
 
@@ -1081,4 +1175,39 @@ func (m *mockJobsDB) AddReadExcludedPartitionIDs(ctx context.Context, partitionI
 		return m.addReadExcludedPartitionIDsErr
 	}
 	return m.JobsDB.AddReadExcludedPartitionIDs(ctx, partitionIDs)
+}
+
+// idJobsDB is a jobsdb.JobsDB whose only meaningful method is Identifier.
+type idJobsDB struct {
+	jobsdb.JobsDB
+	id string
+}
+
+func (j idJobsDB) Identifier() string { return j.id }
+
+func TestResolveReaderJobsDBs(t *testing.T) {
+	m := &migrator{
+		logger: logger.NOP,
+		readerJobsDBs: []jobsdb.JobsDB{
+			idJobsDB{id: "gw"}, idJobsDB{id: "rt"}, idJobsDB{id: "batch_rt"},
+		},
+	}
+
+	t.Run("legacy: empty jobsDB resolves to all reader jobsdbs", func(t *testing.T) {
+		require.Equal(t, m.readerJobsDBs, m.resolveReaderJobsDBs(""))
+	})
+
+	t.Run("fan-out: named jobsDB resolves to the single matching jobsdb", func(t *testing.T) {
+		dbs := m.resolveReaderJobsDBs("rt")
+		require.Len(t, dbs, 1)
+		require.Equal(t, "rt", dbs[0].Identifier())
+	})
+
+	t.Run("unknown jobsDB returns nil and logs a warning", func(t *testing.T) {
+		require.Nil(t, m.resolveReaderJobsDBs("nope"))
+	})
+
+	t.Run("JobsDBs returns reader jobsdb identifiers", func(t *testing.T) {
+		require.Equal(t, []string{"gw", "rt", "batch_rt"}, m.JobsDBs())
+	})
 }

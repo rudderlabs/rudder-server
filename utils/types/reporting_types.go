@@ -29,7 +29,11 @@ const (
 	// Module names
 	BOT_MANAGEMENT         = "bot_management"
 	EVENT_BLOCKING         = "event_blocking"
+	USER_SUPPRESSION       = "user_suppression"
+	DEDUP                  = "dedup"
 	GATEWAY                = "gateway"
+	GATEWAY_INGESTED       = "gw_ingested"
+	DESTINATION_ENTER      = "destination_enter"
 	DESTINATION_FILTER     = "destination_filter"
 	SOURCE_HYDRATION       = "source_hydration"
 	TRACKINGPLAN_VALIDATOR = "tracking_plan_validator"
@@ -39,6 +43,11 @@ const (
 	ROUTER                 = "router"
 	BATCH_ROUTER           = "batch_router"
 	WAREHOUSE              = "warehouse"
+
+	// destination_filter statuses (per-destination visibility, at the destination_enter boundary)
+	FilteredIntegrationStatus   = "filtered_integration"
+	FilteredConsentStatus       = "filtered_consent"
+	FilteredNoDestinationStatus = "filtered_no_destination"
 )
 
 var (

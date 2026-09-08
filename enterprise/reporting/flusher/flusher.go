@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -289,10 +290,7 @@ func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error 
 		batch := aggReports[i:end]
 
 		g.Go(func() error {
-			if err := f.commonClient.Send(ctx, batch); err != nil {
-				return err
-			}
-			return nil
+			return f.sendBatch(ctx, batch)
 		})
 	}
 
@@ -300,6 +298,22 @@ func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error 
 		return err
 	}
 
+	return nil
+}
+
+func (f *Flusher) sendBatch(ctx context.Context, batch []json.RawMessage) error {
+	err := f.commonClient.Send(ctx, batch)
+	if !errors.Is(err, client.ErrPayloadTooLarge) {
+		return err
+	}
+
+	// Items are opaque and cannot be shrunk further, so a 413 on an individual
+	// item is retried like any other non-2xx response.
+	for _, item := range batch {
+		if err := f.commonClient.SendWithoutFailFast(ctx, []json.RawMessage{item}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

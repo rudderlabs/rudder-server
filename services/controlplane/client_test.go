@@ -87,8 +87,9 @@ func TestDestinationHistory(t *testing.T) {
 	require.NoError(t, err)
 
 	expectedDestination := backendconfig.DestinationT{
-		ID:   "2ENkYVMMUInzUGYp32R6dVghgvj",
-		Name: "webhook.site",
+		ID:         "2ENkYVMMUInzUGYp32R6dVghgvj",
+		OriginalID: "29Z8hE8dc7KpqhnOg8DS1ngSk7T",
+		Name:       "webhook.site",
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			ID:          "1aIXpUrvpGno4gEuF2GvI3O9dOe",
 			Name:        "WEBHOOK",

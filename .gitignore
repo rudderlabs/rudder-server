@@ -6,6 +6,9 @@ rudder-server
 runtime.log
 dist/*
 workspaceConfig.json
+# namespace captures, raw and scrubbed: see backend-config/testdata/namespace_capture_fixtures.md
+v[12]-raw.json
+v[12]-anon.json
 **/node_modules
 imports/enterprise.go
 *.coverprofile

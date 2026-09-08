@@ -54,6 +54,7 @@ type Handle struct {
 	Reporting                  reporter
 	transientSources           transientsource.Service
 	rsourcesService            rsources.JobService
+	rsourcesSyncSettings       rsources.SyncSettingDelegate
 	transformerFeaturesService transformerFeaturesService.FeaturesService
 	debugger                   destinationdebugger.DestinationDebugger
 	adaptiveLimit              func(int64) int64
@@ -65,7 +66,7 @@ type Handle struct {
 	netClientTimeout                   time.Duration
 	transformerTimeout                 time.Duration
 	enableBatching                     bool
-	noOfWorkers                        int
+	defaultNoOfWorkers                 int // handle for overriding the default value in tests
 	eventOrderKeyThreshold             config.ValueLoader[int]
 	eventOrderDisabledStateDuration    config.ValueLoader[time.Duration]
 	eventOrderHalfEnabledStateDuration config.ValueLoader[time.Duration]
@@ -76,6 +77,10 @@ type Handle struct {
 	saveDestinationResponse            bool
 	saveDestinationResponseOverride    config.ValueLoader[bool]
 	reportJobsdbPayload                config.ValueLoader[bool]
+	storeDeliveredWithWarningPayload   config.ValueLoader[bool]
+	// supportsDeliveredWithWarnings mirrors the destination definition's capability flag. Written
+	// by the backend-config subscriber and read by workers, hence atomic.
+	supportsDeliveredWithWarnings atomic.Bool
 
 	diagnosisTickerTime time.Duration
 
@@ -107,6 +112,7 @@ type Handle struct {
 	processJobsCountStat           stats.Measurement
 	throttlingErrorStat            stats.Measurement
 	throttledStat                  stats.Measurement
+	statusDowngradedStat           func(from, to int) stats.Counter
 	isolationStrategy              isolation.Strategy
 	backgroundGroup                *errgroup.Group
 	backgroundCtx                  context.Context

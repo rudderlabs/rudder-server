@@ -337,7 +337,7 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 	expectedUpdatedAt, err = time.Parse(updatedAfterTimeFormat, "2022-07-20T10:00:00.000Z")
 	require.NoError(t, err)
 	require.Equal(t, receivedUpdatedAfter[0], expectedUpdatedAt, updatedAfterTimeFormat)
-	require.Equal(t, receivedUpdatedAfter[0], client.lastUpdatedAt, updatedAfterTimeFormat)
+	require.Equal(t, receivedUpdatedAfter[0], client.fetcher.(*v1ConfigFetcher).lastUpdatedAt, updatedAfterTimeFormat)
 	require.Equal(t, 7, requestNumber)
 }
 

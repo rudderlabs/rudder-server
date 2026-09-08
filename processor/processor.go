@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -134,6 +135,7 @@ type Handle struct {
 	backgroundCancel           context.CancelFunc
 	statsFactory               stats.Stats
 	stats                      processorStats
+	maxSrcToDestFanout         atomic.Int64
 	payloadLimit               config.ValueLoader[int64]
 	jobsDBCommandTimeout       config.ValueLoader[time.Duration]
 	jobdDBQueryRequestTimeout  config.ValueLoader[time.Duration]
@@ -143,6 +145,8 @@ type Handle struct {
 	utSamplingFileManager      filemanager.FileManager
 	storeSamplingFileManager   filemanager.FileManager
 	mirrorFilteredCache        *cachettl.Cache[string, bool]
+	destinationIsolationMu     sync.RWMutex
+	destinationIsolationCache  map[string]bool
 	rsourcesService            rsources.JobService
 	transformerFeaturesService transformerFeaturesService.FeaturesService
 	destDebugger               destinationdebugger.DestinationDebugger
@@ -150,6 +154,7 @@ type Handle struct {
 	isolationStrategy          isolation.Strategy
 	limiter                    struct {
 		read         kitsync.Limiter
+		pread        kitsync.Limiter // proc pool read (getProcJobs), independent of gw pool read
 		preprocess   kitsync.Limiter
 		srcHydration kitsync.Limiter
 		pretransform kitsync.Limiter
@@ -199,7 +204,12 @@ type Handle struct {
 		pythonTransformConfig                     transformerutils.PythonTransformConfig
 		userTransformationMirroringBlockedIDs     config.ValueLoader[[]string]
 		storeSamplerEnabled                       config.ValueLoader[bool]
-		archiveInPreProcess                       bool
+		forkRsourcesTrackedJobs                   bool
+		reportingDedupMetricsEnabled              config.ValueLoader[bool]
+		reportingGatewayIngestedMetricsEnabled    config.ValueLoader[bool]
+		earlyDestinationFilter                    config.ValueLoader[bool]
+
+		dropEventsForDisabledDestAtProcRebuild config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -219,25 +229,27 @@ type Handle struct {
 }
 type processorStats struct {
 	statGatewayDBR                func(partition string) stats.Measurement
-	statGatewayDBW                func(partition string) stats.Measurement
+	statGatewayDBW                func(partition, pipeline string) stats.Measurement
 	statDBR                       func(partition string) stats.Measurement
-	statDBW                       func(partition string) stats.Measurement
+	statDBW                       func(partition, pipeline string) stats.Measurement
 	validateEventsTime            func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
 	statNumRequests               func(partition string) stats.Measurement
 	statNumEvents                 func(partition string) stats.Measurement
-	statDBWriteRouterPayloadBytes func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
-	statDBWriteBatchPayloadBytes  func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
-	statDestNumOutputEvents       func(partition string) stats.Measurement
-	statBatchDestNumOutputEvents  func(partition string) stats.Measurement
+	statDBWriteRouterPayloadBytes func(partition, pipeline string) stats.Measurement // TODO: stop using it in dashboards and delete
+	statDBWriteBatchPayloadBytes  func(partition, pipeline string) stats.Measurement // TODO: stop using it in dashboards and delete
+	statDestNumOutputEvents       func(partition, pipeline string) stats.Measurement
+	statBatchDestNumOutputEvents  func(partition, pipeline string) stats.Measurement
 	trackedUsersReportGeneration  func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
+	statSrcToDestFanout           stats.Histogram
+	statMaxSrcToDestFanout        stats.Gauge
 
 	statReadStageCount         func(partition string) stats.Measurement
 	statPretransformStageCount func(partition string) stats.Measurement
 	statPreprocessStageCount   func(partition string) stats.Measurement
 	statSrcHydrationStageCount func(partition string) stats.Measurement
-	statUtransformStageCount   func(partition string) stats.Measurement
-	statDtransformStageCount   func(partition string) stats.Measurement
-	statStoreStageCount        func(partition string) stats.Measurement
+	statUtransformStageCount   func(partition, pipeline string) stats.Measurement
+	statDtransformStageCount   func(partition, pipeline string) stats.Measurement
+	statStoreStageCount        func(partition, pipeline string) stats.Measurement
 
 	utMirroringEqualResponses            func(partition, transformationID string) stats.Measurement
 	utMirroringDifferentResponses        func(partition, transformationID string) stats.Measurement
@@ -494,9 +506,10 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.statGatewayDBW = func(partition string) stats.Measurement {
+	proc.stats.statGatewayDBW = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_gateway_db_write", stats.CountType, stats.Tags{
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
 	proc.stats.statDBR = func(partition string) stats.Measurement {
@@ -504,9 +517,10 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.statDBW = func(partition string) stats.Measurement {
+	proc.stats.statDBW = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_gateway_db_write_time", stats.TimerType, stats.Tags{
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
 	proc.stats.validateEventsTime = func(partition string) stats.Measurement {
@@ -524,28 +538,32 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.statDBWriteRouterPayloadBytes = func(partition string) stats.Measurement {
+	proc.stats.statDBWriteRouterPayloadBytes = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_db_write_payload_bytes", stats.HistogramType, stats.Tags{
 			"module":    "router",
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
-	proc.stats.statDBWriteBatchPayloadBytes = func(partition string) stats.Measurement {
+	proc.stats.statDBWriteBatchPayloadBytes = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_db_write_payload_bytes", stats.HistogramType, stats.Tags{
 			"module":    "batch_router",
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
-	proc.stats.statDestNumOutputEvents = func(partition string) stats.Measurement {
+	proc.stats.statDestNumOutputEvents = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_num_output_events", stats.CountType, stats.Tags{
 			"module":    "router",
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
-	proc.stats.statBatchDestNumOutputEvents = func(partition string) stats.Measurement {
+	proc.stats.statBatchDestNumOutputEvents = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_num_output_events", stats.CountType, stats.Tags{
 			"module":    "batch_router",
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
 	proc.stats.trackedUsersReportGeneration = func(partition string) stats.Measurement {
@@ -553,6 +571,9 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
+	proc.stats.statMaxSrcToDestFanout = proc.statsFactory.NewStat("processor_max_source_to_destination_fanout", stats.GaugeType)
+	proc.stats.statMaxSrcToDestFanout.Gauge(0)
+	proc.stats.statSrcToDestFanout = proc.statsFactory.NewStat("processor_source_to_destination_fanout", stats.HistogramType)
 	proc.stats.statReadStageCount = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("proc_read_jobs", stats.CountType, stats.Tags{
 			"partition": partition,
@@ -573,19 +594,22 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.statUtransformStageCount = func(partition string) stats.Measurement {
+	proc.stats.statUtransformStageCount = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("proc_utransform_jobs", stats.CountType, stats.Tags{
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
-	proc.stats.statDtransformStageCount = func(partition string) stats.Measurement {
+	proc.stats.statDtransformStageCount = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("proc_dtransform_jobs", stats.CountType, stats.Tags{
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
-	proc.stats.statStoreStageCount = func(partition string) stats.Measurement {
+	proc.stats.statStoreStageCount = func(partition, pipeline string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("proc_store_jobs", stats.CountType, stats.Tags{
 			"partition": partition,
+			"pipeline":  pipeline,
 		})
 	}
 	proc.stats.utMirroringEqualResponses = func(partition, transformationID string) stats.Measurement {
@@ -650,7 +674,10 @@ func (proc *Handle) Setup(
 			case <-ctx.Done():
 				return nil
 			case <-time.After(15 * time.Second):
-				proc.stats.statGatewayDBW("").Count(0)
+				proc.stats.statGatewayDBW("", pipelineTypeGw).Count(0)
+				if proc.procDB != nil {
+					proc.stats.statGatewayDBW("", pipelineTypeProc).Count(0)
+				}
 			}
 		}
 	}))
@@ -682,6 +709,10 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.read.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.read.dynamicPeriod")))
+	proc.limiter.pread = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_pread",
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.pread.limit"),
+		s,
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.pread.dynamicPeriod")))
 	proc.limiter.preprocess = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_preprocess",
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.preprocess.limit"),
 		s,
@@ -706,14 +737,15 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.store.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.store.dynamicPeriod")))
+
 	g.Go(func() error {
 		limiterGroup.Wait()
 		return nil
 	})
 
-	// pinger loop
+	// gw consumer loop
 	g.Go(crash.Wrapper(func() error {
-		proc.logger.Infon("Starting pinger loop")
+		proc.logger.Infon("Starting gw consumer loop")
 		proc.backendConfig.WaitForConfig(ctx)
 		proc.logger.Infon("Backend config received")
 
@@ -739,7 +771,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 
 		h := &workerHandleAdapter{proc}
 		pool := workerpool.New(ctx, func(partition string) workerpool.Worker {
-			return newPartitionWorker(partition, h, proc.statsFactory.NewTracer("partitionWorker"), proc.statsFactory)
+			return newGwPartitionWorker(partition, h, proc.statsFactory.NewTracer("gwPartitionWorker"), proc.statsFactory)
 		}, proc.logger)
 		defer pool.Shutdown()
 		for {
@@ -752,6 +784,11 @@ func (proc *Handle) Start(ctx context.Context) error {
 				pool.PingWorker(partition)
 			}
 		}
+	}))
+
+	// proc consumer loop — no-op unless procDB is configured
+	g.Go(crash.Wrapper(func() error {
+		return proc.startProcConsumer(ctx)
 	}))
 
 	return g.Wait()
@@ -811,8 +848,8 @@ func (proc *Handle) loadConfig() {
 	proc.config.transformTimesPQLength = proc.conf.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = proc.conf.GetStringVar("GW", "Gateway.CustomVal")
-	proc.config.archiveInPreProcess = proc.conf.GetBoolVar(false, "Processor.archiveInPreProcess")
 	proc.config.pythonTransformConfig = transformerutils.LoadPythonTransformConfig(proc.conf)
+	proc.config.forkRsourcesTrackedJobs = proc.conf.GetBoolVar(false, "Processor.DestinationIsolation.forkRsourcesTrackedJobs")
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
 
@@ -835,6 +872,12 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.mirrorFilterCacheTTL = proc.conf.GetDurationVar(3, time.Hour, "Processor.userTransformationMirroring.filterCacheTTL")
 	proc.config.userTransformationMirroringBlockedIDs = proc.conf.GetReloadableStringSliceVar(nil, "Processor.userTransformationMirroring.blockedTransformationIDs")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
+	proc.config.reportingDedupMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.dedupMetrics.enabled")
+	proc.config.reportingGatewayIngestedMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.gatewayIngestedMetrics.enabled")
+	proc.config.earlyDestinationFilter = proc.conf.GetReloadableBoolVar(true, "Processor.earlyDestinationFilter")
+	// Opt-in early drop at the proc rebuild stage for destinations disabled since fan-out;
+	// by default such events keep flowing so the router/batchrouter aborts them with reporting.
+	proc.config.dropEventsForDisabledDestAtProcRebuild = proc.conf.GetReloadableBoolVar(false, "Processor.DestinationIsolation.dropEventsForDisabledDestAtProcRebuild")
 }
 
 type connection struct {
@@ -982,6 +1025,35 @@ func (proc *Handle) getBackendEnabledDestinationTypes(sourceId string) map[strin
 		}
 	}
 	return enabledDestinationTypes
+}
+
+// sourceDestinations is a snapshot of a source's enabled destinations, taken once per source
+// so that per-event classification doesn't re-scan the config under lock for every event.
+type sourceDestinations struct {
+	// destTypes maps DestinationDefinition.DisplayName -> definition, the shape
+	// integrations.FilterClientIntegrations consumes.
+	destTypes map[string]backendconfig.DestinationDefinitionT
+	// byTypeName maps DestinationDefinition.Name -> enabled destinations, preserving
+	// backend-config order within each type.
+	byTypeName map[string][]backendconfig.DestinationT
+}
+
+func (proc *Handle) getSourceDestinations(sourceId string) sourceDestinations {
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+	srcDests := sourceDestinations{
+		destTypes:  make(map[string]backendconfig.DestinationDefinitionT),
+		byTypeName: make(map[string][]backendconfig.DestinationT),
+	}
+	for i := range proc.config.sourceIdDestinationMap[sourceId] {
+		dest := &proc.config.sourceIdDestinationMap[sourceId][i]
+		if !dest.Enabled {
+			continue
+		}
+		srcDests.destTypes[dest.DestinationDefinition.DisplayName] = dest.DestinationDefinition
+		srcDests.byTypeName[dest.DestinationDefinition.Name] = append(srcDests.byTypeName[dest.DestinationDefinition.Name], *dest)
+	}
+	return srcDests
 }
 
 // stripActivationMetadata removes the context.activation fields that MAR metering
@@ -1733,26 +1805,32 @@ func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
 }
 
 type preTransformationMessage struct {
-	partition                     string
-	subJobs                       subJob
-	eventSchemaJobsBySourceId     map[SourceIDT][]*jobsdb.JobT
-	archivalJobs                  []*jobsdb.JobT
-	connectionDetailsMap          map[string]*reportingtypes.ConnectionDetails
-	statusDetailsMap              map[string]map[string]*reportingtypes.StatusDetail
-	enricherStatusDetailsMap      map[string]map[string]*reportingtypes.StatusDetail
-	botManagementStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
-	eventBlockingStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
-	destFilterStatusDetailMap     map[string]map[string]*reportingtypes.StatusDetail
-	reportMetrics                 []*reportingtypes.PUReportedMetric
-	totalEvents                   int
-	groupedEventsBySourceId       map[SourceIDT][]types.TransformerEvent
-	eventsByMessageID             map[string]types.SingularEventWithReceivedAt
-	jobIDToSpecificDestMapOnly    map[int64]string
-	statusList                    []*jobsdb.JobStatusT
-	jobList                       []*jobsdb.JobT
-	sourceDupStats                map[dupStatKey]int
-	dedupKeys                     map[string]struct{}
-	srcHydrationEnabledMap        map[SourceIDT]bool
+	partition                       string
+	subJobs                         subJob
+	eventSchemaJobsBySourceId       map[SourceIDT][]*jobsdb.JobT
+	archivalJobs                    []*jobsdb.JobT
+	connectionDetailsMap            map[string]*reportingtypes.ConnectionDetails
+	statusDetailsMap                map[string]map[string]*reportingtypes.StatusDetail
+	enricherStatusDetailsMap        map[string]map[string]*reportingtypes.StatusDetail
+	botManagementStatusDetailsMap   map[string]map[string]*reportingtypes.StatusDetail
+	eventBlockingStatusDetailsMap   map[string]map[string]*reportingtypes.StatusDetail
+	userSuppressionStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
+	dedupStatusDetailsMap           map[string]map[string]*reportingtypes.StatusDetail
+	gatewayIngestedStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
+	destFilterStatusDetailMap       map[string]map[string]*reportingtypes.StatusDetail
+	reportMetrics                   []*reportingtypes.PUReportedMetric
+	totalEvents                     int
+	groupedEventsBySourceId         map[SourceIDT][]types.TransformerEvent
+	eventsByMessageID               map[string]types.SingularEventWithReceivedAt
+	jobIDToSpecificDestMapOnly      map[int64]string
+	statusList                      []*jobsdb.JobStatusT
+	jobList                         []*jobsdb.JobT
+	sourceDupStats                  map[dupStatKey]int
+	dedupKeys                       map[string]struct{}
+	srcHydrationEnabledMap          map[SourceIDT]bool
+	// earlyDestinationFilter is the per-batch snapshot threaded from srcHydrationMessage; see the
+	// field doc on srcHydrationMessage.
+	earlyDestinationFilter bool
 }
 
 func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time.Duration) (*srcHydrationMessage, error) {
@@ -1771,6 +1849,12 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 	delayHandler := preprocessdelay.NewHandle(delay, preprocessdelaySleeper)
 	jobList := subJobs.subJobs
 	proc.stats.statNumRequests(partition).Count(len(jobList))
+
+	// earlyDestinationFilter is snapshotted once per batch here, at the start of the pipeline,
+	// so the preprocess guard below and the fan-out fallback (pretransformStage) observe the
+	// same value even if the reloadable config flips while the batch is in flight. Do not call
+	// .Load() again downstream — thread this snapshot through the stage message structs instead.
+	earlyDestinationFilter := proc.config.earlyDestinationFilter.Load()
 
 	var statusList []*jobsdb.JobStatusT
 	groupedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
@@ -1800,6 +1884,9 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 	enricherStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	botManagementStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	eventBlockingStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+	userSuppressionStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+	dedupStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+	gatewayIngestedStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	// map of jobID to destinationID: for messages that needs to be delivered to a specific destinations only
 	jobIDToSpecificDestMapOnly := make(map[int64]string)
 
@@ -1985,6 +2072,55 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		reportingEvent := &types.TransformerResponse{}
 		reportingEvent.Metadata = *singularEventMetadata
 
+		// REPORTING - GATEWAY_INGESTED metrics - START
+		if proc.isReportingEnabled() && proc.config.reportingGatewayIngestedMetricsEnabled.Load() {
+			reportingEvent.StatusCode = reportingtypes.SuccessEventCode
+
+			proc.updateMetricMaps(
+				nil,
+				nil,
+				connectionDetailsMap,
+				gatewayIngestedStatusDetailsMap,
+				reportingEvent,
+				jobsdb.Succeeded.State,
+				reportingtypes.GATEWAY_INGESTED,
+				func() json.RawMessage {
+					return nil
+				},
+				nil,
+			)
+			// reset status code to 0 because transformerEvent is reused for other metrics
+			reportingEvent.StatusCode = 0
+		}
+		// REPORTING - GATEWAY_INGESTED metrics - END
+
+		if event.eventParams.IsUserSuppressed {
+			// REPORTING - USER_SUPPRESSION metrics - START
+			if proc.isReportingEnabled() {
+				reportingEvent.StatusCode = reportingtypes.FilterEventCode
+
+				proc.updateMetricMaps(
+					nil,
+					nil,
+					connectionDetailsMap,
+					userSuppressionStatusDetailsMap,
+					reportingEvent,
+					jobsdb.Filtered.State,
+					reportingtypes.USER_SUPPRESSION,
+					func() json.RawMessage {
+						return nil
+					},
+					nil,
+				)
+				// reset status code to 0 because transformerEvent is reused for other metrics
+				reportingEvent.StatusCode = 0
+			}
+			// REPORTING - USER_SUPPRESSION metrics - END
+
+			proc.logger.Debugn("Dropping event because the user is suppressed")
+			continue
+		}
+
 		if event.eventParams.IsBot {
 			// REPORTING - BOT_MANAGEMENT metrics - START
 			if proc.isReportingEnabled() {
@@ -2050,6 +2186,28 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			if !allowedBatchKeys[event.dedupKey] {
 				proc.logger.Debugn("Dropping event with duplicate key %s", logger.NewStringField("key", event.dedupKey.Key))
 				sourceDupStats[dupStatKey{sourceID: event.eventParams.SourceId}] += 1
+
+				// REPORTING - DEDUP metrics - START
+				if proc.isReportingEnabled() && proc.config.reportingDedupMetricsEnabled.Load() {
+					reportingEvent.StatusCode = reportingtypes.FilterEventCode
+					proc.updateMetricMaps(
+						nil,
+						nil,
+						connectionDetailsMap,
+						dedupStatusDetailsMap,
+						reportingEvent,
+						jobsdb.Filtered.State,
+						reportingtypes.DEDUP,
+						func() json.RawMessage {
+							return nil
+						},
+						nil,
+					)
+					// reset status code to 0 because transformerEvent is reused for other metrics
+					reportingEvent.StatusCode = 0
+				}
+				// REPORTING - DEDUP metrics - END
+
 				continue
 			}
 			dedupKeys[event.dedupKey.Key] = struct{}{}
@@ -2151,7 +2309,12 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		// Event will be dropped if no valid destination is present
 		// if empty destinationID is passed in this fn all the destinations for the source are validated
 		// else only passed destinationID will be validated
-		if !proc.isDestinationAvailable(event.singularEvent, sourceId, event.eventParams.DestinationID) {
+		//
+		// Processor.earlyDestinationFilter (default true) gates this early guard. When false, the
+		// guard is skipped entirely and every event reaches source hydration + tracking-plan
+		// validation; the destination-filter decision then happens once, at fan-out
+		// (pretransformStage), which becomes the sole drop point for zero-candidate events.
+		if earlyDestinationFilter && !proc.isDestinationAvailable(event.singularEvent, sourceId, event.eventParams.DestinationID) {
 			// REPORTING - DESTINATION_FILTER filtered metrics - START
 			if proc.isReportingEnabled() {
 				reportingEvent.StatusCode = reportingtypes.FilterEventCode
@@ -2205,33 +2368,35 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		return nil, fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList))
 	}
 
-	if proc.config.archiveInPreProcess {
-		if err := proc.storeArchiveJobs(ctx, archivalJobs); err != nil {
-			return nil, err
-		}
-		archivalJobs = nil
+	if err := proc.storeArchiveJobs(ctx, archivalJobs); err != nil {
+		return nil, err
 	}
+	archivalJobs = nil
 
 	return &srcHydrationMessage{
-		partition:                     partition,
-		subJobs:                       subJobs,
-		eventSchemaJobsBySourceId:     eventSchemaJobsBySourceId,
-		archivalJobs:                  archivalJobs,
-		connectionDetailsMap:          connectionDetailsMap,
-		statusDetailsMap:              statusDetailsMap,
-		enricherStatusDetailsMap:      enricherStatusDetailsMap,
-		botManagementStatusDetailsMap: botManagementStatusDetailsMap,
-		eventBlockingStatusDetailsMap: eventBlockingStatusDetailsMap,
-		reportMetrics:                 reportMetrics,
-		destFilterStatusDetailMap:     destFilterStatusDetailMap,
-		totalEvents:                   totalEvents,
-		groupedEventsBySourceId:       groupedEventsBySourceId,
-		eventsByMessageID:             eventsByMessageID,
-		jobIDToSpecificDestMapOnly:    jobIDToSpecificDestMapOnly,
-		statusList:                    statusList,
-		jobList:                       jobList,
-		sourceDupStats:                sourceDupStats,
-		dedupKeys:                     dedupKeys,
+		partition:                       partition,
+		subJobs:                         subJobs,
+		eventSchemaJobsBySourceId:       eventSchemaJobsBySourceId,
+		archivalJobs:                    archivalJobs,
+		connectionDetailsMap:            connectionDetailsMap,
+		statusDetailsMap:                statusDetailsMap,
+		enricherStatusDetailsMap:        enricherStatusDetailsMap,
+		botManagementStatusDetailsMap:   botManagementStatusDetailsMap,
+		eventBlockingStatusDetailsMap:   eventBlockingStatusDetailsMap,
+		userSuppressionStatusDetailsMap: userSuppressionStatusDetailsMap,
+		dedupStatusDetailsMap:           dedupStatusDetailsMap,
+		gatewayIngestedStatusDetailsMap: gatewayIngestedStatusDetailsMap,
+		reportMetrics:                   reportMetrics,
+		destFilterStatusDetailMap:       destFilterStatusDetailMap,
+		totalEvents:                     totalEvents,
+		groupedEventsBySourceId:         groupedEventsBySourceId,
+		eventsByMessageID:               eventsByMessageID,
+		jobIDToSpecificDestMapOnly:      jobIDToSpecificDestMapOnly,
+		statusList:                      statusList,
+		jobList:                         jobList,
+		sourceDupStats:                  sourceDupStats,
+		dedupKeys:                       dedupKeys,
+		earlyDestinationFilter:          earlyDestinationFilter,
 	}, nil
 }
 
@@ -2251,30 +2416,39 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	groupedEvents := make(map[string][]types.TransformerEvent)
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 
-	if !proc.config.archiveInPreProcess {
-		g, groupCtx := errgroup.WithContext(ctx)
+	// destination_enter and destination_filter rows emitted from fan-out (only when
+	// Processor.earlyDestinationFilter is off) carry an empty inPU: the field is slated for
+	// deprecation, so no chain value is computed for the rows introduced here.
+	destEnterConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
+	destEnterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+	sourceLevelDestFilterConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
+	sourceLevelDestFilterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+	destFilterPerDestConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
+	destFilterPerDestStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+	nilPayload := func() json.RawMessage { return nil }
 
-		g.Go(func() error {
-			return proc.storeEventSchemaJobs(groupCtx,
-				lo.Flatten(lo.MapToSlice(preTrans.eventSchemaJobsBySourceId, func(_ SourceIDT, jobs []*jobsdb.JobT) []*jobsdb.JobT {
-					return jobs
-				})))
-		})
-
-		g.Go(func() error {
-			return proc.storeArchiveJobs(groupCtx, preTrans.archivalJobs)
-		})
-
-		if err := g.Wait(); err != nil {
-			return nil, err
+	// Forked (proc) jobs siphoned at fan-out. gwParams looks up a forked event's parent gw
+	// job parameters (source-level: source_id, source_job_run_id, traceparent, …), reused
+	// verbatim so a proc job resolves back to the same source/jobRun as its gw job. The
+	// backing map is built lazily on the first fork, so batches that fork nothing (the
+	// common case even when isolation is configured) pay no allocation. The pretransform
+	// event loop below is single-goroutine, so the lazy init needs no synchronisation.
+	var forkedJobs []*jobsdb.JobT
+	var gwParamsByJobID map[int64]json.RawMessage
+	gwParams := func(jobID int64) json.RawMessage {
+		if gwParamsByJobID == nil {
+			gwParamsByJobID = lo.SliceToMap(preTrans.jobList, func(job *jobsdb.JobT) (int64, json.RawMessage) {
+				return job.JobID, job.Parameters
+			})
 		}
-	} else {
-		if err := proc.storeEventSchemaJobs(ctx,
-			lo.Flatten(lo.MapToSlice(preTrans.eventSchemaJobsBySourceId, func(_ SourceIDT, jobs []*jobsdb.JobT) []*jobsdb.JobT {
-				return jobs
-			}))); err != nil {
-			return nil, err
-		}
+		return gwParamsByJobID[jobID]
+	}
+
+	if err := proc.storeEventSchemaJobs(ctx,
+		lo.Flatten(lo.MapToSlice(preTrans.eventSchemaJobsBySourceId, func(_ SourceIDT, jobs []*jobsdb.JobT) []*jobsdb.JobT {
+			return jobs
+		}))); err != nil {
+		return nil, err
 	}
 
 	// REPORTING - START
@@ -2284,6 +2458,9 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.destFilterStatusDetailMap)
 		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.botManagementStatusDetailsMap)
 		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.eventBlockingStatusDetailsMap)
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.userSuppressionStatusDetailsMap)
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.dedupStatusDetailsMap)
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.gatewayIngestedStatusDetailsMap)
 		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.enricherStatusDetailsMap)
 
 		for k, cd := range preTrans.connectionDetailsMap {
@@ -2299,6 +2476,30 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
 					ConnectionDetails: *cd,
 					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.EVENT_BLOCKING, false, false),
+					StatusDetail:      sd,
+				})
+			}
+
+			for _, sd := range preTrans.userSuppressionStatusDetailsMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.USER_SUPPRESSION, false, false),
+					StatusDetail:      sd,
+				})
+			}
+
+			for _, sd := range preTrans.dedupStatusDetailsMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DEDUP, false, false),
+					StatusDetail:      sd,
+				})
+			}
+
+			for _, sd := range preTrans.gatewayIngestedStatusDetailsMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.GATEWAY_INGESTED, false, false),
 					StatusDetail:      sd,
 				})
 			}
@@ -2359,66 +2560,149 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 
 	// The below part further segregates events by sourceID and DestinationID.
 	for sourceIdT, eventList := range validatedEventsBySourceId {
+		sourceId := string(sourceIdT)
+		srcDests := proc.getSourceDestinations(sourceId)
 		for idx := range eventList {
 			event := &eventList[idx]
-			sourceId := string(sourceIdT)
 			singularEvent := event.Message
 
-			backendEnabledDestTypes := proc.getBackendEnabledDestinationTypes(sourceId)
-			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 			workspaceID := event.Metadata.WorkspaceID
 			workspaceLibraries := proc.getWorkspaceLibraries(workspaceID)
 
-			for _, destType := range enabledDestTypes {
-				enabledDestinationsList := proc.getConsentFilteredDestinations(
-					singularEvent,
-					sourceId,
-					lo.Filter(proc.getEnabledDestinations(sourceId, destType), func(item backendconfig.DestinationT, index int) bool {
-						destId := preTrans.jobIDToSpecificDestMapOnly[event.Metadata.JobID]
-						if destId != "" {
-							return destId == item.ID
-						}
-						return destId == ""
-					}),
-				)
+			specificDestID := preTrans.jobIDToSpecificDestMapOnly[event.Metadata.JobID]
+			availableDestinations, excludedDestinations := proc.classifyDestinations(singularEvent, srcDests, sourceId, specificDestID)
 
-				// Adding a singular event multiple times if there are multiple destinations of same type
-				for idx := range enabledDestinationsList {
-					destination := &enabledDestinationsList[idx]
-					destinationEvent := types.TransformerEvent{}
-					destinationEvent.Connection = proc.getConnectionConfig(connection{sourceID: sourceId, destinationID: destination.ID})
-					destinationEvent.Message = singularEvent
-					destinationEvent.Destination = *destination
-					destinationEvent.Libraries = workspaceLibraries
-					destinationEvent.Metadata = event.Metadata
-
-					// At the TP flow we are not having destination information, so adding it here.
-					destinationEvent.Metadata.DestinationID = destination.ID
-					destinationEvent.Metadata.DestinationName = destination.Name
-					destinationEvent.Metadata.DestinationType = destination.DestinationDefinition.Name
-					destinationEvent.Metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
-					if len(destination.Transformations) > 0 {
-						destinationEvent.Metadata.TransformationID = destination.Transformations[0].ID
-						destinationEvent.Metadata.TransformationVersionID = destination.Transformations[0].VersionID
-					}
-					destinationEvent.Credentials = proc.config.credentialsMap[destination.WorkspaceID]
-					filterConfig(&destinationEvent)
-					metadata := &destinationEvent.Metadata
-					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
-					// We have at-least one event so marking it good
-					_, ok := groupedEvents[srcAndDestKey]
-					if !ok {
-						groupedEvents[srcAndDestKey] = make([]types.TransformerEvent, 0)
-					}
-					groupedEvents[srcAndDestKey] = append(groupedEvents[srcAndDestKey], destinationEvent)
-					if _, ok := uniqueMessageIdsBySrcDestKey[srcAndDestKey]; !ok {
-						uniqueMessageIdsBySrcDestKey[srcAndDestKey] = make(map[string]struct{})
-					}
-					uniqueMessageIdsBySrcDestKey[srcAndDestKey][metadata.MessageID] = struct{}{}
+			// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - START
+			// With Processor.earlyDestinationFilter off, the destination filter runs here at
+			// fan-out and per-destination visibility comes with it: every candidate destination
+			// gets a destination_enter row, excluded candidates additionally get a
+			// per-destination destination_filter row, and zero-candidate events get the
+			// source-level filtered_no_destination row.
+			if proc.isReportingEnabled() && !preTrans.earlyDestinationFilter {
+				reportingEvent := &types.TransformerResponse{Metadata: event.Metadata}
+				setReportingDestination := func(dest *backendconfig.DestinationT) {
+					reportingEvent.Metadata.DestinationID = dest.ID
+					reportingEvent.Metadata.DestinationName = dest.Name
+					reportingEvent.Metadata.DestinationType = dest.DestinationDefinition.Name
+					reportingEvent.Metadata.DestinationDefinitionID = dest.DestinationDefinition.ID
 				}
+
+				for i := range availableDestinations {
+					setReportingDestination(&availableDestinations[i])
+					reportingEvent.StatusCode = reportingtypes.SuccessEventCode
+					proc.updateMetricMaps(nil, nil, destEnterConnectionDetailsMap, destEnterStatusDetailMap, reportingEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_ENTER, nilPayload, nil)
+				}
+				for _, ex := range excludedDestinations {
+					setReportingDestination(ex.destination)
+					reportingEvent.StatusCode = reportingtypes.SuccessEventCode
+					proc.updateMetricMaps(nil, nil, destEnterConnectionDetailsMap, destEnterStatusDetailMap, reportingEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_ENTER, nilPayload, nil)
+					reportingEvent.StatusCode = ex.statusCode
+					proc.updateMetricMaps(nil, nil, destFilterPerDestConnectionDetailsMap, destFilterPerDestStatusDetailMap, reportingEvent, ex.reason, reportingtypes.DESTINATION_FILTER, nilPayload, nil)
+				}
+				if len(availableDestinations) == 0 && len(excludedDestinations) == 0 {
+					// zero-candidate event: source has no destinations, or the RETL-stamped
+					// destination is unavailable — no per-destination row is possible.
+					reportingEvent.Metadata.DestinationID = ""
+					reportingEvent.Metadata.DestinationName = ""
+					reportingEvent.Metadata.DestinationType = ""
+					reportingEvent.Metadata.DestinationDefinitionID = ""
+					reportingEvent.StatusCode = reportingtypes.FilterEventCode
+					proc.updateMetricMaps(nil, nil, sourceLevelDestFilterConnectionDetailsMap, sourceLevelDestFilterStatusDetailMap, reportingEvent, reportingtypes.FilteredNoDestinationStatus, reportingtypes.DESTINATION_FILTER, nilPayload, nil)
+				}
+			}
+			// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - END
+
+			// Destinations whose events are siphoned to the intermediate (proc) jobsdb
+			// rather than transformed inline.
+			var forkedDestIDs []string
+			forkable := proc.forkableEvent(event)
+			eventFanout := len(availableDestinations)
+
+			// Adding a singular event multiple times if there are multiple destinations
+			for i := range availableDestinations {
+				destination := &availableDestinations[i]
+				if forkable && proc.shouldForkDestination(destination.ID) {
+					forkedDestIDs = append(forkedDestIDs, destination.ID)
+					continue
+				}
+				destinationEvent := types.TransformerEvent{}
+				destinationEvent.Connection = proc.getConnectionConfig(connection{sourceID: sourceId, destinationID: destination.ID})
+				destinationEvent.Message = singularEvent
+				destinationEvent.Destination = *destination
+				destinationEvent.Libraries = workspaceLibraries
+				destinationEvent.Metadata = event.Metadata
+
+				// At the TP flow we are not having destination information, so adding it here.
+				destinationEvent.Metadata.DestinationID = destination.ID
+				destinationEvent.Metadata.OriginalDestinationID = destination.OriginalID
+				destinationEvent.Metadata.DestinationName = destination.Name
+				destinationEvent.Metadata.DestinationType = destination.DestinationDefinition.Name
+				destinationEvent.Metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
+				if len(destination.Transformations) > 0 {
+					destinationEvent.Metadata.TransformationID = destination.Transformations[0].ID
+					destinationEvent.Metadata.TransformationVersionID = destination.Transformations[0].VersionID
+				}
+				destinationEvent.Credentials = proc.config.credentialsMap[destination.WorkspaceID]
+				filterConfig(&destinationEvent)
+				metadata := &destinationEvent.Metadata
+				srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
+				// We have at-least one event so marking it good
+				_, ok := groupedEvents[srcAndDestKey]
+				if !ok {
+					groupedEvents[srcAndDestKey] = make([]types.TransformerEvent, 0)
+				}
+				groupedEvents[srcAndDestKey] = append(groupedEvents[srcAndDestKey], destinationEvent)
+				if _, ok := uniqueMessageIdsBySrcDestKey[srcAndDestKey]; !ok {
+					uniqueMessageIdsBySrcDestKey[srcAndDestKey] = make(map[string]struct{})
+				}
+				uniqueMessageIdsBySrcDestKey[srcAndDestKey][metadata.MessageID] = struct{}{}
+			}
+			proc.recordSrcToDestFanout(eventFanout)
+
+			if len(forkedDestIDs) > 0 {
+				job, err := proc.newForkedJob(event, forkedDestIDs, sourcePipelineSteps[sourceIdT], gwParams(event.Metadata.JobID))
+				if err != nil {
+					return nil, fmt.Errorf("building forked job for message %q: %w", event.Metadata.MessageID, err)
+				}
+				forkedJobs = append(forkedJobs, job)
 			}
 		}
 	}
+
+	// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - START
+	if proc.isReportingEnabled() {
+		for k, cd := range destEnterConnectionDetailsMap {
+			for _, sd := range destEnterStatusDetailMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DESTINATION_ENTER, false, false),
+					StatusDetail:      sd,
+				})
+			}
+		}
+
+		for k, cd := range destFilterPerDestConnectionDetailsMap {
+			for _, sd := range destFilterPerDestStatusDetailMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DESTINATION_FILTER, false, false),
+					StatusDetail:      sd,
+				})
+			}
+		}
+
+		for k, cd := range sourceLevelDestFilterConnectionDetailsMap {
+			for _, sd := range sourceLevelDestFilterStatusDetailMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DESTINATION_FILTER, false, false),
+					StatusDetail:      sd,
+				})
+			}
+		}
+	}
+	// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - END
+
 	trackedUsersReportGenStart := time.Now()
 	trackedUsersReports := proc.trackedUsersReporter.GenerateReportsFromJobs(preTrans.jobList, proc.getNonEventStreamSources())
 	proc.stats.trackedUsersReportGeneration(preTrans.partition).SendTiming(time.Since(trackedUsersReportGenStart))
@@ -2433,22 +2717,22 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	activationRecordsReports := proc.activationRecordsReporter.GenerateReportsFromJobs(preTrans.jobList, sourceCategoriesBySourceID)
 
 	return &transformationMessage{
-		preTrans.subJobs.ctx,
-		groupedEvents,
-		sourcePipelineSteps,
-		preTrans.eventsByMessageID,
-		uniqueMessageIdsBySrcDestKey,
-		preTrans.reportMetrics,
-		preTrans.statusList,
-		preTrans.sourceDupStats,
-		preTrans.dedupKeys,
-
-		preTrans.totalEvents,
-
-		preTrans.subJobs.hasMore,
-		preTrans.subJobs.rsourcesStats,
-		trackedUsersReports,
-		activationRecordsReports,
+		ctx:                          preTrans.subJobs.ctx,
+		pipeline:                     pipelineTypeGw,
+		groupedEvents:                groupedEvents,
+		forkedJobs:                   forkedJobs,
+		srcPipelineSteps:             sourcePipelineSteps,
+		eventsByMessageID:            preTrans.eventsByMessageID,
+		uniqueMessageIdsBySrcDestKey: uniqueMessageIdsBySrcDestKey,
+		reportMetrics:                preTrans.reportMetrics,
+		statusList:                   preTrans.statusList,
+		sourceDupStats:               preTrans.sourceDupStats,
+		dedupKeys:                    preTrans.dedupKeys,
+		totalEvents:                  preTrans.totalEvents,
+		hasMore:                      preTrans.subJobs.hasMore,
+		rsourcesStats:                preTrans.subJobs.rsourcesStats,
+		trackedUsersReports:          trackedUsersReports,
+		activationRecordsReports:     activationRecordsReports,
 	}, nil
 }
 
@@ -2504,9 +2788,25 @@ type SourcePipelineSteps struct {
 }
 type sourceIDPipelineSteps map[SourceIDT]SourcePipelineSteps
 
+// pipeline tag values used to attribute stats emitted by stages shared between
+// the gw pool and the proc pool ([gwPipelineWorker] and [procPipelineWorker]).
+const (
+	pipelineTypeGw   = "gw"
+	pipelineTypeProc = "proc"
+)
+
 type transformationMessage struct {
 	ctx           context.Context
 	groupedEvents map[string][]types.TransformerEvent
+
+	// pipeline identifies which pipeline produced this message (pipelineTypeGw or
+	// pipelineTypeProc); it travels through the shared stages for stats attribution.
+	pipeline string
+
+	// forkedJobs are intermediate (proc) jobs siphoned at fan-out; they bypass the gw
+	// pool's transform stages and are committed to procDB atomically with the gateway
+	// status update in storeStage. Always empty in the proc pool (it never re-forks).
+	forkedJobs []*jobsdb.JobT
 
 	srcPipelineSteps             sourceIDPipelineSteps
 	eventsByMessageID            map[string]types.SingularEventWithReceivedAt
@@ -2527,7 +2827,9 @@ type transformationMessage struct {
 
 type userTransformData struct {
 	ctx                           context.Context
+	pipeline                      string // see transformationMessage.pipeline
 	userTransformAndFilterOutputs map[string]userTransformAndFilterOutput
+	forkedJobs                    []*jobsdb.JobT
 	reportMetrics                 []*reportingtypes.PUReportedMetric
 	statusList                    []*jobsdb.JobStatusT
 	sourceDupStats                map[dupStatKey]int
@@ -2550,7 +2852,7 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 
 	if proc.limiter.utransform != nil {
 		defer proc.limiter.utransform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
-		defer proc.stats.statUtransformStageCount(partition).Count(len(in.statusList))
+		defer proc.stats.statUtransformStageCount(partition, in.pipeline).Count(len(in.statusList))
 	}
 	// Now do the actual transformation. We call it in batches, once
 	// for each destination ID
@@ -2618,7 +2920,9 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 
 	return &userTransformData{
 		ctx:                           in.ctx,
+		pipeline:                      in.pipeline,
 		userTransformAndFilterOutputs: userTransformAndFilterOutputs,
+		forkedJobs:                    in.forkedJobs,
 		reportMetrics:                 in.reportMetrics,
 		statusList:                    in.statusList,
 		sourceDupStats:                in.sourceDupStats,
@@ -2639,7 +2943,7 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 
 	if proc.limiter.dtransform != nil {
 		defer proc.limiter.dtransform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
-		defer proc.stats.statDtransformStageCount(partition).Count(len(in.statusList))
+		defer proc.stats.statDtransformStageCount(partition, in.pipeline).Count(len(in.statusList))
 	}
 
 	procErrorJobsByDestID := make(map[string][]procErrorJob)
@@ -2694,30 +2998,32 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 	}
 
 	return &storeMessage{
-		in.ctx,
-		in.trackedUsersReports,
-		in.activationRecordsReports,
-		in.statusList,
-		destJobs,
-		batchDestJobs,
-		droppedJobs,
-
-		procErrorJobsByDestID,
-		lo.Keys(routerDestIDs),
-
-		in.reportMetrics,
-		in.sourceDupStats,
-		in.dedupKeys,
-		in.totalEvents,
-		in.start,
-		in.hasMore,
-		in.rsourcesStats,
-		in.traces,
+		ctx:                      in.ctx,
+		pipeline:                 in.pipeline,
+		forkedJobs:               in.forkedJobs,
+		trackedUsersReports:      in.trackedUsersReports,
+		activationRecordsReports: in.activationRecordsReports,
+		statusList:               in.statusList,
+		destJobs:                 destJobs,
+		batchDestJobs:            batchDestJobs,
+		droppedJobs:              droppedJobs,
+		procErrorJobsByDestID:    procErrorJobsByDestID,
+		routerDestIDs:            lo.Keys(routerDestIDs),
+		reportMetrics:            in.reportMetrics,
+		sourceDupStats:           in.sourceDupStats,
+		dedupKeys:                in.dedupKeys,
+		totalEvents:              in.totalEvents,
+		start:                    in.start,
+		hasMore:                  in.hasMore,
+		rsourcesStats:            in.rsourcesStats,
+		traces:                   in.traces,
 	}
 }
 
 type storeMessage struct {
 	ctx                 context.Context
+	pipeline            string // see transformationMessage.pipeline
+	forkedJobs          []*jobsdb.JobT
 	trackedUsersReports []*trackedusers.UsersReport
 
 	activationRecordsReports []*activationrecords.ActivationRecord
@@ -2739,10 +3045,26 @@ type storeMessage struct {
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
 	traces        map[string]stats.Tags
+
+	// statusDB is the jobsdb whose job statuses (statusList) are updated in the final
+	// commit. When nil it defaults to gatewayDB (the in-memory gw pipeline). The
+	// proc pool sets it to procDB so the same storeStage commits its
+	// status update + reports + rsources against the intermediate jobsdb instead.
+	statusDB jobsdb.JobsDB
+}
+
+// statusUpdateDB returns the jobsdb whose statuses storeStage must update: the
+// explicit statusDB when set (proc pool / procDB), otherwise gatewayDB (gw pool).
+func (proc *Handle) statusUpdateDB(in *storeMessage) jobsdb.JobsDB {
+	if in.statusDB != nil {
+		return in.statusDB
+	}
+	return proc.gatewayDB
 }
 
 func (sm *storeMessage) merge(subJob *storeMessage) {
 	sm.statusList = append(sm.statusList, subJob.statusList...)
+	sm.forkedJobs = append(sm.forkedJobs, subJob.forkedJobs...)
 	sm.destJobs = append(sm.destJobs, subJob.destJobs...)
 	sm.batchDestJobs = append(sm.batchDestJobs, subJob.batchDestJobs...)
 	sm.droppedJobs = append(sm.droppedJobs, subJob.droppedJobs...)
@@ -2832,7 +3154,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 
 	if proc.limiter.store != nil {
 		defer proc.limiter.store.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
-		defer proc.stats.statStoreStageCount(partition).Count(len(in.statusList))
+		defer proc.stats.statStoreStageCount(partition, in.pipeline).Count(len(in.statusList))
 	}
 
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
@@ -2895,8 +3217,8 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 				return err
 			}
 			proc.logger.Debugn("[Processor] Total jobs written to batch router", logger.NewIntField("jobCount", int64(len(batchDestJobs))))
-			proc.stats.statBatchDestNumOutputEvents(partition).Count(len(batchDestJobs))
-			proc.stats.statDBWriteBatchPayloadBytes(partition).Observe(
+			proc.stats.statBatchDestNumOutputEvents(partition, in.pipeline).Count(len(batchDestJobs))
+			proc.stats.statDBWriteBatchPayloadBytes(partition, in.pipeline).Observe(
 				float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
 			)
 			return nil
@@ -2936,8 +3258,8 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 				return err
 			}
 			proc.logger.Debugn("[Processor] Total jobs written to router", logger.NewIntField("jobCount", int64(len(destJobs))))
-			proc.stats.statDestNumOutputEvents(partition).Count(len(destJobs))
-			proc.stats.statDBWriteRouterPayloadBytes(partition).Observe(
+			proc.stats.statDestNumOutputEvents(partition, in.pipeline).Count(len(destJobs))
+			proc.stats.statDBWriteRouterPayloadBytes(partition, in.pipeline).Observe(
 				float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
 			)
 			return nil
@@ -2950,11 +3272,28 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 		}
 	}
 	in.rsourcesStats.CollectStats(statusList)
-	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList)
+	// forkedJobs are only ever populated in the gw pool (the proc pool never re-forks),
+	// so this is a no-op when storeStage is invoked via procStoreStage.
+	in.rsourcesStats.JobsForked(in.forkedJobs)
+	statusDB := proc.statusUpdateDB(in)
+	commitStatuses := func(ctx context.Context) error {
+		return statusDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
+			err := statusDB.UpdateJobStatusInTx(ctx, tx, statusList)
 			if err != nil {
-				return fmt.Errorf("updating gateway jobs statuses: %w", err)
+				return fmt.Errorf("updating %s jobs statuses: %w", statusDB.Identifier(), err)
+			}
+
+			// Siphon forked events into the intermediate (proc) jobsdb in the same
+			// transaction as the gateway status update: a gateway job is marked done iff
+			// its forked jobs are durably persisted. procDB shares the connection pool
+			// with statusDB, so both writes commit atomically. Only ever populated in the
+			// gw pool; the proc pool never re-forks.
+			if len(in.forkedJobs) > 0 {
+				if err = proc.procDB.WithStoreSafeTxFromTx(ctx, tx.Tx(), func(stx jobsdb.StoreSafeTx) error {
+					return proc.procDB.StoreInTx(ctx, stx, in.forkedJobs)
+				}); err != nil {
+					return fmt.Errorf("storing forked jobs: %w", err)
+				}
 			}
 
 			if proc.isReportingEnabled() {
@@ -2990,6 +3329,21 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 			}
 			return nil
 		})
+	}
+	// Forked jobs are stored into procDB within this gateway status-update transaction. procDB routes
+	// each job to its primary or buffer store from the currently buffered partitions, so that routing
+	// must stay consistent with a concurrent flush switchover for the whole transaction. procDB owns
+	// the buffered-partitions read lock, which must be held from before the transaction opens until it
+	// commits — a buffered write only becomes visible to a switchover's drain once committed, so
+	// releasing the lock any earlier could orphan it.
+	storeConsistently := func(_ context.Context, fn func() error) error { return fn() }
+	if locker, ok := proc.procDB.(interface {
+		WithStoreConsistency(context.Context, func() error) error
+	}); ok && len(in.forkedJobs) > 0 {
+		storeConsistently = locker.WithStoreConsistency
+	}
+	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+		return storeConsistently(ctx, func() error { return commitStatuses(ctx) })
 	}, proc.sendRetryUpdateStats)
 	if err != nil {
 		panic(err)
@@ -3005,9 +3359,9 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 	if len(in.procErrorJobsByDestID) > 0 {
 		proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
 	}
-	proc.stats.statDBW(partition).Since(beforeStoreStatus)
+	proc.stats.statDBW(partition, in.pipeline).Since(beforeStoreStatus)
 	proc.logger.Debugn("Processor GW DB Write Complete", logger.NewIntField("totalProcessed", int64(len(statusList))))
-	proc.stats.statGatewayDBW(partition).Count(len(statusList))
+	proc.stats.statGatewayDBW(partition, in.pipeline).Count(len(statusList))
 }
 
 func getStoreSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
@@ -4016,6 +4370,28 @@ func (*Handle) getLimiterPriority(partition string) kitsync.LimiterPriorityValue
 	return kitsync.LimiterPriorityValue(config.GetIntVar(1, 1, fmt.Sprintf("Processor.Limiter.%s.Priority", partition)))
 }
 
+// recordSrcToDestFanout records source-to-destination fanout and the maximum seen so far.
+func (proc *Handle) recordSrcToDestFanout(fanout int) {
+	proc.stats.statSrcToDestFanout.Observe(float64(fanout))
+
+	// The max is a monotonic high-water mark, so the common per-event case is a lock-free
+	// atomic read that returns early. Only a new maximum publishes the gauge, via a CAS
+	// loop. Two distinct new maxima observed truly concurrently could, in a rare
+	// interleaving, leave the gauge one observation stale; that is acceptable for a
+	// high-water-mark monitoring stat and avoids a lock on the fan-out hot path.
+	f := int64(fanout)
+	for {
+		prev := proc.maxSrcToDestFanout.Load()
+		if f <= prev {
+			return
+		}
+		if proc.maxSrcToDestFanout.CompareAndSwap(prev, f) {
+			proc.stats.statMaxSrcToDestFanout.Gauge(fanout)
+			return
+		}
+	}
+}
+
 // check if event has eligible destinations to send to
 //
 // event will be dropped if no destination is found
@@ -4050,6 +4426,76 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId,
 	return true
 }
 
+// excludedDestination is a candidate destination classifyDestinations excluded, along with the
+// reason and reporting status code (filtered_integration/298, filtered_consent/298 — the
+// status string, not the code, is the discriminator within the filtered_* family).
+type excludedDestination struct {
+	destination *backendconfig.DestinationT
+	reason      string
+	statusCode  int
+}
+
+// classifyDestinations returns the candidate destinations of a source split into the ones that
+// survive filtering (available) and the ones excluded, with reason and status code, in the same
+// order and applying the same filters the fan-out uses today: client-integration filtering first,
+// then consent filtering. When specificDestID is set (RETL), the candidate set is narrowed to that
+// single destination before classification: rudder-sources runs one job per (source, destination)
+// connection, so each connection sends its own copy of the event stamped with its destination ID —
+// the source's other destinations are never candidates for this copy and produce no rows.
+//
+// srcDests must be the source's destination snapshot (getSourceDestinations(sourceId)) — passed
+// in so callers looping over a source's events build it once instead of per event.
+func (proc *Handle) classifyDestinations(event types.SingularEventT, srcDests sourceDestinations, sourceId, specificDestID string,
+) (available []backendconfig.DestinationT, excluded []excludedDestination) {
+	narrow := func(dests []backendconfig.DestinationT) []backendconfig.DestinationT {
+		if specificDestID == "" {
+			return dests
+		}
+		return lo.Filter(dests, func(dest backendconfig.DestinationT, _ int) bool {
+			return dest.ID == specificDestID
+		})
+	}
+
+	enabledDestTypeNames := integrations.FilterClientIntegrations(event, srcDests.destTypes)
+	enabledDestTypeNameSet := lo.SliceToMap(enabledDestTypeNames, func(name string) (string, struct{}) {
+		return name, struct{}{}
+	})
+
+	for _, destDef := range srcDests.destTypes {
+		if _, ok := enabledDestTypeNameSet[destDef.Name]; ok {
+			continue
+		}
+		for _, dest := range narrow(srcDests.byTypeName[destDef.Name]) {
+			excluded = append(excluded, excludedDestination{
+				destination: &dest,
+				reason:      reportingtypes.FilteredIntegrationStatus,
+				statusCode:  reportingtypes.FilterEventCode,
+			})
+		}
+	}
+
+	for _, destType := range enabledDestTypeNames {
+		candidates := narrow(srcDests.byTypeName[destType])
+		survivors := proc.getConsentFilteredDestinations(event, sourceId, candidates)
+		survivorIDs := lo.SliceToMap(survivors, func(dest backendconfig.DestinationT) (string, struct{}) {
+			return dest.ID, struct{}{}
+		})
+		for _, dest := range candidates {
+			if _, ok := survivorIDs[dest.ID]; ok {
+				available = append(available, dest)
+			} else {
+				excluded = append(excluded, excludedDestination{
+					destination: &dest,
+					reason:      reportingtypes.FilteredConsentStatus,
+					statusCode:  reportingtypes.FilterEventCode,
+				})
+			}
+		}
+	}
+
+	return available, excluded
+}
+
 // pipelineDelayStats reports the delay of the pipeline as a range:
 //
 // - max - time elapsed since the first job was created
@@ -4068,7 +4514,16 @@ func (proc *Handle) pipelineDelayStats(partition string, first, last *jobsdb.Job
 	proc.statsFactory.NewTaggedStat("pipeline_delay_max_seconds", stats.GaugeType, stats.Tags{"partition": partition, "module": "processor"}).Gauge(firstJobDelay)
 }
 
-func (proc *Handle) countPendingEvents(ctx context.Context) error {
+// countPendingEvents seeds the pending events registry with the jobs that were already pending as of
+// cutoff, i.e. before this processor started producing jobs.
+//
+// The registry must have been reset by the caller, and cutoff captured, before any writer is started:
+// the processor is the only writer of router & batch router jobs and it always starts before router
+// and batch router, so nothing can be written below the cutoff once it has been captured. Everything
+// below the cutoff is therefore accounted for by the queries here and everything above it by the
+// increase/decrease calls of the pending events jobsdb wrappers, with no overlap in between. Metrics
+// are published to the global registry once the baseline is in place.
+func (proc *Handle) countPendingEvents(ctx context.Context, cutoff time.Time) error {
 	dbs := map[string]jobsdb.JobsDB{"rt": proc.routerDB, "batch_rt": proc.batchRouterDB}
 	if proc.procDB != nil {
 		dbs["proc"] = proc.procDB
@@ -4076,23 +4531,30 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 	jobdDBQueryRequestTimeout := proc.conf.GetDurationVar(600, time.Second, "JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
 	jobdDBMaxRetries := proc.conf.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
 
+	defer proc.pendingEventsRegistry.Publish()
 	err := misc.RetryWithNotify(ctx,
 		jobdDBQueryRequestTimeout,
 		jobdDBMaxRetries.Load(),
 		func(ctx context.Context) error {
-			startTime := time.Now()
-			proc.pendingEventsRegistry.Reset()
-			defer proc.pendingEventsRegistry.Publish()
+			// Counts are accumulated separately and applied to the registry only after all queries
+			// have succeeded: an attempt that fails halfway must not leave its partial counts behind
+			// for the next attempt to add on top of, and the registry cannot be reset in between
+			// without discarding the concurrent increases & decreases of the running processor.
+			baseline := &pendingEventsBaseline{}
 			g, ctx := errgroup.WithContext(ctx)
 			for tablePrefix, db := range dbs {
 				g.Go(func() error {
-					if err := db.GetPileUpCounts(ctx, startTime, proc.pendingEventsRegistry.IncreasePendingEvents); err != nil {
+					if err := db.GetPileUpCounts(ctx, cutoff, baseline.add); err != nil {
 						return fmt.Errorf("pileup counts for %s: %w", tablePrefix, err)
 					}
 					return nil
 				})
 			}
-			return g.Wait()
+			if err := g.Wait(); err != nil {
+				return err
+			}
+			baseline.flush(proc.pendingEventsRegistry.IncreasePendingEvents)
+			return nil
 		}, func(attempt int) {
 			proc.logger.Warnn("Timeout during GetPileUpCounts",
 				logger.NewIntField("attempt", int64(attempt)))
@@ -4102,6 +4564,38 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// pendingEventsBaseline accumulates pileup counts, reported concurrently by multiple jobsdbs, until
+// they are ready to be applied to the pending events registry.
+type pendingEventsBaseline struct {
+	mu     sync.Mutex
+	counts map[pendingEventsBaselineKey]float64
+}
+
+type pendingEventsBaselineKey struct {
+	tablePrefix   string
+	workspaceID   string
+	destType      string
+	destinationID string
+}
+
+func (b *pendingEventsBaseline) add(tablePrefix, workspaceID, destType, destinationID string, value float64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.counts == nil {
+		b.counts = make(map[pendingEventsBaselineKey]float64)
+	}
+	b.counts[pendingEventsBaselineKey{tablePrefix, workspaceID, destType, destinationID}] += value
+}
+
+func (b *pendingEventsBaseline) flush(increaseFunc rmetrics.IncreasePendingEventsFunc) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for key, value := range b.counts {
+		increaseFunc(key.tablePrefix, key.workspaceID, key.destType, key.destinationID, value)
+	}
+	b.counts = nil
 }
 
 // shouldSample sampling percentage precision can be with two decimals like 12.34%.

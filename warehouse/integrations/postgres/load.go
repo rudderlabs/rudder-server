@@ -47,10 +47,10 @@ func (pg *Postgres) LoadTable(ctx context.Context, tableName string) (*types.Loa
 	cancel := safeguard.MustStop(ctx, 5*time.Minute)
 	defer cancel()
 
-	err := pg.DB.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
+	err := pg.DB.WithTx(ctx, func(txCtx context.Context, tx *sqlmiddleware.Tx) error {
 		var err error
 		loadTableStats, _, err = pg.loadTable(
-			ctx,
+			txCtx,
 			tx,
 			tableName,
 			pg.Uploader.GetTableSchemaInUpload(tableName),
@@ -336,8 +336,8 @@ func (pg *Postgres) LoadUserTables(ctx context.Context) map[string]error {
 	usersSchemaInWarehouse := pg.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 
 	var loadingError loadUsersTableResponse
-	_ = pg.DB.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
-		loadingError = pg.loadUsersTable(ctx, tx, identifiesSchemaInUpload, usersSchemaInUpload, usersSchemaInWarehouse)
+	_ = pg.DB.WithTx(ctx, func(txCtx context.Context, tx *sqlmiddleware.Tx) error {
+		loadingError = pg.loadUsersTable(txCtx, tx, identifiesSchemaInUpload, usersSchemaInUpload, usersSchemaInWarehouse)
 		if loadingError.identifiesError != nil || loadingError.usersError != nil {
 			return errors.New("loading users and identifies table")
 		}

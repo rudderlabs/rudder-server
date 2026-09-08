@@ -2,6 +2,7 @@ package backendconfig
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/samber/lo"
@@ -57,8 +58,37 @@ type SourceDefinitionOptions struct {
 	}
 }
 
+// sourceTypeOf is the source type a destination's config is filtered for. A destination connected
+// to several sources carries a different config under each source type, so this is what tells two
+// instances of the same destination apart.
+//
+// A port of the control plane's ServiceUtil.getSourceType. Note the default: a source type it does
+// not know is "cloud", not the lowercased definition name.
+func sourceTypeOf(definitionName, category string) string {
+	switch category {
+	case "cloud", "singer":
+		return "cloudSource"
+	case "warehouse":
+		return "warehouse"
+	}
+	switch name := strings.ToLower(definitionName); name {
+	case "javascript":
+		return "web"
+	case "android_kotlin":
+		return "androidKotlin"
+	case "ios_swift":
+		return "iosSwift"
+	case "android", "ios", "unity", "reactnative", "amp", "flutter", "cordova", "shopify":
+		return name
+	default:
+		return "cloud"
+	}
+}
+
 type DestinationT struct {
-	ID                    string
+	ID string
+	// OriginalID is the ID of the original destination for replay destinations
+	OriginalID            string `json:"originalId,omitempty"`
 	Name                  string
 	DestinationDefinition DestinationDefinitionT
 	Config                map[string]any
@@ -92,7 +122,7 @@ func (d *DestinationT) UpdateHasDynamicConfig(cache dynamicconfig.Cache) {
 	// RevisionID is not in cache or has changed, recompute the dynamic config flag
 	d.HasDynamicConfig = dynamicconfig.ContainsPattern(d.Config)
 
-	pkgLogger.Infon("HasDynamicConfig flag updated",
+	pkgLogger.Debugn("HasDynamicConfig flag updated",
 		obskit.DestinationID(d.ID),
 		obskit.WorkspaceID(d.WorkspaceID),
 		logger.NewBoolField("hasDynamicConfig", d.HasDynamicConfig),
@@ -248,28 +278,15 @@ type DgSourceTrackingPlanConfigT struct {
 	SourceId            string                    `json:"sourceId"`
 	SourceConfigVersion int                       `json:"version"`
 	Config              map[string]map[string]any `json:"config"`
-	MergedConfig        map[string]any            `json:"mergedConfig"`
 	Deleted             bool                      `json:"deleted"`
 	TrackingPlan        TrackingPlanT             `json:"trackingPlan"`
 }
 
+// GetMergedConfig returns the tracking plan config that applies to an event type: the global
+// config with the event type's own config layered over it. Either may be absent, and the result is
+// always a non nil map.
 func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType string) map[string]any {
-	if dgSourceTPConfigT.MergedConfig == nil {
-		globalConfig := dgSourceTPConfigT.fetchEventConfig(GlobalEventType)
-		eventSpecificConfig := dgSourceTPConfigT.fetchEventConfig(eventType)
-		outputConfig := lo.Assign(globalConfig, eventSpecificConfig)
-		dgSourceTPConfigT.MergedConfig = outputConfig
-	}
-	return dgSourceTPConfigT.MergedConfig
-}
-
-func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) fetchEventConfig(eventType string) map[string]any {
-	emptyMap := map[string]any{}
-	_, eventSpecificConfigPresent := dgSourceTPConfigT.Config[eventType]
-	if !eventSpecificConfigPresent {
-		return emptyMap
-	}
-	return dgSourceTPConfigT.Config[eventType]
+	return lo.Assign(dgSourceTPConfigT.Config[GlobalEventType], dgSourceTPConfigT.Config[eventType])
 }
 
 type TrackingPlanT struct {

@@ -14,6 +14,7 @@ import (
 	gbq "google.golang.org/api/bigquery/v2"
 	"google.golang.org/api/option"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/googleutil"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -76,28 +77,40 @@ func init() {
 }
 
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*BQStreamProducer, error) {
-	var config Config
+	var destConf Config
 	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("[BQStream] Error while marshalling destination config :: %w", err)
 	}
-	err = jsonrs.Unmarshal(jsonConfig, &config)
+	err = jsonrs.Unmarshal(jsonConfig, &destConf)
 	if err != nil {
 		return nil, createErr(err, "error in BQStream while unmarshalling destination config")
 	}
+	ctx := context.Background()
 	opts := []option.ClientOption{
 		option.WithScopes([]string{
 			gbq.BigqueryInsertdataScope,
 		}...),
 	}
-	if !googleutil.ShouldSkipCredentialsInit(config.Credentials) {
-		confCreds := []byte(config.Credentials)
+	if !googleutil.ShouldSkipCredentialsInit(destConf.Credentials) {
+		confCreds := []byte(destConf.Credentials)
 		if err = googleutil.CompatibleServiceAccountJSON(confCreds); err != nil {
 			return nil, createErr(err, "incompatible credentials")
 		}
 		opts = append(opts, option.WithAuthCredentialsJSON(option.ServiceAccount, confCreds))
 	}
-	bqClient, err := bigquery.NewClient(context.Background(), config.ProjectId, opts...)
+	// Always supply our own HTTP client so the connection pool is tuned to the
+	// number of router workers (see baseTransport). When enabled, it also gzip-
+	// compresses the streaming insert request bodies over the wire; the BigQuery
+	// insertAll endpoint accepts gzipped bodies via Content-Encoding: gzip
+	// (see https://github.com/googleapis/google-cloud-go/issues/1919).
+	compress := config.GetBoolVar(false, "Router.BQSTREAM.enableCompression")
+	httpClient, err := newHTTPClient(ctx, compress, opts...)
+	if err != nil {
+		return nil, createErr(err, "error while creating http client")
+	}
+	opts = append(opts, option.WithHTTPClient(httpClient))
+	bqClient, err := bigquery.NewClient(ctx, destConf.ProjectId, opts...)
 	if err != nil {
 		return nil, err
 	}

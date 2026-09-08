@@ -201,6 +201,7 @@ func (eir *ErrorIndexReporter) DatabaseSyncer(c types.SyncerConfig) types.Report
 	errIndexDB := jobsdb.NewForReadWrite(
 		"err_idx",
 		jobsdb.WithDBHandle(dbHandle),
+		jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in err_idx jobsdb
 		jobsdb.WithDSLimit(eir.conf.GetReloadableIntVar(0, 1, "Reporting.errorIndexReporting.dsLimit")),
 		jobsdb.WithConfig(eir.conf),
 		jobsdb.WithSkipMaintenanceErr(eir.conf.GetBoolVar(false, "Reporting.errorIndexReporting.skipMaintenanceError")),

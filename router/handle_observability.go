@@ -99,7 +99,10 @@ func (rt *Handle) updateRudderSourcesStats(
 	rsourcesStats := rsources.NewStatsCollector(rt.rsourcesService, "rt", stats.Default)
 	rsourcesStats.BeginProcessing(jobs)
 	rsourcesStats.CollectStats(jobStatuses)
-	rsourcesStats.CollectFailedRecords(jobStatuses)
+	if err := rsourcesStats.CollectFailedRecords(ctx, rt.rsourcesSyncSettings, jobStatuses); err != nil {
+		rt.logger.Errorn("collecting rsources failed records", obskit.Error(err))
+		return err
+	}
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		rt.logger.Errorn("publishing rsources stats", obskit.Error(err))

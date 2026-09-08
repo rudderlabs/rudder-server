@@ -148,7 +148,7 @@ func JobsDB(t testing.TB, port int) *sql.DB {
 	)
 	jobsDB, err := sql.Open("postgres", dsn)
 	require.NoError(t, err)
-	require.NoError(t, jobsDB.Ping())
+	require.NoError(t, WithConstantRetries(jobsDB.Ping))
 	t.Cleanup(func() {
 		_ = jobsDB.Close()
 	})
@@ -287,6 +287,15 @@ func RetrieveRecordsFromWarehouse(
 		records = append(records, lo.Map(resultSet, func(item any, index int) string {
 			switch item := item.(type) {
 			case time.Time:
+				return item.Format(time.RFC3339)
+			case *time.Time:
+				// clickhouse-go v2 scans a DateTime into a pointer where v1
+				// handed back a value. Without this it falls to the default
+				// branch and stringifies as 2023-05-12 04:26:48 +0000 UTC
+				// instead of RFC3339.
+				if item == nil {
+					return ""
+				}
 				return item.Format(time.RFC3339)
 			case string:
 				if t, err := time.Parse(time.RFC3339Nano, item); err == nil {

@@ -12,11 +12,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -116,8 +118,11 @@ var sampleConfigWithConnection = ConfigT{
 	},
 }
 
-// This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
+// sampleFilteredSources is sampleBackendConfig as it appears on TopicProcessConfig: destination
+// filtering is the filter's only transformation, so every other field survives verbatim (see
+// TestFilterProcessorEnabledDestinationsPreservesFields).
 var sampleFilteredSources = ConfigT{
+	WorkspaceID: sampleWorkspaceID,
 	Sources: []SourceT{
 		{
 			ID:             "1",
@@ -177,15 +182,19 @@ func TestBadResponse(t *testing.T) {
 	parsedURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
+	nsConfig := &namespaceConfig{
+		config:              config.New(),
+		configBackendURL:    parsedURL,
+		namespace:           "some-namespace",
+		hostedServiceSecret: "some-secret",
+		client:              http.DefaultClient,
+		logger:              logger.NOP,
+		stats:               stats.NOP,
+	}
+	require.NoError(t, nsConfig.SetUp())
+
 	configs := map[string]workspaceConfig{
-		"namespace": &namespaceConfig{
-			configBackendURL:     parsedURL,
-			namespace:            "some-namespace",
-			client:               http.DefaultClient,
-			logger:               logger.NOP,
-			httpCallsStat:        stats.NOP.NewStat("backend_config_http_calls", stats.CountType),
-			httpResponseSizeStat: stats.NOP.NewStat("backend_config_http_response_size", stats.HistogramType),
-		},
+		"namespace": nsConfig,
 		"single-workspace": &singleWorkspaceConfig{
 			configBackendURL:     parsedURL,
 			logger:               logger.NOP,
@@ -227,7 +236,7 @@ func TestNewForDeployment(t *testing.T) {
 	initBackendConfig()
 	t.Run("dedicated", func(t *testing.T) {
 		t.Setenv("WORKSPACE_TOKEN", "foobar")
-		conf, err := newForDeployment(deployment.DedicatedType, "US", nil)
+		conf, err := newForDeployment(deployment.DedicatedType, nil)
 		require.NoError(t, err)
 		cb, ok := conf.(*backendConfigImpl)
 		require.True(t, ok)
@@ -238,7 +247,7 @@ func TestNewForDeployment(t *testing.T) {
 	t.Run("multi-tenant", func(t *testing.T) {
 		t.Setenv("WORKSPACE_NAMESPACE", "spaghetti")
 		t.Setenv("HOSTED_SERVICE_SECRET", "foobar")
-		conf, err := newForDeployment(deployment.MultiTenantType, "", nil)
+		conf, err := newForDeployment(deployment.MultiTenantType, nil)
 		require.NoError(t, err)
 
 		cb, ok := conf.(*backendConfigImpl)
@@ -248,7 +257,7 @@ func TestNewForDeployment(t *testing.T) {
 	})
 
 	t.Run("unsupported", func(t *testing.T) {
-		_, err := newForDeployment("UNSUPPORTED_TYPE", "", nil)
+		_, err := newForDeployment("UNSUPPORTED_TYPE", nil)
 		require.ErrorContains(t, err, `deployment type "UNSUPPORTED_TYPE" not supported`)
 	})
 }
@@ -355,7 +364,14 @@ func TestConfigUpdate(t *testing.T) {
 
 		bc.configUpdate(ctx)
 		require.True(t, bc.initialized)
-		require.Equal(t, (<-chProcess).Data, map[string]ConfigT{workspaces: sampleFilteredSources})
+		// Connections ride TopicProcessConfig filtered by ProcessorEnabled, the same way
+		// destinations are: the processor only ever acts on the ones it processes.
+		filteredWithConnections := sampleFilteredSources
+		filteredWithConnections.Connections = lo.OmitBy(sampleConfigWithConnection.Connections,
+			func(_ string, c Connection) bool { return !c.ProcessorEnabled })
+		require.Len(t, filteredWithConnections.Connections, 1,
+			"the fixture must carry both a processor-enabled and a processor-disabled connection")
+		require.Equal(t, (<-chProcess).Data, map[string]ConfigT{workspaces: filteredWithConnections})
 		require.Equal(t, (<-chBackend).Data, map[string]ConfigT{workspaces: sampleConfigWithConnection})
 		require.Equal(t, bc.curSourceJSON[workspaces].Connections, sampleConfigWithConnection.Connections)
 	})
@@ -663,3 +679,112 @@ type mockIdentifier struct {
 func (m *mockIdentifier) ID() string                  { return m.key }
 func (m *mockIdentifier) BasicAuth() (string, string) { return m.token, "" }
 func (*mockIdentifier) Type() deployment.Type         { return "mockType" }
+
+// TestFilterProcessorEnabledDestinationsPreservesFields pins which fields
+// filterProcessorEnabledDestinations transforms and which it must pass through untouched.
+// Exactly two are transformed - Sources' destinations and Connections, both filtered by their
+// processor-enabled flag; everything else survives verbatim.
+//
+// The reflection sweep forces this fixture to grow with the struct: add a field to ConfigT
+// without setting it here and the test fails, demanding a conscious decision instead of a
+// silent drop.
+func TestFilterProcessorEnabledDestinationsPreservesFields(t *testing.T) {
+	config := ConfigT{
+		EnableMetrics: true,
+		WorkspaceID:   "ws-1",
+		Sources: []SourceT{{
+			ID: "src-1",
+			Destinations: []DestinationT{
+				{ID: "dest-enabled", IsProcessorEnabled: true},
+				{ID: "dest-disabled", IsProcessorEnabled: false},
+			},
+		}},
+		EventReplays: map[string]EventReplayConfig{"replay-1": {}},
+		Libraries:    LibrariesT{{VersionID: "lib-1"}},
+		ConnectionFlags: ConnectionFlags{
+			URL:      "https://cp-router.example",
+			Services: map[string]bool{"warehouse": true},
+		},
+		Settings:    Settings{EventAuditEnabled: true},
+		UpdatedAt:   time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC),
+		Credentials: map[string]Credential{"cred-1": {Key: "k", Value: "v"}},
+		Connections: map[string]Connection{
+			"conn-enabled": {
+				SourceID:      "src-1",
+				DestinationID: "dest-enabled",
+				Enabled:       true,
+				Config: map[string]any{"source": map[string]any{"syncSettings": map[string]any{
+					"errorDetailsConfig": map[string]any{"enabled": true},
+				}}},
+				ProcessorEnabled: true,
+			},
+			"conn-disabled": {
+				SourceID:         "src-1",
+				DestinationID:    "dest-disabled",
+				Enabled:          true,
+				ProcessorEnabled: false,
+			},
+		},
+		Accounts:           map[string]Account{"acct-1": {ID: "acct-1"}},
+		AccountDefinitions: map[string]AccountDefinition{"acctdef-1": {Name: "acctdef-1"}},
+	}
+
+	cv := reflect.ValueOf(config)
+	for i := 0; i < cv.NumField(); i++ {
+		require.Falsef(t, cv.Field(i).IsZero(),
+			"fixture leaves ConfigT.%s at its zero value; set it above and decide whether filterProcessorEnabledDestinations must preserve it",
+			cv.Type().Field(i).Name)
+	}
+
+	got := filterProcessorEnabledDestinations(config)
+
+	// Transformation 1: processor-disabled destinations are dropped.
+	require.Len(t, got.Sources, 1)
+	require.Len(t, got.Sources[0].Destinations, 1)
+	require.Equal(t, "dest-enabled", got.Sources[0].Destinations[0].ID)
+
+	// Transformation 2: processor-disabled connections are dropped.
+	require.Len(t, got.Connections, 1)
+	require.Contains(t, got.Connections, "conn-enabled")
+	require.NotContains(t, got.Connections, "conn-disabled")
+
+	// The input is not mutated: filtering builds new collections.
+	require.Len(t, config.Connections, 2, "the caller's config must not be filtered in place")
+	require.Len(t, config.Sources[0].Destinations, 2)
+
+	// Everything else survives verbatim.
+	want := config
+	want.Sources = got.Sources
+	want.Connections = got.Connections
+	require.Equal(t, want, got)
+}
+
+// TestFilterProcessorEnabledConnections is the behaviour half of the connection filter:
+// the processor must see the connections it processes and none of the others.
+func TestFilterProcessorEnabledConnections(t *testing.T) {
+	t.Run("enabled connections are kept, disabled ones dropped", func(t *testing.T) {
+		got := filterProcessorEnabledDestinations(ConfigT{
+			Connections: map[string]Connection{
+				"keep": {SourceID: "s1", DestinationID: "d1", ProcessorEnabled: true},
+				"drop": {SourceID: "s2", DestinationID: "d2", ProcessorEnabled: false},
+			},
+		})
+		require.Equal(t, map[string]Connection{
+			"keep": {SourceID: "s1", DestinationID: "d1", ProcessorEnabled: true},
+		}, got.Connections)
+	})
+
+	t.Run("a nil connections map stays nil rather than becoming empty", func(t *testing.T) {
+		// Only so that a config carrying no connections at all round-trips unchanged
+		// through every whole-struct comparison in this package.
+		require.Nil(t, filterProcessorEnabledDestinations(ConfigT{}).Connections)
+	})
+
+	t.Run("every connection disabled yields an empty map, not nil", func(t *testing.T) {
+		got := filterProcessorEnabledDestinations(ConfigT{
+			Connections: map[string]Connection{"drop": {ProcessorEnabled: false}},
+		})
+		require.NotNil(t, got.Connections)
+		require.Empty(t, got.Connections)
+	})
+}

@@ -605,6 +605,12 @@ type mockSourceMigrator struct {
 	handleCalls int
 	handleFn    func(ctx context.Context, migration *etcdtypes.PartitionMigration) error
 	handleError error
+
+	jobsDBs []string
+}
+
+func (msm *mockSourceMigrator) JobsDBs() []string {
+	return msm.jobsDBs
 }
 
 func (msm *mockSourceMigrator) Run(ctx context.Context, wg *errgroup.Group) error {

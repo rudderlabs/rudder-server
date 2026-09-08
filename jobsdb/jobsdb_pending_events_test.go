@@ -11,6 +11,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
+	txpkg "github.com/rudderlabs/rudder-server/utils/tx"
 )
 
 func TestPendingEventsJobsDB(t *testing.T) {
@@ -331,6 +333,48 @@ func TestPendingEventsJobsDB(t *testing.T) {
 		require.Equal(t, float64(1), registry.decreasedByDest["A"])
 		require.Equal(t, float64(0), registry.decreasedByDest["B"])
 	})
+
+	t.Run("retry on a shared transaction increases pending events exactly once", func(t *testing.T) {
+		// Regression: with WithStoreSafeTxFromTx the caller's transaction is reused across
+		// the store's internal stale-dataset-list retry. The pending-events increase must be
+		// registered only after the store succeeds, so a failed-then-successful attempt on the
+		// same committed transaction counts once, not once per attempt.
+		_ = startPostgres(t)
+		jobDB := &Handle{config: config.New()}
+		require.NoError(t, jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5))))
+		defer jobDB.TearDown()
+
+		registry := &mockPendingEventsRegistry{}
+		// underlying store fails the first attempt (as a stale-DS retry would) and succeeds the
+		// second, without touching the real DB — the real tx below is what actually commits.
+		underlying := &failThenSucceedStoreJobsDB{JobsDB: jobDB, errs: []error{ErrStaleDsList, nil}}
+		decoratedDB := NewPendingEventsJobsDB(underlying, registry).(*pendingEventsJobsDB)
+
+		jobs := genJobsWithDestination(3)
+		require.NoError(t, jobDB.WithTx(context.Background(), func(tx *txpkg.Tx) error {
+			stx := &storeSafeTx{tx: tx, identity: underlying.Identifier()}
+			require.ErrorIs(t, decoratedDB.StoreInTx(context.Background(), stx, jobs), ErrStaleDsList)
+			require.NoError(t, decoratedDB.StoreInTx(context.Background(), stx, jobs))
+			return nil // commit → fire success listeners
+		}))
+
+		require.Equal(t, 1, registry.increaseCallCount, "increase must fire once despite the retry")
+		require.Equal(t, float64(3), registry.totalIncreased)
+	})
+}
+
+// failThenSucceedStoreJobsDB is a JobsDB whose StoreInTx returns the queued errors in order
+// (modelling a stale-dataset-list retry) without performing any real store. All other
+// behaviour is inherited from the embedded handle.
+type failThenSucceedStoreJobsDB struct {
+	JobsDB
+	errs []error
+}
+
+func (f *failThenSucceedStoreJobsDB) StoreInTx(_ context.Context, _ StoreSafeTx, _ []*JobT) error {
+	err := f.errs[0]
+	f.errs = f.errs[1:]
+	return err
 }
 
 // mockPendingEventsRegistry tracks calls to the pending events registry

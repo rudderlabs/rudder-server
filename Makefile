@@ -60,6 +60,17 @@ endif
 
 test-warehouse: test-warehouse-integration test-teardown
 
+test-async-destination-integration:
+	$(eval TEST_PATTERN = $(if $(run),$(run),Integration))
+	$(eval TEST_CMD = SLOW=1 go test)
+	$(eval TEST_OPTIONS = -v -p 8 -timeout 30m -count 1 -run $(TEST_PATTERN) -coverprofile=profile.out -covermode=atomic -coverpkg=./...)
+ifeq ($(RACE_ENABLED), true)
+	$(eval TEST_OPTIONS := $(TEST_OPTIONS) -race)
+endif
+	$(TEST_CMD) $(TEST_OPTIONS) ./$(package)/... && touch $(TESTFILE) || true
+
+test-async-destination: test-async-destination-integration test-teardown
+
 test-teardown:
 	@if [ -f "$(TESTFILE)" ]; then \
     	echo "Tests passed, tearing down..." ;\
@@ -139,10 +150,3 @@ generate-openapi-spec: install-tools
 sec: ## Run security checks
 	$(GO) run $(gitleaks) detect .
 	$(GO) run $(govulncheck) ./...
-
-.PHONY: bench-multi-threading
-bench-multi-threading:
-	go test -v -tags=threading_benchmark -count 1 \
-		-run TestThreadingBenchmark \
-		./integration_test/pytransformer_contract \
-		-timeout=15m

@@ -285,7 +285,8 @@ func TestSrcHydrationStage(t *testing.T) {
 		err := proc.config.asyncInit.WaitContext(ctx)
 		require.NoError(t, err)
 
-		// Create test message
+		// Create test message. earlyDestinationFilter mirrors the per-batch snapshot
+		// preprocessStage would have taken; Processor.earlyDestinationFilter defaults to true.
 		message := &srcHydrationMessage{
 			partition: "test-partition",
 			subJobs: subJob{
@@ -295,7 +296,8 @@ func TestSrcHydrationStage(t *testing.T) {
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,
 			},
-			eventsByMessageID: make(map[string]types.SingularEventWithReceivedAt),
+			eventsByMessageID:      make(map[string]types.SingularEventWithReceivedAt),
+			earlyDestinationFilter: true,
 		}
 
 		// Execute the source hydration stage
@@ -388,7 +390,8 @@ func TestSrcHydrationStage(t *testing.T) {
 		err := proc.config.asyncInit.WaitContext(ctx)
 		require.NoError(t, err)
 
-		// Create test message
+		// Create test message. earlyDestinationFilter mirrors the per-batch snapshot
+		// preprocessStage would have taken; Processor.earlyDestinationFilter defaults to true.
 		message := &srcHydrationMessage{
 			partition: "test-partition",
 			subJobs: subJob{
@@ -398,7 +401,8 @@ func TestSrcHydrationStage(t *testing.T) {
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,
 			},
-			eventsByMessageID: make(map[string]types.SingularEventWithReceivedAt),
+			eventsByMessageID:      make(map[string]types.SingularEventWithReceivedAt),
+			earlyDestinationFilter: true,
 		}
 
 		// Execute the source hydration stage

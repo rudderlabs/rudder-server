@@ -60,6 +60,7 @@ var rudderDataTypesMapToClickHouse = map[string]string{
 	"array(datetime)": "Array(DateTime)",
 	"boolean":         "UInt8",
 	"array(boolean)":  "Array(UInt8)",
+	"json":            "JSON", // needs ClickHouse 25.3 or newer, so only v2 destinations get json columns
 }
 
 var clickhouseSpecificColumnNameMappings = map[string]string{
@@ -72,6 +73,7 @@ var datatypeDefaultValuesMap = map[string]any{
 	"float":    0.0,
 	"boolean":  0,
 	"datetime": clickhouseDefaultDateTime,
+	"json":     "{}",
 }
 
 var clickhouseDataTypesMapToRudder = map[string]string{
@@ -86,6 +88,7 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 	"Array(Float64)":                   "array(float)",
 	"Array(Nullable(Float64))":         "array(float)",
 	"String":                           "string",
+	"JSON":                             "json",
 	"Array(String)":                    "array(string)",
 	"Array(Nullable(String))":          "array(string)",
 	"DateTime":                         "datetime",
@@ -105,6 +108,7 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 	"Nullable(String)":                 "string",
 	"Nullable(DateTime)":               "datetime",
 	"Nullable(UInt8)":                  "boolean",
+	"Nullable(JSON)":                   "json",
 	"SimpleAggregateFunction(anyLast, Nullable(Int8))":     "int",
 	"SimpleAggregateFunction(anyLast, Nullable(Int16))":    "int",
 	"SimpleAggregateFunction(anyLast, Nullable(Int32))":    "int",
@@ -114,6 +118,7 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 	"SimpleAggregateFunction(anyLast, Nullable(String))":   "string",
 	"SimpleAggregateFunction(anyLast, Nullable(DateTime))": "datetime",
 	"SimpleAggregateFunction(anyLast, Nullable(UInt8))":    "boolean",
+	"SimpleAggregateFunction(anyLast, Nullable(JSON))":     "json",
 }
 
 var errorsMappings = []model.JobError{
@@ -127,8 +132,17 @@ var errorsMappings = []model.JobError{
 	},
 }
 
+type clickhouseDriver interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryContext(context.Context, string, ...any) (*sqlmw.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sqlmw.Row
+	BeginTx(context.Context, *sql.TxOptions) (*sqlmw.Tx, error)
+	PingContext(context.Context) error
+	Close() error
+}
+
 type Clickhouse struct {
-	DB                 *sqlmw.DB
+	DB                 clickhouseDriver
 	Namespace          string
 	ObjectStorage      string
 	Warehouse          model.Warehouse

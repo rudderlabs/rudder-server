@@ -160,7 +160,7 @@ func (u *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Uploa
 
 	var uploadID int64
 
-	err = u.db.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
+	err = u.db.WithTx(ctx, func(txCtx context.Context, tx *sqlmiddleware.Tx) error {
 		err := tx.QueryRow(
 			`INSERT INTO `+uploadsTableName+` (
 			source_id, namespace, workspace_id, destination_id,

@@ -2,6 +2,11 @@ package reporting
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -12,10 +17,12 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	utilsTx "github.com/rudderlabs/rudder-server/utils/tx"
@@ -803,5 +810,336 @@ func TestDefaultReporter_Report_EventNameTrimming_InvalidConfig(t *testing.T) {
 			err = dbMock.ExpectationsWereMet()
 			require.NoError(t, err)
 		})
+	}
+}
+
+func TestSendMetric(t *testing.T) {
+	t.Run("splits batch and sends individual metrics", func(t *testing.T) {
+		var mu sync.Mutex
+		var payloads []types.Metric
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			requestCount++
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			var payload types.Metric
+			require.NoError(t, jsonrs.Unmarshal(body, &payload))
+			payloads = append(payloads, payload)
+
+			if requestCount == 1 {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		metricClient := newLargePayloadTestClient(t, server.URL, 0)
+		r, statsStore := newLargePayloadTestReporter(t, metricClient)
+		err := r.sendMetric(context.Background(), testLargePayloadMetric())
+		require.NoError(t, err)
+
+		mu.Lock()
+		defer mu.Unlock()
+		require.Equal(t, 3, requestCount)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 0)
+		require.Len(t, payloads[0].StatusDetails, 2)
+		require.Len(t, payloads[1].StatusDetails, 1)
+		require.Equal(t, "event-1", payloads[1].StatusDetails[0].EventName)
+		require.Len(t, payloads[2].StatusDetails, 1)
+		require.Equal(t, "event-2", payloads[2].StatusDetails[0].EventName)
+	})
+
+	t.Run("replaces individual oversized sample event and retries with fallback", func(t *testing.T) {
+		var mu sync.Mutex
+		var payloads []types.Metric
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			requestCount++
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			var payload types.Metric
+			require.NoError(t, jsonrs.Unmarshal(body, &payload))
+			payloads = append(payloads, payload)
+
+			if requestCount <= 2 {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		metricClient := newLargePayloadTestClient(t, server.URL, 0)
+		metric := testLargePayloadMetric()
+		r, statsStore := newLargePayloadTestReporter(t, metricClient)
+		err := r.sendMetric(context.Background(), metric)
+		require.NoError(t, err)
+
+		mu.Lock()
+		defer mu.Unlock()
+		// batch (413) + event-1 (413) + event-1 stripped (200) + event-2 (200)
+		require.Equal(t, 4, requestCount)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 1)
+		require.Equal(t, "event-1", payloads[1].StatusDetails[0].EventName)
+		require.JSONEq(t, `{"event":"sample-1"}`, string(payloads[1].StatusDetails[0].SampleEvent))
+		require.Equal(t, "event-1", payloads[2].StatusDetails[0].EventName)
+		require.JSONEq(t, string(sampleEventNotAvailableEntityTooLarge), string(payloads[2].StatusDetails[0].SampleEvent))
+		require.Equal(t, "sample-response-1", payloads[2].StatusDetails[0].SampleResponse)
+		require.Equal(t, "event-2", payloads[3].StatusDetails[0].EventName)
+		require.JSONEq(t, `{"event":"sample-2"}`, string(payloads[3].StatusDetails[0].SampleEvent))
+		// caller's metric must not be mutated by the split/strip
+		require.Len(t, metric.StatusDetails, 2)
+		require.JSONEq(t, `{"event":"sample-1"}`, string(metric.StatusDetails[0].SampleEvent))
+	})
+
+	t.Run("single status detail skips redundant resend and goes straight to stripped fallback", func(t *testing.T) {
+		var mu sync.Mutex
+		var payloads []types.Metric
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			requestCount++
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			var payload types.Metric
+			require.NoError(t, jsonrs.Unmarshal(body, &payload))
+			payloads = append(payloads, payload)
+
+			if requestCount == 1 {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		metricClient := newLargePayloadTestClient(t, server.URL, 0)
+		metric := testLargePayloadMetricWithOneStatusDetail()
+		r, statsStore := newLargePayloadTestReporter(t, metricClient)
+		err := r.sendMetric(context.Background(), metric)
+		require.NoError(t, err)
+
+		mu.Lock()
+		defer mu.Unlock()
+		// batch (413) + stripped (200); no identical individual resend in between
+		require.Equal(t, 2, requestCount)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 1)
+		require.JSONEq(t, `{"event":"sample-1"}`, string(payloads[0].StatusDetails[0].SampleEvent))
+		require.JSONEq(t, string(sampleEventNotAvailableEntityTooLarge), string(payloads[1].StatusDetails[0].SampleEvent))
+		require.JSONEq(t, `{"event":"sample-1"}`, string(metric.StatusDetails[0].SampleEvent))
+	})
+
+	t.Run("stripped oversized metric retries through normal fallback path", func(t *testing.T) {
+		var mu sync.Mutex
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			requestCount++
+			mu.Unlock()
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+		}))
+		defer server.Close()
+
+		metricClient := newLargePayloadTestClient(t, server.URL, 1)
+		r, statsStore := newLargePayloadTestReporter(t, metricClient)
+		err := r.sendMetric(context.Background(), testLargePayloadMetricWithOneStatusDetail())
+		require.Error(t, err)
+		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
+		require.Contains(t, err.Error(), "statusCode: 413")
+
+		mu.Lock()
+		defer mu.Unlock()
+		// batch (413) + stripped fallback (413, retried once)
+		require.Equal(t, 3, requestCount)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 1)
+	})
+
+	t.Run("strips the rejected status detail, not the first one", func(t *testing.T) {
+		var mu sync.Mutex
+		var payloads []types.Metric
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			requestCount++
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			var payload types.Metric
+			require.NoError(t, jsonrs.Unmarshal(body, &payload))
+			payloads = append(payloads, payload)
+
+			// 413 on the batch (1) and on the *second* individual metric (3)
+			if requestCount == 1 || requestCount == 3 {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		metricClient := newLargePayloadTestClient(t, server.URL, 0)
+		r, statsStore := newLargePayloadTestReporter(t, metricClient)
+		err := r.sendMetric(context.Background(), testLargePayloadMetric())
+		require.NoError(t, err)
+
+		mu.Lock()
+		defer mu.Unlock()
+		// batch (413) + event-1 (200) + event-2 (413) + event-2 stripped (200)
+		require.Equal(t, 4, requestCount)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 1)
+		require.Len(t, payloads[3].StatusDetails, 1)
+		require.Equal(t, "event-2", payloads[3].StatusDetails[0].EventName, "stripped resend must carry the rejected status detail, not StatusDetails[0]")
+		require.JSONEq(t, string(sampleEventNotAvailableEntityTooLarge), string(payloads[3].StatusDetails[0].SampleEvent))
+		require.Equal(t, "sample-response-2", payloads[3].StatusDetails[0].SampleResponse)
+	})
+
+	t.Run("non-413 batch error is returned without splitting", func(t *testing.T) {
+		var mu sync.Mutex
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			requestCount++
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		metricClient := newLargePayloadTestClient(t, server.URL, 0)
+		r, statsStore := newLargePayloadTestReporter(t, metricClient)
+		err := r.sendMetric(context.Background(), testLargePayloadMetric())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "statusCode: 500")
+
+		mu.Lock()
+		defer mu.Unlock()
+		// maxRetries=0 => exactly one attempt, and no split
+		require.Equal(t, 1, requestCount, "a non-413 batch error must be returned as-is, without splitting")
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 0)
+	})
+
+	t.Run("partial failure returns error after delivering earlier metrics", func(t *testing.T) {
+		var mu sync.Mutex
+		var payloads []types.Metric
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			requestCount++
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			var payload types.Metric
+			require.NoError(t, jsonrs.Unmarshal(body, &payload))
+			payloads = append(payloads, payload)
+
+			switch requestCount {
+			case 1:
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+			case 2:
+				w.WriteHeader(http.StatusOK)
+			default:
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		}))
+		defer server.Close()
+
+		metricClient := newLargePayloadTestClient(t, server.URL, 1)
+		r, statsStore := newLargePayloadTestReporter(t, metricClient)
+		err := r.sendMetric(context.Background(), testLargePayloadMetric())
+		require.Error(t, err)
+		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
+		require.Contains(t, err.Error(), "statusCode: 500")
+
+		mu.Lock()
+		defer mu.Unlock()
+		// 1 batch (413) + 1 for event-1 (200) + 2 for event-2 (500, retried once)
+		require.Equal(t, 4, requestCount)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 0)
+		require.Len(t, payloads[1].StatusDetails, 1)
+		require.Equal(t, "event-1", payloads[1].StatusDetails[0].EventName)
+		require.Len(t, payloads[2].StatusDetails, 1)
+		require.Equal(t, "event-2", payloads[2].StatusDetails[0].EventName)
+		require.Equal(t, "event-2", payloads[3].StatusDetails[0].EventName)
+	})
+
+	t.Run("individual non-413 error retries through normal path", func(t *testing.T) {
+		var mu sync.Mutex
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			requestCount++
+			currentRequest := requestCount
+			mu.Unlock()
+
+			if currentRequest == 1 {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		metricClient := newLargePayloadTestClient(t, server.URL, 1)
+		r, statsStore := newLargePayloadTestReporter(t, metricClient)
+		err := r.sendMetric(context.Background(), testLargePayloadMetricWithOneStatusDetail())
+		require.Error(t, err)
+		require.False(t, errors.Is(err, client.ErrPayloadTooLarge))
+		require.Contains(t, err.Error(), "statusCode: 500")
+
+		mu.Lock()
+		defer mu.Unlock()
+		require.Equal(t, 3, requestCount)
+		requireLargePayloadStats(t, statsStore, StatReportingOversizedSampleEventSkippedCounter, 1)
+	})
+}
+
+func testLargePayloadMetric() *types.Metric {
+	metric := testLargePayloadMetricWithOneStatusDetail()
+	metric.StatusDetails = append(metric.StatusDetails, &types.StatusDetail{
+		Status:         "failed",
+		Count:          2,
+		StatusCode:     http.StatusBadRequest,
+		SampleResponse: "sample-response-2",
+		SampleEvent:    []byte(`{"event":"sample-2"}`),
+		EventName:      "event-2",
+		EventType:      "track",
+	})
+	return metric
+}
+
+func testLargePayloadMetricWithOneStatusDetail() *types.Metric {
+	return &types.Metric{
+		InstanceDetails: types.InstanceDetails{
+			WorkspaceID: "workspace-1",
+			InstanceID:  "instance-1",
+		},
+		ConnectionDetails: types.ConnectionDetails{
+			SourceID:      "source-1",
+			DestinationID: "destination-1",
+		},
+		PUDetails: types.PUDetails{
+			InPU: "gateway",
+			PU:   "router",
+		},
+		ReportMetadata: types.ReportMetadata{
+			ReportedAt:        1000,
+			SampleEventBucket: 900,
+		},
+		StatusDetails: []*types.StatusDetail{
+			{
+				Status:         "failed",
+				Count:          1,
+				StatusCode:     http.StatusBadRequest,
+				SampleResponse: "sample-response-1",
+				SampleEvent:    []byte(`{"event":"sample-1"}`),
+				EventName:      "event-1",
+				EventType:      "track",
+			},
+		},
 	}
 }

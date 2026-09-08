@@ -67,6 +67,93 @@ func New(destType string, conf *config.Config, logger logger.Logger, stats stats
 	return newStatsManager(m, stats), nil
 }
 
+// clickhouseSelector holds both ClickHouse implementations and picks between
+// them per destination, rather than once per process.
+//
+// The factories only receive a destination type, so the choice cannot be made
+// at construction. Every method that carries a model.Warehouse selects from it
+// before delegating; the rest run after one of those has already chosen, and
+// reach the chosen implementation through the embedded interface.
+//
+// That embedded field starts as v1 so a call arriving before any selection
+// still works. INVARIANT: every interface method taking a model.Warehouse must
+// be overridden here. Miss one and it would silently run v1 against a
+// destination configured for v2.
+type clickhouseSelector struct {
+	WarehouseOperations
+
+	v1, v2 WarehouseOperations
+	conf   *config.Config
+}
+
+func newClickhouse(conf *config.Config, log logger.Logger, stat stats.Stats) WarehouseOperations {
+	v1 := clickhouse.New(conf, log, stat)
+	return &clickhouseSelector{
+		WarehouseOperations: v1,
+		v1:                  v1,
+		v2:                  clickhouse.NewV2(conf, log, stat),
+		conf:                conf,
+	}
+}
+
+// selectFor resolves the implementation for warehouse and keeps it for the
+// calls that follow, which do not carry a warehouse of their own.
+func (s *clickhouseSelector) selectFor(warehouse model.Warehouse) WarehouseOperations {
+	if useV2Driver(s.conf, warehouse) {
+		s.WarehouseOperations = s.v2
+	} else {
+		s.WarehouseOperations = s.v1
+	}
+	return s.WarehouseOperations
+}
+
+func (s *clickhouseSelector) Setup(ctx context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) error {
+	return s.selectFor(warehouse).Setup(ctx, warehouse, uploader)
+}
+
+// Connect is reached without Setup from the warehouse admin query path, which
+// is why selecting only in Setup would leave that path on v1.
+func (s *clickhouseSelector) Connect(ctx context.Context, warehouse model.Warehouse) (client.Client, error) {
+	return s.selectFor(warehouse).Connect(ctx, warehouse)
+}
+
+func (s *clickhouseSelector) IsEmpty(ctx context.Context, warehouse model.Warehouse) (bool, error) {
+	return s.selectFor(warehouse).IsEmpty(ctx, warehouse)
+}
+
+func (s *clickhouseSelector) TestConnection(ctx context.Context, warehouse model.Warehouse) error {
+	return s.selectFor(warehouse).TestConnection(ctx, warehouse)
+}
+
+// SetConnectionTimeout carries no warehouse and is called before Setup, so it
+// has to reach whichever implementation is chosen afterwards.
+func (s *clickhouseSelector) SetConnectionTimeout(timeout time.Duration) {
+	s.v1.SetConnectionTimeout(timeout)
+	s.v2.SetConnectionTimeout(timeout)
+}
+
+// useV2Driver reports whether this destination should load through the v2
+// ClickHouse driver.
+//
+// The keys are ordered most specific first and GetBoolVar takes the first one
+// that is set, so a single destination can be switched on ahead of its
+// workspace, and — the case a rollout actually depends on — switched back off
+// after the global flag has been turned on. An allowlist could only ever add.
+//
+// A manager is built per upload job, and GetBoolVar registers a hot-reloadable
+// var, so a change takes effect on the next job without a restart.
+func useV2Driver(conf *config.Config, warehouse model.Warehouse) bool {
+	keys := make([]string, 0, 3)
+	if warehouse.Destination.ID != "" {
+		keys = append(keys, "Warehouse.clickhouse."+warehouse.Destination.ID+".useV2Driver")
+	}
+	if warehouse.WorkspaceID != "" {
+		keys = append(keys, "Warehouse.clickhouse."+warehouse.WorkspaceID+".useV2Driver")
+	}
+	keys = append(keys, "Warehouse.clickhouse.useV2Driver")
+	return conf.GetBoolVar(false, keys...)
+}
+
 func newManager(destType string, conf *config.Config, logger logger.Logger, stats stats.Stats) (Manager, error) {
 	switch destType {
 	case warehouseutils.RS:
@@ -78,7 +165,7 @@ func newManager(destType string, conf *config.Config, logger logger.Logger, stat
 	case warehouseutils.POSTGRES:
 		return postgres.New(conf, logger, stats), nil
 	case warehouseutils.CLICKHOUSE:
-		return clickhouse.New(conf, logger, stats), nil
+		return newClickhouse(conf, logger, stats), nil
 	case warehouseutils.MSSQL:
 		return mssql.New(conf, logger, stats), nil
 	case warehouseutils.AzureSynapse:
@@ -103,7 +190,7 @@ func NewWarehouseOperations(destType string, conf *config.Config, logger logger.
 	case warehouseutils.POSTGRES:
 		return postgres.New(conf, logger, stats), nil
 	case warehouseutils.CLICKHOUSE:
-		return clickhouse.New(conf, logger, stats), nil
+		return newClickhouse(conf, logger, stats), nil
 	case warehouseutils.MSSQL:
 		return mssql.New(conf, logger, stats), nil
 	case warehouseutils.AzureSynapse:

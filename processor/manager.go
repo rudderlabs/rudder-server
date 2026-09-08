@@ -3,6 +3,7 @@ package processor
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -89,8 +90,16 @@ func (proc *LifecycleManager) Start() error {
 	var wg sync.WaitGroup
 	proc.waitGroup = &wg
 
+	// Reset the registry and capture the pileup cutoff before starting any of the processor's loops:
+	// the processor is the only writer of router & batch router jobs and it always starts before
+	// router and batch router, so no job and no status can be written below the cutoff once it has
+	// been captured here. Jobs pending below the cutoff are counted by countPendingEvents, everything
+	// above it is accounted for by the pending events jobsdb wrappers as it happens.
+	proc.pendingEventsRegistry.Reset()
+	pendingEventsCutoff := time.Now()
+
 	wg.Go(func() {
-		if err := proc.Handle.countPendingEvents(currentCtx); err != nil {
+		if err := proc.Handle.countPendingEvents(currentCtx, pendingEventsCutoff); err != nil {
 			proc.Handle.logger.Errorn("Error counting pending events", obskit.Error(err))
 		}
 	})

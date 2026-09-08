@@ -646,6 +646,31 @@ func TestWHSchemasRepo_GetForNamespace(t *testing.T) {
 		require.Equal(t, now2, tableLevelSchemaCreatedAt.UTC())
 		require.Equal(t, now2, tableLevelSchemaUpdatedAt.UTC())
 	})
+	t.Run("Table-level schema drift", func(t *testing.T) {
+		conf := config.New()
+		conf.Set("Warehouse.enableTableLevelSchema", true)
+
+		db, ctx := setupDB(t), context.Background()
+		r := repo.NewWHSchemas(db, conf, logger.NOP)
+
+		require.NoError(t, r.Insert(ctx, &model.WHSchema{
+			SourceID:        "source_id_1",
+			Namespace:       "namespace_1",
+			DestinationID:   "destination_id_1",
+			DestinationType: "destination_type_1",
+			Schema: model.Schema{
+				"table_name_1": {"column_name_1": "string"},
+			},
+			ExpiresAt: time.Now().Add(time.Hour),
+		}))
+
+		// drift the table-level copy away from the parent
+		_, err := db.ExecContext(ctx, `UPDATE wh_schemas SET schema = '{"column_name_1":"int"}' WHERE destination_id = 'destination_id_1' AND namespace = 'namespace_1' AND table_name = 'table_name_1';`)
+		require.NoError(t, err)
+
+		_, err = r.GetForNamespace(ctx, "destination_id_1", "namespace_1")
+		require.EqualError(t, err, "parent schema does not match")
+	})
 }
 
 func TestWHSchemasRepo_GetDestinationNamespaces(t *testing.T) {

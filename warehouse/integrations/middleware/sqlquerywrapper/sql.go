@@ -201,7 +201,10 @@ func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *R
 	}
 }
 
-func (db *DB) WithTx(ctx context.Context, fn func(*Tx) error) error {
+// WithTx runs fn inside a transaction. The context passed to fn is the one
+// the transaction was opened with, so it carries the query timeout; work
+// inside fn that uses the caller's context instead is not covered by it.
+func (db *DB) WithTx(ctx context.Context, fn func(context.Context, *Tx) error) error {
 	ctx, cancel := queryContextWithTimeout(ctx, db.queryTimeout)
 	defer cancel()
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{})
@@ -209,7 +212,7 @@ func (db *DB) WithTx(ctx context.Context, fn func(*Tx) error) error {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 
-	if err = fn(tx); err != nil {
+	if err = fn(ctx, tx); err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
 			keysAndValues := []any{logfield.Error, fmt.Errorf("executing transaction: %s, rollback: %s", err.Error(), rollbackErr.Error()).Error()}
 			keysAndValues = append(keysAndValues, db.keysAndValues...)

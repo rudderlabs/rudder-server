@@ -65,11 +65,18 @@ type roundTripState struct {
 	req         *http.Request
 }
 
+// httpResponseCreator builds a response this transport synthesizes on an error path, rather than one
+// received from the upstream service. It deliberately carries no apiVersion header: only the
+// transformer stamps that (ControllerUtility.deliveryPostProcess), so its absence marks a response that
+// did not come from the transformer. That covers more than this transport's own errors - an ingress or
+// reverse proxy in front of the transformer, or an unhandled transformer exception routed through the
+// global error handler rather than deliveryPostProcess, all lack it too - which is why the router keys
+// its infra-vs-breach classification on apiVersion presence rather than on this being a distinct marker.
 func httpResponseCreator(statusCode int, body []byte) *http.Response {
 	return &http.Response{
 		StatusCode: statusCode,
 		Body:       io.NopCloser(bytes.NewReader(body)),
-		Header:     http.Header{"apiVersion": []string{"2"}},
+		Header:     http.Header{},
 	}
 }
 
@@ -108,7 +115,31 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 	}
 	secret, scErr := t.oauthHandler.FetchToken(rts.tokenParams)
 	if scErr != nil {
-		return httpResponseCreator(scErr.StatusCode(), []byte(scErr.Error()))
+		// Propagate the token fetch failure through the interceptor envelope, so that
+		// callers which ignore the raw HTTP status code (e.g. router transformation, which
+		// otherwise collapses every non-200 to a retryable 500) can act on it. ErrorType
+		// carries the specific failure (e.g. common.RefTokenInvalidGrant) so callers decide
+		// on the error itself rather than inferring terminality from the status code.
+		// OriginalResponse preserves the raw error text for the callers that fall back to it.
+		message := scErr.Error()
+		var errorType string
+		var typeMessageError *v2.TypeMessageError
+		if errors.As(scErr, &typeMessageError) { // use the message from the underlying TypeMessageError if possible
+			message = typeMessageError.Message
+			errorType = typeMessageError.Type
+		}
+		respBody, marshalErr := jsonrs.Marshal(v2.TransportResponse{
+			OriginalResponse: scErr.Error(),
+			InterceptorResponse: v2.OAuthInterceptorResponse{
+				StatusCode: scErr.StatusCode(),
+				Response:   message,
+				ErrorType:  errorType,
+			},
+		})
+		if marshalErr != nil { // should never happen, the payload is a plain struct of scalars
+			return httpResponseCreator(scErr.StatusCode(), []byte(scErr.Error()))
+		}
+		return httpResponseCreator(scErr.StatusCode(), respBody)
 	}
 	rts.req = rts.req.WithContext(cntx.CtxWithSecret(rts.req.Context(), secret))
 

@@ -16,6 +16,7 @@ import (
 
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 )
 
 // pixelPageHandler can handle pixel page requests where everything is passed as query params.
@@ -77,7 +78,7 @@ func (gw *Handle) pixelInterceptor(reqType string, next http.HandlerFunc) http.H
 				WriteKey: "NoWriteKeyInQueryParams",
 				ReqType:  reqType,
 			}
-			stat.RequestFailed("NoWriteKeyInQueryParams")
+			stat.RequestFailed(gwtypes.ReasonWriteKeyMissingFromQuery)
 			stat.Report(gw.stats)
 			gw.logger.Infon("Error while handling request",
 				logger.NewStringField("ip", kithttputil.GetRequestIP(r)),

@@ -104,6 +104,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, _ func(), options *app
 	gwWOHandle := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in gw jobsdb
 		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "Gateway.jobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(jobsdbPool),

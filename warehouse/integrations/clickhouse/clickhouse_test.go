@@ -1,13 +1,18 @@
 package clickhouse_test
 
 import (
+	"compress/gzip"
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"log"
 	"maps"
+	"net"
 	"os"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	clickhousev2 "github.com/rudderlabs/clickhouse-go/v2"
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -32,6 +38,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -39,7 +46,28 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
+// TestIntegration runs the suite against one ClickHouse implementation, chosen
+// by CLICKHOUSE_USE_V2. Every subtest is shared, so coverage cannot drift
+// between the two, and CI runs the package once per value so each gets its own
+// job. Unset means v1, which is what a bare `go test` gets.
 func TestIntegration(t *testing.T) {
+	var useV2 bool
+	if v := os.Getenv("CLICKHOUSE_USE_V2"); v != "" {
+		parsed, err := strconv.ParseBool(v)
+		require.NoError(t, err, "CLICKHOUSE_USE_V2 must be a boolean")
+		useV2 = parsed
+	}
+
+	implementation := "v1"
+	if useV2 {
+		implementation = "v2"
+	}
+	t.Logf("running against the %s implementation", implementation)
+
+	testIntegration(t, useV2)
+}
+
+func testIntegration(t *testing.T, useV2 bool) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
@@ -48,6 +76,34 @@ func TestIntegration(t *testing.T) {
 	validations.Init()
 	whutils.Init()
 
+	// The single node server is newer for v2 because native JSON needs 25.3+.
+	// The driver itself does not require it: MinSupportedVersion only makes it
+	// log "unsupported clickhouse version" and it connects regardless. So the
+	// cluster keeps the 21.x server both implementations have always used,
+	// along with the node configs written for it.
+	clickhouseCompose := "testdata/docker-compose.clickhouse.yml"
+	clusterCompose := "testdata/docker-compose.clickhouse-cluster.yml"
+	if useV2 {
+		clickhouseCompose = "testdata/docker-compose.clickhouse-v2.yml"
+	}
+
+	// Both implementations satisfy the same interface, so the subtests below only
+	// differ in which one they construct.
+	newClickhouse := func(conf *config.Config) manager.WarehouseOperations {
+		if useV2 {
+			return clickhouse.NewV2(conf, logger.NOP, stats.NOP)
+		}
+		return clickhouse.New(conf, logger.NOP, stats.NOP)
+	}
+
+	// v2 reads its own Warehouse.clickhouse.v2.* namespace, so every key the
+	// suite sets has to follow the implementation under test.
+	configKey := func(key string) string {
+		if useV2 {
+			return "Warehouse.clickhouse.v2." + key
+		}
+		return "Warehouse.clickhouse." + key
+	}
 	destType := whutils.CLICKHOUSE
 
 	host := "localhost"
@@ -58,6 +114,22 @@ func TestIntegration(t *testing.T) {
 	bucketName := "testbucket"
 	accessKeyID := "MYACCESSKEY"
 	secretAccessKey := "MYSECRETKEY"
+
+	// Verification connects with the driver under test. v1 has no JSON type, so
+	// a v1 handle cannot represent everything v2 can create: reads pass because
+	// the queries coerce to String, but a write fails inside the driver rather
+	// than at the server, which leaves v2-only types unverifiable.
+	connectDB := func(t testing.TB, ctx context.Context, port int) *sql.DB {
+		t.Helper()
+
+		if useV2 {
+			return connectClickhouseDBV2(t, host, port, database, user, password)
+		}
+		return connectClickhouseDB(t, ctx, fmt.Sprintf(
+			"tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
+			host, port, database, password, user,
+		))
+	}
 
 	expectedSchema := model.Schema{
 		"screens":       {"context_source_id": "Nullable(String)", "user_id": "Nullable(String)", "sent_at": "Nullable(DateTime)", "context_request_ip": "Nullable(String)", "original_timestamp": "Nullable(DateTime)", "url": "Nullable(String)", "context_source_type": "Nullable(String)", "between": "Nullable(String)", "timestamp": "Nullable(DateTime)", "context_ip": "Nullable(String)", "context_destination_type": "Nullable(String)", "received_at": "DateTime", "title": "Nullable(String)", "uuid_ts": "Nullable(DateTime)", "context_destination_id": "Nullable(String)", "name": "Nullable(String)", "id": "String", "as": "Nullable(String)"},
@@ -159,7 +231,7 @@ func TestIntegration(t *testing.T) {
 				httpPort, err := kithelper.GetFreePort()
 				require.NoError(t, err)
 
-				c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
+				c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 				c.Start(context.Background())
 
 				workspaceID := whutils.RandHex()
@@ -174,10 +246,7 @@ func TestIntegration(t *testing.T) {
 
 				setupDB := func(t testing.TB, ctx context.Context) *sql.DB {
 					t.Helper()
-					dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-						host, clickhousePort, database, password, user,
-					)
-					return connectClickhouseDB(t, ctx, dsn)
+					return connectDB(t, ctx, clickhousePort)
 				}
 
 				verifySchema := func(t *testing.T, db *sql.DB, namespace string) {
@@ -247,6 +316,9 @@ func TestIntegration(t *testing.T) {
 
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
+				if useV2 {
+					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
+				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
@@ -325,7 +397,7 @@ func TestIntegration(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse-cluster.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{clusterCompose, "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -353,10 +425,7 @@ func TestIntegration(t *testing.T) {
 				name: "Cluster Mode Setup",
 				setupDB: func(t testing.TB, ctx context.Context) *sql.DB {
 					t.Helper()
-					dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-						host, clickhouseClusterPort1, database, password, user,
-					)
-					return connectClickhouseDB(t, ctx, dsn)
+					return connectDB(t, ctx, clickhouseClusterPort1)
 				},
 				warehouseEvents2: whth.EventsCountMap{
 					"identifies": 8, "users": 2, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "groups": 8,
@@ -366,13 +435,10 @@ func TestIntegration(t *testing.T) {
 
 					clusterPorts := []int{clickhouseClusterPort2, clickhouseClusterPort3, clickhouseClusterPort4}
 					dbs := lo.Map(clusterPorts, func(port, _ int) *sql.DB {
-						dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-							host, port, database, password, user,
-						)
-						return connectClickhouseDB(t, ctx, dsn)
+						return connectDB(t, ctx, port)
 					})
 					tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-					initializeClickhouseClusterMode(t, dbs, tables, clickhouseClusterPort1)
+					initializeClickhouseClusterMode(t, dbs, tables, clickhouseClusterPort1, connectDB)
 				},
 				eventFilePrefix: "../testdata/upload-job",
 				configOverride: map[string]any{
@@ -452,6 +518,9 @@ func TestIntegration(t *testing.T) {
 
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
+				if useV2 {
+					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
+				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
@@ -527,8 +596,157 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
+	// jsonPaths is what makes the transformer emit a json column for ClickHouse
+	// instead of flattening the object, and the loader then has to carry that
+	// through to a native JSON column. The other blocks exercise one half or
+	// the other: this one puts events in at the gateway and reads the column
+	// type back out of ClickHouse.
+	t.Run("Events flow (JSON paths)", func(t *testing.T) {
+		if !useV2 {
+			// dataTypeOverride emits json for every ClickHouse destination, but
+			// clickhouse-go v1 cannot bind a JSON value, so a v1 destination
+			// with jsonPaths set fails at load rather than here.
+			t.Skip("jsonPaths on clickhouse needs the v2 driver")
+		}
+
+		httpPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
+		c.Start(context.Background())
+
+		workspaceID := whutils.RandHex()
+		sourceID := whutils.RandHex()
+		destinationID := whutils.RandHex()
+		writeKey := whutils.RandHex()
+		jobsDBPort := c.Port("jobsDb", 5432)
+		clickhousePort := c.Port("clickhouse", 9000)
+		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
+
+		// upload-job with one nested object added to the Product Track
+		// properties, so the event counts stay at the suite defaults and the
+		// json column is the only thing new about the schema.
+		eventFilePrefix := "testdata/upload-job-json-paths"
+
+		jobsDB := whth.JobsDB(t, jobsDBPort)
+
+		destination := backendconfigtest.NewDestinationBuilder(destType).
+			WithID(destinationID).
+			WithRevisionID(destinationID).
+			WithConfigOption("host", host).
+			WithConfigOption("database", database).
+			WithConfigOption("user", user).
+			WithConfigOption("password", password).
+			WithConfigOption("port", strconv.Itoa(clickhousePort)).
+			WithConfigOption("bucketProvider", whutils.MINIO).
+			WithConfigOption("bucketName", bucketName).
+			WithConfigOption("accessKeyID", accessKeyID).
+			WithConfigOption("secretAccessKey", secretAccessKey).
+			WithConfigOption("useSSL", false).
+			WithConfigOption("secure", false).
+			WithConfigOption("endPoint", minioEndpoint).
+			WithConfigOption("useRudderStorage", false).
+			WithConfigOption("syncFrequency", "30").
+			WithConfigOption("allowUsersContextTraits", true).
+			WithConfigOption("underscoreDivideNumbers", true).
+			WithConfigOption("cleanupObjectStorageFiles", true).
+			// extractDestOpts splits this on commas, and only reads it at all
+			// because CLICKHOUSE is now in destinationSupportJSONPathAsPartOfConfig.
+			WithConfigOption("jsonPaths", "track.properties.review_meta").
+			Build()
+
+		workspaceConfig := backendconfigtest.NewConfigBuilder().
+			WithSource(
+				backendconfigtest.NewSourceBuilder().
+					WithID(sourceID).
+					WithWriteKey(writeKey).
+					WithWorkspaceID(workspaceID).
+					WithConnection(destination).
+					Build(),
+			).
+			WithWorkspaceID(workspaceID).
+			Build()
+
+		t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
+		t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
+
+		whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
+
+		ctx := context.Background()
+		db := connectDB(t, ctx, clickhousePort)
+		t.Cleanup(func() { _ = db.Close() })
+
+		conf := map[string]any{
+			"bucketProvider":   whutils.MINIO,
+			"bucketName":       bucketName,
+			"accessKeyID":      accessKeyID,
+			"secretAccessKey":  secretAccessKey,
+			"useSSL":           false,
+			"endPoint":         minioEndpoint,
+			"useRudderStorage": false,
+		}
+		tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+
+		for _, eventsFile := range []string{eventFilePrefix + ".events-1.json", eventFilePrefix + ".events-2.json"} {
+			t.Logf("sending %s", eventsFile)
+			ts := whth.TestConfig{
+				WriteKey:        writeKey,
+				Schema:          database,
+				Tables:          tables,
+				SourceID:        sourceID,
+				DestinationID:   destinationID,
+				Config:          conf,
+				WorkspaceID:     workspaceID,
+				DestinationType: destType,
+				JobsDB:          jobsDB,
+				HTTPPort:        httpPort,
+				Client:          &client.Client{SQL: db, Type: client.SQLClient},
+				UserID:          whth.GetUserId(destType),
+				EventsFilePath:  eventsFile,
+				TransformerURL:  transformerURL,
+				Destination:     destination,
+			}
+			ts.VerifyEvents(t)
+		}
+
+		t.Log("verifying the matched path became a json column")
+		var columnType string
+		require.NoError(t, db.QueryRowContext(ctx,
+			"SELECT type FROM system.columns WHERE database = ? AND table = 'product_track' AND name = 'review_meta'",
+			database,
+		).Scan(&columnType))
+		require.Equal(t, "Nullable(JSON)", columnType)
+
+		t.Log("verifying the rest of the schema is untouched")
+		// Only product_track gains a column: the path matches
+		// track_properties_review_meta, and tracks carries no properties.
+		expected := maps.Clone(expectedSchema)
+		expected["product_track"] = maps.Clone(expectedSchema["product_track"])
+		expected["product_track"]["review_meta"] = "Nullable(JSON)"
+		schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, database))
+		require.Equal(t, expected, whth.ConvertRecordsToSchema(schema))
+
+		t.Log("verifying the object round trips")
+		var payload string
+		require.NoError(t, db.QueryRowContext(ctx,
+			fmt.Sprintf(`SELECT toString(review_meta) FROM %q.%q LIMIT 1`, database, "product_track"),
+		).Scan(&payload))
+		require.JSONEq(t, `{"verified": true, "channel": "web"}`, payload)
+
+		// Reading a path out of the column is what separates a real JSON column
+		// from text holding the same bytes.
+		t.Log("verifying a path inside the column is queryable")
+		var channel string
+		require.NoError(t, db.QueryRowContext(ctx,
+			fmt.Sprintf(`SELECT toString(review_meta.channel) FROM %q.%q LIMIT 1`, database, "product_track"),
+		).Scan(&channel))
+		require.Contains(t, channel, "web")
+	})
+
 	t.Run("Validations", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "../testdata/docker-compose.minio.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.minio.yml"}))
 		c.Start(context.Background())
 
 		clickhousePort := c.Port("clickhouse", 9000)
@@ -562,11 +780,14 @@ func TestIntegration(t *testing.T) {
 			Enabled:    true,
 			RevisionID: "29eeuTnqbBKn0XVTj5z9XQIbaru",
 		}
+		if useV2 {
+			t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
+		}
 		whth.VerifyConfigurationTest(t, dest)
 	})
 
 	t.Run("Fetch schema", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -576,14 +797,11 @@ func TestIntegration(t *testing.T) {
 		namespace := "test_namespace"
 		table := "test_table"
 
-		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, clickhousePort, database, password, user,
-		)
-		db := connectClickhouseDB(t, ctx, dsn)
+		db := connectDB(t, ctx, clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		t.Run("Success", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_success", namespace),
@@ -627,7 +845,7 @@ func TestIntegration(t *testing.T) {
 		})
 
 		t.Run("Invalid host", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_invalid_host", namespace),
@@ -652,7 +870,7 @@ func TestIntegration(t *testing.T) {
 		})
 
 		t.Run("Invalid database", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_invalid_database", namespace),
@@ -677,7 +895,7 @@ func TestIntegration(t *testing.T) {
 		})
 
 		t.Run("Empty schema", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_empty_schema", namespace),
@@ -705,7 +923,7 @@ func TestIntegration(t *testing.T) {
 		})
 
 		t.Run("Unrecognized schema", func(t *testing.T) {
-			ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+			ch := newClickhouse(config.New())
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("%s_unrecognized_schema", namespace),
@@ -727,7 +945,7 @@ func TestIntegration(t *testing.T) {
 			err = ch.CreateSchema(ctx)
 			require.NoError(t, err)
 
-			_, err = ch.DB.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog;",
+			_, err = db.ExecContext(ctx, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog;",
 				warehouse.Namespace,
 				table,
 			))
@@ -740,7 +958,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Load Table round trip", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "../testdata/docker-compose.minio.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.minio.yml"}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -751,10 +969,7 @@ func TestIntegration(t *testing.T) {
 		region := "us-east-1"
 		table := "test_table"
 
-		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, clickhousePort, database, password, user,
-		)
-		db := connectClickhouseDB(t, context.Background(), dsn)
+		db := connectDB(t, context.Background(), clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -763,6 +978,12 @@ func TestIntegration(t *testing.T) {
 			S3EngineEnabledWorkspaceIDs []string
 			disableNullable             bool
 			disableLoadTableStats       bool
+
+			// commitEvery only changes behaviour on v2, which drives the commit
+			// cadence itself; v1 hands block_size to the driver and ignores it.
+			// The cases still run on both, which makes v1 the control: the same
+			// load has to produce the same rows however it was committed.
+			commitEvery int
 		}{
 			{
 				name:                  "normal loading using downloading of load files",
@@ -793,16 +1014,38 @@ func TestIntegration(t *testing.T) {
 				fileName:              "testdata/load.csv.gz",
 				disableLoadTableStats: true,
 			},
+			{
+				// load.csv.gz holds 16 rows, so this commits four blocks and
+				// exercises a mid-file commit boundary.
+				name:        "loading in blocks smaller than the file",
+				fileName:    "testdata/load.csv.gz",
+				commitEvery: 5,
+			},
+			{
+				// 16 rows in blocks of 8 ends exactly on a boundary, which is
+				// the case that costs one extra call to learn the stream ended.
+				name:        "row count an exact multiple of the block size",
+				fileName:    "testdata/load.csv.gz",
+				commitEvery: 8,
+			},
+			{
+				name:        "one row per block",
+				fileName:    "testdata/load.csv.gz",
+				commitEvery: 1,
+			},
 		}
 
 		for i, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				conf := config.New()
-				conf.Set("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", tc.S3EngineEnabledWorkspaceIDs)
-				conf.Set("Warehouse.clickhouse.disableNullable", tc.disableNullable)
-				conf.Set("Warehouse.clickhouse.disableLoadTableStats", tc.disableLoadTableStats)
+				conf.Set(configKey("s3EngineEnabledWorkspaceIDs"), tc.S3EngineEnabledWorkspaceIDs)
+				conf.Set(configKey("disableNullable"), tc.disableNullable)
+				conf.Set(configKey("disableLoadTableStats"), tc.disableLoadTableStats)
+				if tc.commitEvery > 0 {
+					conf.Set(configKey("commitEvery"), tc.commitEvery)
+				}
 
-				ch := clickhouse.New(conf, logger.NOP, stats.NOP)
+				ch := newClickhouse(conf)
 
 				warehouse := model.Warehouse{
 					Namespace:   fmt.Sprintf("test_namespace_%d", i),
@@ -927,7 +1170,7 @@ func TestIntegration(t *testing.T) {
 
 				t.Log("verifying if columns are not like Nullable(T) if disableNullable set to true")
 				if tc.disableNullable {
-					rows, err := ch.DB.Query(fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, warehouse.Namespace))
+					rows, err := db.QueryContext(ctx, fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, warehouse.Namespace))
 					require.NoError(t, err)
 
 					defer func() { _ = rows.Close() }()
@@ -987,10 +1230,124 @@ func TestIntegration(t *testing.T) {
 				require.Empty(t, schema)
 			})
 		}
+
+		// The v2 loader concatenates the load files into one gzip stream, so a
+		// block ends after commitEvery rows rather than at a file boundary.
+		// Three copies of a sixteen-row file committed every 5 puts a commit
+		// inside every file and a block across every boundary. v1 runs this too
+		// as a control: it commits once at the end and has to produce the same
+		// rows.
+		t.Run("blocks spanning multiple load files", func(t *testing.T) {
+			const (
+				loadFileCount = 3
+				commitEvery   = 5
+			)
+
+			conf := config.New()
+			conf.Set(configKey("commitEvery"), commitEvery)
+
+			ch := newClickhouse(conf)
+
+			warehouse := model.Warehouse{
+				Namespace:   "test_namespace_multiple_load_files",
+				WorkspaceID: workspaceID,
+				Destination: backendconfig.DestinationT{
+					Config: map[string]any{
+						"bucketProvider":  whutils.MINIO,
+						"host":            host,
+						"port":            strconv.Itoa(clickhousePort),
+						"database":        database,
+						"user":            user,
+						"password":        password,
+						"bucketName":      bucketName,
+						"accessKeyID":     accessKeyID,
+						"secretAccessKey": secretAccessKey,
+						"endPoint":        minioEndpoint,
+					},
+				},
+			}
+
+			tableSchema := model.TableSchema{
+				"alter_test_bool":     "boolean",
+				"alter_test_datetime": "datetime",
+				"alter_test_float":    "float",
+				"alter_test_int":      "int",
+				"alter_test_string":   "string",
+				"id":                  "string",
+				"received_at":         "datetime",
+				"test_array_bool":     "array(boolean)",
+				"test_array_datetime": "array(datetime)",
+				"test_array_float":    "array(float)",
+				"test_array_int":      "array(int)",
+				"test_array_string":   "array(string)",
+				"test_bool":           "boolean",
+				"test_datetime":       "datetime",
+				"test_float":          "float",
+				"test_int":            "int",
+				"test_string":         "string",
+			}
+
+			fm, err := filemanager.New(&filemanager.Settings{
+				Provider: whutils.MINIO,
+				Config: map[string]any{
+					"bucketName":      bucketName,
+					"accessKeyID":     accessKeyID,
+					"secretAccessKey": secretAccessKey,
+					"endPoint":        minioEndpoint,
+					"forcePathStyle":  true,
+					"disableSSL":      true,
+					"region":          region,
+					"enableSSE":       false,
+				},
+				Conf: config.Default,
+			})
+			require.NoError(t, err)
+
+			ctx := context.Background()
+
+			t.Log("Preparing load files metadata")
+			var expectedRows int
+			loadFiles := make([]whutils.LoadFile, 0, loadFileCount)
+			for n := range loadFileCount {
+				path, rows := loadFileWithUniqueIDs(t, tableSchema, fmt.Sprintf("copy-%d", n))
+				expectedRows += rows
+
+				f, err := os.Open(path)
+				require.NoError(t, err)
+
+				uploadOutput, err := fm.Upload(ctx, f, fmt.Sprintf("test_prefix_multiple_load_files_%d", n))
+				_ = f.Close()
+				require.NoError(t, err)
+
+				loadFiles = append(loadFiles, whutils.LoadFile{Location: uploadOutput.Location})
+			}
+
+			mockUploader := newMockUploader(t, strconv.Itoa(minioPort), tableSchema, loadFiles)
+
+			t.Log("Setting up clickhouse")
+			require.NoError(t, ch.Setup(ctx, warehouse, mockUploader))
+			require.NoError(t, ch.CreateSchema(ctx))
+			require.NoError(t, ch.CreateTable(ctx, table, tableSchema))
+
+			t.Log("Loading data from every load file")
+			loadTableStats, err := ch.LoadTable(ctx, table)
+			require.NoError(t, err)
+			require.EqualValues(t, expectedRows, loadTableStats.RowsInserted)
+
+			// uniqExact rather than count: a block sent twice would still be
+			// counted by RowsInserted, but it cannot invent new ids. Every row
+			// was given a unique id, so this is the count that shows each of
+			// them landed exactly once.
+			var distinctIDs uint64
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf(`SELECT uniqExact(id) FROM %q.%q`, warehouse.Namespace, table),
+			).Scan(&distinctIDs))
+			require.EqualValues(t, expectedRows, distinctIDs)
+		})
 	})
 
 	t.Run("Test connection", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -1000,10 +1357,7 @@ func TestIntegration(t *testing.T) {
 		namespace := "test_namespace"
 		timeout := 5 * time.Second
 
-		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, clickhousePort, database, password, user,
-		)
-		db := connectClickhouseDB(t, context.Background(), dsn)
+		db := connectDB(t, context.Background(), clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -1036,7 +1390,7 @@ func TestIntegration(t *testing.T) {
 
 		for i, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+				ch := newClickhouse(config.New())
 
 				host := host
 				if tc.host != "" {
@@ -1078,8 +1432,322 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
+	// A path listed in jsonPaths reaches the warehouse as a json column, which v2
+	// declares as a native JSON column. It needs ClickHouse 25.3 or newer, so it
+	// only runs against the server v2 is tested on.
+	t.Run("Load table with a JSON column", func(t *testing.T) {
+		if !useV2 {
+			t.Skip("native JSON columns are a v2 feature; v1 stores the payload as text")
+		}
+
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.minio.yml"}))
+		c.Start(context.Background())
+
+		workspaceID := whutils.RandHex()
+		clickhousePort := c.Port("clickhouse", 9000)
+		minioPort := c.Port("minio", 9000)
+		minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
+
+		ctx := context.Background()
+		namespace := "test_namespace_json"
+		tableName := "json_paths_test_table"
+		region := "us-east-1"
+
+		// This block only runs for v2, so it verifies over v2 too. The suite's
+		// usual handle is registered by github.com/ClickHouse/clickhouse-go,
+		// which has no JSON type at all: reads happen to work because every
+		// query here coerces the column to String, but writing one fails inside
+		// the driver rather than at the server.
+		db := connectDB(t, ctx, clickhousePort)
+
+		// received_at has to be here: CreateTable always sorts by
+		// ("received_at", "id"), so a schema without it fails to create.
+		tableSchema := model.TableSchema{
+			"id":            "string",
+			"received_at":   "datetime",
+			"context_props": "json",
+		}
+
+		ch := newClickhouse(config.New())
+
+		warehouse := model.Warehouse{
+			Namespace:   namespace,
+			WorkspaceID: workspaceID,
+			Destination: backendconfig.DestinationT{
+				Config: map[string]any{
+					"bucketProvider":  whutils.MINIO,
+					"host":            host,
+					"port":            strconv.Itoa(clickhousePort),
+					"database":        database,
+					"user":            user,
+					"password":        password,
+					"bucketName":      bucketName,
+					"accessKeyID":     accessKeyID,
+					"secretAccessKey": secretAccessKey,
+					"endPoint":        minioEndpoint,
+				},
+			},
+		}
+
+		f, err := os.Open("testdata/load-json.csv.gz")
+		require.NoError(t, err)
+		defer func() { _ = f.Close() }()
+
+		fm, err := filemanager.New(&filemanager.Settings{
+			Provider: whutils.MINIO,
+			Config: map[string]any{
+				"bucketName":      bucketName,
+				"accessKeyID":     accessKeyID,
+				"secretAccessKey": secretAccessKey,
+				"endPoint":        minioEndpoint,
+				"forcePathStyle":  true,
+				"disableSSL":      true,
+				"region":          region,
+				"enableSSE":       false,
+			},
+			Conf: config.Default,
+		})
+		require.NoError(t, err)
+
+		uploadOutput, err := fm.Upload(ctx, f, "json_paths_prefix")
+		require.NoError(t, err)
+
+		mockUploader := newMockUploader(t, strconv.Itoa(minioPort), tableSchema, []whutils.LoadFile{
+			{Location: uploadOutput.Location},
+		})
+
+		require.NoError(t, ch.Setup(ctx, warehouse, mockUploader))
+		require.NoError(t, ch.CreateSchema(ctx))
+		require.NoError(t, ch.CreateTable(ctx, tableName, tableSchema))
+
+		t.Run("column is declared with the driver's JSON type", func(t *testing.T) {
+			var columnType string
+			require.NoError(t, db.QueryRowContext(ctx,
+				"SELECT type FROM system.columns WHERE database = ? AND table = ? AND name = 'context_props'",
+				namespace, tableName,
+			).Scan(&columnType))
+
+			// Nullable like any other scalar column: ClickHouse has allowed
+			// Nullable(JSON) since 25.3.
+			require.Equal(t, "Nullable(JSON)", columnType)
+		})
+
+		t.Run("load", func(t *testing.T) {
+			_, err := ch.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+
+			var rows int64
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf("SELECT count(*) FROM %q.%q", namespace, tableName),
+			).Scan(&rows))
+			require.EqualValues(t, 4, rows)
+		})
+
+		t.Run("payload round trips", func(t *testing.T) {
+			var payload string
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf("SELECT toString(context_props) FROM %q.%q WHERE id = 'row-1'", namespace, tableName),
+			).Scan(&payload))
+			require.Contains(t, payload, "USD")
+			require.Contains(t, payload, "10")
+		})
+
+		// An empty cell is not valid JSON, so it resolves to null exactly as a
+		// cell that fails to parse does for every other type. A cell holding
+		// only whitespace is the same case: it is trimmed before the check.
+		t.Run("an empty cell is stored as null", func(t *testing.T) {
+			for _, id := range []string{"row-2", "row-4"} {
+				var isNull bool
+				require.NoError(t, db.QueryRowContext(ctx,
+					fmt.Sprintf("SELECT context_props IS NULL FROM %q.%q WHERE id = ?", namespace, tableName), id,
+				).Scan(&isNull))
+				require.True(t, isNull, "%s should be null", id)
+			}
+		})
+
+		// Reading a path out of the column is what separates a real JSON column
+		// from text holding the same bytes.
+		t.Run("paths inside the column are queryable", func(t *testing.T) {
+			var revenue string
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf("SELECT toString(context_props.revenue) FROM %q.%q WHERE id = 'row-1'", namespace, tableName),
+			).Scan(&revenue))
+			require.Equal(t, "10", revenue)
+
+			var nested string
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf("SELECT toString(context_props.nested.a) FROM %q.%q WHERE id = 'row-3'", namespace, tableName),
+			).Scan(&nested))
+			require.Contains(t, nested, "1")
+		})
+
+		// The users table wraps every column in SimpleAggregateFunction(anyLast, ...)
+		// so rows collapsing on id take the newest value. That holds for JSON too.
+		t.Run("users table", func(t *testing.T) {
+			usersSchema := model.TableSchema{
+				"id":                     "string",
+				"received_at":            "datetime",
+				"context_traits_address": "json",
+			}
+			require.NoError(t, ch.CreateTable(ctx, whutils.UsersTable, usersSchema))
+
+			var columnType string
+			require.NoError(t, db.QueryRowContext(ctx,
+				"SELECT type FROM system.columns WHERE database = ? AND table = ? AND name = 'context_traits_address'",
+				namespace, whutils.UsersTable,
+			).Scan(&columnType))
+			require.Equal(t, "SimpleAggregateFunction(anyLast, Nullable(JSON))", columnType)
+
+			// v2 takes an INSERT only as a batch, and a batch per write also
+			// lands them in separate parts, which is the state the merge below
+			// is meant to collapse.
+			for _, city := range []string{"Bengaluru", "Mumbai"} {
+				scope, err := db.Begin()
+				require.NoError(t, err)
+
+				batch, err := scope.Prepare(fmt.Sprintf(
+					`INSERT INTO %q.%q (id, received_at, context_traits_address) VALUES (?, ?, ?)`,
+					namespace, whutils.UsersTable,
+				))
+				require.NoError(t, err)
+
+				_, err = batch.Exec("user-1", time.Now(), fmt.Sprintf(`{"city":%q}`, city))
+				require.NoError(t, err)
+				require.NoError(t, scope.Commit())
+			}
+
+			_, err := db.ExecContext(ctx, fmt.Sprintf(`OPTIMIZE TABLE %q.%q FINAL`, namespace, whutils.UsersTable))
+			require.NoError(t, err)
+
+			var rows int64
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf(`SELECT count(*) FROM %q.%q`, namespace, whutils.UsersTable),
+			).Scan(&rows))
+			require.EqualValues(t, 1, rows, "the two rows for user-1 collapse on merge")
+
+			// anyLast keeps the newest write, and the value stays queryable as JSON.
+			var city string
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf(`SELECT toString(context_traits_address.city) FROM %q.%q WHERE id = 'user-1'`, namespace, whutils.UsersTable),
+			).Scan(&city))
+			require.Equal(t, "Mumbai", city)
+		})
+
+		// A jsonPath added to a destination after the table exists arrives through
+		// ALTER TABLE, which takes the same declaration path as CREATE.
+		t.Run("added to an existing table", func(t *testing.T) {
+			require.NoError(t, ch.AddColumns(ctx, tableName, []whutils.ColumnInfo{
+				{Name: "context_extra", Type: model.JSONDataType},
+			}))
+
+			var columnType string
+			require.NoError(t, db.QueryRowContext(ctx,
+				"SELECT type FROM system.columns WHERE database = ? AND table = ? AND name = 'context_extra'",
+				namespace, tableName,
+			).Scan(&columnType))
+			require.Equal(t, "Nullable(JSON)", columnType)
+
+			// Rows written before the column existed read back as null, the same
+			// backfill every other Nullable column gets from ALTER TABLE.
+			var isNull bool
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf(`SELECT context_extra IS NULL FROM %q.%q WHERE id = 'row-1'`, namespace, tableName),
+			).Scan(&isNull))
+			require.True(t, isNull)
+		})
+
+		// disableNullable is the other half of the matrix, and it gets its own
+		// namespace so it can hold a users table of its own: CreateTable is
+		// IF NOT EXISTS, so sharing one would silently assert the shape the
+		// nullable run already created.
+		t.Run("nullable disabled", func(t *testing.T) {
+			conf := config.New()
+			conf.Set(configKey("disableNullable"), true)
+
+			nnNamespace := namespace + "_not_nullable"
+			nnWarehouse := warehouse
+			nnWarehouse.Namespace = nnNamespace
+
+			chNotNullable := newClickhouse(conf)
+			require.NoError(t, chNotNullable.Setup(ctx, nnWarehouse, mockUploader))
+			require.NoError(t, chNotNullable.CreateSchema(ctx))
+			require.NoError(t, chNotNullable.CreateTable(ctx, tableName, tableSchema))
+
+			columnTypeOf := func(table, column string) string {
+				var columnType string
+				require.NoError(t, db.QueryRowContext(ctx,
+					"SELECT type FROM system.columns WHERE database = ? AND table = ? AND name = ?",
+					nnNamespace, table, column,
+				).Scan(&columnType))
+				return columnType
+			}
+
+			require.Equal(t, "JSON", columnTypeOf(tableName, "context_props"))
+
+			_, err := chNotNullable.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+
+			// The whole point of this mode: with no null to fall back to, an
+			// empty or whitespace-only cell takes the typed default instead.
+			for _, id := range []string{"row-2", "row-4"} {
+				var isNull bool
+				var payload string
+				require.NoError(t, db.QueryRowContext(ctx,
+					fmt.Sprintf(`SELECT context_props IS NULL, toString(context_props) FROM %q.%q WHERE id = ?`, nnNamespace, tableName), id,
+				).Scan(&isNull, &payload))
+				require.False(t, isNull, "%s should not be null", id)
+				require.Equal(t, "{}", payload, "%s should hold the typed default", id)
+			}
+
+			// A populated cell is unaffected by the mode.
+			var revenue string
+			require.NoError(t, db.QueryRowContext(ctx,
+				fmt.Sprintf(`SELECT toString(context_props.revenue) FROM %q.%q WHERE id = 'row-1'`, nnNamespace, tableName),
+			).Scan(&revenue))
+			require.Equal(t, "10", revenue)
+
+			// identifies is exempt from disableNullable, for json as for every
+			// other type, so it keeps the wrapper here.
+			require.NoError(t, chNotNullable.CreateTable(ctx, whutils.IdentifiesTable, model.TableSchema{
+				"id":            "string",
+				"received_at":   "datetime",
+				"context_props": "json",
+			}))
+			require.Equal(t, "Nullable(JSON)", columnTypeOf(whutils.IdentifiesTable, "context_props"))
+
+			// users is not exempt: disableNullable short circuits before the
+			// users branch, so the aggregate wrapper is dropped entirely.
+			require.NoError(t, chNotNullable.CreateTable(ctx, whutils.UsersTable, model.TableSchema{
+				"id":                     "string",
+				"received_at":            "datetime",
+				"context_traits_address": "json",
+			}))
+			require.Equal(t, "JSON", columnTypeOf(whutils.UsersTable, "context_traits_address"))
+
+			// Both renderings this namespace produced have to survive the round
+			// trip too, not just the ones the nullable run created.
+			schema, err := chNotNullable.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Equal(t, model.JSONDataType, schema[tableName]["context_props"], "JSON")
+			require.Equal(t, model.JSONDataType, schema[whutils.IdentifiesTable]["context_props"], "Nullable(JSON) in identifies")
+			require.Equal(t, model.JSONDataType, schema[whutils.UsersTable]["context_traits_address"], "JSON in users")
+		})
+
+		// FetchSchema looks the rendered type up as a raw string, so a rendering
+		// with no reverse mapping is dropped silently and only bumps a counter.
+		// Every shape this block created has to survive the round trip.
+		t.Run("fetched schema reports every rendering as json", func(t *testing.T) {
+			schema, err := ch.FetchSchema(ctx)
+			require.NoError(t, err)
+
+			require.Equal(t, model.JSONDataType, schema[tableName]["context_props"], "Nullable(JSON)")
+			require.Equal(t, model.JSONDataType, schema[tableName]["context_extra"], "Nullable(JSON) added by ALTER")
+			require.Equal(t, model.JSONDataType, schema[whutils.UsersTable]["context_traits_address"], "SimpleAggregateFunction(anyLast, Nullable(JSON))")
+		})
+	})
+
 	t.Run("Load test table", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -1097,10 +1765,7 @@ func TestIntegration(t *testing.T) {
 			"val": "RudderStack",
 		}
 
-		dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, clickhousePort, database, password, user,
-		)
-		db := connectClickhouseDB(t, context.Background(), dsn)
+		db := connectDB(t, context.Background(), clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -1122,7 +1787,7 @@ func TestIntegration(t *testing.T) {
 
 		for i, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				ch := clickhouse.New(config.New(), logger.NOP, stats.NOP)
+				ch := newClickhouse(config.New())
 
 				warehouse := model.Warehouse{
 					Namespace:   namespace,
@@ -1165,6 +1830,57 @@ func TestIntegration(t *testing.T) {
 	})
 }
 
+// connectClickhouseDBV2 opens a connection through the v2 fork, for the cases
+// that touch a type v1 cannot represent.
+// clickhouseExceptionCode returns the server error code from whichever driver
+// raised it. The two surface a server exception as different concrete types -
+// v1 as *clickhouse-go.Exception, v2 as the fork's alias of its proto one - so
+// matching on either alone fails under the other. Both carry an int32 Code.
+func clickhouseExceptionCode(t testing.TB, err error) int32 {
+	t.Helper()
+
+	var v1Err *clickhousestd.Exception
+	if errors.As(err, &v1Err) {
+		return v1Err.Code
+	}
+
+	var v2Err *clickhousev2.Exception
+	if errors.As(err, &v2Err) {
+		return v2Err.Code
+	}
+
+	require.Failf(t, "not a clickhouse server exception", "%T: %v", err, err)
+	return 0
+}
+
+func connectClickhouseDBV2(t testing.TB, host string, port int, database, user, password string) *sql.DB {
+	t.Helper()
+
+	db := clickhousev2.OpenDB(&clickhousev2.Options{
+		Addr: []string{net.JoinHostPort(host, strconv.Itoa(port))},
+		Auth: clickhousev2.Auth{
+			Database: database,
+			Username: user,
+			Password: password,
+		},
+		Protocol: clickhousev2.Native,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	require.Eventually(t, func() bool {
+		if err := db.PingContext(ctx); err != nil {
+			t.Log("Ping failed:", err)
+			return false
+		}
+		return true
+	}, time.Minute, time.Second)
+
+	t.Cleanup(func() { _ = db.Close() })
+
+	return db
+}
+
 func connectClickhouseDB(t testing.TB, ctx context.Context, dsn string) *sql.DB {
 	t.Helper()
 
@@ -1186,7 +1902,9 @@ func connectClickhouseDB(t testing.TB, ctx context.Context, dsn string) *sql.DB 
 	return db
 }
 
-func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables []string, clusterPost int) {
+// connect comes from the suite so the DDL below runs over the driver under
+// test, rather than always over v1.
+func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables []string, clusterPost int, connect func(testing.TB, context.Context, int) *sql.DB) {
 	t.Helper()
 
 	type columnInfo struct {
@@ -1321,9 +2039,7 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 	}
 
 	t.Run("Create Drop Create", func(t *testing.T) {
-		clusterDB := connectClickhouseDB(t, context.Background(), fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			"localhost", clusterPost, "rudderdb", "rudder-password", "rudder",
-		))
+		clusterDB := connect(t, context.Background(), clusterPost)
 		defer func() {
 			_ = clusterDB.Close()
 		}()
@@ -1391,9 +2107,7 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 			})
 			require.Error(t, err)
 
-			var clickhouseErr *clickhousestd.Exception
-			require.ErrorAs(t, err, &clickhouseErr)
-			require.Equal(t, int32(253), clickhouseErr.Code)
+			require.EqualValues(t, 253, clickhouseExceptionCode(t, err))
 		})
 	})
 	// Alter columns to all the cluster tables
@@ -1442,4 +2156,47 @@ func newMockUploader(
 	u.EXPECT().IsWarehouseSchemaEmpty().Return(true).AnyTimes()
 
 	return u
+}
+
+// loadFileWithUniqueIDs writes a copy of testdata/load.csv.gz into a temp dir
+// with every id rewritten to be unique, and returns its path and row count.
+//
+// The fixture reuses just two ids across its sixteen rows, and the load table
+// is a ReplacingMergeTree ordered by (received_at, id). Loaded as-is, the rows
+// sharing a sort key are collapsed on merge and the table ends up holding one
+// row per distinct id rather than one per row loaded.
+func loadFileWithUniqueIDs(t testing.TB, schema model.TableSchema, tag string) (string, int) {
+	t.Helper()
+
+	idIndex := slices.Index(whutils.SortColumnKeysFromColumnMap(schema), "id")
+	require.GreaterOrEqual(t, idIndex, 0, "schema has no id column")
+
+	f, err := os.Open("testdata/load.csv.gz")
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+
+	gzr, err := gzip.NewReader(f)
+	require.NoError(t, err)
+	defer func() { _ = gzr.Close() }()
+
+	records, err := csv.NewReader(gzr).ReadAll()
+	require.NoError(t, err)
+
+	dst := filepath.Join(t.TempDir(), "load.csv.gz")
+	out, err := os.Create(dst)
+	require.NoError(t, err)
+
+	gzw := gzip.NewWriter(out)
+	w := csv.NewWriter(gzw)
+	for i, record := range records {
+		require.Greater(t, len(record), idIndex, "load file has fewer columns than the schema")
+		record[idIndex] = fmt.Sprintf("%s-%s-%d", tag, record[idIndex], i)
+		require.NoError(t, w.Write(record))
+	}
+	w.Flush()
+	require.NoError(t, w.Error())
+	require.NoError(t, gzw.Close())
+	require.NoError(t, out.Close())
+
+	return dst, len(records)
 }

@@ -251,13 +251,14 @@ func (d *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 	var transformerResponses []types.TransformerResponse
 	switch statusCode {
 	case http.StatusOK:
-		integrations.CollectIntgTransformErrorStats(respData)
-
 		err = jsonrs.Unmarshal(respData, &transformerResponses)
 		// This is returned by our JS engine so should  be parsable
 		// Panic the processor to avoid replays
 		if err != nil {
 			return nil, err
+		}
+		for _, transformerResponse := range transformerResponses {
+			integrations.CollectIntegrationFailureDetailedStats(d.stat, transformerResponse.StatTags)
 		}
 	default:
 		for i := range data {

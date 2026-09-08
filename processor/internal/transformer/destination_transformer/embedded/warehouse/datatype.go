@@ -49,8 +49,8 @@ func getFloatType(v float64) string {
 
 func dataTypeOverride(destType, key string, val any, isJSONKey bool) string {
 	switch destType {
-	case whutils.POSTGRES, whutils.SNOWFLAKE, whutils.SnowpipeStreaming:
-		return overrideForPostgresSnowflake(key, isJSONKey)
+	case whutils.POSTGRES, whutils.SNOWFLAKE, whutils.SnowpipeStreaming, whutils.CLICKHOUSE:
+		return overrideForJSONColumn(key, isJSONKey)
 	case whutils.RS:
 		return overrideForRedshift(val, isJSONKey)
 	default:
@@ -58,7 +58,9 @@ func dataTypeOverride(destType, key string, val any, isJSONKey bool) string {
 	}
 }
 
-func overrideForPostgresSnowflake(key string, isJSONKey bool) string {
+// Destinations with a native JSON type store a matched path, and the violation
+// errors column, as JSON.
+func overrideForJSONColumn(key string, isJSONKey bool) string {
 	if isJSONKey || key == violationErrors {
 		return model.JSONDataType
 	}

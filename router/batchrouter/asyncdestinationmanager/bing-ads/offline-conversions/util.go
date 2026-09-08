@@ -511,8 +511,14 @@ func hashFields(input map[string]any) (json.RawMessage, error) {
 	return json.RawMessage(result), nil
 }
 
-func validateAndTransformTimeFields(fields map[string]any) error {
-	timeFields := []string{"conversionTime", "adjustedConversionTime"}
+func validateAndTransformTimeFields(fields map[string]any, action string) error {
+	// insert never uses adjustedConversionTime (populateZipFile's insert branch
+	// does not read it), so it is not validated for insert. It is left untouched
+	// in the fields and ignored downstream.
+	timeFields := []string{"conversionTime"}
+	if action != "insert" {
+		timeFields = append(timeFields, "adjustedConversionTime")
+	}
 
 	for _, field := range timeFields {
 		fieldValue, ok := fields[field]
@@ -525,7 +531,7 @@ func validateAndTransformTimeFields(fields map[string]any) error {
 			if parseErr != nil {
 				parsedTime, parseErr = time.Parse("1/2/2006 3:04:05 PM", fieldValueStr)
 				if parseErr != nil {
-					return fmt.Errorf("conversionTime must be in ISO 8601 (e.g. 2006-01-02T15:04:05Z07:00) or mm/dd/yyyy hh:mm:ss AM/PM (e.g. 7/2/2025 6:50:54 PM) format")
+					return fmt.Errorf("%s must be in ISO 8601 (e.g. 2006-01-02T15:04:05Z07:00) or mm/dd/yyyy hh:mm:ss AM/PM (e.g. 7/2/2025 6:50:54 PM) format", field)
 				}
 			}
 			fields[field] = parsedTime.Format("1/2/2006 3:04:05 PM")

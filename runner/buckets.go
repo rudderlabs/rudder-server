@@ -147,6 +147,11 @@ var (
 			// 1microsecond, 2.5microsecond, 5microsecond, 1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s
 			0.00001, 0.00025, 0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1,
 		},
+		"reporting_client_http_request_payload_bytes": {
+			float64(10 * bytesize.KB), float64(500 * bytesize.KB),
+			float64(1 * bytesize.MB), float64(2 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
+			float64(50 * bytesize.MB), float64(100 * bytesize.MB),
+		},
 		"router_delivery_payload_size_bytes": {
 			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
 			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
@@ -178,6 +183,18 @@ var (
 		},
 		"rsources_publish_time_second": {
 			0.1, 0.5, 1, 5, 10, 30, 60,
+		},
+		"processor_grpc_response_time": {
+			0.1, 0.25, 0.5, 1, 2.5, 5, 15, 30, 60, // 0.1s, 0.25s, 0.5s, 1s, 2.5s, 5s, 15s, 30s, 1m
+		},
+		"processor_pyt_forward_rpc_time": {
+			0.5, 1, 2.5, 5, 10, 30, 60, // 0.5s, 1s, 2.5s, 5s, 10s, 30s, 1m
+		},
+		"processor_pyt_request_handle_time": {
+			0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, // 0.1s, 0.25s, 0.5s, 1s, 2.5s, 5s, 10s, 30s, 1m
+		},
+		"processor_pyt_readiness_wait_time": {
+			0.5, 1, 2.5, 5, 10, 30, 60, // 0.5s, 1s, 2.5s, 5s, 10s, 30s, 1m
 		},
 	}
 )

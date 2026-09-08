@@ -12,13 +12,14 @@ import (
 )
 
 type Factory struct {
-	Reporting        types.Reporting
-	BackendConfig    backendconfig.BackendConfig
-	RouterDB         jobsdb.JobsDB
-	TransientSources transientsource.Service
-	RsourcesService  rsources.JobService
-	Debugger         destinationdebugger.DestinationDebugger
-	AdaptiveLimit    func(int64) int64
+	Reporting            types.Reporting
+	BackendConfig        backendconfig.BackendConfig
+	RouterDB             jobsdb.JobsDB
+	TransientSources     transientsource.Service
+	RsourcesService      rsources.JobService
+	RsourcesSyncSettings rsources.SyncSettingDelegate
+	Debugger             destinationdebugger.DestinationDebugger
+	AdaptiveLimit        func(int64) int64
 }
 
 func (f *Factory) New(destType string) *Handle {
@@ -33,6 +34,7 @@ func (f *Factory) New(destType string) *Handle {
 		f.Reporting,
 		f.TransientSources,
 		f.RsourcesService,
+		f.RsourcesSyncSettings,
 		f.Debugger,
 		config.Default,
 	)

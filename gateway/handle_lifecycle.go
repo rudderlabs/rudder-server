@@ -116,6 +116,10 @@ func (gw *Handle) Setup(
 	}
 	// Enable suppress user feature. false by default
 	gw.conf.enableSuppressUserFeature = config.GetBoolVar(true, "Gateway.enableSuppressUserFeature")
+	// Store suppressed user events arriving on the internal batch path as stripped dummy jobs
+	// instead of dropping them at the gateway, so they can be reported and dropped downstream at
+	// the processor. The public path always drops suppressed events regardless. false by default.
+	gw.conf.storeUserSuppressedEvents = config.GetReloadableBoolVar(false, "Gateway.storeUserSuppressedEvents")
 	// Time period for diagnosis ticker
 	gw.conf.diagnosisTickerTime = config.GetDurationVar(60, time.Second, "Diagnostics.gatewayTimePeriod", "Diagnostics.gatewayTimePeriodInS")
 	gw.conf.ReadTimeout = config.GetDurationVar(0, time.Second, "ReadTimeout", "ReadTimeOutInSec")
@@ -174,9 +178,9 @@ func (gw *Handle) Setup(
 	gw.msgValidator = validator.NewValidateMediator(gw.logger, stream.NewMessagePropertiesValidator())
 
 	gw.webhookAuthMiddleware = auth.NewWebhookAuth(
-		func(w http.ResponseWriter, r *http.Request, errorMessage string, authCtx *gwtypes.AuthRequestContext) {
+		func(w http.ResponseWriter, r *http.Request, errorMessage string, reason gwtypes.StatReason, authCtx *gwtypes.AuthRequestContext) {
 			gw.handleHttpError(w, r, errorMessage)
-			gw.handleFailureStats(errorMessage, "webhook", authCtx)
+			gw.handleFailureStats(errorMessage, reason, "webhook", authCtx)
 		},
 		func(writeKey string) (*gwtypes.AuthRequestContext, error) {
 			authCtx := gw.authRequestContextForWriteKey(writeKey)

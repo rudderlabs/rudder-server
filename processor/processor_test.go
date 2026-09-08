@@ -168,6 +168,9 @@ const (
 	SourceIDEnabledNoUTName   = "SourceIDEnabledNoUT"
 	SourceIDEnabledTp         = "enabled-source-tp"
 	SourceIDEnabledTpName     = "SourceIDEnabledTp"
+	WriteKeyHydrationTp       = "write-key-hydration-tp"
+	SourceIDHydrationTp       = "source-hydration-tp"
+	SourceIDHydrationTpName   = "SourceIDHydrationTp"
 	SourceIDEnabledOnlyUT     = "enabled-source-only-ut"
 	SourceIDEnabledOnlyUTName = "SourceIDEnabledOnlyUT"
 	SourceIDEnabledNoUT2      = "enabled-source-no-ut2"
@@ -206,6 +209,7 @@ var (
 		SourceIDKetchConsent:    SourceIDKetchConsentName,
 		SourceIDTransient:       SourceIDTransientName,
 		SourceIDEnabledTp:       SourceIDEnabledTpName,
+		SourceIDHydrationTp:     SourceIDHydrationTpName,
 	}
 )
 
@@ -923,6 +927,14 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						DisplayName: "enabled-destination-a-definition-display-name",
 						Config:      map[string]any{},
 					},
+					// TestDestinationVisibilityReporting's TP-inPU cases need a
+					// user-transformer row to check inPU on; that only fires when the
+					// destination has a Transformation configured.
+					Transformations: []backendconfig.TransformationT{
+						{
+							VersionID: "tp-transformation-version-id",
+						},
+					},
 				},
 			},
 			DgSourceTrackingPlanConfig: backendconfig.DgSourceTrackingPlanConfigT{
@@ -934,7 +946,98 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 		{
-			ID: fblaSourceId,
+			// Hydration-enabled and tracking-plan-enabled: gives
+			// TestDestinationVisibilityReporting a source that exercises the
+			// source_hydration arm of the tracking-plan inPU selection, which
+			// SourceIDEnabledTp (no hydration) and fblaSourceId (no TP, no
+			// destinations) cannot reach on their own.
+			ID:       SourceIDHydrationTp,
+			Name:     SourceIDHydrationTpName,
+			WriteKey: WriteKeyHydrationTp,
+			Enabled:  true,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Category: "webhook",
+				Options: backendconfig.SourceDefinitionOptions{
+					Hydration: struct {
+						Enabled bool
+					}{Enabled: true},
+				},
+			},
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 DestinationIDEnabledA,
+					Name:               "A",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "enabled-destination-a-definition-id",
+						Name:        "enabled-destination-a-definition-name",
+						DisplayName: "enabled-destination-a-definition-display-name",
+						Config:      map[string]any{},
+					},
+					Transformations: []backendconfig.TransformationT{
+						{
+							VersionID: "hydration-tp-transformation-version-id",
+						},
+					},
+				},
+			},
+			DgSourceTrackingPlanConfig: backendconfig.DgSourceTrackingPlanConfigT{
+				SourceId: SourceIDHydrationTp,
+				TrackingPlan: backendconfig.TrackingPlanT{
+					Id:      "tracking-plan-id",
+					Version: 100,
+				},
+			},
+		},
+		{
+			// Hydration-enabled and tracking-plan-enabled: gives
+			// TestDestinationVisibilityReporting a source that exercises the
+			// source_hydration arm of the tracking-plan inPU selection, which
+			// SourceIDEnabledTp (no hydration) and fblaSourceId (no TP, no
+			// destinations) cannot reach on their own.
+			ID:       SourceIDHydrationTp,
+			Name:     SourceIDHydrationTpName,
+			WriteKey: WriteKeyHydrationTp,
+			Enabled:  true,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Category: "webhook",
+				Options: backendconfig.SourceDefinitionOptions{
+					Hydration: struct {
+						Enabled bool
+					}{Enabled: true},
+				},
+			},
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 DestinationIDEnabledA,
+					Name:               "A",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "enabled-destination-a-definition-id",
+						Name:        "enabled-destination-a-definition-name",
+						DisplayName: "enabled-destination-a-definition-display-name",
+						Config:      map[string]any{},
+					},
+					Transformations: []backendconfig.TransformationT{
+						{
+							VersionID: "hydration-tp-transformation-version-id",
+						},
+					},
+				},
+			},
+			DgSourceTrackingPlanConfig: backendconfig.DgSourceTrackingPlanConfigT{
+				SourceId: SourceIDHydrationTp,
+				TrackingPlan: backendconfig.TrackingPlanT{
+					Id:      "tracking-plan-id",
+					Version: 100,
+				},
+			},
+		},
+		{
+			ID:      fblaSourceId,
+			Enabled: true,
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name:     "fbla",
 				Category: "webhook",
@@ -1408,378 +1511,363 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 func TestArchival(t *testing.T) {
 	initProcessor()
 
-	testFn := func(archiveInPreProcess bool) {
-		t.Run("process events and write to archival DB", func(t *testing.T) {
-			c := &testContext{}
-			c.Setup(t)
+	t.Run("process events and write to archival DB", func(t *testing.T) {
+		c := &testContext{}
+		c.Setup(t)
 
-			// crash recovery check
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+		// crash recovery check
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			defer c.Finish()
+		defer c.Finish()
 
-			prepareHandle := func(proc *Handle) *Handle {
-				proc.archivalDB = c.mockArchivalDB
-				proc.config.archivalEnabled = config.SingleValueLoader(true)
-				proc.config.enableConcurrentStore = config.SingleValueLoader(false)
-				isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
-				require.NoError(t, err)
-				proc.isolationStrategy = isolationStrategy
-				proc.config.archiveInPreProcess = archiveInPreProcess
-				return proc
-			}
-
-			messages := map[string]mockEventData{
-				// this message should be delivered only to destination A
-				"message-1": {
-					id:                        "1",
-					jobid:                     1010,
-					originalTimestamp:         "2000-01-02T01:23:45",
-					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
-					sentAt:                    "2000-01-02 01:23",
-					expectedSentAt:            "2000-01-02T01:23:00.000Z",
-					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
-				},
-				// this message should not be delivered to destination A
-				"message-2": {
-					id:                        "2",
-					jobid:                     1010,
-					originalTimestamp:         "2000-02-02T01:23:45",
-					expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
-					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{"All": true, "enabled-destination-a-definition-display-name": false},
-				},
-				// this message should be delivered to all destinations
-				"message-3": {
-					id:                 "3",
-					jobid:              2010,
-					originalTimestamp:  "malformed timestamp",
-					sentAt:             "2000-03-02T01:23:15",
-					expectedSentAt:     "2000-03-02T01:23:15.000Z",
-					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
-					integrations:       map[string]bool{"All": true},
-				},
-				// this message should be delivered to all destinations (default All value)
-				"message-4": {
-					id:                        "4",
-					jobid:                     2010,
-					originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
-					expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
-					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{},
-				},
-				// this message should not be delivered to any destination
-				"message-5": {
-					id:                 "5",
-					jobid:              2010,
-					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
-					integrations:       map[string]bool{"All": false},
-				},
-			}
-
-			unprocessedJobsList := []*jobsdb.JobT{
-				{
-					UUID:          uuid.New(),
-					JobID:         1002,
-					CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
-					ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
-					CustomVal:     gatewayCustomVal[0],
-					EventPayload:  nil,
-					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
-				},
-				{
-					UUID:      uuid.New(),
-					JobID:     1010,
-					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
-					CustomVal: gatewayCustomVal[0],
-					EventPayload: createBatchPayload(
-						WriteKeyEnabledNoUT,
-						"2001-01-02T02:23:45.000Z",
-						[]mockEventData{
-							messages["message-1"],
-							messages["message-2"],
-						},
-						createMessagePayloadWithoutSources, // should be stored
-					),
-					EventCount:    2,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabledNoUT),
-				},
-				{
-					UUID:          uuid.New(),
-					JobID:         2002,
-					CreatedAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
-					ExpireAt:      time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
-					CustomVal:     gatewayCustomVal[0],
-					EventPayload:  nil,
-					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
-				},
-				{
-					UUID:          uuid.New(),
-					JobID:         2003,
-					CreatedAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
-					ExpireAt:      time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
-					CustomVal:     gatewayCustomVal[0],
-					EventPayload:  nil,
-					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
-				},
-				{
-					UUID:      uuid.New(),
-					JobID:     2010,
-					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					CustomVal: gatewayCustomVal[0],
-					EventPayload: createBatchPayload(
-						WriteKeyEnabledNoUT,
-						"2002-01-02T02:23:45.000Z",
-						[]mockEventData{
-							messages["message-3"],
-							messages["message-4"],
-							messages["message-5"],
-						},
-						createMessagePayload, // shouldn't be stored to archivedb
-					),
-					EventCount: 3,
-					Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
-				},
-			}
-
-			c.mockArchivalDB.EXPECT().
-				WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
-					_ = f(jobsdb.EmptyStoreSafeTx())
-				}).Return(nil)
-			c.mockArchivalDB.EXPECT().
-				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-				Times(1).
-				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					require.Len(t, jobs, 2)
-				})
-
-			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
-
-			Setup(processor, c, false, false, t)
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
-			t.Log("Processor setup and init done")
-
-			srcHydrationMsg, err := processor.preprocessStage(
-				"",
-				subJob{
-					ctx:     ctx,
-					subJobs: unprocessedJobsList,
-				},
-				0,
-			)
+		prepareHandle := func(proc *Handle) *Handle {
+			proc.archivalDB = c.mockArchivalDB
+			proc.config.archivalEnabled = config.SingleValueLoader(true)
+			proc.config.enableConcurrentStore = config.SingleValueLoader(false)
+			isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 			require.NoError(t, err)
-			if archiveInPreProcess {
-				require.Nil(t, srcHydrationMsg.archivalJobs)
-			}
-			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
-			require.NoError(t, err)
+			proc.isolationStrategy = isolationStrategy
+			return proc
+		}
 
-			_, _ = processor.pretransformStage("", preTransMessage)
+		messages := map[string]mockEventData{
+			// this message should be delivered only to destination A
+			"message-1": {
+				id:                        "1",
+				jobid:                     1010,
+				originalTimestamp:         "2000-01-02T01:23:45",
+				expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+				sentAt:                    "2000-01-02 01:23",
+				expectedSentAt:            "2000-01-02T01:23:00.000Z",
+				expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+				integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+			},
+			// this message should not be delivered to destination A
+			"message-2": {
+				id:                        "2",
+				jobid:                     1010,
+				originalTimestamp:         "2000-02-02T01:23:45",
+				expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
+				expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+				integrations:              map[string]bool{"All": true, "enabled-destination-a-definition-display-name": false},
+			},
+			// this message should be delivered to all destinations
+			"message-3": {
+				id:                 "3",
+				jobid:              2010,
+				originalTimestamp:  "malformed timestamp",
+				sentAt:             "2000-03-02T01:23:15",
+				expectedSentAt:     "2000-03-02T01:23:15.000Z",
+				expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+				integrations:       map[string]bool{"All": true},
+			},
+			// this message should be delivered to all destinations (default All value)
+			"message-4": {
+				id:                        "4",
+				jobid:                     2010,
+				originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
+				expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
+				expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
+				integrations:              map[string]bool{},
+			},
+			// this message should not be delivered to any destination
+			"message-5": {
+				id:                 "5",
+				jobid:              2010,
+				expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+				integrations:       map[string]bool{"All": false},
+			},
+		}
 
-			require.Len(t, c.MockObserver.calls, 1)
-		})
+		unprocessedJobsList := []*jobsdb.JobT{
+			{
+				UUID:          uuid.New(),
+				JobID:         1002,
+				CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+				ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+				CustomVal:     gatewayCustomVal[0],
+				EventPayload:  nil,
+				EventCount:    1,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDEnabled),
+			},
+			{
+				UUID:      uuid.New(),
+				JobID:     1010,
+				CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+				ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+				CustomVal: gatewayCustomVal[0],
+				EventPayload: createBatchPayload(
+					WriteKeyEnabledNoUT,
+					"2001-01-02T02:23:45.000Z",
+					[]mockEventData{
+						messages["message-1"],
+						messages["message-2"],
+					},
+					createMessagePayloadWithoutSources, // should be stored
+				),
+				EventCount:    2,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDEnabledNoUT),
+			},
+			{
+				UUID:          uuid.New(),
+				JobID:         2002,
+				CreatedAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+				ExpireAt:      time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+				CustomVal:     gatewayCustomVal[0],
+				EventPayload:  nil,
+				EventCount:    1,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDEnabled),
+			},
+			{
+				UUID:          uuid.New(),
+				JobID:         2003,
+				CreatedAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+				ExpireAt:      time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+				CustomVal:     gatewayCustomVal[0],
+				EventPayload:  nil,
+				EventCount:    1,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDEnabled),
+			},
+			{
+				UUID:      uuid.New(),
+				JobID:     2010,
+				CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+				ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+				CustomVal: gatewayCustomVal[0],
+				EventPayload: createBatchPayload(
+					WriteKeyEnabledNoUT,
+					"2002-01-02T02:23:45.000Z",
+					[]mockEventData{
+						messages["message-3"],
+						messages["message-4"],
+						messages["message-5"],
+					},
+					createMessagePayload, // shouldn't be stored to archivedb
+				),
+				EventCount: 3,
+				Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
+			},
+		}
 
-		t.Run("skip writing events belonging to transient sources in archival DB", func(t *testing.T) {
-			c := &testContext{}
-			c.Setup(t)
+		c.mockArchivalDB.EXPECT().
+			WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).
+			Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+		c.mockArchivalDB.EXPECT().
+			StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+			Times(1).
+			Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
+				require.Len(t, jobs, 2)
+			})
 
-			// crash recovery check
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+		mockTransformerClients := transformer.NewSimpleClients()
+		processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
-			defer c.Finish()
+		Setup(processor, c, false, false, t)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+		t.Log("Processor setup and init done")
 
-			prepareHandle := func(proc *Handle) *Handle {
-				proc.archivalDB = c.mockArchivalDB
-				proc.config.archivalEnabled = config.SingleValueLoader(true)
-				proc.config.enableConcurrentStore = config.SingleValueLoader(false)
-				isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
-				require.NoError(t, err)
-				proc.isolationStrategy = isolationStrategy
-				proc.config.archiveInPreProcess = archiveInPreProcess
-				return proc
-			}
+		srcHydrationMsg, err := processor.preprocessStage(
+			"",
+			subJob{
+				ctx:     ctx,
+				subJobs: unprocessedJobsList,
+			},
+			0,
+		)
+		require.NoError(t, err)
+		require.Nil(t, srcHydrationMsg.archivalJobs)
+		preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
 
-			messages := map[string]mockEventData{
-				// this message should be delivered only to destination A
-				"message-1": {
-					id:                        "1",
-					jobid:                     1010,
-					originalTimestamp:         "2000-01-02T01:23:45",
-					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
-					sentAt:                    "2000-01-02 01:23",
-					expectedSentAt:            "2000-01-02T01:23:00.000Z",
-					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
-				},
-				// this message should not be delivered to destination A
-				"message-2": {
-					id:                        "2",
-					jobid:                     1010,
-					originalTimestamp:         "2000-02-02T01:23:45",
-					expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
-					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{"All": true, "enabled-destination-a-definition-display-name": false},
-				},
-				// this message should be delivered to all destinations
-				"message-3": {
-					id:                 "3",
-					jobid:              2010,
-					originalTimestamp:  "malformed timestamp",
-					sentAt:             "2000-03-02T01:23:15",
-					expectedSentAt:     "2000-03-02T01:23:15.000Z",
-					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
-					integrations:       map[string]bool{"All": true},
-				},
-				// this message should be delivered to all destinations (default All value)
-				"message-4": {
-					id:                        "4",
-					jobid:                     2010,
-					originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
-					expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
-					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{},
-				},
-				// this message should not be delivered to any destination
-				"message-5": {
-					id:                 "5",
-					jobid:              2010,
-					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
-					integrations:       map[string]bool{"All": false},
-				},
-			}
+		_, _ = processor.pretransformStage("", preTransMessage)
 
-			unprocessedJobsList := []*jobsdb.JobT{
-				{
-					UUID:          uuid.New(),
-					JobID:         1002,
-					CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
-					ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
-					CustomVal:     gatewayCustomVal[0],
-					EventPayload:  nil,
-					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
-				},
-				{
-					UUID:      uuid.New(),
-					JobID:     1010,
-					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
-					CustomVal: gatewayCustomVal[0],
-					EventPayload: createBatchPayload(
-						WriteKeyTransient,
-						"2001-01-02T02:23:45.000Z",
-						[]mockEventData{
-							messages["message-1"],
-							messages["message-2"],
-						},
-						createMessagePayloadWithoutSources,
-					),
-					EventCount:    2,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDTransient),
-				},
-				{
-					UUID:          uuid.New(),
-					JobID:         2002,
-					CreatedAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
-					ExpireAt:      time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
-					CustomVal:     gatewayCustomVal[0],
-					EventPayload:  nil,
-					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
-				},
-				{
-					UUID:          uuid.New(),
-					JobID:         2003,
-					CreatedAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
-					ExpireAt:      time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
-					CustomVal:     gatewayCustomVal[0],
-					EventPayload:  nil,
-					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
-				},
-				{
-					UUID:      uuid.New(),
-					JobID:     2010,
-					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					CustomVal: gatewayCustomVal[0],
-					EventPayload: createBatchPayload(
-						WriteKeyTransient,
-						"2002-01-02T02:23:45.000Z",
-						[]mockEventData{
-							messages["message-3"],
-							messages["message-4"],
-							messages["message-5"],
-						},
-						createMessagePayload,
-					),
-					EventCount: 3,
-					Parameters: createBatchParameters(SourceIDTransient),
-				},
-			}
-
-			c.mockArchivalDB.EXPECT().
-				WithStoreSafeTx(
-					gomock.Any(),
-					gomock.Any(),
-				).Times(0)
-			c.mockArchivalDB.EXPECT().
-				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-				Times(0)
-
-			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
-
-			Setup(processor, c, false, false, t)
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
-			t.Log("Processor setup and init done")
-
-			srcHydrationMsg, err := processor.preprocessStage(
-				"",
-				subJob{
-					ctx:     ctx,
-					subJobs: unprocessedJobsList,
-				},
-				0,
-			)
-			require.NoError(t, err)
-			if archiveInPreProcess {
-				require.Nil(t, srcHydrationMsg.archivalJobs)
-			}
-			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
-			require.NoError(t, err)
-
-			_, _ = processor.pretransformStage("", preTransMessage)
-
-			require.Len(t, c.MockObserver.calls, 1)
-		})
-	}
-
-	t.Run("archive in preprocess", func(t *testing.T) {
-		testFn(true)
+		require.Len(t, c.MockObserver.calls, 1)
 	})
-	t.Run("archive in preprocess disabled", func(t *testing.T) {
-		testFn(false)
+
+	t.Run("skip writing events belonging to transient sources in archival DB", func(t *testing.T) {
+		c := &testContext{}
+		c.Setup(t)
+
+		// crash recovery check
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+		defer c.Finish()
+
+		prepareHandle := func(proc *Handle) *Handle {
+			proc.archivalDB = c.mockArchivalDB
+			proc.config.archivalEnabled = config.SingleValueLoader(true)
+			proc.config.enableConcurrentStore = config.SingleValueLoader(false)
+			isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+			require.NoError(t, err)
+			proc.isolationStrategy = isolationStrategy
+			return proc
+		}
+
+		messages := map[string]mockEventData{
+			// this message should be delivered only to destination A
+			"message-1": {
+				id:                        "1",
+				jobid:                     1010,
+				originalTimestamp:         "2000-01-02T01:23:45",
+				expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+				sentAt:                    "2000-01-02 01:23",
+				expectedSentAt:            "2000-01-02T01:23:00.000Z",
+				expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+				integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+			},
+			// this message should not be delivered to destination A
+			"message-2": {
+				id:                        "2",
+				jobid:                     1010,
+				originalTimestamp:         "2000-02-02T01:23:45",
+				expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
+				expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+				integrations:              map[string]bool{"All": true, "enabled-destination-a-definition-display-name": false},
+			},
+			// this message should be delivered to all destinations
+			"message-3": {
+				id:                 "3",
+				jobid:              2010,
+				originalTimestamp:  "malformed timestamp",
+				sentAt:             "2000-03-02T01:23:15",
+				expectedSentAt:     "2000-03-02T01:23:15.000Z",
+				expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+				integrations:       map[string]bool{"All": true},
+			},
+			// this message should be delivered to all destinations (default All value)
+			"message-4": {
+				id:                        "4",
+				jobid:                     2010,
+				originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
+				expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
+				expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
+				integrations:              map[string]bool{},
+			},
+			// this message should not be delivered to any destination
+			"message-5": {
+				id:                 "5",
+				jobid:              2010,
+				expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+				integrations:       map[string]bool{"All": false},
+			},
+		}
+
+		unprocessedJobsList := []*jobsdb.JobT{
+			{
+				UUID:          uuid.New(),
+				JobID:         1002,
+				CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+				ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+				CustomVal:     gatewayCustomVal[0],
+				EventPayload:  nil,
+				EventCount:    1,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDEnabled),
+			},
+			{
+				UUID:      uuid.New(),
+				JobID:     1010,
+				CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+				ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+				CustomVal: gatewayCustomVal[0],
+				EventPayload: createBatchPayload(
+					WriteKeyTransient,
+					"2001-01-02T02:23:45.000Z",
+					[]mockEventData{
+						messages["message-1"],
+						messages["message-2"],
+					},
+					createMessagePayloadWithoutSources,
+				),
+				EventCount:    2,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDTransient),
+			},
+			{
+				UUID:          uuid.New(),
+				JobID:         2002,
+				CreatedAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+				ExpireAt:      time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+				CustomVal:     gatewayCustomVal[0],
+				EventPayload:  nil,
+				EventCount:    1,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDEnabled),
+			},
+			{
+				UUID:          uuid.New(),
+				JobID:         2003,
+				CreatedAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+				ExpireAt:      time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+				CustomVal:     gatewayCustomVal[0],
+				EventPayload:  nil,
+				EventCount:    1,
+				LastJobStatus: jobsdb.JobStatusT{},
+				Parameters:    createBatchParameters(SourceIDEnabled),
+			},
+			{
+				UUID:      uuid.New(),
+				JobID:     2010,
+				CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+				ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+				CustomVal: gatewayCustomVal[0],
+				EventPayload: createBatchPayload(
+					WriteKeyTransient,
+					"2002-01-02T02:23:45.000Z",
+					[]mockEventData{
+						messages["message-3"],
+						messages["message-4"],
+						messages["message-5"],
+					},
+					createMessagePayload,
+				),
+				EventCount: 3,
+				Parameters: createBatchParameters(SourceIDTransient),
+			},
+		}
+
+		c.mockArchivalDB.EXPECT().
+			WithStoreSafeTx(
+				gomock.Any(),
+				gomock.Any(),
+			).Times(0)
+		c.mockArchivalDB.EXPECT().
+			StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+			Times(0)
+
+		mockTransformerClients := transformer.NewSimpleClients()
+		processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+
+		Setup(processor, c, false, false, t)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+		t.Log("Processor setup and init done")
+
+		srcHydrationMsg, err := processor.preprocessStage(
+			"",
+			subJob{
+				ctx:     ctx,
+				subJobs: unprocessedJobsList,
+			},
+			0,
+		)
+		require.NoError(t, err)
+		require.Nil(t, srcHydrationMsg.archivalJobs)
+		preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
+
+		_, _ = processor.pretransformStage("", preTransMessage)
+
+		require.Len(t, c.MockObserver.calls, 1)
 	})
 }
 
@@ -5819,5 +5907,1863 @@ func TestStoreMessageMerge(t *testing.T) {
 		dedupKeys:      map[string]struct{}{"1": {}, "2": {}, "3": {}},
 		totalEvents:    3,
 		start:          time.UnixMicro(99999999),
+	})
+}
+
+// TestDedupReporting pins the dedup report-row emission added at the duplicate-drop
+// point in preprocessStage: a single DEDUP/filtered row per drop, gated by
+// proc.isReportingEnabled() && proc.config.reportingDedupMetricsEnabled, with no gateway row
+// for the dropped twin and no change to the unconditional sourceDupStats counter.
+func TestDedupReporting(t *testing.T) {
+	dedupRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.DEDUP
+		})
+	}
+	gatewayRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.GATEWAY
+		})
+	}
+
+	// newDedupProcessor builds the shared fixture: a Handle with dedup and reporting
+	// wired up, backed by a config.Config the test can mutate (for the reloadable
+	// reportingDedupMetricsEnabled flag) and a MockDedup that allows only allowedIndex.
+	newDedupProcessor := func(t *testing.T, enableReporting bool, allowedIndex int) (*Handle, *config.Config, *testContext) {
+		t.Helper()
+		conf := config.New()
+		c := &testContext{}
+		c.Setup(t)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
+
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		require.NoError(t, err)
+
+		processor := NewHandle(conf, transformer.NewSimpleClients())
+		processor.isolationStrategy = isolationStrategy
+		processor.config.archivalEnabled = config.SingleValueLoader(false)
+		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+
+		Setup(processor, c, true /* dedup */, enableReporting, t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+
+		processor.dedup = c.MockDedup
+		c.MockDedup.EXPECT().Allowed(gomock.Any()).DoAndReturn(func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+			return map[dedup.BatchKey]bool{
+				{Index: allowedIndex, Key: "message-some-id"}: true,
+			}, nil
+		}).AnyTimes()
+
+		return processor, conf, c
+	}
+
+	// runDedupPipeline drives preprocessStage -> srcHydrationStage -> pretransformStage,
+	// which is where the new AssertKeysSubset(connectionDetailsMap, dedupStatusDetailsMap)
+	// panics and where the CreatePUDetails("", DEDUP, false, false) row is built.
+	runDedupPipeline := func(t *testing.T, processor *Handle, events []mockEventData) *transformationMessage {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		srcHydrationMsg, err := processor.preprocessStage(
+			"",
+			subJob{
+				ctx: ctx,
+				subJobs: []*jobsdb.JobT{
+					{
+						UUID:      uuid.New(),
+						JobID:     1,
+						CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+						ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+						CustomVal: gatewayCustomVal[0],
+						EventPayload: createBatchPayload(
+							WriteKeyEnabled,
+							"2001-01-02T02:23:45.000Z",
+							events,
+							createMessagePayloadWithSameMessageId,
+						),
+						EventCount: len(events),
+						Parameters: createBatchParameters(SourceIDEnabled),
+					},
+				},
+			},
+			0,
+		)
+		require.NoError(t, err)
+
+		preTransMsg, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
+
+		transMsg, err := processor.pretransformStage("", preTransMsg)
+		require.NoError(t, err)
+		return transMsg
+	}
+
+	twoDuplicates := []mockEventData{
+		{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+		{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+	}
+
+	// shared across the first two subtests: the run with the flag turned on after Setup.
+	var flagOnTransMsg *transformationMessage
+
+	t.Run("should emit exactly one dedup filtered row for a duplicate event when the flag is on", func(t *testing.T) {
+		processor, conf, c := newDedupProcessor(t, true, 0)
+		defer c.Finish()
+
+		// set after Setup: also exercises that reportingDedupMetricsEnabled is read via .Load() at
+		// emission time, not cached at Setup time.
+		conf.Set("Reporting.dedupMetrics.enabled", true)
+
+		flagOnTransMsg = runDedupPipeline(t, processor, twoDuplicates)
+
+		rows := dedupRows(flagOnTransMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		row := rows[0]
+		require.Equal(t, reportingtypes.DEDUP, row.PU)
+		require.Equal(t, "", row.InPU)
+		require.False(t, row.TerminalPU)
+		require.False(t, row.InitialPU)
+		require.Equal(t, jobsdb.Filtered.State, row.StatusDetail.Status)
+		require.Equal(t, reportingtypes.FilterEventCode, row.StatusDetail.StatusCode)
+		require.EqualValues(t, 1, row.StatusDetail.Count)
+		require.Equal(t, SourceIDEnabled, row.SourceID)
+	})
+
+	t.Run("should not emit a gateway row for the deduped event", func(t *testing.T) {
+		require.NotNil(t, flagOnTransMsg, "requires the preceding subtest to have populated the shared run")
+
+		rows := gatewayRows(flagOnTransMsg.reportMetrics)
+		require.Len(t, rows, 1, "only the surviving twin should produce a gateway row")
+		require.EqualValues(t, 1, rows[0].StatusDetail.Count, "the deduped twin must not be counted in the gateway row")
+	})
+
+	t.Run("should emit no dedup row when the flag is off", func(t *testing.T) {
+		processorRun1, _, c1 := newDedupProcessor(t, true, 0)
+		defer c1.Finish()
+		run1 := runDedupPipeline(t, processorRun1, twoDuplicates)
+		require.Empty(t, dedupRows(run1.reportMetrics))
+
+		processorRun2, _, c2 := newDedupProcessor(t, true, 0)
+		defer c2.Finish()
+		run2 := runDedupPipeline(t, processorRun2, twoDuplicates)
+		require.Empty(t, dedupRows(run2.reportMetrics))
+
+		require.Equal(t, run1.reportMetrics, run2.reportMetrics, "an otherwise identical run must produce the same report metrics")
+	})
+
+	t.Run("should emit no dedup row when reporting is disabled but the flag is on", func(t *testing.T) {
+		processor, conf, c := newDedupProcessor(t, false, 0)
+		defer c.Finish()
+
+		conf.Set("Reporting.dedupMetrics.enabled", true)
+
+		transMsg := runDedupPipeline(t, processor, twoDuplicates)
+		require.Empty(t, dedupRows(transMsg.reportMetrics))
+	})
+
+	t.Run("should increment the duplicate counter identically whether the flag is on or off", func(t *testing.T) {
+		processorOn, confOn, cOn := newDedupProcessor(t, true, 0)
+		defer cOn.Finish()
+		confOn.Set("Reporting.dedupMetrics.enabled", true)
+		runOn := runDedupPipeline(t, processorOn, twoDuplicates)
+		require.Equal(t, 1, runOn.sourceDupStats[dupStatKey{sourceID: SourceIDEnabled}])
+
+		processorOff, _, cOff := newDedupProcessor(t, true, 0)
+		defer cOff.Finish()
+		runOff := runDedupPipeline(t, processorOff, twoDuplicates)
+		require.Equal(t, 1, runOff.sourceDupStats[dupStatKey{sourceID: SourceIDEnabled}])
+	})
+
+	t.Run("should aggregate multiple duplicates from one source into a single dedup row", func(t *testing.T) {
+		threeDuplicates := []mockEventData{
+			{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+			{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+			{id: "3", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+		}
+		processor, conf, c := newDedupProcessor(t, true, 0)
+		defer c.Finish()
+		conf.Set("Reporting.dedupMetrics.enabled", true)
+
+		transMsg := runDedupPipeline(t, processor, threeDuplicates)
+
+		rows := dedupRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		require.EqualValues(t, 2, rows[0].StatusDetail.Count)
+	})
+}
+
+// TestUserSuppressionReporting exercises the USER_SUPPRESSION reporting added at the very top
+// of the preprocess loop (processor.go:2055-2079): a job whose parsed EventParams.IsUserSuppressed
+// is true emits a filtered/298 row under CreatePUDetails("", USER_SUPPRESSION, false, false) when
+// reporting is enabled, and is unconditionally dropped before bot management, event blocking,
+// dedup, event schemas, archival and the GATEWAY billing metric. Modelled directly on
+// TestDedupReporting.
+func TestUserSuppressionReporting(t *testing.T) {
+	userSuppressionRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.USER_SUPPRESSION
+		})
+	}
+	gatewayRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.GATEWAY
+		})
+	}
+	dedupRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.DEDUP
+		})
+	}
+	botManagementRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.BOT_MANAGEMENT
+		})
+	}
+
+	// createSuppressionParameters is a sibling of createBatchParameters (:5234), built as raw
+	// JSON so the fixture pins the "is_user_suppressed" wire tag rather than going through a
+	// Go types.EventParams literal (which would still pass even if the tag were misspelled).
+	createSuppressionParameters := func(sourceID string) []byte {
+		return fmt.Appendf(nil, `{"source_id":%q,"is_user_suppressed":true}`, sourceID)
+	}
+	createSuppressedBotParameters := func(sourceID string) []byte {
+		return fmt.Appendf(nil, `{"source_id":%q,"is_user_suppressed":true,"is_bot":true}`, sourceID)
+	}
+
+	type suppressionProcessorOpts struct {
+		enableDedup          bool
+		enableReporting      bool
+		archivalEnabled      bool
+		eventSchemaV2Enabled bool
+		// dedupAllowedFn, when set, overrides the default "allow everything" MockDedup.Allowed
+		// behaviour. Used by the ordering test, which needs the suppressed event's own dedup key
+		// to come back denied so that a broken ordering (suppression checked after dedup) would
+		// be caught as a spurious DEDUP row/stat for a job that should have already been dropped.
+		dedupAllowedFn func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error)
+	}
+
+	// newSuppressionProcessor builds the shared fixture, modelled on newDedupProcessor
+	// (TestDedupReporting, :5887): a Handle with reporting and (optionally) dedup/archival/
+	// event-schema-v2 wired up, backed by a config.Config the test can mutate.
+	newSuppressionProcessor := func(t *testing.T, opts suppressionProcessorOpts) (*Handle, *testContext) {
+		t.Helper()
+		conf := config.New()
+		c := &testContext{}
+		c.Setup(t)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
+
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		require.NoError(t, err)
+
+		processor := NewHandle(conf, transformer.NewSimpleClients())
+		processor.isolationStrategy = isolationStrategy
+		processor.config.archivalEnabled = config.SingleValueLoader(opts.archivalEnabled)
+		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+		if opts.eventSchemaV2Enabled {
+			processor.config.eventSchemaV2Enabled = true
+		}
+
+		Setup(processor, c, opts.enableDedup, opts.enableReporting, t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+
+		if opts.enableDedup {
+			processor.dedup = c.MockDedup
+			allowedFn := opts.dedupAllowedFn
+			if allowedFn == nil {
+				allowedFn = func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+					allowed := make(map[dedup.BatchKey]bool, len(keys))
+					for _, k := range keys {
+						allowed[k] = true
+					}
+					return allowed, nil
+				}
+			}
+			c.MockDedup.EXPECT().Allowed(gomock.Any()).DoAndReturn(allowedFn).AnyTimes()
+		}
+
+		return processor, c
+	}
+
+	// runSuppressionPipeline drives preprocessStage -> srcHydrationStage -> pretransformStage,
+	// the same three stages runDedupPipeline (TestDedupReporting) drives.
+	runSuppressionPipeline := func(t *testing.T, processor *Handle, jobs []*jobsdb.JobT) *transformationMessage {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		srcHydrationMsg, err := processor.preprocessStage("", subJob{ctx: ctx, subJobs: jobs}, 0)
+		require.NoError(t, err)
+
+		preTransMsg, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
+
+		transMsg, err := processor.pretransformStage("", preTransMsg)
+		require.NoError(t, err)
+		return transMsg
+	}
+
+	// job builds a single gateway job carrying one or more singular events for sourceID,
+	// stamped with params (raw JSON job Parameters, e.g. from createSuppressionParameters).
+	job := func(jobID int64, workspaceID string, params []byte, events []mockEventData) *jobsdb.JobT {
+		return &jobsdb.JobT{
+			UUID:      uuid.New(),
+			JobID:     jobID,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabled,
+				"2001-01-02T02:23:45.000Z",
+				events,
+				createMessagePayloadWithoutSources,
+			),
+			EventCount:  len(events),
+			Parameters:  params,
+			WorkspaceId: workspaceID,
+		}
+	}
+
+	oneEvent := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+	twinEvent := []mockEventData{{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+
+	t.Run("should emit exactly one user_suppression filtered row for a suppressed event", func(t *testing.T) {
+		processor, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		defer c.Finish()
+
+		jobs := []*jobsdb.JobT{job(1, "", createSuppressionParameters(SourceIDEnabled), oneEvent)}
+		transMsg := runSuppressionPipeline(t, processor, jobs)
+
+		rows := userSuppressionRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		row := rows[0]
+		require.Equal(t, reportingtypes.USER_SUPPRESSION, row.PU)
+		require.Equal(t, "", row.InPU)
+		require.False(t, row.TerminalPU)
+		require.False(t, row.InitialPU)
+		require.Equal(t, jobsdb.Filtered.State, row.StatusDetail.Status)
+		require.Equal(t, reportingtypes.FilterEventCode, row.StatusDetail.StatusCode)
+		require.EqualValues(t, 1, row.StatusDetail.Count)
+		require.Equal(t, SourceIDEnabled, row.SourceID)
+	})
+
+	t.Run("should not emit a gateway row for the suppressed event", func(t *testing.T) {
+		processor, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		defer c.Finish()
+
+		jobs := []*jobsdb.JobT{
+			job(1, "", createSuppressionParameters(SourceIDEnabled), oneEvent),
+			job(2, "", createBatchParameters(SourceIDEnabled), twinEvent),
+		}
+		transMsg := runSuppressionPipeline(t, processor, jobs)
+
+		require.Len(t, userSuppressionRows(transMsg.reportMetrics), 1)
+		rows := gatewayRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1, "only the non-suppressed twin should produce a gateway row")
+		require.EqualValues(t, 1, rows[0].StatusDetail.Count, "the suppressed twin must not be counted in the gateway row")
+	})
+
+	t.Run("should drop the event but emit no row when reporting is disabled", func(t *testing.T) {
+		processor, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: false})
+		defer c.Finish()
+
+		jobs := []*jobsdb.JobT{job(1, "", createSuppressionParameters(SourceIDEnabled), oneEvent)}
+		transMsg := runSuppressionPipeline(t, processor, jobs)
+
+		require.Empty(t, userSuppressionRows(transMsg.reportMetrics))
+		require.Empty(t, gatewayRows(transMsg.reportMetrics))
+		require.Empty(t, transMsg.groupedEvents, "a reporting-disabled but still-suppressed event must not survive into groupedEvents")
+		require.Zero(t, transMsg.totalEvents, "the suppressed event must still be dropped (not counted) when reporting is disabled")
+	})
+
+	t.Run("should not create a dedup row or duplicate stat for a suppressed event", func(t *testing.T) {
+		// The suppressed event's own dedup key (index 0) comes back denied, as if dedup considered
+		// it a duplicate. This is the discriminating part of the test: if suppression were checked
+		// after dedup, this denial would produce a spurious DEDUP row/stat for a job that should
+		// already have been dropped for suppression before ever reaching the dedup gate.
+		dedupAllowedFn := func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+			allowed := make(map[dedup.BatchKey]bool, len(keys))
+			for _, k := range keys {
+				allowed[k] = k.Index != 0
+			}
+			return allowed, nil
+		}
+		processor, c := newSuppressionProcessor(t, suppressionProcessorOpts{
+			enableReporting: true, enableDedup: true, dedupAllowedFn: dedupAllowedFn,
+		})
+		defer c.Finish()
+
+		sameMessageIDEvents := []mockEventData{
+			{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+			{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+		}
+		suppressedJob := &jobsdb.JobT{
+			UUID:      uuid.New(),
+			JobID:     1,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabled,
+				"2001-01-02T02:23:45.000Z",
+				[]mockEventData{sameMessageIDEvents[0]},
+				createMessagePayloadWithSameMessageId,
+			),
+			EventCount: 1,
+			Parameters: createSuppressionParameters(SourceIDEnabled),
+		}
+		normalJob := &jobsdb.JobT{
+			UUID:      uuid.New(),
+			JobID:     2,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabled,
+				"2001-01-02T02:23:45.000Z",
+				[]mockEventData{sameMessageIDEvents[1]},
+				createMessagePayloadWithSameMessageId,
+			),
+			EventCount: 1,
+			Parameters: createBatchParameters(SourceIDEnabled),
+		}
+
+		transMsg := runSuppressionPipeline(t, processor, []*jobsdb.JobT{suppressedJob, normalJob})
+
+		require.Len(t, userSuppressionRows(transMsg.reportMetrics), 1)
+		require.Empty(t, dedupRows(transMsg.reportMetrics))
+		require.Empty(t, transMsg.sourceDupStats)
+	})
+
+	t.Run("should take precedence over bot management for an event carrying both parameters", func(t *testing.T) {
+		processor, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		defer c.Finish()
+
+		jobs := []*jobsdb.JobT{job(1, "", createSuppressedBotParameters(SourceIDEnabled), oneEvent)}
+		transMsg := runSuppressionPipeline(t, processor, jobs)
+
+		rows := userSuppressionRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		require.Equal(t, reportingtypes.USER_SUPPRESSION, rows[0].PU)
+		require.Empty(t, botManagementRows(transMsg.reportMetrics))
+	})
+
+	t.Run("should not archive or event-schema a suppressed event", func(t *testing.T) {
+		processor, c := newSuppressionProcessor(t, suppressionProcessorOpts{
+			enableReporting:      true,
+			archivalEnabled:      true,
+			eventSchemaV2Enabled: true,
+		})
+		defer c.Finish()
+
+		var archivedJobs, schemaJobs []*jobsdb.JobT
+		c.mockArchivalDB.EXPECT().
+			WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).
+			Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+		c.mockArchivalDB.EXPECT().
+			StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+			Times(1).
+			Do(func(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
+				archivedJobs = jobs
+			})
+		c.mockEventSchemasDB.EXPECT().
+			WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).
+			Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+		c.mockEventSchemasDB.EXPECT().
+			StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+			Times(1).
+			Do(func(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
+				schemaJobs = jobs
+			})
+
+		jobs := []*jobsdb.JobT{
+			job(1, sampleWorkspaceID, createSuppressionParameters(SourceIDEnabled), oneEvent),
+			job(2, sampleWorkspaceID, createBatchParameters(SourceIDEnabled), twinEvent),
+		}
+		_ = runSuppressionPipeline(t, processor, jobs)
+
+		require.Len(t, archivedJobs, 1)
+		require.Equal(t, jobs[1].UUID, archivedJobs[0].UUID, "only the non-suppressed twin should reach archival")
+		require.Len(t, schemaJobs, 1)
+		require.Equal(t, jobs[1].UUID, schemaJobs[0].UUID, "only the non-suppressed twin should reach event schemas")
+	})
+
+	t.Run("should aggregate multiple suppressed events from one source into a single row", func(t *testing.T) {
+		processor, c := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		defer c.Finish()
+
+		threeEvents := []mockEventData{
+			{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+			{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+			{id: "3", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+		}
+		jobs := []*jobsdb.JobT{job(1, "", createSuppressionParameters(SourceIDEnabled), threeEvents)}
+		transMsg := runSuppressionPipeline(t, processor, jobs)
+
+		rows := userSuppressionRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		require.EqualValues(t, 3, rows[0].StatusDetail.Count)
+	})
+
+	t.Run("should leave a batch with no suppressed events unchanged", func(t *testing.T) {
+		buildJobs := func() []*jobsdb.JobT {
+			return []*jobsdb.JobT{job(1, "", createBatchParameters(SourceIDEnabled), oneEvent)}
+		}
+
+		processor1, c1 := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		defer c1.Finish()
+		run1 := runSuppressionPipeline(t, processor1, buildJobs())
+
+		processor2, c2 := newSuppressionProcessor(t, suppressionProcessorOpts{enableReporting: true})
+		defer c2.Finish()
+		run2 := runSuppressionPipeline(t, processor2, buildJobs())
+
+		require.Empty(t, userSuppressionRows(run1.reportMetrics))
+		require.Equal(t, run1.reportMetrics, run2.reportMetrics)
+	})
+}
+
+// TestGatewayIngestedReporting exercises the gw_ingested reporting added at the very top
+// of the preprocess loop (processor.go:2059-2079), above the IsUserSuppressed check: every event
+// accumulates a succeeded/200 row under CreatePUDetails("", gw_ingested, false, false),
+// gated by proc.isReportingEnabled() && Reporting.gatewayIngestedMetrics.enabled (default false),
+// regardless of whether it later survives suppression/bot/blocking/dedup. Modelled directly on
+// TestUserSuppressionReporting.
+func TestGatewayIngestedReporting(t *testing.T) {
+	gatewayIngestedRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.GATEWAY_INGESTED
+		})
+	}
+	gatewayRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.GATEWAY
+		})
+	}
+	userSuppressionRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.USER_SUPPRESSION
+		})
+	}
+	eventBlockingRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.EVENT_BLOCKING
+		})
+	}
+	dedupRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.DEDUP
+		})
+	}
+	botManagementRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.BOT_MANAGEMENT
+		})
+	}
+	sumCount := func(rows []*reportingtypes.PUReportedMetric) int64 {
+		var total int64
+		for _, r := range rows {
+			total += r.StatusDetail.Count
+		}
+		return total
+	}
+
+	// createSuppressionParameters, createBotParameters and createBlockedParameters are raw-JSON
+	// param builders, siblings of createSuppressionParameters/createSuppressedBotParameters in
+	// TestUserSuppressionReporting, pinning the "is_bot"/"bot_action"/"is_event_blocked" wire tags
+	// (processor/types.EventParams:335-336) rather than going through a Go types.EventParams literal.
+	createSuppressionParameters := func(sourceID string) []byte {
+		return fmt.Appendf(nil, `{"source_id":%q,"is_user_suppressed":true}`, sourceID)
+	}
+	createBotParameters := func(sourceID, botAction string) []byte {
+		return fmt.Appendf(nil, `{"source_id":%q,"is_bot":true,"bot_action":%q}`, sourceID, botAction)
+	}
+	createBlockedParameters := func(sourceID string) []byte {
+		return fmt.Appendf(nil, `{"source_id":%q,"is_event_blocked":true}`, sourceID)
+	}
+
+	type gatewayIngestedProcessorOpts struct {
+		enableDedup     bool
+		enableReporting bool
+		// dedupAllowedFn, when set, overrides the default "allow everything" MockDedup.Allowed
+		// behaviour, letting a case deny specific dedup keys by index (assigned in job-list order,
+		// see processor.go:1996-2000).
+		dedupAllowedFn func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error)
+	}
+
+	// newGatewayIngestedProcessor builds the shared fixture, modelled on newSuppressionProcessor
+	// (TestUserSuppressionReporting, :6107): a Handle with reporting and (optionally) dedup wired
+	// up, backed by a config.Config the test can mutate for the reloadable
+	// Reporting.gatewayIngestedMetrics.enabled flag.
+	newGatewayIngestedProcessor := func(t *testing.T, opts gatewayIngestedProcessorOpts) (*Handle, *config.Config, *testContext) {
+		t.Helper()
+		conf := config.New()
+		c := &testContext{}
+		c.Setup(t)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
+
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		require.NoError(t, err)
+
+		processor := NewHandle(conf, transformer.NewSimpleClients())
+		processor.isolationStrategy = isolationStrategy
+		processor.config.archivalEnabled = config.SingleValueLoader(false)
+		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+
+		Setup(processor, c, opts.enableDedup, opts.enableReporting, t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+
+		if opts.enableDedup {
+			processor.dedup = c.MockDedup
+			allowedFn := opts.dedupAllowedFn
+			if allowedFn == nil {
+				allowedFn = func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+					allowed := make(map[dedup.BatchKey]bool, len(keys))
+					for _, k := range keys {
+						allowed[k] = true
+					}
+					return allowed, nil
+				}
+			}
+			c.MockDedup.EXPECT().Allowed(gomock.Any()).DoAndReturn(allowedFn).AnyTimes()
+		}
+
+		return processor, conf, c
+	}
+
+	// runGatewayIngestedPipeline drives preprocessStage -> srcHydrationStage -> pretransformStage,
+	// the same three stages runSuppressionPipeline (TestUserSuppressionReporting) drives.
+	runGatewayIngestedPipeline := func(t *testing.T, processor *Handle, jobs []*jobsdb.JobT) *transformationMessage {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		srcHydrationMsg, err := processor.preprocessStage("", subJob{ctx: ctx, subJobs: jobs}, 0)
+		require.NoError(t, err)
+
+		preTransMsg, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
+
+		transMsg, err := processor.pretransformStage("", preTransMsg)
+		require.NoError(t, err)
+		return transMsg
+	}
+
+	// job builds a single gateway job carrying one or more singular events for sourceID, stamped
+	// with params (raw JSON job Parameters) and rendered with eventCreator (defaults to
+	// createMessagePayloadWithoutSources when nil).
+	job := func(jobID int64, params []byte, events []mockEventData, eventCreator func(mockEventData) string) *jobsdb.JobT {
+		if eventCreator == nil {
+			eventCreator = createMessagePayloadWithoutSources
+		}
+		return &jobsdb.JobT{
+			UUID:      uuid.New(),
+			JobID:     jobID,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabled,
+				"2001-01-02T02:23:45.000Z",
+				events,
+				eventCreator,
+			),
+			EventCount: len(events),
+			Parameters: params,
+		}
+	}
+
+	// payloadWithType is a sibling of createMessagePayloadWithoutSources that stamps a "type"
+	// field from e.params["type"] (default "track"), letting a case vary the eventType leg of
+	// updateMetricMaps' sdkey (status:StatusCode:eventName:eventType) to exercise per-type row
+	// splitting.
+	payloadWithType := func(e mockEventData) string {
+		eventType := e.params["type"]
+		if eventType == "" {
+			eventType = "track"
+		}
+		return fmt.Sprintf(
+			`{"rudderId":"some-rudder-id","messageId":"message-%s","some-property":"property-%s",`+
+				`"originalTimestamp":%q,"sentAt":%q,"type":%q,"context":{}}`,
+			e.id, e.id, e.originalTimestamp, e.sentAt, eventType,
+		)
+	}
+
+	oneEvent := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+
+	t.Run("should emit one gw_ingested succeeded row for an ordinary event when the flag is on", func(t *testing.T) {
+		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
+
+		jobs := []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabled), oneEvent, nil)}
+		transMsg := runGatewayIngestedPipeline(t, processor, jobs)
+
+		rows := gatewayIngestedRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		row := rows[0]
+		require.Equal(t, reportingtypes.GATEWAY_INGESTED, row.PU)
+		require.Equal(t, "", row.InPU)
+		require.False(t, row.TerminalPU)
+		require.False(t, row.InitialPU)
+		require.Equal(t, jobsdb.Succeeded.State, row.StatusDetail.Status)
+		require.Equal(t, reportingtypes.SuccessEventCode, row.StatusDetail.StatusCode)
+		require.EqualValues(t, 1, row.StatusDetail.Count)
+		require.Equal(t, SourceIDEnabled, row.SourceID)
+	})
+
+	t.Run("should emit no gw_ingested row when the flag is off, and produce identical reportMetrics across two such runs", func(t *testing.T) {
+		// The flag defaults to false and is never set here. Running the same fixture twice and
+		// comparing reportMetrics byte-for-byte is the strongest flag-off assertion available
+		// short of a row-count check: it catches nondeterminism introduced by the new map (e.g. a
+		// stray key surviving into connectionDetailsMap), but it cannot catch a change that is
+		// stable and wrong in both runs.
+		buildJobs := func() []*jobsdb.JobT {
+			return []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabled), oneEvent, nil)}
+		}
+
+		processor1, _, c1 := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
+		defer c1.Finish()
+		run1 := runGatewayIngestedPipeline(t, processor1, buildJobs())
+
+		processor2, _, c2 := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
+		defer c2.Finish()
+		run2 := runGatewayIngestedPipeline(t, processor2, buildJobs())
+
+		require.Empty(t, gatewayIngestedRows(run1.reportMetrics))
+		require.Equal(t, run1.reportMetrics, run2.reportMetrics)
+	})
+
+	t.Run("should emit no gw_ingested row when reporting is disabled but the flag is on", func(t *testing.T) {
+		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: false})
+		defer c.Finish()
+		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
+
+		jobs := []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabled), oneEvent, nil)}
+		transMsg := runGatewayIngestedPipeline(t, processor, jobs)
+
+		require.Empty(t, gatewayIngestedRows(transMsg.reportMetrics))
+	})
+
+	t.Run("should count every event in a mixed batch, including the ones it drops", func(t *testing.T) {
+		// One event of each drop kind (suppressed, dropped bot, blocked, deduped) plus two
+		// ordinary events. dedupAllowedFn denies only the duplicate job's event (index 3: the
+		// dedup index is assigned in job-list order, one per singular event, see
+		// processor.go:1996-2000). If the gw_ingested emission ever drifts below one of the
+		// preprocess loop's `continue`s, sum(Count) here falls short of the total.
+		dedupAllowedFn := func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+			allowed := make(map[dedup.BatchKey]bool, len(keys))
+			for _, k := range keys {
+				allowed[k] = k.Index != 3
+			}
+			return allowed, nil
+		}
+		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{
+			enableReporting: true, enableDedup: true, dedupAllowedFn: dedupAllowedFn,
+		})
+		defer c.Finish()
+		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
+		conf.Set("Reporting.dedupMetrics.enabled", true)
+
+		suppressedEvent := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		botDropEvent := []mockEventData{{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		blockedEvent := []mockEventData{{id: "3", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		dupEvent := []mockEventData{{id: "4", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		ordinaryEvent1 := []mockEventData{{id: "5", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		ordinaryEvent2 := []mockEventData{{id: "6", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+
+		jobs := []*jobsdb.JobT{
+			job(1, createSuppressionParameters(SourceIDEnabled), suppressedEvent, nil),
+			job(2, createBotParameters(SourceIDEnabled, reportingtypes.DropBotEventAction), botDropEvent, nil),
+			job(3, createBlockedParameters(SourceIDEnabled), blockedEvent, nil),
+			job(4, createBatchParameters(SourceIDEnabled), dupEvent, nil),
+			job(5, createBatchParameters(SourceIDEnabled), ordinaryEvent1, nil),
+			job(6, createBatchParameters(SourceIDEnabled), ordinaryEvent2, nil),
+		}
+		transMsg := runGatewayIngestedPipeline(t, processor, jobs)
+
+		require.EqualValues(t, 6, sumCount(gatewayIngestedRows(transMsg.reportMetrics)),
+			"every event, dropped or not, must be counted at the gw_ingested site")
+
+		gatewayIngestedTotal := sumCount(gatewayIngestedRows(transMsg.reportMetrics))
+		droppedTotal := sumCount(userSuppressionRows(transMsg.reportMetrics)) +
+			sumCount(eventBlockingRows(transMsg.reportMetrics)) +
+			sumCount(dedupRows(transMsg.reportMetrics)) +
+			sumCount(lo.Filter(botManagementRows(transMsg.reportMetrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+				return m.StatusDetail.Status == jobsdb.Filtered.State
+			}))
+		require.EqualValues(t, gatewayIngestedTotal-droppedTotal, sumCount(gatewayRows(transMsg.reportMetrics)),
+			"gw_ingested minus every drop-site count must equal the surviving gateway count")
+	})
+
+	t.Run("should leave the gateway billing row's StatusCode at 0 while the flag is on", func(t *testing.T) {
+		// The GATEWAY site is the only reporting call in the loop that never sets
+		// reportingEvent.StatusCode itself: it inherits whatever the shared struct holds. A
+		// missing reset at the gw_ingested site would not mislabel the billing row, it would
+		// fork it into a second bucket keyed on the leaked StatusCode.
+		dedupAllowedFn := func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+			allowed := make(map[dedup.BatchKey]bool, len(keys))
+			for _, k := range keys {
+				allowed[k] = k.Index != 1
+			}
+			return allowed, nil
+		}
+		suppressedEvent := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		dupEvent := []mockEventData{{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		ordinaryEvent := []mockEventData{{id: "3", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		buildJobs := func() []*jobsdb.JobT {
+			return []*jobsdb.JobT{
+				job(1, createSuppressionParameters(SourceIDEnabled), suppressedEvent, nil),
+				job(2, createBatchParameters(SourceIDEnabled), dupEvent, nil),
+				job(3, createBatchParameters(SourceIDEnabled), ordinaryEvent, nil),
+			}
+		}
+
+		processorOn, confOn, cOn := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{
+			enableReporting: true, enableDedup: true, dedupAllowedFn: dedupAllowedFn,
+		})
+		defer cOn.Finish()
+		confOn.Set("Reporting.gatewayIngestedMetrics.enabled", true)
+		confOn.Set("Reporting.dedupMetrics.enabled", true)
+		runOn := runGatewayIngestedPipeline(t, processorOn, buildJobs())
+
+		processorOff, _, cOff := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{
+			enableReporting: true, enableDedup: true, dedupAllowedFn: dedupAllowedFn,
+		})
+		defer cOff.Finish()
+		runOff := runGatewayIngestedPipeline(t, processorOff, buildJobs())
+
+		gwRowsOn := gatewayRows(runOn.reportMetrics)
+		require.Len(t, gwRowsOn, 1)
+		require.EqualValues(t, 0, gwRowsOn[0].StatusDetail.StatusCode)
+		require.True(t, gwRowsOn[0].InitialPU)
+		require.Equal(t, "", gwRowsOn[0].InPU)
+
+		gwRowsOff := gatewayRows(runOff.reportMetrics)
+		require.Len(t, gwRowsOff, 1)
+		require.Equal(t, gwRowsOff[0].StatusDetail.Count, gwRowsOn[0].StatusDetail.Count,
+			"the billing row's count must be unaffected by the flag")
+
+		require.Len(t, userSuppressionRows(runOn.reportMetrics), 1)
+		require.Equal(t, reportingtypes.FilterEventCode, userSuppressionRows(runOn.reportMetrics)[0].StatusDetail.StatusCode,
+			"the set-then-reset at the gw_ingested site must not corrupt the suppression row below it")
+		require.Len(t, dedupRows(runOn.reportMetrics), 1)
+		require.Equal(t, reportingtypes.FilterEventCode, dedupRows(runOn.reportMetrics)[0].StatusDetail.StatusCode,
+			"the set-then-reset at the gw_ingested site must not corrupt the dedup row below it")
+	})
+
+	t.Run("should aggregate events of the same name and type from one source into a single row, and split rows by event type", func(t *testing.T) {
+		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
+
+		trackEvents := []mockEventData{
+			{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "track"}},
+			{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "track"}},
+			{id: "3", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "track"}},
+		}
+		identifyEvents := []mockEventData{
+			{id: "4", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "identify"}},
+			{id: "5", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "identify"}},
+		}
+		jobs := []*jobsdb.JobT{
+			job(1, createBatchParameters(SourceIDEnabled), append(trackEvents, identifyEvents...), payloadWithType),
+		}
+		transMsg := runGatewayIngestedPipeline(t, processor, jobs)
+
+		rows := gatewayIngestedRows(transMsg.reportMetrics)
+		require.Len(t, rows, 2, "one row per distinct event type")
+
+		byType := lo.SliceToMap(rows, func(r *reportingtypes.PUReportedMetric) (string, int64) {
+			return r.StatusDetail.EventType, r.StatusDetail.Count
+		})
+		require.EqualValues(t, 3, byType["track"])
+		require.EqualValues(t, 2, byType["identify"])
+	})
+
+	t.Run("should count a flagged-but-not-dropped bot event exactly once in both gw_ingested and gateway", func(t *testing.T) {
+		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
+
+		flaggedEvent := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		jobs := []*jobsdb.JobT{job(1, createBotParameters(SourceIDEnabled, reportingtypes.FlagBotEventAction), flaggedEvent, nil)}
+		transMsg := runGatewayIngestedPipeline(t, processor, jobs)
+
+		rows := gatewayIngestedRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		require.EqualValues(t, 1, rows[0].StatusDetail.Count)
+
+		// The bot-flag path also emits a second GATEWAY row from the enricher map
+		// (status "bot_flagged"), unrelated to this slice; isolate the billing row (status
+		// "succeeded") to check the gw_ingested emission did not fork or duplicate it.
+		billingGwRows := lo.Filter(gatewayRows(transMsg.reportMetrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.StatusDetail.Status == jobsdb.Succeeded.State
+		})
+		require.Len(t, billingGwRows, 1, "a flagged-but-not-dropped bot event still reaches the gateway billing site exactly once")
+		require.EqualValues(t, 1, billingGwRows[0].StatusDetail.Count)
+	})
+
+	t.Run("should emit a gw_ingested row for a batch whose every event is dropped", func(t *testing.T) {
+		// Reporting.dedupMetrics.enabled stays at its default (off): the new gw_ingested
+		// block is now the only thing creating a connectionDetailsMap entry for this source, and
+		// pretransformStage's build loop must still run over a connection key for which every
+		// other status-detail map is empty (AssertKeysSubset tolerates that; it is Subset, not
+		// SameKeys, checked at all eight call sites processor.go:2441-2448).
+		dedupAllowedFn := func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+			allowed := make(map[dedup.BatchKey]bool, len(keys))
+			for _, k := range keys {
+				allowed[k] = false
+			}
+			return allowed, nil
+		}
+		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{
+			enableReporting: true, enableDedup: true, dedupAllowedFn: dedupAllowedFn,
+		})
+		defer c.Finish()
+		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
+
+		allDuplicates := []mockEventData{
+			{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+			{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+		}
+		jobs := []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabled), allDuplicates, nil)}
+		transMsg := runGatewayIngestedPipeline(t, processor, jobs)
+
+		rows := gatewayIngestedRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		require.EqualValues(t, 2, rows[0].StatusDetail.Count)
+		require.Empty(t, dedupRows(transMsg.reportMetrics), "dedup reporting is off; the drop is silent besides gw_ingested")
+		require.Empty(t, gatewayRows(transMsg.reportMetrics))
+	})
+}
+
+// TestDestinationVisibilityReporting exercises the fan-out reporting added for
+// per-destination visibility (destination_enter / destination_filter), see processor.go:2450-2505,
+// plus the earlyDestinationFilter reorder (processor.go:2211). The rows introduced here carry an
+// empty inPU (the field is slated for deprecation), and the reorder must not change the inPU of
+// pre-existing rows. Dedup is off throughout; SourceIDEnabled's three enabled destinations
+// (A, B, C — three distinct destination types plus one disabled) are reused as-is.
+func TestDestinationVisibilityReporting(t *testing.T) {
+	destEnterRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.DESTINATION_ENTER
+		})
+	}
+	destFilterRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.DESTINATION_FILTER
+		})
+	}
+	// sourceLevelDestFilterRows are the destination_filter rows with no destination id: the
+	// carve-out (filtered_no_destination) or the old fallback (filtered).
+	sourceLevelDestFilterRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(destFilterRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.DestinationID == ""
+		})
+	}
+	// perDestFilterRows are the new per-destination filtered_integration/filtered_consent rows.
+	perDestFilterRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(destFilterRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.DestinationID != ""
+		})
+	}
+	tpRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.TRACKINGPLAN_VALIDATOR
+		})
+	}
+	utRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.USER_TRANSFORMER
+		})
+	}
+
+	// newVisibilityProcessor builds a Handle with dedup off and reporting optionally on,
+	// backed by a config.Config the test can mutate for the reloadable
+	// Processor.earlyDestinationFilter flag, and returns the SimpleClients so a case can
+	// wire up TP/hydration/UT echo transforms.
+	newVisibilityProcessor := func(t *testing.T, enableReporting bool) (*Handle, *config.Config, *testContext, *transformer.SimpleClients) {
+		t.Helper()
+		conf := config.New()
+		c := &testContext{}
+		c.Setup(t)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
+
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		require.NoError(t, err)
+
+		transformerClients := transformer.NewSimpleClients()
+		processor := NewHandle(conf, transformerClients)
+		processor.isolationStrategy = isolationStrategy
+		processor.config.archivalEnabled = config.SingleValueLoader(false)
+		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+
+		Setup(processor, c, false /* dedup */, enableReporting, t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+
+		return processor, conf, c, transformerClients
+	}
+
+	// runVisibilityPretransform drives preprocessStage -> srcHydrationStage -> pretransformStage,
+	// the same three stages runDedupPipeline (TestDedupReporting) drives — where the
+	// classifyDestinations call and its reporting live (processor.go:2447-2505).
+	runVisibilityPretransform := func(t *testing.T, processor *Handle, jobs []*jobsdb.JobT) *transformationMessage {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		srcHydrationMsg, err := processor.preprocessStage("", subJob{ctx: ctx, subJobs: jobs}, 0)
+		require.NoError(t, err)
+
+		preTransMsg, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
+
+		transMsg, err := processor.pretransformStage("", preTransMsg)
+		require.NoError(t, err)
+		return transMsg
+	}
+
+	// runVisibilityThroughUT additionally drives userTransformStage and
+	// destinationTransformStage, needed for the tracking-plan/user-transformer inPU cases
+	// (1d): userTransformAndFilter's own reportMetrics are only merged into the pipeline's
+	// reportMetrics inside destTransform (processor.go:2911), so the UT/TP rows are not
+	// observable from userTransformData alone.
+	runVisibilityThroughUT := func(t *testing.T, processor *Handle, jobs []*jobsdb.JobT) (*transformationMessage, *storeMessage) {
+		t.Helper()
+		transMsg := runVisibilityPretransform(t, processor, jobs)
+		utData := processor.userTransformStage("", transMsg)
+		return transMsg, processor.destinationTransformStage("", utData)
+	}
+
+	// payload builds a singular event JSON, letting a case set an `integrations` object
+	// and/or a denied-consent context (lifted from consent_test.go's TestFilterDestinations
+	// shapes).
+	payload := func(msgID string, integrations map[string]any, deniedConsentIDs []string) string {
+		event := map[string]any{
+			"rudderId":  "some-rudder-id",
+			"messageId": msgID,
+			"type":      "track",
+			"event":     "Some Event",
+		}
+		if integrations != nil {
+			event["integrations"] = integrations
+		}
+		if len(deniedConsentIDs) > 0 {
+			event["context"] = map[string]any{
+				"consentManagement": map[string]any{
+					"deniedConsentIds": deniedConsentIDs,
+				},
+			}
+		}
+		b, err := jsonrs.Marshal(event)
+		require.NoError(t, err)
+		return string(b)
+	}
+
+	// job builds a gateway job carrying one or more singular events for sourceID, optionally
+	// stamped with destinationID (the RETL `destination_id` job parameter that
+	// jobIDToSpecificDestMapOnly reads, processor.go:1997-1999).
+	job := func(jobID int64, sourceID, destinationID string, singularPayloads []string) *jobsdb.JobT {
+		params := map[string]any{"source_id": sourceID}
+		if destinationID != "" {
+			params["destination_id"] = destinationID
+		}
+		paramBytes, err := jsonrs.Marshal(params)
+		require.NoError(t, err)
+		batch := strings.Join(singularPayloads, ",")
+		eventPayload := fmt.Appendf(nil, `{"writeKey":%q,"batch":[%s],"requestIP":"1.2.3.4","receivedAt":"2001-01-02T02:23:45.000Z"}`, WriteKeyEnabled, batch)
+		return &jobsdb.JobT{
+			UUID:         uuid.New(),
+			JobID:        jobID,
+			CreatedAt:    time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:     time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal:    gatewayCustomVal[0],
+			EventPayload: eventPayload,
+			EventCount:   len(singularPayloads),
+			Parameters:   paramBytes,
+		}
+	}
+
+	// echoTrackingPlan and echoHydration pass events through unchanged, letting a source's
+	// TP/hydration configuration flip sourcePipelineSteps on without needing a real
+	// transformer response shape per case.
+	echoTrackingPlan := func(_ context.Context, events []types.TransformerEvent) types.Response {
+		return types.Response{
+			Events: lo.Map(events, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+				return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata}
+			}),
+		}
+	}
+	// nolint:unparam // signature is dictated by SimpleClients.WithDynamicSrcHydration
+	echoHydration := func(_ context.Context, req types.SrcHydrationRequest) (types.SrcHydrationResponse, error) {
+		return types.SrcHydrationResponse{Batch: req.Batch}, nil
+	}
+	echoUserTransform := func(_ context.Context, events []types.TransformerEvent) types.Response {
+		return types.Response{
+			Events: lo.Map(events, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+				return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata}
+			}),
+		}
+	}
+
+	// denyConsentFor sets B's oneTrustCookieCategories consent map directly (same
+	// "set after Setup" technique TestDedupReporting uses for reloadable flags, applied here
+	// to proc.config's consent maps — consent_test.go's TestFilterDestinations builds these
+	// maps the same way, just from scratch rather than after Setup). SourceIDEnabled's three
+	// destinations carry no consent config out of the box, so this is the only way to make
+	// one of them consent-deniable without a new backend-config fixture.
+	denyConsentFor := func(processor *Handle, destinationID, category string) {
+		processor.config.configSubscriberLock.Lock()
+		defer processor.config.configSubscriberLock.Unlock()
+		processor.config.oneTrustConsentCategoriesMap[destinationID] = []string{category}
+	}
+
+	allDestOptOut := map[string]any{"All": false}
+
+	t.Run("with earlyDestinationFilter at its default (true) no destination_enter row and no destination-scoped destination_filter row is emitted", func(t *testing.T) {
+		processor, _, c, _ := newVisibilityProcessor(t, true)
+		defer c.Finish()
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
+		msg := runVisibilityPretransform(t, processor, jobs)
+
+		require.Empty(t, destEnterRows(msg.reportMetrics))
+		require.Empty(t, destFilterRows(msg.reportMetrics))
+	})
+
+	t.Run("with defaults two identical runs produce identical reportMetrics and identical groupedEvents keys and lengths", func(t *testing.T) {
+		buildJobs := func() []*jobsdb.JobT {
+			return []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
+		}
+
+		processor1, _, c1, _ := newVisibilityProcessor(t, true)
+		defer c1.Finish()
+		run1 := runVisibilityPretransform(t, processor1, buildJobs())
+
+		processor2, _, c2, _ := newVisibilityProcessor(t, true)
+		defer c2.Finish()
+		run2 := runVisibilityPretransform(t, processor2, buildJobs())
+
+		require.Equal(t, run1.reportMetrics, run2.reportMetrics)
+
+		keysAndLens1 := lo.MapValues(run1.groupedEvents, func(v []types.TransformerEvent, _ string) int { return len(v) })
+		keysAndLens2 := lo.MapValues(run2.groupedEvents, func(v []types.TransformerEvent, _ string) int { return len(v) })
+		require.Equal(t, keysAndLens1, keysAndLens2)
+	})
+
+	t.Run("with defaults a fully-excluded event drops at preprocess emitting exactly one source-level filtered/298 row with inPU gateway", func(t *testing.T) {
+		processor, _, c, _ := newVisibilityProcessor(t, true)
+		defer c.Finish()
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", allDestOptOut, nil)})}
+		msg := runVisibilityPretransform(t, processor, jobs)
+
+		rows := destFilterRows(msg.reportMetrics)
+		require.Len(t, rows, 1, "no double emission alongside the preprocess-guard row")
+		require.Equal(t, "", rows[0].DestinationID)
+		require.Equal(t, reportingtypes.GATEWAY, rows[0].InPU)
+		require.Equal(t, jobsdb.Filtered.State, rows[0].StatusDetail.Status)
+		require.Equal(t, reportingtypes.FilterEventCode, rows[0].StatusDetail.StatusCode)
+		require.Empty(t, destEnterRows(msg.reportMetrics))
+	})
+
+	t.Run("with defaults tracking-plan rows carry inPU destination_filter and user-transformer rows carry inPU destination_filter by default", func(t *testing.T) {
+		// TP's own inPU defaults to DESTINATION_FILTER — it is only overridden to
+		// SOURCE_HYDRATION when hydration ran ahead of it. SourceIDEnabledTp has no
+		// hydration, so this checks the default squarely.
+		t.Run("tracking-plan rows", func(t *testing.T) {
+			processor, _, c, transformerClients := newVisibilityProcessor(t, true)
+			defer c.Finish()
+			transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
+
+			jobs := []*jobsdb.JobT{job(1, SourceIDEnabledTp, "", []string{payload("m1", nil, nil)})}
+			msg := runVisibilityPretransform(t, processor, jobs)
+
+			tRows := tpRows(msg.reportMetrics)
+			require.NotEmpty(t, tRows)
+			for _, r := range tRows {
+				require.Equal(t, reportingtypes.DESTINATION_FILTER, r.InPU)
+			}
+		})
+
+		// The userTransformAndFilter switch (processor.go:3404-3411) only falls back to its
+		// DESTINATION_FILTER default when neither TP validation nor hydration ran ahead of
+		// it (both instead chain UT from themselves) — SourceIDEnabled has neither, and its
+		// destination B carries a Transformation so a UT row is actually emitted.
+		t.Run("user-transformer rows", func(t *testing.T) {
+			processor, _, c, transformerClients := newVisibilityProcessor(t, true)
+			defer c.Finish()
+			transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+			jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
+			_, storeMsg := runVisibilityThroughUT(t, processor, jobs)
+
+			uRows := lo.Filter(utRows(storeMsg.reportMetrics), func(r *reportingtypes.PUReportedMetric, _ int) bool {
+				return r.DestinationID == DestinationIDEnabledB // only B has a Transformation configured
+			})
+			require.NotEmpty(t, uRows)
+			for _, r := range uRows {
+				require.Equal(t, reportingtypes.DESTINATION_FILTER, r.InPU)
+			}
+		})
+	})
+
+	t.Run("with the reorder on a three-destination source produces three succeeded/200 destination_enter rows with distinct non-empty destination ids", func(t *testing.T) {
+		processor, conf, c, _ := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Processor.earlyDestinationFilter", false)
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
+		msg := runVisibilityPretransform(t, processor, jobs)
+
+		rows := destEnterRows(msg.reportMetrics)
+		require.Len(t, rows, 3)
+		ids := lo.Map(rows, func(r *reportingtypes.PUReportedMetric, _ int) string { return r.DestinationID })
+		require.ElementsMatch(t, []string{DestinationIDEnabledA, DestinationIDEnabledB, DestinationIDEnabledC}, ids)
+		for _, r := range rows {
+			require.False(t, r.TerminalPU)
+			require.False(t, r.InitialPU)
+			require.Equal(t, "", r.InPU, "destination_enter rows carry an empty inPU (field slated for deprecation)")
+			require.EqualValues(t, 1, r.StatusDetail.Count)
+			require.Equal(t, jobsdb.Succeeded.State, r.StatusDetail.Status)
+			require.Equal(t, reportingtypes.SuccessEventCode, r.StatusDetail.StatusCode)
+		}
+	})
+
+	t.Run("destination_enter is emitted for excluded candidates as well as survivors", func(t *testing.T) {
+		processor, conf, c, _ := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Processor.earlyDestinationFilter", false)
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", map[string]any{"enabled-destination-c-definition-display-name": false}, nil)})}
+		msg := runVisibilityPretransform(t, processor, jobs)
+
+		rows := destEnterRows(msg.reportMetrics)
+		require.Len(t, rows, 3, "excluded candidate C must still get an enter row")
+		ids := lo.Map(rows, func(r *reportingtypes.PUReportedMetric, _ int) string { return r.DestinationID })
+		require.ElementsMatch(t, []string{DestinationIDEnabledA, DestinationIDEnabledB, DestinationIDEnabledC}, ids)
+	})
+
+	t.Run("destination_enter inPU stays empty regardless of the source's pipeline steps", func(t *testing.T) {
+		// SourceIDHydrationTp runs both source hydration and TP validation ahead of fan-out —
+		// even then no chain value is computed for destination_enter (inPU is slated for
+		// deprecation).
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Processor.earlyDestinationFilter", false)
+		transformerClients.WithDynamicSrcHydration(echoHydration)
+		transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDHydrationTp, "", []string{payload("m1", nil, nil)})}
+		msg := runVisibilityPretransform(t, processor, jobs)
+
+		rows := destEnterRows(msg.reportMetrics)
+		require.NotEmpty(t, rows)
+		for _, r := range rows {
+			require.Equal(t, "", r.InPU)
+		}
+	})
+
+	t.Run("destination_enter is emitted for a forked destination that produces no inline clone", func(t *testing.T) {
+		processor, conf, c, _ := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Processor.earlyDestinationFilter", false)
+		conf.Set("Processor.DestinationIsolation.enabledDestinations."+DestinationIDEnabledC, true)
+		processor.procDB = c.mockGatewayJobsDB
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
+		msg := runVisibilityPretransform(t, processor, jobs)
+
+		rows := destEnterRows(msg.reportMetrics)
+		require.Len(t, rows, 3, "the forked destination still gets an enter row")
+		require.Len(t, msg.groupedEvents, 2, "only A and B are cloned inline")
+		require.Len(t, msg.forkedJobs, 1, "C is siphoned to a forked job instead")
+	})
+
+	t.Run("no destination_enter row when reporting is disabled even with the reorder on", func(t *testing.T) {
+		processor, conf, c, _ := newVisibilityProcessor(t, false)
+		defer c.Finish()
+		conf.Set("Processor.earlyDestinationFilter", false)
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
+		msg := runVisibilityPretransform(t, processor, jobs)
+
+		require.Empty(t, destEnterRows(msg.reportMetrics))
+	})
+
+	// sharedConsentRun is populated by the headline acceptance scenario below and reused by
+	// the candidate-semantics invariant subtest that follows it.
+	var sharedConsentRun *transformationMessage
+
+	t.Run("consent excluding one of three destinations yields three enter rows, exactly one filtered_consent/298 row, and clones to the other two", func(t *testing.T) {
+		processor, conf, c, _ := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Processor.earlyDestinationFilter", false)
+		denyConsentFor(processor, DestinationIDEnabledB, "cat-1")
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, []string{"cat-1"})})}
+		msg := runVisibilityPretransform(t, processor, jobs)
+		sharedConsentRun = msg
+
+		enterRows := destEnterRows(msg.reportMetrics)
+		require.Len(t, enterRows, 3)
+
+		filterRows := perDestFilterRows(msg.reportMetrics)
+		require.Len(t, filterRows, 1)
+		require.Equal(t, DestinationIDEnabledB, filterRows[0].DestinationID)
+		require.Equal(t, reportingtypes.FilteredConsentStatus, filterRows[0].StatusDetail.Status)
+		require.Equal(t, reportingtypes.FilterEventCode, filterRows[0].StatusDetail.StatusCode)
+		require.Equal(t, "", filterRows[0].InPU)
+
+		require.ElementsMatch(t, []string{
+			getKeyFromSourceAndDest(SourceIDEnabled, DestinationIDEnabledA),
+			getKeyFromSourceAndDest(SourceIDEnabled, DestinationIDEnabledC),
+		}, lo.Keys(msg.groupedEvents))
+	})
+
+	t.Run("per source and destination, destination_enter equals clones produced plus filtered_*", func(t *testing.T) {
+		require.NotNil(t, sharedConsentRun, "requires the preceding subtest to have populated the shared run")
+
+		enterCount := len(destEnterRows(sharedConsentRun.reportMetrics))
+		filteredCount := len(perDestFilterRows(sharedConsentRun.reportMetrics)) + len(sourceLevelDestFilterRows(sharedConsentRun.reportMetrics))
+		cloneCount := lo.SumBy(lo.Values(sharedConsentRun.groupedEvents), func(events []types.TransformerEvent) int { return len(events) })
+
+		require.Equal(t, enterCount, cloneCount+filteredCount)
+	})
+
+	t.Run("an integrations-opt-out-of-everything event with the reorder on yields three enter plus three filtered_integration rows and no source-level filtered row", func(t *testing.T) {
+		processor, conf, c, _ := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Processor.earlyDestinationFilter", false)
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", allDestOptOut, nil)})}
+		msg := runVisibilityPretransform(t, processor, jobs)
+
+		require.Len(t, destEnterRows(msg.reportMetrics), 3)
+		filterRows := perDestFilterRows(msg.reportMetrics)
+		require.Len(t, filterRows, 3)
+		for _, r := range filterRows {
+			require.Equal(t, reportingtypes.FilteredIntegrationStatus, r.StatusDetail.Status)
+		}
+		require.Empty(t, sourceLevelDestFilterRows(msg.reportMetrics))
+	})
+
+	t.Run("a zero-candidate event emits filtered_no_destination/298 with empty destination id", func(t *testing.T) {
+		processor, conf, c, _ := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Processor.earlyDestinationFilter", false)
+
+		// SourceIDDisabled has no destinations configured — reused as-is, no new fixture.
+		jobs := []*jobsdb.JobT{job(1, SourceIDDisabled, "", []string{payload("m1", nil, nil)})}
+		msg := runVisibilityPretransform(t, processor, jobs)
+
+		rows := sourceLevelDestFilterRows(msg.reportMetrics)
+		require.Len(t, rows, 1)
+		require.Equal(t, "", rows[0].DestinationID)
+		require.Equal(t, reportingtypes.FilteredNoDestinationStatus, rows[0].StatusDetail.Status)
+		require.Equal(t, reportingtypes.FilterEventCode, rows[0].StatusDetail.StatusCode)
+		require.Equal(t, "", rows[0].InPU)
+	})
+
+	t.Run("a RETL event whose stamped destination is unavailable emits filtered_no_destination and no rows for the source's other destinations", func(t *testing.T) {
+		processor, conf, c, _ := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Processor.earlyDestinationFilter", false)
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "not-connected-destination-id", []string{payload("m1", nil, nil)})}
+		msg := runVisibilityPretransform(t, processor, jobs)
+
+		rows := sourceLevelDestFilterRows(msg.reportMetrics)
+		require.Len(t, rows, 1)
+		require.Equal(t, reportingtypes.FilteredNoDestinationStatus, rows[0].StatusDetail.Status)
+		require.Empty(t, perDestFilterRows(msg.reportMetrics))
+		require.Empty(t, destEnterRows(msg.reportMetrics))
+		require.Empty(t, msg.groupedEvents, "the source's other destinations A, B, C must not produce rows or clones for this copy")
+	})
+
+	t.Run("a RETL event stamped for an available destination emits exactly one destination_enter row and none for the source's other destinations", func(t *testing.T) {
+		processor, conf, c, _ := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Processor.earlyDestinationFilter", false)
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, DestinationIDEnabledA, []string{payload("m1", nil, nil)})}
+		msg := runVisibilityPretransform(t, processor, jobs)
+
+		rows := destEnterRows(msg.reportMetrics)
+		require.Len(t, rows, 1)
+		require.Equal(t, DestinationIDEnabledA, rows[0].DestinationID)
+		require.Equal(t, []string{getKeyFromSourceAndDest(SourceIDEnabled, DestinationIDEnabledA)}, lo.Keys(msg.groupedEvents))
+	})
+
+	t.Run("no per-destination row when reporting is disabled", func(t *testing.T) {
+		processor, conf, c, _ := newVisibilityProcessor(t, false)
+		defer c.Finish()
+		conf.Set("Processor.earlyDestinationFilter", false)
+		denyConsentFor(processor, DestinationIDEnabledB, "cat-1")
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, []string{"cat-1"})})}
+		msg := runVisibilityPretransform(t, processor, jobs)
+
+		require.Empty(t, destFilterRows(msg.reportMetrics))
+	})
+
+	t.Run("with the reorder on, a zero-surviving-destination event reaches tracking-plan validation and appears in TP metrics", func(t *testing.T) {
+		buildJobs := func() []*jobsdb.JobT {
+			return []*jobsdb.JobT{job(1, SourceIDEnabledTp, "", []string{payload("m1", allDestOptOut, nil)})}
+		}
+
+		reorderOn, conf1, c1, transformerClients1 := newVisibilityProcessor(t, true)
+		defer c1.Finish()
+		conf1.Set("Processor.earlyDestinationFilter", false)
+		transformerClients1.WithDynamicTrackingPlanValidate(echoTrackingPlan)
+		msgReorderOn := runVisibilityPretransform(t, reorderOn, buildJobs())
+		require.NotEmpty(t, tpRows(msgReorderOn.reportMetrics), "the flag-off observable behaviour change: TP count movement")
+
+		reorderOff, _, c2, transformerClients2 := newVisibilityProcessor(t, true)
+		defer c2.Finish()
+		transformerClients2.WithDynamicTrackingPlanValidate(echoTrackingPlan)
+		msgReorderOff := runVisibilityPretransform(t, reorderOff, buildJobs())
+		require.Empty(t, tpRows(msgReorderOff.reportMetrics), "with the flag true (default) the event never reaches TP")
+	})
+
+	t.Run("the reorder does not change the inPU of pre-existing tracking-plan and user-transformer rows", func(t *testing.T) {
+		t.Run("no TP, no hydration: user-transformer chains from destination_filter", func(t *testing.T) {
+			processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+			defer c.Finish()
+			conf.Set("Processor.earlyDestinationFilter", false)
+			transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+			jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
+			_, utMsg := runVisibilityThroughUT(t, processor, jobs)
+
+			uRows := lo.Filter(utRows(utMsg.reportMetrics), func(r *reportingtypes.PUReportedMetric, _ int) bool {
+				return r.DestinationID == DestinationIDEnabledB // only B has a Transformation configured
+			})
+			require.NotEmpty(t, uRows)
+			for _, r := range uRows {
+				require.Equal(t, reportingtypes.DESTINATION_FILTER, r.InPU)
+			}
+		})
+
+		t.Run("TP only (no hydration): tracking-plan inPU destination_filter, user-transformer chains from tracking_plan_validator", func(t *testing.T) {
+			processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+			defer c.Finish()
+			conf.Set("Processor.earlyDestinationFilter", false)
+			transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
+			transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+			jobs := []*jobsdb.JobT{job(1, SourceIDEnabledTp, "", []string{payload("m1", nil, nil)})}
+			_, utMsg := runVisibilityThroughUT(t, processor, jobs)
+
+			tRows := tpRows(utMsg.reportMetrics)
+			require.NotEmpty(t, tRows)
+			for _, r := range tRows {
+				require.Equal(t, reportingtypes.DESTINATION_FILTER, r.InPU)
+			}
+			uRows := utRows(utMsg.reportMetrics)
+			require.NotEmpty(t, uRows)
+			for _, r := range uRows {
+				require.Equal(t, reportingtypes.TRACKINGPLAN_VALIDATOR, r.InPU)
+			}
+		})
+
+		t.Run("TP and hydration: tracking-plan inPU source_hydration, user-transformer chains from tracking_plan_validator", func(t *testing.T) {
+			processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+			defer c.Finish()
+			conf.Set("Processor.earlyDestinationFilter", false)
+			transformerClients.WithDynamicSrcHydration(echoHydration)
+			transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
+			transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+			jobs := []*jobsdb.JobT{job(1, SourceIDHydrationTp, "", []string{payload("m1", nil, nil)})}
+			_, utMsg := runVisibilityThroughUT(t, processor, jobs)
+
+			tRows := tpRows(utMsg.reportMetrics)
+			require.NotEmpty(t, tRows)
+			for _, r := range tRows {
+				require.Equal(t, reportingtypes.SOURCE_HYDRATION, r.InPU)
+			}
+			uRows := utRows(utMsg.reportMetrics)
+			require.NotEmpty(t, uRows)
+			for _, r := range uRows {
+				require.Equal(t, reportingtypes.TRACKINGPLAN_VALIDATOR, r.InPU)
+			}
+		})
+	})
+
+	t.Run("flipping earlyDestinationFilter back on between two runs on the same handle restores the preprocess source-level filtered row", func(t *testing.T) {
+		processor, conf, c, _ := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Processor.earlyDestinationFilter", false)
+
+		run1 := runVisibilityPretransform(t, processor, []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", allDestOptOut, nil)})})
+		require.NotEmpty(t, perDestFilterRows(run1.reportMetrics))
+		require.Empty(t, sourceLevelDestFilterRows(run1.reportMetrics))
+
+		conf.Set("Processor.earlyDestinationFilter", true)
+
+		run2 := runVisibilityPretransform(t, processor, []*jobsdb.JobT{job(2, SourceIDEnabled, "", []string{payload("m2", allDestOptOut, nil)})})
+		require.Empty(t, perDestFilterRows(run2.reportMetrics))
+		require.Empty(t, destEnterRows(run2.reportMetrics))
+		rows := sourceLevelDestFilterRows(run2.reportMetrics)
+		require.Len(t, rows, 1)
+		require.Equal(t, jobsdb.Filtered.State, rows[0].StatusDetail.Status)
+		require.Equal(t, reportingtypes.GATEWAY, rows[0].InPU, "the preprocess-guard row, not the fan-out one")
+	})
+}
+
+func TestClassifyDestinations(t *testing.T) {
+	t.Run("all candidates survive", func(t *testing.T) {
+		sourceID := "source-1"
+		dests := []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")}
+		proc := newClassifyTestHandle(sourceID, dests)
+
+		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "")
+
+		require.ElementsMatch(t, []string{"dest-1", "dest-2"}, availableIDs(available))
+		require.Nil(t, excluded)
+	})
+
+	t.Run("an integrations object disabling one destination type excludes every destination of that type", func(t *testing.T) {
+		sourceID := "source-1"
+		dests := []backendconfig.DestinationT{
+			webhookDest(),
+			amplitudeDest("dest-2"),
+			amplitudeDest("dest-3"),
+		}
+		proc := newClassifyTestHandle(sourceID, dests)
+
+		available, excluded := proc.classifyDestinations(integrationsExcludingAmplitude(), proc.getSourceDestinations(sourceID), sourceID, "")
+
+		require.ElementsMatch(t, []string{"dest-1"}, availableIDs(available))
+		require.ElementsMatch(t, []string{"dest-2", "dest-3"}, excludedIDs(excluded))
+		for _, e := range excluded {
+			require.Equal(t, reportingtypes.FilteredIntegrationStatus, e.reason)
+			require.Equal(t, reportingtypes.FilterEventCode, e.statusCode)
+		}
+	})
+
+	t.Run("a consent-denied destination is excluded with reason filtered_consent and code 298", func(t *testing.T) {
+		sourceID := "source-1"
+		dests := []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))}
+		proc := newClassifyTestHandle(sourceID, dests)
+
+		available, excluded := proc.classifyDestinations(deniedConsentEvent(), proc.getSourceDestinations(sourceID), sourceID, "")
+
+		require.Empty(t, available)
+		require.Len(t, excluded, 1)
+		require.Equal(t, "dest-1", excluded[0].destination.ID)
+		require.Equal(t, reportingtypes.FilteredConsentStatus, excluded[0].reason)
+		require.Equal(t, reportingtypes.FilterEventCode, excluded[0].statusCode)
+	})
+
+	t.Run("a destination excluded by integrations and also consent-denied yields exactly one entry, with reason filtered_integration", func(t *testing.T) {
+		sourceID := "source-1"
+		dests := []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))}
+		proc := newClassifyTestHandle(sourceID, dests)
+
+		event := deniedConsentEvent()
+		event["integrations"] = map[string]any{"Amplitude": false}
+
+		available, excluded := proc.classifyDestinations(event, proc.getSourceDestinations(sourceID), sourceID, "")
+
+		require.Empty(t, available)
+		require.Len(t, excluded, 1)
+		require.Equal(t, "dest-1", excluded[0].destination.ID)
+		require.Equal(t, reportingtypes.FilteredIntegrationStatus, excluded[0].reason)
+	})
+
+	t.Run("two destinations of the same type with one consent-denied preserve backend-config order in available", func(t *testing.T) {
+		sourceID := "source-1"
+		dests := []backendconfig.DestinationT{
+			amplitudeDest("dest-2"),
+			consentDeniedDest(amplitudeDest("dest-1")),
+			amplitudeDest("dest-3"),
+		}
+		proc := newClassifyTestHandle(sourceID, dests)
+
+		available, excluded := proc.classifyDestinations(deniedConsentEvent(), proc.getSourceDestinations(sourceID), sourceID, "")
+
+		require.Equal(t, []string{"dest-2", "dest-3"}, availableIDs(available))
+		require.Equal(t, []string{"dest-1"}, excludedIDs(excluded))
+	})
+
+	t.Run("specificDestID narrows the candidate set to the stamped destination and the source's other destinations appear in neither slice", func(t *testing.T) {
+		sourceID := "source-1"
+		dests := []backendconfig.DestinationT{
+			webhookDest(),
+			amplitudeDest("dest-2"),
+			amplitudeDest("dest-3"),
+		}
+		proc := newClassifyTestHandle(sourceID, dests)
+
+		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "dest-2")
+
+		require.Equal(t, []string{"dest-2"}, availableIDs(available))
+		require.Empty(t, excluded)
+	})
+
+	t.Run("specificDestID set and the stamped destination consent-denied yields empty available and exactly one excluded entry", func(t *testing.T) {
+		sourceID := "source-1"
+		dests := []backendconfig.DestinationT{
+			consentDeniedDest(amplitudeDest("dest-1")),
+			amplitudeDest("dest-2"),
+		}
+		proc := newClassifyTestHandle(sourceID, dests)
+
+		available, excluded := proc.classifyDestinations(deniedConsentEvent(), proc.getSourceDestinations(sourceID), sourceID, "dest-1")
+
+		require.Empty(t, available)
+		require.Len(t, excluded, 1)
+		require.Equal(t, "dest-1", excluded[0].destination.ID)
+		require.Equal(t, reportingtypes.FilteredConsentStatus, excluded[0].reason)
+	})
+
+	t.Run("specificDestID naming a disabled or unconnected destination yields empty available AND empty excluded", func(t *testing.T) {
+		sourceID := "source-1"
+		dests := []backendconfig.DestinationT{webhookDest()}
+		proc := newClassifyTestHandle(sourceID, dests)
+
+		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "dest-not-connected")
+
+		require.Empty(t, available)
+		require.Empty(t, excluded)
+	})
+
+	t.Run("specificDestID set and the stamped destination's type integration-excluded yields empty available and one filtered_integration entry", func(t *testing.T) {
+		sourceID := "source-1"
+		dests := []backendconfig.DestinationT{
+			webhookDest(),
+			amplitudeDest("dest-2"),
+		}
+		proc := newClassifyTestHandle(sourceID, dests)
+
+		available, excluded := proc.classifyDestinations(integrationsExcludingAmplitude(), proc.getSourceDestinations(sourceID), sourceID, "dest-2")
+
+		require.Empty(t, available)
+		require.Len(t, excluded, 1)
+		require.Equal(t, "dest-2", excluded[0].destination.ID)
+		require.Equal(t, reportingtypes.FilteredIntegrationStatus, excluded[0].reason)
+	})
+
+	t.Run("a source with no destinations yields empty available and empty excluded", func(t *testing.T) {
+		sourceID := "source-1"
+		proc := newClassifyTestHandle(sourceID, nil)
+
+		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "")
+
+		require.Empty(t, available)
+		require.Empty(t, excluded)
+	})
+
+	t.Run("a disabled destination is not a candidate and appears in neither slice", func(t *testing.T) {
+		sourceID := "source-1"
+		disabled := amplitudeDest("dest-2")
+		disabled.Enabled = false
+		proc := newClassifyTestHandle(sourceID, []backendconfig.DestinationT{webhookDest(), disabled})
+
+		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "")
+
+		require.Equal(t, []string{"dest-1"}, availableIDs(available))
+		require.Empty(t, excluded)
+	})
+
+	t.Run("a malformed integrations.All value excludes every candidate as filtered_integration", func(t *testing.T) {
+		sourceID := "source-1"
+		dests := []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")}
+		proc := newClassifyTestHandle(sourceID, dests)
+
+		event := types.SingularEventT{
+			"integrations": map[string]any{"All": "not-a-bool"},
+		}
+		available, excluded := proc.classifyDestinations(event, proc.getSourceDestinations(sourceID), sourceID, "")
+
+		require.Empty(t, available)
+		require.ElementsMatch(t, []string{"dest-1", "dest-2"}, excludedIDs(excluded))
+		for _, e := range excluded {
+			require.Equal(t, reportingtypes.FilteredIntegrationStatus, e.reason)
+		}
+	})
+
+	t.Run("len(available) > 0 agrees with isDestinationAvailable across the case table", func(t *testing.T) {
+		sourceID := "source-1"
+		testCases := []struct {
+			name           string
+			dests          []backendconfig.DestinationT
+			event          types.SingularEventT
+			specificDestID string
+		}{
+			{
+				name:  "all survive",
+				dests: []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")},
+				event: types.SingularEventT{},
+			},
+			{
+				name:  "integration excluded type",
+				dests: []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")},
+				event: integrationsExcludingAmplitude(),
+			},
+			{
+				name:  "all excluded by integrations",
+				dests: []backendconfig.DestinationT{amplitudeDest("dest-1")},
+				event: integrationsExcludingAmplitude(),
+			},
+			{
+				name:  "consent denies the only destination",
+				dests: []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))},
+				event: deniedConsentEvent(),
+			},
+			{
+				name:  "consent denies one of two",
+				dests: []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1")), amplitudeDest("dest-2")},
+				event: deniedConsentEvent(),
+			},
+			{
+				name:  "no destinations at all",
+				dests: nil,
+				event: types.SingularEventT{},
+			},
+			{
+				name:           "RETL narrowed to available stamped destination",
+				dests:          []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")},
+				event:          types.SingularEventT{},
+				specificDestID: "dest-2",
+			},
+			{
+				name:           "RETL narrowed to unavailable/unconnected destination",
+				dests:          []backendconfig.DestinationT{webhookDest()},
+				event:          types.SingularEventT{},
+				specificDestID: "dest-not-connected",
+			},
+			{
+				name:           "RETL narrowed to consent-denied stamped destination",
+				dests:          []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))},
+				event:          deniedConsentEvent(),
+				specificDestID: "dest-1",
+			},
+			{
+				name:  "malformed integrations.All",
+				dests: []backendconfig.DestinationT{webhookDest()},
+				event: types.SingularEventT{"integrations": map[string]any{"All": "not-a-bool"}},
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				proc := newClassifyTestHandle(sourceID, tc.dests)
+
+				available, _ := proc.classifyDestinations(tc.event, proc.getSourceDestinations(sourceID), sourceID, tc.specificDestID)
+				got := len(available) > 0
+				want := proc.isDestinationAvailable(tc.event, sourceID, tc.specificDestID)
+
+				require.Equal(t, want, got, "classifyDestinations availability must agree with isDestinationAvailable")
+			})
+		}
+	})
+}
+
+// newClassifyTestHandle builds a bare Handle wired the same way TestFilterDestinations does
+// (consent_test.go:1379-1394), plus sourceIdDestinationMap so classifyDestinations can discover
+// candidate destinations without a full NewHandle/backend-config subscription.
+func newClassifyTestHandle(sourceID string, destinations []backendconfig.DestinationT) *Handle {
+	proc := &Handle{}
+	proc.config.sourceIdDestinationMap = map[string][]backendconfig.DestinationT{sourceID: destinations}
+	proc.config.oneTrustConsentCategoriesMap = make(map[string][]string)
+	proc.config.ketchConsentCategoriesMap = make(map[string][]string)
+	proc.config.genericConsentManagementMap = make(SourceConsentMap)
+	proc.config.genericConsentManagementMap[SourceID(sourceID)] = make(DestConsentMap)
+	for _, dest := range destinations {
+		proc.config.oneTrustConsentCategoriesMap[dest.ID] = getOneTrustConsentCategories(&dest)
+		proc.config.ketchConsentCategoriesMap[dest.ID] = getKetchConsentCategories(&dest)
+		proc.config.genericConsentManagementMap[SourceID(sourceID)][DestinationID(dest.ID)], _ = getGenericConsentManagementData(&dest)
+	}
+	proc.logger = logger.NOP
+	return proc
+}
+
+func webhookDest() backendconfig.DestinationT {
+	return backendconfig.DestinationT{
+		ID:      "dest-1",
+		Name:    "dest-1",
+		Enabled: true,
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			ID:          "webhook-def",
+			Name:        "WEBHOOK",
+			DisplayName: "Webhook",
+		},
+	}
+}
+
+func amplitudeDest(id string) backendconfig.DestinationT {
+	return backendconfig.DestinationT{
+		ID:      id,
+		Name:    id,
+		Enabled: true,
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			ID:          "amplitude-def",
+			Name:        "AM",
+			DisplayName: "Amplitude",
+		},
+	}
+}
+
+// consentDeniedDest returns a destination whose oneTrustCookieCategories will exclude it once the
+// event denies "cat-1" (same shape as consent_test.go's TestFilterDestinations fixtures).
+func consentDeniedDest(base backendconfig.DestinationT) backendconfig.DestinationT {
+	base.Config = map[string]any{
+		"oneTrustCookieCategories": []any{
+			map[string]any{"oneTrustCookieCategory": "cat-1"},
+		},
+	}
+	return base
+}
+
+func deniedConsentEvent() types.SingularEventT {
+	return types.SingularEventT{
+		"context": map[string]any{
+			"consentManagement": map[string]any{
+				"deniedConsentIds": []any{"cat-1"},
+			},
+		},
+	}
+}
+
+// integrationsExcludingAmplitude builds an `integrations` object opting out of the Amplitude
+// destination type, keyed by DisplayName — FilterClientIntegrations ranges over destNameIDMap
+// keyed by DisplayName (processor.go:1005, integrations.go:52).
+func integrationsExcludingAmplitude() types.SingularEventT {
+	return types.SingularEventT{
+		"integrations": map[string]any{
+			"Amplitude": false,
+		},
+	}
+}
+
+func excludedIDs(excluded []excludedDestination) []string {
+	return lo.Map(excluded, func(e excludedDestination, _ int) string {
+		return e.destination.ID
+	})
+}
+
+func availableIDs(available []backendconfig.DestinationT) []string {
+	return lo.Map(available, func(d backendconfig.DestinationT, _ int) string {
+		return d.ID
 	})
 }

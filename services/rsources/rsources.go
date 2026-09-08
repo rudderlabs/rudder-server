@@ -179,6 +179,7 @@ type DestinationFailedRecords[R any] struct {
 type FailedRecord struct {
 	Record json.RawMessage `json:"record"`
 	Code   int             `json:"code"`
+	Error  string          `json:"error,omitempty"`
 }
 
 // ErrStatusNotFound sentinel error indicating that status cannot be found

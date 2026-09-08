@@ -331,6 +331,10 @@ func TestGetFailedRecords(t *testing.T) {
 		respBody             string
 	}{
 		{
+			// The captured message rides on the v2 leaf under the `error` key, alongside
+			// `record` and `code`, and is omitted entirely for a record the delegate
+			// captured nothing for - so a client of the previous shape sees exactly what
+			// it saw before.
 			name:                 "basic test - GetFailedRecords succeeds",
 			jobID:                "123",
 			endpoint:             prepURL("/{job_run_id}/failed-records", "123"),
@@ -351,12 +355,19 @@ func TestGetFailedRecords(t *testing.T) {
 							ID: "d1",
 							Records: []rsources.FailedRecord{
 								{Record: json.RawMessage(`{"id":"record_123"}`)},
+								{
+									Record: json.RawMessage(`{"id":"record_456"}`),
+									Code:   422,
+									// A structured message: it is a string on the wire,
+									// escaped, not an embedded object.
+									Error: `{"message":"invalid email"}`,
+								},
 							},
 						}},
 					}},
 				}},
 			},
-			respBody: `{"id":"123","tasks":[{"id":"t1","sources":[{"id":"s1","records":null,"destinations":[{"id":"d1","records":[{"record":{"id":"record_123"},"code":0}]}]}]}]}`,
+			respBody: `{"id":"123","tasks":[{"id":"t1","sources":[{"id":"s1","records":null,"destinations":[{"id":"d1","records":[{"record":{"id":"record_123"},"code":0},{"record":{"id":"record_456"},"code":422,"error":"{\"message\":\"invalid email\"}"}]}]}]}]}`,
 		},
 		{
 			name:                 "get failed records basic test with no failed records",

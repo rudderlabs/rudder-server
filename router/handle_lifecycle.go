@@ -47,6 +47,7 @@ func (rt *Handle) Setup(
 	jobsDB jobsdb.JobsDB,
 	transientSources transientsource.Service,
 	rsourcesService rsources.JobService,
+	rsourcesSyncSettings rsources.SyncSettingDelegate,
 	transformerFeaturesService transformerFeaturesService.FeaturesService,
 	debugger destinationdebugger.DestinationDebugger,
 	throttlerFactory throttler.Factory,
@@ -61,6 +62,7 @@ func (rt *Handle) Setup(
 
 	rt.transientSources = transientSources
 	rt.rsourcesService = rsourcesService
+	rt.rsourcesSyncSettings = rsourcesSyncSettings
 	rt.transformerFeaturesService = transformerFeaturesService
 
 	rt.jobsDB = jobsDB
@@ -99,8 +101,11 @@ func (rt *Handle) Setup(
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 		rt.saveDestinationResponse = value
 	}
+	if value, ok := destinationDefinition.Config["supportsDeliveredWithWarnings"].(bool); ok {
+		rt.supportsDeliveredWithWarnings.Store(value)
+	}
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destType, true)
-	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destType, 64)
+	rt.defaultNoOfWorkers = 64
 	rt.maxNoOfJobsPerChannel = getRouterConfigInt("maxNoOfJobsPerChannel", destType, 10000)
 	rt.noOfJobsPerChannel = getRouterConfigInt("noOfJobsPerChannel", destType, 1000)
 	if rt.noOfJobsPerChannel > rt.maxNoOfJobsPerChannel { // if noOfJobsPerChannel is more than max, set it as the new max
@@ -123,6 +128,7 @@ func (rt *Handle) Setup(
 	rt.eventOrderHalfEnabledStateDuration = config.GetReloadableDurationVar(10, time.Minute, getRouterConfigKeys("eventOrderHalfEnabledStateDuration", destType)...)
 	rt.deliveryThrottlerTimeout = config.GetReloadableDurationVar(5, time.Minute, getRouterConfigKeys("deliveryThrottlerTimeout", destType)...)
 	rt.reportJobsdbPayload = config.GetReloadableBoolVar(true, getRouterConfigKeys("reportJobsdbPayload", destType)...)
+	rt.storeDeliveredWithWarningPayload = config.GetReloadableBoolVar(false, getRouterConfigKeys("storeDeliveredWithWarningPayload", destType)...)
 	rt.saveDestinationResponseOverride = config.GetReloadableBoolVar(false, getRouterConfigKeys("saveDestinationResponseOverride", destType)...)
 
 	statTags := stats.Tags{"destType": rt.destType}
@@ -133,6 +139,13 @@ func (rt *Handle) Setup(
 	rt.routerTransformInputCountStat = stats.Default.NewTaggedStat("router_transform_num_input_jobs", stats.CountType, statTags)
 	rt.routerTransformOutputCountStat = stats.Default.NewTaggedStat("router_transform_num_output_jobs", stats.CountType, statTags)
 	rt.batchInputOutputDiffCountStat = stats.Default.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, statTags)
+	rt.statusDowngradedStat = func(from, to int) stats.Counter {
+		return stats.Default.NewTaggedStat("router_status_downgraded_count", stats.CountType, stats.Tags{
+			"destType": rt.destType,
+			"from":     strconv.Itoa(from),
+			"to":       strconv.Itoa(to),
+		})
+	}
 	rt.processJobsHistogramStat = stats.Default.NewTaggedStat("router_process_jobs_hist", stats.HistogramType, statTags)
 	rt.processJobsCountStat = stats.Default.NewTaggedStat("router_process_jobs_count", stats.CountType, statTags)
 	rt.processRequestsHistogramStat = stats.Default.NewTaggedStat("router_process_requests_hist", stats.HistogramType, statTags)
@@ -474,6 +487,9 @@ func (rt *Handle) backendConfigSubscriber() {
 
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 							rt.saveDestinationResponse = value
+						}
+						if value, ok := destination.DestinationDefinition.Config["supportsDeliveredWithWarnings"].(bool); ok {
+							rt.supportsDeliveredWithWarnings.Store(value)
 						}
 
 						// Config key "throttlingCost" is expected to have the eventType as the first key and the call type

@@ -190,6 +190,7 @@ type Metadata struct {
 
 	// destination metadata (available after tracking plan)
 	DestinationID           string `json:"destinationId"`
+	OriginalDestinationID   string `json:"originalDestinationId,omitempty"` // for replayed events
 	DestinationName         string `json:"destinationName"`
 	DestinationType         string `json:"destinationType"`
 	DestinationDefinitionID string `json:"destinationDefinitionId,omitempty"`
@@ -233,6 +234,7 @@ func (m Metadata) CommonMetadata() *Metadata {
 
 		// destination metadata (available after tracking plan)
 		DestinationID:           m.DestinationID,
+		OriginalDestinationID:   m.OriginalDestinationID,
 		DestinationName:         m.DestinationName,
 		DestinationType:         m.DestinationType,
 		DestinationDefinitionID: m.DestinationDefinitionID,
@@ -332,6 +334,7 @@ type EventParams struct {
 	BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser,omitempty"`
 	BotAction           string `json:"bot_action,omitempty"`
 	IsEventBlocked      bool   `json:"is_event_blocked,omitempty"`
+	IsUserSuppressed    bool   `json:"is_user_suppressed,omitempty"`
 }
 
 type TransformerMetricLabels struct {
