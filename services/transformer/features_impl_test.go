@@ -18,8 +18,7 @@ func newTestFeaturesService(features *featuresPayload) *featuresService {
 		logger:   logger.NewLogger(),
 		waitChan: make(chan struct{}),
 		options: FeaturesServiceOptions{
-			PollInterval:             time.Duration(1),
-			FeaturesRetryMaxAttempts: 1,
+			PollInterval: 10 * time.Millisecond,
 		},
 		client: &http.Client{},
 	}
@@ -75,33 +74,71 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.SourceTransformerVersion()).To(Equal(V2))
 		})
 
-		It("if transformer returns a non-200 status (404 included), features should not be considered fetched", func() {
-			for _, status := range []int{http.StatusNotFound, http.StatusInternalServerError} {
-				transformerServer := httptest.NewServer(
-					http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						http.Error(w, "error", status)
-					}))
-				DeferCleanup(transformerServer.Close)
+		It("if transformer returns an error status, features should not be considered fetched", func() {
+			transformerServer := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					http.Error(w, "error", http.StatusInternalServerError)
+				}))
+			DeferCleanup(transformerServer.Close)
 
-				handler := newTestFeaturesService(defaultTransformerFeatures)
-				handler.options.TransformerURL = transformerServer.URL
+			handler := newTestFeaturesService(defaultTransformerFeatures)
+			handler.options.TransformerURL = transformerServer.URL
 
-				Expect(handler.makeFeaturesFetchCall()).To(MatchError(ContainSubstring("unexpected response status")))
+			Expect(handler.makeFeaturesFetchCall(context.Background())).To(MatchError(ContainSubstring("unexpected response status")))
 
-				ctx, cancel := context.WithCancel(context.Background())
-				DeferCleanup(cancel)
-				go handler.syncTransformerFeatureJson(ctx)
+			ctx, cancel := context.WithCancel(context.Background())
+			DeferCleanup(cancel)
+			go handler.syncTransformerFeatureJson(ctx)
 
-				Consistently(func() bool {
-					select {
-					case <-handler.Wait():
-						return true
-					default:
-						return false
-					}
-				}, 500*time.Millisecond, 10*time.Millisecond).Should(BeFalse())
-				Expect(handler.RouterTransform("MARKETO")).To(BeTrue()) // still serving defaults
-			}
+			Consistently(func() bool {
+				select {
+				case <-handler.Wait():
+					return true
+				default:
+					return false
+				}
+			}, 500*time.Millisecond, 10*time.Millisecond).Should(BeFalse())
+			Expect(handler.RouterTransform("MARKETO")).To(BeTrue()) // still serving defaults
+		})
+
+		It("if transformer has no /features endpoint, the defaults should be served and the fetch considered successful", func() {
+			transformerServer := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					http.Error(w, "not found", http.StatusNotFound)
+				}))
+			DeferCleanup(transformerServer.Close)
+
+			handler := newTestFeaturesService(parseTestFeatures(`{"routerTransform": {"CUSTOMERIO": true}}`))
+			handler.options.TransformerURL = transformerServer.URL
+
+			Expect(handler.makeFeaturesFetchCall(context.Background())).To(Succeed())
+			Expect(handler.features.Load()).To(BeIdenticalTo(defaultTransformerFeatures))
+
+			ctx, cancel := context.WithCancel(context.Background())
+			DeferCleanup(cancel)
+			go handler.syncTransformerFeatureJson(ctx)
+
+			Eventually(handler.Wait(), time.Second).Should(BeClosed())
+			Expect(handler.RouterTransform("MARKETO")).To(BeTrue())
+			Expect(handler.RouterTransform("CUSTOMERIO")).To(BeFalse())
+		})
+
+		It("should release Wait() when the context is cancelled before the first successful fetch", func() {
+			transformerServer := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					http.Error(w, "error", http.StatusInternalServerError)
+				}))
+			DeferCleanup(transformerServer.Close)
+
+			handler := newTestFeaturesService(defaultTransformerFeatures)
+			handler.options.TransformerURL = transformerServer.URL
+
+			ctx, cancel := context.WithCancel(context.Background())
+			go handler.syncTransformerFeatureJson(ctx)
+
+			Consistently(handler.Wait(), 100*time.Millisecond, 10*time.Millisecond).ShouldNot(BeClosed())
+			cancel()
+			Eventually(handler.Wait(), time.Second).Should(BeClosed())
 		})
 
 		It("should not swap the features snapshot when the fetched body is unchanged", func() {
@@ -115,9 +152,9 @@ var _ = Describe("Transformer features", func() {
 			handler := newTestFeaturesService(defaultTransformerFeatures)
 			handler.options.TransformerURL = transformerServer.URL
 
-			Expect(handler.makeFeaturesFetchCall()).To(Succeed())
+			Expect(handler.makeFeaturesFetchCall(context.Background())).To(Succeed())
 			firstSnapshot := handler.features.Load()
-			Expect(handler.makeFeaturesFetchCall()).To(Succeed())
+			Expect(handler.makeFeaturesFetchCall(context.Background())).To(Succeed())
 			Expect(handler.features.Load()).To(BeIdenticalTo(firstSnapshot))
 		})
 
@@ -127,7 +164,7 @@ var _ = Describe("Transformer features", func() {
 			defer func() {
 				r := recover()
 				Expect(r).To(Equal("Webhook source v0 version has been deprecated. This is a breaking change. Upgrade transformer version to greater than 1.50.0 for v1"))
-				Expect(handler.isInitialized()).To(BeFalse())
+				Expect(handler.Wait()).ToNot(BeClosed())
 			}()
 
 			mockTransformerResp := `{
@@ -167,9 +204,8 @@ var _ = Describe("Transformer features", func() {
 			DeferCleanup(transformerServer.Close)
 
 			handler := NewFeaturesService(context.TODO(), config.Default, FeaturesServiceOptions{
-				PollInterval:             time.Duration(1),
-				TransformerURL:           transformerServer.URL,
-				FeaturesRetryMaxAttempts: 1,
+				PollInterval:   10 * time.Millisecond,
+				TransformerURL: transformerServer.URL,
 			})
 
 			<-handler.Wait()

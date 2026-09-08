@@ -155,9 +155,8 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, _ func(), options *app
 		return err
 	}
 	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
-		PollInterval:             config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
-		TransformerURL:           config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"),
-		FeaturesRetryMaxAttempts: 10,
+		PollInterval:   config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
+		TransformerURL: config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"),
 	})
 	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"), statsFactory)
 	if err != nil {

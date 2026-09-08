@@ -11,10 +11,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cenkalti/backoff/v5"
+
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
@@ -62,23 +65,11 @@ type featuresService struct {
 	client   *http.Client
 }
 
-func (t *featuresService) isInitialized() bool {
-	select {
-	case <-t.waitChan:
-		return true
-	default:
-		return false
-	}
-}
-
+// SourceTransformerVersion reports the source transformer protocol version. Safe to call before
+// the first fetch: the default snapshot advertises v2. The v0 deprecation check runs against every
+// fetched snapshot before it is published, so a deprecated transformer panics at fetch time rather
+// than here.
 func (t *featuresService) SourceTransformerVersion() string {
-	// Before the first successful fetch the snapshot holds hardcoded defaults; report v2 rather
-	// than trusting them. The v0 deprecation check runs against every fetched snapshot before it
-	// is published, so by the time Wait() releases callers a deprecated transformer has already
-	// caused a panic.
-	if !t.isInitialized() {
-		return V2
-	}
 	return t.features.Load().sourceTransformerVersion()
 }
 
@@ -119,8 +110,11 @@ func (t *featuresService) Wait() chan struct{} {
 func (t *featuresService) syncTransformerFeatureJson(ctx context.Context) {
 	var initDone bool
 	t.logger.Infon("Fetching transformer features", logger.NewStringField("transformerURL", t.options.TransformerURL))
-	for {
-		if t.fetchWithRetries(ctx) && !initDone {
+	for ctx.Err() == nil {
+		if err := t.fetchWithRetries(ctx); err != nil {
+			break // context cancelled
+		}
+		if !initDone {
 			initDone = true
 			t.logger.Infon("Fetched transformer features", logger.NewStringField("transformerURL", t.options.TransformerURL))
 			close(t.waitChan)
@@ -128,37 +122,42 @@ func (t *featuresService) syncTransformerFeatureJson(ctx context.Context) {
 
 		select {
 		case <-ctx.Done():
-			return
 		case <-time.After(t.options.PollInterval):
 		}
 	}
-}
-
-func (t *featuresService) fetchWithRetries(ctx context.Context) bool {
-	for i := 0; i < t.options.FeaturesRetryMaxAttempts; i++ {
-		if ctx.Err() != nil {
-			return false
-		}
-		err := t.makeFeaturesFetchCall()
-		if err == nil {
-			return true
-		}
-		t.logger.Errorn("Error fetching transformer features",
-			logger.NewStringField("transformerURL", t.options.TransformerURL),
-			obskit.Error(err),
-		)
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(2 * time.Millisecond):
-		}
+	if !initDone {
+		// Context cancelled before the first successful fetch. Release Wait() callers so a
+		// shutdown mid-initialisation doesn't leave components blocked forever.
+		close(t.waitChan)
 	}
-	return false
 }
 
-func (t *featuresService) makeFeaturesFetchCall() error {
+// fetchWithRetries retries the /features call with an exponential backoff until it succeeds or
+// ctx is cancelled. Retries are perpetual: a persistently unreachable transformer keeps Wait()
+// callers blocked rather than letting the fetch give up and advertise stale defaults.
+func (t *featuresService) fetchWithRetries(ctx context.Context) error {
+	b := backoff.NewExponentialBackOff()
+	// Cap the backoff at the poll cadence: retrying less often than a normal poll would just
+	// delay recovery without saving the transformer any load.
+	b.MaxInterval = t.options.PollInterval
+	b.InitialInterval = min(b.InitialInterval, b.MaxInterval)
+	return backoffvoid.Retry(ctx,
+		func() error { return t.makeFeaturesFetchCall(ctx) },
+		backoff.WithBackOff(b),
+		backoff.WithNotify(func(err error, next time.Duration) {
+			t.logger.Errorn("Error fetching transformer features",
+				logger.NewStringField("transformerURL", t.options.TransformerURL),
+				logger.NewDurationField("retryAfter", next),
+				obskit.Error(err),
+			)
+		}),
+		backoff.WithMaxElapsedTime(0), // perpetual retries
+	)
+}
+
+func (t *featuresService) makeFeaturesFetchCall(ctx context.Context) error {
 	url := t.options.TransformerURL + "/features"
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
@@ -173,7 +172,14 @@ func (t *featuresService) makeFeaturesFetchCall() error {
 		return fmt.Errorf("reading response body: %w", err)
 	}
 
-	if res.StatusCode != http.StatusOK {
+	switch {
+	case res.StatusCode == http.StatusNotFound:
+		// Transformer images that predate the /features endpoint. Serve the hardcoded defaults
+		// and treat the fetch as successful, so startup isn't blocked waiting for an endpoint
+		// that will never exist.
+		t.features.Store(defaultTransformerFeatures)
+		return nil
+	case res.StatusCode != http.StatusOK:
 		return fmt.Errorf("unexpected response status: %s", res.Status)
 	}
 

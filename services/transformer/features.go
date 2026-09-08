@@ -20,9 +20,8 @@ const (
 )
 
 type FeaturesServiceOptions struct {
-	PollInterval             time.Duration
-	TransformerURL           string
-	FeaturesRetryMaxAttempts int
+	PollInterval   time.Duration
+	TransformerURL string
 }
 
 type FeaturesService interface {
