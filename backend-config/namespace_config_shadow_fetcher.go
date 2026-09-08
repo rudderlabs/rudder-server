@@ -3,7 +3,9 @@ package backendconfig
 import (
 	"context"
 	"fmt"
+	"maps"
 	"runtime/debug"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -15,7 +17,7 @@ import (
 // the candidate's on the side and compares the two (§3.3 in design doc). The primary stays
 // authoritative: nothing the candidate does - an error, a panic, a divergence - reaches the
 // returned config, and the candidate is only fetched after the primary has returned, off the poll
-// goroutine, so the poll's latency is untouched.
+// goroutine, so all the poll pays is a shallow copy of the configs.
 type shadowConfigFetcher struct {
 	primary   configFetcher
 	candidate shadowCandidate
@@ -77,8 +79,10 @@ func (f *shadowConfigFetcher) sample(ctx context.Context, primary map[string]Con
 		return
 	}
 	f.lastRun = time.Now()
-	// handing the primary's map to the goroutine is safe: every poll builds a fresh map and never
-	// mutates a previous one
+	// the caller is handed these very configs and does mutate them - configUpdate sorts every
+	// workspace's sources in place as soon as Get returns - so the comparison walks a copy of the
+	// containers, taken here, before the goroutine that reads them exists
+	primary = snapshotForComparison(primary)
 	go func() {
 		defer f.sampling.Store(false)
 		defer func() {
@@ -115,6 +119,18 @@ func (f *shadowConfigFetcher) runSample(ctx context.Context, primary map[string]
 		return
 	}
 	f.comparer.compare(ctx, primary, candidate)
+}
+
+// snapshotForComparison copies the containers the comparison walks. Only the containers: what
+// hangs below them is read by both sides and written by neither.
+func snapshotForComparison(configs map[string]ConfigT) map[string]ConfigT {
+	snapshot := make(map[string]ConfigT, len(configs))
+	for workspaceID, config := range configs {
+		config.Sources = slices.Clone(config.Sources)
+		config.Connections = maps.Clone(config.Connections)
+		snapshot[workspaceID] = config
+	}
+	return snapshot
 }
 
 func newestUpdatedAt(configs map[string]ConfigT) time.Time {

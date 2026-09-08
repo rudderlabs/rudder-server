@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
+	"sort"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -58,6 +60,32 @@ func TestShadowConfigFetcher(t *testing.T) {
 			// race the sample goroutine into passing
 			require.True(t, fetcher.lastRun.IsZero(), "the failed poll did not spend a sample")
 			require.EqualValues(t, 0, candidate.calls.Load())
+		})
+
+		t.Run("and leaves it free to mutate what it was served", func(t *testing.T) {
+			release := make(chan struct{})
+			sources := []SourceT{{ID: "s2"}, {ID: "s1"}}
+			primary := &shadowFetcherStub{configs: map[string]ConfigT{
+				"ws-1": {WorkspaceID: "ws-1", Sources: sources},
+			}}
+			candidate := &shadowFetcherStub{configs: map[string]ConfigT{
+				"ws-1": {WorkspaceID: "ws-1", Sources: slices.Clone(sources)},
+			}, release: release}
+			fetcher, store := newShadowFetcherForTest(t, primary, candidate)
+
+			configs, err := fetcher.Get(context.Background())
+			require.NoError(t, err)
+			// the sample is released from a third goroutine, so that the sort below is ordered
+			// against neither the release nor the sample's reads: were the slices shared, this
+			// is the data race configUpdate makes on every poll
+			go close(release)
+			for _, config := range configs {
+				sort.Slice(config.Sources, func(i, j int) bool {
+					return config.Sources[i].ID < config.Sources[j].ID
+				})
+			}
+			awaitSample(t, fetcher)
+			require.Equal(t, 1.0, counterValue(store, "bcv2_shadow_matched", nil))
 		})
 	})
 
