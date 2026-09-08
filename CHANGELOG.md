@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.86.0](https://github.com/rudderlabs/rudder-server/compare/v1.85.0...v1.86.0) (2026-09-07)
+
+
+### Features
+
+* backend config v2-to-v1 mapper ([#7315](https://github.com/rudderlabs/rudder-server/issues/7315)) ([887f6d2](https://github.com/rudderlabs/rudder-server/commit/887f6d28d856e65e5e6d8faac1178b97382adac1))
+* **core:** capture the final recorded error for failed rETL records ([#7295](https://github.com/rudderlabs/rudder-server/issues/7295)) ([f4dc4d9](https://github.com/rudderlabs/rudder-server/commit/f4dc4d91c10202215f36a91e5f642f843808baa9))
+* per-destination visibility at the destination-filter boundary ([#7283](https://github.com/rudderlabs/rudder-server/issues/7283)) ([3d83f02](https://github.com/rudderlabs/rudder-server/commit/3d83f02a3453d7aa4ae56935334ace074e18893e))
+* user_suppression counter via suppressed dummy jobs ([#7325](https://github.com/rudderlabs/rudder-server/issues/7325)) ([77d3d37](https://github.com/rudderlabs/rudder-server/commit/77d3d3769126713e949860d318d7c568a5784d1d))
+* **warehouse:** support jsonPaths for gcs datalake ([#7333](https://github.com/rudderlabs/rudder-server/issues/7333)) ([e714140](https://github.com/rudderlabs/rudder-server/commit/e71414019924594a70d012ca3221fb2fd454cf07))
+
+
+### Bug Fixes
+
+* rsources failed-records pagination drops records across failed-key boundaries ([#7329](https://github.com/rudderlabs/rudder-server/issues/7329)) ([0a50439](https://github.com/rudderlabs/rudder-server/commit/0a504397fcd9db8692295291086655a2650ae1a2))
+* **warehouse:** stop logging full schemas on table-level schema mismatch ([#7339](https://github.com/rudderlabs/rudder-server/issues/7339)) ([f244c14](https://github.com/rudderlabs/rudder-server/commit/f244c1457b14d8029b80bb73b59b79d74ef3f525))
+* **warehouse:** upgrade clickhouse v2 driver ([#7332](https://github.com/rudderlabs/rudder-server/issues/7332)) ([e2c5cb9](https://github.com/rudderlabs/rudder-server/commit/e2c5cb961c28ac678ff9d2cbcb05f88fd17ab504))
+
+
+### Miscellaneous
+
+* **ci:** remove unused Snyk policy file (SEC-409) ([#7317](https://github.com/rudderlabs/rudder-server/issues/7317)) ([d60b3c6](https://github.com/rudderlabs/rudder-server/commit/d60b3c63e5956815cad1fcb2352a9b17f21bfb17))
+* make reporting 413 handling unconditional ([#7313](https://github.com/rudderlabs/rudder-server/issues/7313)) ([d2474e9](https://github.com/rudderlabs/rudder-server/commit/d2474e9768749f153d8fbeafe6776a999c2bbd6b))
+* moving pyt contract tests ([#7327](https://github.com/rudderlabs/rudder-server/issues/7327)) ([8316af2](https://github.com/rudderlabs/rudder-server/commit/8316af298a900bc8c1f992e43af466c4ecb55686))
+* **processor:** pipeline attribution in processor stats ([#7326](https://github.com/rudderlabs/rudder-server/issues/7326)) ([3e97f7c](https://github.com/rudderlabs/rudder-server/commit/3e97f7c94231112de8deab437468ac87a8f88887))
+* skip consent and connection-mode filtering for replays of non-existent connections ([#7323](https://github.com/rudderlabs/rudder-server/issues/7323)) ([d2474e9](https://github.com/rudderlabs/rudder-server/commit/d2474e9768749f153d8fbeafe6776a999c2bbd6b))
+
 ## [1.85.0](https://github.com/rudderlabs/rudder-server/compare/v1.84.0...v1.85.0) (2026-08-31)
 
 
