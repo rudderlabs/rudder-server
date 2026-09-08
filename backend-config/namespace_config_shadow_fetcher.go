@@ -14,7 +14,7 @@ import (
 )
 
 // shadowConfigFetcher serves the primary fetcher's configs and, at most once per interval, fetches
-// the candidate's on the side and compares the two (§3.3 in design doc). The primary stays
+// the candidate's on the side and compares the two. The primary stays
 // authoritative: nothing the candidate does - an error, a panic, a divergence - reaches the
 // returned config, and the candidate is only fetched after the primary has returned, off the poll
 // goroutine, so all the poll pays is a shallow copy of the configs.
@@ -108,8 +108,8 @@ func (f *shadowConfigFetcher) runSample(ctx context.Context, primary map[string]
 	}
 	defer f.comparer.comparisonTime.RecordDuration()()
 	// anything written between the two fetches carries a timestamp later than everything the
-	// primary observed, making the sample incomparable (§3.3.2 in design doc). The candidate's
-	// side folds in the definition catalogues, which no workspace timestamp covers
+	// primary observed, making the sample incomparable. The candidate's side folds in the
+	// definition catalogues, which no workspace timestamp covers
 	candidateMax := newestUpdatedAt(candidate)
 	if definitions := f.candidate.definitionsUpdatedAt(); definitions.After(candidateMax) {
 		candidateMax = definitions

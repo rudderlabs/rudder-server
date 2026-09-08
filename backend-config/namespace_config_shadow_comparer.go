@@ -59,7 +59,7 @@ func newShadowComparer(
 
 func (c *shadowComparer) compare(ctx context.Context, primary, candidate map[string]ConfigT) {
 	// membership is counted, not diffed: a workspace added or removed between the two fetches
-	// moves no timestamp, so the gate cannot catch it (§3.3.2 in design doc)
+	// moves no timestamp, so the gate cannot catch it
 	var diverging []string
 	for workspaceID, primaryConfig := range primary {
 		candidateConfig, ok := candidate[workspaceID]
@@ -265,7 +265,7 @@ func shadowNormalize(config ConfigT) ConfigT {
 // unenrichedSourceCategories are the source categories the control plane serves as stored. The
 // mapper maps every source the same way, but the control plane enriches cloud, singer-protocol and
 // warehouse source configs before serving them (credentials, resources, audiences), and that
-// enrichment is not ported (D2 in design doc) - so only the unenriched categories can be compared.
+// enrichment is not ported - so only the unenriched categories can be compared.
 // An allowlist, because enrichment dispatches on a mix of category and config.origin.
 var unenrichedSourceCategories = map[string]struct{}{"": {}, "webhook": {}}
 
