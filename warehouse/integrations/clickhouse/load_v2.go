@@ -109,10 +109,13 @@ func (ch *ClickhouseV2) loadTable(ctx context.Context, tableName string, tableSc
 			return err
 		}
 	}
+	st := ch.newLoadStats(tableName)
+	defer st.loadTableTime.RecordDuration()()
+
 	if ch.UseS3CopyEngineForLoading() {
 		return ch.loadByCopyCommand(ctx, tableName, tableSchemaInUpload)
 	}
-	return ch.loadByDownloadingLoadFiles(ctx, tableName, tableSchemaInUpload)
+	return ch.loadByDownloadingLoadFiles(ctx, tableName, tableSchemaInUpload, st)
 }
 
 func (ch *ClickhouseV2) UseS3CopyEngineForLoading() bool {
@@ -209,7 +212,7 @@ func copySQLStatement(namespace, tableName, sortedColumnNames string, s3Args []s
 	)
 }
 
-func (ch *ClickhouseV2) loadByDownloadingLoadFiles(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) error {
+func (ch *ClickhouseV2) loadByDownloadingLoadFiles(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema, st *loadStats) error {
 	log := ch.logger.Withn(
 		logger.NewStringField(logfield.SourceID, ch.Warehouse.Source.ID),
 		logger.NewStringField(logfield.SourceType, ch.Warehouse.Source.SourceDefinition.Name),
@@ -221,7 +224,9 @@ func (ch *ClickhouseV2) loadByDownloadingLoadFiles(ctx context.Context, tableNam
 	)
 	log.Infon("Starting load by downloading load files")
 
+	downloadStart := time.Now()
 	fileNames, err := ch.LoadFileDownloader.Download(ctx, tableName)
+	st.downloadLoadFilesTime.Since(downloadStart)
 	if err != nil {
 		return fmt.Errorf("downloading load files: %w", err)
 	}
@@ -229,7 +234,7 @@ func (ch *ClickhouseV2) loadByDownloadingLoadFiles(ctx context.Context, tableNam
 		misc.RemoveFilePaths(fileNames...)
 	}()
 
-	if err := ch.loadTableFromFiles(ctx, log, tableName, tableSchemaInUpload, fileNames); err != nil {
+	if err := ch.loadTableFromFiles(ctx, log, tableName, tableSchemaInUpload, fileNames, st); err != nil {
 		return fmt.Errorf("loading table from files: %w", err)
 	}
 	log.Infon("Completed load by downloading load files")
@@ -331,6 +336,7 @@ func (ch *ClickhouseV2) loadTableFromFiles(
 	tableName string,
 	tableSchemaInUpload model.TableSchema,
 	fileNames []string,
+	st *loadStats,
 ) error {
 	if len(fileNames) == 0 {
 		return nil
@@ -370,7 +376,7 @@ func (ch *ClickhouseV2) loadTableFromFiles(
 	var rows int
 	csvReader := csv.NewReader(gzipReader)
 	for {
-		inserted, err := ch.insertBlock(ctx, insertSQL, csvReader, sortedColumnKeys, tableSchemaInUpload)
+		inserted, err := ch.insertBlock(ctx, insertSQL, csvReader, sortedColumnKeys, tableSchemaInUpload, st)
 		if err != nil {
 			return fmt.Errorf("inserting block after %d rows: %w", rows, err)
 		}
@@ -382,6 +388,8 @@ func (ch *ClickhouseV2) loadTableFromFiles(
 			break
 		}
 	}
+
+	st.numRowsLoadFile.Count(rows)
 
 	log.Debugn("Load files processed",
 		logger.NewIntField("files", int64(len(fileNames))),
@@ -410,18 +418,29 @@ func (ch *ClickhouseV2) insertBlock(
 	csvReader *csv.Reader,
 	columnKeys []string,
 	schema model.TableSchema,
+	st *loadStats,
 ) (int, error) {
+	readStart := time.Now()
 	block, err := readBlock(csvReader, columnKeys, ch.config.commitEvery)
 	if err != nil {
 		return 0, err
 	}
+	st.blockReadTime.Since(readStart)
 	if len(block) == 0 {
 		return 0, nil
 	}
 
+	st.blocks.Increment()
+	st.blockSize.Observe(float64(len(block)))
+
+	// WithNotify fires only once a retry is actually going to follow — after the
+	// permanent check and after the budget check — so this counts retries made,
+	// not failures seen.
 	if err := ch.withBlockRetries(ctx, func() error {
-		return ch.sendBlock(ctx, insertSQL, block, columnKeys, schema)
-	}); err != nil {
+		return ch.sendBlock(ctx, insertSQL, block, columnKeys, schema, st)
+	}, backoff.WithNotify(func(error, time.Duration) {
+		st.blockRetries.Increment()
+	})); err != nil {
 		return 0, err
 	}
 	return len(block), nil
@@ -483,14 +502,23 @@ func readBlock(csvReader *csv.Reader, columnKeys []string, size int) ([][]string
 // sendBlock binds every row and commits the batch. Binding happens here rather
 // than in readBlock so a retry rebinds from the raw text, which keeps the held
 // block as small as it can be.
+// The three phases are timed apart on purpose. Each is bounded by something
+// different — prepare is a round trip, binding is client CPU, and the commit is
+// the one wire write a block makes — and only their ratio says where a slow load
+// is actually spending its time. Timed together they cannot tell a saturated
+// server from a saturated loader, which is the question worth asking before
+// adding any concurrency.
 func (ch *ClickhouseV2) sendBlock(
 	ctx context.Context,
 	insertSQL string,
 	block [][]string,
 	columnKeys []string,
 	schema model.TableSchema,
+	st *loadStats,
 ) error {
-	return ch.DB.WithTx(ctx, func(txCtx context.Context, txn *sqlmw.Tx) error {
+	var boundAt time.Time
+
+	err := ch.DB.WithTx(ctx, func(txCtx context.Context, txn *sqlmw.Tx) error {
 		// A *sql.Stmt belongs to its transaction, and sending a batch is what
 		// ends one, so every block prepares the same SQL again on a fresh
 		// transaction.
@@ -498,23 +526,39 @@ func (ch *ClickhouseV2) sendBlock(
 		// txCtx rather than ctx: the driver captures this context on the batch,
 		// and it is the only one batch.Send can observe. Whatever deadline it
 		// carries is what bounds the write.
+		prepareStart := time.Now()
 		stmt, err := txn.PrepareContext(txCtx, insertSQL)
 		if err != nil {
 			return fmt.Errorf("preparing statement %s: %w", insertSQL, err)
 		}
+		st.blockPrepareTime.Since(prepareStart)
 		defer func() { _ = stmt.Close() }()
 
+		bindStart := time.Now()
 		for _, record := range block {
 			values := make([]any, 0, len(record))
 			for index, value := range record {
 				values = append(values, ch.bindValue(value, schema[columnKeys[index]]))
 			}
+			// Client-side only: ExecContext appends to the batch and sends
+			// nothing, which is why this is counted as binding rather than as
+			// part of the write.
 			if _, err := stmt.ExecContext(txCtx, values...); err != nil {
 				return fmt.Errorf("executing statement: %w", err)
 			}
 		}
+		st.blockBindTime.Since(bindStart)
+		boundAt = time.Now()
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	// WithTx commits once fn returns, and the driver's Commit is batch.Send. The
+	// interval from the last bind to here is therefore the wire write and
+	// nothing else.
+	st.commitTime.Since(boundAt)
+	return nil
 }
 
 // isRetryableSendError reports whether a failed block send is worth repeating.
