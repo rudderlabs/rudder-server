@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -41,6 +42,11 @@ type ClickhouseV2 struct {
 	Uploader           warehouseutils.Uploader
 	connectTimeout     time.Duration
 	LoadFileDownloader downloader.Downloader
+
+	// TemporaryS3Cred mints the short-lived credentials the copy engine hands
+	// to the s3 table function. NewV2 points it at the shared helper, which
+	// reaches AWS; a test can point it somewhere closer.
+	TemporaryS3Cred func(*backendconfig.DestinationT) (string, string, string, error)
 
 	conf   *config.Config
 	logger logger.Logger
@@ -70,6 +76,7 @@ func NewV2(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse
 	ch.conf = conf
 	ch.logger = log.Child("integrations").Child("clickhouse").Child("v2")
 	ch.stats = stat
+	ch.TemporaryS3Cred = warehouseutils.GetTemporaryS3Cred
 
 	ch.config.queryDebugLogs = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.queryDebugLogs")
 	// commitEvery is the number of rows between commits, which is what bounds
