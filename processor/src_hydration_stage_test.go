@@ -3,6 +3,7 @@ package processor
 import (
 	"context"
 	"errors"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -671,6 +672,135 @@ func TestSrcHydrationStage(t *testing.T) {
 		require.Equal(t, ogEventSchemaJob.CustomVal, eventSchemaJobs[0].CustomVal)
 		require.Equal(t, ogEventSchemaJob.WorkspaceId, eventSchemaJobs[0].WorkspaceId)
 		require.Equal(t, jsonparser.GetStringOrEmpty(eventSchemaJobs[0].EventPayload, "productName"), "Test Product 1")
+	})
+
+	t.Run("hydration failure rows are appended to reportMetrics that arrive non-empty", func(t *testing.T) {
+		msgId := "message-1"
+		receivedAt := time.Now().In(time.UTC)
+		events := []types.TransformerEvent{
+			{
+				Message: map[string]any{
+					"type":      "track",
+					"event":     "Product Viewed",
+					"productId": "12345",
+				},
+				Metadata: types.Metadata{
+					MessageID:  msgId,
+					ReceivedAt: receivedAt.Format(misc.RFC3339Milli),
+					SourceID:   fblaSourceId,
+				},
+			},
+		}
+
+		// Setup mock transformer clients with error, forcing a hydration-failure row.
+		transformerClients := transformer.NewSimpleClients()
+		transformerClients.SetSrcHydrationOutput(types.SrcHydrationResponse{}, errors.New("hydration error"))
+
+		c := &testContext{}
+		c.Setup(t)
+		defer c.Finish()
+		conf := config.New()
+		proc := NewHandle(conf, transformerClients)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().AnyTimes()
+		Setup(proc, c, true, true, t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		err := proc.config.asyncInit.WaitContext(ctx)
+		require.NoError(t, err)
+
+		// Pre-seed reportMetrics with two sentinel rows, mimicking the eight-map assembly
+		// that now runs in preprocessStage and hands non-empty reportMetrics down to this
+		// stage (see assembleSideStatusDetailMetrics in processor.go).
+		sentinel1 := &reportingtypes.PUReportedMetric{
+			ConnectionDetails: reportingtypes.ConnectionDetails{SourceID: "sentinel-source-1"},
+			PUDetails: reportingtypes.PUDetails{
+				PU:        reportingtypes.GATEWAY,
+				InitialPU: true,
+			},
+			StatusDetail: &reportingtypes.StatusDetail{
+				Status:    "succeeded",
+				Count:     11,
+				EventName: "sentinel-event-1",
+				EventType: "track",
+			},
+		}
+		sentinel2 := &reportingtypes.PUReportedMetric{
+			ConnectionDetails: reportingtypes.ConnectionDetails{SourceID: "sentinel-source-2"},
+			PUDetails: reportingtypes.PUDetails{
+				PU: reportingtypes.DEDUP,
+			},
+			StatusDetail: &reportingtypes.StatusDetail{
+				Status:    "succeeded",
+				Count:     22,
+				EventName: "sentinel-event-2",
+				EventType: "track",
+			},
+		}
+
+		message := &srcHydrationMessage{
+			partition: "test-partition",
+			subJobs: subJob{
+				ctx: context.Background(),
+			},
+			eventSchemaJobsBySourceId: make(map[SourceIDT][]*jobsdb.JobT),
+			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
+				SourceIDT(fblaSourceId): events,
+			},
+			eventsByMessageID:      make(map[string]types.SingularEventWithReceivedAt),
+			earlyDestinationFilter: true,
+			reportMetrics:          []*reportingtypes.PUReportedMetric{sentinel1, sentinel2},
+		}
+
+		// Execute the source hydration stage
+		result, err := proc.srcHydrationStage("test-partition", message)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		sampleEvent, err := jsonrs.Marshal(events[0].Message)
+		require.NoError(t, err)
+		hydrationFailureRow := &reportingtypes.PUReportedMetric{
+			ConnectionDetails: reportingtypes.ConnectionDetails{
+				SourceID:       fblaSourceId,
+				SourceCategory: "webhook",
+			},
+			PUDetails: reportingtypes.PUDetails{
+				InPU:       reportingtypes.DESTINATION_FILTER,
+				PU:         reportingtypes.SOURCE_HYDRATION,
+				TerminalPU: false,
+				InitialPU:  false,
+			},
+			StatusDetail: &reportingtypes.StatusDetail{
+				Status:         "aborted",
+				Count:          1,
+				StatusCode:     500,
+				SampleResponse: "hydration error",
+				SampleEvent:    sampleEvent,
+				EventName:      "Product Viewed",
+				EventType:      "track",
+				FailedMessages: []*reportingtypes.FailedMessage{
+					{
+						MessageID:  msgId,
+						ReceivedAt: receivedAt.Truncate(time.Millisecond),
+					},
+				},
+			},
+		}
+
+		// Assert the result contains both sentinels *and* the hydration row as a multiset,
+		// sorted by a stable key (PU + event name) rather than relying on append order/index.
+		expected := []*reportingtypes.PUReportedMetric{sentinel1, sentinel2, hydrationFailureRow}
+		metricKey := func(m *reportingtypes.PUReportedMetric) string {
+			return m.PU + "|" + m.StatusDetail.EventName
+		}
+		sort.Slice(expected, func(i, j int) bool { return metricKey(expected[i]) < metricKey(expected[j]) })
+
+		require.Len(t, result.reportMetrics, len(expected))
+		actual := append([]*reportingtypes.PUReportedMetric(nil), result.reportMetrics...)
+		sort.Slice(actual, func(i, j int) bool { return metricKey(actual[i]) < metricKey(actual[j]) })
+
+		require.Equal(t, expected, actual)
 	})
 
 	t.Run("Test eventsByMessageID updated with hydrated data", func(t *testing.T) {
