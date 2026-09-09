@@ -55,6 +55,7 @@ type ClickhouseV2 struct {
 	config struct {
 		queryDebugLogs              bool
 		commitEvery                 int
+		maxRetriesPerBlock          int
 		poolSize                    int
 		connMaxIdleTime             time.Duration
 		connMaxLifetime             time.Duration
@@ -85,6 +86,10 @@ func NewV2(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse
 	// load spins forever committing empty batches. One is enough to rule that
 	// out, and keeping the floor there leaves small values usable in tests.
 	ch.config.commitEvery = max(conf.GetIntVar(1000000, 1, "Warehouse.clickhouse.v2.commitEvery"), 1)
+	// The number of times one block may be sent again, not a count of blocked
+	// retries: a block that failed on a connection the pool handed over dead is
+	// worth repeating, anything the server rejected is not. Zero disables them.
+	ch.config.maxRetriesPerBlock = conf.GetIntVar(3, 1, "Warehouse.clickhouse.v2.maxRetriesPerBlock")
 	ch.config.poolSize = conf.GetIntVar(100, 1, "Warehouse.clickhouse.v2.poolSize")
 	// Every block takes a connection out of the pool, so a connection the
 	// server closed while it sat idle has to be retired before a block picks

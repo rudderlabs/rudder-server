@@ -4,18 +4,25 @@ import (
 	"compress/gzip"
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path"
 	"slices"
 	"sort"
 	"strings"
+	"syscall"
+	"time"
+
+	"github.com/cenkalti/backoff/v5"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
@@ -389,9 +396,7 @@ func (ch *ClickhouseV2) loadTableFromFiles(
 //
 // A return below commitEvery means EOF was reached, which is how the caller
 // knows to stop. When the row count is an exact multiple of commitEvery the
-// caller makes one more call that reads EOF and commits nothing: that costs a
-// prepare and a query close but no data frame, since batch.Send skips the send
-// entirely for a zero-row block.
+// caller makes one more call that reads EOF and sends nothing.
 //
 // "Transaction" is the driver's word, not ClickHouse's: BeginTx sends nothing
 // and only health-checks the connection, Commit is batch.Send, and Rollback
@@ -406,9 +411,86 @@ func (ch *ClickhouseV2) insertBlock(
 	columnKeys []string,
 	schema model.TableSchema,
 ) (int, error) {
-	var inserted int
+	block, err := readBlock(csvReader, columnKeys, ch.config.commitEvery)
+	if err != nil {
+		return 0, err
+	}
+	if len(block) == 0 {
+		return 0, nil
+	}
 
-	err := ch.DB.WithTx(ctx, func(txCtx context.Context, txn *sqlmw.Tx) error {
+	if err := ch.withBlockRetries(ctx, func() error {
+		return ch.sendBlock(ctx, insertSQL, block, columnKeys, schema)
+	}); err != nil {
+		return 0, err
+	}
+	return len(block), nil
+}
+
+// withBlockRetries runs send under the retry policy for one block: a failure
+// that came from the connection is repeated, anything the server rejected is
+// not, and the whole thing is bounded by maxRetriesPerBlock. send always runs
+// at least once.
+//
+// It is separate from insertBlock so the policy can be exercised without a
+// server, and so a caller can override or extend the options — the later of two
+// conflicting options wins, which is what lets a test collapse the delay.
+func (ch *ClickhouseV2) withBlockRetries(ctx context.Context, send func() error, opts ...backoff.RetryOption) error {
+	return backoffvoid.Retry(ctx, func() error {
+		err := send()
+		if err == nil {
+			return nil
+		}
+		if !isRetryableSendError(err) {
+			return backoff.Permanent(err)
+		}
+		return err
+	}, append([]backoff.RetryOption{
+		backoff.WithBackOff(backoff.NewConstantBackOff(time.Second)),
+		backoff.WithMaxElapsedTime(0),
+		backoff.WithMaxTries(uint(ch.config.maxRetriesPerBlock) + 1),
+	}, opts...)...)
+}
+
+// readBlock reads up to size rows off csvReader.
+//
+// The rows are held rather than bound and sent as they are read, because the
+// reader has already moved past them: a send that has to be repeated has to
+// repeat these rows, not pull the next ones. Retrying without this would skip a
+// block's worth of data and report success. The cost is the block's raw text
+// staying in memory until it lands, which makes commitEvery a memory knob on
+// top of a batching one.
+func readBlock(csvReader *csv.Reader, columnKeys []string, size int) ([][]string, error) {
+	block := make([][]string, 0, size)
+	for len(block) < size {
+		record, err := csvReader.Read()
+		if errors.Is(err, io.EOF) {
+			return block, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading csv: %w", err)
+		}
+		if len(columnKeys) != len(record) {
+			return nil, fmt.Errorf("%w: columns in row: %d, columns in upload schema: %d",
+				errCSVColumnsMismatch, len(record), len(columnKeys),
+			)
+		}
+		block = append(block, record)
+	}
+	return block, nil
+}
+
+// sendBlock binds every row and commits the batch. Binding happens here rather
+// than in readBlock so a retry rebinds from the raw text, which keeps the held
+// block as small as it can be.
+func (ch *ClickhouseV2) sendBlock(
+	ctx context.Context,
+	insertSQL string,
+	block [][]string,
+	columnKeys []string,
+	schema model.TableSchema,
+) error {
+	return ch.DB.WithTx(ctx, func(txCtx context.Context, txn *sqlmw.Tx) error {
 		// A *sql.Stmt belongs to its transaction, and sending a batch is what
 		// ends one, so every block prepares the same SQL again on a fresh
 		// transaction.
@@ -422,20 +504,7 @@ func (ch *ClickhouseV2) insertBlock(
 		}
 		defer func() { _ = stmt.Close() }()
 
-		for inserted < ch.config.commitEvery {
-			record, err := csvReader.Read()
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("reading csv: %w", err)
-			}
-			if len(columnKeys) != len(record) {
-				return fmt.Errorf("%w: columns in row: %d, columns in upload schema: %d",
-					errCSVColumnsMismatch, len(record), len(columnKeys),
-				)
-			}
-
+		for _, record := range block {
 			values := make([]any, 0, len(record))
 			for index, value := range record {
 				values = append(values, ch.bindValue(value, schema[columnKeys[index]]))
@@ -443,9 +512,25 @@ func (ch *ClickhouseV2) insertBlock(
 			if _, err := stmt.ExecContext(txCtx, values...); err != nil {
 				return fmt.Errorf("executing statement: %w", err)
 			}
-			inserted++
 		}
 		return nil
 	})
-	return inserted, err
+}
+
+// isRetryableSendError reports whether a failed block send is worth repeating.
+//
+// Only connection-level failures are: the pool can hand over a socket the
+// server closed while it sat idle, and the first write on it fails. Inside a
+// transaction database/sql cannot swap that connection out itself, so the error
+// reaches us as driver.ErrBadConn. Anything the server actually rejected is
+// deterministic and would fail the same way again.
+func isRetryableSendError(err error) bool {
+	if errors.Is(err, driver.ErrBadConn) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET) {
+		return true
+	}
+	var opErr *net.OpError
+	return errors.As(err, &opErr)
 }
