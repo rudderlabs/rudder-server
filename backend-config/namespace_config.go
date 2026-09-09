@@ -3,6 +3,7 @@ package backendconfig
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"time"
@@ -83,9 +84,22 @@ func (nc *namespaceConfig) SetUp() (err error) {
 		nc.logger = logger.NewLogger().Child("backend-config").Withn(obskit.Namespace(nc.namespace))
 	}
 
-	// the mode is fixed at setup. v2 is not selectable yet, see
-	// newV2ConfigFetcher
-	nc.fetcher = newV1ConfigFetcher(nc)
+	// the mode is fixed at setup: each fetcher owns its own incremental update state, so they
+	// cannot be swapped underneath a running poll loop
+	switch mode := nc.config.GetStringVar("v1", "BackendConfig.namespaceConfigMode"); mode {
+	case "v1":
+		nc.fetcher = newV1ConfigFetcher(nc)
+	case "v2":
+		if nc.fetcher, err = newV2ConfigFetcher(nc); err != nil {
+			return err
+		}
+	case "shadow": // v1 serves, v2 is fetched on the side and compared
+		if nc.fetcher, err = newShadowConfigFetcher(nc); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unknown namespace config mode %q", mode)
+	}
 
 	nc.logger.Infon("Setup backend config complete")
 

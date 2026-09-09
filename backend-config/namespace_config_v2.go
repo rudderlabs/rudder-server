@@ -212,6 +212,11 @@ func (f *v2ConfigFetcher) memoized(workspaceID string, changed map[string]struct
 	return entry.config, true
 }
 
+// definitionsUpdatedAt is when the definition catalogues last changed, as of the latest Get.
+func (f *v2ConfigFetcher) definitionsUpdatedAt() time.Time {
+	return f.cache.generation().maxUpdatedAt
+}
+
 // v2Generation identifies a state of the definition catalogues, which every workspace is mapped
 // against. Cardinalities are part of it because a deletion bumps no timestamp.
 //

@@ -7,7 +7,7 @@ import (
 	"github.com/samber/lo"
 )
 
-// Per source destination config filtering (B3 in design doc).
+// Per source destination config filtering.
 //
 // The destination's config is not delivered as stored: it is rebuilt from the keys its definition
 // declares for the source type it is connected to, which is how a destination wired to a web
@@ -33,7 +33,7 @@ func filterDestinationConfig(stored, liveEventsConfig, definitionConfig map[stri
 		return nil, fmt.Errorf("definition destConfig has no defaultConfig list")
 	}
 
-	// the stored config and the live events flags are one object before any of this (A9 in design doc)
+	// the stored config and the live events flags are one object before any of this
 	unfiltered := lo.Assign(stored, liveEventsConfig)
 
 	filtered := make(map[string]any, len(defaultConfig))
@@ -118,7 +118,7 @@ func lodashSet(m map[string]any, path string, value any) {
 	m[segments[len(segments)-1]] = value
 }
 
-// Consent backfill, modern to legacy (B4 in design doc).
+// Consent backfill, modern to legacy.
 //
 // This is what keeps older SDK clients working against a destination configured in the modern UI.
 // processor/consent.go picks its branch from the event: an event whose context.consentManagement
