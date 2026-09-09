@@ -34,3 +34,54 @@ func TestUnsupportedCredentials(t *testing.T) {
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), "client_credentials.json file is not supported")
 }
+
+func TestUnsupportedCredentialType(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	uploader := mockuploader.NewMockUploader(ctrl)
+
+	bq := New(config.New(), logger.NOP)
+	bq.warehouse = model.Warehouse{
+		Destination: backendconfig.DestinationT{
+			Config: map[string]any{
+				"credentials": `{"type": "authorized_user"}`,
+			},
+		},
+	}
+	bq.uploader = uploader
+	bq.projectID = "projectId"
+
+	_, err := bq.connect(context.Background())
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), `unsupported credential type "authorized_user"`)
+}
+
+// TestWorkloadIdentityFederationCredentials verifies that a Workload Identity Federation
+// credential configuration (as produced by `gcloud iam workload-identity-pools
+// create-cred-config`), rather than a static service account key, is accepted in the
+// `credentials` field: it passes validation and is handed to the BigQuery client under
+// its own credential type instead of being rejected or misdeclared as a service account.
+func TestWorkloadIdentityFederationCredentials(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	uploader := mockuploader.NewMockUploader(ctrl)
+
+	bq := New(config.New(), logger.NOP)
+	bq.warehouse = model.Warehouse{
+		Destination: backendconfig.DestinationT{
+			Config: map[string]any{
+				"credentials": `{
+					"type": "external_account",
+					"audience": "//iam.googleapis.com/projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider",
+					"subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+					"token_url": "https://sts.googleapis.com/v1/token",
+					"service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/sa@my-project.iam.gserviceaccount.com:generateAccessToken",
+					"credential_source": {"file": "/var/run/secrets/tokens/gcp-token"}
+				}`,
+			},
+		},
+	}
+	bq.uploader = uploader
+	bq.projectID = "projectId"
+
+	_, err := bq.connect(context.Background())
+	require.NoError(t, err)
+}
