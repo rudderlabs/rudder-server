@@ -127,9 +127,8 @@ func TestIntegrationWebhook(t *testing.T) {
 	}
 
 	transformerFeaturesService := transformer.NewFeaturesService(ctx, conf, transformer.FeaturesServiceOptions{
-		PollInterval:             config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
-		TransformerURL:           transformerURL,
-		FeaturesRetryMaxAttempts: 10,
+		PollInterval:   config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
+		TransformerURL: transformerURL,
 	})
 	t.Setenv("DEST_TRANSFORM_URL", transformerURL)
 

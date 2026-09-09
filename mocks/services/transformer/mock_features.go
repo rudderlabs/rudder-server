@@ -95,6 +95,20 @@ func (mr *MockFeaturesServiceMockRecorder) SupportDestTransformCompactedPayloadV
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SupportDestTransformCompactedPayloadV1", reflect.TypeOf((*MockFeaturesService)(nil).SupportDestTransformCompactedPayloadV1))
 }
 
+// TransformerProxy mocks base method.
+func (m *MockFeaturesService) TransformerProxy(destType string) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TransformerProxy", destType)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// TransformerProxy indicates an expected call of TransformerProxy.
+func (mr *MockFeaturesServiceMockRecorder) TransformerProxy(destType any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TransformerProxy", reflect.TypeOf((*MockFeaturesService)(nil).TransformerProxy), destType)
+}
+
 // TransformerProxyVersion mocks base method.
 func (m *MockFeaturesService) TransformerProxyVersion() string {
 	m.ctrl.T.Helper()

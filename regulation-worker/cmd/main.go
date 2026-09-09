@@ -109,9 +109,8 @@ func Run(ctx context.Context) error {
 				DestTransformURL:             config.MustGetString("DEST_TRANSFORM_URL"),
 				MaxOAuthRefreshRetryAttempts: config.GetIntVar(1, 1, "RegulationWorker.oauth.maxRefreshRetryAttempts"),
 				TransformerFeaturesService: transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
-					PollInterval:             config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
-					TransformerURL:           config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"),
-					FeaturesRetryMaxAttempts: 10,
+					PollInterval:   config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
+					TransformerURL: config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"),
 				}),
 			}),
 		MaxFailedAttempts: config.GetIntVar(4, 1, "REGULATION_DELETION_MAX_FAILED_ATTEMPTS"),

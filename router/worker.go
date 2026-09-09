@@ -369,7 +369,7 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 
 	ctx := context.TODO() // TODO: use w.ctx and handle graceful shutdown scenario
 
-	transformerProxy := w.rt.reloadableConfig.transformerProxy.Load()
+	transformerProxy := w.rt.transformerProxyEnabled()
 
 	traces := make(map[string]stats.TraceSpan)
 	defer func() {
@@ -504,7 +504,7 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 						for i, val := range result {
 							w.logger.Debugn(`responseTransform status`,
 								obskit.DestinationType(w.rt.destType),
-								logger.NewBoolField("transformerProxy", w.rt.reloadableConfig.transformerProxy.Load()))
+								logger.NewBoolField("transformerProxy", w.rt.transformerProxyEnabled()))
 							errorAt = routerutils.ERROR_AT_DEL
 							endpointPath := val.EndpointPath
 							if endpointPath == "" {
@@ -947,7 +947,7 @@ func (w *worker) allowRouterAbortedAlert(errorAt string) bool {
 	case routerutils.ERROR_AT_TF:
 		return !w.rt.reloadableConfig.skipRtAbortAlertForTransformation.Load()
 	case routerutils.ERROR_AT_DEL:
-		return !w.rt.reloadableConfig.transformerProxy.Load() && !w.rt.reloadableConfig.skipRtAbortAlertForDelivery.Load()
+		return !w.rt.transformerProxyEnabled() && !w.rt.reloadableConfig.skipRtAbortAlertForDelivery.Load()
 	default:
 		return true
 	}
@@ -1169,7 +1169,7 @@ func (w *worker) ReserveSlot() *reservedSlot {
 
 func (w *worker) trackStuckDelivery() chan struct{} {
 	var d time.Duration
-	if w.rt.reloadableConfig.transformerProxy.Load() {
+	if w.rt.transformerProxyEnabled() {
 		d = (w.rt.transformerTimeout + w.rt.netClientTimeout) * 2
 	} else {
 		d = w.rt.netClientTimeout * 2
@@ -1232,7 +1232,7 @@ func (w *worker) recordTransformerOutgoingRequestMetrics(
 
 	labels := deliveryMetricLabels{
 		DestType:         w.rt.destType,
-		TransformerProxy: w.rt.reloadableConfig.transformerProxy.Load(),
+		TransformerProxy: w.rt.transformerProxyEnabled(),
 		EndpointPath:     postParams.EndpointPath,
 		StatusCode:       respStatus,
 		RequestMethod:    postParams.RequestMethod,
