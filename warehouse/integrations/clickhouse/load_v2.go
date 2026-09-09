@@ -4,18 +4,25 @@ import (
 	"compress/gzip"
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path"
 	"slices"
 	"sort"
 	"strings"
+	"syscall"
+	"time"
+
+	"github.com/cenkalti/backoff/v5"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
@@ -27,6 +34,7 @@ import (
 var (
 	errObjectStorageNotSupported = errors.New("objectStorage not supported for loading using S3 engine")
 	errCSVColumnsMismatch        = errors.New("csv columns mismatch")
+	errMissingS3Credentials      = errors.New("no object storage credentials for the s3 engine")
 )
 
 func (ch *ClickhouseV2) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
@@ -101,10 +109,13 @@ func (ch *ClickhouseV2) loadTable(ctx context.Context, tableName string, tableSc
 			return err
 		}
 	}
+	st := ch.newLoadStats(tableName)
+	defer st.loadTableTime.RecordDuration()()
+
 	if ch.UseS3CopyEngineForLoading() {
 		return ch.loadByCopyCommand(ctx, tableName, tableSchemaInUpload)
 	}
-	return ch.loadByDownloadingLoadFiles(ctx, tableName, tableSchemaInUpload)
+	return ch.loadByDownloadingLoadFiles(ctx, tableName, tableSchemaInUpload, st)
 }
 
 func (ch *ClickhouseV2) UseS3CopyEngineForLoading() bool {
@@ -140,37 +151,14 @@ func (ch *ClickhouseV2) loadByCopyCommand(ctx context.Context, tableName string,
 	loadFolderDir, _ := path.Split(csvObjectLocation)
 	loadFolder := loadFolderDir + "*.csv.gz"
 
-	accessKeyID, secretAccessKey, err := ch.credentials()
+	accessKeyID, secretAccessKey, sessionToken, err := ch.credentials()
 	if err != nil {
 		return fmt.Errorf("getting auth credentials: %w", err)
 	}
 
-	sqlStatement := fmt.Sprintf(`
-		INSERT INTO %[1]q.%[2]q (
-			%[3]s
-		)
-		SELECT
-		  *
-		FROM
-		  s3(
-			'%[4]s',
-		  	'%[5]s',
-		  	'%[6]s',
-			'CSV',
-			'%[7]s',
-			'gz'
-		  )
-			settings
-				date_time_input_format = 'best_effort',
-				input_format_csv_arrays_as_nested_csv = 1;
-		`,
-		ch.Namespace,                   // 1
-		tableName,                      // 2
-		sortedColumnNames,              // 3
-		loadFolder,                     // 4
-		accessKeyID,                    // 5
-		secretAccessKey,                // 6
-		sortedColumnNamesWithDataTypes, // 7
+	sqlStatement := copySQLStatement(
+		ch.Namespace, tableName, sortedColumnNames,
+		s3TableFunctionArgs(loadFolder, accessKeyID, secretAccessKey, sessionToken, sortedColumnNamesWithDataTypes),
 	)
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
@@ -181,7 +169,50 @@ func (ch *ClickhouseV2) loadByCopyCommand(ctx context.Context, tableName string,
 	return nil
 }
 
-func (ch *ClickhouseV2) loadByDownloadingLoadFiles(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) error {
+// s3TableFunctionArgs returns the positional arguments the s3 table function
+// reads a folder of gzipped CSV with. The session token sits between the secret
+// and the format, and servers older than 24.1 do not know about it at all, so it
+// is left out entirely when there is none: a destination with static keys sends
+// exactly what it always sent.
+func s3TableFunctionArgs(loadFolder, accessKeyID, secretAccessKey, sessionToken, columnTypes string) []string {
+	args := []string{
+		fmt.Sprintf("'%s'", loadFolder),
+		fmt.Sprintf("'%s'", accessKeyID),
+		fmt.Sprintf("'%s'", secretAccessKey),
+	}
+	if sessionToken != "" {
+		args = append(args, fmt.Sprintf("'%s'", sessionToken))
+	}
+	return append(args,
+		"'CSV'",
+		fmt.Sprintf("'%s'", columnTypes),
+		"'gz'",
+	)
+}
+
+// copySQLStatement is the statement the copy engine runs. It is separate so the
+// masking test can build the real thing rather than a copy of it that drifts.
+func copySQLStatement(namespace, tableName, sortedColumnNames string, s3Args []string) string {
+	return fmt.Sprintf(`
+		INSERT INTO %[1]q.%[2]q (
+			%[3]s
+		)
+		SELECT
+		  *
+		FROM
+		  s3(%[4]s)
+			settings
+				date_time_input_format = 'best_effort',
+				input_format_csv_arrays_as_nested_csv = 1;
+		`,
+		namespace,                  // 1
+		tableName,                  // 2
+		sortedColumnNames,          // 3
+		strings.Join(s3Args, ", "), // 4
+	)
+}
+
+func (ch *ClickhouseV2) loadByDownloadingLoadFiles(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema, st *loadStats) error {
 	log := ch.logger.Withn(
 		logger.NewStringField(logfield.SourceID, ch.Warehouse.Source.ID),
 		logger.NewStringField(logfield.SourceType, ch.Warehouse.Source.SourceDefinition.Name),
@@ -193,7 +224,9 @@ func (ch *ClickhouseV2) loadByDownloadingLoadFiles(ctx context.Context, tableNam
 	)
 	log.Infon("Starting load by downloading load files")
 
+	downloadStart := time.Now()
 	fileNames, err := ch.LoadFileDownloader.Download(ctx, tableName)
+	st.downloadLoadFilesTime.Since(downloadStart)
 	if err != nil {
 		return fmt.Errorf("downloading load files: %w", err)
 	}
@@ -201,21 +234,43 @@ func (ch *ClickhouseV2) loadByDownloadingLoadFiles(ctx context.Context, tableNam
 		misc.RemoveFilePaths(fileNames...)
 	}()
 
-	if err := ch.loadTableFromFiles(ctx, log, tableName, tableSchemaInUpload, fileNames); err != nil {
+	if err := ch.loadTableFromFiles(ctx, log, tableName, tableSchemaInUpload, fileNames, st); err != nil {
 		return fmt.Errorf("loading table from files: %w", err)
 	}
 	log.Infon("Completed load by downloading load files")
 	return nil
 }
 
-func (ch *ClickhouseV2) credentials() (accessKeyID, secretAccessKey string, err error) {
-	if ch.ObjectStorage == warehouseutils.S3 {
-		return ch.Warehouse.GetStringDestinationConfig(ch.conf, model.AWSAccessSecretSetting), ch.Warehouse.GetStringDestinationConfig(ch.conf, model.AWSAccessKeySetting), nil
+// credentials returns the literals the s3 table function authenticates with.
+// A session token comes back for aws, where they are always short-lived, and
+// never for minio.
+func (ch *ClickhouseV2) credentials() (accessKeyID, secretAccessKey, sessionToken string, err error) {
+	switch ch.ObjectStorage {
+	case warehouseutils.S3:
+		// An aws destination need not hold keys at all: rudder storage, a role
+		// and the shared copy user all authenticate through the SDK credential
+		// chain, and the s3 table function cannot, because it takes literals.
+		// So mint them, without asking which shape the destination is — the
+		// same thing redshift, snowflake and deltalake do for their own copy
+		// statements, and GetTemporaryS3Cred covers every shape including plain
+		// static keys.
+		accessKeyID, secretAccessKey, sessionToken, err = ch.TemporaryS3Cred(&ch.Warehouse.Destination)
+		if err != nil {
+			return "", "", "", fmt.Errorf("getting temporary s3 credentials: %w", err)
+		}
+	case warehouseutils.MINIO:
+		accessKeyID = ch.Warehouse.GetStringDestinationConfig(ch.conf, model.MinioAccessKeyIDSetting)
+		secretAccessKey = ch.Warehouse.GetStringDestinationConfig(ch.conf, model.MinioSecretAccessKeySetting)
+	default:
+		return "", "", "", errObjectStorageNotSupported
 	}
-	if ch.ObjectStorage == warehouseutils.MINIO {
-		return ch.Warehouse.GetStringDestinationConfig(ch.conf, model.MinioAccessKeyIDSetting), ch.Warehouse.GetStringDestinationConfig(ch.conf, model.MinioSecretAccessKeySetting), nil
+	// Empty keys would be interpolated into the statement as '' and come back
+	// as an access error from the server, which says nothing about where the
+	// keys were meant to come from.
+	if accessKeyID == "" || secretAccessKey == "" {
+		return "", "", "", errMissingS3Credentials
 	}
-	return "", "", errObjectStorageNotSupported
+	return accessKeyID, secretAccessKey, sessionToken, nil
 }
 
 func (ch *ClickhouseV2) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]any, _ string) error {
@@ -281,6 +336,7 @@ func (ch *ClickhouseV2) loadTableFromFiles(
 	tableName string,
 	tableSchemaInUpload model.TableSchema,
 	fileNames []string,
+	st *loadStats,
 ) error {
 	if len(fileNames) == 0 {
 		return nil
@@ -320,7 +376,7 @@ func (ch *ClickhouseV2) loadTableFromFiles(
 	var rows int
 	csvReader := csv.NewReader(gzipReader)
 	for {
-		inserted, err := ch.insertBlock(ctx, insertSQL, csvReader, sortedColumnKeys, tableSchemaInUpload)
+		inserted, err := ch.insertBlock(ctx, insertSQL, csvReader, sortedColumnKeys, tableSchemaInUpload, st)
 		if err != nil {
 			return fmt.Errorf("inserting block after %d rows: %w", rows, err)
 		}
@@ -332,6 +388,8 @@ func (ch *ClickhouseV2) loadTableFromFiles(
 			break
 		}
 	}
+
+	st.numRowsLoadFile.Count(rows)
 
 	log.Debugn("Load files processed",
 		logger.NewIntField("files", int64(len(fileNames))),
@@ -346,9 +404,7 @@ func (ch *ClickhouseV2) loadTableFromFiles(
 //
 // A return below commitEvery means EOF was reached, which is how the caller
 // knows to stop. When the row count is an exact multiple of commitEvery the
-// caller makes one more call that reads EOF and commits nothing: that costs a
-// prepare and a query close but no data frame, since batch.Send skips the send
-// entirely for a zero-row block.
+// caller makes one more call that reads EOF and sends nothing.
 //
 // "Transaction" is the driver's word, not ClickHouse's: BeginTx sends nothing
 // and only health-checks the connection, Commit is batch.Send, and Rollback
@@ -362,8 +418,105 @@ func (ch *ClickhouseV2) insertBlock(
 	csvReader *csv.Reader,
 	columnKeys []string,
 	schema model.TableSchema,
+	st *loadStats,
 ) (int, error) {
-	var inserted int
+	readStart := time.Now()
+	block, err := readBlock(csvReader, columnKeys, ch.config.commitEvery)
+	if err != nil {
+		return 0, err
+	}
+	st.blockReadTime.Since(readStart)
+	if len(block) == 0 {
+		return 0, nil
+	}
+
+	st.blocks.Increment()
+	st.blockSize.Observe(float64(len(block)))
+
+	// WithNotify fires only once a retry is actually going to follow — after the
+	// permanent check and after the budget check — so this counts retries made,
+	// not failures seen.
+	if err := ch.withBlockRetries(ctx, func() error {
+		return ch.sendBlock(ctx, insertSQL, block, columnKeys, schema, st)
+	}, backoff.WithNotify(func(error, time.Duration) {
+		st.blockRetries.Increment()
+	})); err != nil {
+		return 0, err
+	}
+	return len(block), nil
+}
+
+// withBlockRetries runs send under the retry policy for one block: a failure
+// that came from the connection is repeated, anything the server rejected is
+// not, and the whole thing is bounded by maxRetriesPerBlock. send always runs
+// at least once.
+//
+// It is separate from insertBlock so the policy can be exercised without a
+// server, and so a caller can override or extend the options — the later of two
+// conflicting options wins, which is what lets a test collapse the delay.
+func (ch *ClickhouseV2) withBlockRetries(ctx context.Context, send func() error, opts ...backoff.RetryOption) error {
+	return backoffvoid.Retry(ctx, func() error {
+		err := send()
+		if err == nil {
+			return nil
+		}
+		if !isRetryableSendError(err) {
+			return backoff.Permanent(err)
+		}
+		return err
+	}, append([]backoff.RetryOption{
+		backoff.WithBackOff(backoff.NewConstantBackOff(time.Second)),
+		backoff.WithMaxElapsedTime(0),
+		backoff.WithMaxTries(uint(ch.config.maxRetriesPerBlock) + 1),
+	}, opts...)...)
+}
+
+// readBlock reads up to size rows off csvReader.
+//
+// The rows are held rather than bound and sent as they are read, because the
+// reader has already moved past them: a send that has to be repeated has to
+// repeat these rows, not pull the next ones. Retrying without this would skip a
+// block's worth of data and report success. The cost is the block's raw text
+// staying in memory until it lands, which makes commitEvery a memory knob on
+// top of a batching one.
+func readBlock(csvReader *csv.Reader, columnKeys []string, size int) ([][]string, error) {
+	block := make([][]string, 0, size)
+	for len(block) < size {
+		record, err := csvReader.Read()
+		if errors.Is(err, io.EOF) {
+			return block, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading csv: %w", err)
+		}
+		if len(columnKeys) != len(record) {
+			return nil, fmt.Errorf("%w: columns in row: %d, columns in upload schema: %d",
+				errCSVColumnsMismatch, len(record), len(columnKeys),
+			)
+		}
+		block = append(block, record)
+	}
+	return block, nil
+}
+
+// sendBlock binds every row and commits the batch. Binding happens here rather
+// than in readBlock so a retry rebinds from the raw text, which keeps the held
+// block as small as it can be.
+// The three phases are timed apart on purpose. Each is bounded by something
+// different — prepare is a round trip, binding is client CPU, and the commit is
+// the one wire write a block makes — and only their ratio says where a slow load
+// is actually spending its time. Timed together they cannot tell a saturated
+// server from a saturated loader, which is the question worth asking before
+// adding any concurrency.
+func (ch *ClickhouseV2) sendBlock(
+	ctx context.Context,
+	insertSQL string,
+	block [][]string,
+	columnKeys []string,
+	schema model.TableSchema,
+	st *loadStats,
+) error {
+	var boundAt time.Time
 
 	err := ch.DB.WithTx(ctx, func(txCtx context.Context, txn *sqlmw.Tx) error {
 		// A *sql.Stmt belongs to its transaction, and sending a batch is what
@@ -373,36 +526,55 @@ func (ch *ClickhouseV2) insertBlock(
 		// txCtx rather than ctx: the driver captures this context on the batch,
 		// and it is the only one batch.Send can observe. Whatever deadline it
 		// carries is what bounds the write.
+		prepareStart := time.Now()
 		stmt, err := txn.PrepareContext(txCtx, insertSQL)
 		if err != nil {
 			return fmt.Errorf("preparing statement %s: %w", insertSQL, err)
 		}
+		st.blockPrepareTime.Since(prepareStart)
 		defer func() { _ = stmt.Close() }()
 
-		for inserted < ch.config.commitEvery {
-			record, err := csvReader.Read()
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("reading csv: %w", err)
-			}
-			if len(columnKeys) != len(record) {
-				return fmt.Errorf("%w: columns in row: %d, columns in upload schema: %d",
-					errCSVColumnsMismatch, len(record), len(columnKeys),
-				)
-			}
-
+		bindStart := time.Now()
+		for _, record := range block {
 			values := make([]any, 0, len(record))
 			for index, value := range record {
 				values = append(values, ch.bindValue(value, schema[columnKeys[index]]))
 			}
+			// Client-side only: ExecContext appends to the batch and sends
+			// nothing, which is why this is counted as binding rather than as
+			// part of the write.
 			if _, err := stmt.ExecContext(txCtx, values...); err != nil {
 				return fmt.Errorf("executing statement: %w", err)
 			}
-			inserted++
 		}
+		st.blockBindTime.Since(bindStart)
+		boundAt = time.Now()
 		return nil
 	})
-	return inserted, err
+	if err != nil {
+		return err
+	}
+	// WithTx commits once fn returns, and the driver's Commit is batch.Send. The
+	// interval from the last bind to here is therefore the wire write and
+	// nothing else.
+	st.commitTime.Since(boundAt)
+	return nil
+}
+
+// isRetryableSendError reports whether a failed block send is worth repeating.
+//
+// Only connection-level failures are: the pool can hand over a socket the
+// server closed while it sat idle, and the first write on it fails. Inside a
+// transaction database/sql cannot swap that connection out itself, so the error
+// reaches us as driver.ErrBadConn. Anything the server actually rejected is
+// deterministic and would fail the same way again.
+func isRetryableSendError(err error) bool {
+	if errors.Is(err, driver.ErrBadConn) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET) {
+		return true
+	}
+	var opErr *net.OpError
+	return errors.As(err, &opErr)
 }

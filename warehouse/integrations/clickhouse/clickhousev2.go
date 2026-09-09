@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -42,6 +43,11 @@ type ClickhouseV2 struct {
 	connectTimeout     time.Duration
 	LoadFileDownloader downloader.Downloader
 
+	// TemporaryS3Cred mints the short-lived credentials the copy engine hands
+	// to the s3 table function. NewV2 points it at the shared helper, which
+	// reaches AWS; a test can point it somewhere closer.
+	TemporaryS3Cred func(*backendconfig.DestinationT) (string, string, string, error)
+
 	conf   *config.Config
 	logger logger.Logger
 	stats  stats.Stats
@@ -49,7 +55,10 @@ type ClickhouseV2 struct {
 	config struct {
 		queryDebugLogs              bool
 		commitEvery                 int
+		maxRetriesPerBlock          int
 		poolSize                    int
+		connMaxIdleTime             time.Duration
+		connMaxLifetime             time.Duration
 		readTimeout                 time.Duration
 		compress                    bool
 		disableNullable             bool
@@ -67,6 +76,7 @@ func NewV2(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse
 	ch.conf = conf
 	ch.logger = log.Child("integrations").Child("clickhouse").Child("v2")
 	ch.stats = stat
+	ch.TemporaryS3Cred = warehouseutils.GetTemporaryS3Cred
 
 	ch.config.queryDebugLogs = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.queryDebugLogs")
 	// commitEvery is the number of rows between commits, which is what bounds
@@ -76,7 +86,16 @@ func NewV2(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse
 	// load spins forever committing empty batches. One is enough to rule that
 	// out, and keeping the floor there leaves small values usable in tests.
 	ch.config.commitEvery = max(conf.GetIntVar(1000000, 1, "Warehouse.clickhouse.v2.commitEvery"), 1)
+	// The number of times one block may be sent again, not a count of blocked
+	// retries: a block that failed on a connection the pool handed over dead is
+	// worth repeating, anything the server rejected is not. Zero disables them.
+	ch.config.maxRetriesPerBlock = conf.GetIntVar(3, 1, "Warehouse.clickhouse.v2.maxRetriesPerBlock")
 	ch.config.poolSize = conf.GetIntVar(100, 1, "Warehouse.clickhouse.v2.poolSize")
+	// Every block takes a connection out of the pool, so a connection the
+	// server closed while it sat idle has to be retired before a block picks
+	// it up.
+	ch.config.connMaxIdleTime = conf.GetDurationVar(5, time.Minute, "Warehouse.clickhouse.v2.connMaxIdleTime")
+	ch.config.connMaxLifetime = conf.GetDurationVar(30, time.Minute, "Warehouse.clickhouse.v2.connMaxLifetime")
 	ch.config.readTimeout = conf.GetDurationVar(300, time.Second, "Warehouse.clickhouse.v2.readTimeout")
 	ch.config.compress = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.compress")
 	ch.config.disableNullable = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.disableNullable")
