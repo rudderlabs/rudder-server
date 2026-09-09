@@ -18,14 +18,6 @@ func quoteColumnList(columns string) string {
 	return strings.Join(parts, ", ")
 }
 
-func quoteIdentifiers(identifiers []string) string {
-	quotedIdentifiers := make([]string, 0, len(identifiers))
-	for _, identifier := range identifiers {
-		quotedIdentifiers = append(quotedIdentifiers, quoteIdentifier(identifier))
-	}
-	return strings.Join(quotedIdentifiers, ",")
-}
-
 func quoteStringLiteral(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
