@@ -562,14 +562,9 @@ func configuredNamespaceInDestination(dest *backendconfig.DestinationT) string {
 
 func getTable(dest *backendconfig.DestinationT) string {
 	destType := dest.DestinationDefinition.Name
-	conf := dest.Config
 
 	if destType == warehouseutils.DELTALAKE {
-		enableExternalLocation, _ := conf["enableExternalLocation"].(bool)
-		externalLocation, _ := conf["externalLocation"].(string)
-		if enableExternalLocation && externalLocation != "" {
-			return tableWithUUID()
-		}
+		return tableWithUUID()
 	}
 
 	return table

@@ -305,10 +305,10 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 			%s = ? AND
 			%s < ?`,
 			quoteQualifiedIdentifier(sf.Namespace, tb),
-			quoteIdentifier("context_sources_job_run_id"),
-			quoteIdentifier("context_sources_task_run_id"),
-			quoteIdentifier("context_source_id"),
-			quoteIdentifier("received_at"),
+			quoteIdentifier(whutils.ToProviderCase(provider, "context_sources_job_run_id")),
+			quoteIdentifier(whutils.ToProviderCase(provider, "context_sources_task_run_id")),
+			quoteIdentifier(whutils.ToProviderCase(provider, "context_source_id")),
+			quoteIdentifier(whutils.ToProviderCase(provider, "received_at")),
 		)
 		_, err := sf.DB.ExecContext(ctx,
 			sqlStatement,

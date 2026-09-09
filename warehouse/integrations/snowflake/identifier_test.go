@@ -61,10 +61,10 @@ func TestDeleteByQuotesTableAndColumnIdentifiers(t *testing.T) {
 			%s = ? AND
 			%s < ?`,
 		quoteQualifiedIdentifier(sf.Namespace, tableName),
-		quoteIdentifier("context_sources_job_run_id"),
-		quoteIdentifier("context_sources_task_run_id"),
-		quoteIdentifier("context_source_id"),
-		quoteIdentifier("received_at"),
+		quoteIdentifier("CONTEXT_SOURCES_JOB_RUN_ID"),
+		quoteIdentifier("CONTEXT_SOURCES_TASK_RUN_ID"),
+		quoteIdentifier("CONTEXT_SOURCE_ID"),
+		quoteIdentifier("RECEIVED_AT"),
 	)
 
 	mock.ExpectExec(regexp.QuoteMeta(expectedQuery)).
