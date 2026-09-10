@@ -428,6 +428,22 @@ func TestSendPost(t *testing.T) {
 			require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 			require.NotContains(t, string(resp.ResponseBody), "s3cr3t")
 		})
+
+		// A destination configured without a scheme is the case a pattern match
+		// cannot see: http.NewRequest accepts it, so the failure surfaces from Do
+		// with the credential in the error's own copy of the URL.
+		t.Run("scheme-less destination URL", func(t *testing.T) {
+			resp := network.SendPost(context.Background(), integrations.PostParametersT{
+				Type:          "REST",
+				RequestMethod: "POST",
+				URL:           "api.example.com/v1/events?api_key=s3cr3t",
+			})
+
+			require.NotContains(t, string(resp.ResponseBody), "s3cr3t",
+				"a scheme-less URL must be redacted structurally, since no pattern matches it")
+			require.Contains(t, string(resp.ResponseBody), "api.example.com/v1/events",
+				"the endpoint must still identify the destination")
+		})
 	})
 
 	t.Run("should handle private IP in block mode", func(t *testing.T) {

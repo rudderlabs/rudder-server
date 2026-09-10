@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -93,4 +94,67 @@ func TestRedactURLCredentialsCoversTheWrappedError(t *testing.T) {
 func TestRedactURLFailsClosed(t *testing.T) {
 	// A control character is rejected by url.Parse.
 	require.Equal(t, "[redacted url]", redactURL("https://example.com/\x7f?k=v"))
+}
+
+// TestRedactURLHandlesSchemelessURLs is the case pattern matching cannot reach, raised
+// in review: a destination configured without a scheme (or with a typo'd one) is not a
+// "https://..." match, so only a structural pass sees its query string. http.NewRequest
+// accepts such a URL and the failure surfaces later from Do, which is how the
+// credential used to reach the response body.
+func TestRedactURLHandlesSchemelessURLs(t *testing.T) {
+	for _, raw := range []string{
+		"api.example.com/v1/events?api_key=s3cr3t",
+		"htp://api.example.com/v1/events?api_key=s3cr3t", // typo'd scheme
+		"//api.example.com/v1/events?api_key=s3cr3t",     // protocol-relative
+	} {
+		t.Run(raw, func(t *testing.T) {
+			got := redactURL(raw)
+			require.NotContains(t, got, "s3cr3t", "the query string must go, scheme or not")
+			require.Contains(t, got, "api.example.com/v1/events", "the endpoint must survive")
+		})
+	}
+}
+
+// TestRedactURLIsIdempotent matters because redactURLCredentials runs over text whose
+// URLs the caller has already redacted structurally; the marker must not accumulate.
+func TestRedactURLIsIdempotent(t *testing.T) {
+	once := redactURL("https://api.example.com/v1/events?api_key=s3cr3t")
+	require.Equal(t, "https://api.example.com/v1/events?[redacted]", once)
+	require.Equal(t, once, redactURL(once), "redacting twice must not change the result")
+	require.Equal(t, once, redactURLCredentials(once), "nor must the pattern backstop")
+}
+
+func TestRedactErrorText(t *testing.T) {
+	t.Run("redacts the URL net/http repeats inside url.Error", func(t *testing.T) {
+		err := &url.Error{
+			Op:  "Post",
+			URL: "https://api.example.com/v1/events?api_key=s3cr3t",
+			Err: errors.New("dial tcp: i/o timeout"),
+		}
+		require.Contains(t, err.Error(), "s3cr3t", "the fixture must reproduce the leak")
+
+		got := redactErrorText(err)
+		require.NotContains(t, got, "s3cr3t")
+		require.Contains(t, got, "https://api.example.com/v1/events?[redacted]")
+		require.Contains(t, got, "dial tcp: i/o timeout", "the cause must survive")
+		require.Contains(t, got, "Post", "so must the operation")
+	})
+
+	t.Run("reaches a url.Error wrapped deeper, keeping the outer text", func(t *testing.T) {
+		inner := &url.Error{
+			Op:  "Post",
+			URL: "api.example.com/collect?token=s3cr3t", // scheme-less, so no pattern match
+			Err: errors.New("unsupported protocol scheme"),
+		}
+		got := redactErrorText(fmt.Errorf("sending batch: %w", inner))
+
+		require.NotContains(t, got, "s3cr3t")
+		require.Contains(t, got, "sending batch:", "the wrapping must not be lost")
+		require.Contains(t, got, "unsupported protocol scheme")
+	})
+
+	t.Run("leaves an error with no URL alone", func(t *testing.T) {
+		require.Equal(t, "some failure", redactErrorText(errors.New("some failure")))
+		require.Equal(t, "", redactErrorText(nil))
+	})
 }
