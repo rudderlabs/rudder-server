@@ -11,13 +11,17 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 )
 
+const defaultEloquaLoginEndpoint = "https://login.eloqua.com/id"
+
 type EloquaServiceImpl struct {
-	bulkApi string
+	bulkApi       string
+	loginEndpoint string
 }
 
 func NewEloquaServiceImpl(version string) *EloquaServiceImpl {
 	return &EloquaServiceImpl{
-		bulkApi: fmt.Sprintf("/api/bulk/%v", version),
+		bulkApi:       fmt.Sprintf("/api/bulk/%v", version),
+		loginEndpoint: defaultEloquaLoginEndpoint,
 	}
 }
 
@@ -44,16 +48,25 @@ func (e *EloquaServiceImpl) MakeHTTPRequest(data *HttpRequestData) ([]byte, int,
 
 func (e *EloquaServiceImpl) GetBaseEndpoint(data *HttpRequestData) (string, error) {
 	data.Method = http.MethodGet
-	data.Endpoint = "https://login.eloqua.com/id"
+	data.Endpoint = e.loginEndpoint
+	if data.Endpoint == "" {
+		data.Endpoint = defaultEloquaLoginEndpoint
+	}
 
-	body, _, err := e.MakeHTTPRequest(data)
+	body, statusCode, err := e.MakeHTTPRequest(data)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("eloqua login request failed: %w", err)
+	}
+	if statusCode != http.StatusOK {
+		return "", fmt.Errorf("eloqua login returned status %d: %s", statusCode, string(body))
 	}
 	loginDetailsResponse := LoginDetailsResponse{}
 	err = jsonrs.Unmarshal(body, &loginDetailsResponse)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("parsing eloqua login response: %w, body: %s", err, string(body))
+	}
+	if loginDetailsResponse.Urls.Base == "" {
+		return "", fmt.Errorf("eloqua login response missing urls.base, body: %s", string(body))
 	}
 	return loginDetailsResponse.Urls.Base, nil
 }

@@ -49,6 +49,14 @@ import (
 
 const module = "batch_router"
 
+type asyncManagerFactory func(
+	*config.Config,
+	logger.Logger,
+	stats.Stats,
+	*backendconfig.DestinationT,
+	backendconfig.BackendConfig,
+) (asynccommon.AsyncDestinationManager, error)
+
 type Handle struct {
 	destType string
 	// dependencies
@@ -69,6 +77,7 @@ type Handle struct {
 	adaptiveLimit        func(int64) int64
 	isolationStrategy    isolation.Strategy
 	now                  func() time.Time
+	asyncManagerFactory  asyncManagerFactory
 
 	// configuration
 
@@ -78,6 +87,7 @@ type Handle struct {
 	maxFailedCountForSourcesJob  config.ValueLoader[int]
 	asyncUploadTimeout           config.ValueLoader[time.Duration]
 	asyncUploadWorkerTimeout     config.ValueLoader[time.Duration]
+	invalidManagerRetryInterval  config.ValueLoader[time.Duration]
 	retryTimeWindow              config.ValueLoader[time.Duration]
 	sourcesRetryTimeWindow       config.ValueLoader[time.Duration]
 	schemaGenerationWorkers      config.ValueLoader[int]
@@ -133,6 +143,8 @@ type Handle struct {
 
 	diagnosisTicker          *time.Ticker
 	uploadedRawDataJobsCache map[string]map[string]bool
+
+	asyncDestinationStructMu sync.RWMutex // protects asyncDestinationStruct map membership and Manager/Destination replacement
 	asyncDestinationStruct   map[string]*asynccommon.AsyncDestinationStruct
 
 	asyncPollTimeStat           stats.Measurement

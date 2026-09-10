@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mockdestinationdebugger "github.com/rudderlabs/rudder-server/mocks/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -34,13 +35,17 @@ type mockAsyncDestinationManager struct {
 	uploadOutput common.AsyncUploadOutput
 	pollOutput   common.PollStatusResponse
 	statsOutput  common.GetUploadStatsResponse
+	uploadFunc   func(context.Context, *common.AsyncDestinationStruct) common.AsyncUploadOutput
 }
 
 func (m mockAsyncDestinationManager) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(string(job.EventPayload), job.JobID)
 }
 
-func (m mockAsyncDestinationManager) Upload(context.Context, *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (m mockAsyncDestinationManager) Upload(ctx context.Context, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+	if m.uploadFunc != nil {
+		return m.uploadFunc(ctx, asyncDestStruct)
+	}
 	return m.uploadOutput
 }
 
@@ -63,6 +68,7 @@ func defaultHandle(destType string) *Handle {
 	batchRouter.setupReloadableVars()
 	batchRouter.logger = logger.NOP
 	batchRouter.conf = config.Default
+	batchRouter.asyncManagerFactory = asyncdestinationmanager.NewManager
 	batchRouter.rsourcesSyncSettings = rsources.NewStaticSyncSettingDelegate("", nil)
 	batchRouter.adaptiveLimit = func(i int64) int64 {
 		return i
@@ -838,6 +844,9 @@ func TestAsyncDestinationManager(t *testing.T) {
 
 			batchRouter := defaultHandle(destType)
 			batchRouter.initAsyncDestinationStruct(&destination)
+			invalidManager, ok := batchRouter.asyncDestinationStruct[destination.ID].Manager.(*common.InvalidManager)
+			require.True(t, ok)
+			require.Equal(t, batchRouter.now(), invalidManager.FailedAt)
 			mockCtrl := gomock.NewController(t)
 			mockJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
 			batchRouter.jobsDB = mockJobsDB
