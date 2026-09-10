@@ -11,17 +11,13 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 )
 
-const defaultEloquaLoginEndpoint = "https://login.eloqua.com/id"
-
 type EloquaServiceImpl struct {
-	bulkApi       string
-	loginEndpoint string
+	bulkApi string
 }
 
 func NewEloquaServiceImpl(version string) *EloquaServiceImpl {
 	return &EloquaServiceImpl{
-		bulkApi:       fmt.Sprintf("/api/bulk/%v", version),
-		loginEndpoint: defaultEloquaLoginEndpoint,
+		bulkApi: fmt.Sprintf("/api/bulk/%v", version),
 	}
 }
 
@@ -48,10 +44,7 @@ func (e *EloquaServiceImpl) MakeHTTPRequest(data *HttpRequestData) ([]byte, int,
 
 func (e *EloquaServiceImpl) GetBaseEndpoint(data *HttpRequestData) (string, error) {
 	data.Method = http.MethodGet
-	data.Endpoint = e.loginEndpoint
-	if data.Endpoint == "" {
-		data.Endpoint = defaultEloquaLoginEndpoint
-	}
+	data.Endpoint = "https://login.eloqua.com/id"
 
 	body, statusCode, err := e.MakeHTTPRequest(data)
 	if err != nil {

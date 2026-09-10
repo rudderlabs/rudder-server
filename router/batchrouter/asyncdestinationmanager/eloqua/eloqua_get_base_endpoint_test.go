@@ -1,23 +1,22 @@
 package eloqua
 
 import (
+	"io"
 	"net/http"
-	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestGetBaseEndpointReturnsStatusCodeAndBody(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	withDefaultTransport(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		require.Equal(t, http.MethodGet, r.Method)
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":"invalid credentials"}`))
+		require.Equal(t, "https://login.eloqua.com/id", r.URL.String())
+		return response(http.StatusUnauthorized, `{"error":"invalid credentials"}`), nil
 	}))
-	defer server.Close()
 
 	service := NewEloquaServiceImpl("2.0")
-	service.loginEndpoint = server.URL
 
 	baseEndpoint, err := service.GetBaseEndpoint(&HttpRequestData{})
 
@@ -27,19 +26,40 @@ func TestGetBaseEndpointReturnsStatusCodeAndBody(t *testing.T) {
 }
 
 func TestGetBaseEndpointReturnsErrorForMissingBaseURL(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	withDefaultTransport(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		require.Equal(t, http.MethodGet, r.Method)
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"urls":{}}`))
+		require.Equal(t, "https://login.eloqua.com/id", r.URL.String())
+		return response(http.StatusOK, `{"urls":{}}`), nil
 	}))
-	defer server.Close()
 
 	service := NewEloquaServiceImpl("2.0")
-	service.loginEndpoint = server.URL
 
 	baseEndpoint, err := service.GetBaseEndpoint(&HttpRequestData{})
 
 	require.Empty(t, baseEndpoint)
 	require.ErrorContains(t, err, "eloqua login response missing urls.base")
 	require.ErrorContains(t, err, `{"urls":{}}`)
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func withDefaultTransport(t *testing.T, transport http.RoundTripper) {
+	t.Helper()
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = transport
+	t.Cleanup(func() {
+		http.DefaultTransport = originalTransport
+	})
+}
+
+func response(statusCode int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: statusCode,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+	}
 }
