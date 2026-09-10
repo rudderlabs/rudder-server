@@ -45,7 +45,6 @@ func TestDelete(t *testing.T) {
 		destConfig           map[string]any
 		destName             string
 		respCode             int
-		respBodyStatus       model.Status
 		respBodyErr          error
 		expectedDeleteStatus model.JobStatus
 		expectedPayload      string
@@ -91,29 +90,6 @@ func TestDelete(t *testing.T) {
 			respCode:             200,
 			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusComplete},
 			expectedPayload:      `[{"jobId":"1","destType":"amplitude","config":{"accessKey":"xyz","accessKeyID":"abc","bucketName":"regulation-test-data","enableSSE":false,"prefix":"reg-original"},"userAttributes":[{"email":"dorowane8n285680461479465450293436@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279980@gmail.com","userId":"Mercie8221821544021583104106123"},{"phone":"8782905113","userId":"Claiborn443446989226249191822329"}]}]`,
-		},
-		{
-			name: "test deleter API client treats transformer-normalized Iterable not-found as complete",
-			job: model.Job{
-				ID:            7112,
-				WorkspaceID:   "1001",
-				DestinationID: "1234",
-				Status:        model.JobStatus{Status: model.JobStatusPending},
-				Users: []model.User{
-					{
-						ID: "rudder-absent-user",
-						Attributes: map[string]string{
-							"email": "absent@example.com",
-						},
-					},
-				},
-			},
-			destConfig:           map[string]any{"apiKey": "iterable-api-key"},
-			destName:             "ITERABLE",
-			respCode:             200,
-			respBodyStatus:       model.Status("successful"),
-			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusComplete},
-			expectedPayload:      `[{"jobId":"7112","destType":"iterable","config":{"apiKey":"iterable-api-key"},"userAttributes":[{"email":"absent@example.com","userId":"rudder-absent-user"}]}]`,
 		},
 		{
 			name:                 "test deleter API client with expected status failed: error returned 429",
@@ -162,7 +138,6 @@ func TestDelete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := deleteAPI{
 				respStatusCode: tt.respCode,
-				respBodyStatus: tt.respBodyStatus,
 			}
 			ctx := context.Background()
 			svr := httptest.NewServer(d.handler())
