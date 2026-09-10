@@ -221,9 +221,7 @@ func startSSHForwarder(t *testing.T, publicAuthorizedKey []byte) int {
 		wg.Wait()
 	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for {
 			conn, err := listener.Accept()
 			if errors.Is(err, net.ErrClosed) {
@@ -237,13 +235,11 @@ func startSSHForwarder(t *testing.T, publicAuthorizedKey []byte) int {
 			conns = append(conns, conn)
 			connMu.Unlock()
 
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				handleSSHForwarderConn(t, conn, serverConfig, &wg)
-			}()
+			})
 		}
-	}()
+	})
 
 	return listener.Addr().(*net.TCPAddr).Port
 }
