@@ -390,6 +390,46 @@ func TestSendPost(t *testing.T) {
 		require.Contains(t, string(resp.ResponseBody), "400 Unable to construct")
 	})
 
+	// The response body of a failed request is not an internal string: the
+	// failed-records feature stores it verbatim in the customer's warehouse and shows
+	// it in the UI. A destination that authenticates in its query string must not put
+	// that credential there. These exercise SendPost itself rather than the redaction
+	// helper, so removing the calls in network.go fails them.
+	t.Run("should not leak destination credentials in the failure response", func(t *testing.T) {
+		network.httpClient = &http.Client{}
+
+		t.Run("request failure", func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			resp := network.SendPost(ctx, integrations.PostParametersT{
+				Type:          "REST",
+				RequestMethod: "POST",
+				URL:           "https://www.google-analytics.com/collect?api_key=s3cr3t",
+			})
+
+			require.Equal(t, http.StatusGatewayTimeout, resp.StatusCode)
+			body := string(resp.ResponseBody)
+			require.NotContains(t, body, "s3cr3t",
+				"the credential must not reach the response body by any route, "+
+					"including the URL that *url.Error repeats")
+			require.Contains(t, body, "https://www.google-analytics.com/collect?[redacted]",
+				"the endpoint must survive so the failure stays diagnosable")
+			require.Contains(t, body, "context canceled", "the cause must survive")
+		})
+
+		t.Run("request construction failure", func(t *testing.T) {
+			resp := network.SendPost(context.Background(), integrations.PostParametersT{
+				Type:          "REST",
+				RequestMethod: "POST",
+				URL:           "http://[::1]:namedport?api_key=s3cr3t", // invalid host, valid query
+			})
+
+			require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			require.NotContains(t, string(resp.ResponseBody), "s3cr3t")
+		})
+	})
+
 	t.Run("should handle private IP in block mode", func(t *testing.T) {
 		// Save original config value and restore after test
 		originalValue := config.GetBoolVar(false, "Router.blockPrivateIPs")

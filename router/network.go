@@ -206,8 +206,9 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				obskit.Error(err),
 			)
 			return &utils.SendPostResponse{
-				StatusCode:   400,
-				ResponseBody: fmt.Appendf(nil, `400 Unable to construct %q request for URL : %q`, requestMethod, postInfo.URL),
+				StatusCode: 400,
+				ResponseBody: []byte(redactURLCredentials(
+					fmt.Sprintf(`400 Unable to construct %q request for URL : %q`, requestMethod, postInfo.URL))),
 			}
 		}
 
@@ -240,8 +241,11 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 
 		if err != nil {
 			return &utils.SendPostResponse{
-				StatusCode:   http.StatusGatewayTimeout,
-				ResponseBody: fmt.Appendf(nil, `504 Unable to make %q request for URL : %q. Error: %v`, requestMethod, postInfo.URL, err),
+				StatusCode: http.StatusGatewayTimeout,
+				// err is *url.Error here, which repeats the request URL inside its
+				// own message, so the redaction runs over the composed string.
+				ResponseBody: []byte(redactURLCredentials(
+					fmt.Sprintf(`504 Unable to make %q request for URL : %q. Error: %v`, requestMethod, postInfo.URL, err))),
 			}
 		}
 
@@ -250,8 +254,9 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return &utils.SendPostResponse{
-				StatusCode:   resp.StatusCode,
-				ResponseBody: fmt.Appendf(nil, `Failed to read response body for request for URL : %q. Error: %v`, postInfo.URL, err),
+				StatusCode: resp.StatusCode,
+				ResponseBody: []byte(redactURLCredentials(
+					fmt.Sprintf(`Failed to read response body for request for URL : %q. Error: %v`, postInfo.URL, err))),
 			}
 		}
 		network.logger.Debugn("SendPost",
