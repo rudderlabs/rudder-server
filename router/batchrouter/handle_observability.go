@@ -136,8 +136,8 @@ func (brt *Handle) recordAsyncDestinationDeliveryStatus(sourceID, destinationID 
 // emitAsyncEventDeliveryTimeMetrics emits event_delivery_time metrics for successful async destination deliveries
 func (brt *Handle) emitAsyncEventDeliveryTimeMetrics(sourceID, destinationID string, statusList []*jobsdb.JobStatusT) {
 	// Get the async destination struct to access original job parameters
-	asyncDestStruct := brt.asyncDestinationStruct[destinationID]
-	if asyncDestStruct == nil {
+	asyncDestStruct, ok := brt.asyncDestination(destinationID)
+	if !ok || asyncDestStruct == nil {
 		brt.logger.Errorn("Async destination struct not found for destinationID: %s", obskit.DestinationID(destinationID))
 		return
 	}

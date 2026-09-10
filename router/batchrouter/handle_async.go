@@ -212,10 +212,8 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sour
 				Parameters:           importingJob.LastJobStatus.Parameters,
 				ImportingList:        importingList,
 			}
-			brt.asyncDestinationStructMu.RLock()
-			asyncDestStruct := brt.asyncDestinationStruct[destinationID]
-			brt.asyncDestinationStructMu.RUnlock()
-			if asyncDestStruct == nil {
+			asyncDestStruct, ok := brt.asyncDestination(destinationID)
+			if !ok || asyncDestStruct == nil {
 				return statusList, fmt.Errorf("async destination struct not found for destinationID: %s", destinationID)
 			}
 			asyncDestStruct.UploadMutex.RLock()
@@ -373,10 +371,8 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 				importingJob := jobsResult.Jobs[0]
 				pollInput := getPollInput(importingJob)
 				sourceID := gjson.GetBytes(importingJob.Parameters, "source_id").String()
-				brt.asyncDestinationStructMu.RLock()
-				asyncDestStruct := brt.asyncDestinationStruct[destinationID]
-				brt.asyncDestinationStructMu.RUnlock()
-				if asyncDestStruct == nil {
+				asyncDestStruct, ok := brt.asyncDestination(destinationID)
+				if !ok || asyncDestStruct == nil {
 					brt.logger.Errorn("Async destination struct not found", obskit.DestinationType(brt.destType), obskit.DestinationID(destinationID))
 					continue
 				}
@@ -403,10 +399,8 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 				statusList, err := brt.updatePollStatusToDB(ctx, destinationID, sourceID, importingJob, importingCount, pollResp)
 				if err == nil {
 					brt.recordAsyncDestinationDeliveryStatus(sourceID, destinationID, statusList)
-					brt.asyncDestinationStructMu.RLock()
-					asyncDestStruct := brt.asyncDestinationStruct[destinationID]
-					brt.asyncDestinationStructMu.RUnlock()
-					if asyncDestStruct == nil {
+					asyncDestStruct, ok := brt.asyncDestination(destinationID)
+					if !ok || asyncDestStruct == nil {
 						continue
 					}
 					asyncDestStruct.UploadMutex.Lock()
@@ -459,9 +453,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 			brt.configSubscriberMu.RUnlock()
 
 			for destinationID := range destinationsMap {
-				brt.asyncDestinationStructMu.RLock()
-				asyncDestStruct, ok := brt.asyncDestinationStruct[destinationID]
-				brt.asyncDestinationStructMu.RUnlock()
+				asyncDestStruct, ok := brt.asyncDestination(destinationID)
 				if !ok {
 					continue
 				}
@@ -506,10 +498,8 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 }
 
 func (brt *Handle) asyncStructSetup(sourceID, destinationID string, jobsList []*jobsdb.JobT) {
-	brt.asyncDestinationStructMu.RLock()
-	asyncDestStruct := brt.asyncDestinationStruct[destinationID]
-	brt.asyncDestinationStructMu.RUnlock()
-	if asyncDestStruct == nil {
+	asyncDestStruct, ok := brt.asyncDestination(destinationID)
+	if !ok || asyncDestStruct == nil {
 		return
 	}
 
@@ -582,19 +572,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) error {
 		return nil
 	}
 
-	brt.asyncDestinationStructMu.RLock()
-	asyncDestStruct, ok := brt.asyncDestinationStruct[destinationID]
-	brt.asyncDestinationStructMu.RUnlock()
-	if !ok {
-		brt.asyncDestinationStructMu.Lock()
-		if existingAsyncDestStruct, exists := brt.asyncDestinationStruct[destinationID]; exists {
-			asyncDestStruct = existingAsyncDestStruct
-		} else {
-			asyncDestStruct = &common.AsyncDestinationStruct{}
-			brt.asyncDestinationStruct[destinationID] = asyncDestStruct
-		}
-		brt.asyncDestinationStructMu.Unlock()
-	}
+	asyncDestStruct := brt.ensureAsyncDestination(destinationID)
 	asyncDestStruct.UploadMutex.Lock()
 	defer asyncDestStruct.UploadMutex.Unlock()
 	manager := asyncDestStruct.Manager

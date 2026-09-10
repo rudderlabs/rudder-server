@@ -302,6 +302,31 @@ func (brt *Handle) destinationSnapshotIsCurrentLocked(destination backendconfig.
 	return ok && currentDestination.Destination.RevisionID == destination.RevisionID
 }
 
+func (brt *Handle) asyncDestination(destinationID string) (*asynccommon.AsyncDestinationStruct, bool) {
+	brt.asyncDestinationStructMu.RLock()
+	asyncDestStruct, ok := brt.asyncDestinationStruct[destinationID]
+	brt.asyncDestinationStructMu.RUnlock()
+	return asyncDestStruct, ok
+}
+
+func (brt *Handle) ensureAsyncDestination(destinationID string) *asynccommon.AsyncDestinationStruct {
+	if asyncDestStruct, ok := brt.asyncDestination(destinationID); ok {
+		return asyncDestStruct
+	}
+
+	brt.asyncDestinationStructMu.Lock()
+	defer brt.asyncDestinationStructMu.Unlock()
+	if brt.asyncDestinationStruct == nil {
+		brt.asyncDestinationStruct = make(map[string]*asynccommon.AsyncDestinationStruct)
+	}
+	if asyncDestStruct, ok := brt.asyncDestinationStruct[destinationID]; ok {
+		return asyncDestStruct
+	}
+	asyncDestStruct := &asynccommon.AsyncDestinationStruct{}
+	brt.asyncDestinationStruct[destinationID] = asyncDestStruct
+	return asyncDestStruct
+}
+
 func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
 	brt.configSubscriberMu.RLock()
 	isCurrentDestination := brt.destinationSnapshotIsCurrentLocked(*destination)
@@ -328,14 +353,7 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 		}
 	}
 
-	brt.asyncDestinationStructMu.Lock()
-	asyncDestStruct, ok := brt.asyncDestinationStruct[destination.ID]
-	if !ok {
-		asyncDestStruct = &asynccommon.AsyncDestinationStruct{}
-		brt.asyncDestinationStruct[destination.ID] = asyncDestStruct
-	}
-	brt.asyncDestinationStructMu.Unlock()
-
+	asyncDestStruct := brt.ensureAsyncDestination(destination.ID)
 	asyncDestStruct.UploadMutex.Lock()
 	defer asyncDestStruct.UploadMutex.Unlock()
 
@@ -359,9 +377,7 @@ func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
 	if !isCurrentDestination {
 		return
 	}
-	brt.asyncDestinationStructMu.RLock()
-	asyncDestStruct, ok := brt.asyncDestinationStruct[destination.ID]
-	brt.asyncDestinationStructMu.RUnlock()
+	asyncDestStruct, ok := brt.asyncDestination(destination.ID)
 	if ok && asyncDestStruct != nil {
 		asyncDestStruct.UploadMutex.RLock()
 		currentDestination := asyncDestStruct.Destination

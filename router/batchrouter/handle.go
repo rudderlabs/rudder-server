@@ -144,7 +144,7 @@ type Handle struct {
 	diagnosisTicker          *time.Ticker
 	uploadedRawDataJobsCache map[string]map[string]bool
 
-	asyncDestinationStructMu sync.RWMutex // protects asyncDestinationStruct map membership and Manager/Destination replacement
+	asyncDestinationStructMu sync.RWMutex // protects asyncDestinationStruct map membership
 	asyncDestinationStruct   map[string]*asynccommon.AsyncDestinationStruct
 
 	asyncPollTimeStat           stats.Measurement
