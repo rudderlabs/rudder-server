@@ -196,7 +196,7 @@ func startSSHForwarder(t *testing.T, publicAuthorizedKey []byte) int {
 	serverConfig := &ssh.ServerConfig{
 		PublicKeyCallback: func(_ ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 			if bytes.Equal(key.Marshal(), authorizedKey.Marshal()) {
-				return nil, nil
+				return &ssh.Permissions{}, nil
 			}
 			return nil, fmt.Errorf("unauthorized public key")
 		},
