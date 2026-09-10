@@ -18,14 +18,14 @@ import (
 // unknownDatabase is ClickHouse's UNKNOWN_DATABASE error code.
 const unknownDatabase = 81
 
-// s3CredentialsRegex masks the access key and secret that loadByCopyCommand
-// passes to the s3 table function. Without it the middleware logs the statement
-// verbatim once it crosses the slow query threshold, which a full table copy
-// does routinely. The credentials are positional single-quoted arguments rather
-// than named ones, so the pattern anchors on s3( and the location that precedes
-// them.
+// s3CredentialsRegex masks the credentials that loadByCopyCommand passes to
+// the s3 table function. Without it the middleware logs the statement verbatim
+// once it crosses the slow query threshold, which a full table copy does
+// routinely. They are positional single-quoted arguments rather than named
+// ones, and there are two of them or three when a session token is included,
+// so the pattern collapses everything between the location and the format.
 var s3CredentialsRegex = map[string]string{
-	`(s3\(\s*'[^']*',\s*)'[^']*',\s*'[^']*'`: `${1}'***', '***'`,
+	`(s3\(\s*'[^']*',\s*)(?:'[^']*',\s*)+('CSV')`: `${1}'***', ${2}`,
 }
 
 // connect opens a connection and wraps it in the shared middleware.
@@ -62,6 +62,13 @@ func (ch *ClickhouseV2) connect(includeDatabase bool) (*sqlmw.DB, error) {
 	db := clickhouse.OpenDB(opts)
 	db.SetMaxOpenConns(ch.config.poolSize)
 	db.SetMaxIdleConns(ch.config.poolSize)
+	// A load commits one block per transaction, so every block takes a
+	// connection from the pool. Without a lifetime, a connection the server
+	// closed while it sat idle stays in the pool and the first write on it
+	// fails as driver: bad connection — which database/sql cannot retry once
+	// the connection is bound to a transaction.
+	db.SetConnMaxIdleTime(ch.config.connMaxIdleTime)
+	db.SetConnMaxLifetime(ch.config.connMaxLifetime)
 
 	return sqlmw.New(
 		db,

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.86.1](https://github.com/rudderlabs/rudder-server/compare/v1.86.0...v1.86.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **warehouse:** instrument the clickhouse v2 load path ([#7355](https://github.com/rudderlabs/rudder-server/issues/7355)) ([6456c64](https://github.com/rudderlabs/rudder-server/commit/6456c6417e4d24fb8e3b6fecac972cf21b045616))
+* **warehouse:** pass temporary credentials to the clickhouse v2 s3 copy engine ([#7353](https://github.com/rudderlabs/rudder-server/issues/7353)) ([c835fc0](https://github.com/rudderlabs/rudder-server/commit/c835fc067489cb66c388c4807e7bc7c116abac3c))
+* **warehouse:** retire idle clickhouse v2 connections ([#7352](https://github.com/rudderlabs/rudder-server/issues/7352)) ([3a1407c](https://github.com/rudderlabs/rudder-server/commit/3a1407ccfa7cd0c7ac939018de5782bc43dbcb6b))
+* **warehouse:** retry a failed clickhouse v2 block ([#7354](https://github.com/rudderlabs/rudder-server/issues/7354)) ([72390f6](https://github.com/rudderlabs/rudder-server/commit/72390f6e169e48cc151e7ab385ac28bb7a2afcf5))
+
 ## [1.86.0](https://github.com/rudderlabs/rudder-server/compare/v1.85.0...v1.86.0) (2026-09-07)
 
 

@@ -10,6 +10,7 @@ import (
 	"log"
 	"maps"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -20,6 +21,7 @@ import (
 
 	clickhousestd "github.com/ClickHouse/clickhouse-go"
 	"github.com/google/uuid"
+	miniocredentials "github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -969,6 +971,31 @@ func testIntegration(t *testing.T, useV2 bool) {
 		region := "us-east-1"
 		table := "test_table"
 
+		// minioTemporaryCredentials asks MinIO for short-lived credentials. MinIO
+		// implements the AssumeRole call for any of its own users, root included,
+		// and validates the session token it hands back on later S3 requests. The
+		// session policy is spelled out rather than inherited so the credentials
+		// do not depend on what the parent user happens to carry.
+		minioTemporaryCredentials := func() (string, string, string, error) {
+			creds, err := miniocredentials.NewSTSAssumeRole("http://"+minioEndpoint, miniocredentials.STSAssumeRoleOptions{
+				AccessKey:       accessKeyID,
+				SecretKey:       secretAccessKey,
+				Location:        region,
+				DurationSeconds: 3600,
+				Policy:          `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:*"],"Resource":["arn:aws:s3:::*","arn:aws:s3:::*/*"]}]}`,
+			})
+			if err != nil {
+				return "", "", "", fmt.Errorf("creating sts credentials: %w", err)
+			}
+			// GetWithContext rather than Get: the latter is deprecated because it
+			// cannot be told which HTTP client to make the STS call with.
+			value, err := creds.GetWithContext(&miniocredentials.CredContext{Client: http.DefaultClient})
+			if err != nil {
+				return "", "", "", fmt.Errorf("retrieving sts credentials: %w", err)
+			}
+			return value.AccessKeyID, value.SecretAccessKey, value.SessionToken, nil
+		}
+
 		db := connectDB(t, context.Background(), clickhousePort)
 		defer func() { _ = db.Close() }()
 
@@ -978,6 +1005,12 @@ func testIntegration(t *testing.T, useV2 bool) {
 			S3EngineEnabledWorkspaceIDs []string
 			disableNullable             bool
 			disableLoadTableStats       bool
+
+			// bucketProvider overrides the destination's provider, which is
+			// MINIO everywhere else in this table. S3 reaches the same bucket
+			// through the aws branch of credentials(), which mints short-lived
+			// credentials rather than reading the destination's own.
+			bucketProvider string
 
 			// commitEvery only changes behaviour on v2, which drives the commit
 			// cadence itself; v1 hands block_size to the driver and ignores it.
@@ -1010,6 +1043,12 @@ func testIntegration(t *testing.T, useV2 bool) {
 				disableLoadTableStats:       false,
 			},
 			{
+				name:                        "using s3 engine with temporary credentials",
+				S3EngineEnabledWorkspaceIDs: []string{workspaceID},
+				fileName:                    "testdata/load-copy.csv.gz",
+				bucketProvider:              whutils.S3,
+			},
+			{
 				name:                  "normal loading using downloading of load files with disable load table stats",
 				fileName:              "testdata/load.csv.gz",
 				disableLoadTableStats: true,
@@ -1037,6 +1076,10 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 		for i, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
+				if tc.bucketProvider == whutils.S3 && !useV2 {
+					t.Skip("v1 has no temporary credential path, and runs clickhouse 21, which predates the session token argument of the s3 table function")
+				}
+
 				conf := config.New()
 				conf.Set(configKey("s3EngineEnabledWorkspaceIDs"), tc.S3EngineEnabledWorkspaceIDs)
 				conf.Set(configKey("disableNullable"), tc.disableNullable)
@@ -1047,22 +1090,38 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 				ch := newClickhouse(conf)
 
+				destConfig := map[string]any{
+					"bucketProvider":  whutils.MINIO,
+					"host":            host,
+					"port":            strconv.Itoa(clickhousePort),
+					"database":        database,
+					"user":            user,
+					"password":        password,
+					"bucketName":      bucketName,
+					"accessKeyID":     accessKeyID,
+					"secretAccessKey": secretAccessKey,
+					"endPoint":        minioEndpoint,
+				}
+				if tc.bucketProvider != "" {
+					destConfig["bucketProvider"] = tc.bucketProvider
+				}
+				if tc.bucketProvider == whutils.S3 {
+					chv2, ok := ch.(*clickhouse.ClickhouseV2)
+					require.True(t, ok)
+					// The server reaches AWS STS here. MinIO issues credentials
+					// of the same shape for its own users and validates the
+					// token on the way back in, so the fourth argument of the s3
+					// table function is covered without leaving the compose.
+					chv2.TemporaryS3Cred = func(*backendconfig.DestinationT) (string, string, string, error) {
+						return minioTemporaryCredentials()
+					}
+				}
+
 				warehouse := model.Warehouse{
 					Namespace:   fmt.Sprintf("test_namespace_%d", i),
 					WorkspaceID: workspaceID,
 					Destination: backendconfig.DestinationT{
-						Config: map[string]any{
-							"bucketProvider":  whutils.MINIO,
-							"host":            host,
-							"port":            strconv.Itoa(clickhousePort),
-							"database":        database,
-							"user":            user,
-							"password":        password,
-							"bucketName":      bucketName,
-							"accessKeyID":     accessKeyID,
-							"secretAccessKey": secretAccessKey,
-							"endPoint":        minioEndpoint,
-						},
+						Config: destConfig,
 					},
 				}
 
