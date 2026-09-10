@@ -51,6 +51,28 @@ func TestRedactURLCredentials(t *testing.T) {
 			input:    `http://internal.example.com/ingest?token=abc`,
 			expected: `http://internal.example.com/ingest?[redacted]`,
 		},
+		// Raised in review: the match must not eat the punctuation around it, or the
+		// surrounding message is quietly corrupted.
+		{
+			name:     "sentence-ending period is left in place",
+			input:    `request failed at https://api.example.com/x?k=v.`,
+			expected: `request failed at https://api.example.com/x?[redacted].`,
+		},
+		{
+			name:     "comma between clauses survives",
+			input:    `failed at https://api.example.com/x?k=v, retrying`,
+			expected: `failed at https://api.example.com/x?[redacted], retrying`,
+		},
+		{
+			name:     "closing bracket survives",
+			input:    `see https://api.example.com/x?k=v)`,
+			expected: `see https://api.example.com/x?[redacted])`,
+		},
+		{
+			name:     "a url with no query keeps its trailing punctuation too",
+			input:    `see https://api.example.com/x.`,
+			expected: `see https://api.example.com/x.`,
+		},
 	}
 
 	for _, tc := range testCases {
