@@ -779,16 +779,17 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 		_ = os.Remove(tempFilePath)
 	}()
 
-	f, err := os.Open(tempFilePath)
+	uploadFile, err := os.Open(tempFilePath)
 	if err != nil {
 		return fmt.Errorf("unable to open path to temporary file: \n%w", err)
 	}
+	defer func() { _ = uploadFile.Close() }()
 
-	uploadOutput, err := fileManager.Upload(ctx, f)
+	uploadOutput, err := fileManager.Upload(ctx, uploadFile)
 	if err != nil {
 		return invalidDestinationCredErr{Base: err, Operation: "upload"}
 	}
-	if err = f.Close(); err != nil {
+	if err = uploadFile.Close(); err != nil {
 		return fmt.Errorf("unable to close file: \n%w", err)
 	}
 
@@ -802,23 +803,24 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 		return fmt.Errorf("unable to create download directory: \n%w", err)
 	}
 
-	f, err = os.CreateTemp(downloadDir, downloadFileNamePattern)
+	downloadFile, err := os.CreateTemp(downloadDir, downloadFileNamePattern)
 	if err != nil {
 		return fmt.Errorf("unable to create temp file: \n%w", err)
 	}
 	defer func() {
-		_ = os.Remove(f.Name())
+		_ = downloadFile.Close()
+		_ = os.Remove(downloadFile.Name())
 	}()
 
 	err = fileManager.Download(
 		ctx,
-		f,
+		downloadFile,
 		fileManager.GetDownloadKeyFromFileLocation(uploadOutput.Location),
 	)
 	if err != nil {
 		return invalidDestinationCredErr{Base: err, Operation: "download"}
 	}
-	if err = f.Close(); err != nil {
+	if err = downloadFile.Close(); err != nil {
 		return fmt.Errorf("unable to close file: \n%w", err)
 	}
 	return nil

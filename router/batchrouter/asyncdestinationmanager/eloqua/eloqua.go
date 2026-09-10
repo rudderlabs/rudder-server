@@ -110,6 +110,7 @@ func (e *EloquaServiceImpl) UploadData(data *HttpRequestData, filePath string) e
 	if err != nil {
 		return err
 	}
+	defer func() { _ = file.Close() }()
 	data.Endpoint = data.BaseEndpoint + e.bulkApi + data.DynamicPart + "/data"
 	data.Method = http.MethodPost
 	data.ContentType = "text/csv"

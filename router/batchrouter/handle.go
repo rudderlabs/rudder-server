@@ -384,8 +384,12 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 
 	outputFile, err := os.Open(gzipFilePath)
 	if err != nil {
-		panic(err)
+		return UploadResult{
+			Error:          fmt.Errorf("BRT: Error opening gzip file for upload: %w", err),
+			LocalFilePaths: []string{gzipFilePath},
+		}
 	}
+	defer func() { _ = outputFile.Close() }()
 
 	brt.logger.Debugn("BRT: Starting upload to", logger.NewStringField("provider", provider))
 	var folderName string

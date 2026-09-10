@@ -1,8 +1,11 @@
 package batchrouter
 
 import (
+	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -707,4 +710,159 @@ func TestUploadDatePrefixOverridePrecedence(t *testing.T) {
 			require.Equal(t, tc.expectedDatePrefix, capturedKeyPrefixes[2])
 		})
 	}
+}
+
+func requireFileClosed(t *testing.T, f *os.File) {
+	t.Helper()
+	require.NotNil(t, f)
+	_, err := f.Write([]byte("x"))
+	require.Error(t, err)
+	require.Error(t, f.Close(), "expected file to already be closed")
+}
+
+func TestUploadClosesGzipFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("RUDDER_TMPDIR", tmpDir)
+	config.Reset()
+	config.Set("RUDDER_TMPDIR", tmpDir)
+	t.Cleanup(config.Reset)
+
+	mockCtrl := gomock.NewController(t)
+	mockFileManager := mock_filemanager.NewMockFileManager(mockCtrl)
+	mockFileManager.EXPECT().Prefix().Return("mockPrefix")
+	mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(filemanager.MockListSession([]*filemanager.FileInfo{}, nil))
+
+	var uploadedFile *os.File
+	mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, f *os.File, _ ...string) (filemanager.UploadedFile, error) {
+			uploadedFile = f
+			return filemanager.UploadedFile{Location: "local", ObjectName: "file"}, nil
+		},
+	)
+
+	handle := &Handle{
+		logger: logger.NewLogger().Child("batchrouter"),
+		fileManagerFactory: func(_ *filemanager.Settings) (filemanager.FileManager, error) {
+			return mockFileManager, nil
+		},
+		datePrefixOverride: config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride"),
+		customDatePrefix:   config.GetReloadableStringVar("", "BatchRouter.customDatePrefix"),
+		dateFormatProvider: &storageDateFormatProvider{dateFormatsCache: make(map[string]string)},
+		conf:               config.New(),
+		now:                timeutil.Now,
+		jobsDB:             mocksJobsDB.NewMockJobsDB(mockCtrl),
+	}
+
+	result := handle.upload("S3", &BatchedJobs{
+		Jobs: []*jobsdb.JobT{
+			{EventPayload: []byte(`{"metadata":{"table":"users"}}`)},
+		},
+		Connection: &Connection{
+			Source:      backendconfig.SourceT{ID: "test-source"},
+			Destination: backendconfig.DestinationT{ID: "test-destination"},
+		},
+	}, true)
+
+	require.NoError(t, result.Error)
+	requireFileClosed(t, uploadedFile)
+}
+
+func TestCrashRecoverClosesFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("RUDDER_TMPDIR", tmpDir)
+	config.Reset()
+	config.Set("RUDDER_TMPDIR", tmpDir)
+	t.Cleanup(config.Reset)
+
+	payload, err := jsonrs.Marshal(&ObjectStorageDefinition{
+		Config:          map[string]any{"bucket": "test-bucket", "prefix": "test-prefix"},
+		Key:             "path/to/object.json.gz",
+		Provider:        "S3",
+		DestinationID:   "dest-1",
+		DestinationType: "S3",
+	})
+	require.NoError(t, err)
+
+	entry := jobsdb.JournalEntryT{
+		OpID:      42,
+		OpType:    jobsdb.RawDataDestUploadOperation,
+		OpPayload: payload,
+	}
+
+	t.Run("download failure closes and removes temp file", func(t *testing.T) {
+		mockCtrl := gomock.NewController(t)
+		mockFileManager := mock_filemanager.NewMockFileManager(mockCtrl)
+		jobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+
+		var downloadPath string
+		jobsDB.EXPECT().GetJournalEntries(jobsdb.RawDataDestUploadOperation).Return([]jobsdb.JournalEntryT{entry})
+		jobsDB.EXPECT().JournalDeleteEntry(int64(42)).Times(1)
+		mockFileManager.EXPECT().Download(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, w io.WriterAt, _ string, _ ...filemanager.DownloadOption) error {
+				f, ok := w.(*os.File)
+				require.True(t, ok)
+				downloadPath = f.Name()
+				return errors.New("download failed")
+			},
+		)
+
+		brt := &Handle{
+			destType:                 "S3",
+			logger:                   logger.NOP,
+			conf:                     config.New(),
+			jobsDB:                   jobsDB,
+			uploadedRawDataJobsCache: make(map[string]map[string]bool),
+			fileManagerFactory: func(_ *filemanager.Settings) (filemanager.FileManager, error) {
+				return mockFileManager, nil
+			},
+		}
+
+		require.NotPanics(t, brt.crashRecover)
+		require.NotEmpty(t, downloadPath)
+		_, statErr := os.Stat(downloadPath)
+		require.Error(t, statErr)
+		require.True(t, os.IsNotExist(statErr))
+	})
+
+	t.Run("success populates cache and closes raw file", func(t *testing.T) {
+		mockCtrl := gomock.NewController(t)
+		mockFileManager := mock_filemanager.NewMockFileManager(mockCtrl)
+		jobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+
+		var downloadPath string
+		var downloadedFile *os.File
+		jobsDB.EXPECT().GetJournalEntries(jobsdb.RawDataDestUploadOperation).Return([]jobsdb.JournalEntryT{entry})
+		jobsDB.EXPECT().JournalDeleteEntry(int64(42)).Times(1)
+		mockFileManager.EXPECT().Download(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, w io.WriterAt, _ string, _ ...filemanager.DownloadOption) error {
+				f, ok := w.(*os.File)
+				require.True(t, ok)
+				downloadPath = f.Name()
+				downloadedFile = f
+				gz := gzip.NewWriter(f)
+				_, writeErr := gz.Write([]byte(`{"messageId":"msg-1"}` + "\n"))
+				require.NoError(t, writeErr)
+				return gz.Close()
+			},
+		)
+
+		brt := &Handle{
+			destType:                 "S3",
+			logger:                   logger.NOP,
+			conf:                     config.New(),
+			jobsDB:                   jobsDB,
+			uploadedRawDataJobsCache: make(map[string]map[string]bool),
+			fileManagerFactory: func(_ *filemanager.Settings) (filemanager.FileManager, error) {
+				return mockFileManager, nil
+			},
+		}
+
+		require.NotPanics(t, brt.crashRecover)
+		require.True(t, brt.uploadedRawDataJobsCache["dest-1"]["msg-1"])
+		requireFileClosed(t, downloadedFile)
+		_, statErr := os.Stat(downloadPath)
+		require.Error(t, statErr)
+		require.True(t, os.IsNotExist(statErr))
+	})
 }

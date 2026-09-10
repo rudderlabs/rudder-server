@@ -58,6 +58,7 @@ func (u *LyticsServiceImpl) UploadBulkFile(data *HttpRequestData, filePath strin
 	if err != nil {
 		return err
 	}
+	defer func() { _ = file.Close() }()
 
 	data.Method = http.MethodPost
 	data.ContentType = "application/csv"
