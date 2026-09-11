@@ -56,7 +56,7 @@ func (e *EloquaServiceImpl) GetBaseEndpoint(data *HttpRequestData) (string, erro
 	loginDetailsResponse := LoginDetailsResponse{}
 	err = jsonrs.Unmarshal(body, &loginDetailsResponse)
 	if err != nil {
-		return "", fmt.Errorf("Unable to parse eloqua login response: %w, body: %s", err, string(body))
+		return "", fmt.Errorf("unable to parse eloqua login response: %w, body: %s", err, string(body))
 	}
 	if loginDetailsResponse.Urls.Base == "" {
 		return "", fmt.Errorf("eloqua login response missing urls.base, body: %s", string(body))

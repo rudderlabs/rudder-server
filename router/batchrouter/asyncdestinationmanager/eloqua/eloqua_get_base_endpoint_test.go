@@ -53,7 +53,7 @@ func TestGetBaseEndpointReturnsErrorForInvalidLoginResponse(t *testing.T) {
 	baseEndpoint, err := service.GetBaseEndpoint(&HttpRequestData{})
 
 	require.Empty(t, baseEndpoint)
-	require.ErrorContains(t, err, "Unable to parse eloqua login response")
+	require.ErrorContains(t, err, "unable to parse eloqua login response")
 	require.ErrorContains(t, err, `{"urls":`)
 }
 
