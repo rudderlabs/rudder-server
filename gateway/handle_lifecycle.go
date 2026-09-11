@@ -649,8 +649,12 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	srvMux.Get("/robots.txt", gw.robotsHandler)
 
 	c := cors.New(cors.Options{
-		AllowOriginFunc:  func(_ string) bool { return true },
-		AllowCredentials: true,
+		AllowOriginFunc: func(_ string) bool { return true },
+		// AllowCredentials is intentionally false: the gateway authenticates via the
+		// Authorization header (Basic Auth writeKey), not cookies. Setting this to true
+		// while reflecting any origin would allow malicious pages to make credentialed
+		// cross-origin requests on behalf of a victim's browser session.
+		AllowCredentials: false,
 		AllowedHeaders:   []string{"*"},
 		MaxAge:           900, // 15 mins
 	})
