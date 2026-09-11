@@ -61,7 +61,7 @@ func TestInitAsyncDestinationStructInstallsInvalidManagerWithFailedAt(t *testing
 }
 
 func TestRefreshDestinationInvalidManagerRetryPolicy(t *testing.T) {
-	interval := 5 * time.Minute
+	interval := 15 * time.Minute
 	now := time.Date(2024, 2, 3, 4, 5, 6, 0, time.UTC)
 
 	t.Run("same revision within cooldown does not retry", func(t *testing.T) {

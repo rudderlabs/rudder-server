@@ -198,7 +198,7 @@ func (brt *Handle) setupReloadableVars() {
 	brt.maxFailedCountForSourcesJob = config.GetReloadableIntVar(3, 1, "BatchRouter.RSources."+brt.destType+".maxFailedCountForJob", "BatchRouter.RSources.maxFailedCountForJob")
 	brt.asyncUploadTimeout = config.GetReloadableDurationVar(30, time.Minute, "BatchRouter."+brt.destType+".asyncUploadTimeout", "BatchRouter.asyncUploadTimeout")
 	brt.asyncUploadWorkerTimeout = config.GetReloadableDurationVar(10, time.Second, "BatchRouter."+brt.destType+".asyncUploadWorkerTimeout", "BatchRouter.asyncUploadWorkerTimeout")
-	brt.invalidManagerRetryInterval = config.GetReloadableDurationVar(5, time.Minute, "BatchRouter.invalidManagerRetryInterval")
+	brt.invalidManagerRetryInterval = config.GetReloadableDurationVar(15, time.Minute, "BatchRouter.invalidManagerRetryInterval")
 	brt.retryTimeWindow = config.GetReloadableDurationVar(180, time.Minute, "BatchRouter."+brt.destType+".retryTimeWindow", "BatchRouter."+brt.destType+".retryTimeWindowInMins", "BatchRouter.retryTimeWindow", "BatchRouter.retryTimeWindowInMins")
 	brt.sourcesRetryTimeWindow = config.GetReloadableDurationVar(1, time.Minute, "BatchRouter.RSources."+brt.destType+".retryTimeWindow", "BatchRouter.RSources."+brt.destType+".retryTimeWindowInMins", "BatchRouter.RSources.retryTimeWindow", "BatchRouter.RSources.retryTimeWindowInMins")
 	brt.jobQueryBatchSize = config.GetReloadableIntVar(20000, 1, "BatchRouter."+brt.destType+".jobQueryBatchSize", "BatchRouter.jobQueryBatchSize")
