@@ -264,18 +264,11 @@ func (brt *Handle) Shutdown() {
 	brt.logger.Infon("Batch router shutdown complete")
 }
 
-func (brt *Handle) currentTime() time.Time {
-	if brt.now != nil {
-		return brt.now()
-	}
-	return timeutil.Now()
-}
-
 func (brt *Handle) shouldRetryInvalidManager(invalidManager *asynccommon.InvalidManager) bool {
 	if invalidManager.FailedAt.IsZero() {
 		return true
 	}
-	return brt.currentTime().Sub(invalidManager.FailedAt) >= brt.invalidManagerRetryInterval.Load()
+	return brt.now().Sub(invalidManager.FailedAt) >= brt.invalidManagerRetryInterval.Load()
 }
 
 func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
@@ -289,7 +282,7 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 		destInitFailStat.Count(1)
 		manager = &asynccommon.InvalidManager{
 			Error:    fmt.Errorf("%s initialization failed with error: %v", destination.Name, err),
-			FailedAt: brt.currentTime(),
+			FailedAt: brt.now(),
 		}
 	}
 	_, ok := brt.asyncDestinationStruct[destination.ID]
