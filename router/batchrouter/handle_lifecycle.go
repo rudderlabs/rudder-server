@@ -300,11 +300,8 @@ func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
 	asyncDestStruct, ok := brt.asyncDestinationStruct[destination.ID]
 	if ok && asyncDestStruct.Destination != nil &&
 		asyncDestStruct.Destination.RevisionID == destination.RevisionID {
-		if invalidManager, isInvalidManager := asyncDestStruct.Manager.(*asynccommon.InvalidManager); isInvalidManager {
-			if !brt.shouldRetryInvalidManager(invalidManager) {
-				return
-			}
-		} else {
+		invalidManager, isInvalidManager := asyncDestStruct.Manager.(*asynccommon.InvalidManager)
+		if !isInvalidManager || !brt.shouldRetryInvalidManager(invalidManager) {
 			return
 		}
 	}
