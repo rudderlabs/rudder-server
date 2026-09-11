@@ -239,11 +239,6 @@ func (brt *Handle) startAsyncDestinationManager() {
 	}
 
 	brt.backgroundGroup.Go(crash.Wrapper(func() error {
-		brt.retryInvalidAsyncDestinationManagers(brt.backgroundCtx)
-		return nil
-	}))
-
-	brt.backgroundGroup.Go(crash.Wrapper(func() error {
 		brt.asyncUploadWorker(brt.backgroundCtx)
 		return nil
 	}))
@@ -294,47 +289,7 @@ func (brt *Handle) shouldRetryInvalidManager(invalidManager *asynccommon.Invalid
 	return brt.currentTime().Sub(invalidManager.FailedAt) >= brt.invalidManagerRetryIntervalValue()
 }
 
-func (brt *Handle) destinationSnapshotIsCurrentLocked(destination backendconfig.DestinationT) bool {
-	if len(brt.destinationsMap) == 0 {
-		return true
-	}
-	currentDestination, ok := brt.destinationsMap[destination.ID]
-	return ok && currentDestination.Destination.RevisionID == destination.RevisionID
-}
-
-func (brt *Handle) asyncDestination(destinationID string) (*asynccommon.AsyncDestinationStruct, bool) {
-	brt.asyncDestinationStructMu.RLock()
-	asyncDestStruct, ok := brt.asyncDestinationStruct[destinationID]
-	brt.asyncDestinationStructMu.RUnlock()
-	return asyncDestStruct, ok
-}
-
-func (brt *Handle) ensureAsyncDestination(destinationID string) *asynccommon.AsyncDestinationStruct {
-	if asyncDestStruct, ok := brt.asyncDestination(destinationID); ok {
-		return asyncDestStruct
-	}
-
-	brt.asyncDestinationStructMu.Lock()
-	defer brt.asyncDestinationStructMu.Unlock()
-	if brt.asyncDestinationStruct == nil {
-		brt.asyncDestinationStruct = make(map[string]*asynccommon.AsyncDestinationStruct)
-	}
-	if asyncDestStruct, ok := brt.asyncDestinationStruct[destinationID]; ok {
-		return asyncDestStruct
-	}
-	asyncDestStruct := &asynccommon.AsyncDestinationStruct{}
-	brt.asyncDestinationStruct[destinationID] = asyncDestStruct
-	return asyncDestStruct
-}
-
 func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
-	brt.configSubscriberMu.RLock()
-	isCurrentDestination := brt.destinationSnapshotIsCurrentLocked(*destination)
-	brt.configSubscriberMu.RUnlock()
-	if !isCurrentDestination {
-		return
-	}
-
 	managerFactory := brt.asyncManagerFactory
 	if managerFactory == nil {
 		managerFactory = asyncdestinationmanager.NewManager
@@ -352,86 +307,30 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 			FailedAt: brt.currentTime(),
 		}
 	}
-
-	asyncDestStruct := brt.ensureAsyncDestination(destination.ID)
-	asyncDestStruct.UploadMutex.Lock()
-	defer asyncDestStruct.UploadMutex.Unlock()
-
-	brt.configSubscriberMu.RLock()
-	isCurrentDestination = brt.destinationSnapshotIsCurrentLocked(*destination)
-	brt.configSubscriberMu.RUnlock()
-	if !isCurrentDestination {
-		return
+	_, ok := brt.asyncDestinationStruct[destination.ID]
+	if !ok {
+		brt.asyncDestinationStruct[destination.ID] = &asynccommon.AsyncDestinationStruct{}
 	}
-	asyncDestStruct.Destination = destination
-	asyncDestStruct.Manager = manager
+	brt.asyncDestinationStruct[destination.ID].Destination = destination
+	brt.asyncDestinationStruct[destination.ID].Manager = manager
 }
 
 func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
 	if !asynccommon.IsAsyncDestination(destination.DestinationDefinition.Name) {
 		return
 	}
-	brt.configSubscriberMu.RLock()
-	isCurrentDestination := brt.destinationSnapshotIsCurrentLocked(destination)
-	brt.configSubscriberMu.RUnlock()
-	if !isCurrentDestination {
-		return
-	}
-	asyncDestStruct, ok := brt.asyncDestination(destination.ID)
-	if ok && asyncDestStruct != nil {
-		asyncDestStruct.UploadMutex.RLock()
-		currentDestination := asyncDestStruct.Destination
-		currentManager := asyncDestStruct.Manager
-		asyncDestStruct.UploadMutex.RUnlock()
-		if currentDestination != nil && currentDestination.RevisionID == destination.RevisionID {
-			invalidManager, isInvalidManager := currentManager.(*asynccommon.InvalidManager)
-			if !isInvalidManager || !brt.shouldRetryInvalidManager(invalidManager) {
+	asyncDestStruct, ok := brt.asyncDestinationStruct[destination.ID]
+	if ok && asyncDestStruct.Destination != nil &&
+		asyncDestStruct.Destination.RevisionID == destination.RevisionID {
+		if invalidManager, isInvalidManager := asyncDestStruct.Manager.(*asynccommon.InvalidManager); isInvalidManager {
+			if !brt.shouldRetryInvalidManager(invalidManager) {
 				return
 			}
+		} else {
+			return
 		}
 	}
 	brt.initAsyncDestinationStruct(&destination)
-}
-
-func (brt *Handle) retryInvalidAsyncDestinationManagers(ctx context.Context) {
-	if !asynccommon.IsAsyncDestination(brt.destType) {
-		return
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(brt.asyncUploadWorkerTimeout.Load()):
-			brt.retryInvalidAsyncDestinationManagersOnce(ctx)
-		}
-	}
-}
-
-func (brt *Handle) retryInvalidAsyncDestinationManagersOnce(ctx context.Context) {
-	brt.configSubscriberMu.RLock()
-	destinationIDs := make([]string, 0, len(brt.destinationsMap))
-	for destinationID := range brt.destinationsMap {
-		destinationIDs = append(destinationIDs, destinationID)
-	}
-	brt.configSubscriberMu.RUnlock()
-
-	for _, destinationID := range destinationIDs {
-		if ctx.Err() != nil {
-			return
-		}
-
-		brt.configSubscriberMu.RLock()
-		destinationWithSources, ok := brt.destinationsMap[destinationID]
-		var destination backendconfig.DestinationT
-		if ok {
-			destination = destinationWithSources.Destination
-		}
-		brt.configSubscriberMu.RUnlock()
-		if !ok {
-			continue
-		}
-		brt.refreshDestination(destination)
-	}
 }
 
 func (brt *Handle) crashRecover() {
@@ -528,7 +427,6 @@ func (brt *Handle) backendConfigSubscriber() {
 		destinationsMap := map[string]*routerutils.DestinationWithSources{}
 		connectionWHNamespaceMap := map[string]string{}
 		uploadIntervalMap := map[string]time.Duration{}
-		destinationsToRefresh := make([]backendconfig.DestinationT, 0)
 		config := data.Data.(map[string]backendconfig.ConfigT)
 		for _, wConfig := range config {
 			for _, source := range wConfig.Sources {
@@ -537,12 +435,12 @@ func (brt *Handle) backendConfigSubscriber() {
 						if destination.DestinationDefinition.Name == brt.destType {
 							if _, ok := destinationsMap[destination.ID]; !ok {
 								destinationsMap[destination.ID] = &routerutils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}
-								destinationsToRefresh = append(destinationsToRefresh, destination)
 								if asynccommon.IsAsyncDestination(brt.destType) {
 									uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
 								}
 							}
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
+							brt.refreshDestination(destination)
 
 							// initialize map to track encountered anonymousIds for a warehouse destination
 							if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
@@ -559,10 +457,7 @@ func (brt *Handle) backendConfigSubscriber() {
 		brt.destinationsMap = destinationsMap
 		brt.connectionWHNamespaceMap = connectionWHNamespaceMap
 		brt.uploadIntervalMap = uploadIntervalMap
-		brt.configSubscriberMu.Unlock()
-		for _, destination := range destinationsToRefresh {
-			brt.refreshDestination(destination)
-		}
 		initialized()
+		brt.configSubscriberMu.Unlock()
 	}
 }

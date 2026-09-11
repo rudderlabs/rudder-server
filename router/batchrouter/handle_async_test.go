@@ -35,17 +35,13 @@ type mockAsyncDestinationManager struct {
 	uploadOutput common.AsyncUploadOutput
 	pollOutput   common.PollStatusResponse
 	statsOutput  common.GetUploadStatsResponse
-	uploadFunc   func(context.Context, *common.AsyncDestinationStruct) common.AsyncUploadOutput
 }
 
 func (m mockAsyncDestinationManager) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(string(job.EventPayload), job.JobID)
 }
 
-func (m mockAsyncDestinationManager) Upload(ctx context.Context, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
-	if m.uploadFunc != nil {
-		return m.uploadFunc(ctx, asyncDestStruct)
-	}
+func (m mockAsyncDestinationManager) Upload(context.Context, *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	return m.uploadOutput
 }
 
