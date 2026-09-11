@@ -271,27 +271,15 @@ func (brt *Handle) currentTime() time.Time {
 	return timeutil.Now()
 }
 
-func (brt *Handle) invalidManagerRetryIntervalValue() time.Duration {
-	interval := brt.invalidManagerRetryInterval.Load()
-	if interval <= 0 {
-		return 5 * time.Minute
-	}
-	return interval
-}
-
 func (brt *Handle) shouldRetryInvalidManager(invalidManager *asynccommon.InvalidManager) bool {
 	if invalidManager.FailedAt.IsZero() {
 		return true
 	}
-	return brt.currentTime().Sub(invalidManager.FailedAt) >= brt.invalidManagerRetryIntervalValue()
+	return brt.currentTime().Sub(invalidManager.FailedAt) >= brt.invalidManagerRetryInterval.Load()
 }
 
 func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
-	managerFactory := brt.asyncManagerFactory
-	if managerFactory == nil {
-		managerFactory = asyncdestinationmanager.NewManager
-	}
-	manager, err := managerFactory(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig)
+	manager, err := brt.asyncManagerFactory(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig)
 	if err != nil {
 		brt.logger.Errorn("BRT: Error initializing async destination struct", obskit.DestinationType(destination.Name), obskit.Error(err))
 		destInitFailStat := stats.Default.NewTaggedStat("destination_initialization_fail", stats.CountType, map[string]string{
