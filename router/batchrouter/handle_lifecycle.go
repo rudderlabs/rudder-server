@@ -272,9 +272,6 @@ func (brt *Handle) currentTime() time.Time {
 }
 
 func (brt *Handle) invalidManagerRetryIntervalValue() time.Duration {
-	if brt.invalidManagerRetryInterval == nil {
-		return 5 * time.Minute
-	}
 	interval := brt.invalidManagerRetryInterval.Load()
 	if interval <= 0 {
 		return 5 * time.Minute
