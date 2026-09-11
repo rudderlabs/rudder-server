@@ -25,8 +25,7 @@ func findNewColumns(eventSchema, warehouseSchema whutils.ModelTableSchema) []whu
 }
 
 func checkAndIgnoreAlreadyExistError(err error) bool {
-	var e *googleapi.Error
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*googleapi.Error](err); ok {
 		// 409 is returned when we try to create a table that already exists
 		// 400 is returned for all kinds of invalid input - so we need to check the error message too
 		if e.Code == 409 || (e.Code == 400 && strings.Contains(strings.ToLower(e.Message), "already exists in schema")) {

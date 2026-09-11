@@ -1898,13 +1898,11 @@ func testIntegration(t *testing.T, useV2 bool) {
 func clickhouseExceptionCode(t testing.TB, err error) int32 {
 	t.Helper()
 
-	var v1Err *clickhousestd.Exception
-	if errors.As(err, &v1Err) {
+	if v1Err, ok := errors.AsType[*clickhousestd.Exception](err); ok {
 		return v1Err.Code
 	}
 
-	var v2Err *clickhousev2.Exception
-	if errors.As(err, &v2Err) {
+	if v2Err, ok := errors.AsType[*clickhousev2.Exception](err); ok {
 		return v2Err.Code
 	}
 

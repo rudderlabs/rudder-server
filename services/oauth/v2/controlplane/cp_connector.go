@@ -183,8 +183,7 @@ func GetErrorType(err error) string {
 			return errTyp
 		}
 	}
-	var e net.Error
-	if errors.As(err, &e) {
+	if _, ok := errors.AsType[net.Error](err); ok {
 		return common.NetworkError
 	}
 	return common.None

@@ -13,14 +13,10 @@ const someEventName = "some-event-name"
 
 func createMetricObject(eventName string) types.PUReportedMetric {
 	metric := types.PUReportedMetric{
-		ConnectionDetails: types.ConnectionDetails{
-			SourceID:      "some-source-id",
-			DestinationID: "some-destination-id",
-		},
-		PUDetails: types.PUDetails{
-			InPU: "some-in-pu",
-			PU:   "some-pu",
-		},
+		SourceID:      "some-source-id",
+		DestinationID: "some-destination-id",
+		InPU:          "some-in-pu",
+		PU:            "some-pu",
 		StatusDetail: &types.StatusDetail{
 			Status:         "some-status",
 			Count:          3,

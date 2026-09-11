@@ -178,11 +178,9 @@ func TestRouter_CronTrack(t *testing.T) {
 				}))
 
 				stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{
-					StagingFile: model.StagingFile{
-						WorkspaceID:   "test-workspaceID",
-						SourceID:      "test-sourceID",
-						DestinationID: "test-destinationID",
-					},
+					WorkspaceID:   "test-workspaceID",
+					SourceID:      "test-sourceID",
+					DestinationID: "test-destinationID",
 				})
 				require.NoError(t, err)
 
@@ -259,11 +257,9 @@ func TestRouter_CronTrack(t *testing.T) {
 		}))
 
 		_, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{
-			StagingFile: model.StagingFile{
-				WorkspaceID:   "test-workspaceID",
-				SourceID:      "test-sourceID",
-				DestinationID: "test-destinationID",
-			},
+			WorkspaceID:   "test-workspaceID",
+			SourceID:      "test-sourceID",
+			DestinationID: "test-destinationID",
 		})
 		require.NoError(t, err)
 

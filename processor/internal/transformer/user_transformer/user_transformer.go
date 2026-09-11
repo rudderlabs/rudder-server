@@ -199,7 +199,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		batches,
 		func(batch []types.TransformerEvent, i int) {
 			wg.Go(func() {
-				defer crash.Notify("Core")
+				defer crash.Notify("Core")()
 				responses, mirrorFiltered := u.sendBatch(ctx, userURL, labels, batch)
 				transformResponse[i] = sendBatchResult{responses: responses, mirrorFiltered: mirrorFiltered}
 			})

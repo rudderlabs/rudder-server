@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 )
@@ -132,8 +133,8 @@ type PendingTableUpload struct {
 
 func GetLastFailedStatus(timingsMap Timings) (status string) {
 	if len(timingsMap) > 0 {
-		for index := len(timingsMap) - 1; index >= 0; index-- {
-			for s := range timingsMap[index] {
+		for _, t := range slices.Backward(timingsMap) {
+			for s := range t {
 				if strings.Contains(s, Failed) {
 					return s
 				}

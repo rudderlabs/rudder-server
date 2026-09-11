@@ -101,6 +101,9 @@ linters:
         - G404  # Weak PRNG math/rand (8 findings)
         - G501  # Blocklisted import crypto/md5 (2 findings)
         - G602  # Slice index out of range (2 findings)
+        - G702  # Command injection via taint analysis (1 finding, superseded G204)
+        - G704  # SSRF via taint analysis (2 findings, supersedes G107)
+        - G705  # XSS via taint analysis (1 finding)
   exclusions:
     generated: lax
     presets:
@@ -121,6 +124,12 @@ linters:
       - linters:
           - bodyclose
         path: cmd/rudder-cli/status/status.go
+      # clickhouse-go's Options.Debug is deprecated in favour of Logger; migrating
+      # the query debug logs to a structured logger is tracked separately.
+      - linters:
+          - staticcheck
+        path: warehouse/integrations/clickhouse/driver_v2.go
+        text: 'SA1019: .*Options\)\.Debug is deprecated'
     paths:
       - third_party$
       - builtin$

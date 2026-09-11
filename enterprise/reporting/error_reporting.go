@@ -766,22 +766,16 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 		reports := groupedReports[key]
 		firstReport := reports[0]
 		edrSchema := types.EDMetric{
-			EDInstanceDetails: types.EDInstanceDetails{
-				WorkspaceID: firstReport.WorkspaceID,
-				Namespace:   firstReport.Namespace,
-				InstanceID:  firstReport.InstanceID,
-			},
-			EDConnectionDetails: types.EDConnectionDetails{
-				DestinationID:           firstReport.DestinationID,
-				DestinationDefinitionId: firstReport.DestinationDefinitionId,
-				SourceID:                firstReport.SourceID,
-				SourceDefinitionId:      firstReport.SourceDefinitionId,
-				DestType:                firstReport.DestType,
-			},
-			PU: firstReport.PU,
-			ReportMetadata: types.ReportMetadata{
-				ReportedAt: firstReport.ReportedAt * 60 * 1000,
-			},
+			WorkspaceID:             firstReport.WorkspaceID,
+			Namespace:               firstReport.Namespace,
+			InstanceID:              firstReport.InstanceID,
+			DestinationID:           firstReport.DestinationID,
+			DestinationDefinitionId: firstReport.DestinationDefinitionId,
+			SourceID:                firstReport.SourceID,
+			SourceDefinitionId:      firstReport.SourceDefinitionId,
+			DestType:                firstReport.DestType,
+			PU:                      firstReport.PU,
+			ReportedAt:              firstReport.ReportedAt * 60 * 1000,
 		}
 		messageMap := make(map[string]int)
 		reportsCountMap := make(map[types.EDErrorDetailsKey]*types.EDReportMapValue)

@@ -28,7 +28,6 @@ type StreamJobsRequest struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Types that are assignable to Payload:
-	//
 	//	*StreamJobsRequest_Metadata
 	//	*StreamJobsRequest_Chunk
 	Payload isStreamJobsRequest_Payload `protobuf_oneof:"payload"`

@@ -203,8 +203,7 @@ func UpdateProcessedEventsMetrics(statsHandle stats.Stats, module, destType stri
 
 	}
 	for connectionKey, eventsPerStateAndCode := range eventsPerConnectionInfoAndStateAndCode {
-		sourceID := strings.Split(connectionKey, ",")[0]
-		destinationID := strings.Split(connectionKey, ",")[1]
+		sourceID, destinationID, _ := strings.Cut(connectionKey, ",")
 		for state, codes := range eventsPerStateAndCode {
 			for code, count := range codes {
 				statsHandle.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{

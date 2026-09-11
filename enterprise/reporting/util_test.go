@@ -474,10 +474,8 @@ func TestGetSampleWithEventSamplingForEDReportsDBSkipsOversizedSampleEvent(t *te
 	mockEventSampler.EXPECT().Put(gomock.Any()).Times(0)
 
 	metric := types.EDReportsDB{
-		EDErrorDetails: types.EDErrorDetails{
-			SampleEvent:    json.RawMessage(`{"event":"too-large"}`),
-			SampleResponse: "sample response",
-		},
+		SampleEvent:    json.RawMessage(`{"event":"too-large"}`),
+		SampleResponse: "sample response",
 	}
 
 	sampleEvent, sampleResponse, isOversized, err := getSampleWithEventSamplingForEDReportsDB(metric, 1234567890, mockEventSampler, true, 60, 5)
@@ -534,10 +532,8 @@ func TestGetSampleWithEventSamplingForEDReportsDBSkipsOversizedSampleEventWhenSa
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			metric := types.EDReportsDB{
-				EDErrorDetails: types.EDErrorDetails{
-					SampleEvent:    json.RawMessage(`{"event":"too-large"}`),
-					SampleResponse: "sample response",
-				},
+				SampleEvent:    json.RawMessage(`{"event":"too-large"}`),
+				SampleResponse: "sample response",
 			}
 
 			sampleEvent, sampleResponse, isOversized, err := getSampleWithEventSamplingForEDReportsDB(metric, 1234567890, tc.sampler, tc.enabled, 60, 5)

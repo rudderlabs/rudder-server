@@ -657,12 +657,10 @@ func TestMigrator(t *testing.T) {
 
 			// Create migration job in etcd
 			migrationJob := &etcdtypes.PartitionMigrationJob{
-				PartitionMigrationJobHeader: etcdtypes.PartitionMigrationJobHeader{
-					JobID:      "job-1",
-					SourceNode: 0, // this node
-					TargetNode: 1,
-					Partitions: []string{"partition-1", "partition-2"},
-				},
+				JobID:       "job-1",
+				SourceNode:  0, // this node
+				TargetNode:  1,
+				Partitions:  []string{"partition-1", "partition-2"},
 				MigrationID: "migration-1",
 				Status:      etcdtypes.PartitionMigrationJobStatusNew,
 			}
@@ -759,13 +757,11 @@ func TestMigrator(t *testing.T) {
 
 			// Create a migration job scoped to the gw jobsdb only (fan-out mode)
 			migrationJob := &etcdtypes.PartitionMigrationJob{
-				PartitionMigrationJobHeader: etcdtypes.PartitionMigrationJobHeader{
-					JobID:      "job-1",
-					SourceNode: 0, // this node
-					TargetNode: 1,
-					Partitions: []string{"partition-1", "partition-2"},
-					JobsDB:     "gw",
-				},
+				JobID:       "job-1",
+				SourceNode:  0, // this node
+				TargetNode:  1,
+				Partitions:  []string{"partition-1", "partition-2"},
+				JobsDB:      "gw",
 				MigrationID: "migration-1",
 				Status:      etcdtypes.PartitionMigrationJobStatusNew,
 			}
@@ -855,12 +851,10 @@ func TestMigrator(t *testing.T) {
 
 			// Create migration job in etcd (use real client to ensure data is there)
 			migrationJob := &etcdtypes.PartitionMigrationJob{
-				PartitionMigrationJobHeader: etcdtypes.PartitionMigrationJobHeader{
-					JobID:      "job-1",
-					SourceNode: 0, // this node
-					TargetNode: 1,
-					Partitions: []string{"partition-1", "partition-2"},
-				},
+				JobID:       "job-1",
+				SourceNode:  0, // this node
+				TargetNode:  1,
+				Partitions:  []string{"partition-1", "partition-2"},
 				MigrationID: "migration-1",
 				Status:      etcdtypes.PartitionMigrationJobStatusNew,
 			}
@@ -970,12 +964,10 @@ func TestMigrator(t *testing.T) {
 
 			// Create migration job in etcd
 			migrationJob := &etcdtypes.PartitionMigrationJob{
-				PartitionMigrationJobHeader: etcdtypes.PartitionMigrationJobHeader{
-					JobID:      "job-1",
-					SourceNode: 0, // this node
-					TargetNode: 1,
-					Partitions: []string{"partition-1", "partition-2"},
-				},
+				JobID:       "job-1",
+				SourceNode:  0, // this node
+				TargetNode:  1,
+				Partitions:  []string{"partition-1", "partition-2"},
 				MigrationID: "migration-1",
 				Status:      etcdtypes.PartitionMigrationJobStatusNew,
 			}

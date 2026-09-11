@@ -166,15 +166,11 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 				{Name: "prom", ContainerPort: pytMetricsPort, Protocol: corev1.ProtocolTCP},
 			},
 			LivenessProbe: &corev1.Probe{
-				ProbeHandler: corev1.ProbeHandler{
-					HTTPGet: &corev1.HTTPGetAction{Path: "/health/live", Port: intstr.FromInt32(pytContainerPort)},
-				},
+				HTTPGet:             &corev1.HTTPGetAction{Path: "/health/live", Port: intstr.FromInt32(pytContainerPort)},
 				InitialDelaySeconds: 10, PeriodSeconds: 30, TimeoutSeconds: 10, FailureThreshold: 3,
 			},
 			ReadinessProbe: &corev1.Probe{
-				ProbeHandler: corev1.ProbeHandler{
-					HTTPGet: &corev1.HTTPGetAction{Path: "/health/ready", Port: intstr.FromInt32(pytContainerPort)},
-				},
+				HTTPGet:             &corev1.HTTPGetAction{Path: "/health/ready", Port: intstr.FromInt32(pytContainerPort)},
 				InitialDelaySeconds: 5, PeriodSeconds: 10, TimeoutSeconds: 5, FailureThreshold: 3,
 			},
 			// Limits are mandatory here, not an optimization: the container
@@ -194,8 +190,8 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 			VolumeMounts: []corev1.VolumeMount{{Name: "tmp", MountPath: "/tmp"}},
 		}},
 		Volumes: []corev1.Volume{{
-			Name:         "tmp",
-			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+			Name:     "tmp",
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
 		}},
 	}
 	if d.config.runtimeClass != "" {
@@ -226,7 +222,7 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 
 	replicas := int32(1)
 	dep := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: d.config.namespace, Labels: labels},
+		Name: name, Namespace: d.config.namespace, Labels: labels,
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
@@ -237,7 +233,7 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 		},
 	}
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: d.config.namespace, Labels: labels},
+		Name: name, Namespace: d.config.namespace, Labels: labels,
 		Spec: corev1.ServiceSpec{
 			Selector: svcSelector,
 			Ports: []corev1.ServicePort{{

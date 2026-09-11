@@ -33,11 +33,9 @@ func TestStatsEmission(t *testing.T) {
 		repoStagingFileSchemaSnapshots := repo.NewStagingFileSchemaSnapshots(db, repo.WithStats(statsStore))
 
 		stagingFile := &model.StagingFileWithSchema{
-			StagingFile: model.StagingFile{
-				ID:            1,
-				SourceID:      "source_id",
-				DestinationID: "destination_id",
-			},
+			ID:            1,
+			SourceID:      "source_id",
+			DestinationID: "destination_id",
 		}
 		_, err = repoStagingFiles.Insert(ctx, stagingFile)
 		require.NoError(t, err)
