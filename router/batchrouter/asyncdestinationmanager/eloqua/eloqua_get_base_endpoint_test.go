@@ -41,6 +41,22 @@ func TestGetBaseEndpointReturnsErrorForMissingBaseURL(t *testing.T) {
 	require.ErrorContains(t, err, `{"urls":{}}`)
 }
 
+func TestGetBaseEndpointReturnsErrorForInvalidLoginResponse(t *testing.T) {
+	withDefaultTransport(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "https://login.eloqua.com/id", r.URL.String())
+		return response(http.StatusOK, `{"urls":`), nil
+	}))
+
+	service := NewEloquaServiceImpl("2.0")
+
+	baseEndpoint, err := service.GetBaseEndpoint(&HttpRequestData{})
+
+	require.Empty(t, baseEndpoint)
+	require.ErrorContains(t, err, "Unable to parse eloqua login response")
+	require.ErrorContains(t, err, `{"urls":`)
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
