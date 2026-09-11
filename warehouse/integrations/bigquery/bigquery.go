@@ -893,7 +893,61 @@ func (bq *BigQuery) Setup(ctx context.Context, warehouse model.Warehouse, upload
 	bq.projectID = strings.TrimSpace(bq.warehouse.GetStringDestinationConfig(bq.conf, model.ProjectSetting))
 
 	bq.db, err = bq.connect(ctx)
-	return err
+	if err != nil {
+		return err
+	}
+
+	bq.namespace = bq.resolveNamespace(ctx, bq.datasetExists)
+	return nil
+}
+
+// resolveNamespace prefers the dataset the user configured verbatim over the
+// sanitised one, when the configured dataset actually exists in BigQuery.
+//
+// ToSafeNamespace snake-cases the namespace, which inserts an underscore at
+// every letter/digit boundary: a dataset configured as `analytics_euwe1`
+// becomes `analytics_euwe_1`. That silently points the destination at a dataset
+// that does not exist, and BigQuery reports the resulting INFORMATION_SCHEMA
+// read as a permission error, which is hard to trace back to the rename.
+//
+// Existing behaviour is unchanged whenever the configured dataset is absent:
+// the sanitised namespace is kept and created as before.
+func (bq *BigQuery) resolveNamespace(ctx context.Context, exists func(context.Context, string) (bool, error)) string {
+	configured := strings.TrimSpace(bq.warehouse.GetStringDestinationConfig(bq.conf, model.NamespaceSetting))
+	if configured == "" || configured == bq.namespace {
+		return bq.namespace
+	}
+
+	configuredExists, err := exists(ctx, configured)
+	if err != nil {
+		bq.logger.Warnn("Checking if configured dataset exists",
+			logger.NewStringField("configuredNamespace", configured),
+			obskit.Namespace(bq.namespace),
+			obskit.Error(err),
+		)
+		return bq.namespace
+	}
+	if !configuredExists {
+		return bq.namespace
+	}
+
+	bq.logger.Infon("Using configured dataset since it already exists",
+		logger.NewStringField("configuredNamespace", configured),
+		obskit.Namespace(bq.namespace),
+	)
+	return configured
+}
+
+func (bq *BigQuery) datasetExists(ctx context.Context, namespace string) (bool, error) {
+	_, err := bq.db.Dataset(namespace).Metadata(ctx)
+	if err != nil {
+		var e *googleapi.Error
+		if errors.As(err, &e) && e.Code == 404 {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (*BigQuery) TestConnection(_ context.Context, _ model.Warehouse) (err error) {
