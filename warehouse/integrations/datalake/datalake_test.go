@@ -268,8 +268,47 @@ func TestIntegration(t *testing.T) {
 				},
 				stagingEvents:     whth.EventsCountMap{"wh_staging_files": 2},
 				tableUploadEvents: whth.EventsCountMap{"tracks": 1, "product_track": 1},
-				verifySchema:      verifyGCSJsonPathsSchema,
-				verifyRecords:     verifyGCSJsonPathsRecords,
+				verifySchema:      verifyDatalakeJsonPathsSchema,
+				verifyRecords:     verifyDatalakeJsonPathsRecords("userId_gcs_datalake"),
+			},
+			{
+				name:               "S3Datalake JSON paths",
+				tables:             []string{"tracks", "product_track"},
+				destType:           whutils.S3Datalake,
+				eventsFilePath:     "testdata/upload-job-json-paths.events.json",
+				schemaTTLInMinutes: 0,
+				conf: map[string]any{
+					"region":           s3Region,
+					"bucketName":       s3BucketName,
+					"accessKeyID":      s3AccessKeyID,
+					"accessKey":        s3AccessKey,
+					"endPoint":         s3EndPoint,
+					"enableSSE":        false,
+					"s3ForcePathStyle": true,
+					"disableSSL":       true,
+					"prefix":           "some-prefix",
+					"jsonPaths":        "track.context.traits,track.properties.metadata",
+					"syncFrequency":    "30",
+				},
+				prerequisite: func(t testing.TB, ctx context.Context) {
+					t.Helper()
+					createMinioBucket(t, ctx, minioEndpoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
+				},
+				configOverride: map[string]any{
+					"region":           s3Region,
+					"bucketName":       s3BucketName,
+					"accessKeyID":      s3AccessKeyID,
+					"accessKey":        s3AccessKey,
+					"endPoint":         s3EndPoint,
+					"enableSSE":        false,
+					"s3ForcePathStyle": true,
+					"disableSSL":       true,
+					"jsonPaths":        "track.context.traits,track.properties.metadata",
+				},
+				stagingEvents:     whth.EventsCountMap{"wh_staging_files": 2},
+				tableUploadEvents: whth.EventsCountMap{"tracks": 1, "product_track": 1},
+				verifySchema:      verifyDatalakeJsonPathsSchema,
+				verifyRecords:     verifyDatalakeJsonPathsRecords("userId_s3_datalake"),
 			},
 			{
 				name:               "AzureDatalake",
@@ -342,6 +381,37 @@ func TestIntegration(t *testing.T) {
 					require.ElementsMatch(t, er["aliases"], whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
 					require.ElementsMatch(t, er["groups"], whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
 				},
+			},
+			{
+				name:               "AzureDatalake JSON paths",
+				tables:             []string{"tracks", "product_track"},
+				destType:           whutils.AzureDatalake,
+				eventsFilePath:     "testdata/upload-job-json-paths.events.json",
+				schemaTTLInMinutes: 100,
+				conf: map[string]any{
+					"containerName":  azContainerName,
+					"prefix":         "",
+					"accountName":    azAccountName,
+					"accountKey":     azAccountKey,
+					"endPoint":       azEndPoint,
+					"jsonPaths":      "track.context.traits,track.properties.metadata",
+					"syncFrequency":  "30",
+					"forcePathStyle": true,
+					"disableSSL":     true,
+				},
+				configOverride: map[string]any{
+					"containerName":  azContainerName,
+					"accountName":    azAccountName,
+					"accountKey":     azAccountKey,
+					"endPoint":       azEndPoint,
+					"forcePathStyle": true,
+					"disableSSL":     true,
+					"jsonPaths":      "track.context.traits,track.properties.metadata",
+				},
+				stagingEvents:     whth.EventsCountMap{"wh_staging_files": 2},
+				tableUploadEvents: whth.EventsCountMap{"tracks": 1, "product_track": 1},
+				verifySchema:      verifyDatalakeJsonPathsSchema,
+				verifyRecords:     verifyDatalakeJsonPathsRecords("userId_azure_datalake"),
 			},
 		}
 
@@ -1062,7 +1132,7 @@ func filesSchema(t testing.TB, fm filemanager.FileManager, prefix string) map[st
 	return schemasMap
 }
 
-func verifyGCSJsonPathsSchema(t *testing.T, fm filemanager.FileManager, namespace string) {
+func verifyDatalakeJsonPathsSchema(t *testing.T, fm filemanager.FileManager, namespace string) {
 	t.Helper()
 
 	fs := filesSchema(t, fm, "rudder-datalake/"+namespace+"/")
@@ -1096,25 +1166,27 @@ func verifyGCSJsonPathsSchema(t *testing.T, fm filemanager.FileManager, namespac
 	require.Contains(t, seenTables, "product_track")
 }
 
-func verifyGCSJsonPathsRecords(t *testing.T, fm filemanager.FileManager, sourceID, destinationID, namespace string) {
-	t.Helper()
+func verifyDatalakeJsonPathsRecords(userIDFormat string) func(*testing.T, filemanager.FileManager, string, string, string) {
+	return func(t *testing.T, fm filemanager.FileManager, sourceID, destinationID, namespace string) {
+		t.Helper()
 
-	outputFormat := map[string][]string{
-		"tracks":        {"Context_traits"},
-		"product_track": {"Context_traits", "Metadata"},
+		outputFormat := map[string][]string{
+			"tracks":        {"Context_traits"},
+			"product_track": {"Context_traits", "Metadata"},
+		}
+
+		er := eventRecords(t, fm, namespace, outputFormat, userIDFormat)
+
+		require.ElementsMatch(t, [][]string{
+			{`{"email":"rhedricks@example.com","logins":2,"name":"Richard Hendricks"}`},
+		}, er["tracks"])
+		require.ElementsMatch(t, [][]string{
+			{
+				`{"email":"rhedricks@example.com","logins":2,"name":"Richard Hendricks"}`,
+				`{"campaign":{"name":"spring","variant":"blue"},"source":"web"}`,
+			},
+		}, er["product_track"])
 	}
-
-	er := eventRecords(t, fm, namespace, outputFormat, "userId_gcs_datalake")
-
-	require.ElementsMatch(t, [][]string{
-		{`{"email":"rhedricks@example.com","logins":2,"name":"Richard Hendricks"}`},
-	}, er["tracks"])
-	require.ElementsMatch(t, [][]string{
-		{
-			`{"email":"rhedricks@example.com","logins":2,"name":"Richard Hendricks"}`,
-			`{"campaign":{"name":"spring","variant":"blue"},"source":"web"}`,
-		},
-	}, er["product_track"])
 }
 
 func eventRecords(t testing.TB, fm filemanager.FileManager, namespace string, outputFormat map[string][]string, userIDFormat string) map[string][][]string {

@@ -123,6 +123,7 @@ type testContext struct {
 	mockRouterJobsDB  *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
 	mockReporting     *mockutils.MockReporting
+	routers           []*Handle
 }
 
 // Initialize mocks and common expectations
@@ -152,8 +153,16 @@ func (c *testContext) Setup() {
 }
 
 func (c *testContext) Finish() {
+	for i := len(c.routers) - 1; i >= 0; i-- {
+		c.routers[i].Shutdown()
+	}
 	c.asyncHelper.WaitWithTimeout(testTimeout)
 	c.mockCtrl.Finish()
+}
+
+func (c *testContext) TrackRouter(router *Handle) *Handle {
+	c.routers = append(c.routers, router)
+	return router
 }
 
 func initRouter() {
@@ -523,9 +532,9 @@ var _ = Describe("router", func() {
 
 	Context("initialization", func() {
 		It("should initialize and recover after crash", func() {
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(
 				gaDestinationDefinition,
@@ -550,10 +559,10 @@ var _ = Describe("router", func() {
 
 		It("should send failed and unprocessed jobs to ga destination", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
 				netHandle: mockNetHandle,
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			router.Setup(
@@ -654,9 +663,9 @@ var _ = Describe("router", func() {
 		})
 
 		It("should abort unprocessed jobs to ga destination because of bad payload", func() {
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			router.Setup(
@@ -739,9 +748,9 @@ var _ = Describe("router", func() {
 
 		It("aborts events that are older than a configurable duration", func() {
 			config.Set("Router.jobRetention", "24h")
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			router.Setup(
@@ -813,9 +822,9 @@ var _ = Describe("router", func() {
 
 		It("aborts jobs that bear a abort configured jobRunId", func() {
 			conf.Set("drain.jobRunIDs", "someJobRunId")
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			router.Setup(
@@ -890,9 +899,9 @@ var _ = Describe("router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
-			}
+			})
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
@@ -985,9 +994,9 @@ var _ = Describe("router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
-			}
+			})
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
@@ -1086,10 +1095,10 @@ var _ = Describe("router", func() {
 		It("aborts jobs if destination is not found in config", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
 				netHandle: mockNetHandle,
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(
 				gaDestinationDefinition,
@@ -1194,10 +1203,10 @@ var _ = Describe("router", func() {
 		It("can batch jobs together", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: c.mockReporting,
 				netHandle: mockNetHandle,
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(
 				gaDestinationDefinition,
@@ -1359,10 +1368,10 @@ var _ = Describe("router", func() {
 		It("fails jobs if batching fails for few of the jobs", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: c.mockReporting,
 				netHandle: mockNetHandle,
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(
 				gaDestinationDefinition,
@@ -1548,10 +1557,10 @@ var _ = Describe("router", func() {
 		It("can transform jobs at router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
 				netHandle: mockNetHandle,
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(
 				gaDestinationDefinition,
@@ -1769,10 +1778,10 @@ var _ = Describe("router", func() {
 		It("skip sendpost && (if statusCode returned is 298 then mark as filtered & if statusCode returned is 299 then mark as succeeded)", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
 				netHandle: mockNetHandle,
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(
 				gaDestinationDefinition,
@@ -1948,10 +1957,10 @@ var _ = Describe("router", func() {
 		*/
 		It("marks all jobs of a user failed if a preceding job fails due to transformation failure", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
 				netHandle: mockNetHandle,
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(
 				gaDestinationDefinition,
@@ -2119,10 +2128,10 @@ var _ = Describe("router", func() {
 		})
 		It("all jobs should go through transformer proxy and succeed", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
 				netHandle: mockNetHandle,
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(
 				gaDestinationDefinition,
@@ -2277,10 +2286,10 @@ var _ = Describe("router", func() {
 		})
 		It("all jobs should be marked failed when partial 5xx failure occurred", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
 				netHandle: mockNetHandle,
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(
 				gaDestinationDefinition,

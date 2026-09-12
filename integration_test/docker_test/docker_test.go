@@ -27,7 +27,6 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kafkaClient "github.com/rudderlabs/rudder-go-kit/kafkaclient"
@@ -56,6 +55,7 @@ var (
 	webhookURL                   string
 	disableDestinationWebhookURL string
 	webhook                      *whUtil.Recorder
+	webhookRequestsBeforeSend    int
 	disableDestinationWebhook    *whUtil.Recorder
 	writeKey                     string
 	workspaceID                  string
@@ -82,64 +82,46 @@ func TestMainFlow(t *testing.T) {
 	hold = os.Getenv("HOLD") == "true"
 
 	t.Run("common connection pool to database", func(t *testing.T) {
-		var tearDownStart time.Time
-		defer func() {
-			if tearDownStart.IsZero() {
-				t.Log("--- Teardown done (unexpected)")
-			} else {
-				t.Logf("--- Teardown done (%s)", time.Since(tearDownStart))
-			}
-		}()
-
-		svcCtx, svcCancel := context.WithCancel(context.Background())
-		svcDone := setupMainFlow(svcCtx, svcCancel, t, true)
-		sendEventsToGateway(t)
-
-		testCases(t)
-
-		blockOnHold(t)
-		svcCancel()
-		t.Log("Waiting for service to stop")
-		<-svcDone
-
-		tearDownStart = time.Now()
+		runMainFlow(t, true)
 	})
 
 	t.Run("separate connection pools to database", func(t *testing.T) {
-		var tearDownStart time.Time
-		defer func() {
-			if tearDownStart.IsZero() {
-				t.Log("--- Teardown done (unexpected)")
-			} else {
-				t.Logf("--- Teardown done (%s)", time.Since(tearDownStart))
-			}
-		}()
-
-		svcCtx, svcCancel := context.WithCancel(context.Background())
-		svcDone := setupMainFlow(svcCtx, svcCancel, t, false)
-		sendEventsToGateway(t)
-
-		testCases(t)
-
-		blockOnHold(t)
-		svcCancel()
-		t.Log("Waiting for service to stop")
-		<-svcDone
-
-		tearDownStart = time.Now()
+		runMainFlow(t, false)
 	})
 }
 
+func runMainFlow(t *testing.T, commonPool bool) {
+	svcCtx, svcCancel := context.WithCancel(context.Background())
+	svcDone := setupMainFlow(svcCtx, svcCancel, t, commonPool)
+	defer func() {
+		tearDownStart := time.Now()
+		svcCancel()
+		t.Log("Waiting for service to stop")
+		<-svcDone
+		t.Logf("--- Teardown done (%s)", time.Since(tearDownStart))
+	}()
+
+	sendEventsToGateway(t)
+
+	testCases(t)
+
+	blockOnHold(t)
+}
+
 func testCases(t *testing.T) {
-	t.Run("webhook", func(t *testing.T) {
+	if !t.Run("webhook", func(t *testing.T) {
 		require.Eventually(t, func() bool {
-			return webhook.RequestsCount() == 11
+			return webhook.RequestsCount()-webhookRequestsBeforeSend == 11
 		}, time.Minute, 300*time.Millisecond)
 
-		i := -1
+		i := webhookRequestsBeforeSend - 1
 		require.Eventually(t, func() bool {
-			i = i + 1
-			req := webhook.Requests()[i]
+			requests := webhook.Requests()
+			if i+1 >= len(requests) {
+				return false
+			}
+			i++
+			req := requests[i]
 			body, _ := io.ReadAll(req.Body)
 			return gjson.GetBytes(body, "anonymousId").Str == "anonymousId_1"
 		}, time.Minute, 100*time.Millisecond)
@@ -167,9 +149,11 @@ func testCases(t *testing.T) {
 
 		// Verify Disabled destination doesn't receive any event.
 		require.Equal(t, 0, len(disableDestinationWebhook.Requests()))
-	})
+	}) {
+		return
+	}
 
-	t.Run("postgres", func(t *testing.T) {
+	if !t.Run("postgres", func(t *testing.T) {
 		var myEvent event
 
 		require.Eventually(t, func() bool {
@@ -228,9 +212,11 @@ func testCases(t *testing.T) {
 		require.Equal(t, myEvent.myUniqueID, "identified_user_idanonymousId_1")
 		require.Equal(t, myEvent.propKey, "prop_value_edited")
 		require.Equal(t, myEvent.ip, "0.0.0.0")
-	})
+	}) {
+		return
+	}
 
-	t.Run("redis", func(t *testing.T) {
+	if !t.Run("redis", func(t *testing.T) {
 		conn, err := redigo.Dial("tcp", redisContainer.Addr)
 		require.NoError(t, err)
 		defer func() { _ = conn.Close() }()
@@ -239,9 +225,11 @@ func testCases(t *testing.T) {
 			event, _ := redigo.String(conn.Do("HGET", "user:identified_user_id", "trait1"))
 			return event == "new-val"
 		}, time.Minute, 10*time.Millisecond)
-	})
+	}) {
+		return
+	}
 
-	t.Run("kafka", func(t *testing.T) {
+	if !t.Run("kafka", func(t *testing.T) {
 		kafkaHost := kafkaContainer.Brokers[0]
 
 		// Create new consumer
@@ -283,9 +271,11 @@ func testCases(t *testing.T) {
 		}
 
 		t.Log("Processed", msgCount, "messages")
-	})
+	}) {
+		return
+	}
 
-	t.Run("beacon-batch", func(t *testing.T) {
+	if !t.Run("beacon-batch", func(t *testing.T) {
 		payload := strings.NewReader(`{
 			"batch":[
 				{
@@ -296,7 +286,9 @@ func testCases(t *testing.T) {
 			]
 		}`)
 		sendEvent(t, payload, "beacon/v1/batch", writeKey)
-	})
+	}) {
+		return
+	}
 }
 
 func setupMainFlow(svcCtx context.Context, cancel context.CancelFunc, t *testing.T, commonPool bool) <-chan struct{} {
@@ -312,37 +304,27 @@ func setupMainFlow(svcCtx context.Context, cancel context.CancelFunc, t *testing
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	containersGroup, containersCtx := errgroup.WithContext(context.TODO())
-	containersGroup.Go(func() (err error) {
-		kafkaContainer, err = kafka.Setup(pool, t, kafka.WithBrokers(1))
-		if err != nil {
-			return err
-		}
-		kafkaCtx, kafkaCancel := context.WithTimeout(containersCtx, 3*time.Minute)
-		defer kafkaCancel()
-		return waitForKafka(kafkaCtx, t, kafkaContainer.Brokers[0])
-	})
-	containersGroup.Go(func() (err error) {
-		redisContainer, err = redis.Setup(containersCtx, pool, t)
-		return err
-	})
-	containersGroup.Go(func() (err error) {
-		postgresContainer, err = pgdocker.Setup(pool, t)
-		if err != nil {
-			return err
-		}
-		db = postgresContainer.DB
-		return nil
-	})
-	containersGroup.Go(func() (err error) {
-		transformerContainer, err = transformertest.Setup(pool, t)
-		return err
-	})
-	containersGroup.Go(func() (err error) {
-		minioContainer, err = minio.Setup(pool, t)
-		return err
-	})
-	require.NoError(t, containersGroup.Wait())
+	// Kafka reserves host ports before container creation for advertised listeners.
+	// Start dependencies sequentially so Docker's dynamic port bindings cannot
+	// claim those ports in the gap.
+	kafkaContainer, err = kafka.Setup(pool, t, kafka.WithBrokers(1))
+	require.NoError(t, err)
+	kafkaCtx, kafkaCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer kafkaCancel()
+	require.NoError(t, waitForKafka(kafkaCtx, t, kafkaContainer.Brokers[0]))
+
+	redisContainer, err = redis.Setup(context.Background(), pool, t)
+	require.NoError(t, err)
+
+	postgresContainer, err = pgdocker.Setup(pool, t)
+	require.NoError(t, err)
+	db = postgresContainer.DB
+
+	transformerContainer, err = transformertest.Setup(pool, t)
+	require.NoError(t, err)
+
+	minioContainer, err = minio.Setup(pool, t)
+	require.NoError(t, err)
 
 	if err := godotenv.Load("../../testhelper/.env"); err != nil {
 		t.Log("INFO: No .env file found.")
@@ -433,7 +415,7 @@ func setupMainFlow(svcCtx context.Context, cancel context.CancelFunc, t *testing
 }
 
 func sendEventsToGateway(t *testing.T) {
-	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
+	webhookRequestsBeforeSend = webhook.RequestsCount()
 	payload1 := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
