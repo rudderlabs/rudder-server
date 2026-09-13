@@ -411,8 +411,33 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context, modifier func(result uplo
 		)
 	}
 
+	// Snapshot outputFileWritersMap and tableEventCountMap under their respective
+	// read locks before starting concurrent uploads. The upload workers then run
+	// over local slices/maps rather than reading jr.outputFileWritersMap and
+	// jr.tableEventCountMap directly, which the Go race detector otherwise flags
+	// as unsynchronised concurrent reads (#7002). In practice these maps are
+	// fully populated by handlePendingStagingFile before this method is called,
+	// but locking here removes the implicit ordering assumption.
+	type pendingUpload struct {
+		tableName  string
+		uploadFile encoding.LoadFileWriter
+	}
+	jr.outputFileWritersMapMu.RLock()
+	pending := make([]pendingUpload, 0, len(jr.outputFileWritersMap))
+	for tableName, uploadFile := range jr.outputFileWritersMap {
+		pending = append(pending, pendingUpload{tableName: tableName, uploadFile: uploadFile})
+	}
+	jr.outputFileWritersMapMu.RUnlock()
+
+	jr.tableEventCountMapMu.RLock()
+	tableEventCounts := make(map[string]int, len(jr.tableEventCountMap))
+	for tableName, count := range jr.tableEventCountMap {
+		tableEventCounts[tableName] = count
+	}
+	jr.tableEventCountMapMu.RUnlock()
+
 	process := func() <-chan *uploadProcessingResult {
-		processStream := make(chan *uploadProcessingResult, len(jr.outputFileWritersMap))
+		processStream := make(chan *uploadProcessingResult, len(pending))
 
 		g, groupCtx := errgroup.WithContext(ctx)
 		g.SetLimit(jr.config.numLoadFileUploadWorkers)
@@ -420,7 +445,9 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context, modifier func(result uplo
 		go func() {
 			defer close(processStream)
 
-			for tableName, uploadFile := range jr.outputFileWritersMap {
+			for _, pu := range pending {
+				tableName := pu.tableName
+				uploadFile := pu.uploadFile
 				g.Go(func() error {
 					select {
 					case <-ctx.Done():
@@ -447,7 +474,7 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context, modifier func(result uplo
 						result := uploadResult{
 							TableName:             tableName,
 							Location:              uploadOutput.Location,
-							TotalRows:             jr.tableEventCountMap[tableName],
+							TotalRows:             tableEventCounts[tableName],
 							ContentLength:         loadFileStats.Size(),
 							DestinationRevisionID: jr.job.DestinationRevisionID,
 							UseRudderStorage:      jr.job.UseRudderStorage,
@@ -470,7 +497,7 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context, modifier func(result uplo
 	}
 
 	processStream := process()
-	output := make([]uploadResult, 0, len(jr.outputFileWritersMap))
+	output := make([]uploadResult, 0, len(pending))
 
 	for processedJob := range processStream {
 		if err := processedJob.err; err != nil {
@@ -480,8 +507,8 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context, modifier func(result uplo
 		output = append(output, processedJob.result)
 	}
 
-	if len(output) != len(jr.outputFileWritersMap) {
-		return nil, fmt.Errorf("matching number of load file upload outputs: expected %d, got %d", len(jr.outputFileWritersMap), len(output))
+	if len(output) != len(pending) {
+		return nil, fmt.Errorf("matching number of load file upload outputs: expected %d, got %d", len(pending), len(output))
 	}
 
 	return output, nil
