@@ -46,7 +46,7 @@ services:
       - STATSD_SERVER_HOST=metrics-exporter
       - STATSD_SERVER_PORT="9125"
   # minio:
-  #   image: minio/minio
+  #   image: pgsty/minio
   #   ports:
   #     - "9000:9000"
   #   command: server /data

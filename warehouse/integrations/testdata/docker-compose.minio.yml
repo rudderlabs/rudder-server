@@ -1,6 +1,6 @@
 services:
   minio:
-    image: minio/minio:latest
+    image: pgsty/minio:latest
     ports:
       - "9000/tcp"
     environment:
