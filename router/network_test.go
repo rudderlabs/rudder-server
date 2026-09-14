@@ -21,6 +21,7 @@ import (
 
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/router/utils"
 )
 
 func replaceDefaultStatsWithMemStats(t *testing.T) *memstats.Store {
@@ -626,4 +627,78 @@ func TestResponseContentType(t *testing.T) {
 			}
 		})
 	}
+}
+
+// startHTTP2TestServer starts a TLS test server that negotiates HTTP/2, uses http.DefaultTransport
+// once so that it is in its "HTTP/2 already configured" state, and makes the default transport
+// trust the server's certificate in place so that any transport derived from it does too.
+//
+// Since Go 1.27, using a Transport installs a placeholder in the exported TLSNextProto["h2"] and
+// keeps the real HTTP/2 transport in an unexported field; a field-wise copy of the default
+// transport inherits the placeholder and fails every h2 request with
+// "unexpected use of stub RoundTripper". Deriving the router's client after this setup exercises
+// that path.
+func startHTTP2TestServer(t *testing.T, protoMajor *int) *httptest.Server {
+	t.Helper()
+	testServer := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*protoMajor = r.ProtoMajor
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	testServer.EnableHTTP2 = true
+	testServer.StartTLS()
+	t.Cleanup(testServer.Close)
+
+	// Any request configures HTTP/2 on http.DefaultTransport, even one whose TLS handshake fails
+	// because the certificate is not trusted yet.
+	resp, err := http.DefaultClient.Get(testServer.URL)
+	if err == nil {
+		_ = resp.Body.Close()
+	}
+	defaultTransport := http.DefaultTransport.(*http.Transport)
+	require.NotNil(t, defaultTransport.TLSClientConfig)
+	originalRootCAs := defaultTransport.TLSClientConfig.RootCAs
+	defaultTransport.TLSClientConfig.RootCAs = testServer.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs
+	t.Cleanup(func() { defaultTransport.TLSClientConfig.RootCAs = originalRootCAs })
+	return testServer
+}
+
+func TestSendPostProtocolNegotiation(t *testing.T) {
+	sendPost := func(t *testing.T, url string) *utils.SendPostResponse {
+		network := &netHandle{
+			logger:   logger.NewLogger().Child("network"),
+			destType: "TEST",
+		}
+		require.NoError(t, network.Setup(config.Default, 30*time.Second))
+		return network.SendPost(context.Background(), integrations.PostParametersT{
+			Type:          "REST",
+			RequestMethod: "POST",
+			URL:           url,
+			Body: map[string]any{
+				"JSON": map[string]any{"key": "value"},
+			},
+		})
+	}
+
+	t.Run("uses HTTP/2 after http.DefaultTransport has been used", func(t *testing.T) {
+		var protoMajor int
+		testServer := startHTTP2TestServer(t, &protoMajor)
+
+		result := sendPost(t, testServer.URL)
+		require.Equal(t, http.StatusOK, result.StatusCode, string(result.ResponseBody))
+		require.Equal(t, "ok", string(result.ResponseBody))
+		require.Equal(t, 2, protoMajor)
+	})
+
+	t.Run("forceHTTP1 pins the connection to HTTP/1.1", func(t *testing.T) {
+		config.Set("Router.TEST.forceHTTP1", true)
+		t.Cleanup(func() { config.Set("Router.TEST.forceHTTP1", false) })
+		var protoMajor int
+		testServer := startHTTP2TestServer(t, &protoMajor)
+
+		result := sendPost(t, testServer.URL)
+		require.Equal(t, http.StatusOK, result.StatusCode, string(result.ResponseBody))
+		require.Equal(t, "ok", string(result.ResponseBody))
+		require.Equal(t, 1, protoMajor)
+	})
 }

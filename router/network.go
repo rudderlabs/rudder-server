@@ -28,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
@@ -323,10 +322,9 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 	if !ok {
 		return fmt.Errorf("typecast of defaultRoundTripper to *http.Transport failed")
 	}
-	var defaultTransportCopy http.Transport
-	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
+	defaultTransportCloned := defaultTransportPointer.Clone()
 
-	originalDialContext := defaultTransportCopy.DialContext
+	originalDialContext := defaultTransportCloned.DialContext
 
 	dialContext := func(ctx context.Context, networkType, address string) (net.Conn, error) {
 		if network.blockPrivateIPs {
@@ -352,32 +350,31 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 		return originalDialContext(ctx, networkType, address)
 	}
 
-	defaultTransportCopy.DialContext = dialContext
+	defaultTransportCloned.DialContext = dialContext
 
 	forceHTTP1 := getRouterConfigBool("forceHTTP1", network.destType, false)
 	network.logger.Infon("forceHTTP1", logger.NewBoolField("forceHTTP1", forceHTTP1))
 	if forceHTTP1 {
 		network.logger.Infon("Forcing HTTP1 connection", logger.NewStringField("destType", network.destType))
-		defaultTransportCopy.ForceAttemptHTTP2 = false
-		var tlsClientConfig tls.Config
-		if defaultTransportCopy.TLSClientConfig != nil {
-			misc.Copy(&tlsClientConfig, defaultTransportCopy.TLSClientConfig)
+		defaultTransportCloned.ForceAttemptHTTP2 = false
+		// Clone above gave us our own TLSClientConfig, so it can be edited in place.
+		if defaultTransportCloned.TLSClientConfig == nil {
+			defaultTransportCloned.TLSClientConfig = &tls.Config{}
 		}
-		tlsClientConfig.NextProtos = []string{"http/1.1"}
-		defaultTransportCopy.TLSClientConfig = &tlsClientConfig
+		defaultTransportCloned.TLSClientConfig.NextProtos = []string{"http/1.1"}
 		network.logger.Infon(network.destType+" protos",
-			logger.NewStringField("tlsNextProtos", strings.Join(tlsClientConfig.NextProtos, ",")),
+			logger.NewStringField("tlsNextProtos", strings.Join(defaultTransportCloned.TLSClientConfig.NextProtos, ",")),
 		)
 	}
 
-	defaultTransportCopy.MaxIdleConns = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConns", "noOfWorkers")
-	defaultTransportCopy.MaxIdleConnsPerHost = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConnsPerHost", "noOfWorkers")
+	defaultTransportCloned.MaxIdleConns = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConns", "noOfWorkers")
+	defaultTransportCloned.MaxIdleConnsPerHost = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConnsPerHost", "noOfWorkers")
 	network.logger.Infon(network.destType,
-		logger.NewIntField("maxIdleConns", int64(defaultTransportCopy.MaxIdleConns)),
-		logger.NewIntField("maxIdleConnsPerHost", int64(defaultTransportCopy.MaxIdleConnsPerHost)),
+		logger.NewIntField("maxIdleConns", int64(defaultTransportCloned.MaxIdleConns)),
+		logger.NewIntField("maxIdleConnsPerHost", int64(defaultTransportCloned.MaxIdleConnsPerHost)),
 		logger.NewDurationField("timeout", netClientTimeout),
 	)
-	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
+	network.httpClient = &http.Client{Transport: defaultTransportCloned, Timeout: netClientTimeout}
 	if config.GetBoolVar(false, "Router.Network.IncludeInstanceIdInHeader") {
 		network.instanceID = config.GetStringVar("", "INSTANCE_ID")
 	}
