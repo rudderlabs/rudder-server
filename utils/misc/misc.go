@@ -237,45 +237,6 @@ func GetTmpDir() (string, error) {
 	return tmpdirPath, nil
 }
 
-// Copy copies the exported fields from src to dest
-// Used for copying the default transport
-func Copy(dst, src any) {
-	srcV := reflect.ValueOf(src)
-	dstV := reflect.ValueOf(dst)
-
-	// First src and dst must be pointers, so that dst can be assignable.
-	if srcV.Kind() != reflect.Pointer {
-		panic("Copy: src must be a pointer")
-	}
-	if dstV.Kind() != reflect.Pointer {
-		panic("Copy: dst must be a pointer")
-	}
-	srcV = srcV.Elem()
-	dstV = dstV.Elem()
-
-	// Then src must be assignable to dst and both must be structs (but this is
-	// already guaranteed).
-	srcT := srcV.Type()
-	dstT := dstV.Type()
-	if !srcT.AssignableTo(dstT) {
-		panic("Copy not assignable to")
-	}
-	if srcT.Kind() != reflect.Struct || dstT.Kind() != reflect.Struct {
-		panic("Copy are not structs")
-	}
-
-	// Finally, copy all exported fields.  Since the types are the same, we
-	// have no problems and we only have to ignore unexported fields.
-	for i := 0; i < srcV.NumField(); i++ {
-		sf := dstT.Field(i)
-		if sf.PkgPath != "" {
-			// Unexported field.
-			continue
-		}
-		dstV.Field(i).Set(srcV.Field(i))
-	}
-}
-
 // Returns chronological timestamp of the event using the formula
 // timestamp = receivedAt - (sentAt - originalTimestamp)
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
