@@ -100,10 +100,8 @@ func (d *dbDelegate) statsStore() *memstats.Store { return d.deps.stats }
 
 func (d *dbDelegate) key(jobRunID string) statKey {
 	return statKey{
-		jobRunId: jobRunID,
-		JobTargetKey: JobTargetKey{
-			TaskRunID: testTaskRunID, SourceID: dbTestSourceID, DestinationID: testDestID,
-		},
+		jobRunId:  jobRunID,
+		TaskRunID: testTaskRunID, SourceID: dbTestSourceID, DestinationID: testDestID,
 	}
 }
 
@@ -612,7 +610,7 @@ func TestSyncSettingDelegateDB(t *testing.T) {
 		}, 30*time.Second, 10*time.Millisecond, "a real push must reach the index through the routine")
 
 		text, err := d.GetErrorResponse(ctx,
-			statKey{jobRunId: "db-lifecycle", JobTargetKey: JobTargetKey{SourceID: dbTestSourceID, DestinationID: testDestID}},
+			statKey{jobRunId: "db-lifecycle", SourceID: dbTestSourceID, DestinationID: testDestID},
 			abortedStatus(`{"response":"boom"}`))
 		require.NoError(t, err)
 		require.Equal(t, "boom", text)

@@ -20,9 +20,7 @@ func createUpload(t *testing.T, ctx context.Context, db *sqlmiddleware.DB) int64
 	t.Helper()
 	stagingFilesRepo := repo.NewStagingFiles(db, config.New())
 	stagingFile := model.StagingFileWithSchema{
-		StagingFile: model.StagingFile{
-			ID: 1,
-		},
+		ID: 1,
 	}
 	_, err := stagingFilesRepo.Insert(ctx, &stagingFile)
 	require.NoError(t, err)

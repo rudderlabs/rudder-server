@@ -14,14 +14,14 @@ func TestV2DestinationConfig(t *testing.T) {
 	t.Run("version matched definition slice", func(t *testing.T) {
 		// a definition whose current major is 2, with the first major archived
 		versioned := v2DestinationDefinition{
-			DestinationDefinitionT: DestinationDefinitionT{ID: "dd-1", Config: map[string]any{"major": "two"}},
-			Version:                "2",
+			ID: "dd-1", Config: map[string]any{"major": "two"},
+			Version: "2",
 			Versions: map[string]v2DefinitionArchiveEntry{
 				"1": {Config: map[string]any{"major": "one"}},
 			},
 		}
 		unversioned := v2DestinationDefinition{
-			DestinationDefinitionT: DestinationDefinitionT{ID: "dd-1", Config: map[string]any{"major": "flat"}},
+			ID: "dd-1", Config: map[string]any{"major": "flat"},
 		}
 
 		for _, tc := range []struct {
@@ -52,8 +52,8 @@ func TestV2DestinationConfig(t *testing.T) {
 
 		t.Run("an unparseable definition version falls back to the first major", func(t *testing.T) {
 			definition := v2DestinationDefinition{
-				DestinationDefinitionT: DestinationDefinitionT{Config: map[string]any{"major": "flat"}},
-				Version:                "not a number",
+				Config:  map[string]any{"major": "flat"},
+				Version: "not a number",
 			}
 			require.Equal(t, defaultDefinitionMajor, definition.currentMajor())
 		})

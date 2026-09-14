@@ -1001,8 +1001,8 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	)
 
 	for idx, colName := range columnNames {
-		columnsWithValues.WriteString(fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName))
-		stagingColumnValues.WriteString(fmt.Sprintf(`staging.%s`, colName))
+		fmt.Fprintf(&columnsWithValues, `original.%[1]s = staging.%[1]s`, colName)
+		fmt.Fprintf(&stagingColumnValues, `staging.%s`, colName)
 		if idx != len(columnNames)-1 {
 			columnsWithValues.WriteString(`,`)
 			stagingColumnValues.WriteString(`,`)

@@ -1720,24 +1720,20 @@ func getDiffMetrics(
 		}
 
 		metric := &reportingtypes.PUReportedMetric{
-			ConnectionDetails: reportingtypes.ConnectionDetails{
-				SourceID:                metadata.sourceID,
-				DestinationID:           metadata.destinationID,
-				SourceTaskRunID:         metadata.sourceTaskRunID,
-				SourceJobID:             metadata.sourceJobID,
-				SourceJobRunID:          metadata.sourceJobRunID,
-				SourceDefinitionID:      metadata.sourceDefinitionID,
-				DestinationDefinitionID: metadata.destinationDefinitionID,
-				SourceCategory:          metadata.sourceCategory,
-				TransformationID:        metadata.transformationID,
-				TransformationVersionID: metadata.transformationVersionID,
-				TrackingPlanID:          metadata.trackingPlanID,
-				TrackingPlanVersion:     metadata.trackingPlanVersion,
-			},
-			PUDetails: reportingtypes.PUDetails{
-				InPU: inPU,
-				PU:   pu,
-			},
+			SourceID:                metadata.sourceID,
+			DestinationID:           metadata.destinationID,
+			SourceTaskRunID:         metadata.sourceTaskRunID,
+			SourceJobID:             metadata.sourceJobID,
+			SourceJobRunID:          metadata.sourceJobRunID,
+			SourceDefinitionID:      metadata.sourceDefinitionID,
+			DestinationDefinitionID: metadata.destinationDefinitionID,
+			SourceCategory:          metadata.sourceCategory,
+			TransformationID:        metadata.transformationID,
+			TransformationVersionID: metadata.transformationVersionID,
+			TrackingPlanID:          metadata.trackingPlanID,
+			TrackingPlanVersion:     metadata.trackingPlanVersion,
+			InPU:                    inPU,
+			PU:                      pu,
 			StatusDetail: &reportingtypes.StatusDetail{
 				Status:      reportingtypes.DiffStatus,
 				Count:       count,

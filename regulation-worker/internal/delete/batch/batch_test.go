@@ -1,7 +1,7 @@
 package batch_test
 
 import (
-	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -116,31 +116,34 @@ func TestBatchDelete(t *testing.T) {
 			sort.Strings(goldenFilesList)
 			require.Equal(t, len(goldenFilesList), len(cleanedFilesList), "actual number of files in destination bucket different than expected")
 			for i := 0; i < len(goldenFilesList); i++ {
-				func() {
-					goldenFilePtr, err := os.Open(goldenFilesList[i])
-					require.NoError(t, err)
-					defer func() { _ = goldenFilePtr.Close() }()
-
-					goldenFileContent, err := io.ReadAll(goldenFilePtr)
-					require.NoError(t, err)
-
-					cleanedFilePtr, err := os.Open(cleanedFilesList[i])
-					require.NoError(t, err)
-					defer func() { _ = cleanedFilePtr.Close() }()
-
-					cleanedFileContent, err := io.ReadAll(cleanedFilePtr)
-					require.NoError(t, err)
-
-					require.Equalf(t,
-						0, bytes.Compare(goldenFileContent, cleanedFileContent),
-						"comparing: %v against %v", goldenFilesList[i], cleanedFilesList[i],
-					)
-				}()
+				require.Equalf(t,
+					readGzippedFile(t, goldenFilesList[i]), readGzippedFile(t, cleanedFilesList[i]),
+					"comparing: %v against %v", goldenFilesList[i], cleanedFilesList[i],
+				)
 			}
 			err = os.RemoveAll(mockBucketLocation)
 			require.NoError(t, err)
 		})
 	}
+}
+
+// readGzippedFile returns the decompressed contents of a gzipped file. The golden files are
+// compared after decompression because gzip's encoding is not stable across Go releases -
+// go1.27 changed compress/flate - while the records they hold must stay identical.
+func readGzippedFile(t *testing.T, path string) []byte {
+	t.Helper()
+
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+
+	gzipReader, err := gzip.NewReader(f)
+	require.NoError(t, err)
+	defer func() { _ = gzipReader.Close() }()
+
+	content, err := io.ReadAll(gzipReader)
+	require.NoError(t, err)
+	return content
 }
 
 // creates a tmp directory and copy all the content of testData in it, to use it as mockBucket & store it in the mockFileManager struct.

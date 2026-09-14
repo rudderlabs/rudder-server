@@ -221,12 +221,10 @@ func (proc *Handle) getHydrationFailedReports(source *backendconfig.SourceT, job
 		if _, ok := metricsMap[eventName][eventType]; !ok {
 			sampleEvent, _ := jsonrs.Marshal(job.Message)
 			metricsMap[eventName][eventType] = &reportingtypes.PUReportedMetric{
-				ConnectionDetails: reportingtypes.ConnectionDetails{
-					SourceID:           source.ID,
-					SourceDefinitionID: source.SourceDefinition.ID,
-					SourceCategory:     source.SourceDefinition.Category,
-				},
-				PUDetails: *reportingtypes.CreatePUDetails(reportingtypes.DESTINATION_FILTER, reportingtypes.SOURCE_HYDRATION, false, false),
+				SourceID:           source.ID,
+				SourceDefinitionID: source.SourceDefinition.ID,
+				SourceCategory:     source.SourceDefinition.Category,
+				PUDetails:          *reportingtypes.CreatePUDetails(reportingtypes.DESTINATION_FILTER, reportingtypes.SOURCE_HYDRATION, false, false),
 				StatusDetail: &reportingtypes.StatusDetail{
 					Status:         jobsdb.Aborted.State,
 					Count:          1,

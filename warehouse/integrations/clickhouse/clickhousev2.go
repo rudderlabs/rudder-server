@@ -364,13 +364,12 @@ func (ch *ClickhouseV2) AddColumns(ctx context.Context, tableName string, column
 		queryBuilder strings.Builder
 	)
 
-	queryBuilder.WriteString(fmt.Sprintf(`
+	fmt.Fprintf(&queryBuilder, `
 		ALTER TABLE
 		  %q.%q %s`,
 		ch.Namespace,
 		tableName,
-		ch.clusterClause(),
-	))
+		ch.clusterClause())
 
 	for _, columnInfo := range columnsInfo {
 		columnType := ch.getClickHouseColumnTypeForSpecificTable(
@@ -379,7 +378,7 @@ func (ch *ClickhouseV2) AddColumns(ctx context.Context, tableName string, column
 			rudderDataTypesMapToClickHouse[columnInfo.Type],
 			false,
 		)
-		queryBuilder.WriteString(fmt.Sprintf(` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, columnType))
+		fmt.Fprintf(&queryBuilder, ` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, columnType)
 	}
 
 	query = strings.TrimSuffix(queryBuilder.String(), ",")

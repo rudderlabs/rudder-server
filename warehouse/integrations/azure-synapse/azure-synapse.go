@@ -857,7 +857,7 @@ func (as *AzureSynapse) AddColumns(ctx context.Context, tableName string, column
 	)
 
 	if len(columnsInfo) == 1 {
-		queryBuilder.WriteString(fmt.Sprintf(`
+		fmt.Fprintf(&queryBuilder, `
 			IF NOT EXISTS (
 			  SELECT
 				1
@@ -869,20 +869,18 @@ func (as *AzureSynapse) AddColumns(ctx context.Context, tableName string, column
 			)`,
 			as.namespace,
 			tableName,
-			columnsInfo[0].Name,
-		))
+			columnsInfo[0].Name)
 	}
 
-	queryBuilder.WriteString(fmt.Sprintf(`
+	fmt.Fprintf(&queryBuilder, `
 		ALTER TABLE
 		  %s.%s
 		ADD`,
 		as.namespace,
-		tableName,
-	))
+		tableName)
 
 	for _, columnInfo := range columnsInfo {
-		queryBuilder.WriteString(fmt.Sprintf(` %q %s,`, columnInfo.Name, rudderDataTypesMapToAzureSynapse[columnInfo.Type]))
+		fmt.Fprintf(&queryBuilder, ` %q %s,`, columnInfo.Name, rudderDataTypesMapToAzureSynapse[columnInfo.Type])
 	}
 
 	query = strings.TrimSuffix(queryBuilder.String(), ",")

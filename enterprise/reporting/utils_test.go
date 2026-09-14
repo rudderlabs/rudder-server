@@ -25,10 +25,8 @@ const maxSampleEventSizeBytesForTest = 80 * bytesize.MB
 func TestGetSampleWithEventSamplingForEDReportsDB(t *testing.T) {
 	t.Run("event sampling disabled", func(t *testing.T) {
 		metric := types.EDReportsDB{
-			EDErrorDetails: types.EDErrorDetails{
-				SampleEvent:    json.RawMessage(`{"test": "event"}`),
-				SampleResponse: "test response",
-			},
+			SampleEvent:    json.RawMessage(`{"test": "event"}`),
+			SampleResponse: "test response",
 		}
 
 		sampleEvent, sampleResponse, _, err := getSampleWithEventSamplingForEDReportsDB(metric, 123456, nil, false, 60, maxSampleEventSizeBytesForTest)
@@ -39,10 +37,8 @@ func TestGetSampleWithEventSamplingForEDReportsDB(t *testing.T) {
 
 	t.Run("event sampler is nil", func(t *testing.T) {
 		metric := types.EDReportsDB{
-			EDErrorDetails: types.EDErrorDetails{
-				SampleEvent:    json.RawMessage(`{"test": "event"}`),
-				SampleResponse: "test response",
-			},
+			SampleEvent:    json.RawMessage(`{"test": "event"}`),
+			SampleResponse: "test response",
 		}
 
 		sampleEvent, sampleResponse, _, err := getSampleWithEventSamplingForEDReportsDB(metric, 123456, nil, true, 60, maxSampleEventSizeBytesForTest)
@@ -53,10 +49,8 @@ func TestGetSampleWithEventSamplingForEDReportsDB(t *testing.T) {
 
 	t.Run("no valid sample", func(t *testing.T) {
 		metric := types.EDReportsDB{
-			EDErrorDetails: types.EDErrorDetails{
-				SampleEvent:    nil,
-				SampleResponse: "",
-			},
+			SampleEvent:    nil,
+			SampleResponse: "",
 		}
 
 		ctrl := gomock.NewController(t)
@@ -71,25 +65,17 @@ func TestGetSampleWithEventSamplingForEDReportsDB(t *testing.T) {
 
 	t.Run("event sampling enabled with valid sample", func(t *testing.T) {
 		metric := types.EDReportsDB{
-			EDInstanceDetails: types.EDInstanceDetails{
-				WorkspaceID: "test-workspace",
-			},
-			EDConnectionDetails: types.EDConnectionDetails{
-				SourceID:      "test-source",
-				DestinationID: "test-destination",
-			},
-			PU: "test-pu",
-			EDErrorDetails: types.EDErrorDetails{
-				EDErrorDetailsKey: types.EDErrorDetailsKey{
-					StatusCode:   500,
-					EventName:    "test_event",
-					EventType:    "track",
-					ErrorCode:    "TEST_ERROR",
-					ErrorMessage: "Test error message",
-				},
-				SampleEvent:    json.RawMessage(`{"test": "event"}`),
-				SampleResponse: "test response",
-			},
+			WorkspaceID:    "test-workspace",
+			SourceID:       "test-source",
+			DestinationID:  "test-destination",
+			PU:             "test-pu",
+			StatusCode:     500,
+			EventName:      "test_event",
+			EventType:      "track",
+			ErrorCode:      "TEST_ERROR",
+			ErrorMessage:   "Test error message",
+			SampleEvent:    json.RawMessage(`{"test": "event"}`),
+			SampleResponse: "test response",
 		}
 
 		ctrl := gomock.NewController(t)
@@ -109,25 +95,17 @@ func TestGetSampleWithEventSamplingForEDReportsDB(t *testing.T) {
 
 	t.Run("event sampling enabled - sample already seen", func(t *testing.T) {
 		metric := types.EDReportsDB{
-			EDInstanceDetails: types.EDInstanceDetails{
-				WorkspaceID: "test-workspace",
-			},
-			EDConnectionDetails: types.EDConnectionDetails{
-				SourceID:      "test-source",
-				DestinationID: "test-destination",
-			},
-			PU: "test-pu",
-			EDErrorDetails: types.EDErrorDetails{
-				EDErrorDetailsKey: types.EDErrorDetailsKey{
-					StatusCode:   500,
-					EventName:    "test_event",
-					EventType:    "track",
-					ErrorCode:    "TEST_ERROR",
-					ErrorMessage: "Test error message",
-				},
-				SampleEvent:    json.RawMessage(`{"test": "event"}`),
-				SampleResponse: "test response",
-			},
+			WorkspaceID:    "test-workspace",
+			SourceID:       "test-source",
+			DestinationID:  "test-destination",
+			PU:             "test-pu",
+			StatusCode:     500,
+			EventName:      "test_event",
+			EventType:      "track",
+			ErrorCode:      "TEST_ERROR",
+			ErrorMessage:   "Test error message",
+			SampleEvent:    json.RawMessage(`{"test": "event"}`),
+			SampleResponse: "test response",
 		}
 
 		ctrl := gomock.NewController(t)

@@ -171,9 +171,9 @@ func TestBadResponse(t *testing.T) {
 	initBackendConfig()
 	t.Setenv("RSERVER_BACKEND_CONFIG_POLL_INTERVAL", "10ms")
 
-	var calls int32
+	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		defer atomic.AddInt32(&calls, 1)
+		defer calls.Add(1)
 		t.Log("Server got called")
 		w.WriteHeader(http.StatusBadRequest)
 	}))
@@ -208,7 +208,7 @@ func TestBadResponse(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 			pkgLogger = logger.NOP
-			atomic.StoreInt32(&calls, 0)
+			calls.Store(0)
 
 			bc := &backendConfigImpl{
 				workspaceConfig: conf,
@@ -223,7 +223,7 @@ func TestBadResponse(t *testing.T) {
 				case <-timeout.C:
 					t.Fatal("Timeout while waiting for 3 calls to HTTP server")
 				default:
-					if atomic.LoadInt32(&calls) == 3 {
+					if calls.Load() == 3 {
 						return
 					}
 				}
@@ -445,15 +445,15 @@ func TestWaitForConfig(t *testing.T) {
 		pollInterval = config.SingleValueLoader(time.Millisecond)
 		bc := &backendConfigImpl{initialized: false}
 
-		var done int32
+		var done atomic.Int32
 		go func() {
-			defer atomic.StoreInt32(&done, 1)
+			defer done.Store(1)
 			bc.WaitForConfig(ctx)
 		}()
 
 		require.False(t, bc.initialized)
 		for range 10 {
-			require.EqualValues(t, atomic.LoadInt32(&done), 0)
+			require.EqualValues(t, done.Load(), 0)
 			time.Sleep(10 * time.Millisecond)
 		}
 
@@ -462,7 +462,7 @@ func TestWaitForConfig(t *testing.T) {
 		bc.initializedLock.Unlock()
 
 		require.Eventually(t, func() bool {
-			return atomic.LoadInt32(&done) == 1
+			return done.Load() == 1
 		}, 100*time.Millisecond, time.Millisecond)
 	})
 }
@@ -471,9 +471,9 @@ func TestCache(t *testing.T) {
 	initBackendConfig()
 	t.Setenv("RSERVER_BACKEND_CONFIG_POLL_INTERVAL", "10ms")
 	t.Setenv("RSERVER_BACKEND_CONFIG_DB_CACHE_WRITE_DEBOUNCE", "10ms")
-	var calls int32
+	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		defer atomic.AddInt32(&calls, 1)
+		defer calls.Add(1)
 		t.Log("Server got called")
 		w.WriteHeader(http.StatusBadRequest)
 	}))

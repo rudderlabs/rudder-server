@@ -110,8 +110,7 @@ func (ch *ClickhouseV2) tlsConfig() (*tls.Config, error) {
 // isUnknownDatabase reports whether err is ClickHouse's UNKNOWN_DATABASE, which
 // FetchSchema treats as an empty schema rather than a failure.
 func isUnknownDatabase(err error) bool {
-	var chErr *clickhouse.Exception
-	if errors.As(err, &chErr) {
+	if chErr, ok := errors.AsType[*clickhouse.Exception](err); ok {
 		return chErr.Code == unknownDatabase
 	}
 	return false

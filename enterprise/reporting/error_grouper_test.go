@@ -14,52 +14,34 @@ func TestErrorGrouper_GroupErrors(t *testing.T) {
 	// Create test metrics
 	metrics := []*types.EDReportsDB{
 		{
-			EDConnectionDetails: types.EDConnectionDetails{
-				SourceID:      "source1",
-				DestinationID: "dest1",
-			},
-			PU: "processor",
-			EDErrorDetails: types.EDErrorDetails{
-				EDErrorDetailsKey: types.EDErrorDetailsKey{
-					EventType:    "track",
-					ErrorMessage: "Database connection failed: timeout",
-					ErrorCode:    "DB_TIMEOUT",
-				},
-				ErrorCount: 5,
-			},
-			Count: 5,
+			SourceID:      "source1",
+			DestinationID: "dest1",
+			PU:            "processor",
+			EventType:     "track",
+			ErrorMessage:  "Database connection failed: timeout",
+			ErrorCode:     "DB_TIMEOUT",
+			ErrorCount:    5,
+			Count:         5,
 		},
 		{
-			EDConnectionDetails: types.EDConnectionDetails{
-				SourceID:      "source1",
-				DestinationID: "dest1",
-			},
-			PU: "processor",
-			EDErrorDetails: types.EDErrorDetails{
-				EDErrorDetailsKey: types.EDErrorDetailsKey{
-					EventType:    "track",
-					ErrorMessage: "Database connection failed: timeout",
-					ErrorCode:    "DB_TIMEOUT",
-				},
-				ErrorCount: 3,
-			},
-			Count: 3,
+			SourceID:      "source1",
+			DestinationID: "dest1",
+			PU:            "processor",
+			EventType:     "track",
+			ErrorMessage:  "Database connection failed: timeout",
+			ErrorCode:     "DB_TIMEOUT",
+			ErrorCount:    3,
+			Count:         3,
 		},
 		{
-			EDConnectionDetails: types.EDConnectionDetails{
-				SourceID:      "source1",
-				DestinationID: "dest1",
-			},
-			PU: "processor",
-			EDErrorDetails: types.EDErrorDetails{
-				EDErrorDetailsKey: types.EDErrorDetailsKey{
-					EventType:    "track",
-					ErrorMessage: "Authentication failed: invalid credentials",
-					ErrorCode:    "AUTH_ERROR",
-				},
-				ErrorCount: 2,
-			},
-			Count: 2,
+			SourceID:      "source1",
+			DestinationID: "dest1",
+			PU:            "processor",
+			EventType:     "track",
+			ErrorMessage:  "Authentication failed: invalid credentials",
+			ErrorCode:     "AUTH_ERROR",
+			ErrorCount:    2,
+			Count:         2,
 		},
 	}
 
@@ -98,43 +80,25 @@ func TestErrorGrouper_GroupByConnection(t *testing.T) {
 	// Create test metrics with different connection details
 	metrics := []*types.EDReportsDB{
 		{
-			EDConnectionDetails: types.EDConnectionDetails{
-				SourceID:      "source1",
-				DestinationID: "dest1",
-			},
-			PU: "processor",
-			EDErrorDetails: types.EDErrorDetails{
-				EDErrorDetailsKey: types.EDErrorDetailsKey{
-					EventType:    "track",
-					ErrorMessage: "Error 1",
-				},
-			},
+			SourceID:      "source1",
+			DestinationID: "dest1",
+			PU:            "processor",
+			EventType:     "track",
+			ErrorMessage:  "Error 1",
 		},
 		{
-			EDConnectionDetails: types.EDConnectionDetails{
-				SourceID:      "source1",
-				DestinationID: "dest1",
-			},
-			PU: "processor",
-			EDErrorDetails: types.EDErrorDetails{
-				EDErrorDetailsKey: types.EDErrorDetailsKey{
-					EventType:    "track",
-					ErrorMessage: "Error 2",
-				},
-			},
+			SourceID:      "source1",
+			DestinationID: "dest1",
+			PU:            "processor",
+			EventType:     "track",
+			ErrorMessage:  "Error 2",
 		},
 		{
-			EDConnectionDetails: types.EDConnectionDetails{
-				SourceID:      "source2",
-				DestinationID: "dest1",
-			},
-			PU: "processor",
-			EDErrorDetails: types.EDErrorDetails{
-				EDErrorDetailsKey: types.EDErrorDetailsKey{
-					EventType:    "track",
-					ErrorMessage: "Error 3",
-				},
-			},
+			SourceID:      "source2",
+			DestinationID: "dest1",
+			PU:            "processor",
+			EventType:     "track",
+			ErrorMessage:  "Error 3",
 		},
 	}
 
@@ -183,70 +147,46 @@ func TestMergeMetricGroupsByErrorMessage(t *testing.T) {
 	groups := map[types.ErrorDetailGroupKey][]*types.EDReportsDB{
 		key1: {
 			{
-				EDConnectionDetails: types.EDConnectionDetails{
-					SourceID:      "source1",
-					DestinationID: "dest1",
-				},
-				PU: "processor",
-				EDErrorDetails: types.EDErrorDetails{
-					EDErrorDetailsKey: types.EDErrorDetailsKey{
-						EventType:    "track",
-						ErrorMessage: "Database connection failed",
-						ErrorCode:    "DB_ERROR",
-					},
-					ErrorCount: 5,
-				},
-				Count: 5,
+				SourceID:      "source1",
+				DestinationID: "dest1",
+				PU:            "processor",
+				EventType:     "track",
+				ErrorMessage:  "Database connection failed",
+				ErrorCode:     "DB_ERROR",
+				ErrorCount:    5,
+				Count:         5,
 			},
 			{
-				EDConnectionDetails: types.EDConnectionDetails{
-					SourceID:      "source1",
-					DestinationID: "dest1",
-				},
-				PU: "processor",
-				EDErrorDetails: types.EDErrorDetails{
-					EDErrorDetailsKey: types.EDErrorDetailsKey{
-						EventType:    "track",
-						ErrorMessage: "Database connection failed",
-						ErrorCode:    "DB_ERROR",
-					},
-					ErrorCount: 3,
-				},
-				Count: 3,
+				SourceID:      "source1",
+				DestinationID: "dest1",
+				PU:            "processor",
+				EventType:     "track",
+				ErrorMessage:  "Database connection failed",
+				ErrorCode:     "DB_ERROR",
+				ErrorCount:    3,
+				Count:         3,
 			},
 			{
-				EDConnectionDetails: types.EDConnectionDetails{
-					SourceID:      "source1",
-					DestinationID: "dest1",
-				},
-				PU: "processor",
-				EDErrorDetails: types.EDErrorDetails{
-					EDErrorDetailsKey: types.EDErrorDetailsKey{
-						EventType:    "track",
-						ErrorMessage: "Authentication failed",
-						ErrorCode:    "AUTH_ERROR",
-					},
-					ErrorCount: 2,
-				},
-				Count: 2,
+				SourceID:      "source1",
+				DestinationID: "dest1",
+				PU:            "processor",
+				EventType:     "track",
+				ErrorMessage:  "Authentication failed",
+				ErrorCode:     "AUTH_ERROR",
+				ErrorCount:    2,
+				Count:         2,
 			},
 		},
 		key2: {
 			{
-				EDConnectionDetails: types.EDConnectionDetails{
-					SourceID:      "source2",
-					DestinationID: "dest1",
-				},
-				PU: "processor",
-				EDErrorDetails: types.EDErrorDetails{
-					EDErrorDetailsKey: types.EDErrorDetailsKey{
-						EventType:    "track",
-						ErrorMessage: "Rate limited",
-						ErrorCode:    "RATE_LIMITED",
-					},
-					ErrorCount: 1,
-				},
-				Count: 1,
+				SourceID:      "source2",
+				DestinationID: "dest1",
+				PU:            "processor",
+				EventType:     "track",
+				ErrorMessage:  "Rate limited",
+				ErrorCode:     "RATE_LIMITED",
+				ErrorCount:    1,
+				Count:         1,
 			},
 		},
 	}
@@ -273,16 +213,10 @@ func TestGenerateMetricGroupKey(t *testing.T) {
 	edr := &ErrorDetailReporter{}
 
 	metric := &types.EDReportsDB{
-		EDConnectionDetails: types.EDConnectionDetails{
-			SourceID:      "test-source",
-			DestinationID: "test-dest",
-		},
-		PU: "test-processor",
-		EDErrorDetails: types.EDErrorDetails{
-			EDErrorDetailsKey: types.EDErrorDetailsKey{
-				EventType: "test-event",
-			},
-		},
+		SourceID:      "test-source",
+		DestinationID: "test-dest",
+		PU:            "test-processor",
+		EventType:     "test-event",
 	}
 
 	key := edr.generateMetricGroupKey(metric)

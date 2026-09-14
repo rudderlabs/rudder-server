@@ -33,19 +33,15 @@ var _ = Describe("Reporting", func() {
 	Context("transformMetricForPII Tests", func() {
 		It("Should match transformMetricForPII response for a valid metric", func() {
 			inputMetric := types.PUReportedMetric{
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:        "some-source-id",
-					DestinationID:   "some-destination-id",
-					SourceTaskRunID: "some-source-task-run-id",
-					SourceJobID:     "some-source-job-id",
-					SourceJobRunID:  "some-source-job-run-id",
-				},
-				PUDetails: types.PUDetails{
-					InPU:       "some-in-pu",
-					PU:         "some-pu",
-					TerminalPU: false,
-					InitialPU:  false,
-				},
+				SourceID:        "some-source-id",
+				DestinationID:   "some-destination-id",
+				SourceTaskRunID: "some-source-task-run-id",
+				SourceJobID:     "some-source-job-id",
+				SourceJobRunID:  "some-source-job-run-id",
+				InPU:            "some-in-pu",
+				PU:              "some-pu",
+				TerminalPU:      false,
+				InitialPU:       false,
 				StatusDetail: &types.StatusDetail{
 					Status:         "some-status",
 					Count:          3,
@@ -58,19 +54,15 @@ var _ = Describe("Reporting", func() {
 			}
 
 			expectedResponse := types.PUReportedMetric{
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:        "some-source-id",
-					DestinationID:   "some-destination-id",
-					SourceTaskRunID: "some-source-task-run-id",
-					SourceJobID:     "some-source-job-id",
-					SourceJobRunID:  "some-source-job-run-id",
-				},
-				PUDetails: types.PUDetails{
-					InPU:       "some-in-pu",
-					PU:         "some-pu",
-					TerminalPU: false,
-					InitialPU:  false,
-				},
+				SourceID:        "some-source-id",
+				DestinationID:   "some-destination-id",
+				SourceTaskRunID: "some-source-task-run-id",
+				SourceJobID:     "some-source-job-id",
+				SourceJobRunID:  "some-source-job-run-id",
+				InPU:            "some-in-pu",
+				PU:              "some-pu",
+				TerminalPU:      false,
+				InitialPU:       false,
 				StatusDetail: &types.StatusDetail{
 					Status:         "some-status",
 					Count:          3,
@@ -111,22 +103,14 @@ func assertReportMetric(expectedMetric, actualMetric types.PUReportedMetric) {
 func TestGetAggregatedReports(t *testing.T) {
 	inputReports := []*types.ReportByStatus{
 		{
-			InstanceDetails: types.InstanceDetails{
-				WorkspaceID: "some-workspace-id",
-			},
-			ConnectionDetails: types.ConnectionDetails{
-				SourceID:         "some-source-id",
-				DestinationID:    "some-destination-id",
-				TransformationID: "some-transformation-id",
-				TrackingPlanID:   "some-tracking-plan-id",
-			},
-			PUDetails: types.PUDetails{
-				InPU: "some-in-pu",
-				PU:   "some-pu",
-			},
-			ReportMetadata: types.ReportMetadata{
-				ReportedAt: 28017690,
-			},
+			WorkspaceID:      "some-workspace-id",
+			SourceID:         "some-source-id",
+			DestinationID:    "some-destination-id",
+			TransformationID: "some-transformation-id",
+			TrackingPlanID:   "some-tracking-plan-id",
+			InPU:             "some-in-pu",
+			PU:               "some-pu",
+			ReportedAt:       28017690,
 			StatusDetail: &types.StatusDetail{
 				Status:         "some-status",
 				Count:          3,
@@ -138,22 +122,14 @@ func TestGetAggregatedReports(t *testing.T) {
 			},
 		},
 		{
-			InstanceDetails: types.InstanceDetails{
-				WorkspaceID: "some-workspace-id",
-			},
-			ConnectionDetails: types.ConnectionDetails{
-				SourceID:         "some-source-id",
-				DestinationID:    "some-destination-id",
-				TransformationID: "some-transformation-id",
-				TrackingPlanID:   "some-tracking-plan-id",
-			},
-			PUDetails: types.PUDetails{
-				InPU: "some-in-pu",
-				PU:   "some-pu",
-			},
-			ReportMetadata: types.ReportMetadata{
-				ReportedAt: 28017690,
-			},
+			WorkspaceID:      "some-workspace-id",
+			SourceID:         "some-source-id",
+			DestinationID:    "some-destination-id",
+			TransformationID: "some-transformation-id",
+			TrackingPlanID:   "some-tracking-plan-id",
+			InPU:             "some-in-pu",
+			PU:               "some-pu",
+			ReportedAt:       28017690,
 			StatusDetail: &types.StatusDetail{
 				Status:         "some-status",
 				Count:          2,
@@ -165,22 +141,14 @@ func TestGetAggregatedReports(t *testing.T) {
 			},
 		},
 		{
-			InstanceDetails: types.InstanceDetails{
-				WorkspaceID: "some-workspace-id",
-			},
-			ConnectionDetails: types.ConnectionDetails{
-				SourceID:         "some-source-id-2",
-				DestinationID:    "some-destination-id",
-				TransformationID: "some-transformation-id",
-				TrackingPlanID:   "some-tracking-plan-id",
-			},
-			PUDetails: types.PUDetails{
-				InPU: "some-in-pu",
-				PU:   "some-pu",
-			},
-			ReportMetadata: types.ReportMetadata{
-				ReportedAt: 28017690,
-			},
+			WorkspaceID:      "some-workspace-id",
+			SourceID:         "some-source-id-2",
+			DestinationID:    "some-destination-id",
+			TransformationID: "some-transformation-id",
+			TrackingPlanID:   "some-tracking-plan-id",
+			InPU:             "some-in-pu",
+			PU:               "some-pu",
+			ReportedAt:       28017690,
 			StatusDetail: &types.StatusDetail{
 				Status:         "some-status",
 				Count:          3,
@@ -203,23 +171,15 @@ func TestGetAggregatedReports(t *testing.T) {
 		bucket, _ := GetAggregationBucketMinute(28017690, 10)
 		expectedResponse := []*types.Metric{
 			{
-				InstanceDetails: types.InstanceDetails{
-					WorkspaceID: "some-workspace-id",
-				},
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:         "some-source-id",
-					DestinationID:    "some-destination-id",
-					TransformationID: "some-transformation-id",
-					TrackingPlanID:   "some-tracking-plan-id",
-				},
-				PUDetails: types.PUDetails{
-					InPU: "some-in-pu",
-					PU:   "some-pu",
-				},
-				ReportMetadata: types.ReportMetadata{
-					ReportedAt:        28017690 * 60 * 1000,
-					SampleEventBucket: bucket * 60 * 1000,
-				},
+				WorkspaceID:       "some-workspace-id",
+				SourceID:          "some-source-id",
+				DestinationID:     "some-destination-id",
+				TransformationID:  "some-transformation-id",
+				TrackingPlanID:    "some-tracking-plan-id",
+				InPU:              "some-in-pu",
+				PU:                "some-pu",
+				ReportedAt:        28017690 * 60 * 1000,
+				SampleEventBucket: bucket * 60 * 1000,
 				StatusDetails: []*types.StatusDetail{
 					{
 						Status:         "some-status",
@@ -233,23 +193,15 @@ func TestGetAggregatedReports(t *testing.T) {
 				},
 			},
 			{
-				InstanceDetails: types.InstanceDetails{
-					WorkspaceID: "some-workspace-id",
-				},
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:         "some-source-id",
-					DestinationID:    "some-destination-id",
-					TransformationID: "some-transformation-id",
-					TrackingPlanID:   "some-tracking-plan-id",
-				},
-				PUDetails: types.PUDetails{
-					InPU: "some-in-pu",
-					PU:   "some-pu",
-				},
-				ReportMetadata: types.ReportMetadata{
-					ReportedAt:        28017690 * 60 * 1000,
-					SampleEventBucket: bucket * 60 * 1000,
-				},
+				WorkspaceID:       "some-workspace-id",
+				SourceID:          "some-source-id",
+				DestinationID:     "some-destination-id",
+				TransformationID:  "some-transformation-id",
+				TrackingPlanID:    "some-tracking-plan-id",
+				InPU:              "some-in-pu",
+				PU:                "some-pu",
+				ReportedAt:        28017690 * 60 * 1000,
+				SampleEventBucket: bucket * 60 * 1000,
 				StatusDetails: []*types.StatusDetail{
 					{
 						Status:         "some-status",
@@ -263,23 +215,15 @@ func TestGetAggregatedReports(t *testing.T) {
 				},
 			},
 			{
-				InstanceDetails: types.InstanceDetails{
-					WorkspaceID: "some-workspace-id",
-				},
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:         "some-source-id-2",
-					DestinationID:    "some-destination-id",
-					TransformationID: "some-transformation-id",
-					TrackingPlanID:   "some-tracking-plan-id",
-				},
-				PUDetails: types.PUDetails{
-					InPU: "some-in-pu",
-					PU:   "some-pu",
-				},
-				ReportMetadata: types.ReportMetadata{
-					ReportedAt:        28017690 * 60 * 1000,
-					SampleEventBucket: bucket * 60 * 1000,
-				},
+				WorkspaceID:       "some-workspace-id",
+				SourceID:          "some-source-id-2",
+				DestinationID:     "some-destination-id",
+				TransformationID:  "some-transformation-id",
+				TrackingPlanID:    "some-tracking-plan-id",
+				InPU:              "some-in-pu",
+				PU:                "some-pu",
+				ReportedAt:        28017690 * 60 * 1000,
+				SampleEventBucket: bucket * 60 * 1000,
 				StatusDetails: []*types.StatusDetail{
 					{
 						Status:         "some-status",
@@ -304,23 +248,15 @@ func TestGetAggregatedReports(t *testing.T) {
 		bucket, _ := GetAggregationBucketMinute(28017690, 10)
 		expectedResponse := []*types.Metric{
 			{
-				InstanceDetails: types.InstanceDetails{
-					WorkspaceID: "some-workspace-id",
-				},
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:         "some-source-id",
-					DestinationID:    "some-destination-id",
-					TransformationID: "some-transformation-id",
-					TrackingPlanID:   "some-tracking-plan-id",
-				},
-				PUDetails: types.PUDetails{
-					InPU: "some-in-pu",
-					PU:   "some-pu",
-				},
-				ReportMetadata: types.ReportMetadata{
-					ReportedAt:        28017690 * 60 * 1000,
-					SampleEventBucket: bucket * 60 * 1000,
-				},
+				WorkspaceID:       "some-workspace-id",
+				SourceID:          "some-source-id",
+				DestinationID:     "some-destination-id",
+				TransformationID:  "some-transformation-id",
+				TrackingPlanID:    "some-tracking-plan-id",
+				InPU:              "some-in-pu",
+				PU:                "some-pu",
+				ReportedAt:        28017690 * 60 * 1000,
+				SampleEventBucket: bucket * 60 * 1000,
 				StatusDetails: []*types.StatusDetail{
 					{
 						Status:         "some-status",
@@ -343,23 +279,15 @@ func TestGetAggregatedReports(t *testing.T) {
 				},
 			},
 			{
-				InstanceDetails: types.InstanceDetails{
-					WorkspaceID: "some-workspace-id",
-				},
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:         "some-source-id-2",
-					DestinationID:    "some-destination-id",
-					TransformationID: "some-transformation-id",
-					TrackingPlanID:   "some-tracking-plan-id",
-				},
-				PUDetails: types.PUDetails{
-					InPU: "some-in-pu",
-					PU:   "some-pu",
-				},
-				ReportMetadata: types.ReportMetadata{
-					ReportedAt:        28017690 * 60 * 1000,
-					SampleEventBucket: bucket * 60 * 1000,
-				},
+				WorkspaceID:       "some-workspace-id",
+				SourceID:          "some-source-id-2",
+				DestinationID:     "some-destination-id",
+				TransformationID:  "some-transformation-id",
+				TrackingPlanID:    "some-tracking-plan-id",
+				InPU:              "some-in-pu",
+				PU:                "some-pu",
+				ReportedAt:        28017690 * 60 * 1000,
+				SampleEventBucket: bucket * 60 * 1000,
 				StatusDetails: []*types.StatusDetail{
 					{
 						Status:         "some-status",
@@ -383,22 +311,14 @@ func TestGetAggregatedReports(t *testing.T) {
 		assert.Equal(t, 2, reportHandle.maxReportsCountInARequest.Load())
 		bucket, _ := GetAggregationBucketMinute(28017690, 10)
 		extraReport := &types.ReportByStatus{
-			InstanceDetails: types.InstanceDetails{
-				WorkspaceID: "some-workspace-id",
-			},
-			ConnectionDetails: types.ConnectionDetails{
-				SourceID:         "some-source-id",
-				DestinationID:    "some-destination-id",
-				TransformationID: "some-transformation-id",
-				TrackingPlanID:   "some-tracking-plan-id",
-			},
-			PUDetails: types.PUDetails{
-				InPU: "some-in-pu",
-				PU:   "some-pu",
-			},
-			ReportMetadata: types.ReportMetadata{
-				ReportedAt: 28017690,
-			},
+			WorkspaceID:      "some-workspace-id",
+			SourceID:         "some-source-id",
+			DestinationID:    "some-destination-id",
+			TransformationID: "some-transformation-id",
+			TrackingPlanID:   "some-tracking-plan-id",
+			InPU:             "some-in-pu",
+			PU:               "some-pu",
+			ReportedAt:       28017690,
 			StatusDetail: &types.StatusDetail{
 				Status:         "some-status",
 				Count:          2,
@@ -412,23 +332,15 @@ func TestGetAggregatedReports(t *testing.T) {
 		newInputReports := append(inputReports, extraReport)
 		expectedResponse := []*types.Metric{
 			{
-				InstanceDetails: types.InstanceDetails{
-					WorkspaceID: "some-workspace-id",
-				},
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:         "some-source-id",
-					DestinationID:    "some-destination-id",
-					TransformationID: "some-transformation-id",
-					TrackingPlanID:   "some-tracking-plan-id",
-				},
-				PUDetails: types.PUDetails{
-					InPU: "some-in-pu",
-					PU:   "some-pu",
-				},
-				ReportMetadata: types.ReportMetadata{
-					ReportedAt:        28017690 * 60 * 1000,
-					SampleEventBucket: bucket * 60 * 1000,
-				},
+				WorkspaceID:       "some-workspace-id",
+				SourceID:          "some-source-id",
+				DestinationID:     "some-destination-id",
+				TransformationID:  "some-transformation-id",
+				TrackingPlanID:    "some-tracking-plan-id",
+				InPU:              "some-in-pu",
+				PU:                "some-pu",
+				ReportedAt:        28017690 * 60 * 1000,
+				SampleEventBucket: bucket * 60 * 1000,
 				StatusDetails: []*types.StatusDetail{
 					{
 						Status:         "some-status",
@@ -451,23 +363,15 @@ func TestGetAggregatedReports(t *testing.T) {
 				},
 			},
 			{
-				InstanceDetails: types.InstanceDetails{
-					WorkspaceID: "some-workspace-id",
-				},
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:         "some-source-id-2",
-					DestinationID:    "some-destination-id",
-					TransformationID: "some-transformation-id",
-					TrackingPlanID:   "some-tracking-plan-id",
-				},
-				PUDetails: types.PUDetails{
-					InPU: "some-in-pu",
-					PU:   "some-pu",
-				},
-				ReportMetadata: types.ReportMetadata{
-					ReportedAt:        28017690 * 60 * 1000,
-					SampleEventBucket: bucket * 60 * 1000,
-				},
+				WorkspaceID:       "some-workspace-id",
+				SourceID:          "some-source-id-2",
+				DestinationID:     "some-destination-id",
+				TransformationID:  "some-transformation-id",
+				TrackingPlanID:    "some-tracking-plan-id",
+				InPU:              "some-in-pu",
+				PU:                "some-pu",
+				ReportedAt:        28017690 * 60 * 1000,
+				SampleEventBucket: bucket * 60 * 1000,
 				StatusDetails: []*types.StatusDetail{
 					{
 						Status:         "some-status",
@@ -481,23 +385,15 @@ func TestGetAggregatedReports(t *testing.T) {
 				},
 			},
 			{
-				InstanceDetails: types.InstanceDetails{
-					WorkspaceID: "some-workspace-id",
-				},
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:         "some-source-id",
-					DestinationID:    "some-destination-id",
-					TransformationID: "some-transformation-id",
-					TrackingPlanID:   "some-tracking-plan-id",
-				},
-				PUDetails: types.PUDetails{
-					InPU: "some-in-pu",
-					PU:   "some-pu",
-				},
-				ReportMetadata: types.ReportMetadata{
-					ReportedAt:        28017690 * 60 * 1000,
-					SampleEventBucket: bucket * 60 * 1000,
-				},
+				WorkspaceID:       "some-workspace-id",
+				SourceID:          "some-source-id",
+				DestinationID:     "some-destination-id",
+				TransformationID:  "some-transformation-id",
+				TrackingPlanID:    "some-tracking-plan-id",
+				InPU:              "some-in-pu",
+				PU:                "some-pu",
+				ReportedAt:        28017690 * 60 * 1000,
+				SampleEventBucket: bucket * 60 * 1000,
 				StatusDetails: []*types.StatusDetail{
 					{
 						Status:         "some-status",
@@ -625,10 +521,8 @@ func TestDefaultReporter_Report_EventNameTrimming(t *testing.T) {
 
 			// Create test metric
 			metric := &types.PUReportedMetric{
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:      sourceID,
-					DestinationID: destinationID,
-				},
+				SourceID:      sourceID,
+				DestinationID: destinationID,
 				StatusDetail: &types.StatusDetail{
 					EventName: tc.eventName,
 					EventType: "track",
@@ -788,10 +682,8 @@ func TestDefaultReporter_Report_EventNameTrimming_InvalidConfig(t *testing.T) {
 
 			// Create test metric
 			metric := &types.PUReportedMetric{
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:      sourceID,
-					DestinationID: destinationID,
-				},
+				SourceID:      sourceID,
+				DestinationID: destinationID,
 				StatusDetail: &types.StatusDetail{
 					EventName: tc.eventName,
 					EventType: "track",
@@ -1114,22 +1006,14 @@ func testLargePayloadMetric() *types.Metric {
 
 func testLargePayloadMetricWithOneStatusDetail() *types.Metric {
 	return &types.Metric{
-		InstanceDetails: types.InstanceDetails{
-			WorkspaceID: "workspace-1",
-			InstanceID:  "instance-1",
-		},
-		ConnectionDetails: types.ConnectionDetails{
-			SourceID:      "source-1",
-			DestinationID: "destination-1",
-		},
-		PUDetails: types.PUDetails{
-			InPU: "gateway",
-			PU:   "router",
-		},
-		ReportMetadata: types.ReportMetadata{
-			ReportedAt:        1000,
-			SampleEventBucket: 900,
-		},
+		WorkspaceID:       "workspace-1",
+		InstanceID:        "instance-1",
+		SourceID:          "source-1",
+		DestinationID:     "destination-1",
+		InPU:              "gateway",
+		PU:                "router",
+		ReportedAt:        1000,
+		SampleEventBucket: 900,
 		StatusDetails: []*types.StatusDetail{
 			{
 				Status:         "failed",

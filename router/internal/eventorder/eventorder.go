@@ -335,13 +335,13 @@ func (b *Barrier) String() string {
 	var sb strings.Builder
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	sb.WriteString(fmt.Sprintf("Barrier{%+v[", b.metadata))
+	fmt.Fprintf(&sb, "Barrier{%+v[", b.metadata)
 	for key, barrier := range b.barriers {
 		failedJobID := "<nil>"
 		if barrier.failedJobID != nil {
 			failedJobID = fmt.Sprintf("%d", *barrier.failedJobID)
 		}
-		sb.WriteString(fmt.Sprintf("{key: %s, failedJobID: %v, concurrentJobs: %v}", key, failedJobID, barrier.concurrencyLimiter))
+		fmt.Fprintf(&sb, "{key: %s, failedJobID: %v, concurrentJobs: %v}", key, failedJobID, barrier.concurrencyLimiter)
 	}
 	sb.WriteString("]}")
 	return sb.String()

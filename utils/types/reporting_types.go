@@ -235,35 +235,25 @@ func PUReportedMetricToEDReportsDB(
 	}
 
 	return &EDReportsDB{
-		EDInstanceDetails: EDInstanceDetails{
-			WorkspaceID: params.WorkspaceID,
-			Namespace:   params.Namespace,
-			InstanceID:  params.InstanceID,
-		},
-		EDConnectionDetails: EDConnectionDetails{
-			SourceID:                metric.SourceID,
-			DestinationID:           metric.DestinationID,
-			SourceDefinitionId:      metric.SourceDefinitionID,
-			DestinationDefinitionId: params.DestinationDefinitionID,
-			DestType:                params.DestType,
-		},
-		ReportMetadata: ReportMetadata{
-			ReportedAt: time.Now().UTC().Unix() / 60,
-		},
-		PU: metric.PU,
-		EDErrorDetails: EDErrorDetails{
-			EDErrorDetailsKey: EDErrorDetailsKey{
-				StatusCode:   statusCode,
-				ErrorCode:    params.ErrorDetails.Code,
-				ErrorMessage: params.ErrorDetails.Message,
-				EventType:    eventType,
-				EventName:    eventName,
-			},
-			SampleResponse: sampleResponse,
-			SampleEvent:    sampleEvent,
-			ErrorCount:     count,
-		},
-		Count: count,
+		WorkspaceID:             params.WorkspaceID,
+		Namespace:               params.Namespace,
+		InstanceID:              params.InstanceID,
+		SourceID:                metric.SourceID,
+		DestinationID:           metric.DestinationID,
+		SourceDefinitionId:      metric.SourceDefinitionID,
+		DestinationDefinitionId: params.DestinationDefinitionID,
+		DestType:                params.DestType,
+		ReportedAt:              time.Now().UTC().Unix() / 60,
+		PU:                      metric.PU,
+		StatusCode:              statusCode,
+		ErrorCode:               params.ErrorDetails.Code,
+		ErrorMessage:            params.ErrorDetails.Message,
+		EventType:               eventType,
+		EventName:               eventName,
+		SampleResponse:          sampleResponse,
+		SampleEvent:             sampleEvent,
+		ErrorCount:              count,
+		Count:                   count,
 	}
 }
 

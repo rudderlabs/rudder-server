@@ -901,12 +901,10 @@ func TestAsyncDestinationManager(t *testing.T) {
 		}).Return(nil)
 
 		batchRouter.setMultipleJobStatus(setMultipleJobStatusParams{
-			asyncJobMetadata: asyncJobMetadata{
-				AttemptNums:       map[int64]int{jobID: 1},
-				FirstAttemptedAts: map[int64]time.Time{jobID: firstAttempt},
-				JobParameters:     map[int64]stdjson.RawMessage{jobID: jobParameters},
-				PartitionIDs:      map[int64]string{jobID: "partition-1"},
-			},
+			AttemptNums:       map[int64]int{jobID: 1},
+			FirstAttemptedAts: map[int64]time.Time{jobID: firstAttempt},
+			JobParameters:     map[int64]stdjson.RawMessage{jobID: jobParameters},
+			PartitionIDs:      map[int64]string{jobID: "partition-1"},
 			AsyncOutput: common.AsyncUploadOutput{
 				DestinationID: "destinationID",
 				FailedJobIDs:  []int64{jobID},

@@ -21,7 +21,7 @@ func Test_Pulsar(t *testing.T) {
 		payload          = []byte("test-message")
 		key              = "test-key"
 		subscriptionName = "test-subscription"
-		counter          uint32
+		counter          atomic.Uint32
 	)
 	pulsarContainer := PulsarResource(t)
 
@@ -56,12 +56,12 @@ func Test_Pulsar(t *testing.T) {
 	for i := range 10 {
 		producer.SendMessageAsync(context.Background(), key, "", fmt.Appendf(nil, "test-message-%d", i), func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error) {
 			require.NoError(t, err)
-			atomic.AddUint32(&counter, 1)
+			counter.Add(1)
 		})
 	}
 	err = producer.Flush()
 	require.NoError(t, err)
-	require.Equal(t, atomic.LoadUint32(&counter), uint32(10))
+	require.Equal(t, counter.Load(), uint32(10))
 	for i := range 10 {
 		msg, err := consumer.Receive(context.Background())
 		require.NoError(t, err)

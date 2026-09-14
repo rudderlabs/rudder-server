@@ -297,8 +297,7 @@ func (rs *Redshift) AddColumns(ctx context.Context, tableName string, columnsInf
 
 func CheckAndIgnoreColumnAlreadyExistError(err error) bool {
 	if err != nil {
-		var e *pq.Error
-		if errors.As(err, &e) {
+		if e, ok := errors.AsType[*pq.Error](err); ok {
 			if e.Code == "42701" {
 				return true
 			}
@@ -1530,8 +1529,7 @@ func (*Redshift) ErrorMappings() []model.JobError {
 }
 
 func normalizeError(err error) error {
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) {
+	if pqErr, ok := errors.AsType[*pq.Error](err); ok {
 		return fmt.Errorf("pq: message: %s, detail: %s",
 			pqErr.Message,
 			pqErr.Detail,

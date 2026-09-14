@@ -44,12 +44,10 @@ const (
 
 func testStatKey() statKey {
 	return statKey{
-		jobRunId: testJobRunID,
-		JobTargetKey: JobTargetKey{
-			TaskRunID:     testTaskRunID,
-			SourceID:      testSourceID,
-			DestinationID: testDestID,
-		},
+		jobRunId:      testJobRunID,
+		TaskRunID:     testTaskRunID,
+		SourceID:      testSourceID,
+		DestinationID: testDestID,
 	}
 }
 

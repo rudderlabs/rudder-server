@@ -30,7 +30,7 @@ func AddNestedLevels(eventPayload string, numLevels int) string {
 		if i < numLevels {
 			nestedBuilder.WriteString(", ")
 		}
-		nestedBuilder.WriteString(fmt.Sprintf(`"nested_level_%d": {`, i))
+		fmt.Fprintf(&nestedBuilder, `"nested_level_%d": {`, i)
 	}
 	for i := range numLevels {
 		nestedBuilder.WriteString("}")

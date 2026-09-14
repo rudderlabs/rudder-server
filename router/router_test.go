@@ -616,7 +616,7 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: allJobs}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -702,7 +702,7 @@ var _ = Describe("router", func() {
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
-			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: unprocessedJobsList}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -786,7 +786,7 @@ var _ = Describe("router", func() {
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
-			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: unprocessedJobsList}, nil)
 
 			var routerAborted bool
 
@@ -860,7 +860,7 @@ var _ = Describe("router", func() {
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
-			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: unprocessedJobsList}, nil)
 
 			var routerAborted bool
 
@@ -941,7 +941,7 @@ var _ = Describe("router", func() {
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
-			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobs}}, nil)
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: jobs}, nil)
 
 			var routerAborted bool
 
@@ -1045,7 +1045,7 @@ var _ = Describe("router", func() {
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
-			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobs}}, nil)
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: jobs}, nil)
 
 			var routerAborted bool
 
@@ -1138,7 +1138,7 @@ var _ = Describe("router", func() {
 				},
 				nil).
 				Times(1).
-				Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
+				Return(&jobsdb.MoreJobsResult{Jobs: unprocessedJobsList}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -1277,7 +1277,7 @@ var _ = Describe("router", func() {
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
-			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobsList}}, nil)
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: jobsList}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -1434,7 +1434,7 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: allJobs}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -1654,7 +1654,7 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: allJobs}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -1849,7 +1849,7 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: allJobs}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -2030,7 +2030,7 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: allJobs}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -2189,7 +2189,7 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: allJobs}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -2347,7 +2347,7 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: allJobs}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {

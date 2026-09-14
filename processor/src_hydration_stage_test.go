@@ -312,16 +312,12 @@ func TestSrcHydrationStage(t *testing.T) {
 		require.NoError(t, err)
 
 		require.EqualValues(t, result.reportMetrics[0], &reportingtypes.PUReportedMetric{
-			ConnectionDetails: reportingtypes.ConnectionDetails{
-				SourceID:       fblaSourceId,
-				SourceCategory: "webhook",
-			},
-			PUDetails: reportingtypes.PUDetails{
-				InPU:       reportingtypes.DESTINATION_FILTER,
-				PU:         reportingtypes.SOURCE_HYDRATION,
-				TerminalPU: false,
-				InitialPU:  false,
-			},
+			SourceID:       fblaSourceId,
+			SourceCategory: "webhook",
+			InPU:           reportingtypes.DESTINATION_FILTER,
+			PU:             reportingtypes.SOURCE_HYDRATION,
+			TerminalPU:     false,
+			InitialPU:      false,
 			StatusDetail: &reportingtypes.StatusDetail{
 				Status:         "aborted",
 				Count:          1,
@@ -419,16 +415,12 @@ func TestSrcHydrationStage(t *testing.T) {
 		require.NoError(t, err)
 
 		require.EqualValues(t, result.reportMetrics[0], &reportingtypes.PUReportedMetric{
-			ConnectionDetails: reportingtypes.ConnectionDetails{
-				SourceID:       fblaSourceId,
-				SourceCategory: "webhook",
-			},
-			PUDetails: reportingtypes.PUDetails{
-				InPU:       reportingtypes.DESTINATION_FILTER,
-				PU:         reportingtypes.SOURCE_HYDRATION,
-				TerminalPU: false,
-				InitialPU:  false,
-			},
+			SourceID:       fblaSourceId,
+			SourceCategory: "webhook",
+			InPU:           reportingtypes.DESTINATION_FILTER,
+			PU:             reportingtypes.SOURCE_HYDRATION,
+			TerminalPU:     false,
+			InitialPU:      false,
 			StatusDetail: &reportingtypes.StatusDetail{
 				Status:         "aborted",
 				Count:          1,
@@ -446,16 +438,12 @@ func TestSrcHydrationStage(t *testing.T) {
 			},
 		})
 		require.EqualValues(t, result.reportMetrics[1], &reportingtypes.PUReportedMetric{
-			ConnectionDetails: reportingtypes.ConnectionDetails{
-				SourceID:       fblaSourceId,
-				SourceCategory: "webhook",
-			},
-			PUDetails: reportingtypes.PUDetails{
-				InPU:       reportingtypes.DESTINATION_FILTER,
-				PU:         reportingtypes.SOURCE_HYDRATION,
-				TerminalPU: false,
-				InitialPU:  false,
-			},
+			SourceID:       fblaSourceId,
+			SourceCategory: "webhook",
+			InPU:           reportingtypes.DESTINATION_FILTER,
+			PU:             reportingtypes.SOURCE_HYDRATION,
+			TerminalPU:     false,
+			InitialPU:      false,
 			StatusDetail: &reportingtypes.StatusDetail{
 				Status:         "aborted",
 				Count:          1,
@@ -713,11 +701,9 @@ func TestSrcHydrationStage(t *testing.T) {
 		// that now runs in preprocessStage and hands non-empty reportMetrics down to this
 		// stage (see assembleSideStatusDetailMetrics in processor.go).
 		sentinel1 := &reportingtypes.PUReportedMetric{
-			ConnectionDetails: reportingtypes.ConnectionDetails{SourceID: "sentinel-source-1"},
-			PUDetails: reportingtypes.PUDetails{
-				PU:        reportingtypes.GATEWAY,
-				InitialPU: true,
-			},
+			SourceID:  "sentinel-source-1",
+			PU:        reportingtypes.GATEWAY,
+			InitialPU: true,
 			StatusDetail: &reportingtypes.StatusDetail{
 				Status:    "succeeded",
 				Count:     11,
@@ -726,10 +712,8 @@ func TestSrcHydrationStage(t *testing.T) {
 			},
 		}
 		sentinel2 := &reportingtypes.PUReportedMetric{
-			ConnectionDetails: reportingtypes.ConnectionDetails{SourceID: "sentinel-source-2"},
-			PUDetails: reportingtypes.PUDetails{
-				PU: reportingtypes.DEDUP,
-			},
+			SourceID: "sentinel-source-2",
+			PU:       reportingtypes.DEDUP,
 			StatusDetail: &reportingtypes.StatusDetail{
 				Status:    "succeeded",
 				Count:     22,
@@ -761,16 +745,12 @@ func TestSrcHydrationStage(t *testing.T) {
 		sampleEvent, err := jsonrs.Marshal(events[0].Message)
 		require.NoError(t, err)
 		hydrationFailureRow := &reportingtypes.PUReportedMetric{
-			ConnectionDetails: reportingtypes.ConnectionDetails{
-				SourceID:       fblaSourceId,
-				SourceCategory: "webhook",
-			},
-			PUDetails: reportingtypes.PUDetails{
-				InPU:       reportingtypes.DESTINATION_FILTER,
-				PU:         reportingtypes.SOURCE_HYDRATION,
-				TerminalPU: false,
-				InitialPU:  false,
-			},
+			SourceID:       fblaSourceId,
+			SourceCategory: "webhook",
+			InPU:           reportingtypes.DESTINATION_FILTER,
+			PU:             reportingtypes.SOURCE_HYDRATION,
+			TerminalPU:     false,
+			InitialPU:      false,
 			StatusDetail: &reportingtypes.StatusDetail{
 				Status:         "aborted",
 				Count:          1,

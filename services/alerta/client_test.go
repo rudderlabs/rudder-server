@@ -109,10 +109,10 @@ func TestSendFeatures(t *testing.T) {
 		t.Parallel()
 
 		const maxRetries = 2
-		var count int64
+		var count atomic.Int64
 
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			atomic.AddInt64(&count, 1)
+			count.Add(1)
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
 		defer s.Close()
@@ -132,17 +132,17 @@ func TestSendFeatures(t *testing.T) {
 		)
 		require.EqualError(t, err, "unexpected status code 500: ")
 
-		require.Equalf(t, int64(maxRetries+1), atomic.LoadInt64(&count), "retry %d times", maxRetries)
+		require.Equalf(t, int64(maxRetries+1), count.Load(), "retry %d times", maxRetries)
 	})
 
 	t.Run("unexpected non-retriable status", func(t *testing.T) {
 		t.Parallel()
 
 		const maxRetries = 2
-		var count int64
+		var count atomic.Int64
 
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			atomic.AddInt64(&count, 1)
+			count.Add(1)
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte("bad request"))
 		}))
@@ -163,7 +163,7 @@ func TestSendFeatures(t *testing.T) {
 		)
 		require.EqualError(t, err, "non retriable: unexpected status code 400: bad request")
 
-		require.Equalf(t, int64(1), atomic.LoadInt64(&count), "retry %d times", maxRetries)
+		require.Equalf(t, int64(1), count.Load(), "retry %d times", maxRetries)
 	})
 
 	t.Run("timeout", func(t *testing.T) {

@@ -87,24 +87,16 @@ func TestClientSendMetric(t *testing.T) {
 	instanceID := "test-instance"
 
 	metric := types.Metric{
-		InstanceDetails: types.InstanceDetails{
-			WorkspaceID: workspaceID,
-			InstanceID:  instanceID,
-		},
-		ConnectionDetails: types.ConnectionDetails{
-			SourceID:         "some-source-id",
-			DestinationID:    "some-destination-id",
-			TransformationID: "some-transformation-id",
-			TrackingPlanID:   "some-tracking-plan-id",
-		},
-		PUDetails: types.PUDetails{
-			InPU: "some-in-pu",
-			PU:   "some-pu",
-		},
-		ReportMetadata: types.ReportMetadata{
-			ReportedAt:        28017690 * 60 * 1000,
-			SampleEventBucket: bucket * 60 * 1000,
-		},
+		WorkspaceID:       workspaceID,
+		InstanceID:        instanceID,
+		SourceID:          "some-source-id",
+		DestinationID:     "some-destination-id",
+		TransformationID:  "some-transformation-id",
+		TrackingPlanID:    "some-tracking-plan-id",
+		InPU:              "some-in-pu",
+		PU:                "some-pu",
+		ReportedAt:        28017690 * 60 * 1000,
+		SampleEventBucket: bucket * 60 * 1000,
 		StatusDetails: []*types.StatusDetail{
 			{
 				Status:         "some-status",
@@ -240,19 +232,15 @@ func TestClientSendErrorMetric(t *testing.T) {
 
 	// Create a test error metric
 	metric := &types.EDMetric{
-		EDInstanceDetails: types.EDInstanceDetails{
-			WorkspaceID: "test-workspace",
-			InstanceID:  "test-instance",
-		},
+		WorkspaceID: "test-workspace",
+		InstanceID:  "test-instance",
 		Errors: []types.EDErrorDetails{
 			{
-				EDErrorDetailsKey: types.EDErrorDetailsKey{
-					StatusCode:   400,
-					ErrorCode:    "ERR_001",
-					ErrorMessage: "Test error",
-					EventType:    "track",
-					EventName:    "test_event",
-				},
+				StatusCode:     400,
+				ErrorCode:      "ERR_001",
+				ErrorMessage:   "Test error",
+				EventType:      "track",
+				EventName:      "test_event",
 				SampleResponse: "error response",
 				SampleEvent:    sampleEvent,
 				ErrorCount:     5,
@@ -367,10 +355,8 @@ func TestClientSendCompressed(t *testing.T) {
 	c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
 
 	metric := &types.Metric{
-		InstanceDetails: types.InstanceDetails{
-			WorkspaceID: "test-workspace",
-			InstanceID:  "test-instance",
-		},
+		WorkspaceID: "test-workspace",
+		InstanceID:  "test-instance",
 		StatusDetails: []*types.StatusDetail{
 			{Status: "success", Count: 100, StatusCode: 200},
 		},
@@ -401,10 +387,8 @@ func TestClientSendCompressed(t *testing.T) {
 
 func TestClientLargePayloadHandling(t *testing.T) {
 	metric := &types.Metric{
-		InstanceDetails: types.InstanceDetails{
-			WorkspaceID: "test-workspace",
-			InstanceID:  "test-instance",
-		},
+		WorkspaceID:   "test-workspace",
+		InstanceID:    "test-instance",
 		StatusDetails: []*types.StatusDetail{{Status: "success", Count: 100, StatusCode: 200}},
 	}
 
@@ -495,10 +479,8 @@ func TestClientMalformedURLReturnsError(t *testing.T) {
 
 func TestClient5xx(t *testing.T) {
 	metric := &types.Metric{
-		InstanceDetails: types.InstanceDetails{
-			WorkspaceID: "test-workspace",
-			InstanceID:  "test-instance",
-		},
+		WorkspaceID: "test-workspace",
+		InstanceID:  "test-instance",
 		StatusDetails: []*types.StatusDetail{
 			{
 				Status:     "success",
