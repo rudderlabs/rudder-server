@@ -103,7 +103,11 @@ func (f *shadowConfigFetcher) sample(ctx context.Context, primary map[string]Con
 func (f *shadowConfigFetcher) runSample(ctx context.Context, primary map[string]ConfigT) {
 	candidate, err := f.candidate.Get(ctx)
 	if err != nil {
-		f.comparer.errored("fetch") // the candidate has already logged the error itself
+		// the candidate logs a failed request itself, but not a response it could not make sense
+		// of (unexpected version, no workspaces, a workspace the mapper rejects): without this line
+		// those surface as a bare counter with nothing to act on
+		f.logger.Errorn("shadow candidate fetch failed", obskit.Error(err))
+		f.comparer.errored("fetch")
 		return
 	}
 	defer f.comparer.comparisonTime.RecordDuration()()
