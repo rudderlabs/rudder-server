@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.87.0](https://github.com/rudderlabs/rudder-server/compare/v1.86.0...v1.87.0) (2026-09-14)
+
+
+### Features
+
+* backend config shadow mode ([#7340](https://github.com/rudderlabs/rudder-server/issues/7340)) ([4898165](https://github.com/rudderlabs/rudder-server/commit/4898165da311e5f7c388ed9e6826376bf2fec6e9))
+* bump rudder-go-kit and go modules to Go 1.27.1 ([#7345](https://github.com/rudderlabs/rudder-server/issues/7345)) ([8d95c68](https://github.com/rudderlabs/rudder-server/commit/8d95c68dd367de8d35860131d166beec12c7f95a))
+* **router:** read transformerProxy from transformer features before env ([#7337](https://github.com/rudderlabs/rudder-server/issues/7337)) ([e8f0ea6](https://github.com/rudderlabs/rudder-server/commit/e8f0ea6dc4a5429a9e2f253666ef38b65a678b16))
+
+
+### Bug Fixes
+
+* **router:** redact credentials from destination URLs in failure responses ([#7372](https://github.com/rudderlabs/rudder-server/issues/7372)) ([14659bf](https://github.com/rudderlabs/rudder-server/commit/14659bfe744940288c8afdd7c85243486319d92e))
+* **router:** request fails with unexpected use of stub RoundTripper error ([#7386](https://github.com/rudderlabs/rudder-server/issues/7386)) ([2ff491f](https://github.com/rudderlabs/rudder-server/commit/2ff491fec4d49e53a0d0ccc37dd76ccafa5f3f2c))
+* **warehouse:** instrument the clickhouse v2 load path ([#7355](https://github.com/rudderlabs/rudder-server/issues/7355)) ([4d743db](https://github.com/rudderlabs/rudder-server/commit/4d743db0bdf40f127ffcf782e4b4648507a92048))
+* **warehouse:** pass temporary credentials to the clickhouse v2 s3 copy engine ([#7353](https://github.com/rudderlabs/rudder-server/issues/7353)) ([4d743db](https://github.com/rudderlabs/rudder-server/commit/4d743db0bdf40f127ffcf782e4b4648507a92048))
+* **warehouse:** retire idle clickhouse v2 connections ([#7352](https://github.com/rudderlabs/rudder-server/issues/7352)) ([4d743db](https://github.com/rudderlabs/rudder-server/commit/4d743db0bdf40f127ffcf782e4b4648507a92048))
+* **warehouse:** retry a failed clickhouse v2 block ([#7354](https://github.com/rudderlabs/rudder-server/issues/7354)) ([4d743db](https://github.com/rudderlabs/rudder-server/commit/4d743db0bdf40f127ffcf782e4b4648507a92048))
+
+
+### Miscellaneous
+
+* log the candidate error when a backend config shadow sample fails to fetch ([#7383](https://github.com/rudderlabs/rudder-server/issues/7383)) ([eaa9b61](https://github.com/rudderlabs/rudder-server/commit/eaa9b6165551bdc50be7727abcad69964a87e32a))
+* **processor:** assemble side-PU report metrics at end of preprocess stage ([#7346](https://github.com/rudderlabs/rudder-server/issues/7346)) ([4540876](https://github.com/rudderlabs/rudder-server/commit/4540876341235db608ebc18abc19c13d053fd12f))
+* sync release v1.86.0 to main branch ([#7356](https://github.com/rudderlabs/rudder-server/issues/7356)) ([6868c6c](https://github.com/rudderlabs/rudder-server/commit/6868c6c2c3a9ee131f7b5c9849e354e142b7c797))
+
 ## [1.86.1](https://github.com/rudderlabs/rudder-server/compare/v1.86.0...v1.86.1) (2026-09-09)
 
 
