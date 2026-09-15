@@ -145,10 +145,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	}
 	batchSize := u.config.batchSize.Load()
 	transformationLanguage, _, transformationID := transformerutils.GetTransformationInfo(clientEvents)
-	workspaceID := ""
-	if len(clientEvents) > 0 {
-		workspaceID = clientEvents[0].Metadata.WorkspaceID
-	}
+	workspaceID := clientEvents[0].Metadata.WorkspaceID
 	userURL := u.userTransformURL(transformationLanguage, workspaceID)
 
 	labels := types.TransformerMetricLabels{

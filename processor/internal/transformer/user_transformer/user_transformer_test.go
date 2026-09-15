@@ -1178,15 +1178,15 @@ func TestTransformerEvent_ToUserTransformerEvent(t *testing.T) {
 	}
 }
 
-// TestUserTransformURLRouting verifies the URL-resolution branches added by
-// the per-workspace PyT routing feature. Each case spins up real httptest
-// servers for the JS, legacy-Python, mirror-Python, and per-workspace endpoints
-// and asserts which one is hit by Transform.
+// TestUserTransformURLRouting verifies the URL-resolution branches of the
+// per-workspace PyT routing feature. Each case spins up real httptest servers
+// for the JS and per-workspace endpoints and asserts which one Transform hits,
+// or that it panics rather than routing Python somewhere that cannot run it.
 func TestUserTransformURLRouting(t *testing.T) {
 	const (
 		workspaceID = "ws-A1"
 		messageID   = "messageID-0"
-		allowedV    = "v-allowed"
+		versionID   = "v-1"
 	)
 
 	type recordingSrv struct {
@@ -1299,7 +1299,7 @@ func TestUserTransformURLRouting(t *testing.T) {
 	t.Run("JS — flag off → JS URL", func(t *testing.T) {
 		f := newFixture(t)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		rsp := tr.Transform(context.Background(), makeEvents("javascript", allowedV, workspaceID))
+		rsp := tr.Transform(context.Background(), makeEvents("javascript", versionID, workspaceID))
 		require.Equal(t, expectedResponseFor(workspaceID), rsp)
 		assertOnly(t, f, &f.js, "/customTransform")
 	})
@@ -1308,7 +1308,7 @@ func TestUserTransformURLRouting(t *testing.T) {
 		f := newFixture(t)
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		rsp := tr.Transform(context.Background(), makeEvents("javascript", allowedV, workspaceID))
+		rsp := tr.Transform(context.Background(), makeEvents("javascript", versionID, workspaceID))
 		require.Equal(t, expectedResponseFor(workspaceID), rsp)
 		assertOnly(t, f, &f.js, "/customTransform")
 	})
@@ -1320,7 +1320,7 @@ func TestUserTransformURLRouting(t *testing.T) {
 			t,
 			"python transformation but per-workspace PyT is disabled",
 			func() {
-				tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+				tr.Transform(context.Background(), makeEvents("pythonfaas", versionID, workspaceID))
 			},
 		)
 		assertNoHits(t, f)
@@ -1330,7 +1330,7 @@ func TestUserTransformURLRouting(t *testing.T) {
 		f := newFixture(t)
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", versionID, workspaceID))
 		require.Equal(t, expectedResponseFor(workspaceID), rsp)
 		assertOnly(t, f, &f.perWS, f.perWSExpectPath)
 	})
@@ -1343,7 +1343,7 @@ func TestUserTransformURLRouting(t *testing.T) {
 			t,
 			"per-workspace PyT enabled but workspaceID is empty",
 			func() {
-				tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, ""))
+				tr.Transform(context.Background(), makeEvents("pythonfaas", versionID, ""))
 			},
 		)
 	})
@@ -1402,7 +1402,7 @@ func TestColdStartCounter(t *testing.T) {
 		coldStartMetric = "processor_user_transformer_cold_start_errors_total"
 		workspaceID     = "ws-A1"
 		messageID       = "messageID-0"
-		allowedV        = "v-allowed"
+		versionID       = "v-allowed"
 	)
 
 	connRefused := &net.OpError{
@@ -1609,7 +1609,7 @@ func TestColdStartCounter(t *testing.T) {
 					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "test-destination"},
 					Transformations: []backendconfig.TransformationT{{
 						ID:        "transform-1",
-						VersionID: allowedV,
+						VersionID: versionID,
 						Language:  language,
 					}},
 				},

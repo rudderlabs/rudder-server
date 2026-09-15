@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 func TestUTMirroring(t *testing.T) {
@@ -545,6 +546,90 @@ func TestUTMirroring(t *testing.T) {
 		require.JSONEq(t, string(expectedClientEvents), clientEventsFile.Content)
 	})
 
+	// The mirror can answer with failures rather than events: those feed the failed/filtered
+	// split on the mirroring stats, and the comparison then has no Events to name in its log
+	// line and falls back to the first FailedEvent.
+	t.Run("mirror returns only failed and filtered events", func(t *testing.T) {
+		mockTransformerClients := transformer.NewSimpleClients()
+		_, processor, tc := prepareProcessor(t, mockTransformerClients, 100, false)
+
+		setupMocksExpectations(t, tc, processor)
+
+		mockTransformerClients.WithDynamicUserTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			copiedEvents := copyClientEvents(t, clientEvents)
+			outputEvents := make([]types.TransformerResponse, 0)
+			for _, event := range copiedEvents {
+				event.Message["user-transform"] = "value"
+				outputEvents = append(outputEvents, types.TransformerResponse{
+					Output:     event.Message,
+					StatusCode: 200,
+					Metadata: types.Metadata{
+						SourceID:        SourceIDEnabledOnlyUT,
+						SourceName:      sourceIDToName[SourceIDEnabledOnlyUT],
+						DestinationID:   DestinationIDEnabledB,
+						DestinationType: "MINIO",
+					},
+				})
+			}
+			return types.Response{Events: outputEvents}
+		})
+		mockTransformerClients.WithDynamicUserMirrorTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			meta := types.Metadata{
+				MessageID:       "message-from-mirror",
+				WorkspaceID:     sampleWorkspaceID,
+				SourceID:        SourceIDEnabledOnlyUT,
+				SourceName:      sourceIDToName[SourceIDEnabledOnlyUT],
+				DestinationID:   DestinationIDEnabledB,
+				DestinationType: "MINIO",
+			}
+			return types.Response{
+				FailedEvents: []types.TransformerResponse{
+					{StatusCode: reportingtypes.FilterEventCode, Metadata: meta},
+					{StatusCode: reportingtypes.FilterEventCode, Metadata: meta},
+					{StatusCode: 400, Error: "mirror failure", Metadata: meta},
+				},
+			}
+		})
+		mockTransformerClients.WithDynamicDestinationTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			return assertDestinationTransform(
+				messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB], t,
+			)(ctx, clientEvents, 1)
+		})
+
+		memStats, err := memstats.New()
+		require.NoError(t, err)
+		handlePendingGatewayJobs(t, processor, tc, func(h *Handle) {
+			h.statsFactory = memStats
+		})
+
+		// mirroring=true separates the mirror's own stage counts from the primary transformer's.
+		mirrorStageCount := func(errTag string) float64 {
+			for _, m := range memStats.GetByName("proc_transform_stage_out_count") {
+				if m.Tags["mirroring"] == "true" && m.Tags["error"] == errTag {
+					return m.Value
+				}
+			}
+			return -1
+		}
+
+		// Counts are deliberately unequal: a swapped filtered/failed grouping would still
+		// satisfy 1-and-1, but cannot satisfy 2-and-1.
+		require.Eventually(t, func() bool {
+			return mirrorStageCount("filtered") == 2
+		}, 10*time.Second, 10*time.Millisecond, "Expected two filtered events on the mirroring stats")
+		require.Equal(t, float64(1), mirrorStageCount("true"), "Expected one failed event on the mirroring stats")
+		require.Equal(t, float64(0), mirrorStageCount("false"), "Mirror returned no successful events")
+
+		require.Eventually(t, func() bool {
+			metric := memStats.Get("processor_ut_mirroring_responses_count", stats.Tags{
+				"equal":            "false",
+				"partition":        "",
+				"transformationId": "",
+			})
+			return metric != nil && metric.LastValue() == 1
+		}, 10*time.Second, 10*time.Millisecond, "Expected different response from UserMirrorTransform")
+	})
+
 	t.Run("fire and forget", func(t *testing.T) {
 		mockTransformerClients := transformer.NewSimpleClients()
 		minioContainer, processor, tc := prepareProcessor(t, mockTransformerClients, 0, true)
@@ -694,6 +779,44 @@ func TestIsUserTransformMirroringEnabled_JavaScriptOnly(t *testing.T) {
 			userTransformURL: "http://js-mirror:9090",
 			expectEnabled:    false,
 		},
+		{
+			// The production default: neither knob set, so mirroring stays off
+			// before any language or URL check is reached.
+			name:             "mirroring off by default does not mirror",
+			eventList:        makeEventList("javascript", "v1"),
+			sanitySampling:   0,
+			fireAndForget:    false,
+			userTransformURL: "http://js-mirror:9090",
+			expectEnabled:    false,
+		},
+		{
+			// Sanity checks and fire&forget are mutually exclusive; enabling both
+			// is a misconfiguration and disables mirroring rather than picking one.
+			name:             "sanity sampling and fire and forget together disable mirroring",
+			eventList:        makeEventList("javascript", "v1"),
+			sanitySampling:   100,
+			fireAndForget:    true,
+			userTransformURL: "http://js-mirror:9090",
+			expectEnabled:    false,
+		},
+		{
+			// GetTransformationInfo defaults the language to javascript for both
+			// degenerate shapes, so neither is mistaken for python.
+			name:             "empty event list is treated as javascript and mirrors",
+			eventList:        []types.TransformerEvent{},
+			sanitySampling:   100,
+			userTransformURL: "http://js-mirror:9090",
+			expectEnabled:    true,
+			expectSanityCh:   true,
+		},
+		{
+			name:             "destination with no transformations is treated as javascript and mirrors",
+			eventList:        []types.TransformerEvent{{Destination: backendconfig.DestinationT{}}},
+			sanitySampling:   100,
+			userTransformURL: "http://js-mirror:9090",
+			expectEnabled:    true,
+			expectSanityCh:   true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -723,6 +846,38 @@ func TestIsUserTransformMirroringEnabled_JavaScriptOnly(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestIsUserTransformMirroringEnabled_SamplingRejects covers the branch where mirroring is
+// configured but the sampling draw declines this batch. shouldSample is random, so the
+// assertion is that a very low percentage refuses at least once over many calls rather than
+// that any single call refuses.
+func TestIsUserTransformMirroringEnabled_SamplingRejects(t *testing.T) {
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+
+	proc := &Handle{conf: config.New(), statsFactory: statsStore, logger: logger.NOP}
+	proc.config.userTransformationMirroringSanitySampling = config.SingleValueLoader(0.01)
+	proc.config.userTransformationMirroringFireAndForget = config.SingleValueLoader(false)
+	proc.config.userTransformMirrorURL = "http://js-mirror:9090"
+	proc.config.userTransformationMirroringBlockedIDs = config.SingleValueLoader[[]string](nil)
+
+	eventList := []types.TransformerEvent{
+		{
+			Destination: backendconfig.DestinationT{
+				Transformations: []backendconfig.TransformationT{{Language: "javascript", VersionID: "v1"}},
+			},
+		},
+	}
+
+	var refused int
+	for range 200 {
+		if enabled, sanityCh := proc.isUserTransformMirroringEnabled(eventList, ""); !enabled {
+			require.Nil(t, sanityCh, "a refused batch must not hand back a sanity channel")
+			refused++
+		}
+	}
+	require.NotZero(t, refused, "0.01%% sampling should refuse at least one of 200 batches")
 }
 
 func TestShouldSample(t *testing.T) {
