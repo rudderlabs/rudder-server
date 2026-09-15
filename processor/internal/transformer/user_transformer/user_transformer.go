@@ -721,13 +721,14 @@ func (u *Client) userTransformBaseURL(language, workspaceID string) string {
 	if !transformerutils.IsPythonLanguage(language) {
 		return u.config.userTransformationURL
 	}
-	if u.config.perWorkspacePyTEnabled.Load() {
-		if workspaceID == "" {
-			// Panic so the bug surfaces immediately as this should not happen
-			panic("per-workspace PyT enabled but workspaceID is empty")
-		}
-		return PerWorkspacePyTBaseURL(u.config.perWorkspacePyTURLTemplate, workspaceID)
+	// Python has nowhere else to go: the JS transformer cannot execute it, so falling back there
+	// would fail every event instead of transforming it. Panic rather than drop customer data.
+	if !u.config.perWorkspacePyTEnabled.Load() {
+		panic("python transformation but per-workspace PyT is disabled")
 	}
-	// No per-workspace PyT on this cluster: Python falls back to the JS transformer.
-	return u.config.userTransformationURL
+	if workspaceID == "" {
+		// Panic so the bug surfaces immediately as this should not happen
+		panic("per-workspace PyT enabled but workspaceID is empty")
+	}
+	return PerWorkspacePyTBaseURL(u.config.perWorkspacePyTURLTemplate, workspaceID)
 }

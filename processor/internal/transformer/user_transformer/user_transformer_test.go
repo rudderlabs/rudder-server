@@ -802,11 +802,10 @@ func TestUserTransformer(t *testing.T) {
 					}}
 				}
 
-				t.Run("python transformation routes to JS URL when per-workspace PyT is disabled", func(t *testing.T) {
-					jsSrv := httptest.NewServer(&endpointTransformer{
-						supportedPaths: []string{"/customTransform"},
-						t:              t,
-					})
+				t.Run("python transformation panics when per-workspace PyT is disabled", func(t *testing.T) {
+					jsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						t.Error("python must never be routed to the JS transformer")
+					}))
 					defer jsSrv.Close()
 
 					c := config.New()
@@ -814,9 +813,11 @@ func TestUserTransformer(t *testing.T) {
 					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
 
 					tr := user_transformer.New(c, logger.NOP, stats.Default)
-					rsp := tr.Transform(context.TODO(), makeEvents("pythonfaas"))
-
-					require.Equal(t, expectedResponse, rsp)
+					require.PanicsWithValue(
+						t,
+						"python transformation but per-workspace PyT is disabled",
+						func() { tr.Transform(context.TODO(), makeEvents("pythonfaas")) },
+					)
 				})
 
 				t.Run("javascript transformation routes to JS URL", func(t *testing.T) {
@@ -977,6 +978,10 @@ func TestUserTransformer(t *testing.T) {
 						c.Set("Processor.maxRetry", 1)
 						c.Set("USER_TRANSFORM_URL", srv.URL)
 						c.Set("Processor.userTransformBatchSize", 10)
+						// Python has no JS fallback, so it needs a per-workspace target;
+						// point it at the same server to keep this about the label.
+						c.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+						c.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
 
 						tr := user_transformer.New(c, logger.NOP, statsStore, user_transformer.WithClient(srv.Client()))
 
@@ -1300,6 +1305,13 @@ func TestUserTransformURLRouting(t *testing.T) {
 		}
 	}
 
+	assertNoHits := func(t *testing.T, f *fixture) {
+		t.Helper()
+		for name, s := range map[string]*recordingSrv{"js": &f.js, "perWS": &f.perWS} {
+			require.Equal(t, int32(0), s.hits.Load(), "server %s should not be hit", name)
+		}
+	}
+
 	t.Run("JS — flag off → JS URL", func(t *testing.T) {
 		f := newFixture(t)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
@@ -1317,12 +1329,17 @@ func TestUserTransformURLRouting(t *testing.T) {
 		assertOnly(t, f, &f.js, "/customTransform")
 	})
 
-	t.Run("Python — flag off → JS URL", func(t *testing.T) {
+	t.Run("Python — flag off → panics rather than falling back to JS", func(t *testing.T) {
 		f := newFixture(t)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
-		require.Equal(t, expectedResponseFor(workspaceID), rsp)
-		assertOnly(t, f, &f.js, "/customTransform")
+		require.PanicsWithValue(
+			t,
+			"python transformation but per-workspace PyT is disabled",
+			func() {
+				tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
+			},
+		)
+		assertNoHits(t, f)
 	})
 
 	t.Run("Python — flag on → per-workspace URL", func(t *testing.T) {
@@ -1445,7 +1462,6 @@ func TestColdStartCounter(t *testing.T) {
 		// Optional per-case overrides on top of the default fixture
 		// (perWorkspacePyTEnabled=true, endless retries=true, language=python,
 		// non-mirroring). Each toggles one of the cold-start gating predicates.
-		disableFlag    bool   // sets perWorkspacePyTEnabled=false
 		language       string // overrides "pythonfaas"
 		disableEndless bool   // sets perWorkspacePyTEndlessRetries=false
 
@@ -1534,16 +1550,9 @@ func TestColdStartCounter(t *testing.T) {
 		// gating predicates is false, even if the transport returns
 		// cold-start-looking errors. The transport warms after 2 failures so
 		// doPost recovers via its inner retry budget (3 inner attempts at
-		// maxRetry=2) — no panic, just a clean success. Empty-workspaceID is
-		// covered by TestUserTransformURLRouting's panic-on-invariant case.
-		{
-			name:             "guard: flag off → cold-start error not counted",
-			disableFlag:      true,
-			failErr:          connRefused,
-			failures:         2,
-			expectCounter:    0,
-			expectEventCount: 1,
-		},
+		// maxRetry=2) — no panic, just a clean success. The flag-off and
+		// empty-workspaceID cases panic instead, and are covered by
+		// TestUserTransformURLRouting.
 		{
 			name:             "guard: JS language → cold-start error not counted",
 			language:         "javascript",
@@ -1590,7 +1599,7 @@ func TestColdStartCounter(t *testing.T) {
 			// transport itself warms up to end the loop.
 			c.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
 			c.Set("USER_TRANSFORM_URL", "http://js-stub:9090")
-			c.Set("Processor.UserTransformer.perWorkspacePyTEnabled", !tc.disableFlag)
+			c.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
 			c.Set("Processor.UserTransformer.perWorkspacePyTEndlessRetries", !tc.disableEndless)
 			c.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", "http://pyt-{workspaceID}:9090")
 
