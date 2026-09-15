@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -85,8 +86,11 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	}
 
 	// the mode is fixed at setup: each fetcher owns its own incremental update state, so they
-	// cannot be swapped underneath a running poll loop
-	switch mode := nc.config.GetStringVar("v1", "BackendConfig.namespaceConfigMode"); mode {
+	// cannot be swapped underneath a running poll loop.
+	appType := strings.ToLower(nc.config.GetStringVar("EMBEDDED", "APP_TYPE"))
+	switch mode := nc.config.GetStringVar("v1",
+		"BackendConfig."+appType+".namespaceConfigMode", "BackendConfig.namespaceConfigMode",
+	); mode {
 	case "v1":
 		nc.fetcher = newV1ConfigFetcher(nc)
 	case "v2":
