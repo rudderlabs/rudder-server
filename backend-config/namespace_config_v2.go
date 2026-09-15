@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-cp-sdk/diff"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/backend-config/dynamicconfig"
@@ -38,8 +37,6 @@ type v2ConfigFetcher struct {
 	lastUpdatedAt      time.Time
 	memo               map[string]v2MemoEntry
 	dynamicConfigCache dynamicconfig.Cache
-
-	httpCallsStat stats.Counter
 }
 
 // v2Client is the part of the control plane SDK this fetcher needs.
@@ -55,8 +52,6 @@ type v2MemoEntry struct {
 }
 
 func newV2ConfigFetcher(nc *namespaceConfig) (*v2ConfigFetcher, error) {
-	httpCallsStat := nc.stats.NewStat("backend_config_http_calls", stats.CountType)
-
 	client, err := cpsdk.New(
 		cpsdk.WithNamespaceIdentity(nc.namespace, nc.hostedServiceSecret),
 		// both versions are served from the same host, the one CONFIG_BACKEND_URL points at
@@ -65,9 +60,8 @@ func newV2ConfigFetcher(nc *namespaceConfig) (*v2ConfigFetcher, error) {
 		// destinations arrive without their credentials and every delivery fails authentication
 		cpsdk.WithSecrets(cpsdk.SecretsEmbed),
 		cpsdk.WithRequestDoer(&v2RequestDoer{
-			doer:                 nc.client,
-			configEnvHandler:     nc.configEnvHandler,
-			httpResponseSizeStat: nc.stats.NewStat("backend_config_http_response_size", stats.HistogramType),
+			doer:             &fetchStatsDoer{doer: nc.client, stats: nc.stats, version: "v2"},
+			configEnvHandler: nc.configEnvHandler,
 		}),
 	)
 	if err != nil {
@@ -82,7 +76,6 @@ func newV2ConfigFetcher(nc *namespaceConfig) (*v2ConfigFetcher, error) {
 		incrementalConfigUpdates: nc.incrementalConfigUpdates,
 		memo:                     make(map[string]v2MemoEntry),
 		dynamicConfigCache:       make(DynamicConfigMapCache),
-		httpCallsStat:            httpCallsStat,
 	}, nil
 }
 
@@ -112,7 +105,6 @@ func (f *v2ConfigFetcher) getFromAPI(ctx context.Context) (map[string]ConfigT, e
 
 	var response v2NamespaceConfig
 	operation := func() error {
-		defer f.httpCallsStat.Increment()
 		response = v2NamespaceConfig{} // a retry must not decode on top of a half filled response
 		var updatedAfter time.Time
 		if f.incrementalConfigUpdates {
@@ -250,11 +242,10 @@ func newestOf[M ~map[string]T, T interface{ updatedAt() time.Time }](newest time
 }
 
 // v2RequestDoer carries over what the SDK's client does not do itself: the environment variable
-// replacement v1 applies to the payload, and the response size stat.
+// replacement v1 applies to the payload.
 type v2RequestDoer struct {
-	doer                 *http.Client
-	configEnvHandler     types.ConfigEnvI
-	httpResponseSizeStat stats.Histogram
+	doer             requestDoer
+	configEnvHandler types.ConfigEnvI
 }
 
 func (d *v2RequestDoer) Do(req *http.Request) (*http.Response, error) {
@@ -272,7 +263,6 @@ func (d *v2RequestDoer) Do(req *http.Request) (*http.Response, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading response body: %w", err)
 		}
-		d.httpResponseSizeStat.Observe(float64(len(body)))
 		replaced := configEnvHandler.ReplaceConfigWithEnvVariables(body)
 		return &http.Response{
 			Status:     resp.Status,
@@ -282,24 +272,5 @@ func (d *v2RequestDoer) Do(req *http.Request) (*http.Response, error) {
 		}, nil
 	}
 
-	resp.Body = &observedReadCloser{ReadCloser: resp.Body, observe: d.httpResponseSizeStat.Observe}
 	return resp, nil
-}
-
-// observedReadCloser reports how much was read out of it once it is closed.
-type observedReadCloser struct {
-	io.ReadCloser
-	read    int
-	observe func(float64)
-}
-
-func (r *observedReadCloser) Read(p []byte) (int, error) {
-	n, err := r.ReadCloser.Read(p)
-	r.read += n
-	return n, err
-}
-
-func (r *observedReadCloser) Close() error {
-	r.observe(float64(r.read))
-	return r.ReadCloser.Close()
 }
