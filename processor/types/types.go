@@ -260,9 +260,8 @@ type ValidationError struct {
 
 // Response represents a Transformer response
 type Response struct {
-	Events         []TransformerResponse
-	FailedEvents   []TransformerResponse
-	MirrorFiltered bool
+	Events       []TransformerResponse
+	FailedEvents []TransformerResponse
 }
 
 var responseDatetimePattern = regexp.MustCompile(

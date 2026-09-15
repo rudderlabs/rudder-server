@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/rudderlabs/rudder-go-kit/cachettl"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -24,7 +23,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -622,7 +620,7 @@ func TestUTMirroring(t *testing.T) {
 	})
 }
 
-func TestIsUserTransformMirroringEnabled_PythonVersionFiltering(t *testing.T) {
+func TestIsUserTransformMirroringEnabled_JavaScriptOnly(t *testing.T) {
 	makeEventList := func(language, versionID string) []types.TransformerEvent {
 		return []types.TransformerEvent{
 			{
@@ -636,121 +634,65 @@ func TestIsUserTransformMirroringEnabled_PythonVersionFiltering(t *testing.T) {
 	}
 
 	tests := []struct {
-		name               string
-		eventList          []types.TransformerEvent
-		versionEnabled     bool
-		versionIDs         map[string]struct{}
-		fireAndForget      bool
-		sanitySampling     float64
-		userTransformURL   string
-		pythonTransformURL string
-		expectEnabled      bool
-		expectSanityCh     bool // true if we expect a non-nil sanity channel
+		name             string
+		eventList        []types.TransformerEvent
+		fireAndForget    bool
+		sanitySampling   float64
+		userTransformURL string
+		expectEnabled    bool
+		expectSanityCh   bool
 	}{
 		{
-			name:               "python transform with version filtering enabled and version allowed",
-			eventList:          makeEventList("pythonFaaS", "v1"),
-			versionEnabled:     true,
-			versionIDs:         map[string]struct{}{"v1": {}},
-			sanitySampling:     100,
-			pythonTransformURL: "http://python-mirror:9090",
-			expectEnabled:      true,
-			expectSanityCh:     true,
-		},
-		{
-			name:               "python transform with version filtering enabled and version not allowed",
-			eventList:          makeEventList("pythonFaaS", "v2"),
-			versionEnabled:     true,
-			versionIDs:         map[string]struct{}{"v1": {}},
-			sanitySampling:     100,
-			pythonTransformURL: "http://python-mirror:9090",
-			expectEnabled:      false,
-		},
-		{
-			name:               "python transform with version filtering disabled",
-			eventList:          makeEventList("pythonFaaS", "v2"),
-			versionEnabled:     false,
-			sanitySampling:     100,
-			pythonTransformURL: "http://python-mirror:9090",
-			expectEnabled:      true,
-			expectSanityCh:     true,
-		},
-		{
-			name:             "non-python transform with version filtering enabled",
+			name:             "javascript with sanity sampling mirrors",
 			eventList:        makeEventList("javascript", "v1"),
-			versionEnabled:   true,
-			versionIDs:       map[string]struct{}{"v99": {}},
 			sanitySampling:   100,
 			userTransformURL: "http://js-mirror:9090",
 			expectEnabled:    true,
 			expectSanityCh:   true,
 		},
 		{
-			name:               "python transform with fire and forget and version allowed",
-			eventList:          makeEventList("pythonFaaS", "v1"),
-			versionEnabled:     true,
-			versionIDs:         map[string]struct{}{"v1": {}},
-			fireAndForget:      true,
-			pythonTransformURL: "http://python-mirror:9090",
-			expectEnabled:      true,
-			expectSanityCh:     false,
+			name:             "javascript with fire and forget mirrors",
+			eventList:        makeEventList("javascript", "v1"),
+			fireAndForget:    true,
+			userTransformURL: "http://js-mirror:9090",
+			expectEnabled:    true,
+			expectSanityCh:   false,
 		},
 		{
-			name:               "python transform with fire and forget and version not allowed",
-			eventList:          makeEventList("pythonFaaS", "v2"),
-			versionEnabled:     true,
-			versionIDs:         map[string]struct{}{"v1": {}},
-			fireAndForget:      true,
-			pythonTransformURL: "http://python-mirror:9090",
-			expectEnabled:      false,
+			name:             "javascript without a mirror url does not mirror",
+			eventList:        makeEventList("javascript", "v1"),
+			sanitySampling:   100,
+			userTransformURL: "",
+			expectEnabled:    false,
 		},
 		{
-			name:             "empty event list",
-			eventList:        []types.TransformerEvent{},
-			versionEnabled:   true,
-			versionIDs:       map[string]struct{}{"v1": {}},
+			name:             "empty language is treated as javascript and mirrors",
+			eventList:        makeEventList("", "v1"),
 			sanitySampling:   100,
 			userTransformURL: "http://js-mirror:9090",
 			expectEnabled:    true,
 			expectSanityCh:   true,
 		},
 		{
-			name: "event with no transformations",
-			eventList: []types.TransformerEvent{
-				{Destination: backendconfig.DestinationT{}},
-			},
-			versionEnabled:   true,
-			versionIDs:       map[string]struct{}{"v1": {}},
-			sanitySampling:   100,
-			userTransformURL: "http://js-mirror:9090",
-			expectEnabled:    true,
-			expectSanityCh:   true,
-		},
-		{
-			name:             "python transform skips when python mirror URL not configured",
+			name:             "python never mirrors even with sanity sampling",
 			eventList:        makeEventList("pythonFaaS", "v1"),
-			versionEnabled:   false,
 			sanitySampling:   100,
 			userTransformURL: "http://js-mirror:9090",
-			// pythonTransformURL not set
-			expectEnabled: false,
+			expectEnabled:    false,
 		},
 		{
-			name:               "javascript transform skips when JS mirror URL not configured",
-			eventList:          makeEventList("javascript", "v1"),
-			versionEnabled:     true,
-			versionIDs:         map[string]struct{}{"v99": {}},
-			sanitySampling:     100,
-			pythonTransformURL: "http://python-mirror:9090",
-			// userTransformURL not set
-			expectEnabled: false,
+			name:             "python never mirrors even with fire and forget",
+			eventList:        makeEventList("pythonFaaS", "v1"),
+			fireAndForget:    true,
+			userTransformURL: "http://js-mirror:9090",
+			expectEnabled:    false,
 		},
 		{
-			name:           "both mirror URLs not configured",
-			eventList:      makeEventList("javascript", "v1"),
-			sanitySampling: 100,
-			// neither URL set
-			expectEnabled: false,
+			name:             "pythonwithlibs never mirrors",
+			eventList:        makeEventList("pythonwithlibs", "v1"),
+			sanitySampling:   100,
+			userTransformURL: "http://js-mirror:9090",
+			expectEnabled:    false,
 		},
 	}
 
@@ -764,18 +706,12 @@ func TestIsUserTransformMirroringEnabled_PythonVersionFiltering(t *testing.T) {
 			proc.config.userTransformationMirroringSanitySampling = config.SingleValueLoader(tc.sanitySampling)
 			proc.config.userTransformationMirroringFireAndForget = config.SingleValueLoader(tc.fireAndForget)
 			proc.config.userTransformMirrorURL = tc.userTransformURL
-			proc.config.pythonTransformMirrorURL = tc.pythonTransformURL
-			proc.config.pythonTransformConfig = transformerutils.PythonTransformConfig{
-				Enabled:    tc.versionEnabled,
-				VersionIDs: tc.versionIDs,
-			}
 			proc.config.userTransformationMirroringBlockedIDs = config.SingleValueLoader[[]string](nil)
-			proc.mirrorFilteredCache = cachettl.New[string, bool](cachettl.WithNoRefreshTTL)
-			proc.stats.utMirroringFilteredResponses = func(partition, transformationID string) stats.Measurement {
-				return statsStore.NewTaggedStat("processor_ut_mirroring_filtered_count", stats.CountType, stats.Tags{"partition": partition, "transformationId": transformationID})
-			}
 			proc.stats.utMirroringBlockedByTransformationID = func(partition, transformationID string) stats.Measurement {
-				return statsStore.NewTaggedStat("processor_ut_mirroring_blocked_transformation", stats.CountType, stats.Tags{"partition": partition, "transformationId": transformationID})
+				return statsStore.NewTaggedStat("processor_ut_mirroring_blocked_transformation", stats.CountType, stats.Tags{
+					"partition":        partition,
+					"transformationId": transformationID,
+				})
 			}
 
 			enabled, sanityCh := proc.isUserTransformMirroringEnabled(tc.eventList, "")
@@ -881,11 +817,20 @@ func TestUTMirroringBlockedTransformationIDs(t *testing.T) {
 		},
 		{
 			name:             "multiple blocked IDs matches correctly",
-			eventList:        makeEventList("pythonFaaS", "v2", "tr-second"),
+			eventList:        makeEventList("javascript", "v2", "tr-second"),
 			blockedIDs:       []string{"tr-first", "tr-second", "tr-third"},
 			expectEnabled:    false,
 			expectMetricHit:  true,
 			expectedMetricID: "tr-second",
+		},
+		{
+			// The python check short-circuits ahead of the blocklist, so a blocked
+			// python transformation is refused without being counted as blocked-by-ID.
+			name:            "python in blocklist is refused without recording the blocked metric",
+			eventList:       makeEventList("pythonFaaS", "v2", "tr-second"),
+			blockedIDs:      []string{"tr-first", "tr-second", "tr-third"},
+			expectEnabled:   false,
+			expectMetricHit: false,
 		},
 	}
 
@@ -899,18 +844,8 @@ func TestUTMirroringBlockedTransformationIDs(t *testing.T) {
 			proc.config.userTransformationMirroringSanitySampling = config.SingleValueLoader(100.0)
 			proc.config.userTransformationMirroringFireAndForget = config.SingleValueLoader(false)
 			proc.config.userTransformMirrorURL = "http://js-mirror:9090"
-			proc.config.pythonTransformMirrorURL = "http://python-mirror:9090"
-			proc.config.pythonTransformConfig = transformerutils.PythonTransformConfig{Enabled: false}
 			proc.config.userTransformationMirroringBlockedIDs = config.SingleValueLoader(tc.blockedIDs)
 
-			proc.mirrorFilteredCache = cachettl.New[string, bool](cachettl.WithNoRefreshTTL)
-
-			proc.stats.utMirroringFilteredResponses = func(partition, transformationID string) stats.Measurement {
-				return statsStore.NewTaggedStat("processor_ut_mirroring_filtered_count", stats.CountType, stats.Tags{
-					"partition":        partition,
-					"transformationId": transformationID,
-				})
-			}
 			proc.stats.utMirroringBlockedByTransformationID = func(partition, transformationID string) stats.Measurement {
 				return statsStore.NewTaggedStat("processor_ut_mirroring_blocked_transformation", stats.CountType, stats.Tags{
 					"partition":        partition,

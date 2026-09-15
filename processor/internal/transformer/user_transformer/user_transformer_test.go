@@ -802,60 +802,7 @@ func TestUserTransformer(t *testing.T) {
 					}}
 				}
 
-				t.Run("python transformation routes to python URL when configured", func(t *testing.T) {
-					var jsHits, pythonHits atomic.Int32
-
-					jsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						jsHits.Add(1)
-						t.Error("request should not hit JS transformer")
-					}))
-					defer jsSrv.Close()
-
-					pythonSrv := httptest.NewServer(&endpointTransformer{
-						supportedPaths: []string{"/customTransform"},
-						t:              t,
-					})
-					defer pythonSrv.Close()
-
-					c := config.New()
-					c.Set("Processor.maxRetry", 1)
-					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
-					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
-
-					tr := user_transformer.New(c, logger.NOP, stats.Default)
-					rsp := tr.Transform(context.TODO(), makeEvents("pythonfaas"))
-
-					require.Equal(t, expectedResponse, rsp)
-					require.Equal(t, int32(0), jsHits.Load(), "JS transformer should not be hit")
-
-					pythonHits.Add(1)
-					require.Equal(t, int32(1), pythonHits.Load(), "Python transformer should be hit")
-				})
-
-				t.Run("pythonwithlibs transformation routes to python URL", func(t *testing.T) {
-					jsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit JS transformer")
-					}))
-					defer jsSrv.Close()
-
-					pythonSrv := httptest.NewServer(&endpointTransformer{
-						supportedPaths: []string{"/customTransform"},
-						t:              t,
-					})
-					defer pythonSrv.Close()
-
-					c := config.New()
-					c.Set("Processor.maxRetry", 1)
-					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
-					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
-
-					tr := user_transformer.New(c, logger.NOP, stats.Default)
-					rsp := tr.Transform(context.TODO(), makeEvents("pythonwithlibs"))
-
-					require.Equal(t, expectedResponse, rsp)
-				})
-
-				t.Run("python transformation falls back to JS URL when python URL not configured", func(t *testing.T) {
+				t.Run("python transformation routes to JS URL when per-workspace PyT is disabled", func(t *testing.T) {
 					jsSrv := httptest.NewServer(&endpointTransformer{
 						supportedPaths: []string{"/customTransform"},
 						t:              t,
@@ -865,7 +812,6 @@ func TestUserTransformer(t *testing.T) {
 					c := config.New()
 					c.Set("Processor.maxRetry", 1)
 					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
-					// PYTHON_TRANSFORM_URL not set
 
 					tr := user_transformer.New(c, logger.NOP, stats.Default)
 					rsp := tr.Transform(context.TODO(), makeEvents("pythonfaas"))
@@ -888,7 +834,6 @@ func TestUserTransformer(t *testing.T) {
 					c := config.New()
 					c.Set("Processor.maxRetry", 1)
 					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
-					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
 
 					tr := user_transformer.New(c, logger.NOP, stats.Default)
 					rsp := tr.Transform(context.TODO(), makeEvents("javascript"))
@@ -911,7 +856,6 @@ func TestUserTransformer(t *testing.T) {
 					c := config.New()
 					c.Set("Processor.maxRetry", 1)
 					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
-					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
 
 					tr := user_transformer.New(c, logger.NOP, stats.Default)
 					rsp := tr.Transform(context.TODO(), makeEvents(""))
@@ -920,7 +864,7 @@ func TestUserTransformer(t *testing.T) {
 				})
 			})
 
-			t.Run("python mirroring routing", func(t *testing.T) {
+			t.Run("mirroring routing", func(t *testing.T) {
 				msgID := "messageID-0"
 				expectedResponse := types.Response{
 					Events: []types.TransformerResponse{
@@ -967,52 +911,6 @@ func TestUserTransformer(t *testing.T) {
 					}}
 				}
 
-				t.Run("python mirroring routes to python mirror URL when configured", func(t *testing.T) {
-					jsMirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit JS mirror transformer")
-					}))
-					defer jsMirrorSrv.Close()
-
-					pythonMirrorSrv := httptest.NewServer(&endpointTransformer{
-						supportedPaths: []string{"/customTransform"},
-						t:              t,
-					})
-					defer pythonMirrorSrv.Close()
-
-					c := config.New()
-					c.Set("Processor.maxRetry", 1)
-					c.Set("USER_TRANSFORM_MIRROR_URL", jsMirrorSrv.URL)
-					c.Set("PYTHON_TRANSFORM_MIRROR_URL", pythonMirrorSrv.URL)
-
-					tr := user_transformer.New(c, logger.NOP, stats.Default, user_transformer.ForMirroring())
-					rsp := tr.Transform(context.TODO(), makeEvents("pythonfaas"))
-
-					require.Equal(t, expectedResponse, rsp)
-				})
-
-				t.Run("pythonwithlibs mirroring routes to python mirror URL", func(t *testing.T) {
-					jsMirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit JS mirror transformer")
-					}))
-					defer jsMirrorSrv.Close()
-
-					pythonMirrorSrv := httptest.NewServer(&endpointTransformer{
-						supportedPaths: []string{"/customTransform"},
-						t:              t,
-					})
-					defer pythonMirrorSrv.Close()
-
-					c := config.New()
-					c.Set("Processor.maxRetry", 1)
-					c.Set("USER_TRANSFORM_MIRROR_URL", jsMirrorSrv.URL)
-					c.Set("PYTHON_TRANSFORM_MIRROR_URL", pythonMirrorSrv.URL)
-
-					tr := user_transformer.New(c, logger.NOP, stats.Default, user_transformer.ForMirroring())
-					rsp := tr.Transform(context.TODO(), makeEvents("pythonwithlibs"))
-
-					require.Equal(t, expectedResponse, rsp)
-				})
-
 				t.Run("javascript mirroring routes to JS mirror URL when configured", func(t *testing.T) {
 					jsMirrorSrv := httptest.NewServer(&endpointTransformer{
 						supportedPaths: []string{"/customTransform"},
@@ -1028,189 +926,9 @@ func TestUserTransformer(t *testing.T) {
 					c := config.New()
 					c.Set("Processor.maxRetry", 1)
 					c.Set("USER_TRANSFORM_MIRROR_URL", jsMirrorSrv.URL)
-					c.Set("PYTHON_TRANSFORM_MIRROR_URL", pythonMirrorSrv.URL)
 
 					tr := user_transformer.New(c, logger.NOP, stats.Default, user_transformer.ForMirroring())
 					rsp := tr.Transform(context.TODO(), makeEvents("javascript"))
-
-					require.Equal(t, expectedResponse, rsp)
-				})
-			})
-
-			t.Run("python version ID filtering", func(t *testing.T) {
-				msgID := "messageID-0"
-				expectedResponse := types.Response{
-					Events: []types.TransformerResponse{
-						{
-							Output: map[string]any{
-								"src-key-1": msgID,
-							},
-							Metadata: types.Metadata{
-								MessageID: msgID,
-							},
-							StatusCode: http.StatusOK,
-						},
-					},
-				}
-
-				makeEventsWithVersion := func(language, versionID string) []types.TransformerEvent {
-					return []types.TransformerEvent{{
-						Metadata: types.Metadata{
-							MessageID: msgID,
-						},
-						Message: map[string]any{
-							"src-key-1": msgID,
-						},
-						Destination: backendconfig.DestinationT{
-							DestinationDefinition: backendconfig.DestinationDefinitionT{
-								Name: "test-destination",
-							},
-							Transformations: []backendconfig.TransformationT{
-								{
-									ID:        "test-transformation",
-									VersionID: versionID,
-									Language:  language,
-								},
-							},
-						},
-						Credentials: []types.Credential{
-							{
-								ID:       "test-credential",
-								Key:      "test-key",
-								Value:    "test-value",
-								IsSecret: false,
-							},
-						},
-					}}
-				}
-
-				t.Run("empty version list falls back to JS transformer", func(t *testing.T) {
-					jsSrv := httptest.NewServer(&endpointTransformer{
-						supportedPaths: []string{"/customTransform"},
-						t:              t,
-					})
-					defer jsSrv.Close()
-
-					pythonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit Python transformer")
-					}))
-					defer pythonSrv.Close()
-
-					c := config.New()
-					c.Set("Processor.maxRetry", 1)
-					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
-					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
-					// PYTHON_TRANSFORM_VERSION_IDS not set (empty)
-
-					tr := user_transformer.New(c, logger.NOP, stats.Default)
-					rsp := tr.Transform(context.TODO(), makeEventsWithVersion("pythonfaas", "any-version-id"))
-
-					require.Equal(t, expectedResponse, rsp)
-				})
-
-				t.Run("version in allowlist routes to python transformer", func(t *testing.T) {
-					jsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit JS transformer")
-					}))
-					defer jsSrv.Close()
-
-					pythonSrv := httptest.NewServer(&endpointTransformer{
-						supportedPaths: []string{"/customTransform"},
-						t:              t,
-					})
-					defer pythonSrv.Close()
-
-					c := config.New()
-					c.Set("Processor.maxRetry", 1)
-					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
-					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS", "allowed-version-1,allowed-version-2")
-
-					tr := user_transformer.New(c, logger.NOP, stats.Default)
-					rsp := tr.Transform(context.TODO(), makeEventsWithVersion("pythonfaas", "allowed-version-1"))
-
-					require.Equal(t, expectedResponse, rsp)
-				})
-
-				t.Run("version not in allowlist falls back to JS transformer", func(t *testing.T) {
-					jsSrv := httptest.NewServer(&endpointTransformer{
-						supportedPaths: []string{"/customTransform"},
-						t:              t,
-					})
-					defer jsSrv.Close()
-
-					pythonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit Python transformer")
-					}))
-					defer pythonSrv.Close()
-
-					c := config.New()
-					c.Set("Processor.maxRetry", 1)
-					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
-					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS", "allowed-version-1,allowed-version-2")
-
-					tr := user_transformer.New(c, logger.NOP, stats.Default)
-					rsp := tr.Transform(context.TODO(), makeEventsWithVersion("pythonfaas", "not-allowed-version"))
-
-					require.Equal(t, expectedResponse, rsp)
-				})
-
-				t.Run("mirroring with version in allowlist routes to python mirror", func(t *testing.T) {
-					jsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit JS transformer")
-					}))
-					defer jsSrv.Close()
-
-					pythonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit Python transformer")
-					}))
-					defer pythonSrv.Close()
-
-					pythonMirrorSrv := httptest.NewServer(&endpointTransformer{
-						supportedPaths: []string{"/customTransform"},
-						t:              t,
-					})
-					defer pythonMirrorSrv.Close()
-
-					c := config.New()
-					c.Set("Processor.maxRetry", 1)
-					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
-					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
-					c.Set("PYTHON_TRANSFORM_MIRROR_URL", pythonMirrorSrv.URL)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS", "allowed-version-1")
-
-					tr := user_transformer.New(c, logger.NOP, stats.Default, user_transformer.ForMirroring())
-					rsp := tr.Transform(context.TODO(), makeEventsWithVersion("pythonfaas", "allowed-version-1"))
-
-					require.Equal(t, expectedResponse, rsp)
-				})
-
-				t.Run("filtering disabled allows all python transformations", func(t *testing.T) {
-					jsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit JS transformer")
-					}))
-					defer jsSrv.Close()
-
-					pythonSrv := httptest.NewServer(&endpointTransformer{
-						supportedPaths: []string{"/customTransform"},
-						t:              t,
-					})
-					defer pythonSrv.Close()
-
-					c := config.New()
-					c.Set("Processor.maxRetry", 1)
-					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
-					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
-					// PYTHON_TRANSFORM_VERSION_IDS_ENABLE defaults to false
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS", "some-other-version")
-
-					tr := user_transformer.New(c, logger.NOP, stats.Default)
-					rsp := tr.Transform(context.TODO(), makeEventsWithVersion("pythonfaas", "any-version-id"))
 
 					require.Equal(t, expectedResponse, rsp)
 				})
@@ -1258,7 +976,6 @@ func TestUserTransformer(t *testing.T) {
 						c := config.New()
 						c.Set("Processor.maxRetry", 1)
 						c.Set("USER_TRANSFORM_URL", srv.URL)
-						c.Set("PYTHON_TRANSFORM_URL", srv.URL)
 						c.Set("Processor.userTransformBatchSize", 10)
 
 						tr := user_transformer.New(c, logger.NOP, statsStore, user_transformer.WithClient(srv.Client()))
@@ -1480,7 +1197,6 @@ func TestUserTransformURLRouting(t *testing.T) {
 		workspaceID = "ws-A1"
 		messageID   = "messageID-0"
 		allowedV    = "v-allowed"
-		blockedV    = "v-blocked"
 	)
 
 	type recordingSrv struct {
@@ -1547,7 +1263,7 @@ func TestUserTransformURLRouting(t *testing.T) {
 
 	type fixture struct {
 		conf            *config.Config
-		js, py, pyMir   recordingSrv
+		js              recordingSrv
 		perWS           recordingSrv
 		perWSExpectPath string
 	}
@@ -1555,23 +1271,16 @@ func TestUserTransformURLRouting(t *testing.T) {
 	newFixture := func(t *testing.T) *fixture {
 		f := &fixture{
 			js:    newRecordingSrv(t),
-			py:    newRecordingSrv(t),
-			pyMir: newRecordingSrv(t),
 			perWS: newRecordingSrv(t),
 		}
 		f.perWSExpectPath = "/pyt-" + strings.ToLower(workspaceID) + "/customTransform"
 		f.conf = config.New()
 		f.conf.Set("Processor.UserTransformer.maxRetry", 1)
 		f.conf.Set("USER_TRANSFORM_URL", f.js.srv.URL)
-		f.conf.Set("PYTHON_TRANSFORM_URL", f.py.srv.URL)
 		f.conf.Set("USER_TRANSFORM_MIRROR_URL", f.js.srv.URL)
-		f.conf.Set("PYTHON_TRANSFORM_MIRROR_URL", f.pyMir.srv.URL)
 		// Pin the per-workspace template to the recording server so the request
 		// resolves; embed {workspaceID} in the path so we can assert it.
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", f.perWS.srv.URL+"/pyt-{workspaceID}")
-		// Enable version allowlist with one allowed version.
-		f.conf.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
-		f.conf.Set("PYTHON_TRANSFORM_VERSION_IDS", allowedV)
 		return f
 	}
 
@@ -1582,7 +1291,7 @@ func TestUserTransformURLRouting(t *testing.T) {
 			require.Equal(t, expectPath, hit.paths.Load().(string))
 		}
 		for name, s := range map[string]*recordingSrv{
-			"js": &f.js, "py": &f.py, "pyMir": &f.pyMir, "perWS": &f.perWS,
+			"js": &f.js, "perWS": &f.perWS,
 		} {
 			if s == hit {
 				continue
@@ -1608,48 +1317,21 @@ func TestUserTransformURLRouting(t *testing.T) {
 		assertOnly(t, f, &f.js, "/customTransform")
 	})
 
-	t.Run("Python — flag off → global Python URL", func(t *testing.T) {
+	t.Run("Python — flag off → JS URL", func(t *testing.T) {
 		f := newFixture(t)
 		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
 		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
-		require.Equal(t, expectedResponseFor(workspaceID), rsp)
-		assertOnly(t, f, &f.py, "/customTransform")
-	})
-
-	t.Run("Python — flag on, version allowed → per-workspace URL", func(t *testing.T) {
-		f := newFixture(t)
-		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
-		require.Equal(t, expectedResponseFor(workspaceID), rsp)
-		assertOnly(t, f, &f.perWS, f.perWSExpectPath)
-	})
-
-	t.Run("Python — flag on, version disallowed → still routes to per-workspace URL (allowlist doesn't apply in per-ws mode)", func(t *testing.T) {
-		f := newFixture(t)
-		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", blockedV, workspaceID))
-		require.Equal(t, expectedResponseFor(workspaceID), rsp)
-		assertOnly(t, f, &f.perWS, f.perWSExpectPath)
-	})
-
-	t.Run("Python — flag off, version disallowed → JS URL fallback (legacy allowlist still applies)", func(t *testing.T) {
-		f := newFixture(t)
-		// per-ws flag off, legacy path active; disallowed version → JS fallback.
-		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
-		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", blockedV, workspaceID))
 		require.Equal(t, expectedResponseFor(workspaceID), rsp)
 		assertOnly(t, f, &f.js, "/customTransform")
 	})
 
-	t.Run("Python — flag on, mirroring → mirror Python URL", func(t *testing.T) {
+	t.Run("Python — flag on → per-workspace URL", func(t *testing.T) {
 		f := newFixture(t)
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP, user_transformer.ForMirroring())
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
 		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", allowedV, workspaceID))
 		require.Equal(t, expectedResponseFor(workspaceID), rsp)
-		assertOnly(t, f, &f.pyMir, "/customTransform")
+		assertOnly(t, f, &f.perWS, f.perWSExpectPath)
 	})
 
 	t.Run("Python — flag on, empty workspaceID → panics (invariant violation)", func(t *testing.T) {
@@ -1917,12 +1599,9 @@ func TestColdStartCounter(t *testing.T) {
 			// transport itself warms up to end the loop.
 			c.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
 			c.Set("USER_TRANSFORM_URL", "http://js-stub:9090")
-			c.Set("PYTHON_TRANSFORM_URL", "http://py-stub:9090")
 			c.Set("Processor.UserTransformer.perWorkspacePyTEnabled", !tc.disableFlag)
 			c.Set("Processor.UserTransformer.perWorkspacePyTEndlessRetries", !tc.disableEndless)
 			c.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", "http://pyt-{workspaceID}:9090")
-			c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
-			c.Set("PYTHON_TRANSFORM_VERSION_IDS", allowedV)
 
 			transport := &fakeColdStartTransport{
 				failStatus:  tc.failStatus,

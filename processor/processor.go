@@ -23,7 +23,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
-	"github.com/rudderlabs/rudder-go-kit/cachettl"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -144,7 +143,6 @@ type Handle struct {
 	fileuploader               fileuploader.Provider
 	utSamplingFileManager      filemanager.FileManager
 	storeSamplingFileManager   filemanager.FileManager
-	mirrorFilteredCache        *cachettl.Cache[string, bool]
 	destinationIsolationMu     sync.RWMutex
 	destinationIsolationCache  map[string]bool
 	rsourcesService            rsources.JobService
@@ -199,9 +197,6 @@ type Handle struct {
 		userTransformationMirroringSanitySampling config.ValueLoader[float64]
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 		userTransformMirrorURL                    string
-		pythonTransformMirrorURL                  string
-		mirrorFilterCacheTTL                      time.Duration
-		pythonTransformConfig                     transformerutils.PythonTransformConfig
 		userTransformationMirroringBlockedIDs     config.ValueLoader[[]string]
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		forkRsourcesTrackedJobs                   bool
@@ -253,7 +248,6 @@ type processorStats struct {
 
 	utMirroringEqualResponses            func(partition, transformationID string) stats.Measurement
 	utMirroringDifferentResponses        func(partition, transformationID string) stats.Measurement
-	utMirroringFilteredResponses         func(partition, transformationID string) stats.Measurement
 	utMirroringBlockedByTransformationID func(partition, transformationID string) stats.Measurement
 	utMirroringDatetimeForgivenResponses func(partition, transformationID string) stats.Measurement
 }
@@ -488,8 +482,6 @@ func (proc *Handle) Setup(
 		proc.logger.Errorn("failed to create store sampling file manager", obskit.Error(err))
 	}
 
-	proc.mirrorFilteredCache = cachettl.New[string, bool](cachettl.WithNoRefreshTTL)
-
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
 	}
@@ -622,12 +614,6 @@ func (proc *Handle) Setup(
 	proc.stats.utMirroringDifferentResponses = func(partition, transformationID string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_responses_count", stats.CountType, stats.Tags{
 			"equal":            "false",
-			"partition":        partition,
-			"transformationId": transformationID,
-		})
-	}
-	proc.stats.utMirroringFilteredResponses = func(partition, transformationID string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_filtered_count", stats.CountType, stats.Tags{
 			"partition":        partition,
 			"transformationId": transformationID,
 		})
@@ -844,7 +830,6 @@ func (proc *Handle) loadConfig() {
 	proc.config.transformTimesPQLength = proc.conf.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = proc.conf.GetStringVar("GW", "Gateway.CustomVal")
-	proc.config.pythonTransformConfig = transformerutils.LoadPythonTransformConfig(proc.conf)
 	proc.config.forkRsourcesTrackedJobs = proc.conf.GetBoolVar(false, "Processor.DestinationIsolation.forkRsourcesTrackedJobs")
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
@@ -864,8 +849,6 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.userTransformationMirroringSanitySampling = proc.conf.GetReloadableFloat64Var(0, "Processor.userTransformationMirroring.sanitySampling")
 	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
 	proc.config.userTransformMirrorURL = proc.conf.GetStringVar("", "USER_TRANSFORM_MIRROR_URL")
-	proc.config.pythonTransformMirrorURL = proc.conf.GetStringVar("", "PYTHON_TRANSFORM_MIRROR_URL")
-	proc.config.mirrorFilterCacheTTL = proc.conf.GetDurationVar(3, time.Hour, "Processor.userTransformationMirroring.filterCacheTTL")
 	proc.config.userTransformationMirroringBlockedIDs = proc.conf.GetReloadableStringSliceVar(nil, "Processor.userTransformationMirroring.blockedTransformationIDs")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
 	proc.config.reportingDedupMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.dedupMetrics.enabled")
@@ -3519,20 +3502,6 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 			if utMirroringEnabled {
 				go func() { // mirroring go routine
 					response := proc.transformerClients.UserMirror().Transform(ctx, eventList)
-					if response.MirrorFiltered {
-						_, versionID, transformationID := transformerutils.GetTransformationInfo(eventList)
-						proc.mirrorFilteredCache.Put(versionID, true, proc.config.mirrorFilterCacheTTL)
-						proc.stats.utMirroringFilteredResponses(partition, transformationID).Increment()
-						proc.logger.Infon("UT mirroring filtered by mirror response",
-							logger.NewStringField("versionId", versionID),
-							logger.NewStringField("transformationId", transformationID),
-						)
-						if utMirroringSanityChecks != nil {
-							utMirroringSanityChecks <- response
-							close(utMirroringSanityChecks)
-						}
-						return
-					}
 					d := time.Since(startedAt)
 					userTransformationMirroringStat.transformTime.SendTiming(d)
 					userTransformationMirroringStat.numOutputSuccessEvents.Count(len(response.Events))
@@ -3575,11 +3544,6 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 					}
 
 					mirroredResponse := <-utMirroringSanityChecks
-					if mirroredResponse.MirrorFiltered {
-						// filtered metric already bumped and transformation already cached as mirror-filtered
-						// in the mirroring go routine
-						return
-					}
 
 					var response types.Response
 					err := jsonrs.Unmarshal(responseCopy, &response)
@@ -4029,6 +3993,11 @@ func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.Transforme
 
 	language, versionID, transformationID := transformerutils.GetTransformationInfo(eventList)
 
+	// Mirroring is supported for JavaScript transformations only.
+	if strings.HasPrefix(language, "python") {
+		return false, nil
+	}
+
 	if blockedIDs := proc.config.userTransformationMirroringBlockedIDs.Load(); slices.Contains(blockedIDs, transformationID) {
 		proc.stats.utMirroringBlockedByTransformationID(partition, transformationID).Increment()
 		proc.logger.Debugn("UT mirroring blocked by transformation ID",
@@ -4038,26 +4007,7 @@ func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.Transforme
 		return false, nil
 	}
 
-	if proc.mirrorFilteredCache.Get(versionID) {
-		proc.stats.utMirroringFilteredResponses(partition, transformationID).Increment()
-		proc.logger.Debugn("UT mirroring filtered by cache",
-			logger.NewStringField("versionId", versionID),
-			logger.NewStringField("transformationId", transformationID),
-		)
-		return false, nil
-	}
-
-	// Check if this is a Python transformation and apply version-based filtering
-	isPython := strings.HasPrefix(language, "python")
-	if isPython && !proc.config.pythonTransformConfig.IsVersionAllowed(versionID) {
-		return false, nil
-	}
-
-	// Check if the mirror URL is configured for the transformation language
-	if isPython && proc.config.pythonTransformMirrorURL == "" {
-		return false, nil
-	}
-	if !isPython && proc.config.userTransformMirrorURL == "" {
+	if proc.config.userTransformMirrorURL == "" {
 		return false, nil
 	}
 

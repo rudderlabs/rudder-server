@@ -94,11 +94,9 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.stat = stat
 	handle.client = transformerclient.NewClient("UserTransformer", transformerutils.TransformerClientConfig(conf, "UserTransformer"))
 	handle.config.userTransformationURL = handle.conf.GetStringVar(handle.conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"), "USER_TRANSFORM_URL")
-	handle.config.pythonTransformationURL = handle.conf.GetStringVar("", "PYTHON_TRANSFORM_URL")
 	handle.config.perWorkspacePyTEnabled = handle.conf.GetReloadableBoolVar(false, "Processor.UserTransformer.perWorkspacePyTEnabled")
 	handle.config.perWorkspacePyTURLTemplate = handle.conf.GetStringVar(DefaultPerWorkspacePyTURLTemplate, "Processor.UserTransformer.perWorkspacePyTURLTemplate")
 	handle.config.perWorkspacePyTEndlessRetries = handle.conf.GetReloadableBoolVar(true, "Processor.UserTransformer.perWorkspacePyTEndlessRetries")
-	handle.config.pythonTransformConfig = transformerutils.LoadPythonTransformConfig(conf)
 	handle.config.timeoutDuration = conf.GetDurationVar(600, time.Second, "HttpClient.procTransformer.timeout")
 	handle.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.UserTransformer.failOnUserTransformTimeout", "Processor.Transformer.failOnUserTransformTimeout")
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.UserTransformer.maxRetry", "Processor.maxRetry")
@@ -114,7 +112,6 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 
 	if handle.config.forMirroring {
 		handle.config.userTransformationURL = handle.conf.GetStringVar("", "USER_TRANSFORM_MIRROR_URL")
-		handle.config.pythonTransformationURL = handle.conf.GetStringVar("", "PYTHON_TRANSFORM_MIRROR_URL")
 	}
 
 	return handle
@@ -123,8 +120,6 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 type Client struct {
 	config struct {
 		userTransformationURL         string
-		pythonTransformationURL       string
-		pythonTransformConfig         transformerutils.PythonTransformConfig
 		forMirroring                  bool
 		maxRetry                      config.ValueLoader[int]
 		cpDownEndlessRetries          config.ValueLoader[bool]
@@ -149,12 +144,12 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		return types.Response{}
 	}
 	batchSize := u.config.batchSize.Load()
-	transformationLanguage, transformationVersionID, transformationID := transformerutils.GetTransformationInfo(clientEvents)
+	transformationLanguage, _, transformationID := transformerutils.GetTransformationInfo(clientEvents)
 	workspaceID := ""
 	if len(clientEvents) > 0 {
 		workspaceID = clientEvents[0].Metadata.WorkspaceID
 	}
-	userURL := u.userTransformURL(transformationLanguage, transformationVersionID, workspaceID)
+	userURL := u.userTransformURL(transformationLanguage, workspaceID)
 
 	labels := types.TransformerMetricLabels{
 		Endpoint:         transformerutils.GetEndpointFromURL(userURL),
@@ -188,11 +183,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		labels.ToStatsTag(),
 	).Observe(float64(len(batches)))
 
-	type sendBatchResult struct {
-		responses      []types.TransformerResponse
-		mirrorFiltered bool
-	}
-	transformResponse := make([]sendBatchResult, len(batches))
+	transformResponse := make([][]types.TransformerResponse, len(batches))
 
 	var wg sync.WaitGroup
 	lo.ForEach(
@@ -200,8 +191,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		func(batch []types.TransformerEvent, i int) {
 			wg.Go(func() {
 				defer crash.Notify("Core")()
-				responses, mirrorFiltered := u.sendBatch(ctx, userURL, labels, batch)
-				transformResponse[i] = sendBatchResult{responses: responses, mirrorFiltered: mirrorFiltered}
+				transformResponse[i] = u.sendBatch(ctx, userURL, labels, batch)
 			})
 		},
 	)
@@ -210,16 +200,10 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	var outClientEvents []types.TransformerResponse
 	var failedEvents []types.TransformerResponse
 
-	for _, br := range transformResponse {
-		if br.mirrorFiltered {
-			// If any batch was mirror-filtered, the whole response is mirror-filtered.
-			// All batches share the same transformation, so this is all-or-nothing.
-			return types.Response{MirrorFiltered: true}
-		}
-
+	for _, batchResponses := range transformResponse {
 		// Transform is one to many mapping so returned
 		// response for each is an array. We flatten it out
-		for _, transformerResponse := range br.responses {
+		for _, transformerResponse := range batchResponses {
 			if transformerResponse.Metadata.OriginalSourceID != "" {
 				transformerResponse.Metadata.SourceID, transformerResponse.Metadata.OriginalSourceID = transformerResponse.Metadata.OriginalSourceID, transformerResponse.Metadata.SourceID
 			}
@@ -249,12 +233,9 @@ func (u *Client) sendBatch(
 	url string,
 	labels types.TransformerMetricLabels,
 	clientEvents []types.TransformerEvent,
-) (
-	[]types.TransformerResponse,
-	bool, // is mirror filtered
-) {
+) []types.TransformerResponse {
 	if len(clientEvents) == 0 {
-		return nil, false
+		return nil
 	}
 	start := time.Now()
 	// Call remote transformation
@@ -355,8 +336,7 @@ func (u *Client) sendBatch(
 	case http.StatusOK,
 		http.StatusBadRequest,
 		http.StatusNotFound,
-		http.StatusRequestEntityTooLarge,
-		transformerutils.StatusMirrorFiltered:
+		http.StatusRequestEntityTooLarge:
 	default:
 		u.log.Errorn("Transformer returned status code", logger.NewStringField("statusCode", strconv.Itoa(statusCode)))
 	}
@@ -375,11 +355,6 @@ func (u *Client) sendBatch(
 		for _, transformerResponse := range transformerResponses {
 			integrations.CollectIntegrationFailureDetailedStats(u.stat, transformerResponse.StatTags)
 		}
-	case transformerutils.StatusMirrorFiltered:
-		if !u.config.forMirroring {
-			panic("received mirror-filtered response (HTTP 297) outside of mirroring mode")
-		}
-		return nil, true
 	default:
 		for i := range data {
 			transformEvent := &data[i]
@@ -390,7 +365,7 @@ func (u *Client) sendBatch(
 	u.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(clientEvents))
 	u.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformerResponses))
 	u.stat.NewTaggedStat("transformer_client_total_time", stats.TimerType, labels.ToStatsTag()).SendTiming(time.Since(start))
-	return transformerResponses, false
+	return transformerResponses
 }
 
 func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels types.TransformerMetricLabels) ([]byte, int, error) {
@@ -662,18 +637,17 @@ func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path str
 	return statusCode, body, nil
 }
 
-// isPerWorkspacePyTPath returns true when the request is targeting the
-// per-workspace PyT URL. Single source of truth shared by URL resolution and
-// the cold-start error / counter path so the two can't drift.
-func (u *Client) isPerWorkspacePyTPath(language, workspaceID string) bool {
-	return u.config.perWorkspacePyTEnabled.Load() &&
-		!u.config.forMirroring &&
-		isPythonTransformation(language) &&
-		workspaceID != ""
-}
-
+// shouldThrowPythonColdStartErr reports whether a failed request should be treated as a per-workspace PyT cold start
+// rather than a real failure: those Deployments scale to zero, so the first request after a scale-down is expected to
+// be refused while the pod comes up.
+//
+// The mirroring client is excluded because mirroring is JavaScript-only (see Handle.isUserTransformMirroringEnabled).
 func (u *Client) shouldThrowPythonColdStartErr(labels types.TransformerMetricLabels, err error, resp *http.Response) bool {
-	return u.isPerWorkspacePyTPath(labels.Language, labels.WorkspaceID) && isColdStartError(err, resp)
+	return u.config.perWorkspacePyTEnabled.Load() &&
+		labels.WorkspaceID != "" &&
+		isPythonTransformation(labels.Language) &&
+		!u.config.forMirroring &&
+		isColdStartError(err, resp)
 }
 
 // isColdStartError returns true for transient errors that mean the target
@@ -744,26 +718,21 @@ func isPythonTransformation(language string) bool {
 	return strings.HasPrefix(language, "python")
 }
 
-func (u *Client) userTransformURL(language, versionID, workspaceID string) string {
-	return u.userTransformBaseURL(language, versionID, workspaceID) + "/customTransform"
+func (u *Client) userTransformURL(language, workspaceID string) string {
+	return u.userTransformBaseURL(language, workspaceID) + "/customTransform"
 }
 
-func (u *Client) userTransformBaseURL(language, versionID, workspaceID string) string {
+func (u *Client) userTransformBaseURL(language, workspaceID string) string {
 	if !isPythonTransformation(language) {
 		return u.config.userTransformationURL
 	}
-	// Per-workspace PyT: a global version allowlist doesn't apply — each
-	// workspace runs its own pod with its own version.
-	if u.config.perWorkspacePyTEnabled.Load() && !u.config.forMirroring {
+	if u.config.perWorkspacePyTEnabled.Load() {
 		if workspaceID == "" {
 			// Panic so the bug surfaces immediately as this should not happen
 			panic("per-workspace PyT enabled but workspaceID is empty")
 		}
 		return PerWorkspacePyTBaseURL(u.config.perWorkspacePyTURLTemplate, workspaceID)
 	}
-	// Legacy shared-PyT path: the version allowlist is a rollout gate for the shared service.
-	if u.config.pythonTransformationURL != "" && u.config.pythonTransformConfig.IsVersionAllowed(versionID) {
-		return u.config.pythonTransformationURL
-	}
+	// No per-workspace PyT on this cluster: Python falls back to the JS transformer.
 	return u.config.userTransformationURL
 }
