@@ -827,11 +827,6 @@ func TestUserTransformer(t *testing.T) {
 					})
 					defer jsSrv.Close()
 
-					pythonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit Python transformer")
-					}))
-					defer pythonSrv.Close()
-
 					c := config.New()
 					c.Set("Processor.maxRetry", 1)
 					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
@@ -848,11 +843,6 @@ func TestUserTransformer(t *testing.T) {
 						t:              t,
 					})
 					defer jsSrv.Close()
-
-					pythonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit Python transformer")
-					}))
-					defer pythonSrv.Close()
 
 					c := config.New()
 					c.Set("Processor.maxRetry", 1)
@@ -918,11 +908,6 @@ func TestUserTransformer(t *testing.T) {
 						t:              t,
 					})
 					defer jsMirrorSrv.Close()
-
-					pythonMirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit Python mirror transformer")
-					}))
-					defer pythonMirrorSrv.Close()
 
 					c := config.New()
 					c.Set("Processor.maxRetry", 1)
@@ -1282,7 +1267,6 @@ func TestUserTransformURLRouting(t *testing.T) {
 		f.conf = config.New()
 		f.conf.Set("Processor.UserTransformer.maxRetry", 1)
 		f.conf.Set("USER_TRANSFORM_URL", f.js.srv.URL)
-		f.conf.Set("USER_TRANSFORM_MIRROR_URL", f.js.srv.URL)
 		// Pin the per-workspace template to the recording server so the request
 		// resolves; embed {workspaceID} in the path so we can assert it.
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", f.perWS.srv.URL+"/pyt-{workspaceID}")
