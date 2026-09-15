@@ -3994,7 +3994,7 @@ func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.Transforme
 	language, versionID, transformationID := transformerutils.GetTransformationInfo(eventList)
 
 	// Mirroring is supported for JavaScript transformations only.
-	if strings.HasPrefix(language, "python") {
+	if transformerutils.IsPythonLanguage(language) {
 		return false, nil
 	}
 

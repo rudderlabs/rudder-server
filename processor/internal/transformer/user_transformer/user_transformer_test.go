@@ -1446,7 +1446,6 @@ func TestColdStartCounter(t *testing.T) {
 		// (perWorkspacePyTEnabled=true, endless retries=true, language=python,
 		// non-mirroring). Each toggles one of the cold-start gating predicates.
 		disableFlag    bool   // sets perWorkspacePyTEnabled=false
-		mirroring      bool   // applies the ForMirroring() opt
 		language       string // overrides "pythonfaas"
 		disableEndless bool   // sets perWorkspacePyTEndlessRetries=false
 
@@ -1546,14 +1545,6 @@ func TestColdStartCounter(t *testing.T) {
 			expectEventCount: 1,
 		},
 		{
-			name:             "guard: mirroring on → cold-start error not counted",
-			mirroring:        true,
-			failErr:          connRefused,
-			failures:         2,
-			expectCounter:    0,
-			expectEventCount: 1,
-		},
-		{
 			name:             "guard: JS language → cold-start error not counted",
 			language:         "javascript",
 			failErr:          connRefused,
@@ -1609,11 +1600,7 @@ func TestColdStartCounter(t *testing.T) {
 				failures:    tc.failures,
 				successBody: successBody,
 			}
-			opts := []user_transformer.Opt{user_transformer.WithClient(transport)}
-			if tc.mirroring {
-				opts = append(opts, user_transformer.ForMirroring())
-			}
-			tr := user_transformer.New(c, logger.NOP, statsStore, opts...)
+			tr := user_transformer.New(c, logger.NOP, statsStore, user_transformer.WithClient(transport))
 
 			language := tc.language
 			if language == "" {

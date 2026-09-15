@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -89,6 +90,13 @@ func GetTransformationInfo(events []types.TransformerEvent) (language, versionID
 		language = t.Language
 	}
 	return language, versionID, transformationID
+}
+
+// IsPythonLanguage reports whether a transformation language is one of the Python variants
+// (python, pythonfaas, pythonwithlibs, ...). The match is case-sensitive: the config backend
+// only ever emits lowercase language values.
+func IsPythonLanguage(language string) bool {
+	return strings.HasPrefix(language, "python")
 }
 
 // GetEndpointFromURL is a helper function to extract hostname from URL

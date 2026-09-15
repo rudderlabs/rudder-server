@@ -645,7 +645,7 @@ func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path str
 func (u *Client) shouldThrowPythonColdStartErr(labels types.TransformerMetricLabels, err error, resp *http.Response) bool {
 	return u.config.perWorkspacePyTEnabled.Load() &&
 		labels.WorkspaceID != "" &&
-		isPythonTransformation(labels.Language) &&
+		transformerutils.IsPythonLanguage(labels.Language) &&
 		isColdStartError(err, resp)
 }
 
@@ -713,16 +713,12 @@ func retryReasonTag(header http.Header) string {
 	return reason
 }
 
-func isPythonTransformation(language string) bool {
-	return strings.HasPrefix(language, "python")
-}
-
 func (u *Client) userTransformURL(language, workspaceID string) string {
 	return u.userTransformBaseURL(language, workspaceID) + "/customTransform"
 }
 
 func (u *Client) userTransformBaseURL(language, workspaceID string) string {
-	if !isPythonTransformation(language) {
+	if !transformerutils.IsPythonLanguage(language) {
 		return u.config.userTransformationURL
 	}
 	if u.config.perWorkspacePyTEnabled.Load() {
