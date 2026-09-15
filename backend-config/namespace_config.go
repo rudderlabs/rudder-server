@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -85,8 +86,16 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	}
 
 	// the mode is fixed at setup: each fetcher owns its own incremental update state, so they
-	// cannot be swapped underneath a running poll loop
-	switch mode := nc.config.GetStringVar("v1", "BackendConfig.namespaceConfigMode"); mode {
+	// cannot be swapped underneath a running poll loop.
+	//
+	// The app type key takes precedence, so a rollout can target one kind of pod: the shadow costs a
+	// second fetch of the namespace every sampling interval, which a processor can absorb and a
+	// gateway or a warehouse pod need not pay. The types are the ones runner reads from APP_TYPE:
+	// gateway, processor, and embedded, which is what warehouse pods run as
+	appType := strings.ToLower(nc.config.GetStringVar("embedded", "APP_TYPE"))
+	switch mode := nc.config.GetStringVar("v1",
+		"BackendConfig."+appType+".namespaceConfigMode", "BackendConfig.namespaceConfigMode",
+	); mode {
 	case "v1":
 		nc.fetcher = newV1ConfigFetcher(nc)
 	case "v2":
