@@ -39,6 +39,48 @@ func Test_Namespace_SetUp(t *testing.T) {
 	require.Equal(t, "a-testing-namespace", client.namespace)
 	require.Equal(t, "service-secret", client.AccessToken())
 	require.Equal(t, "service-secret", client.hostedServiceSecret)
+
+	t.Run("mode by app type", func(t *testing.T) {
+		newClient := func(appType string, set map[string]string) *namespaceConfig {
+			conf := config.New()
+			conf.Set("WORKSPACE_NAMESPACE", "a-testing-namespace")
+			conf.Set("HOSTED_SERVICE_SECRET", "service-secret")
+			conf.Set("CONFIG_BACKEND_URL", configBackendURL)
+			if appType != "" {
+				conf.Set("APP_TYPE", appType)
+			}
+			for key, value := range set {
+				conf.Set(key, value)
+			}
+			client := &namespaceConfig{config: conf, logger: logger.NOP}
+			require.NoError(t, client.SetUp())
+			return client
+		}
+
+		t.Run("the generic key applies to every app type", func(t *testing.T) {
+			set := map[string]string{"BackendConfig.namespaceConfigMode": "shadow"}
+			require.IsType(t, &shadowConfigFetcher{}, newClient("PROCESSOR", set).fetcher)
+			require.IsType(t, &shadowConfigFetcher{}, newClient("GATEWAY", set).fetcher)
+			require.IsType(t, &shadowConfigFetcher{}, newClient("", set).fetcher)
+		})
+
+		t.Run("the app type key takes precedence over the generic one", func(t *testing.T) {
+			set := map[string]string{
+				"BackendConfig.namespaceConfigMode":           "v1",
+				"BackendConfig.processor.namespaceConfigMode": "shadow",
+			}
+			require.IsType(t, &shadowConfigFetcher{}, newClient("PROCESSOR", set).fetcher)
+			require.IsType(t, &shadowConfigFetcher{}, newClient("processor", set).fetcher)
+			require.IsType(t, &v1ConfigFetcher{}, newClient("GATEWAY", set).fetcher)
+			require.IsType(t, &v1ConfigFetcher{}, newClient("", set).fetcher)
+		})
+
+		t.Run("an unset APP_TYPE is embedded", func(t *testing.T) {
+			set := map[string]string{"BackendConfig.embedded.namespaceConfigMode": "shadow"}
+			require.IsType(t, &shadowConfigFetcher{}, newClient("", set).fetcher)
+			require.IsType(t, &v1ConfigFetcher{}, newClient("PROCESSOR", set).fetcher)
+		})
+	})
 }
 
 func Test_Namespace_Get(t *testing.T) {

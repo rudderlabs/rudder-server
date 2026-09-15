@@ -66,7 +66,7 @@ type SourceDefinitionOptions struct {
 // not know is "cloud", not the lowercased definition name.
 func sourceTypeOf(definitionName, category string) string {
 	switch category {
-	case "cloud", "singer":
+	case "cloud", "singer-protocol":
 		return "cloudSource"
 	case "warehouse":
 		return "warehouse"

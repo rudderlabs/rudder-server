@@ -223,7 +223,7 @@ func TestV2DestinationConfig(t *testing.T) {
 	t.Run("source type", func(t *testing.T) {
 		for _, tc := range []struct{ definitionName, category, want string }{
 			{"anything", "cloud", "cloudSource"},
-			{"anything", "singer", "cloudSource"},
+			{"anything", "singer-protocol", "cloudSource"},
 			{"anything", "warehouse", "warehouse"},
 			{"javascript", "", "web"},
 			{"JavaScript", "", "web"},
