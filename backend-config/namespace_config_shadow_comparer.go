@@ -67,8 +67,10 @@ func (c *shadowComparer) compare(ctx context.Context, primary, candidate map[str
 			c.membership("v1only")
 			continue
 		}
-		c.compared.Increment()
 		fields := divergingFields(shadowNormalize(primaryConfig), shadowNormalize(candidateConfig))
+		// counted after the diff, alongside matched: a scrape landing mid-diff would otherwise
+		// read compared-matched as a divergence for the workspace in flight
+		c.compared.Increment()
 		if len(fields) == 0 {
 			c.matched.Increment()
 			continue
