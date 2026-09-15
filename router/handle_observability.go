@@ -27,6 +27,15 @@ func (rt *Handle) trackRequestMetrics(reqMetric requestMetric) {
 	}
 }
 
+func (rt *Handle) trackFailureMetrics(event, errorResponse string) {
+	rt.telemetry.failureMetricLock.Lock()
+	if _, ok := rt.telemetry.failuresMetric[event]; !ok {
+		rt.telemetry.failuresMetric[event] = make(map[string]int)
+	}
+	rt.telemetry.failuresMetric[event][errorResponse]++
+	rt.telemetry.failureMetricLock.Unlock()
+}
+
 func (rt *Handle) collectMetrics(ctx context.Context) {
 	if !diagnostics.EnableRouterMetric {
 		return
