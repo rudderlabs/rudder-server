@@ -646,7 +646,6 @@ func (u *Client) shouldThrowPythonColdStartErr(labels types.TransformerMetricLab
 	return u.config.perWorkspacePyTEnabled.Load() &&
 		labels.WorkspaceID != "" &&
 		isPythonTransformation(labels.Language) &&
-		!u.config.forMirroring &&
 		isColdStartError(err, resp)
 }
 
