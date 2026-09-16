@@ -451,18 +451,14 @@ func (job *UploadJob) run() (err error) {
 			rowCount, _ := job.stagingFileRepo.TotalEventsForUploadID(job.ctx, job.upload.ID)
 
 			reportingMetric := types.PUReportedMetric{
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:        job.upload.SourceID,
-					DestinationID:   job.upload.DestinationID,
-					SourceTaskRunID: job.upload.SourceTaskRunID,
-					SourceJobID:     job.upload.SourceJobID,
-					SourceJobRunID:  job.upload.SourceJobRunID,
-				},
-				PUDetails: types.PUDetails{
-					InPU:       types.BATCH_ROUTER,
-					PU:         types.WAREHOUSE,
-					TerminalPU: true,
-				},
+				SourceID:        job.upload.SourceID,
+				DestinationID:   job.upload.DestinationID,
+				SourceTaskRunID: job.upload.SourceTaskRunID,
+				SourceJobID:     job.upload.SourceJobID,
+				SourceJobRunID:  job.upload.SourceJobRunID,
+				InPU:            types.BATCH_ROUTER,
+				PU:              types.WAREHOUSE,
+				TerminalPU:      true,
 				StatusDetail: &types.StatusDetail{
 					Status:      jobsdb.Succeeded.State,
 					StatusCode:  200,
@@ -834,18 +830,14 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		isTerminalPU = true
 	}
 	reportingMetrics := []*types.PUReportedMetric{{
-		ConnectionDetails: types.ConnectionDetails{
-			SourceID:        job.upload.SourceID,
-			DestinationID:   job.upload.DestinationID,
-			SourceTaskRunID: job.upload.SourceTaskRunID,
-			SourceJobID:     job.upload.SourceJobID,
-			SourceJobRunID:  job.upload.SourceJobRunID,
-		},
-		PUDetails: types.PUDetails{
-			InPU:       types.BATCH_ROUTER,
-			PU:         types.WAREHOUSE,
-			TerminalPU: isTerminalPU,
-		},
+		SourceID:        job.upload.SourceID,
+		DestinationID:   job.upload.DestinationID,
+		SourceTaskRunID: job.upload.SourceTaskRunID,
+		SourceJobID:     job.upload.SourceJobID,
+		SourceJobRunID:  job.upload.SourceJobRunID,
+		InPU:            types.BATCH_ROUTER,
+		PU:              types.WAREHOUSE,
+		TerminalPU:      isTerminalPU,
 		StatusDetail: &types.StatusDetail{
 			Status:         reportingStatus,
 			StatusCode:     400, // TODO: Change this to error specific code
@@ -856,18 +848,14 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	}}
 	if outputCount > 0 {
 		reportingMetrics = append(reportingMetrics, &types.PUReportedMetric{
-			ConnectionDetails: types.ConnectionDetails{
-				SourceID:        job.upload.SourceID,
-				DestinationID:   job.upload.DestinationID,
-				SourceTaskRunID: job.upload.SourceTaskRunID,
-				SourceJobID:     job.upload.SourceJobID,
-				SourceJobRunID:  job.upload.SourceJobRunID,
-			},
-			PUDetails: types.PUDetails{
-				InPU:       types.BATCH_ROUTER,
-				PU:         types.WAREHOUSE,
-				TerminalPU: isTerminalPU,
-			},
+			SourceID:        job.upload.SourceID,
+			DestinationID:   job.upload.DestinationID,
+			SourceTaskRunID: job.upload.SourceTaskRunID,
+			SourceJobID:     job.upload.SourceJobID,
+			SourceJobRunID:  job.upload.SourceJobRunID,
+			InPU:            types.BATCH_ROUTER,
+			PU:              types.WAREHOUSE,
+			TerminalPU:      isTerminalPU,
 			StatusDetail: &types.StatusDetail{
 				Status:         jobsdb.Succeeded.State,
 				StatusCode:     200, // TODO: Change this to error specific code

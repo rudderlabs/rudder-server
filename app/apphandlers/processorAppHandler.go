@@ -162,9 +162,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 	defer stopRsourcesSyncSettings()
 
 	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
-		PollInterval:             config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
-		TransformerURL:           config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"),
-		FeaturesRetryMaxAttempts: 10,
+		PollInterval:   config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
+		TransformerURL: config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"),
 	})
 
 	var (

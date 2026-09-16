@@ -75,16 +75,12 @@ func TestEventStatsReporter(t *testing.T) {
 
 	testReports := []*types.PUReportedMetric{
 		{
-			ConnectionDetails: types.ConnectionDetails{
-				SourceID:       sourceID,
-				DestinationID:  destinationID,
-				SourceCategory: sourceCategory,
-				TrackingPlanID: "",
-			},
-			PUDetails: types.PUDetails{
-				PU:         reportedBy,
-				TerminalPU: true,
-			},
+			SourceID:       sourceID,
+			DestinationID:  destinationID,
+			SourceCategory: sourceCategory,
+			TrackingPlanID: "",
+			PU:             reportedBy,
+			TerminalPU:     true,
 			StatusDetail: &types.StatusDetail{
 				Count:      10,
 				Status:     jobsdb.Succeeded.State,
@@ -92,16 +88,12 @@ func TestEventStatsReporter(t *testing.T) {
 			},
 		},
 		{
-			ConnectionDetails: types.ConnectionDetails{
-				SourceID:       sourceID,
-				DestinationID:  destinationID,
-				SourceCategory: sourceCategory,
-				TrackingPlanID: "",
-			},
-			PUDetails: types.PUDetails{
-				PU:         reportedBy,
-				TerminalPU: true,
-			},
+			SourceID:       sourceID,
+			DestinationID:  destinationID,
+			SourceCategory: sourceCategory,
+			TrackingPlanID: "",
+			PU:             reportedBy,
+			TerminalPU:     true,
 			StatusDetail: &types.StatusDetail{
 				Count:      50,
 				Status:     jobsdb.Aborted.State,
@@ -109,16 +101,12 @@ func TestEventStatsReporter(t *testing.T) {
 			},
 		},
 		{
-			ConnectionDetails: types.ConnectionDetails{
-				SourceID:       sourceID,
-				DestinationID:  destinationID,
-				SourceCategory: sourceCategory,
-				TrackingPlanID: trackingPlanID,
-			},
-			PUDetails: types.PUDetails{
-				PU:         reportedBy,
-				TerminalPU: true,
-			},
+			SourceID:       sourceID,
+			DestinationID:  destinationID,
+			SourceCategory: sourceCategory,
+			TrackingPlanID: trackingPlanID,
+			PU:             reportedBy,
+			TerminalPU:     true,
 			StatusDetail: &types.StatusDetail{
 				Count:      150,
 				Status:     jobsdb.Migrated.State,
@@ -126,16 +114,12 @@ func TestEventStatsReporter(t *testing.T) {
 			},
 		},
 		{
-			ConnectionDetails: types.ConnectionDetails{
-				SourceID:       sourceID,
-				DestinationID:  destinationID,
-				SourceCategory: sourceCategory,
-				TrackingPlanID: trackingPlanID,
-			},
-			PUDetails: types.PUDetails{
-				PU:         reportedBy,
-				TerminalPU: false,
-			},
+			SourceID:       sourceID,
+			DestinationID:  destinationID,
+			SourceCategory: sourceCategory,
+			TrackingPlanID: trackingPlanID,
+			PU:             reportedBy,
+			TerminalPU:     false,
 			StatusDetail: &types.StatusDetail{
 				Count:      100,
 				Status:     "non-terminal",
@@ -143,16 +127,12 @@ func TestEventStatsReporter(t *testing.T) {
 			},
 		},
 		{
-			ConnectionDetails: types.ConnectionDetails{
-				SourceID:       sourceID,
-				DestinationID:  destinationID,
-				SourceCategory: "",
-				TrackingPlanID: "",
-			},
-			PUDetails: types.PUDetails{
-				PU:         reportedBy,
-				TerminalPU: true,
-			},
+			SourceID:       sourceID,
+			DestinationID:  destinationID,
+			SourceCategory: "",
+			TrackingPlanID: "",
+			PU:             reportedBy,
+			TerminalPU:     true,
 			StatusDetail: &types.StatusDetail{
 				Count:      20,
 				Status:     jobsdb.Succeeded.State,

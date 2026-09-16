@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mockdestinationdebugger "github.com/rudderlabs/rudder-server/mocks/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -63,6 +64,7 @@ func defaultHandle(destType string) *Handle {
 	batchRouter.setupReloadableVars()
 	batchRouter.logger = logger.NOP
 	batchRouter.conf = config.Default
+	batchRouter.asyncManagerFactory = asyncdestinationmanager.NewManager
 	batchRouter.rsourcesSyncSettings = rsources.NewStaticSyncSettingDelegate("", nil)
 	batchRouter.adaptiveLimit = func(i int64) int64 {
 		return i
@@ -838,6 +840,9 @@ func TestAsyncDestinationManager(t *testing.T) {
 
 			batchRouter := defaultHandle(destType)
 			batchRouter.initAsyncDestinationStruct(&destination)
+			invalidManager, ok := batchRouter.asyncDestinationStruct[destination.ID].Manager.(*common.InvalidManager)
+			require.True(t, ok)
+			require.Equal(t, batchRouter.now(), invalidManager.FailedAt)
 			mockCtrl := gomock.NewController(t)
 			mockJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
 			batchRouter.jobsDB = mockJobsDB
@@ -901,12 +906,10 @@ func TestAsyncDestinationManager(t *testing.T) {
 		}).Return(nil)
 
 		batchRouter.setMultipleJobStatus(setMultipleJobStatusParams{
-			asyncJobMetadata: asyncJobMetadata{
-				AttemptNums:       map[int64]int{jobID: 1},
-				FirstAttemptedAts: map[int64]time.Time{jobID: firstAttempt},
-				JobParameters:     map[int64]stdjson.RawMessage{jobID: jobParameters},
-				PartitionIDs:      map[int64]string{jobID: "partition-1"},
-			},
+			AttemptNums:       map[int64]int{jobID: 1},
+			FirstAttemptedAts: map[int64]time.Time{jobID: firstAttempt},
+			JobParameters:     map[int64]stdjson.RawMessage{jobID: jobParameters},
+			PartitionIDs:      map[int64]string{jobID: "partition-1"},
 			AsyncOutput: common.AsyncUploadOutput{
 				DestinationID: "destinationID",
 				FailedJobIDs:  []int64{jobID},

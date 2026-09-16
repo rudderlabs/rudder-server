@@ -594,16 +594,15 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 
 	var queryBuilder strings.Builder
 
-	queryBuilder.WriteString(fmt.Sprintf(`
+	fmt.Fprintf(&queryBuilder, `
 		ALTER TABLE
 		  %s.%s
 		ADD COLUMNS(`,
 		d.Namespace,
-		tableName,
-	))
+		tableName)
 
 	for _, columnInfo := range columnsToAddInfo {
-		queryBuilder.WriteString(fmt.Sprintf(` %s %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type]))
+		fmt.Fprintf(&queryBuilder, ` %s %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type])
 	}
 
 	query := strings.TrimSuffix(queryBuilder.String(), ",")

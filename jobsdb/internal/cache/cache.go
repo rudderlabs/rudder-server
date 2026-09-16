@@ -474,8 +474,8 @@ func (ce *cacheEntry) AddToken(token string) {
 
 // SetNoJobs sets the noJobs flag to true if the provided token is found in the cache entry.
 func (ce *cacheEntry) SetNoJobs(token string) bool {
-	for i := len(ce.tokens) - 1; i >= 0; i-- {
-		if ce.tokens[i] == token {
+	for i, v := range slices.Backward(ce.tokens) {
+		if v == token {
 			ce.noJobs = true
 			ce.t = time.Now()
 			ce.tokens = slices.Delete(ce.tokens, i, i+1)

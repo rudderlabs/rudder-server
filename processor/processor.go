@@ -23,7 +23,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
-	"github.com/rudderlabs/rudder-go-kit/cachettl"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -144,7 +143,6 @@ type Handle struct {
 	fileuploader               fileuploader.Provider
 	utSamplingFileManager      filemanager.FileManager
 	storeSamplingFileManager   filemanager.FileManager
-	mirrorFilteredCache        *cachettl.Cache[string, bool]
 	destinationIsolationMu     sync.RWMutex
 	destinationIsolationCache  map[string]bool
 	rsourcesService            rsources.JobService
@@ -199,9 +197,6 @@ type Handle struct {
 		userTransformationMirroringSanitySampling config.ValueLoader[float64]
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 		userTransformMirrorURL                    string
-		pythonTransformMirrorURL                  string
-		mirrorFilterCacheTTL                      time.Duration
-		pythonTransformConfig                     transformerutils.PythonTransformConfig
 		userTransformationMirroringBlockedIDs     config.ValueLoader[[]string]
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		forkRsourcesTrackedJobs                   bool
@@ -253,7 +248,6 @@ type processorStats struct {
 
 	utMirroringEqualResponses            func(partition, transformationID string) stats.Measurement
 	utMirroringDifferentResponses        func(partition, transformationID string) stats.Measurement
-	utMirroringFilteredResponses         func(partition, transformationID string) stats.Measurement
 	utMirroringBlockedByTransformationID func(partition, transformationID string) stats.Measurement
 	utMirroringDatetimeForgivenResponses func(partition, transformationID string) stats.Measurement
 }
@@ -488,8 +482,6 @@ func (proc *Handle) Setup(
 		proc.logger.Errorn("failed to create store sampling file manager", obskit.Error(err))
 	}
 
-	proc.mirrorFilteredCache = cachettl.New[string, bool](cachettl.WithNoRefreshTTL)
-
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
 	}
@@ -622,12 +614,6 @@ func (proc *Handle) Setup(
 	proc.stats.utMirroringDifferentResponses = func(partition, transformationID string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_responses_count", stats.CountType, stats.Tags{
 			"equal":            "false",
-			"partition":        partition,
-			"transformationId": transformationID,
-		})
-	}
-	proc.stats.utMirroringFilteredResponses = func(partition, transformationID string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_filtered_count", stats.CountType, stats.Tags{
 			"partition":        partition,
 			"transformationId": transformationID,
 		})
@@ -844,7 +830,6 @@ func (proc *Handle) loadConfig() {
 	proc.config.transformTimesPQLength = proc.conf.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = proc.conf.GetStringVar("GW", "Gateway.CustomVal")
-	proc.config.pythonTransformConfig = transformerutils.LoadPythonTransformConfig(proc.conf)
 	proc.config.forkRsourcesTrackedJobs = proc.conf.GetBoolVar(false, "Processor.DestinationIsolation.forkRsourcesTrackedJobs")
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
@@ -864,8 +849,6 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.userTransformationMirroringSanitySampling = proc.conf.GetReloadableFloat64Var(0, "Processor.userTransformationMirroring.sanitySampling")
 	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
 	proc.config.userTransformMirrorURL = proc.conf.GetStringVar("", "USER_TRANSFORM_MIRROR_URL")
-	proc.config.pythonTransformMirrorURL = proc.conf.GetStringVar("", "PYTHON_TRANSFORM_MIRROR_URL")
-	proc.config.mirrorFilterCacheTTL = proc.conf.GetDurationVar(3, time.Hour, "Processor.userTransformationMirroring.filterCacheTTL")
 	proc.config.userTransformationMirroringBlockedIDs = proc.conf.GetReloadableStringSliceVar(nil, "Processor.userTransformationMirroring.blockedTransformationIDs")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
 	proc.config.reportingDedupMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.dedupMetrics.enabled")
@@ -1720,24 +1703,20 @@ func getDiffMetrics(
 		}
 
 		metric := &reportingtypes.PUReportedMetric{
-			ConnectionDetails: reportingtypes.ConnectionDetails{
-				SourceID:                metadata.sourceID,
-				DestinationID:           metadata.destinationID,
-				SourceTaskRunID:         metadata.sourceTaskRunID,
-				SourceJobID:             metadata.sourceJobID,
-				SourceJobRunID:          metadata.sourceJobRunID,
-				SourceDefinitionID:      metadata.sourceDefinitionID,
-				DestinationDefinitionID: metadata.destinationDefinitionID,
-				SourceCategory:          metadata.sourceCategory,
-				TransformationID:        metadata.transformationID,
-				TransformationVersionID: metadata.transformationVersionID,
-				TrackingPlanID:          metadata.trackingPlanID,
-				TrackingPlanVersion:     metadata.trackingPlanVersion,
-			},
-			PUDetails: reportingtypes.PUDetails{
-				InPU: inPU,
-				PU:   pu,
-			},
+			SourceID:                metadata.sourceID,
+			DestinationID:           metadata.destinationID,
+			SourceTaskRunID:         metadata.sourceTaskRunID,
+			SourceJobID:             metadata.sourceJobID,
+			SourceJobRunID:          metadata.sourceJobRunID,
+			SourceDefinitionID:      metadata.sourceDefinitionID,
+			DestinationDefinitionID: metadata.destinationDefinitionID,
+			SourceCategory:          metadata.sourceCategory,
+			TransformationID:        metadata.transformationID,
+			TransformationVersionID: metadata.transformationVersionID,
+			TrackingPlanID:          metadata.trackingPlanID,
+			TrackingPlanVersion:     metadata.trackingPlanVersion,
+			InPU:                    inPU,
+			PU:                      pu,
 			StatusDetail: &reportingtypes.StatusDetail{
 				Status:      reportingtypes.DiffStatus,
 				Count:       count,
@@ -1801,29 +1780,20 @@ func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
 }
 
 type preTransformationMessage struct {
-	partition                       string
-	subJobs                         subJob
-	eventSchemaJobsBySourceId       map[SourceIDT][]*jobsdb.JobT
-	archivalJobs                    []*jobsdb.JobT
-	connectionDetailsMap            map[string]*reportingtypes.ConnectionDetails
-	statusDetailsMap                map[string]map[string]*reportingtypes.StatusDetail
-	enricherStatusDetailsMap        map[string]map[string]*reportingtypes.StatusDetail
-	botManagementStatusDetailsMap   map[string]map[string]*reportingtypes.StatusDetail
-	eventBlockingStatusDetailsMap   map[string]map[string]*reportingtypes.StatusDetail
-	userSuppressionStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
-	dedupStatusDetailsMap           map[string]map[string]*reportingtypes.StatusDetail
-	gatewayIngestedStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
-	destFilterStatusDetailMap       map[string]map[string]*reportingtypes.StatusDetail
-	reportMetrics                   []*reportingtypes.PUReportedMetric
-	totalEvents                     int
-	groupedEventsBySourceId         map[SourceIDT][]types.TransformerEvent
-	eventsByMessageID               map[string]types.SingularEventWithReceivedAt
-	jobIDToSpecificDestMapOnly      map[int64]string
-	statusList                      []*jobsdb.JobStatusT
-	jobList                         []*jobsdb.JobT
-	sourceDupStats                  map[dupStatKey]int
-	dedupKeys                       map[string]struct{}
-	srcHydrationEnabledMap          map[SourceIDT]bool
+	partition                  string
+	subJobs                    subJob
+	eventSchemaJobsBySourceId  map[SourceIDT][]*jobsdb.JobT
+	archivalJobs               []*jobsdb.JobT
+	reportMetrics              []*reportingtypes.PUReportedMetric
+	totalEvents                int
+	groupedEventsBySourceId    map[SourceIDT][]types.TransformerEvent
+	eventsByMessageID          map[string]types.SingularEventWithReceivedAt
+	jobIDToSpecificDestMapOnly map[int64]string
+	statusList                 []*jobsdb.JobStatusT
+	jobList                    []*jobsdb.JobT
+	sourceDupStats             map[dupStatKey]int
+	dedupKeys                  map[string]struct{}
+	srcHydrationEnabledMap     map[SourceIDT]bool
 	// earlyDestinationFilter is the per-batch snapshot threaded from srcHydrationMessage; see the
 	// field doc on srcHydrationMessage.
 	earlyDestinationFilter bool
@@ -2369,31 +2339,136 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 	}
 	archivalJobs = nil
 
+	// REPORTING - side-PU status details assembly - START
+	// connectionDetailsMap and every side-PU statusDetailsMap above are only ever populated in
+	// the loop just above, so by this point (end of preprocessStage) they are already complete
+	// for the batch. Assemble them into PUReportedMetric rows here instead of threading nine
+	// separate map fields through srcHydrationMessage/preTransformationMessage down to
+	// pretransformStage.
+	if proc.isReportingEnabled() {
+		reportMetrics = append(reportMetrics, proc.assembleSideStatusDetailMetrics(
+			connectionDetailsMap,
+			statusDetailsMap,
+			enricherStatusDetailsMap,
+			botManagementStatusDetailsMap,
+			eventBlockingStatusDetailsMap,
+			userSuppressionStatusDetailsMap,
+			dedupStatusDetailsMap,
+			gatewayIngestedStatusDetailsMap,
+			destFilterStatusDetailMap,
+		)...)
+	}
+	// REPORTING - side-PU status details assembly - END
+
 	return &srcHydrationMessage{
-		partition:                       partition,
-		subJobs:                         subJobs,
-		eventSchemaJobsBySourceId:       eventSchemaJobsBySourceId,
-		archivalJobs:                    archivalJobs,
-		connectionDetailsMap:            connectionDetailsMap,
-		statusDetailsMap:                statusDetailsMap,
-		enricherStatusDetailsMap:        enricherStatusDetailsMap,
-		botManagementStatusDetailsMap:   botManagementStatusDetailsMap,
-		eventBlockingStatusDetailsMap:   eventBlockingStatusDetailsMap,
-		userSuppressionStatusDetailsMap: userSuppressionStatusDetailsMap,
-		dedupStatusDetailsMap:           dedupStatusDetailsMap,
-		gatewayIngestedStatusDetailsMap: gatewayIngestedStatusDetailsMap,
-		reportMetrics:                   reportMetrics,
-		destFilterStatusDetailMap:       destFilterStatusDetailMap,
-		totalEvents:                     totalEvents,
-		groupedEventsBySourceId:         groupedEventsBySourceId,
-		eventsByMessageID:               eventsByMessageID,
-		jobIDToSpecificDestMapOnly:      jobIDToSpecificDestMapOnly,
-		statusList:                      statusList,
-		jobList:                         jobList,
-		sourceDupStats:                  sourceDupStats,
-		dedupKeys:                       dedupKeys,
-		earlyDestinationFilter:          earlyDestinationFilter,
+		partition:                  partition,
+		subJobs:                    subJobs,
+		eventSchemaJobsBySourceId:  eventSchemaJobsBySourceId,
+		archivalJobs:               archivalJobs,
+		reportMetrics:              reportMetrics,
+		totalEvents:                totalEvents,
+		groupedEventsBySourceId:    groupedEventsBySourceId,
+		eventsByMessageID:          eventsByMessageID,
+		jobIDToSpecificDestMapOnly: jobIDToSpecificDestMapOnly,
+		statusList:                 statusList,
+		jobList:                    jobList,
+		sourceDupStats:             sourceDupStats,
+		dedupKeys:                  dedupKeys,
+		earlyDestinationFilter:     earlyDestinationFilter,
 	}, nil
+}
+
+// assembleSideStatusDetailMetrics converts the side-PU status-details maps accumulated in the
+// preprocess loop into PUReportedMetric rows. It requires connectionDetailsMap and every
+// statusDetailsMap argument to already be complete for the batch — callers must not invoke this
+// before the maps have stopped being written to.
+func (proc *Handle) assembleSideStatusDetailMetrics(
+	connectionDetailsMap map[string]*reportingtypes.ConnectionDetails,
+	statusDetailsMap map[string]map[string]*reportingtypes.StatusDetail,
+	enricherStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail,
+	botManagementStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail,
+	eventBlockingStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail,
+	userSuppressionStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail,
+	dedupStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail,
+	gatewayIngestedStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail,
+	destFilterStatusDetailMap map[string]map[string]*reportingtypes.StatusDetail,
+) []*reportingtypes.PUReportedMetric {
+	reportingtypes.AssertKeysSubset(connectionDetailsMap, statusDetailsMap)
+	reportingtypes.AssertKeysSubset(connectionDetailsMap, destFilterStatusDetailMap)
+	reportingtypes.AssertKeysSubset(connectionDetailsMap, botManagementStatusDetailsMap)
+	reportingtypes.AssertKeysSubset(connectionDetailsMap, eventBlockingStatusDetailsMap)
+	reportingtypes.AssertKeysSubset(connectionDetailsMap, userSuppressionStatusDetailsMap)
+	reportingtypes.AssertKeysSubset(connectionDetailsMap, dedupStatusDetailsMap)
+	reportingtypes.AssertKeysSubset(connectionDetailsMap, gatewayIngestedStatusDetailsMap)
+	reportingtypes.AssertKeysSubset(connectionDetailsMap, enricherStatusDetailsMap)
+
+	metrics := make([]*reportingtypes.PUReportedMetric, 0)
+	for k, cd := range connectionDetailsMap {
+		for _, sd := range botManagementStatusDetailsMap[k] {
+			metrics = append(metrics, &reportingtypes.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.BOT_MANAGEMENT, false, false),
+				StatusDetail:      sd,
+			})
+		}
+
+		for _, sd := range eventBlockingStatusDetailsMap[k] {
+			metrics = append(metrics, &reportingtypes.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.EVENT_BLOCKING, false, false),
+				StatusDetail:      sd,
+			})
+		}
+
+		for _, sd := range userSuppressionStatusDetailsMap[k] {
+			metrics = append(metrics, &reportingtypes.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.USER_SUPPRESSION, false, false),
+				StatusDetail:      sd,
+			})
+		}
+
+		for _, sd := range dedupStatusDetailsMap[k] {
+			metrics = append(metrics, &reportingtypes.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DEDUP, false, false),
+				StatusDetail:      sd,
+			})
+		}
+
+		for _, sd := range gatewayIngestedStatusDetailsMap[k] {
+			metrics = append(metrics, &reportingtypes.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.GATEWAY_INGESTED, false, false),
+				StatusDetail:      sd,
+			})
+		}
+
+		for _, sd := range statusDetailsMap[k] {
+			metrics = append(metrics, &reportingtypes.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.GATEWAY, false, true),
+				StatusDetail:      sd,
+			})
+		}
+
+		for _, sd := range enricherStatusDetailsMap[k] {
+			metrics = append(metrics, &reportingtypes.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.GATEWAY, false, true),
+				StatusDetail:      sd,
+			})
+		}
+
+		for _, dsd := range destFilterStatusDetailMap[k] {
+			metrics = append(metrics, &reportingtypes.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.GATEWAY, reportingtypes.DESTINATION_FILTER, false, false),
+				StatusDetail:      dsd,
+			})
+		}
+	}
+	return metrics
 }
 
 func (proc *Handle) pretransformStage(partition string, preTrans *preTransformationMessage) (*transformationMessage, error) {
@@ -2447,87 +2522,11 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		return nil, err
 	}
 
-	// REPORTING - START
-	if proc.isReportingEnabled() {
-
-		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.statusDetailsMap)
-		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.destFilterStatusDetailMap)
-		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.botManagementStatusDetailsMap)
-		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.eventBlockingStatusDetailsMap)
-		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.userSuppressionStatusDetailsMap)
-		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.dedupStatusDetailsMap)
-		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.gatewayIngestedStatusDetailsMap)
-		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.enricherStatusDetailsMap)
-
-		for k, cd := range preTrans.connectionDetailsMap {
-			for _, sd := range preTrans.botManagementStatusDetailsMap[k] {
-				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
-					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.BOT_MANAGEMENT, false, false),
-					StatusDetail:      sd,
-				})
-			}
-
-			for _, sd := range preTrans.eventBlockingStatusDetailsMap[k] {
-				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
-					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.EVENT_BLOCKING, false, false),
-					StatusDetail:      sd,
-				})
-			}
-
-			for _, sd := range preTrans.userSuppressionStatusDetailsMap[k] {
-				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
-					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.USER_SUPPRESSION, false, false),
-					StatusDetail:      sd,
-				})
-			}
-
-			for _, sd := range preTrans.dedupStatusDetailsMap[k] {
-				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
-					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DEDUP, false, false),
-					StatusDetail:      sd,
-				})
-			}
-
-			for _, sd := range preTrans.gatewayIngestedStatusDetailsMap[k] {
-				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
-					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.GATEWAY_INGESTED, false, false),
-					StatusDetail:      sd,
-				})
-			}
-
-			for _, sd := range preTrans.statusDetailsMap[k] {
-				m := &reportingtypes.PUReportedMetric{
-					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.GATEWAY, false, true),
-					StatusDetail:      sd,
-				}
-				preTrans.reportMetrics = append(preTrans.reportMetrics, m)
-			}
-
-			for _, sd := range preTrans.enricherStatusDetailsMap[k] {
-				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
-					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.GATEWAY, false, true),
-					StatusDetail:      sd,
-				})
-			}
-
-			for _, dsd := range preTrans.destFilterStatusDetailMap[k] {
-				destFilterMetric := &reportingtypes.PUReportedMetric{
-					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.GATEWAY, reportingtypes.DESTINATION_FILTER, false, false),
-					StatusDetail:      dsd,
-				}
-				preTrans.reportMetrics = append(preTrans.reportMetrics, destFilterMetric)
-			}
-		}
-	}
-	// REPORTING - END
+	// REPORTING - the side-PU status-details maps (GATEWAY, BOT_MANAGEMENT, EVENT_BLOCKING,
+	// USER_SUPPRESSION, DEDUP, GATEWAY_INGESTED, DESTINATION_FILTER) are assembled into
+	// PUReportedMetric rows at the end of preprocessStage, as soon as connectionDetailsMap and
+	// those maps are complete for the batch — see assembleSideStatusDetailMetrics. They already
+	// arrive on preTrans.reportMetrics.
 
 	proc.stats.statNumEvents(preTrans.partition).Count(preTrans.totalEvents)
 
@@ -3503,20 +3502,6 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 			if utMirroringEnabled {
 				go func() { // mirroring go routine
 					response := proc.transformerClients.UserMirror().Transform(ctx, eventList)
-					if response.MirrorFiltered {
-						_, versionID, transformationID := transformerutils.GetTransformationInfo(eventList)
-						proc.mirrorFilteredCache.Put(versionID, true, proc.config.mirrorFilterCacheTTL)
-						proc.stats.utMirroringFilteredResponses(partition, transformationID).Increment()
-						proc.logger.Infon("UT mirroring filtered by mirror response",
-							logger.NewStringField("versionId", versionID),
-							logger.NewStringField("transformationId", transformationID),
-						)
-						if utMirroringSanityChecks != nil {
-							utMirroringSanityChecks <- response
-							close(utMirroringSanityChecks)
-						}
-						return
-					}
 					d := time.Since(startedAt)
 					userTransformationMirroringStat.transformTime.SendTiming(d)
 					userTransformationMirroringStat.numOutputSuccessEvents.Count(len(response.Events))
@@ -3559,11 +3544,6 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 					}
 
 					mirroredResponse := <-utMirroringSanityChecks
-					if mirroredResponse.MirrorFiltered {
-						// filtered metric already bumped and transformation already cached as mirror-filtered
-						// in the mirroring go routine
-						return
-					}
 
 					var response types.Response
 					err := jsonrs.Unmarshal(responseCopy, &response)
@@ -4013,6 +3993,11 @@ func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.Transforme
 
 	language, versionID, transformationID := transformerutils.GetTransformationInfo(eventList)
 
+	// Mirroring is supported for JavaScript transformations only.
+	if transformerutils.IsPythonLanguage(language) {
+		return false, nil
+	}
+
 	if blockedIDs := proc.config.userTransformationMirroringBlockedIDs.Load(); slices.Contains(blockedIDs, transformationID) {
 		proc.stats.utMirroringBlockedByTransformationID(partition, transformationID).Increment()
 		proc.logger.Debugn("UT mirroring blocked by transformation ID",
@@ -4022,26 +4007,7 @@ func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.Transforme
 		return false, nil
 	}
 
-	if proc.mirrorFilteredCache.Get(versionID) {
-		proc.stats.utMirroringFilteredResponses(partition, transformationID).Increment()
-		proc.logger.Debugn("UT mirroring filtered by cache",
-			logger.NewStringField("versionId", versionID),
-			logger.NewStringField("transformationId", transformationID),
-		)
-		return false, nil
-	}
-
-	// Check if this is a Python transformation and apply version-based filtering
-	isPython := strings.HasPrefix(language, "python")
-	if isPython && !proc.config.pythonTransformConfig.IsVersionAllowed(versionID) {
-		return false, nil
-	}
-
-	// Check if the mirror URL is configured for the transformation language
-	if isPython && proc.config.pythonTransformMirrorURL == "" {
-		return false, nil
-	}
-	if !isPython && proc.config.userTransformMirrorURL == "" {
+	if proc.config.userTransformMirrorURL == "" {
 		return false, nil
 	}
 

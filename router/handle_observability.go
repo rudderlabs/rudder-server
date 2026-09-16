@@ -163,7 +163,7 @@ func (rt *Handle) eventOrderDebugInfo(orderKey eventorder.BarrierKey) (res strin
 		}()
 		var out bytes.Buffer
 		if err := sqlutil.PrintRowsToTable(rows, &out); err != nil {
-			out.WriteString(fmt.Sprintf("error printing rows: %v", err))
+			fmt.Fprintf(&out, "error printing rows: %v", err)
 		}
 		res = out.String()
 		return nil

@@ -46,14 +46,20 @@ func (e *EloquaServiceImpl) GetBaseEndpoint(data *HttpRequestData) (string, erro
 	data.Method = http.MethodGet
 	data.Endpoint = "https://login.eloqua.com/id"
 
-	body, _, err := e.MakeHTTPRequest(data)
+	body, statusCode, err := e.MakeHTTPRequest(data)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("eloqua login request failed: %w", err)
+	}
+	if statusCode != http.StatusOK {
+		return "", fmt.Errorf("eloqua login returned status %d: %s", statusCode, string(body))
 	}
 	loginDetailsResponse := LoginDetailsResponse{}
 	err = jsonrs.Unmarshal(body, &loginDetailsResponse)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("unable to parse eloqua login response: %w, body: %s", err, string(body))
+	}
+	if loginDetailsResponse.Urls.Base == "" {
+		return "", fmt.Errorf("eloqua login response missing urls.base, body: %s", string(body))
 	}
 	return loginDetailsResponse.Urls.Base, nil
 }

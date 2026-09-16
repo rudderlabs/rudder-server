@@ -399,9 +399,7 @@ func (m *mockGetJobs) GetJobs(_ context.Context, params jobsdb.GetQueryParams, r
 		return nil, errors.New("failed to get jobs")
 	}
 	return &jobsdb.MoreJobsResult{
-		JobsResult: jobsdb.JobsResult{
-			Jobs: m.jobs,
-		},
+		Jobs: m.jobs,
 		More: m.count,
 	}, nil
 }

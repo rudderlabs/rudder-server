@@ -30,6 +30,7 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
+	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
 	mockutils "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/throttler"
@@ -615,7 +616,7 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: allJobs}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -701,7 +702,7 @@ var _ = Describe("router", func() {
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
-			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: unprocessedJobsList}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -785,7 +786,7 @@ var _ = Describe("router", func() {
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
-			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: unprocessedJobsList}, nil)
 
 			var routerAborted bool
 
@@ -859,7 +860,7 @@ var _ = Describe("router", func() {
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
-			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: unprocessedJobsList}, nil)
 
 			var routerAborted bool
 
@@ -940,7 +941,7 @@ var _ = Describe("router", func() {
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
-			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobs}}, nil)
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: jobs}, nil)
 
 			var routerAborted bool
 
@@ -1044,7 +1045,7 @@ var _ = Describe("router", func() {
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
-			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobs}}, nil)
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: jobs}, nil)
 
 			var routerAborted bool
 
@@ -1137,7 +1138,7 @@ var _ = Describe("router", func() {
 				},
 				nil).
 				Times(1).
-				Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
+				Return(&jobsdb.MoreJobsResult{Jobs: unprocessedJobsList}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -1276,7 +1277,7 @@ var _ = Describe("router", func() {
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
-			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobsList}}, nil)
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: jobsList}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -1433,7 +1434,7 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: allJobs}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -1653,7 +1654,7 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: allJobs}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -1848,7 +1849,7 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: allJobs}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -2029,7 +2030,7 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: allJobs}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -2188,7 +2189,7 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: allJobs}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -2346,7 +2347,7 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: allJobs}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
@@ -2489,8 +2490,11 @@ func TestAllowRouterAbortAlert(t *testing.T) {
 		transformationAlert bool
 	}
 	cases := []struct {
-		skip                   skipT
+		skip skipT
+		// transformerProxy is Router.<DEST>.transformerProxy; declaredByTransformer is what the
+		// transformer publishes on /features. Either enables the proxy.
 		transformerProxy       bool
+		declaredByTransformer  bool
 		expectedAlertFlagValue bool
 		errorAt                string
 		caseName               string
@@ -2570,17 +2574,37 @@ func TestAllowRouterAbortAlert(t *testing.T) {
 			skip:                   skipT{deliveryAlert: true},
 			expectedAlertFlagValue: true,
 		},
+		// The transformer's GA declaration reaches this call site the same way the env does, which
+		// is what keeps alerting correct for a destination once its env entry is removed.
+		{
+			caseName:               "[delivery] when the transformer declares the destination GA and the env is unset, the alert should be false",
+			skip:                   skipT{},
+			declaredByTransformer:  true,
+			expectedAlertFlagValue: false,
+			errorAt:                routerutils.ERROR_AT_DEL,
+		},
+		{
+			caseName:               "[custom] when the transformer declares the destination GA and the env is unset, the alert should be true",
+			skip:                   skipT{},
+			declaredByTransformer:  true,
+			expectedAlertFlagValue: true,
+			errorAt:                routerutils.ERROR_AT_CUST,
+		},
 	}
 	for _, tc := range cases {
+		features := mock_features.NewMockFeaturesService(gomock.NewController(t))
+		features.EXPECT().TransformerProxy(gomock.Any()).Return(tc.declaredByTransformer).AnyTimes()
+		rt := &Handle{
+			transformerFeaturesService: features,
+			reloadableConfig: &reloadableConfig{
+				transformerProxy:                  config.SingleValueLoader(tc.transformerProxy),
+				skipRtAbortAlertForDelivery:       config.SingleValueLoader(tc.skip.deliveryAlert),
+				skipRtAbortAlertForTransformation: config.SingleValueLoader(tc.skip.transformationAlert),
+			},
+		}
 		wrk := &worker{
 			logger: logger.NOP,
-			rt: &Handle{
-				reloadableConfig: &reloadableConfig{
-					transformerProxy:                  config.SingleValueLoader(tc.transformerProxy),
-					skipRtAbortAlertForDelivery:       config.SingleValueLoader(tc.skip.deliveryAlert),
-					skipRtAbortAlertForTransformation: config.SingleValueLoader(tc.skip.transformationAlert),
-				},
-			},
+			rt:     rt,
 		}
 		t.Run(tc.caseName, func(testT *testing.T) {
 			output := wrk.allowRouterAbortedAlert(tc.errorAt)

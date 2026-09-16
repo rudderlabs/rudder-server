@@ -50,20 +50,20 @@ func TestAPIIntegration(t *testing.T) {
 	}
 
 	t.Run("Create channel + Get channel + Insert data + Status/Bulk status", func(t *testing.T) {
+		// Size of the marshalled insert request below, which is what gets sent uncompressed.
+		const uncompressedPayloadSize = 839
+
 		testCases := []struct {
 			name              string
 			enableCompression bool
-			payloadSize       int
 		}{
 			{
 				name:              "Compression enabled",
 				enableCompression: true,
-				payloadSize:       378,
 			},
 			{
 				name:              "Compression disabled",
 				enableCompression: false,
-				payloadSize:       839,
 			},
 		}
 
@@ -112,9 +112,18 @@ func TestAPIIntegration(t *testing.T) {
 				})
 				require.NoError(t, err)
 				require.Equal(t, &model.InsertResponse{Success: true, Errors: nil}, insertRes)
-				require.EqualValues(t, tc.payloadSize, statsStore.Get("snowpipe_streaming_request_body_size", stats.Tags{
+				payloadSize := statsStore.Get("snowpipe_streaming_request_body_size", stats.Tags{
 					"api": "insert",
-				}).LastValue())
+				}).LastValue()
+				if tc.enableCompression {
+					// gzip's output size is not stable across Go releases - go1.27 changed
+					// compress/flate - so assert that the body was actually compressed instead
+					// of pinning a byte count that every toolchain bump invalidates.
+					require.Positive(t, payloadSize)
+					require.Less(t, payloadSize, float64(uncompressedPayloadSize))
+				} else {
+					require.EqualValues(t, uncompressedPayloadSize, payloadSize)
+				}
 
 				t.Log("Checking status")
 				require.Eventually(t, func() bool {

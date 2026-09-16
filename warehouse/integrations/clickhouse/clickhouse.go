@@ -533,6 +533,13 @@ func (ch *Clickhouse) UseS3CopyEngineForLoading() bool {
 	if !slices.Contains(ch.config.s3EngineEnabledWorkspaceIDs, ch.Warehouse.WorkspaceID) {
 		return false
 	}
+	// ObjectStorageType reports S3 for rudder storage, but that bucket is
+	// reached through the AWS SDK credential chain and the s3 table function
+	// only takes literal keys, which the destination config does not hold for
+	// it. Downloading the load files is the only path that can authenticate.
+	if ch.Uploader.UseRudderStorage() {
+		return false
+	}
 	return ch.ObjectStorage == warehouseutils.S3 || ch.ObjectStorage == warehouseutils.MINIO
 }
 
@@ -918,9 +925,9 @@ func getSortKeyTuple(sortKeyFields []string) string {
 	tuple.WriteString("(")
 	for index, field := range sortKeyFields {
 		if index == len(sortKeyFields)-1 {
-			tuple.WriteString(fmt.Sprintf(`%q`, field))
+			fmt.Fprintf(&tuple, `%q`, field)
 		} else {
-			tuple.WriteString(fmt.Sprintf(`%q,`, field))
+			fmt.Fprintf(&tuple, `%q,`, field)
 		}
 	}
 	tuple.WriteString(")")
@@ -985,13 +992,12 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 		queryBuilder strings.Builder
 	)
 
-	queryBuilder.WriteString(fmt.Sprintf(`
+	fmt.Fprintf(&queryBuilder, `
 		ALTER TABLE
 		  %q.%q %s`,
 		ch.Namespace,
 		tableName,
-		ch.clusterClause(),
-	))
+		ch.clusterClause())
 
 	for _, columnInfo := range columnsInfo {
 		columnType := ch.getClickHouseColumnTypeForSpecificTable(
@@ -1000,7 +1006,7 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 			rudderDataTypesMapToClickHouse[columnInfo.Type],
 			false,
 		)
-		queryBuilder.WriteString(fmt.Sprintf(` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, columnType))
+		fmt.Fprintf(&queryBuilder, ` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, columnType)
 	}
 
 	query = strings.TrimSuffix(queryBuilder.String(), ",")

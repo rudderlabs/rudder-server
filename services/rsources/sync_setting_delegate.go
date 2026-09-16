@@ -323,8 +323,8 @@ func (d *syncSettingDelegate) reportCaptured(key statKey, workspaceID string, ca
 		return
 	}
 	c := d.counters(captureStatKey{
-		connectionKey: connectionKey{sourceID: key.SourceID, destinationID: key.DestinationID},
-		workspaceID:   workspaceID,
+		sourceID: key.SourceID, destinationID: key.DestinationID,
+		workspaceID: workspaceID,
 	})
 	if captured {
 		c.captured.Count(1)

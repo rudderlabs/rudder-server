@@ -38,6 +38,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -58,6 +59,10 @@ func (brt *Handle) Setup(
 	brt.destType = destType
 	brt.backendConfig = backendConfig
 	brt.logger = logger.NewLogger().Child("batchrouter").Child(destType)
+	if brt.now == nil {
+		brt.now = timeutil.Now
+	}
+	brt.asyncManagerFactory = asyncdestinationmanager.NewManager
 
 	brt.netHandle = &http.Client{
 		Transport: &http.Transport{},
@@ -193,6 +198,7 @@ func (brt *Handle) setupReloadableVars() {
 	brt.maxFailedCountForSourcesJob = config.GetReloadableIntVar(3, 1, "BatchRouter.RSources."+brt.destType+".maxFailedCountForJob", "BatchRouter.RSources.maxFailedCountForJob")
 	brt.asyncUploadTimeout = config.GetReloadableDurationVar(30, time.Minute, "BatchRouter."+brt.destType+".asyncUploadTimeout", "BatchRouter.asyncUploadTimeout")
 	brt.asyncUploadWorkerTimeout = config.GetReloadableDurationVar(10, time.Second, "BatchRouter."+brt.destType+".asyncUploadWorkerTimeout", "BatchRouter.asyncUploadWorkerTimeout")
+	brt.invalidManagerRetryInterval = config.GetReloadableDurationVar(15, time.Minute, "BatchRouter.invalidManagerRetryInterval")
 	brt.retryTimeWindow = config.GetReloadableDurationVar(180, time.Minute, "BatchRouter."+brt.destType+".retryTimeWindow", "BatchRouter."+brt.destType+".retryTimeWindowInMins", "BatchRouter.retryTimeWindow", "BatchRouter.retryTimeWindowInMins")
 	brt.sourcesRetryTimeWindow = config.GetReloadableDurationVar(1, time.Minute, "BatchRouter.RSources."+brt.destType+".retryTimeWindow", "BatchRouter.RSources."+brt.destType+".retryTimeWindowInMins", "BatchRouter.RSources.retryTimeWindow", "BatchRouter.RSources.retryTimeWindowInMins")
 	brt.jobQueryBatchSize = config.GetReloadableIntVar(20000, 1, "BatchRouter."+brt.destType+".jobQueryBatchSize", "BatchRouter.jobQueryBatchSize")
@@ -258,9 +264,15 @@ func (brt *Handle) Shutdown() {
 	brt.logger.Infon("Batch router shutdown complete")
 }
 
+func (brt *Handle) shouldRetryInvalidManager(invalidManager *asynccommon.InvalidManager) bool {
+	if invalidManager.FailedAt.IsZero() {
+		return true
+	}
+	return brt.now().Sub(invalidManager.FailedAt) >= brt.invalidManagerRetryInterval.Load()
+}
+
 func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
-	_, ok := brt.asyncDestinationStruct[destination.ID]
-	manager, err := asyncdestinationmanager.NewManager(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig)
+	manager, err := brt.asyncManagerFactory(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig)
 	if err != nil {
 		brt.logger.Errorn("BRT: Error initializing async destination struct", obskit.DestinationType(destination.Name), obskit.Error(err))
 		destInitFailStat := stats.Default.NewTaggedStat("destination_initialization_fail", stats.CountType, map[string]string{
@@ -269,9 +281,11 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 		})
 		destInitFailStat.Count(1)
 		manager = &asynccommon.InvalidManager{
-			Error: fmt.Errorf("%s initialization failed with error: %v", destination.Name, err),
+			Error:    fmt.Errorf("%s initialization failed with error: %v", destination.Name, err),
+			FailedAt: brt.now(),
 		}
 	}
+	_, ok := brt.asyncDestinationStruct[destination.ID]
 	if !ok {
 		brt.asyncDestinationStruct[destination.ID] = &asynccommon.AsyncDestinationStruct{}
 	}
@@ -280,14 +294,18 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 }
 
 func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
-	if asynccommon.IsAsyncDestination(destination.DestinationDefinition.Name) {
-		asyncDestStruct, ok := brt.asyncDestinationStruct[destination.ID]
-		if ok && asyncDestStruct.Destination != nil &&
-			asyncDestStruct.Destination.RevisionID == destination.RevisionID {
+	if !asynccommon.IsAsyncDestination(destination.DestinationDefinition.Name) {
+		return
+	}
+	asyncDestStruct, ok := brt.asyncDestinationStruct[destination.ID]
+	if ok && asyncDestStruct.Destination != nil &&
+		asyncDestStruct.Destination.RevisionID == destination.RevisionID {
+		invalidManager, isInvalidManager := asyncDestStruct.Manager.(*asynccommon.InvalidManager)
+		if !isInvalidManager || !brt.shouldRetryInvalidManager(invalidManager) {
 			return
 		}
-		brt.initAsyncDestinationStruct(&destination)
 	}
+	brt.initAsyncDestinationStruct(&destination)
 }
 
 func (brt *Handle) crashRecover() {

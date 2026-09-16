@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -413,7 +414,10 @@ func prepareExpectedReports(t *testing.T, sourceId string, gwOnly bool, numEvent
 
 func requireReports(t *testing.T, ctx context.Context, db *sql.DB, expectedReports []reportRow) {
 	t.Helper()
-	// multiple rows can be recorded for the same report key, so aggregate their counts
+	// multiple rows can be recorded for the same report key, so aggregate their counts.
+	// Order by the report key itself, not insertion order (MIN(id)): rows for different
+	// PUs of the same batch are appended to reportMetrics in an order that is not part of
+	// the reporting contract.
 	query := `
 					SELECT
 					  workspace_id, instance_id, source_id, destination_id,
@@ -424,10 +428,10 @@ func requireReports(t *testing.T, ctx context.Context, db *sql.DB, expectedRepor
 					GROUP BY
 					  workspace_id, instance_id, source_id, destination_id,
 					  in_pu, pu, status_code, status,
-					  terminal_state, initial_state, source_category, event_type
-					ORDER BY
-					  source_id, MIN(id);
+					  terminal_state, initial_state, source_category, event_type;
 				`
+	expectedReports = append([]reportRow(nil), expectedReports...)
+	slices.SortFunc(expectedReports, compareReportRows)
 	require.Eventuallyf(t, func() bool {
 		rows, err := db.QueryContext(ctx, query)
 		if err != nil {
@@ -454,9 +458,31 @@ func requireReports(t *testing.T, ctx context.Context, db *sql.DB, expectedRepor
 			actualReports = append(actualReports, r)
 		}
 		require.NoError(t, rows.Err())
+		slices.SortFunc(actualReports, compareReportRows)
 		require.Equal(t, expectedReports, actualReports)
 		return true
 	}, 1*time.Minute, 5*time.Second, "reporting data mismatch")
+}
+
+// compareReportRows orders rows by their report key so assertions don't depend on the
+// order rows were inserted into the reports table.
+func compareReportRows(a, b reportRow) int {
+	if c := strings.Compare(a.SourceID, b.SourceID); c != 0 {
+		return c
+	}
+	if c := strings.Compare(a.DestinationID, b.DestinationID); c != 0 {
+		return c
+	}
+	if c := strings.Compare(a.PU, b.PU); c != 0 {
+		return c
+	}
+	if c := strings.Compare(a.InPU, b.InPU); c != 0 {
+		return c
+	}
+	if c := strings.Compare(a.Status, b.Status); c != 0 {
+		return c
+	}
+	return a.StatusCode - b.StatusCode
 }
 
 func prepareBackendConfigServer(t *testing.T, webhookURL string, internalSecret json.RawMessage) *httptest.Server {

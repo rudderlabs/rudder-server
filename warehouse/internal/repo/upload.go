@@ -231,15 +231,15 @@ func (u *Uploads) Count(ctx context.Context, filters ...FilterBy) (int64, error)
 	defer (*repo)(u).TimerStat("count", nil)()
 
 	var query strings.Builder
-	query.WriteString(fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE 1=1", uploadsTableName))
+	fmt.Fprintf(&query, "SELECT COUNT(*) FROM %s WHERE 1=1", uploadsTableName)
 
 	args := make([]any, 0)
 	for i, filter := range filters {
 
 		if filter.NotEquals {
-			query.WriteString(fmt.Sprintf(" AND %s!=$%d", filter.Key, i+1))
+			fmt.Fprintf(&query, " AND %s!=$%d", filter.Key, i+1)
 		} else {
-			query.WriteString(fmt.Sprintf(" AND %s=$%d", filter.Key, i+1))
+			fmt.Fprintf(&query, " AND %s=$%d", filter.Key, i+1)
 		}
 
 		args = append(args, filter.Value)

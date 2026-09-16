@@ -389,15 +389,14 @@ func (pg *Postgres) AddColumns(ctx context.Context, tableName string, columnsInf
 		logger.NewStringField(logfield.Query, query),
 	)
 
-	queryBuilder.WriteString(fmt.Sprintf(`
+	fmt.Fprintf(&queryBuilder, `
 		ALTER TABLE
 		  %s.%s`,
 		pq.QuoteIdentifier(pg.Namespace),
-		pq.QuoteIdentifier(tableName),
-	))
+		pq.QuoteIdentifier(tableName))
 
 	for _, columnInfo := range columnsInfo {
-		queryBuilder.WriteString(fmt.Sprintf(` ADD COLUMN IF NOT EXISTS %s %s,`, pq.QuoteIdentifier(columnInfo.Name), rudderDataTypesMapToPostgres[columnInfo.Type]))
+		fmt.Fprintf(&queryBuilder, ` ADD COLUMN IF NOT EXISTS %s %s,`, pq.QuoteIdentifier(columnInfo.Name), rudderDataTypesMapToPostgres[columnInfo.Type])
 	}
 
 	query = strings.TrimSuffix(queryBuilder.String(), ",")

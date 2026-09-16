@@ -42,6 +42,24 @@ var (
 		"schema_snapshot_compression_ratio": {
 			0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2, 5, 10,
 		},
+		// A block is a row count bounded by commitEvery, not a duration, so it
+		// has nothing in common with the second-scale default and would land
+		// entirely in the overflow bucket without these.
+		"warehouse.clickhouse.blockSize": {
+			1, 10, 100, 1000, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000, 2500000,
+		},
+		// The per-block phases resolve below the 0.1s the warehouse default
+		// starts at: preparing is a single round trip, and reading and binding
+		// scale with commitEvery rather than with the table.
+		"warehouse.clickhouse.blockPrepareTime": {
+			0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10,
+		},
+		"warehouse.clickhouse.blockReadTime": {
+			0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60,
+		},
+		"warehouse.clickhouse.blockBindTime": {
+			0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60,
+		},
 		"warehouse_consolidated_schema_size": {
 			float64(10 * bytesize.B), float64(100 * bytesize.B),
 			float64(1 * bytesize.KB), float64(5 * bytesize.KB), float64(10 * bytesize.KB), float64(50 * bytesize.KB), float64(100 * bytesize.KB), float64(500 * bytesize.KB),

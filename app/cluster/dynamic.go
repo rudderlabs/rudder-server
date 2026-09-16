@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -137,8 +138,8 @@ func (d *Dynamic) start() error {
 	start := time.Now()
 	var started []lifecycle
 	rollback := func() {
-		for i := len(started) - 1; i >= 0; i-- {
-			started[i].Stop()
+		for _, s := range slices.Backward(started) {
+			s.Stop()
 		}
 	}
 	if err := d.GatewayDB.Start(); err != nil {

@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
 type InvalidManager struct {
-	Error error
+	Error    error
+	FailedAt time.Time
 }
 
 func (*InvalidManager) Transform(job *jobsdb.JobT) (string, error) {

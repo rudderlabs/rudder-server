@@ -294,24 +294,24 @@ func (tu *TableUploads) Set(ctx context.Context, uploadId int64, tableName strin
 	}
 
 	if options.Status != nil {
-		setQuery.WriteString(fmt.Sprintf(`status = $%d,`, len(queryArgs)+1))
+		fmt.Fprintf(&setQuery, `status = $%d,`, len(queryArgs)+1)
 		queryArgs = append(queryArgs, *options.Status)
 	}
 	if options.Error != nil {
-		setQuery.WriteString(fmt.Sprintf(`error = $%d,`, len(queryArgs)+1))
+		fmt.Fprintf(&setQuery, `error = $%d,`, len(queryArgs)+1)
 		sanitizedError := misc.SanitizeString(*options.Error)
 		queryArgs = append(queryArgs, sanitizedError)
 	}
 	if options.LastExecTime != nil {
-		setQuery.WriteString(fmt.Sprintf(`last_exec_time = $%d,`, len(queryArgs)+1))
+		fmt.Fprintf(&setQuery, `last_exec_time = $%d,`, len(queryArgs)+1)
 		queryArgs = append(queryArgs, *options.LastExecTime)
 	}
 	if options.Location != nil {
-		setQuery.WriteString(fmt.Sprintf(`location = $%d,`, len(queryArgs)+1))
+		fmt.Fprintf(&setQuery, `location = $%d,`, len(queryArgs)+1)
 		queryArgs = append(queryArgs, *options.Location)
 	}
 	if options.TotalEvents != nil {
-		setQuery.WriteString(fmt.Sprintf(`total_events = $%d,`, len(queryArgs)+1))
+		fmt.Fprintf(&setQuery, `total_events = $%d,`, len(queryArgs)+1)
 		queryArgs = append(queryArgs, *options.TotalEvents)
 	}
 
@@ -319,7 +319,7 @@ func (tu *TableUploads) Set(ctx context.Context, uploadId int64, tableName strin
 		return fmt.Errorf(`no set options provided`)
 	}
 
-	setQuery.WriteString(fmt.Sprintf(`updated_at = $%d,`, len(queryArgs)+1))
+	fmt.Fprintf(&setQuery, `updated_at = $%d,`, len(queryArgs)+1)
 	queryArgs = append(queryArgs, tu.now())
 
 	// remove trailing comma

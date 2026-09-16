@@ -30,7 +30,7 @@ services:
     ports:
       - "9090:9090"
   minio:
-    image: minio/minio
+    image: pgsty/minio
     profiles:
       - storage
     ports:

@@ -48,7 +48,7 @@ func (m *configMapper) Map(workspaceID string, raw json.RawMessage, catalogues v
 		return ConfigT{}, fmt.Errorf("unmarshalling workspace: %w", err)
 	}
 
-	// v1 nests destinations under sources, v2 joins them through connections (A7 in design doc).
+	// v1 nests destinations under sources, v2 joins them through connections.
 	// Ranged in id order, here and over the sources below, for a repeatable output: configUpdate
 	// compares each poll's result with the previous one.
 	connectionsBySource := make(map[string][]Connection, len(workspace.Sources))
@@ -67,15 +67,15 @@ func (m *configMapper) Map(workspaceID string, raw json.RawMessage, catalogues v
 		sources = append(sources, mapped)
 	}
 
-	// connections are emitted as they are, minus the ones whose destination was skipped (B7 in design doc)
+	// connections are emitted as they are, minus the ones whose destination was skipped
 	connections := lo.OmitBy(workspace.Connections, func(_ string, c Connection) bool {
 		_, skipped := skippedDestinations[c.DestinationID]
 		return skipped
 	})
 
-	// pass-throughs (A11 in design doc). The account definition catalogue is kept whole
-	// (A12 in design doc) - v1 prunes it to what the workspace references, purely to keep its
-	// per-workspace copy small
+	// Libraries, EventReplays, Credentials and Accounts below are pass-throughs. The account
+	// definition catalogue is kept whole - v1 prunes it to what the workspace references, purely
+	// to keep its per-workspace copy small
 	accountDefinitions := lo.MapValues(catalogues.AccountDefinitions,
 		func(definition v2AccountDefinition, name string) AccountDefinition { return definition.toV1(name) })
 
@@ -114,7 +114,7 @@ func (m *configMapper) mapSource(
 	connections []Connection,
 	skippedDestinations map[string]struct{},
 ) (SourceT, error) {
-	// definitions are catalogued by name and carry none of their own (A3 in design doc)
+	// definitions are catalogued by name and carry none of their own
 	definition, ok := catalogues.SourceDefinitions[source.SourceDefinitionName]
 	if !ok {
 		return SourceT{}, fmt.Errorf("source %q references unknown source definition %q", sourceID, source.SourceDefinitionName)
@@ -126,15 +126,15 @@ func (m *configMapper) mapSource(
 		return SourceT{}, err
 	}
 
-	// the flat config and liveEventsConfig are merged into one object (A4 in design doc)
+	// the flat config and liveEventsConfig are merged into one object
 	config, err := jsonrs.Marshal(lo.Assign(source.Config, source.LiveEventsConfig))
 	if err != nil {
 		return SourceT{}, fmt.Errorf("marshalling config of source %q: %w", sourceID, err)
 	}
 
 	mapped := SourceT{
-		ID:               sourceID,    // the map key is the id (A2 in design doc)
-		WorkspaceID:      workspaceID, // and the workspace's key is the workspace id (A2 in design doc)
+		ID:               sourceID,    // the map key is the id
+		WorkspaceID:      workspaceID, // and the workspace's key is the workspace id
 		Name:             source.Name,
 		SourceDefinition: sourceDefinition,
 		Config:           config,
@@ -142,13 +142,13 @@ func (m *configMapper) mapSource(
 		Destinations:     destinations,
 		WriteKey:         source.WriteKey,
 		Transient:        source.Transient,
-		InternalSecret:   source.InternalSecret, // load bearing: the hydrate path forwards it (A14 in design doc)
+		InternalSecret:   source.InternalSecret, // load bearing: the hydrate path forwards it
 	}
-	// truthy, not nullish - an absent geoEnrichment is disabled (A5 in design doc)
+	// truthy, not nullish - an absent geoEnrichment is disabled
 	mapped.GeoEnrichment.Enabled = lo.FromPtr(source.GeoEnrichment).Enabled
 
 	// the tracking plan is attached only to a source that has one, enabled and not deleted, and
-	// only when the plan it names exists in this workspace (A6 in design doc)
+	// only when the plan it names exists in this workspace
 	if plan := source.DgSourceTrackingPlanConfig; plan != nil {
 		mapped.DgSourceTrackingPlanConfig = DgSourceTrackingPlanConfigT{
 			SourceId:            sourceID,
@@ -189,11 +189,11 @@ func (m *configMapper) mapDestinations(
 		}
 
 		// the definition this destination is delivered with carries the config of the major it is
-		// pinned to, which may be an archived one (B2 in design doc)
+		// pinned to, which may be an archived one
 		definitionV1, major, err := definition.toV1(destination.DestinationDefinitionName, destination.Version)
 		if errors.Is(err, errUnknownVersion) {
 			// skip the row rather than fail the workspace, and let the connection pruning drop its
-			// connection with it (B7 in design doc)
+			// connection with it
 			skippedDestinations[connection.DestinationID] = struct{}{}
 			m.reportUnresolvable(workspaceID, connection.DestinationID, destination, major)
 			continue
@@ -202,13 +202,12 @@ func (m *configMapper) mapDestinations(
 		}
 
 		// the config is rebuilt from the keys the definition declares for this source's type
-		// (B3 in design doc)
 		config, err := filterDestinationConfig(destination.Config, destination.LiveEventsConfig,
 			definitionV1.Config, sourceTypeOf(sourceDefinition.Name, sourceDefinition.Category))
 		if err != nil {
 			return nil, fmt.Errorf("filtering config of destination %q: %w", connection.DestinationID, err)
 		}
-		// the legacy consent keys are backfilled last, from the config just rebuilt (B4 in design doc)
+		// the legacy consent keys are backfilled last, from the config just rebuilt
 		config = backfillLegacyConsents(config)
 
 		mapped := DestinationT{
@@ -219,12 +218,12 @@ func (m *configMapper) mapDestinations(
 			WorkspaceID:        workspaceID,
 			IsProcessorEnabled: connection.ProcessorEnabled,
 			RevisionID:         destination.RevisionID,
-			// the major its definition was resolved for (A10 in design doc)
+			// the major its definition was resolved for
 			Version:               major,
 			DestinationDefinition: definitionV1,
 		}
 
-		// the slice is always there, empty included, as v1 serializes it (A8 in design doc)
+		// the slice is always there, empty included, as v1 serializes it
 		mapped.Transformations, err = lo.MapErr(destination.TransformationIDs,
 			func(transformationID string, _ int) (TransformationT, error) {
 				transformation, ok := workspace.Transformations[transformationID]
