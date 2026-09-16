@@ -777,7 +777,7 @@ func (bq *BigQuery) authOptions(ctx context.Context, credentials string) ([]opti
 			ProjectNumber:        bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityProjectNumSetting),
 			PoolID:               bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityPoolIDSetting),
 			ProviderID:           bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityProviderIDSetting),
-			TargetServiceAccount: bq.warehouse.GetStringDestinationConfig(bq.conf, model.TargetServiceAccountSetting),
+			TargetServiceAccount: bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityTargetSASetting),
 			WorkspaceID:          bq.warehouse.WorkspaceID,
 			RoleARN:              roleARN,
 			Region:               region,

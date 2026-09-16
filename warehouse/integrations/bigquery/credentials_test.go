@@ -64,12 +64,12 @@ func TestWorkloadIdentityFederation(t *testing.T) {
 	bq.warehouse = model.Warehouse{
 		WorkspaceID: "30bK6N9S6Ca7C0SGITpgVsmRlIs",
 		Destination: backendconfig.DestinationT{Config: map[string]any{
-			"authMethod":                    "workloadIdentityFederation",
-			"workloadIdentityProjectNumber": "799415897419",
-			"workloadIdentityPoolId":        "wif-pool",
-			"workloadIdentityProviderId":    "rudderstack-aws",
-			"targetServiceAccount":          "rudderstack-bq@acme.iam.gserviceaccount.com",
-			"credentials":                   `{"type": "authorized_user"}`, // rejected if it were consulted
+			"authMethod":                           "workloadIdentityFederation",
+			"workloadIdentityProjectNumber":        "799415897419",
+			"workloadIdentityPoolId":               "wif-pool",
+			"workloadIdentityProviderId":           "rudderstack-aws",
+			"workloadIdentityTargetServiceAccount": "rudderstack-bq@acme.iam.gserviceaccount.com",
+			"credentials":                          `{"type": "authorized_user"}`, // rejected if it were consulted
 		}},
 	}
 	bq.uploader = mockuploader.NewMockUploader(gomock.NewController(t))

@@ -69,7 +69,7 @@ var (
 	ManualSyncSetting                  DestinationConfigSetting = destConfSetting("manualSync")
 	EnableHierarchicalNamespaceSetting DestinationConfigSetting = destConfSetting("enableHierarchicalNamespace")
 	AuthMethodSetting                  DestinationConfigSetting = destConfSetting("authMethod")
-	TargetServiceAccountSetting        DestinationConfigSetting = destConfSetting("targetServiceAccount")
+	WorkloadIdentityTargetSASetting    DestinationConfigSetting = destConfSetting("workloadIdentityTargetServiceAccount")
 	WorkloadIdentityProjectNumSetting  DestinationConfigSetting = destConfSetting("workloadIdentityProjectNumber")
 	WorkloadIdentityPoolIDSetting      DestinationConfigSetting = destConfSetting("workloadIdentityPoolId")
 	WorkloadIdentityProviderIDSetting  DestinationConfigSetting = destConfSetting("workloadIdentityProviderId")
