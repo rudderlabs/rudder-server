@@ -56,8 +56,9 @@ func TestUnsupportedCredentialType(t *testing.T) {
 }
 
 func TestWorkloadIdentityFederation(t *testing.T) {
-	t.Setenv("AWS_REGION", "us-east-1")
-	t.Setenv("RUDDER_GCP_FEDERATION_AWS_ROLE_ARN", "") // only the federation role is missing
+	t.Setenv("RUDDER_GCP_FEDERATION_AWS_ROLE_ARN", "")
+	t.Setenv("AWS_ROLE_ARN", "") // no dedicated role and no IRSA: only the AWS role is missing
+	t.Setenv("AWS_WEB_IDENTITY_TOKEN_FILE", "")
 
 	bq := New(config.New(), logger.NOP)
 	bq.warehouse = model.Warehouse{
@@ -76,6 +77,6 @@ func TestWorkloadIdentityFederation(t *testing.T) {
 
 	_, err := bq.connect(context.Background())
 	// every destination identifier and the workspace ID were read; only the pod's AWS role is absent
-	require.ErrorContains(t, err, "workload identity federation: AWS role ARN is required")
+	require.ErrorContains(t, err, "workload identity federation: AWS role ARN is required, or IRSA")
 	require.NotContains(t, err.Error(), "unsupported credential type")
 }
