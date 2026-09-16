@@ -55,33 +55,27 @@ func TestUnsupportedCredentialType(t *testing.T) {
 	require.Contains(t, err.Error(), `unsupported credential type "authorized_user"`)
 }
 
-// TestWorkloadIdentityFederationCredentials verifies that a Workload Identity Federation
-// credential configuration (as produced by `gcloud iam workload-identity-pools
-// create-cred-config`), rather than a static service account key, is accepted in the
-// `credentials` field: it passes validation and is handed to the BigQuery client under
-// its own credential type instead of being rejected or misdeclared as a service account.
-func TestWorkloadIdentityFederationCredentials(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	uploader := mockuploader.NewMockUploader(ctrl)
+func TestWorkloadIdentityFederation(t *testing.T) {
+	t.Setenv("AWS_REGION", "us-east-1")
+	t.Setenv("RUDDER_GCP_FEDERATION_AWS_ROLE_ARN", "") // only the federation role is missing
 
 	bq := New(config.New(), logger.NOP)
 	bq.warehouse = model.Warehouse{
-		Destination: backendconfig.DestinationT{
-			Config: map[string]any{
-				"credentials": `{
-					"type": "external_account",
-					"audience": "//iam.googleapis.com/projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider",
-					"subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
-					"token_url": "https://sts.googleapis.com/v1/token",
-					"service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/sa@my-project.iam.gserviceaccount.com:generateAccessToken",
-					"credential_source": {"file": "/var/run/secrets/tokens/gcp-token"}
-				}`,
-			},
-		},
+		WorkspaceID: "30bK6N9S6Ca7C0SGITpgVsmRlIs",
+		Destination: backendconfig.DestinationT{Config: map[string]any{
+			"authMethod":                    "workloadIdentityFederation",
+			"workloadIdentityProjectNumber": "799415897419",
+			"workloadIdentityPoolId":        "wif-pool",
+			"workloadIdentityProviderId":    "rudderstack-aws",
+			"targetServiceAccount":          "rudderstack-bq@acme.iam.gserviceaccount.com",
+			"credentials":                   `{"type": "authorized_user"}`, // rejected if it were consulted
+		}},
 	}
-	bq.uploader = uploader
+	bq.uploader = mockuploader.NewMockUploader(gomock.NewController(t))
 	bq.projectID = "projectId"
 
 	_, err := bq.connect(context.Background())
-	require.NoError(t, err)
+	// every destination identifier and the workspace ID were read; only the pod's AWS role is absent
+	require.ErrorContains(t, err, "workload identity federation: AWS role ARN is required")
+	require.NotContains(t, err.Error(), "unsupported credential type")
 }

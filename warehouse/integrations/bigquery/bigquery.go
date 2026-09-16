@@ -380,8 +380,7 @@ func (bq *BigQuery) CreateSchema(ctx context.Context) (err error) {
 
 func checkAndIgnoreAlreadyExistError(err error) bool {
 	if err != nil {
-		var e *googleapi.Error
-		if errors.As(err, &e) {
+		if e, ok := errors.AsType[*googleapi.Error](err); ok {
 			// 409 is returned when we try to create a table that already exists
 			// 400 is returned for all kinds of invalid input - so we need to check the error message too
 			if e.Code == 409 || (e.Code == 400 && strings.Contains(e.Message, "already exists in schema")) {
@@ -592,7 +591,7 @@ func (bq *BigQuery) jobStatistics(
 	ctx context.Context,
 	job *bigquery.Job,
 ) (*bqservice.JobStatistics, error) {
-	opts, err := bq.authOptions(bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting))
+	opts, err := bq.authOptions(ctx, bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting))
 	if err != nil {
 		return nil, err
 	}
@@ -762,36 +761,40 @@ func (bq *BigQuery) createAndLoadStagingUsersTable(ctx context.Context, stagingT
 	return nil
 }
 
-// authOptions builds the option.ClientOption(s) needed to authenticate a BigQuery API
-// client from the destination's `credentials` setting.
+// authOptions builds the option.ClientOption(s) needed to authenticate a BigQuery API client.
 //
-// The credentials JSON may be either a static service account key, or a Workload
-// Identity Federation credential configuration ("external_account" /
-// "external_account_authorized_user", as produced by
-// `gcloud iam workload-identity-pools create-cred-config`) - the latter can itself carry
-// a service_account_impersonation_url, letting rudder-server authenticate through an
-// external identity provider (AWS, Azure, OIDC/SAML) and impersonate a GCP service
-// account for short-lived tokens, without ever holding a static private key.
+// With authMethod "workloadIdentityFederation", no credentials are used: RudderStack's federation role is assumed with the
+// workspace ID as the session name, exchanged through the customer's workload identity pool, and
+// the customer's target service account is impersonated.
 //
-// If credentials is empty (or "{}") and workload identity is enabled for this
-// deployment (googleutil.ShouldSkipCredentialsInit), no explicit credentials are passed
-// at all: the underlying client library falls through to Application Default
-// Credentials, which on GKE resolves via the node's bound Workload Identity.
-func (bq *BigQuery) authOptions(credentials string) ([]option.ClientOption, error) {
+// Otherwise (authMethod "serviceAccountKey" or absent) `credentials` must be a service account key. If it is empty (or "{}") and workload
+// identity is enabled for this deployment (googleutil.ShouldSkipCredentialsInit), no explicit
+// credentials are passed and the client falls through to Application Default Credentials.
+func (bq *BigQuery) authOptions(ctx context.Context, credentials string) ([]option.ClientOption, error) {
+	if bq.warehouse.GetStringDestinationConfig(bq.conf, model.AuthMethodSetting) == googleutil.AuthMethodWorkloadIdentityFederation {
+		roleARN, region := misc.GetRudderGCPFederationAWSRole()
+		ts, err := googleutil.AWSFederatedTokenSource(ctx, googleutil.AWSFederationConfig{
+			ProjectNumber:        bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityProjectNumSetting),
+			PoolID:               bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityPoolIDSetting),
+			ProviderID:           bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityProviderIDSetting),
+			TargetServiceAccount: bq.warehouse.GetStringDestinationConfig(bq.conf, model.TargetServiceAccountSetting),
+			WorkspaceID:          bq.warehouse.WorkspaceID,
+			RoleARN:              roleARN,
+			Region:               region,
+		}, []string{bigquery.Scope})
+		if err != nil {
+			return nil, err
+		}
+		return []option.ClientOption{option.WithTokenSource(ts)}, nil
+	}
 	if googleutil.ShouldSkipCredentialsInit(credentials) {
 		return nil, nil
 	}
 	credBytes := []byte(credentials)
-	if err := googleutil.CompatibleFederatedCredentialsJSON(credBytes); err != nil {
+	if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
 		return nil, fmt.Errorf("incompatible credentials: %w", err)
 	}
-	credType, err := googleutil.CredentialType(credBytes)
-	if err != nil {
-		return nil, fmt.Errorf("incompatible credentials: %w", err)
-	}
-	return []option.ClientOption{
-		option.WithAuthCredentialsJSON(option.CredentialsType(credType), credBytes),
-	}, nil
+	return []option.ClientOption{option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes)}, nil
 }
 
 func (bq *BigQuery) connect(ctx context.Context) (*middleware.Client, error) {
@@ -802,7 +805,7 @@ func (bq *BigQuery) connect(ctx context.Context) (*middleware.Client, error) {
 
 	bq.logger.Infon("Connecting to BigQuery", logger.NewStringField(projectID, projectID))
 
-	opts, err := bq.authOptions(credentials)
+	opts, err := bq.authOptions(ctx, credentials)
 	if err != nil {
 		return nil, err
 	}
@@ -1083,8 +1086,7 @@ func (bq *BigQuery) tableExists(ctx context.Context, tableName string) (exists b
 	if err == nil {
 		return true, nil
 	}
-	var e *googleapi.Error
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*googleapi.Error](err); ok {
 		if e.Code == 404 {
 			return false, nil
 		}
