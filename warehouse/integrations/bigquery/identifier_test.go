@@ -56,3 +56,10 @@ func TestUsersMergeQueryQuotesIdentifiers(t *testing.T) {
 			)
 		)`, query)
 }
+
+func TestEscapeCharacterMatrix(t *testing.T) {
+	const sink = "a\"b`c]d'e\\f" // a " b ` c ] d ' e \ f
+
+	// GoogleSQL quoted identifiers use backslash escapes: ` and \ are escaped with a backslash.
+	require.Equal(t, "`a\"b\\`c]d'e\\\\f`", quoteIdentifier(sink))
+}
