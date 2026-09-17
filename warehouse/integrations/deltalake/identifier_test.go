@@ -37,3 +37,12 @@ func TestColumnsWithDataTypesQuotesIdentifiers(t *testing.T) {
 	require.Contains(t, columns, "`event_date` DATE GENERATED ALWAYS AS ( CAST(`received_at` AS DATE) )")
 	require.False(t, strings.Contains(columns, "id`;drop table"))
 }
+
+func TestEscapeCharacterMatrix(t *testing.T) {
+	const sink = "a\"b`c]d'e\\f" // a " b ` c ] d ' e \ f
+
+	// Backtick identifiers: only ` is doubled, the backslash stays literal.
+	require.Equal(t, "`a\"b``c]d'e\\f`", quoteIdentifier(sink))
+	// String literals: Spark SQL uses backslash escapes, so ' and \ are escaped with a backslash.
+	require.Equal(t, "'a\"b`c]d\\'e\\\\f'", quoteStringLiteral(sink))
+}
