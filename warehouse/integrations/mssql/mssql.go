@@ -870,11 +870,12 @@ func (ms *MSSQL) CreateTable(ctx context.Context, tableName string, columnMap mo
 }
 
 func (ms *MSSQL) DropTable(ctx context.Context, tableName string) (err error) {
-	sqlStatement := `DROP TABLE %[1]s.%[2]s`
-	ms.logger.Infon("AZ: Dropping table in synapse for AZ",
+	sqlStatement := fmt.Sprintf(`DROP TABLE %s`, quoteQualifiedIdentifier(ms.namespace, tableName))
+	ms.logger.Infon("MSSQL: Dropping table",
 		logger.NewStringField(logfield.DestinationID, ms.warehouse.Destination.ID),
-		logger.NewStringField("sqlStatement", sqlStatement))
-	_, err = ms.db.ExecContext(ctx, fmt.Sprintf(sqlStatement, quoteIdentifier(ms.namespace), quoteIdentifier(tableName)))
+		logger.NewStringField(logfield.Query, sqlStatement),
+	)
+	_, err = ms.db.ExecContext(ctx, sqlStatement)
 	return err
 }
 
