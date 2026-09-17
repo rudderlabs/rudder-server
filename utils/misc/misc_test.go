@@ -625,11 +625,11 @@ func TestGetObjectStorageConfig(t *testing.T) {
 		t.Setenv("AWS_S3_REGION_HINT", "us-east-1")
 		original := map[string]any{"bucketName": "some-bucket"}
 		config := GetObjectStorageConfig(ObjectStorageOptsT{Provider: "GCS", Config: original, WorkspaceID: sampleWorkspaceID})
-		require.Equal(t, sampleWorkspaceID, config["externalID"])
-		require.Equal(t, "arn:aws:iam::422074288268:role/rudderstack-gcp-federation", config["federationRoleARN"])
-		require.Equal(t, "us-east-1", config["federationRegion"])
+		require.Equal(t, sampleWorkspaceID, config["workspaceID"])
+		require.Equal(t, "arn:aws:iam::422074288268:role/rudderstack-gcp-federation", config["workloadIdentityAWSRoleARN"])
+		require.Equal(t, "us-east-1", config["workloadIdentityAWSRegion"])
 		require.Equal(t, "some-bucket", config["bucketName"])
-		require.NotContains(t, original, "externalID")
+		require.NotContains(t, original, "workspaceID")
 	})
 
 	t.Run("UseRudderStorage returns rudder config without static creds", func(t *testing.T) {

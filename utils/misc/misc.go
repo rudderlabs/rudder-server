@@ -684,8 +684,8 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
 		// workload identity federation assumes RudderStack's federation role with the workspace ID as session name
 		clonedObjectStorageConfig := make(map[string]any)
 		maps.Copy(clonedObjectStorageConfig, objectStorageConfigMap)
-		clonedObjectStorageConfig["externalID"] = opts.WorkspaceID
-		clonedObjectStorageConfig["federationRoleARN"], clonedObjectStorageConfig["federationRegion"] = GetRudderGCPFederationAWSRole()
+		clonedObjectStorageConfig["workspaceID"] = opts.WorkspaceID
+		clonedObjectStorageConfig["workloadIdentityAWSRoleARN"], clonedObjectStorageConfig["workloadIdentityAWSRegion"] = GetRudderGCPFederationAWSRole()
 		objectStorageConfigMap = clonedObjectStorageConfig
 	}
 	return objectStorageConfigMap
