@@ -188,7 +188,7 @@ func newDelegate(conf *config.Config, log logger.Logger, statFactory stats.Stats
 		log:                log,
 		statFactory:        statFactory,
 		db:                 db,
-		enabled:            conf.GetReloadableBoolVar(false, captureErrorDetailKey),
+		enabled:            conf.GetReloadableBoolVar(true, captureErrorDetailKey),
 		maxErrorLength:     conf.GetReloadableIntVar(defaultMaxErrorLength, 1, maxErrorLengthKey),
 		blockedConnections: conf.GetReloadableStringSliceVar(nil, blockedConnectionsKey),
 		blockedWorkspaces:  conf.GetReloadableStringSliceVar(nil, blockedWorkspacesKey),
@@ -262,8 +262,15 @@ func (d *syncSettingDelegate) GetErrorResponse(ctx context.Context, key statKey,
 	if emptyErrorResponse(status.ErrorResponse) {
 		return "", nil
 	}
-	// 2. Feature off process-wide. No pin is read and, crucially, none is written:
-	// turning the flag on must not find every live run already pinned to false.
+	// 2. Feature off process-wide. This defaults ON: whether a connection's errors are
+	// stored is the customer's decision, taken per connection in the UI, and requiring
+	// an operator to also set a variable only means the toggle silently does nothing.
+	// It remains settable to false because it is the only check that runs before the
+	// pin below touches the database, which makes it the lever to pull when that
+	// database is the problem - the blocklist at step 4 is too late for that.
+	//
+	// No pin is read and, crucially, none is written while it is off: turning it back
+	// on must not find every live run already pinned to false.
 	if !d.enabled.Load() {
 		return "", nil
 	}

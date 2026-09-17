@@ -177,7 +177,11 @@ func TestSyncSettingDelegateCheckOrder(t *testing.T) {
 			errorResponse: `{}`,
 		},
 		{
-			name:          "step 2 the global flag being off never reaches the pin",
+			name: "step 2 the global flag being off never reaches the pin",
+			// Set explicitly rather than leaning on the default, which is on: what
+			// this pins is that an off switch short-circuits before the database,
+			// not what the switch happens to default to.
+			setup:         func(p *probeDelegate) { p.conf.Set(captureErrorDetailKey, false) },
 			errorResponse: boom,
 		},
 		{
@@ -1026,4 +1030,27 @@ func TestSyncSettingDelegateShutdown(t *testing.T) {
 			t.Fatal("ConfigSubscriberRoutine did not return on Stop")
 		}
 	})
+}
+
+// TestCaptureErrorDetailDefaultsOn pins the default of the process-wide switch.
+//
+// It defaults on because the decision that matters - whether a connection's error
+// text is stored - is the customer's, taken per connection in the UI, and that
+// toggle silently doing nothing until an operator also sets a variable is a worse
+// failure than the switch being on with nothing opted in.
+//
+// The switch itself must stay settable: it is the only check that runs before the
+// pin reaches the database, so it is what an operator turns off when that database
+// is the problem. The blocklist runs after the pin and cannot substitute.
+func TestCaptureErrorDetailDefaultsOn(t *testing.T) {
+	p := newProbeDelegate(t)
+
+	require.True(t, p.enabled.Load(),
+		"%s must default to true: a connection opted in through the UI has to capture "+
+			"without an operator setting anything", captureErrorDetailKey)
+
+	p.conf.Set(captureErrorDetailKey, false)
+	require.False(t, p.enabled.Load(),
+		"%s must remain settable to false - it is the only lever that stops the "+
+			"delegate touching its database", captureErrorDetailKey)
 }
