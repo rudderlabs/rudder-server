@@ -811,7 +811,7 @@ func TestIntegration(t *testing.T) {
 
 		t.Run("prevents SQL injection via malicious identifiers", func(t *testing.T) {
 			dropVictim := `; DROP TABLE victim_secrets; --`
-			maliciousNamespace := `evil_ns]` + dropVictim
+			maliciousNamespace := `evil_ns]'` + dropVictim
 			maliciousTable := `evil_table]` + dropVictim
 			maliciousColumn := `evil_col] int)` + dropVictim
 			addedColumn := `added_col] int)` + dropVictim
@@ -846,6 +846,19 @@ func TestIntegration(t *testing.T) {
 			require.Contains(t, schema[maliciousTable], maliciousColumn)
 			require.Contains(t, schema[maliciousTable], backslashColumn, "trailing-backslash column must round-trip verbatim")
 			require.Contains(t, schema[maliciousTable], addedColumn)
+
+			// Cleanup drops dangling staging tables: the lookup escapes the namespace as a string
+			// literal and the drop quotes the staging table name, so both must handle quotes and
+			// brackets in the names.
+			danglingStagingTable := whutils.StagingTablePrefix(destType) + `evil_table]'` + dropVictim
+			require.NoError(t, ms.CreateTable(ctx, danglingStagingTable, model.TableSchema{"id": "string"}))
+			ms.Cleanup(ctx)
+			var danglingCount int
+			require.NoError(t, db.QueryRowContext(ctx,
+				`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = @p1 AND table_name = @p2`,
+				maliciousNamespace, danglingStagingTable,
+			).Scan(&danglingCount))
+			require.Zero(t, danglingCount, "dangling staging table must be dropped by Cleanup")
 
 			// DropTable must also quote the identifier - a broken drop would inject a second DROP.
 			require.NoError(t, ms.DropTable(ctx, maliciousTable))
