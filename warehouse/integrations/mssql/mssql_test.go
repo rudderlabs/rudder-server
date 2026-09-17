@@ -847,9 +847,16 @@ func TestIntegration(t *testing.T) {
 			require.Contains(t, schema[maliciousTable], backslashColumn, "trailing-backslash column must round-trip verbatim")
 			require.Contains(t, schema[maliciousTable], addedColumn)
 
+			// DropTable must also quote the identifier - a broken drop would inject a second DROP.
+			require.NoError(t, ms.DropTable(ctx, maliciousTable))
+			schema, err = ms.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Contains(t, schema, "victim_secrets", "victim table must survive DropTable injection")
+			require.NotContains(t, schema, maliciousTable, "malicious table should have been dropped")
+
 			// Cleanup drops dangling staging tables: the lookup escapes the namespace as a string
 			// literal and the drop quotes the staging table name, so both must handle quotes and
-			// brackets in the names.
+			// brackets in the names. Cleanup also closes the connection, so this runs last.
 			danglingStagingTable := whutils.StagingTablePrefix(destType) + `evil_table]'` + dropVictim
 			require.NoError(t, ms.CreateTable(ctx, danglingStagingTable, model.TableSchema{"id": "string"}))
 			ms.Cleanup(ctx)
@@ -859,13 +866,6 @@ func TestIntegration(t *testing.T) {
 				maliciousNamespace, danglingStagingTable,
 			).Scan(&danglingCount))
 			require.Zero(t, danglingCount, "dangling staging table must be dropped by Cleanup")
-
-			// DropTable must also quote the identifier - a broken drop would inject a second DROP.
-			require.NoError(t, ms.DropTable(ctx, maliciousTable))
-			schema, err = ms.FetchSchema(ctx)
-			require.NoError(t, err)
-			require.Contains(t, schema, "victim_secrets", "victim table must survive DropTable injection")
-			require.NotContains(t, schema, maliciousTable, "malicious table should have been dropped")
 		})
 	})
 }
