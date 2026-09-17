@@ -89,3 +89,17 @@ func TestAddColumnsGuardUsesQuotedName(t *testing.T) {
 	require.NoError(t, ms.AddColumns(context.Background(), `my.table]x`, []warehouseutils.ColumnInfo{{Name: `col'x`, Type: "string"}}))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestDropTableQuotesQualifiedName(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	ms := &MSSQL{db: sqlmw.New(db), namespace: `ns]x`, logger: logger.NOP}
+
+	mock.ExpectExec(regexp.QuoteMeta(`DROP TABLE [ns]]x].[my.table]]x]`)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	require.NoError(t, ms.DropTable(context.Background(), `my.table]x`))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
