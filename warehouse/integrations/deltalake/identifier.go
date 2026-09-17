@@ -22,6 +22,12 @@ func quoteIdentifiers(identifiers []string) string {
 	return strings.Join(quotedIdentifiers, ",")
 }
 
+// stringLiteralEscaper escapes characters in a Spark SQL single-quoted string literal.
+// Spark SQL uses backslash escape sequences inside string literals and does not treat a
+// doubled single quote as an escaped quote, so both the backslash and the quote are
+// escaped with a backslash.
+var stringLiteralEscaper = strings.NewReplacer(`\`, `\\`, `'`, `\'`)
+
 func quoteStringLiteral(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+	return "'" + stringLiteralEscaper.Replace(value) + "'"
 }

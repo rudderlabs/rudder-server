@@ -740,7 +740,7 @@ func (d *Deltalake) copyIntoLoadTable(
 				SELECT
 				  %s
 				FROM
-				  '%s'
+				  %s
 			  )
 			FILEFORMAT = PARQUET
 			PATTERN = '*.parquet'
@@ -748,7 +748,7 @@ func (d *Deltalake) copyIntoLoadTable(
 			%s;`,
 			quoteQualifiedIdentifier(d.Namespace, stagingTableName),
 			sortedColumnNames,
-			loadFolder,
+			quoteStringLiteral(loadFolder),
 			auth,
 		)
 	} else {
@@ -759,7 +759,7 @@ func (d *Deltalake) copyIntoLoadTable(
 				SELECT
 				  %s
 				FROM
-				  '%s'
+				  %s
 			  )
 			FILEFORMAT = CSV
 			PATTERN = '*.gz'
@@ -774,7 +774,7 @@ func (d *Deltalake) copyIntoLoadTable(
 `,
 			quoteQualifiedIdentifier(d.Namespace, stagingTableName),
 			sortedColumnNames,
-			loadFolder,
+			quoteStringLiteral(loadFolder),
 			auth,
 		)
 	}
@@ -1367,7 +1367,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 				SELECT
 				  %s
 				FROM
-				  '%s'
+				  %s
 			  )
 			FILEFORMAT = PARQUET
 			PATTERN = '*.parquet'
@@ -1376,7 +1376,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 `,
 			quoteQualifiedIdentifier(d.Namespace, tableName),
 			fmt.Sprintf(`%s, %s`, quoteIdentifier("id"), quoteIdentifier("val")),
-			loadFolder,
+			quoteStringLiteral(loadFolder),
 			auth,
 		)
 	} else {
@@ -1387,7 +1387,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 				SELECT
 				  %s
 				FROM
-				  '%s'
+				  %s
 			  )
 			FILEFORMAT = CSV
 			PATTERN = '*.gz'
@@ -1402,7 +1402,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 `,
 			quoteQualifiedIdentifier(d.Namespace, tableName),
 			"CAST ( '_c0' AS BIGINT ) AS id, CAST ( '_c1' AS STRING ) AS val",
-			loadFolder,
+			quoteStringLiteral(loadFolder),
 			auth,
 		)
 	}

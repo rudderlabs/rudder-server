@@ -14,6 +14,15 @@ func TestIdentifierQuoting(t *testing.T) {
 	require.Equal(t, "`schema``x`.`table``;drop table x;--`", quoteQualifiedIdentifier("schema`x", "table`;drop table x;--"))
 	require.Equal(t, "`row_id`,`column``name`,`table_name`", quoteIdentifiers([]string{"row_id", "column`name", "table_name"}))
 	require.Equal(t, "`row_id`", primaryKey("rudder_discards"))
+	require.Equal(t, "`evil\\`", quoteIdentifier(`evil\`))
+}
+
+func TestStringLiteralQuoting(t *testing.T) {
+	require.Equal(t, `'s3://bucket/prefix'`, quoteStringLiteral(`s3://bucket/prefix`))
+	require.Equal(t, `'^(?!rudder_staging_.*$).*'`, quoteStringLiteral(nonRudderStagingTableRegex))
+	require.Equal(t, `'evil\\'`, quoteStringLiteral(`evil\`))
+	require.Equal(t, `'evil\\\'; DROP TABLE x; --'`, quoteStringLiteral(`evil\'; DROP TABLE x; --`))
+	require.Equal(t, `'it\'s'`, quoteStringLiteral(`it's`))
 }
 
 func TestColumnsWithDataTypesQuotesIdentifiers(t *testing.T) {
