@@ -188,7 +188,7 @@ func newDelegate(conf *config.Config, log logger.Logger, statFactory stats.Stats
 		log:                log,
 		statFactory:        statFactory,
 		db:                 db,
-		enabled:            conf.GetReloadableBoolVar(false, captureErrorDetailKey),
+		enabled:            conf.GetReloadableBoolVar(true, captureErrorDetailKey),
 		maxErrorLength:     conf.GetReloadableIntVar(defaultMaxErrorLength, 1, maxErrorLengthKey),
 		blockedConnections: conf.GetReloadableStringSliceVar(nil, blockedConnectionsKey),
 		blockedWorkspaces:  conf.GetReloadableStringSliceVar(nil, blockedWorkspacesKey),

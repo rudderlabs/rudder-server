@@ -178,6 +178,7 @@ func TestSyncSettingDelegateCheckOrder(t *testing.T) {
 		},
 		{
 			name:          "step 2 the global flag being off never reaches the pin",
+			setup:         func(p *probeDelegate) { p.conf.Set(captureErrorDetailKey, false) },
 			errorResponse: boom,
 		},
 		{
