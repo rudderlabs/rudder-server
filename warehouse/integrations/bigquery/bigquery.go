@@ -42,6 +42,10 @@ type BigQuery struct {
 	logger    logger.Logger
 	now       func() time.Time
 
+	// authOpts are built once by connect and reused, so workload identity federation does not
+	// exchange credentials again for every job statistics call.
+	authOpts []option.ClientOption
+
 	config struct {
 		setUsersLoadPartitionFirstEventFilter bool
 		customPartitionsEnabled               bool
@@ -591,11 +595,7 @@ func (bq *BigQuery) jobStatistics(
 	ctx context.Context,
 	job *bigquery.Job,
 ) (*bqservice.JobStatistics, error) {
-	opts, err := bq.authOptions(ctx, bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting))
-	if err != nil {
-		return nil, err
-	}
-	serv, err := bqservice.NewService(ctx, opts...)
+	serv, err := bqservice.NewService(ctx, bq.authOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating service: %w", err)
 	}
@@ -772,12 +772,12 @@ func (bq *BigQuery) createAndLoadStagingUsersTable(ctx context.Context, stagingT
 // credentials are passed and the client falls through to Application Default Credentials.
 func (bq *BigQuery) authOptions(ctx context.Context, credentials string) ([]option.ClientOption, error) {
 	if bq.warehouse.GetStringDestinationConfig(bq.conf, model.AuthMethodSetting) == googleutil.AuthMethodWorkloadIdentityFederation {
-		roleARN, region := misc.GetRudderGCPFederationAWSRole()
+		roleARN, region := misc.GetRudderGCPFederationAWSRoleAndRegion(bq.conf)
 		ts, err := googleutil.AWSFederatedTokenSource(ctx, googleutil.AWSFederationConfig{
-			ProjectNumber:        bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityProjectNumSetting),
+			ProjectNumber:        bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityProjectNumberSetting),
 			PoolID:               bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityPoolIDSetting),
 			ProviderID:           bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityProviderIDSetting),
-			TargetServiceAccount: bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityTargetSASetting),
+			TargetServiceAccount: bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityTargetServiceAccountSetting),
 			WorkspaceID:          bq.warehouse.WorkspaceID,
 			RoleARN:              roleARN,
 			Region:               region,
@@ -814,6 +814,7 @@ func (bq *BigQuery) connect(ctx context.Context) (*middleware.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating bigquery client: %w", err)
 	}
+	bq.authOpts = opts
 
 	middlewareClient := middleware.New(
 		bqClient,

@@ -50,7 +50,7 @@ func TestUnsupportedCredentialType(t *testing.T) {
 	bq.uploader = uploader
 	bq.projectID = "projectId"
 
-	_, err := bq.connect(context.Background())
+	_, err := bq.connect(t.Context())
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), `unsupported credential type "authorized_user"`)
 }
@@ -80,8 +80,9 @@ func TestWorkloadIdentityFederation(t *testing.T) {
 
 			// credentials would be rejected as a service account key; the federation path never reads them.
 			// AWS credentials resolve lazily on the first request, so connecting succeeds.
-			_, err := bq.connect(context.Background())
+			_, err := bq.connect(t.Context())
 			require.NoError(t, err)
+			require.Len(t, bq.authOpts, 1, "job statistics reuse the federated token source built by connect")
 		})
 	}
 }

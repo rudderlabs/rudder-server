@@ -90,7 +90,7 @@ require (
 	github.com/rudderlabs/compose-test v0.1.5
 	github.com/rudderlabs/keydb v1.4.1
 	github.com/rudderlabs/rudder-cp-sdk v1.4.1
-	github.com/rudderlabs/rudder-go-kit v0.79.2-0.20260917061814-be2aece6f833
+	github.com/rudderlabs/rudder-go-kit v0.79.2-0.20260917070023-23015c410d60
 	github.com/rudderlabs/rudder-observability-kit v0.0.7
 	github.com/rudderlabs/rudder-schemas v0.12.0
 	github.com/rudderlabs/rudder-transformer/go v1.151.0

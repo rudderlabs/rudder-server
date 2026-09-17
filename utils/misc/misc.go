@@ -616,10 +616,10 @@ func GetRudderObjectStorageAccessKeys() (accessKeyID, accessKey string) {
 	return config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID"), config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY")
 }
 
-// GetRudderGCPFederationAWSRole returns the AWS role RudderStack assumes for GCP workload identity federation.
-// An empty roleARN means the pod's IRSA role is assumed instead.
-func GetRudderGCPFederationAWSRole() (roleARN, region string) {
-	return config.GetStringVar("", "RUDDER_GCP_FEDERATION_AWS_ROLE_ARN"), GetRegionHint()
+// GetRudderGCPFederationAWSRoleAndRegion returns the AWS role and region RudderStack uses for GCP workload
+// identity federation. An empty roleARN means the pod's IRSA role is assumed instead.
+func GetRudderGCPFederationAWSRoleAndRegion(conf *config.Config) (roleARN, region string) {
+	return conf.GetStringVar("", "RUDDER_GCP_FEDERATION_AWS_ROLE_ARN"), conf.GetStringVar("us-east-1", "AWS_S3_REGION_HINT")
 }
 
 func GetRudderObjectStoragePrefix() (prefix string) {
@@ -685,7 +685,7 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
 		clonedObjectStorageConfig := make(map[string]any)
 		maps.Copy(clonedObjectStorageConfig, objectStorageConfigMap)
 		clonedObjectStorageConfig["workspaceID"] = opts.WorkspaceID
-		clonedObjectStorageConfig["workloadIdentityAWSRoleARN"], clonedObjectStorageConfig["workloadIdentityAWSRegion"] = GetRudderGCPFederationAWSRole()
+		clonedObjectStorageConfig["workloadIdentityAWSRoleARN"], clonedObjectStorageConfig["workloadIdentityAWSRegion"] = GetRudderGCPFederationAWSRoleAndRegion(config.Default)
 		objectStorageConfigMap = clonedObjectStorageConfig
 	}
 	return objectStorageConfigMap

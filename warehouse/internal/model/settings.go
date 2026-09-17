@@ -68,9 +68,11 @@ var (
 	SkipViewsSetting                   DestinationConfigSetting = destConfSetting("skipViews")
 	ManualSyncSetting                  DestinationConfigSetting = destConfSetting("manualSync")
 	EnableHierarchicalNamespaceSetting DestinationConfigSetting = destConfSetting("enableHierarchicalNamespace")
-	AuthMethodSetting                  DestinationConfigSetting = destConfSetting("authMethod")
-	WorkloadIdentityTargetSASetting    DestinationConfigSetting = destConfSetting("workloadIdentityTargetServiceAccount")
-	WorkloadIdentityProjectNumSetting  DestinationConfigSetting = destConfSetting("workloadIdentityProjectNumber")
-	WorkloadIdentityPoolIDSetting      DestinationConfigSetting = destConfSetting("workloadIdentityPoolId")
-	WorkloadIdentityProviderIDSetting  DestinationConfigSetting = destConfSetting("workloadIdentityProviderId")
+
+	// BigQuery workload identity federation
+	AuthMethodSetting                           DestinationConfigSetting = destConfSetting("authMethod")
+	WorkloadIdentityProjectNumberSetting        DestinationConfigSetting = destConfSetting("workloadIdentityProjectNumber")
+	WorkloadIdentityPoolIDSetting               DestinationConfigSetting = destConfSetting("workloadIdentityPoolId")
+	WorkloadIdentityProviderIDSetting           DestinationConfigSetting = destConfSetting("workloadIdentityProviderId")
+	WorkloadIdentityTargetServiceAccountSetting DestinationConfigSetting = destConfSetting("workloadIdentityTargetServiceAccount")
 )
