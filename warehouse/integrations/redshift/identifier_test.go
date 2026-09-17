@@ -25,3 +25,12 @@ func TestIdentifierQuoting(t *testing.T) {
 	require.Contains(t, columns, `"received""at" timestamp`)
 	require.False(t, strings.Contains(columns, `%q`))
 }
+
+func TestEscapeCharacterMatrix(t *testing.T) {
+	const sink = "a\"b`c]d'e\\f" // a " b ` c ] d ' e \ f
+
+	// Double-quoted identifiers: only " is doubled, the backslash stays literal.
+	require.Equal(t, "\"a\"\"b`c]d'e\\f\"", quoteIdentifier(sink))
+	// String literals: Redshift honours backslash escapes, so both ' and \ are escaped.
+	require.Equal(t, "'a\"b`c]d''e\\\\f'", quoteStringLiteral(sink))
+}
