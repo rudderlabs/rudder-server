@@ -1319,6 +1319,100 @@ func TestIntegration(t *testing.T) {
 		})
 	})
 
+	t.Run("prevents SQL injection via malicious identifiers", func(t *testing.T) {
+		ctx := context.Background()
+		namespace := whth.RandSchema(destType)
+
+		db, err := bigquery.NewClient(ctx,
+			credentials.ProjectID,
+			option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(credentials.Credentials)),
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = db.Close() })
+		t.Cleanup(func() {
+			dropSchema(t, db, namespace)
+		})
+
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: "test_source_id",
+			},
+			Destination: backendconfig.DestinationT{
+				ID: "test_destination_id",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destType,
+				},
+				Config: map[string]any{
+					"project":     credentials.ProjectID,
+					"location":    credentials.Location,
+					"bucketName":  credentials.BucketName,
+					"credentials": credentials.Credentials,
+					"namespace":   namespace,
+				},
+			},
+			WorkspaceID: "test_workspace_id",
+			Namespace:   namespace,
+		}
+
+		// BigQuery rejects backticks, backslashes, double quotes, semicolons and
+		// parentheses in table and column names at the API level, so a live
+		// breakout payload cannot be created. Instead, use names that BigQuery
+		// accepts but that are only valid SQL when correctly quoted (spaces,
+		// dashes, and flexible column name characters such as ' = : # |), and
+		// verify every raw-SQL path (dedup view, DeleteBy, INFORMATION_SCHEMA
+		// lookups) handles them.
+		maliciousTable := "evil table-name drop"
+		maliciousColumn := "evil col-name' = 1 # drop"
+		addedColumn := "added col'|drop"
+		maliciousSchema := model.TableSchema{
+			"id":                          "string",
+			"received_at":                 "datetime",
+			"context_sources_job_run_id":  "string",
+			"context_sources_task_run_id": "string",
+			"context_source_id":           "string",
+			maliciousColumn:               "string",
+		}
+
+		conf := config.New()
+		conf.Set("Warehouse.bigquery.enableDeleteByJobs", true)
+
+		bq := whbigquery.New(conf, logger.NOP)
+		require.NoError(t, bq.Setup(ctx, warehouse, mockuploader.NewMockUploader(gomock.NewController(t))))
+
+		require.NoError(t, bq.CreateSchema(ctx))
+		// Victim (control) table created through the manager itself.
+		require.NoError(t, bq.CreateTable(ctx, "victim_secrets", model.TableSchema{"id": "string"}))
+		// CreateTable also creates the deduplication view through raw SQL.
+		require.NoError(t, bq.CreateTable(ctx, maliciousTable, maliciousSchema))
+		require.NoError(t, bq.CreateTable(ctx, maliciousTable, maliciousSchema), "Running twice should not error out")
+		require.Len(t, lo.Filter(listViews(t, ctx, db, namespace), func(item *bigquery.TableMetadata, index int) bool {
+			return item.Name == maliciousTable+"_view"
+		}), 1, "deduplication view must be created for the malicious table")
+		require.NoError(t, bq.AddColumns(ctx, maliciousTable, []whutils.ColumnInfo{{Name: addedColumn, Type: "string"}}))
+
+		// DeleteBy interpolates the table path into a raw DELETE statement.
+		require.NoError(t, bq.DeleteBy(ctx, []string{maliciousTable}, whutils.DeleteByParams{
+			SourceId:  "source_id",
+			JobRunId:  "job_run_id",
+			TaskRunId: "task_run_id",
+			StartTime: time.Now(),
+		}))
+
+		// FetchSchema round-trips the stored identifiers through INFORMATION_SCHEMA.
+		schema, err := bq.FetchSchema(ctx)
+		require.NoError(t, err)
+		require.Contains(t, schema, "victim_secrets", "victim table must survive")
+		require.Contains(t, schema, maliciousTable, "malicious table must be created verbatim")
+		require.Contains(t, schema[maliciousTable], maliciousColumn)
+		require.Contains(t, schema[maliciousTable], addedColumn)
+
+		require.NoError(t, bq.DropTable(ctx, maliciousTable))
+		schema, err = bq.FetchSchema(ctx)
+		require.NoError(t, err)
+		require.Contains(t, schema, "victim_secrets", "victim table must survive DropTable")
+		require.NotContains(t, schema, maliciousTable, "malicious table should have been dropped")
+	})
+
 	t.Run("Fetch schema", func(t *testing.T) {
 		ctx := context.Background()
 		namespace := whth.RandSchema(destType)
