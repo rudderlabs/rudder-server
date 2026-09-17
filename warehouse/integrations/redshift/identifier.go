@@ -33,3 +33,12 @@ func quoteIdentifiers(identifiers []string) string {
 	}
 	return strings.Join(quotedIdentifiers, ",")
 }
+
+// stringLiteralEscaper escapes characters in a Redshift single-quoted string literal.
+// Redshift interprets backslash escape sequences inside string literals, so the backslash
+// must be escaped as well as the single quote.
+var stringLiteralEscaper = strings.NewReplacer(`\`, `\\`, `'`, `''`)
+
+func quoteStringLiteral(value string) string {
+	return "'" + stringLiteralEscaper.Replace(value) + "'"
+}
