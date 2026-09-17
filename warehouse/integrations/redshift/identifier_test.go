@@ -13,6 +13,9 @@ func TestIdentifierQuoting(t *testing.T) {
 	require.Equal(t, `"schema"";drop schema public;--"`, quoteIdentifier(`schema";drop schema public;--`))
 	require.Equal(t, `"schema""x"."table"";drop table x;--"`, quoteQualifiedIdentifier(`schema"x`, `table";drop table x;--`))
 	require.Equal(t, `"row_id", "column""name", "table_name"`, quoteColumnList(`row_id, column"name, table_name`))
+	require.Equal(t, `'s3://bucket/prefix/manifest.json'`, quoteStringLiteral(`s3://bucket/prefix/manifest.json`))
+	require.Equal(t, `'evil\\'`, quoteStringLiteral(`evil\`))
+	require.Equal(t, `'evil\\''; DROP TABLE x; --'`, quoteStringLiteral(`evil\'; DROP TABLE x; --`))
 
 	columns := ColumnsWithDataTypes(model.TableSchema{
 		`id";drop table x;--`: "string",
