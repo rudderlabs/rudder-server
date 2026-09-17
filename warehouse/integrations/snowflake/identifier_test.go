@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -23,11 +24,13 @@ func TestIdentifierQuoting(t *testing.T) {
 	require.Equal(t, `"schema"";drop schema public;--"`, quoteIdentifier(`schema";drop schema public;--`))
 	require.Equal(t, `"schema""x"."table"";drop table x;--"`, quoteQualifiedIdentifier(`schema"x`, `table";drop table x;--`))
 	require.Equal(t, `"ROW_ID", "COLUMN""NAME", "TABLE_NAME"`, quoteColumnList(`ROW_ID, COLUMN"NAME, TABLE_NAME`))
+	require.Equal(t, `'evil\\'`, quoteStringLiteral(`evil\`))
+	require.Equal(t, `'evil\\''; DROP TABLE x; --'`, quoteStringLiteral(`evil\'; DROP TABLE x; --`))
 }
 
 func TestTableManagerQuotesIdentifiers(t *testing.T) {
 	manager := newStandardTableManager()
-	query := manager.createTableQuery(quoteIdentifier(`schema"x`), `schema"x`, `table";drop table x;--`, model.TableSchema{
+	query := manager.createTableQuery(quoteIdentifier(`schema"x`), `table";drop table x;--`, model.TableSchema{
 		`id";drop table x;--`: "string",
 	})
 	require.Contains(t, query, `"schema""x"."table"";drop table x;--"`)
@@ -55,15 +58,11 @@ func TestDeleteByQuotesTableAndColumnIdentifiers(t *testing.T) {
 	tableName := `x";DROP TABLE y;--`
 	expectedQuery := fmt.Sprintf(`DELETE FROM %s
 		WHERE
-			%s <> ? AND
-			%s <> ? AND
-			%s = ? AND
-			%s < ?`,
+			"CONTEXT_SOURCES_JOB_RUN_ID" <> ? AND
+			"CONTEXT_SOURCES_TASK_RUN_ID" <> ? AND
+			"CONTEXT_SOURCE_ID" = ? AND
+			"RECEIVED_AT" < ?`,
 		quoteQualifiedIdentifier(sf.Namespace, tableName),
-		quoteIdentifier("context_sources_job_run_id"),
-		quoteIdentifier("context_sources_task_run_id"),
-		quoteIdentifier("context_source_id"),
-		quoteIdentifier("received_at"),
 	)
 
 	mock.ExpectExec(regexp.QuoteMeta(expectedQuery)).

@@ -207,7 +207,7 @@ func (sf *Snowflake) schemaIdentifier() string {
 func (sf *Snowflake) createTable(ctx context.Context, tableName string, columns model.TableSchema) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 
-	sqlStatement := sf.tableManager.createTableQuery(schemaIdentifier, sf.Namespace, tableName, columns)
+	sqlStatement := sf.tableManager.createTableQuery(schemaIdentifier, tableName, columns)
 
 	sf.logger.Infon("Creating table in snowflake",
 		logger.NewStringField(lf.DestinationID, sf.Warehouse.Destination.ID),
@@ -305,10 +305,10 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 			%s = ? AND
 			%s < ?`,
 			quoteQualifiedIdentifier(sf.Namespace, tb),
-			quoteIdentifier("context_sources_job_run_id"),
-			quoteIdentifier("context_sources_task_run_id"),
-			quoteIdentifier("context_source_id"),
-			quoteIdentifier("received_at"),
+			quoteIdentifier(whutils.ToProviderCase(provider, "context_sources_job_run_id")),
+			quoteIdentifier(whutils.ToProviderCase(provider, "context_sources_task_run_id")),
+			quoteIdentifier(whutils.ToProviderCase(provider, "context_source_id")),
+			quoteIdentifier(whutils.ToProviderCase(provider, "received_at")),
 		)
 		_, err := sf.DB.ExecContext(ctx,
 			sqlStatement,
@@ -609,13 +609,13 @@ func (sf *Snowflake) copyInto(
 		`COPY INTO
 			%s(%v)
 		FROM
-		  '%v' %s
+		  %s %s
 		PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE)
 		TRUNCATECOLUMNS = TRUE;`,
 		quoteQualifiedIdentifier(sf.Namespace, copyTargetTable),
 		sortedColumnNames,
-		loadFolder,
+		quoteStringLiteral(loadFolder),
 		authString,
 	)
 
@@ -701,14 +701,14 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
 	sqlStatement := fmt.Sprintf(`
 		COPY INTO %s(%v)
-		FROM '%v'
+		FROM %s
 		%s
 		PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE;`,
 		quoteQualifiedIdentifier(sf.Namespace, identityMergeRulesTable),
 		sortedColumnNames,
-		loadLocation,
+		quoteStringLiteral(loadLocation),
 		authString,
 	)
 
@@ -788,11 +788,11 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
 	sqlStatement = fmt.Sprintf(
 		`COPY INTO %s("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT")
-		FROM '%v' %s PATTERN = '.*\.csv\.gz'
+		FROM %s %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE`,
 		quoteQualifiedIdentifier(sf.Namespace, stagingTableName),
-		loadLocation,
+		quoteStringLiteral(loadLocation),
 		authString,
 	)
 
@@ -1460,12 +1460,12 @@ func (sf *Snowflake) TestLoadTable(
 	}
 
 	loadFolder := whutils.GetObjectFolder(sf.ObjectStorage, location)
-	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
+	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM %s %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE`,
 		quoteQualifiedIdentifier(sf.Namespace, tableName),
 		fmt.Sprintf(`%s, %s`, quoteIdentifier("id"), quoteIdentifier("val")),
-		loadFolder,
+		quoteStringLiteral(loadFolder),
 		authString,
 	)
 

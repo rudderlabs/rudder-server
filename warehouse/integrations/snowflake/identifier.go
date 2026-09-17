@@ -30,6 +30,11 @@ func quoteIdentifiers(identifiers []string) string {
 	return strings.Join(quotedIdentifiers, ",")
 }
 
+// stringLiteralEscaper escapes characters in a Snowflake single-quoted string constant.
+// Snowflake interprets backslash escape sequences inside string constants, so the backslash
+// must be escaped as well as the single quote.
+var stringLiteralEscaper = strings.NewReplacer(`\`, `\\`, `'`, `''`)
+
 func quoteStringLiteral(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+	return "'" + stringLiteralEscaper.Replace(value) + "'"
 }
