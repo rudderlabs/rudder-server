@@ -1166,7 +1166,7 @@ func (bq *BigQuery) DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZ
 		} else if hasAnonymousID {
 			toSelectFields = `anonymous_id, null as user_id`
 		} else if hasUserID {
-			toSelectFields = `null as anonymous_id", user_id`
+			toSelectFields = `null as anonymous_id, user_id`
 		} else {
 			bq.logger.Infon("anonymous_id, user_id columns not present",
 				logger.NewStringField(logfield.TableName, tableName),
