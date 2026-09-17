@@ -5,13 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/lib/pq"
 	"github.com/lib/pq/pqerror"
 	"github.com/ory/dockertest/v3"
@@ -37,7 +35,6 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
@@ -56,46 +53,6 @@ func TestColumnsWithDataTypesQuotesIdentifiers(t *testing.T) {
 
 	require.Equal(t, `"x"" text);copy (select '') to program 'id>/tmp/rce';--" text`, fragment)
 	require.NotContains(t, fragment, `x" text);`)
-}
-
-func TestCreateTableQuotesSchemaAndTableIdentifiers(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer db.Close()
-
-	namespace := `schema";drop schema public;--`
-	tableName := `events");copy (select '') to program 'id>/tmp/rce';--`
-	pg := postgres.New(config.New(), logger.NOP, stats.NOP)
-	pg.DB = sqlmiddleware.New(db)
-	pg.Namespace = namespace
-
-	mock.ExpectExec(regexp.QuoteMeta(`SET search_path to "schema"";drop schema public;--"`)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec(regexp.QuoteMeta(`CREATE TABLE IF NOT EXISTS "schema"";drop schema public;--"."events"");copy (select '') to program 'id>/tmp/rce';--" ( "id" text )`)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-
-	require.NoError(t, pg.CreateTable(context.Background(), tableName, model.TableSchema{
-		"id": model.StringDataType,
-	}))
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestCreateSchemaChecksExistenceWithBindParameter(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer db.Close()
-
-	namespace := `schema');drop schema public;--`
-	pg := postgres.New(config.New(), logger.NOP, stats.NOP)
-	pg.DB = sqlmiddleware.New(db)
-	pg.Namespace = namespace
-
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = $1);`)).
-		WithArgs(namespace).
-		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
-
-	require.NoError(t, pg.CreateSchema(context.Background()))
-	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestIntegration(t *testing.T) {
@@ -1178,7 +1135,7 @@ func TestIntegration(t *testing.T) {
 			ctx := context.Background()
 
 			// Note: Postgres reserves the "pg_" prefix for schema names, so avoid it here.
-			maliciousNamespace := `evil_ns";drop table victim_secrets;--`
+			maliciousNamespace := `evil_ns'";drop table victim_secrets;--`
 			maliciousTable := `evil_table");drop table victim_secrets;--`
 			maliciousColumn := `evil_col" text);drop table victim_secrets;--`
 			addedColumn := `evil_added_col" text);drop table victim_secrets;--`
@@ -1197,6 +1154,9 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, pg.Setup(ctx, maliciousWarehouse, mockUploader(t, nil, maliciousTable, maliciousSchema, maliciousSchema)))
 
 			require.NoError(t, pg.CreateSchema(ctx))
+			// Re-running must find the existing schema: schemaExists has to bind the namespace
+			// (which contains a single quote) instead of interpolating it into a string literal.
+			require.NoError(t, pg.CreateSchema(ctx), "CreateSchema must be idempotent for a namespace containing a quote")
 			// Victim (control) table created through the manager; an injected
 			// `drop table victim_secrets` (search_path is the malicious schema) would remove it.
 			require.NoError(t, pg.CreateTable(ctx, "victim_secrets", model.TableSchema{"id": "string"}))
