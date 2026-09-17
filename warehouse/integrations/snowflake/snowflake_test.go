@@ -920,7 +920,8 @@ func TestIntegration(t *testing.T) {
 
 				c := config.New()
 				c.Set("Warehouse.snowflake.mergeWindow."+warehouse.Destination.ID+".tables", tableName)
-				c.Set("Warehouse.snowflake.mergeWindow."+warehouse.Destination.ID+".column", "RECEIVED_AT")
+				// Lowercase on purpose: the column must resolve to the stored uppercase identifier.
+				c.Set("Warehouse.snowflake.mergeWindow."+warehouse.Destination.ID+".column", "received_at")
 				c.Set("Warehouse.snowflake.mergeWindow."+warehouse.Destination.ID+".duration", "24h")
 
 				sf := snowflake.New(c, logger.NOP, stats.NOP)

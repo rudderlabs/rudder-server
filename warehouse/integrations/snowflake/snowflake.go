@@ -283,6 +283,9 @@ func (sf *Snowflake) authString() (string, error) {
 		}
 		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
 	} else {
+		// The storage integration name comes from the destination configuration, not from event data.
+		// It is intentionally left unquoted: quoting would make it case-sensitive and break existing
+		// configurations that rely on Snowflake resolving unquoted identifiers to uppercase.
 		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, sf.Warehouse.GetStringDestinationConfig(sf.conf, model.StorageIntegrationSetting))
 	}
 	return auth, nil
@@ -473,7 +476,7 @@ func (sf *Snowflake) mergeIntoLoadTable(
 
 		additionalJoinClause += fmt.Sprintf(
 			` AND original.%s >= DATEADD(hour, -%d, CURRENT_TIMESTAMP())`,
-			quoteIdentifier(mergeWindowColumn),
+			quoteIdentifier(whutils.ToProviderCase(provider, mergeWindowColumn)),
 			int(mergeWindowDuration.Hours()),
 		)
 	}
