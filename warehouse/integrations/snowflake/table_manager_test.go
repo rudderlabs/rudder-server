@@ -65,7 +65,7 @@ func TestTableManager(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				manager := newTableManager(config.New(), tt.warehouse)
-				result := manager.createTableQuery("myschema", "myschema", "mytable", tt.columns)
+				result := manager.createTableQuery("myschema", "mytable", tt.columns)
 				require.Equal(t, tt.expectedCreateTableQuery, result)
 			})
 		}
@@ -128,14 +128,14 @@ func TestTableManager(t *testing.T) {
 		}
 	})
 
-	t.Run("TestIcebergBaseLocationUsesRawPathComponents", func(t *testing.T) {
-		manager := newIcebergTableManager("myvolume")
-		result := manager.createTableQuery(quoteIdentifier(`schema"x`), `schema"x`, `table'y`, model.TableSchema{
+	t.Run("TestIcebergQuotesStringLiterals", func(t *testing.T) {
+		manager := newIcebergTableManager(`vol\'; DROP TABLE x; --`)
+		result := manager.createTableQuery(quoteIdentifier("MYSCHEMA"), `table'y`, model.TableSchema{
 			"col1": "string",
 		})
 
-		require.Contains(t, result, `CREATE OR REPLACE ICEBERG TABLE "schema""x"."table'y"`)
-		require.Contains(t, result, `BASE_LOCATION = 'schema"x/table''y'`)
-		require.NotContains(t, result, `BASE_LOCATION = '"schema""x"/table''y'`)
+		require.Contains(t, result, `CREATE OR REPLACE ICEBERG TABLE "MYSCHEMA"."table'y"`)
+		require.Contains(t, result, `EXTERNAL_VOLUME = 'vol\\''; DROP TABLE x; --'`)
+		require.Contains(t, result, `BASE_LOCATION = '"MYSCHEMA"/table''y'`)
 	})
 }

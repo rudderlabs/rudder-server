@@ -11,7 +11,7 @@ import (
 )
 
 type tableManager interface {
-	createTableQuery(schemaIdentifier, namespace, tableName string, columns model.TableSchema) string
+	createTableQuery(schemaIdentifier, tableName string, columns model.TableSchema) string
 	addColumnsQuery(schemaIdentifier, tableName string, columnsInfo []whutils.ColumnInfo) (string, error)
 }
 
@@ -42,7 +42,7 @@ func newStandardTableManager() tableManager {
 	}
 }
 
-func (m *standardTableManager) createTableQuery(schemaIdentifier, _, tableName string, columns model.TableSchema) string {
+func (m *standardTableManager) createTableQuery(schemaIdentifier, tableName string, columns model.TableSchema) string {
 	return fmt.Sprintf(
 		`CREATE TABLE IF NOT EXISTS %s.%s ( %v )`,
 		schemaIdentifier, quoteIdentifier(tableName), columnsWithDataTypes(columns, m.dataTypesMap),
@@ -86,15 +86,15 @@ func newIcebergTableManager(externalVolume string) tableManager {
 	}
 }
 
-func (m *icebergTableManager) createTableQuery(schemaIdentifier, namespace, tableName string, columns model.TableSchema) string {
-	baseLocation := fmt.Sprintf("%s/%s", namespace, tableName)
+func (m *icebergTableManager) createTableQuery(schemaIdentifier, tableName string, columns model.TableSchema) string {
+	baseLocation := fmt.Sprintf("%s/%s", schemaIdentifier, tableName)
 	return fmt.Sprintf(
 		`CREATE OR REPLACE ICEBERG TABLE %s.%s ( %v )
 		CATALOG = 'SNOWFLAKE'
-		EXTERNAL_VOLUME = '%s'
+		EXTERNAL_VOLUME = %s
 		BASE_LOCATION = %s`,
 		schemaIdentifier, quoteIdentifier(tableName), columnsWithDataTypes(columns, m.dataTypesMap),
-		m.externalVolume,
+		quoteStringLiteral(m.externalVolume),
 		quoteStringLiteral(baseLocation),
 	)
 }
