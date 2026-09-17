@@ -80,6 +80,24 @@ func TestCreateTableQuotesSchemaAndTableIdentifiers(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestCreateSchemaChecksExistenceWithBindParameter(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	namespace := `schema');drop schema public;--`
+	pg := postgres.New(config.New(), logger.NOP, stats.NOP)
+	pg.DB = sqlmiddleware.New(db)
+	pg.Namespace = namespace
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = $1);`)).
+		WithArgs(namespace).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+
+	require.NoError(t, pg.CreateSchema(context.Background()))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
@@ -1156,66 +1174,52 @@ func TestIntegration(t *testing.T) {
 			require.NotContains(t, fragment, `x" text);`)
 		})
 
-		t.Run("quotes identifiers in create table", func(t *testing.T) {
+		t.Run("prevents SQL injection via malicious identifiers", func(t *testing.T) {
 			ctx := context.Background()
-			tableName := `events");copy (select '') to program 'id>/tmp/rce';--`
-			columnName := `x" text);copy (select '') to program 'id>/tmp/rce';--`
-			maliciousNamespace := `schema";drop schema public;--`
+
+			// Note: Postgres reserves the "pg_" prefix for schema names, so avoid it here.
+			maliciousNamespace := `evil_ns";drop table victim_secrets;--`
+			maliciousTable := `evil_table");drop table victim_secrets;--`
+			maliciousColumn := `evil_col" text);drop table victim_secrets;--`
+			addedColumn := `evil_added_col" text);drop table victim_secrets;--`
+			backslashColumn := `evil_bs\`
+
 			maliciousSchema := model.TableSchema{
-				columnName: "string",
-				"id":       "string",
+				"id":            "string",
+				maliciousColumn: "string",
+				backslashColumn: "string",
 			}
 
 			maliciousWarehouse := th.Clone(t, warehouse)
 			maliciousWarehouse.Namespace = maliciousNamespace
 
-			loadFiles := []whutils.LoadFile{}
-			mockUploader := mockUploader(t, loadFiles, tableName, maliciousSchema, maliciousSchema)
-
 			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
-			require.NoError(t, pg.Setup(ctx, maliciousWarehouse, mockUploader))
+			require.NoError(t, pg.Setup(ctx, maliciousWarehouse, mockUploader(t, nil, maliciousTable, maliciousSchema, maliciousSchema)))
+
 			require.NoError(t, pg.CreateSchema(ctx))
-			require.NoError(t, pg.CreateTable(ctx, tableName, maliciousSchema))
+			// Victim (control) table created through the manager; an injected
+			// `drop table victim_secrets` (search_path is the malicious schema) would remove it.
+			require.NoError(t, pg.CreateTable(ctx, "victim_secrets", model.TableSchema{"id": "string"}))
+			require.NoError(t, pg.CreateTable(ctx, maliciousTable, maliciousSchema))
+			require.NoError(t, pg.AddColumns(ctx, maliciousTable, []whutils.ColumnInfo{
+				{Name: addedColumn, Type: "string"},
+			}))
 
-			var publicSchemaExists bool
-			err := pg.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'public')`).Scan(&publicSchemaExists)
+			// FetchSchema round-trips the stored identifiers - dialect-agnostic verification.
+			schema, err := pg.FetchSchema(ctx)
 			require.NoError(t, err)
-			require.True(t, publicSchemaExists)
+			require.Contains(t, schema, "victim_secrets", "victim table must survive - the injection executed")
+			require.Contains(t, schema, maliciousTable, "malicious table must be created verbatim")
+			require.Contains(t, schema[maliciousTable], maliciousColumn)
+			require.Contains(t, schema[maliciousTable], backslashColumn, "trailing-backslash column must round-trip verbatim")
+			require.Contains(t, schema[maliciousTable], addedColumn)
 
-			var maliciousSchemaExists bool
-			err = pg.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = $1)`, maliciousNamespace).Scan(&maliciousSchemaExists)
+			// DropTable must also quote the identifier - a broken drop would inject a second DROP.
+			require.NoError(t, pg.DropTable(ctx, maliciousTable))
+			schema, err = pg.FetchSchema(ctx)
 			require.NoError(t, err)
-			require.True(t, maliciousSchemaExists)
-
-			var tableExists bool
-			err = pg.DB.QueryRowContext(ctx, `
-				SELECT EXISTS (
-				  SELECT 1
-				  FROM information_schema.tables
-				  WHERE table_schema = $1
-				    AND table_name = $2
-				)`,
-				maliciousNamespace,
-				tableName,
-			).Scan(&tableExists)
-			require.NoError(t, err)
-			require.True(t, tableExists)
-
-			var columnExists bool
-			err = pg.DB.QueryRowContext(ctx, `
-				SELECT EXISTS (
-				  SELECT 1
-				  FROM information_schema.columns
-				  WHERE table_schema = $1
-				    AND table_name = $2
-				    AND column_name = $3
-				)`,
-				maliciousNamespace,
-				tableName,
-				columnName,
-			).Scan(&columnExists)
-			require.NoError(t, err)
-			require.True(t, columnExists)
+			require.Contains(t, schema, "victim_secrets", "victim table must survive DropTable injection")
+			require.NotContains(t, schema, maliciousTable, "malicious table should have been dropped")
 		})
 	})
 
