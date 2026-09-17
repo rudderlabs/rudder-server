@@ -2,8 +2,13 @@ package bigquery
 
 import "strings"
 
+// identifierEscaper escapes characters in a GoogleSQL quoted identifier.
+// Quoted identifiers share string-literal escape sequences, so the backslash
+// must be escaped as well as the backtick.
+var identifierEscaper = strings.NewReplacer(`\`, `\\`, "`", "\\`")
+
 func quoteIdentifier(identifier string) string {
-	return "`" + strings.ReplaceAll(identifier, "`", "\\`") + "`"
+	return "`" + identifierEscaper.Replace(identifier) + "`"
 }
 
 func quoteTablePath(identifiers ...string) string {
@@ -16,16 +21,4 @@ func quoteColumnList(columns string) string {
 		parts[i] = quoteIdentifier(strings.TrimSpace(column))
 	}
 	return strings.Join(parts, ", ")
-}
-
-func quoteIdentifiers(identifiers []string) string {
-	quotedIdentifiers := make([]string, 0, len(identifiers))
-	for _, identifier := range identifiers {
-		quotedIdentifiers = append(quotedIdentifiers, quoteIdentifier(identifier))
-	}
-	return strings.Join(quotedIdentifiers, ",")
-}
-
-func quoteStringLiteral(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }

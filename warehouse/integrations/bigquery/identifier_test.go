@@ -13,6 +13,8 @@ import (
 
 func TestIdentifierQuoting(t *testing.T) {
 	require.Equal(t, "`column\\`name`", quoteIdentifier("column`name"))
+	require.Equal(t, "`evil\\\\`", quoteIdentifier(`evil\`))
+	require.Equal(t, "`evil\\\\\\`; DROP TABLE x; --`", quoteIdentifier("evil\\`; DROP TABLE x; --"))
 	require.Equal(t, "`project-id.data\\`set.table$20240101`", quoteTablePath("project-id", "data`set", "table$20240101"))
 	require.Equal(t, "`row_id`, `column\\`name`, `table_name`", quoteColumnList("row_id, column`name, table_name"))
 }
@@ -31,4 +33,26 @@ func TestDeduplicationQueryQuotesIdentifiers(t *testing.T) {
 	partitionQuery, err := bq.deduplicationQuery("partitioned", model.TableSchema{"id": "string"})
 	require.NoError(t, err)
 	require.True(t, strings.Contains(partitionQuery, "_PARTITIONTIME BETWEEN"), partitionQuery)
+}
+
+func TestUsersMergeQueryQuotesIdentifiers(t *testing.T) {
+	bq := &BigQuery{namespace: "data`set"}
+	query := bq.usersMergeQuery(model.TableSchema{
+		"id":                     "string",
+		"email":                  "string",
+		"evil`) AS x FROM y; --": "string",
+		`trailing\`:              "string",
+	}, "SELECT * FROM dedup", "rudder_staging_users")
+
+	require.Equal(t, `SELECT DISTINCT * FROM (
+			SELECT `+"`id`"+`, FIRST_VALUE(`+"`email`"+` IGNORE NULLS) OVER (PARTITION BY `+"`id`"+` ORDER BY `+"`received_at`"+` DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS `+"`email`"+`,FIRST_VALUE(`+"`evil\\`) AS x FROM y; --`"+` IGNORE NULLS) OVER (PARTITION BY `+"`id`"+` ORDER BY `+"`received_at`"+` DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS `+"`evil\\`) AS x FROM y; --`"+`,FIRST_VALUE(`+"`trailing\\\\`"+` IGNORE NULLS) OVER (PARTITION BY `+"`id`"+` ORDER BY `+"`received_at`"+` DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS `+"`trailing\\\\`"+` FROM (
+				(
+					SELECT `+"`id`"+`, `+"`email`,`evil\\`) AS x FROM y; --`,`trailing\\\\`"+` FROM (SELECT * FROM dedup) WHERE (
+						`+"`id`"+` in (SELECT `+"`id`"+` FROM `+"`data\\`set.rudder_staging_users`"+`)
+					)
+				) UNION ALL (
+					SELECT `+"`id`"+`, `+"`email`,`evil\\`) AS x FROM y; --`,`trailing\\\\`"+` FROM `+"`data\\`set.rudder_staging_users`"+`
+				)
+			)
+		)`, query)
 }

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -656,21 +658,6 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 		return errorMap
 	}
 
-	firstValueSQL := func(column string) string {
-		quotedColumn := quoteIdentifier(column)
-		return fmt.Sprintf("FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY %[2]s ORDER BY %[3]s DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s", quotedColumn, quoteIdentifier("id"), quoteIdentifier("received_at"))
-	}
-
-	userColMap := bq.uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
-	var userColNames, firstValProps []string
-	for colName := range userColMap {
-		if colName == "id" {
-			continue
-		}
-		userColNames = append(userColNames, quoteIdentifier(colName))
-		firstValProps = append(firstValProps, firstValueSQL(colName))
-	}
-
 	deduplicationQuery, err := bq.deduplicationQuery(
 		warehouseutils.UsersTable,
 		bq.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable),
@@ -681,21 +668,10 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 		return errorMap
 	}
 
-	sqlStatement := fmt.Sprintf(`SELECT DISTINCT * FROM (
-			SELECT id, %[1]s FROM (
-				(
-					SELECT id, %[2]s FROM (%[3]s) WHERE (
-						id in (SELECT id FROM %[4]s)
-					)
-				) UNION ALL (
-					SELECT id, %[2]s FROM %[4]s
-				)
-			)
-		)`,
-		strings.Join(firstValProps, ","),
-		strings.Join(userColNames, ","),
+	sqlStatement := bq.usersMergeQuery(
+		bq.uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable),
 		deduplicationQuery,
-		quoteTablePath(bq.namespace, stagingUsersTableName),
+		stagingUsersTableName,
 	)
 
 	log.Infon("Loading data")
@@ -728,6 +704,43 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 		return errorMap
 	}
 	return errorMap
+}
+
+// usersMergeQuery builds the query which merges the users staging table into the deduplicated users table.
+func (bq *BigQuery) usersMergeQuery(userColMap model.TableSchema, deduplicationQuery, stagingUsersTableName string) string {
+	quotedID := quoteIdentifier("id")
+
+	userColNames := make([]string, 0, len(userColMap))
+	firstValProps := make([]string, 0, len(userColMap))
+	for _, colName := range slices.Sorted(maps.Keys(userColMap)) {
+		if colName == "id" {
+			continue
+		}
+		quotedColumn := quoteIdentifier(colName)
+		userColNames = append(userColNames, quotedColumn)
+		firstValProps = append(firstValProps, fmt.Sprintf(
+			"FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY %[2]s ORDER BY %[3]s DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s",
+			quotedColumn, quotedID, quoteIdentifier("received_at"),
+		))
+	}
+
+	return fmt.Sprintf(`SELECT DISTINCT * FROM (
+			SELECT %[5]s, %[1]s FROM (
+				(
+					SELECT %[5]s, %[2]s FROM (%[3]s) WHERE (
+						%[5]s in (SELECT %[5]s FROM %[4]s)
+					)
+				) UNION ALL (
+					SELECT %[5]s, %[2]s FROM %[4]s
+				)
+			)
+		)`,
+		strings.Join(firstValProps, ","),
+		strings.Join(userColNames, ","),
+		deduplicationQuery,
+		quoteTablePath(bq.namespace, stagingUsersTableName),
+		quotedID,
+	)
 }
 
 func (bq *BigQuery) createAndLoadStagingUsersTable(ctx context.Context, stagingTable string) error {
@@ -810,14 +823,16 @@ func (bq *BigQuery) dropDanglingStagingTables(ctx context.Context) error {
 		FROM
 		  %[1]s.INFORMATION_SCHEMA.TABLES
 		WHERE
-		  table_schema = %[2]s
-		  AND table_name LIKE %[3]s;
+		  table_schema = @schema
+		  AND table_name LIKE @prefix;
 	`,
 		quoteIdentifier(bq.namespace),
-		quoteStringLiteral(bq.namespace),
-		quoteStringLiteral(fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider))),
 	)
 	query := bq.db.Query(sqlStatement)
+	query.Parameters = []bigquery.QueryParameter{
+		{Name: "schema", Value: bq.namespace},
+		{Name: "prefix", Value: fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider))},
+	}
 	it, err := bq.db.Read(ctx, query)
 	if err != nil {
 		return fmt.Errorf("reading dangling staging tables in dataset %v: %w", bq.namespace, err)
@@ -968,16 +983,18 @@ func (bq *BigQuery) FetchSchema(ctx context.Context) (model.Schema, error) {
 		WHERE
 		  (t.table_type != 'VIEW')
 		  AND
-		  (t.table_name NOT LIKE %[2]s)
+		  (t.table_name NOT LIKE @prefix)
 		  AND (
 			c.column_name != '_PARTITIONTIME'
 			OR c.column_name IS NULL
 		  );
 	`,
 		quoteIdentifier(bq.namespace),
-		quoteStringLiteral(fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider))),
 	)
 	query := bq.db.Query(sqlStatement)
+	query.Parameters = []bigquery.QueryParameter{
+		{Name: "prefix", Value: fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider))},
+	}
 
 	it, err := bq.db.Read(ctx, query)
 	if err != nil {
