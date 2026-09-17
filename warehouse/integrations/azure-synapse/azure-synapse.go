@@ -859,12 +859,12 @@ func (as *AzureSynapse) CreateTable(ctx context.Context, tableName string, colum
 }
 
 func (as *AzureSynapse) DropTable(ctx context.Context, tableName string) (err error) {
-	sqlStatement := `DROP TABLE %[1]s.%[2]s`
+	sqlStatement := fmt.Sprintf(`DROP TABLE %s`, quoteQualifiedIdentifier(as.namespace, tableName))
 	as.logger.Infon("AZ: Dropping table in synapse for AZ",
 		logger.NewStringField(logfield.DestinationID, as.warehouse.Destination.ID),
 		logger.NewStringField(logfield.Query, sqlStatement),
 	)
-	_, err = as.db.ExecContext(ctx, fmt.Sprintf(sqlStatement, quoteIdentifier(as.namespace), quoteIdentifier(tableName)))
+	_, err = as.db.ExecContext(ctx, sqlStatement)
 	return err
 }
 
