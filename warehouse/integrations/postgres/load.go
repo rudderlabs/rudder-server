@@ -42,6 +42,15 @@ func quoteColumnList(columns string) string {
 	return strings.Join(parts, ", ")
 }
 
+// quoteIdentifiers quotes each column name as a Postgres identifier and joins them with commas.
+func quoteIdentifiers(columns []string) string {
+	quoted := make([]string, 0, len(columns))
+	for _, c := range columns {
+		quoted = append(quoted, pq.QuoteIdentifier(c))
+	}
+	return strings.Join(quoted, ",")
+}
+
 func (pg *Postgres) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
 	var loadTableStats *types.LoadTableStats
 	cancel := safeguard.MustStop(ctx, 5*time.Minute)
@@ -285,9 +294,7 @@ func (pg *Postgres) insertIntoLoadTable(
 
 	quotedPartitionKey := quoteColumnList(partitionKey)
 
-	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(
-		sortedColumnKeys,
-	)
+	quotedColumnNames := quoteIdentifiers(sortedColumnKeys)
 
 	insertStmt := fmt.Sprintf(`
 		INSERT INTO %[1]s.%[2]s (%[3]s)
