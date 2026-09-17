@@ -764,8 +764,8 @@ func (bq *BigQuery) createAndLoadStagingUsersTable(ctx context.Context, stagingT
 // authOptions builds the option.ClientOption(s) needed to authenticate a BigQuery API client.
 //
 // With authMethod "workloadIdentityFederation", no credentials are used: RudderStack's federation role is assumed with the
-// workspace ID as the session name, exchanged through the customer's workload identity pool, and
-// the customer's target service account is impersonated.
+// workspace ID as the session name and exchanged through the customer's workload identity pool. The
+// customer's target service account is impersonated when set; otherwise the federated token is used directly.
 //
 // Otherwise (authMethod "serviceAccountKey" or absent) `credentials` must be a service account key. If it is empty (or "{}") and workload
 // identity is enabled for this deployment (googleutil.ShouldSkipCredentialsInit), no explicit
