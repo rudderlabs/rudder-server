@@ -643,13 +643,13 @@ func (rs *Redshift) copyIntoLoadTable(
 	if rs.Uploader.GetLoadFileType() == warehouseutils.LoadFileTypeParquet {
 		copyStmt = fmt.Sprintf(
 			`COPY %s
-			FROM '%s'
+			FROM %s
 			ACCESS_KEY_ID '%s'
 			SECRET_ACCESS_KEY '%s'
 			SESSION_TOKEN '%s'
 			%s FORMAT PARQUET;`,
 			quoteQualifiedIdentifier(rs.Namespace, stagingTableName),
-			s3Location,
+			quoteStringLiteral(s3Location),
 			tempAccessKeyId,
 			tempSecretAccessKey,
 			token,
@@ -658,7 +658,7 @@ func (rs *Redshift) copyIntoLoadTable(
 	} else {
 		copyStmt = fmt.Sprintf(
 			`COPY %s(%s)
-			FROM '%s'
+			FROM %s
 			CSV GZIP
 			ACCESS_KEY_ID '%s'
 			SECRET_ACCESS_KEY '%s'
@@ -671,7 +671,7 @@ func (rs *Redshift) copyIntoLoadTable(
 			STATUPDATE OFF;`,
 			quoteQualifiedIdentifier(rs.Namespace, stagingTableName),
 			sortedColumnNames,
-			s3Location,
+			quoteStringLiteral(s3Location),
 			tempAccessKeyId,
 			tempSecretAccessKey,
 			token,
@@ -1455,19 +1455,19 @@ func (rs *Redshift) TestLoadTable(ctx context.Context, location, tableName strin
 	var sqlStatement string
 	if format == warehouseutils.LoadFileTypeParquet {
 		// copy statement for parquet load files
-		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' FORMAT PARQUET`,
+		sqlStatement = fmt.Sprintf(`COPY %v FROM %s ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' FORMAT PARQUET`,
 			quoteQualifiedIdentifier(rs.Namespace, tableName),
-			s3Location,
+			quoteStringLiteral(s3Location),
 			tempAccessKeyId,
 			tempSecretAccessKey,
 			token,
 		)
 	} else {
 		// copy statement for csv load files
-		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
+		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM %s CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
 			quoteQualifiedIdentifier(rs.Namespace, tableName),
 			fmt.Sprintf(`%s, %s`, quoteIdentifier("id"), quoteIdentifier("val")),
-			s3Location,
+			quoteStringLiteral(s3Location),
 			tempAccessKeyId,
 			tempSecretAccessKey,
 			token,
