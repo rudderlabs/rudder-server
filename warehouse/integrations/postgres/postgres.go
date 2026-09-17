@@ -305,9 +305,12 @@ func (pg *Postgres) DeleteBy(ctx context.Context, tableNames []string, params wa
 	return nil
 }
 
-func (pg *Postgres) schemaExists(ctx context.Context, _ string) (exists bool, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, pg.Namespace)
-	err = pg.DB.QueryRowContext(ctx, sqlStatement).Scan(&exists)
+func (pg *Postgres) schemaExists(ctx context.Context, namespace string) (exists bool, err error) {
+	err = pg.DB.QueryRowContext(
+		ctx,
+		`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = $1);`,
+		namespace,
+	).Scan(&exists)
 	return exists, err
 }
 
