@@ -464,6 +464,7 @@ func (idr *Identity) uploadFile(ctx context.Context, filePath string, txn *sqlmi
 			Provider:         storageProvider,
 			Config:           idr.warehouse.Destination.Config,
 			UseRudderStorage: idr.uploader.UseRudderStorage(),
+			WorkspaceID:      idr.warehouse.WorkspaceID,
 		}),
 		Conf: config.Default,
 	})

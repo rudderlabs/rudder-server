@@ -42,6 +42,10 @@ type BigQuery struct {
 	logger    logger.Logger
 	now       func() time.Time
 
+	// authOpts are built once by connect and reused, so workload identity federation does not
+	// exchange credentials again for every job statistics call.
+	authOpts []option.ClientOption
+
 	config struct {
 		setUsersLoadPartitionFirstEventFilter bool
 		customPartitionsEnabled               bool
@@ -591,14 +595,7 @@ func (bq *BigQuery) jobStatistics(
 	ctx context.Context,
 	job *bigquery.Job,
 ) (*bqservice.JobStatistics, error) {
-	credBytes := []byte(bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting))
-	if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
-		return nil, fmt.Errorf("incompatible credentials: %w", err)
-	}
-	serv, err := bqservice.NewService(
-		ctx,
-		option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes),
-	)
+	serv, err := bqservice.NewService(ctx, bq.authOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating service: %w", err)
 	}
@@ -764,6 +761,42 @@ func (bq *BigQuery) createAndLoadStagingUsersTable(ctx context.Context, stagingT
 	return nil
 }
 
+// authOptions builds the option.ClientOption(s) needed to authenticate a BigQuery API client.
+//
+// With authMethod "workloadIdentityFederation", no credentials are used: RudderStack's federation role is assumed with the
+// workspace ID as the session name and exchanged through the customer's workload identity pool. The
+// customer's target service account is impersonated when set; otherwise the federated token is used directly.
+//
+// Otherwise (authMethod "serviceAccountKey" or absent) `credentials` must be a service account key. If it is empty (or "{}") and workload
+// identity is enabled for this deployment (googleutil.ShouldSkipCredentialsInit), no explicit
+// credentials are passed and the client falls through to Application Default Credentials.
+func (bq *BigQuery) authOptions(ctx context.Context, credentials string) ([]option.ClientOption, error) {
+	if bq.warehouse.GetStringDestinationConfig(bq.conf, model.AuthMethodSetting) == googleutil.AuthMethodWorkloadIdentityFederation {
+		roleARN, region := misc.GetRudderGCPFederationAWSRoleAndRegion(bq.conf)
+		ts, err := googleutil.AWSFederatedTokenSource(ctx, googleutil.AWSFederationConfig{
+			ProjectNumber:        bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityProjectNumberSetting),
+			PoolID:               bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityPoolIDSetting),
+			ProviderID:           bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityProviderIDSetting),
+			TargetServiceAccount: bq.warehouse.GetStringDestinationConfig(bq.conf, model.WorkloadIdentityTargetServiceAccountSetting),
+			WorkspaceID:          bq.warehouse.WorkspaceID,
+			RoleARN:              roleARN,
+			Region:               region,
+		}, []string{bigquery.Scope})
+		if err != nil {
+			return nil, err
+		}
+		return []option.ClientOption{option.WithTokenSource(ts)}, nil
+	}
+	if googleutil.ShouldSkipCredentialsInit(credentials) {
+		return nil, nil
+	}
+	credBytes := []byte(credentials)
+	if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
+		return nil, fmt.Errorf("incompatible credentials: %w", err)
+	}
+	return []option.ClientOption{option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes)}, nil
+}
+
 func (bq *BigQuery) connect(ctx context.Context) (*middleware.Client, error) {
 	var (
 		projectID   = bq.projectID
@@ -772,19 +805,16 @@ func (bq *BigQuery) connect(ctx context.Context) (*middleware.Client, error) {
 
 	bq.logger.Infon("Connecting to BigQuery", logger.NewStringField(projectID, projectID))
 
-	var opts []option.ClientOption
-	if !googleutil.ShouldSkipCredentialsInit(credentials) {
-		credBytes := []byte(credentials)
-		if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
-			return nil, fmt.Errorf("incompatible credentials: %w", err)
-		}
-		opts = append(opts, option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes))
+	opts, err := bq.authOptions(ctx, credentials)
+	if err != nil {
+		return nil, err
 	}
 
 	bqClient, err := bigquery.NewClient(ctx, projectID, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating bigquery client: %w", err)
 	}
+	bq.authOpts = opts
 
 	middlewareClient := middleware.New(
 		bqClient,
