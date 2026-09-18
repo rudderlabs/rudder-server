@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 // TestColumnsWithDataTypesNeutralizesSQLInjection proves the reason for the
@@ -28,7 +29,7 @@ func TestColumnsWithDataTypesNeutralizesSQLInjection(t *testing.T) {
 				columnName: model.StringDataType,
 			}, "")
 
-			require.Contains(t, fragment, quoteIdentifier(columnName))
+			require.Contains(t, fragment, warehouseutils.BracketQuoteIdentifier(columnName))
 			require.NotContains(t, fragment, columnName)
 		})
 	}
