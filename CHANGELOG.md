@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.87.1](https://github.com/rudderlabs/rudder-server/compare/v1.87.0...v1.87.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* bound clickHouse v2 s3 copy memory ([#7407](https://github.com/rudderlabs/rudder-server/issues/7407)) ([ee78070](https://github.com/rudderlabs/rudder-server/commit/ee780704b5e419d92ce01987ada13b1565921bb6))
+
 ## [1.87.0](https://github.com/rudderlabs/rudder-server/compare/v1.86.0...v1.87.0) (2026-09-15)
 
 
