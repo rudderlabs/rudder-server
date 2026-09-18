@@ -9,22 +9,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
-func TestIdentifierQuoting(t *testing.T) {
-	require.Equal(t, "`schema``;drop schema public;--`", quoteIdentifier("schema`;drop schema public;--"))
-	require.Equal(t, "`schema``x`.`table``;drop table x;--`", quoteQualifiedIdentifier("schema`x", "table`;drop table x;--"))
-	require.Equal(t, "`row_id`,`column``name`,`table_name`", quoteIdentifiers([]string{"row_id", "column`name", "table_name"}))
-	require.Equal(t, "`row_id`", primaryKey("rudder_discards"))
-	require.Equal(t, "`evil\\`", quoteIdentifier(`evil\`))
-}
-
-func TestStringLiteralQuoting(t *testing.T) {
-	require.Equal(t, `'s3://bucket/prefix'`, quoteStringLiteral(`s3://bucket/prefix`))
-	require.Equal(t, `'^(?!rudder_staging_.*$).*'`, quoteStringLiteral(nonRudderStagingTableRegex))
-	require.Equal(t, `'evil\\'`, quoteStringLiteral(`evil\`))
-	require.Equal(t, `'evil\\\'; DROP TABLE x; --'`, quoteStringLiteral(`evil\'; DROP TABLE x; --`))
-	require.Equal(t, `'it\'s'`, quoteStringLiteral(`it's`))
-}
-
 func TestColumnsWithDataTypesQuotesIdentifiers(t *testing.T) {
 	columns := columnsWithDataTypes(model.TableSchema{
 		"received_at":             "datetime",
@@ -36,13 +20,4 @@ func TestColumnsWithDataTypesQuotesIdentifiers(t *testing.T) {
 	require.Contains(t, columns, "`received_at` TIMESTAMP")
 	require.Contains(t, columns, "`event_date` DATE GENERATED ALWAYS AS ( CAST(`received_at` AS DATE) )")
 	require.False(t, strings.Contains(columns, "id`;drop table"))
-}
-
-func TestEscapeCharacterMatrix(t *testing.T) {
-	const sink = "a\"b`c]d'e\\f" // a " b ` c ] d ' e \ f
-
-	// Backtick identifiers: only ` is doubled, the backslash stays literal.
-	require.Equal(t, "`a\"b``c]d'e\\f`", quoteIdentifier(sink))
-	// String literals: Spark SQL uses backslash escapes, so ' and \ are escaped with a backslash.
-	require.Equal(t, "'a\"b`c]d\\'e\\\\f'", quoteStringLiteral(sink))
 }
