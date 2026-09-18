@@ -45,7 +45,7 @@ func newStandardTableManager() tableManager {
 func (m *standardTableManager) createTableQuery(schemaIdentifier, tableName string, columns model.TableSchema) string {
 	return fmt.Sprintf(
 		`CREATE TABLE IF NOT EXISTS %s.%s ( %v )`,
-		schemaIdentifier, quoteIdentifier(tableName), columnsWithDataTypes(columns, m.dataTypesMap),
+		schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName), columnsWithDataTypes(columns, m.dataTypesMap),
 	)
 }
 
@@ -56,11 +56,11 @@ func (m *standardTableManager) addColumnsQuery(schemaIdentifier, tableName strin
 		  %s.%s
 		ADD COLUMN`,
 		schemaIdentifier,
-		quoteIdentifier(tableName),
+		whutils.DoubleQuoteIdentifier(tableName),
 	)
 
 	for _, columnInfo := range columnsInfo {
-		fmt.Fprintf(&queryBuilder, ` IF NOT EXISTS %s %s,`, quoteIdentifier(columnInfo.Name), m.dataTypesMap[columnInfo.Type])
+		fmt.Fprintf(&queryBuilder, ` IF NOT EXISTS %s %s,`, whutils.DoubleQuoteIdentifier(columnInfo.Name), m.dataTypesMap[columnInfo.Type])
 	}
 	return strings.TrimSuffix(queryBuilder.String(), ",") + ";", nil
 }
@@ -93,9 +93,9 @@ func (m *icebergTableManager) createTableQuery(schemaIdentifier, tableName strin
 		CATALOG = 'SNOWFLAKE'
 		EXTERNAL_VOLUME = %s
 		BASE_LOCATION = %s`,
-		schemaIdentifier, quoteIdentifier(tableName), columnsWithDataTypes(columns, m.dataTypesMap),
-		quoteStringLiteral(m.externalVolume),
-		quoteStringLiteral(baseLocation),
+		schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName), columnsWithDataTypes(columns, m.dataTypesMap),
+		whutils.SQLStringLiteralBackslash(m.externalVolume),
+		whutils.SQLStringLiteralBackslash(baseLocation),
 	)
 }
 
@@ -106,14 +106,14 @@ func (m *icebergTableManager) addColumnsQuery(schemaIdentifier, tableName string
 		  %s.%s
 		ADD COLUMN`,
 		schemaIdentifier,
-		quoteIdentifier(tableName),
+		whutils.DoubleQuoteIdentifier(tableName),
 	)
 	for _, columnInfo := range columnsInfo {
 		dataType, ok := m.dataTypesMap[columnInfo.Type]
 		if !ok {
 			return "", fmt.Errorf("invalid data type: %s", columnInfo.Type)
 		}
-		fmt.Fprintf(&queryBuilder, ` IF NOT EXISTS %s %s,`, quoteIdentifier(columnInfo.Name), dataType)
+		fmt.Fprintf(&queryBuilder, ` IF NOT EXISTS %s %s,`, whutils.DoubleQuoteIdentifier(columnInfo.Name), dataType)
 	}
 	return strings.TrimSuffix(queryBuilder.String(), ",") + ";", nil
 }
@@ -122,7 +122,7 @@ func columnsWithDataTypes(columns model.TableSchema, dataTypesMap map[string]str
 	var arr []string
 	sortedColumns := getSortedColumnsFromTableSchema(columns)
 	for _, name := range sortedColumns {
-		arr = append(arr, fmt.Sprintf(`%s %s`, quoteIdentifier(name), dataTypesMap[columns[name]]))
+		arr = append(arr, fmt.Sprintf(`%s %s`, whutils.DoubleQuoteIdentifier(name), dataTypesMap[columns[name]]))
 	}
 	return strings.Join(arr, ",")
 }
