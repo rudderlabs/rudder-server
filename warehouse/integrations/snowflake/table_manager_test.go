@@ -130,7 +130,7 @@ func TestTableManager(t *testing.T) {
 
 	t.Run("TestIcebergQuotesStringLiterals", func(t *testing.T) {
 		manager := newIcebergTableManager(`vol\'; DROP TABLE x; --`)
-		result := manager.createTableQuery(quoteIdentifier("MYSCHEMA"), `table'y`, model.TableSchema{
+		result := manager.createTableQuery(whutils.DoubleQuoteIdentifier("MYSCHEMA"), `table'y`, model.TableSchema{
 			"col1": "string",
 		})
 
