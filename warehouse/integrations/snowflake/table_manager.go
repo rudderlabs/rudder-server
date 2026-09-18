@@ -44,8 +44,8 @@ func newStandardTableManager() tableManager {
 
 func (m *standardTableManager) createTableQuery(schemaIdentifier, tableName string, columns model.TableSchema) string {
 	return fmt.Sprintf(
-		`CREATE TABLE IF NOT EXISTS %s.%q ( %v )`,
-		schemaIdentifier, tableName, columnsWithDataTypes(columns, m.dataTypesMap),
+		`CREATE TABLE IF NOT EXISTS %s.%s ( %v )`,
+		schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName), columnsWithDataTypes(columns, m.dataTypesMap),
 	)
 }
 
@@ -53,13 +53,14 @@ func (m *standardTableManager) addColumnsQuery(schemaIdentifier, tableName strin
 	var queryBuilder strings.Builder
 	fmt.Fprintf(&queryBuilder, `
 		ALTER TABLE
-		  %s.%q
+		  %s.%s
 		ADD COLUMN`,
 		schemaIdentifier,
-		tableName)
+		whutils.DoubleQuoteIdentifier(tableName),
+	)
 
 	for _, columnInfo := range columnsInfo {
-		fmt.Fprintf(&queryBuilder, ` IF NOT EXISTS %q %s,`, columnInfo.Name, m.dataTypesMap[columnInfo.Type])
+		fmt.Fprintf(&queryBuilder, ` IF NOT EXISTS %s %s,`, whutils.DoubleQuoteIdentifier(columnInfo.Name), m.dataTypesMap[columnInfo.Type])
 	}
 	return strings.TrimSuffix(queryBuilder.String(), ",") + ";", nil
 }
@@ -88,13 +89,13 @@ func newIcebergTableManager(externalVolume string) tableManager {
 func (m *icebergTableManager) createTableQuery(schemaIdentifier, tableName string, columns model.TableSchema) string {
 	baseLocation := fmt.Sprintf("%s/%s", schemaIdentifier, tableName)
 	return fmt.Sprintf(
-		`CREATE OR REPLACE ICEBERG TABLE %s.%q ( %v )
+		`CREATE OR REPLACE ICEBERG TABLE %s.%s ( %v )
 		CATALOG = 'SNOWFLAKE'
-		EXTERNAL_VOLUME = '%s'
-		BASE_LOCATION = '%s'`,
-		schemaIdentifier, tableName, columnsWithDataTypes(columns, m.dataTypesMap),
-		m.externalVolume,
-		baseLocation,
+		EXTERNAL_VOLUME = %s
+		BASE_LOCATION = %s`,
+		schemaIdentifier, whutils.DoubleQuoteIdentifier(tableName), columnsWithDataTypes(columns, m.dataTypesMap),
+		whutils.SQLStringLiteralBackslash(m.externalVolume),
+		whutils.SQLStringLiteralBackslash(baseLocation),
 	)
 }
 
@@ -102,16 +103,17 @@ func (m *icebergTableManager) addColumnsQuery(schemaIdentifier, tableName string
 	var queryBuilder strings.Builder
 	fmt.Fprintf(&queryBuilder, `
 		ALTER ICEBERG TABLE
-		  %s.%q
+		  %s.%s
 		ADD COLUMN`,
 		schemaIdentifier,
-		tableName)
+		whutils.DoubleQuoteIdentifier(tableName),
+	)
 	for _, columnInfo := range columnsInfo {
 		dataType, ok := m.dataTypesMap[columnInfo.Type]
 		if !ok {
 			return "", fmt.Errorf("invalid data type: %s", columnInfo.Type)
 		}
-		fmt.Fprintf(&queryBuilder, ` IF NOT EXISTS %q %s,`, columnInfo.Name, dataType)
+		fmt.Fprintf(&queryBuilder, ` IF NOT EXISTS %s %s,`, whutils.DoubleQuoteIdentifier(columnInfo.Name), dataType)
 	}
 	return strings.TrimSuffix(queryBuilder.String(), ",") + ";", nil
 }
@@ -120,7 +122,7 @@ func columnsWithDataTypes(columns model.TableSchema, dataTypesMap map[string]str
 	var arr []string
 	sortedColumns := getSortedColumnsFromTableSchema(columns)
 	for _, name := range sortedColumns {
-		arr = append(arr, fmt.Sprintf(`"%s" %s`, name, dataTypesMap[columns[name]]))
+		arr = append(arr, fmt.Sprintf(`%s %s`, whutils.DoubleQuoteIdentifier(name), dataTypesMap[columns[name]]))
 	}
 	return strings.Join(arr, ",")
 }
