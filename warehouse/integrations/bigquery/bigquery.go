@@ -232,7 +232,7 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 	}
 
 	viewName := tableName + "_view"
-	query := fmt.Sprintf("CREATE OR REPLACE VIEW %s AS %s;", quoteTablePath(bq.namespace, viewName), deduplicationQuery)
+	query := fmt.Sprintf("CREATE OR REPLACE VIEW %s AS %s;", warehouseutils.BigQueryQuoteTablePath(bq.namespace, viewName), deduplicationQuery)
 
 	bq.logger.Infon("Creating view", logger.NewStringField("view", viewName), logger.NewStringField("query", query))
 	job, err := bq.db.Query(query).Run(ctx)
@@ -257,7 +257,7 @@ func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSc
 
 	var viewOrderByStmt string
 	if _, ok := columnMap["loaded_at"]; ok {
-		viewOrderByStmt = " ORDER BY " + quoteIdentifier("loaded_at") + " DESC "
+		viewOrderByStmt = " ORDER BY " + warehouseutils.BigQueryQuoteIdentifier("loaded_at") + " DESC "
 	}
 
 	var (
@@ -287,7 +287,7 @@ func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSc
 					logger.NewStringField("partitionColumn", partitionColumn),
 				)
 				granularity = string(bqPartitionType)
-				partitionFilter = `TIMESTAMP_TRUNC(` + quoteIdentifier(partitionColumn) + `, ` + granularity + `, 'UTC')`
+				partitionFilter = `TIMESTAMP_TRUNC(` + warehouseutils.BigQueryQuoteIdentifier(partitionColumn) + `, ` + granularity + `, 'UTC')`
 			} else {
 				bq.logger.Warnn("Deduplication query: Partition column not found in schema",
 					logger.NewStringField("partitionColumn", partitionColumn),
@@ -301,8 +301,8 @@ func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSc
 	// assuming it has field named id upon which dedup is done in view
 	// the following view takes the last two months into consideration i.e. 60 * 60 * 24 * 60 * 1000000
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + quoteColumnList(partitionKey) + viewOrderByStmt + `) AS __row_number
-			FROM ` + quoteTablePath(bq.projectID, bq.namespace, tableName) + `
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + warehouseutils.QuoteCommaSeparatedIdentifiers(partitionKey, warehouseutils.BigQueryQuoteIdentifier) + viewOrderByStmt + `) AS __row_number
+			FROM ` + warehouseutils.BigQueryQuoteTablePath(bq.projectID, bq.namespace, tableName) + `
 			WHERE
 				` + partitionFilter + ` BETWEEN TIMESTAMP_TRUNC(
 					TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 24 * 60 * 1000000),
@@ -396,7 +396,7 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 
 func (bq *BigQuery) DeleteBy(ctx context.Context, tableNames []string, params warehouseutils.DeleteByParams) error {
 	for _, tb := range tableNames {
-		tableName := quoteTablePath(bq.namespace, tb)
+		tableName := warehouseutils.BigQueryQuoteTablePath(bq.namespace, tb)
 		sqlStatement := fmt.Sprintf(`
 			DELETE FROM
 				%[1]s
@@ -708,7 +708,7 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 
 // usersMergeQuery builds the query which merges the users staging table into the deduplicated users table.
 func (bq *BigQuery) usersMergeQuery(userColMap model.TableSchema, deduplicationQuery, stagingUsersTableName string) string {
-	quotedID := quoteIdentifier("id")
+	quotedID := warehouseutils.BigQueryQuoteIdentifier("id")
 
 	userColNames := make([]string, 0, len(userColMap))
 	firstValProps := make([]string, 0, len(userColMap))
@@ -716,11 +716,11 @@ func (bq *BigQuery) usersMergeQuery(userColMap model.TableSchema, deduplicationQ
 		if colName == "id" {
 			continue
 		}
-		quotedColumn := quoteIdentifier(colName)
+		quotedColumn := warehouseutils.BigQueryQuoteIdentifier(colName)
 		userColNames = append(userColNames, quotedColumn)
 		firstValProps = append(firstValProps, fmt.Sprintf(
 			"FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY %[2]s ORDER BY %[3]s DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s",
-			quotedColumn, quotedID, quoteIdentifier("received_at"),
+			quotedColumn, quotedID, warehouseutils.BigQueryQuoteIdentifier("received_at"),
 		))
 	}
 
@@ -738,7 +738,7 @@ func (bq *BigQuery) usersMergeQuery(userColMap model.TableSchema, deduplicationQ
 		strings.Join(firstValProps, ","),
 		strings.Join(userColNames, ","),
 		deduplicationQuery,
-		quoteTablePath(bq.namespace, stagingUsersTableName),
+		warehouseutils.BigQueryQuoteTablePath(bq.namespace, stagingUsersTableName),
 		quotedID,
 	)
 }
@@ -826,7 +826,7 @@ func (bq *BigQuery) dropDanglingStagingTables(ctx context.Context) error {
 		  table_schema = @schema
 		  AND table_name LIKE @prefix;
 	`,
-		quoteIdentifier(bq.namespace),
+		warehouseutils.BigQueryQuoteIdentifier(bq.namespace),
 	)
 	query := bq.db.Query(sqlStatement)
 	query.Parameters = []bigquery.QueryParameter{
@@ -989,7 +989,7 @@ func (bq *BigQuery) FetchSchema(ctx context.Context) (model.Schema, error) {
 			OR c.column_name IS NULL
 		  );
 	`,
-		quoteIdentifier(bq.namespace),
+		warehouseutils.BigQueryQuoteIdentifier(bq.namespace),
 	)
 	query := bq.db.Query(sqlStatement)
 	query.Parameters = []bigquery.QueryParameter{
@@ -1147,7 +1147,7 @@ func (bq *BigQuery) DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZ
 		batchSize := int64(10000)
 		var offset int64
 		for {
-			sqlStatement := fmt.Sprintf(`SELECT DISTINCT %[1]s FROM %[2]s LIMIT %[3]d OFFSET %[4]d`, toSelectFields, quoteTablePath(bq.namespace, tableName), batchSize, offset)
+			sqlStatement := fmt.Sprintf(`SELECT DISTINCT %[1]s FROM %[2]s LIMIT %[3]d OFFSET %[4]d`, toSelectFields, warehouseutils.BigQueryQuoteTablePath(bq.namespace, tableName), batchSize, offset)
 			bq.logger.Infon("Downloading distinct combinations of anonymous_id, user_id",
 				logger.NewStringField(logfield.Query, sqlStatement),
 				logger.NewIntField(logfield.TotalRows, totalRows),

@@ -9,6 +9,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 // BigQuery's DDL (CreateTable/AddColumns/DropTable/CreateSchema) goes through the
@@ -39,7 +40,7 @@ func TestDeduplicationQueryQuotesBacktickIdentifiers(t *testing.T) {
 	// BigQuery escapes the backtick delimiter (and backslash) with a preceding
 	// backslash, not by doubling. The table name must appear backtick-quoted with
 	// the embedded backtick backslash-escaped.
-	require.Contains(t, query, quoteTablePath(bq.projectID, bq.namespace, maliciousTable))
+	require.Contains(t, query, warehouseutils.BigQueryQuoteTablePath(bq.projectID, bq.namespace, maliciousTable))
 	require.Contains(t, query, "`test_project.test_namespace.evil_table\\`); DROP TABLE victim_secrets; --`")
 
 	// The raw, unescaped breakout must never appear in the generated SQL.
@@ -53,7 +54,7 @@ func TestDeduplicationQueryQuotesBacktickIdentifiers(t *testing.T) {
 func TestQualifiedTableNamesQuoteBacktickIdentifiers(t *testing.T) {
 	tableName := "evil_table`); DROP TABLE victim_secrets; --"
 
-	qualifiedName := quoteTablePath("project", "namespace", tableName)
+	qualifiedName := warehouseutils.BigQueryQuoteTablePath("project", "namespace", tableName)
 
 	require.Equal(t, "`project.namespace.evil_table\\`); DROP TABLE victim_secrets; --`", qualifiedName)
 	require.NotContains(t, qualifiedName, "evil_table`); DROP")
