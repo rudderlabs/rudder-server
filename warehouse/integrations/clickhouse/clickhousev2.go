@@ -120,6 +120,7 @@ func NewV2(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse
 		var settings []string
 		// What each one does, in ClickHouse's own words:
 		//   max_threads                   https://clickhouse.com/docs/operations/settings/settings#max_threads
+		//   max_parsing_threads           https://clickhouse.com/docs/operations/settings/settings#max_parsing_threads
 		//   max_insert_threads            https://clickhouse.com/docs/operations/settings/settings#max_insert_threads
 		//   max_memory_usage              https://clickhouse.com/docs/operations/settings/query-complexity#max_memory_usage
 		//   min_insert_block_size_bytes   https://clickhouse.com/docs/operations/settings/settings#min_insert_block_size_bytes
@@ -130,6 +131,7 @@ func NewV2(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse
 		// https://clickhouse.com/docs/integrations/s3/performance
 		for _, s := range []struct{ conf, clickhouse string }{
 			{"maxThreads", "max_threads"},
+			{"maxParsingThreads", "max_parsing_threads"},
 			{"maxInsertThreads", "max_insert_threads"},
 			{"maxMemoryUsage", "max_memory_usage"},
 			{"minInsertBlockSizeBytes", "min_insert_block_size_bytes"},
@@ -140,7 +142,9 @@ func NewV2(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse
 			}
 		}
 		// Parallel CSV parsing keeps a buffer per parsing thread, which is what
-		// tips a folder of many files over the instance limit:
+		// tips a folder of many files over the instance limit. Turning it off
+		// is the blunt form of maxParsingThreads above, which bounds the
+		// threads instead of giving the parallelism up altogether:
 		// https://clickhouse.com/docs/operations/settings/formats#input_format_parallel_parsing
 		if conf.GetBoolVar(false, keys("disableParallelParsing")...) {
 			settings = append(settings, "input_format_parallel_parsing = 0")

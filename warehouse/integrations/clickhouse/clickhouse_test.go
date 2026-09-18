@@ -1062,6 +1062,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 				fileName:                    "testdata/load-copy.csv.gz",
 				s3CopySettings: map[string]any{
 					"maxThreads":              2,
+					"maxParsingThreads":       2,
 					"maxInsertThreads":        1,
 					"maxMemoryUsage":          1073741824,
 					"minInsertBlockSizeBytes": 1048576,

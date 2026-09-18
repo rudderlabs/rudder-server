@@ -191,6 +191,31 @@ func TestS3CopySettingsV2(t *testing.T) {
 		)
 	})
 
+	// Spelled out rather than derived, so a typo in a ClickHouse setting name
+	// fails here rather than on the server mid-load.
+	t.Run("every setting maps to its ClickHouse name", func(t *testing.T) {
+		require.Equal(t,
+			[]string{
+				"max_threads = 1",
+				"max_parsing_threads = 2",
+				"max_insert_threads = 3",
+				"max_memory_usage = 4",
+				"min_insert_block_size_bytes = 5",
+				"min_insert_block_size_rows = 6",
+				"input_format_parallel_parsing = 0",
+			},
+			settingsFor(func(c *config.Config) {
+				c.Set("Warehouse.clickhouse.v2.s3Copy.maxThreads", 1)
+				c.Set("Warehouse.clickhouse.v2.s3Copy.maxParsingThreads", 2)
+				c.Set("Warehouse.clickhouse.v2.s3Copy.maxInsertThreads", 3)
+				c.Set("Warehouse.clickhouse.v2.s3Copy.maxMemoryUsage", 4)
+				c.Set("Warehouse.clickhouse.v2.s3Copy.minInsertBlockSizeBytes", 5)
+				c.Set("Warehouse.clickhouse.v2.s3Copy.minInsertBlockSizeRows", 6)
+				c.Set("Warehouse.clickhouse.v2.s3Copy.disableParallelParsing", true)
+			}),
+		)
+	})
+
 	t.Run("statement carries them after the two it always needs", func(t *testing.T) {
 		base := copySQLStatement("ns", "tracks", "id", []string{"'folder'"}, nil)
 		require.Contains(t, base, "date_time_input_format = 'best_effort'")
