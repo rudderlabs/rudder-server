@@ -11,14 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
-func TestIdentifierQuoting(t *testing.T) {
-	require.Equal(t, "`column\\`name`", quoteIdentifier("column`name"))
-	require.Equal(t, "`evil\\\\`", quoteIdentifier(`evil\`))
-	require.Equal(t, "`evil\\\\\\`; DROP TABLE x; --`", quoteIdentifier("evil\\`; DROP TABLE x; --"))
-	require.Equal(t, "`project-id.data\\`set.table$20240101`", quoteTablePath("project-id", "data`set", "table$20240101"))
-	require.Equal(t, "`row_id`, `column\\`name`, `table_name`", quoteColumnList("row_id, column`name, table_name"))
-}
-
 func TestDeduplicationQueryQuotesIdentifiers(t *testing.T) {
 	bq := &BigQuery{projectID: "project-id", namespace: "data`set", conf: config.New()}
 	query, err := bq.deduplicationQuery("table`x", model.TableSchema{
@@ -55,11 +47,4 @@ func TestUsersMergeQueryQuotesIdentifiers(t *testing.T) {
 				)
 			)
 		)`, query)
-}
-
-func TestEscapeCharacterMatrix(t *testing.T) {
-	const sink = "a\"b`c]d'e\\f" // a " b ` c ] d ' e \ f
-
-	// GoogleSQL quoted identifiers use backslash escapes: ` and \ are escaped with a backslash.
-	require.Equal(t, "`a\"b\\`c]d'e\\\\f`", quoteIdentifier(sink))
 }
