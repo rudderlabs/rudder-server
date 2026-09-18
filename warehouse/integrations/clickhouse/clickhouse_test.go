@@ -1017,6 +1017,12 @@ func testIntegration(t *testing.T, useV2 bool) {
 			// The cases still run on both, which makes v1 the control: the same
 			// load has to produce the same rows however it was committed.
 			commitEvery int
+
+			// s3CopySettings are appended to the copy statement's SETTINGS
+			// clause, keyed by the name under Warehouse.clickhouse.v2.s3Copy.
+			// Only the server rejects a bad setting name or a malformed clause,
+			// so they have to reach a real load to be covered at all.
+			s3CopySettings map[string]any
 		}{
 			{
 				name:                  "normal loading using downloading of load files",
@@ -1049,6 +1055,21 @@ func testIntegration(t *testing.T, useV2 bool) {
 				bucketProvider:              whutils.S3,
 			},
 			{
+				// Every supported setting at once, including the two the copy
+				// engine has to be able to send as zero.
+				name:                        "using s3 engine with memory settings",
+				S3EngineEnabledWorkspaceIDs: []string{workspaceID},
+				fileName:                    "testdata/load-copy.csv.gz",
+				s3CopySettings: map[string]any{
+					"maxThreads":              2,
+					"maxInsertThreads":        1,
+					"maxMemoryUsage":          1073741824,
+					"minInsertBlockSizeBytes": 1048576,
+					"minInsertBlockSizeRows":  0,
+					"disableParallelParsing":  true,
+				},
+			},
+			{
 				name:                  "normal loading using downloading of load files with disable load table stats",
 				fileName:              "testdata/load.csv.gz",
 				disableLoadTableStats: true,
@@ -1079,6 +1100,9 @@ func testIntegration(t *testing.T, useV2 bool) {
 				if tc.bucketProvider == whutils.S3 && !useV2 {
 					t.Skip("v1 has no temporary credential path, and runs clickhouse 21, which predates the session token argument of the s3 table function")
 				}
+				if len(tc.s3CopySettings) > 0 && !useV2 {
+					t.Skip("only v2 builds the copy statement, so only v2 has a settings clause to extend")
+				}
 
 				conf := config.New()
 				conf.Set(configKey("s3EngineEnabledWorkspaceIDs"), tc.S3EngineEnabledWorkspaceIDs)
@@ -1086,6 +1110,9 @@ func testIntegration(t *testing.T, useV2 bool) {
 				conf.Set(configKey("disableLoadTableStats"), tc.disableLoadTableStats)
 				if tc.commitEvery > 0 {
 					conf.Set(configKey("commitEvery"), tc.commitEvery)
+				}
+				for name, value := range tc.s3CopySettings {
+					conf.Set(configKey("s3Copy."+name), value)
 				}
 
 				ch := newClickhouse(conf)
