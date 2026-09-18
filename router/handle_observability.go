@@ -27,6 +27,26 @@ func (rt *Handle) trackRequestMetrics(reqMetric requestMetric) {
 	}
 }
 
+func (rt *Handle) trackFailureMetrics(event, errorResponse string) {
+	rt.telemetry.failureMetricLock.Lock()
+	if _, ok := rt.telemetry.failuresMetric[event]; !ok {
+		rt.telemetry.failuresMetric[event] = make(map[string]int)
+	}
+	rt.telemetry.failuresMetric[event][errorResponse]++
+	rt.telemetry.failureMetricLock.Unlock()
+}
+
+// takeRequestMetrics hands over the metrics collected since the previous call
+// and resets them for the next one. Resetting is a write, so it needs the
+// exclusive lock, not a read lock.
+func (rt *Handle) takeRequestMetrics() []requestMetric {
+	rt.telemetry.requestsMetricLock.Lock()
+	defer rt.telemetry.requestsMetricLock.Unlock()
+	requestsMetric := rt.telemetry.requestsMetric
+	rt.telemetry.requestsMetric = nil
+	return requestsMetric
+}
+
 func (rt *Handle) collectMetrics(ctx context.Context) {
 	if !diagnostics.EnableRouterMetric {
 		return
@@ -39,34 +59,32 @@ func (rt *Handle) collectMetrics(ctx context.Context) {
 			return
 		case <-rt.telemetry.diagnosisTicker.C:
 		}
-		rt.telemetry.requestsMetricLock.RLock()
+		requestsMetric := rt.takeRequestMetrics()
+
 		var diagnosisProperties map[string]any
 		retries := 0
 		aborted := 0
 		success := 0
 		var compTime time.Duration
-		for _, reqMetric := range rt.telemetry.requestsMetric {
+		for _, reqMetric := range requestsMetric {
 			retries += reqMetric.RequestRetries
 			aborted += reqMetric.RequestAborted
 			success += reqMetric.RequestSuccess
 			compTime += reqMetric.RequestCompletedTime
 		}
-		if len(rt.telemetry.requestsMetric) > 0 {
+		if len(requestsMetric) > 0 {
 			diagnosisProperties = map[string]any{
 				rt.destType: map[string]any{
 					diagnostics.RouterAborted:       aborted,
 					diagnostics.RouterRetries:       retries,
 					diagnostics.RouterSuccess:       success,
-					diagnostics.RouterCompletedTime: (compTime / time.Duration(len(rt.telemetry.requestsMetric))) / time.Millisecond,
+					diagnostics.RouterCompletedTime: (compTime / time.Duration(len(requestsMetric))) / time.Millisecond,
 				},
 			}
 			if diagnostics.Diagnostics != nil {
 				diagnostics.Diagnostics.Track(diagnostics.RouterEvents, diagnosisProperties)
 			}
 		}
-
-		rt.telemetry.requestsMetric = nil
-		rt.telemetry.requestsMetricLock.RUnlock()
 
 		// This lock will ensure we don't send out Track Request while filling up the
 		// failureMetric struct
