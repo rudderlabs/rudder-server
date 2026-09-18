@@ -67,7 +67,7 @@ func TestColumnTypesV2(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ch := NewV2(config.New(), logger.NOP, stats.NOP)
+			ch := New(config.New(), logger.NOP, stats.NOP)
 			ch.config.disableNullable = tc.disableNullable
 
 			got := ch.ColumnsWithDataTypes(
@@ -83,7 +83,7 @@ func TestColumnTypesV2(t *testing.T) {
 // A json column alongside others: every column keeps its own declaration. The
 // order follows map iteration, so the parts are compared rather than the string.
 func TestJSONColumnAmongOthersV2(t *testing.T) {
-	ch := NewV2(config.New(), logger.NOP, stats.NOP)
+	ch := New(config.New(), logger.NOP, stats.NOP)
 
 	got := ch.ColumnsWithDataTypes("product_track", model.TableSchema{
 		"context_props": model.JSONDataType,
@@ -157,7 +157,7 @@ func TestBindValueV2(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ch := NewV2(config.New(), logger.NOP, stats.NOP)
+			ch := New(config.New(), logger.NOP, stats.NOP)
 			ch.config.disableNullable = tc.disableNullable
 
 			require.Equal(t, tc.want, ch.bindValue(tc.data, tc.dataType))
@@ -206,7 +206,7 @@ func TestJSONRenderingsMapBackV2(t *testing.T) {
 						notNullableColumns = []string{jsonColumn}
 					}
 
-					ch := NewV2(conf, logger.NOP, stats.NOP)
+					ch := New(conf, logger.NOP, stats.NOP)
 					declared := ch.ColumnsWithDataTypes(tableName, model.TableSchema{jsonColumn: model.JSONDataType}, notNullableColumns)
 					columnType := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(declared), `"`+jsonColumn+`"`))
 
