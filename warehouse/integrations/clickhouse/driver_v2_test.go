@@ -23,6 +23,7 @@ func TestS3CredentialsRegexV2(t *testing.T) {
 	statementWith := func(token string) string {
 		return copySQLStatement("namespace", "table", "id,received_at",
 			s3TableFunctionArgs(loadFolder, accessKeyID, secretAccessKey, token, columnTypes),
+			nil,
 		)
 	}
 

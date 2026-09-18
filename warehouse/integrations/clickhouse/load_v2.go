@@ -159,6 +159,7 @@ func (ch *ClickhouseV2) loadByCopyCommand(ctx context.Context, tableName string,
 	sqlStatement := copySQLStatement(
 		ch.Namespace, tableName, sortedColumnNames,
 		s3TableFunctionArgs(loadFolder, accessKeyID, secretAccessKey, sessionToken, sortedColumnNamesWithDataTypes),
+		ch.config.s3CopySettings(ch.Warehouse.WorkspaceID),
 	)
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
@@ -192,7 +193,11 @@ func s3TableFunctionArgs(loadFolder, accessKeyID, secretAccessKey, sessionToken,
 
 // copySQLStatement is the statement the copy engine runs. It is separate so the
 // masking test can build the real thing rather than a copy of it that drifts.
-func copySQLStatement(namespace, tableName, sortedColumnNames string, s3Args []string) string {
+func copySQLStatement(namespace, tableName, sortedColumnNames string, s3Args, extraSettings []string) string {
+	settings := append([]string{
+		"date_time_input_format = 'best_effort'",
+		"input_format_csv_arrays_as_nested_csv = 1",
+	}, extraSettings...)
 	return fmt.Sprintf(`
 		INSERT INTO %[1]q.%[2]q (
 			%[3]s
@@ -202,13 +207,13 @@ func copySQLStatement(namespace, tableName, sortedColumnNames string, s3Args []s
 		FROM
 		  s3(%[4]s)
 			settings
-				date_time_input_format = 'best_effort',
-				input_format_csv_arrays_as_nested_csv = 1;
+				%[5]s;
 		`,
-		namespace,                  // 1
-		tableName,                  // 2
-		sortedColumnNames,          // 3
-		strings.Join(s3Args, ", "), // 4
+		namespace,                             // 1
+		tableName,                             // 2
+		sortedColumnNames,                     // 3
+		strings.Join(s3Args, ", "),            // 4
+		strings.Join(settings, ",\n\t\t\t\t"), // 5
 	)
 }
 

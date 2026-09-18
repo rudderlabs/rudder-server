@@ -64,6 +64,7 @@ type ClickhouseV2 struct {
 		disableNullable             bool
 		numWorkersDownloadLoadFiles int
 		s3EngineEnabledWorkspaceIDs []string
+		s3CopySettings              func(string) []string
 		slowQueryThreshold          time.Duration
 		randomLoadDelay             func(string) time.Duration
 		disableLoadTableStats       func(string) bool
@@ -101,6 +102,40 @@ func NewV2(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse
 	ch.config.disableNullable = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.disableNullable")
 	ch.config.numWorkersDownloadLoadFiles = conf.GetIntVar(8, 1, "Warehouse.clickhouse.v2.numWorkersDownloadLoadFiles")
 	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSliceVar(nil, "Warehouse.clickhouse.v2.s3EngineEnabledWorkspaceIDs")
+	// s3CopySettings are the SETTINGS the copy statement carries on top of the
+	// two it always needs. The copy reads a whole folder of gzipped CSV in one
+	// INSERT ... SELECT, so its peak memory follows the parse and insert
+	// parallelism rather than anything the server batches client-side, and a
+	// large enough folder can exhaust the ClickHouse instance. Every one is
+	// unset by default, so a deployment that configures none of them sends the
+	// statement it sent before; -1 rather than 0 marks unset because 0 is a
+	// value min_insert_block_size_rows is meant to take.
+	ch.config.s3CopySettings = func(workspaceID string) []string {
+		keys := func(name string) []string {
+			return []string{
+				fmt.Sprintf("Warehouse.clickhouse.v2.%s.s3Copy.%s", workspaceID, name),
+				"Warehouse.clickhouse.v2.s3Copy." + name,
+			}
+		}
+		var settings []string
+		for _, s := range []struct{ conf, clickhouse string }{
+			{"maxThreads", "max_threads"},
+			{"maxInsertThreads", "max_insert_threads"},
+			{"maxMemoryUsage", "max_memory_usage"},
+			{"minInsertBlockSizeBytes", "min_insert_block_size_bytes"},
+			{"minInsertBlockSizeRows", "min_insert_block_size_rows"},
+		} {
+			if v := conf.GetInt64Var(-1, 1, keys(s.conf)...); v >= 0 {
+				settings = append(settings, fmt.Sprintf("%s = %d", s.clickhouse, v))
+			}
+		}
+		// Parallel CSV parsing keeps a buffer per parsing thread, which is what
+		// tips a folder of many files over the instance limit.
+		if conf.GetBoolVar(false, keys("disableParallelParsing")...) {
+			settings = append(settings, "input_format_parallel_parsing = 0")
+		}
+		return settings
+	}
 	ch.config.slowQueryThreshold = conf.GetDurationVar(5, time.Minute, "Warehouse.clickhouse.v2.slowQueryThreshold")
 	ch.config.disableLoadTableStats = func(workspaceID string) bool {
 		return conf.GetBoolVar(
