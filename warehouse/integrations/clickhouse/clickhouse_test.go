@@ -48,28 +48,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
-// TestIntegration runs the suite against one ClickHouse implementation, chosen
-// by CLICKHOUSE_USE_V2. Every subtest is shared, so coverage cannot drift
-// between the two, and CI runs the package once per value so each gets its own
-// job. Unset means v1, which is what a bare `go test` gets.
 func TestIntegration(t *testing.T) {
-	var useV2 bool
-	if v := os.Getenv("CLICKHOUSE_USE_V2"); v != "" {
-		parsed, err := strconv.ParseBool(v)
-		require.NoError(t, err, "CLICKHOUSE_USE_V2 must be a boolean")
-		useV2 = parsed
-	}
-
-	implementation := "v1"
-	if useV2 {
-		implementation = "v2"
-	}
-	t.Logf("running against the %s implementation", implementation)
-
-	testIntegration(t, useV2)
-}
-
-func testIntegration(t *testing.T, useV2 bool) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
@@ -78,33 +57,19 @@ func testIntegration(t *testing.T, useV2 bool) {
 	validations.Init()
 	whutils.Init()
 
-	// The single node server is newer for v2 because native JSON needs 25.3+.
-	// The driver itself does not require it: MinSupportedVersion only makes it
-	// log "unsupported clickhouse version" and it connects regardless. So the
-	// cluster keeps the 21.x server both implementations have always used,
-	// along with the node configs written for it.
+	// The single node server needs 25.3+ for native JSON. The cluster keeps the
+	// 21.x server it has always used, along with the node configs written for
+	// it: the driver only logs "unsupported clickhouse version" below
+	// MinSupportedVersion and connects regardless.
 	clickhouseCompose := "testdata/docker-compose.clickhouse.yml"
 	clusterCompose := "testdata/docker-compose.clickhouse-cluster.yml"
-	if useV2 {
-		clickhouseCompose = "testdata/docker-compose.clickhouse-v2.yml"
-	}
 
-	// Both implementations satisfy the same interface, so the subtests below only
-	// differ in which one they construct.
 	newClickhouse := func(conf *config.Config) manager.WarehouseOperations {
-		if useV2 {
-			return clickhouse.NewV2(conf, logger.NOP, stats.NOP)
-		}
 		return clickhouse.New(conf, logger.NOP, stats.NOP)
 	}
 
-	// v2 reads its own Warehouse.clickhouse.v2.* namespace, so every key the
-	// suite sets has to follow the implementation under test.
 	configKey := func(key string) string {
-		if useV2 {
-			return "Warehouse.clickhouse.v2." + key
-		}
-		return "Warehouse.clickhouse." + key
+		return "Warehouse.clickhouse.v2." + key
 	}
 	destType := whutils.CLICKHOUSE
 
@@ -117,20 +82,9 @@ func testIntegration(t *testing.T, useV2 bool) {
 	accessKeyID := "MYACCESSKEY"
 	secretAccessKey := "MYSECRETKEY"
 
-	// Verification connects with the driver under test. v1 has no JSON type, so
-	// a v1 handle cannot represent everything v2 can create: reads pass because
-	// the queries coerce to String, but a write fails inside the driver rather
-	// than at the server, which leaves v2-only types unverifiable.
 	connectDB := func(t testing.TB, ctx context.Context, port int) *sql.DB {
 		t.Helper()
-
-		if useV2 {
-			return connectClickhouseDBV2(t, host, port, database, user, password)
-		}
-		return connectClickhouseDB(t, ctx, fmt.Sprintf(
-			"tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, port, database, password, user,
-		))
+		return connectClickhouseDBV2(t, host, port, database, user, password)
 	}
 
 	expectedSchema := model.Schema{
@@ -318,9 +272,6 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
-				if useV2 {
-					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
-				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
@@ -520,9 +471,6 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
-				if useV2 {
-					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
-				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
@@ -604,13 +552,6 @@ func testIntegration(t *testing.T, useV2 bool) {
 	// the other: this one puts events in at the gateway and reads the column
 	// type back out of ClickHouse.
 	t.Run("Events flow (JSON paths)", func(t *testing.T) {
-		if !useV2 {
-			// dataTypeOverride emits json for every ClickHouse destination, but
-			// clickhouse-go v1 cannot bind a JSON value, so a v1 destination
-			// with jsonPaths set fails at load rather than here.
-			t.Skip("jsonPaths on clickhouse needs the v2 driver")
-		}
-
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
@@ -672,7 +613,6 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 		t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
 		t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
 
 		whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
@@ -781,9 +721,6 @@ func testIntegration(t *testing.T, useV2 bool) {
 			Name:       "clickhouse-demo",
 			Enabled:    true,
 			RevisionID: "29eeuTnqbBKn0XVTj5z9XQIbaru",
-		}
-		if useV2 {
-			t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
 		}
 		whth.VerifyConfigurationTest(t, dest)
 	})
@@ -1098,13 +1035,6 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 		for i, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				if tc.bucketProvider == whutils.S3 && !useV2 {
-					t.Skip("v1 has no temporary credential path, and runs clickhouse 21, which predates the session token argument of the s3 table function")
-				}
-				if len(tc.s3CopySettings) > 0 && !useV2 {
-					t.Skip("only v2 builds the copy statement, so only v2 has a settings clause to extend")
-				}
-
 				conf := config.New()
 				conf.Set(configKey("s3EngineEnabledWorkspaceIDs"), tc.S3EngineEnabledWorkspaceIDs)
 				conf.Set(configKey("disableNullable"), tc.disableNullable)
@@ -1134,7 +1064,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 					destConfig["bucketProvider"] = tc.bucketProvider
 				}
 				if tc.bucketProvider == whutils.S3 {
-					chv2, ok := ch.(*clickhouse.ClickhouseV2)
+					chv2, ok := ch.(*clickhouse.Clickhouse)
 					require.True(t, ok)
 					// The server reaches AWS STS here. MinIO issues credentials
 					// of the same shape for its own users and validates the
@@ -1520,13 +1450,8 @@ func testIntegration(t *testing.T, useV2 bool) {
 	})
 
 	// A path listed in jsonPaths reaches the warehouse as a json column, which v2
-	// declares as a native JSON column. It needs ClickHouse 25.3 or newer, so it
-	// only runs against the server v2 is tested on.
+	// declares as a native JSON column. It needs ClickHouse 25.3 or newer.
 	t.Run("Load table with a JSON column", func(t *testing.T) {
-		if !useV2 {
-			t.Skip("native JSON columns are a v2 feature; v1 stores the payload as text")
-		}
-
 		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.minio.yml"}))
 		c.Start(context.Background())
 
@@ -1963,27 +1888,6 @@ func connectClickhouseDBV2(t testing.TB, host string, port int, database, user, 
 
 	t.Cleanup(func() { _ = db.Close() })
 
-	return db
-}
-
-func connectClickhouseDB(t testing.TB, ctx context.Context, dsn string) *sql.DB {
-	t.Helper()
-
-	db, err := sql.Open("clickhouse", dsn)
-	require.NoError(t, err)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-
-	require.Eventually(t, func() bool {
-		if err := db.PingContext(ctx); err != nil {
-			t.Log("Ping failed:", err)
-			return false
-		}
-		return true
-	}, time.Minute, time.Second)
-
-	require.NoError(t, db.PingContext(ctx))
 	return db
 }
 
