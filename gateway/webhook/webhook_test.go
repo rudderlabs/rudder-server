@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"testing/iotest"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -717,4 +718,63 @@ func newMockTransformerServer(successAfter int, successRespBody, failureRespBody
 		}))
 	mockServer.Server = handler
 	return mockServer
+}
+
+// Regression test for #6999: sending a webhook request for a source type that
+// has not been Register()ed used to send on a nil channel, blocking the HTTP
+// handler goroutine forever. The fix returns 404 (InvalidWebhookSource) fast
+// instead. This test intentionally does NOT call Register(sourceDefName) and
+// asserts that the handler returns quickly with the correct status.
+func TestWebhookRequestHandlerReturns404WhenSourceNotRegistered(t *testing.T) {
+	initWebhook()
+
+	ctrl := gomock.NewController(t)
+	mockGW := mockWebhook.NewMockGateway(ctrl)
+	mockTransformerFeaturesService := mock_features.NewMockFeaturesService(ctrl)
+
+	webhookHandler := Setup(
+		mockGW,
+		mockTransformerFeaturesService,
+		stats.NOP,
+		config.Default,
+		newSourceStatReporter,
+		func(bt *batchWebhookTransformerT) {
+			bt.sourceTransformAdapter = func(ctx context.Context) (sourceTransformAdapter, error) {
+				return &mockSourceTransformAdapter{}, nil
+			}
+		},
+	)
+	t.Cleanup(func() {
+		_ = webhookHandler.Shutdown()
+	})
+
+	// The nil-channel path is only reachable when webhookV2 is disabled, so
+	// the handler does not fall back to lazy Register() during RequestHandler.
+	webhookHandler.config.webhookV2HandlerEnabled = false
+
+	// NOTE: intentionally no webhookHandler.Register(...) — this is exactly
+	// the pre-condition that used to hang the handler goroutine.
+	req := httptest.NewRequest(http.MethodPost, "/v1/webhook", bytes.NewBufferString(sampleJson))
+	w := httptest.NewRecorder()
+	ctx := context.WithValue(req.Context(), gwtypes.CtxParamCallType, "webhook")
+	ctx = context.WithValue(ctx, gwtypes.CtxParamAuthRequestContext, &gwtypes.AuthRequestContext{
+		SourceDefName: "some-unregistered-source-type",
+		WriteKey:      sampleWriteKey,
+	})
+	req = req.WithContext(ctx)
+
+	done := make(chan struct{})
+	go func() {
+		webhookHandler.RequestHandler(w, req)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("RequestHandler blocked instead of returning 404 for unregistered source (#6999)")
+	}
+
+	assert.Equal(t, http.StatusNotFound, w.Result().StatusCode)
+	assert.Contains(t, strings.TrimSpace(w.Body.String()), response.InvalidWebhookSource)
 }
