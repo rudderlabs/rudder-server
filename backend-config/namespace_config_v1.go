@@ -14,7 +14,6 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/backend-config/dynamicconfig"
@@ -27,7 +26,7 @@ import (
 // data-plane endpoint, which already serves them as ConfigT.
 type v1ConfigFetcher struct {
 	logger           logger.Logger
-	client           *http.Client
+	client           requestDoer
 	configEnvHandler types.ConfigEnvI
 
 	namespace                string
@@ -39,15 +38,12 @@ type v1ConfigFetcher struct {
 	lastUpdatedAt      time.Time
 	workspacesConfig   map[string]ConfigT
 	dynamicConfigCache dynamicconfig.Cache
-
-	httpCallsStat        stats.Counter
-	httpResponseSizeStat stats.Histogram
 }
 
 func newV1ConfigFetcher(nc *namespaceConfig) *v1ConfigFetcher {
 	return &v1ConfigFetcher{
 		logger:           nc.logger,
-		client:           nc.client,
+		client:           &fetchStatsDoer{doer: nc.client, stats: nc.stats, version: "v1"},
 		configEnvHandler: nc.configEnvHandler,
 
 		namespace:                nc.namespace,
@@ -58,9 +54,6 @@ func newV1ConfigFetcher(nc *namespaceConfig) *v1ConfigFetcher {
 
 		workspacesConfig:   make(map[string]ConfigT),
 		dynamicConfigCache: make(DynamicConfigMapCache),
-
-		httpCallsStat:        nc.stats.NewStat("backend_config_http_calls", stats.CountType),
-		httpResponseSizeStat: nc.stats.NewStat("backend_config_http_response_size", stats.HistogramType),
 	}
 }
 
@@ -99,7 +92,6 @@ func (f *v1ConfigFetcher) getFromAPI(ctx context.Context) (map[string]ConfigT, e
 	}
 
 	operation := func() (fetchError error) {
-		defer f.httpCallsStat.Increment()
 		f.logger.Debugn("Fetching backend config", logger.NewStringField("url", urlString))
 		respBody, fetchError = f.makeHTTPRequest(req)
 		return fetchError
@@ -186,8 +178,6 @@ func (f *v1ConfigFetcher) makeHTTPRequest(req *http.Request) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	f.httpResponseSizeStat.Observe(float64(len(respBody)))
 
 	if resp.StatusCode >= 300 {
 		return nil, getNotOKError(respBody, resp.StatusCode)
