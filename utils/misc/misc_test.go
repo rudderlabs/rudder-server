@@ -622,12 +622,12 @@ func TestGetObjectStorageConfig(t *testing.T) {
 
 	t.Run("GCS carries the workspace ID and federation role without mutating the input", func(t *testing.T) {
 		t.Setenv("RUDDER_GCP_FEDERATION_AWS_ROLE_ARN", "arn:aws:iam::422074288268:role/rudderstack-gcp-federation")
-		t.Setenv("AWS_S3_REGION_HINT", "us-east-1")
+		t.Setenv("AWS_REGION", "eu-west-1")
 		original := map[string]any{"bucketName": "some-bucket"}
 		config := GetObjectStorageConfig(ObjectStorageOptsT{Provider: "GCS", Config: original, WorkspaceID: sampleWorkspaceID})
 		require.Equal(t, sampleWorkspaceID, config["workspaceID"])
 		require.Equal(t, "arn:aws:iam::422074288268:role/rudderstack-gcp-federation", config["workloadIdentityAWSRoleARN"])
-		require.Equal(t, "us-east-1", config["workloadIdentityAWSRegion"])
+		require.Equal(t, "eu-west-1", config["workloadIdentityAWSRegion"])
 		require.Equal(t, "some-bucket", config["bucketName"])
 		require.NotContains(t, original, "workspaceID")
 	})

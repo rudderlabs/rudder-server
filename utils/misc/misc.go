@@ -619,7 +619,7 @@ func GetRudderObjectStorageAccessKeys() (accessKeyID, accessKey string) {
 // GetRudderGCPFederationAWSRoleAndRegion returns the AWS role and region RudderStack uses for GCP workload
 // identity federation. An empty roleARN means the pod's IRSA role is assumed instead.
 func GetRudderGCPFederationAWSRoleAndRegion(conf *config.Config) (roleARN, region string) {
-	return conf.GetStringVar("", "RUDDER_GCP_FEDERATION_AWS_ROLE_ARN"), conf.GetStringVar("us-east-1", "AWS_S3_REGION_HINT")
+	return conf.GetStringVar("", "RUDDER_GCP_FEDERATION_AWS_ROLE_ARN"), conf.GetStringVar("us-east-1", "AWS_REGION")
 }
 
 func GetRudderObjectStoragePrefix() (prefix string) {
