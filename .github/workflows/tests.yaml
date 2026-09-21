@@ -151,7 +151,8 @@ jobs:
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
       - name: Set Redshift Ginkgo AWS Credentials
-        if: matrix.destination == 'redshift'
+        # bigquery uses them to assume the workload identity federation test role
+        if: matrix.destination == 'redshift' || matrix.destination == 'bigquery'
         run: |
           echo "Setting Redshift Ginkgo AWS Credentials..."
           echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_REDSHIFT_GINKGO_ACCESS_KEY_ID }}" >> $GITHUB_ENV
@@ -160,6 +161,7 @@ jobs:
         run: make test-warehouse package=${{ matrix.package }}
         env:
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
+          BIGQUERY_WIF_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_WIF_INTEGRATION_TEST_CREDENTIALS }}
           DATABRICKS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_INTEGRATION_TEST_CREDENTIALS }}
           DATABRICKS_HIERARCHICAL_NAMESPACE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_HIERARCHICAL_NAMESPACE_INTEGRATION_TEST_CREDENTIALS }}
           REDSHIFT_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_INTEGRATION_TEST_CREDENTIALS }}

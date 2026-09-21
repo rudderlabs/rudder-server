@@ -620,6 +620,18 @@ func TestGetObjectStorageConfig(t *testing.T) {
 		require.NotContains(t, config, "accessKey")
 	})
 
+	t.Run("GCS carries the workspace ID and federation role without mutating the input", func(t *testing.T) {
+		t.Setenv("RUDDER_GCP_FEDERATION_AWS_ROLE_ARN", "arn:aws:iam::422074288268:role/rudderstack-gcp-federation")
+		t.Setenv("AWS_REGION", "eu-west-1")
+		original := map[string]any{"bucketName": "some-bucket"}
+		config := GetObjectStorageConfig(ObjectStorageOptsT{Provider: "GCS", Config: original, WorkspaceID: sampleWorkspaceID})
+		require.Equal(t, sampleWorkspaceID, config["workspaceID"])
+		require.Equal(t, "arn:aws:iam::422074288268:role/rudderstack-gcp-federation", config["workloadIdentityAWSRoleARN"])
+		require.Equal(t, "eu-west-1", config["workloadIdentityAWSRegion"])
+		require.Equal(t, "some-bucket", config["bucketName"])
+		require.NotContains(t, original, "workspaceID")
+	})
+
 	t.Run("UseRudderStorage returns rudder config without static creds", func(t *testing.T) {
 		config := GetObjectStorageConfig(ObjectStorageOptsT{
 			Provider:         "S3",
