@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.88.0](https://github.com/rudderlabs/rudder-server/compare/v1.87.0...v1.88.0) (2026-09-21)
+
+
+### Features
+
+* **warehouse:** bigquery workload identity federation authentication ([#7361](https://github.com/rudderlabs/rudder-server/issues/7361)) ([d16ab5f](https://github.com/rudderlabs/rudder-server/commit/d16ab5f8a18ca81f2603b9450ef2322670535cf0))
+
+
+### Bug Fixes
+
+* bound clickHouse v2 s3 copy memory ([#7407](https://github.com/rudderlabs/rudder-server/issues/7407)) ([a17a78f](https://github.com/rudderlabs/rudder-server/commit/a17a78f8b046420b6eca8bbfb76b7d00d7db28f2))
+
+
+### Miscellaneous
+
+* cleanup python mirroring ([#7395](https://github.com/rudderlabs/rudder-server/issues/7395)) ([9f9bcde](https://github.com/rudderlabs/rudder-server/commit/9f9bcde9d16a0182372863f3b7a09483c0a0fbc4))
+* default failed-keys error capture on ([#7404](https://github.com/rudderlabs/rudder-server/issues/7404)) ([db84987](https://github.com/rudderlabs/rudder-server/commit/db849871a57b9832aaea4fa2e4187e4f1c9b34d1))
+* sync release v1.87.0 to main branch ([#7394](https://github.com/rudderlabs/rudder-server/issues/7394)) ([80353d1](https://github.com/rudderlabs/rudder-server/commit/80353d18b25c4b58c874833a8c2e6ec508f5c073))
+* tag namespace config http client stats with version and mode ([#7401](https://github.com/rudderlabs/rudder-server/issues/7401)) ([d152ae5](https://github.com/rudderlabs/rudder-server/commit/d152ae5513b63c414ede4d34b3c729a7f1644df6))
+
 ## [1.87.1](https://github.com/rudderlabs/rudder-server/compare/v1.87.0...v1.87.1) (2026-09-18)
 
 
