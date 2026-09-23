@@ -21,6 +21,10 @@ func TestColumnsWithDataTypesQuotesBacktickIdentifiers(t *testing.T) {
 
 	require.Contains(t, fragment, "`x`` STRING); DROP TABLE users; --`")
 	require.NotContains(t, fragment, "x` STRING); DROP")
+
+	// The generated event_date column quotes the column it casts from.
+	withReceivedAt := columnsWithDataTypes(model.TableSchema{"received_at": "datetime"}, "")
+	require.Contains(t, withReceivedAt, "`event_date` DATE GENERATED ALWAYS AS ( CAST(`received_at` AS DATE) )")
 }
 
 func TestQualifiedTableNamesQuoteBacktickIdentifiers(t *testing.T) {
