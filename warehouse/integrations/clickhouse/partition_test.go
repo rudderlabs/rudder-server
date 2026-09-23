@@ -56,7 +56,7 @@ func TestPartitionExpr(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := config.New()
-			ch := New(conf, logger.NOP, stats.NOP)
+			ch := NewV2(conf, logger.NOP, stats.NOP)
 			cfg := map[string]any{
 				"partitionType": tc.partitionType,
 			}

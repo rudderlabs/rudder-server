@@ -44,7 +44,7 @@ type ClickhouseV2 struct {
 	LoadFileDownloader downloader.Downloader
 
 	// TemporaryS3Cred mints the short-lived credentials the copy engine hands
-	// to the s3 table function. NewV2 points it at the shared helper, which
+	// to the s3 table function. New points it at the shared helper, which
 	// reaches AWS; a test can point it somewhere closer.
 	TemporaryS3Cred func(*backendconfig.DestinationT) (string, string, string, error)
 
