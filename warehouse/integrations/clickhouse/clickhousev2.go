@@ -33,7 +33,7 @@ var (
 	errAppendingCACertificate = errors.New("appending ca certificate to pool")
 )
 
-type Clickhouse struct {
+type ClickhouseV2 struct {
 	DB *sqlmw.DB
 
 	Namespace          string
@@ -71,41 +71,37 @@ type Clickhouse struct {
 	}
 }
 
-// Settings are read from Warehouse.clickhouse.v2.* first and Warehouse.clickhouse.*
-// second, so config deployed against the v2 namespace keeps winning while the
-// unprefixed name becomes canonical. Once deployments have moved, the v2 keys
-// can be dropped.
-func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
-	ch := &Clickhouse{}
+func NewV2(conf *config.Config, log logger.Logger, stat stats.Stats) *ClickhouseV2 {
+	ch := &ClickhouseV2{}
 
 	ch.conf = conf
-	ch.logger = log.Child("integrations").Child("clickhouse")
+	ch.logger = log.Child("integrations").Child("clickhouse").Child("v2")
 	ch.stats = stat
 	ch.TemporaryS3Cred = warehouseutils.GetTemporaryS3Cred
 
-	ch.config.queryDebugLogs = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.queryDebugLogs", "Warehouse.clickhouse.queryDebugLogs")
+	ch.config.queryDebugLogs = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.queryDebugLogs")
 	// commitEvery is the number of rows between commits, which is what bounds
 	// how much of an upload is held client-side at once.
 	// Floored at 1: at zero or below, the block loop never runs a single row, so
 	// insertBlock returns nothing, the caller never sees a short block, and the
 	// load spins forever committing empty batches. One is enough to rule that
 	// out, and keeping the floor there leaves small values usable in tests.
-	ch.config.commitEvery = max(conf.GetIntVar(1000000, 1, "Warehouse.clickhouse.v2.commitEvery", "Warehouse.clickhouse.commitEvery"), 1)
+	ch.config.commitEvery = max(conf.GetIntVar(1000000, 1, "Warehouse.clickhouse.v2.commitEvery"), 1)
 	// The number of times one block may be sent again, not a count of blocked
 	// retries: a block that failed on a connection the pool handed over dead is
 	// worth repeating, anything the server rejected is not. Zero disables them.
-	ch.config.maxRetriesPerBlock = conf.GetIntVar(3, 1, "Warehouse.clickhouse.v2.maxRetriesPerBlock", "Warehouse.clickhouse.maxRetriesPerBlock")
-	ch.config.poolSize = conf.GetIntVar(100, 1, "Warehouse.clickhouse.v2.poolSize", "Warehouse.clickhouse.poolSize")
+	ch.config.maxRetriesPerBlock = conf.GetIntVar(3, 1, "Warehouse.clickhouse.v2.maxRetriesPerBlock")
+	ch.config.poolSize = conf.GetIntVar(100, 1, "Warehouse.clickhouse.v2.poolSize")
 	// Every block takes a connection out of the pool, so a connection the
 	// server closed while it sat idle has to be retired before a block picks
 	// it up.
-	ch.config.connMaxIdleTime = conf.GetDurationVar(5, time.Minute, "Warehouse.clickhouse.v2.connMaxIdleTime", "Warehouse.clickhouse.connMaxIdleTime")
-	ch.config.connMaxLifetime = conf.GetDurationVar(30, time.Minute, "Warehouse.clickhouse.v2.connMaxLifetime", "Warehouse.clickhouse.connMaxLifetime")
-	ch.config.readTimeout = conf.GetDurationVar(300, time.Second, "Warehouse.clickhouse.v2.readTimeout", "Warehouse.clickhouse.readTimeout")
-	ch.config.compress = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.compress", "Warehouse.clickhouse.compress")
-	ch.config.disableNullable = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.disableNullable", "Warehouse.clickhouse.disableNullable")
-	ch.config.numWorkersDownloadLoadFiles = conf.GetIntVar(8, 1, "Warehouse.clickhouse.v2.numWorkersDownloadLoadFiles", "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
-	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSliceVar(nil, "Warehouse.clickhouse.v2.s3EngineEnabledWorkspaceIDs", "Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs")
+	ch.config.connMaxIdleTime = conf.GetDurationVar(5, time.Minute, "Warehouse.clickhouse.v2.connMaxIdleTime")
+	ch.config.connMaxLifetime = conf.GetDurationVar(30, time.Minute, "Warehouse.clickhouse.v2.connMaxLifetime")
+	ch.config.readTimeout = conf.GetDurationVar(300, time.Second, "Warehouse.clickhouse.v2.readTimeout")
+	ch.config.compress = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.compress")
+	ch.config.disableNullable = conf.GetBoolVar(false, "Warehouse.clickhouse.v2.disableNullable")
+	ch.config.numWorkersDownloadLoadFiles = conf.GetIntVar(8, 1, "Warehouse.clickhouse.v2.numWorkersDownloadLoadFiles")
+	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSliceVar(nil, "Warehouse.clickhouse.v2.s3EngineEnabledWorkspaceIDs")
 	// s3CopySettings are the SETTINGS the copy statement carries on top of the
 	// two it always needs. The copy reads a whole folder of gzipped CSV in one
 	// INSERT ... SELECT, so its peak memory follows the parse and insert
@@ -118,9 +114,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 		keys := func(name string) []string {
 			return []string{
 				fmt.Sprintf("Warehouse.clickhouse.v2.%s.s3Copy.%s", workspaceID, name),
-				fmt.Sprintf("Warehouse.clickhouse.%s.s3Copy.%s", workspaceID, name),
 				"Warehouse.clickhouse.v2.s3Copy." + name,
-				"Warehouse.clickhouse.s3Copy." + name,
 			}
 		}
 		var settings []string
@@ -157,13 +151,12 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 		}
 		return settings
 	}
-	ch.config.slowQueryThreshold = conf.GetDurationVar(5, time.Minute, "Warehouse.clickhouse.v2.slowQueryThreshold", "Warehouse.clickhouse.slowQueryThreshold")
+	ch.config.slowQueryThreshold = conf.GetDurationVar(5, time.Minute, "Warehouse.clickhouse.v2.slowQueryThreshold")
 	ch.config.disableLoadTableStats = func(workspaceID string) bool {
 		return conf.GetBoolVar(
 			false,
 			fmt.Sprintf("Warehouse.clickhouse.v2.%s.disableLoadTableStats", workspaceID),
-			fmt.Sprintf("Warehouse.clickhouse.%s.disableLoadTableStats", workspaceID),
-			"Warehouse.clickhouse.v2.disableLoadTableStats", "Warehouse.clickhouse.disableLoadTableStats",
+			"Warehouse.clickhouse.v2.disableLoadTableStats",
 		)
 	}
 	ch.config.randomLoadDelay = func(workspaceID string) time.Duration {
@@ -171,8 +164,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 			0,
 			time.Second,
 			fmt.Sprintf("Warehouse.clickhouse.v2.%s.maxLoadDelay", workspaceID),
-			fmt.Sprintf("Warehouse.clickhouse.%s.maxLoadDelay", workspaceID),
-			"Warehouse.clickhouse.v2.maxLoadDelay", "Warehouse.clickhouse.maxLoadDelay",
+			"Warehouse.clickhouse.v2.maxLoadDelay",
 		)
 		return time.Duration(float64(maxDelay) * (1 - rand.Float64()))
 	}
@@ -180,7 +172,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	return ch
 }
 
-func (ch *Clickhouse) Setup(_ context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (ch *ClickhouseV2) Setup(_ context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.Uploader = uploader
@@ -193,13 +185,13 @@ func (ch *Clickhouse) Setup(_ context.Context, warehouse model.Warehouse, upload
 	return nil
 }
 
-func (ch *Clickhouse) Cleanup(_ context.Context) {
+func (ch *ClickhouseV2) Cleanup(_ context.Context) {
 	if ch.DB != nil {
 		_ = ch.DB.Close()
 	}
 }
 
-func (ch *Clickhouse) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
+func (ch *ClickhouseV2) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(
@@ -217,7 +209,7 @@ func (ch *Clickhouse) Connect(_ context.Context, warehouse model.Warehouse) (cli
 }
 
 // TestConnection is used destination connection tester to test the clickhouse connection
-func (ch *Clickhouse) TestConnection(ctx context.Context, _ model.Warehouse) error {
+func (ch *ClickhouseV2) TestConnection(ctx context.Context, _ model.Warehouse) error {
 	err := ch.DB.PingContext(ctx)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("connection timeout: %w", err)
@@ -229,7 +221,7 @@ func (ch *Clickhouse) TestConnection(ctx context.Context, _ model.Warehouse) err
 	return nil
 }
 
-func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
+func (ch *ClickhouseV2) CreateSchema(ctx context.Context) error {
 	if !ch.Uploader.IsWarehouseSchemaEmpty() {
 		return nil
 	}
@@ -257,7 +249,7 @@ func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
 	return nil
 }
 
-func (ch *Clickhouse) schemaExists(ctx context.Context, schemaName string) (exists bool, err error) {
+func (ch *ClickhouseV2) schemaExists(ctx context.Context, schemaName string) (exists bool, err error) {
 	var count int64
 	sqlStatement := "SELECT count(*) FROM system.databases WHERE name = ?"
 	err = ch.DB.QueryRowContext(ctx, sqlStatement, schemaName).Scan(&count)
@@ -269,14 +261,14 @@ func (ch *Clickhouse) schemaExists(ctx context.Context, schemaName string) (exis
 	return exists, err
 }
 
-func (ch *Clickhouse) clusterClause() string {
+func (ch *ClickhouseV2) clusterClause() string {
 	if cluster := ch.Warehouse.GetStringDestinationConfig(ch.conf, model.ClusterSetting); len(strings.TrimSpace(cluster)) > 0 {
 		return fmt.Sprintf(`ON CLUSTER %q`, cluster)
 	}
 	return ""
 }
 
-func (ch *Clickhouse) CreateTable(ctx context.Context, tableName string, columns model.TableSchema) (err error) {
+func (ch *ClickhouseV2) CreateTable(ctx context.Context, tableName string, columns model.TableSchema) (err error) {
 	sortKeyFields := []string{"received_at", "id"}
 	if tableName == warehouseutils.DiscardsTable {
 		sortKeyFields = []string{"received_at"}
@@ -325,7 +317,7 @@ createUsersTable creates a user's table with engine AggregatingMergeTree,
 this lets us choose aggregation logic before merging records with same user id.
 current behaviour is to replace user  properties with the latest non-null values
 */
-func (ch *Clickhouse) createUsersTable(ctx context.Context, name string, columns model.TableSchema) (err error) {
+func (ch *ClickhouseV2) createUsersTable(ctx context.Context, name string, columns model.TableSchema) (err error) {
 	sortKeyFields := []string{"id"}
 	notNullableColumns := []string{"received_at", "id"}
 	clusterClause := ""
@@ -352,7 +344,7 @@ func (ch *Clickhouse) createUsersTable(ctx context.Context, name string, columns
 }
 
 // ColumnsWithDataTypes creates columns and its datatype into sql format for creating table
-func (ch *Clickhouse) ColumnsWithDataTypes(tableName string, columns model.TableSchema, notNullableColumns []string) string {
+func (ch *ClickhouseV2) ColumnsWithDataTypes(tableName string, columns model.TableSchema, notNullableColumns []string) string {
 	columnsWithDataTypes := lo.Map(lo.Keys(columns), func(columnName string, _ int) string {
 		dataType := columns[columnName]
 		codec := ch.getClickHouseCodecForColumnType(dataType, tableName)
@@ -362,7 +354,7 @@ func (ch *Clickhouse) ColumnsWithDataTypes(tableName string, columns model.Table
 	return strings.Join(columnsWithDataTypes, ",")
 }
 
-func (ch *Clickhouse) getClickHouseCodecForColumnType(columnType, tableName string) string {
+func (ch *ClickhouseV2) getClickHouseCodecForColumnType(columnType, tableName string) string {
 	if columnType == model.DateTimeDataType {
 		if ch.config.disableNullable && (tableName != warehouseutils.IdentifiesTable && tableName != warehouseutils.UsersTable) {
 			return "Codec(DoubleDelta, LZ4)"
@@ -371,7 +363,7 @@ func (ch *Clickhouse) getClickHouseCodecForColumnType(columnType, tableName stri
 	return ""
 }
 
-func (ch *Clickhouse) getClickHouseColumnTypeForSpecificTable(tableName, columnName, columnType string, notNullableKey bool) string {
+func (ch *ClickhouseV2) getClickHouseColumnTypeForSpecificTable(tableName, columnName, columnType string, notNullableKey bool) string {
 	if notNullableKey || (tableName != warehouseutils.IdentifiesTable && ch.config.disableNullable) {
 		return getClickhouseColumnTypeForSpecificColumn(columnName, columnType, false)
 	}
@@ -382,7 +374,7 @@ func (ch *Clickhouse) getClickHouseColumnTypeForSpecificTable(tableName, columnN
 	return getClickhouseColumnTypeForSpecificColumn(columnName, columnType, true)
 }
 
-func (ch *Clickhouse) partitionByClause() (string, error) {
+func (ch *ClickhouseV2) partitionByClause() (string, error) {
 	partitionExpr, err := ch.partitionExpr()
 	if err != nil {
 		return "", fmt.Errorf("getting partition expr: %w", err)
@@ -390,7 +382,7 @@ func (ch *Clickhouse) partitionByClause() (string, error) {
 	return fmt.Sprintf(`PARTITION BY %s`, partitionExpr), nil
 }
 
-func (ch *Clickhouse) partitionExpr() (string, error) {
+func (ch *ClickhouseV2) partitionExpr() (string, error) {
 	partitionType := ch.Warehouse.GetStringDestinationConfig(ch.conf, model.PartitionTypeSetting)
 	switch partitionType {
 	case "", "day":
@@ -410,13 +402,13 @@ func (ch *Clickhouse) partitionExpr() (string, error) {
 	}
 }
 
-func (ch *Clickhouse) DropTable(ctx context.Context, tableName string) (err error) {
+func (ch *ClickhouseV2) DropTable(ctx context.Context, tableName string) (err error) {
 	sqlStatement := fmt.Sprintf(`DROP TABLE %q.%q %s `, ch.Warehouse.Namespace, tableName, ch.clusterClause())
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	return err
 }
 
-func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+func (ch *ClickhouseV2) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	var (
 		query        string
 		queryBuilder strings.Builder
@@ -451,12 +443,12 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 	return err
 }
 
-func (*Clickhouse) AlterColumn(_ context.Context, _, _, _ string) (model.AlterTableResponse, error) {
+func (*ClickhouseV2) AlterColumn(_ context.Context, _, _, _ string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
-func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, error) {
+func (ch *ClickhouseV2) FetchSchema(ctx context.Context) (model.Schema, error) {
 	schema := make(model.Schema)
 
 	sqlStatement := `
@@ -505,35 +497,35 @@ func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, error) {
 	return schema, nil
 }
 
-func (ch *Clickhouse) TestFetchSchema(ctx context.Context) error {
+func (ch *ClickhouseV2) TestFetchSchema(ctx context.Context) error {
 	_, err := ch.FetchSchema(ctx)
 	return err
 }
 
-func (*Clickhouse) DeleteBy(context.Context, []string, warehouseutils.DeleteByParams) error {
+func (*ClickhouseV2) DeleteBy(context.Context, []string, warehouseutils.DeleteByParams) error {
 	return errNotImplemented
 }
 
-func (*Clickhouse) LoadIdentityMergeRulesTable(_ context.Context) error {
+func (*ClickhouseV2) LoadIdentityMergeRulesTable(_ context.Context) error {
 	return nil
 }
 
-func (*Clickhouse) LoadIdentityMappingsTable(_ context.Context) error {
+func (*ClickhouseV2) LoadIdentityMappingsTable(_ context.Context) error {
 	return nil
 }
 
-func (*Clickhouse) DownloadIdentityRules(context.Context, *misc.GZipWriter) error {
+func (*ClickhouseV2) DownloadIdentityRules(context.Context, *misc.GZipWriter) error {
 	return nil
 }
 
-func (*Clickhouse) IsEmpty(_ context.Context, _ model.Warehouse) (bool, error) {
+func (*ClickhouseV2) IsEmpty(_ context.Context, _ model.Warehouse) (bool, error) {
 	return false, nil
 }
 
-func (ch *Clickhouse) SetConnectionTimeout(timeout time.Duration) {
+func (ch *ClickhouseV2) SetConnectionTimeout(timeout time.Duration) {
 	ch.connectTimeout = timeout
 }
 
-func (*Clickhouse) ErrorMappings() []model.JobError {
+func (*ClickhouseV2) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

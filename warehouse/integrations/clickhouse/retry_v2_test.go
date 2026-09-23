@@ -28,10 +28,10 @@ func TestWithBlockRetriesV2(t *testing.T) {
 	// it without touching what is under test.
 	fast := backoff.WithBackOff(backoff.NewConstantBackOff(time.Millisecond))
 
-	newCH := func(maxRetriesPerBlock int) *Clickhouse {
+	newCH := func(maxRetriesPerBlock int) *ClickhouseV2 {
 		conf := config.New()
 		conf.Set("Warehouse.clickhouse.v2.maxRetriesPerBlock", maxRetriesPerBlock)
-		return New(conf, logger.NOP, stats.NOP)
+		return NewV2(conf, logger.NOP, stats.NOP)
 	}
 
 	// failThenSucceed returns a send that fails with err its first n times.

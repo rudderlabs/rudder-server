@@ -78,7 +78,7 @@ func newManager(destType string, conf *config.Config, logger logger.Logger, stat
 	case warehouseutils.POSTGRES:
 		return postgres.New(conf, logger, stats), nil
 	case warehouseutils.CLICKHOUSE:
-		return clickhouse.New(conf, logger, stats), nil
+		return clickhouse.NewV2(conf, logger, stats), nil
 	case warehouseutils.MSSQL:
 		return mssql.New(conf, logger, stats), nil
 	case warehouseutils.AzureSynapse:
@@ -103,7 +103,7 @@ func NewWarehouseOperations(destType string, conf *config.Config, logger logger.
 	case warehouseutils.POSTGRES:
 		return postgres.New(conf, logger, stats), nil
 	case warehouseutils.CLICKHOUSE:
-		return clickhouse.New(conf, logger, stats), nil
+		return clickhouse.NewV2(conf, logger, stats), nil
 	case warehouseutils.MSSQL:
 		return mssql.New(conf, logger, stats), nil
 	case warehouseutils.AzureSynapse:

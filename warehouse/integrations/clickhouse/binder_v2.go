@@ -22,7 +22,7 @@ var errEmptyJSONCell = errors.New("empty json cell")
 //
 // On a cell that fails to parse the value resolves to nil for a nullable
 // column, or to the type's typed default when nullable columns are disabled.
-func (ch *Clickhouse) bindValue(data, dataType string) any {
+func (ch *ClickhouseV2) bindValue(data, dataType string) any {
 	var (
 		value any
 		err   error
@@ -70,7 +70,7 @@ func (ch *Clickhouse) bindValue(data, dataType string) any {
 // castStringToArray unmarshals a JSON array cell into the typed slice the
 // column expects. Never returns a nil slice: the driver rejects nil for array
 // columns.
-func (ch *Clickhouse) castStringToArray(data, dataType string) any {
+func (ch *ClickhouseV2) castStringToArray(data, dataType string) any {
 	switch dataType {
 	case "array(int)":
 		dataInt := make([]int64, 0)

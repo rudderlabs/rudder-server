@@ -24,8 +24,8 @@ import (
 func TestCredentialsV2(t *testing.T) {
 	errMinting := errors.New("sts unreachable")
 
-	newCH := func(objectStorage string, destConfig map[string]any) *Clickhouse {
-		ch := New(config.New(), logger.NOP, stats.NOP)
+	newCH := func(objectStorage string, destConfig map[string]any) *ClickhouseV2 {
+		ch := NewV2(config.New(), logger.NOP, stats.NOP)
 		ch.ObjectStorage = objectStorage
 		ch.Warehouse = model.Warehouse{
 			Destination: backendconfig.DestinationT{Config: destConfig},
@@ -143,7 +143,7 @@ func TestS3CopySettingsV2(t *testing.T) {
 		if set != nil {
 			set(conf)
 		}
-		return New(conf, logger.NOP, stats.NOP).config.s3CopySettings(workspaceID)
+		return NewV2(conf, logger.NOP, stats.NOP).config.s3CopySettings(workspaceID)
 	}
 
 	t.Run("unset by default", func(t *testing.T) {

@@ -26,7 +26,7 @@ type loadStats struct {
 	blockRetries          stats.Counter
 }
 
-func (ch *Clickhouse) newLoadStats(tableName string) *loadStats {
+func (ch *ClickhouseV2) newLoadStats(tableName string) *loadStats {
 	tags := stats.Tags{
 		"workspaceId": ch.Warehouse.WorkspaceID,
 		"destination": ch.Warehouse.Destination.ID,
