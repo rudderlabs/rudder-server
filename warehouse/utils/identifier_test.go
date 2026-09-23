@@ -51,11 +51,9 @@ func TestDialectQualifiedAndJoinHelpers(t *testing.T) {
 	require.Equal(t, `"schema""x"."table""y"`, DoubleQuoteQualifiedIdentifier(`schema"x`, `table"y`))
 	require.Equal(t, `[schema]]x].[table]]y]`, BracketQuoteQualifiedIdentifier(`schema]x`, `table]y`))
 	require.Equal(t, "`schema``x`.`table``y`", BacktickQuoteQualifiedIdentifier("schema`x", "table`y"))
-	require.Equal(t, `"schema\"x"."table\"y"`, ClickHouseQuoteQualifiedIdentifier(`schema"x`, `table"y`))
 	require.Equal(t, `"id","evil""x"`, DoubleQuoteAndJoinByComma([]string{"id", `evil"x`}))
 	require.Equal(t, `[id],[evil]]x]`, BracketQuoteAndJoinByComma([]string{"id", `evil]x`}))
 	require.Equal(t, "`id`,`evil``x`", BacktickQuoteAndJoinByComma([]string{"id", "evil`x"}))
-	require.Equal(t, `"id","evil\"x"`, ClickHouseQuoteAndJoinByComma([]string{"id", `evil"x`}))
 }
 
 func TestJoinQuotedIdentifiers(t *testing.T) {

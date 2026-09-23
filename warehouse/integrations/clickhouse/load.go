@@ -76,7 +76,7 @@ func (ch *Clickhouse) totalCountIntable(ctx context.Context, tableName string) (
 	sqlStatement = fmt.Sprintf(`
 		SELECT count(*) FROM %s;
 	`,
-		warehouseutils.ClickHouseQuoteQualifiedIdentifier(ch.Namespace, tableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, ch.Namespace, tableName),
 	)
 	err = ch.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
 	return total, err
@@ -138,7 +138,7 @@ func (ch *Clickhouse) loadByCopyCommand(ctx context.Context, tableName string, t
 
 	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
 	sort.Strings(strKeys)
-	sortedColumnNames := warehouseutils.ClickHouseQuoteAndJoinByComma(strKeys)
+	sortedColumnNames := warehouseutils.JoinQuotedIdentifiers(strKeys, warehouseutils.ClickHouseQuoteIdentifier, ",")
 	sortedColumnNamesWithDataTypes := warehouseutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
 		return fmt.Sprintf(`%s %s`, warehouseutils.ClickHouseQuoteIdentifier(name), rudderDataTypesMapToClickHouse[tableSchemaInUpload[name]])
 	}, ",")
@@ -208,7 +208,7 @@ func copySQLStatement(namespace, tableName, sortedColumnNames string, s3Args, ex
 			settings
 				%[4]s;
 		`,
-		warehouseutils.ClickHouseQuoteQualifiedIdentifier(namespace, tableName), // 1
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, namespace, tableName), // 1
 		sortedColumnNames,                     // 2
 		strings.Join(s3Args, ", "),            // 3
 		strings.Join(settings, ",\n\t\t\t\t"), // 4
@@ -288,8 +288,8 @@ func (ch *Clickhouse) TestLoadTable(ctx context.Context, _, tableName string, pa
 	}
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (%v) VALUES (%s)`,
-		warehouseutils.ClickHouseQuoteQualifiedIdentifier(ch.Namespace, tableName),
-		warehouseutils.ClickHouseQuoteAndJoinByComma(columns),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, ch.Namespace, tableName),
+		warehouseutils.JoinQuotedIdentifiers(columns, warehouseutils.ClickHouseQuoteIdentifier, ","),
 		generateArgumentString(len(columns)),
 	)
 	txn, err := ch.DB.BeginTx(ctx, &sql.TxOptions{})
@@ -346,8 +346,8 @@ func (ch *Clickhouse) loadTableFromFiles(
 
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 	insertSQL := fmt.Sprintf(`INSERT INTO %s (%v) VALUES (%s)`,
-		warehouseutils.ClickHouseQuoteQualifiedIdentifier(ch.Namespace, tableName),
-		warehouseutils.ClickHouseQuoteAndJoinByComma(sortedColumnKeys),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, ch.Namespace, tableName),
+		warehouseutils.JoinQuotedIdentifiers(sortedColumnKeys, warehouseutils.ClickHouseQuoteIdentifier, ","),
 		generateArgumentString(len(sortedColumnKeys)),
 	)
 

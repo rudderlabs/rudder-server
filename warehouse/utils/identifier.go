@@ -72,18 +72,6 @@ func BacktickQuoteQualifiedIdentifier(identifiers ...string) string {
 	return QuoteQualifiedIdentifier(BacktickQuoteIdentifier, identifiers...)
 }
 
-// ClickHouseQuoteQualifiedIdentifier quotes each part for ClickHouse and joins them with
-// a dot, e.g. "database"."table".
-func ClickHouseQuoteQualifiedIdentifier(identifiers ...string) string {
-	return QuoteQualifiedIdentifier(ClickHouseQuoteIdentifier, identifiers...)
-}
-
-// ClickHouseQuoteAndJoinByComma quotes each identifier for ClickHouse and joins them with
-// commas.
-func ClickHouseQuoteAndJoinByComma(identifiers []string) string {
-	return JoinQuotedIdentifiers(identifiers, ClickHouseQuoteIdentifier, ",")
-}
-
 // BracketQuoteAndJoinByComma quotes each identifier for MSSQL and Azure Synapse and
 // joins them with commas.
 func BracketQuoteAndJoinByComma(identifiers []string) string {

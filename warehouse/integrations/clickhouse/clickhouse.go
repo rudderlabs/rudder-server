@@ -310,7 +310,7 @@ func (ch *Clickhouse) CreateTable(ctx context.Context, tableName string, columns
 		}
 	}
 
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s %s ( %v ) ENGINE = %s(%s) %s %s`, warehouseutils.ClickHouseQuoteQualifiedIdentifier(ch.Namespace, tableName), clusterClause, ch.ColumnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, orderByClause, partitionByClause)
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s %s ( %v ) ENGINE = %s(%s) %s %s`, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, ch.Namespace, tableName), clusterClause, ch.ColumnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, orderByClause, partitionByClause)
 
 	ch.logger.Infon("CH: Creating table in clickhouse for ch",
 		logger.NewStringField(logfield.DestinationID, ch.Warehouse.Destination.ID),
@@ -342,7 +342,7 @@ func (ch *Clickhouse) createUsersTable(ctx context.Context, name string, columns
 		return fmt.Errorf("getting partition by clause: %w", err)
 	}
 
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s %s ( %v )  ENGINE = %s(%s) ORDER BY %s %s`, warehouseutils.ClickHouseQuoteQualifiedIdentifier(ch.Namespace, name), clusterClause, ch.ColumnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionByClause)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s %s ( %v )  ENGINE = %s(%s) ORDER BY %s %s`, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, ch.Namespace, name), clusterClause, ch.ColumnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionByClause)
 	ch.logger.Infon("CH: Creating table in clickhouse for ch",
 		logger.NewStringField(logfield.DestinationID, ch.Warehouse.Destination.ID),
 		logger.NewStringField(logfield.Query, sqlStatement),
@@ -411,7 +411,7 @@ func (ch *Clickhouse) partitionExpr() (string, error) {
 }
 
 func (ch *Clickhouse) DropTable(ctx context.Context, tableName string) (err error) {
-	sqlStatement := fmt.Sprintf(`DROP TABLE %s %s `, warehouseutils.ClickHouseQuoteQualifiedIdentifier(ch.Warehouse.Namespace, tableName), ch.clusterClause())
+	sqlStatement := fmt.Sprintf(`DROP TABLE %s %s `, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, ch.Warehouse.Namespace, tableName), ch.clusterClause())
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	return err
 }
@@ -425,7 +425,7 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 	fmt.Fprintf(&queryBuilder, `
 		ALTER TABLE
 		  %s %s`,
-		warehouseutils.ClickHouseQuoteQualifiedIdentifier(ch.Namespace, tableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, ch.Namespace, tableName),
 		ch.clusterClause())
 
 	for _, columnInfo := range columnsInfo {

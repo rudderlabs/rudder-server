@@ -50,7 +50,7 @@ func TestS3CopyStatementQuotesIdentifiersAndLiterals(t *testing.T) {
 	statement := copySQLStatement(
 		`ns"x`,
 		`table"y`,
-		warehouseutils.ClickHouseQuoteAndJoinByComma([]string{`evil"col`, "id"}),
+		warehouseutils.JoinQuotedIdentifiers([]string{`evil"col`, "id"}, warehouseutils.ClickHouseQuoteIdentifier, ","),
 		args,
 		nil,
 	)
