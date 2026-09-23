@@ -574,7 +574,7 @@ func (d *Deltalake) tableLocationQuery(tableName string) string {
 		return ""
 	}
 
-	return fmt.Sprintf("LOCATION %s", warehouseutils.SparkSQLStringLiteral(externalLocation+"/"+d.Namespace+"/"+tableName))
+	return fmt.Sprintf("LOCATION %s", warehouseutils.SparkSQLStringLiteral(warehouseutils.TableLocationPath(externalLocation, d.Namespace, tableName)))
 }
 
 // AddColumns adds columns to the table.
