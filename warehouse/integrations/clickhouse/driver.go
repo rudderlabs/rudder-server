@@ -30,7 +30,7 @@ var s3CredentialsRegex = map[string]string{
 
 // connect opens a connection and wraps it in the shared middleware.
 // includeDatabase is false when connecting in order to create the database.
-func (ch *ClickhouseV2) connect(includeDatabase bool) (*sqlmw.DB, error) {
+func (ch *Clickhouse) connect(includeDatabase bool) (*sqlmw.DB, error) {
 	opts := &clickhouse.Options{
 		Addr: []string{net.JoinHostPort(
 			ch.Warehouse.GetStringDestinationConfig(ch.conf, model.HostSetting),
@@ -88,7 +88,7 @@ func (ch *ClickhouseV2) connect(includeDatabase bool) (*sqlmw.DB, error) {
 	), nil
 }
 
-func (ch *ClickhouseV2) tlsConfig() (*tls.Config, error) {
+func (ch *Clickhouse) tlsConfig() (*tls.Config, error) {
 	conf := &tls.Config{
 		InsecureSkipVerify: ch.Warehouse.GetBoolDestinationConfig(model.SkipVerifySetting),
 		MinVersion:         tls.VersionTLS12,
