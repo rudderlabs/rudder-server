@@ -19,13 +19,13 @@ import (
 	"testing"
 	"time"
 
+	clickhousev2 "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/google/uuid"
 	miniocredentials "github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	clickhousev2 "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
