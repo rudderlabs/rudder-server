@@ -84,9 +84,6 @@ func getRedshiftTestCredentials(key string) (*testCredentials, error) {
 }
 
 func TestIntegration(t *testing.T) {
-	// TODO: re-enable once the shared Redshift test user is unlocked; every run currently fails with
-	// "pq: Account locked due to multiple failed login attempts" (28000).
-	t.Skip("Skipping: shared Redshift test user is locked")
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
