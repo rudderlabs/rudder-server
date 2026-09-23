@@ -37,7 +37,7 @@ var (
 	errMissingS3Credentials      = errors.New("no object storage credentials for the s3 engine")
 )
 
-func (ch *ClickhouseV2) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
+func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
 	var (
 		preLoadTableCount int64
 		err               error
@@ -67,7 +67,7 @@ func (ch *ClickhouseV2) LoadTable(ctx context.Context, tableName string) (*types
 	}, nil
 }
 
-func (ch *ClickhouseV2) totalCountIntable(ctx context.Context, tableName string) (int64, error) {
+func (ch *Clickhouse) totalCountIntable(ctx context.Context, tableName string) (int64, error) {
 	var (
 		total        int64
 		err          error
@@ -83,7 +83,7 @@ func (ch *ClickhouseV2) totalCountIntable(ctx context.Context, tableName string)
 	return total, err
 }
 
-func (ch *ClickhouseV2) LoadUserTables(ctx context.Context) (errorMap map[string]error) {
+func (ch *Clickhouse) LoadUserTables(ctx context.Context) (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	err := ch.loadTable(ctx, warehouseutils.IdentifiesTable, ch.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable))
 	if err != nil {
@@ -103,7 +103,7 @@ func (ch *ClickhouseV2) LoadUserTables(ctx context.Context) (errorMap map[string
 	return errorMap
 }
 
-func (ch *ClickhouseV2) loadTable(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) (err error) {
+func (ch *Clickhouse) loadTable(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) (err error) {
 	if delay := ch.config.randomLoadDelay(ch.Warehouse.WorkspaceID); delay > 0 {
 		if err = misc.SleepCtx(ctx, delay); err != nil {
 			return err
@@ -118,14 +118,14 @@ func (ch *ClickhouseV2) loadTable(ctx context.Context, tableName string, tableSc
 	return ch.loadByDownloadingLoadFiles(ctx, tableName, tableSchemaInUpload, st)
 }
 
-func (ch *ClickhouseV2) UseS3CopyEngineForLoading() bool {
+func (ch *Clickhouse) UseS3CopyEngineForLoading() bool {
 	if !slices.Contains(ch.config.s3EngineEnabledWorkspaceIDs, ch.Warehouse.WorkspaceID) {
 		return false
 	}
 	return ch.ObjectStorage == warehouseutils.S3 || ch.ObjectStorage == warehouseutils.MINIO
 }
 
-func (ch *ClickhouseV2) loadByCopyCommand(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) error {
+func (ch *Clickhouse) loadByCopyCommand(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) error {
 	log := ch.logger.Withn(
 		logger.NewStringField(logfield.SourceID, ch.Warehouse.Source.ID),
 		logger.NewStringField(logfield.SourceType, ch.Warehouse.Source.SourceDefinition.Name),
@@ -217,7 +217,7 @@ func copySQLStatement(namespace, tableName, sortedColumnNames string, s3Args, ex
 	)
 }
 
-func (ch *ClickhouseV2) loadByDownloadingLoadFiles(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema, st *loadStats) error {
+func (ch *Clickhouse) loadByDownloadingLoadFiles(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema, st *loadStats) error {
 	log := ch.logger.Withn(
 		logger.NewStringField(logfield.SourceID, ch.Warehouse.Source.ID),
 		logger.NewStringField(logfield.SourceType, ch.Warehouse.Source.SourceDefinition.Name),
@@ -249,7 +249,7 @@ func (ch *ClickhouseV2) loadByDownloadingLoadFiles(ctx context.Context, tableNam
 // credentials returns the literals the s3 table function authenticates with.
 // A session token comes back for aws, where they are always short-lived, and
 // never for minio.
-func (ch *ClickhouseV2) credentials() (accessKeyID, secretAccessKey, sessionToken string, err error) {
+func (ch *Clickhouse) credentials() (accessKeyID, secretAccessKey, sessionToken string, err error) {
 	switch ch.ObjectStorage {
 	case warehouseutils.S3:
 		// An aws destination need not hold keys at all: rudder storage, a role
@@ -278,7 +278,7 @@ func (ch *ClickhouseV2) credentials() (accessKeyID, secretAccessKey, sessionToke
 	return accessKeyID, secretAccessKey, sessionToken, nil
 }
 
-func (ch *ClickhouseV2) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]any, _ string) error {
+func (ch *Clickhouse) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]any, _ string) error {
 	// One pass over the map. Collecting keys and values separately means two
 	// iterations, and Go randomises map order, so a value can end up paired with
 	// the wrong column.
@@ -335,7 +335,7 @@ func (ch *ClickhouseV2) TestLoadTable(ctx context.Context, _, tableName string, 
 // ExecContext only appends to a client-side batch and the single wire write
 // happens on commit, so commitEvery is what bounds how much of the upload is
 // held in memory at once.
-func (ch *ClickhouseV2) loadTableFromFiles(
+func (ch *Clickhouse) loadTableFromFiles(
 	ctx context.Context,
 	log logger.Logger,
 	tableName string,
@@ -417,7 +417,7 @@ func (ch *ClickhouseV2) loadTableFromFiles(
 // sending it is the only thing the transaction is for. A block is therefore
 // atomic only until it is sent, and a failure part-way through a load leaves
 // the blocks before it already in the table.
-func (ch *ClickhouseV2) insertBlock(
+func (ch *Clickhouse) insertBlock(
 	ctx context.Context,
 	insertSQL string,
 	csvReader *csv.Reader,
@@ -459,7 +459,7 @@ func (ch *ClickhouseV2) insertBlock(
 // It is separate from insertBlock so the policy can be exercised without a
 // server, and so a caller can override or extend the options — the later of two
 // conflicting options wins, which is what lets a test collapse the delay.
-func (ch *ClickhouseV2) withBlockRetries(ctx context.Context, send func() error, opts ...backoff.RetryOption) error {
+func (ch *Clickhouse) withBlockRetries(ctx context.Context, send func() error, opts ...backoff.RetryOption) error {
 	return backoffvoid.Retry(ctx, func() error {
 		err := send()
 		if err == nil {
@@ -513,7 +513,7 @@ func readBlock(csvReader *csv.Reader, columnKeys []string, size int) ([][]string
 // is actually spending its time. Timed together they cannot tell a saturated
 // server from a saturated loader, which is the question worth asking before
 // adding any concurrency.
-func (ch *ClickhouseV2) sendBlock(
+func (ch *Clickhouse) sendBlock(
 	ctx context.Context,
 	insertSQL string,
 	block [][]string,

@@ -61,11 +61,11 @@ func TestIntegration(t *testing.T) {
 	// 21.x server it has always used, along with the node configs written for
 	// it: the driver only logs "unsupported clickhouse version" below
 	// MinSupportedVersion and connects regardless.
-	clickhouseCompose := "testdata/docker-compose.clickhouse-v2.yml"
+	clickhouseCompose := "testdata/docker-compose.clickhouse.yml"
 	clusterCompose := "testdata/docker-compose.clickhouse-cluster.yml"
 
 	newClickhouse := func(conf *config.Config) manager.WarehouseOperations {
-		return clickhouse.NewV2(conf, logger.NOP, stats.NOP)
+		return clickhouse.New(conf, logger.NOP, stats.NOP)
 	}
 
 	configKey := func(key string) string {
@@ -1064,7 +1064,7 @@ func TestIntegration(t *testing.T) {
 					destConfig["bucketProvider"] = tc.bucketProvider
 				}
 				if tc.bucketProvider == whutils.S3 {
-					chv2, ok := ch.(*clickhouse.ClickhouseV2)
+					chv2, ok := ch.(*clickhouse.Clickhouse)
 					require.True(t, ok)
 					// The server reaches AWS STS here. MinIO issues credentials
 					// of the same shape for its own users and validates the
