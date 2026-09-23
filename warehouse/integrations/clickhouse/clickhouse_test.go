@@ -48,28 +48,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
-// TestIntegration runs the suite against one ClickHouse implementation, chosen
-// by CLICKHOUSE_USE_V2. Every subtest is shared, so coverage cannot drift
-// between the two, and CI runs the package once per value so each gets its own
-// job. Unset means v1, which is what a bare `go test` gets.
 func TestIntegration(t *testing.T) {
-	var useV2 bool
-	if v := os.Getenv("CLICKHOUSE_USE_V2"); v != "" {
-		parsed, err := strconv.ParseBool(v)
-		require.NoError(t, err, "CLICKHOUSE_USE_V2 must be a boolean")
-		useV2 = parsed
-	}
-
-	implementation := "v1"
-	if useV2 {
-		implementation = "v2"
-	}
-	t.Logf("running against the %s implementation", implementation)
-
-	testIntegration(t, useV2)
-}
-
-func testIntegration(t *testing.T, useV2 bool) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
@@ -78,33 +57,19 @@ func testIntegration(t *testing.T, useV2 bool) {
 	validations.Init()
 	whutils.Init()
 
-	// The single node server is newer for v2 because native JSON needs 25.3+.
-	// The driver itself does not require it: MinSupportedVersion only makes it
-	// log "unsupported clickhouse version" and it connects regardless. So the
-	// cluster keeps the 21.x server both implementations have always used,
-	// along with the node configs written for it.
-	clickhouseCompose := "testdata/docker-compose.clickhouse.yml"
+	// The single node server needs 25.3+ for native JSON. The cluster keeps the
+	// 21.x server it has always used, along with the node configs written for
+	// it: the driver only logs "unsupported clickhouse version" below
+	// MinSupportedVersion and connects regardless.
+	clickhouseCompose := "testdata/docker-compose.clickhouse-v2.yml"
 	clusterCompose := "testdata/docker-compose.clickhouse-cluster.yml"
-	if useV2 {
-		clickhouseCompose = "testdata/docker-compose.clickhouse-v2.yml"
-	}
 
-	// Both implementations satisfy the same interface, so the subtests below only
-	// differ in which one they construct.
 	newClickhouse := func(conf *config.Config) manager.WarehouseOperations {
-		if useV2 {
-			return clickhouse.NewV2(conf, logger.NOP, stats.NOP)
-		}
-		return clickhouse.New(conf, logger.NOP, stats.NOP)
+		return clickhouse.NewV2(conf, logger.NOP, stats.NOP)
 	}
 
-	// v2 reads its own Warehouse.clickhouse.v2.* namespace, so every key the
-	// suite sets has to follow the implementation under test.
 	configKey := func(key string) string {
-		if useV2 {
-			return "Warehouse.clickhouse.v2." + key
-		}
-		return "Warehouse.clickhouse." + key
+		return "Warehouse.clickhouse.v2." + key
 	}
 	destType := whutils.CLICKHOUSE
 
@@ -117,20 +82,9 @@ func testIntegration(t *testing.T, useV2 bool) {
 	accessKeyID := "MYACCESSKEY"
 	secretAccessKey := "MYSECRETKEY"
 
-	// Verification connects with the driver under test. v1 has no JSON type, so
-	// a v1 handle cannot represent everything v2 can create: reads pass because
-	// the queries coerce to String, but a write fails inside the driver rather
-	// than at the server, which leaves v2-only types unverifiable.
-	connectDB := func(t testing.TB, ctx context.Context, port int) *sql.DB {
+	connectDB := func(t testing.TB, port int) *sql.DB {
 		t.Helper()
-
-		if useV2 {
-			return connectClickhouseDBV2(t, host, port, database, user, password)
-		}
-		return connectClickhouseDB(t, ctx, fmt.Sprintf(
-			"tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			host, port, database, password, user,
-		))
+		return connectClickhouseDBV2(t, host, port, database, user, password)
 	}
 
 	expectedSchema := model.Schema{
@@ -246,9 +200,9 @@ func testIntegration(t *testing.T, useV2 bool) {
 				transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 				eventFilePrefix := "../testdata/upload-job"
 
-				setupDB := func(t testing.TB, ctx context.Context) *sql.DB {
+				setupDB := func(t testing.TB) *sql.DB {
 					t.Helper()
-					return connectDB(t, ctx, clickhousePort)
+					return connectDB(t, clickhousePort)
 				}
 
 				verifySchema := func(t *testing.T, db *sql.DB, namespace string) {
@@ -318,13 +272,10 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
-				if useV2 {
-					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
-				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
-				db := setupDB(t, context.Background())
+				db := setupDB(t)
 				t.Cleanup(func() { _ = db.Close() })
 				tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 
@@ -417,7 +368,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 			name             string
 			warehouseEvents2 whth.EventsCountMap
 			clusterSetup     func(*testing.T, context.Context)
-			setupDB          func(testing.TB, context.Context) *sql.DB
+			setupDB          func(testing.TB) *sql.DB
 			eventFilePrefix  string
 			configOverride   map[string]any
 			verifySchema     func(t *testing.T, db *sql.DB, namespace string)
@@ -425,9 +376,9 @@ func testIntegration(t *testing.T, useV2 bool) {
 		}{
 			{
 				name: "Cluster Mode Setup",
-				setupDB: func(t testing.TB, ctx context.Context) *sql.DB {
+				setupDB: func(t testing.TB) *sql.DB {
 					t.Helper()
-					return connectDB(t, ctx, clickhouseClusterPort1)
+					return connectDB(t, clickhouseClusterPort1)
 				},
 				warehouseEvents2: whth.EventsCountMap{
 					"identifies": 8, "users": 2, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "groups": 8,
@@ -437,7 +388,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 					clusterPorts := []int{clickhouseClusterPort2, clickhouseClusterPort3, clickhouseClusterPort4}
 					dbs := lo.Map(clusterPorts, func(port, _ int) *sql.DB {
-						return connectDB(t, ctx, port)
+						return connectDB(t, port)
 					})
 					tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 					initializeClickhouseClusterMode(t, dbs, tables, clickhouseClusterPort1, connectDB)
@@ -520,13 +471,10 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
-				if useV2 {
-					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
-				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
-				db := tc.setupDB(t, context.Background())
+				db := tc.setupDB(t)
 				t.Cleanup(func() { _ = db.Close() })
 				tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 
@@ -604,13 +552,6 @@ func testIntegration(t *testing.T, useV2 bool) {
 	// the other: this one puts events in at the gateway and reads the column
 	// type back out of ClickHouse.
 	t.Run("Events flow (JSON paths)", func(t *testing.T) {
-		if !useV2 {
-			// dataTypeOverride emits json for every ClickHouse destination, but
-			// clickhouse-go v1 cannot bind a JSON value, so a v1 destination
-			// with jsonPaths set fails at load rather than here.
-			t.Skip("jsonPaths on clickhouse needs the v2 driver")
-		}
-
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
@@ -672,12 +613,11 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 		t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
 		t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
 
 		whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
 		ctx := context.Background()
-		db := connectDB(t, ctx, clickhousePort)
+		db := connectDB(t, clickhousePort)
 		t.Cleanup(func() { _ = db.Close() })
 
 		conf := map[string]any{
@@ -782,9 +722,6 @@ func testIntegration(t *testing.T, useV2 bool) {
 			Enabled:    true,
 			RevisionID: "29eeuTnqbBKn0XVTj5z9XQIbaru",
 		}
-		if useV2 {
-			t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.clickhouse.useV2Driver"), "true")
-		}
 		whth.VerifyConfigurationTest(t, dest)
 	})
 
@@ -799,7 +736,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 		namespace := "test_namespace"
 		table := "test_table"
 
-		db := connectDB(t, ctx, clickhousePort)
+		db := connectDB(t, clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		t.Run("Success", func(t *testing.T) {
@@ -996,7 +933,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 			return value.AccessKeyID, value.SecretAccessKey, value.SessionToken, nil
 		}
 
-		db := connectDB(t, context.Background(), clickhousePort)
+		db := connectDB(t, clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -1098,13 +1035,6 @@ func testIntegration(t *testing.T, useV2 bool) {
 
 		for i, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				if tc.bucketProvider == whutils.S3 && !useV2 {
-					t.Skip("v1 has no temporary credential path, and runs clickhouse 21, which predates the session token argument of the s3 table function")
-				}
-				if len(tc.s3CopySettings) > 0 && !useV2 {
-					t.Skip("only v2 builds the copy statement, so only v2 has a settings clause to extend")
-				}
-
 				conf := config.New()
 				conf.Set(configKey("s3EngineEnabledWorkspaceIDs"), tc.S3EngineEnabledWorkspaceIDs)
 				conf.Set(configKey("disableNullable"), tc.disableNullable)
@@ -1444,7 +1374,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 		namespace := "test_namespace"
 		timeout := 5 * time.Second
 
-		db := connectDB(t, context.Background(), clickhousePort)
+		db := connectDB(t, clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -1520,13 +1450,8 @@ func testIntegration(t *testing.T, useV2 bool) {
 	})
 
 	// A path listed in jsonPaths reaches the warehouse as a json column, which v2
-	// declares as a native JSON column. It needs ClickHouse 25.3 or newer, so it
-	// only runs against the server v2 is tested on.
+	// declares as a native JSON column. It needs ClickHouse 25.3 or newer.
 	t.Run("Load table with a JSON column", func(t *testing.T) {
-		if !useV2 {
-			t.Skip("native JSON columns are a v2 feature; v1 stores the payload as text")
-		}
-
 		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.minio.yml"}))
 		c.Start(context.Background())
 
@@ -1545,7 +1470,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 		// which has no JSON type at all: reads happen to work because every
 		// query here coerces the column to String, but writing one fails inside
 		// the driver rather than at the server.
-		db := connectDB(t, ctx, clickhousePort)
+		db := connectDB(t, clickhousePort)
 
 		// received_at has to be here: CreateTable always sorts by
 		// ("received_at", "id"), so a schema without it fails to create.
@@ -1852,7 +1777,7 @@ func testIntegration(t *testing.T, useV2 bool) {
 			"val": "RudderStack",
 		}
 
-		db := connectDB(t, context.Background(), clickhousePort)
+		db := connectDB(t, clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -1966,30 +1891,9 @@ func connectClickhouseDBV2(t testing.TB, host string, port int, database, user, 
 	return db
 }
 
-func connectClickhouseDB(t testing.TB, ctx context.Context, dsn string) *sql.DB {
-	t.Helper()
-
-	db, err := sql.Open("clickhouse", dsn)
-	require.NoError(t, err)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-
-	require.Eventually(t, func() bool {
-		if err := db.PingContext(ctx); err != nil {
-			t.Log("Ping failed:", err)
-			return false
-		}
-		return true
-	}, time.Minute, time.Second)
-
-	require.NoError(t, db.PingContext(ctx))
-	return db
-}
-
 // connect comes from the suite so the DDL below runs over the driver under
 // test, rather than always over v1.
-func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables []string, clusterPost int, connect func(testing.TB, context.Context, int) *sql.DB) {
+func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables []string, clusterPost int, connect func(testing.TB, int) *sql.DB) {
 	t.Helper()
 
 	type columnInfo struct {
@@ -2124,7 +2028,7 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 	}
 
 	t.Run("Create Drop Create", func(t *testing.T) {
-		clusterDB := connect(t, context.Background(), clusterPost)
+		clusterDB := connect(t, clusterPost)
 		defer func() {
 			_ = clusterDB.Close()
 		}()

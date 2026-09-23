@@ -63,14 +63,6 @@ const secureServerConfig = `<%[1]s>
 // computed at runtime, which the shared compose files cannot, so this is the one
 // place in the package that starts its container directly.
 func TestSecureConnection(t *testing.T) {
-	testSecureConnection(t, false)
-}
-
-func TestSecureConnectionV2(t *testing.T) {
-	testSecureConnection(t, true)
-}
-
-func testSecureConnection(t *testing.T, useV2 bool) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
@@ -92,12 +84,9 @@ func testSecureConnection(t *testing.T, useV2 bool) {
 	// A certificate the server never presents, so verifying against it has to fail.
 	untrustedCertificate, _ := generateCertificate(t)
 
-	// v1 stays on the 21.x server it has always been tested against; v2 needs a
-	// server its driver supports (MinSupportedVersion 25.8.0).
-	image, tag, rootElement := "yandex/clickhouse-server", "21-alpine", "yandex"
-	if useV2 {
-		image, tag, rootElement = "clickhouse/clickhouse-server", "25.8-alpine", "clickhouse"
-	}
+	// The driver reports MinSupportedVersion 25.8.0, so the server has to be at
+	// least that.
+	image, tag, rootElement := "clickhouse/clickhouse-server", "25.8-alpine", "clickhouse"
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "secure.xml"),
 		fmt.Appendf(nil, secureServerConfig, rootElement),
@@ -192,10 +181,7 @@ func testSecureConnection(t *testing.T, useV2 bool) {
 				},
 			}
 
-			var ch manager.WarehouseOperations = clickhouse.New(config.New(), logger.NOP, stats.NOP)
-			if useV2 {
-				ch = clickhouse.NewV2(config.New(), logger.NOP, stats.NOP)
-			}
+			var ch manager.WarehouseOperations = clickhouse.NewV2(config.New(), logger.NOP, stats.NOP)
 
 			require.NoError(t, ch.Setup(context.Background(), warehouse, newMockUploader(t, "", nil, nil)))
 			ch.SetConnectionTimeout(timeout)
