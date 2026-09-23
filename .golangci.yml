@@ -128,7 +128,7 @@ linters:
       # the query debug logs to a structured logger is tracked separately.
       - linters:
           - staticcheck
-        path: warehouse/integrations/clickhouse/driver_v2.go
+        path: warehouse/integrations/clickhouse/driver.go
         text: 'SA1019: .*Options\)\.Debug is deprecated'
     paths:
       - third_party$
