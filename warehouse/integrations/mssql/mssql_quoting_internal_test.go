@@ -1,11 +1,10 @@
-package mssql_test
+package mssql
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
@@ -15,7 +14,7 @@ import (
 func TestColumnsWithDataTypesQuotesBracketIdentifiers(t *testing.T) {
 	columnName := `x] int); DROP TABLE users; --`
 
-	fragment := mssql.ColumnsWithDataTypes(model.TableSchema{
+	fragment := ColumnsWithDataTypes(model.TableSchema{
 		columnName: model.StringDataType,
 	}, "")
 
