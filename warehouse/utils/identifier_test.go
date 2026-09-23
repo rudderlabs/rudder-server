@@ -40,13 +40,13 @@ func TestQualifiedIdentifierQuoting(t *testing.T) {
 	require.Equal(t, "`project.data\\`set.table$20240101`", BigQueryQuoteTablePath("project", "data`set", "table$20240101"))
 }
 
-func TestDialectQualifiedAndJoinHelpers(t *testing.T) {
-	require.Equal(t, `"schema""x"."table""y"`, DoubleQuoteQualifiedIdentifier(`schema"x`, `table"y`))
-	require.Equal(t, `[schema]]x].[table]]y]`, BracketQuoteQualifiedIdentifier(`schema]x`, `table]y`))
-	require.Equal(t, "`schema``x`.`table``y`", BacktickQuoteQualifiedIdentifier("schema`x", "table`y"))
+func TestDialectQuotingThroughGenericHelpers(t *testing.T) {
+	require.Equal(t, `"schema""x"."table""y"`, QuoteQualifiedIdentifier(DoubleQuoteIdentifier, `schema"x`, `table"y`))
+	require.Equal(t, `[schema]]x].[table]]y]`, QuoteQualifiedIdentifier(BracketQuoteIdentifier, `schema]x`, `table]y`))
+	require.Equal(t, "`schema``x`.`table``y`", QuoteQualifiedIdentifier(BacktickQuoteIdentifier, "schema`x", "table`y"))
 	require.Equal(t, `"id","evil""x"`, DoubleQuoteAndJoinByComma([]string{"id", `evil"x`}))
-	require.Equal(t, `[id],[evil]]x]`, BracketQuoteAndJoinByComma([]string{"id", `evil]x`}))
-	require.Equal(t, "`id`,`evil``x`", BacktickQuoteAndJoinByComma([]string{"id", "evil`x"}))
+	require.Equal(t, `[id],[evil]]x]`, JoinQuotedIdentifiers([]string{"id", `evil]x`}, BracketQuoteIdentifier, ","))
+	require.Equal(t, "`id`,`evil``x`", JoinQuotedIdentifiers([]string{"id", "evil`x"}, BacktickQuoteIdentifier, ","))
 }
 
 func TestJoinQuotedIdentifiers(t *testing.T) {

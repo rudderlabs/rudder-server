@@ -44,36 +44,6 @@ func QuoteQualifiedIdentifier(quote func(string) string, identifiers ...string) 
 	return JoinQuotedIdentifiers(identifiers, quote, ".")
 }
 
-// DoubleQuoteQualifiedIdentifier quotes each part for Postgres, Redshift and Snowflake
-// and joins them with a dot, e.g. "schema"."table".
-func DoubleQuoteQualifiedIdentifier(identifiers ...string) string {
-	return QuoteQualifiedIdentifier(DoubleQuoteIdentifier, identifiers...)
-}
-
-// BracketQuoteQualifiedIdentifier quotes each part for MSSQL and Azure Synapse and
-// joins them with a dot, e.g. [schema].[table].
-func BracketQuoteQualifiedIdentifier(identifiers ...string) string {
-	return QuoteQualifiedIdentifier(BracketQuoteIdentifier, identifiers...)
-}
-
-// BacktickQuoteQualifiedIdentifier quotes each part for Databricks and joins them with
-// a dot, e.g. `schema`.`table`.
-func BacktickQuoteQualifiedIdentifier(identifiers ...string) string {
-	return QuoteQualifiedIdentifier(BacktickQuoteIdentifier, identifiers...)
-}
-
-// BracketQuoteAndJoinByComma quotes each identifier for MSSQL and Azure Synapse and
-// joins them with commas.
-func BracketQuoteAndJoinByComma(identifiers []string) string {
-	return JoinQuotedIdentifiers(identifiers, BracketQuoteIdentifier, ",")
-}
-
-// BacktickQuoteAndJoinByComma quotes each identifier for Databricks and joins them
-// with commas.
-func BacktickQuoteAndJoinByComma(identifiers []string) string {
-	return JoinQuotedIdentifiers(identifiers, BacktickQuoteIdentifier, ",")
-}
-
 // BigQueryQuoteTablePath quotes a dotted BigQuery path such as project.dataset.table
 // as a single quoted identifier.
 func BigQueryQuoteTablePath(identifiers ...string) string {
