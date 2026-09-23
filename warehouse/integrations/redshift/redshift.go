@@ -698,7 +698,7 @@ func (rs *Redshift) deleteFromLoadTable(
 		primaryKey = column
 	}
 
-	mainTable := warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName)
+	mainTableName := warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName)
 	stagingTable := warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, stagingTableName)
 	quotedPrimaryKey := warehouseutils.DoubleQuoteIdentifier(primaryKey)
 
@@ -706,7 +706,7 @@ func (rs *Redshift) deleteFromLoadTable(
 		`DELETE FROM %[1]s
 			USING %[2]s _source
 			WHERE _source.%[3]s = %[1]s.%[3]s`,
-		mainTable,
+		mainTableName,
 		stagingTable,
 		quotedPrimaryKey,
 	)
@@ -714,20 +714,19 @@ func (rs *Redshift) deleteFromLoadTable(
 		if _, ok := tableSchemaAfterUpload["received_at"]; ok {
 			deleteStmt += fmt.Sprintf(
 				` AND %[1]s.%[2]s > GETDATE() - INTERVAL '%[3]d HOUR'`,
-				mainTable,
+				mainTableName,
 				warehouseutils.DoubleQuoteIdentifier("received_at"),
 				rs.config.dedupWindowInHours/time.Hour,
 			)
 		}
 	}
 	if tableName == warehouseutils.DiscardsTable {
-		tableNameColumn := warehouseutils.DoubleQuoteIdentifier("table_name")
-		columnNameColumn := warehouseutils.DoubleQuoteIdentifier("column_name")
 		deleteStmt += fmt.Sprintf(
-			` AND _source.%[1]s = %[3]s.%[1]s AND _source.%[2]s = %[3]s.%[2]s`,
-			tableNameColumn,
-			columnNameColumn,
-			mainTable,
+			` AND _source.%[1]s = %[3]s AND _source.%[2]s = %[4]s`,
+			warehouseutils.DoubleQuoteIdentifier("table_name"),
+			warehouseutils.DoubleQuoteIdentifier("column_name"),
+			warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName, "table_name"),
+			warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName, "column_name"),
 		)
 	}
 
