@@ -214,7 +214,7 @@ func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 }
 
 func (rs *Redshift) CreateTable(ctx context.Context, tableName string, columns model.TableSchema) (err error) {
-	name := warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName)
+	name := warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, tableName)
 	sortKeyField := "received_at"
 	if _, ok := columns["received_at"]; !ok {
 		sortKeyField = "uuid_ts"
@@ -236,7 +236,7 @@ func (rs *Redshift) CreateTable(ctx context.Context, tableName string, columns m
 }
 
 func (rs *Redshift) DropTable(ctx context.Context, tableName string) (err error) {
-	sqlStatement := fmt.Sprintf(`DROP TABLE %s`, warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName))
+	sqlStatement := fmt.Sprintf(`DROP TABLE %s`, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, tableName))
 	rs.logger.Infon("RS: Dropping table in redshift",
 		logger.NewStringField(logfield.DestinationID, rs.Warehouse.Destination.ID),
 		logger.NewStringField(logfield.Query, sqlStatement),
@@ -260,7 +260,7 @@ func (rs *Redshift) AddColumns(ctx context.Context, tableName string, columnsInf
 				ADD
 				  COLUMN %s %s;
 		`,
-			warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, tableName),
 			warehouseutils.DoubleQuoteIdentifier(columnInfo.Name),
 			columnType,
 		)
@@ -324,7 +324,7 @@ func (rs *Redshift) DeleteBy(ctx context.Context, tableNames []string, params wa
 			%[3]s <> $2 AND
 			%[4]s = $3 AND
 			%[5]s < $4`,
-			warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tb),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, tb),
 			warehouseutils.DoubleQuoteIdentifier("context_sources_job_run_id"),
 			warehouseutils.DoubleQuoteIdentifier("context_sources_task_run_id"),
 			warehouseutils.DoubleQuoteIdentifier("context_source_id"),
@@ -455,7 +455,7 @@ func (rs *Redshift) dropStagingTables(ctx context.Context, stagingTableNames []s
 		rs.logger.Infon("WH: dropping table",
 			logger.NewStringField(logfield.TableName, stagingTableName),
 		)
-		_, err := rs.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE %s`, warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, stagingTableName)))
+		_, err := rs.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE %s`, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, stagingTableName)))
 		if err != nil {
 			rs.logger.Errorn("WH: RS: Error dropping staging tables in redshift", obskit.Error(err))
 		}
@@ -470,8 +470,8 @@ func (rs *Redshift) createStagingTable(ctx context.Context, sourceTableName stri
 	)
 	rs.logger.Debugn("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`CREATE TABLE %[1]s (LIKE %[2]s INCLUDING DEFAULTS);`,
-		warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, stagingTableName),
-		warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, sourceTableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, stagingTableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, sourceTableName),
 	)
 	if _, err := rs.DB.ExecContext(ctx, createStagingTableStmt); err != nil {
 		return "", err
@@ -648,7 +648,7 @@ func (rs *Redshift) copyIntoLoadTable(
 			SECRET_ACCESS_KEY '%s'
 			SESSION_TOKEN '%s'
 			%s FORMAT PARQUET;`,
-			warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, stagingTableName),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, stagingTableName),
 			warehouseutils.SQLStringLiteralBackslash(s3Location),
 			tempAccessKeyId,
 			tempSecretAccessKey,
@@ -669,7 +669,7 @@ func (rs *Redshift) copyIntoLoadTable(
 			%s TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS
 			COMPUPDATE OFF
 			STATUPDATE OFF;`,
-			warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, stagingTableName),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, stagingTableName),
 			sortedColumnNames,
 			warehouseutils.SQLStringLiteralBackslash(s3Location),
 			tempAccessKeyId,
@@ -698,8 +698,8 @@ func (rs *Redshift) deleteFromLoadTable(
 		primaryKey = column
 	}
 
-	mainTableName := warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName)
-	stagingTable := warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, stagingTableName)
+	mainTableName := warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, tableName)
+	stagingTable := warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, stagingTableName)
 	quotedPrimaryKey := warehouseutils.DoubleQuoteIdentifier(primaryKey)
 
 	deleteStmt := fmt.Sprintf(
@@ -725,8 +725,8 @@ func (rs *Redshift) deleteFromLoadTable(
 			` AND _source.%[1]s = %[3]s AND _source.%[2]s = %[4]s`,
 			warehouseutils.DoubleQuoteIdentifier("table_name"),
 			warehouseutils.DoubleQuoteIdentifier("column_name"),
-			warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName, "table_name"),
-			warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName, "column_name"),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, tableName, "table_name"),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, tableName, "column_name"),
 		)
 	}
 
@@ -766,8 +766,8 @@ func (rs *Redshift) insertIntoLoadTable(
 				FROM %[2]s
 			  ) AS _
 			WHERE _rudder_staging_row_number = 1;`,
-		warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName),
-		warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, stagingTableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, tableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, stagingTableName),
 		quotedColumnNames,
 		warehouseutils.QuoteCommaSeparatedIdentifiers(partitionKey, warehouseutils.DoubleQuoteIdentifier),
 		warehouseutils.DoubleQuoteIdentifier("received_at"),
@@ -909,10 +909,10 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 				)
 			)
 		);`,
-		warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, stagingTableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, stagingTableName),
 		strings.Join(firstValProps, ","),
-		warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, warehouseutils.UsersTable),
-		warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, identifyStagingTable),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, warehouseutils.UsersTable),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, identifyStagingTable),
 		quotedUserColNames,
 		warehouseutils.DoubleQuoteIdentifier("id"),
 		warehouseutils.DoubleQuoteIdentifier("user_id"),
@@ -938,8 +938,8 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 	primaryKey := "id"
 	query = fmt.Sprintf(`DELETE FROM %[1]s USING %[2]s _source
 			WHERE _source.%[3]s = %[1]s.%[3]s;`,
-		warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, warehouseutils.UsersTable),
-		warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, stagingTableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, warehouseutils.UsersTable),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, stagingTableName),
 		warehouseutils.DoubleQuoteIdentifier(primaryKey),
 	)
 
@@ -959,8 +959,8 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 		`INSERT INTO %[1]s (%[3]s)
 			SELECT %[3]s
 			FROM %[2]s;`,
-		warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, warehouseutils.UsersTable),
-		warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, stagingTableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, warehouseutils.UsersTable),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, stagingTableName),
 		warehouseutils.DoubleQuoteAndJoinByComma(append([]string{"id"}, userColNames...)),
 	)
 
@@ -1157,7 +1157,7 @@ func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) error {
 		logger.NewStringField("stagingTableNames", strings.Join(stagingTableNames, ",")),
 	)
 	for _, stagingTableName := range stagingTableNames {
-		_, err := rs.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, stagingTableName)))
+		_, err := rs.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, stagingTableName)))
 		if err != nil {
 			return fmt.Errorf("dropping dangling staging table %q.%q: %w", rs.Namespace, stagingTableName, err)
 		}
@@ -1207,7 +1207,7 @@ func (rs *Redshift) AlterColumn(ctx context.Context, tableName, columnName, colu
 		}
 	}()
 
-	qualifiedTable := warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName)
+	qualifiedTable := warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, tableName)
 
 	// creating staging column
 	stagingColumnType = getRSDataType(columnType)
@@ -1455,7 +1455,7 @@ func (rs *Redshift) TestLoadTable(ctx context.Context, location, tableName strin
 	if format == warehouseutils.LoadFileTypeParquet {
 		// copy statement for parquet load files
 		sqlStatement = fmt.Sprintf(`COPY %v FROM %s ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' FORMAT PARQUET`,
-			warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, tableName),
 			warehouseutils.SQLStringLiteralBackslash(s3Location),
 			tempAccessKeyId,
 			tempSecretAccessKey,
@@ -1464,7 +1464,7 @@ func (rs *Redshift) TestLoadTable(ctx context.Context, location, tableName strin
 	} else {
 		// copy statement for csv load files
 		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM %s CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
-			warehouseutils.DoubleQuoteQualifiedIdentifier(rs.Namespace, tableName),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, tableName),
 			fmt.Sprintf(`%s, %s`, warehouseutils.DoubleQuoteIdentifier("id"), warehouseutils.DoubleQuoteIdentifier("val")),
 			warehouseutils.SQLStringLiteralBackslash(s3Location),
 			tempAccessKeyId,
