@@ -333,7 +333,7 @@ func (d *Deltalake) dropStagingTables(ctx context.Context, stagingTables []strin
 
 // DropTable drops a table from the warehouse
 func (d *Deltalake) dropTable(ctx context.Context, table string) error {
-	query := fmt.Sprintf(`DROP TABLE %s;`, warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, table))
+	query := fmt.Sprintf(`DROP TABLE %s;`, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, table))
 
 	_, err := d.DB.ExecContext(ctx, query)
 	if err != nil {
@@ -408,7 +408,7 @@ func (d *Deltalake) sendStatForMissingDatatype(missingDatatype string) {
 
 // fetchTableAttributes fetches the attributes of a table
 func (d *Deltalake) fetchTableAttributes(ctx context.Context, tableName string) (model.TableSchema, error) {
-	query := fmt.Sprintf(`DESCRIBE QUERY TABLE %s;`, warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName))
+	query := fmt.Sprintf(`DESCRIBE QUERY TABLE %s;`, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, tableName))
 
 	rows, err := d.DB.QueryContext(ctx, query)
 	if err != nil {
@@ -526,7 +526,7 @@ func (d *Deltalake) CreateTable(ctx context.Context, tableName string, columns m
 			%s %s ( %s ) USING DELTA %s %s;
 	`,
 		createTableClauseSql,
-		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, tableName),
 		columnsWithDataTypes(columns, ""),
 		tableLocationSql,
 		partitionedSql,
@@ -597,7 +597,7 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 		ALTER TABLE
 		  %s
 		ADD COLUMNS(`,
-		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, tableName),
 	)
 
 	for _, columnInfo := range columnsToAddInfo {
@@ -746,7 +746,7 @@ func (d *Deltalake) copyIntoLoadTable(
 			PATTERN = '*.parquet'
 			COPY_OPTIONS ('force' = 'true')
 			%s;`,
-			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, stagingTableName),
 			sortedColumnNames,
 			warehouseutils.SparkSQLStringLiteral(loadFolder),
 			auth,
@@ -772,7 +772,7 @@ func (d *Deltalake) copyIntoLoadTable(
 			COPY_OPTIONS ('force' = 'true')
 			%s;
 `,
-			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, stagingTableName),
 			sortedColumnNames,
 			warehouseutils.SparkSQLStringLiteral(loadFolder),
 			auth,
@@ -815,8 +815,8 @@ func (d *Deltalake) insertIntoLoadTable(
 					  _rudder_staging_row_number = 1
 				  );
 			`,
-		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
-		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, tableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, stagingTableName),
 		columnNames(warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload)),
 		primaryKey(tableName),
 		warehouseutils.BacktickQuoteIdentifier("RECEIVED_AT"),
@@ -876,8 +876,8 @@ func (d *Deltalake) mergeIntoLoadTable(
 				VALUES
 				  (%[6]s);
 			`,
-		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
-		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, tableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, stagingTableName),
 		pk,
 		columnsWithValues(sortedColumnKeys),
 		columnNames(sortedColumnKeys),
@@ -916,7 +916,7 @@ func tableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload model.TableSche
 }
 
 func columnNames(columns []string) string {
-	return warehouseutils.BacktickQuoteAndJoinByComma(columns)
+	return warehouseutils.JoinQuotedIdentifiers(columns, warehouseutils.BacktickQuoteIdentifier, ",")
 }
 
 func stagingColumnNames(columns []string) string {
@@ -1122,10 +1122,10 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 				)
 			)
 		);`,
-		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, stagingTableName),
 		strings.Join(firstValProps, ","),
-		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, warehouseutils.UsersTable),
-		warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, identifyStagingTable),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, warehouseutils.UsersTable),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, identifyStagingTable),
 		columnNames(userColNames),
 		tableLocationSql,
 		warehouseutils.BacktickQuoteIdentifier("id"),
@@ -1171,8 +1171,8 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 				  %[2]s
 			  );
 		`,
-			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, warehouseutils.UsersTable),
-			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, warehouseutils.UsersTable),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, stagingTableName),
 			columnNames(columnKeys),
 		)
 	} else {
@@ -1192,8 +1192,8 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 			THEN INSERT (%[5]s)
 			VALUES
 			  (%[6]s);`,
-			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, warehouseutils.UsersTable),
-			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, stagingTableName),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, warehouseutils.UsersTable),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, stagingTableName),
 			pk,
 			columnsWithValues(columnKeys),
 			columnNames(columnKeys),
@@ -1374,7 +1374,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 			COPY_OPTIONS ('force' = 'true')
 			%s;
 `,
-			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, tableName),
 			fmt.Sprintf(`%s, %s`, warehouseutils.BacktickQuoteIdentifier("id"), warehouseutils.BacktickQuoteIdentifier("val")),
 			warehouseutils.SparkSQLStringLiteral(loadFolder),
 			auth,
@@ -1400,7 +1400,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 			COPY_OPTIONS ('force' = 'true')
 			%s;
 `,
-			warehouseutils.BacktickQuoteQualifiedIdentifier(d.Namespace, tableName),
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, tableName),
 			"CAST ( '_c0' AS BIGINT ) AS id, CAST ( '_c1' AS STRING ) AS val",
 			warehouseutils.SparkSQLStringLiteral(loadFolder),
 			auth,

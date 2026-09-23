@@ -30,7 +30,7 @@ func TestColumnsWithDataTypesQuotesBacktickIdentifiers(t *testing.T) {
 func TestQualifiedTableNamesQuoteBacktickIdentifiers(t *testing.T) {
 	tableName := "evil_table`); DROP TABLE victim_secrets; --"
 
-	qualifiedName := warehouseutils.BacktickQuoteQualifiedIdentifier("namespace", tableName)
+	qualifiedName := warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, "namespace", tableName)
 
 	require.Equal(t, "`namespace`.`evil_table``); DROP TABLE victim_secrets; --`", qualifiedName)
 	require.NotContains(t, qualifiedName, "evil_table`); DROP")
