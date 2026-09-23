@@ -22,7 +22,7 @@ require (
 	cloud.google.com/go/pubsub/v2 v2.6.2
 	cloud.google.com/go/storage v1.65.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
-	github.com/ClickHouse/clickhouse-go v1.5.4
+	github.com/ClickHouse/clickhouse-go/v2 v2.48.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/alexeyco/simpletable v1.0.0
@@ -86,7 +86,6 @@ require (
 	github.com/rs/cors v1.11.1
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
-	github.com/rudderlabs/clickhouse-go/v2 v2.48.0
 	github.com/rudderlabs/compose-test v0.1.5
 	github.com/rudderlabs/keydb v1.4.1
 	github.com/rudderlabs/rudder-cp-sdk v1.4.1
@@ -195,7 +194,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
-	github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/containerd/continuity v0.5.0 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect

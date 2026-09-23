@@ -19,14 +19,13 @@ import (
 	"testing"
 	"time"
 
-	clickhousestd "github.com/ClickHouse/clickhouse-go"
 	"github.com/google/uuid"
 	miniocredentials "github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	clickhousev2 "github.com/rudderlabs/clickhouse-go/v2"
+	clickhousev2 "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -1851,12 +1850,8 @@ func TestIntegration(t *testing.T) {
 func clickhouseExceptionCode(t testing.TB, err error) int32 {
 	t.Helper()
 
-	if v1Err, ok := errors.AsType[*clickhousestd.Exception](err); ok {
-		return v1Err.Code
-	}
-
-	if v2Err, ok := errors.AsType[*clickhousev2.Exception](err); ok {
-		return v2Err.Code
+	if chErr, ok := errors.AsType[*clickhousev2.Exception](err); ok {
+		return chErr.Code
 	}
 
 	require.Failf(t, "not a clickhouse server exception", "%T: %v", err, err)
