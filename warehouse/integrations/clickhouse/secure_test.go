@@ -181,7 +181,7 @@ func TestSecureConnection(t *testing.T) {
 				},
 			}
 
-			var ch manager.WarehouseOperations = clickhouse.NewV2(config.New(), logger.NOP, stats.NOP)
+			var ch manager.WarehouseOperations = clickhouse.New(config.New(), logger.NOP, stats.NOP)
 
 			require.NoError(t, ch.Setup(context.Background(), warehouse, newMockUploader(t, "", nil, nil)))
 			ch.SetConnectionTimeout(timeout)
