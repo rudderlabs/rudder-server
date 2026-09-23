@@ -87,7 +87,7 @@ func newIcebergTableManager(externalVolume string) tableManager {
 }
 
 func (m *icebergTableManager) createTableQuery(schemaIdentifier, tableName string, columns model.TableSchema) string {
-	baseLocation := fmt.Sprintf("%s/%s", schemaIdentifier, tableName)
+	baseLocation := whutils.TableLocationPath(schemaIdentifier, tableName)
 	return fmt.Sprintf(
 		`CREATE OR REPLACE ICEBERG TABLE %s.%s ( %v )
 		CATALOG = 'SNOWFLAKE'
