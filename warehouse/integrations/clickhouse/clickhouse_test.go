@@ -1379,6 +1379,9 @@ func TestIntegration(t *testing.T) {
 		addedColumn := `added_col String)` + dropVictim
 		backslashColumn := `evil_bs\`
 
+		// Wait for the server to accept connections before the manager talks to it.
+		_ = connectDB(t, clickhousePort)
+
 		ch := newClickhouse(config.New())
 		warehouse := model.Warehouse{
 			Namespace:   maliciousNamespace,
