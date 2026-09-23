@@ -1,4 +1,4 @@
-package redshift_test
+package redshift
 
 import (
 	"testing"
@@ -6,7 +6,6 @@ import (
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
@@ -26,7 +25,7 @@ func TestColumnsWithDataTypesNeutralizesSQLInjection(t *testing.T) {
 
 	for name, columnName := range payloads {
 		t.Run(name, func(t *testing.T) {
-			fragment := redshift.ColumnsWithDataTypes(model.TableSchema{
+			fragment := ColumnsWithDataTypes(model.TableSchema{
 				columnName: model.StringDataType,
 			}, "")
 
