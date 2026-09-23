@@ -83,3 +83,11 @@ func TestStringLiterals(t *testing.T) {
 		require.Equal(t, "'a\"b`c]d\\'e\\\\f'", SparkSQLStringLiteral(sink))
 	})
 }
+
+func TestTableLocationPath(t *testing.T) {
+	require.Equal(t, "s3://bucket/prefix/namespace/table", TableLocationPath("s3://bucket/prefix", "namespace", "table"))
+	require.Equal(t, `"NAMESPACE"/table`, TableLocationPath(`"NAMESPACE"`, "table"))
+	// A trailing slash in the configured location is kept as is, so paths do not change.
+	require.Equal(t, "s3://bucket//namespace/table", TableLocationPath("s3://bucket/", "namespace", "table"))
+	require.Empty(t, TableLocationPath())
+}

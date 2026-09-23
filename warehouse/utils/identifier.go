@@ -132,3 +132,11 @@ func SQLStringLiteralBackslash(value string) string {
 func SparkSQLStringLiteral(value string) string {
 	return `'` + sparkStringLiteralEscaper.Replace(value) + `'`
 }
+
+// TableLocationPath builds the storage path of a table, such as the Delta Lake
+// LOCATION clause or the Snowflake Iceberg BASE_LOCATION, by joining the parts with
+// a slash. The parts are joined verbatim so the resulting path stays exactly what
+// the destination configuration produced.
+func TableLocationPath(parts ...string) string {
+	return strings.Join(parts, "/")
+}
