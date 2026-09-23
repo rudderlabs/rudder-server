@@ -92,18 +92,6 @@ var errorsMappings = []model.JobError{
 	},
 }
 
-type credentials struct {
-	host       string
-	database   string
-	user       string
-	password   string
-	port       string
-	secure     string
-	skipVerify string
-	tlsConfig  string
-	timeout    time.Duration
-}
-
 func getClickhouseColumnTypeForSpecificColumn(columnName, columnType string, isNullable bool) string {
 	specificColumnType := columnType
 	if strings.Contains(specificColumnType, "Array") {

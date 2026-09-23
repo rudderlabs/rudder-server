@@ -82,7 +82,7 @@ func TestIntegration(t *testing.T) {
 	accessKeyID := "MYACCESSKEY"
 	secretAccessKey := "MYSECRETKEY"
 
-	connectDB := func(t testing.TB, ctx context.Context, port int) *sql.DB {
+	connectDB := func(t testing.TB, port int) *sql.DB {
 		t.Helper()
 		return connectClickhouseDBV2(t, host, port, database, user, password)
 	}
@@ -200,9 +200,9 @@ func TestIntegration(t *testing.T) {
 				transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 				eventFilePrefix := "../testdata/upload-job"
 
-				setupDB := func(t testing.TB, ctx context.Context) *sql.DB {
+				setupDB := func(t testing.TB) *sql.DB {
 					t.Helper()
-					return connectDB(t, ctx, clickhousePort)
+					return connectDB(t, clickhousePort)
 				}
 
 				verifySchema := func(t *testing.T, db *sql.DB, namespace string) {
@@ -275,7 +275,7 @@ func TestIntegration(t *testing.T) {
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
-				db := setupDB(t, context.Background())
+				db := setupDB(t)
 				t.Cleanup(func() { _ = db.Close() })
 				tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 
@@ -368,7 +368,7 @@ func TestIntegration(t *testing.T) {
 			name             string
 			warehouseEvents2 whth.EventsCountMap
 			clusterSetup     func(*testing.T, context.Context)
-			setupDB          func(testing.TB, context.Context) *sql.DB
+			setupDB          func(testing.TB) *sql.DB
 			eventFilePrefix  string
 			configOverride   map[string]any
 			verifySchema     func(t *testing.T, db *sql.DB, namespace string)
@@ -376,9 +376,9 @@ func TestIntegration(t *testing.T) {
 		}{
 			{
 				name: "Cluster Mode Setup",
-				setupDB: func(t testing.TB, ctx context.Context) *sql.DB {
+				setupDB: func(t testing.TB) *sql.DB {
 					t.Helper()
-					return connectDB(t, ctx, clickhouseClusterPort1)
+					return connectDB(t, clickhouseClusterPort1)
 				},
 				warehouseEvents2: whth.EventsCountMap{
 					"identifies": 8, "users": 2, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "groups": 8,
@@ -388,7 +388,7 @@ func TestIntegration(t *testing.T) {
 
 					clusterPorts := []int{clickhouseClusterPort2, clickhouseClusterPort3, clickhouseClusterPort4}
 					dbs := lo.Map(clusterPorts, func(port, _ int) *sql.DB {
-						return connectDB(t, ctx, port)
+						return connectDB(t, port)
 					})
 					tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 					initializeClickhouseClusterMode(t, dbs, tables, clickhouseClusterPort1, connectDB)
@@ -474,7 +474,7 @@ func TestIntegration(t *testing.T) {
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
-				db := tc.setupDB(t, context.Background())
+				db := tc.setupDB(t)
 				t.Cleanup(func() { _ = db.Close() })
 				tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 
@@ -617,7 +617,7 @@ func TestIntegration(t *testing.T) {
 		whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
 		ctx := context.Background()
-		db := connectDB(t, ctx, clickhousePort)
+		db := connectDB(t, clickhousePort)
 		t.Cleanup(func() { _ = db.Close() })
 
 		conf := map[string]any{
@@ -736,7 +736,7 @@ func TestIntegration(t *testing.T) {
 		namespace := "test_namespace"
 		table := "test_table"
 
-		db := connectDB(t, ctx, clickhousePort)
+		db := connectDB(t, clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		t.Run("Success", func(t *testing.T) {
@@ -933,7 +933,7 @@ func TestIntegration(t *testing.T) {
 			return value.AccessKeyID, value.SecretAccessKey, value.SessionToken, nil
 		}
 
-		db := connectDB(t, context.Background(), clickhousePort)
+		db := connectDB(t, clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -1374,7 +1374,7 @@ func TestIntegration(t *testing.T) {
 		namespace := "test_namespace"
 		timeout := 5 * time.Second
 
-		db := connectDB(t, context.Background(), clickhousePort)
+		db := connectDB(t, clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -1470,7 +1470,7 @@ func TestIntegration(t *testing.T) {
 		// which has no JSON type at all: reads happen to work because every
 		// query here coerces the column to String, but writing one fails inside
 		// the driver rather than at the server.
-		db := connectDB(t, ctx, clickhousePort)
+		db := connectDB(t, clickhousePort)
 
 		// received_at has to be here: CreateTable always sorts by
 		// ("received_at", "id"), so a schema without it fails to create.
@@ -1777,7 +1777,7 @@ func TestIntegration(t *testing.T) {
 			"val": "RudderStack",
 		}
 
-		db := connectDB(t, context.Background(), clickhousePort)
+		db := connectDB(t, clickhousePort)
 		defer func() { _ = db.Close() }()
 
 		testCases := []struct {
@@ -1893,7 +1893,7 @@ func connectClickhouseDBV2(t testing.TB, host string, port int, database, user, 
 
 // connect comes from the suite so the DDL below runs over the driver under
 // test, rather than always over v1.
-func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables []string, clusterPost int, connect func(testing.TB, context.Context, int) *sql.DB) {
+func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables []string, clusterPost int, connect func(testing.TB, int) *sql.DB) {
 	t.Helper()
 
 	type columnInfo struct {
@@ -2028,7 +2028,7 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 	}
 
 	t.Run("Create Drop Create", func(t *testing.T) {
-		clusterDB := connect(t, context.Background(), clusterPost)
+		clusterDB := connect(t, clusterPost)
 		defer func() {
 			_ = clusterDB.Close()
 		}()
