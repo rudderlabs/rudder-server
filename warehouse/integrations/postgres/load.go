@@ -272,7 +272,7 @@ func (pg *Postgres) insertIntoLoadTable(
 
 	quotedPartitionKey := warehouseutils.QuoteCommaSeparatedIdentifiers(partitionKey, warehouseutils.DoubleQuoteIdentifier)
 
-	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
+	quotedColumnNames := warehouseutils.JoinQuotedIdentifiers(sortedColumnKeys, warehouseutils.DoubleQuoteIdentifier, ",")
 
 	insertStmt := fmt.Sprintf(`
 		INSERT INTO %[1]s.%[2]s (%[3]s)
