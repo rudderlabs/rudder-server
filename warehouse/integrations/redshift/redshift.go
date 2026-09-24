@@ -663,7 +663,7 @@ func (rs *Redshift) copyIntoLoadTable(
 			ACCESS_KEY_ID '%s'
 			SECRET_ACCESS_KEY '%s'
 			SESSION_TOKEN '%s'
-			REGION '%s'
+			REGION %s
 			DATEFORMAT 'auto'
 			TIMEFORMAT 'auto'
 			%s TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS
@@ -675,7 +675,7 @@ func (rs *Redshift) copyIntoLoadTable(
 			tempAccessKeyId,
 			tempSecretAccessKey,
 			token,
-			region,
+			warehouseutils.SQLStringLiteralBackslash(region),
 			manifestSQL,
 		)
 	}
@@ -1030,9 +1030,12 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 		sqlmiddleware.WithSlowQueryThreshold(rs.config.slowQueryThreshold),
 		sqlmiddleware.WithQueryTimeout(rs.connectTimeout),
 		sqlmiddleware.WithSecretsRegex(map[string]string{
-			"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
-			"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
-			"SESSION_TOKEN '[^']*'":     "SESSION_TOKEN '***'",
+			// The credentials are SQL string literals, so a quote inside one is
+			// doubled. Matching only [^'] would stop at that quote and leave the
+			// rest of the secret in the log.
+			"ACCESS_KEY_ID '(?:[^']|'')*'":     "ACCESS_KEY_ID '***'",
+			"SECRET_ACCESS_KEY '(?:[^']|'')*'": "SECRET_ACCESS_KEY '***'",
+			"SESSION_TOKEN '(?:[^']|'')*'":     "SESSION_TOKEN '***'",
 		}),
 	)
 	return middleware, nil
@@ -1463,20 +1466,22 @@ func (rs *Redshift) TestLoadTable(ctx context.Context, location, tableName strin
 		)
 	} else {
 		// copy statement for csv load files
-		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM %s CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
+		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM %s CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION %s  DATEFORMAT 'auto' TIMEFORMAT 'auto' TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
 			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, tableName),
 			fmt.Sprintf(`%s, %s`, warehouseutils.DoubleQuoteIdentifier("id"), warehouseutils.DoubleQuoteIdentifier("val")),
 			warehouseutils.SQLStringLiteralBackslash(s3Location),
 			tempAccessKeyId,
 			tempSecretAccessKey,
 			token,
-			region,
+			warehouseutils.SQLStringLiteralBackslash(region),
 		)
 	}
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
-		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
-		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
-		"SESSION_TOKEN '[^']*'":     "SESSION_TOKEN '***'",
+		// A doubled quote inside the literal must not end the match, or the rest
+		// of the credential reaches the log.
+		"ACCESS_KEY_ID '(?:[^']|'')*'":     "ACCESS_KEY_ID '***'",
+		"SECRET_ACCESS_KEY '(?:[^']|'')*'": "SECRET_ACCESS_KEY '***'",
+		"SESSION_TOKEN '(?:[^']|'')*'":     "SESSION_TOKEN '***'",
 	})
 	if regexErr == nil {
 		rs.logger.Infon("RS: Running COPY command for load test table",
