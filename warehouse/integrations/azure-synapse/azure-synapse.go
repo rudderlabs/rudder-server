@@ -292,6 +292,11 @@ func (as *AzureSynapse) loadTable(
 	})
 
 	log.Debugn("creating prepared stmt for loading data")
+	// CopyIn is given the bracket quoted qualified name: go-mssqldb parses the
+	// object name itself and leaves an already delimited part as it is, so a
+	// namespace containing a dot is not split into a database and schema. The
+	// column names stay unquoted because the driver matches them against the
+	// destination metadata and quotes them itself.
 	copyInStmt := mssql.CopyIn(warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, as.namespace, stagingTableName), mssql.BulkOptions{CheckConstraints: false},
 		append(sortedColumnKeys, extraColumns...)...,
 	)
@@ -842,7 +847,7 @@ func (as *AzureSynapse) dropStagingTable(ctx context.Context, stagingTableName s
 func (as *AzureSynapse) createTable(ctx context.Context, tableName string, columns model.TableSchema) (err error) {
 	qualifiedTable := warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, as.namespace, tableName)
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(%[1]s) AND type = N'U')
-		CREATE TABLE %[2]s ( %[3]v )`, warehouseutils.UnicodeStringLiteral(warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, as.namespace, tableName)), qualifiedTable, columnsWithDataTypes(columns, ""))
+		CREATE TABLE %[2]s ( %[3]v )`, warehouseutils.UnicodeStringLiteral(qualifiedTable), qualifiedTable, columnsWithDataTypes(columns, ""))
 
 	as.logger.Infon("AZ: Creating table in synapse for AZ",
 		logger.NewStringField(logfield.DestinationID, as.warehouse.Destination.ID),
@@ -952,8 +957,8 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) error {
 		  table_schema = %s
 		  AND table_name like %s;
 	`,
-		warehouseutils.SQLStringLiteral(as.namespace),
-		warehouseutils.SQLStringLiteral(fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider))),
+		warehouseutils.UnicodeStringLiteral(as.namespace),
+		warehouseutils.UnicodeStringLiteral(fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider))),
 	)
 	rows, err := as.db.QueryContext(ctx, sqlStatement)
 	if err != nil {
@@ -1099,7 +1104,7 @@ func (as *AzureSynapse) TestLoadTable(ctx context.Context, _, tableName string, 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (%v) VALUES (%s)`,
 		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, as.namespace, tableName),
 		fmt.Sprintf(`%s, %s`, warehouseutils.BracketQuoteIdentifier("id"), warehouseutils.BracketQuoteIdentifier("val")),
-		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
+		fmt.Sprintf(`%s, %s`, warehouseutils.SQLStringLiteral(fmt.Sprint(payloadMap["id"])), warehouseutils.SQLStringLiteral(fmt.Sprint(payloadMap["val"]))),
 	)
 	_, err = as.db.ExecContext(ctx, sqlStatement)
 	return err

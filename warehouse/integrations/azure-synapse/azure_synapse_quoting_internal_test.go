@@ -1,12 +1,12 @@
 package azuresynapse
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 // TestColumnsWithDataTypesNeutralizesSQLInjection proves the reason for the
@@ -29,7 +29,9 @@ func TestColumnsWithDataTypesNeutralizesSQLInjection(t *testing.T) {
 				columnName: model.StringDataType,
 			}, "")
 
-			require.Contains(t, fragment, warehouseutils.BracketQuoteIdentifier(columnName))
+			// Assert the expected text rather than re-deriving it from the helper,
+			// so a change to the escaping rule has to be stated here.
+			require.Contains(t, fragment, "["+strings.ReplaceAll(columnName, "]", "]]")+"]")
 			require.NotContains(t, fragment, columnName)
 		})
 	}
