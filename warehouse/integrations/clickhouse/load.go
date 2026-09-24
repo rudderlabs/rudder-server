@@ -351,7 +351,7 @@ func (ch *Clickhouse) loadTableFromFiles(
 	insertSQL := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
 		ch.Namespace,
 		tableName,
-		warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys),
+		warehouseutils.JoinQuotedIdentifiers(sortedColumnKeys, warehouseutils.DoubleQuoteIdentifier, ","),
 		generateArgumentString(len(sortedColumnKeys)),
 	)
 

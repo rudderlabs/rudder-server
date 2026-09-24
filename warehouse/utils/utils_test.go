@@ -573,13 +573,6 @@ func TestGetObjectFolderForDeltalake(t *testing.T) {
 	}
 }
 
-func TestDoubleQuoteAndJoinByComma(t *testing.T) {
-	names := []string{"Samantha Edwards", "Samantha Smith", "Holly Miller", "Tammie Tyler", "Gina Richards"}
-	want := "\"Samantha Edwards\",\"Samantha Smith\",\"Holly Miller\",\"Tammie Tyler\",\"Gina Richards\""
-	got := DoubleQuoteAndJoinByComma(names)
-	require.Equal(t, got, want)
-}
-
 func TestSortColumnKeysFromColumnMap(t *testing.T) {
 	columnMap := model.TableSchema{"k5": "V5", "k4": "V4", "k3": "V3", "k2": "V2", "k1": "V1"}
 	want := []string{"k1", "k2", "k3", "k4", "k5"}
