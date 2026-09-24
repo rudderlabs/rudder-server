@@ -365,7 +365,7 @@ func (sf *Snowflake) loadTable(
 	)
 
 	strKeys := getSortedColumnsFromTableSchema(tableSchemaInUpload)
-	sortedColumnNames := whutils.DoubleQuoteAndJoinByComma(strKeys)
+	sortedColumnNames := whutils.JoinQuotedIdentifiers(strKeys, whutils.DoubleQuoteIdentifier, ",")
 
 	// Truncating the columns by default to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
@@ -698,9 +698,9 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 		return fmt.Errorf("getting auth string: %w", err)
 	}
 
-	sortedColumnNames := whutils.DoubleQuoteAndJoinByComma([]string{
+	sortedColumnNames := whutils.JoinQuotedIdentifiers([]string{
 		"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE",
-	})
+	}, whutils.DoubleQuoteIdentifier, ",")
 	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
 	sqlStatement := fmt.Sprintf(`
 		COPY INTO %s(%v)
@@ -915,7 +915,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		}
 
 		strKeys := getSortedColumnsFromTableSchema(identifiesSchema)
-		sortedColumnNames := whutils.DoubleQuoteAndJoinByComma(strKeys)
+		sortedColumnNames := whutils.JoinQuotedIdentifiers(strKeys, whutils.DoubleQuoteIdentifier, ",")
 
 		_, err = sf.copyInto(ctx, resp.db, identifiesTable, sortedColumnNames, tmpIdentifiesStagingTable)
 		if err != nil {
