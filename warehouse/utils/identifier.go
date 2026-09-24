@@ -38,12 +38,6 @@ func BigQueryQuoteIdentifier(identifier string) string {
 	return "`" + bigQueryIdentifierEscaper.Replace(identifier) + "`"
 }
 
-// QuoteQualifiedIdentifier quotes each part with quote and joins them with a dot,
-// e.g. "schema"."table".
-func QuoteQualifiedIdentifier(quote func(string) string, identifiers ...string) string {
-	return JoinQuotedIdentifiers(identifiers, quote, ".")
-}
-
 // clickHouseIdentifierEscaper escapes a ClickHouse quoted identifier. ClickHouse applies
 // string literal escape rules inside double-quoted identifiers, so the delimiter and the
 // backslash are escaped with a backslash instead of being doubled.
@@ -54,34 +48,10 @@ func ClickHouseQuoteIdentifier(identifier string) string {
 	return `"` + clickHouseIdentifierEscaper.Replace(identifier) + `"`
 }
 
-// DoubleQuoteQualifiedIdentifier quotes each part for Postgres, Redshift and Snowflake
-// and joins them with a dot, e.g. "schema"."table".
-func DoubleQuoteQualifiedIdentifier(identifiers ...string) string {
-	return QuoteQualifiedIdentifier(DoubleQuoteIdentifier, identifiers...)
-}
-
-// BracketQuoteQualifiedIdentifier quotes each part for MSSQL and Azure Synapse and
-// joins them with a dot, e.g. [schema].[table].
-func BracketQuoteQualifiedIdentifier(identifiers ...string) string {
-	return QuoteQualifiedIdentifier(BracketQuoteIdentifier, identifiers...)
-}
-
-// BacktickQuoteQualifiedIdentifier quotes each part for Databricks and joins them with
-// a dot, e.g. `schema`.`table`.
-func BacktickQuoteQualifiedIdentifier(identifiers ...string) string {
-	return QuoteQualifiedIdentifier(BacktickQuoteIdentifier, identifiers...)
-}
-
-// BracketQuoteAndJoinByComma quotes each identifier for MSSQL and Azure Synapse and
-// joins them with commas.
-func BracketQuoteAndJoinByComma(identifiers []string) string {
-	return JoinQuotedIdentifiers(identifiers, BracketQuoteIdentifier, ",")
-}
-
-// BacktickQuoteAndJoinByComma quotes each identifier for Databricks and joins them
-// with commas.
-func BacktickQuoteAndJoinByComma(identifiers []string) string {
-	return JoinQuotedIdentifiers(identifiers, BacktickQuoteIdentifier, ",")
+// QuoteQualifiedIdentifier quotes each part with quote and joins them with a dot,
+// e.g. "schema"."table".
+func QuoteQualifiedIdentifier(quote func(string) string, identifiers ...string) string {
+	return JoinQuotedIdentifiers(identifiers, quote, ".")
 }
 
 // BigQueryQuoteTablePath quotes a dotted BigQuery path such as project.dataset.table
@@ -142,4 +112,12 @@ func SQLStringLiteralBackslash(value string) string {
 // SparkSQLStringLiteral quotes a value as a string literal for Databricks (Spark SQL).
 func SparkSQLStringLiteral(value string) string {
 	return `'` + sparkStringLiteralEscaper.Replace(value) + `'`
+}
+
+// TableLocationPath builds the storage path of a table, such as the Delta Lake
+// LOCATION clause or the Snowflake Iceberg BASE_LOCATION, by joining the parts with
+// a slash. The parts are joined verbatim so the resulting path stays exactly what
+// the destination configuration produced.
+func TableLocationPath(parts ...string) string {
+	return strings.Join(parts, "/")
 }
