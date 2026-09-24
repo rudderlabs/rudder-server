@@ -127,4 +127,15 @@ func TestTableManager(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("TestIcebergQuotesStringLiterals", func(t *testing.T) {
+		manager := newIcebergTableManager(`vol\'; DROP TABLE x; --`)
+		result := manager.createTableQuery(whutils.DoubleQuoteIdentifier("MYSCHEMA"), `table'y`, model.TableSchema{
+			"col1": "string",
+		})
+
+		require.Contains(t, result, `CREATE OR REPLACE ICEBERG TABLE "MYSCHEMA"."table'y"`)
+		require.Contains(t, result, `EXTERNAL_VOLUME = 'vol\\''; DROP TABLE x; --'`)
+		require.Contains(t, result, `BASE_LOCATION = '"MYSCHEMA"/table''y'`)
+	})
 }
