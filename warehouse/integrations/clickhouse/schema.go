@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const (
@@ -122,9 +123,9 @@ func getSortKeyTuple(sortKeyFields []string) string {
 	tuple.WriteString("(")
 	for index, field := range sortKeyFields {
 		if index == len(sortKeyFields)-1 {
-			fmt.Fprintf(&tuple, `%q`, field)
+			tuple.WriteString(warehouseutils.ClickHouseQuoteIdentifier(field))
 		} else {
-			fmt.Fprintf(&tuple, `%q,`, field)
+			fmt.Fprintf(&tuple, `%s,`, warehouseutils.ClickHouseQuoteIdentifier(field))
 		}
 	}
 	tuple.WriteString(")")

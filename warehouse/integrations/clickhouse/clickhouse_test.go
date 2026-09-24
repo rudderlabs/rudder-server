@@ -1362,6 +1362,70 @@ func TestIntegration(t *testing.T) {
 		})
 	})
 
+	t.Run("prevents SQL injection via malicious identifiers", func(t *testing.T) {
+		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
+		c.Start(context.Background())
+
+		ctx := context.Background()
+		workspaceID := whutils.RandHex()
+		clickhousePort := c.Port("clickhouse", 9000)
+
+		// ClickHouse quotes identifiers with double quotes and escapes the delimiter and
+		// the backslash with a backslash, so the payloads target both.
+		dropVictim := `";drop table victim_secrets;--`
+		maliciousNamespace := `evil_ns` + dropVictim
+		maliciousTable := `evil_table` + dropVictim
+		maliciousColumn := `evil_col String)` + dropVictim
+		addedColumn := `added_col String)` + dropVictim
+		backslashColumn := `evil_bs\`
+
+		// Wait for the server to accept connections before the manager talks to it.
+		_ = connectDB(t, clickhousePort)
+
+		ch := newClickhouse(config.New())
+		warehouse := model.Warehouse{
+			Namespace:   maliciousNamespace,
+			WorkspaceID: workspaceID,
+			Destination: backendconfig.DestinationT{
+				Config: map[string]any{
+					"host":     host,
+					"port":     strconv.Itoa(clickhousePort),
+					"database": database,
+					"user":     user,
+					"password": password,
+				},
+			},
+		}
+		require.NoError(t, ch.Setup(ctx, warehouse, newMockUploader(t, "", nil, nil)))
+
+		require.NoError(t, ch.CreateSchema(ctx))
+		// Victim (control) table created through the manager itself.
+		require.NoError(t, ch.CreateTable(ctx, "victim_secrets", model.TableSchema{"id": "string", "received_at": "datetime"}))
+		require.NoError(t, ch.CreateTable(ctx, maliciousTable, model.TableSchema{
+			"id":            "string",
+			"received_at":   "datetime",
+			maliciousColumn: "string",
+			backslashColumn: "string",
+		}))
+		require.NoError(t, ch.AddColumns(ctx, maliciousTable, []whutils.ColumnInfo{{Name: addedColumn, Type: "string"}}))
+
+		// FetchSchema round-trips the stored identifiers - dialect agnostic verification.
+		schema, err := ch.FetchSchema(ctx)
+		require.NoError(t, err)
+		require.Contains(t, schema, "victim_secrets", "victim table must survive - the injection executed")
+		require.Contains(t, schema, maliciousTable, "malicious table must be created verbatim")
+		require.Contains(t, schema[maliciousTable], maliciousColumn)
+		require.Contains(t, schema[maliciousTable], backslashColumn, "trailing-backslash column must round-trip verbatim")
+		require.Contains(t, schema[maliciousTable], addedColumn)
+
+		// DropTable must also quote the identifier - a broken drop would inject a second DROP.
+		require.NoError(t, ch.DropTable(ctx, maliciousTable))
+		schema, err = ch.FetchSchema(ctx)
+		require.NoError(t, err)
+		require.Contains(t, schema, "victim_secrets", "victim table must survive DropTable injection")
+		require.NotContains(t, schema, maliciousTable, "malicious table should have been dropped")
+	})
+
 	t.Run("Test connection", func(t *testing.T) {
 		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose}))
 		c.Start(context.Background())

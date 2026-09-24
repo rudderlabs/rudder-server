@@ -250,7 +250,7 @@ func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
 		logger.NewStringField("clusterClause", ch.clusterClause()),
 	)
 
-	query := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS %q %s`, ch.Namespace, ch.clusterClause())
+	query := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS %s %s`, warehouseutils.ClickHouseQuoteIdentifier(ch.Namespace), ch.clusterClause())
 	if _, err = db.ExecContext(ctx, query); err != nil {
 		return fmt.Errorf("creating database: %w", err)
 	}
@@ -271,7 +271,7 @@ func (ch *Clickhouse) schemaExists(ctx context.Context, schemaName string) (exis
 
 func (ch *Clickhouse) clusterClause() string {
 	if cluster := ch.Warehouse.GetStringDestinationConfig(ch.conf, model.ClusterSetting); len(strings.TrimSpace(cluster)) > 0 {
-		return fmt.Sprintf(`ON CLUSTER %q`, cluster)
+		return fmt.Sprintf(`ON CLUSTER %s`, warehouseutils.ClickHouseQuoteIdentifier(cluster))
 	}
 	return ""
 }
@@ -293,7 +293,7 @@ func (ch *Clickhouse) CreateTable(ctx context.Context, tableName string, columns
 	engineOptions := ""
 	cluster := ch.Warehouse.GetStringDestinationConfig(ch.conf, model.ClusterSetting)
 	if len(strings.TrimSpace(cluster)) > 0 {
-		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
+		clusterClause = fmt.Sprintf(`ON CLUSTER %s`, warehouseutils.ClickHouseQuoteIdentifier(cluster))
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
 		engineOptions = fmt.Sprintf(`'/clickhouse/{cluster}/tables/%s/{database}/{table}', '{replica}'`, uuid.New().String())
 	}
@@ -310,7 +310,7 @@ func (ch *Clickhouse) CreateTable(ctx context.Context, tableName string, columns
 		}
 	}
 
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %q.%q %s ( %v ) ENGINE = %s(%s) %s %s`, ch.Namespace, tableName, clusterClause, ch.ColumnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, orderByClause, partitionByClause)
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s %s ( %v ) ENGINE = %s(%s) %s %s`, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, ch.Namespace, tableName), clusterClause, ch.ColumnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, orderByClause, partitionByClause)
 
 	ch.logger.Infon("CH: Creating table in clickhouse for ch",
 		logger.NewStringField(logfield.DestinationID, ch.Warehouse.Destination.ID),
@@ -333,7 +333,7 @@ func (ch *Clickhouse) createUsersTable(ctx context.Context, name string, columns
 	engineOptions := ""
 	cluster := ch.Warehouse.GetStringDestinationConfig(ch.conf, model.ClusterSetting)
 	if len(strings.TrimSpace(cluster)) > 0 {
-		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
+		clusterClause = fmt.Sprintf(`ON CLUSTER %s`, warehouseutils.ClickHouseQuoteIdentifier(cluster))
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
 		engineOptions = fmt.Sprintf(`'/clickhouse/{cluster}/tables/%s/{database}/{table}', '{replica}'`, uuid.New().String())
 	}
@@ -342,7 +342,7 @@ func (ch *Clickhouse) createUsersTable(ctx context.Context, name string, columns
 		return fmt.Errorf("getting partition by clause: %w", err)
 	}
 
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %q.%q %s ( %v )  ENGINE = %s(%s) ORDER BY %s %s`, ch.Namespace, name, clusterClause, ch.ColumnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionByClause)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s %s ( %v )  ENGINE = %s(%s) ORDER BY %s %s`, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, ch.Namespace, name), clusterClause, ch.ColumnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionByClause)
 	ch.logger.Infon("CH: Creating table in clickhouse for ch",
 		logger.NewStringField(logfield.DestinationID, ch.Warehouse.Destination.ID),
 		logger.NewStringField(logfield.Query, sqlStatement),
@@ -357,7 +357,7 @@ func (ch *Clickhouse) ColumnsWithDataTypes(tableName string, columns model.Table
 		dataType := columns[columnName]
 		codec := ch.getClickHouseCodecForColumnType(dataType, tableName)
 		columnType := ch.getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[dataType], slices.Contains(notNullableColumns, columnName))
-		return fmt.Sprintf(`%q %s %s`, columnName, columnType, codec)
+		return fmt.Sprintf(`%s %s %s`, warehouseutils.ClickHouseQuoteIdentifier(columnName), columnType, codec)
 	})
 	return strings.Join(columnsWithDataTypes, ",")
 }
@@ -411,7 +411,7 @@ func (ch *Clickhouse) partitionExpr() (string, error) {
 }
 
 func (ch *Clickhouse) DropTable(ctx context.Context, tableName string) (err error) {
-	sqlStatement := fmt.Sprintf(`DROP TABLE %q.%q %s `, ch.Warehouse.Namespace, tableName, ch.clusterClause())
+	sqlStatement := fmt.Sprintf(`DROP TABLE %s %s `, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, ch.Warehouse.Namespace, tableName), ch.clusterClause())
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	return err
 }
@@ -424,9 +424,8 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 
 	fmt.Fprintf(&queryBuilder, `
 		ALTER TABLE
-		  %q.%q %s`,
-		ch.Namespace,
-		tableName,
+		  %s %s`,
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, ch.Namespace, tableName),
 		ch.clusterClause())
 
 	for _, columnInfo := range columnsInfo {
@@ -436,7 +435,7 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 			rudderDataTypesMapToClickHouse[columnInfo.Type],
 			false,
 		)
-		fmt.Fprintf(&queryBuilder, ` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, columnType)
+		fmt.Fprintf(&queryBuilder, ` ADD COLUMN IF NOT EXISTS %s %s,`, warehouseutils.ClickHouseQuoteIdentifier(columnInfo.Name), columnType)
 	}
 
 	query = strings.TrimSuffix(queryBuilder.String(), ",")

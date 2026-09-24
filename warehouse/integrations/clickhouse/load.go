@@ -74,10 +74,9 @@ func (ch *Clickhouse) totalCountIntable(ctx context.Context, tableName string) (
 		sqlStatement string
 	)
 	sqlStatement = fmt.Sprintf(`
-		SELECT count(*) FROM "%[1]s"."%[2]s";
+		SELECT count(*) FROM %s;
 	`,
-		ch.Namespace,
-		tableName,
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, ch.Namespace, tableName),
 	)
 	err = ch.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
 	return total, err
@@ -139,9 +138,9 @@ func (ch *Clickhouse) loadByCopyCommand(ctx context.Context, tableName string, t
 
 	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
 	sort.Strings(strKeys)
-	sortedColumnNames := strings.Join(strKeys, ",")
+	sortedColumnNames := warehouseutils.JoinQuotedIdentifiers(strKeys, warehouseutils.ClickHouseQuoteIdentifier, ",")
 	sortedColumnNamesWithDataTypes := warehouseutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
-		return fmt.Sprintf(`%s %s`, name, rudderDataTypesMapToClickHouse[tableSchemaInUpload[name]])
+		return fmt.Sprintf(`%s %s`, warehouseutils.ClickHouseQuoteIdentifier(name), rudderDataTypesMapToClickHouse[tableSchemaInUpload[name]])
 	}, ",")
 
 	csvObjectLocation, err := ch.Uploader.GetSampleLoadFileLocation(ctx, tableName)
@@ -177,16 +176,16 @@ func (ch *Clickhouse) loadByCopyCommand(ctx context.Context, tableName string, t
 // exactly what it always sent.
 func s3TableFunctionArgs(loadFolder, accessKeyID, secretAccessKey, sessionToken, columnTypes string) []string {
 	args := []string{
-		fmt.Sprintf("'%s'", loadFolder),
-		fmt.Sprintf("'%s'", accessKeyID),
-		fmt.Sprintf("'%s'", secretAccessKey),
+		warehouseutils.SQLStringLiteralBackslash(loadFolder),
+		warehouseutils.SQLStringLiteralBackslash(accessKeyID),
+		warehouseutils.SQLStringLiteralBackslash(secretAccessKey),
 	}
 	if sessionToken != "" {
-		args = append(args, fmt.Sprintf("'%s'", sessionToken))
+		args = append(args, warehouseutils.SQLStringLiteralBackslash(sessionToken))
 	}
 	return append(args,
 		"'CSV'",
-		fmt.Sprintf("'%s'", columnTypes),
+		warehouseutils.SQLStringLiteralBackslash(columnTypes),
 		"'gz'",
 	)
 }
@@ -199,21 +198,20 @@ func copySQLStatement(namespace, tableName, sortedColumnNames string, s3Args, ex
 		"input_format_csv_arrays_as_nested_csv = 1",
 	}, extraSettings...)
 	return fmt.Sprintf(`
-		INSERT INTO %[1]q.%[2]q (
-			%[3]s
+		INSERT INTO %[1]s (
+			%[2]s
 		)
 		SELECT
 		  *
 		FROM
-		  s3(%[4]s)
+		  s3(%[3]s)
 			settings
-				%[5]s;
+				%[4]s;
 		`,
-		namespace,                             // 1
-		tableName,                             // 2
-		sortedColumnNames,                     // 3
-		strings.Join(s3Args, ", "),            // 4
-		strings.Join(settings, ",\n\t\t\t\t"), // 5
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, namespace, tableName), // 1
+		sortedColumnNames,                     // 2
+		strings.Join(s3Args, ", "),            // 3
+		strings.Join(settings, ",\n\t\t\t\t"), // 4
 	)
 }
 
@@ -289,10 +287,9 @@ func (ch *Clickhouse) TestLoadTable(ctx context.Context, _, tableName string, pa
 		values = append(values, value)
 	}
 
-	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
-		ch.Namespace,
-		tableName,
-		strings.Join(columns, ","),
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (%v) VALUES (%s)`,
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, ch.Namespace, tableName),
+		warehouseutils.JoinQuotedIdentifiers(columns, warehouseutils.ClickHouseQuoteIdentifier, ","),
 		generateArgumentString(len(columns)),
 	)
 	txn, err := ch.DB.BeginTx(ctx, &sql.TxOptions{})
@@ -348,10 +345,9 @@ func (ch *Clickhouse) loadTableFromFiles(
 	}
 
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
-	insertSQL := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
-		ch.Namespace,
-		tableName,
-		warehouseutils.JoinQuotedIdentifiers(sortedColumnKeys, warehouseutils.DoubleQuoteIdentifier, ","),
+	insertSQL := fmt.Sprintf(`INSERT INTO %s (%v) VALUES (%s)`,
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.ClickHouseQuoteIdentifier, ch.Namespace, tableName),
+		warehouseutils.JoinQuotedIdentifiers(sortedColumnKeys, warehouseutils.ClickHouseQuoteIdentifier, ","),
 		generateArgumentString(len(sortedColumnKeys)),
 	)
 
