@@ -61,4 +61,22 @@ func TestS3CopyStatementQuotesIdentifiersAndLiterals(t *testing.T) {
 	require.Contains(t, statement, `'s3://bucket/it''s/*.csv.gz'`)
 	require.Contains(t, statement, `'secret''key'`)
 	require.NotContains(t, statement, `'s3://bucket/it's/`)
+	// The structure argument is escaped twice: the column name is quoted as an
+	// identifier, then that whole fragment is escaped as a string literal, so the
+	// backslash the identifier escaper added is itself doubled. ClickHouse unwraps
+	// both layers back to the column named evil"col.
+	require.Contains(t, statement, `'"evil\\"col" String'`)
+}
+
+// TestColumnsWithDataTypesAssertsExpectedText pins the generated fragment rather than
+// comparing it against the helper it was built with, so a change to the escaping rule
+// has to be stated here instead of tracking the production code silently.
+func TestColumnsWithDataTypesAssertsExpectedText(t *testing.T) {
+	ch := &Clickhouse{}
+
+	fragment := ch.ColumnsWithDataTypes(warehouseutils.DiscardsTable, model.TableSchema{
+		`x" String);drop table rudder_secrets;--`: model.StringDataType,
+	}, nil)
+
+	require.Contains(t, fragment, `"x\" String);drop table rudder_secrets;--"`)
 }

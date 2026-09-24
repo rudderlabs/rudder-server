@@ -24,8 +24,12 @@ const unknownDatabase = 81
 // routinely. They are positional single-quoted arguments rather than named
 // ones, and there are two of them or three when a session token is included,
 // so the pattern collapses everything between the location and the format.
+// Each argument is a SQL string literal, so it can itself contain a doubled
+// quote: matching only [^'] would stop at that quote and leave the credentials
+// unmasked, which matters because a MinIO secret access key is customer
+// supplied and may contain one.
 var s3CredentialsRegex = map[string]string{
-	`(s3\(\s*'[^']*',\s*)(?:'[^']*',\s*)+('CSV')`: `${1}'***', ${2}`,
+	`(s3\(\s*'(?:[^']|'')*',\s*)(?:'(?:[^']|'')*',\s*)+('CSV')`: `${1}'***', ${2}`,
 }
 
 // connect opens a connection and wraps it in the shared middleware.

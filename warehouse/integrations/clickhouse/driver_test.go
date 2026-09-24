@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 // TestS3CredentialsRegexV2 guards the masking the middleware applies before it
@@ -17,40 +18,47 @@ func TestS3CredentialsRegexV2(t *testing.T) {
 		secretAccessKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 		sessionToken    = "FQoGZXIvYXdzEPP//////////wEaDEXAMPLESESSIONTOKEN"
 		loadFolder      = "s3://bucket/rudder/uploads/*.csv.gz"
-		columnTypes     = "id String,received_at DateTime"
+		columnTypes     = `"id" String,"received_at" DateTime`
 	)
 
-	statementWith := func(token string) string {
+	statementWith := func(folder, secret, token string) string {
 		return copySQLStatement("namespace", "table", "id,received_at",
-			s3TableFunctionArgs(loadFolder, accessKeyID, secretAccessKey, token, columnTypes),
+			s3TableFunctionArgs(folder, accessKeyID, secret, token, columnTypes),
 			nil,
 		)
 	}
 
 	for _, tc := range []struct {
-		name  string
-		token string
+		name                  string
+		folder, secret, token string
 	}{
-		{name: "static keys", token: ""},
-		{name: "temporary credentials", token: sessionToken},
+		{name: "static keys", folder: loadFolder, secret: secretAccessKey},
+		{name: "temporary credentials", folder: loadFolder, secret: secretAccessKey, token: sessionToken},
+		// A MinIO secret access key is customer supplied, so it can contain a
+		// quote. Escaping it doubles the quote inside the literal, which the
+		// masking pattern has to keep following.
+		{name: "secret containing a quote", folder: loadFolder, secret: `wJal'rXUtnFEMI`},
+		{name: "token containing a quote", folder: loadFolder, secret: secretAccessKey, token: `FQoGZXI'vYXdz`},
+		{name: "folder containing a quote", folder: `s3://bucket/it's/uploads/*.csv.gz`, secret: secretAccessKey},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			statement := statementWith(tc.token)
+			statement := statementWith(tc.folder, tc.secret, tc.token)
 
 			masked, err := misc.ReplaceMultiRegex(statement, s3CredentialsRegex)
 			require.NoError(t, err)
 
 			require.NotContains(t, masked, accessKeyID)
-			require.NotContains(t, masked, secretAccessKey)
+			require.NotContains(t, masked, tc.secret)
+			require.NotContains(t, masked, warehouseutils.SQLStringLiteralBackslash(tc.secret), "the escaped form must not survive either")
 			if tc.token != "" {
-				require.Contains(t, statement, sessionToken, "the token has to reach the statement to be worth masking")
-				require.NotContains(t, masked, sessionToken)
+				require.Contains(t, statement, warehouseutils.SQLStringLiteralBackslash(tc.token), "the token has to reach the statement to be worth masking")
+				require.NotContains(t, masked, tc.token)
 			}
 			require.Contains(t, masked, "'***'")
 
 			// The rest of the statement has to survive, or the log stops being
 			// useful.
-			require.Contains(t, masked, loadFolder)
+			require.Contains(t, masked, warehouseutils.SQLStringLiteralBackslash(tc.folder))
 			require.Contains(t, masked, columnTypes)
 			require.Contains(t, masked, "'CSV'")
 			require.Contains(t, masked, "date_time_input_format = 'best_effort'")
