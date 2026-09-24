@@ -25,6 +25,13 @@ func TestIdentifierQuoting(t *testing.T) {
 		require.Equal(t, "`x``; DROP TABLE users; --`", BacktickQuoteIdentifier("x`; DROP TABLE users; --"))
 		require.Equal(t, "`a\"b``c]d'e\\f`", BacktickQuoteIdentifier(sink))
 	})
+	t.Run("clickhouse", func(t *testing.T) {
+		// ClickHouse applies string literal escape rules inside quoted identifiers, so the
+		// delimiter and the backslash are backslash escaped rather than doubled.
+		require.Equal(t, `"x\"; DROP TABLE users; --"`, ClickHouseQuoteIdentifier(`x"; DROP TABLE users; --`))
+		require.Equal(t, `"evil\\"`, ClickHouseQuoteIdentifier(`evil\`))
+		require.Equal(t, "\"a\\\"b`c]d'e\\\\f\"", ClickHouseQuoteIdentifier(sink))
+	})
 	t.Run("bigquery backtick", func(t *testing.T) {
 		require.Equal(t, "`x\\`; DROP TABLE users; --`", BigQueryQuoteIdentifier("x`; DROP TABLE users; --"))
 		// The backslash must be escaped, otherwise a name ending in \ escapes the closing backtick.
@@ -40,18 +47,11 @@ func TestQualifiedIdentifierQuoting(t *testing.T) {
 	require.Equal(t, "`project.data\\`set.table$20240101`", BigQueryQuoteTablePath("project", "data`set", "table$20240101"))
 }
 
-func TestDialectQualifiedAndJoinHelpers(t *testing.T) {
-	require.Equal(t, `"schema""x"."table""y"`, DoubleQuoteQualifiedIdentifier(`schema"x`, `table"y`))
-	require.Equal(t, `[schema]]x].[table]]y]`, BracketQuoteQualifiedIdentifier(`schema]x`, `table]y`))
-	require.Equal(t, "`schema``x`.`table``y`", BacktickQuoteQualifiedIdentifier("schema`x", "table`y"))
-	require.Equal(t, `"id","evil""x"`, DoubleQuoteAndJoinByComma([]string{"id", `evil"x`}))
-	require.Equal(t, `[id],[evil]]x]`, BracketQuoteAndJoinByComma([]string{"id", `evil]x`}))
-	require.Equal(t, "`id`,`evil``x`", BacktickQuoteAndJoinByComma([]string{"id", "evil`x"}))
-}
-
 func TestJoinQuotedIdentifiers(t *testing.T) {
 	require.Equal(t, `"id","received_at"`, JoinQuotedIdentifiers([]string{"id", "received_at"}, DoubleQuoteIdentifier, ","))
+	require.Equal(t, `"id","evil""x"`, JoinQuotedIdentifiers([]string{"id", `evil"x`}, DoubleQuoteIdentifier, ","))
 	require.Equal(t, `[id], [evil]]x]`, JoinQuotedIdentifiers([]string{"id", `evil]x`}, BracketQuoteIdentifier, ", "))
+	require.Equal(t, "`id`,`evil``x`", JoinQuotedIdentifiers([]string{"id", "evil`x"}, BacktickQuoteIdentifier, ","))
 	require.Empty(t, JoinQuotedIdentifiers(nil, DoubleQuoteIdentifier, ","))
 }
 
@@ -82,4 +82,12 @@ func TestStringLiterals(t *testing.T) {
 		require.Equal(t, `'evil\\\'; DROP TABLE x; --'`, SparkSQLStringLiteral(`evil\'; DROP TABLE x; --`))
 		require.Equal(t, "'a\"b`c]d\\'e\\\\f'", SparkSQLStringLiteral(sink))
 	})
+}
+
+func TestTableLocationPath(t *testing.T) {
+	require.Equal(t, "s3://bucket/prefix/namespace/table", TableLocationPath("s3://bucket/prefix", "namespace", "table"))
+	require.Equal(t, `"NAMESPACE"/table`, TableLocationPath(`"NAMESPACE"`, "table"))
+	// A trailing slash in the configured location is kept as is, so paths do not change.
+	require.Equal(t, "s3://bucket//namespace/table", TableLocationPath("s3://bucket/", "namespace", "table"))
+	require.Empty(t, TableLocationPath())
 }

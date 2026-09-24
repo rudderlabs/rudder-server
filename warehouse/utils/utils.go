@@ -596,14 +596,6 @@ func GetWarehouseIdentifier(destType, sourceID, destinationID string) string {
 	return destType + ":" + sourceID + ":" + destinationID
 }
 
-// DoubleQuoteAndJoinByComma quotes each identifier for Postgres, Redshift and
-// Snowflake and joins them with commas. It doubles an embedded double quote, which
-// Go's %q verb does not do: %q escapes it as \", which those engines do not honour
-// inside a quoted identifier.
-func DoubleQuoteAndJoinByComma(elems []string) string {
-	return JoinQuotedIdentifiers(elems, DoubleQuoteIdentifier, ",")
-}
-
 func GetTempFileExtension(destType string) string {
 	if destType == BQ {
 		return "json.gz"

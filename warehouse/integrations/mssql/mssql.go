@@ -614,9 +614,7 @@ func (ms *MSSQL) insertIntoLoadTable(
 		partitionKey = column
 	}
 
-	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(
-		sortedColumnKeys,
-	)
+	quotedColumnNames := warehouseutils.JoinQuotedIdentifiers(sortedColumnKeys, warehouseutils.DoubleQuoteIdentifier, ",")
 
 	insertStmt := fmt.Sprintf(`
 		INSERT INTO %[1]q.%[2]q (%[3]s)
