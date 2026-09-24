@@ -527,7 +527,7 @@ func (d *Deltalake) CreateTable(ctx context.Context, tableName string, columns m
 	`,
 		createTableClauseSql,
 		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, tableName),
-		columnsWithDataTypes(columns, ""),
+		columnsWithDataTypes(columns),
 		tableLocationSql,
 		partitionedSql,
 	)
@@ -550,7 +550,7 @@ func (d *Deltalake) TrimErrorMessage(baseError error) error {
 }
 
 // columnsWithDataTypes returns the columns with their data types.
-func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
+func columnsWithDataTypes(columns model.TableSchema) string {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
 	format := func(_ int, name string) string {
 		if _, ok := excludeColumnsMap[name]; ok {
@@ -558,9 +558,9 @@ func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
 		}
 		if name == "received_at" {
 			generatedColumnSQL := fmt.Sprintf("DATE GENERATED ALWAYS AS ( CAST(%s AS DATE) )", warehouseutils.BacktickQuoteIdentifier("received_at"))
-			return fmt.Sprintf(`%s %s, %s %s`, warehouseutils.BacktickQuoteIdentifier(prefix+name), dataTypesMap[columns[name]], warehouseutils.BacktickQuoteIdentifier(prefix+"event_date"), generatedColumnSQL)
+			return fmt.Sprintf(`%s %s, %s %s`, warehouseutils.BacktickQuoteIdentifier(name), dataTypesMap[columns[name]], warehouseutils.BacktickQuoteIdentifier("event_date"), generatedColumnSQL)
 		}
-		return fmt.Sprintf(`%s %s`, warehouseutils.BacktickQuoteIdentifier(prefix+name), dataTypesMap[columns[name]])
+		return fmt.Sprintf(`%s %s`, warehouseutils.BacktickQuoteIdentifier(name), dataTypesMap[columns[name]])
 	}
 	return warehouseutils.JoinWithFormatting(keys, format, ",")
 }
@@ -819,7 +819,7 @@ func (d *Deltalake) insertIntoLoadTable(
 		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BacktickQuoteIdentifier, d.Namespace, stagingTableName),
 		columnNames(warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload)),
 		primaryKey(tableName),
-		warehouseutils.BacktickQuoteIdentifier("RECEIVED_AT"),
+		warehouseutils.BacktickQuoteIdentifier("received_at"),
 	)
 
 	var rowsAffected, rowsInserted int64
@@ -882,7 +882,7 @@ func (d *Deltalake) mergeIntoLoadTable(
 		columnsWithValues(sortedColumnKeys),
 		columnNames(sortedColumnKeys),
 		stagingColumnNames(sortedColumnKeys),
-		warehouseutils.BacktickQuoteIdentifier("RECEIVED_AT"),
+		warehouseutils.BacktickQuoteIdentifier("received_at"),
 	)
 
 	var rowsAffected, rowsUpdated, rowsDeleted, rowsInserted int64
