@@ -749,7 +749,7 @@ func (rs *Redshift) insertIntoLoadTable(
 		partitionKey = column
 	}
 
-	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
+	quotedColumnNames := warehouseutils.JoinQuotedIdentifiers(sortedColumnKeys, warehouseutils.DoubleQuoteIdentifier, ",")
 
 	insertStmt := fmt.Sprintf(
 		`INSERT INTO %[1]s (%[3]s)
@@ -872,7 +872,7 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 			warehouseutils.DoubleQuoteIdentifier("received_at"),
 		))
 	}
-	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
+	quotedUserColNames := warehouseutils.JoinQuotedIdentifiers(userColNames, warehouseutils.DoubleQuoteIdentifier, ",")
 
 	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
 
@@ -961,7 +961,7 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 			FROM %[2]s;`,
 		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, warehouseutils.UsersTable),
 		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.DoubleQuoteIdentifier, rs.Namespace, stagingTableName),
-		warehouseutils.DoubleQuoteAndJoinByComma(append([]string{"id"}, userColNames...)),
+		warehouseutils.JoinQuotedIdentifiers(append([]string{"id"}, userColNames...), warehouseutils.DoubleQuoteIdentifier, ","),
 	)
 
 	log.Infon("inserting into users table", logger.NewStringField(logfield.Query, query))
