@@ -38,6 +38,16 @@ func BigQueryQuoteIdentifier(identifier string) string {
 	return "`" + bigQueryIdentifierEscaper.Replace(identifier) + "`"
 }
 
+// clickHouseIdentifierEscaper escapes a ClickHouse quoted identifier. ClickHouse applies
+// string literal escape rules inside double-quoted identifiers, so the delimiter and the
+// backslash are escaped with a backslash instead of being doubled.
+var clickHouseIdentifierEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+
+// ClickHouseQuoteIdentifier quotes an identifier for ClickHouse.
+func ClickHouseQuoteIdentifier(identifier string) string {
+	return `"` + clickHouseIdentifierEscaper.Replace(identifier) + `"`
+}
+
 // QuoteQualifiedIdentifier quotes each part with quote and joins them with a dot,
 // e.g. "schema"."table".
 func QuoteQualifiedIdentifier(quote func(string) string, identifiers ...string) string {
@@ -76,7 +86,7 @@ func QuoteCommaSeparatedIdentifiers(columns string, quote func(string) string) s
 // value ending in \ (or containing \') could otherwise escape the closing quote.
 
 // sqlStringLiteralBackslashEscaper escapes a literal for engines that honour backslash
-// escapes and accept a doubled single quote (Redshift, Snowflake).
+// escapes and accept a doubled single quote (Redshift, Snowflake, ClickHouse).
 var sqlStringLiteralBackslashEscaper = strings.NewReplacer(`\`, `\\`, `'`, `''`)
 
 // sparkStringLiteralEscaper escapes a literal for Spark SQL, which uses backslash
@@ -93,7 +103,8 @@ func UnicodeStringLiteral(value string) string {
 	return "N" + SQLStringLiteral(value)
 }
 
-// SQLStringLiteralBackslash quotes a value as a string literal for Redshift and Snowflake.
+// SQLStringLiteralBackslash quotes a value as a string literal for Redshift, Snowflake and
+// ClickHouse.
 func SQLStringLiteralBackslash(value string) string {
 	return `'` + sqlStringLiteralBackslashEscaper.Replace(value) + `'`
 }
@@ -101,4 +112,12 @@ func SQLStringLiteralBackslash(value string) string {
 // SparkSQLStringLiteral quotes a value as a string literal for Databricks (Spark SQL).
 func SparkSQLStringLiteral(value string) string {
 	return `'` + sparkStringLiteralEscaper.Replace(value) + `'`
+}
+
+// TableLocationPath builds the storage path of a table, such as the Delta Lake
+// LOCATION clause or the Snowflake Iceberg BASE_LOCATION, by joining the parts with
+// a slash. The parts are joined verbatim so the resulting path stays exactly what
+// the destination configuration produced.
+func TableLocationPath(parts ...string) string {
+	return strings.Join(parts, "/")
 }
