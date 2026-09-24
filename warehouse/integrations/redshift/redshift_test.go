@@ -834,7 +834,7 @@ func TestIntegration(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Cleanup(func() {
-					dropSchema(t, db, tc.destination.Config["namespace"].(string))
+					dropSchemaAsDestination(t, tc.destination)
 				})
 
 				whth.VerifyConfigurationTest(t, tc.destination)
@@ -1588,6 +1588,26 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, rs.DB.PingContext(ctx))
 		})
 	})
+}
+
+// dropSchemaAsDestination drops the schema through a connection opened from the
+// destination itself. A schema is owned by whichever identity created it, so one
+// created through the IAM role cannot be dropped by the password user: Redshift
+// answers "permission denied for schema" and the cleanup retries until it times out.
+func dropSchemaAsDestination(t *testing.T, destination backendconfig.DestinationT) {
+	t.Helper()
+
+	namespace, ok := destination.Config["namespace"].(string)
+	require.True(t, ok, "destination must carry a namespace")
+
+	rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+	require.NoError(t, rs.Setup(context.Background(), model.Warehouse{
+		Destination: destination,
+		Namespace:   namespace,
+	}, nil))
+	defer func() { _ = rs.DB.Close() }()
+
+	dropSchema(t, rs.DB.DB, namespace)
 }
 
 func dropSchema(t *testing.T, db *sql.DB, namespace string) {

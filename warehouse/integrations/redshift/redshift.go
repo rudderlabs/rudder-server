@@ -133,6 +133,16 @@ var primaryKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id",
 }
 
+// copyCredentialsRegex masks the credentials the COPY command carries, before the
+// middleware logs the statement. The credentials are interpolated without escaping,
+// so a credential containing a quote ends the match early and leaves its tail in the
+// log; such a statement is also malformed SQL, so the COPY fails either way.
+var copyCredentialsRegex = map[string]string{
+	"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
+	"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
+	"SESSION_TOKEN '[^']*'":     "SESSION_TOKEN '***'",
+}
+
 var partitionKeyMap = map[string]string{
 	warehouseutils.UsersTable:      "id",
 	warehouseutils.IdentifiesTable: "id",
@@ -1029,14 +1039,7 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 		),
 		sqlmiddleware.WithSlowQueryThreshold(rs.config.slowQueryThreshold),
 		sqlmiddleware.WithQueryTimeout(rs.connectTimeout),
-		sqlmiddleware.WithSecretsRegex(map[string]string{
-			// The credentials are SQL string literals, so a quote inside one is
-			// doubled. Matching only [^'] would stop at that quote and leave the
-			// rest of the secret in the log.
-			"ACCESS_KEY_ID '(?:[^']|'')*'":     "ACCESS_KEY_ID '***'",
-			"SECRET_ACCESS_KEY '(?:[^']|'')*'": "SECRET_ACCESS_KEY '***'",
-			"SESSION_TOKEN '(?:[^']|'')*'":     "SESSION_TOKEN '***'",
-		}),
+		sqlmiddleware.WithSecretsRegex(copyCredentialsRegex),
 	)
 	return middleware, nil
 }
@@ -1476,13 +1479,7 @@ func (rs *Redshift) TestLoadTable(ctx context.Context, location, tableName strin
 			warehouseutils.SQLStringLiteralBackslash(region),
 		)
 	}
-	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
-		// A doubled quote inside the literal must not end the match, or the rest
-		// of the credential reaches the log.
-		"ACCESS_KEY_ID '(?:[^']|'')*'":     "ACCESS_KEY_ID '***'",
-		"SECRET_ACCESS_KEY '(?:[^']|'')*'": "SECRET_ACCESS_KEY '***'",
-		"SESSION_TOKEN '(?:[^']|'')*'":     "SESSION_TOKEN '***'",
-	})
+	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, copyCredentialsRegex)
 	if regexErr == nil {
 		rs.logger.Infon("RS: Running COPY command for load test table",
 			logger.NewStringField(logfield.TableName, tableName),
