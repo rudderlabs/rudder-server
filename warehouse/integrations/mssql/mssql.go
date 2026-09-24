@@ -325,6 +325,11 @@ func (ms *MSSQL) loadTable(
 	)
 
 	log.Debugn("creating prepared stmt for loading data")
+	// CopyIn is given the bracket quoted qualified name: go-mssqldb parses the
+	// object name itself and leaves an already delimited part as it is, so a
+	// namespace containing a dot is not split into a database and schema. The
+	// column names stay unquoted because the driver matches them against the
+	// destination metadata and quotes them itself.
 	copyInStmt := mssql.CopyIn(warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, stagingTableName), mssql.BulkOptions{CheckConstraints: false},
 		sortedColumnKeys...,
 	)
@@ -712,6 +717,9 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 								OFFSET 0 ROWS
 								FETCH NEXT 1 ROWS ONLY)
 							  end as %[1]s`, quotedColumn, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, unionStagingTableName), warehouseutils.BracketQuoteIdentifier("id"), warehouseutils.BracketQuoteIdentifier("received_at"))
+		// IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortened to below
+		// https://docs.microsoft.com/en-us/sql/t-sql/functions/first-value-transact-sql?view=sql-server-ver15
+		// caseSubQuery := fmt.Sprintf(`FIRST_VALUE(%[1]s) IGNORE NULLS OVER (PARTITION BY %[2]s ORDER BY %[3]s DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, quotedColumn, warehouseutils.BracketQuoteIdentifier("id"), warehouseutils.BracketQuoteIdentifier("received_at"))
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
 
@@ -845,7 +853,7 @@ func (ms *MSSQL) dropStagingTable(ctx context.Context, stagingTableName string) 
 	_, err := ms.db.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, stagingTableName)))
 	if err != nil {
 		ms.logger.Errorn("MSSQL: Error dropping staging table in mssql",
-			logger.NewStringField("stagingTableName", ms.namespace+"."+stagingTableName),
+			logger.NewStringField("stagingTableName", warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, stagingTableName)),
 			obskit.Error(err))
 	}
 }
@@ -1112,7 +1120,7 @@ func (ms *MSSQL) TestLoadTable(ctx context.Context, _, tableName string, payload
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (%v) VALUES (%s)`,
 		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, tableName),
 		fmt.Sprintf(`%s, %s`, warehouseutils.BracketQuoteIdentifier("id"), warehouseutils.BracketQuoteIdentifier("val")),
-		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
+		fmt.Sprintf(`%s, %s`, warehouseutils.SQLStringLiteral(fmt.Sprint(payloadMap["id"])), warehouseutils.SQLStringLiteral(fmt.Sprint(payloadMap["val"]))),
 	)
 	_, err = ms.db.ExecContext(ctx, sqlStatement)
 	return err
