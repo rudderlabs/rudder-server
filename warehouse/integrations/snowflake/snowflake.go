@@ -291,6 +291,34 @@ func (sf *Snowflake) authString() (string, error) {
 	return auth, nil
 }
 
+// deleteByStatement builds the source job cleanup statement. The columns are
+// converted to provider case before being quoted: Snowflake stores an unquoted
+// identifier upper cased, so quoting the lower case spelling would not resolve.
+func deleteByStatement(namespace, tableName string) string {
+	return fmt.Sprintf(`DELETE FROM %s
+		WHERE
+			%s <> ? AND
+			%s <> ? AND
+			%s = ? AND
+			%s < ?`,
+		whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, namespace, tableName),
+		whutils.DoubleQuoteIdentifier(whutils.ToProviderCase(provider, "context_sources_job_run_id")),
+		whutils.DoubleQuoteIdentifier(whutils.ToProviderCase(provider, "context_sources_task_run_id")),
+		whutils.DoubleQuoteIdentifier(whutils.ToProviderCase(provider, "context_source_id")),
+		whutils.DoubleQuoteIdentifier(whutils.ToProviderCase(provider, "received_at")),
+	)
+}
+
+// mergeWindowJoinClause limits the merge to rows newer than the window. The column
+// comes from configuration, so it is converted to provider case before quoting.
+func mergeWindowJoinClause(column string, window time.Duration) string {
+	return fmt.Sprintf(
+		` AND original.%s >= DATEADD(hour, -%d, CURRENT_TIMESTAMP())`,
+		whutils.DoubleQuoteIdentifier(whutils.ToProviderCase(provider, column)),
+		int(window.Hours()),
+	)
+}
+
 func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params whutils.DeleteByParams) error {
 	if !sf.config.enableDeleteByJobs {
 		return nil
@@ -301,18 +329,7 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 			logger.NewStringField(lf.DestinationID, sf.Warehouse.Destination.ID),
 		)
 		log.Infon("Cleaning up the following tables in snowflake")
-		sqlStatement := fmt.Sprintf(`DELETE FROM %s
-		WHERE
-			%s <> ? AND
-			%s <> ? AND
-			%s = ? AND
-			%s < ?`,
-			whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, tb),
-			whutils.DoubleQuoteIdentifier(whutils.ToProviderCase(provider, "context_sources_job_run_id")),
-			whutils.DoubleQuoteIdentifier(whutils.ToProviderCase(provider, "context_sources_task_run_id")),
-			whutils.DoubleQuoteIdentifier(whutils.ToProviderCase(provider, "context_source_id")),
-			whutils.DoubleQuoteIdentifier(whutils.ToProviderCase(provider, "received_at")),
-		)
+		sqlStatement := deleteByStatement(sf.Namespace, tb)
 		_, err := sf.DB.ExecContext(ctx,
 			sqlStatement,
 			params.JobRunId,
@@ -474,11 +491,7 @@ func (sf *Snowflake) mergeIntoLoadTable(
 		mergeWindowDuration := sf.conf.GetDurationVar(30*24, time.Hour, configKeyPrefix+".duration")
 		mergeWindowColumn := sf.conf.GetStringVar("RECEIVED_AT", configKeyPrefix+".column")
 
-		additionalJoinClause += fmt.Sprintf(
-			` AND original.%s >= DATEADD(hour, -%d, CURRENT_TIMESTAMP())`,
-			whutils.DoubleQuoteIdentifier(whutils.ToProviderCase(provider, mergeWindowColumn)),
-			int(mergeWindowDuration.Hours()),
-		)
+		additionalJoinClause += mergeWindowJoinClause(mergeWindowColumn, mergeWindowDuration)
 	}
 
 	mergeStmt := fmt.Sprintf(`MERGE INTO %[1]s AS original USING (
