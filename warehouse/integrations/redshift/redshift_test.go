@@ -84,9 +84,6 @@ func getRedshiftTestCredentials(key string) (*testCredentials, error) {
 }
 
 func TestIntegration(t *testing.T) {
-	// TODO: re-enable once the shared Redshift test user is unlocked; every run currently fails with
-	// "pq: Account locked due to multiple failed login attempts" (28000).
-	t.Skip("Skipping: shared Redshift test user is locked")
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
@@ -837,7 +834,7 @@ func TestIntegration(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Cleanup(func() {
-					dropSchema(t, db, tc.destination.Config["namespace"].(string))
+					dropSchemaAsDestination(t, tc.destination)
 				})
 
 				whth.VerifyConfigurationTest(t, tc.destination)
@@ -1477,6 +1474,52 @@ func TestIntegration(t *testing.T) {
 				})
 			}
 		})
+
+		t.Run("prevents SQL injection via malicious identifiers", func(t *testing.T) {
+			ctx := context.Background()
+
+			maliciousNamespace := `rs_evil_ns";drop table victim_secrets;--`
+			maliciousTable := `rs_evil_table");drop table victim_secrets;--`
+			maliciousColumn := `rs_evil_col" text);drop table victim_secrets;--`
+			addedColumn := `rs_added_col" text);drop table victim_secrets;--`
+
+			maliciousSchema := model.TableSchema{
+				"id":            "string",
+				maliciousColumn: "string",
+			}
+
+			maliciousWarehouse := th.Clone(t, warehouse)
+			maliciousWarehouse.Namespace = maliciousNamespace
+
+			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+			require.NoError(t, rs.Setup(ctx, maliciousWarehouse, newMockUploader(t, nil, maliciousTable, maliciousSchema, maliciousSchema, whutils.LoadFileTypeCsv)))
+			t.Cleanup(func() {
+				_, _ = db.ExecContext(ctx, `DROP SCHEMA IF EXISTS "`+strings.ReplaceAll(maliciousNamespace, `"`, `""`)+`" CASCADE`)
+			})
+
+			require.NoError(t, rs.CreateSchema(ctx))
+			// Victim (control) table created through the manager itself.
+			require.NoError(t, rs.CreateTable(ctx, "victim_secrets", model.TableSchema{"id": "string"}))
+			require.NoError(t, rs.CreateTable(ctx, maliciousTable, maliciousSchema))
+			require.NoError(t, rs.AddColumns(ctx, maliciousTable, []whutils.ColumnInfo{
+				{Name: addedColumn, Type: "string"},
+			}))
+
+			// FetchSchema round-trips the stored identifiers - dialect-agnostic verification.
+			schema, err := rs.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Contains(t, schema, "victim_secrets", "victim table must survive - the injection executed")
+			require.Contains(t, schema, maliciousTable, "malicious table must be created verbatim")
+			require.Contains(t, schema[maliciousTable], maliciousColumn)
+			require.Contains(t, schema[maliciousTable], addedColumn)
+
+			// DropTable must also quote the identifier - a broken drop would inject a second DROP.
+			require.NoError(t, rs.DropTable(ctx, maliciousTable))
+			schema, err = rs.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Contains(t, schema, "victim_secrets", "victim table must survive DropTable injection")
+			require.NotContains(t, schema, maliciousTable, "malicious table should have been dropped")
+		})
 	})
 
 	t.Run("Connection timeout using password", func(t *testing.T) {
@@ -1545,6 +1588,26 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, rs.DB.PingContext(ctx))
 		})
 	})
+}
+
+// dropSchemaAsDestination drops the schema through a connection opened from the
+// destination itself. A schema is owned by whichever identity created it, so one
+// created through the IAM role cannot be dropped by the password user: Redshift
+// answers "permission denied for schema" and the cleanup retries until it times out.
+func dropSchemaAsDestination(t *testing.T, destination backendconfig.DestinationT) {
+	t.Helper()
+
+	namespace, ok := destination.Config["namespace"].(string)
+	require.True(t, ok, "destination must carry a namespace")
+
+	rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+	require.NoError(t, rs.Setup(context.Background(), model.Warehouse{
+		Destination: destination,
+		Namespace:   namespace,
+	}, nil))
+	defer func() { _ = rs.DB.Close() }()
+
+	dropSchema(t, rs.DB.DB, namespace)
 }
 
 func dropSchema(t *testing.T, db *sql.DB, namespace string) {
