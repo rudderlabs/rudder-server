@@ -81,3 +81,42 @@ func TestUsersMergeQueryQuotesIdentifiers(t *testing.T) {
 			)
 		)`, query)
 }
+
+// TestDeduplicationQueryPartitionAndOrder covers the two branches of the view that
+// are not exercised by the malicious-name test: the composite partition key, whose
+// parts have to be quoted one by one rather than as a single identifier, and the
+// loaded_at ORDER BY. The default partition filter is the _PARTITIONTIME pseudo
+// column, which must stay unquoted.
+func TestDeduplicationQueryPartitionAndOrder(t *testing.T) {
+	bq := &BigQuery{}
+	bq.conf = config.New()
+	bq.warehouse = model.Warehouse{
+		Destination: backendconfig.DestinationT{Config: map[string]any{}},
+	}
+	bq.projectID = "test_project"
+	bq.namespace = "test_namespace"
+
+	t.Run("composite partition key and loaded_at order", func(t *testing.T) {
+		query, err := bq.deduplicationQuery(warehouseutils.DiscardsTable, model.TableSchema{
+			"row_id":      "string",
+			"column_name": "string",
+			"table_name":  "string",
+			"loaded_at":   "datetime",
+		})
+		require.NoError(t, err)
+
+		require.Contains(t, query, "PARTITION BY `row_id`, `column_name`, `table_name`")
+		require.Contains(t, query, "ORDER BY `loaded_at` DESC")
+		// The pseudo column is not an identifier and must not be quoted.
+		require.Contains(t, query, "_PARTITIONTIME BETWEEN")
+		require.NotContains(t, query, "`_PARTITIONTIME`")
+	})
+
+	t.Run("single partition key without loaded_at", func(t *testing.T) {
+		query, err := bq.deduplicationQuery(warehouseutils.UsersTable, model.TableSchema{"id": "string"})
+		require.NoError(t, err)
+
+		require.Contains(t, query, "PARTITION BY `id`")
+		require.NotContains(t, query, "ORDER BY")
+	})
+}
