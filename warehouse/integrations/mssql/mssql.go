@@ -208,7 +208,7 @@ func (ms *MSSQL) connectionCredentials() *credentials {
 
 func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	formattedColumns := lo.MapToSlice(columns, func(name, dataType string) string {
-		return fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToMssql[dataType])
+		return fmt.Sprintf(`%s %s`, warehouseutils.BracketQuoteIdentifier(prefix+name), rudderDataTypesMapToMssql[dataType])
 	})
 	return strings.Join(formattedColumns, ",")
 }
@@ -220,13 +220,16 @@ func (*MSSQL) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) 
 func (ms *MSSQL) DeleteBy(ctx context.Context, tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	for _, tb := range tableNames {
 		ms.logger.Infon("MSSQL: Cleaning up the table", logger.NewStringField("table", tb))
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
-		context_sources_job_run_id <> @jobrunid AND
-		context_sources_task_run_id <> @taskrunid AND
-		context_source_id = @sourceid AND
-		received_at < @starttime`,
-			ms.namespace,
-			tb,
+		sqlStatement := fmt.Sprintf(`DELETE FROM %[1]s WHERE
+		%[2]s <> @jobrunid AND
+		%[3]s <> @taskrunid AND
+		%[4]s = @sourceid AND
+		%[5]s < @starttime`,
+			warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, tb),
+			warehouseutils.BracketQuoteIdentifier("context_sources_job_run_id"),
+			warehouseutils.BracketQuoteIdentifier("context_sources_task_run_id"),
+			warehouseutils.BracketQuoteIdentifier("context_source_id"),
+			warehouseutils.BracketQuoteIdentifier("received_at"),
 		)
 
 		ms.logger.Debugn("MSSQL: Deleting rows in table in mysql for MSSQL", obskit.DestinationID(ms.warehouse.Destination.ID))
@@ -291,12 +294,11 @@ func (ms *MSSQL) loadTable(
 	log.Debugn("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`
 		SELECT
-		  TOP 0 * INTO %[1]s.%[2]s
+		  TOP 0 * INTO %[1]s
 		FROM
-		  %[1]s.%[3]s;`,
-		ms.namespace,
-		stagingTableName,
-		tableName,
+		  %[2]s;`,
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, stagingTableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, tableName),
 	)
 	if _, err = ms.db.ExecContext(ctx, createStagingTableStmt); err != nil {
 		return nil, "", fmt.Errorf("creating temporary table: %w", err)
@@ -323,7 +325,12 @@ func (ms *MSSQL) loadTable(
 	)
 
 	log.Debugn("creating prepared stmt for loading data")
-	copyInStmt := mssql.CopyIn(ms.namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false},
+	// CopyIn is given the bracket quoted qualified name: go-mssqldb parses the
+	// object name itself and leaves an already delimited part as it is, so a
+	// namespace containing a dot is not split into a database and schema. The
+	// column names stay unquoted because the driver matches them against the
+	// destination metadata and quotes them itself.
+	copyInStmt := mssql.CopyIn(warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, stagingTableName), mssql.BulkOptions{CheckConstraints: false},
 		sortedColumnKeys...,
 	)
 	stmt, err := txn.PrepareContext(ctx, copyInStmt)
@@ -569,30 +576,35 @@ func (ms *MSSQL) deleteFromLoadTable(
 		primaryKey = column
 	}
 
-	var additionalDeleteStmtClause string
+	mainTable := warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, tableName)
+	stagingTable := warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, stagingTableName)
+	quotedPrimaryKey := warehouseutils.BracketQuoteIdentifier(primaryKey)
+
+	var additionalJoinClause string
 	if tableName == warehouseutils.DiscardsTable {
-		additionalDeleteStmtClause = fmt.Sprintf(`AND _source.%[3]s = %[1]q.%[2]q.%[3]q AND _source.%[4]s = %[1]q.%[2]q.%[4]q`,
-			ms.namespace,
-			tableName,
-			"table_name",
-			"column_name",
+		tableNameColumn := warehouseutils.BracketQuoteIdentifier("table_name")
+		columnNameColumn := warehouseutils.BracketQuoteIdentifier("column_name")
+		additionalJoinClause = fmt.Sprintf(
+			`AND _source.%[1]s = %[3]s.%[1]s AND _source.%[2]s = %[3]s.%[2]s`,
+			tableNameColumn,
+			columnNameColumn,
+			mainTable,
 		)
 	}
 
 	deleteStmt := fmt.Sprintf(`
-		DELETE FROM
-		  %[1]q.%[2]q
-		FROM
-		  %[1]q.%[3]q AS _source
-		WHERE
-		  (
-			_source.%[4]s = %[1]q.%[2]q.%[4]q %[5]s
-		  );`,
-		ms.namespace,
-		tableName,
-		stagingTableName,
-		primaryKey,
-		additionalDeleteStmtClause,
+			DELETE FROM
+			  %[1]s
+			FROM
+			  %[2]s AS _source
+			WHERE
+			  (
+				_source.%[3]s = %[1]s.%[3]s %[4]s
+			  );`,
+		mainTable,
+		stagingTable,
+		quotedPrimaryKey,
+		additionalJoinClause,
 	)
 
 	r, err := txn.ExecContext(ctx, deleteStmt)
@@ -614,31 +626,31 @@ func (ms *MSSQL) insertIntoLoadTable(
 		partitionKey = column
 	}
 
-	quotedColumnNames := warehouseutils.JoinQuotedIdentifiers(sortedColumnKeys, warehouseutils.DoubleQuoteIdentifier, ",")
+	quotedColumnNames := warehouseutils.JoinQuotedIdentifiers(sortedColumnKeys, warehouseutils.BracketQuoteIdentifier, ",")
 
 	insertStmt := fmt.Sprintf(`
-		INSERT INTO %[1]q.%[2]q (%[3]s)
-		SELECT
-		  %[3]s
-		FROM
-		  (
+			INSERT INTO %[1]s (%[3]s)
 			SELECT
-			  *,
-			  ROW_NUMBER() OVER (
-				PARTITION BY %[5]s
-				ORDER BY
-				  received_at DESC
-			  ) AS _rudder_staging_row_number
+			  %[3]s
 			FROM
-			  %[1]q.%[4]q
-		  ) AS _
-		WHERE
-		  _rudder_staging_row_number = 1;`,
-		ms.namespace,
-		tableName,
+			  (
+				SELECT
+				  *,
+				  ROW_NUMBER() OVER (
+					PARTITION BY %[4]s
+					ORDER BY
+					  %[5]s DESC
+				  ) AS _rudder_staging_row_number
+				FROM
+				  %[2]s
+			  ) AS _
+			WHERE
+			  _rudder_staging_row_number = 1;`,
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, tableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, stagingTableName),
 		quotedColumnNames,
-		stagingTableName,
-		partitionKey,
+		warehouseutils.QuoteCommaSeparatedIdentifiers(partitionKey, warehouseutils.BracketQuoteIdentifier),
+		warehouseutils.BracketQuoteIdentifier("received_at"),
 	)
 
 	r, err := txn.ExecContext(ctx, insertStmt)
@@ -694,34 +706,43 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 		if colName == "id" {
 			continue
 		}
-		userColNames = append(userColNames, fmt.Sprintf(`%q`, colName))
+		quotedColumn := warehouseutils.BracketQuoteIdentifier(colName)
+		userColNames = append(userColNames, quotedColumn)
 		caseSubQuery := fmt.Sprintf(`case
-						  when (exists(select 1)) then (
-						  	select "%[1]s" from %[2]s
-						  	where x.id = %[2]s.id
-							  and "%[1]s" is not null
-							  order by received_at desc
-						  	OFFSET 0 ROWS
-							FETCH NEXT 1 ROWS ONLY)
-						  end as "%[1]s"`, colName, ms.namespace+"."+unionStagingTableName)
-
+							  when (exists(select 1)) then (
+								select %[1]s from %[2]s AS staging_table
+								where x.%[3]s = staging_table.%[3]s
+								  and %[1]s is not null
+								  order by %[4]s desc
+								OFFSET 0 ROWS
+								FETCH NEXT 1 ROWS ONLY)
+							  end as %[1]s`, quotedColumn, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, unionStagingTableName), warehouseutils.BracketQuoteIdentifier("id"), warehouseutils.BracketQuoteIdentifier("received_at"))
 		// IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortened to below
 		// https://docs.microsoft.com/en-us/sql/t-sql/functions/first-value-transact-sql?view=sql-server-ver15
-		// caseSubQuery := fmt.Sprintf(`FIRST_VALUE(%[1]s) IGNORE NULLS OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName)
+		// caseSubQuery := fmt.Sprintf(`FIRST_VALUE(%[1]s) IGNORE NULLS OVER (PARTITION BY %[2]s ORDER BY %[3]s DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, quotedColumn, warehouseutils.BracketQuoteIdentifier("id"), warehouseutils.BracketQuoteIdentifier("received_at"))
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
 
 	// TODO: skipped top level temporary table for now
-	sqlStatement := fmt.Sprintf(`SELECT * into %[5]s FROM
-												((
-													SELECT id, %[4]s FROM %[2]s WHERE id in (SELECT user_id FROM %[3]s WHERE user_id IS NOT NULL)
-												) UNION
-												(
-													SELECT user_id, %[4]s FROM %[3]s  WHERE user_id IS NOT NULL
-												)) a
-											`, ms.namespace, ms.namespace+"."+warehouseutils.UsersTable, ms.namespace+"."+identifyStagingTable, strings.Join(userColNames, ","), ms.namespace+"."+unionStagingTableName)
+	sqlStatement := fmt.Sprintf(`SELECT * into %[1]s FROM
+													((
+														SELECT %[5]s, %[3]s FROM %[2]s WHERE %[5]s in (SELECT %[6]s FROM %[4]s WHERE %[6]s IS NOT NULL)
+													) UNION
+													(
+														SELECT %[6]s, %[3]s FROM %[4]s WHERE %[6]s IS NOT NULL
+													)) a
+												`,
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, unionStagingTableName),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, warehouseutils.UsersTable),
+		strings.Join(userColNames, ","),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, identifyStagingTable),
+		warehouseutils.BracketQuoteIdentifier("id"),
+		warehouseutils.BracketQuoteIdentifier("user_id"),
+	)
 
-	ms.logger.Debugn("MSSQL: Creating staging table for union of users table with identify staging table", logger.NewStringField("statement", sqlStatement))
+	ms.logger.Debugn("MSSQL: Creating staging table for union of users table with identify staging table",
+		logger.NewStringField(logfield.Query, sqlStatement),
+	)
 	_, err = ms.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
@@ -729,21 +750,27 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 	}
 
 	sqlStatement = fmt.Sprintf(`SELECT * INTO %[1]s FROM (SELECT DISTINCT * FROM
-										(
-											SELECT
-											x.id, %[2]s
-											FROM %[3]s as x
-										) as xyz
-									) a`,
-		ms.namespace+"."+stagingTableName,
+											(
+												SELECT
+												x.%[4]s, %[2]s
+												FROM %[3]s as x
+											) as xyz
+										) a`,
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, stagingTableName),
 		strings.Join(firstValProps, ","),
-		ms.namespace+"."+unionStagingTableName,
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, unionStagingTableName),
+		warehouseutils.BracketQuoteIdentifier("id"),
 	)
 
-	ms.logger.Debugn("MSSQL: Creating staging table for users", logger.NewStringField("statement", sqlStatement))
+	ms.logger.Debugn("MSSQL: Creating staging table for users",
+		logger.NewStringField(logfield.Query, sqlStatement),
+	)
 	_, err = ms.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		ms.logger.Errorn("MSSQL: Error Creating staging table for users", logger.NewStringField("statement", sqlStatement))
+		ms.logger.Errorn("MSSQL: Error creating staging table for users",
+			logger.NewStringField(logfield.Query, sqlStatement),
+			obskit.Error(err),
+		)
 		errorMap[warehouseutils.UsersTable] = err
 		return errorMap
 	}
@@ -756,25 +783,40 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 	}
 
 	primaryKey := "id"
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" FROM %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, ms.namespace, warehouseutils.UsersTable, ms.namespace+"."+stagingTableName, primaryKey)
+	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s FROM %[2]s _source where (_source.%[3]s = %[1]s.%[3]s)`,
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, warehouseutils.UsersTable),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, stagingTableName),
+		warehouseutils.BracketQuoteIdentifier(primaryKey),
+	)
 	ms.logger.Infon("MSSQL: Dedup records for table using staging table",
-		logger.NewStringField("table", warehouseutils.UsersTable),
-		logger.NewStringField("statement", sqlStatement))
+		logger.NewStringField(logfield.TableName, warehouseutils.UsersTable),
+		logger.NewStringField(logfield.Query, sqlStatement),
+	)
 	_, err = tx.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		ms.logger.Errorn("MSSQL: Error deleting from main table for dedup", obskit.Error(err))
+		ms.logger.Errorn("MSSQL: Error deleting from main table for dedup",
+			obskit.Error(err),
+		)
 		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return errorMap
 	}
 
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, ms.namespace, warehouseutils.UsersTable, ms.namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
+	columnNames := strings.Join(append([]string{warehouseutils.BracketQuoteIdentifier("id")}, userColNames...), ",")
+	sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s (%[3]s) SELECT %[3]s FROM %[2]s`,
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, warehouseutils.UsersTable),
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, stagingTableName),
+		columnNames,
+	)
 	ms.logger.Infon("MSSQL: Inserting records for table using staging table",
-		logger.NewStringField("table", warehouseutils.UsersTable),
-		logger.NewStringField("statement", sqlStatement))
+		logger.NewStringField(logfield.TableName, warehouseutils.UsersTable),
+		logger.NewStringField(logfield.Query, sqlStatement),
+	)
 	_, err = tx.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		ms.logger.Errorn("MSSQL: Error inserting into users table from staging table", obskit.Error(err))
+		ms.logger.Errorn("MSSQL: Error inserting into users table from staging table",
+			obskit.Error(err),
+		)
 		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return errorMap
@@ -782,7 +824,9 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 
 	err = tx.Commit()
 	if err != nil {
-		ms.logger.Errorn("MSSQL: Error in transaction commit for users table", obskit.Error(err))
+		ms.logger.Errorn("MSSQL: Error in transaction commit for users table",
+			obskit.Error(err),
+		)
 		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return errorMap
@@ -791,8 +835,8 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 }
 
 func (ms *MSSQL) CreateSchema(ctx context.Context) (err error) {
-	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
-    EXEC('CREATE SCHEMA [%s]');`, ms.namespace, ms.namespace)
+	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT * FROM sys.schemas WHERE name = %s )
+    EXEC(%s);`, warehouseutils.UnicodeStringLiteral(ms.namespace), warehouseutils.SQLStringLiteral("CREATE SCHEMA "+warehouseutils.BracketQuoteIdentifier(ms.namespace)))
 	ms.logger.Infon("MSSQL: Creating schema name in mssql for MSSQL",
 		logger.NewStringField(logfield.DestinationID, ms.warehouse.Destination.ID),
 		logger.NewStringField("statement", sqlStatement))
@@ -806,37 +850,40 @@ func (ms *MSSQL) CreateSchema(ctx context.Context) (err error) {
 func (ms *MSSQL) dropStagingTable(ctx context.Context, stagingTableName string) {
 	ms.logger.Infon("MSSQL: dropping table",
 		logger.NewStringField("stagingTableName", stagingTableName))
-	_, err := ms.db.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ms.namespace+"."+stagingTableName))
+	_, err := ms.db.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, stagingTableName)))
 	if err != nil {
 		ms.logger.Errorn("MSSQL: Error dropping staging table in mssql",
-			logger.NewStringField("stagingTableName", ms.namespace+"."+stagingTableName),
+			logger.NewStringField("stagingTableName", warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, stagingTableName)),
 			obskit.Error(err))
 	}
 }
 
-func (ms *MSSQL) createTable(ctx context.Context, name string, columns model.TableSchema) (err error) {
-	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
-	CREATE TABLE %[1]s ( %v )`, name, ColumnsWithDataTypes(columns, ""))
+func (ms *MSSQL) createTable(ctx context.Context, tableName string, columns model.TableSchema) (err error) {
+	qualifiedTable := warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, tableName)
+	sqlStatement := fmt.Sprintf(`IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(%[1]s) AND type = N'U')
+		CREATE TABLE %[2]s ( %[3]v )`, warehouseutils.UnicodeStringLiteral(warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, tableName)), qualifiedTable, ColumnsWithDataTypes(columns, ""))
 
 	ms.logger.Infon("MSSQL: Creating table in mssql for MSSQL",
 		logger.NewStringField(logfield.DestinationID, ms.warehouse.Destination.ID),
-		logger.NewStringField("sqlStatement", sqlStatement))
+		logger.NewStringField("sqlStatement", sqlStatement),
+	)
 	_, err = ms.db.ExecContext(ctx, sqlStatement)
 	return err
 }
 
 func (ms *MSSQL) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
 	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
-	err = ms.createTable(ctx, ms.namespace+"."+tableName, columnMap)
+	err = ms.createTable(ctx, tableName, columnMap)
 	return err
 }
 
 func (ms *MSSQL) DropTable(ctx context.Context, tableName string) (err error) {
-	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
-	ms.logger.Infon("AZ: Dropping table in synapse for AZ",
+	sqlStatement := fmt.Sprintf(`DROP TABLE %s`, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, tableName))
+	ms.logger.Infon("MSSQL: Dropping table",
 		logger.NewStringField(logfield.DestinationID, ms.warehouse.Destination.ID),
-		logger.NewStringField("sqlStatement", sqlStatement))
-	_, err = ms.db.ExecContext(ctx, fmt.Sprintf(sqlStatement, ms.namespace, tableName))
+		logger.NewStringField(logfield.Query, sqlStatement),
+	)
+	_, err = ms.db.ExecContext(ctx, sqlStatement)
 	return err
 }
 
@@ -854,23 +901,23 @@ func (ms *MSSQL) AddColumns(ctx context.Context, tableName string, columnsInfo [
 			  FROM
 				SYS.COLUMNS
 			  WHERE
-				OBJECT_ID = OBJECT_ID(N'%[1]s.%[2]s')
-				AND name = '%[3]s'
+				OBJECT_ID = OBJECT_ID(%[1]s)
+				AND name = %[2]s
 			)`,
-			ms.namespace,
-			tableName,
-			columnsInfo[0].Name)
+			warehouseutils.UnicodeStringLiteral(warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, tableName)),
+			warehouseutils.UnicodeStringLiteral(columnsInfo[0].Name),
+		)
 	}
 
 	fmt.Fprintf(&queryBuilder, `
 		ALTER TABLE
-		  %s.%s
+		  %s
 		ADD`,
-		ms.namespace,
-		tableName)
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, tableName),
+	)
 
 	for _, columnInfo := range columnsInfo {
-		fmt.Fprintf(&queryBuilder, ` %q %s,`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type])
+		fmt.Fprintf(&queryBuilder, ` %s %s,`, warehouseutils.BracketQuoteIdentifier(columnInfo.Name), rudderDataTypesMapToMssql[columnInfo.Type])
 	}
 
 	query = strings.TrimSuffix(queryBuilder.String(), ",")
@@ -879,7 +926,8 @@ func (ms *MSSQL) AddColumns(ctx context.Context, tableName string, columnsInfo [
 	ms.logger.Infon("MSSQL: Adding columns",
 		logger.NewStringField(logfield.DestinationID, ms.warehouse.Destination.ID),
 		logger.NewStringField("tableName", tableName),
-		logger.NewStringField("query", query))
+		logger.NewStringField("query", query),
+	)
 	_, err = ms.db.ExecContext(ctx, query)
 	return err
 }
@@ -920,11 +968,11 @@ func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) error {
 		from
 		  information_schema.tables
 		where
-		  table_schema = '%s'
-		  AND table_name like '%s';
+		  table_schema = %s
+		  AND table_name like %s;
 	`,
-		ms.namespace,
-		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
+		warehouseutils.SQLStringLiteral(ms.namespace),
+		warehouseutils.SQLStringLiteral(fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider))),
 	)
 	rows, err := ms.db.QueryContext(ctx, sqlStatement)
 	if err != nil {
@@ -948,7 +996,7 @@ func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) error {
 		logger.NewIntField("count", int64(len(stagingTableNames))),
 		logger.NewStringField("stagingTableNames", fmt.Sprintf("%+v", stagingTableNames)))
 	for _, stagingTableName := range stagingTableNames {
-		_, err := ms.db.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ms.namespace, stagingTableName))
+		_, err := ms.db.ExecContext(ctx, fmt.Sprintf(`DROP TABLE %s`, warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, stagingTableName)))
 		if err != nil {
 			return fmt.Errorf("dropping dangling staging tables %q.%q : %w", ms.namespace, stagingTableName, err)
 		}
@@ -1069,11 +1117,10 @@ func (ms *MSSQL) Connect(_ context.Context, warehouse model.Warehouse) (client.C
 }
 
 func (ms *MSSQL) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]any, _ string) (err error) {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
-		ms.namespace,
-		tableName,
-		fmt.Sprintf(`%q, %q`, "id", "val"),
-		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (%v) VALUES (%s)`,
+		warehouseutils.QuoteQualifiedIdentifier(warehouseutils.BracketQuoteIdentifier, ms.namespace, tableName),
+		fmt.Sprintf(`%s, %s`, warehouseutils.BracketQuoteIdentifier("id"), warehouseutils.BracketQuoteIdentifier("val")),
+		fmt.Sprintf(`%s, %s`, warehouseutils.SQLStringLiteral(fmt.Sprint(payloadMap["id"])), warehouseutils.SQLStringLiteral(fmt.Sprint(payloadMap["val"]))),
 	)
 	_, err = ms.db.ExecContext(ctx, sqlStatement)
 	return err
