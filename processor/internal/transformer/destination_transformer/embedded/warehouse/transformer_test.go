@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/response"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/testhelper"
 	"github.com/rudderlabs/rudder-server/processor/types"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestTransformer(t *testing.T) {
@@ -663,6 +664,102 @@ func TestTransformer(t *testing.T) {
 			legacyResponse := processorTransformer.Transform(ctx, events)
 			embeddedResponse := warehouseTransformer.Transform(ctx, events)
 			testhelper.ValidateExpectedEvents(t, tc.expectedResponse, embeddedResponse, legacyResponse)
+		})
+	}
+}
+
+func TestDatalakeJSONPathsDestConfig(t *testing.T) {
+	const expectedLocationJSON = `{"city":"Palo Alto","coordinates":{"geo":{"accuracy":5,"altitude":30.5,"details":{"accuracyUnits":"meters","altitudeUnits":"meters"}},"latitude":37.4419,"longitude":-122.143},"country":"USA","state":"California"}`
+
+	for _, destinationType := range []string{whutils.S3Datalake, whutils.AzureDatalake} {
+		t.Run(destinationType, func(t *testing.T) {
+			warehouseTransformer := warehouse.New(config.New(), logger.NOP, stats.NOP)
+			events := []types.TransformerEvent{
+				{
+					Message: types.SingularEventT{
+						"type":              "track",
+						"messageId":         "messageId",
+						"anonymousId":       "anonymousId",
+						"userId":            "userId",
+						"sentAt":            "2021-09-01T00:00:00.000Z",
+						"timestamp":         "2021-09-01T00:00:00.000Z",
+						"receivedAt":        "2021-09-01T00:00:00.000Z",
+						"originalTimestamp": "2021-09-01T00:00:00.000Z",
+						"channel":           "web",
+						"event":             "event",
+						"request_ip":        "5.6.7.8",
+						"properties": map[string]any{
+							"review_id":  "86ac1cd43",
+							"product_id": "9578257311",
+							"location": map[string]any{
+								"city":    "Palo Alto",
+								"state":   "California",
+								"country": "USA",
+								"coordinates": map[string]any{
+									"latitude":  37.4419,
+									"longitude": -122.143,
+									"geo": map[string]any{
+										"altitude": 30.5,
+										"accuracy": 5,
+										"details": map[string]any{
+											"altitudeUnits": "meters",
+											"accuracyUnits": "meters",
+										},
+									},
+								},
+							},
+						},
+						"userProperties": map[string]any{
+							"rating":      3.0,
+							"review_body": "OK for the price. It works but the material feels flimsy.",
+						},
+						"context": map[string]any{
+							"traits": map[string]any{
+								"name":   "Richard Hendricks",
+								"email":  "rhedricks@example.com",
+								"logins": 2,
+							},
+							"ip": "1.2.3.4",
+						},
+					},
+					Metadata:    getTrackMetadata(destinationType, "webhook"),
+					Destination: getDestination(destinationType, map[string]any{"jsonPaths": "track.properties.location"}),
+				},
+			}
+
+			response := warehouseTransformer.Transform(context.Background(), events)
+
+			require.Empty(t, response.FailedEvents)
+			require.Len(t, response.Events, 2)
+			var eventTable map[string]any
+			for _, event := range response.Events {
+				outputMetadata := event.Output["metadata"].(map[string]any)
+				if outputMetadata["table"] == "event" {
+					eventTable = event.Output
+				}
+				require.Equal(t, destinationType, event.Metadata.DestinationType)
+			}
+			require.NotNil(t, eventTable)
+
+			data := eventTable["data"].(map[string]any)
+			columns := eventTable["metadata"].(map[string]any)["columns"].(map[string]any)
+
+			require.JSONEq(t, expectedLocationJSON, data["location"].(string))
+			require.Equal(t, "string", columns["location"])
+			for _, flattenedKey := range []string{
+				"location_city",
+				"location_state",
+				"location_country",
+				"location_coordinates_latitude",
+				"location_coordinates_longitude",
+				"location_coordinates_geo_altitude",
+				"location_coordinates_geo_accuracy",
+				"location_coordinates_geo_details_altitude_units",
+				"location_coordinates_geo_details_accuracy_units",
+			} {
+				require.NotContains(t, data, flattenedKey)
+				require.NotContains(t, columns, flattenedKey)
+			}
 		})
 	}
 }

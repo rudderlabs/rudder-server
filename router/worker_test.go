@@ -365,10 +365,10 @@ var _ = Describe("Proxy Request", func() {
 		It("should return responses transformer.ProxyRequest returned for every job on transformer.ProxyRequest's 200", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
 				netHandle: mockNetHandle,
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).
@@ -468,10 +468,10 @@ var _ = Describe("Proxy Request", func() {
 		It("should return responses transformer.ProxyRequest returned for every job on transformer.ProxyRequest's non 200 and authType is not OAuth", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			router := &Handle{
+			router := c.TrackRouter(&Handle{
 				Reporting: &reporting.NOOP{},
 				netHandle: mockNetHandle,
-			}
+			})
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).
