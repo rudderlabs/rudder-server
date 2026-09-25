@@ -114,7 +114,7 @@ jobs:
     strategy:
       matrix:
         build-config:
-          - os: [ self-hosted, Linux, ARM64, ubuntu-22 ]
+          - os: arc-arm64
             tags: ${{ needs.docker-meta.outputs.arm64_tags }}
             labels: ${{ needs.docker-meta.outputs.arm64_labels }}
             platform: linux/arm64
