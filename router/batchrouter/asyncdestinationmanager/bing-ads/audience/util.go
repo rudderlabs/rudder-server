@@ -245,37 +245,37 @@ func unzip(zipFile, targetDir string) ([]string, error) {
 	defer r.Close()
 
 	for _, f := range r.File {
-		// Open each file in the zip archive
-		rc, err := f.Open()
-		if err != nil {
-			return nil, err
-		}
-		defer rc.Close()
-
-		// Create the corresponding file in the target directory
 		path := filepath.Join(targetDir, f.Name)
 		if f.FileInfo().IsDir() {
-			// Create directories if the file is a directory
-			err = os.MkdirAll(path, f.Mode())
-			if err != nil {
+			if err := os.MkdirAll(path, f.Mode()); err != nil {
 				return nil, err
 			}
-		} else {
-			// Create the file and copy the contents
+			continue
+		}
+
+		// Wrap extraction in a closure so deferred file descriptor closures
+		// execute per iteration rather than lingering until unzip returns.
+		err := func() error {
+			rc, err := f.Open()
+			if err != nil {
+				return err
+			}
+			defer rc.Close()
+
 			file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
 			if err != nil {
-				return nil, err
+				return err
 			}
 			defer file.Close()
 
 			_, err = io.Copy(file, rc)
-			if err != nil {
-				return nil, err
-			}
-
-			// Append the file path to the list
-			filePaths = append(filePaths, path)
+			return err
+		}()
+		if err != nil {
+			return nil, err
 		}
+
+		filePaths = append(filePaths, path)
 	}
 
 	return filePaths, nil
