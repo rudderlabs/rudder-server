@@ -26,6 +26,7 @@ var (
 	SSLModeSetting                     DestinationConfigSetting = destConfSetting("sslMode")
 	ProjectSetting                     DestinationConfigSetting = destConfSetting("project")
 	CredentialsSetting                 DestinationConfigSetting = destConfSetting("credentials")
+	NamespaceSetting                   DestinationConfigSetting = destConfSetting("namespace")
 	LocationSetting                    DestinationConfigSetting = destConfSetting("location")
 	CACertificateSetting               DestinationConfigSetting = destConfSetting("caCertificate")
 	ClusterSetting                     DestinationConfigSetting = destConfSetting("cluster")
