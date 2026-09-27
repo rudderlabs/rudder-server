@@ -7767,3 +7767,90 @@ func availableIDs(available []backendconfig.DestinationT) []string {
 		return d.ID
 	})
 }
+
+func TestEventSchemasV2DisabledSourceIDs(t *testing.T) {
+	initProcessor()
+
+	job := func(jobID int64, sourceID, messageID string) *jobsdb.JobT {
+		return &jobsdb.JobT{
+			UUID:      uuid.New(),
+			JobID:     jobID,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabled,
+				"2001-01-02T02:23:45.000Z",
+				[]mockEventData{{id: messageID, originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}},
+				createMessagePayloadWithoutSources,
+			),
+			EventCount:  1,
+			Parameters:  createBatchParameters(sourceID),
+			WorkspaceId: sampleWorkspaceID,
+		}
+	}
+
+	run := func(t *testing.T, disabledSourceIDs []string, jobs []*jobsdb.JobT) (schemaJobs []*jobsdb.JobT) {
+		t.Helper()
+		c := &testContext{}
+		c.Setup(t)
+		defer c.Finish()
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
+
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		require.NoError(t, err)
+
+		conf := config.New()
+		for _, sourceID := range disabledSourceIDs {
+			conf.Set("EventSchemas2."+sourceID+".enabled", false)
+		}
+		processor := NewHandle(conf, transformer.NewSimpleClients())
+		processor.isolationStrategy = isolationStrategy
+		processor.config.archivalEnabled = config.SingleValueLoader(false)
+		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+		processor.config.eventSchemaV2Enabled = true
+		Setup(processor, c, false, false, t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+
+		c.mockEventSchemasDB.EXPECT().
+			WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().
+			Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+		c.mockEventSchemasDB.EXPECT().
+			StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().
+			Do(func(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
+				schemaJobs = append(schemaJobs, jobs...)
+			})
+
+		srcHydrationMsg, err := processor.preprocessStage("", subJob{ctx: ctx, subJobs: jobs}, 0)
+		require.NoError(t, err)
+		preTransMsg, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
+		_, err = processor.pretransformStage("", preTransMsg)
+		require.NoError(t, err)
+		return schemaJobs
+	}
+
+	t.Run("no disabled sources", func(t *testing.T) {
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "1"), job(2, SourceIDEnabledNoUT, "2")}
+		schemaJobs := run(t, nil, jobs)
+		require.ElementsMatch(t, []uuid.UUID{jobs[0].UUID, jobs[1].UUID}, lo.Map(schemaJobs, func(j *jobsdb.JobT, _ int) uuid.UUID { return j.UUID }))
+	})
+
+	t.Run("one disabled source", func(t *testing.T) {
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "1"), job(2, SourceIDEnabledNoUT, "2")}
+		schemaJobs := run(t, []string{SourceIDEnabledNoUT}, jobs)
+		require.Len(t, schemaJobs, 1)
+		require.Equal(t, jobs[0].UUID, schemaJobs[0].UUID)
+	})
+
+	t.Run("all sources disabled", func(t *testing.T) {
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "1"), job(2, SourceIDEnabledNoUT, "2")}
+		schemaJobs := run(t, []string{SourceIDEnabled, SourceIDEnabledNoUT}, jobs)
+		require.Empty(t, schemaJobs)
+	})
+}

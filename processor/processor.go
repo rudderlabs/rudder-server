@@ -188,6 +188,8 @@ type Handle struct {
 		GWCustomVal                               string
 		asyncInit                                 *misc.AsyncInit
 		eventSchemaV2Enabled                      bool
+		eventSchemaV2SourceEnabledMu              sync.RWMutex
+		eventSchemaV2SourceEnabled                map[string]config.ValueLoader[bool] // sourceID -> EventSchemas2.<sourceID>.enabled
 		archivalEnabled                           config.ValueLoader[bool]
 		eventAuditEnabled                         map[string]bool
 		credentialsMap                            map[string][]types.Credential
@@ -2188,6 +2190,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 
 		sourceIsTransient := proc.transientSources.Apply(sourceId)
 		if proc.config.eventSchemaV2Enabled && // schemas enabled
+			proc.eventSchemaV2EnabledForSource(sourceId) &&
 			proc.eventAuditEnabled(event.workspaceID) &&
 			// TODO: could use source.SourceDefinition.Category instead?
 			singularEventMetadata.SourceJobRunID == "" &&
@@ -2729,6 +2732,26 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		trackedUsersReports:          trackedUsersReports,
 		activationRecordsReports:     activationRecordsReports,
 	}, nil
+}
+
+// eventSchemaV2EnabledForSource returns the value of the reloadable EventSchemas2.<sourceID>.enabled config (default true),
+// which can be used for turning off event schemas v2 for individual sources.
+func (proc *Handle) eventSchemaV2EnabledForSource(sourceID string) bool {
+	proc.config.eventSchemaV2SourceEnabledMu.RLock()
+	enabled, ok := proc.config.eventSchemaV2SourceEnabled[sourceID]
+	proc.config.eventSchemaV2SourceEnabledMu.RUnlock()
+	if !ok {
+		proc.config.eventSchemaV2SourceEnabledMu.Lock()
+		if enabled, ok = proc.config.eventSchemaV2SourceEnabled[sourceID]; !ok {
+			if proc.config.eventSchemaV2SourceEnabled == nil {
+				proc.config.eventSchemaV2SourceEnabled = make(map[string]config.ValueLoader[bool])
+			}
+			enabled = proc.conf.GetReloadableBoolVar(true, "EventSchemas2."+sourceID+".enabled")
+			proc.config.eventSchemaV2SourceEnabled[sourceID] = enabled
+		}
+		proc.config.eventSchemaV2SourceEnabledMu.Unlock()
+	}
+	return enabled.Load()
 }
 
 func (proc *Handle) storeEventSchemaJobs(ctx context.Context, eventSchemaJobs []*jobsdb.JobT) error {
