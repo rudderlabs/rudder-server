@@ -55,6 +55,14 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 		"string":   parquetString,
 		"datetime": parquetTimestampMicros,
 	},
+	warehouseutils.MicrosoftFabric: {
+		"int":      parquetInt64,
+		"boolean":  parquetBoolean,
+		"float":    parquetDouble,
+		"string":   parquetString,
+		"json":     parquetString,
+		"datetime": parquetTimestampMicros,
+	},
 	warehouseutils.DELTALAKE: {
 		"int":      parquetInt64,
 		"boolean":  parquetBoolean,

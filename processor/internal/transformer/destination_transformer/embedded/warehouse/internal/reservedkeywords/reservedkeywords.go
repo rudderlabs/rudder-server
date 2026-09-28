@@ -33,6 +33,11 @@ func init() {
 	// SnowpipeStreaming has the same reserved keywords as SNOWFLAKE, so we can use the same map
 	reservedTablesColumns[whutils.SnowpipeStreaming] = reservedTablesColumns[whutils.SNOWFLAKE]
 	reservedNamespaces[whutils.SnowpipeStreaming] = reservedNamespaces[whutils.SNOWFLAKE]
+
+	// Fabric Warehouse uses the T-SQL reserved-word surface. Clone the maps so
+	// future Fabric-specific changes cannot mutate the MSSQL entries.
+	reservedTablesColumns[whutils.MicrosoftFabric] = lo.Assign(map[string]struct{}{}, reservedTablesColumns[whutils.MSSQL])
+	reservedNamespaces[whutils.MicrosoftFabric] = lo.Assign(map[string]struct{}{}, reservedNamespaces[whutils.MSSQL])
 }
 
 func load(file embed.FS, fileName string) map[string]map[string]struct{} {

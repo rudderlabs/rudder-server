@@ -41,6 +41,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/filemanagerresolver"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -703,6 +704,13 @@ func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *pr
 	}
 
 	switch request.Type {
+	case warehouseutils.MicrosoftFabric:
+		for _, key := range []string{"host", "fabricWorkspaceId", "lakehouseId", "tenantId", "clientId", "clientSecret"} {
+			if !checkMapForValidKey(validateRequest.Config, key) {
+				err = fmt.Errorf("%s invalid or not present", key)
+				break
+			}
+		}
 	case warehouseutils.AzureBlob:
 		if !checkMapForValidKey(validateRequest.Config, "containerName") {
 			err = errors.New("containerName invalid or not present")
@@ -756,7 +764,7 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 
 	overrideWithEnv(ctx, settings)
 
-	fileManager, err := g.fileManagerFactory(settings)
+	fileManager, err := filemanagerresolver.New(request.Type, request.Config, settings, g.fileManagerFactory)
 	if err != nil {
 		return fmt.Errorf("unable to create file manager: \n%s", err.Error())
 	}

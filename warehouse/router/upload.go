@@ -32,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/filemanagerresolver"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -499,7 +500,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	log := job.logger.Withn(logger.NewStringField("storageProvider", storageProvider))
 	log.Infon("Starting object storage cleanup")
 
-	fm, err := job.fileManagerFactory(&filemanager.Settings{
+	settings := &filemanager.Settings{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         storageProvider,
@@ -508,7 +509,8 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 			WorkspaceID:      job.upload.WorkspaceID,
 		}),
 		Conf: job.conf,
-	})
+	}
+	fm, err := filemanagerresolver.New(destination.DestinationDefinition.Name, destination.Config, settings, job.fileManagerFactory)
 	if err != nil {
 		return fmt.Errorf("creating file manager: %w", err)
 	}
@@ -516,10 +518,14 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	filesToDel := lo.Map(job.stagingFiles, func(file *model.StagingFile, _ int) string {
 		return fm.GetDownloadKeyFromFileLocation(file.Location)
 	})
-	log.Infon("Found staging files to delete",
-		logger.NewIntField("stagingFileCount", int64(len(filesToDel))),
-		logger.NewStringField("stagingFiles", strings.Join(filesToDel, ",")),
-	)
+	if destination.DestinationDefinition.Name == whutils.MicrosoftFabric {
+		log.Infon("Found staging files to delete", logger.NewIntField("stagingFileCount", int64(len(filesToDel))))
+	} else {
+		log.Infon("Found staging files to delete",
+			logger.NewIntField("stagingFileCount", int64(len(filesToDel))),
+			logger.NewStringField("stagingFiles", strings.Join(filesToDel, ",")),
+		)
+	}
 
 	if !whutils.IsDatalakeDestination(destination.DestinationDefinition.Name) {
 		loadingFiles, err := job.loadFilesRepo.Get(job.ctx, job.upload.ID)

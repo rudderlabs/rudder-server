@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/filemanagerresolver"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -484,7 +485,7 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 		provider = warehouseutils.ObjectStorageType(destType, conf, misc.IsConfiguredToUseRudderObjectStorage(conf))
 	)
 
-	fileManager, err := fileManagerFactory(&filemanager.Settings{
+	settings := &filemanager.Settings{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         provider,
@@ -493,7 +494,8 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 			WorkspaceID:      dest.WorkspaceID,
 		}),
 		Conf: config.Default,
-	})
+	}
+	fileManager, err := filemanagerresolver.New(destType, conf, settings, fileManagerFactory)
 	if err != nil {
 		return nil, fmt.Errorf("creating file manager: %w", err)
 	}
