@@ -7429,6 +7429,403 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	})
 }
 
+// TestSourceSucceededReporting covers the source_succeeded rows emitted in pretransformStage:
+// one succeeded row per event that reaches the destination fan-out, gated by
+// Reporting.sourceSucceededMetrics.enabled.
+func TestSourceSucceededReporting(t *testing.T) {
+	sourceSucceededRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.SOURCE_SUCCEEDED
+		})
+	}
+	sumCount := func(rows []*reportingtypes.PUReportedMetric) int64 {
+		var total int64
+		for _, r := range rows {
+			total += r.StatusDetail.Count
+		}
+		return total
+	}
+
+	// createSuppressionParameters builds raw job parameters carrying the is_user_suppressed flag.
+	createSuppressionParameters := func(sourceID string) []byte {
+		return fmt.Appendf(nil, `{"source_id":%q,"is_user_suppressed":true}`, sourceID)
+	}
+
+	type sourceSucceededProcessorOpts struct {
+		enableDedup     bool
+		enableReporting bool
+		dedupAllowedFn  func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error)
+	}
+
+	// newSourceSucceededProcessor returns a Handle with reporting and, optionally, dedup wired up,
+	// the config it reads the reloadable flag from, and the transformer clients so a case can
+	// attach a tracking-plan validator.
+	newSourceSucceededProcessor := func(t *testing.T, opts sourceSucceededProcessorOpts) (*Handle, *config.Config, *testContext, *transformer.SimpleClients) {
+		t.Helper()
+		conf := config.New()
+		c := &testContext{}
+		c.Setup(t)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
+
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		require.NoError(t, err)
+
+		transformerClients := transformer.NewSimpleClients()
+		processor := NewHandle(conf, transformerClients)
+		processor.isolationStrategy = isolationStrategy
+		processor.config.archivalEnabled = config.SingleValueLoader(false)
+		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+
+		Setup(processor, c, opts.enableDedup, opts.enableReporting, t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+
+		if opts.enableDedup {
+			processor.dedup = c.MockDedup
+			allowedFn := opts.dedupAllowedFn
+			if allowedFn == nil {
+				allowedFn = func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+					allowed := make(map[dedup.BatchKey]bool, len(keys))
+					for _, k := range keys {
+						allowed[k] = true
+					}
+					return allowed, nil
+				}
+			}
+			c.MockDedup.EXPECT().Allowed(gomock.Any()).DoAndReturn(allowedFn).AnyTimes()
+		}
+
+		return processor, conf, c, transformerClients
+	}
+
+	// runSourceSucceededPipeline drives preprocessStage -> srcHydrationStage -> pretransformStage.
+	runSourceSucceededPipeline := func(t *testing.T, processor *Handle, jobs []*jobsdb.JobT) *transformationMessage {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		srcHydrationMsg, err := processor.preprocessStage("", subJob{ctx: ctx, subJobs: jobs}, 0)
+		require.NoError(t, err)
+
+		preTransMsg, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
+
+		transMsg, err := processor.pretransformStage("", preTransMsg)
+		require.NoError(t, err)
+		return transMsg
+	}
+
+	// defaultPayload renders a singular event with no "integrations" key. A present-but-null
+	// "integrations" value (which createMessagePayloadWithoutSources produces) makes
+	// FilterClientIntegrations return zero destinations, and the event is then dropped at
+	// preprocess before it reaches pretransformStage.
+	defaultPayload := func(e mockEventData) string {
+		return fmt.Sprintf(
+			`{"rudderId":"some-rudder-id","messageId":"message-%s","some-property":"property-%s",`+
+				`"originalTimestamp":%q,"sentAt":%q,"context":{}}`,
+			e.id, e.id, e.originalTimestamp, e.sentAt,
+		)
+	}
+
+	// optOutPayload opts every destination out via "integrations":{"All":false}.
+	optOutPayload := func(e mockEventData) string {
+		return fmt.Sprintf(
+			`{"rudderId":"some-rudder-id","messageId":"message-%s","some-property":"property-%s",`+
+				`"originalTimestamp":%q,"sentAt":%q,"integrations":{"All":false},"context":{}}`,
+			e.id, e.id, e.originalTimestamp, e.sentAt,
+		)
+	}
+
+	// job builds one gateway job for sourceID carrying the given events, rendered with
+	// eventCreator (defaultPayload when nil).
+	job := func(jobID int64, params []byte, events []mockEventData, eventCreator func(mockEventData) string) *jobsdb.JobT {
+		if eventCreator == nil {
+			eventCreator = defaultPayload
+		}
+		return &jobsdb.JobT{
+			UUID:      uuid.New(),
+			JobID:     jobID,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabled,
+				"2001-01-02T02:23:45.000Z",
+				events,
+				eventCreator,
+			),
+			EventCount: len(events),
+			Parameters: params,
+		}
+	}
+
+	// payloadWithType renders a singular event whose type comes from e.params["type"]
+	// (default "track").
+	payloadWithType := func(e mockEventData) string {
+		eventType := e.params["type"]
+		if eventType == "" {
+			eventType = "track"
+		}
+		return fmt.Sprintf(
+			`{"rudderId":"some-rudder-id","messageId":"message-%s","some-property":"property-%s",`+
+				`"originalTimestamp":%q,"sentAt":%q,"type":%q,"context":{}}`,
+			e.id, e.id, e.originalTimestamp, e.sentAt, eventType,
+		)
+	}
+
+	oneEvent := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+
+	t.Run("should emit exactly one source_succeeded succeeded/200 row per event with empty destinationId and empty inPU when the flag is on", func(t *testing.T) {
+		processor, conf, c, _ := newSourceSucceededProcessor(t, sourceSucceededProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceSucceededMetrics.enabled", true)
+
+		jobs := []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabled), oneEvent, nil)}
+		transMsg := runSourceSucceededPipeline(t, processor, jobs)
+
+		rows := sourceSucceededRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		row := rows[0]
+		require.Equal(t, reportingtypes.SOURCE_SUCCEEDED, row.PU)
+		require.Equal(t, "", row.InPU)
+		require.False(t, row.TerminalPU)
+		require.False(t, row.InitialPU)
+		require.Equal(t, "", row.DestinationID)
+		require.Equal(t, jobsdb.Succeeded.State, row.StatusDetail.Status)
+		require.Equal(t, reportingtypes.SuccessEventCode, row.StatusDetail.StatusCode)
+		require.EqualValues(t, 1, row.StatusDetail.Count)
+		require.Equal(t, SourceIDEnabled, row.SourceID)
+		require.Nil(t, row.StatusDetail.SampleEvent)
+	})
+
+	t.Run("should emit one row per event and not one per destination for a source with three enabled destinations", func(t *testing.T) {
+		// SourceIDEnabled fans out to three enabled destinations; the row is per event, so a
+		// per-destination emission would show up here as a count of 3.
+		processor, conf, c, _ := newSourceSucceededProcessor(t, sourceSucceededProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceSucceededMetrics.enabled", true)
+
+		jobs := []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabled), oneEvent, nil)}
+		transMsg := runSourceSucceededPipeline(t, processor, jobs)
+
+		rows := sourceSucceededRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1, "one row per event, not one per destination")
+		require.EqualValues(t, 1, sumCount(rows))
+	})
+
+	t.Run("should emit no source_succeeded row when the flag is off, and produce identical reportMetrics across two such runs", func(t *testing.T) {
+		// The flag defaults to false and is never set here.
+		buildJobs := func() []*jobsdb.JobT {
+			return []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabled), oneEvent, nil)}
+		}
+
+		processor1, _, c1, _ := newSourceSucceededProcessor(t, sourceSucceededProcessorOpts{enableReporting: true})
+		defer c1.Finish()
+		run1 := runSourceSucceededPipeline(t, processor1, buildJobs())
+
+		processor2, _, c2, _ := newSourceSucceededProcessor(t, sourceSucceededProcessorOpts{enableReporting: true})
+		defer c2.Finish()
+		run2 := runSourceSucceededPipeline(t, processor2, buildJobs())
+
+		require.Empty(t, sourceSucceededRows(run1.reportMetrics))
+		require.Equal(t, run1.reportMetrics, run2.reportMetrics)
+	})
+
+	t.Run("should emit no source_succeeded row when reporting is disabled but the flag is on", func(t *testing.T) {
+		processor, conf, c, _ := newSourceSucceededProcessor(t, sourceSucceededProcessorOpts{enableReporting: false})
+		defer c.Finish()
+		conf.Set("Reporting.sourceSucceededMetrics.enabled", true)
+
+		jobs := []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabled), oneEvent, nil)}
+		transMsg := runSourceSucceededPipeline(t, processor, jobs)
+
+		require.Empty(t, sourceSucceededRows(transMsg.reportMetrics))
+	})
+
+	t.Run("should start emitting rows when the flag is flipped on between two runs of the same Handle", func(t *testing.T) {
+		processor, conf, c, _ := newSourceSucceededProcessor(t, sourceSucceededProcessorOpts{enableReporting: true})
+		defer c.Finish()
+
+		run1 := runSourceSucceededPipeline(t, processor, []*jobsdb.JobT{
+			job(1, createBatchParameters(SourceIDEnabled), oneEvent, nil),
+		})
+		require.Empty(t, sourceSucceededRows(run1.reportMetrics), "flag defaults to off, no restart yet")
+
+		conf.Set("Reporting.sourceSucceededMetrics.enabled", true)
+
+		run2 := runSourceSucceededPipeline(t, processor, []*jobsdb.JobT{
+			job(2, createBatchParameters(SourceIDEnabled), oneEvent, nil),
+		})
+		rows := sourceSucceededRows(run2.reportMetrics)
+		require.Len(t, rows, 1, "the reloadable flag flips without restarting the handle")
+	})
+
+	t.Run("should aggregate events of the same name and type from one source into a single row and split rows by event type", func(t *testing.T) {
+		processor, conf, c, _ := newSourceSucceededProcessor(t, sourceSucceededProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceSucceededMetrics.enabled", true)
+
+		trackEvents := []mockEventData{
+			{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "track"}},
+			{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "track"}},
+			{id: "3", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "track"}},
+		}
+		identifyEvents := []mockEventData{
+			{id: "4", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "identify"}},
+			{id: "5", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "identify"}},
+		}
+		jobs := []*jobsdb.JobT{
+			job(1, createBatchParameters(SourceIDEnabled), append(trackEvents, identifyEvents...), payloadWithType),
+		}
+		transMsg := runSourceSucceededPipeline(t, processor, jobs)
+
+		rows := sourceSucceededRows(transMsg.reportMetrics)
+		require.Len(t, rows, 2, "one row per distinct event type")
+
+		byType := lo.SliceToMap(rows, func(r *reportingtypes.PUReportedMetric) (string, int64) {
+			return r.StatusDetail.EventType, r.StatusDetail.Count
+		})
+		require.EqualValues(t, 3, byType["track"])
+		require.EqualValues(t, 2, byType["identify"])
+	})
+
+	t.Run("should emit one row per source for a batch spanning two sources", func(t *testing.T) {
+		processor, conf, c, _ := newSourceSucceededProcessor(t, sourceSucceededProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceSucceededMetrics.enabled", true)
+
+		event1 := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		event2 := []mockEventData{{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		jobs := []*jobsdb.JobT{
+			job(1, createBatchParameters(SourceIDEnabled), event1, nil),
+			job(2, createBatchParameters(SourceIDEnabledNoUT), event2, nil),
+		}
+		transMsg := runSourceSucceededPipeline(t, processor, jobs)
+
+		rows := sourceSucceededRows(transMsg.reportMetrics)
+		require.Len(t, rows, 2, "a batch spanning two sources must not collapse into one row")
+		ids := lo.Map(rows, func(r *reportingtypes.PUReportedMetric, _ int) string { return r.SourceID })
+		require.ElementsMatch(t, []string{SourceIDEnabled, SourceIDEnabledNoUT}, ids)
+		for _, r := range rows {
+			require.EqualValues(t, 1, r.StatusDetail.Count)
+		}
+	})
+
+	t.Run("should emit a row for an event whose candidate destination set is empty at fan-out", func(t *testing.T) {
+		// With every destination opted out, the candidate set is empty at classifyDestinations;
+		// the row must still be emitted.
+		processor, conf, c, _ := newSourceSucceededProcessor(t, sourceSucceededProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceSucceededMetrics.enabled", true)
+		conf.Set("Processor.earlyDestinationFilter", false)
+
+		allDestOptOut := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		jobs := []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabled), allDestOptOut, optOutPayload)}
+		transMsg := runSourceSucceededPipeline(t, processor, jobs)
+
+		rows := sourceSucceededRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1)
+		require.EqualValues(t, 1, rows[0].StatusDetail.Count)
+	})
+
+	t.Run("should emit no row for events dropped by tracking plan validation while still emitting rows for the survivors in the same batch", func(t *testing.T) {
+		// validateEvents runs before the fan-out loop, so tracking-plan drops never reach the
+		// emission site.
+		processor, conf, c, transformerClients := newSourceSucceededProcessor(t, sourceSucceededProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceSucceededMetrics.enabled", true)
+
+		dropOneKeepOne := func(_ context.Context, events []types.TransformerEvent) types.Response {
+			var resp types.Response
+			for _, e := range events {
+				if e.Metadata.MessageID == "message-drop" {
+					resp.FailedEvents = append(resp.FailedEvents, types.TransformerResponse{
+						Output:     e.Message,
+						Metadata:   e.Metadata,
+						StatusCode: reportingtypes.FilterEventCode,
+						Error:      "dropped by tracking plan",
+					})
+					continue
+				}
+				resp.Events = append(resp.Events, types.TransformerResponse{Output: e.Message, Metadata: e.Metadata})
+			}
+			return resp
+		}
+		transformerClients.WithDynamicTrackingPlanValidate(dropOneKeepOne)
+
+		events := []mockEventData{
+			{id: "drop", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+			{id: "keep", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+		}
+		jobs := []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabledTp), events, nil)}
+		transMsg := runSourceSucceededPipeline(t, processor, jobs)
+
+		rows := sourceSucceededRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1, "the tracking-plan-dropped event must not reach the fan-out loop")
+		require.EqualValues(t, 1, rows[0].StatusDetail.Count)
+	})
+
+	t.Run("should emit rows for a source with a tracking plan and for a source with neither tracking plan nor hydration", func(t *testing.T) {
+		processor, conf, c, transformerClients := newSourceSucceededProcessor(t, sourceSucceededProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceSucceededMetrics.enabled", true)
+		transformerClients.WithDynamicTrackingPlanValidate(func(_ context.Context, events []types.TransformerEvent) types.Response {
+			return types.Response{
+				Events: lo.Map(events, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+					return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata}
+				}),
+			}
+		})
+
+		eventTp := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		eventPlain := []mockEventData{{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		jobs := []*jobsdb.JobT{
+			job(1, createBatchParameters(SourceIDEnabledTp), eventTp, nil),
+			job(2, createBatchParameters(SourceIDEnabled), eventPlain, nil),
+		}
+		transMsg := runSourceSucceededPipeline(t, processor, jobs)
+
+		rows := sourceSucceededRows(transMsg.reportMetrics)
+		require.Len(t, rows, 2, "SourceID splits the connectionDetails key, one row per source")
+		ids := lo.Map(rows, func(r *reportingtypes.PUReportedMetric, _ int) string { return r.SourceID })
+		require.ElementsMatch(t, []string{SourceIDEnabledTp, SourceIDEnabled}, ids)
+
+		// getTransformerEvents strips TrackingPlanID from Metadata after validation, so it is
+		// SourceID that keeps these two rows distinct.
+	})
+
+	t.Run("should emit no row for events dropped in the preprocess stage by dedup or user suppression", func(t *testing.T) {
+		dedupAllowedFn := func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+			allowed := make(map[dedup.BatchKey]bool, len(keys))
+			for _, k := range keys {
+				allowed[k] = k.Index != 1
+			}
+			return allowed, nil
+		}
+		processor, conf, c, _ := newSourceSucceededProcessor(t, sourceSucceededProcessorOpts{
+			enableReporting: true, enableDedup: true, dedupAllowedFn: dedupAllowedFn,
+		})
+		defer c.Finish()
+		conf.Set("Reporting.sourceSucceededMetrics.enabled", true)
+
+		suppressedEvent := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		dupEvent := []mockEventData{{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		ordinaryEvent := []mockEventData{{id: "3", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+		jobs := []*jobsdb.JobT{
+			job(1, createSuppressionParameters(SourceIDEnabled), suppressedEvent, nil),
+			job(2, createBatchParameters(SourceIDEnabled), dupEvent, nil),
+			job(3, createBatchParameters(SourceIDEnabled), ordinaryEvent, nil),
+		}
+		transMsg := runSourceSucceededPipeline(t, processor, jobs)
+
+		rows := sourceSucceededRows(transMsg.reportMetrics)
+		require.Len(t, rows, 1, "the suppressed and deduped events drop before the fan-out loop")
+		require.EqualValues(t, 1, sumCount(rows))
+	})
+}
+
 func TestClassifyDestinations(t *testing.T) {
 	t.Run("all candidates survive", func(t *testing.T) {
 		sourceID := "source-1"

@@ -202,6 +202,7 @@ type Handle struct {
 		forkRsourcesTrackedJobs                   bool
 		reportingDedupMetricsEnabled              config.ValueLoader[bool]
 		reportingGatewayIngestedMetricsEnabled    config.ValueLoader[bool]
+		reportingSourceSucceededMetricsEnabled    config.ValueLoader[bool]
 		earlyDestinationFilter                    config.ValueLoader[bool]
 
 		dropEventsForDisabledDestAtProcRebuild config.ValueLoader[bool]
@@ -853,6 +854,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
 	proc.config.reportingDedupMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.dedupMetrics.enabled")
 	proc.config.reportingGatewayIngestedMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.gatewayIngestedMetrics.enabled")
+	proc.config.reportingSourceSucceededMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.sourceSucceededMetrics.enabled")
 	proc.config.earlyDestinationFilter = proc.conf.GetReloadableBoolVar(true, "Processor.earlyDestinationFilter")
 	// Opt-in early drop at the proc rebuild stage for destinations disabled since fan-out;
 	// by default such events keep flowing so the router/batchrouter aborts them with reporting.
@@ -2492,6 +2494,11 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	// deprecation, so no chain value is computed for the rows introduced here.
 	destEnterConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 	destEnterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+	// source_succeeded: one row per event that reaches the destination fan-out loop below,
+	// independent of Processor.earlyDestinationFilter and of how many destinations (if any)
+	// the event fans out to. Gated by Reporting.sourceSucceededMetrics.enabled.
+	sourceSucceededConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
+	sourceSucceededStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	sourceLevelDestFilterConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 	sourceLevelDestFilterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	destFilterPerDestConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
@@ -2566,6 +2573,18 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 
 			specificDestID := preTrans.jobIDToSpecificDestMapOnly[event.Metadata.JobID]
 			availableDestinations, excludedDestinations := proc.classifyDestinations(singularEvent, srcDests, sourceId, specificDestID)
+
+			// REPORTING - SOURCE_SUCCEEDED - START
+			// One row per event that reaches the fan-out loop below (tracking plan and source
+			// hydration drops already happened upstream in validateEvents), regardless of
+			// Processor.earlyDestinationFilter and regardless of how many destinations the event
+			// fans out to. destinationId and inPU stay empty; this is a source-level count.
+			if proc.isReportingEnabled() && proc.config.reportingSourceSucceededMetricsEnabled.Load() {
+				sourceSucceededEvent := &types.TransformerResponse{Metadata: event.Metadata}
+				sourceSucceededEvent.StatusCode = reportingtypes.SuccessEventCode
+				proc.updateMetricMaps(nil, nil, sourceSucceededConnectionDetailsMap, sourceSucceededStatusDetailMap, sourceSucceededEvent, jobsdb.Succeeded.State, reportingtypes.SOURCE_SUCCEEDED, nilPayload, nil)
+			}
+			// REPORTING - SOURCE_SUCCEEDED - END
 
 			// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - START
 			// With Processor.earlyDestinationFilter off, the destination filter runs here at
@@ -2663,6 +2682,20 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			}
 		}
 	}
+
+	// REPORTING - SOURCE_SUCCEEDED - START
+	if proc.isReportingEnabled() {
+		for k, cd := range sourceSucceededConnectionDetailsMap {
+			for _, sd := range sourceSucceededStatusDetailMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.SOURCE_SUCCEEDED, false, false),
+					StatusDetail:      sd,
+				})
+			}
+		}
+	}
+	// REPORTING - SOURCE_SUCCEEDED - END
 
 	// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - START
 	if proc.isReportingEnabled() {
