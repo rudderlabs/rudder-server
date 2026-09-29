@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.89.1](https://github.com/rudderlabs/rudder-server/compare/v1.89.0...v1.89.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **batchrouter:** recover snowpipe streaming channels for tables dropped externally ([#7434](https://github.com/rudderlabs/rudder-server/issues/7434)) ([2c79aa8](https://github.com/rudderlabs/rudder-server/commit/2c79aa8657eec98f697d8158f0cc5028b9ef6491))
+
 ## [1.89.0](https://github.com/rudderlabs/rudder-server/compare/v1.88.0...v1.89.0) (2026-09-28)
 
 
