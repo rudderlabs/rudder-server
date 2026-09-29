@@ -91,7 +91,6 @@ func newWorker(
 	constraintsManager *constraints.Manager,
 	encodingFactory *encoding.Factory,
 	workerIdx int,
-	resolver ...filemanagerresolver.Resolver,
 ) *worker {
 	s := &worker{}
 
@@ -103,9 +102,6 @@ func newWorker(
 	s.constraintsManager = constraintsManager
 	s.encodingFactory = encodingFactory
 	s.fileManagerResolver = filemanagerresolver.Default
-	if len(resolver) > 0 && resolver[0] != nil {
-		s.fileManagerResolver = resolver[0]
-	}
 	s.workerIdx = workerIdx
 
 	s.config.maxStagingFileReadBufferCapacityInK = s.conf.GetReloadableIntVar(10240, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")

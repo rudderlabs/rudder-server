@@ -447,7 +447,7 @@ WHEN NOT MATCHED THEN INSERT (%[8]s) VALUES (%[9]s);`,
 		warehouseutils.BracketQuoteIdentifier("received_at"), pk, additionalJoin, updates, quotedColumns, sourceColumns)
 }
 
-func (f *MicrosoftFabric) loadTable(ctx context.Context, tableName string, forceStaging, keepStaging bool) (*types.LoadTableStats, string, error) {
+func (f *MicrosoftFabric) loadTable(ctx context.Context, tableName string, keepStaging bool) (*types.LoadTableStats, string, error) {
 	metadata, err := f.uploader.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{Table: tableName})
 	if err != nil {
 		return nil, "", fmt.Errorf("getting load files: %w", err)
@@ -487,12 +487,12 @@ func (f *MicrosoftFabric) loadTable(ctx context.Context, tableName string, force
 }
 
 func (f *MicrosoftFabric) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
-	loadStats, _, err := f.loadTable(ctx, tableName, false, false)
+	loadStats, _, err := f.loadTable(ctx, tableName, false)
 	return loadStats, err
 }
 
 func (f *MicrosoftFabric) LoadUserTables(ctx context.Context) map[string]error {
-	_, identifiesStaging, err := f.loadTable(ctx, warehouseutils.IdentifiesTable, true, true)
+	_, identifiesStaging, err := f.loadTable(ctx, warehouseutils.IdentifiesTable, true)
 	if err != nil {
 		return map[string]error{warehouseutils.IdentifiesTable: fmt.Errorf("loading identifies table: %w", err)}
 	}
