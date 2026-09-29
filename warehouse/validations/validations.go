@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/filemanagerresolver"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
@@ -23,7 +23,7 @@ const (
 var (
 	connectionTestingFolder string
 	pkgLogger               logger.Logger
-	fileManagerFactory      filemanager.Factory
+	fileManagerResolver     filemanagerresolver.Resolver
 	objectStorageTimeout    time.Duration
 	queryTimeout            time.Duration
 )
@@ -46,14 +46,28 @@ type validationFunc struct {
 	Func func(context.Context, *backendconfig.DestinationT, string) (json.RawMessage, error)
 }
 
-func Init() {
+type Option func()
+
+func WithFileManagerResolver(resolver filemanagerresolver.Resolver) Option {
+	return func() {
+		fileManagerResolver = resolver
+	}
+}
+
+func Init(options ...Option) {
 	connectionTestingFolder = config.GetStringVar(misc.RudderTestPayload, "RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME")
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("validations")
-	fileManagerFactory = filemanager.New
+	fileManagerResolver = filemanagerresolver.Default
 	objectStorageTimeout = config.GetDurationVar(15, time.Second, "Warehouse.Validations.ObjectStorageTimeout")
 
 	// Since we have a cp-router default timeout of 30 seconds, keeping the query timeout to 25 seconds
 	queryTimeout = config.GetDurationVar(25, time.Second, "Warehouse.Validations.QueryTimeout")
+	for _, option := range options {
+		option()
+	}
+	if fileManagerResolver == nil {
+		fileManagerResolver = filemanagerresolver.Default
+	}
 }
 
 // Validate the destination by running all the validation steps

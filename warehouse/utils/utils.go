@@ -50,6 +50,7 @@ const (
 	CLICKHOUSE        = "CLICKHOUSE"
 	MSSQL             = "MSSQL"
 	AzureSynapse      = "AZURE_SYNAPSE"
+	MicrosoftFabric   = "MICROSOFT_FABRIC"
 	DELTALAKE         = "DELTALAKE"
 	S3Datalake        = "S3_DATALAKE"
 	GCSDatalake       = "GCS_DATALAKE"
@@ -113,6 +114,7 @@ const (
 	GCS                = "GCS"
 	MINIO              = "MINIO"
 	DigitalOceanSpaces = "DIGITAL_OCEAN_SPACES"
+	OneLake            = "ONELAKE"
 )
 
 // Cloud providers
@@ -129,7 +131,7 @@ var (
 	TimeWindowDestinations = []string{S3Datalake, GCSDatalake, AzureDatalake}
 	awsCredsExpiryInS      config.ValueLoader[int64]
 
-	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}
+	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, MicrosoftFabric, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}
 	StreamDestinations        = []string{SnowpipeStreaming, BQStreamAllEvents}
 	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
 	S3PathStyleRegex          = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
@@ -146,25 +148,27 @@ func pseudoWarehouseDestinations() map[string]struct{} {
 }
 
 var WHDestNameMap = map[string]string{
-	BQ:            "bigquery",
-	RS:            "redshift",
-	MSSQL:         "mssql",
-	POSTGRES:      "postgres",
-	SNOWFLAKE:     "snowflake",
-	CLICKHOUSE:    "clickhouse",
-	DELTALAKE:     "deltalake",
-	S3Datalake:    "s3_datalake",
-	GCSDatalake:   "gcs_datalake",
-	AzureDatalake: "azure_datalake",
-	AzureSynapse:  "azure_synapse",
+	BQ:              "bigquery",
+	RS:              "redshift",
+	MSSQL:           "mssql",
+	POSTGRES:        "postgres",
+	SNOWFLAKE:       "snowflake",
+	CLICKHOUSE:      "clickhouse",
+	DELTALAKE:       "deltalake",
+	S3Datalake:      "s3_datalake",
+	GCSDatalake:     "gcs_datalake",
+	AzureDatalake:   "azure_datalake",
+	AzureSynapse:    "azure_synapse",
+	MicrosoftFabric: "microsoft_fabric",
 }
 
 var ObjectStorageMap = map[string]string{
-	RS:            S3,
-	S3Datalake:    S3,
-	BQ:            GCS,
-	GCSDatalake:   GCS,
-	AzureDatalake: AzureBlob,
+	RS:              S3,
+	S3Datalake:      S3,
+	BQ:              GCS,
+	GCSDatalake:     GCS,
+	AzureDatalake:   AzureBlob,
+	MicrosoftFabric: OneLake,
 }
 
 var SnowflakeStorageMap = map[string]string{
@@ -546,6 +550,9 @@ func SnowflakeCloudProvider(config any) string {
 
 func ObjectStorageType(destType string, config any, useRudderStorage bool) string {
 	c := config.(map[string]any)
+	if destType == MicrosoftFabric {
+		return OneLake
+	}
 	if useRudderStorage {
 		return S3
 	}
@@ -832,7 +839,7 @@ func GetLoadFileType(destType string) string {
 		return LoadFileTypeJson
 	case RS:
 		return LoadFileTypeCsv
-	case S3Datalake, GCSDatalake, AzureDatalake:
+	case S3Datalake, GCSDatalake, AzureDatalake, MicrosoftFabric:
 		return LoadFileTypeParquet
 	case DELTALAKE:
 		if config.GetBoolVar(false, "Warehouse.deltalake.useParquetLoadFiles") {

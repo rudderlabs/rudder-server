@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 // TestGenerateSchemaMapCornerCases tests various corner cases for the generateSchemaMap function
@@ -586,6 +587,59 @@ func TestBytesPerTable(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWarehouseUploadUsesResolverForFabricOneLake(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockFileManager := mock_filemanager.NewMockFileManager(mockCtrl)
+	mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ *os.File, keyPrefixes ...string) (filemanager.UploadedFile, error) {
+			return filemanager.UploadedFile{
+				Location:   "https://onelake.dfs.fabric.microsoft.com/workspace/lakehouse.Lakehouse/Files/" + strings.Join(keyPrefixes, "/") + "/file",
+				ObjectName: strings.Join(append(keyPrefixes, "file"), "/"),
+			}, nil
+		},
+	)
+
+	var resolverCalled bool
+	brt := &Handle{
+		destType: warehouseutils.MicrosoftFabric,
+		logger:   logger.NewLogger().Child("batchrouter"),
+		fileManagerFactory: func(settings *filemanager.Settings) (filemanager.FileManager, error) {
+			return nil, fmt.Errorf("base factory called for %s", settings.Provider)
+		},
+		fileManagerResolver: func(destType string, settings *filemanager.Settings) (filemanager.FileManager, error) {
+			resolverCalled = true
+			require.Equal(t, warehouseutils.MicrosoftFabric, destType)
+			require.Equal(t, warehouseutils.OneLake, settings.Provider)
+			return mockFileManager, nil
+		},
+		datePrefixOverride: config.SingleValueLoader("YYYY-MM-DD"),
+		customDatePrefix:   config.SingleValueLoader(""),
+		dateFormatProvider: &storageDateFormatProvider{dateFormatsCache: make(map[string]string)},
+		conf:               config.New(),
+		now:                func() time.Time { return time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC) },
+	}
+
+	result := brt.upload(warehouseutils.OneLake, &BatchedJobs{
+		Jobs: []*jobsdb.JobT{{
+			EventPayload: []byte(`{"metadata":{"table":"tracks","receivedAt":"2024-01-02T00:00:00.000Z"}}`),
+		}},
+		Connection: &Connection{
+			Source: backendconfig.SourceT{ID: "source-1"},
+			Destination: backendconfig.DestinationT{
+				ID:          "dest-1",
+				WorkspaceID: "workspace-1",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: warehouseutils.MicrosoftFabric,
+				},
+				Config: map[string]any{},
+			},
+		},
+	}, true)
+
+	require.NoError(t, result.Error)
+	require.True(t, resolverCalled)
 }
 
 func TestUploadDatePrefixOverridePrecedence(t *testing.T) {

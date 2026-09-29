@@ -322,7 +322,7 @@ func (brt *Handle) crashRecover() {
 				brt.jobsDB.JournalDeleteEntry(entry.OpID)
 				continue
 			}
-			downloader, err := brt.fileManagerFactory(&filemanager.Settings{
+			downloader, err := brt.resolveFileManager(&filemanager.Settings{
 				Provider: object.Provider,
 				Config:   object.Config,
 				Conf:     brt.conf,
