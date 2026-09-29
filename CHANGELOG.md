@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.89.0](https://github.com/rudderlabs/rudder-server/compare/v1.88.0...v1.89.0) (2026-09-28)
+
+
+### Features
+
+* **warehouse:** add shared SQL identifier and string literal quoting helpers ([#7406](https://github.com/rudderlabs/rudder-server/issues/7406)) ([814f6db](https://github.com/rudderlabs/rudder-server/commit/814f6db72cee7b7a35aac78d73a66fe41f588bc5))
+
+
+### Bug Fixes
+
+* **warehouse:** quote azure synapse identifiers ([#7363](https://github.com/rudderlabs/rudder-server/issues/7363)) ([d399fd1](https://github.com/rudderlabs/rudder-server/commit/d399fd1ee1f5b0f75a39f321e81039bf481086dd))
+* **warehouse:** quote bigquery identifiers ([#7366](https://github.com/rudderlabs/rudder-server/issues/7366)) ([89de526](https://github.com/rudderlabs/rudder-server/commit/89de52687f58885b4f37407773f7aac0045b4638))
+* **warehouse:** quote clickhouse identifiers ([#7420](https://github.com/rudderlabs/rudder-server/issues/7420)) ([490c097](https://github.com/rudderlabs/rudder-server/commit/490c097c71c37916e3a52a16c1ce144760dd4459))
+* **warehouse:** quote deltalake identifiers ([#7368](https://github.com/rudderlabs/rudder-server/issues/7368)) ([08f2f1e](https://github.com/rudderlabs/rudder-server/commit/08f2f1e7501af45f778affbe0c46b0507db1d295))
+* **warehouse:** quote mssql identifiers ([#7364](https://github.com/rudderlabs/rudder-server/issues/7364)) ([695b881](https://github.com/rudderlabs/rudder-server/commit/695b881aa2f5c2ac47ac63225b2c4629d8e5fef8))
+* **warehouse:** quote postgres load column list and bind schema existence check ([#7405](https://github.com/rudderlabs/rudder-server/issues/7405)) ([2ff81c1](https://github.com/rudderlabs/rudder-server/commit/2ff81c1af8c506745492b3da3055be0431b9968e))
+* **warehouse:** quote redshift identifiers ([#7365](https://github.com/rudderlabs/rudder-server/issues/7365)) ([a3e2a3c](https://github.com/rudderlabs/rudder-server/commit/a3e2a3c06e99b6dac2f0d2df5542dc277358364f))
+* **warehouse:** quote snowflake identifiers ([#7367](https://github.com/rudderlabs/rudder-server/issues/7367)) ([53d4891](https://github.com/rudderlabs/rudder-server/commit/53d489146181224b8ea66573b975775bb8651959))
+
+
+### Miscellaneous
+
+* sync release v1.88.0 to main branch ([#7415](https://github.com/rudderlabs/rudder-server/issues/7415)) ([130bdd3](https://github.com/rudderlabs/rudder-server/commit/130bdd357461681d8e330515ed45567c6569b7d8))
+* **warehouse:** drop the per dialect identifier quoting wrappers ([#7421](https://github.com/rudderlabs/rudder-server/issues/7421)) ([ec0cf52](https://github.com/rudderlabs/rudder-server/commit/ec0cf524060d2fd77109b276f5dbfa9e559d7807))
+* **warehouse:** drop the v2 suffix now v1 is gone ([#7418](https://github.com/rudderlabs/rudder-server/issues/7418)) ([b759c33](https://github.com/rudderlabs/rudder-server/commit/b759c3321b4fa41aae24ff2e677e948f781fbd4a))
+* **warehouse:** move back to upstream clickhouse-go ([#7419](https://github.com/rudderlabs/rudder-server/issues/7419)) ([1a7e776](https://github.com/rudderlabs/rudder-server/commit/1a7e77640d44e5fb891a83a15a67d74594717a6f))
+* **warehouse:** remove the ClickHouse v1 driver ([#7417](https://github.com/rudderlabs/rudder-server/issues/7417)) ([bd14179](https://github.com/rudderlabs/rudder-server/commit/bd14179a3c6cbf01182e7433c2446c6424acf094))
+* **warehouse:** replace dead clickhouse blockSize with commitEvery ([#7427](https://github.com/rudderlabs/rudder-server/issues/7427)) ([0806478](https://github.com/rudderlabs/rudder-server/commit/0806478532f0f2fa38ad05a2c12957676e7ae35b))
+
 ## [1.88.0](https://github.com/rudderlabs/rudder-server/compare/v1.87.0...v1.88.0) (2026-09-21)
 
 
