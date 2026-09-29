@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	internalapi "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/api"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
@@ -26,6 +27,17 @@ func (m *Manager) initializeChannelWithSchema(
 	tableName string,
 	eventSchema whutils.ModelTableSchema,
 ) (*model.ChannelResponse, error) {
+	return m.initializeChannelWithSchemaRetry(ctx, destinationID, destConf, tableName, eventSchema, true)
+}
+
+func (m *Manager) initializeChannelWithSchemaRetry(
+	ctx context.Context,
+	destinationID string,
+	destConf *destConfig,
+	tableName string,
+	eventSchema whutils.ModelTableSchema,
+	retryOnAddColumnsFailure bool,
+) (*model.ChannelResponse, error) {
 	channelResponse, err := m.createChannel(ctx, destinationID, destConf, tableName, eventSchema)
 	if err != nil {
 		return nil, fmt.Errorf("creating channel for table %s: %w", tableName, err)
@@ -34,7 +46,21 @@ func (m *Manager) initializeChannelWithSchema(
 	columnInfos := findNewColumns(eventSchema, channelResponse.SnowpipeSchema)
 	if len(columnInfos) > 0 {
 		if err := m.addColumns(ctx, destConf.Namespace, tableName, columnInfos); err != nil {
-			return nil, fmt.Errorf("adding columns for table %s: %w", tableName, err)
+			if !retryOnAddColumnsFailure {
+				return nil, fmt.Errorf("adding columns for table %s: %w", tableName, err)
+			}
+			// The channel (cached here or in the Snowpipe service) and its schema may be stale, e.g. the table was
+			// dropped externally. Delete it and retry once with a fresh channel, which recreates the table if it is missing.
+			m.logger.Warnn("Adding columns failed, retrying with a fresh channel",
+				logger.NewStringField("table", tableName),
+				logger.NewStringField("channelID", channelResponse.ChannelID),
+				obskit.Error(err),
+			)
+			if deleteErr := m.deleteChannel(ctx, tableName, channelResponse.ChannelID); deleteErr != nil {
+				// Not wrapping the adding columns error: it is an abort error, whereas a failed deletion should be retried.
+				return nil, fmt.Errorf("deleting channel for table %s after adding columns failed with %v: %w", tableName, err, deleteErr)
+			}
+			return m.initializeChannelWithSchemaRetry(ctx, destinationID, destConf, tableName, eventSchema, false)
 		}
 
 		channelResponse, err = m.recreateChannel(ctx, destinationID, destConf, tableName, eventSchema, channelResponse.ChannelID)

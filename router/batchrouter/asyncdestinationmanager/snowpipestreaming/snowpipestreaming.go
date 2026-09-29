@@ -987,6 +987,11 @@ func (m *Manager) handleChannelRecoveryPostBulkStatus(ctx context.Context, info 
 	if recreateErr != nil {
 		return nil, fmt.Errorf("recreating channel: %w", recreateErr)
 	}
+	if !recreatedChannel.Success {
+		// Don't cache a failed response: it has no channel ID and no schema. The next upload creates the
+		// channel afresh, recreating the table or schema if they are missing.
+		return nil, fmt.Errorf("recreating channel with code %s, message: %s and error: %s", recreatedChannel.Code, recreatedChannel.SnowflakeAPIMessage, recreatedChannel.Error)
+	}
 	m.channelCache.Store(info.Table, recreatedChannel)
 
 	log.Infon("Recreated channel for polling post bulk status", logger.NewStringField("channelID", recreatedChannel.ChannelID))
