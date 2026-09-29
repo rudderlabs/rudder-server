@@ -6769,6 +6769,64 @@ func TestGatewayIngestedReporting(t *testing.T) {
 	})
 }
 
+// newVisibilityProcessor builds a Handle with dedup off and reporting optionally on, backed by
+// a config.Config the test can mutate for reloadable flags (e.g.
+// Reporting.userTransformerPassThroughMetrics.enabled), and returns the SimpleClients so a case
+// can wire up TP/hydration/UT echo transforms.
+func newVisibilityProcessor(t *testing.T, enableReporting bool) (*Handle, *config.Config, *testContext, *transformer.SimpleClients) {
+	t.Helper()
+	conf := config.New()
+	c := &testContext{}
+	c.Setup(t)
+	c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
+
+	isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+	require.NoError(t, err)
+
+	transformerClients := transformer.NewSimpleClients()
+	processor := NewHandle(conf, transformerClients)
+	processor.isolationStrategy = isolationStrategy
+	processor.config.archivalEnabled = config.SingleValueLoader(false)
+	processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+
+	Setup(processor, c, false /* dedup */, enableReporting, t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+
+	return processor, conf, c, transformerClients
+}
+
+// runVisibilityPretransform drives preprocessStage -> srcHydrationStage -> pretransformStage,
+// the stage where classifyDestinations runs and reports.
+func runVisibilityPretransform(t *testing.T, processor *Handle, jobs []*jobsdb.JobT) *transformationMessage {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	srcHydrationMsg, err := processor.preprocessStage("", subJob{ctx: ctx, subJobs: jobs}, 0)
+	require.NoError(t, err)
+
+	preTransMsg, err := processor.srcHydrationStage("", srcHydrationMsg)
+	require.NoError(t, err)
+
+	transMsg, err := processor.pretransformStage("", preTransMsg)
+	require.NoError(t, err)
+	return transMsg
+}
+
+// runVisibilityThroughUT additionally drives userTransformStage and destinationTransformStage:
+// userTransformAndFilter's own reportMetrics are only merged into the pipeline's reportMetrics
+// inside destTransform, so UT rows are not observable from
+// userTransformData alone.
+func runVisibilityThroughUT(t *testing.T, processor *Handle, jobs []*jobsdb.JobT) *storeMessage {
+	t.Helper()
+	transMsg := runVisibilityPretransform(t, processor, jobs)
+	utData := processor.userTransformStage("", transMsg)
+	return processor.destinationTransformStage("", utData)
+}
+
 // TestDestinationVisibilityReporting exercises the fan-out reporting added for
 // per-destination visibility (destination_enter / destination_filter), emitted where the
 // destination filter runs, at fan-out in pretransformStage. The rows introduced here carry an
@@ -6808,65 +6866,6 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
 			return m.PU == reportingtypes.USER_TRANSFORMER
 		})
-	}
-
-	// newVisibilityProcessor builds a Handle with dedup off and reporting optionally on,
-	// backed by a config.Config the test can mutate (e.g. destination isolation), and returns
-	// the SimpleClients so a case can wire up TP/hydration/UT echo transforms.
-	newVisibilityProcessor := func(t *testing.T, enableReporting bool) (*Handle, *config.Config, *testContext, *transformer.SimpleClients) {
-		t.Helper()
-		conf := config.New()
-		c := &testContext{}
-		c.Setup(t)
-		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
-
-		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
-		require.NoError(t, err)
-
-		transformerClients := transformer.NewSimpleClients()
-		processor := NewHandle(conf, transformerClients)
-		processor.isolationStrategy = isolationStrategy
-		processor.config.archivalEnabled = config.SingleValueLoader(false)
-		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
-
-		Setup(processor, c, false /* dedup */, enableReporting, t)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
-
-		return processor, conf, c, transformerClients
-	}
-
-	// runVisibilityPretransform drives preprocessStage -> srcHydrationStage -> pretransformStage,
-	// the same three stages runDedupPipeline (TestDedupReporting) drives — where the
-	// classifyDestinations call and its reporting live (processor.go:2447-2505).
-	runVisibilityPretransform := func(t *testing.T, processor *Handle, jobs []*jobsdb.JobT) *transformationMessage {
-		t.Helper()
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		srcHydrationMsg, err := processor.preprocessStage("", subJob{ctx: ctx, subJobs: jobs}, 0)
-		require.NoError(t, err)
-
-		preTransMsg, err := processor.srcHydrationStage("", srcHydrationMsg)
-		require.NoError(t, err)
-
-		transMsg, err := processor.pretransformStage("", preTransMsg)
-		require.NoError(t, err)
-		return transMsg
-	}
-
-	// runVisibilityThroughUT additionally drives userTransformStage and
-	// destinationTransformStage, needed for the tracking-plan/user-transformer inPU cases
-	// (1d): userTransformAndFilter's own reportMetrics are only merged into the pipeline's
-	// reportMetrics inside destTransform (processor.go:2911), so the UT/TP rows are not
-	// observable from userTransformData alone.
-	runVisibilityThroughUT := func(t *testing.T, processor *Handle, jobs []*jobsdb.JobT) (*transformationMessage, *storeMessage) {
-		t.Helper()
-		transMsg := runVisibilityPretransform(t, processor, jobs)
-		utData := processor.userTransformStage("", transMsg)
-		return transMsg, processor.destinationTransformStage("", utData)
 	}
 
 	// payload builds a singular event JSON, letting a case set an `integrations` object
@@ -7161,7 +7160,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 			transformerClients.WithDynamicUserTransform(echoUserTransform)
 
 			jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
-			_, utMsg := runVisibilityThroughUT(t, processor, jobs)
+			utMsg := runVisibilityThroughUT(t, processor, jobs)
 
 			uRows := lo.Filter(utRows(utMsg.reportMetrics), func(r *reportingtypes.PUReportedMetric, _ int) bool {
 				return r.DestinationID == DestinationIDEnabledB // only B has a Transformation configured
@@ -7179,7 +7178,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 			transformerClients.WithDynamicUserTransform(echoUserTransform)
 
 			jobs := []*jobsdb.JobT{job(1, SourceIDEnabledTp, "", []string{payload("m1", nil, nil)})}
-			_, utMsg := runVisibilityThroughUT(t, processor, jobs)
+			utMsg := runVisibilityThroughUT(t, processor, jobs)
 
 			tRows := tpRows(utMsg.reportMetrics)
 			require.NotEmpty(t, tRows)
@@ -7201,7 +7200,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 			transformerClients.WithDynamicUserTransform(echoUserTransform)
 
 			jobs := []*jobsdb.JobT{job(1, SourceIDHydrationTp, "", []string{payload("m1", nil, nil)})}
-			_, utMsg := runVisibilityThroughUT(t, processor, jobs)
+			utMsg := runVisibilityThroughUT(t, processor, jobs)
 
 			tRows := tpRows(utMsg.reportMetrics)
 			require.NotEmpty(t, tRows)
@@ -7214,6 +7213,260 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 				require.Equal(t, reportingtypes.TRACKINGPLAN_VALIDATOR, r.InPU)
 			}
 		})
+	})
+}
+
+// TestUserTransformerPassThroughReporting covers the user_transformer pass-through rows emitted
+// from the no-transformation branch of userTransformAndFilter, gated by
+// Reporting.userTransformerPassThroughMetrics.enabled. SourceIDEnabled's destinations A and C
+// have no Transformation configured and take the pass-through branch; B has one Transformation
+// and always runs the real UT block, which this test must leave untouched.
+func TestUserTransformerPassThroughReporting(t *testing.T) {
+	utRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.USER_TRANSFORMER
+		})
+	}
+	utRowsFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(utRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.DestinationID == destinationID
+		})
+	}
+	// nonUTForAC isolates the pre-existing event_filter/dest_transformer rows for A and C, so a
+	// case can confirm the pass-through addition leaves them untouched.
+	nonUTForAC := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU != reportingtypes.USER_TRANSFORMER &&
+				(m.DestinationID == DestinationIDEnabledA || m.DestinationID == DestinationIDEnabledC)
+		})
+	}
+
+	// payload builds a singular track event JSON, letting a case set the event name and an
+	// `integrations` object.
+	payload := func(msgID, eventName string, integrations map[string]any) string {
+		event := map[string]any{
+			"rudderId":  "some-rudder-id",
+			"messageId": msgID,
+			"type":      "track",
+			"event":     eventName,
+		}
+		if integrations != nil {
+			event["integrations"] = integrations
+		}
+		b, err := jsonrs.Marshal(event)
+		require.NoError(t, err)
+		return string(b)
+	}
+
+	// job builds a gateway job carrying one or more singular events for sourceID.
+	job := func(jobID int64, sourceID string, singularPayloads []string) *jobsdb.JobT {
+		params := map[string]any{"source_id": sourceID}
+		paramBytes, err := jsonrs.Marshal(params)
+		require.NoError(t, err)
+		batch := strings.Join(singularPayloads, ",")
+		eventPayload := fmt.Appendf(nil, `{"writeKey":%q,"batch":[%s],"requestIP":"1.2.3.4","receivedAt":"2001-01-02T02:23:45.000Z"}`, WriteKeyEnabled, batch)
+		return &jobsdb.JobT{
+			UUID:         uuid.New(),
+			JobID:        jobID,
+			CreatedAt:    time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:     time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal:    gatewayCustomVal[0],
+			EventPayload: eventPayload,
+			EventCount:   len(singularPayloads),
+			Parameters:   paramBytes,
+		}
+	}
+
+	echoUserTransform := func(_ context.Context, events []types.TransformerEvent) types.Response {
+		return types.Response{
+			Events: lo.Map(events, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+				return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata}
+			}),
+		}
+	}
+	// dropUserTransform echoes every event except the one whose message id is msgID. Dropping
+	// it silently (no FailedEvents entry) makes the UT success count smaller than the input
+	// count, so getDiffMetrics has a nonzero diff to report for B.
+	dropUserTransform := func(msgID string) func(context.Context, []types.TransformerEvent) types.Response {
+		return func(_ context.Context, events []types.TransformerEvent) types.Response {
+			kept := lo.Filter(events, func(e types.TransformerEvent, _ int) bool {
+				return e.Metadata.MessageID != msgID
+			})
+			return types.Response{
+				Events: lo.Map(kept, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+					return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata}
+				}),
+			}
+		}
+	}
+
+	twoEventsSameName := func() []*jobsdb.JobT {
+		return []*jobsdb.JobT{job(1, SourceIDEnabled, []string{
+			payload("m1", "Some Event", nil),
+			payload("m2", "Some Event", nil),
+		})}
+	}
+
+	t.Run("with the flag off (default) no user_transformer row is emitted for a destination without a transformation", func(t *testing.T) {
+		processor, _, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		require.Empty(t, utRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA))
+		require.Empty(t, utRowsFor(storeMsg.reportMetrics, DestinationIDEnabledC))
+		require.NotEmpty(t, utRowsFor(storeMsg.reportMetrics, DestinationIDEnabledB),
+			"B has a Transformation and reports regardless of the flag, showing the harness reached the UT stage")
+	})
+
+	t.Run("with the flag on each zero-transformation destination gets one succeeded/200 user_transformer row per event", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Reporting.userTransformerPassThroughMetrics.enabled", true)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		for _, destID := range []string{DestinationIDEnabledA, DestinationIDEnabledC} {
+			rows := utRowsFor(storeMsg.reportMetrics, destID)
+			require.Len(t, rows, 1, "destination %s", destID)
+			r := rows[0]
+			require.Equal(t, destID, r.DestinationID)
+			require.Equal(t, jobsdb.Succeeded.State, r.StatusDetail.Status)
+			require.Equal(t, reportingtypes.SuccessEventCode, r.StatusDetail.StatusCode)
+			require.Equal(t, "", r.InPU, "a bug reusing the TP/hydration/destination_filter switch would fail here")
+			require.False(t, r.InitialPU)
+			require.False(t, r.TerminalPU)
+			require.EqualValues(t, 2, r.StatusDetail.Count)
+		}
+	})
+
+	t.Run("with the flag on no aborted, filtered or diff user_transformer row is emitted for a zero-transformation destination", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Reporting.userTransformerPassThroughMetrics.enabled", true)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		for _, destID := range []string{DestinationIDEnabledA, DestinationIDEnabledC} {
+			rows := utRowsFor(storeMsg.reportMetrics, destID)
+			require.NotEmpty(t, rows)
+			for _, r := range rows {
+				require.Equal(t, jobsdb.Succeeded.State, r.StatusDetail.Status)
+			}
+		}
+	})
+
+	t.Run("with the flag on events with different event names yield one row per event name with counts summing to the events that entered", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Reporting.userTransformerPassThroughMetrics.enabled", true)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, []string{
+			payload("m1", "Event One", nil),
+			payload("m2", "Event Two", nil),
+		})}
+		storeMsg := runVisibilityThroughUT(t, processor, jobs)
+
+		for _, destID := range []string{DestinationIDEnabledA, DestinationIDEnabledC} {
+			rows := utRowsFor(storeMsg.reportMetrics, destID)
+			require.Len(t, rows, 2, "destination %s", destID)
+			var total int64
+			for _, r := range rows {
+				require.EqualValues(t, 1, r.StatusDetail.Count)
+				total += r.StatusDetail.Count
+			}
+			require.EqualValues(t, 2, total)
+		}
+	})
+
+	t.Run("with the flag on an event excluded from one destination gets no row for that destination", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Reporting.userTransformerPassThroughMetrics.enabled", true)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, []string{
+			payload("m1", "Some Event", map[string]any{"enabled-destination-c-definition-display-name": false}),
+		})}
+		storeMsg := runVisibilityThroughUT(t, processor, jobs)
+
+		aRows := utRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA)
+		require.Len(t, aRows, 1)
+		require.EqualValues(t, 1, aRows[0].StatusDetail.Count)
+		require.Empty(t, utRowsFor(storeMsg.reportMetrics, DestinationIDEnabledC))
+	})
+
+	t.Run("with the flag on the rows for a destination with a transformation are unchanged, including diff rows", func(t *testing.T) {
+		off, _, cOff, transformerClientsOff := newVisibilityProcessor(t, true)
+		defer cOff.Finish()
+		transformerClientsOff.WithDynamicUserTransform(dropUserTransform("m2"))
+		offMsg := runVisibilityThroughUT(t, off, twoEventsSameName())
+
+		on, conf, cOn, transformerClientsOn := newVisibilityProcessor(t, true)
+		defer cOn.Finish()
+		conf.Set("Reporting.userTransformerPassThroughMetrics.enabled", true)
+		transformerClientsOn.WithDynamicUserTransform(dropUserTransform("m2"))
+		onMsg := runVisibilityThroughUT(t, on, twoEventsSameName())
+
+		bRowsOff := utRowsFor(offMsg.reportMetrics, DestinationIDEnabledB)
+		diffRows := lo.Filter(bRowsOff, func(r *reportingtypes.PUReportedMetric, _ int) bool {
+			return r.StatusDetail.Status == reportingtypes.DiffStatus
+		})
+		require.NotEmpty(t, diffRows, "the dropped event must produce a diff row for B, or the comparison below is vacuous")
+
+		bRowsOn := utRowsFor(onMsg.reportMetrics, DestinationIDEnabledB)
+		require.ElementsMatch(t, bRowsOff, bRowsOn)
+	})
+
+	t.Run("with the flag on event_filter and dest_transformer rows for zero-transformation destinations are unchanged", func(t *testing.T) {
+		off, _, cOff, transformerClientsOff := newVisibilityProcessor(t, true)
+		defer cOff.Finish()
+		transformerClientsOff.WithDynamicUserTransform(echoUserTransform)
+		offMsg := runVisibilityThroughUT(t, off, twoEventsSameName())
+
+		on, conf, cOn, transformerClientsOn := newVisibilityProcessor(t, true)
+		defer cOn.Finish()
+		conf.Set("Reporting.userTransformerPassThroughMetrics.enabled", true)
+		transformerClientsOn.WithDynamicUserTransform(echoUserTransform)
+		onMsg := runVisibilityThroughUT(t, on, twoEventsSameName())
+
+		require.ElementsMatch(t, nonUTForAC(offMsg.reportMetrics), nonUTForAC(onMsg.reportMetrics))
+	})
+
+	t.Run("toggling the flag at runtime on the same handle takes effect without a restart", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+		buildJob := func(jobID int64, msgID string) []*jobsdb.JobT {
+			return []*jobsdb.JobT{job(jobID, SourceIDEnabled, []string{payload(msgID, "Some Event", nil)})}
+		}
+
+		msg1 := runVisibilityThroughUT(t, processor, buildJob(1, "m1"))
+		require.Empty(t, utRowsFor(msg1.reportMetrics, DestinationIDEnabledA))
+
+		conf.Set("Reporting.userTransformerPassThroughMetrics.enabled", true)
+		msg2 := runVisibilityThroughUT(t, processor, buildJob(2, "m2"))
+		require.NotEmpty(t, utRowsFor(msg2.reportMetrics, DestinationIDEnabledA))
+
+		conf.Set("Reporting.userTransformerPassThroughMetrics.enabled", false)
+		msg3 := runVisibilityThroughUT(t, processor, buildJob(3, "m3"))
+		require.Empty(t, utRowsFor(msg3.reportMetrics, DestinationIDEnabledA))
+	})
+
+	t.Run("with the flag on but reporting disabled no user_transformer row is emitted", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, false)
+		defer c.Finish()
+		conf.Set("Reporting.userTransformerPassThroughMetrics.enabled", true)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		require.Empty(t, utRows(storeMsg.reportMetrics))
 	})
 }
 
