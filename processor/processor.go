@@ -204,6 +204,7 @@ type Handle struct {
 		reportingGatewayIngestedMetricsEnabled    config.ValueLoader[bool]
 		reportingSourceSucceededMetricsEnabled    config.ValueLoader[bool]
 		reportingUTPassThroughMetricsEnabled      config.ValueLoader[bool]
+		reportingDTPassThroughMetricsEnabled      config.ValueLoader[bool]
 		earlyDestinationFilter                    config.ValueLoader[bool]
 
 		dropEventsForDisabledDestAtProcRebuild config.ValueLoader[bool]
@@ -857,6 +858,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.reportingGatewayIngestedMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.gatewayIngestedMetrics.enabled")
 	proc.config.reportingSourceSucceededMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.sourceSucceededMetrics.enabled")
 	proc.config.reportingUTPassThroughMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.userTransformerPassThroughMetrics.enabled")
+	proc.config.reportingDTPassThroughMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.destTransformerPassThroughMetrics.enabled")
 	proc.config.earlyDestinationFilter = proc.conf.GetReloadableBoolVar(true, "Processor.earlyDestinationFilter")
 	// Opt-in early drop at the proc rebuild stage for destinations disabled since fan-out;
 	// by default such events keep flowing so the router/batchrouter aborts them with reporting.
@@ -3926,6 +3928,37 @@ func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilt
 			}
 			// REPORTING - PROCESSOR metrics - END
 		})
+	} else if transformAt == "none" {
+		// REPORTING - DEST_TRANSFORMER PASS-THROUGH - START
+		// No destination transformation exists for this destination, so the block above never
+		// runs and dest_transformer's succeeded count would otherwise be undefined here. Every
+		// event that entered this stage passes through unchanged, so one succeeded row per event
+		// is enough - nothing can fail or get filtered in a stage that never executes. The row
+		// carries inPU="" and initialState=false, because this stage did no work of its own.
+		// Router-transform destinations (transformAt == "router" with the transformer supporting
+		// it) fall through here too but are excluded by the transformAt == "none" check - the
+		// router reports their outcome.
+		if proc.isReportingEnabled() && proc.config.reportingDTPassThroughMetricsEnabled.Load() {
+			passThroughConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
+			passThroughStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+			for i := range data.eventsToTransform {
+				passThroughEvent := &types.TransformerResponse{
+					Metadata:   data.eventsToTransform[i].Metadata,
+					StatusCode: reportingtypes.SuccessEventCode,
+				}
+				proc.updateMetricMaps(nil, nil, passThroughConnectionDetailsMap, passThroughStatusDetailsMap, passThroughEvent, jobsdb.Succeeded.State, reportingtypes.DEST_TRANSFORMER, func() json.RawMessage { return nil }, nil)
+			}
+			for key, cd := range passThroughConnectionDetailsMap {
+				for _, sd := range passThroughStatusDetailsMap[key] {
+					data.reportMetrics = append(data.reportMetrics, &reportingtypes.PUReportedMetric{
+						ConnectionDetails: *cd,
+						PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DEST_TRANSFORMER, false, false),
+						StatusDetail:      sd,
+					})
+				}
+			}
+		}
+		// REPORTING - DEST_TRANSFORMER PASS-THROUGH - END
 	}
 
 	trace.WithRegion(ctx, "MarshalForDB", func() {
