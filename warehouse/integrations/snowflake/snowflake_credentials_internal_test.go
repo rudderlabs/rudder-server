@@ -5,33 +5,59 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func TestMaskCopyCredentials(t *testing.T) {
-	const (
-		accessKeyID     = "AKIAIOSFODNN7EXAMPLE"
-		secretAccessKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-		sessionToken    = "FQoGZXIvYXdzEPP//////////wEaDEXAMPLESESSIONTOKEN"
-		loadLocation    = "s3://bucket/rudder/uploads/identity-mappings/"
-	)
+const (
+	testSQLTemplate  = `COPY INTO t FROM '%s' %s PATTERN = '.*\.csv\.gz'`
+	testLoadLocation = "s3://bucket/rudder/uploads/identity-mappings/"
+)
 
-	statement := fmt.Sprintf(`COPY INTO t FROM '%s' %s PATTERN = '.*\.csv\.gz'`,
-		loadLocation,
-		awsCredentialsClause(accessKeyID, secretAccessKey, sessionToken),
-	)
+var testSecretAuthClause = awsCredentialsClause(
+	"AKIAIOSFODNN7EXAMPLE",
+	"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+	"FQoGZXIvYXdzEPP//////////wEaDEXAMPLESESSIONTOKEN",
+)
 
-	masked := maskCopyCredentials(statement)
+func TestCopyStatement(t *testing.T) {
+	loggable := fmt.Sprintf(testSQLTemplate, testLoadLocation, secretAuthClausePlaceholder)
 
-	require.NotContains(t, masked, accessKeyID)
-	require.NotContains(t, masked, secretAccessKey)
-	require.NotContains(t, masked, sessionToken)
-	require.Contains(t, masked, `CREDENTIALS = (AWS_KEY_ID='***' AWS_SECRET_KEY='***' AWS_TOKEN='***')`)
-	// The rest of the statement has to survive, or the log stops being useful.
-	require.Contains(t, masked, loadLocation)
-	require.Contains(t, masked, `PATTERN = '.*\.csv\.gz'`)
+	copyStmt, err := newCopyStatement(loggable, testSecretAuthClause)
+	require.NoError(t, err)
 
-	t.Run("statements without credentials are untouched", func(t *testing.T) {
-		storageIntegration := `COPY INTO t FROM 's3://bucket/' STORAGE_INTEGRATION = my_integration`
-		require.Equal(t, storageIntegration, maskCopyCredentials(storageIntegration))
+	t.Run("formatting leaves the credentials out", func(t *testing.T) {
+		require.Equal(t, loggable, copyStmt.String())
+		require.Equal(t, loggable, fmt.Sprintf("%v", copyStmt))
+		require.Equal(t, loggable, fmt.Sprintf("%+v", copyStmt))
+		require.Equal(t, loggable, fmt.Sprintf("%#v", copyStmt))
 	})
+
+	t.Run("unsafeSQL puts the auth clause where the placeholder was", func(t *testing.T) {
+		require.Equal(t, fmt.Sprintf(testSQLTemplate, testLoadLocation, testSecretAuthClause), copyStmt.unsafeSQL())
+	})
+
+	t.Run("the placeholder has to appear exactly once", func(t *testing.T) {
+		_, err := newCopyStatement(`COPY INTO t FROM 's3://bucket/'`, testSecretAuthClause)
+		require.Error(t, err)
+
+		// A location that carries the placeholder must not decide where the
+		// credentials land.
+		_, err = newCopyStatement(
+			fmt.Sprintf(testSQLTemplate, "s3://bucket/"+secretAuthClausePlaceholder, secretAuthClausePlaceholder),
+			testSecretAuthClause,
+		)
+		require.Error(t, err)
+	})
+}
+
+// TestCopyCredentialsRegex guards the masking the middleware applies to the
+// statements it logs, which reach it with the credentials in place.
+func TestCopyCredentialsRegex(t *testing.T) {
+	masked, err := misc.ReplaceMultiRegex(fmt.Sprintf(testSQLTemplate, testLoadLocation, testSecretAuthClause), copyCredentialsRegex)
+	require.NoError(t, err)
+	require.Equal(t,
+		fmt.Sprintf(testSQLTemplate, testLoadLocation, `CREDENTIALS = (AWS_KEY_ID='***' AWS_SECRET_KEY='***' AWS_TOKEN='***')`),
+		masked,
+	)
 }
