@@ -598,19 +598,21 @@ func (sf *Snowflake) copyInto(
 		sf.ObjectStorage,
 		csvObjectLocation,
 	)
-	copyStmt, err := sf.newCopyStatement(fmt.Sprintf(
-		`COPY INTO
+	copyStmt, err := sf.newCopyStatement(func(authClause string) string {
+		return fmt.Sprintf(
+			`COPY INTO
 			%s(%v)
 		FROM
 		  %s %s
 		PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE)
 		TRUNCATECOLUMNS = TRUE;`,
-		whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, copyTargetTable),
-		sortedColumnNames,
-		whutils.SQLStringLiteralBackslash(loadFolder),
-		secretAuthClausePlaceholder,
-	))
+			whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, copyTargetTable),
+			sortedColumnNames,
+			whutils.SQLStringLiteralBackslash(loadFolder),
+			authClause,
+		)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("building copy statement: %w", err)
 	}
@@ -690,18 +692,20 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 		"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE",
 	}, whutils.DoubleQuoteIdentifier, ",")
 	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
-	copyStmt, err := sf.newCopyStatement(fmt.Sprintf(`
+	copyStmt, err := sf.newCopyStatement(func(authClause string) string {
+		return fmt.Sprintf(`
 		COPY INTO %s(%v)
 		FROM %s
 		%s
 		PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE;`,
-		whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, identityMergeRulesTable),
-		sortedColumnNames,
-		whutils.SQLStringLiteralBackslash(loadLocation),
-		secretAuthClausePlaceholder,
-	))
+			whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, identityMergeRulesTable),
+			sortedColumnNames,
+			whutils.SQLStringLiteralBackslash(loadLocation),
+			authClause,
+		)
+	})
 	if err != nil {
 		return fmt.Errorf("building copy statement: %w", err)
 	}
@@ -768,15 +772,17 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	}
 
 	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
-	copyStmt, err := sf.newCopyStatement(fmt.Sprintf(
-		`COPY INTO %s("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT")
+	copyStmt, err := sf.newCopyStatement(func(authClause string) string {
+		return fmt.Sprintf(
+			`COPY INTO %s("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT")
 		FROM %s %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE`,
-		whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, stagingTableName),
-		whutils.SQLStringLiteralBackslash(loadLocation),
-		secretAuthClausePlaceholder,
-	))
+			whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, stagingTableName),
+			whutils.SQLStringLiteralBackslash(loadLocation),
+			authClause,
+		)
+	})
 	if err != nil {
 		return fmt.Errorf("building copy statement: %w", err)
 	}
@@ -1436,14 +1442,16 @@ func (sf *Snowflake) TestLoadTable(
 	ctx context.Context, location, tableName string, _ map[string]any, _ string,
 ) error {
 	loadFolder := whutils.GetObjectFolder(sf.ObjectStorage, location)
-	copyStmt, err := sf.newCopyStatement(fmt.Sprintf(`COPY INTO %v(%v) FROM %s %s PATTERN = '.*\.csv\.gz'
+	copyStmt, err := sf.newCopyStatement(func(authClause string) string {
+		return fmt.Sprintf(`COPY INTO %v(%v) FROM %s %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE`,
-		whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, tableName),
-		fmt.Sprintf(`%s, %s`, whutils.DoubleQuoteIdentifier("id"), whutils.DoubleQuoteIdentifier("val")),
-		whutils.SQLStringLiteralBackslash(loadFolder),
-		secretAuthClausePlaceholder,
-	))
+			whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, tableName),
+			fmt.Sprintf(`%s, %s`, whutils.DoubleQuoteIdentifier("id"), whutils.DoubleQuoteIdentifier("val")),
+			whutils.SQLStringLiteralBackslash(loadFolder),
+			authClause,
+		)
+	})
 	if err != nil {
 		return fmt.Errorf("building copy statement: %w", err)
 	}

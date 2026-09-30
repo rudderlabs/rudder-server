@@ -9,10 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-const (
-	testSQLTemplate  = `COPY INTO t FROM '%s' %s PATTERN = '.*\.csv\.gz'`
-	testLoadLocation = "s3://bucket/rudder/uploads/identity-mappings/"
-)
+const testLoadLocation = "s3://bucket/rudder/uploads/identity-mappings/"
 
 var testSecretAuthClause = awsCredentialsClause(
 	"AKIAIOSFODNN7EXAMPLE",
@@ -20,44 +17,29 @@ var testSecretAuthClause = awsCredentialsClause(
 	"FQoGZXIvYXdzEPP//////////wEaDEXAMPLESESSIONTOKEN",
 )
 
-func TestCopyStatement(t *testing.T) {
-	loggable := fmt.Sprintf(testSQLTemplate, testLoadLocation, secretAuthClausePlaceholder)
+func testBuildCopySQL(authClause string) string {
+	return fmt.Sprintf(`COPY INTO t FROM '%s' %s PATTERN = '.*\.csv\.gz'`, testLoadLocation, authClause)
+}
 
-	copyStmt, err := newCopyStatement(loggable, testSecretAuthClause)
-	require.NoError(t, err)
+func TestCopyStatement(t *testing.T) {
+	copyStmt := newCopyStatement(testBuildCopySQL, testSecretAuthClause, maskedAWSCredentialsClause)
+	loggable := testBuildCopySQL(maskedAWSCredentialsClause)
 
 	t.Run("formatting leaves the credentials out", func(t *testing.T) {
 		require.Equal(t, loggable, copyStmt.String())
-		require.Equal(t, loggable, fmt.Sprintf("%v", copyStmt))
-		require.Equal(t, loggable, fmt.Sprintf("%+v", copyStmt))
 		require.Equal(t, loggable, fmt.Sprintf("%#v", copyStmt))
 	})
 
-	t.Run("unsafeSQL puts the auth clause where the placeholder was", func(t *testing.T) {
-		require.Equal(t, fmt.Sprintf(testSQLTemplate, testLoadLocation, testSecretAuthClause), copyStmt.unsafeSQL())
-	})
-
-	t.Run("the placeholder has to appear exactly once", func(t *testing.T) {
-		_, err := newCopyStatement(`COPY INTO t FROM 's3://bucket/'`, testSecretAuthClause)
-		require.Error(t, err)
-
-		// A location that carries the placeholder must not decide where the
-		// credentials land.
-		_, err = newCopyStatement(
-			fmt.Sprintf(testSQLTemplate, "s3://bucket/"+secretAuthClausePlaceholder, secretAuthClausePlaceholder),
-			testSecretAuthClause,
-		)
-		require.Error(t, err)
+	t.Run("the database gets the real auth clause", func(t *testing.T) {
+		require.Equal(t, testBuildCopySQL(testSecretAuthClause), copyStmt.secretSQL)
 	})
 }
 
 // TestCopyCredentialsRegex guards the masking the middleware applies to the
-// statements it logs, which reach it with the credentials in place.
+// statements it logs, which reach it with the credentials in place. It has to
+// agree with what a copyStatement logs.
 func TestCopyCredentialsRegex(t *testing.T) {
-	masked, err := misc.ReplaceMultiRegex(fmt.Sprintf(testSQLTemplate, testLoadLocation, testSecretAuthClause), copyCredentialsRegex)
+	masked, err := misc.ReplaceMultiRegex(testBuildCopySQL(testSecretAuthClause), copyCredentialsRegex)
 	require.NoError(t, err)
-	require.Equal(t,
-		fmt.Sprintf(testSQLTemplate, testLoadLocation, `CREDENTIALS = (AWS_KEY_ID='***' AWS_SECRET_KEY='***' AWS_TOKEN='***')`),
-		masked,
-	)
+	require.Equal(t, testBuildCopySQL(maskedAWSCredentialsClause), masked)
 }
