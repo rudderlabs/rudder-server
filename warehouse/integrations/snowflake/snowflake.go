@@ -273,6 +273,30 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return true
 }
 
+// awsCredentialsClause is the CREDENTIALS clause a COPY statement carries when
+// it reads from S3 with temporary credentials instead of a storage integration.
+func awsCredentialsClause(accessKeyID, secretAccessKey, sessionToken string) string {
+	return fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, accessKeyID, secretAccessKey, sessionToken)
+}
+
+// copyCredentialsRegex masks the credentials awsCredentialsClause puts into a
+// COPY statement. The middleware applies it to every query it logs, and a COPY
+// statement logged directly has to go through maskCopyCredentials.
+var copyCredentialsRegex = map[string]string{
+	"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
+	"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
+	"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
+}
+
+// maskCopyCredentials returns sqlStatement with its credentials masked, for logging.
+func maskCopyCredentials(sqlStatement string) string {
+	masked, err := misc.ReplaceMultiRegex(sqlStatement, copyCredentialsRegex)
+	if err != nil {
+		return "<masking failed>"
+	}
+	return masked
+}
+
 func (sf *Snowflake) authString() (string, error) {
 	var auth string
 	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) || (sf.CloudProvider == "AWS" && sf.Warehouse.GetStringDestinationConfig(sf.conf, model.StorageIntegrationSetting) == "") {
@@ -281,7 +305,7 @@ func (sf *Snowflake) authString() (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("getting temporary s3 credentials: %w", err)
 		}
-		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
+		auth = awsCredentialsClause(tempAccessKeyId, tempSecretAccessKey, token)
 	} else {
 		// The storage integration name comes from the destination configuration, not from event data.
 		// It is intentionally left unquoted: quoting would make it case-sensitive and break existing
@@ -728,14 +752,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 		authString,
 	)
 
-	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
-		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
-		"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
-		"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
-	})
-	if regexErr == nil {
-		log.Infon("Copying identity merge rules for table", logger.NewStringField(lf.Query, sanitisedSQLStmt))
-	}
+	log.Infon("Copying identity merge rules for table", logger.NewStringField(lf.Query, maskCopyCredentials(sqlStatement)))
 
 	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
 		log.Errorn("Error while copying identity merge rules for table", obskit.Error(err))
@@ -812,11 +829,11 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 		authString,
 	)
 
-	log.Infon("Copying identity mappings for table", logger.NewStringField(lf.Query, sqlStatement))
+	log.Infon("Copying identity mappings for table", logger.NewStringField(lf.Query, maskCopyCredentials(sqlStatement)))
 	_, err = db.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		log.Errorn("Error running COPY for table",
-			logger.NewStringField(lf.Query, sqlStatement),
+			logger.NewStringField(lf.Query, maskCopyCredentials(sqlStatement)),
 			obskit.Error(err),
 		)
 		return fmt.Errorf("cannot run copy into %s.%q: %v", schemaIdentifier, stagingTableName, err)
@@ -1153,11 +1170,7 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmw.DB
 		),
 		sqlmw.WithSlowQueryThreshold(sf.config.slowQueryThreshold),
 		sqlmw.WithQueryTimeout(sf.connectTimeout),
-		sqlmw.WithSecretsRegex(map[string]string{
-			"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
-			"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
-			"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
-		}),
+		sqlmw.WithSecretsRegex(copyCredentialsRegex),
 	)
 	return middleware, nil
 }
