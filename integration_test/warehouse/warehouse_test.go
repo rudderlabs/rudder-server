@@ -2190,6 +2190,7 @@ func runRudderServer(
 	config.Set("DEST_TRANSFORM_URL", transformerURL)
 
 	config.Set("Warehouse.mode", "embedded")
+	config.Set("JobsDB.gw.pendingEvents.enabled", true)
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
 	config.Set("SourceDebugger.disableEventUploads", true)
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
