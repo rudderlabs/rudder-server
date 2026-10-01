@@ -162,6 +162,7 @@ func (s *SUT) Start(t *testing.T) {
 	t.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
 
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
+	t.Setenv("RSERVER_JOBS_DB_GW_PENDING_EVENTS_ENABLED", "true")
 
 	// quick looops
 	t.Setenv("RSERVER_PROCESSOR_READ_LOOP_SLEEP", "50ms")

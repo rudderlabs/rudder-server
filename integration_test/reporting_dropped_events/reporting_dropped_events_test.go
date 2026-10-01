@@ -1071,6 +1071,7 @@ func runRudderServer(ctx context.Context, cancel context.CancelFunc, port int, p
 	config.Set("DEST_TRANSFORM_URL", transformerURL)
 
 	config.Set("Warehouse.mode", "off")
+	config.Set("JobsDB.gw.pendingEvents.enabled", true)
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
 	config.Set("SourceDebugger.disableEventUploads", true)
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
