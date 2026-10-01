@@ -205,6 +205,7 @@ type Handle struct {
 		reportingSourceSucceededMetricsEnabled    config.ValueLoader[bool]
 		reportingUTPassThroughMetricsEnabled      config.ValueLoader[bool]
 		reportingDTPassThroughMetricsEnabled      config.ValueLoader[bool]
+		reportingDTDiffMetricsEnabled             config.ValueLoader[bool]
 		earlyDestinationFilter                    config.ValueLoader[bool]
 
 		dropEventsForDisabledDestAtProcRebuild config.ValueLoader[bool]
@@ -859,6 +860,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.reportingSourceSucceededMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.sourceSucceededMetrics.enabled")
 	proc.config.reportingUTPassThroughMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.userTransformerPassThroughMetrics.enabled")
 	proc.config.reportingDTPassThroughMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.destTransformerPassThroughMetrics.enabled")
+	proc.config.reportingDTDiffMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.destTransformerDiffMetrics.enabled")
 	proc.config.earlyDestinationFilter = proc.conf.GetReloadableBoolVar(true, "Processor.earlyDestinationFilter")
 	// Opt-in early drop at the proc rebuild stage for destinations disabled since fan-out;
 	// by default such events keep flowing so the router/batchrouter aborts them with reporting.
@@ -3442,6 +3444,11 @@ type userTransformAndFilterOutput struct {
 	srcAndDestKey         string
 	response              types.Response
 	transformAt           string
+	// inCountMap and inCountMetadataMap are the event-filter output counts (the dest_transformer
+	// stage's input counts), threaded through so destTransform can compute DEST_TRANSFORMER diff
+	// metrics without recomputing them.
+	inCountMap         map[string]int64
+	inCountMetadataMap map[string]MetricMetadata
 }
 
 func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAndDestKey string, eventList []types.TransformerEvent, srcPipelineSteps sourceIDPipelineSteps, eventsByMessageID map[string]types.SingularEventWithReceivedAt, uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}) userTransformAndFilterOutput {
@@ -3839,6 +3846,8 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 		srcAndDestKey:         srcAndDestKey,
 		response:              response,
 		transformAt:           transformAt,
+		inCountMap:            inCountMap,
+		inCountMetadataMap:    inCountMetadataMap,
 	}
 }
 
@@ -3903,11 +3912,13 @@ func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilt
 			// REPORTING - PROCESSOR metrics - START
 			if proc.isReportingEnabled() {
 				successMetrics := make([]*reportingtypes.PUReportedMetric, 0)
+				successCountMetadataMap := make(map[string]MetricMetadata)
+				successCountMap := make(map[string]int64)
 				connectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 				statusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 				for i := range response.Events {
 					// Update metrics maps
-					proc.updateMetricMaps(nil, nil, connectionDetailsMap, statusDetailsMap, &response.Events[i], jobsdb.Succeeded.State, reportingtypes.DEST_TRANSFORMER, func() json.RawMessage { return nil }, nil)
+					proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, &response.Events[i], jobsdb.Succeeded.State, reportingtypes.DEST_TRANSFORMER, func() json.RawMessage { return nil }, nil)
 				}
 				reportingtypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
@@ -3925,6 +3936,24 @@ func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilt
 				data.reportMetrics = append(data.reportMetrics, nonSuccessMetrics.failedMetrics...)
 				data.reportMetrics = append(data.reportMetrics, nonSuccessMetrics.filteredMetrics...)
 				data.reportMetrics = append(data.reportMetrics, successMetrics...)
+
+				// Destination transformation can multiplex (one input event can yield several
+				// output events, or fewer), so succeeded + filtered + aborted does not equal the
+				// stage's input - emit a diff row to account for the gap, same as USER_TRANSFORMER.
+				if proc.config.reportingDTDiffMetricsEnabled.Load() {
+					diffMetrics := getDiffMetrics(
+						"",
+						reportingtypes.DEST_TRANSFORMER,
+						data.inCountMetadataMap,
+						successCountMetadataMap,
+						data.inCountMap,
+						successCountMap,
+						nonSuccessMetrics.failedCountMap,
+						nonSuccessMetrics.filteredCountMap,
+						proc.statsFactory,
+					)
+					data.reportMetrics = append(data.reportMetrics, diffMetrics...)
+				}
 			}
 			// REPORTING - PROCESSOR metrics - END
 		})
