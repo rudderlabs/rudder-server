@@ -8096,6 +8096,498 @@ func TestDestTransformerPassThroughReporting(t *testing.T) {
 	})
 }
 
+// TestDestTransformerDiffReporting covers the DEST_TRANSFORMER diff rows emitted from the real
+// (non pass-through) destTransform block, gated by Reporting.destTransformerDiffMetrics.enabled.
+// Destination transformation can multiplex (one input event yields several output events, or
+// fewer), so succeeded + aborted + filtered need not equal the stage's input; a diff row accounts
+// for the gap, mirroring the existing USER_TRANSFORMER diff. SourceIDEnabled's destination A has
+// no Transformation and no transformAtV1 override, so it takes the real DT block and is the only
+// destination whose transform is multiplexed in these cases. B is MINIO with a Transformation and
+// also takes the real DT block, but is kept 1:1 throughout to show the diff is destination-scoped.
+// C has transformAtV1 "none" and takes the pass-through arm added in the previous slice, which
+// must never reach the diff.
+func TestDestTransformerDiffReporting(t *testing.T) {
+	dtDiffRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.DEST_TRANSFORMER && m.StatusDetail.Status == reportingtypes.DiffStatus
+		})
+	}
+	dtDiffRowsFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(dtDiffRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.DestinationID == destinationID
+		})
+	}
+	dtRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.DEST_TRANSFORMER
+		})
+	}
+	dtRowsFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(dtRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.DestinationID == destinationID
+		})
+	}
+	dtSucceededFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(dtRowsFor(metrics, destinationID), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.StatusDetail.Status == jobsdb.Succeeded.State
+		})
+	}
+	efSucceededFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.EVENT_FILTER &&
+				m.DestinationID == destinationID &&
+				m.StatusDetail.Status == jobsdb.Succeeded.State
+		})
+	}
+	efAbortedFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.EVENT_FILTER &&
+				m.DestinationID == destinationID &&
+				m.StatusDetail.Status == jobsdb.Aborted.State
+		})
+	}
+	sumCount := func(rows []*reportingtypes.PUReportedMetric) int64 {
+		return lo.SumBy(rows, func(r *reportingtypes.PUReportedMetric) int64 { return r.StatusDetail.Count })
+	}
+
+	// payload builds a singular event JSON of the given type, letting a case set the event
+	// name (empty renders an identify event that carries none).
+	payload := func(msgID, eventType, eventName string) string {
+		event := map[string]any{
+			"rudderId":  "some-rudder-id",
+			"messageId": msgID,
+			"type":      eventType,
+		}
+		if eventName != "" {
+			event["event"] = eventName
+		}
+		b, err := jsonrs.Marshal(event)
+		require.NoError(t, err)
+		return string(b)
+	}
+
+	// job builds a gateway job carrying one or more singular events for sourceID, merging in
+	// any extra source-level parameters (for example source_job_run_id).
+	job := func(jobID int64, sourceID string, singularPayloads []string, extraParams map[string]any) *jobsdb.JobT {
+		params := map[string]any{"source_id": sourceID}
+		for k, v := range extraParams {
+			params[k] = v
+		}
+		paramBytes, err := jsonrs.Marshal(params)
+		require.NoError(t, err)
+		batch := strings.Join(singularPayloads, ",")
+		eventPayload := fmt.Appendf(nil, `{"writeKey":%q,"batch":[%s],"requestIP":"1.2.3.4","receivedAt":"2001-01-02T02:23:45.000Z"}`, WriteKeyEnabled, batch)
+		return &jobsdb.JobT{
+			UUID:         uuid.New(),
+			JobID:        jobID,
+			CreatedAt:    time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:     time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal:    gatewayCustomVal[0],
+			EventPayload: eventPayload,
+			EventCount:   len(singularPayloads),
+			Parameters:   paramBytes,
+		}
+	}
+
+	echoUserTransform := func(_ context.Context, events []types.TransformerEvent) types.Response {
+		return types.Response{
+			Events: lo.Map(events, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+				return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata}
+			}),
+		}
+	}
+	// dropUserTransform echoes every event except the one whose message id is msgID. Dropping
+	// it silently (no FailedEvents entry) makes the UT success count smaller than the input
+	// count, so getDiffMetrics has a nonzero diff to report for B.
+	dropUserTransform := func(msgID string) func(context.Context, []types.TransformerEvent) types.Response {
+		return func(_ context.Context, events []types.TransformerEvent) types.Response {
+			kept := lo.Filter(events, func(e types.TransformerEvent, _ int) bool {
+				return e.Metadata.MessageID != msgID
+			})
+			return types.Response{
+				Events: lo.Map(kept, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+					return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata}
+				}),
+			}
+		}
+	}
+	// echoDestTransform stands in for the real destination transformer so a processor-path
+	// destination produces a succeeded dest_transformer row instead of an empty response.
+	echoDestTransform := func(_ context.Context, events []types.TransformerEvent) types.Response {
+		return types.Response{
+			Events: lo.Map(events, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+				return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata, StatusCode: 200}
+			}),
+		}
+	}
+
+	twoEventsSameName := func() []*jobsdb.JobT {
+		return []*jobsdb.JobT{job(1, SourceIDEnabled, []string{
+			payload("m1", "track", "Some Event"),
+			payload("m2", "track", "Some Event"),
+		}, nil)}
+	}
+
+	// withRouterTransformOverride points destination A at "router" and makes the transformer
+	// features service report router-transform support for it, so destTransform's out-of-scope
+	// branch excludes A.
+	withRouterTransformOverride := func(processor *Handle, conf *config.Config) {
+		conf.Set("Processor.enabled-destination-a-definition-name.transformAt", "router")
+		processor.transformerFeaturesService = routerTransformFeatures{
+			FeaturesService: transformerFeaturesService.NewNoOpService(),
+			destTypes:       []string{"enabled-destination-a-definition-name"},
+		}
+	}
+
+	// destTransformForA sends only destination A's events through fn, so a case can multiplex
+	// A's output while every other destination (notably B) stays 1:1 through echoDestTransform.
+	destTransformForA := func(fn func(context.Context, []types.TransformerEvent) types.Response) func(context.Context, []types.TransformerEvent) types.Response {
+		return func(ctx context.Context, events []types.TransformerEvent) types.Response {
+			aEvents := lo.Filter(events, func(e types.TransformerEvent, _ int) bool {
+				return e.Metadata.DestinationID == DestinationIDEnabledA
+			})
+			otherEvents := lo.Filter(events, func(e types.TransformerEvent, _ int) bool {
+				return e.Metadata.DestinationID != DestinationIDEnabledA
+			})
+			aResp := fn(ctx, aEvents)
+			otherResp := echoDestTransform(ctx, otherEvents)
+			return types.Response{
+				Events:       append(aResp.Events, otherResp.Events...),
+				FailedEvents: append(aResp.FailedEvents, otherResp.FailedEvents...),
+			}
+		}
+	}
+
+	// duplicate emits two succeeded outputs per input event, giving the stage more output
+	// events than it was given.
+	duplicate := func(_ context.Context, events []types.TransformerEvent) types.Response {
+		return types.Response{
+			Events: lo.FlatMap(events, func(e types.TransformerEvent, _ int) []types.TransformerResponse {
+				return []types.TransformerResponse{
+					{Output: e.Message, Metadata: e.Metadata, StatusCode: 200},
+					{Output: e.Message, Metadata: e.Metadata, StatusCode: 200},
+				}
+			}),
+		}
+	}
+
+	// dropMsg echoes every event except the one with the given message id. The dropped event
+	// lands in neither Events nor FailedEvents, so it silently disappears from the stage.
+	dropMsg := func(msgID string) func(context.Context, []types.TransformerEvent) types.Response {
+		return func(_ context.Context, events []types.TransformerEvent) types.Response {
+			kept := lo.Filter(events, func(e types.TransformerEvent, _ int) bool {
+				return e.Metadata.MessageID != msgID
+			})
+			return types.Response{
+				Events: lo.Map(kept, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+					return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata, StatusCode: 200}
+				}),
+			}
+		}
+	}
+
+	const flagKey = "Reporting.destTransformerDiffMetrics.enabled"
+
+	t.Run("with the flag off (default) a multiplexing destination transformation emits no diff row and the dest_transformer succeeded row is unchanged", func(t *testing.T) {
+		processor, _, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(destTransformForA(duplicate))
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		require.Empty(t, dtDiffRows(storeMsg.reportMetrics))
+
+		rows := dtSucceededFor(storeMsg.reportMetrics, DestinationIDEnabledA)
+		require.Len(t, rows, 1)
+		r := rows[0]
+		require.Equal(t, reportingtypes.DEST_TRANSFORMER, r.PU)
+		require.Equal(t, reportingtypes.EVENT_FILTER, r.InPU)
+		require.Equal(t, reportingtypes.SuccessEventCode, r.StatusDetail.StatusCode)
+		require.Equal(t, "Some Event", r.StatusDetail.EventName)
+		require.Equal(t, "track", r.StatusDetail.EventType)
+		require.False(t, r.InitialPU)
+		require.False(t, r.TerminalPU)
+		require.EqualValues(t, 4, r.StatusDetail.Count)
+	})
+
+	t.Run("with the flag on a destination transformation that returns more events than it was given emits a positive diff row", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set(flagKey, true)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(destTransformForA(duplicate))
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		rows := dtDiffRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA)
+		require.Len(t, rows, 1)
+		r := rows[0]
+		require.Equal(t, reportingtypes.DEST_TRANSFORMER, r.PU)
+		require.Equal(t, "", r.InPU)
+		require.Equal(t, reportingtypes.DiffStatus, r.StatusDetail.Status)
+		require.Equal(t, 0, r.StatusDetail.StatusCode)
+		require.EqualValues(t, 2, r.StatusDetail.Count)
+		require.Equal(t, SourceIDEnabled, r.SourceID)
+		require.Equal(t, DestinationIDEnabledA, r.DestinationID)
+		require.Equal(t, "enabled-destination-a-definition-id", r.DestinationDefinitionID)
+		require.Equal(t, "Some Event", r.StatusDetail.EventName)
+		require.Equal(t, "track", r.StatusDetail.EventType)
+		require.False(t, r.InitialPU)
+		require.False(t, r.TerminalPU)
+
+		efCount := sumCount(efSucceededFor(storeMsg.reportMetrics, DestinationIDEnabledA))
+		require.EqualValues(t, 2, efCount)
+		require.EqualValues(t, efCount+2, sumCount(dtSucceededFor(storeMsg.reportMetrics, DestinationIDEnabledA)))
+
+		require.Empty(t, dtDiffRowsFor(storeMsg.reportMetrics, DestinationIDEnabledB), "B is kept 1:1 and must not get a diff row")
+	})
+
+	t.Run("with the flag on a destination transformation that returns fewer events than it was given emits a negative diff row", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set(flagKey, true)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(destTransformForA(dropMsg("m2")))
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		rows := dtDiffRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA)
+		require.Len(t, rows, 1)
+		require.EqualValues(t, -1, rows[0].StatusDetail.Count)
+		require.Equal(t, "", rows[0].InPU)
+		require.Equal(t, "Some Event", rows[0].StatusDetail.EventName)
+
+		require.EqualValues(t, 1, sumCount(dtSucceededFor(storeMsg.reportMetrics, DestinationIDEnabledA)))
+	})
+
+	t.Run("with the flag on a one to one destination transformation emits no diff row", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set(flagKey, true)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(echoDestTransform)
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		require.Empty(t, dtDiffRows(storeMsg.reportMetrics))
+		require.NotEmpty(t, dtSucceededFor(storeMsg.reportMetrics, DestinationIDEnabledA),
+			"the harness must actually reach the real dest_transformer block for this assertion to mean anything")
+	})
+
+	t.Run("with the flag on aborted and filtered destination transformer outputs count toward the input", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set(flagKey, true)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+		fn := func(_ context.Context, events []types.TransformerEvent) types.Response {
+			var resp types.Response
+			for _, e := range events {
+				switch e.Metadata.MessageID {
+				case "m1":
+					resp.Events = append(
+						resp.Events,
+						types.TransformerResponse{Output: e.Message, Metadata: e.Metadata, StatusCode: 200},
+						types.TransformerResponse{Output: e.Message, Metadata: e.Metadata, StatusCode: 200},
+					)
+				case "m2":
+					resp.FailedEvents = append(resp.FailedEvents, types.TransformerResponse{Metadata: e.Metadata, StatusCode: 400, Error: "dt failed"})
+				case "m3":
+					resp.FailedEvents = append(resp.FailedEvents, types.TransformerResponse{Metadata: e.Metadata, StatusCode: reportingtypes.FilterEventCode})
+				}
+			}
+			return resp
+		}
+		transformerClients.WithDynamicDestinationTransform(destTransformForA(fn))
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, []string{
+			payload("m1", "track", "Some Event"),
+			payload("m2", "track", "Some Event"),
+			payload("m3", "track", "Some Event"),
+		}, nil)}
+		storeMsg := runVisibilityThroughUT(t, processor, jobs)
+
+		diffRows := dtDiffRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA)
+		require.Len(t, diffRows, 1)
+		require.EqualValues(t, 1, diffRows[0].StatusDetail.Count)
+
+		abortedRows := lo.Filter(dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.StatusDetail.Status == jobsdb.Aborted.State
+		})
+		require.Len(t, abortedRows, 1)
+		require.EqualValues(t, 1, abortedRows[0].StatusDetail.Count)
+
+		filteredRows := lo.Filter(dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.StatusDetail.Status == jobsdb.Filtered.State
+		})
+		require.Len(t, filteredRows, 1)
+		require.EqualValues(t, 1, filteredRows[0].StatusDetail.Count)
+	})
+
+	t.Run("with the flag on diff rows are computed per event name and do not net out across names", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set(flagKey, true)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+		fn := func(_ context.Context, events []types.TransformerEvent) types.Response {
+			var resp types.Response
+			for _, e := range events {
+				if e.Metadata.MessageID == "m1" {
+					resp.Events = append(
+						resp.Events,
+						types.TransformerResponse{Output: e.Message, Metadata: e.Metadata, StatusCode: 200},
+						types.TransformerResponse{Output: e.Message, Metadata: e.Metadata, StatusCode: 200},
+					)
+				}
+				// m2 (Event Two) is dropped silently: no Events entry, no FailedEvents entry.
+			}
+			return resp
+		}
+		transformerClients.WithDynamicDestinationTransform(destTransformForA(fn))
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, []string{
+			payload("m1", "track", "Event One"),
+			payload("m2", "track", "Event Two"),
+		}, nil)}
+		storeMsg := runVisibilityThroughUT(t, processor, jobs)
+
+		rows := dtDiffRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA)
+		require.Len(t, rows, 2)
+
+		byName := make(map[string]int64)
+		for _, r := range rows {
+			byName[r.StatusDetail.EventName] = r.StatusDetail.Count
+		}
+		require.EqualValues(t, 1, byName["Event One"])
+		require.EqualValues(t, -1, byName["Event Two"])
+	})
+
+	t.Run("with the flag on the diff in-count is the event filter output, so events dropped by the event filter are not counted again in the diff", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set(flagKey, true)
+		conf.Set("drain.jobRunIDs", []string{"job_run_id_drained"})
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(echoDestTransform)
+
+		jobs := []*jobsdb.JobT{
+			job(1, SourceIDEnabled, []string{payload("m1", "track", "Some Event")}, map[string]any{"source_job_run_id": "job_run_id_drained"}),
+			job(2, SourceIDEnabled, []string{payload("m2", "track", "Some Event")}, map[string]any{"source_job_run_id": "job_run_id_kept"}),
+		}
+		storeMsg := runVisibilityThroughUT(t, processor, jobs)
+
+		require.Empty(t, dtDiffRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA),
+			"a wrong in-count would produce a -1 row keyed to the drained job run id")
+
+		abortedRows := efAbortedFor(storeMsg.reportMetrics, DestinationIDEnabledA)
+		require.NotEmpty(t, abortedRows, "the drained job is reported as aborted by event_filter")
+		for _, r := range abortedRows {
+			require.Equal(t, reportingtypes.DrainEventCode, r.StatusDetail.StatusCode)
+		}
+		require.EqualValues(t, 1, sumCount(dtSucceededFor(storeMsg.reportMetrics, DestinationIDEnabledA)))
+	})
+
+	t.Run("with the flag on a transformAt none destination gets only its pass-through row and no diff row", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set(flagKey, true)
+		conf.Set("Reporting.destTransformerPassThroughMetrics.enabled", true)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(duplicate)
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		require.Empty(t, dtDiffRowsFor(storeMsg.reportMetrics, DestinationIDEnabledC))
+
+		cRows := dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledC)
+		require.Len(t, cRows, 1)
+		require.Equal(t, jobsdb.Succeeded.State, cRows[0].StatusDetail.Status)
+		require.Equal(t, "", cRows[0].InPU)
+		require.EqualValues(t, 2, cRows[0].StatusDetail.Count)
+
+		require.Len(t, dtDiffRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA), 1,
+			"A must still multiplex through the real DT block, showing the flag was live in this run")
+		require.EqualValues(t, 2, dtDiffRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA)[0].StatusDetail.Count)
+	})
+
+	t.Run("with the flag on a router-transform destination emits no dest_transformer row of any kind", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set(flagKey, true)
+		withRouterTransformOverride(processor, conf)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(duplicate)
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		require.Empty(t, dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA))
+		require.Contains(t, storeMsg.routerDestIDs, DestinationIDEnabledA)
+
+		bRows := dtDiffRowsFor(storeMsg.reportMetrics, DestinationIDEnabledB)
+		require.Len(t, bRows, 1, "B still multiplexes, showing the flag was live in this run")
+		require.EqualValues(t, 2, bRows[0].StatusDetail.Count)
+	})
+
+	t.Run("with the flag on every row other than the dest_transformer diff rows is identical to a flag-off run, including user_transformer diff rows", func(t *testing.T) {
+		off, _, cOff, transformerClientsOff := newVisibilityProcessor(t, true)
+		defer cOff.Finish()
+		transformerClientsOff.WithDynamicUserTransform(dropUserTransform("m2"))
+		transformerClientsOff.WithDynamicDestinationTransform(destTransformForA(duplicate))
+		offMsg := runVisibilityThroughUT(t, off, twoEventsSameName())
+
+		on, conf, cOn, transformerClientsOn := newVisibilityProcessor(t, true)
+		defer cOn.Finish()
+		conf.Set(flagKey, true)
+		transformerClientsOn.WithDynamicUserTransform(dropUserTransform("m2"))
+		transformerClientsOn.WithDynamicDestinationTransform(destTransformForA(duplicate))
+		onMsg := runVisibilityThroughUT(t, on, twoEventsSameName())
+
+		utDiffForBOff := lo.Filter(offMsg.reportMetrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.USER_TRANSFORMER &&
+				m.DestinationID == DestinationIDEnabledB &&
+				m.StatusDetail.Status == reportingtypes.DiffStatus
+		})
+		require.NotEmpty(t, utDiffForBOff, "the dropped event produces a user_transformer diff row for B")
+
+		require.Empty(t, dtDiffRows(offMsg.reportMetrics))
+		require.NotEmpty(t, dtDiffRows(onMsg.reportMetrics))
+
+		isDTDiff := func(m *reportingtypes.PUReportedMetric) bool {
+			return m.PU == reportingtypes.DEST_TRANSFORMER && m.StatusDetail.Status == reportingtypes.DiffStatus
+		}
+		onWithoutDTDiff := lo.Filter(onMsg.reportMetrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return !isDTDiff(m)
+		})
+		require.ElementsMatch(t, offMsg.reportMetrics, onWithoutDTDiff)
+	})
+
+	t.Run("toggling the flag at runtime on the same handle takes effect without a restart", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(destTransformForA(duplicate))
+
+		buildJob := func(jobID int64, msgID string) []*jobsdb.JobT {
+			return []*jobsdb.JobT{job(jobID, SourceIDEnabled, []string{payload(msgID, "track", "Some Event")}, nil)}
+		}
+
+		msg1 := runVisibilityThroughUT(t, processor, buildJob(1, "m1"))
+		require.Empty(t, dtDiffRowsFor(msg1.reportMetrics, DestinationIDEnabledA))
+
+		conf.Set(flagKey, true)
+		msg2 := runVisibilityThroughUT(t, processor, buildJob(2, "m2"))
+		rows2 := dtDiffRowsFor(msg2.reportMetrics, DestinationIDEnabledA)
+		require.Len(t, rows2, 1)
+		require.EqualValues(t, 1, rows2[0].StatusDetail.Count)
+
+		conf.Set(flagKey, false)
+		msg3 := runVisibilityThroughUT(t, processor, buildJob(3, "m3"))
+		require.Empty(t, dtDiffRowsFor(msg3.reportMetrics, DestinationIDEnabledA))
+	})
+}
+
 // TestSourceSucceededReporting covers the source_succeeded rows emitted in pretransformStage:
 // one succeeded row per event that reaches the destination fan-out, gated by
 // Reporting.sourceSucceededMetrics.enabled.
