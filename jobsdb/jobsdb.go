@@ -11,6 +11,14 @@ asynchronously queues for drop, the old datasets.
 Dataset job-id ranges are tracked in memory with dataSetRangeT. Reads use those
 ranges, the dataset list, and no-result/distinct-value caches to avoid unnecessary
 queries.
+
+Pending-events gauges come from two decorators. NewPendingEventsJobsDB tracks a
+jobsdb whose only writer is the current process, with in-memory increments and
+decrements on top of a baseline count. NewPendingEventsTracker serves a reader whose
+jobs are stored by other processes: it counts the jobs of sealed datasets once, then
+subtracts their terminal statuses as they commit, and polls the last dataset for the
+rest. A count and the subtractions that race with it are reconciled through the
+count's Postgres snapshot and the transaction id of each status write.
 */
 
 package jobsdb
