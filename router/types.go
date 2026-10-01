@@ -23,9 +23,9 @@ type workerJobStatus struct {
 }
 type Diagnostic struct {
 	diagnosisTicker    *time.Ticker
-	requestsMetricLock sync.RWMutex
+	requestsMetricLock sync.Mutex
 	requestsMetric     []requestMetric
-	failureMetricLock  sync.RWMutex
+	failureMetricLock  sync.Mutex
 	failuresMetric     map[string]map[string]int
 }
 

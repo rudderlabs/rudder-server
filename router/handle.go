@@ -528,12 +528,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 					event = diagnostics.RouterAborted
 				}
 
-				rt.telemetry.failureMetricLock.Lock()
-				if _, ok := rt.telemetry.failuresMetric[event][string(workerJobStatus.status.ErrorResponse)]; !ok {
-					rt.telemetry.failuresMetric[event] = make(map[string]int)
-				}
-				rt.telemetry.failuresMetric[event][string(workerJobStatus.status.ErrorResponse)] += 1
-				rt.telemetry.failureMetricLock.Unlock()
+				rt.trackFailureMetrics(event, string(workerJobStatus.status.ErrorResponse))
 			}
 		}
 	}

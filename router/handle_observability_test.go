@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -11,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 )
 
@@ -98,4 +101,73 @@ func TestUpdateRudderSourcesStats_CapturesErrorResponse(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, jobService.failedRecords, 1)
 	require.Equal(t, "captured-text", jobService.failedRecords[0].Error)
+}
+
+// TestTrackFailureMetrics proves that a new error response for an event adds to
+// that event's counts instead of replacing the counts collected so far.
+func TestTrackFailureMetrics(t *testing.T) {
+	rt := &Handle{telemetry: &Diagnostic{failuresMetric: make(map[string]map[string]int)}}
+
+	rt.trackFailureMetrics(diagnostics.RouterFailed, "timeout")
+	rt.trackFailureMetrics(diagnostics.RouterFailed, "timeout")
+	rt.trackFailureMetrics(diagnostics.RouterFailed, "connection refused")
+	rt.trackFailureMetrics(diagnostics.RouterFailed, "timeout")
+	rt.trackFailureMetrics(diagnostics.RouterAborted, "bad request")
+
+	require.Equal(t, map[string]map[string]int{
+		diagnostics.RouterFailed:  {"timeout": 3, "connection refused": 1},
+		diagnostics.RouterAborted: {"bad request": 1},
+	}, rt.telemetry.failuresMetric)
+}
+
+// TestTakeRequestMetrics proves the swap hands over everything collected so far
+// and leaves the next batch empty, and that concurrent callers neither lose nor
+// double-count a metric.
+func TestTakeRequestMetrics(t *testing.T) {
+	rt := &Handle{telemetry: &Diagnostic{}}
+
+	rt.telemetry.requestsMetric = []requestMetric{{RequestRetries: 1}, {RequestSuccess: 2}}
+	require.Len(t, rt.takeRequestMetrics(), 2)
+	require.Empty(t, rt.telemetry.requestsMetric)
+	require.Empty(t, rt.takeRequestMetrics())
+
+	const (
+		writers   = 4
+		takers    = 2
+		perWriter = 250
+	)
+	var (
+		writersWG   sync.WaitGroup
+		takersWG    sync.WaitGroup
+		writersDone = make(chan struct{})
+		taken       atomic.Int64
+	)
+	for range takers {
+		takersWG.Go(func() {
+			for {
+				taken.Add(int64(len(rt.takeRequestMetrics())))
+				select {
+				case <-writersDone: // drain whatever the writers added last
+					taken.Add(int64(len(rt.takeRequestMetrics())))
+					return
+				default:
+				}
+			}
+		})
+	}
+	for range writers {
+		writersWG.Go(func() {
+			for range perWriter {
+				rt.telemetry.requestsMetricLock.Lock()
+				rt.telemetry.requestsMetric = append(rt.telemetry.requestsMetric, requestMetric{RequestSuccess: 1})
+				rt.telemetry.requestsMetricLock.Unlock()
+			}
+		})
+	}
+	writersWG.Wait()
+	close(writersDone)
+	takersWG.Wait()
+
+	require.Equal(t, int64(writers*perWriter), taken.Load())
+	require.Empty(t, rt.telemetry.requestsMetric)
 }
