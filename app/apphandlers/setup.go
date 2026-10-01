@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -188,4 +189,17 @@ func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.
 	}
 
 	return enrichers, nil
+}
+
+// withGatewayPendingEventsTracker wraps the gateway reader handle with the pending events tracker, if enabled.
+// It must wrap the handle before anything else does, so that every gateway status write of the process passes through it.
+func withGatewayPendingEventsTracker(conf *config.Config, gwROHandle *jobsdb.Handle) (jobsdb.JobsDB, error) {
+	if !conf.GetBoolVar(false, "JobsDB.gw.pendingEvents.enabled") {
+		return gwROHandle, nil
+	}
+	gwRODB, err := jobsdb.NewPendingEventsTracker(gwROHandle)
+	if err != nil {
+		return nil, fmt.Errorf("creating gateway pending events tracker: %w", err)
+	}
+	return gwRODB, nil
 }
