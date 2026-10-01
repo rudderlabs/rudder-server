@@ -30,6 +30,9 @@ func BuildRudderServerBinary(t *testing.T, mainPath, binaryPath string) {
 func StartRudderServer(t *testing.T, ctx context.Context, g *errgroup.Group, name, binaryPath string, configs map[string]string, otherEnv ...string) {
 	coverDir := t.TempDir()
 	configs["GOCOVERDIR"] = coverDir
+	if _, ok := configs["JobsDB.gw.pendingEvents.enabled"]; !ok { // exercise the gw pending events tracker in every test, unless a test decides otherwise
+		configs["JobsDB.gw.pendingEvents.enabled"] = "true"
+	}
 	// Don't use exec.CommandContext - it sends SIGKILL on context cancellation,
 	// which prevents the process from writing coverage data.
 	cmd := exec.Command(binaryPath)

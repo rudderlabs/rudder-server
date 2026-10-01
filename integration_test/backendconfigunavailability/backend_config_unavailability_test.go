@@ -21,6 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	statshelper "github.com/rudderlabs/rudder-go-kit/stats/testhelper"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
@@ -42,6 +43,7 @@ type testConfig struct {
 	transformerResource       *transformer.Resource
 	postgresResource          *postgres.Resource
 	gwPort                    int
+	prometheusPort            int
 	transformerConfigBEServer *httptest.Server
 	webhook                   *webhookutil.Recorder
 	configBEServer            *httptest.Server
@@ -55,7 +57,7 @@ func TestBackendConfigUnavailabilityForTransformer(t *testing.T) {
 
 	wg, ctx := errgroup.WithContext(ctx)
 	wg.Go(func() error {
-		err := runRudderServer(t, ctx, cancel, tc.gwPort, tc.postgresResource, tc.configBEServer.URL, tc.transformerResource.TransformerURL, t.TempDir())
+		err := runRudderServer(t, ctx, cancel, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.configBEServer.URL, tc.transformerResource.TransformerURL, t.TempDir())
 		if err != nil {
 			t.Logf("rudder-server exited with error: %v", err)
 		}
@@ -74,6 +76,11 @@ func TestBackendConfigUnavailabilityForTransformer(t *testing.T) {
 	require.Never(t, func() bool {
 		return tc.webhook.RequestsCount() != 0
 	}, time.Minute, time.Second)
+	// and they are pending in the gw jobsdb
+	require.Eventually(t, func() bool {
+		v, ok := gwPendingEvents(t, tc.prometheusPort, "source-1")
+		return ok && v == float64(eventsCount)
+	}, time.Minute, time.Second, "gw pending events should equal the events sent")
 
 	// starting backend config
 	tc.transformerConfigBEServer.Start()
@@ -86,6 +93,10 @@ func TestBackendConfigUnavailabilityForTransformer(t *testing.T) {
 		body, _ := io.ReadAll(req.Body)
 		require.True(t, gjson.GetBytes(body, "transformed").Bool())
 	})
+	require.Eventually(t, func() bool {
+		v, ok := gwPendingEvents(t, tc.prometheusPort, "source-1")
+		return ok && v == 0
+	}, time.Minute, time.Second, "no gw events should be pending once all are delivered")
 
 	cancel()
 	require.NoError(t, wg.Wait())
@@ -104,6 +115,8 @@ func setup(t testing.TB) testConfig {
 	require.NoError(t, err)
 
 	gwPort, err := kithelper.GetFreePort()
+	require.NoError(t, err)
+	prometheusPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 
 	webhook := webhookutil.NewRecorder()
@@ -149,6 +162,7 @@ func setup(t testing.TB) testConfig {
 	return testConfig{
 		postgresResource:          postgresResource,
 		gwPort:                    gwPort,
+		prometheusPort:            prometheusPort,
 		transformerResource:       transformerResource,
 		transformerConfigBEServer: unStartedTransformerConfigBEServer,
 		webhook:                   webhook,
@@ -160,7 +174,7 @@ func runRudderServer(
 	t testing.TB,
 	ctx context.Context,
 	cancel context.CancelFunc,
-	port int,
+	port, prometheusPort int,
 	postgresContainer *postgres.Resource,
 	cbURL, transformerURL, tmpDir string,
 ) (err error) {
@@ -175,6 +189,13 @@ func runRudderServer(
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.password"), postgresContainer.Password)
 
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.mode"), "off")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.gw.pendingEvents.enabled"), "true")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.gw.pendingEvents.interval"), "1s")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "enableStats"), "true")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "RuntimeStats.enabled"), "false")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "OpenTelemetry.enabled"), "true")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "OpenTelemetry.metrics.prometheus.enabled"), "true")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "OpenTelemetry.metrics.prometheus.port"), strconv.Itoa(prometheusPort))
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DestinationDebugger.disableEventDeliveryStatusUploads"), "true")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "SourceDebugger.disableEventUploads"), "true")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "TransformationDebugger.disableTransformationStatusUploads"), "true")
@@ -253,4 +274,30 @@ func sendEvents(
 		kithttputil.CloseResponse(resp)
 	}
 	return nil
+}
+
+// gwPendingEvents scrapes the server's prometheus endpoint and returns the gw pending events gauge of a source.
+func gwPendingEvents(t testing.TB, prometheusPort int, sourceID string) (float64, bool) {
+	t.Helper()
+	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/metrics", prometheusPort))
+	if err != nil {
+		return 0, false
+	}
+	defer func() { kithttputil.CloseResponse(resp) }()
+	families, err := statshelper.ParsePrometheusMetrics(resp.Body)
+	if err != nil {
+		return 0, false
+	}
+	family, ok := families["jobsdb_gw_pending_events_count"]
+	if !ok {
+		return 0, false
+	}
+	for _, m := range family.GetMetric() {
+		for _, label := range m.GetLabel() {
+			if label.GetName() == "sourceId" && label.GetValue() == sourceID {
+				return m.GetGauge().GetValue(), true
+			}
+		}
+	}
+	return 0, false
 }
