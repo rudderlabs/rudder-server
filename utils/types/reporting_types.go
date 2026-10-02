@@ -35,6 +35,7 @@ const (
 	GATEWAY_INGESTED       = "gw_ingested"
 	DESTINATION_ENTER      = "destination_enter"
 	DESTINATION_FILTER     = "destination_filter"
+	SOURCE_SUCCEEDED       = "source_succeeded"
 	SOURCE_HYDRATION       = "source_hydration"
 	TRACKINGPLAN_VALIDATOR = "tracking_plan_validator"
 	USER_TRANSFORMER       = "user_transformer"

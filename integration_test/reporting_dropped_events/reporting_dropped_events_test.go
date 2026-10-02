@@ -505,6 +505,14 @@ func TestReportingDroppedEvents(t *testing.T) {
 				"Reporting.dedupMetrics.enabled": true,
 
 				"Reporting.gatewayIngestedMetrics.enabled": true,
+
+				"Reporting.sourceSucceededMetrics.enabled": true,
+				// source-1 has no connections here, so with the reorder off (earlyDestinationFilter
+				// true, the default) the surviving event is dropped at preprocess before the
+				// destination fan-out and would never reach the source_succeeded emission. Turning
+				// the reorder on lets it reach the fan-out loop, which is what makes the source-side
+				// algebra below (3 ingested - 2 deduped = 1 gateway = 1 source_succeeded) observable.
+				"Processor.earlyDestinationFilter": false,
 			})
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
@@ -561,10 +569,16 @@ func TestReportingDroppedEvents(t *testing.T) {
 			// the gw_ingested status code must not leak into the gateway billing row, which
 			// master writes with status_code 0
 			gatewayWithStatusCode := reportCount("source_id = 'source-1' and destination_id = '' and pu = 'gateway' and status_code = 200")
-			t.Logf("gw_ingested count: %d (matching: %d), gateway rows carrying status_code 200: %d", ingested, matching, gatewayWithStatusCode)
+			// source_succeeded closes the source side of the same algebra: only the surviving event
+			// reaches the destination fan-out, so a deduped event must not get a row. The full row
+			// shape is pinned here too.
+			sourceSucceeded := reportCount("source_id = 'source-1' and destination_id = '' and pu = 'source_succeeded'")
+			sourceSucceededMatching := reportCount("source_id = 'source-1' and destination_id = '' and pu = 'source_succeeded' and status = 'succeeded' and status_code = 200 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''")
+			t.Logf("gw_ingested count: %d (matching: %d), gateway rows carrying status_code 200: %d, source_succeeded count: %d (matching: %d)", ingested, matching, gatewayWithStatusCode, sourceSucceeded, sourceSucceededMatching)
 			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
-			return ingested == 3 && matching == 3 && gatewayWithStatusCode == 0
-		}, 10*time.Second, 1*time.Second, "every ingested event, duplicates included, should get a gw_ingested row")
+			return ingested == 3 && matching == 3 && gatewayWithStatusCode == 0 &&
+				sourceSucceeded == 1 && sourceSucceededMatching == 1
+		}, 10*time.Second, 1*time.Second, "every ingested event, duplicates included, should get a gw_ingested row, and only the survivor a source_succeeded row")
 
 		cancel()
 		_ = wg.Wait()
@@ -580,6 +594,14 @@ func TestReportingDroppedEvents(t *testing.T) {
 	//	3. reorder on, part. exclude -> filtered_integration/298 per destination, no source-level row
 	//	4. reorder on, zero cands    -> filtered_no_destination/298 with an empty destination_id
 	//	5. reorder on, consent deny  -> filtered_consent/298 per destination, no source-level row
+	//
+	// Reporting.sourceSucceededMetrics.enabled is flipped on at
+	// runtime after those five batches, so the same table also carries both of its flag states:
+	//
+	//	6. source_succeeded on, reorder on  -> one row per event for source-1, not one per destination
+	//	7. source_succeeded on, reorder on  -> a row per event for source-2, which has no destinations
+	//	8. source_succeeded on, reorder off -> no row for source-2 (the documented gap), a row per
+	//	                                       event for source-1 (independent of the reorder flag)
 	//
 	// Batches are drained before the flag is flipped: report rows are committed in the same
 	// transaction as the gateway job statuses, so "all gw jobs succeeded" is a safe barrier.
@@ -805,6 +827,89 @@ func TestReportingDroppedEvents(t *testing.T) {
 			}, 30*time.Second, 500*time.Millisecond, "the consented destinations should still be routed to")
 			require.EqualValues(t, 0, routerJobCount("destination-5"),
 				"the consent-denied destination should not have received this batch")
+		})
+
+		// source_succeeded. The same long-lived server now
+		// observes Reporting.sourceSucceededMetrics.enabled flipped on at runtime, after five
+		// batches have already drained with it off.
+		t.Run("source succeeded flag on at runtime: one row per event, not one per destination", func(t *testing.T) {
+			// nothing before the flip may have emitted a row, whatever the reorder state was
+			require.EqualValues(t, 0, reportCount("pu = 'source_succeeded'"),
+				"no source_succeeded rows while Reporting.sourceSucceededMetrics.enabled is off")
+
+			config.Set("Reporting.sourceSucceededMetrics.enabled", true)
+
+			// source-1 fans out to three enabled destinations; the row is pre-fan-out and per event
+			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-1", url))
+			drainGateway(6 * eventsPerBatch)
+
+			require.Eventually(t, func() bool {
+				// the full row shape is pinned here: in_pu written as NULL, initial_state flipping
+				// to true, or a non-empty destination_id has to fail this assertion
+				return reportCount("source_id = 'source-1' and pu = 'source_succeeded' and status = 'succeeded' and status_code = 200 and in_pu = '' and destination_id = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "every event reaching the fan-out should get exactly one source_succeeded row")
+
+			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
+			// one row per event, not one per destination: a per-destination emission would make
+			// this 3*eventsPerBatch
+			require.EqualValues(t, eventsPerBatch, reportCount("source_id = 'source-1' and pu = 'source_succeeded'"),
+				"source_succeeded counts events entering the fan-out, not (event, destination) pairs")
+			// the same batches did fan out: three source-1 batches have entered three destinations each
+			require.EqualValues(t, 3*3*eventsPerBatch,
+				reportCount("source_id = 'source-1' and pu = 'destination_enter' and status = 'succeeded'"),
+				"this batch should still have entered all three destinations")
+			require.EqualValues(t, 0, reportCount("pu = 'source_succeeded' and destination_id != ''"),
+				"source_succeeded is a source-level row and must never carry a destination id")
+		})
+
+		t.Run("source succeeded is emitted for a source with no destinations while the reorder is on", func(t *testing.T) {
+			// source-2 has no connections at all: with the reorder on its events still reach the
+			// fan-out loop, so they are counted. This is the direction that shows the emission does
+			// not depend on there being a destination.
+			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-2", url))
+			drainGateway(7 * eventsPerBatch)
+
+			require.Eventually(t, func() bool {
+				return reportCount("source_id = 'source-2' and pu = 'source_succeeded' and status = 'succeeded' and status_code = 200 and in_pu = '' and destination_id = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "a source with no destinations should still get source_succeeded rows")
+
+			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
+			require.EqualValues(t, eventsPerBatch, reportCount("source_id = 'source-2' and pu = 'source_succeeded'"),
+				"one row per event for source-2 as well")
+		})
+
+		t.Run("known gap: with the reorder off a zero destination event is dropped before the row, sources with destinations are unaffected", func(t *testing.T) {
+			sourceTwoBefore := reportCount("source_id = 'source-2' and pu = 'source_succeeded'")
+			sourceOneBefore := reportCount("source_id = 'source-1' and pu = 'source_succeeded'")
+			// batch 1 already produced a plain filtered row for source-2, so this is a delta
+			preprocessFilteredBefore := reportCount("source_id = 'source-2' and destination_id = '' and pu = 'destination_filter' and status = 'filtered' and status_code = 298")
+
+			// back to the default: the zero-candidate guard runs at preprocess again
+			config.Set("Processor.earlyDestinationFilter", true)
+
+			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-2", url))
+			drainGateway(8 * eventsPerBatch)
+
+			// known gap: these events are dropped at preprocess and never reach the fan-out loop,
+			// so they get no row
+			require.Eventually(t, func() bool {
+				return reportCount("source_id = 'source-2' and destination_id = '' and pu = 'destination_filter' and status = 'filtered' and status_code = 298") == preprocessFilteredBefore+eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "the preprocess source-level filtered row marks the drop")
+			require.EqualValues(t, sourceTwoBefore, reportCount("source_id = 'source-2' and pu = 'source_succeeded'"),
+				"with Processor.earlyDestinationFilter on, a source with no enabled destination gets no source_succeeded row")
+
+			// but the emission itself is independent of that flag: a source that does reach the
+			// fan-out is counted in either reorder state
+			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-1", url))
+			drainGateway(9 * eventsPerBatch)
+
+			require.Eventually(t, func() bool {
+				return reportCount("source_id = 'source-1' and pu = 'source_succeeded' and status = 'succeeded' and status_code = 200 and in_pu = '' and destination_id = '' and terminal_state = false and initial_state = false and error_type = ''") == sourceOneBefore+eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "source_succeeded must be emitted with Processor.earlyDestinationFilter on too")
+
+			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
+			require.EqualValues(t, sourceOneBefore+eventsPerBatch, reportCount("source_id = 'source-1' and pu = 'source_succeeded'"),
+				"still one row per event, not one per destination, with the reorder off")
 		})
 
 		cancel()
