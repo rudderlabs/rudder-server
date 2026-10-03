@@ -62,6 +62,16 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 		"string":   parquetString,
 		"datetime": parquetTimestampMicros,
 	},
+	warehouseutils.MicrosoftFabric: {
+		"bigint":   parquetInt64,
+		"int":      parquetInt64,
+		"boolean":  parquetBoolean,
+		"float":    parquetDouble,
+		"string":   parquetString,
+		"text":     parquetString,
+		"json":     parquetString,
+		"datetime": parquetTimestampMicros,
+	},
 }
 
 type parquetWriter struct {
@@ -131,7 +141,11 @@ func parquetSchema(schema model.TableSchema, destType string) ([]string, error) 
 
 	var pSchema []string
 	for _, col := range sortedTableColumns(schema) {
-		pType := fmt.Sprintf("name=%s, %s", warehouseutils.ToProviderCase(destType, col), whTypeMap[schema[col]])
+		parquetType, ok := whTypeMap[schema[col]]
+		if !ok {
+			return nil, fmt.Errorf("unsupported data type %q for parquet load files in warehouse %q", schema[col], destType)
+		}
+		pType := fmt.Sprintf("name=%s, %s", warehouseutils.ToProviderCase(destType, col), parquetType)
 		pSchema = append(pSchema, pType)
 	}
 	return pSchema, nil

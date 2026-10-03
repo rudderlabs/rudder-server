@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/filemanagerresolver"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -22,21 +23,39 @@ type Downloader interface {
 }
 
 type downloaderImpl struct {
-	warehouse  *model.Warehouse
-	uploader   warehouseutils.Uploader
-	numWorkers int
+	warehouse           *model.Warehouse
+	uploader            warehouseutils.Uploader
+	numWorkers          int
+	fileManagerResolver filemanagerresolver.Resolver
+}
+
+type Option func(*downloaderImpl)
+
+func WithFileManagerResolver(resolver filemanagerresolver.Resolver) Option {
+	return func(d *downloaderImpl) {
+		d.fileManagerResolver = resolver
+	}
 }
 
 func NewDownloader(
 	warehouse *model.Warehouse,
 	uploader warehouseutils.Uploader,
 	numWorkers int,
+	options ...Option,
 ) Downloader {
-	return &downloaderImpl{
-		warehouse:  warehouse,
-		uploader:   uploader,
-		numWorkers: numWorkers,
+	d := &downloaderImpl{
+		warehouse:           warehouse,
+		uploader:            uploader,
+		numWorkers:          numWorkers,
+		fileManagerResolver: filemanagerresolver.Default,
 	}
+	for _, option := range options {
+		option(d)
+	}
+	if d.fileManagerResolver == nil {
+		d.fileManagerResolver = filemanagerresolver.Default
+	}
+	return d
 }
 
 func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]string, error) {
@@ -55,7 +74,7 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 		l.uploader.UseRudderStorage(),
 	)
 
-	fileManager, err := filemanager.New(&filemanager.Settings{
+	fileManager, err := l.fileManagerResolver(l.warehouse.Type, &filemanager.Settings{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         storageProvider,
@@ -99,13 +118,7 @@ func (l *downloaderImpl) downloadSingleObject(ctx context.Context, fileManager f
 		objectFile *os.File
 	)
 
-	ObjectStorage := warehouseutils.ObjectStorageType(
-		l.warehouse.Destination.DestinationDefinition.Name,
-		l.warehouse.Destination.Config,
-		l.uploader.UseRudderStorage(),
-	)
-
-	if objectName, err = warehouseutils.GetObjectName(object.Location, l.warehouse.Destination.Config, ObjectStorage); err != nil {
+	if objectName, err = fileManager.GetObjectNameFromLocation(object.Location); err != nil {
 		return "", fmt.Errorf("object name for location: %s, %w", object.Location, err)
 	}
 

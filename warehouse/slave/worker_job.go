@@ -29,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/rudderlabs/rudder-server/warehouse/filemanagerresolver"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -88,7 +89,7 @@ func (p *basePayload) sortedColumnMapForAllTables() map[string][]string {
 	})
 }
 
-func (p *basePayload) fileManager(config any, useRudderStorage bool) (filemanager.FileManager, error) {
+func (p *basePayload) fileManager(config any, useRudderStorage bool, resolver filemanagerresolver.Resolver) (filemanager.FileManager, error) {
 	configMap, ok := config.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("config is not a map[string]any: %T", config)
@@ -99,7 +100,10 @@ func (p *basePayload) fileManager(config any, useRudderStorage bool) (filemanage
 	clonedConfig["uploadIfNotExist"] = true
 
 	storageProvider := warehouseutils.ObjectStorageType(p.DestinationType, config, useRudderStorage)
-	fileManager, err := filemanager.New(&filemanager.Settings{
+	if resolver == nil {
+		resolver = filemanagerresolver.Default
+	}
+	fileManager, err := resolver(p.DestinationType, &filemanager.Settings{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:                    storageProvider,
@@ -130,9 +134,10 @@ type jobRun struct {
 
 	identifier string
 
-	since           func(time.Time) time.Duration
-	logger          logger.Logger
-	encodingFactory *encoding.Factory
+	since               func(time.Time) time.Duration
+	logger              logger.Logger
+	encodingFactory     *encoding.Factory
+	fileManagerResolver filemanagerresolver.Resolver
 
 	now func() time.Time
 
@@ -169,7 +174,7 @@ type jobRun struct {
 	downloadStagingFile func(ctx context.Context, stagingFileInfo stagingFileInfo) error
 }
 
-func newJobRun(job basePayload, workerIdx int, conf *appConfig.Config, log logger.Logger, stat stats.Stats, encodingFactory *encoding.Factory) *jobRun {
+func newJobRun(job basePayload, workerIdx int, conf *appConfig.Config, log logger.Logger, stat stats.Stats, encodingFactory *encoding.Factory, resolver ...filemanagerresolver.Resolver) *jobRun {
 	jr := &jobRun{
 		job:                  job,
 		workerIdx:            workerIdx,
@@ -185,6 +190,10 @@ func newJobRun(job basePayload, workerIdx int, conf *appConfig.Config, log logge
 		tableEventCountMap:   make(map[string]int),
 		stagingFilePaths:     make(map[int64]string),
 		tableWriterMutexes:   make(map[string]*sync.Mutex),
+	}
+
+	if len(resolver) > 0 && resolver[0] != nil {
+		jr.fileManagerResolver = resolver[0]
 	}
 
 	jr.downloadStagingFile = func(ctx context.Context, stagingFileInfo stagingFileInfo) error {
@@ -205,7 +214,7 @@ func newJobRun(job basePayload, workerIdx int, conf *appConfig.Config, log logge
 				)
 			}
 
-			downloader, err := jr.job.fileManager(config, useRudderStorage)
+			downloader, err := jr.job.fileManager(config, useRudderStorage, jr.fileManagerResolver)
 			if err != nil {
 				return fmt.Errorf("creating file manager: %w", err)
 			}
@@ -354,7 +363,7 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context, modifier func(result uplo
 	ctx, cancel := context.WithTimeout(ctx, jr.config.slaveUploadTimeout)
 	defer cancel()
 
-	uploader, err := jr.job.fileManager(jr.job.DestinationConfig, jr.job.UseRudderStorage)
+	uploader, err := jr.job.fileManager(jr.job.DestinationConfig, jr.job.UseRudderStorage, jr.fileManagerResolver)
 	if err != nil {
 		return nil, fmt.Errorf("creating uploader: %w", err)
 	}

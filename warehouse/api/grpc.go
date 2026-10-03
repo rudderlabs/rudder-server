@@ -40,6 +40,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
+	"github.com/rudderlabs/rudder-server/warehouse/filemanagerresolver"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -60,20 +61,20 @@ const (
 type GRPC struct {
 	proto.UnimplementedWarehouseServer
 
-	conf               *config.Config
-	logger             logger.Logger
-	isMultiWorkspace   bool
-	cpClient           cpclient.InternalControlPlane
-	connectionManager  *controlplane.ConnectionManager
-	tenantManager      *multitenant.Manager
-	bcManager          *bcm.BackendConfigManager
-	tableUploadsRepo   *repo.TableUploads
-	stagingRepo        *repo.StagingFiles
-	schemaRepo         *repo.WHSchema
-	uploadRepo         *repo.Uploads
-	triggerStore       *sync.Map
-	fileManagerFactory filemanager.Factory
-	now                func() time.Time
+	conf                *config.Config
+	logger              logger.Logger
+	isMultiWorkspace    bool
+	cpClient            cpclient.InternalControlPlane
+	connectionManager   *controlplane.ConnectionManager
+	tenantManager       *multitenant.Manager
+	bcManager           *bcm.BackendConfigManager
+	tableUploadsRepo    *repo.TableUploads
+	stagingRepo         *repo.StagingFiles
+	schemaRepo          *repo.WHSchema
+	uploadRepo          *repo.Uploads
+	triggerStore        *sync.Map
+	fileManagerResolver filemanagerresolver.Resolver
+	now                 func() time.Time
 
 	config struct {
 		region         string
@@ -90,6 +91,14 @@ type GRPC struct {
 	}
 }
 
+type GRPCOption func(*GRPC)
+
+func WithFileManagerResolver(resolver filemanagerresolver.Resolver) GRPCOption {
+	return func(g *GRPC) {
+		g.fileManagerResolver = resolver
+	}
+}
+
 func NewGRPCServer(
 	conf *config.Config,
 	logger logger.Logger,
@@ -98,19 +107,26 @@ func NewGRPCServer(
 	tenantManager *multitenant.Manager,
 	bcManager *bcm.BackendConfigManager,
 	triggerStore *sync.Map,
+	options ...GRPCOption,
 ) (*GRPC, error) {
 	g := &GRPC{
-		conf:               conf,
-		logger:             logger.Child("grpc"),
-		tenantManager:      tenantManager,
-		bcManager:          bcManager,
-		stagingRepo:        repo.NewStagingFiles(db, conf, repo.WithStats(statsFactory)),
-		uploadRepo:         repo.NewUploads(db, repo.WithStats(statsFactory)),
-		tableUploadsRepo:   repo.NewTableUploads(db, conf, repo.WithStats(statsFactory)),
-		schemaRepo:         repo.NewWHSchemas(db, conf, logger, repo.WithStats(statsFactory)),
-		triggerStore:       triggerStore,
-		fileManagerFactory: filemanager.New,
-		now:                timeutil.Now,
+		conf:                conf,
+		logger:              logger.Child("grpc"),
+		tenantManager:       tenantManager,
+		bcManager:           bcManager,
+		stagingRepo:         repo.NewStagingFiles(db, conf, repo.WithStats(statsFactory)),
+		uploadRepo:          repo.NewUploads(db, repo.WithStats(statsFactory)),
+		tableUploadsRepo:    repo.NewTableUploads(db, conf, repo.WithStats(statsFactory)),
+		schemaRepo:          repo.NewWHSchemas(db, conf, logger, repo.WithStats(statsFactory)),
+		triggerStore:        triggerStore,
+		fileManagerResolver: filemanagerresolver.Default,
+		now:                 timeutil.Now,
+	}
+	for _, option := range options {
+		option(g)
+	}
+	if g.fileManagerResolver == nil {
+		g.fileManagerResolver = filemanagerresolver.Default
 	}
 
 	g.config.region = conf.GetStringVar("", "region")
@@ -703,6 +719,13 @@ func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *pr
 	}
 
 	switch request.Type {
+	case warehouseutils.MicrosoftFabric:
+		for _, key := range []string{"host", "fabricWorkspaceId", "lakehouseId", "tenantId", "clientId", "clientSecret"} {
+			if !checkMapForValidKey(validateRequest.Config, key) {
+				err = fmt.Errorf("%s invalid or not present", key)
+				break
+			}
+		}
 	case warehouseutils.AzureBlob:
 		if !checkMapForValidKey(validateRequest.Config, "containerName") {
 			err = errors.New("containerName invalid or not present")
@@ -748,15 +771,19 @@ func checkMapForValidKey(configMap map[string]any, key string) bool {
 }
 
 func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObjectStorageRequest) error {
+	provider := request.Type
+	if request.Type == warehouseutils.MicrosoftFabric {
+		provider = warehouseutils.OneLake
+	}
 	settings := &filemanager.Settings{
-		Provider: request.Type,
+		Provider: provider,
 		Config:   request.Config,
 		Conf:     g.conf,
 	}
 
 	overrideWithEnv(ctx, settings)
 
-	fileManager, err := g.fileManagerFactory(settings)
+	fileManager, err := g.fileManagerResolver(request.Type, settings)
 	if err != nil {
 		return fmt.Errorf("unable to create file manager: \n%s", err.Error())
 	}

@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/rudderlabs/rudder-server/warehouse/filemanagerresolver"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
@@ -172,7 +173,8 @@ func New(
 			LoadRepo:           repo.NewLoadFiles(db, r.conf, repo.WithStats(r.statsFactory)),
 			ControlPlaneClient: controlPlaneClient,
 		},
-		encodingFactory: encodingFactory,
+		encodingFactory:     encodingFactory,
+		fileManagerResolver: filemanagerresolver.Default,
 	}
 	loadfiles.WithConfig(r.uploadJobFactory.loadFile, r.conf)
 

@@ -72,6 +72,25 @@ func TestErrorHandler_MatchUploadJobErrorType(t *testing.T) {
 			},
 
 			{
+				"Microsoft Fabric service-principal bootstrap", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"spn_token_bootstrap: token request failed\"]}}"), model.PermissionError,
+			},
+			{
+				"Microsoft Fabric lakehouse access", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"lakehouse_access: uploading file failed with HTTP 403\"]}}"), model.PermissionError,
+			},
+			{
+				"Microsoft Fabric lakehouse not found", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"lakehouse_not_found: listing files failed with HTTP 404\"]}}"), model.ResourceNotFoundError,
+			},
+			{
+				"Microsoft Fabric COPY INTO", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"copy_into: loading Parquet into tracks\"]}}"), model.ResourceNotFoundError,
+			},
+			{
+				"Microsoft Fabric schema evolution", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"schema_evolution: unsupported Rudder type\"]}}"), model.AlterColumnError,
+			},
+			{
+				"Microsoft Fabric merge", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"merge: loading tracks from staging\"]}}"), model.ConcurrentQueriesError,
+			},
+
+			{
 				"Postgres no such host", warehouseutils.POSTGRES, errors.New("{\"fetching_remote_schema_failed\":{\"attempt\":2,\"errors\":[\"dial tcp: lookup *** on ***: no such host\"]}}"), model.ResourceNotFoundError,
 			},
 			{
