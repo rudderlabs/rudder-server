@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -23,8 +24,11 @@ type LyticsServiceImpl struct {
 }
 
 func (u *LyticsServiceImpl) getBulkApi(destConfig DestinationConfig) *LyticsServiceImpl {
+	query := url.Values{}
+	query.Set("timestamp_field", destConfig.TimestampField)
+
 	return &LyticsServiceImpl{
-		BulkApi: fmt.Sprintf("https://bulk.lytics.io/collect/bulk/%s?timestamp_field=%s", destConfig.LyticsStreamName, destConfig.TimestampField),
+		BulkApi: "https://bulk.lytics.io/collect/bulk/" + url.PathEscape(destConfig.LyticsStreamName) + "?" + query.Encode(),
 	}
 }
 
