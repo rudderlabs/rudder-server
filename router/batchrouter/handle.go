@@ -44,7 +44,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/filemanagerresolver"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -69,7 +68,6 @@ type Handle struct {
 	reporting            types.Reporting
 	backendConfig        backendconfig.BackendConfig
 	fileManagerFactory   filemanager.Factory
-	fileManagerResolver  filemanagerresolver.Resolver
 	transientSources     transientsource.Service
 	rsourcesService      rsources.JobService
 	rsourcesSyncSettings rsources.SyncSettingDelegate
@@ -378,7 +376,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 
 	brt.logger.Debugn("BRT: Logged to local file", logger.NewStringField("gzipFilePath", gzipFilePath))
 	useRudderStorage := isWarehouse && misc.IsConfiguredToUseRudderObjectStorage(batchJobs.Connection.Destination.Config)
-	uploader, err := brt.resolveFileManager(&filemanager.Settings{
+	uploader, err := brt.fileManagerFactory(&filemanager.Settings{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         provider,
@@ -494,14 +492,6 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 		BytesPerTable:    bytesPerTable,
 		UseRudderStorage: useRudderStorage,
 	}
-}
-
-func (brt *Handle) resolveFileManager(settings *filemanager.Settings) (filemanager.FileManager, error) {
-	resolver := brt.fileManagerResolver
-	if resolver == nil {
-		resolver = filemanagerresolver.New(brt.fileManagerFactory)
-	}
-	return resolver(brt.destType, settings)
 }
 
 func (brt *Handle) resolveDatePrefixOverride(workspaceID, destinationID string) string {

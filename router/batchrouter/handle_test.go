@@ -589,7 +589,7 @@ func TestBytesPerTable(t *testing.T) {
 	}
 }
 
-func TestWarehouseUploadUsesResolverForFabricOneLake(t *testing.T) {
+func TestWarehouseUploadUsesFactoryForFabricOneLake(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockFileManager := mock_filemanager.NewMockFileManager(mockCtrl)
 	mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
@@ -601,16 +601,12 @@ func TestWarehouseUploadUsesResolverForFabricOneLake(t *testing.T) {
 		},
 	)
 
-	var resolverCalled bool
+	var factoryCalled bool
 	brt := &Handle{
 		destType: warehouseutils.MicrosoftFabric,
 		logger:   logger.NewLogger().Child("batchrouter"),
 		fileManagerFactory: func(settings *filemanager.Settings) (filemanager.FileManager, error) {
-			return nil, fmt.Errorf("base factory called for %s", settings.Provider)
-		},
-		fileManagerResolver: func(destType string, settings *filemanager.Settings) (filemanager.FileManager, error) {
-			resolverCalled = true
-			require.Equal(t, warehouseutils.MicrosoftFabric, destType)
+			factoryCalled = true
 			require.Equal(t, warehouseutils.OneLake, settings.Provider)
 			return mockFileManager, nil
 		},
@@ -639,7 +635,7 @@ func TestWarehouseUploadUsesResolverForFabricOneLake(t *testing.T) {
 	}, true)
 
 	require.NoError(t, result.Error)
-	require.True(t, resolverCalled)
+	require.True(t, factoryCalled)
 }
 
 func TestUploadDatePrefixOverridePrecedence(t *testing.T) {

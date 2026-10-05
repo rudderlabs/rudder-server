@@ -344,11 +344,7 @@ func (f *MicrosoftFabric) ShouldMerge(tableName string) bool {
 	return !f.warehouse.GetPreferAppendSetting() || !f.uploader.CanAppend()
 }
 
-type sqlExecer interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
-}
-
-func (f *MicrosoftFabric) copyInto(ctx context.Context, execer sqlExecer, tableName, location string, columns []string) error {
+func (f *MicrosoftFabric) copyInto(ctx context.Context, tableName, location string, columns []string) error {
 	if err := f.validateOneLakeLocation(location); err != nil {
 		return err
 	}
@@ -359,7 +355,7 @@ func (f *MicrosoftFabric) copyInto(ctx context.Context, execer sqlExecer, tableN
 		qualified(f.namespace, tableName),
 		warehouseutils.JoinQuotedIdentifiers(columns, warehouseutils.BracketQuoteIdentifier, ","),
 		warehouseutils.SQLStringLiteral(location))
-	if _, err := execer.ExecContext(ctx, statement); err != nil {
+	if _, err := f.db.ExecContext(ctx, statement); err != nil {
 		return fmt.Errorf("copy_into: loading Parquet into %q: %w", tableName, err)
 	}
 	return nil
@@ -447,63 +443,66 @@ WHEN NOT MATCHED THEN INSERT (%[8]s) VALUES (%[9]s);`,
 		warehouseutils.BracketQuoteIdentifier("received_at"), pk, additionalJoin, updates, quotedColumns, sourceColumns)
 }
 
-func (f *MicrosoftFabric) loadTable(ctx context.Context, tableName string, keepStaging bool) (*types.LoadTableStats, string, error) {
+// loadTable loads tableName through a staging table and returns that staging table's name,
+// even on error, so the caller can drop it. It returns "" when there are no load files.
+func (f *MicrosoftFabric) loadTable(ctx context.Context, tableName string) (string, error) {
 	metadata, err := f.uploader.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{Table: tableName})
 	if err != nil {
-		return nil, "", fmt.Errorf("getting load files: %w", err)
+		return "", fmt.Errorf("getting load files: %w", err)
 	}
 	if len(metadata) == 0 {
-		return &types.LoadTableStats{}, "", nil
+		return "", nil
 	}
 	columns := warehouseutils.SortColumnKeysFromColumnMap(f.uploader.GetTableSchemaInUpload(tableName))
-	shouldMerge := f.ShouldMerge(tableName)
 
 	stagingTableName, err := f.createStagingTable(ctx, tableName)
 	if err != nil {
-		return nil, "", err
-	}
-	if !keepStaging {
-		defer f.dropStagingTable(ctx, stagingTableName)
+		return "", err
 	}
 	for _, loadFile := range metadata {
-		if err := f.copyInto(ctx, f.db, stagingTableName, loadFile.Location, columns); err != nil {
-			return nil, stagingTableName, err
+		if err := f.copyInto(ctx, stagingTableName, loadFile.Location, columns); err != nil {
+			return stagingTableName, err
 		}
 	}
 
-	if shouldMerge {
+	if f.ShouldMerge(tableName) {
 		statement := mergeStatement(f.namespace, tableName, stagingTableName, columns, f.uploader.ShouldOnDedupUseNewRecord())
 		if _, err := f.db.ExecContext(ctx, statement); err != nil {
-			return nil, stagingTableName, fmt.Errorf("merge: loading %q from staging: %w", tableName, err)
+			return stagingTableName, fmt.Errorf("merge: loading %q from staging: %w", tableName, err)
 		}
 	} else {
 		quotedColumns := warehouseutils.JoinQuotedIdentifiers(columns, warehouseutils.BracketQuoteIdentifier, ",")
 		statement := fmt.Sprintf(`INSERT INTO %s (%s) SELECT %s FROM %s;`, qualified(f.namespace, tableName), quotedColumns, quotedColumns, qualified(f.namespace, stagingTableName))
 		if _, err := f.db.ExecContext(ctx, statement); err != nil {
-			return nil, stagingTableName, fmt.Errorf("inserting append rows from staging: %w", err)
+			return stagingTableName, fmt.Errorf("inserting append rows from staging: %w", err)
 		}
 	}
-	return &types.LoadTableStats{}, stagingTableName, nil
+	return stagingTableName, nil
 }
 
 func (f *MicrosoftFabric) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
-	loadStats, _, err := f.loadTable(ctx, tableName, false)
-	return loadStats, err
+	stagingTableName, err := f.loadTable(ctx, tableName)
+	f.dropStagingTable(ctx, stagingTableName)
+	if err != nil {
+		return nil, err
+	}
+	return &types.LoadTableStats{}, nil
 }
 
 func (f *MicrosoftFabric) LoadUserTables(ctx context.Context) map[string]error {
-	_, identifiesStaging, err := f.loadTable(ctx, warehouseutils.IdentifiesTable, true)
+	identifiesStaging, err := f.loadTable(ctx, warehouseutils.IdentifiesTable)
+	defer f.dropStagingTable(ctx, identifiesStaging)
 	if err != nil {
 		return map[string]error{warehouseutils.IdentifiesTable: fmt.Errorf("loading identifies table: %w", err)}
-	}
-	if identifiesStaging != "" {
-		defer f.dropStagingTable(ctx, identifiesStaging)
 	}
 	if len(f.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
 		return map[string]error{warehouseutils.IdentifiesTable: nil}
 	}
+	usersResult := func(err error) map[string]error {
+		return map[string]error{warehouseutils.IdentifiesTable: nil, warehouseutils.UsersTable: err}
+	}
 	if identifiesStaging == "" {
-		return map[string]error{warehouseutils.IdentifiesTable: nil, warehouseutils.UsersTable: errors.New("loading users: no identifies load files")}
+		return usersResult(errors.New("loading users: no identifies load files"))
 	}
 
 	userSchema := f.uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
@@ -538,33 +537,27 @@ SELECT %[6]s AS %[3]s, %[8]s FROM %[7]s WHERE %[6]s IS NOT NULL
 		qualified(f.namespace, unionTable), warehouseutils.BracketQuoteIdentifier("id"), warehouseutils.BracketQuoteIdentifier("id"), userColumns,
 		qualified(f.namespace, warehouseutils.UsersTable), warehouseutils.BracketQuoteIdentifier("user_id"), qualified(f.namespace, identifiesStaging), strings.Join(identifyColumns, ","))
 	if _, err := f.db.ExecContext(ctx, unionStatement); err != nil {
-		return map[string]error{warehouseutils.IdentifiesTable: nil, warehouseutils.UsersTable: fmt.Errorf("creating users union staging table: %w", err)}
+		return usersResult(fmt.Errorf("creating users union staging table: %w", err))
 	}
 
-	latestColumns := make([]string, 0, len(columns))
+	latestColumns := make([]string, 0, len(columns)+1)
+	latestColumns = append(latestColumns, "x."+warehouseutils.BracketQuoteIdentifier("id"))
 	for _, column := range columns {
 		quoted := warehouseutils.BracketQuoteIdentifier(column)
 		latestColumns = append(latestColumns, fmt.Sprintf(`(SELECT TOP 1 s.%[1]s FROM %[2]s AS s WHERE s.%[3]s = x.%[3]s AND s.%[1]s IS NOT NULL ORDER BY s.%[4]s DESC) AS %[1]s`,
 			quoted, qualified(f.namespace, unionTable), warehouseutils.BracketQuoteIdentifier("id"), warehouseutils.BracketQuoteIdentifier("received_at")))
 	}
-	latestStatement := fmt.Sprintf(`SELECT DISTINCT x.%s%s INTO %s FROM %s AS x;`,
-		warehouseutils.BracketQuoteIdentifier("id"), conditionalComma(strings.Join(latestColumns, ",")), qualified(f.namespace, latestTable), qualified(f.namespace, unionTable))
+	latestStatement := fmt.Sprintf(`SELECT DISTINCT %s INTO %s FROM %s AS x;`,
+		strings.Join(latestColumns, ","), qualified(f.namespace, latestTable), qualified(f.namespace, unionTable))
 	if _, err := f.db.ExecContext(ctx, latestStatement); err != nil {
-		return map[string]error{warehouseutils.IdentifiesTable: nil, warehouseutils.UsersTable: fmt.Errorf("creating latest users staging table: %w", err)}
+		return usersResult(fmt.Errorf("creating latest users staging table: %w", err))
 	}
 
 	allColumns := append([]string{"id"}, columns...)
 	if _, err := f.db.ExecContext(ctx, mergeStatement(f.namespace, warehouseutils.UsersTable, latestTable, allColumns, true)); err != nil {
-		return map[string]error{warehouseutils.IdentifiesTable: nil, warehouseutils.UsersTable: fmt.Errorf("merge: loading users latest traits: %w", err)}
+		return usersResult(fmt.Errorf("merge: loading users latest traits: %w", err))
 	}
-	return map[string]error{warehouseutils.IdentifiesTable: nil, warehouseutils.UsersTable: nil}
-}
-
-func conditionalComma(value string) string {
-	if value == "" {
-		return ""
-	}
-	return "," + value
+	return usersResult(nil)
 }
 
 func (f *MicrosoftFabric) TestLoadTable(ctx context.Context, location, tableName string, payload map[string]any, loadFileFormat string) error {
@@ -576,7 +569,7 @@ func (f *MicrosoftFabric) TestLoadTable(ctx context.Context, location, tableName
 		columns = append(columns, column)
 	}
 	sort.Strings(columns)
-	return f.copyInto(ctx, f.db, tableName, location, columns)
+	return f.copyInto(ctx, tableName, location, columns)
 }
 
 func (f *MicrosoftFabric) TestFetchSchema(ctx context.Context) error {

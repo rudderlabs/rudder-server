@@ -64,7 +64,6 @@ type UploadJobFactory struct {
 	logger               logger.Logger
 	statsFactory         stats.Stats
 	encodingFactory      *encoding.Factory
-	fileManagerResolver  filemanagerresolver.Resolver
 }
 
 type loadFilesRepo interface {
@@ -126,9 +125,9 @@ type UploadJob struct {
 		objDeleteBatchSize func(workspaceID string) int
 	}
 
-	errorHandler        ErrorHandler
-	encodingFactory     *encoding.Factory
-	fileManagerResolver filemanagerresolver.Resolver
+	errorHandler       ErrorHandler
+	encodingFactory    *encoding.Factory
+	fileManagerFactory filemanager.Factory
 
 	stats struct {
 		uploadTime                         stats.Timer
@@ -159,13 +158,6 @@ var (
 		"singer-protocol": {},
 	}
 )
-
-func (f *UploadJobFactory) resolver() filemanagerresolver.Resolver {
-	if f.fileManagerResolver != nil {
-		return f.fileManagerResolver
-	}
-	return filemanagerresolver.Default
-}
 
 func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJob, whManager manager.Manager) *UploadJob {
 	ujCtx := whutils.CtxWithUploadID(ctx, dto.Upload.ID)
@@ -208,9 +200,9 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		),
 		now: timeutil.Now,
 
-		errorHandler:        ErrorHandler{Mapper: whManager},
-		encodingFactory:     f.encodingFactory,
-		fileManagerResolver: f.resolver(),
+		errorHandler:       ErrorHandler{Mapper: whManager},
+		encodingFactory:    f.encodingFactory,
+		fileManagerFactory: filemanagerresolver.Default,
 	}
 
 	uj.config.refreshPartitionBatchSize = f.conf.GetIntVar(100, 1, "Warehouse.refreshPartitionBatchSize")
@@ -508,7 +500,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	log := job.logger.Withn(logger.NewStringField("storageProvider", storageProvider))
 	log.Infon("Starting object storage cleanup")
 
-	fm, err := job.fileManagerResolver(job.warehouse.Type, &filemanager.Settings{
+	fm, err := job.fileManagerFactory(&filemanager.Settings{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         storageProvider,

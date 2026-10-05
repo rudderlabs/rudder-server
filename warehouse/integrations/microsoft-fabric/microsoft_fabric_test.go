@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/microsoft/go-mssqldb/azuread"
 	"github.com/stretchr/testify/require"
@@ -122,7 +123,7 @@ func TestConnectionDSNUsesCompleteHostAndEntraSPN(t *testing.T) {
 
 func TestConnectBootstrapsBeforeOpeningSQL(t *testing.T) {
 	bootstrap := newBootstrapper(nil)
-	bootstrap.newCredential = func(_, _, _ string) (tokenCredential, error) {
+	bootstrap.newCredential = func(_, _, _ string) (azcore.TokenCredential, error) {
 		return nil, context.Canceled
 	}
 	fabric := New(config.New(), logger.NOP, stats.NOP)

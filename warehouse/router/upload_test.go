@@ -867,7 +867,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 				},
 			},
 			conf: config.New(),
-			fileManagerResolver: func(_ string, settings *filemanager.Settings) (filemanager.FileManager, error) {
+			fileManagerFactory: func(settings *filemanager.Settings) (filemanager.FileManager, error) {
 				return mockFileManager, nil
 			},
 			loadFilesRepo: mockLoadFilesRepo,

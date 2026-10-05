@@ -26,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-	"github.com/rudderlabs/rudder-server/warehouse/filemanagerresolver"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -51,17 +50,16 @@ type uploadResult struct {
 }
 
 type worker struct {
-	conf                *config.Config
-	log                 logger.Logger
-	statsFactory        stats.Stats
-	notifier            slaveNotifier
-	bcManager           *bcm.BackendConfigManager
-	constraintsManager  *constraints.Manager
-	encodingFactory     *encoding.Factory
-	fileManagerResolver filemanagerresolver.Resolver
-	workerIdx           int
-	activeJobId         atomic.Int64
-	refreshClaimJitter  time.Duration
+	conf               *config.Config
+	log                logger.Logger
+	statsFactory       stats.Stats
+	notifier           slaveNotifier
+	bcManager          *bcm.BackendConfigManager
+	constraintsManager *constraints.Manager
+	encodingFactory    *encoding.Factory
+	workerIdx          int
+	activeJobId        atomic.Int64
+	refreshClaimJitter time.Duration
 
 	config struct {
 		maxStagingFileReadBufferCapacityInK config.ValueLoader[int]
@@ -101,7 +99,6 @@ func newWorker(
 	s.bcManager = bcManager
 	s.constraintsManager = constraintsManager
 	s.encodingFactory = encodingFactory
-	s.fileManagerResolver = filemanagerresolver.Default
 	s.workerIdx = workerIdx
 
 	s.config.maxStagingFileReadBufferCapacityInK = s.conf.GetReloadableIntVar(10240, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
@@ -496,7 +493,7 @@ func (w *worker) processMultiStagingFiles(ctx context.Context, job *payloadV2) (
 	processStartTime := time.Now()
 
 	// Create a jobRun for all staging files
-	jr := newJobRun(job.basePayload, w.workerIdx, w.conf, w.log, w.statsFactory, w.encodingFactory, w.fileManagerResolver)
+	jr := newJobRun(job.basePayload, w.workerIdx, w.conf, w.log, w.statsFactory, w.encodingFactory)
 
 	defer func() {
 		jr.counterStat("staging_files_processed", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(w.workerIdx)}).Count(len(job.StagingFiles))

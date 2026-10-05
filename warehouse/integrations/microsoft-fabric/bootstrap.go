@@ -23,10 +23,6 @@ const (
 	bootstrapTTL   = 24 * time.Hour
 )
 
-type tokenCredential interface {
-	GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error)
-}
-
 type bootstrapError struct {
 	StatusCode int
 	ErrorCode  string
@@ -66,7 +62,7 @@ type bootstrapCall struct {
 }
 
 type bootstrapper struct {
-	newCredential func(tenantID, clientID, clientSecret string) (tokenCredential, error)
+	newCredential func(tenantID, clientID, clientSecret string) (azcore.TokenCredential, error)
 	client        *http.Client
 	endpoint      string
 	now           func() time.Time
@@ -82,7 +78,7 @@ func newBootstrapper(client *http.Client) *bootstrapper {
 		client = http.DefaultClient
 	}
 	return &bootstrapper{
-		newCredential: func(tenantID, clientID, clientSecret string) (tokenCredential, error) {
+		newCredential: func(tenantID, clientID, clientSecret string) (azcore.TokenCredential, error) {
 			return azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
 		},
 		client:   client,

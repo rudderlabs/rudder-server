@@ -598,7 +598,7 @@ func (job *UploadJob) resolveIdentities(populateHistoricIdentities bool) (err er
 		job,
 		job.upload.ID,
 		job.whManager,
-		downloader.NewDownloader(&job.warehouse, job, 8, downloader.WithFileManagerResolver(job.fileManagerResolver)),
+		downloader.NewDownloader(&job.warehouse, job, 8),
 		job.encodingFactory,
 	)
 	if populateHistoricIdentities {

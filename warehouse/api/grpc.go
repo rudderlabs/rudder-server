@@ -61,20 +61,20 @@ const (
 type GRPC struct {
 	proto.UnimplementedWarehouseServer
 
-	conf                *config.Config
-	logger              logger.Logger
-	isMultiWorkspace    bool
-	cpClient            cpclient.InternalControlPlane
-	connectionManager   *controlplane.ConnectionManager
-	tenantManager       *multitenant.Manager
-	bcManager           *bcm.BackendConfigManager
-	tableUploadsRepo    *repo.TableUploads
-	stagingRepo         *repo.StagingFiles
-	schemaRepo          *repo.WHSchema
-	uploadRepo          *repo.Uploads
-	triggerStore        *sync.Map
-	fileManagerResolver filemanagerresolver.Resolver
-	now                 func() time.Time
+	conf               *config.Config
+	logger             logger.Logger
+	isMultiWorkspace   bool
+	cpClient           cpclient.InternalControlPlane
+	connectionManager  *controlplane.ConnectionManager
+	tenantManager      *multitenant.Manager
+	bcManager          *bcm.BackendConfigManager
+	tableUploadsRepo   *repo.TableUploads
+	stagingRepo        *repo.StagingFiles
+	schemaRepo         *repo.WHSchema
+	uploadRepo         *repo.Uploads
+	triggerStore       *sync.Map
+	fileManagerFactory filemanager.Factory
+	now                func() time.Time
 
 	config struct {
 		region         string
@@ -91,14 +91,6 @@ type GRPC struct {
 	}
 }
 
-type GRPCOption func(*GRPC)
-
-func WithFileManagerResolver(resolver filemanagerresolver.Resolver) GRPCOption {
-	return func(g *GRPC) {
-		g.fileManagerResolver = resolver
-	}
-}
-
 func NewGRPCServer(
 	conf *config.Config,
 	logger logger.Logger,
@@ -107,26 +99,19 @@ func NewGRPCServer(
 	tenantManager *multitenant.Manager,
 	bcManager *bcm.BackendConfigManager,
 	triggerStore *sync.Map,
-	options ...GRPCOption,
 ) (*GRPC, error) {
 	g := &GRPC{
-		conf:                conf,
-		logger:              logger.Child("grpc"),
-		tenantManager:       tenantManager,
-		bcManager:           bcManager,
-		stagingRepo:         repo.NewStagingFiles(db, conf, repo.WithStats(statsFactory)),
-		uploadRepo:          repo.NewUploads(db, repo.WithStats(statsFactory)),
-		tableUploadsRepo:    repo.NewTableUploads(db, conf, repo.WithStats(statsFactory)),
-		schemaRepo:          repo.NewWHSchemas(db, conf, logger, repo.WithStats(statsFactory)),
-		triggerStore:        triggerStore,
-		fileManagerResolver: filemanagerresolver.Default,
-		now:                 timeutil.Now,
-	}
-	for _, option := range options {
-		option(g)
-	}
-	if g.fileManagerResolver == nil {
-		g.fileManagerResolver = filemanagerresolver.Default
+		conf:               conf,
+		logger:             logger.Child("grpc"),
+		tenantManager:      tenantManager,
+		bcManager:          bcManager,
+		stagingRepo:        repo.NewStagingFiles(db, conf, repo.WithStats(statsFactory)),
+		uploadRepo:         repo.NewUploads(db, repo.WithStats(statsFactory)),
+		tableUploadsRepo:   repo.NewTableUploads(db, conf, repo.WithStats(statsFactory)),
+		schemaRepo:         repo.NewWHSchemas(db, conf, logger, repo.WithStats(statsFactory)),
+		triggerStore:       triggerStore,
+		fileManagerFactory: filemanagerresolver.Default,
+		now:                timeutil.Now,
 	}
 
 	g.config.region = conf.GetStringVar("", "region")
@@ -783,7 +768,7 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 
 	overrideWithEnv(ctx, settings)
 
-	fileManager, err := g.fileManagerResolver(request.Type, settings)
+	fileManager, err := g.fileManagerFactory(settings)
 	if err != nil {
 		return fmt.Errorf("unable to create file manager: \n%s", err.Error())
 	}

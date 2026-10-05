@@ -41,6 +41,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/filemanagerresolver"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -70,7 +71,7 @@ func (brt *Handle) Setup(
 	}
 	brt.jobsDB = jobsDB
 	brt.reporting = reporting
-	brt.fileManagerFactory = filemanager.New
+	brt.fileManagerFactory = filemanagerresolver.Default
 	brt.transientSources = transientSources
 	brt.rsourcesService = rsourcesService
 	brt.rsourcesSyncSettings = rsourcesSyncSettings
@@ -322,7 +323,7 @@ func (brt *Handle) crashRecover() {
 				brt.jobsDB.JournalDeleteEntry(entry.OpID)
 				continue
 			}
-			downloader, err := brt.resolveFileManager(&filemanager.Settings{
+			downloader, err := brt.fileManagerFactory(&filemanager.Settings{
 				Provider: object.Provider,
 				Config:   object.Config,
 				Conf:     brt.conf,

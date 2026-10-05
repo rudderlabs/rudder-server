@@ -3,6 +3,8 @@ package onelake
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -29,13 +31,26 @@ import (
 const (
 	storageScope       = "https://storage.azure.com/.default"
 	defaultOneLakeHost = "onelake.dfs.fabric.microsoft.com"
-	defaultPrefix      = ""
 )
 
 var _ filemanager.FileManager = (*Manager)(nil)
 
-type tokenCredential interface {
-	GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error)
+// credentials shares one Entra credential, and so one token cache, per service principal
+// across the many short-lived Managers created per upload and download.
+var credentials sync.Map
+
+func sharedCredential(tenantID, clientID, clientSecret string) (azcore.TokenCredential, error) {
+	secretHash := sha256.Sum256([]byte(clientSecret))
+	key := tenantID + "\x00" + clientID + "\x00" + hex.EncodeToString(secretHash[:])
+	if credential, ok := credentials.Load(key); ok {
+		return credential.(azcore.TokenCredential), nil
+	}
+	credential, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := credentials.LoadOrStore(key, credential)
+	return actual.(azcore.TokenCredential), nil
 }
 
 type Config struct {
@@ -50,7 +65,7 @@ type Config struct {
 
 type Manager struct {
 	config     Config
-	credential tokenCredential
+	credential azcore.TokenCredential
 	client     *http.Client
 	logger     logger.Logger
 
@@ -72,20 +87,17 @@ func New(config map[string]any, log logger.Logger) (*Manager, error) {
 		ClientSecret:      stringConfig(config, "clientSecret"),
 		Prefix:            strings.Trim(stringConfig(config, "prefix"), "/"),
 	}
-	if cfg.Prefix == "" {
-		cfg.Prefix = defaultPrefix
-	}
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
 	}
-	credential, err := azidentity.NewClientSecretCredential(cfg.TenantID, cfg.ClientID, cfg.ClientSecret, nil)
+	credential, err := sharedCredential(cfg.TenantID, cfg.ClientID, cfg.ClientSecret)
 	if err != nil {
 		return nil, fmt.Errorf("creating OneLake credential: %w", err)
 	}
 	return newManager(cfg, credential, http.DefaultClient, log), nil
 }
 
-func newManager(cfg Config, credential tokenCredential, client *http.Client, log logger.Logger) *Manager {
+func newManager(cfg Config, credential azcore.TokenCredential, client *http.Client, log logger.Logger) *Manager {
 	if log == nil {
 		log = logger.NewLogger()
 	}

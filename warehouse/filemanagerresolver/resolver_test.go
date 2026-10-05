@@ -14,24 +14,24 @@ import (
 
 type fileManagerStub struct{ filemanager.FileManager }
 
-func TestResolverDelegatesNonFabricSettingsUnchanged(t *testing.T) {
+func TestFactoryDelegatesOtherProvidersUnchanged(t *testing.T) {
 	settings := &filemanager.Settings{Provider: warehouseutils.S3, Config: map[string]any{"bucketName": "bucket"}}
 	stub := &fileManagerStub{}
 	var received *filemanager.Settings
-	resolver := New(func(value *filemanager.Settings) (filemanager.FileManager, error) {
+	factory := New(func(value *filemanager.Settings) (filemanager.FileManager, error) {
 		received = value
 		return stub, nil
 	})
 
-	manager, err := resolver(warehouseutils.RS, settings)
+	manager, err := factory(settings)
 	require.NoError(t, err)
 	require.Same(t, settings, received)
 	require.Same(t, stub, manager)
 }
 
-func TestResolverSelectsOneLakeForFabric(t *testing.T) {
+func TestFactorySelectsOneLake(t *testing.T) {
 	called := false
-	resolver := New(func(*filemanager.Settings) (filemanager.FileManager, error) {
+	factory := New(func(*filemanager.Settings) (filemanager.FileManager, error) {
 		called = true
 		return &fileManagerStub{}, nil
 	})
@@ -47,13 +47,8 @@ func TestResolverSelectsOneLakeForFabric(t *testing.T) {
 		},
 	}
 
-	manager, err := resolver(warehouseutils.MicrosoftFabric, settings)
+	manager, err := factory(settings)
 	require.NoError(t, err)
 	require.IsType(t, &onelake.Manager{}, manager)
 	require.False(t, called)
-}
-
-func TestResolverRequiresSettings(t *testing.T) {
-	_, err := New(nil)(warehouseutils.MicrosoftFabric, nil)
-	require.ErrorContains(t, err, "settings are required")
 }

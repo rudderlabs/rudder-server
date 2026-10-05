@@ -44,7 +44,7 @@ func TestBootstrapRequestAndCache(t *testing.T) {
 	bootstrap := newBootstrapper(server.Client())
 	bootstrap.endpoint = server.URL
 	bootstrap.now = func() time.Time { return now }
-	bootstrap.newCredential = func(_, _, _ string) (tokenCredential, error) { return credential, nil }
+	bootstrap.newCredential = func(_, _, _ string) (azcore.TokenCredential, error) { return credential, nil }
 
 	require.NoError(t, bootstrap.Bootstrap(context.Background(), "tenant", "client", "secret", "workspace-id"))
 	require.Equal(t, []string{fabricAPIScope}, credential.scopes)
@@ -71,7 +71,7 @@ func TestBootstrapCoordinatesOnlyMatchingPrincipals(t *testing.T) {
 
 	bootstrap := newBootstrapper(server.Client())
 	bootstrap.endpoint = server.URL
-	bootstrap.newCredential = func(_, _, _ string) (tokenCredential, error) {
+	bootstrap.newCredential = func(_, _, _ string) (azcore.TokenCredential, error) {
 		return &staticCredential{token: "token"}, nil
 	}
 	errCh := make(chan error, 3)
@@ -127,7 +127,7 @@ func TestBootstrapFailureClassificationAndSafety(t *testing.T) {
 
 			bootstrap := newBootstrapper(server.Client())
 			bootstrap.endpoint = server.URL
-			bootstrap.newCredential = func(_, _, _ string) (tokenCredential, error) {
+			bootstrap.newCredential = func(_, _, _ string) (azcore.TokenCredential, error) {
 				return &staticCredential{token: "sensitive-token"}, nil
 			}
 			err := bootstrap.Bootstrap(context.Background(), "tenant", "client", "sensitive-secret", "workspace")
@@ -149,7 +149,7 @@ func TestBootstrapFailureClassificationAndSafety(t *testing.T) {
 
 func TestBootstrapCredentialFailureIsSafe(t *testing.T) {
 	bootstrap := newBootstrapper(nil)
-	bootstrap.newCredential = func(_, _, _ string) (tokenCredential, error) {
+	bootstrap.newCredential = func(_, _, _ string) (azcore.TokenCredential, error) {
 		return nil, errors.New("credential rejected")
 	}
 	err := bootstrap.Bootstrap(context.Background(), "tenant", "client", "secret", "workspace")

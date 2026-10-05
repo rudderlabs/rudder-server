@@ -23,39 +23,21 @@ type Downloader interface {
 }
 
 type downloaderImpl struct {
-	warehouse           *model.Warehouse
-	uploader            warehouseutils.Uploader
-	numWorkers          int
-	fileManagerResolver filemanagerresolver.Resolver
-}
-
-type Option func(*downloaderImpl)
-
-func WithFileManagerResolver(resolver filemanagerresolver.Resolver) Option {
-	return func(d *downloaderImpl) {
-		d.fileManagerResolver = resolver
-	}
+	warehouse  *model.Warehouse
+	uploader   warehouseutils.Uploader
+	numWorkers int
 }
 
 func NewDownloader(
 	warehouse *model.Warehouse,
 	uploader warehouseutils.Uploader,
 	numWorkers int,
-	options ...Option,
 ) Downloader {
-	d := &downloaderImpl{
-		warehouse:           warehouse,
-		uploader:            uploader,
-		numWorkers:          numWorkers,
-		fileManagerResolver: filemanagerresolver.Default,
+	return &downloaderImpl{
+		warehouse:  warehouse,
+		uploader:   uploader,
+		numWorkers: numWorkers,
 	}
-	for _, option := range options {
-		option(d)
-	}
-	if d.fileManagerResolver == nil {
-		d.fileManagerResolver = filemanagerresolver.Default
-	}
-	return d
 }
 
 func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]string, error) {
@@ -74,7 +56,7 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 		l.uploader.UseRudderStorage(),
 	)
 
-	fileManager, err := l.fileManagerResolver(l.warehouse.Type, &filemanager.Settings{
+	fileManager, err := filemanagerresolver.Default(&filemanager.Settings{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         storageProvider,
