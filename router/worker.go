@@ -859,8 +859,17 @@ func (w *worker) prepareRouterJobResponses(destinationJob types.DestinationJobT,
 	// By default we get some config from dest def
 	// We can override via env saveDestinationResponseOverride
 
+	// A blanked 2xx body is kept for the Live Events record only, while capture is on
+	// for this destination and Router.<destType>.liveEventsSuccessResponse is set.
+	var liveEventsRespBodys map[int64]string
+	if w.rt.liveEventsSuccessResponse.Load() && w.rt.debugger.HasUploadEnabled(destinationJob.Destination.ID) {
+		liveEventsRespBodys = make(map[int64]string)
+	}
 	for k, respStatusCode := range respStatusCodes {
 		if isSuccessStatus(respStatusCode) && !w.rt.saveDestinationResponseOverride.Load() && !w.rt.saveDestinationResponse {
+			if liveEventsRespBodys != nil && respBodys[k] != "" {
+				liveEventsRespBodys[k] = respBodys[k]
+			}
 			respBodys[k] = ""
 		}
 	}
@@ -882,6 +891,7 @@ func (w *worker) prepareRouterJobResponses(destinationJob types.DestinationJobT,
 			destinationJobMetadata: &_destinationJobMetadata,
 			respStatusCode:         respStatusCodes[destinationJobMetadata.JobID],
 			respBody:               respBodys[destinationJobMetadata.JobID],
+			liveEventsRespBody:     liveEventsRespBodys[destinationJobMetadata.JobID],
 			errorAt:                errorAt,
 		})
 	}

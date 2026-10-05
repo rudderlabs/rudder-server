@@ -149,7 +149,10 @@ func TestGateDeliveredWithWarning(t *testing.T) {
 }
 
 func TestPrepareRouterJobResponsesPreservesDeliveredWithWarning(t *testing.T) {
-	w := &worker{rt: &Handle{saveDestinationResponseOverride: config.SingleValueLoader(true)}}
+	w := &worker{rt: &Handle{
+		saveDestinationResponseOverride: config.SingleValueLoader(true),
+		liveEventsSuccessResponse:       config.SingleValueLoader(false),
+	}}
 	w.rt.supportsDeliveredWithWarnings.Store(true)
 	destinationJob := types.DestinationJobT{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "workspace-id"}}}
 	responses := w.prepareRouterJobResponses(

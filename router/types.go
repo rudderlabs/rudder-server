@@ -42,6 +42,7 @@ type JobResponse struct {
 	destinationJobMetadata *types.JobMetadataT
 	respStatusCode         int
 	respBody               string
+	liveEventsRespBody     string // 2xx body kept only for the Live Events record; "" unless kept
 	errorAt                string
 	status                 *jobsdb.JobStatusT
 }

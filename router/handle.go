@@ -76,6 +76,7 @@ type Handle struct {
 	noOfJobsPerChannel                 int // requested capacity of each worker channel (important when job buffering is being calculated using the standard method)
 	saveDestinationResponse            bool
 	saveDestinationResponseOverride    config.ValueLoader[bool]
+	liveEventsSuccessResponse          config.ValueLoader[bool] // keep 2xx bodies for Live Events records while capture is on
 	reportJobsdbPayload                config.ValueLoader[bool]
 	storeDeliveredWithWarningPayload   config.ValueLoader[bool]
 	// supportsDeliveredWithWarnings mirrors the destination definition's capability flag. Written

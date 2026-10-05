@@ -130,6 +130,7 @@ func (rt *Handle) Setup(
 	rt.reportJobsdbPayload = config.GetReloadableBoolVar(true, getRouterConfigKeys("reportJobsdbPayload", destType)...)
 	rt.storeDeliveredWithWarningPayload = config.GetReloadableBoolVar(false, getRouterConfigKeys("storeDeliveredWithWarningPayload", destType)...)
 	rt.saveDestinationResponseOverride = config.GetReloadableBoolVar(false, getRouterConfigKeys("saveDestinationResponseOverride", destType)...)
+	rt.liveEventsSuccessResponse = config.GetReloadableBoolVar(false, getRouterConfigKeys("liveEventsSuccessResponse", destType)...)
 
 	statTags := stats.Tags{"destType": rt.destType}
 	rt.tracer = stats.Default.NewTracer("router")
