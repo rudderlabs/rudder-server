@@ -23,6 +23,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -142,10 +144,7 @@ func TestE2EGatewayToFabric(t *testing.T) {
 	t.Setenv("RSERVER_BATCH_ROUTER_MICROSOFT_FABRIC_UPLOAD_FREQ", "5s")
 	t.Setenv("RSERVER_WAREHOUSE_MICROSOFT_FABRIC_SLOW_QUERY_THRESHOLD", "0s")
 
-	whth.BootstrapSvc(t, workspaceConfig, whPort, jobsDBPort)
-	health.WaitUntilReady(context.Background(), t,
-		fmt.Sprintf("http://localhost:%d/health", gwPort), time.Minute, time.Second, "gateway",
-	)
+	bootstrapEmbedded(t, workspaceConfig, whPort, gwPort, jobsDBPort)
 
 	db := openFabric(t, creds)
 	t.Cleanup(func() { dropFabricSchema(t, db, namespace) })
@@ -171,6 +170,48 @@ func TestE2EGatewayToFabric(t *testing.T) {
 	state = runRound("round2", "Bob")
 	require.Equal(t, expectedCounts(4), state.counts)
 	require.Equal(t, "Bob", state.usersName)
+}
+
+// bootstrapEmbedded is adapted from whth.BootstrapSvc, which forces Warehouse.mode=master_and_slave
+// (warehouse-only). Leaving the mode at its embedded default also starts the gateway, processor and
+// batch router, so events can flow from the gateway into Fabric.
+func bootstrapEmbedded(t *testing.T, workspaceConfig backendconfig.ConfigT, whPort, gwPort, jobsDBPort int) {
+	bcServer := backendconfigtest.NewBuilder().WithWorkspaceConfig(workspaceConfig).Build()
+	t.Cleanup(bcServer.Close)
+
+	t.Setenv("JOBS_DB_HOST", "localhost")
+	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
+	t.Setenv("JOBS_DB_DB_NAME", "jobsdb")
+	t.Setenv("JOBS_DB_USER", "rudder")
+	t.Setenv("JOBS_DB_PASSWORD", "password")
+	t.Setenv("JOBS_DB_SSL_MODE", "disable")
+	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(whPort))
+	t.Setenv("WORKSPACE_TOKEN", "token")
+	t.Setenv("CONFIG_BACKEND_URL", bcServer.URL)
+	t.Setenv("GO_ENV", "production")
+	t.Setenv("LOG_LEVEL", "INFO")
+	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
+	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
+	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "1")
+	t.Setenv("RSERVER_WAREHOUSE_MAIN_LOOP_SLEEP", "1s")
+	t.Setenv("RSERVER_WAREHOUSE_ENABLE_JITTER_FOR_SYNCS", "false")
+	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "false")
+	t.Setenv("RSERVER_ADMIN_SERVER_ENABLED", "false")
+	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
+	t.Setenv("RSERVER_ENABLE_STATS", "false")
+	t.Setenv("RUDDER_TMPDIR", t.TempDir())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	svcDone := make(chan struct{})
+	go func() {
+		r := runner.New(runner.ReleaseInfo{EnterpriseToken: "TOKEN"})
+		_ = r.Run(ctx, cancel, []string{"fabric-e2e"})
+		close(svcDone)
+	}()
+	t.Cleanup(func() { <-svcDone })
+	t.Cleanup(cancel)
+
+	health.WaitUntilReady(ctx, t, fmt.Sprintf("http://localhost:%d/health", gwPort), time.Minute, 250*time.Millisecond, "gateway")
 }
 
 func buildEvents(userID, round, name string, n int) []map[string]any {
