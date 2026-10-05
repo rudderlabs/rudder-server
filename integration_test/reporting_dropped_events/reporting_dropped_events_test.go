@@ -88,8 +88,8 @@ func TestReportingDroppedEvents(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			var filteredCount sql.NullInt64
-			require.NoError(t, postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE source_id = 'source-1' and destination_id = '' AND pu = 'destination_filter' and status = 'filtered' and error_type = ''").Scan(&filteredCount))
-			t.Logf("destination_filter filtered count: %d", filteredCount.Int64)
+			require.NoError(t, postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE source_id = 'source-1' and destination_id = '' AND pu = 'destination_filter' and status = 'filtered_no_destination' and status_code = 298 and in_pu = '' and error_type = ''").Scan(&filteredCount))
+			t.Logf("destination_filter filtered_no_destination count: %d", filteredCount.Int64)
 			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
 			return filteredCount.Int64 == 10
 		}, 10*time.Second, 1*time.Second, "all events should be dropped in destination_filter stage")
@@ -500,11 +500,8 @@ func TestReportingDroppedEvents(t *testing.T) {
 		t.Cleanup(func() { _ = os.RemoveAll(dedupTmpDir) })
 		wg.Go(func() error {
 			err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir(), map[string]any{
-				"Dedup.enableDedup":              true,
-				"RUDDER_TMPDIR":                  dedupTmpDir,
-				"Reporting.dedupMetrics.enabled": true,
-
-				"Reporting.gatewayIngestedMetrics.enabled": true,
+				"Dedup.enableDedup": true,
+				"RUDDER_TMPDIR":     dedupTmpDir,
 			})
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
@@ -571,17 +568,15 @@ func TestReportingDroppedEvents(t *testing.T) {
 	})
 
 	// Phase 1 of the pipeline inspector: per-destination visibility at the destination-filter
-	// boundary. A single server processes four batches with the (reloadable)
-	// Processor.earlyDestinationFilter flag flipped between them via config.Set, so both rollout
-	// states are exercised end to end against the same reports table:
+	// boundary. The destination filter runs once, at fan-out. A single server processes four batches
+	// against the same reports table:
 	//
-	//	1. reorder off (default)     -> zero candidates drop at preprocess, old filtered/298 row
-	//	2. reorder on                -> one succeeded/200 destination_enter row per candidate
-	//	3. reorder on, part. exclude -> filtered_integration/298 per destination, no source-level row
-	//	4. reorder on, zero cands    -> filtered_no_destination/298 with an empty destination_id
-	//	5. reorder on, consent deny  -> filtered_consent/298 per destination, no source-level row
+	//	1. all candidates       -> one succeeded/200 destination_enter row per candidate
+	//	2. partial exclusion    -> filtered_integration/298 per destination, no source-level row
+	//	3. zero candidates      -> filtered_no_destination/298 with an empty destination_id
+	//	4. consent deny         -> filtered_consent/298 per destination, no source-level row
 	//
-	// Batches are drained before the flag is flipped: report rows are committed in the same
+	// Each batch is drained before the next is sent: report rows are committed in the same
 	// transaction as the gateway job statuses, so "all gw jobs succeeded" is a safe barrier.
 	t.Run("Per destination visibility at the destination filter boundary", func(t *testing.T) {
 		config.Reset()
@@ -682,26 +677,9 @@ func TestReportingDroppedEvents(t *testing.T) {
 			}, 60*time.Second, 500*time.Millisecond, "all gw events should be successfully processed")
 		}
 
-		t.Run("reorder off (default): zero-candidate events drop at preprocess with the old source-level filtered row", func(t *testing.T) {
-			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-2", url))
-			drainGateway(eventsPerBatch)
-
-			require.Eventually(t, func() bool {
-				return reportCount("source_id = 'source-2' and destination_id = '' and pu = 'destination_filter' and status = 'filtered' and status_code = 298 and in_pu = 'gateway' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
-			}, 30*time.Second, 500*time.Millisecond, "the preprocess source-level filtered row should be emitted")
-
-			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
-			require.EqualValues(t, 0, reportCount("pu = 'destination_enter'"),
-				"no destination_enter rows while Processor.earlyDestinationFilter is on")
-			require.EqualValues(t, 0, reportCount("pu = 'destination_filter' and status like 'filtered_%'"),
-				"no per-destination rows while Processor.earlyDestinationFilter is on")
-		})
-
-		t.Run("reorder on: one destination_enter row per candidate destination", func(t *testing.T) {
-			config.Set("Processor.earlyDestinationFilter", false)
-
+		t.Run("one destination_enter row per candidate destination", func(t *testing.T) {
 			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-1", url))
-			drainGateway(2 * eventsPerBatch)
+			drainGateway(eventsPerBatch)
 
 			require.Eventually(t, func() bool {
 				return reportCount("source_id = 'source-1' and pu = 'destination_enter' and status = 'succeeded' and status_code = 200 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''") == 3*eventsPerBatch
@@ -719,10 +697,10 @@ func TestReportingDroppedEvents(t *testing.T) {
 				"nothing was excluded, so no destination_filter rows for source-1")
 		})
 
-		t.Run("reorder on: partial exclusion emits a per-destination row instead of the source level row", func(t *testing.T) {
+		t.Run("partial exclusion emits a per-destination row instead of the source level row", func(t *testing.T) {
 			// opt out of destination-2's type only; destination-1 and destination-3 still deliver
 			require.NoError(t, sendEventsWithIntegrations(eventsPerBatch, `{"AM": false}`, "identify", "writekey-1", url))
-			drainGateway(3 * eventsPerBatch)
+			drainGateway(2 * eventsPerBatch)
 
 			require.Eventually(t, func() bool {
 				return reportCount("source_id = 'source-1' and destination_id = 'destination-2' and pu = 'destination_filter' and status = 'filtered_integration' and status_code = 298 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
@@ -736,10 +714,10 @@ func TestReportingDroppedEvents(t *testing.T) {
 			require.EqualValues(t, eventsPerBatch,
 				reportCount("source_id = 'source-1' and pu = 'destination_filter' and status like 'filtered_%'"),
 				"only destination-2 should be filtered")
-			// the cutover: the old source-level row is gone for this source
+			// exclusion is reported per destination; there is no source-level row for this source
 			require.EqualValues(t, 0,
 				reportCount("source_id = 'source-1' and destination_id = '' and pu = 'destination_filter' and status = 'filtered'"),
-				"the source-level filtered row must not be emitted once per-destination metrics are on")
+				"partial exclusion must not emit a source-level filtered row")
 
 			// the exclusion is a reporting outcome, not a routing change: the two survivors got
 			// jobs from both batches, the excluded one only from the previous batch
@@ -750,31 +728,28 @@ func TestReportingDroppedEvents(t *testing.T) {
 				"the excluded destination should not have received this batch")
 		})
 
-		t.Run("reorder on: zero candidate events keep a source level row as filtered_no_destination", func(t *testing.T) {
-			filteredBefore := reportCount("source_id = 'source-2' and pu = 'destination_filter' and status = 'filtered'")
-
+		t.Run("zero candidate events get a source level filtered_no_destination row", func(t *testing.T) {
 			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-2", url))
-			drainGateway(4 * eventsPerBatch)
+			drainGateway(3 * eventsPerBatch)
 
 			require.Eventually(t, func() bool {
 				return reportCount("source_id = 'source-2' and destination_id = '' and pu = 'destination_filter' and status = 'filtered_no_destination' and status_code = 298 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
 			}, 30*time.Second, 500*time.Millisecond, "zero-candidate events should be reported as filtered_no_destination")
 
 			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
-			require.EqualValues(t, filteredBefore,
-				reportCount("source_id = 'source-2' and pu = 'destination_filter' and status = 'filtered'"),
-				"no new plain filtered rows should be emitted for source-2")
+			require.EqualValues(t, 0, reportCount("pu = 'destination_filter' and status = 'filtered'"),
+				"the destination filter never emits a plain filtered row")
+			require.EqualValues(t, 0, reportCount("pu = 'destination_filter' and in_pu = 'gateway'"),
+				"the destination filter emits only from fan-out, never from preprocess")
 			require.EqualValues(t, 0, reportCount("source_id = 'source-2' and pu = 'destination_enter'"),
 				"a source without destinations has no candidates to enter")
 		})
 
-		t.Run("reorder on: consent excludes one destination as filtered_consent instead of the source level row", func(t *testing.T) {
-			config.Set("Processor.earlyDestinationFilter", false)
-
+		t.Run("consent excludes one destination as filtered_consent instead of the source level row", func(t *testing.T) {
 			// destination-5 is gated on "cat-1", which these events deny; destination-4 and
 			// destination-6 carry no consent configuration and still deliver
 			require.NoError(t, sendEventsWithDeniedConsent(eventsPerBatch, `["cat-1"]`, "identify", "writekey-3", url))
-			drainGateway(5 * eventsPerBatch)
+			drainGateway(4 * eventsPerBatch)
 
 			require.Eventually(t, func() bool {
 				return reportCount("source_id = 'source-3' and destination_id = 'destination-5' and pu = 'destination_filter' and status = 'filtered_consent' and status_code = 298 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
@@ -793,10 +768,10 @@ func TestReportingDroppedEvents(t *testing.T) {
 			require.EqualValues(t, eventsPerBatch,
 				reportCount("source_id = 'source-3' and pu = 'destination_filter' and status like 'filtered_%'"),
 				"only destination-5 should be filtered")
-			// the cutover: the old source-level row is gone for this source
+			// exclusion is reported per destination; there is no source-level row for this source
 			require.EqualValues(t, 0,
 				reportCount("source_id = 'source-3' and destination_id = '' and pu = 'destination_filter'"),
-				"the source-level filtered row must not be emitted once per-destination metrics are on")
+				"partial exclusion must not emit a source-level filtered row")
 
 			// consent denial is a reporting outcome for one destination only: the other two are
 			// still routed to

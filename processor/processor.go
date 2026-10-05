@@ -202,9 +202,6 @@ type Handle struct {
 		userTransformationMirroringBlockedIDs     config.ValueLoader[[]string]
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		forkRsourcesTrackedJobs                   bool
-		reportingDedupMetricsEnabled              config.ValueLoader[bool]
-		reportingGatewayIngestedMetricsEnabled    config.ValueLoader[bool]
-		earlyDestinationFilter                    config.ValueLoader[bool]
 
 		dropEventsForDisabledDestAtProcRebuild config.ValueLoader[bool]
 	}
@@ -853,9 +850,6 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.userTransformMirrorURL = proc.conf.GetStringVar("", "USER_TRANSFORM_MIRROR_URL")
 	proc.config.userTransformationMirroringBlockedIDs = proc.conf.GetReloadableStringSliceVar(nil, "Processor.userTransformationMirroring.blockedTransformationIDs")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
-	proc.config.reportingDedupMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.dedupMetrics.enabled")
-	proc.config.reportingGatewayIngestedMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.gatewayIngestedMetrics.enabled")
-	proc.config.earlyDestinationFilter = proc.conf.GetReloadableBoolVar(true, "Processor.earlyDestinationFilter")
 	// Opt-in early drop at the proc rebuild stage for destinations disabled since fan-out;
 	// by default such events keep flowing so the router/batchrouter aborts them with reporting.
 	proc.config.dropEventsForDisabledDestAtProcRebuild = proc.conf.GetReloadableBoolVar(false, "Processor.DestinationIsolation.dropEventsForDisabledDestAtProcRebuild")
@@ -980,32 +974,6 @@ func (proc *Handle) getSourceCategoriesBySourceID() map[string]string {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 	return proc.config.sourceIdCategoryMap
-}
-
-func (proc *Handle) getEnabledDestinations(sourceId, destinationName string) []backendconfig.DestinationT {
-	proc.config.configSubscriberLock.RLock()
-	defer proc.config.configSubscriberLock.RUnlock()
-	var enabledDests []backendconfig.DestinationT
-	for i := range proc.config.sourceIdDestinationMap[sourceId] {
-		dest := &proc.config.sourceIdDestinationMap[sourceId][i]
-		if destinationName == dest.DestinationDefinition.Name && dest.Enabled {
-			enabledDests = append(enabledDests, *dest)
-		}
-	}
-	return enabledDests
-}
-
-func (proc *Handle) getBackendEnabledDestinationTypes(sourceId string) map[string]backendconfig.DestinationDefinitionT {
-	proc.config.configSubscriberLock.RLock()
-	defer proc.config.configSubscriberLock.RUnlock()
-	enabledDestinationTypes := make(map[string]backendconfig.DestinationDefinitionT)
-	for i := range proc.config.sourceIdDestinationMap[sourceId] {
-		destination := &proc.config.sourceIdDestinationMap[sourceId][i]
-		if destination.Enabled {
-			enabledDestinationTypes[destination.DestinationDefinition.DisplayName] = destination.DestinationDefinition
-		}
-	}
-	return enabledDestinationTypes
 }
 
 // sourceDestinations is a snapshot of a source's enabled destinations, taken once per source
@@ -1796,9 +1764,6 @@ type preTransformationMessage struct {
 	sourceDupStats             map[dupStatKey]int
 	dedupKeys                  map[string]struct{}
 	srcHydrationEnabledMap     map[SourceIDT]bool
-	// earlyDestinationFilter is the per-batch snapshot threaded from srcHydrationMessage; see the
-	// field doc on srcHydrationMessage.
-	earlyDestinationFilter bool
 }
 
 func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time.Duration) (*srcHydrationMessage, error) {
@@ -1817,12 +1782,6 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 	delayHandler := preprocessdelay.NewHandle(delay, preprocessdelaySleeper)
 	jobList := subJobs.subJobs
 	proc.stats.statNumRequests(partition).Count(len(jobList))
-
-	// earlyDestinationFilter is snapshotted once per batch here, at the start of the pipeline,
-	// so the preprocess guard below and the fan-out fallback (pretransformStage) observe the
-	// same value even if the reloadable config flips while the batch is in flight. Do not call
-	// .Load() again downstream — thread this snapshot through the stage message structs instead.
-	earlyDestinationFilter := proc.config.earlyDestinationFilter.Load()
 
 	var statusList []*jobsdb.JobStatusT
 	groupedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
@@ -1848,7 +1807,6 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 	reportMetrics := make([]*reportingtypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 	statusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
-	destFilterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	enricherStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	botManagementStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	eventBlockingStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
@@ -2041,7 +1999,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		reportingEvent.Metadata = *singularEventMetadata
 
 		// REPORTING - GATEWAY_INGESTED metrics - START
-		if proc.isReportingEnabled() && proc.config.reportingGatewayIngestedMetricsEnabled.Load() {
+		if proc.isReportingEnabled() {
 			reportingEvent.StatusCode = reportingtypes.SuccessEventCode
 
 			proc.updateMetricMaps(
@@ -2156,7 +2114,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 				sourceDupStats[dupStatKey{sourceID: event.eventParams.SourceId}] += 1
 
 				// REPORTING - DEDUP metrics - START
-				if proc.isReportingEnabled() && proc.config.reportingDedupMetricsEnabled.Load() {
+				if proc.isReportingEnabled() {
 					reportingEvent.StatusCode = reportingtypes.FilterEventCode
 					proc.updateMetricMaps(
 						nil,
@@ -2274,38 +2232,9 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			}
 		}
 		// REPORTING - GATEWAY metrics - END
-		// Getting all the destinations which are enabled for this event.
-		// Event will be dropped if no valid destination is present
-		// if empty destinationID is passed in this fn all the destinations for the source are validated
-		// else only passed destinationID will be validated
-		//
-		// Processor.earlyDestinationFilter (default true) gates this early guard. When false, the
-		// guard is skipped entirely and every event reaches source hydration + tracking-plan
-		// validation; the destination-filter decision then happens once, at fan-out
-		// (pretransformStage), which becomes the sole drop point for zero-candidate events.
-		if earlyDestinationFilter && !proc.isDestinationAvailable(event.singularEvent, sourceId, event.eventParams.DestinationID) {
-			// REPORTING - DESTINATION_FILTER filtered metrics - START
-			if proc.isReportingEnabled() {
-				reportingEvent.StatusCode = reportingtypes.FilterEventCode
-				proc.updateMetricMaps(
-					nil,
-					nil,
-					connectionDetailsMap,
-					destFilterStatusDetailMap,
-					reportingEvent,
-					jobsdb.Filtered.State,
-					reportingtypes.DESTINATION_FILTER,
-					func() json.RawMessage {
-						return nil
-					},
-					nil,
-				)
-				reportingEvent.StatusCode = 0
-			}
-			// REPORTING - DESTINATION_FILTER filtered metrics - END
-			continue
-		}
-
+		// Every event reaches source hydration and tracking-plan validation here; the
+		// destination-filter decision happens once, at fan-out (pretransformStage), which is the
+		// sole drop point for zero-candidate events.
 		if _, ok := groupedEventsBySourceId[SourceIDT(sourceId)]; !ok {
 			groupedEventsBySourceId[SourceIDT(sourceId)] = make([]types.TransformerEvent, 0)
 		}
@@ -2358,7 +2287,6 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			userSuppressionStatusDetailsMap,
 			dedupStatusDetailsMap,
 			gatewayIngestedStatusDetailsMap,
-			destFilterStatusDetailMap,
 		)...)
 	}
 	// REPORTING - side-PU status details assembly - END
@@ -2377,7 +2305,6 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		jobList:                    jobList,
 		sourceDupStats:             sourceDupStats,
 		dedupKeys:                  dedupKeys,
-		earlyDestinationFilter:     earlyDestinationFilter,
 	}, nil
 }
 
@@ -2394,10 +2321,8 @@ func (proc *Handle) assembleSideStatusDetailMetrics(
 	userSuppressionStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail,
 	dedupStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail,
 	gatewayIngestedStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail,
-	destFilterStatusDetailMap map[string]map[string]*reportingtypes.StatusDetail,
 ) []*reportingtypes.PUReportedMetric {
 	reportingtypes.AssertKeysSubset(connectionDetailsMap, statusDetailsMap)
-	reportingtypes.AssertKeysSubset(connectionDetailsMap, destFilterStatusDetailMap)
 	reportingtypes.AssertKeysSubset(connectionDetailsMap, botManagementStatusDetailsMap)
 	reportingtypes.AssertKeysSubset(connectionDetailsMap, eventBlockingStatusDetailsMap)
 	reportingtypes.AssertKeysSubset(connectionDetailsMap, userSuppressionStatusDetailsMap)
@@ -2462,14 +2387,6 @@ func (proc *Handle) assembleSideStatusDetailMetrics(
 				StatusDetail:      sd,
 			})
 		}
-
-		for _, dsd := range destFilterStatusDetailMap[k] {
-			metrics = append(metrics, &reportingtypes.PUReportedMetric{
-				ConnectionDetails: *cd,
-				PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.GATEWAY, reportingtypes.DESTINATION_FILTER, false, false),
-				StatusDetail:      dsd,
-			})
-		}
 	}
 	return metrics
 }
@@ -2490,9 +2407,9 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	groupedEvents := make(map[string][]types.TransformerEvent)
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 
-	// destination_enter and destination_filter rows emitted from fan-out (only when
-	// Processor.earlyDestinationFilter is off) carry an empty inPU: the field is slated for
-	// deprecation, so no chain value is computed for the rows introduced here.
+	// destination_enter and destination_filter rows emitted from fan-out carry an empty inPU:
+	// the field is slated for deprecation, so no chain value is computed for the rows introduced
+	// here.
 	destEnterConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 	destEnterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	sourceLevelDestFilterConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
@@ -2526,7 +2443,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	}
 
 	// REPORTING - the side-PU status-details maps (GATEWAY, BOT_MANAGEMENT, EVENT_BLOCKING,
-	// USER_SUPPRESSION, DEDUP, GATEWAY_INGESTED, DESTINATION_FILTER) are assembled into
+	// USER_SUPPRESSION, DEDUP, GATEWAY_INGESTED) are assembled into
 	// PUReportedMetric rows at the end of preprocessStage, as soon as connectionDetailsMap and
 	// those maps are complete for the batch — see assembleSideStatusDetailMetrics. They already
 	// arrive on preTrans.reportMetrics.
@@ -2571,12 +2488,11 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			availableDestinations, excludedDestinations := proc.classifyDestinations(singularEvent, srcDests, sourceId, specificDestID)
 
 			// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - START
-			// With Processor.earlyDestinationFilter off, the destination filter runs here at
-			// fan-out and per-destination visibility comes with it: every candidate destination
-			// gets a destination_enter row, excluded candidates additionally get a
-			// per-destination destination_filter row, and zero-candidate events get the
+			// The destination filter runs here at fan-out with per-destination visibility: every
+			// candidate destination gets a destination_enter row, excluded candidates additionally
+			// get a per-destination destination_filter row, and zero-candidate events get the
 			// source-level filtered_no_destination row.
-			if proc.isReportingEnabled() && !preTrans.earlyDestinationFilter {
+			if proc.isReportingEnabled() {
 				reportingEvent := &types.TransformerResponse{Metadata: event.Metadata}
 				setReportingDestination := func(dest *backendconfig.DestinationT) {
 					reportingEvent.Metadata.DestinationID = dest.ID
@@ -3503,7 +3419,8 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 	case sourceSteps.srcHydration:
 		inPU = reportingtypes.SOURCE_HYDRATION
 	default:
-		inPU = reportingtypes.DESTINATION_FILTER
+		// no earlier reporting stage ran for the event, so inPU stays empty
+		inPU = ""
 	}
 	// Send to custom transformer only if the destination has a transformer enabled
 	if transformationEnabled {
@@ -4375,40 +4292,6 @@ func (proc *Handle) recordSrcToDestFanout(fanout int) {
 			return
 		}
 	}
-}
-
-// check if event has eligible destinations to send to
-//
-// event will be dropped if no destination is found
-func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId, destinationID string) bool {
-	enabledDestTypes := integrations.FilterClientIntegrations(
-		event,
-		proc.getBackendEnabledDestinationTypes(sourceId),
-	)
-	if len(enabledDestTypes) == 0 {
-		proc.logger.Debugn("No enabled destination types")
-		return false
-	}
-
-	if enabledDestinationsList := lo.Filter(proc.getConsentFilteredDestinations(
-		event,
-		sourceId,
-		lo.Flatten(
-			lo.Map(
-				enabledDestTypes,
-				func(destType string, _ int) []backendconfig.DestinationT {
-					return proc.getEnabledDestinations(sourceId, destType)
-				},
-			),
-		),
-	), func(dest backendconfig.DestinationT, index int) bool {
-		return len(destinationID) == 0 || dest.ID == destinationID
-	}); len(enabledDestinationsList) == 0 {
-		proc.logger.Debugn("No destination to route this event to")
-		return false
-	}
-
-	return true
 }
 
 // excludedDestination is a candidate destination classifyDestinations excluded, along with the
