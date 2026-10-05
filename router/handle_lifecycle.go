@@ -131,6 +131,13 @@ func (rt *Handle) Setup(
 	rt.storeDeliveredWithWarningPayload = config.GetReloadableBoolVar(false, getRouterConfigKeys("storeDeliveredWithWarningPayload", destType)...)
 	rt.saveDestinationResponseOverride = config.GetReloadableBoolVar(false, getRouterConfigKeys("saveDestinationResponseOverride", destType)...)
 	rt.liveEventsSuccessResponse = config.GetReloadableBoolVar(false, getRouterConfigKeys("liveEventsSuccessResponse", destType)...)
+	rt.liveEventsResponseKeptStat = func(destID, workspaceID string) stats.Counter {
+		return stats.Default.NewTaggedStat("router_live_events_success_response_kept", stats.CountType, stats.Tags{
+			"destType":    rt.destType,
+			"destId":      destID,
+			"workspaceId": workspaceID,
+		})
+	}
 
 	statTags := stats.Tags{"destType": rt.destType}
 	rt.tracer = stats.Default.NewTracer("router")

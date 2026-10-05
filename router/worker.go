@@ -691,7 +691,7 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 			jobOrderKeyToJobIDMap[orderKey] = destinationJobMetadata.JobID
 		}
 
-		trimmedResponse := string(lo.Slice([]byte(routerJobResponse.respBody), 0, int(10*bytesize.KB)))
+		trimmedResponse := trimResponseBody(routerJobResponse.respBody)
 		status.AttemptNum++
 		status.ErrorResponse = routerutils.EnhanceJSON(routerutils.EmptyPayload, "response", trimmedResponse)
 		status.ErrorCode = strconv.Itoa(respStatusCode)
@@ -717,24 +717,7 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 	}
 
 	// NOTE: Sending live events to config backend after the status objects are built completely.
-	destLiveEventSentMap := make(map[*types.DestinationJobT]struct{})
-	for _, routerJobResponse := range routerJobResponses {
-		// Sending only one destination live event for every destinationJob
-		if _, ok := destLiveEventSentMap[routerJobResponse.destinationJob]; !ok {
-			payload := routerJobResponse.destinationJob.Message
-			if routerJobResponse.destinationJob.Message == nil {
-				payload = routerJobResponse.destinationJobMetadata.JobT.EventPayload
-			}
-			sourcesIDs := make([]string, 0)
-			for _, metadata := range routerJobResponse.destinationJob.JobMetadataArray {
-				if !slices.Contains(sourcesIDs, metadata.SourceID) {
-					sourcesIDs = append(sourcesIDs, metadata.SourceID)
-				}
-			}
-			w.sendDestinationResponseToConfigBackend(payload, routerJobResponse.destinationJobMetadata, routerJobResponse.status, sourcesIDs)
-			destLiveEventSentMap[routerJobResponse.destinationJob] = struct{}{}
-		}
-	}
+	w.sendLiveEvents(routerJobResponses)
 
 	// the following stat (in combination with the limiter's timer stats) are used to capture the process stage
 	// average latency and max processing capacity
@@ -1148,9 +1131,42 @@ func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadata
 	}
 }
 
-func (w *worker) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string) {
+// trimResponseBody cuts a destination response body to the size the router keeps (10KB).
+func trimResponseBody(body string) string {
+	return string(lo.Slice([]byte(body), 0, int(10*bytesize.KB)))
+}
+
+// sendLiveEvents uploads one Live Events record per destination job (one HTTP call).
+func (w *worker) sendLiveEvents(routerJobResponses []*JobResponse) {
+	destLiveEventSentMap := make(map[*types.DestinationJobT]struct{})
+	for _, routerJobResponse := range routerJobResponses {
+		// Sending only one destination live event for every destinationJob
+		if _, ok := destLiveEventSentMap[routerJobResponse.destinationJob]; !ok {
+			payload := routerJobResponse.destinationJob.Message
+			if routerJobResponse.destinationJob.Message == nil {
+				payload = routerJobResponse.destinationJobMetadata.JobT.EventPayload
+			}
+			sourcesIDs := make([]string, 0)
+			for _, metadata := range routerJobResponse.destinationJob.JobMetadataArray {
+				if !slices.Contains(sourcesIDs, metadata.SourceID) {
+					sourcesIDs = append(sourcesIDs, metadata.SourceID)
+				}
+			}
+			w.sendDestinationResponseToConfigBackend(payload, routerJobResponse.destinationJobMetadata, routerJobResponse.status, sourcesIDs, routerJobResponse.liveEventsRespBody)
+			destLiveEventSentMap[routerJobResponse.destinationJob] = struct{}{}
+		}
+	}
+}
+
+func (w *worker) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string, liveEventsRespBody string) {
 	// Sending destination response to config backend
 	if status.ErrorCode != fmt.Sprint(types.RouterUnMarshalErrorCode) {
+		// status belongs to the jobs database writer by now: build the record's errorResponse
+		// on a copy (EnhanceJSON returns a new buffer) and never write to status.
+		errorResponse := status.ErrorResponse
+		if liveEventsRespBody != "" {
+			errorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "response", trimResponseBody(liveEventsRespBody))
+		}
 		deliveryStatus := destinationdebugger.DeliveryStatusT{
 			DestinationID: destinationJobMetadata.DestinationID,
 			SourceID:      strings.Join(sourceIDs, ","),
@@ -1158,12 +1174,15 @@ func (w *worker) sendDestinationResponseToConfigBackend(payload json.RawMessage,
 			AttemptNum:    status.AttemptNum,
 			JobState:      status.JobState,
 			ErrorCode:     status.ErrorCode,
-			ErrorResponse: status.ErrorResponse,
+			ErrorResponse: errorResponse,
 			SentAt:        status.ExecTime.Format(misc.RFC3339Milli),
 			EventName:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_name").String(),
 			EventType:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_type").String(),
 		}
-		w.rt.debugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
+		recorded := w.rt.debugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
+		if recorded && liveEventsRespBody != "" && w.rt.liveEventsResponseKeptStat != nil {
+			w.rt.liveEventsResponseKeptStat(destinationJobMetadata.DestinationID, status.WorkspaceId).Increment()
+		}
 	}
 }
 

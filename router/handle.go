@@ -77,6 +77,7 @@ type Handle struct {
 	saveDestinationResponse            bool
 	saveDestinationResponseOverride    config.ValueLoader[bool]
 	liveEventsSuccessResponse          config.ValueLoader[bool] // keep 2xx bodies for Live Events records while capture is on
+	liveEventsResponseKeptStat         func(destID, workspaceID string) stats.Counter
 	reportJobsdbPayload                config.ValueLoader[bool]
 	storeDeliveredWithWarningPayload   config.ValueLoader[bool]
 	// supportsDeliveredWithWarnings mirrors the destination definition's capability flag. Written
