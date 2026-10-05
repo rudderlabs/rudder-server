@@ -39,7 +39,7 @@ var (
 	dataTypesMap = map[string]string{
 		model.BooleanDataType:  "bit",
 		model.IntDataType:      "bigint",
-		model.FloatDataType:    "decimal(28,10)",
+		model.FloatDataType:    "float",
 		model.DateTimeDataType: "datetime2(6)",
 		model.StringDataType:   "varchar(max)",
 		model.TextDataType:     "varchar(max)",
@@ -376,7 +376,7 @@ func (f *MicrosoftFabric) validateOneLakeLocation(location string) error {
 	}
 	workspaceID := stringConfig(f.warehouse.Destination.Config, "fabricWorkspaceId")
 	lakehouseID := stringConfig(f.warehouse.Destination.Config, "lakehouseId")
-	expectedPrefix := "/" + workspaceID + "/" + lakehouseID + ".Lakehouse/Files/"
+	expectedPrefix := "/" + workspaceID + "/" + lakehouseID + "/Files/"
 	if u.Scheme != "https" || !strings.EqualFold(u.Host, host) || !strings.HasPrefix(u.EscapedPath(), expectedPrefix) {
 		return errors.New("copy_into: load file is outside the configured OneLake Lakehouse")
 	}

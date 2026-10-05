@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -93,7 +94,7 @@ func TestObjectLocationAndParsing(t *testing.T) {
 	manager := newManager(testConfig(defaultOneLakeHost), &staticCredential{}, http.DefaultClient, logger.NOP)
 	locationURL := manager.objectURL("folder/a name.parquet")
 	location := locationURL.String()
-	require.Equal(t, "https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222.Lakehouse/Files/folder/a%20name.parquet", location)
+	require.Equal(t, "https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222/Files/folder/a%20name.parquet", location)
 
 	name, err := manager.GetObjectNameFromLocation(location)
 	require.NoError(t, err)
@@ -113,6 +114,8 @@ func TestUploadDownloadDeleteAndList(t *testing.T) {
 			uploadedPath = r.URL.EscapedPath()
 			w.WriteHeader(http.StatusCreated)
 		case r.Method == http.MethodPatch && r.URL.Query().Get("action") == "append":
+			require.Equal(t, int64(13), r.ContentLength)
+			require.Empty(t, r.TransferEncoding)
 			body, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
 			stored = append(stored, body...)
@@ -138,11 +141,11 @@ func TestUploadDownloadDeleteAndList(t *testing.T) {
 	credential := &staticCredential{token: "token"}
 	manager := newManager(testConfig(host), credential, server.Client(), logger.NOP)
 
-	uploaded, err := manager.UploadReader(context.Background(), "load/file.parquet", strings.NewReader("hello OneLake"))
+	uploaded, err := manager.UploadReader(context.Background(), "load/file.parquet", io.LimitReader(strings.NewReader("hello OneLake"), 13))
 	require.NoError(t, err)
 	require.Equal(t, "rudder-prefix/load/file.parquet", uploaded.ObjectName)
 	require.Contains(t, uploaded.Location, "/Files/rudder-prefix/load/file.parquet")
-	require.Contains(t, uploadedPath, "/Files/rudder-prefix/load/file.parquet")
+	require.Equal(t, "/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222/Files/rudder-prefix/load/file.parquet", uploadedPath)
 	require.Equal(t, []string{storageScope}, credential.scopes)
 
 	output := &writerAtBuffer{}
@@ -156,6 +159,36 @@ func TestUploadDownloadDeleteAndList(t *testing.T) {
 
 	require.NoError(t, manager.Delete(context.Background(), []string{uploaded.Location}))
 	require.Empty(t, stored)
+}
+
+func TestUploadUsesFileSizeForContentLength(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("action") {
+		case "append":
+			require.Equal(t, int64(7), r.ContentLength)
+			require.Empty(t, r.TransferEncoding)
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			require.Equal(t, []byte("payload"), body)
+			w.WriteHeader(http.StatusAccepted)
+		case "flush":
+			require.Equal(t, "7", r.URL.Query().Get("position"))
+			w.WriteHeader(http.StatusOK)
+		default:
+			require.Equal(t, "file", r.URL.Query().Get("resource"))
+			w.WriteHeader(http.StatusCreated)
+		}
+	}))
+	defer server.Close()
+
+	file, err := os.CreateTemp(t.TempDir(), "payload-*.parquet")
+	require.NoError(t, err)
+	_, err = file.WriteString("payload")
+	require.NoError(t, err)
+
+	manager := newManager(testConfig(strings.TrimPrefix(server.URL, "https://")), &staticCredential{token: "token"}, server.Client(), logger.NOP)
+	_, err = manager.Upload(context.Background(), file, "load")
+	require.NoError(t, err)
 }
 
 func TestDownloadRejectsRangeOptions(t *testing.T) {

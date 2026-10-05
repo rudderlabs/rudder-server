@@ -1,6 +1,7 @@
 package onelake
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -182,7 +183,7 @@ func (m *Manager) baseURL() url.URL {
 		Host:   m.config.Host,
 		Path: "/" + path.Join(
 			m.config.FabricWorkspaceID,
-			m.config.LakehouseID+".Lakehouse",
+			m.config.LakehouseID,
 			"Files",
 		),
 	}
@@ -201,7 +202,7 @@ func (m *Manager) withTimeout(ctx context.Context) (context.Context, context.Can
 	return context.WithTimeout(ctx, timeout)
 }
 
-func (m *Manager) request(ctx context.Context, method string, u url.URL, body io.Reader, headers http.Header) (*http.Response, error) {
+func (m *Manager) request(ctx context.Context, method string, u url.URL, body io.Reader, contentLength *int64, headers http.Header) (*http.Response, error) {
 	token, err := m.credential.GetToken(ctx, policy.TokenRequestOptions{Scopes: []string{storageScope}})
 	if err != nil {
 		return nil, fmt.Errorf("authenticating with OneLake: %w", err)
@@ -209,6 +210,9 @@ func (m *Manager) request(ctx context.Context, method string, u url.URL, body io
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return nil, fmt.Errorf("creating OneLake request: %w", err)
+	}
+	if contentLength != nil {
+		req.ContentLength = *contentLength
 	}
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 	for key, values := range headers {
@@ -239,12 +243,16 @@ func (m *Manager) Upload(ctx context.Context, file *os.File, prefixes ...string)
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return filemanager.UploadedFile{}, fmt.Errorf("seeking upload file: %w", err)
 	}
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return filemanager.UploadedFile{}, fmt.Errorf("stating upload file: %w", err)
+	}
 	parts := append(append([]string(nil), prefixes...), path.Base(file.Name()))
 	objectName, err := m.prefixedObjectName(parts...)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
 	}
-	return m.upload(ctx, objectName, file)
+	return m.upload(ctx, objectName, file, fileInfo.Size())
 }
 
 func (m *Manager) UploadReader(ctx context.Context, objectName string, reader io.Reader) (filemanager.UploadedFile, error) {
@@ -252,7 +260,18 @@ func (m *Manager) UploadReader(ctx context.Context, objectName string, reader io
 	if err != nil {
 		return filemanager.UploadedFile{}, err
 	}
-	return m.upload(ctx, objectName, reader)
+	var size int64
+	if readerWithLen, ok := reader.(interface{ Len() int }); ok {
+		size = int64(readerWithLen.Len())
+	} else {
+		data, err := io.ReadAll(reader)
+		if err != nil {
+			return filemanager.UploadedFile{}, fmt.Errorf("buffering OneLake upload: %w", err)
+		}
+		reader = bytes.NewReader(data)
+		size = int64(len(data))
+	}
+	return m.upload(ctx, objectName, reader, size)
 }
 
 func (m *Manager) prefixedObjectName(parts ...string) (string, error) {
@@ -274,7 +293,7 @@ func (m *Manager) prefixedObjectName(parts ...string) (string, error) {
 	return normalizeObjectName(path.Join(validated...))
 }
 
-func (m *Manager) upload(ctx context.Context, objectName string, reader io.Reader) (filemanager.UploadedFile, error) {
+func (m *Manager) upload(ctx context.Context, objectName string, reader io.Reader, size int64) (filemanager.UploadedFile, error) {
 	objectName, err := normalizeObjectName(objectName)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
@@ -286,7 +305,7 @@ func (m *Manager) upload(ctx context.Context, objectName string, reader io.Reade
 	query := u.Query()
 	query.Set("resource", "file")
 	u.RawQuery = query.Encode()
-	resp, err := m.request(ctx, http.MethodPut, u, nil, nil)
+	resp, err := m.request(ctx, http.MethodPut, u, nil, nil, nil)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
 	}
@@ -301,8 +320,7 @@ func (m *Manager) upload(ctx context.Context, objectName string, reader io.Reade
 	query.Set("position", "0")
 	u.RawQuery = query.Encode()
 	headers := http.Header{"Content-Type": []string{"application/octet-stream"}}
-	countedReader := &countingReader{reader: reader}
-	resp, err = m.request(ctx, http.MethodPatch, u, countedReader, headers)
+	resp, err = m.request(ctx, http.MethodPatch, u, reader, &size, headers)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
 	}
@@ -312,9 +330,9 @@ func (m *Manager) upload(ctx context.Context, objectName string, reader io.Reade
 	_ = resp.Body.Close()
 
 	query.Set("action", "flush")
-	query.Set("position", strconv.FormatInt(countedReader.count, 10))
+	query.Set("position", strconv.FormatInt(size, 10))
 	u.RawQuery = query.Encode()
-	resp, err = m.request(ctx, http.MethodPatch, u, nil, nil)
+	resp, err = m.request(ctx, http.MethodPatch, u, nil, nil, nil)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
 	}
@@ -341,7 +359,7 @@ func (m *Manager) Download(ctx context.Context, output io.WriterAt, key string, 
 	}
 	ctx, cancel := m.withTimeout(ctx)
 	defer cancel()
-	resp, err := m.request(ctx, http.MethodGet, m.objectURL(objectName), nil, nil)
+	resp, err := m.request(ctx, http.MethodGet, m.objectURL(objectName), nil, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -367,7 +385,7 @@ func (m *Manager) Delete(ctx context.Context, keys []string) error {
 			return err
 		}
 		requestCtx, cancel := m.withTimeout(ctx)
-		resp, err := m.request(requestCtx, http.MethodDelete, m.objectURL(objectName), nil, nil)
+		resp, err := m.request(requestCtx, http.MethodDelete, m.objectURL(objectName), nil, nil, nil)
 		cancel()
 		if err != nil {
 			return err
@@ -418,17 +436,6 @@ func (m *Manager) GetDownloadKeyFromFileLocation(location string) string {
 		return ""
 	}
 	return key
-}
-
-type countingReader struct {
-	reader io.Reader
-	count  int64
-}
-
-func (r *countingReader) Read(data []byte) (int, error) {
-	n, err := r.reader.Read(data)
-	r.count += int64(n)
-	return n, err
 }
 
 func normalizeObjectName(name string) (string, error) {
@@ -486,7 +493,7 @@ func (s *listSession) Next() ([]*filemanager.FileInfo, error) {
 		query.Set("continuation", s.continuation)
 	}
 	u.RawQuery = query.Encode()
-	resp, err := s.manager.request(ctx, http.MethodGet, u, nil, nil)
+	resp, err := s.manager.request(ctx, http.MethodGet, u, nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}
