@@ -55,7 +55,6 @@ func testWarehouse(preferAppend bool) model.Warehouse {
 		Destination: backendconfig.DestinationT{
 			Config: map[string]any{
 				"host":              "configured.fabric.example",
-				"port":              "1433",
 				"database":          "warehouse",
 				"tenantId":          "tenant",
 				"clientId":          "client",
@@ -104,10 +103,9 @@ func TestAddColumnsMapsTextToVarcharMax(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestConnectionDSNUsesCompleteHostAndEntraSPN(t *testing.T) {
+func TestConnectionDSNUsesCompleteHostFixedPortAndEntraSPN(t *testing.T) {
 	fabric := &MicrosoftFabric{warehouse: testWarehouse(false), connectTimeout: 3 * time.Second, conf: config.New()}
-	dsn, err := fabric.connectionDSN()
-	require.NoError(t, err)
+	dsn := fabric.connectionDSN()
 	u, err := url.Parse(dsn)
 	require.NoError(t, err)
 	require.Equal(t, "configured.fabric.example:1433", u.Host)

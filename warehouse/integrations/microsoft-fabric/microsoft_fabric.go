@@ -31,8 +31,9 @@ import (
 )
 
 const (
-	provider       = warehouseutils.MicrosoftFabric
-	tableNameLimit = 128
+	provider        = warehouseutils.MicrosoftFabric
+	tableNameLimit  = 128
+	sqlEndpointPort = 1433
 )
 
 var (
@@ -131,17 +132,16 @@ func stringConfig(values map[string]any, key string) string {
 	return value
 }
 
-func (f *MicrosoftFabric) credentials() (host, port, database, tenantID, clientID, clientSecret, workspaceID string) {
+func (f *MicrosoftFabric) credentials() (host, database, tenantID, clientID, clientSecret, workspaceID string) {
 	config := f.warehouse.Destination.Config
 	return f.warehouse.GetStringDestinationConfig(f.conf, model.HostSetting),
-		f.warehouse.GetStringDestinationConfig(f.conf, model.PortSetting),
 		f.warehouse.GetStringDestinationConfig(f.conf, model.DatabaseSetting),
 		stringConfig(config, "tenantId"), stringConfig(config, "clientId"), stringConfig(config, "clientSecret"),
 		stringConfig(config, "fabricWorkspaceId")
 }
 
 func (f *MicrosoftFabric) bootstrap(ctx context.Context) error {
-	_, _, _, tenantID, clientID, clientSecret, workspaceID := f.credentials()
+	_, _, tenantID, clientID, clientSecret, workspaceID := f.credentials()
 	for name, value := range map[string]string{
 		"tenantId": tenantID, "clientId": clientID, "clientSecret": clientSecret, "fabricWorkspaceId": workspaceID,
 	} {
@@ -152,12 +152,8 @@ func (f *MicrosoftFabric) bootstrap(ctx context.Context) error {
 	return f.bootstrapper.Bootstrap(ctx, tenantID, clientID, clientSecret, workspaceID)
 }
 
-func (f *MicrosoftFabric) connectionDSN() (string, error) {
-	host, port, database, tenantID, clientID, clientSecret, _ := f.credentials()
-	portNumber, err := strconv.Atoi(port)
-	if err != nil {
-		return "", fmt.Errorf("invalid port %q: %w", port, err)
-	}
+func (f *MicrosoftFabric) connectionDSN() string {
+	host, database, tenantID, clientID, clientSecret, _ := f.credentials()
 	query := url.Values{}
 	query.Set("database", database)
 	query.Set("fedauth", azuread.ActiveDirectoryServicePrincipal)
@@ -168,17 +164,13 @@ func (f *MicrosoftFabric) connectionDSN() (string, error) {
 	return (&url.URL{
 		Scheme:   "sqlserver",
 		User:     url.UserPassword(clientID+"@"+tenantID, clientSecret),
-		Host:     net.JoinHostPort(host, strconv.Itoa(portNumber)),
+		Host:     net.JoinHostPort(host, strconv.Itoa(sqlEndpointPort)),
 		RawQuery: query.Encode(),
-	}).String(), nil
+	}).String()
 }
 
 func (f *MicrosoftFabric) connect() (*sqlmw.DB, error) {
-	dsn, err := f.connectionDSN()
-	if err != nil {
-		return nil, err
-	}
-	connector, err := azuread.NewConnector(dsn)
+	connector, err := azuread.NewConnector(f.connectionDSN())
 	if err != nil {
 		return nil, fmt.Errorf("creating Entra SQL connector: %w", err)
 	}
