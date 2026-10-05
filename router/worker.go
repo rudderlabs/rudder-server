@@ -1163,8 +1163,7 @@ func (w *worker) sendLiveEvents(routerJobResponses []*JobResponse) {
 func (w *worker) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string, liveEventsRespBody string) {
 	// Sending destination response to config backend
 	if status.ErrorCode != fmt.Sprint(types.RouterUnMarshalErrorCode) {
-		// status belongs to the jobs database writer by now: build the record's errorResponse
-		// on a copy (EnhanceJSON returns a new buffer) and never write to status.
+		// status shouldn't be modified
 		errorResponse := status.ErrorResponse
 		if liveEventsRespBody != "" {
 			errorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "response", trimResponseBody(liveEventsRespBody))
@@ -1181,10 +1180,7 @@ func (w *worker) sendDestinationResponseToConfigBackend(payload json.RawMessage,
 			EventName:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_name").String(),
 			EventType:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_type").String(),
 		}
-		recorded := w.rt.debugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
-		if recorded && liveEventsRespBody != "" && w.rt.liveEventsResponseKeptStat != nil {
-			w.rt.liveEventsResponseKeptStat(destinationJobMetadata.DestinationID, status.WorkspaceId).Increment()
-		}
+		w.rt.debugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
 	}
 }
 

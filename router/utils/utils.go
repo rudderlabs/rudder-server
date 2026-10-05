@@ -78,7 +78,8 @@ func (jp *JobParameters) ParseReceivedAtTime() time.Time {
 	return receivedAt
 }
 
-// rawMsg passed must be a valid JSON
+// EnhanceJSON returns a copy of rawMsg with key set to the string val; rawMsg is never modified.
+// It returns {} if rawMsg is not valid JSON.
 func EnhanceJSON(rawMsg []byte, key, val string) []byte {
 	resp, err := sjson.SetBytes(rawMsg, key, val)
 	if err != nil {

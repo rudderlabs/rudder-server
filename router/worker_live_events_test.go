@@ -12,8 +12,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -215,24 +213,4 @@ func TestPrepareRouterJobResponsesLiveEventsNoCopyWithoutDelivery(t *testing.T) 
 			require.Equal(t, "", responses[0].liveEventsRespBody)
 		})
 	}
-}
-
-func TestSendLiveEventsCountsKeptBodies(t *testing.T) {
-	statsStore, err := memstats.New()
-	require.NoError(t, err)
-
-	var records []*destinationdebugger.DeliveryStatusT
-	w := newRecordingWorker(t, &records)
-	w.rt.liveEventsResponseKeptStat = func(destID, workspaceID string) stats.Counter {
-		return statsStore.NewTaggedStat("router_live_events_success_response_kept", stats.CountType, stats.Tags{
-			"destType": "CUSTOM_AUDIENCE", "destId": destID, "workspaceId": workspaceID,
-		})
-	}
-	w.sendLiveEvents(liveEventsJobResponses(t, []int64{1}, 200, "", `{"handles":["h1"]}`))
-	w.sendLiveEvents(liveEventsJobResponses(t, []int64{2}, 200, "", ""))
-
-	m := statsStore.Get("router_live_events_success_response_kept",
-		stats.Tags{"destType": "CUSTOM_AUDIENCE", "destId": "dest-1", "workspaceId": "ws-1"})
-	require.NotNil(t, m)
-	require.EqualValues(t, 1, m.LastValue())
 }
