@@ -376,7 +376,7 @@ func (f *MicrosoftFabric) validateOneLakeLocation(location string) error {
 	}
 	workspaceID := stringConfig(f.warehouse.Destination.Config, "fabricWorkspaceId")
 	lakehouseID := stringConfig(f.warehouse.Destination.Config, "lakehouseId")
-	expectedPrefix := "/" + workspaceID + "/" + lakehouseID + ".Lakehouse/Files/"
+	expectedPrefix := "/" + workspaceID + "/" + lakehouseID + "/Files/"
 	if u.Scheme != "https" || !strings.EqualFold(u.Host, host) || !strings.HasPrefix(u.EscapedPath(), expectedPrefix) {
 		return errors.New("copy_into: load file is outside the configured OneLake Lakehouse")
 	}

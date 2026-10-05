@@ -93,7 +93,7 @@ func TestObjectLocationAndParsing(t *testing.T) {
 	manager := newManager(testConfig(defaultOneLakeHost), &staticCredential{}, http.DefaultClient, logger.NOP)
 	locationURL := manager.objectURL("folder/a name.parquet")
 	location := locationURL.String()
-	require.Equal(t, "https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222.Lakehouse/Files/folder/a%20name.parquet", location)
+	require.Equal(t, "https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222/Files/folder/a%20name.parquet", location)
 
 	name, err := manager.GetObjectNameFromLocation(location)
 	require.NoError(t, err)

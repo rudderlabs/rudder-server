@@ -155,7 +155,7 @@ func TestShouldMerge(t *testing.T) {
 
 func TestLoadTableAppendUsesStagingBeforeTargetInsert(t *testing.T) {
 	db, mock := newSQLMock(t)
-	location := "https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222.Lakehouse/Files/load/tracks.parquet"
+	location := "https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222/Files/load/tracks.parquet"
 	mock.ExpectExec(`SELECT TOP 0 \* INTO \[schema\.with\.dot\]\.\[rudder_staging_tracks_[0-9a-f]+\] FROM \[schema\.with\.dot\]\.\[tracks\];`).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(`COPY INTO \[schema\.with\.dot\]\.\[rudder_staging_tracks_[0-9a-f]+\] \(\[id\],\[received_at\]\) FROM 'https://onelake\.dfs\.fabric\.microsoft\.com/.+' WITH \(FILE_TYPE = 'PARQUET'\);`).WillReturnResult(sqlmock.NewResult(0, 2))
 	mock.ExpectExec(`INSERT INTO \[schema\.with\.dot\]\.\[tracks\] \(\[id\],\[received_at\]\) SELECT \[id\],\[received_at\] FROM \[schema\.with\.dot\]\.\[rudder_staging_tracks_[0-9a-f]+\];`).WillReturnResult(sqlmock.NewResult(0, 2))
@@ -178,7 +178,7 @@ func TestLoadTableAppendUsesStagingBeforeTargetInsert(t *testing.T) {
 
 func TestLoadTableUsesUniqueStagingAndSingleMerge(t *testing.T) {
 	db, mock := newSQLMock(t)
-	location := "https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222.Lakehouse/Files/load/tracks.parquet"
+	location := "https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222/Files/load/tracks.parquet"
 	mock.ExpectExec(`SELECT TOP 0 \* INTO \[schema\.with\.dot\]\.\[rudder_staging_tracks_[0-9a-f]+\] FROM \[schema\.with\.dot\]\.\[tracks\];`).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(`COPY INTO \[schema\.with\.dot\]\.\[rudder_staging_tracks_[0-9a-f]+\] \(\[id\],\[received_at\],\[value\]\) FROM 'https://onelake\.dfs\.fabric\.microsoft\.com/.+' WITH \(FILE_TYPE = 'PARQUET'\);`).WillReturnResult(sqlmock.NewResult(0, 2))
 	mock.ExpectExec(`(?s)MERGE INTO \[schema\.with\.dot\]\.\[tracks\] AS target USING .*WHEN MATCHED THEN UPDATE SET.*WHEN NOT MATCHED THEN INSERT`).WillReturnResult(sqlmock.NewResult(0, 2))
@@ -206,7 +206,7 @@ func TestCopyRejectsLocationOutsideConfiguredLakehouse(t *testing.T) {
 	fabric := &MicrosoftFabric{warehouse: testWarehouse(false), conf: config.New()}
 	err := fabric.validateOneLakeLocation("https://attacker.example/file.parquet")
 	require.ErrorContains(t, err, "outside the configured OneLake Lakehouse")
-	err = fabric.validateOneLakeLocation("https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222.Lakehouse/Files/f.parquet")
+	err = fabric.validateOneLakeLocation("https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222/Files/f.parquet")
 	require.NoError(t, err)
 }
 

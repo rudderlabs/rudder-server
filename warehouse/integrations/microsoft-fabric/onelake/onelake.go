@@ -182,7 +182,7 @@ func (m *Manager) baseURL() url.URL {
 		Host:   m.config.Host,
 		Path: "/" + path.Join(
 			m.config.FabricWorkspaceID,
-			m.config.LakehouseID+".Lakehouse",
+			m.config.LakehouseID,
 			"Files",
 		),
 	}
