@@ -202,7 +202,7 @@ func (m *Manager) withTimeout(ctx context.Context) (context.Context, context.Can
 	return context.WithTimeout(ctx, timeout)
 }
 
-func (m *Manager) request(ctx context.Context, method string, u url.URL, body io.Reader, headers http.Header) (*http.Response, error) {
+func (m *Manager) request(ctx context.Context, method string, u url.URL, body io.Reader, contentLength int64, headers http.Header) (*http.Response, error) {
 	token, err := m.credential.GetToken(ctx, policy.TokenRequestOptions{Scopes: []string{storageScope}})
 	if err != nil {
 		return nil, fmt.Errorf("authenticating with OneLake: %w", err)
@@ -211,8 +211,8 @@ func (m *Manager) request(ctx context.Context, method string, u url.URL, body io
 	if err != nil {
 		return nil, fmt.Errorf("creating OneLake request: %w", err)
 	}
-	if sized, ok := body.(*sizedReader); ok {
-		req.ContentLength = sized.size
+	if body != nil {
+		req.ContentLength = contentLength
 	}
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 	for key, values := range headers {
@@ -243,12 +243,16 @@ func (m *Manager) Upload(ctx context.Context, file *os.File, prefixes ...string)
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return filemanager.UploadedFile{}, fmt.Errorf("seeking upload file: %w", err)
 	}
+	info, err := file.Stat()
+	if err != nil {
+		return filemanager.UploadedFile{}, fmt.Errorf("reading upload file size: %w", err)
+	}
 	parts := append(append([]string(nil), prefixes...), path.Base(file.Name()))
 	objectName, err := m.prefixedObjectName(parts...)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
 	}
-	return m.upload(ctx, objectName, file)
+	return m.upload(ctx, objectName, file, info.Size())
 }
 
 func (m *Manager) UploadReader(ctx context.Context, objectName string, reader io.Reader) (filemanager.UploadedFile, error) {
@@ -256,7 +260,14 @@ func (m *Manager) UploadReader(ctx context.Context, objectName string, reader io
 	if err != nil {
 		return filemanager.UploadedFile{}, err
 	}
-	return m.upload(ctx, objectName, reader)
+	if sized, ok := reader.(interface{ Len() int }); ok {
+		return m.upload(ctx, objectName, reader, int64(sized.Len()))
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return filemanager.UploadedFile{}, fmt.Errorf("reading upload body: %w", err)
+	}
+	return m.upload(ctx, objectName, bytes.NewReader(data), int64(len(data)))
 }
 
 func (m *Manager) prefixedObjectName(parts ...string) (string, error) {
@@ -278,7 +289,7 @@ func (m *Manager) prefixedObjectName(parts ...string) (string, error) {
 	return normalizeObjectName(path.Join(validated...))
 }
 
-func (m *Manager) upload(ctx context.Context, objectName string, reader io.Reader) (filemanager.UploadedFile, error) {
+func (m *Manager) upload(ctx context.Context, objectName string, body io.Reader, size int64) (filemanager.UploadedFile, error) {
 	objectName, err := normalizeObjectName(objectName)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
@@ -290,7 +301,7 @@ func (m *Manager) upload(ctx context.Context, objectName string, reader io.Reade
 	query := u.Query()
 	query.Set("resource", "file")
 	u.RawQuery = query.Encode()
-	resp, err := m.request(ctx, http.MethodPut, u, nil, nil)
+	resp, err := m.request(ctx, http.MethodPut, u, nil, 0, nil)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
 	}
@@ -304,14 +315,10 @@ func (m *Manager) upload(ctx context.Context, objectName string, reader io.Reade
 	query.Set("action", "append")
 	query.Set("position", "0")
 	u.RawQuery = query.Encode()
-	// The DFS append endpoint rejects chunked bodies, so the request needs an explicit Content-Length.
-	body, err := newSizedReader(reader)
-	if err != nil {
-		return filemanager.UploadedFile{}, fmt.Errorf("sizing upload: %w", err)
-	}
-	if body.size > 0 {
+	if size > 0 {
+		// The DFS append endpoint rejects chunked bodies, so the request carries an explicit Content-Length.
 		headers := http.Header{"Content-Type": []string{"application/octet-stream"}}
-		resp, err = m.request(ctx, http.MethodPatch, u, body, headers)
+		resp, err = m.request(ctx, http.MethodPatch, u, body, size, headers)
 		if err != nil {
 			return filemanager.UploadedFile{}, err
 		}
@@ -322,9 +329,9 @@ func (m *Manager) upload(ctx context.Context, objectName string, reader io.Reade
 	}
 
 	query.Set("action", "flush")
-	query.Set("position", strconv.FormatInt(body.size, 10))
+	query.Set("position", strconv.FormatInt(size, 10))
 	u.RawQuery = query.Encode()
-	resp, err = m.request(ctx, http.MethodPatch, u, nil, nil)
+	resp, err = m.request(ctx, http.MethodPatch, u, nil, 0, nil)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
 	}
@@ -351,7 +358,7 @@ func (m *Manager) Download(ctx context.Context, output io.WriterAt, key string, 
 	}
 	ctx, cancel := m.withTimeout(ctx)
 	defer cancel()
-	resp, err := m.request(ctx, http.MethodGet, m.objectURL(objectName), nil, nil)
+	resp, err := m.request(ctx, http.MethodGet, m.objectURL(objectName), nil, 0, nil)
 	if err != nil {
 		return err
 	}
@@ -377,7 +384,7 @@ func (m *Manager) Delete(ctx context.Context, keys []string) error {
 			return err
 		}
 		requestCtx, cancel := m.withTimeout(ctx)
-		resp, err := m.request(requestCtx, http.MethodDelete, m.objectURL(objectName), nil, nil)
+		resp, err := m.request(requestCtx, http.MethodDelete, m.objectURL(objectName), nil, 0, nil)
 		cancel()
 		if err != nil {
 			return err
@@ -428,32 +435,6 @@ func (m *Manager) GetDownloadKeyFromFileLocation(location string) string {
 		return ""
 	}
 	return key
-}
-
-// sizedReader is a request body whose length is known up front.
-type sizedReader struct {
-	io.Reader
-	size int64
-}
-
-// newSizedReader streams files from their current offset and buffers any other reader.
-func newSizedReader(reader io.Reader) (*sizedReader, error) {
-	if file, ok := reader.(*os.File); ok {
-		info, err := file.Stat()
-		if err != nil {
-			return nil, err
-		}
-		offset, err := file.Seek(0, io.SeekCurrent)
-		if err != nil {
-			return nil, err
-		}
-		return &sizedReader{Reader: file, size: info.Size() - offset}, nil
-	}
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, err
-	}
-	return &sizedReader{Reader: bytes.NewReader(data), size: int64(len(data))}, nil
 }
 
 func normalizeObjectName(name string) (string, error) {
@@ -511,7 +492,7 @@ func (s *listSession) Next() ([]*filemanager.FileInfo, error) {
 		query.Set("continuation", s.continuation)
 	}
 	u.RawQuery = query.Encode()
-	resp, err := s.manager.request(ctx, http.MethodGet, u, nil, nil)
+	resp, err := s.manager.request(ctx, http.MethodGet, u, nil, 0, nil)
 	if err != nil {
 		return nil, err
 	}
