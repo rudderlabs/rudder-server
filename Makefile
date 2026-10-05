@@ -4,6 +4,8 @@ GO=go
 LDFLAGS?=-s -w
 TESTFILE=_testok
 MOUNT_PATH=/local
+# Registry prefix for Docker Hub images, e.g. the ECR pull-through cache "<registry>/docker-hub/" (set by CI)
+DOCKER_HUB_PREFIX?=
 
 # go tools versions
 GOLANGCI=github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
@@ -141,7 +143,7 @@ bench-kafka:
 .PHONY: generate-openapi-spec
 generate-openapi-spec: install-tools
 	docker run --rm \
-	  -v ${PWD}:${MOUNT_PATH} openapitools/openapi-generator-cli:v7.3.0 generate \
+	  -v ${PWD}:${MOUNT_PATH} $(DOCKER_HUB_PREFIX)openapitools/openapi-generator-cli:v7.3.0 generate \
 	  -i ${MOUNT_PATH}/gateway/openapi.yaml \
 	  -g html2 \
 	  -o ${MOUNT_PATH}/gateway/openapi

@@ -175,7 +175,7 @@ Warehouse:
   clickhouse:
     maxParallelLoads: 3
     queryDebugLogs: false
-    blockSize: 1000
+    commitEvery: 1000
     poolSize: 10
     disableNullable: false
     enableArraySupport: false
