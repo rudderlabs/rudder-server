@@ -39,7 +39,7 @@ var (
 	dataTypesMap = map[string]string{
 		model.BooleanDataType:  "bit",
 		model.IntDataType:      "bigint",
-		model.FloatDataType:    "decimal(28,10)",
+		model.FloatDataType:    "float", // Parquet load files carry DOUBLE, which COPY INTO cannot load into decimal
 		model.DateTimeDataType: "datetime2(6)",
 		model.StringDataType:   "varchar(max)",
 		model.TextDataType:     "varchar(max)",

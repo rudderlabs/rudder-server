@@ -79,7 +79,7 @@ func TestPersistedTypeMappings(t *testing.T) {
 	require.Equal(t, map[string]string{
 		"boolean":  "bit",
 		"int":      "bigint",
-		"float":    "decimal(28,10)",
+		"float":    "float",
 		"datetime": "datetime2(6)",
 		"string":   "varchar(max)",
 		"text":     "varchar(max)",
@@ -90,7 +90,7 @@ func TestPersistedTypeMappings(t *testing.T) {
 		"payload": "json", "description": "text", "at": "datetime", "name": "string", "enabled": "boolean", "count": "int", "amount": "float",
 	})
 	require.NoError(t, err)
-	require.Equal(t, "[amount] decimal(28,10) NULL,[at] datetime2(6) NULL,[count] bigint NULL,[description] varchar(max) NULL,[enabled] bit NULL,[name] varchar(max) NULL,[payload] varchar(max) NULL", columns)
+	require.Equal(t, "[amount] float NULL,[at] datetime2(6) NULL,[count] bigint NULL,[description] varchar(max) NULL,[enabled] bit NULL,[name] varchar(max) NULL,[payload] varchar(max) NULL", columns)
 	_, err = columnsWithDataTypes(model.TableSchema{"bad": "array(string)"})
 	require.ErrorContains(t, err, "schema_evolution")
 }
