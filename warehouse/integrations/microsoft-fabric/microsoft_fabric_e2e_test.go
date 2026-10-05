@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -23,6 +24,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -40,6 +42,23 @@ type fabricCredentials struct {
 	FabricWorkspaceID string `json:"fabricWorkspaceId"`
 	LakehouseID       string `json:"lakehouseId"`
 	OneLakeHost       string `json:"oneLakeHost"`
+}
+
+var eventTables = []string{"identifies", "users", "tracks", "product_reviewed", "pages", "screens", "aliases", "groups"}
+
+// tableState is the per-table row count for one user, plus the users.name trait.
+type tableState struct {
+	counts    map[string]int
+	usersName string
+}
+
+func expectedCounts(perTable int) map[string]int {
+	counts := make(map[string]int, len(eventTables))
+	for _, table := range eventTables {
+		counts[table] = perTable
+	}
+	counts["users"] = 1
+	return counts
 }
 
 // TestE2EGatewayToFabric sends events through the gateway and verifies they land in Fabric
@@ -67,10 +86,9 @@ func TestE2EGatewayToFabric(t *testing.T) {
 	c.Start(context.Background())
 
 	jobsDBPort := c.Port("jobsDb", 5432)
-	transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 	jobsDB := whth.JobsDB(t, jobsDBPort)
 
-	httpPort, err := kithelper.GetFreePort()
+	whPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 	gwPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
@@ -80,34 +98,30 @@ func TestE2EGatewayToFabric(t *testing.T) {
 		sourceID      = whutils.RandHex()
 		destinationID = whutils.RandHex()
 		writeKey      = whutils.RandHex()
-		namespace     = "fabric_e2e_" + strings.ToLower(whutils.RandHex()[:10])
-		userID        = "fabric_e2e_user_" + whutils.RandHex()[:8]
+		namespace     = whth.RandSchema(destType)
+		userID        = whth.GetUserId(destType)
 	)
 	t.Logf("namespace=%s userID=%s", namespace, userID)
 
-	destConfig := map[string]any{
-		"host":                    creds.Host,
-		"port":                    creds.Port,
-		"database":                creds.Database,
-		"tenantId":                creds.TenantID,
-		"clientId":                creds.ClientID,
-		"clientSecret":            creds.ClientSecret,
-		"fabricWorkspaceId":       creds.FabricWorkspaceID,
-		"lakehouseId":             creds.LakehouseID,
-		"prefix":                  "rudder-e2e",
-		"namespace":               namespace,
-		"syncFrequency":           "30",
-		"allowUsersContextTraits": true,
-		"underscoreDivideNumbers": true,
-	}
-	if creds.OneLakeHost != "" {
-		destConfig["oneLakeHost"] = creds.OneLakeHost
-	}
 	builder := backendconfigtest.NewDestinationBuilder(destType).
 		WithID(destinationID).
-		WithRevisionID(destinationID)
-	for k, v := range destConfig {
-		builder = builder.WithConfigOption(k, v)
+		WithRevisionID(destinationID).
+		WithConfigOption("host", creds.Host).
+		WithConfigOption("port", creds.Port).
+		WithConfigOption("database", creds.Database).
+		WithConfigOption("tenantId", creds.TenantID).
+		WithConfigOption("clientId", creds.ClientID).
+		WithConfigOption("clientSecret", creds.ClientSecret).
+		WithConfigOption("fabricWorkspaceId", creds.FabricWorkspaceID).
+		WithConfigOption("lakehouseId", creds.LakehouseID).
+		WithConfigOption("prefix", "rudder-e2e").
+		WithConfigOption("namespace", namespace).
+		WithConfigOption("preferAppend", false).
+		WithConfigOption("syncFrequency", "30").
+		WithConfigOption("allowUsersContextTraits", true).
+		WithConfigOption("underscoreDivideNumbers", true)
+	if creds.OneLakeHost != "" {
+		builder = builder.WithConfigOption("oneLakeHost", creds.OneLakeHost)
 	}
 	destination := builder.Build()
 
@@ -124,89 +138,68 @@ func TestE2EGatewayToFabric(t *testing.T) {
 		Build()
 
 	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(gwPort))
-	t.Setenv("DEST_TRANSFORM_URL", transformerURL)
+	t.Setenv("DEST_TRANSFORM_URL", fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090)))
 	t.Setenv("RSERVER_BATCH_ROUTER_MICROSOFT_FABRIC_UPLOAD_FREQ", "5s")
 	t.Setenv("RSERVER_WAREHOUSE_MICROSOFT_FABRIC_SLOW_QUERY_THRESHOLD", "0s")
 
-	whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
+	whth.BootstrapSvc(t, workspaceConfig, whPort, jobsDBPort)
+	health.WaitUntilReady(context.Background(), t,
+		fmt.Sprintf("http://localhost:%d/health", gwPort), time.Minute, time.Second, "gateway",
+	)
 
 	db := openFabric(t, creds)
 	t.Cleanup(func() { dropFabricSchema(t, db, namespace) })
 
-	// Round 1: two of each event type.
-	start := time.Now().UTC()
-	sendBatch(t, gwPort, writeKey, buildEvents(userID, "round1", "Alice", 2))
-	waitForUpload(t, jobsDB, destinationID, start)
+	runRound := func(round, name string) tableState {
+		start := time.Now().UTC()
+		sendBatch(t, gwPort, writeKey, buildEvents(userID, round, name, 2))
+		waitForUpload(t, jobsDB, destinationID, start)
+		return readState(t, db, namespace, userID)
+	}
 
-	counts := tableCounts(t, db, namespace, userID)
-	t.Logf("round 1 counts: %v", counts)
-	require.Equal(t, map[string]int{
-		"identifies": 2, "users": 1, "tracks": 2, "product_reviewed": 2,
-		"pages": 2, "screens": 2, "aliases": 2, "groups": 2,
-	}, counts)
-	require.Equal(t, "Alice", usersName(t, db, namespace, userID))
+	// Round 1: two of each event type.
+	state := runRound("round1", "Alice")
+	require.Equal(t, expectedCounts(2), state.counts)
+	require.Equal(t, "Alice", state.usersName)
 
 	// Round 2: new events for the same user with updated traits; users must stay one row with latest traits.
-	start = time.Now().UTC()
-	sendBatch(t, gwPort, writeKey, buildEvents(userID, "round2", "Bob", 2))
-	waitForUpload(t, jobsDB, destinationID, start)
+	state = runRound("round2", "Bob")
+	require.Equal(t, expectedCounts(4), state.counts)
+	require.Equal(t, "Bob", state.usersName)
 
-	counts = tableCounts(t, db, namespace, userID)
-	t.Logf("round 2 counts: %v", counts)
-	require.Equal(t, map[string]int{
-		"identifies": 4, "users": 1, "tracks": 4, "product_reviewed": 4,
-		"pages": 4, "screens": 4, "aliases": 4, "groups": 4,
-	}, counts)
-	require.Equal(t, "Bob", usersName(t, db, namespace, userID))
-
-	// Round 3: replay round 2 messageIds; non-append tables must dedupe on id.
-	start = time.Now().UTC()
-	sendBatch(t, gwPort, writeKey, buildEvents(userID, "round2", "Bob", 2))
-	waitForUpload(t, jobsDB, destinationID, start)
-	t.Logf("round 3 (replayed message IDs) counts: %v", tableCounts(t, db, namespace, userID))
+	// Round 3: replay round 2 message IDs; with preferAppend=false every table merges on id, so nothing is added.
+	state = runRound("round2", "Bob")
+	require.Equal(t, expectedCounts(4), state.counts)
+	require.Equal(t, "Bob", state.usersName)
 }
 
 func buildEvents(userID, round, name string, n int) []map[string]any {
 	ts := time.Now().UTC().Format(time.RFC3339Nano)
 	var events []map[string]any
 	for i := 0; i < n; i++ {
-		id := func(kind string) string { return fmt.Sprintf("%s-%s-%s-%d", userID, round, kind, i) }
-		common := func(kind string) map[string]any {
-			return map[string]any{
-				"userId": userID, "messageId": id(kind), "anonymousId": "anon-" + userID,
+		event := func(typ string, fields map[string]any) map[string]any {
+			e := map[string]any{
+				"type": typ, "userId": userID, "anonymousId": "anon-" + userID,
+				"messageId":         fmt.Sprintf("%s-%s-%s-%d", userID, round, typ, i),
 				"originalTimestamp": ts, "sentAt": ts, "timestamp": ts,
 			}
+			maps.Copy(e, fields)
+			return e
 		}
-		identify := common("identify")
-		identify["type"] = "identify"
-		identify["traits"] = map[string]any{"name": name, "email": strings.ToLower(name) + "@example.com", "logins": i + 1}
-		identify["context"] = map[string]any{"traits": map[string]any{"name": name, "plan": "pro"}}
-
-		track := common("track")
-		track["type"] = "track"
-		track["event"] = "Product Reviewed"
-		track["properties"] = map[string]any{"review_id": id("review"), "product_id": "p-1", "rating": 4.5, "is_verified": true}
-
-		page := common("page")
-		page["type"] = "page"
-		page["name"] = "Home"
-		page["properties"] = map[string]any{"title": "Home", "url": "https://example.com"}
-
-		screen := common("screen")
-		screen["type"] = "screen"
-		screen["name"] = "Main"
-		screen["properties"] = map[string]any{"title": "Main"}
-
-		alias := common("alias")
-		alias["type"] = "alias"
-		alias["previousId"] = "prev-" + userID
-
-		group := common("group")
-		group["type"] = "group"
-		group["groupId"] = "g-1"
-		group["traits"] = map[string]any{"name": "Acme", "employees": 10, "industry": "Tech"}
-
-		events = append(events, identify, track, page, screen, alias, group)
+		events = append(events,
+			event("identify", map[string]any{
+				"traits":  map[string]any{"name": name, "email": strings.ToLower(name) + "@example.com", "logins": i + 1},
+				"context": map[string]any{"traits": map[string]any{"name": name, "plan": "pro"}},
+			}),
+			event("track", map[string]any{
+				"event":      "Product Reviewed",
+				"properties": map[string]any{"review_id": fmt.Sprintf("%s-%d", round, i), "product_id": "p-1", "rating": 4.5, "is_verified": true},
+			}),
+			event("page", map[string]any{"name": "Home", "properties": map[string]any{"title": "Home", "url": "https://example.com"}}),
+			event("screen", map[string]any{"name": "Main", "properties": map[string]any{"title": "Main"}}),
+			event("alias", map[string]any{"previousId": "prev-" + userID}),
+			event("group", map[string]any{"groupId": "g-1", "traits": map[string]any{"name": "Acme", "employees": 10, "industry": "Tech"}}),
+		)
 	}
 	return events
 }
@@ -219,15 +212,10 @@ func sendBatch(t *testing.T, gwPort int, writeKey string, events []map[string]an
 	require.NoError(t, err)
 	req.SetBasicAuth(writeKey, "")
 	req.Header.Set("Content-Type", "application/json")
-	require.Eventually(t, func() bool {
-		resp, err := http.DefaultClient.Do(req.Clone(context.Background()))
-		if err != nil {
-			return false
-		}
-		defer func() { _ = resp.Body.Close() }()
-		req.Body, _ = req.GetBody()
-		return resp.StatusCode == http.StatusOK
-	}, time.Minute, time.Second, "gateway did not accept batch")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode, "gateway rejected batch")
 }
 
 // waitForUpload blocks until an upload created after start reaches exported_data, failing on abort.
@@ -274,30 +262,39 @@ func openFabric(t *testing.T, creds fabricCredentials) *sql.DB {
 	return db
 }
 
-func tableCounts(t *testing.T, db *sql.DB, namespace, userID string) map[string]int {
+// readState fetches every table's row count for userID, plus users.name, in a single round-trip.
+func readState(t *testing.T, db *sql.DB, namespace, userID string) tableState {
 	t.Helper()
-	counts := map[string]int{}
-	for _, table := range []string{"identifies", "users", "tracks", "product_reviewed", "pages", "screens", "aliases", "groups"} {
-		col := "user_id"
+	parts := make([]string, 0, len(eventTables))
+	for _, table := range eventTables {
+		col, name := "user_id", "NULL"
 		if table == "users" {
-			col = "id"
+			col, name = "id", "MAX([name])"
 		}
-		var n int
-		err := db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM [%s].[%s] WHERE [%s] = @p1`, namespace, table, col), userID).Scan(&n)
-		require.NoErrorf(t, err, "counting %s", table)
-		counts[table] = n
+		parts = append(parts, fmt.Sprintf(`SELECT '%s', COUNT(*), %s FROM [%s].[%s] WHERE [%s] = @p1`, table, name, namespace, table, col))
 	}
-	return counts
-}
+	rows, err := db.Query(strings.Join(parts, " UNION ALL "), userID)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
 
-func usersName(t *testing.T, db *sql.DB, namespace, userID string) string {
-	t.Helper()
-	var name sql.NullString
-	require.NoError(t, db.QueryRow(fmt.Sprintf(`SELECT TOP 1 [name] FROM [%s].[users] WHERE [id] = @p1`, namespace), userID).Scan(&name))
-	return name.String
+	state := tableState{counts: map[string]int{}}
+	for rows.Next() {
+		var table string
+		var count int
+		var name sql.NullString
+		require.NoError(t, rows.Scan(&table, &count, &name))
+		state.counts[table] = count
+		if table == "users" {
+			state.usersName = name.String
+		}
+	}
+	require.NoError(t, rows.Err())
+	t.Logf("fabric state: %+v", state)
+	return state
 }
 
 func dropFabricSchema(t *testing.T, db *sql.DB, namespace string) {
+	t.Helper()
 	if os.Getenv("FABRIC_E2E_KEEP_SCHEMA") == "true" {
 		t.Logf("keeping schema %s", namespace)
 		return
@@ -307,20 +304,16 @@ func dropFabricSchema(t *testing.T, db *sql.DB, namespace string) {
 		t.Logf("listing tables for cleanup: %v", err)
 		return
 	}
-	var tables []string
+	var stmts []string
 	for rows.Next() {
 		var name string
 		if rows.Scan(&name) == nil {
-			tables = append(tables, name)
+			stmts = append(stmts, fmt.Sprintf(`DROP TABLE [%s].[%s];`, namespace, name))
 		}
 	}
 	_ = rows.Close()
-	for _, table := range tables {
-		if _, err := db.Exec(fmt.Sprintf(`DROP TABLE [%s].[%s]`, namespace, table)); err != nil {
-			t.Logf("dropping %s: %v", table, err)
-		}
-	}
-	if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA [%s]`, namespace)); err != nil {
-		t.Logf("dropping schema: %v", err)
+	stmts = append(stmts, fmt.Sprintf(`DROP SCHEMA [%s];`, namespace))
+	if _, err := db.Exec(strings.Join(stmts, " ")); err != nil {
+		t.Logf("dropping schema %s: %v", namespace, err)
 	}
 }
