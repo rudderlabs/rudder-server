@@ -19,6 +19,8 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
+const lyticsBulkAPIURL = "https://bulk.lytics.io/collect/bulk/"
+
 type LyticsServiceImpl struct {
 	BulkApi string
 }
@@ -28,7 +30,7 @@ func (u *LyticsServiceImpl) getBulkApi(destConfig DestinationConfig) *LyticsServ
 	query.Set("timestamp_field", destConfig.TimestampField)
 
 	return &LyticsServiceImpl{
-		BulkApi: "https://bulk.lytics.io/collect/bulk/" + url.PathEscape(destConfig.LyticsStreamName) + "?" + query.Encode(),
+		BulkApi: lyticsBulkAPIURL + url.PathEscape(destConfig.LyticsStreamName) + "?" + query.Encode(),
 	}
 }
 
