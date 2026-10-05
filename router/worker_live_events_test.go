@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 func newLiveEventsTestWorker(t *testing.T, flag, captureOn bool) *worker {
@@ -190,8 +191,29 @@ func TestSendLiveEventsOneRecordPerCall(t *testing.T) {
 	responses := liveEventsJobResponses(t, []int64{1, 2, 3}, 200, "", `{"handles":["h1"]}`)
 	w.sendLiveEvents(responses)
 	require.Len(t, records, 1, "one record per destination job (= one HTTP call)")
+	require.Equal(t, `{"handles":["h1"]}`, gjson.GetBytes(records[0].ErrorResponse, "response").String())
 	for _, r := range responses {
 		require.Equal(t, "", gjson.GetBytes(r.status.ErrorResponse, "response").String())
+	}
+}
+
+func TestPrepareRouterJobResponsesLiveEventsFlagOffCaptureOff(t *testing.T) {
+	w := newLiveEventsTestWorker(t, false, false)
+	responses := w.prepareRouterJobResponses(liveEventsDestinationJob(1),
+		map[int64]int{1: 200}, map[int64]string{1: `{"handles":["h1"]}`}, "")
+	require.Equal(t, "", responses[0].respBody)
+	require.Equal(t, "", responses[0].liveEventsRespBody)
+}
+
+func TestPrepareRouterJobResponsesLiveEventsNoCopyWithoutDelivery(t *testing.T) {
+	// 298 (filtered) and 299 (suppressed) make no HTTP call; their bodies are router text, not a reply.
+	for _, code := range []int{utilTypes.FilterEventCode, utilTypes.SuppressEventCode} {
+		t.Run(strconv.Itoa(code), func(t *testing.T) {
+			w := newLiveEventsTestWorker(t, true, true)
+			responses := w.prepareRouterJobResponses(liveEventsDestinationJob(1),
+				map[int64]int{1: code}, map[int64]string{1: "Event filtered"}, "")
+			require.Equal(t, "", responses[0].liveEventsRespBody)
+		})
 	}
 }
 

@@ -850,7 +850,9 @@ func (w *worker) prepareRouterJobResponses(destinationJob types.DestinationJobT,
 	}
 	for k, respStatusCode := range respStatusCodes {
 		if isSuccessStatus(respStatusCode) && !w.rt.saveDestinationResponseOverride.Load() && !w.rt.saveDestinationResponse {
-			if liveEventsRespBodys != nil && respBodys[k] != "" {
+			// 298 (filtered) and 299 (suppressed) never reached the destination: their body is router text, not a reply.
+			if liveEventsRespBodys != nil && respBodys[k] != "" &&
+				respStatusCode != utilTypes.FilterEventCode && respStatusCode != utilTypes.SuppressEventCode {
 				liveEventsRespBodys[k] = respBodys[k]
 			}
 			respBodys[k] = ""
