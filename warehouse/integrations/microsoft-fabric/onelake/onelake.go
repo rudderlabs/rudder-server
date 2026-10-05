@@ -1,6 +1,7 @@
 package onelake
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -210,6 +211,9 @@ func (m *Manager) request(ctx context.Context, method string, u url.URL, body io
 	if err != nil {
 		return nil, fmt.Errorf("creating OneLake request: %w", err)
 	}
+	if sized, ok := body.(*sizedReader); ok {
+		req.ContentLength = sized.size
+	}
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 	for key, values := range headers {
 		for _, value := range values {
@@ -300,19 +304,25 @@ func (m *Manager) upload(ctx context.Context, objectName string, reader io.Reade
 	query.Set("action", "append")
 	query.Set("position", "0")
 	u.RawQuery = query.Encode()
-	headers := http.Header{"Content-Type": []string{"application/octet-stream"}}
-	countedReader := &countingReader{reader: reader}
-	resp, err = m.request(ctx, http.MethodPatch, u, countedReader, headers)
+	// The DFS append endpoint rejects chunked bodies, so the request needs an explicit Content-Length.
+	body, err := newSizedReader(reader)
 	if err != nil {
-		return filemanager.UploadedFile{}, err
+		return filemanager.UploadedFile{}, fmt.Errorf("sizing upload: %w", err)
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return filemanager.UploadedFile{}, responseError("uploading file", resp)
+	if body.size > 0 {
+		headers := http.Header{"Content-Type": []string{"application/octet-stream"}}
+		resp, err = m.request(ctx, http.MethodPatch, u, body, headers)
+		if err != nil {
+			return filemanager.UploadedFile{}, err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return filemanager.UploadedFile{}, responseError("uploading file", resp)
+		}
+		_ = resp.Body.Close()
 	}
-	_ = resp.Body.Close()
 
 	query.Set("action", "flush")
-	query.Set("position", strconv.FormatInt(countedReader.count, 10))
+	query.Set("position", strconv.FormatInt(body.size, 10))
 	u.RawQuery = query.Encode()
 	resp, err = m.request(ctx, http.MethodPatch, u, nil, nil)
 	if err != nil {
@@ -420,15 +430,30 @@ func (m *Manager) GetDownloadKeyFromFileLocation(location string) string {
 	return key
 }
 
-type countingReader struct {
-	reader io.Reader
-	count  int64
+// sizedReader is a request body whose length is known up front.
+type sizedReader struct {
+	io.Reader
+	size int64
 }
 
-func (r *countingReader) Read(data []byte) (int, error) {
-	n, err := r.reader.Read(data)
-	r.count += int64(n)
-	return n, err
+// newSizedReader streams files from their current offset and buffers any other reader.
+func newSizedReader(reader io.Reader) (*sizedReader, error) {
+	if file, ok := reader.(*os.File); ok {
+		info, err := file.Stat()
+		if err != nil {
+			return nil, err
+		}
+		offset, err := file.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return nil, err
+		}
+		return &sizedReader{Reader: file, size: info.Size() - offset}, nil
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	return &sizedReader{Reader: bytes.NewReader(data), size: int64(len(data))}, nil
 }
 
 func normalizeObjectName(name string) (string, error) {
