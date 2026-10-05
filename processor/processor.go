@@ -202,6 +202,7 @@ type Handle struct {
 		userTransformationMirroringBlockedIDs     config.ValueLoader[[]string]
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		forkRsourcesTrackedJobs                   bool
+		reportingSourceOutMetricsEnabled          config.ValueLoader[bool]
 
 		dropEventsForDisabledDestAtProcRebuild config.ValueLoader[bool]
 	}
@@ -850,6 +851,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.userTransformMirrorURL = proc.conf.GetStringVar("", "USER_TRANSFORM_MIRROR_URL")
 	proc.config.userTransformationMirroringBlockedIDs = proc.conf.GetReloadableStringSliceVar(nil, "Processor.userTransformationMirroring.blockedTransformationIDs")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
+	proc.config.reportingSourceOutMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.sourceOutMetrics.enabled")
 	// Opt-in early drop at the proc rebuild stage for destinations disabled since fan-out;
 	// by default such events keep flowing so the router/batchrouter aborts them with reporting.
 	proc.config.dropEventsForDisabledDestAtProcRebuild = proc.conf.GetReloadableBoolVar(false, "Processor.DestinationIsolation.dropEventsForDisabledDestAtProcRebuild")
@@ -2412,6 +2414,11 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	// here.
 	destEnterConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 	destEnterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+	// source_out: one row per event that reaches the destination fan-out loop below, succeeded
+	// or filtered depending on whether the event has any candidate destination. Gated by
+	// Reporting.sourceOutMetrics.enabled.
+	sourceOutConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
+	sourceOutStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	sourceLevelDestFilterConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 	sourceLevelDestFilterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	destFilterPerDestConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
@@ -2487,6 +2494,29 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			specificDestID := preTrans.jobIDToSpecificDestMapOnly[event.Metadata.JobID]
 			availableDestinations, excludedDestinations := proc.classifyDestinations(singularEvent, srcDests, sourceId, specificDestID)
 
+			// REPORTING - SOURCE_OUT - START
+			// With Reporting.sourceOutMetrics.enabled, every event that reaches this point (tracking
+			// plan and source hydration drops already happened upstream in validateEvents) gets one
+			// source-level source_out row, whatever the number of destinations it fans out to:
+			//   - succeeded/200 when the event has at least one candidate destination, available or
+			//     excluded (excluded candidates still get their per-destination rows below);
+			//   - filtered/298 when it has no candidate destination at all.
+			// destinationId and inPU stay empty. The filtered row replaces the source-level
+			// destination_filter/filtered_no_destination row emitted below, so a zero-candidate
+			// event is never reported by both PUs.
+			sourceOutEnabled := proc.isReportingEnabled() && proc.config.reportingSourceOutMetricsEnabled.Load()
+			if sourceOutEnabled {
+				sourceOutEvent := &types.TransformerResponse{Metadata: event.Metadata}
+				sourceOutStatus := jobsdb.Succeeded.State
+				sourceOutEvent.StatusCode = reportingtypes.SuccessEventCode
+				if len(availableDestinations) == 0 && len(excludedDestinations) == 0 {
+					sourceOutStatus = jobsdb.Filtered.State
+					sourceOutEvent.StatusCode = reportingtypes.FilterEventCode
+				}
+				proc.updateMetricMaps(nil, nil, sourceOutConnectionDetailsMap, sourceOutStatusDetailMap, sourceOutEvent, sourceOutStatus, reportingtypes.SOURCE_OUT, nilPayload, nil)
+			}
+			// REPORTING - SOURCE_OUT - END
+
 			// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - START
 			// The destination filter runs here at fan-out with per-destination visibility: every
 			// candidate destination gets a destination_enter row, excluded candidates additionally
@@ -2513,9 +2543,10 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 					reportingEvent.StatusCode = ex.statusCode
 					proc.updateMetricMaps(nil, nil, destFilterPerDestConnectionDetailsMap, destFilterPerDestStatusDetailMap, reportingEvent, ex.reason, reportingtypes.DESTINATION_FILTER, nilPayload, nil)
 				}
-				if len(availableDestinations) == 0 && len(excludedDestinations) == 0 {
+				if len(availableDestinations) == 0 && len(excludedDestinations) == 0 && !sourceOutEnabled {
 					// zero-candidate event: source has no destinations, or the RETL-stamped
-					// destination is unavailable — no per-destination row is possible.
+					// destination is unavailable — no per-destination row is possible. With
+					// source_out enabled the source_out filtered row reports it instead.
 					reportingEvent.Metadata.DestinationID = ""
 					reportingEvent.Metadata.DestinationName = ""
 					reportingEvent.Metadata.DestinationType = ""
@@ -2582,6 +2613,20 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			}
 		}
 	}
+
+	// REPORTING - SOURCE_OUT - START
+	if proc.isReportingEnabled() {
+		for k, cd := range sourceOutConnectionDetailsMap {
+			for _, sd := range sourceOutStatusDetailMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.SOURCE_OUT, false, false),
+					StatusDetail:      sd,
+				})
+			}
+		}
+	}
+	// REPORTING - SOURCE_OUT - END
 
 	// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - START
 	if proc.isReportingEnabled() {
