@@ -40,6 +40,7 @@ import (
 	mockDedup "github.com/rudderlabs/rudder-server/mocks/services/dedup"
 	mockFeatures "github.com/rudderlabs/rudder-server/mocks/services/transformer"
 	mockreportingtypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
+	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -3929,6 +3930,7 @@ var _ = Describe("Processor", Ordered, func() {
 				eventsByMessageID,
 				reportingtypes.EVENT_FILTER,
 				reportingtypes.DEST_TRANSFORMER,
+				responseStatusCode,
 			)
 
 			key := strings.Join([]string{
@@ -3951,6 +3953,8 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(len(m.filteredJobs)).To(Equal(1))
 			Expect(len(m.filteredMetrics)).To(Equal(1))
 			Expect(int(m.filteredCountMap[key])).To(Equal(1))
+			Expect(m.filteredMetrics[0].StatusDetail.StatusCode).To(Equal(298))
+			Expect(m.filteredMetrics[0].StatusDetail.Status).To(Equal(jobsdb.Filtered.State))
 		})
 	})
 })
@@ -8379,6 +8383,545 @@ func TestDestTransformerDiffReporting(t *testing.T) {
 		conf.Set(flagKey, false)
 		msg3 := runVisibilityThroughUT(t, processor, buildJob(3, "m3"))
 		require.Empty(t, dtDiffRowsFor(msg3.reportMetrics, DestinationIDEnabledA))
+	})
+}
+
+// TestEventFilterReasonReporting covers the event_filter reporting under
+// Reporting.eventFilterReasonMetrics.enabled: filtered events are reported under the filtered
+// state with one status code per reason (291 message type, 292 event name, 293 hybrid mode) and
+// the event_filter succeeded rows are not reported. The responses, proc_error jobs, dropped jobs,
+// job statuses, routing, stats tags and the other processing units are the same as with the flag
+// off.
+func TestEventFilterReasonReporting(t *testing.T) {
+	const flagKey = "Reporting.eventFilterReasonMetrics.enabled"
+
+	job := func(jobID int64, sourceID string, singularPayloads []string, extraParams map[string]any) *jobsdb.JobT {
+		params := map[string]any{"source_id": sourceID}
+		maps.Copy(params, extraParams)
+		paramBytes, err := jsonrs.Marshal(params)
+		require.NoError(t, err)
+		batch := strings.Join(singularPayloads, ",")
+		eventPayload := fmt.Appendf(nil, `{"writeKey":%q,"batch":[%s],"requestIP":"1.2.3.4","receivedAt":"2001-01-02T02:23:45.000Z"}`, WriteKeyEnabled, batch)
+		return &jobsdb.JobT{
+			UUID:         uuid.New(),
+			JobID:        jobID,
+			CreatedAt:    time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:     time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal:    gatewayCustomVal[0],
+			EventPayload: eventPayload,
+			EventCount:   len(singularPayloads),
+			Parameters:   paramBytes,
+		}
+	}
+	// raw marshals the event as is, so type and event can be non-strings.
+	raw := func(event map[string]any) string {
+		b, err := jsonrs.Marshal(event)
+		require.NoError(t, err)
+		return string(b)
+	}
+	echoUserTransform := func(_ context.Context, events []types.TransformerEvent) types.Response {
+		return types.Response{
+			Events: lo.Map(events, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+				return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata}
+			}),
+		}
+	}
+	echoDestTransform := func(_ context.Context, events []types.TransformerEvent) types.Response {
+		return types.Response{
+			Events: lo.Map(events, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+				return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata, StatusCode: 200}
+			}),
+		}
+	}
+	sumCount := func(rows []*reportingtypes.PUReportedMetric) int64 {
+		return lo.SumBy(rows, func(r *reportingtypes.PUReportedMetric) int64 { return r.StatusDetail.Count })
+	}
+
+	efRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.EVENT_FILTER
+		})
+	}
+	efRowsFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(efRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.DestinationID == destinationID
+		})
+	}
+	efByStatus := func(metrics []*reportingtypes.PUReportedMetric, status string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(efRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.StatusDetail.Status == status
+		})
+	}
+	efByCode := func(metrics []*reportingtypes.PUReportedMetric, code int) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(efRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.StatusDetail.StatusCode == code
+		})
+	}
+	reasonCodeRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(efRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return lo.Contains([]int{291, 292, 293}, m.StatusDetail.StatusCode)
+		})
+	}
+	type filteredRow struct {
+		status    string
+		code      int
+		eventType string
+		eventName string
+		count     int64
+	}
+	filteredRows := func(rows []*reportingtypes.PUReportedMetric) []filteredRow {
+		return lo.Map(rows, func(r *reportingtypes.PUReportedMetric, _ int) filteredRow {
+			return filteredRow{r.StatusDetail.Status, r.StatusDetail.StatusCode, r.StatusDetail.EventType, r.StatusDetail.EventName, r.StatusDetail.Count}
+		})
+	}
+	nonEF := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU != reportingtypes.EVENT_FILTER
+		})
+	}
+	dtDiffRowsFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.DEST_TRANSFORMER &&
+				m.StatusDetail.Status == reportingtypes.DiffStatus &&
+				m.DestinationID == destinationID
+		})
+	}
+	dtSucceededFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.DEST_TRANSFORMER &&
+				m.StatusDetail.Status == jobsdb.Succeeded.State &&
+				m.DestinationID == destinationID
+		})
+	}
+
+	// withEventFilterConfigOnA restricts destination A to the track and identify message types,
+	// to the track message type in hybrid mode for web sources and to the "Allowed Event" event
+	// name. B has no supported message types and C has the event filter off, so both let every
+	// event through. New maps are assigned so the shared backend config is left untouched.
+	withEventFilterConfigOnA := func(processor *Handle) {
+		processor.config.configSubscriberLock.Lock()
+		defer processor.config.configSubscriberLock.Unlock()
+		dests := slices.Clone(processor.config.sourceIdDestinationMap[SourceIDEnabled])
+		for i := range dests {
+			if dests[i].ID != DestinationIDEnabledA {
+				continue
+			}
+			dests[i].DestinationDefinition.Config = map[string]any{
+				"supportedMessageTypes": []any{"track", "identify"},
+				"hybridModeCloudEventsFilter": map[string]any{
+					"web": map[string]any{"messageType": []any{"track"}},
+				},
+			}
+			dests[i].Config = map[string]any{
+				"connectionMode":    "hybrid",
+				"listOfConversions": []any{map[string]any{"conversions": "Allowed Event"}},
+			}
+		}
+		processor.config.sourceIdDestinationMap[SourceIDEnabled] = dests
+		src := processor.config.sourceIdSourceMap[SourceIDEnabled]
+		src.SourceDefinition.Type = "web"
+		processor.config.sourceIdSourceMap[SourceIDEnabled] = src
+	}
+
+	// mixedBatch returns a job whose events cover every event_filter outcome on destination A
+	// and a second job that is drained.
+	mixedBatch := func(jobIDBase int64, prefix string) []*jobsdb.JobT {
+		event := func(id string, fields map[string]any) string {
+			e := map[string]any{"rudderId": "some-rudder-id", "messageId": prefix + id}
+			maps.Copy(e, fields)
+			return raw(e)
+		}
+		return []*jobsdb.JobT{
+			job(jobIDBase, SourceIDEnabled, []string{
+				event("pass", map[string]any{"type": "track", "event": "Allowed Event"}),
+				event("type", map[string]any{"type": "page"}),
+				event("hybrid", map[string]any{"type": "identify"}),
+				event("name", map[string]any{"type": "track", "event": "Other Event"}),
+				event("invtype", map[string]any{"type": 123}),
+				event("invevent", map[string]any{"type": "track", "event": 123}),
+			}, map[string]any{"source_job_run_id": "run-kept"}),
+			job(jobIDBase+1, SourceIDEnabled, []string{
+				event("drained", map[string]any{"type": "track", "event": "Allowed Event"}),
+			}, map[string]any{"source_job_run_id": "run-drained"}),
+		}
+	}
+
+	newMixedProcessor := func(t *testing.T, flagOn bool) (*Handle, *config.Config, *testContext) {
+		t.Helper()
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		conf.Set("drain.jobRunIDs", []string{"run-drained"})
+		conf.Set(flagKey, flagOn)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(echoDestTransform)
+		withEventFilterConfigOnA(processor)
+		return processor, conf, c
+	}
+	runMixed := func(t *testing.T, flagOn bool) *storeMessage {
+		t.Helper()
+		processor, _, c := newMixedProcessor(t, flagOn)
+		defer c.Finish()
+		return runVisibilityThroughUT(t, processor, mixedBatch(1, ""))
+	}
+
+	type rowKey struct{ eventType, eventName string }
+	countsByKey := func(rows []*reportingtypes.PUReportedMetric) map[rowKey]int64 {
+		out := make(map[rowKey]int64)
+		for _, r := range rows {
+			out[rowKey{r.StatusDetail.EventType, r.StatusDetail.EventName}] += r.StatusDetail.Count
+		}
+		return out
+	}
+
+	type normalisedJob struct {
+		Parameters, UserID, CustomVal, WorkspaceID string
+	}
+	normalise := func(jobs []*jobsdb.JobT) []normalisedJob {
+		return lo.Map(jobs, func(j *jobsdb.JobT, _ int) normalisedJob {
+			return normalisedJob{string(j.Parameters), j.UserID, j.CustomVal, j.WorkspaceId}
+		})
+	}
+	normaliseProcErrors := func(jobs []procErrorJob) []normalisedJob {
+		return normalise(procErrorJobs(jobs))
+	}
+	type routedEvent struct{ destinationID, messageID string }
+	routed := func(jobs []*jobsdb.JobT) []routedEvent {
+		return lo.Map(jobs, func(j *jobsdb.JobT, _ int) routedEvent {
+			var params map[string]any
+			require.NoError(t, jsonrs.Unmarshal(j.Parameters, &params))
+			destinationID, _ := params["destination_id"].(string)
+			messageID, _ := params["message_id"].(string)
+			return routedEvent{destinationID, messageID}
+		})
+	}
+
+	t.Run("with the flag off (default) event_filter emits succeeded rows and one filtered/298 row per filtered event", func(t *testing.T) {
+		msg := runMixed(t, false)
+
+		rowsA := efRowsFor(msg.reportMetrics, DestinationIDEnabledA)
+		require.EqualValues(t, 1, sumCount(efByStatus(rowsA, jobsdb.Succeeded.State)))
+
+		filtered := efByStatus(rowsA, jobsdb.Filtered.State)
+		require.Len(t, filtered, 3)
+		for _, r := range filtered {
+			require.EqualValues(t, 1, r.StatusDetail.Count)
+			require.Equal(t, reportingtypes.FilterEventCode, r.StatusDetail.StatusCode)
+		}
+		require.Equal(t, map[rowKey]int64{
+			{"page", ""}:             1,
+			{"identify", ""}:         1,
+			{"track", "Other Event"}: 1,
+		}, countsByKey(filtered))
+
+		abortedWithCode := func(code int) []*reportingtypes.PUReportedMetric {
+			return lo.Filter(efByStatus(rowsA, jobsdb.Aborted.State), func(r *reportingtypes.PUReportedMetric, _ int) bool {
+				return r.StatusDetail.StatusCode == code
+			})
+		}
+		require.EqualValues(t, 2, sumCount(abortedWithCode(400)))
+		drained := abortedWithCode(410)
+		require.EqualValues(t, 1, sumCount(drained))
+		for _, r := range drained {
+			require.Equal(t, "run-drained", r.SourceJobRunID)
+		}
+
+		require.Empty(t, reasonCodeRows(msg.reportMetrics))
+	})
+
+	t.Run("with the flag on the three filtered reasons are reported under the filtered state with status codes 291, 292 and 293", func(t *testing.T) {
+		msg := runMixed(t, true)
+		rowsA := efRowsFor(msg.reportMetrics, DestinationIDEnabledA)
+
+		require.ElementsMatch(t, []filteredRow{
+			{"filtered", 291, "page", "", 1},
+			{"filtered", 293, "identify", "", 1},
+			{"filtered", 292, "track", "Other Event", 1},
+		}, filteredRows(efByStatus(rowsA, jobsdb.Filtered.State)))
+	})
+
+	t.Run("with the flag on no event_filter row carries status code 298", func(t *testing.T) {
+		msg := runMixed(t, true)
+		require.Empty(t, efByCode(msg.reportMetrics, 298))
+	})
+
+	t.Run("with the flag on no event_filter succeeded row is emitted for any destination", func(t *testing.T) {
+		msg := runMixed(t, true)
+
+		require.Empty(t, efByStatus(msg.reportMetrics, jobsdb.Succeeded.State))
+		require.Contains(t, msg.routerDestIDs, DestinationIDEnabledA)
+		require.Contains(t, msg.routerDestIDs, DestinationIDEnabledC)
+		require.NotEmpty(t, msg.batchDestJobs, "B's events still reach the destination stage")
+	})
+
+	t.Run("with the flag on the per-reason code rows carry the same state, inPU, initial and terminal state as the flag-off filtered rows", func(t *testing.T) {
+		off := runMixed(t, false)
+		on := runMixed(t, true)
+
+		offFiltered := efByStatus(efRowsFor(off.reportMetrics, DestinationIDEnabledA), jobsdb.Filtered.State)
+		require.Len(t, offFiltered, 3)
+		onRows := efRowsFor(on.reportMetrics, DestinationIDEnabledA)
+		for _, offRow := range offFiltered {
+			matching := lo.Filter(onRows, func(r *reportingtypes.PUReportedMetric, _ int) bool {
+				return r.StatusDetail.EventName == offRow.StatusDetail.EventName &&
+					r.StatusDetail.EventType == offRow.StatusDetail.EventType &&
+					r.StatusDetail.Status == jobsdb.Filtered.State
+			})
+			require.Len(t, matching, 1, "%+v", offRow.StatusDetail)
+			onRow := matching[0]
+			require.Equal(t, offRow.InPU, onRow.InPU)
+			require.Equal(t, offRow.InitialPU, onRow.InitialPU)
+			require.Equal(t, offRow.TerminalPU, onRow.TerminalPU)
+			require.Equal(t, offRow.SourceID, onRow.SourceID)
+			require.Equal(t, offRow.DestinationID, onRow.DestinationID)
+			require.Equal(t, offRow.StatusDetail.Count, onRow.StatusDetail.Count)
+			require.Equal(t, offRow.StatusDetail.Status, onRow.StatusDetail.Status)
+			require.Equal(t, 298, offRow.StatusDetail.StatusCode)
+			require.Contains(t, []int{291, 292, 293}, onRow.StatusDetail.StatusCode)
+			require.Equal(t, offRow.StatusDetail.SampleResponse, onRow.StatusDetail.SampleResponse)
+		}
+	})
+
+	t.Run("the reason code comes from the response reason within the 298 group, and a non-298 response with a filtered reason stays aborted with its own code", func(t *testing.T) {
+		processor, _, c, _ := newVisibilityProcessor(t, true)
+		defer c.Finish()
+
+		commonMetadata := types.Metadata{SourceID: SourceIDEnabled, DestinationID: DestinationIDEnabledA}
+		reasons := []struct {
+			statusCode int
+			reason     string
+		}{
+			{298, eventfilter.MessageTypeNotSupportedReason},
+			{298, eventfilter.MessageEventNotSupportedReason},
+			{298, eventfilter.HybridModeFilterReason},
+			{298, "some unrecognised reason"},
+			{400, eventfilter.MessageTypeNotSupportedReason},
+		}
+		var inputEvents []types.TransformerEvent
+		var failedEvents []types.TransformerResponse
+		eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
+		for i, r := range reasons {
+			msgID := fmt.Sprintf("msg%d", i+1)
+			event := types.SingularEventT{"messageId": msgID}
+			metadata := commonMetadata
+			metadata.MessageID = msgID
+			eventsByMessageID[msgID] = types.SingularEventWithReceivedAt{SingularEvent: event, ReceivedAt: time.Now()}
+			inputEvents = append(inputEvents, types.TransformerEvent{Metadata: metadata, Message: event})
+			failedEvents = append(failedEvents, types.TransformerResponse{
+				StatusCode: r.statusCode, Metadata: metadata, Output: event, Error: r.reason,
+			})
+		}
+
+		m := processor.getNonSuccessfulMetrics(
+			types.Response{FailedEvents: failedEvents},
+			inputEvents,
+			&commonMetadata,
+			eventsByMessageID,
+			"",
+			reportingtypes.EVENT_FILTER,
+			func(r types.TransformerResponse) int { return eventfilter.FilteredCodeForReason(r.Error) },
+		)
+
+		require.Len(t, m.failedJobs, 1)
+		require.Len(t, m.failedMetrics, 1)
+		require.Equal(t, jobsdb.Aborted.State, m.failedMetrics[0].StatusDetail.Status)
+		require.Equal(t, 400, m.failedMetrics[0].StatusDetail.StatusCode)
+
+		require.Len(t, m.filteredJobs, 4)
+		require.ElementsMatch(
+			t,
+			[]int{291, 292, 293, 298},
+			lo.Map(m.filteredMetrics, func(r *reportingtypes.PUReportedMetric, _ int) int { return r.StatusDetail.StatusCode }),
+		)
+		for _, r := range m.filteredMetrics {
+			require.Equal(t, jobsdb.Filtered.State, r.StatusDetail.Status)
+			require.EqualValues(t, 1, r.StatusDetail.Count)
+		}
+		statusCodeOf := func(j *jobsdb.JobT) any {
+			var params map[string]any
+			require.NoError(t, jsonrs.Unmarshal(j.Parameters, &params))
+			return params["status_code"]
+		}
+		for _, j := range m.filteredJobs {
+			require.EqualValues(t, 298, statusCodeOf(j.JobT))
+		}
+		require.EqualValues(t, 400, statusCodeOf(m.failedJobs[0].JobT))
+
+		key := strings.Join([]string{
+			commonMetadata.SourceID,
+			commonMetadata.DestinationID,
+			commonMetadata.SourceJobRunID,
+			commonMetadata.EventName,
+			commonMetadata.EventType,
+		}, "!<<#>>!")
+		require.EqualValues(t, 4, m.filteredCountMap[key])
+		require.EqualValues(t, 1, m.failedCountMap[key])
+	})
+
+	t.Run("proc_error jobs, dropped jobs and gw job statuses are identical with the flag on and off", func(t *testing.T) {
+		off := runMixed(t, false)
+		on := runMixed(t, true)
+
+		require.ElementsMatch(t, lo.Keys(off.procErrorJobsByDestID), lo.Keys(on.procErrorJobsByDestID))
+		for destID, offJobs := range off.procErrorJobsByDestID {
+			require.ElementsMatch(t, normaliseProcErrors(offJobs), normaliseProcErrors(on.procErrorJobsByDestID[destID]), destID)
+		}
+		require.Len(t, on.procErrorJobsByDestID[DestinationIDEnabledA], 3)
+		require.Len(t, on.procErrorJobsByDestID[DestinationIDEnabledB], 1)
+		require.Len(t, on.procErrorJobsByDestID[DestinationIDEnabledC], 1)
+
+		require.ElementsMatch(t, normalise(off.droppedJobs), normalise(on.droppedJobs))
+		require.Len(t, on.droppedJobs, len(off.droppedJobs))
+		require.NotEmpty(t, on.droppedJobs)
+
+		filterReasons := []string{
+			eventfilter.MessageTypeNotSupportedReason,
+			eventfilter.MessageEventNotSupportedReason,
+			eventfilter.HybridModeFilterReason,
+		}
+		filteredDropped := lo.Filter(on.droppedJobs, func(j *jobsdb.JobT, _ int) bool {
+			var params map[string]any
+			require.NoError(t, jsonrs.Unmarshal(j.Parameters, &params))
+			reason, _ := params["error"].(string)
+			return params["stage"] == "event_filter" &&
+				params["destination_id"] == DestinationIDEnabledA &&
+				lo.Contains(filterReasons, reason)
+		})
+		require.Len(t, filteredDropped, 3)
+		for _, j := range filteredDropped {
+			var params map[string]any
+			require.NoError(t, jsonrs.Unmarshal(j.Parameters, &params))
+			require.EqualValues(t, 298, params["status_code"])
+		}
+
+		type status struct {
+			jobID     int64
+			jobState  string
+			errorCode string
+		}
+		statuses := func(list []*jobsdb.JobStatusT) []status {
+			return lo.Map(list, func(s *jobsdb.JobStatusT, _ int) status { return status{s.JobID, s.JobState, s.ErrorCode} })
+		}
+		require.ElementsMatch(t, statuses(off.statusList), statuses(on.statusList))
+	})
+
+	t.Run("with the flag on the same events reach the destination stage", func(t *testing.T) {
+		off := runMixed(t, false)
+		on := runMixed(t, true)
+
+		require.ElementsMatch(t, off.routerDestIDs, on.routerDestIDs)
+		require.ElementsMatch(t, routed(off.destJobs), routed(on.destJobs))
+		require.ElementsMatch(t, routed(off.batchDestJobs), routed(on.batchDestJobs))
+
+		var aMessages []string
+		for _, r := range append(routed(on.destJobs), routed(on.batchDestJobs)...) {
+			if r.destinationID == DestinationIDEnabledA {
+				aMessages = append(aMessages, r.messageID)
+			}
+		}
+		require.Equal(t, []string{"pass"}, aMessages)
+	})
+
+	t.Run("with the flag on every row outside event_filter, and every event_filter aborted row, is identical to a flag-off run", func(t *testing.T) {
+		off := runMixed(t, false)
+		on := runMixed(t, true)
+
+		require.NotEmpty(t, nonEF(off.reportMetrics))
+		require.ElementsMatch(t, nonEF(off.reportMetrics), nonEF(on.reportMetrics))
+		require.NotEmpty(t, efByStatus(off.reportMetrics, jobsdb.Aborted.State))
+		require.ElementsMatch(t, efByStatus(off.reportMetrics, jobsdb.Aborted.State), efByStatus(on.reportMetrics, jobsdb.Aborted.State))
+	})
+
+	t.Run("with the flag on filtered outcomes increment proc_filtered_counts tagged with status code 298 and never proc_error_counts, and proc_event_filter stats are unchanged", func(t *testing.T) {
+		orig := stats.Default
+		t.Cleanup(func() { stats.Default = orig })
+
+		runWithStore := func(flagOn bool) *memstats.Store {
+			store, err := memstats.New()
+			require.NoError(t, err)
+			stats.Default = store
+			runMixed(t, flagOn)
+			return store
+		}
+		type metricValue struct {
+			tags  stats.Tags
+			value float64
+		}
+		metricValues := func(store *memstats.Store, name string) []metricValue {
+			return lo.Map(store.GetByName(name), func(m memstats.Metric, _ int) metricValue {
+				return metricValue{m.Tags, m.Value}
+			})
+		}
+		tagsFor := func(statusCode string) stats.Tags {
+			return stats.Tags{"destName": "enabled-destination-a-definition-name", "statusCode": statusCode, "stage": "event_filter"}
+		}
+
+		off := runWithStore(false)
+		on := runWithStore(true)
+		for name, store := range map[string]*memstats.Store{"off": off, "on": on} {
+			filtered := store.Get("proc_filtered_counts", tagsFor("298"))
+			require.NotNil(t, filtered, name)
+			require.EqualValues(t, 3, filtered.LastValue(), name)
+
+			aborted400 := store.Get("proc_error_counts", tagsFor("400"))
+			require.NotNil(t, aborted400, name)
+			require.EqualValues(t, 2, aborted400.LastValue(), name)
+			aborted410 := store.Get("proc_error_counts", tagsFor("410"))
+			require.NotNil(t, aborted410, name)
+			require.EqualValues(t, 1, aborted410.LastValue(), name)
+
+			for _, m := range store.GetByName("proc_error_counts") {
+				require.NotEqual(t, "298", m.Tags["statusCode"], name)
+			}
+			for _, m := range store.GetByName("proc_filtered_counts") {
+				require.Equal(t, "298", m.Tags["statusCode"], name)
+			}
+		}
+
+		require.ElementsMatch(t, metricValues(off, "proc_event_filter_in_count"), metricValues(on, "proc_event_filter_in_count"))
+		require.ElementsMatch(t, metricValues(off, "proc_event_filter_out_count"), metricValues(on, "proc_event_filter_out_count"))
+		require.NotEmpty(t, metricValues(on, "proc_event_filter_in_count"))
+	})
+
+	t.Run("with the flag and Reporting.destTransformerDiffMetrics.enabled both on, a one-to-one destination transformation after event-filter drops produces no diff row", func(t *testing.T) {
+		processor, conf, c := newMixedProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Reporting.destTransformerDiffMetrics.enabled", true)
+
+		msg := runVisibilityThroughUT(t, processor, mixedBatch(1, ""))
+
+		require.Empty(t, dtDiffRowsFor(msg.reportMetrics, DestinationIDEnabledA))
+		require.EqualValues(t, 1, sumCount(dtSucceededFor(msg.reportMetrics, DestinationIDEnabledA)))
+		require.Len(t, efByCode(efRowsFor(msg.reportMetrics, DestinationIDEnabledA), 291), 1)
+	})
+
+	t.Run("toggling the flag at runtime on the same handle takes effect both ways without a restart", func(t *testing.T) {
+		processor, conf, c := newMixedProcessor(t, false)
+		defer c.Finish()
+
+		msg1 := runVisibilityThroughUT(t, processor, mixedBatch(1, "r1-"))
+		rows1 := efRowsFor(msg1.reportMetrics, DestinationIDEnabledA)
+		require.NotEmpty(t, efByStatus(rows1, jobsdb.Succeeded.State))
+		require.EqualValues(t, 3, sumCount(efByStatus(rows1, jobsdb.Filtered.State)))
+		require.EqualValues(t, 3, sumCount(efByCode(rows1, 298)))
+		require.Empty(t, reasonCodeRows(rows1))
+
+		conf.Set(flagKey, true)
+		msg2 := runVisibilityThroughUT(t, processor, mixedBatch(10, "r2-"))
+		rows2 := efRowsFor(msg2.reportMetrics, DestinationIDEnabledA)
+		require.Empty(t, efByStatus(rows2, jobsdb.Succeeded.State))
+		require.Empty(t, efByCode(rows2, 298))
+		require.ElementsMatch(
+			t,
+			[]int{291, 293, 292},
+			lo.Map(efByStatus(rows2, jobsdb.Filtered.State), func(r *reportingtypes.PUReportedMetric, _ int) int { return r.StatusDetail.StatusCode }),
+		)
+
+		conf.Set(flagKey, false)
+		msg3 := runVisibilityThroughUT(t, processor, mixedBatch(20, "r3-"))
+		rows3 := efRowsFor(msg3.reportMetrics, DestinationIDEnabledA)
+		require.NotEmpty(t, efByStatus(rows3, jobsdb.Succeeded.State))
+		require.EqualValues(t, 3, sumCount(efByStatus(rows3, jobsdb.Filtered.State)))
+		require.EqualValues(t, 3, sumCount(efByCode(rows3, 298)))
+		require.Empty(t, reasonCodeRows(rows3))
 	})
 }
 

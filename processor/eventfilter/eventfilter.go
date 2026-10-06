@@ -17,6 +17,28 @@ const (
 	hybridMode                = "hybrid"
 )
 
+// Reasons set on the filtered (status code 298) responses produced by the event filter.
+const (
+	MessageTypeNotSupportedReason  = "Message type not supported"
+	HybridModeFilterReason         = "Filtering event based on hybridModeFilter"
+	MessageEventNotSupportedReason = "Event not supported"
+)
+
+// FilteredCodeForReason maps the reason of a filtered event filter response to the status code
+// of its report row. An unrecognised reason maps to reportingtypes.FilterEventCode.
+func FilteredCodeForReason(reason string) int {
+	switch reason {
+	case MessageTypeNotSupportedReason:
+		return reportingtypes.FilteredMessageTypeCode
+	case MessageEventNotSupportedReason:
+		return reportingtypes.FilteredEventNameCode
+	case HybridModeFilterReason:
+		return reportingtypes.FilteredHybridModeCode
+	default:
+		return reportingtypes.FilterEventCode
+	}
+}
+
 var pkgLogger = logger.NewLogger().Child("eventfilter")
 
 // GetSupportedMessageTypes returns the supported message types for the given event, based on configuration.
@@ -145,7 +167,7 @@ func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, su
 		return false, &types.TransformerResponse{
 			Output: transformerEvent.Message, StatusCode: reportingtypes.FilterEventCode,
 			Metadata: transformerEvent.Metadata,
-			Error:    "Message type not supported",
+			Error:    MessageTypeNotSupportedReason,
 		}
 	}
 	// MessageType filtering -- ENDS
@@ -169,7 +191,7 @@ func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, su
 		return allow, &types.TransformerResponse{
 			Output: transformerEvent.Message, StatusCode: reportingtypes.FilterEventCode,
 			Metadata: transformerEvent.Metadata,
-			Error:    "Filtering event based on hybridModeFilter",
+			Error:    HybridModeFilterReason,
 		}
 	}
 	// hybridModeCloudEventsFilter.srcType.[eventProperty] filtering -- ENDS

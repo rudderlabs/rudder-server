@@ -56,6 +56,51 @@ func TestShouldReport(t *testing.T) {
 			expected: true,
 		},
 		{
+			name: "filtered message type case",
+			metric: types.PUReportedMetric{
+				StatusDetail: &types.StatusDetail{
+					StatusCode: types.FilteredMessageTypeCode,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "filtered event name case",
+			metric: types.PUReportedMetric{
+				StatusDetail: &types.StatusDetail{
+					StatusCode: types.FilteredEventNameCode,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "filtered hybrid mode case",
+			metric: types.PUReportedMetric{
+				StatusDetail: &types.StatusDetail{
+					StatusCode: types.FilteredHybridModeCode,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "code below the filtered reason codes",
+			metric: types.PUReportedMetric{
+				StatusDetail: &types.StatusDetail{
+					StatusCode: 290,
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "code above the filtered reason codes",
+			metric: types.PUReportedMetric{
+				StatusDetail: &types.StatusDetail{
+					StatusCode: 294,
+				},
+			},
+			expected: false,
+		},
+		{
 			name: "success case",
 			metric: types.PUReportedMetric{
 				StatusDetail: &types.StatusDetail{
