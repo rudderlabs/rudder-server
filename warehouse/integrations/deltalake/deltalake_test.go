@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	stsv2 "github.com/aws/aws-sdk-go-v2/service/sts"
 	dbsql "github.com/databricks/databricks-sql-go"
@@ -37,6 +39,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -101,6 +104,83 @@ func mintTemporaryS3Credentials(t *testing.T, accessKeyID, accessKey string) (id
 	})
 	require.NoError(t, err)
 	return *output.Credentials.AccessKeyId, *output.Credentials.SecretAccessKey, *output.Credentials.SessionToken
+}
+
+func TestFetchSchemaValidationTableLimit(t *testing.T) {
+	const namespace = "test_namespace"
+	tableNames := []string{"table_1", "table_2", "table_3", "table_4"}
+
+	testCases := []struct {
+		name                string
+		validationMaxTables int
+		fetchSchema         func(context.Context, *deltalake.Deltalake) (model.Schema, error)
+		describedTableCount int
+	}{
+		{
+			name:                "validation caps described tables",
+			validationMaxTables: 2,
+			fetchSchema: func(ctx context.Context, d *deltalake.Deltalake) (model.Schema, error) {
+				return nil, d.TestFetchSchema(ctx)
+			},
+			describedTableCount: 2,
+		},
+		{
+			name:                "production fetch remains uncapped",
+			validationMaxTables: 2,
+			fetchSchema: func(ctx context.Context, d *deltalake.Deltalake) (model.Schema, error) {
+				return d.FetchSchema(ctx)
+			},
+			describedTableCount: len(tableNames),
+		},
+		{
+			name:                "zero validation cap describes all tables",
+			validationMaxTables: 0,
+			fetchSchema: func(ctx context.Context, d *deltalake.Deltalake) (model.Schema, error) {
+				return nil, d.TestFetchSchema(ctx)
+			},
+			describedTableCount: len(tableNames),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+
+			conf := config.New()
+			conf.Set("Warehouse.deltalake.validationMaxTables", tc.validationMaxTables)
+			d := deltalake.New(conf, logger.NOP, stats.NOP)
+			d.DB = sqlquerywrapper.New(db)
+			d.Namespace = namespace
+
+			mock.ExpectQuery(regexp.QuoteMeta("SHOW SCHEMAS LIKE '" + namespace + "';")).
+				WillReturnRows(sqlmock.NewRows([]string{"databaseName"}))
+			mock.ExpectExec(regexp.QuoteMeta("CREATE SCHEMA IF NOT EXISTS `" + namespace + "`;")).
+				WillReturnResult(sqlmock.NewResult(0, 0))
+
+			tableRows := sqlmock.NewRows([]string{"database", "tableName", "isTemporary"})
+			for _, tableName := range tableNames {
+				tableRows.AddRow(namespace, tableName, false)
+			}
+			mock.ExpectQuery(regexp.QuoteMeta("SHOW tables FROM `" + namespace + "` LIKE '^(?!rudder_staging_.*$).*';")).
+				WillReturnRows(tableRows)
+
+			for _, tableName := range tableNames[:tc.describedTableCount] {
+				mock.ExpectQuery(regexp.QuoteMeta("DESCRIBE QUERY TABLE `" + namespace + "`.`" + tableName + "`;")).
+					WillReturnRows(sqlmock.NewRows([]string{"col_name", "data_type"}).AddRow("id", "STRING"))
+			}
+
+			schema, err := tc.fetchSchema(context.Background(), d)
+			require.NoError(t, err)
+			if tc.name == "production fetch remains uncapped" {
+				require.Len(t, schema, len(tableNames))
+				for _, tableName := range tableNames {
+					require.Equal(t, model.TableSchema{"id": "string"}, schema[tableName])
+				}
+			}
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }
 
 func TestIntegration(t *testing.T) {
