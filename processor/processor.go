@@ -2543,6 +2543,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 					reportingEvent.StatusCode = ex.statusCode
 					proc.updateMetricMaps(nil, nil, destFilterPerDestConnectionDetailsMap, destFilterPerDestStatusDetailMap, reportingEvent, ex.reason, reportingtypes.DESTINATION_FILTER, nilPayload, nil)
 				}
+				// todo: clean up this branch once we have source_out metrics enabled by default and remove the config flag
 				if len(availableDestinations) == 0 && len(excludedDestinations) == 0 && !sourceOutEnabled {
 					// zero-candidate event: source has no destinations, or the RETL-stamped
 					// destination is unavailable — no per-destination row is possible. With
