@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
+	"maps"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -322,19 +322,8 @@ func (f *MicrosoftFabric) copyInto(ctx context.Context, tableName, location stri
 }
 
 func (f *MicrosoftFabric) validateOneLakeLocation(location string) error {
-	u, err := url.Parse(location)
-	if err != nil {
-		return fmt.Errorf("copy_into: invalid OneLake location")
-	}
-	host, err := onelake.HostFromConfig(f.warehouse.Destination.Config)
-	if err != nil {
-		return fmt.Errorf("copy_into: invalid OneLake host: %w", err)
-	}
-	workspaceID := stringConfig(f.warehouse.Destination.Config, "fabricWorkspaceId")
-	lakehouseID := stringConfig(f.warehouse.Destination.Config, "lakehouseId")
-	expectedPrefix := "/" + workspaceID + "/" + lakehouseID + "/Files/"
-	if u.Scheme != "https" || !strings.EqualFold(u.Host, host) || !strings.HasPrefix(u.EscapedPath(), expectedPrefix) {
-		return errors.New("copy_into: load file is outside the configured OneLake Lakehouse")
+	if err := onelake.ValidateLocation(f.warehouse.Destination.Config, location); err != nil {
+		return fmt.Errorf("copy_into: %w", err)
 	}
 	return nil
 }
@@ -467,13 +456,7 @@ func (f *MicrosoftFabric) LoadUserTables(ctx context.Context) map[string]error {
 
 	userSchema := f.uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	identifySchema := f.uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable)
-	columns := make([]string, 0, len(userSchema))
-	for column := range userSchema {
-		if column != "id" {
-			columns = append(columns, column)
-		}
-	}
-	sort.Strings(columns)
+	columns := slices.DeleteFunc(slices.Sorted(maps.Keys(userSchema)), func(column string) bool { return column == "id" })
 
 	unionTable := warehouseutils.StagingTableName(provider, "users_identifies_union", tableNameLimit)
 	latestTable := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
@@ -490,11 +473,11 @@ func (f *MicrosoftFabric) LoadUserTables(ctx context.Context) map[string]error {
 		}
 	}
 	unionStatement := fmt.Sprintf(`SELECT * INTO %[1]s FROM (
-SELECT %[2]s AS %[3]s, %[4]s FROM %[5]s WHERE %[2]s IN (SELECT %[6]s FROM %[7]s WHERE %[6]s IS NOT NULL)
+SELECT %[2]s AS %[2]s, %[3]s FROM %[4]s WHERE %[2]s IN (SELECT %[5]s FROM %[6]s WHERE %[5]s IS NOT NULL)
 UNION ALL
-SELECT %[6]s AS %[3]s, %[8]s FROM %[7]s WHERE %[6]s IS NOT NULL
+SELECT %[5]s AS %[2]s, %[7]s FROM %[6]s WHERE %[5]s IS NOT NULL
 ) AS users_identifies;`,
-		qualified(f.namespace, unionTable), warehouseutils.BracketQuoteIdentifier("id"), warehouseutils.BracketQuoteIdentifier("id"), userColumns,
+		qualified(f.namespace, unionTable), warehouseutils.BracketQuoteIdentifier("id"), userColumns,
 		qualified(f.namespace, warehouseutils.UsersTable), warehouseutils.BracketQuoteIdentifier("user_id"), qualified(f.namespace, identifiesStaging), strings.Join(identifyColumns, ","))
 	if _, err := f.db.ExecContext(ctx, unionStatement); err != nil {
 		return usersResult(fmt.Errorf("creating users union staging table: %w", err))
@@ -524,12 +507,7 @@ func (f *MicrosoftFabric) TestLoadTable(ctx context.Context, location, tableName
 	if loadFileFormat != warehouseutils.LoadFileTypeParquet {
 		return fmt.Errorf("copy_into: Microsoft Fabric supports only Parquet load files")
 	}
-	columns := make([]string, 0, len(payload))
-	for column := range payload {
-		columns = append(columns, column)
-	}
-	sort.Strings(columns)
-	return f.copyInto(ctx, tableName, location, columns)
+	return f.copyInto(ctx, tableName, location, slices.Sorted(maps.Keys(payload)))
 }
 
 func (f *MicrosoftFabric) TestFetchSchema(ctx context.Context) error {

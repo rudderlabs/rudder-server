@@ -1,7 +1,6 @@
 package encoding
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,9 +67,6 @@ func TestMicrosoftFabricParquetWriter(t *testing.T) {
 	require.Equal(t, `{"key":"value"}`, *rows[0].Event_json)
 	require.Equal(t, "Fabric", *rows[0].Name)
 	require.Equal(t, int64(1735787045123456), *rows[0].Received_at)
-
-	_, err = os.Stat(path)
-	require.NoError(t, err)
 }
 
 func TestMicrosoftFabricParquetRejectsUnknownType(t *testing.T) {

@@ -2246,7 +2246,5 @@ var reservedKeywords = map[string]map[string]bool{
 var ReservedKeywords = lo.Assign(reservedKeywords, map[string]map[string]bool{
 	"SNOWPIPE_STREAMING":  reservedKeywords["SNOWFLAKE"],
 	"BQSTREAM_ALL_EVENTS": reservedKeywords["BQ"],
-	// Microsoft Fabric Warehouse follows the documented T-SQL reserved-word surface.
-	// Keep a distinct map so Fabric additions do not mutate Azure Synapse behavior.
-	"MICROSOFT_FABRIC": lo.Assign(map[string]bool{}, reservedKeywords["AZURE_SYNAPSE"]),
+	"MICROSOFT_FABRIC":    reservedKeywords["AZURE_SYNAPSE"],
 })

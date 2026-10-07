@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -100,13 +101,15 @@ func TestAddColumnsMapsTextToVarcharMax(t *testing.T) {
 
 func TestConnectionConfig(t *testing.T) {
 	fabric := &MicrosoftFabric{warehouse: testWarehouse(false), connectTimeout: 3 * time.Second, conf: config.New()}
-	require.Equal(t, "configured.fabric.microsoft.com", fabric.connectionConfig().Host)
-	require.Equal(t, "warehouse", fabric.connectionConfig().Database)
-	require.Equal(t, "tenant", fabric.connectionConfig().TenantID)
-	require.Equal(t, "client", fabric.connectionConfig().ClientID)
-	require.Equal(t, "secret", fabric.connectionConfig().ClientSecret)
-	require.Equal(t, "11111111-1111-1111-1111-111111111111", fabric.connectionConfig().FabricWorkspaceID)
-	require.Equal(t, 3*time.Second, fabric.connectionConfig().Timeout)
+	require.Equal(t, sqlconnectconfig.Fabric{
+		Host:              "configured.fabric.microsoft.com",
+		Database:          "warehouse",
+		TenantID:          "tenant",
+		ClientID:          "client",
+		ClientSecret:      "secret",
+		FabricWorkspaceID: "11111111-1111-1111-1111-111111111111",
+		Timeout:           3 * time.Second,
+	}, fabric.connectionConfig())
 }
 
 func TestShouldMerge(t *testing.T) {

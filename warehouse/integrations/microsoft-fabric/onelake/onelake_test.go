@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
 type staticCredential struct {
@@ -47,8 +46,8 @@ func (w *writerAtBuffer) WriteAt(data []byte, offset int64) (int, error) {
 	return len(data), nil
 }
 
-func testConfig(host string) Config {
-	return Config{
+func testConfig(host string) config {
+	return config{
 		Host:              host,
 		FabricWorkspaceID: "11111111-1111-1111-1111-111111111111",
 		LakehouseID:       "22222222-2222-2222-2222-222222222222",
@@ -91,7 +90,7 @@ func TestHostFromConfigDefaultsAndRejectsArbitraryHosts(t *testing.T) {
 }
 
 func TestObjectLocationAndParsing(t *testing.T) {
-	manager := newManager(testConfig(defaultOneLakeHost), &staticCredential{}, http.DefaultClient, logger.NOP)
+	manager := newManager(testConfig(defaultOneLakeHost), &staticCredential{}, http.DefaultClient)
 	locationURL := manager.objectURL("folder/a name.parquet")
 	location := locationURL.String()
 	require.Equal(t, "https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222/Files/folder/a%20name.parquet", location)
@@ -139,7 +138,7 @@ func TestUploadDownloadDeleteAndList(t *testing.T) {
 
 	host := strings.TrimPrefix(server.URL, "https://")
 	credential := &staticCredential{token: "token"}
-	manager := newManager(testConfig(host), credential, server.Client(), logger.NOP)
+	manager := newManager(testConfig(host), credential, server.Client())
 
 	uploaded, err := manager.UploadReader(context.Background(), "load/file.parquet", io.LimitReader(strings.NewReader("hello OneLake"), 13))
 	require.NoError(t, err)
@@ -186,19 +185,19 @@ func TestUploadUsesFileSizeForContentLength(t *testing.T) {
 	_, err = file.WriteString("payload")
 	require.NoError(t, err)
 
-	manager := newManager(testConfig(strings.TrimPrefix(server.URL, "https://")), &staticCredential{token: "token"}, server.Client(), logger.NOP)
+	manager := newManager(testConfig(strings.TrimPrefix(server.URL, "https://")), &staticCredential{token: "token"}, server.Client())
 	_, err = manager.Upload(context.Background(), file, "load")
 	require.NoError(t, err)
 }
 
 func TestDownloadRejectsRangeOptions(t *testing.T) {
-	manager := newManager(testConfig(defaultOneLakeHost), &staticCredential{}, http.DefaultClient, logger.NOP)
+	manager := newManager(testConfig(defaultOneLakeHost), &staticCredential{}, http.DefaultClient)
 	err := manager.Download(context.Background(), &writerAtBuffer{}, "file.parquet", filemanager.WithDownloadOffSetAndLength(2, 4))
 	require.ErrorContains(t, err, "range downloads are unsupported")
 }
 
 func TestObjectNamesRejectTraversalAndExternalLocations(t *testing.T) {
-	manager := newManager(testConfig(defaultOneLakeHost), &staticCredential{}, http.DefaultClient, logger.NOP)
+	manager := newManager(testConfig(defaultOneLakeHost), &staticCredential{}, http.DefaultClient)
 	for _, objectName := range []string{"", "/absolute.parquet", "../escape.parquet", "folder/../escape.parquet", `folder\file.parquet`, "folder//file.parquet"} {
 		_, err := manager.UploadReader(context.Background(), objectName, strings.NewReader("payload"))
 		require.ErrorContains(t, err, "object name is invalid", objectName)
@@ -224,7 +223,7 @@ func TestListFollowsContinuation(t *testing.T) {
 		_, _ = io.WriteString(w, `{"paths":[{"name":"rudder-prefix/b.parquet"}]}`)
 	}))
 	defer server.Close()
-	manager := newManager(testConfig(strings.TrimPrefix(server.URL, "https://")), &staticCredential{token: "token"}, server.Client(), logger.NOP)
+	manager := newManager(testConfig(strings.TrimPrefix(server.URL, "https://")), &staticCredential{token: "token"}, server.Client())
 	session := manager.ListFilesWithPrefix(context.Background(), "", "", 10)
 
 	files, err := session.Next()
@@ -241,7 +240,7 @@ func TestRequestErrorsDoNotExposeTokenOrURL(t *testing.T) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	defer server.Close()
-	manager := newManager(testConfig(strings.TrimPrefix(server.URL, "https://")), &staticCredential{token: "sensitive-token"}, server.Client(), logger.NOP)
+	manager := newManager(testConfig(strings.TrimPrefix(server.URL, "https://")), &staticCredential{token: "sensitive-token"}, server.Client())
 
 	_, err := manager.UploadReader(context.Background(), "payload.parquet", bytes.NewReader(nil))
 	require.Error(t, err)
@@ -250,7 +249,7 @@ func TestRequestErrorsDoNotExposeTokenOrURL(t *testing.T) {
 }
 
 func TestGetObjectNameRejectsMalformedURL(t *testing.T) {
-	manager := newManager(testConfig(defaultOneLakeHost), &staticCredential{}, http.DefaultClient, logger.NOP)
+	manager := newManager(testConfig(defaultOneLakeHost), &staticCredential{}, http.DefaultClient)
 	_, err := manager.GetObjectNameFromLocation("https://onelake.dfs.fabric.microsoft.com/%zz")
 	var urlError *url.Error
 	require.ErrorAs(t, err, &urlError)

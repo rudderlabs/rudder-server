@@ -163,12 +163,11 @@ var WHDestNameMap = map[string]string{
 }
 
 var ObjectStorageMap = map[string]string{
-	RS:              S3,
-	S3Datalake:      S3,
-	BQ:              GCS,
-	GCSDatalake:     GCS,
-	AzureDatalake:   AzureBlob,
-	MicrosoftFabric: OneLake,
+	RS:            S3,
+	S3Datalake:    S3,
+	BQ:            GCS,
+	GCSDatalake:   GCS,
+	AzureDatalake: AzureBlob,
 }
 
 var SnowflakeStorageMap = map[string]string{
