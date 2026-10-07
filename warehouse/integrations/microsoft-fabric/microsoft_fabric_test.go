@@ -147,8 +147,10 @@ func TestLoadTableAppendUsesStagingBeforeTargetInsert(t *testing.T) {
 			loadFiles:       map[string][]warehouseutils.LoadFile{"tracks": {{Location: location}}},
 		},
 	}
-	_, err := fabric.LoadTable(context.Background(), "tracks")
+	loadTableStats, err := fabric.LoadTable(context.Background(), "tracks")
 	require.NoError(t, err)
+	require.Equal(t, int64(2), loadTableStats.RowsInserted)
+	require.Zero(t, loadTableStats.RowsUpdated)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -157,6 +159,7 @@ func TestLoadTableUsesUniqueStagingAndSingleMerge(t *testing.T) {
 	location := "https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222/Files/load/tracks.parquet"
 	mock.ExpectExec(`SELECT TOP 0 \* INTO \[schema\.with\.dot\]\.\[rudder_staging_tracks_[0-9a-f]+\] FROM \[schema\.with\.dot\]\.\[tracks\];`).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(`COPY INTO \[schema\.with\.dot\]\.\[rudder_staging_tracks_[0-9a-f]+\] \(\[id\],\[received_at\],\[value\]\) FROM 'https://onelake\.dfs\.fabric\.microsoft\.com/.+' WITH \(FILE_TYPE = 'PARQUET'\);`).WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectQuery(`(?s)SELECT COUNT\(\*\) FROM \[schema\.with\.dot\]\.\[tracks\] AS target WHERE EXISTS \(.*FROM \[schema\.with\.dot\]\.\[rudder_staging_tracks_[0-9a-f]+\] AS source.*\);`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 	mock.ExpectExec(`(?s)MERGE INTO \[schema\.with\.dot\]\.\[tracks\] AS target USING .*WHEN MATCHED THEN UPDATE SET.*WHEN NOT MATCHED THEN INSERT`).WillReturnResult(sqlmock.NewResult(0, 2))
 	mock.ExpectExec(`IF OBJECT_ID\(N'\[schema\.with\.dot\]\.\[rudder_staging_tracks_[0-9a-f]+\]', 'U'\) IS NOT NULL DROP TABLE \[schema\.with\.dot\]\.\[rudder_staging_tracks_[0-9a-f]+\];`).WillReturnResult(sqlmock.NewResult(0, 0))
 	fabric := &MicrosoftFabric{
@@ -173,8 +176,10 @@ func TestLoadTableUsesUniqueStagingAndSingleMerge(t *testing.T) {
 			loadFiles: map[string][]warehouseutils.LoadFile{"tracks": {{Location: location}}},
 		},
 	}
-	_, err := fabric.LoadTable(context.Background(), "tracks")
+	loadTableStats, err := fabric.LoadTable(context.Background(), "tracks")
 	require.NoError(t, err)
+	require.Equal(t, int64(1), loadTableStats.RowsInserted)
+	require.Equal(t, int64(1), loadTableStats.RowsUpdated)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -200,7 +205,7 @@ func TestMergeStatementDiscardsCompositeMatch(t *testing.T) {
 	require.Contains(t, statement, "target.[column_name] = source.[column_name]")
 }
 
-func TestErrorMappingsCoverFabricPrefixes(t *testing.T) {
+func TestErrorMappingsUseProviderErrors(t *testing.T) {
 	fabric := &MicrosoftFabric{}
 	for _, tc := range []struct {
 		name string
@@ -210,12 +215,17 @@ func TestErrorMappingsCoverFabricPrefixes(t *testing.T) {
 		{name: "bootstrap", err: "spn_token_bootstrap: unauthorized", want: model.PermissionError},
 		{name: "lakehouse access", err: "lakehouse_access: upload failed with HTTP 403", want: model.PermissionError},
 		{name: "lakehouse missing", err: "lakehouse_not_found: listing files failed with HTTP 404", want: model.ResourceNotFoundError},
-		{name: "copy", err: "copy_into: loading Parquet into tracks", want: model.ResourceNotFoundError},
-		{name: "schema", err: "schema_evolution: unsupported Rudder type", want: model.AlterColumnError},
-		{name: "merge", err: "merge: loading tracks from staging", want: model.ConcurrentQueriesError},
+		{name: "missing table", err: "mssql: Invalid object name 'schema.missing'", want: model.ResourceNotFoundError},
+		{name: "deadlock", err: "mssql: Transaction (Process ID 72) was deadlocked on lock resources with another process", want: model.ConcurrentQueriesError},
+		{name: "lock timeout", err: "mssql: Lock request time out period exceeded", want: model.ConcurrentQueriesError},
+		{name: "parquet type mismatch", err: "Column 'rating' of type 'DECIMAL(28, 10)' is not compatible with external data type 'Parquet physical type: DOUBLE'", want: model.AlterColumnError},
+		{name: "copy wrapper", err: "copy_into: request throttled", want: model.UncategorizedError},
+		{name: "schema wrapper", err: "schema_evolution: unsupported Rudder type", want: model.UncategorizedError},
+		{name: "merge wrapper", err: "merge: constraint violation", want: model.UncategorizedError},
+		{name: "blocked prose", err: "query blocked while waiting for capacity", want: model.UncategorizedError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var got model.JobErrorType
+			got := model.UncategorizedError
 			for _, mapping := range fabric.ErrorMappings() {
 				if mapping.Format.MatchString(tc.err) {
 					got = mapping.Type
@@ -225,4 +235,21 @@ func TestErrorMappingsCoverFabricPrefixes(t *testing.T) {
 			require.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestCleanupDropsDanglingStagingTables(t *testing.T) {
+	db, mock := newSQLMock(t)
+	mock.ExpectQuery(`SELECT table_name FROM INFORMATION_SCHEMA\.TABLES WHERE table_schema = @schema AND table_name LIKE @prefix;`).
+		WillReturnRows(sqlmock.NewRows([]string{"table_name"}).AddRow("rudder_staging_tracks_a1").AddRow("rudder_staging_users_b2"))
+	mock.ExpectExec(`IF OBJECT_ID\(N'\[schema\.with\.dot\]\.\[rudder_staging_tracks_a1\]', 'U'\) IS NOT NULL DROP TABLE \[schema\.with\.dot\]\.\[rudder_staging_tracks_a1\];`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`IF OBJECT_ID\(N'\[schema\.with\.dot\]\.\[rudder_staging_users_b2\]', 'U'\) IS NOT NULL DROP TABLE \[schema\.with\.dot\]\.\[rudder_staging_users_b2\];`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectClose()
+
+	fabric := &MicrosoftFabric{db: sqlmw.New(db), namespace: "schema.with.dot"}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	fabric.Cleanup(ctx)
+	require.NoError(t, mock.ExpectationsWereMet())
 }

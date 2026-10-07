@@ -83,16 +83,14 @@ var (
 	}
 	errorsMappings = []model.JobError{
 		{Type: model.PermissionError, Format: regexp.MustCompile(`(?i)(login failed|principal.*not able|permission.*denied|not authorized)`)},
-		{Type: model.ResourceNotFoundError, Format: regexp.MustCompile(`(?i)(cannot open server|could not be found|does not exist)`)},
-		{Type: model.ConcurrentQueriesError, Format: regexp.MustCompile(`(?i)(deadlock|lock request time out|blocked)`)},
+		{Type: model.ResourceNotFoundError, Format: regexp.MustCompile(`(?i)(cannot open (?:database|server)|invalid object name|could not be found|does not exist)`)},
+		{Type: model.ConcurrentQueriesError, Format: regexp.MustCompile(`(?i)(was deadlocked on .* resources|lock request time out period exceeded)`)},
 		{Type: model.ColumnCountError, Format: regexp.MustCompile(`(?i)(1024 columns|maximum.*columns)`)},
 		{Type: model.ColumnSizeError, Format: regexp.MustCompile(`(?i)(string or binary data would be truncated|16 MB)`)},
+		{Type: model.AlterColumnError, Format: regexp.MustCompile(`(?i)(is not compatible with external data type|cannot be converted from parquet)`)},
 		{Type: model.PermissionError, Format: regexp.MustCompile(`(?i)spn_token_bootstrap`)},
 		{Type: model.PermissionError, Format: regexp.MustCompile(`(?i)lakehouse_access`)},
 		{Type: model.ResourceNotFoundError, Format: regexp.MustCompile(`(?i)lakehouse_not_found`)},
-		{Type: model.ResourceNotFoundError, Format: regexp.MustCompile(`(?i)copy_into`)},
-		{Type: model.AlterColumnError, Format: regexp.MustCompile(`(?i)schema_evolution`)},
-		{Type: model.ConcurrentQueriesError, Format: regexp.MustCompile(`(?i)merge`)},
 	}
 )
 
@@ -304,21 +302,26 @@ func (f *MicrosoftFabric) ShouldMerge(tableName string) bool {
 	return !f.warehouse.GetPreferAppendSetting() || !f.uploader.CanAppend()
 }
 
-func (f *MicrosoftFabric) copyInto(ctx context.Context, tableName, location string, columns []string) error {
+func (f *MicrosoftFabric) copyInto(ctx context.Context, tableName, location string, columns []string) (int64, error) {
 	if err := f.validateOneLakeLocation(location); err != nil {
-		return err
+		return 0, err
 	}
 	if len(columns) == 0 {
-		return errors.New("copy_into: target column list is empty")
+		return 0, errors.New("copy_into: target column list is empty")
 	}
 	statement := fmt.Sprintf(`COPY INTO %s (%s) FROM %s WITH (FILE_TYPE = 'PARQUET');`,
 		qualified(f.namespace, tableName),
 		warehouseutils.JoinQuotedIdentifiers(columns, warehouseutils.BracketQuoteIdentifier, ","),
 		warehouseutils.SQLStringLiteral(location))
-	if _, err := f.db.ExecContext(ctx, statement); err != nil {
-		return fmt.Errorf("copy_into: loading Parquet into %q: %w", tableName, err)
+	result, err := f.db.ExecContext(ctx, statement)
+	if err != nil {
+		return 0, fmt.Errorf("copy_into: loading Parquet into %q: %w", tableName, err)
 	}
-	return nil
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("copy_into: counting rows loaded into %q: %w", tableName, err)
+	}
+	return rowsAffected, nil
 }
 
 func (f *MicrosoftFabric) validateOneLakeLocation(location string) error {
@@ -348,15 +351,17 @@ func (f *MicrosoftFabric) createStagingTable(ctx context.Context, tableName stri
 	return stagingTableName, nil
 }
 
-func (f *MicrosoftFabric) dropStagingTable(ctx context.Context, tableName string) {
+func (f *MicrosoftFabric) dropStagingTable(ctx context.Context, tableName string) error {
 	if tableName == "" || f.db == nil {
-		return
+		return nil
 	}
 	_, err := f.db.ExecContext(ctx, fmt.Sprintf(`IF OBJECT_ID(%s, 'U') IS NOT NULL DROP TABLE %s;`,
 		warehouseutils.UnicodeStringLiteral(qualified(f.namespace, tableName)), qualified(f.namespace, tableName)))
 	if err != nil {
 		f.logger.Warnn("dropping Microsoft Fabric staging table", logger.NewStringField(logfield.TableName, tableName), logger.NewStringField(logfield.Error, err.Error()))
+		return err
 	}
+	return nil
 }
 
 func primaryKey(tableName string) string {
@@ -403,55 +408,96 @@ WHEN NOT MATCHED THEN INSERT (%[8]s) VALUES (%[9]s);`,
 		warehouseutils.BracketQuoteIdentifier("received_at"), pk, additionalJoin, updates, quotedColumns, sourceColumns)
 }
 
-// loadTable loads tableName through a staging table and returns that staging table's name,
-// even on error, so the caller can drop it. It returns "" when there are no load files.
-func (f *MicrosoftFabric) loadTable(ctx context.Context, tableName string) (string, error) {
+func matchingRowsStatement(namespace, target, staging string) string {
+	pk := warehouseutils.BracketQuoteIdentifier(primaryKey(target))
+	additionalJoin := ""
+	if target == warehouseutils.DiscardsTable {
+		additionalJoin = fmt.Sprintf(" AND target.%s = source.%s AND target.%s = source.%s",
+			warehouseutils.BracketQuoteIdentifier("table_name"), warehouseutils.BracketQuoteIdentifier("table_name"),
+			warehouseutils.BracketQuoteIdentifier("column_name"), warehouseutils.BracketQuoteIdentifier("column_name"))
+	}
+	return fmt.Sprintf(`SELECT COUNT(*) FROM %s AS target WHERE EXISTS (
+SELECT 1 FROM %s AS source WHERE target.%s = source.%s%s
+);`, qualified(namespace, target), qualified(namespace, staging), pk, pk, additionalJoin)
+}
+
+// loadTable loads tableName through a staging table and returns load statistics plus that
+// staging table's name, even on error, so the caller can drop it. The staging name is empty
+// when there are no load files.
+func (f *MicrosoftFabric) loadTable(ctx context.Context, tableName string) (*types.LoadTableStats, string, error) {
 	metadata, err := f.uploader.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{Table: tableName})
 	if err != nil {
-		return "", fmt.Errorf("getting load files: %w", err)
+		return nil, "", fmt.Errorf("getting load files: %w", err)
 	}
 	if len(metadata) == 0 {
-		return "", nil
+		return &types.LoadTableStats{}, "", nil
 	}
 	columns := warehouseutils.SortColumnKeysFromColumnMap(f.uploader.GetTableSchemaInUpload(tableName))
 
 	stagingTableName, err := f.createStagingTable(ctx, tableName)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
+	var rowsCopied int64
 	for _, loadFile := range metadata {
-		if err := f.copyInto(ctx, stagingTableName, loadFile.Location, columns); err != nil {
-			return stagingTableName, err
+		copied, err := f.copyInto(ctx, stagingTableName, loadFile.Location, columns)
+		if err != nil {
+			return nil, stagingTableName, err
 		}
+		rowsCopied += copied
 	}
 
 	if f.ShouldMerge(tableName) {
-		statement := mergeStatement(f.namespace, tableName, stagingTableName, columns, f.uploader.ShouldOnDedupUseNewRecord())
-		if _, err := f.db.ExecContext(ctx, statement); err != nil {
-			return stagingTableName, fmt.Errorf("merge: loading %q from staging: %w", tableName, err)
+		var rowsUpdated int64
+		if err := f.db.QueryRowContext(ctx, matchingRowsStatement(f.namespace, tableName, stagingTableName)).Scan(&rowsUpdated); err != nil {
+			return nil, stagingTableName, fmt.Errorf("counting rows matched by merge for %q: %w", tableName, err)
 		}
+		statement := mergeStatement(f.namespace, tableName, stagingTableName, columns, f.uploader.ShouldOnDedupUseNewRecord())
+		result, err := f.db.ExecContext(ctx, statement)
+		if err != nil {
+			return nil, stagingTableName, fmt.Errorf("merge: loading %q from staging: %w", tableName, err)
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return nil, stagingTableName, fmt.Errorf("merge: counting affected rows for %q: %w", tableName, err)
+		}
+		if rowsAffected < rowsUpdated {
+			return nil, stagingTableName, fmt.Errorf("merge: affected row count %d is smaller than matched row count %d for %q", rowsAffected, rowsUpdated, tableName)
+		}
+		if rowsAffected > rowsCopied {
+			return nil, stagingTableName, fmt.Errorf("merge: affected row count %d exceeds copied row count %d for %q", rowsAffected, rowsCopied, tableName)
+		}
+		return &types.LoadTableStats{RowsInserted: rowsAffected - rowsUpdated, RowsUpdated: rowsUpdated}, stagingTableName, nil
 	} else {
 		quotedColumns := warehouseutils.JoinQuotedIdentifiers(columns, warehouseutils.BracketQuoteIdentifier, ",")
 		statement := fmt.Sprintf(`INSERT INTO %s (%s) SELECT %s FROM %s;`, qualified(f.namespace, tableName), quotedColumns, quotedColumns, qualified(f.namespace, stagingTableName))
-		if _, err := f.db.ExecContext(ctx, statement); err != nil {
-			return stagingTableName, fmt.Errorf("inserting append rows from staging: %w", err)
+		result, err := f.db.ExecContext(ctx, statement)
+		if err != nil {
+			return nil, stagingTableName, fmt.Errorf("inserting append rows from staging: %w", err)
 		}
+		rowsInserted, err := result.RowsAffected()
+		if err != nil {
+			return nil, stagingTableName, fmt.Errorf("counting appended rows for %q: %w", tableName, err)
+		}
+		if rowsInserted != rowsCopied {
+			return nil, stagingTableName, fmt.Errorf("appending: inserted row count %d differs from copied row count %d for %q", rowsInserted, rowsCopied, tableName)
+		}
+		return &types.LoadTableStats{RowsInserted: rowsInserted}, stagingTableName, nil
 	}
-	return stagingTableName, nil
 }
 
 func (f *MicrosoftFabric) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
-	stagingTableName, err := f.loadTable(ctx, tableName)
-	f.dropStagingTable(ctx, stagingTableName)
+	loadTableStats, stagingTableName, err := f.loadTable(ctx, tableName)
+	_ = f.dropStagingTable(context.WithoutCancel(ctx), stagingTableName)
 	if err != nil {
 		return nil, err
 	}
-	return &types.LoadTableStats{}, nil
+	return loadTableStats, nil
 }
 
 func (f *MicrosoftFabric) LoadUserTables(ctx context.Context) map[string]error {
-	identifiesStaging, err := f.loadTable(ctx, warehouseutils.IdentifiesTable)
-	defer f.dropStagingTable(ctx, identifiesStaging)
+	_, identifiesStaging, err := f.loadTable(ctx, warehouseutils.IdentifiesTable)
+	defer func() { _ = f.dropStagingTable(context.WithoutCancel(ctx), identifiesStaging) }()
 	if err != nil {
 		return map[string]error{warehouseutils.IdentifiesTable: fmt.Errorf("loading identifies table: %w", err)}
 	}
@@ -477,8 +523,8 @@ func (f *MicrosoftFabric) LoadUserTables(ctx context.Context) map[string]error {
 
 	unionTable := warehouseutils.StagingTableName(provider, "users_identifies_union", tableNameLimit)
 	latestTable := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
-	defer f.dropStagingTable(ctx, latestTable)
-	defer f.dropStagingTable(ctx, unionTable)
+	defer func() { _ = f.dropStagingTable(context.WithoutCancel(ctx), latestTable) }()
+	defer func() { _ = f.dropStagingTable(context.WithoutCancel(ctx), unionTable) }()
 
 	userColumns := warehouseutils.JoinQuotedIdentifiers(columns, warehouseutils.BracketQuoteIdentifier, ",")
 	identifyColumns := make([]string, 0, len(columns))
@@ -529,7 +575,8 @@ func (f *MicrosoftFabric) TestLoadTable(ctx context.Context, location, tableName
 		columns = append(columns, column)
 	}
 	sort.Strings(columns)
-	return f.copyInto(ctx, tableName, location, columns)
+	_, err := f.copyInto(ctx, tableName, location, columns)
+	return err
 }
 
 func (f *MicrosoftFabric) TestFetchSchema(ctx context.Context) error {
@@ -537,8 +584,38 @@ func (f *MicrosoftFabric) TestFetchSchema(ctx context.Context) error {
 	return err
 }
 
-func (f *MicrosoftFabric) Cleanup(context.Context) {
+func (f *MicrosoftFabric) dropDanglingStagingTables(ctx context.Context) error {
+	rows, err := f.db.QueryContext(ctx, `SELECT table_name FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = @schema AND table_name LIKE @prefix;`,
+		sql.Named("schema", f.namespace), sql.Named("prefix", warehouseutils.StagingTablePrefix(provider)+"%"))
+	if err != nil {
+		return fmt.Errorf("querying for dangling staging tables: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var stagingTableNames []string
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			return fmt.Errorf("scanning dangling staging tables: %w", err)
+		}
+		stagingTableNames = append(stagingTableNames, tableName)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterating dangling staging tables: %w", err)
+	}
+	for _, tableName := range stagingTableNames {
+		if err := f.dropStagingTable(ctx, tableName); err != nil {
+			return fmt.Errorf("dropping dangling staging table %q.%q: %w", f.namespace, tableName, err)
+		}
+	}
+	return nil
+}
+
+func (f *MicrosoftFabric) Cleanup(ctx context.Context) {
 	if f.db != nil {
+		if err := f.dropDanglingStagingTables(context.WithoutCancel(ctx)); err != nil {
+			f.logger.Warnn("dropping dangling Microsoft Fabric staging tables", logger.NewStringField(logfield.Error, err.Error()))
+		}
 		_ = f.db.Close()
 	}
 }

@@ -58,7 +58,7 @@ func TestFullEventColumnTypeByDestTypeMapping(t *testing.T) {
 	for _, destType := range whutils.WarehouseDestinations {
 		require.NotNilf(t, fullEventColumnTypeByDestType[destType], "Full event column type not found for destination type %s", destType)
 	}
-	require.Equal(t, model.StringDataType, fullEventColumnTypeByDestType[whutils.MicrosoftFabric])
+	require.Equal(t, model.JSONDataType, fullEventColumnTypeByDestType[whutils.MicrosoftFabric])
 }
 
 func TestValidTimestamp(t *testing.T) {

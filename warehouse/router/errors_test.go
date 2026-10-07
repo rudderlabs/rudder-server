@@ -81,13 +81,13 @@ func TestErrorHandler_MatchUploadJobErrorType(t *testing.T) {
 				"Microsoft Fabric lakehouse not found", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"lakehouse_not_found: listing files failed with HTTP 404\"]}}"), model.ResourceNotFoundError,
 			},
 			{
-				"Microsoft Fabric COPY INTO", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"copy_into: loading Parquet into tracks\"]}}"), model.ResourceNotFoundError,
+				"Microsoft Fabric missing table", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"mssql: Invalid object name 'schema.missing'\"]}}"), model.ResourceNotFoundError,
 			},
 			{
-				"Microsoft Fabric schema evolution", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"schema_evolution: unsupported Rudder type\"]}}"), model.AlterColumnError,
+				"Microsoft Fabric Parquet type mismatch", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"Column 'rating' of type 'DECIMAL(28, 10)' is not compatible with external data type 'Parquet physical type: DOUBLE'\"]}}"), model.AlterColumnError,
 			},
 			{
-				"Microsoft Fabric merge", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"merge: loading tracks from staging\"]}}"), model.ConcurrentQueriesError,
+				"Microsoft Fabric deadlock", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"mssql: Transaction (Process ID 72) was deadlocked on lock resources with another process\"]}}"), model.ConcurrentQueriesError,
 			},
 
 			{
