@@ -2247,6 +2247,28 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 	})
 })
 
+// enabledDestinations returns the enabled destinations of sourceID whose definition is the
+// fixture's "destination-definition-name-enabled", the input the consent filters operate on.
+func enabledDestinations(proc *Handle, sourceID string) []backendconfig.DestinationT {
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+	var enabled []backendconfig.DestinationT
+	for _, dest := range proc.config.sourceIdDestinationMap[sourceID] {
+		if dest.Enabled && dest.DestinationDefinition.Name == "destination-definition-name-enabled" {
+			enabled = append(enabled, dest)
+		}
+	}
+	return enabled
+}
+
+// destinationAvailable reports whether at least one destination remains available for the event
+// after integrations, consent and enabled-state filtering. A non-empty specificDestID narrows
+// the check to that destination.
+func destinationAvailable(proc *Handle, event types.SingularEventT, sourceID, specificDestID string) bool {
+	available, _ := proc.classifyDestinations(event, proc.getSourceDestinations(sourceID), sourceID, specificDestID)
+	return len(available) > 0
+}
+
 var _ = Describe("Processor", Ordered, func() {
 	initProcessor()
 
@@ -3538,51 +3560,39 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsents, SourceIDOneTrustConsent, "")).To(BeTrue())
+			Expect(destinationAvailable(processor, eventWithDeniedConsents, SourceIDOneTrustConsent, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsents,
 					SourceIDOneTrustConsent,
-					processor.getEnabledDestinations(
-						SourceIDOneTrustConsent,
-						"destination-definition-name-enabled",
-					),
+					enabledDestinations(processor, SourceIDOneTrustConsent),
 				)),
 			).To(Equal(3)) // all except D1 and D3
 
-			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsents, SourceIDOneTrustConsent, "")).To(BeTrue())
+			Expect(destinationAvailable(processor, eventWithoutDeniedConsents, SourceIDOneTrustConsent, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutDeniedConsents,
 					SourceIDOneTrustConsent,
-					processor.getEnabledDestinations(
-						SourceIDOneTrustConsent,
-						"destination-definition-name-enabled",
-					),
+					enabledDestinations(processor, SourceIDOneTrustConsent),
 				)),
 			).To(Equal(5)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent, "")).To(BeTrue())
+			Expect(destinationAvailable(processor, eventWithoutConsentManagementData, SourceIDOneTrustConsent, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutConsentManagementData,
 					SourceIDOneTrustConsent,
-					processor.getEnabledDestinations(
-						SourceIDOneTrustConsent,
-						"destination-definition-name-enabled",
-					),
+					enabledDestinations(processor, SourceIDOneTrustConsent),
 				)),
 			).To(Equal(5)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent, "dest-id-1")).To(BeTrue())
+			Expect(destinationAvailable(processor, eventWithoutConsentManagementData, SourceIDOneTrustConsent, "dest-id-1")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutConsentManagementData,
 					SourceIDOneTrustConsent,
-					processor.getEnabledDestinations(
-						SourceIDOneTrustConsent,
-						"destination-definition-name-enabled",
-					),
+					enabledDestinations(processor, SourceIDOneTrustConsent),
 				)),
 			).To(Equal(5)) // all
 		})
@@ -3630,13 +3640,10 @@ var _ = Describe("Processor", Ordered, func() {
 			filteredDestinations := processor.getConsentFilteredDestinations(
 				event,
 				SourceIDKetchConsent,
-				processor.getEnabledDestinations(
-					SourceIDKetchConsent,
-					"destination-definition-name-enabled",
-				),
+				enabledDestinations(processor, SourceIDKetchConsent),
 			)
 			Expect(len(filteredDestinations)).To(Equal(4)) // all except dest-id-5 since both purpose1 and purpose2 are denied
-			Expect(processor.isDestinationAvailable(event, SourceIDKetchConsent, "")).To(BeTrue())
+			Expect(destinationAvailable(processor, event, SourceIDKetchConsent, "")).To(BeTrue())
 		})
 
 		It("should filter based on generic consent management preferences", func() {
@@ -3792,74 +3799,59 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDGCM, "")).To(BeTrue())
+			Expect(destinationAvailable(processor, eventWithoutConsentManagementData, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutConsentManagementData,
 					SourceIDGCM,
-					processor.getEnabledDestinations(
-						SourceIDGCM,
-						"destination-definition-name-enabled",
-					),
+					enabledDestinations(processor, SourceIDGCM),
 				)),
 			).To(Equal(9)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsentsGCM, SourceIDGCM, "")).To(BeTrue())
+			Expect(destinationAvailable(processor, eventWithoutDeniedConsentsGCM, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutDeniedConsentsGCM,
 					SourceIDGCM,
-					processor.getEnabledDestinations(
-						SourceIDGCM,
-						"destination-definition-name-enabled",
-					),
+					enabledDestinations(processor, SourceIDGCM),
 				)),
 			).To(Equal(9)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithCustomConsentsGCM, SourceIDGCM, "")).To(BeTrue())
+			Expect(destinationAvailable(processor, eventWithCustomConsentsGCM, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithCustomConsentsGCM,
 					SourceIDGCM,
-					processor.getEnabledDestinations(
-						SourceIDGCM,
-						"destination-definition-name-enabled",
-					),
+					enabledDestinations(processor, SourceIDGCM),
 				)),
 			).To(Equal(8)) // all except D13
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM, "")).To(BeTrue())
+			Expect(destinationAvailable(processor, eventWithDeniedConsentsGCM, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsentsGCM,
 					SourceIDGCM,
-					processor.getEnabledDestinations(
-						SourceIDGCM,
-						"destination-definition-name-enabled",
-					),
+					enabledDestinations(processor, SourceIDGCM),
 				)),
 			).To(Equal(7)) // all except D6 and D7
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM, "")).To(BeTrue())
+			Expect(destinationAvailable(processor, eventWithDeniedConsentsGCMKetch, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsentsGCMKetch,
 					SourceIDGCM,
-					processor.getEnabledDestinations(
-						SourceIDGCM,
-						"destination-definition-name-enabled",
-					),
+					enabledDestinations(processor, SourceIDGCM),
 				)),
 			).To(Equal(8)) // all except D7
 
 			// some unknown destination ID is passed destination will be unavailable
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM, "unknown-destination")).To(BeFalse())
+			Expect(destinationAvailable(processor, eventWithDeniedConsentsGCMKetch, SourceIDGCM, "unknown-destination")).To(BeFalse())
 
 			// known destination ID is passed and destination is enabled
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDTransient, DestinationIDEnabledA)).To(BeTrue())
+			Expect(destinationAvailable(processor, eventWithDeniedConsentsGCMKetch, SourceIDTransient, DestinationIDEnabledA)).To(BeTrue())
 
 			// know destination ID is passed and destination is not enabled
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDTransient, DestinationIDDisabled)).To(BeFalse())
+			Expect(destinationAvailable(processor, eventWithDeniedConsentsGCMKetch, SourceIDTransient, DestinationIDDisabled)).To(BeFalse())
 		})
 	})
 
@@ -5912,7 +5904,7 @@ func TestStoreMessageMerge(t *testing.T) {
 
 // TestDedupReporting pins the dedup report-row emission added at the duplicate-drop
 // point in preprocessStage: a single DEDUP/filtered row per drop, gated by
-// proc.isReportingEnabled() && proc.config.reportingDedupMetricsEnabled, with no gateway row
+// proc.isReportingEnabled(), with no gateway row
 // for the dropped twin and no change to the unconditional sourceDupStats counter.
 func TestDedupReporting(t *testing.T) {
 	dedupRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
@@ -5927,9 +5919,8 @@ func TestDedupReporting(t *testing.T) {
 	}
 
 	// newDedupProcessor builds the shared fixture: a Handle with dedup and reporting
-	// wired up, backed by a config.Config the test can mutate (for the reloadable
-	// reportingDedupMetricsEnabled flag) and a MockDedup that allows only allowedIndex.
-	newDedupProcessor := func(t *testing.T, enableReporting bool, allowedIndex int) (*Handle, *config.Config, *testContext) {
+	// wired up and a MockDedup that allows only allowedIndex.
+	newDedupProcessor := func(t *testing.T, enableReporting bool, allowedIndex int) (*Handle, *testContext) {
 		t.Helper()
 		conf := config.New()
 		c := &testContext{}
@@ -5957,7 +5948,7 @@ func TestDedupReporting(t *testing.T) {
 			}, nil
 		}).AnyTimes()
 
-		return processor, conf, c
+		return processor, c
 	}
 
 	// runDedupPipeline drives preprocessStage -> srcHydrationStage -> pretransformStage,
@@ -6007,20 +5998,16 @@ func TestDedupReporting(t *testing.T) {
 		{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
 	}
 
-	// shared across the first two subtests: the run with the flag turned on after Setup.
-	var flagOnTransMsg *transformationMessage
+	// shared across the first two subtests.
+	var sharedTransMsg *transformationMessage
 
-	t.Run("should emit exactly one dedup filtered row for a duplicate event when the flag is on", func(t *testing.T) {
-		processor, conf, c := newDedupProcessor(t, true, 0)
+	t.Run("should emit exactly one dedup filtered row for a duplicate event", func(t *testing.T) {
+		processor, c := newDedupProcessor(t, true, 0)
 		defer c.Finish()
 
-		// set after Setup: also exercises that reportingDedupMetricsEnabled is read via .Load() at
-		// emission time, not cached at Setup time.
-		conf.Set("Reporting.dedupMetrics.enabled", true)
+		sharedTransMsg = runDedupPipeline(t, processor, twoDuplicates)
 
-		flagOnTransMsg = runDedupPipeline(t, processor, twoDuplicates)
-
-		rows := dedupRows(flagOnTransMsg.reportMetrics)
+		rows := dedupRows(sharedTransMsg.reportMetrics)
 		require.Len(t, rows, 1)
 		row := rows[0]
 		require.Equal(t, reportingtypes.DEDUP, row.PU)
@@ -6034,48 +6021,26 @@ func TestDedupReporting(t *testing.T) {
 	})
 
 	t.Run("should not emit a gateway row for the deduped event", func(t *testing.T) {
-		require.NotNil(t, flagOnTransMsg, "requires the preceding subtest to have populated the shared run")
+		require.NotNil(t, sharedTransMsg, "requires the preceding subtest to have populated the shared run")
 
-		rows := gatewayRows(flagOnTransMsg.reportMetrics)
+		rows := gatewayRows(sharedTransMsg.reportMetrics)
 		require.Len(t, rows, 1, "only the surviving twin should produce a gateway row")
 		require.EqualValues(t, 1, rows[0].StatusDetail.Count, "the deduped twin must not be counted in the gateway row")
 	})
 
-	t.Run("should emit no dedup row when the flag is off", func(t *testing.T) {
-		processorRun1, _, c1 := newDedupProcessor(t, true, 0)
-		defer c1.Finish()
-		run1 := runDedupPipeline(t, processorRun1, twoDuplicates)
-		require.Empty(t, dedupRows(run1.reportMetrics))
-
-		processorRun2, _, c2 := newDedupProcessor(t, true, 0)
-		defer c2.Finish()
-		run2 := runDedupPipeline(t, processorRun2, twoDuplicates)
-		require.Empty(t, dedupRows(run2.reportMetrics))
-
-		require.Equal(t, run1.reportMetrics, run2.reportMetrics, "an otherwise identical run must produce the same report metrics")
-	})
-
-	t.Run("should emit no dedup row when reporting is disabled but the flag is on", func(t *testing.T) {
-		processor, conf, c := newDedupProcessor(t, false, 0)
+	t.Run("should emit no dedup row when reporting is disabled", func(t *testing.T) {
+		processor, c := newDedupProcessor(t, false, 0)
 		defer c.Finish()
-
-		conf.Set("Reporting.dedupMetrics.enabled", true)
 
 		transMsg := runDedupPipeline(t, processor, twoDuplicates)
 		require.Empty(t, dedupRows(transMsg.reportMetrics))
 	})
 
-	t.Run("should increment the duplicate counter identically whether the flag is on or off", func(t *testing.T) {
-		processorOn, confOn, cOn := newDedupProcessor(t, true, 0)
-		defer cOn.Finish()
-		confOn.Set("Reporting.dedupMetrics.enabled", true)
-		runOn := runDedupPipeline(t, processorOn, twoDuplicates)
-		require.Equal(t, 1, runOn.sourceDupStats[dupStatKey{sourceID: SourceIDEnabled}])
-
-		processorOff, _, cOff := newDedupProcessor(t, true, 0)
-		defer cOff.Finish()
-		runOff := runDedupPipeline(t, processorOff, twoDuplicates)
-		require.Equal(t, 1, runOff.sourceDupStats[dupStatKey{sourceID: SourceIDEnabled}])
+	t.Run("should increment the duplicate counter for a deduped event", func(t *testing.T) {
+		processor, c := newDedupProcessor(t, true, 0)
+		defer c.Finish()
+		run := runDedupPipeline(t, processor, twoDuplicates)
+		require.Equal(t, 1, run.sourceDupStats[dupStatKey{sourceID: SourceIDEnabled}])
 	})
 
 	t.Run("should aggregate multiple duplicates from one source into a single dedup row", func(t *testing.T) {
@@ -6084,9 +6049,8 @@ func TestDedupReporting(t *testing.T) {
 			{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
 			{id: "3", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
 		}
-		processor, conf, c := newDedupProcessor(t, true, 0)
+		processor, c := newDedupProcessor(t, true, 0)
 		defer c.Finish()
-		conf.Set("Reporting.dedupMetrics.enabled", true)
 
 		transMsg := runDedupPipeline(t, processor, threeDuplicates)
 
@@ -6429,14 +6393,14 @@ func TestUserSuppressionReporting(t *testing.T) {
 		run2 := runSuppressionPipeline(t, processor2, buildJobs())
 
 		require.Empty(t, userSuppressionRows(run1.reportMetrics))
-		require.Equal(t, run1.reportMetrics, run2.reportMetrics)
+		require.ElementsMatch(t, run1.reportMetrics, run2.reportMetrics)
 	})
 }
 
 // TestGatewayIngestedReporting exercises the gw_ingested reporting added at the very top
 // of the preprocess loop (processor.go:2059-2079), above the IsUserSuppressed check: every event
 // accumulates a succeeded/200 row under CreatePUDetails("", gw_ingested, false, false),
-// gated by proc.isReportingEnabled() && Reporting.gatewayIngestedMetrics.enabled (default false),
+// gated by proc.isReportingEnabled(),
 // regardless of whether it later survives suppression/bot/blocking/dedup. Modelled directly on
 // TestUserSuppressionReporting.
 func TestGatewayIngestedReporting(t *testing.T) {
@@ -6503,9 +6467,8 @@ func TestGatewayIngestedReporting(t *testing.T) {
 
 	// newGatewayIngestedProcessor builds the shared fixture, modelled on newSuppressionProcessor
 	// (TestUserSuppressionReporting, :6107): a Handle with reporting and (optionally) dedup wired
-	// up, backed by a config.Config the test can mutate for the reloadable
-	// Reporting.gatewayIngestedMetrics.enabled flag.
-	newGatewayIngestedProcessor := func(t *testing.T, opts gatewayIngestedProcessorOpts) (*Handle, *config.Config, *testContext) {
+	// up.
+	newGatewayIngestedProcessor := func(t *testing.T, opts gatewayIngestedProcessorOpts) (*Handle, *testContext) {
 		t.Helper()
 		conf := config.New()
 		c := &testContext{}
@@ -6541,7 +6504,7 @@ func TestGatewayIngestedReporting(t *testing.T) {
 			c.MockDedup.EXPECT().Allowed(gomock.Any()).DoAndReturn(allowedFn).AnyTimes()
 		}
 
-		return processor, conf, c
+		return processor, c
 	}
 
 	// runGatewayIngestedPipeline drives preprocessStage -> srcHydrationStage -> pretransformStage,
@@ -6604,10 +6567,9 @@ func TestGatewayIngestedReporting(t *testing.T) {
 
 	oneEvent := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
 
-	t.Run("should emit one gw_ingested succeeded row for an ordinary event when the flag is on", func(t *testing.T) {
-		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
+	t.Run("should emit one gw_ingested succeeded row for an ordinary event", func(t *testing.T) {
+		processor, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
 		defer c.Finish()
-		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
 
 		jobs := []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabled), oneEvent, nil)}
 		transMsg := runGatewayIngestedPipeline(t, processor, jobs)
@@ -6625,32 +6587,9 @@ func TestGatewayIngestedReporting(t *testing.T) {
 		require.Equal(t, SourceIDEnabled, row.SourceID)
 	})
 
-	t.Run("should emit no gw_ingested row when the flag is off, and produce identical reportMetrics across two such runs", func(t *testing.T) {
-		// The flag defaults to false and is never set here. Running the same fixture twice and
-		// comparing reportMetrics byte-for-byte is the strongest flag-off assertion available
-		// short of a row-count check: it catches nondeterminism introduced by the new map (e.g. a
-		// stray key surviving into connectionDetailsMap), but it cannot catch a change that is
-		// stable and wrong in both runs.
-		buildJobs := func() []*jobsdb.JobT {
-			return []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabled), oneEvent, nil)}
-		}
-
-		processor1, _, c1 := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
-		defer c1.Finish()
-		run1 := runGatewayIngestedPipeline(t, processor1, buildJobs())
-
-		processor2, _, c2 := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
-		defer c2.Finish()
-		run2 := runGatewayIngestedPipeline(t, processor2, buildJobs())
-
-		require.Empty(t, gatewayIngestedRows(run1.reportMetrics))
-		require.Equal(t, run1.reportMetrics, run2.reportMetrics)
-	})
-
-	t.Run("should emit no gw_ingested row when reporting is disabled but the flag is on", func(t *testing.T) {
-		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: false})
+	t.Run("should emit no gw_ingested row when reporting is disabled", func(t *testing.T) {
+		processor, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: false})
 		defer c.Finish()
-		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
 
 		jobs := []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabled), oneEvent, nil)}
 		transMsg := runGatewayIngestedPipeline(t, processor, jobs)
@@ -6671,12 +6610,10 @@ func TestGatewayIngestedReporting(t *testing.T) {
 			}
 			return allowed, nil
 		}
-		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{
+		processor, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{
 			enableReporting: true, enableDedup: true, dedupAllowedFn: dedupAllowedFn,
 		})
 		defer c.Finish()
-		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
-		conf.Set("Reporting.dedupMetrics.enabled", true)
 
 		suppressedEvent := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
 		botDropEvent := []mockEventData{{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
@@ -6709,7 +6646,7 @@ func TestGatewayIngestedReporting(t *testing.T) {
 			"gw_ingested minus every drop-site count must equal the surviving gateway count")
 	})
 
-	t.Run("should leave the gateway billing row's StatusCode at 0 while the flag is on", func(t *testing.T) {
+	t.Run("should leave the gateway billing row's StatusCode at 0", func(t *testing.T) {
 		// The GATEWAY site is the only reporting call in the loop that never sets
 		// reportingEvent.StatusCode itself: it inherits whatever the shared struct holds. A
 		// missing reset at the gw_ingested site would not mislabel the billing row, it would
@@ -6732,43 +6669,30 @@ func TestGatewayIngestedReporting(t *testing.T) {
 			}
 		}
 
-		processorOn, confOn, cOn := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{
+		processor, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{
 			enableReporting: true, enableDedup: true, dedupAllowedFn: dedupAllowedFn,
 		})
-		defer cOn.Finish()
-		confOn.Set("Reporting.gatewayIngestedMetrics.enabled", true)
-		confOn.Set("Reporting.dedupMetrics.enabled", true)
-		runOn := runGatewayIngestedPipeline(t, processorOn, buildJobs())
+		defer c.Finish()
+		run := runGatewayIngestedPipeline(t, processor, buildJobs())
 
-		processorOff, _, cOff := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{
-			enableReporting: true, enableDedup: true, dedupAllowedFn: dedupAllowedFn,
-		})
-		defer cOff.Finish()
-		runOff := runGatewayIngestedPipeline(t, processorOff, buildJobs())
+		gwRows := gatewayRows(run.reportMetrics)
+		require.Len(t, gwRows, 1)
+		require.EqualValues(t, 0, gwRows[0].StatusDetail.StatusCode)
+		require.True(t, gwRows[0].InitialPU)
+		require.Equal(t, "", gwRows[0].InPU)
+		require.EqualValues(t, 1, gwRows[0].StatusDetail.Count, "only the ordinary event reaches the gateway billing site")
 
-		gwRowsOn := gatewayRows(runOn.reportMetrics)
-		require.Len(t, gwRowsOn, 1)
-		require.EqualValues(t, 0, gwRowsOn[0].StatusDetail.StatusCode)
-		require.True(t, gwRowsOn[0].InitialPU)
-		require.Equal(t, "", gwRowsOn[0].InPU)
-
-		gwRowsOff := gatewayRows(runOff.reportMetrics)
-		require.Len(t, gwRowsOff, 1)
-		require.Equal(t, gwRowsOff[0].StatusDetail.Count, gwRowsOn[0].StatusDetail.Count,
-			"the billing row's count must be unaffected by the flag")
-
-		require.Len(t, userSuppressionRows(runOn.reportMetrics), 1)
-		require.Equal(t, reportingtypes.FilterEventCode, userSuppressionRows(runOn.reportMetrics)[0].StatusDetail.StatusCode,
+		require.Len(t, userSuppressionRows(run.reportMetrics), 1)
+		require.Equal(t, reportingtypes.FilterEventCode, userSuppressionRows(run.reportMetrics)[0].StatusDetail.StatusCode,
 			"the set-then-reset at the gw_ingested site must not corrupt the suppression row below it")
-		require.Len(t, dedupRows(runOn.reportMetrics), 1)
-		require.Equal(t, reportingtypes.FilterEventCode, dedupRows(runOn.reportMetrics)[0].StatusDetail.StatusCode,
+		require.Len(t, dedupRows(run.reportMetrics), 1)
+		require.Equal(t, reportingtypes.FilterEventCode, dedupRows(run.reportMetrics)[0].StatusDetail.StatusCode,
 			"the set-then-reset at the gw_ingested site must not corrupt the dedup row below it")
 	})
 
 	t.Run("should aggregate events of the same name and type from one source into a single row, and split rows by event type", func(t *testing.T) {
-		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
+		processor, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
 		defer c.Finish()
-		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
 
 		trackEvents := []mockEventData{
 			{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "track"}},
@@ -6795,9 +6719,8 @@ func TestGatewayIngestedReporting(t *testing.T) {
 	})
 
 	t.Run("should count a flagged-but-not-dropped bot event exactly once in both gw_ingested and gateway", func(t *testing.T) {
-		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
+		processor, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{enableReporting: true})
 		defer c.Finish()
-		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
 
 		flaggedEvent := []mockEventData{{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
 		jobs := []*jobsdb.JobT{job(1, createBotParameters(SourceIDEnabled, reportingtypes.FlagBotEventAction), flaggedEvent, nil)}
@@ -6817,12 +6740,7 @@ func TestGatewayIngestedReporting(t *testing.T) {
 		require.EqualValues(t, 1, billingGwRows[0].StatusDetail.Count)
 	})
 
-	t.Run("should emit a gw_ingested row for a batch whose every event is dropped", func(t *testing.T) {
-		// Reporting.dedupMetrics.enabled stays at its default (off): the new gw_ingested
-		// block is now the only thing creating a connectionDetailsMap entry for this source, and
-		// pretransformStage's build loop must still run over a connection key for which every
-		// other status-detail map is empty (AssertKeysSubset tolerates that; it is Subset, not
-		// SameKeys, checked at all eight call sites processor.go:2441-2448).
+	t.Run("should emit gw_ingested and dedup rows but no gateway row for a batch whose every event is deduped", func(t *testing.T) {
 		dedupAllowedFn := func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
 			allowed := make(map[dedup.BatchKey]bool, len(keys))
 			for _, k := range keys {
@@ -6830,11 +6748,10 @@ func TestGatewayIngestedReporting(t *testing.T) {
 			}
 			return allowed, nil
 		}
-		processor, conf, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{
+		processor, c := newGatewayIngestedProcessor(t, gatewayIngestedProcessorOpts{
 			enableReporting: true, enableDedup: true, dedupAllowedFn: dedupAllowedFn,
 		})
 		defer c.Finish()
-		conf.Set("Reporting.gatewayIngestedMetrics.enabled", true)
 
 		allDuplicates := []mockEventData{
 			{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
@@ -6846,16 +6763,17 @@ func TestGatewayIngestedReporting(t *testing.T) {
 		rows := gatewayIngestedRows(transMsg.reportMetrics)
 		require.Len(t, rows, 1)
 		require.EqualValues(t, 2, rows[0].StatusDetail.Count)
-		require.Empty(t, dedupRows(transMsg.reportMetrics), "dedup reporting is off; the drop is silent besides gw_ingested")
+		require.Len(t, dedupRows(transMsg.reportMetrics), 1)
+		require.EqualValues(t, 2, dedupRows(transMsg.reportMetrics)[0].StatusDetail.Count)
 		require.Empty(t, gatewayRows(transMsg.reportMetrics))
 	})
 }
 
 // TestDestinationVisibilityReporting exercises the fan-out reporting added for
-// per-destination visibility (destination_enter / destination_filter), see processor.go:2450-2505,
-// plus the earlyDestinationFilter reorder (processor.go:2211). The rows introduced here carry an
-// empty inPU (the field is slated for deprecation), and the reorder must not change the inPU of
-// pre-existing rows. Dedup is off throughout; SourceIDEnabled's three enabled destinations
+// per-destination visibility (destination_enter / destination_filter), emitted where the
+// destination filter runs, at fan-out in pretransformStage. The rows introduced here carry an
+// empty inPU (the field is slated for deprecation), and pre-existing tracking-plan and
+// user-transformer rows keep their inPU chain. Dedup is off throughout; SourceIDEnabled's three enabled destinations
 // (A, B, C — three distinct destination types plus one disabled) are reused as-is.
 func TestDestinationVisibilityReporting(t *testing.T) {
 	destEnterRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
@@ -6869,7 +6787,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		})
 	}
 	// sourceLevelDestFilterRows are the destination_filter rows with no destination id: the
-	// carve-out (filtered_no_destination) or the old fallback (filtered).
+	// zero-candidate filtered_no_destination row.
 	sourceLevelDestFilterRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
 		return lo.Filter(destFilterRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
 			return m.DestinationID == ""
@@ -6893,9 +6811,8 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	}
 
 	// newVisibilityProcessor builds a Handle with dedup off and reporting optionally on,
-	// backed by a config.Config the test can mutate for the reloadable
-	// Processor.earlyDestinationFilter flag, and returns the SimpleClients so a case can
-	// wire up TP/hydration/UT echo transforms.
+	// backed by a config.Config the test can mutate (e.g. destination isolation), and returns
+	// the SimpleClients so a case can wire up TP/hydration/UT echo transforms.
 	newVisibilityProcessor := func(t *testing.T, enableReporting bool) (*Handle, *config.Config, *testContext, *transformer.SimpleClients) {
 		t.Helper()
 		conf := config.New()
@@ -7023,10 +6940,9 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		}
 	}
 
-	// denyConsentFor sets B's oneTrustCookieCategories consent map directly (same
-	// "set after Setup" technique TestDedupReporting uses for reloadable flags, applied here
-	// to proc.config's consent maps — consent_test.go's TestFilterDestinations builds these
-	// maps the same way, just from scratch rather than after Setup). SourceIDEnabled's three
+	// denyConsentFor sets B's oneTrustCookieCategories consent map directly
+	// (consent_test.go's TestFilterDestinations builds these maps the same way, just from
+	// scratch rather than after Setup). SourceIDEnabled's three
 	// destinations carry no consent config out of the box, so this is the only way to make
 	// one of them consent-deniable without a new backend-config fixture.
 	denyConsentFor := func(processor *Handle, destinationID, category string) {
@@ -7037,98 +6953,9 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 
 	allDestOptOut := map[string]any{"All": false}
 
-	t.Run("with earlyDestinationFilter at its default (true) no destination_enter row and no destination-scoped destination_filter row is emitted", func(t *testing.T) {
+	t.Run("a three-destination source produces three succeeded/200 destination_enter rows with distinct non-empty destination ids", func(t *testing.T) {
 		processor, _, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
-
-		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
-		msg := runVisibilityPretransform(t, processor, jobs)
-
-		require.Empty(t, destEnterRows(msg.reportMetrics))
-		require.Empty(t, destFilterRows(msg.reportMetrics))
-	})
-
-	t.Run("with defaults two identical runs produce identical reportMetrics and identical groupedEvents keys and lengths", func(t *testing.T) {
-		buildJobs := func() []*jobsdb.JobT {
-			return []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
-		}
-
-		processor1, _, c1, _ := newVisibilityProcessor(t, true)
-		defer c1.Finish()
-		run1 := runVisibilityPretransform(t, processor1, buildJobs())
-
-		processor2, _, c2, _ := newVisibilityProcessor(t, true)
-		defer c2.Finish()
-		run2 := runVisibilityPretransform(t, processor2, buildJobs())
-
-		require.Equal(t, run1.reportMetrics, run2.reportMetrics)
-
-		keysAndLens1 := lo.MapValues(run1.groupedEvents, func(v []types.TransformerEvent, _ string) int { return len(v) })
-		keysAndLens2 := lo.MapValues(run2.groupedEvents, func(v []types.TransformerEvent, _ string) int { return len(v) })
-		require.Equal(t, keysAndLens1, keysAndLens2)
-	})
-
-	t.Run("with defaults a fully-excluded event drops at preprocess emitting exactly one source-level filtered/298 row with inPU gateway", func(t *testing.T) {
-		processor, _, c, _ := newVisibilityProcessor(t, true)
-		defer c.Finish()
-
-		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", allDestOptOut, nil)})}
-		msg := runVisibilityPretransform(t, processor, jobs)
-
-		rows := destFilterRows(msg.reportMetrics)
-		require.Len(t, rows, 1, "no double emission alongside the preprocess-guard row")
-		require.Equal(t, "", rows[0].DestinationID)
-		require.Equal(t, reportingtypes.GATEWAY, rows[0].InPU)
-		require.Equal(t, jobsdb.Filtered.State, rows[0].StatusDetail.Status)
-		require.Equal(t, reportingtypes.FilterEventCode, rows[0].StatusDetail.StatusCode)
-		require.Empty(t, destEnterRows(msg.reportMetrics))
-	})
-
-	t.Run("with defaults tracking-plan rows carry inPU destination_filter and user-transformer rows carry inPU destination_filter by default", func(t *testing.T) {
-		// TP's own inPU defaults to DESTINATION_FILTER — it is only overridden to
-		// SOURCE_HYDRATION when hydration ran ahead of it. SourceIDEnabledTp has no
-		// hydration, so this checks the default squarely.
-		t.Run("tracking-plan rows", func(t *testing.T) {
-			processor, _, c, transformerClients := newVisibilityProcessor(t, true)
-			defer c.Finish()
-			transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
-
-			jobs := []*jobsdb.JobT{job(1, SourceIDEnabledTp, "", []string{payload("m1", nil, nil)})}
-			msg := runVisibilityPretransform(t, processor, jobs)
-
-			tRows := tpRows(msg.reportMetrics)
-			require.NotEmpty(t, tRows)
-			for _, r := range tRows {
-				require.Equal(t, reportingtypes.DESTINATION_FILTER, r.InPU)
-			}
-		})
-
-		// The userTransformAndFilter switch (processor.go:3404-3411) only falls back to its
-		// DESTINATION_FILTER default when neither TP validation nor hydration ran ahead of
-		// it (both instead chain UT from themselves) — SourceIDEnabled has neither, and its
-		// destination B carries a Transformation so a UT row is actually emitted.
-		t.Run("user-transformer rows", func(t *testing.T) {
-			processor, _, c, transformerClients := newVisibilityProcessor(t, true)
-			defer c.Finish()
-			transformerClients.WithDynamicUserTransform(echoUserTransform)
-
-			jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
-			_, storeMsg := runVisibilityThroughUT(t, processor, jobs)
-
-			uRows := lo.Filter(utRows(storeMsg.reportMetrics), func(r *reportingtypes.PUReportedMetric, _ int) bool {
-				return r.DestinationID == DestinationIDEnabledB // only B has a Transformation configured
-			})
-			require.NotEmpty(t, uRows)
-			for _, r := range uRows {
-				require.Equal(t, reportingtypes.DESTINATION_FILTER, r.InPU)
-			}
-		})
-	})
-
-	t.Run("with the reorder on a three-destination source produces three succeeded/200 destination_enter rows with distinct non-empty destination ids", func(t *testing.T) {
-		processor, conf, c, _ := newVisibilityProcessor(t, true)
-		defer c.Finish()
-		conf.Set("Processor.earlyDestinationFilter", false)
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
 		msg := runVisibilityPretransform(t, processor, jobs)
@@ -7148,9 +6975,8 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	})
 
 	t.Run("destination_enter is emitted for excluded candidates as well as survivors", func(t *testing.T) {
-		processor, conf, c, _ := newVisibilityProcessor(t, true)
+		processor, _, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
-		conf.Set("Processor.earlyDestinationFilter", false)
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", map[string]any{"enabled-destination-c-definition-display-name": false}, nil)})}
 		msg := runVisibilityPretransform(t, processor, jobs)
@@ -7165,9 +6991,8 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		// SourceIDHydrationTp runs both source hydration and TP validation ahead of fan-out —
 		// even then no chain value is computed for destination_enter (inPU is slated for
 		// deprecation).
-		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		processor, _, c, transformerClients := newVisibilityProcessor(t, true)
 		defer c.Finish()
-		conf.Set("Processor.earlyDestinationFilter", false)
 		transformerClients.WithDynamicSrcHydration(echoHydration)
 		transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
 
@@ -7184,7 +7009,6 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	t.Run("destination_enter is emitted for a forked destination that produces no inline clone", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
-		conf.Set("Processor.earlyDestinationFilter", false)
 		conf.Set("Processor.DestinationIsolation.enabledDestinations."+DestinationIDEnabledC, true)
 		processor.procDB = c.mockGatewayJobsDB
 
@@ -7197,10 +7021,9 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.Len(t, msg.forkedJobs, 1, "C is siphoned to a forked job instead")
 	})
 
-	t.Run("no destination_enter row when reporting is disabled even with the reorder on", func(t *testing.T) {
-		processor, conf, c, _ := newVisibilityProcessor(t, false)
+	t.Run("no destination_enter row when reporting is disabled", func(t *testing.T) {
+		processor, _, c, _ := newVisibilityProcessor(t, false)
 		defer c.Finish()
-		conf.Set("Processor.earlyDestinationFilter", false)
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
 		msg := runVisibilityPretransform(t, processor, jobs)
@@ -7213,9 +7036,8 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	var sharedConsentRun *transformationMessage
 
 	t.Run("consent excluding one of three destinations yields three enter rows, exactly one filtered_consent/298 row, and clones to the other two", func(t *testing.T) {
-		processor, conf, c, _ := newVisibilityProcessor(t, true)
+		processor, _, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
-		conf.Set("Processor.earlyDestinationFilter", false)
 		denyConsentFor(processor, DestinationIDEnabledB, "cat-1")
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, []string{"cat-1"})})}
@@ -7248,10 +7070,9 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.Equal(t, enterCount, cloneCount+filteredCount)
 	})
 
-	t.Run("an integrations-opt-out-of-everything event with the reorder on yields three enter plus three filtered_integration rows and no source-level filtered row", func(t *testing.T) {
-		processor, conf, c, _ := newVisibilityProcessor(t, true)
+	t.Run("an integrations-opt-out-of-everything event yields three enter plus three filtered_integration rows and no source-level filtered row", func(t *testing.T) {
+		processor, _, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
-		conf.Set("Processor.earlyDestinationFilter", false)
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", allDestOptOut, nil)})}
 		msg := runVisibilityPretransform(t, processor, jobs)
@@ -7266,9 +7087,8 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	})
 
 	t.Run("a zero-candidate event emits filtered_no_destination/298 with empty destination id", func(t *testing.T) {
-		processor, conf, c, _ := newVisibilityProcessor(t, true)
+		processor, _, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
-		conf.Set("Processor.earlyDestinationFilter", false)
 
 		// SourceIDDisabled has no destinations configured — reused as-is, no new fixture.
 		jobs := []*jobsdb.JobT{job(1, SourceIDDisabled, "", []string{payload("m1", nil, nil)})}
@@ -7283,9 +7103,8 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	})
 
 	t.Run("a RETL event whose stamped destination is unavailable emits filtered_no_destination and no rows for the source's other destinations", func(t *testing.T) {
-		processor, conf, c, _ := newVisibilityProcessor(t, true)
+		processor, _, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
-		conf.Set("Processor.earlyDestinationFilter", false)
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "not-connected-destination-id", []string{payload("m1", nil, nil)})}
 		msg := runVisibilityPretransform(t, processor, jobs)
@@ -7299,9 +7118,8 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	})
 
 	t.Run("a RETL event stamped for an available destination emits exactly one destination_enter row and none for the source's other destinations", func(t *testing.T) {
-		processor, conf, c, _ := newVisibilityProcessor(t, true)
+		processor, _, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
-		conf.Set("Processor.earlyDestinationFilter", false)
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, DestinationIDEnabledA, []string{payload("m1", nil, nil)})}
 		msg := runVisibilityPretransform(t, processor, jobs)
@@ -7313,9 +7131,8 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	})
 
 	t.Run("no per-destination row when reporting is disabled", func(t *testing.T) {
-		processor, conf, c, _ := newVisibilityProcessor(t, false)
+		processor, _, c, _ := newVisibilityProcessor(t, false)
 		defer c.Finish()
-		conf.Set("Processor.earlyDestinationFilter", false)
 		denyConsentFor(processor, DestinationIDEnabledB, "cat-1")
 
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, []string{"cat-1"})})}
@@ -7324,30 +7141,23 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.Empty(t, destFilterRows(msg.reportMetrics))
 	})
 
-	t.Run("with the reorder on, a zero-surviving-destination event reaches tracking-plan validation and appears in TP metrics", func(t *testing.T) {
-		buildJobs := func() []*jobsdb.JobT {
-			return []*jobsdb.JobT{job(1, SourceIDEnabledTp, "", []string{payload("m1", allDestOptOut, nil)})}
-		}
+	t.Run("a zero-surviving-destination event reaches tracking-plan validation and appears in TP metrics", func(t *testing.T) {
+		processor, _, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
 
-		reorderOn, conf1, c1, transformerClients1 := newVisibilityProcessor(t, true)
-		defer c1.Finish()
-		conf1.Set("Processor.earlyDestinationFilter", false)
-		transformerClients1.WithDynamicTrackingPlanValidate(echoTrackingPlan)
-		msgReorderOn := runVisibilityPretransform(t, reorderOn, buildJobs())
-		require.NotEmpty(t, tpRows(msgReorderOn.reportMetrics), "the flag-off observable behaviour change: TP count movement")
-
-		reorderOff, _, c2, transformerClients2 := newVisibilityProcessor(t, true)
-		defer c2.Finish()
-		transformerClients2.WithDynamicTrackingPlanValidate(echoTrackingPlan)
-		msgReorderOff := runVisibilityPretransform(t, reorderOff, buildJobs())
-		require.Empty(t, tpRows(msgReorderOff.reportMetrics), "with the flag true (default) the event never reaches TP")
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabledTp, "", []string{payload("m1", allDestOptOut, nil)})}
+		msg := runVisibilityPretransform(t, processor, jobs)
+		require.NotEmpty(t, tpRows(msg.reportMetrics), "an event with no surviving destination still reaches tracking-plan validation")
 	})
 
-	t.Run("the reorder does not change the inPU of pre-existing tracking-plan and user-transformer rows", func(t *testing.T) {
-		t.Run("no TP, no hydration: user-transformer chains from destination_filter", func(t *testing.T) {
-			processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+	t.Run("pre-existing tracking-plan and user-transformer rows carry an empty inPU unless an earlier reporting stage ran", func(t *testing.T) {
+		// Rows carry an empty inPU when neither TP validation nor hydration ran ahead of them;
+		// when one did, the following row chains from it. SourceIDEnabled has neither, and its
+		// destination B carries a Transformation so a UT row is actually emitted.
+		t.Run("no TP, no hydration: user-transformer inPU is empty", func(t *testing.T) {
+			processor, _, c, transformerClients := newVisibilityProcessor(t, true)
 			defer c.Finish()
-			conf.Set("Processor.earlyDestinationFilter", false)
 			transformerClients.WithDynamicUserTransform(echoUserTransform)
 
 			jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
@@ -7358,14 +7168,13 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 			})
 			require.NotEmpty(t, uRows)
 			for _, r := range uRows {
-				require.Equal(t, reportingtypes.DESTINATION_FILTER, r.InPU)
+				require.Equal(t, "", r.InPU)
 			}
 		})
 
-		t.Run("TP only (no hydration): tracking-plan inPU destination_filter, user-transformer chains from tracking_plan_validator", func(t *testing.T) {
-			processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		t.Run("TP only (no hydration): tracking-plan inPU is empty, user-transformer chains from tracking_plan_validator", func(t *testing.T) {
+			processor, _, c, transformerClients := newVisibilityProcessor(t, true)
 			defer c.Finish()
-			conf.Set("Processor.earlyDestinationFilter", false)
 			transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
 			transformerClients.WithDynamicUserTransform(echoUserTransform)
 
@@ -7375,7 +7184,7 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 			tRows := tpRows(utMsg.reportMetrics)
 			require.NotEmpty(t, tRows)
 			for _, r := range tRows {
-				require.Equal(t, reportingtypes.DESTINATION_FILTER, r.InPU)
+				require.Equal(t, "", r.InPU)
 			}
 			uRows := utRows(utMsg.reportMetrics)
 			require.NotEmpty(t, uRows)
@@ -7385,9 +7194,8 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		})
 
 		t.Run("TP and hydration: tracking-plan inPU source_hydration, user-transformer chains from tracking_plan_validator", func(t *testing.T) {
-			processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+			processor, _, c, transformerClients := newVisibilityProcessor(t, true)
 			defer c.Finish()
-			conf.Set("Processor.earlyDestinationFilter", false)
 			transformerClients.WithDynamicSrcHydration(echoHydration)
 			transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
 			transformerClients.WithDynamicUserTransform(echoUserTransform)
@@ -7407,33 +7215,13 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 			}
 		})
 	})
-
-	t.Run("flipping earlyDestinationFilter back on between two runs on the same handle restores the preprocess source-level filtered row", func(t *testing.T) {
-		processor, conf, c, _ := newVisibilityProcessor(t, true)
-		defer c.Finish()
-		conf.Set("Processor.earlyDestinationFilter", false)
-
-		run1 := runVisibilityPretransform(t, processor, []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", allDestOptOut, nil)})})
-		require.NotEmpty(t, perDestFilterRows(run1.reportMetrics))
-		require.Empty(t, sourceLevelDestFilterRows(run1.reportMetrics))
-
-		conf.Set("Processor.earlyDestinationFilter", true)
-
-		run2 := runVisibilityPretransform(t, processor, []*jobsdb.JobT{job(2, SourceIDEnabled, "", []string{payload("m2", allDestOptOut, nil)})})
-		require.Empty(t, perDestFilterRows(run2.reportMetrics))
-		require.Empty(t, destEnterRows(run2.reportMetrics))
-		rows := sourceLevelDestFilterRows(run2.reportMetrics)
-		require.Len(t, rows, 1)
-		require.Equal(t, jobsdb.Filtered.State, rows[0].StatusDetail.Status)
-		require.Equal(t, reportingtypes.GATEWAY, rows[0].InPU, "the preprocess-guard row, not the fan-out one")
-	})
 }
 
 func TestClassifyDestinations(t *testing.T) {
 	t.Run("all candidates survive", func(t *testing.T) {
 		sourceID := "source-1"
 		dests := []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")}
-		proc := newClassifyTestHandle(sourceID, dests)
+		proc := newClassifyTestHandle(dests)
 
 		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "")
 
@@ -7448,7 +7236,7 @@ func TestClassifyDestinations(t *testing.T) {
 			amplitudeDest("dest-2"),
 			amplitudeDest("dest-3"),
 		}
-		proc := newClassifyTestHandle(sourceID, dests)
+		proc := newClassifyTestHandle(dests)
 
 		available, excluded := proc.classifyDestinations(integrationsExcludingAmplitude(), proc.getSourceDestinations(sourceID), sourceID, "")
 
@@ -7463,7 +7251,7 @@ func TestClassifyDestinations(t *testing.T) {
 	t.Run("a consent-denied destination is excluded with reason filtered_consent and code 298", func(t *testing.T) {
 		sourceID := "source-1"
 		dests := []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))}
-		proc := newClassifyTestHandle(sourceID, dests)
+		proc := newClassifyTestHandle(dests)
 
 		available, excluded := proc.classifyDestinations(deniedConsentEvent(), proc.getSourceDestinations(sourceID), sourceID, "")
 
@@ -7477,7 +7265,7 @@ func TestClassifyDestinations(t *testing.T) {
 	t.Run("a destination excluded by integrations and also consent-denied yields exactly one entry, with reason filtered_integration", func(t *testing.T) {
 		sourceID := "source-1"
 		dests := []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))}
-		proc := newClassifyTestHandle(sourceID, dests)
+		proc := newClassifyTestHandle(dests)
 
 		event := deniedConsentEvent()
 		event["integrations"] = map[string]any{"Amplitude": false}
@@ -7497,7 +7285,7 @@ func TestClassifyDestinations(t *testing.T) {
 			consentDeniedDest(amplitudeDest("dest-1")),
 			amplitudeDest("dest-3"),
 		}
-		proc := newClassifyTestHandle(sourceID, dests)
+		proc := newClassifyTestHandle(dests)
 
 		available, excluded := proc.classifyDestinations(deniedConsentEvent(), proc.getSourceDestinations(sourceID), sourceID, "")
 
@@ -7512,7 +7300,7 @@ func TestClassifyDestinations(t *testing.T) {
 			amplitudeDest("dest-2"),
 			amplitudeDest("dest-3"),
 		}
-		proc := newClassifyTestHandle(sourceID, dests)
+		proc := newClassifyTestHandle(dests)
 
 		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "dest-2")
 
@@ -7526,7 +7314,7 @@ func TestClassifyDestinations(t *testing.T) {
 			consentDeniedDest(amplitudeDest("dest-1")),
 			amplitudeDest("dest-2"),
 		}
-		proc := newClassifyTestHandle(sourceID, dests)
+		proc := newClassifyTestHandle(dests)
 
 		available, excluded := proc.classifyDestinations(deniedConsentEvent(), proc.getSourceDestinations(sourceID), sourceID, "dest-1")
 
@@ -7539,7 +7327,7 @@ func TestClassifyDestinations(t *testing.T) {
 	t.Run("specificDestID naming a disabled or unconnected destination yields empty available AND empty excluded", func(t *testing.T) {
 		sourceID := "source-1"
 		dests := []backendconfig.DestinationT{webhookDest()}
-		proc := newClassifyTestHandle(sourceID, dests)
+		proc := newClassifyTestHandle(dests)
 
 		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "dest-not-connected")
 
@@ -7553,7 +7341,7 @@ func TestClassifyDestinations(t *testing.T) {
 			webhookDest(),
 			amplitudeDest("dest-2"),
 		}
-		proc := newClassifyTestHandle(sourceID, dests)
+		proc := newClassifyTestHandle(dests)
 
 		available, excluded := proc.classifyDestinations(integrationsExcludingAmplitude(), proc.getSourceDestinations(sourceID), sourceID, "dest-2")
 
@@ -7565,7 +7353,7 @@ func TestClassifyDestinations(t *testing.T) {
 
 	t.Run("a source with no destinations yields empty available and empty excluded", func(t *testing.T) {
 		sourceID := "source-1"
-		proc := newClassifyTestHandle(sourceID, nil)
+		proc := newClassifyTestHandle(nil)
 
 		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "")
 
@@ -7577,7 +7365,7 @@ func TestClassifyDestinations(t *testing.T) {
 		sourceID := "source-1"
 		disabled := amplitudeDest("dest-2")
 		disabled.Enabled = false
-		proc := newClassifyTestHandle(sourceID, []backendconfig.DestinationT{webhookDest(), disabled})
+		proc := newClassifyTestHandle([]backendconfig.DestinationT{webhookDest(), disabled})
 
 		available, excluded := proc.classifyDestinations(types.SingularEventT{}, proc.getSourceDestinations(sourceID), sourceID, "")
 
@@ -7588,7 +7376,7 @@ func TestClassifyDestinations(t *testing.T) {
 	t.Run("a malformed integrations.All value excludes every candidate as filtered_integration", func(t *testing.T) {
 		sourceID := "source-1"
 		dests := []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")}
-		proc := newClassifyTestHandle(sourceID, dests)
+		proc := newClassifyTestHandle(dests)
 
 		event := types.SingularEventT{
 			"integrations": map[string]any{"All": "not-a-bool"},
@@ -7601,98 +7389,25 @@ func TestClassifyDestinations(t *testing.T) {
 			require.Equal(t, reportingtypes.FilteredIntegrationStatus, e.reason)
 		}
 	})
-
-	t.Run("len(available) > 0 agrees with isDestinationAvailable across the case table", func(t *testing.T) {
-		sourceID := "source-1"
-		testCases := []struct {
-			name           string
-			dests          []backendconfig.DestinationT
-			event          types.SingularEventT
-			specificDestID string
-		}{
-			{
-				name:  "all survive",
-				dests: []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")},
-				event: types.SingularEventT{},
-			},
-			{
-				name:  "integration excluded type",
-				dests: []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")},
-				event: integrationsExcludingAmplitude(),
-			},
-			{
-				name:  "all excluded by integrations",
-				dests: []backendconfig.DestinationT{amplitudeDest("dest-1")},
-				event: integrationsExcludingAmplitude(),
-			},
-			{
-				name:  "consent denies the only destination",
-				dests: []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))},
-				event: deniedConsentEvent(),
-			},
-			{
-				name:  "consent denies one of two",
-				dests: []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1")), amplitudeDest("dest-2")},
-				event: deniedConsentEvent(),
-			},
-			{
-				name:  "no destinations at all",
-				dests: nil,
-				event: types.SingularEventT{},
-			},
-			{
-				name:           "RETL narrowed to available stamped destination",
-				dests:          []backendconfig.DestinationT{webhookDest(), amplitudeDest("dest-2")},
-				event:          types.SingularEventT{},
-				specificDestID: "dest-2",
-			},
-			{
-				name:           "RETL narrowed to unavailable/unconnected destination",
-				dests:          []backendconfig.DestinationT{webhookDest()},
-				event:          types.SingularEventT{},
-				specificDestID: "dest-not-connected",
-			},
-			{
-				name:           "RETL narrowed to consent-denied stamped destination",
-				dests:          []backendconfig.DestinationT{consentDeniedDest(amplitudeDest("dest-1"))},
-				event:          deniedConsentEvent(),
-				specificDestID: "dest-1",
-			},
-			{
-				name:  "malformed integrations.All",
-				dests: []backendconfig.DestinationT{webhookDest()},
-				event: types.SingularEventT{"integrations": map[string]any{"All": "not-a-bool"}},
-			},
-		}
-
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				proc := newClassifyTestHandle(sourceID, tc.dests)
-
-				available, _ := proc.classifyDestinations(tc.event, proc.getSourceDestinations(sourceID), sourceID, tc.specificDestID)
-				got := len(available) > 0
-				want := proc.isDestinationAvailable(tc.event, sourceID, tc.specificDestID)
-
-				require.Equal(t, want, got, "classifyDestinations availability must agree with isDestinationAvailable")
-			})
-		}
-	})
 }
 
 // newClassifyTestHandle builds a bare Handle wired the same way TestFilterDestinations does
 // (consent_test.go:1379-1394), plus sourceIdDestinationMap so classifyDestinations can discover
 // candidate destinations without a full NewHandle/backend-config subscription.
-func newClassifyTestHandle(sourceID string, destinations []backendconfig.DestinationT) *Handle {
+// classifyTestSourceID is the single source the classifyDestinations cases run against.
+const classifyTestSourceID = "source-1"
+
+func newClassifyTestHandle(destinations []backendconfig.DestinationT) *Handle {
 	proc := &Handle{}
-	proc.config.sourceIdDestinationMap = map[string][]backendconfig.DestinationT{sourceID: destinations}
+	proc.config.sourceIdDestinationMap = map[string][]backendconfig.DestinationT{classifyTestSourceID: destinations}
 	proc.config.oneTrustConsentCategoriesMap = make(map[string][]string)
 	proc.config.ketchConsentCategoriesMap = make(map[string][]string)
 	proc.config.genericConsentManagementMap = make(SourceConsentMap)
-	proc.config.genericConsentManagementMap[SourceID(sourceID)] = make(DestConsentMap)
+	proc.config.genericConsentManagementMap[SourceID(classifyTestSourceID)] = make(DestConsentMap)
 	for _, dest := range destinations {
 		proc.config.oneTrustConsentCategoriesMap[dest.ID] = getOneTrustConsentCategories(&dest)
 		proc.config.ketchConsentCategoriesMap[dest.ID] = getKetchConsentCategories(&dest)
-		proc.config.genericConsentManagementMap[SourceID(sourceID)][DestinationID(dest.ID)], _ = getGenericConsentManagementData(&dest)
+		proc.config.genericConsentManagementMap[SourceID(classifyTestSourceID)][DestinationID(dest.ID)], _ = getGenericConsentManagementData(&dest)
 	}
 	proc.logger = logger.NOP
 	return proc
@@ -7765,5 +7480,92 @@ func excludedIDs(excluded []excludedDestination) []string {
 func availableIDs(available []backendconfig.DestinationT) []string {
 	return lo.Map(available, func(d backendconfig.DestinationT, _ int) string {
 		return d.ID
+	})
+}
+
+func TestEventSchemasV2DisabledSourceIDs(t *testing.T) {
+	initProcessor()
+
+	job := func(jobID int64, sourceID, messageID string) *jobsdb.JobT {
+		return &jobsdb.JobT{
+			UUID:      uuid.New(),
+			JobID:     jobID,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabled,
+				"2001-01-02T02:23:45.000Z",
+				[]mockEventData{{id: messageID, originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}},
+				createMessagePayloadWithoutSources,
+			),
+			EventCount:  1,
+			Parameters:  createBatchParameters(sourceID),
+			WorkspaceId: sampleWorkspaceID,
+		}
+	}
+
+	run := func(t *testing.T, disabledSourceIDs []string, jobs []*jobsdb.JobT) (schemaJobs []*jobsdb.JobT) {
+		t.Helper()
+		c := &testContext{}
+		c.Setup(t)
+		defer c.Finish()
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
+
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		require.NoError(t, err)
+
+		conf := config.New()
+		for _, sourceID := range disabledSourceIDs {
+			conf.Set("EventSchemas2."+sourceID+".enabled", false)
+		}
+		processor := NewHandle(conf, transformer.NewSimpleClients())
+		processor.isolationStrategy = isolationStrategy
+		processor.config.archivalEnabled = config.SingleValueLoader(false)
+		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+		processor.config.eventSchemaV2Enabled = true
+		Setup(processor, c, false, false, t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+
+		c.mockEventSchemasDB.EXPECT().
+			WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().
+			Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+		c.mockEventSchemasDB.EXPECT().
+			StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().
+			Do(func(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
+				schemaJobs = append(schemaJobs, jobs...)
+			})
+
+		srcHydrationMsg, err := processor.preprocessStage("", subJob{ctx: ctx, subJobs: jobs}, 0)
+		require.NoError(t, err)
+		preTransMsg, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
+		_, err = processor.pretransformStage("", preTransMsg)
+		require.NoError(t, err)
+		return schemaJobs
+	}
+
+	t.Run("no disabled sources", func(t *testing.T) {
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "1"), job(2, SourceIDEnabledNoUT, "2")}
+		schemaJobs := run(t, nil, jobs)
+		require.ElementsMatch(t, []uuid.UUID{jobs[0].UUID, jobs[1].UUID}, lo.Map(schemaJobs, func(j *jobsdb.JobT, _ int) uuid.UUID { return j.UUID }))
+	})
+
+	t.Run("one disabled source", func(t *testing.T) {
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "1"), job(2, SourceIDEnabledNoUT, "2")}
+		schemaJobs := run(t, []string{SourceIDEnabledNoUT}, jobs)
+		require.Len(t, schemaJobs, 1)
+		require.Equal(t, jobs[0].UUID, schemaJobs[0].UUID)
+	})
+
+	t.Run("all sources disabled", func(t *testing.T) {
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "1"), job(2, SourceIDEnabledNoUT, "2")}
+		schemaJobs := run(t, []string{SourceIDEnabled, SourceIDEnabledNoUT}, jobs)
+		require.Empty(t, schemaJobs)
 	})
 }
