@@ -59,11 +59,6 @@ type WarehouseOperations interface {
 	WarehouseDelete
 }
 
-var (
-	_ Manager             = (*microsoftfabric.MicrosoftFabric)(nil)
-	_ WarehouseOperations = (*microsoftfabric.MicrosoftFabric)(nil)
-)
-
 // New is a Factory function that returns a Manager of a given destination-type
 func New(destType string, conf *config.Config, logger logger.Logger, stats stats.Stats) (Manager, error) {
 	m, err := newManager(destType, conf, logger, stats)

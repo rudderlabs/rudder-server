@@ -12,7 +12,7 @@ import (
 func New(base filemanager.Factory) filemanager.Factory {
 	return func(settings *filemanager.Settings) (filemanager.FileManager, error) {
 		if settings.Provider == warehouseutils.OneLake {
-			return onelake.New(settings.Config, settings.Logger)
+			return onelake.New(settings.Config)
 		}
 		return base(settings)
 	}

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,7 +24,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-go-kit/logger"
+
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 const (
@@ -34,6 +34,14 @@ const (
 )
 
 var _ filemanager.FileManager = (*Manager)(nil)
+
+// httpClient is shared by every Manager: all requests go to the same OneLake host, so keep
+// more idle connections to it than http.DefaultTransport's two per host.
+var httpClient = func() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConnsPerHost = 64
+	return &http.Client{Transport: transport}
+}()
 
 // credentials shares one Entra credential, and so one token cache, per service principal
 // across the many short-lived Managers created per upload and download.
@@ -53,7 +61,7 @@ func sharedCredential(tenantID, clientID, clientSecret string) (azcore.TokenCred
 	return actual.(azcore.TokenCredential), nil
 }
 
-type Config struct {
+type config struct {
 	Host              string
 	FabricWorkspaceID string
 	LakehouseID       string
@@ -64,28 +72,35 @@ type Config struct {
 }
 
 type Manager struct {
-	config     Config
+	config     config
 	credential azcore.TokenCredential
 	client     *http.Client
-	logger     logger.Logger
 
 	mu      sync.RWMutex
 	timeout time.Duration
 }
 
-func New(config map[string]any, log logger.Logger) (*Manager, error) {
-	oneLakeHost, err := HostFromConfig(config)
+// parseConfig reads the OneLake settings from a destination config without validating them.
+func parseConfig(destConfig map[string]any) (config, error) {
+	oneLakeHost, err := hostFromConfig(destConfig)
+	if err != nil {
+		return config{}, err
+	}
+	return config{
+		Host:              oneLakeHost,
+		FabricWorkspaceID: stringConfig(destConfig, "fabricWorkspaceId"),
+		LakehouseID:       stringConfig(destConfig, "lakehouseId"),
+		TenantID:          stringConfig(destConfig, "tenantId"),
+		ClientID:          stringConfig(destConfig, "clientId"),
+		ClientSecret:      stringConfig(destConfig, "clientSecret"),
+		Prefix:            strings.Trim(stringConfig(destConfig, "prefix"), "/"),
+	}, nil
+}
+
+func New(destConfig map[string]any) (*Manager, error) {
+	cfg, err := parseConfig(destConfig)
 	if err != nil {
 		return nil, err
-	}
-	cfg := Config{
-		Host:              oneLakeHost,
-		FabricWorkspaceID: stringConfig(config, "fabricWorkspaceId"),
-		LakehouseID:       stringConfig(config, "lakehouseId"),
-		TenantID:          stringConfig(config, "tenantId"),
-		ClientID:          stringConfig(config, "clientId"),
-		ClientSecret:      stringConfig(config, "clientSecret"),
-		Prefix:            strings.Trim(stringConfig(config, "prefix"), "/"),
 	}
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
@@ -94,23 +109,19 @@ func New(config map[string]any, log logger.Logger) (*Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating OneLake credential: %w", err)
 	}
-	return newManager(cfg, credential, http.DefaultClient, log), nil
+	return newManager(cfg, credential, httpClient), nil
 }
 
-func newManager(cfg Config, credential azcore.TokenCredential, client *http.Client, log logger.Logger) *Manager {
-	if log == nil {
-		log = logger.NewLogger()
-	}
+func newManager(cfg config, credential azcore.TokenCredential, client *http.Client) *Manager {
 	return &Manager{
 		config:     cfg,
 		credential: credential,
 		client:     client,
-		logger:     log.Child("onelake"),
 		timeout:    120 * time.Second,
 	}
 }
 
-func HostFromConfig(config map[string]any) (string, error) {
+func hostFromConfig(config map[string]any) (string, error) {
 	host := stringConfig(config, "oneLakeHost")
 	if host == "" {
 		host = stringConfig(config, "onelakeHost")
@@ -146,16 +157,13 @@ func validateOneLakeHost(host string) error {
 		return errors.New("oneLakeHost must be a hostname without a port")
 	}
 	host = strings.Trim(strings.ToLower(host), ".")
-	if net.ParseIP(host) != nil {
-		return errors.New("oneLakeHost must be a Microsoft OneLake endpoint")
-	}
-	if host == defaultOneLakeHost || strings.HasSuffix(host, ".dfs.fabric.microsoft.com") {
+	if strings.HasSuffix(host, ".dfs.fabric.microsoft.com") {
 		return nil
 	}
 	return errors.New("oneLakeHost must be a Microsoft OneLake endpoint")
 }
 
-func validateConfig(cfg Config) error {
+func validateConfig(cfg config) error {
 	for name, value := range map[string]string{
 		"fabricWorkspaceId": cfg.FabricWorkspaceID,
 		"lakehouseId":       cfg.LakehouseID,
@@ -189,16 +197,40 @@ func stringConfig(config map[string]any, key string) string {
 	return value
 }
 
-func (m *Manager) baseURL() url.URL {
+func lakehouseURL(host, workspaceID, lakehouseID string) url.URL {
 	return url.URL{
 		Scheme: "https",
-		Host:   m.config.Host,
-		Path: "/" + path.Join(
-			m.config.FabricWorkspaceID,
-			m.config.LakehouseID,
-			"Files",
-		),
+		Host:   host,
+		Path:   "/" + path.Join(workspaceID, lakehouseID, "Files"),
 	}
+}
+
+func (m *Manager) baseURL() url.URL {
+	return lakehouseURL(m.config.Host, m.config.FabricWorkspaceID, m.config.LakehouseID)
+}
+
+// objectNameInLakehouse returns the object name of the absolute location u under base,
+// the Files root of a Lakehouse.
+func objectNameInLakehouse(base url.URL, u *url.URL) (string, error) {
+	if u.Scheme != base.Scheme || u.Host != base.Host || !strings.HasPrefix(u.Path, base.Path+"/") {
+		return "", errors.New("location is outside the configured OneLake Lakehouse")
+	}
+	return normalizeObjectName(strings.TrimPrefix(strings.TrimPrefix(u.Path, base.Path), "/"))
+}
+
+// ValidateLocation checks that location is an absolute URL inside the Files root of the
+// Lakehouse configured in destConfig.
+func ValidateLocation(destConfig map[string]any, location string) error {
+	cfg, err := parseConfig(destConfig)
+	if err != nil {
+		return err
+	}
+	u, err := url.Parse(location)
+	if err != nil {
+		return fmt.Errorf("parsing OneLake location: %w", err)
+	}
+	_, err = objectNameInLakehouse(lakehouseURL(cfg.Host, cfg.FabricWorkspaceID, cfg.LakehouseID), u)
+	return err
 }
 
 func (m *Manager) objectURL(key string) url.URL {
@@ -237,6 +269,19 @@ func (m *Manager) request(ctx context.Context, method string, u url.URL, body io
 		return nil, fmt.Errorf("calling OneLake: %w", err)
 	}
 	return resp, nil
+}
+
+// exec sends a request whose response body is not needed and fails on a non-2xx status.
+func (m *Manager) exec(ctx context.Context, operation, method string, u url.URL, body io.Reader, contentLength *int64, headers http.Header) error {
+	resp, err := m.request(ctx, method, u, body, contentLength, headers)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return responseError(operation, resp)
+	}
+	httputil.CloseResponse(resp)
+	return nil
 }
 
 func responseError(operation string, response *http.Response) error {
@@ -302,14 +347,11 @@ func (m *Manager) prefixedObjectName(parts ...string) (string, error) {
 		}
 		validated = append(validated, part)
 	}
-	return normalizeObjectName(path.Join(validated...))
+	return path.Join(validated...), nil
 }
 
+// upload creates, appends to and flushes objectName, which must come from prefixedObjectName.
 func (m *Manager) upload(ctx context.Context, objectName string, reader io.Reader, size int64) (filemanager.UploadedFile, error) {
-	objectName, err := normalizeObjectName(objectName)
-	if err != nil {
-		return filemanager.UploadedFile{}, err
-	}
 	ctx, cancel := m.withTimeout(ctx)
 	defer cancel()
 
@@ -317,14 +359,9 @@ func (m *Manager) upload(ctx context.Context, objectName string, reader io.Reade
 	query := u.Query()
 	query.Set("resource", "file")
 	u.RawQuery = query.Encode()
-	resp, err := m.request(ctx, http.MethodPut, u, nil, nil, nil)
-	if err != nil {
+	if err := m.exec(ctx, "creating file", http.MethodPut, u, nil, nil, nil); err != nil {
 		return filemanager.UploadedFile{}, err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return filemanager.UploadedFile{}, responseError("creating file", resp)
-	}
-	_ = resp.Body.Close()
 
 	query = u.Query()
 	query.Del("resource")
@@ -332,26 +369,16 @@ func (m *Manager) upload(ctx context.Context, objectName string, reader io.Reade
 	query.Set("position", "0")
 	u.RawQuery = query.Encode()
 	headers := http.Header{"Content-Type": []string{"application/octet-stream"}}
-	resp, err = m.request(ctx, http.MethodPatch, u, reader, &size, headers)
-	if err != nil {
+	if err := m.exec(ctx, "uploading file", http.MethodPatch, u, reader, &size, headers); err != nil {
 		return filemanager.UploadedFile{}, err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return filemanager.UploadedFile{}, responseError("uploading file", resp)
-	}
-	_ = resp.Body.Close()
 
 	query.Set("action", "flush")
 	query.Set("position", strconv.FormatInt(size, 10))
 	u.RawQuery = query.Encode()
-	resp, err = m.request(ctx, http.MethodPatch, u, nil, nil, nil)
-	if err != nil {
+	if err := m.exec(ctx, "flushing file", http.MethodPatch, u, nil, nil, nil); err != nil {
 		return filemanager.UploadedFile{}, err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return filemanager.UploadedFile{}, responseError("flushing file", resp)
-	}
-	_ = resp.Body.Close()
 
 	locationURL := m.objectURL(objectName)
 	return filemanager.UploadedFile{Location: locationURL.String(), ObjectName: objectName}, nil
@@ -365,10 +392,6 @@ func (m *Manager) Download(ctx context.Context, output io.WriterAt, key string, 
 	if err != nil {
 		return err
 	}
-	objectName, err = normalizeObjectName(objectName)
-	if err != nil {
-		return err
-	}
 	ctx, cancel := m.withTimeout(ctx)
 	defer cancel()
 	resp, err := m.request(ctx, http.MethodGet, m.objectURL(objectName), nil, nil, nil)
@@ -379,7 +402,7 @@ func (m *Manager) Download(ctx context.Context, output io.WriterAt, key string, 
 		return responseError("downloading file", resp)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	_, err = io.Copy(&writerAtAdapter{writer: output}, resp.Body)
+	_, err = io.Copy(io.NewOffsetWriter(output, 0), resp.Body)
 	if err != nil {
 		return fmt.Errorf("writing OneLake download: %w", err)
 	}
@@ -392,20 +415,12 @@ func (m *Manager) Delete(ctx context.Context, keys []string) error {
 		if err != nil {
 			return err
 		}
-		objectName, err = normalizeObjectName(objectName)
-		if err != nil {
-			return err
-		}
 		requestCtx, cancel := m.withTimeout(ctx)
-		resp, err := m.request(requestCtx, http.MethodDelete, m.objectURL(objectName), nil, nil, nil)
+		err = m.exec(requestCtx, "deleting file", http.MethodDelete, m.objectURL(objectName), nil, nil, nil)
 		cancel()
 		if err != nil {
 			return err
 		}
-		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusNoContent {
-			return responseError("deleting file", resp)
-		}
-		_ = resp.Body.Close()
 	}
 	return nil
 }
@@ -432,12 +447,8 @@ func (m *Manager) GetObjectNameFromLocation(location string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parsing OneLake location: %w", err)
 	}
-	base := m.baseURL()
 	if u.Host != "" {
-		if u.Scheme != base.Scheme || u.Host != base.Host || !strings.HasPrefix(u.Path, base.Path+"/") {
-			return "", errors.New("location is outside the configured OneLake Lakehouse")
-		}
-		return normalizeObjectName(strings.TrimPrefix(strings.TrimPrefix(u.Path, base.Path), "/"))
+		return objectNameInLakehouse(m.baseURL(), u)
 	}
 	return normalizeObjectName(location)
 }
@@ -460,17 +471,6 @@ func normalizeObjectName(name string) (string, error) {
 		}
 	}
 	return name, nil
-}
-
-type writerAtAdapter struct {
-	writer io.WriterAt
-	offset int64
-}
-
-func (w *writerAtAdapter) Write(data []byte) (int, error) {
-	n, err := w.writer.WriteAt(data, w.offset)
-	w.offset += int64(n)
-	return n, err
 }
 
 type listSession struct {
