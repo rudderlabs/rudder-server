@@ -77,15 +77,15 @@ func TestValidateConfig(t *testing.T) {
 }
 
 func TestHostFromConfigDefaultsAndRejectsArbitraryHosts(t *testing.T) {
-	host, err := HostFromConfig(map[string]any{"host": "sql.fabric.example"})
+	host, err := hostFromConfig(map[string]any{"host": "sql.fabric.example"})
 	require.NoError(t, err)
 	require.Equal(t, defaultOneLakeHost, host)
 
-	host, err = HostFromConfig(map[string]any{"host": "sql.fabric.example", "oneLakeHost": "https://onelake.dfs.fabric.microsoft.com"})
+	host, err = hostFromConfig(map[string]any{"host": "sql.fabric.example", "oneLakeHost": "https://onelake.dfs.fabric.microsoft.com"})
 	require.NoError(t, err)
 	require.Equal(t, defaultOneLakeHost, host)
 
-	_, err = HostFromConfig(map[string]any{"oneLakeHost": "attacker.example"})
+	_, err = hostFromConfig(map[string]any{"oneLakeHost": "attacker.example"})
 	require.ErrorContains(t, err, "Microsoft OneLake endpoint")
 }
 

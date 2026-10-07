@@ -24,6 +24,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 const (
@@ -78,12 +80,13 @@ type Manager struct {
 	timeout time.Duration
 }
 
-func New(destConfig map[string]any) (*Manager, error) {
-	oneLakeHost, err := HostFromConfig(destConfig)
+// parseConfig reads the OneLake settings from a destination config without validating them.
+func parseConfig(destConfig map[string]any) (config, error) {
+	oneLakeHost, err := hostFromConfig(destConfig)
 	if err != nil {
-		return nil, err
+		return config{}, err
 	}
-	cfg := config{
+	return config{
 		Host:              oneLakeHost,
 		FabricWorkspaceID: stringConfig(destConfig, "fabricWorkspaceId"),
 		LakehouseID:       stringConfig(destConfig, "lakehouseId"),
@@ -91,6 +94,13 @@ func New(destConfig map[string]any) (*Manager, error) {
 		ClientID:          stringConfig(destConfig, "clientId"),
 		ClientSecret:      stringConfig(destConfig, "clientSecret"),
 		Prefix:            strings.Trim(stringConfig(destConfig, "prefix"), "/"),
+	}, nil
+}
+
+func New(destConfig map[string]any) (*Manager, error) {
+	cfg, err := parseConfig(destConfig)
+	if err != nil {
+		return nil, err
 	}
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
@@ -111,7 +121,7 @@ func newManager(cfg config, credential azcore.TokenCredential, client *http.Clie
 	}
 }
 
-func HostFromConfig(config map[string]any) (string, error) {
+func hostFromConfig(config map[string]any) (string, error) {
 	host := stringConfig(config, "oneLakeHost")
 	if host == "" {
 		host = stringConfig(config, "onelakeHost")
@@ -211,7 +221,7 @@ func objectNameInLakehouse(base url.URL, u *url.URL) (string, error) {
 // ValidateLocation checks that location is an absolute URL inside the Files root of the
 // Lakehouse configured in destConfig.
 func ValidateLocation(destConfig map[string]any, location string) error {
-	host, err := HostFromConfig(destConfig)
+	cfg, err := parseConfig(destConfig)
 	if err != nil {
 		return err
 	}
@@ -219,8 +229,7 @@ func ValidateLocation(destConfig map[string]any, location string) error {
 	if err != nil {
 		return fmt.Errorf("parsing OneLake location: %w", err)
 	}
-	base := lakehouseURL(host, stringConfig(destConfig, "fabricWorkspaceId"), stringConfig(destConfig, "lakehouseId"))
-	_, err = objectNameInLakehouse(base, u)
+	_, err = objectNameInLakehouse(lakehouseURL(cfg.Host, cfg.FabricWorkspaceID, cfg.LakehouseID), u)
 	return err
 }
 
@@ -271,7 +280,7 @@ func (m *Manager) exec(ctx context.Context, operation, method string, u url.URL,
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return responseError(operation, resp)
 	}
-	_ = resp.Body.Close()
+	httputil.CloseResponse(resp)
 	return nil
 }
 
@@ -407,15 +416,11 @@ func (m *Manager) Delete(ctx context.Context, keys []string) error {
 			return err
 		}
 		requestCtx, cancel := m.withTimeout(ctx)
-		resp, err := m.request(requestCtx, http.MethodDelete, m.objectURL(objectName), nil, nil, nil)
+		err = m.exec(requestCtx, "deleting file", http.MethodDelete, m.objectURL(objectName), nil, nil, nil)
 		cancel()
 		if err != nil {
 			return err
 		}
-		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusNoContent {
-			return responseError("deleting file", resp)
-		}
-		_ = resp.Body.Close()
 	}
 	return nil
 }

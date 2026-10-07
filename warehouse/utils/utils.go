@@ -549,6 +549,7 @@ func SnowflakeCloudProvider(config any) string {
 
 func ObjectStorageType(destType string, config any, useRudderStorage bool) string {
 	c := config.(map[string]any)
+	// Fabric loads with COPY INTO from its own Lakehouse, so it never uses RudderStack storage.
 	if destType == MicrosoftFabric {
 		return OneLake
 	}
