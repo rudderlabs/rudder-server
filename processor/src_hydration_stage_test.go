@@ -286,8 +286,6 @@ func TestSrcHydrationStage(t *testing.T) {
 		err := proc.config.asyncInit.WaitContext(ctx)
 		require.NoError(t, err)
 
-		// Create test message. earlyDestinationFilter mirrors the per-batch snapshot
-		// preprocessStage would have taken; Processor.earlyDestinationFilter defaults to true.
 		message := &srcHydrationMessage{
 			partition: "test-partition",
 			subJobs: subJob{
@@ -297,8 +295,7 @@ func TestSrcHydrationStage(t *testing.T) {
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,
 			},
-			eventsByMessageID:      make(map[string]types.SingularEventWithReceivedAt),
-			earlyDestinationFilter: true,
+			eventsByMessageID: make(map[string]types.SingularEventWithReceivedAt),
 		}
 
 		// Execute the source hydration stage
@@ -314,7 +311,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		require.EqualValues(t, result.reportMetrics[0], &reportingtypes.PUReportedMetric{
 			SourceID:       fblaSourceId,
 			SourceCategory: "webhook",
-			InPU:           reportingtypes.DESTINATION_FILTER,
+			InPU:           "",
 			PU:             reportingtypes.SOURCE_HYDRATION,
 			TerminalPU:     false,
 			InitialPU:      false,
@@ -387,8 +384,6 @@ func TestSrcHydrationStage(t *testing.T) {
 		err := proc.config.asyncInit.WaitContext(ctx)
 		require.NoError(t, err)
 
-		// Create test message. earlyDestinationFilter mirrors the per-batch snapshot
-		// preprocessStage would have taken; Processor.earlyDestinationFilter defaults to true.
 		message := &srcHydrationMessage{
 			partition: "test-partition",
 			subJobs: subJob{
@@ -398,8 +393,7 @@ func TestSrcHydrationStage(t *testing.T) {
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,
 			},
-			eventsByMessageID:      make(map[string]types.SingularEventWithReceivedAt),
-			earlyDestinationFilter: true,
+			eventsByMessageID: make(map[string]types.SingularEventWithReceivedAt),
 		}
 
 		// Execute the source hydration stage
@@ -417,7 +411,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		require.EqualValues(t, result.reportMetrics[0], &reportingtypes.PUReportedMetric{
 			SourceID:       fblaSourceId,
 			SourceCategory: "webhook",
-			InPU:           reportingtypes.DESTINATION_FILTER,
+			InPU:           "",
 			PU:             reportingtypes.SOURCE_HYDRATION,
 			TerminalPU:     false,
 			InitialPU:      false,
@@ -440,7 +434,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		require.EqualValues(t, result.reportMetrics[1], &reportingtypes.PUReportedMetric{
 			SourceID:       fblaSourceId,
 			SourceCategory: "webhook",
-			InPU:           reportingtypes.DESTINATION_FILTER,
+			InPU:           "",
 			PU:             reportingtypes.SOURCE_HYDRATION,
 			TerminalPU:     false,
 			InitialPU:      false,
@@ -731,9 +725,8 @@ func TestSrcHydrationStage(t *testing.T) {
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,
 			},
-			eventsByMessageID:      make(map[string]types.SingularEventWithReceivedAt),
-			earlyDestinationFilter: true,
-			reportMetrics:          []*reportingtypes.PUReportedMetric{sentinel1, sentinel2},
+			eventsByMessageID: make(map[string]types.SingularEventWithReceivedAt),
+			reportMetrics:     []*reportingtypes.PUReportedMetric{sentinel1, sentinel2},
 		}
 
 		// Execute the source hydration stage
@@ -747,7 +740,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		hydrationFailureRow := &reportingtypes.PUReportedMetric{
 			SourceID:       fblaSourceId,
 			SourceCategory: "webhook",
-			InPU:           reportingtypes.DESTINATION_FILTER,
+			InPU:           "",
 			PU:             reportingtypes.SOURCE_HYDRATION,
 			TerminalPU:     false,
 			InitialPU:      false,

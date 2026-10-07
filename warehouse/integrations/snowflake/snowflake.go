@@ -273,24 +273,6 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return true
 }
 
-func (sf *Snowflake) authString() (string, error) {
-	var auth string
-	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) || (sf.CloudProvider == "AWS" && sf.Warehouse.GetStringDestinationConfig(sf.conf, model.StorageIntegrationSetting) == "") {
-		var tempAccessKeyId, tempSecretAccessKey, token string
-		tempAccessKeyId, tempSecretAccessKey, token, err := whutils.GetTemporaryS3Cred(&sf.Warehouse.Destination)
-		if err != nil {
-			return "", fmt.Errorf("getting temporary s3 credentials: %w", err)
-		}
-		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
-	} else {
-		// The storage integration name comes from the destination configuration, not from event data.
-		// It is intentionally left unquoted: quoting would make it case-sensitive and break existing
-		// configurations that rely on Snowflake resolving unquoted identifiers to uppercase.
-		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, sf.Warehouse.GetStringDestinationConfig(sf.conf, model.StorageIntegrationSetting))
-	}
-	return auth, nil
-}
-
 // deleteByStatement builds the source job cleanup statement. The columns are
 // converted to provider case before being quoted: Snowflake stores an unquoted
 // identifier upper cased, so quoting the lower case spelling would not resolve.
@@ -616,26 +598,26 @@ func (sf *Snowflake) copyInto(
 		sf.ObjectStorage,
 		csvObjectLocation,
 	)
-	authString, err := sf.authString()
-	if err != nil {
-		return nil, fmt.Errorf("getting auth string: %w", err)
-	}
-
-	copyStmt := fmt.Sprintf(
-		`COPY INTO
+	copyStmt, err := sf.newCopyStatement(func(authClause string) string {
+		return fmt.Sprintf(
+			`COPY INTO
 			%s(%v)
 		FROM
 		  %s %s
 		PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE)
 		TRUNCATECOLUMNS = TRUE;`,
-		whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, copyTargetTable),
-		sortedColumnNames,
-		whutils.SQLStringLiteralBackslash(loadFolder),
-		authString,
-	)
+			whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, copyTargetTable),
+			sortedColumnNames,
+			whutils.SQLStringLiteralBackslash(loadFolder),
+			authClause,
+		)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("building copy statement: %w", err)
+	}
 
-	rows, err := db.QueryContext(ctx, copyStmt)
+	rows, err := copyStmt.queryContext(ctx, db)
 	if err != nil {
 		return nil, fmt.Errorf("copy into table: %w", err)
 	}
@@ -706,38 +688,31 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 		return fmt.Errorf("cannot connect to snowflake with namespace %q: %w", sf.Namespace, err)
 	}
 
-	authString, err := sf.authString()
-	if err != nil {
-		return fmt.Errorf("getting auth string: %w", err)
-	}
-
 	sortedColumnNames := whutils.JoinQuotedIdentifiers([]string{
 		"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE",
 	}, whutils.DoubleQuoteIdentifier, ",")
 	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
-	sqlStatement := fmt.Sprintf(`
+	copyStmt, err := sf.newCopyStatement(func(authClause string) string {
+		return fmt.Sprintf(`
 		COPY INTO %s(%v)
 		FROM %s
 		%s
 		PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE;`,
-		whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, identityMergeRulesTable),
-		sortedColumnNames,
-		whutils.SQLStringLiteralBackslash(loadLocation),
-		authString,
-	)
-
-	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
-		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
-		"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
-		"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
+			whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, identityMergeRulesTable),
+			sortedColumnNames,
+			whutils.SQLStringLiteralBackslash(loadLocation),
+			authClause,
+		)
 	})
-	if regexErr == nil {
-		log.Infon("Copying identity merge rules for table", logger.NewStringField(lf.Query, sanitisedSQLStmt))
+	if err != nil {
+		return fmt.Errorf("building copy statement: %w", err)
 	}
 
-	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
+	log.Infon("Copying identity merge rules for table", logger.NewStringField(lf.Query, copyStmt.String()))
+
+	if _, err = copyStmt.execContext(ctx, db); err != nil {
 		log.Errorn("Error while copying identity merge rules for table", obskit.Error(err))
 		return fmt.Errorf("cannot copy into table %q: %w", identityMergeRulesTable, err)
 	}
@@ -796,27 +771,27 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 		return fmt.Errorf("cannot add autoincrement column to %s.%q: %w", schemaIdentifier, stagingTableName, err)
 	}
 
-	authString, err := sf.authString()
-	if err != nil {
-		return fmt.Errorf("getting auth string: %w", err)
-	}
-
 	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
-	sqlStatement = fmt.Sprintf(
-		`COPY INTO %s("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT")
+	copyStmt, err := sf.newCopyStatement(func(authClause string) string {
+		return fmt.Sprintf(
+			`COPY INTO %s("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT")
 		FROM %s %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE`,
-		whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, stagingTableName),
-		whutils.SQLStringLiteralBackslash(loadLocation),
-		authString,
-	)
+			whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, stagingTableName),
+			whutils.SQLStringLiteralBackslash(loadLocation),
+			authClause,
+		)
+	})
+	if err != nil {
+		return fmt.Errorf("building copy statement: %w", err)
+	}
 
-	log.Infon("Copying identity mappings for table", logger.NewStringField(lf.Query, sqlStatement))
-	_, err = db.ExecContext(ctx, sqlStatement)
+	log.Infon("Copying identity mappings for table", logger.NewStringField(lf.Query, copyStmt.String()))
+	_, err = copyStmt.execContext(ctx, db)
 	if err != nil {
 		log.Errorn("Error running COPY for table",
-			logger.NewStringField(lf.Query, sqlStatement),
+			logger.NewStringField(lf.Query, copyStmt.String()),
 			obskit.Error(err),
 		)
 		return fmt.Errorf("cannot run copy into %s.%q: %v", schemaIdentifier, stagingTableName, err)
@@ -1153,11 +1128,7 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmw.DB
 		),
 		sqlmw.WithSlowQueryThreshold(sf.config.slowQueryThreshold),
 		sqlmw.WithQueryTimeout(sf.connectTimeout),
-		sqlmw.WithSecretsRegex(map[string]string{
-			"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
-			"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
-			"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
-		}),
+		sqlmw.WithSecretsRegex(copyCredentialsRegex),
 	)
 	return middleware, nil
 }
@@ -1470,22 +1441,22 @@ func (sf *Snowflake) Connect(ctx context.Context, warehouse model.Warehouse) (cl
 func (sf *Snowflake) TestLoadTable(
 	ctx context.Context, location, tableName string, _ map[string]any, _ string,
 ) error {
-	authString, err := sf.authString()
-	if err != nil {
-		return fmt.Errorf("getting auth string: %w", err)
-	}
-
 	loadFolder := whutils.GetObjectFolder(sf.ObjectStorage, location)
-	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM %s %s PATTERN = '.*\.csv\.gz'
+	copyStmt, err := sf.newCopyStatement(func(authClause string) string {
+		return fmt.Sprintf(`COPY INTO %v(%v) FROM %s %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE`,
-		whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, tableName),
-		fmt.Sprintf(`%s, %s`, whutils.DoubleQuoteIdentifier("id"), whutils.DoubleQuoteIdentifier("val")),
-		whutils.SQLStringLiteralBackslash(loadFolder),
-		authString,
-	)
+			whutils.QuoteQualifiedIdentifier(whutils.DoubleQuoteIdentifier, sf.Namespace, tableName),
+			fmt.Sprintf(`%s, %s`, whutils.DoubleQuoteIdentifier("id"), whutils.DoubleQuoteIdentifier("val")),
+			whutils.SQLStringLiteralBackslash(loadFolder),
+			authClause,
+		)
+	})
+	if err != nil {
+		return fmt.Errorf("building copy statement: %w", err)
+	}
 
-	_, err = sf.DB.ExecContext(ctx, sqlStatement)
+	_, err = copyStmt.execContext(ctx, sf.DB)
 	return err
 }
 

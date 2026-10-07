@@ -110,7 +110,8 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		sourceSteps.trackingPlanValidation = true
 		sourcePipelineSteps[sourceId] = sourceSteps
 
-		inPU := reportingtypes.DESTINATION_FILTER
+		// inPU stays empty when no earlier reporting stage ran for the event.
+		inPU := ""
 		if sourcePipelineSteps[sourceId].srcHydration {
 			inPU = reportingtypes.SOURCE_HYDRATION
 		}

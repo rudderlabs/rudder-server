@@ -629,11 +629,19 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 
 	var statusList []*jobsdb.JobStatusT
 
+	// warehouseServiceFailedSince is captured under the same lock that sets it, and the
+	// abort check below uses this local copy rather than re-reading the field. The field is
+	// shared by every destination of this destType, and any warehouse batch that is not a
+	// ping failure zeroes it, so a concurrent success could otherwise reset it between the
+	// write and the read - leaving the check to compare against the zero time.Time, which is
+	// ~2000 years in the past and trivially exceeds any retry window.
+	var warehouseServiceFailedSince time.Time
 	if isWarehouse && notifyWarehouseErr {
 		brt.warehouseServiceFailedTimeMu.Lock()
 		if brt.warehouseServiceFailedTime.IsZero() {
 			brt.warehouseServiceFailedTime = time.Now()
 		}
+		warehouseServiceFailedSince = brt.warehouseServiceFailedTime
 		brt.warehouseServiceFailedTimeMu.Unlock()
 	} else if isWarehouse {
 		brt.warehouseServiceFailedTimeMu.Lock()
@@ -675,15 +683,13 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			}
 			if notifyWarehouseErr && isWarehouse {
 				// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
-				brt.warehouseServiceFailedTimeMu.RLock()
-				if time.Since(brt.warehouseServiceFailedTime) > brt.warehouseServiceMaxRetryTime.Load() {
+				if brt.warehouseServiceRetryLimitReached(warehouseServiceFailedSince) {
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 					failedMessage = &types.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()}
 					jobState = jobsdb.Aborted.State
 					errorCode = routerutils.DRAIN_ERROR_CODE
 				}
-				brt.warehouseServiceFailedTimeMu.RUnlock()
 			}
 		case jobsdb.Aborted.State:
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
@@ -896,6 +902,21 @@ func (brt *Handle) splitBatchJobsOnTimeWindow(batchJobs BatchedJobs) map[time.Ti
 		splitBatches[timeWindow].Jobs = append(splitBatches[timeWindow].Jobs, job)
 	}
 	return splitBatches
+}
+
+// warehouseServiceRetryLimitReached reports whether the warehouse service has been failing
+// for longer than warehouseServiceMaxRetryTime, and the jobs waiting on it should therefore be
+// aborted rather than retried.
+//
+// failedSince is the moment the current run of warehouse-service failures started, captured by
+// the caller under warehouseServiceFailedTimeMu. A zero failedSince means no failure start was
+// recorded, which must never abort: the zero time.Time is year 1, so comparing it against any
+// retry window would discard jobs on their first attempt.
+func (brt *Handle) warehouseServiceRetryLimitReached(failedSince time.Time) bool {
+	if failedSince.IsZero() {
+		return false
+	}
+	return time.Since(failedSince) > brt.warehouseServiceMaxRetryTime.Load()
 }
 
 func (brt *Handle) retryLimitReached(status *jobsdb.JobStatusT) bool {

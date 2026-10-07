@@ -148,6 +148,7 @@ type Deltalake struct {
 		retryMinWait           time.Duration
 		retryMaxWait           time.Duration
 		maxErrorLength         int
+		validationMaxTables    int
 	}
 }
 
@@ -165,6 +166,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Deltalake {
 	dl.config.retryMinWait = conf.GetDurationVar(1, time.Second, "Warehouse.deltalake.retryMinWait")
 	dl.config.retryMaxWait = conf.GetDurationVar(300, time.Second, "Warehouse.deltalake.retryMaxWait")
 	dl.config.maxErrorLength = conf.GetIntVar(64*1024, 1, "Warehouse.deltalake.maxErrorLength") // 64 KB
+	dl.config.validationMaxTables = conf.GetIntVar(5, 1, "Warehouse.deltalake.validationMaxTables")
 	return dl
 }
 
@@ -345,6 +347,10 @@ func (d *Deltalake) dropTable(ctx context.Context, table string) error {
 
 // FetchSchema fetches the schema from the warehouse
 func (d *Deltalake) FetchSchema(ctx context.Context) (model.Schema, error) {
+	return d.fetchSchema(ctx, 0)
+}
+
+func (d *Deltalake) fetchSchema(ctx context.Context, maxTables int) (model.Schema, error) {
 	// Since error handling is not so good with the Databricks driver we need to verify the exact string in the error.
 	// Therefore, creating the schema every time before we fetch it. Also, creating the schema is idempotent.
 	log := d.logger.Withn(
@@ -367,6 +373,13 @@ func (d *Deltalake) FetchSchema(ctx context.Context) (model.Schema, error) {
 		return model.Schema{}, fmt.Errorf("fetching tables: %w", err)
 	}
 	log.Debugn("Fetched tables", logger.NewIntField("tableCount", int64(len(tableNames))))
+	if maxTables > 0 && len(tableNames) > maxTables {
+		log.Debugn("Limiting tables for schema validation",
+			logger.NewIntField("tableCount", int64(len(tableNames))),
+			logger.NewIntField("maxTables", int64(maxTables)),
+		)
+		tableNames = tableNames[:maxTables]
+	}
 
 	// For each table, fetch the attributes
 	for _, tableName := range tableNames {
@@ -1418,7 +1431,7 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 }
 
 func (d *Deltalake) TestFetchSchema(ctx context.Context) error {
-	_, err := d.FetchSchema(ctx)
+	_, err := d.fetchSchema(ctx, d.config.validationMaxTables)
 	return err
 }
 
