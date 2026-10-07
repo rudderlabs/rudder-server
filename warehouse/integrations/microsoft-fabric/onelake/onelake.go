@@ -24,8 +24,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 const (
@@ -277,15 +275,14 @@ func (m *Manager) exec(ctx context.Context, operation, method string, u url.URL,
 	if err != nil {
 		return err
 	}
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return responseError(operation, resp)
 	}
-	httputil.CloseResponse(resp)
 	return nil
 }
 
 func responseError(operation string, response *http.Response) error {
-	defer func() { _ = response.Body.Close() }()
 	switch response.StatusCode {
 	case http.StatusNotFound:
 		return fmt.Errorf("lakehouse_not_found: %s failed with HTTP %d; verify workspace and Lakehouse GUIDs", operation, response.StatusCode)
@@ -398,10 +395,10 @@ func (m *Manager) Download(ctx context.Context, output io.WriterAt, key string, 
 	if err != nil {
 		return err
 	}
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 		return responseError("downloading file", resp)
 	}
-	defer func() { _ = resp.Body.Close() }()
 	_, err = io.Copy(io.NewOffsetWriter(output, 0), resp.Body)
 	if err != nil {
 		return fmt.Errorf("writing OneLake download: %w", err)
@@ -509,10 +506,10 @@ func (s *listSession) Next() ([]*filemanager.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, responseError("listing files", resp)
 	}
-	defer func() { _ = resp.Body.Close() }()
 
 	var listing struct {
 		Paths []struct {
