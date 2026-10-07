@@ -7217,6 +7217,529 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 	})
 }
 
+// TestSourceOutReporting covers the source_out rows emitted in pretransformStage: one row per
+// event that reaches the destination fan-out, succeeded when it has at least one candidate
+// destination and filtered when it has none, gated by Reporting.sourceOutMetrics.enabled.
+func TestSourceOutReporting(t *testing.T) {
+	type rowFilter = func(*reportingtypes.PUReportedMetric) bool
+	byPU := func(pu string) rowFilter {
+		return func(m *reportingtypes.PUReportedMetric) bool { return m.PU == pu }
+	}
+	pick := func(metrics []*reportingtypes.PUReportedMetric, keep rowFilter) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool { return keep(m) })
+	}
+	withoutRows := func(metrics []*reportingtypes.PUReportedMetric, drop rowFilter) []*reportingtypes.PUReportedMetric {
+		return lo.Reject(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool { return drop(m) })
+	}
+	isSourceOut := byPU(reportingtypes.SOURCE_OUT)
+	isSourceLevelDestFilter := func(m *reportingtypes.PUReportedMetric) bool {
+		return m.PU == reportingtypes.DESTINATION_FILTER && m.DestinationID == ""
+	}
+	sourceOutRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return pick(metrics, isSourceOut)
+	}
+	destEnterRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return pick(metrics, byPU(reportingtypes.DESTINATION_ENTER))
+	}
+	destFilterRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return pick(metrics, byPU(reportingtypes.DESTINATION_FILTER))
+	}
+	sourceLevelDestFilterRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return pick(metrics, isSourceLevelDestFilter)
+	}
+	perDestFilterRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return pick(destFilterRows(metrics), func(m *reportingtypes.PUReportedMetric) bool { return m.DestinationID != "" })
+	}
+	sumCount := func(rows []*reportingtypes.PUReportedMetric) int64 {
+		var total int64
+		for _, r := range rows {
+			total += r.StatusDetail.Count
+		}
+		return total
+	}
+
+	type sourceOutView struct {
+		SourceID, DestinationID, InPU, Status string
+		StatusCode                            int
+		Count                                 int64
+		InitialPU, TerminalPU                 bool
+	}
+	viewSourceOut := func(rows []*reportingtypes.PUReportedMetric) []sourceOutView {
+		return lo.Map(rows, func(r *reportingtypes.PUReportedMetric, _ int) sourceOutView {
+			return sourceOutView{
+				SourceID:      r.SourceID,
+				DestinationID: r.DestinationID,
+				InPU:          r.InPU,
+				Status:        r.StatusDetail.Status,
+				StatusCode:    r.StatusDetail.StatusCode,
+				Count:         r.StatusDetail.Count,
+				InitialPU:     r.InitialPU,
+				TerminalPU:    r.TerminalPU,
+			}
+		})
+	}
+	succeeded := func(src string, n int64) sourceOutView {
+		return sourceOutView{SourceID: src, Status: jobsdb.Succeeded.State, StatusCode: reportingtypes.SuccessEventCode, Count: n}
+	}
+	filtered := func(src string, n int64) sourceOutView {
+		return sourceOutView{SourceID: src, Status: jobsdb.Filtered.State, StatusCode: reportingtypes.FilterEventCode, Count: n}
+	}
+
+	// createSuppressionParameters builds raw job parameters carrying the is_user_suppressed flag.
+	createSuppressionParameters := func(sourceID string) []byte {
+		return fmt.Appendf(nil, `{"source_id":%q,"is_user_suppressed":true}`, sourceID)
+	}
+
+	// retlParams builds raw job parameters stamping the job for one specific destination.
+	retlParams := func(sourceID, destinationID string) []byte {
+		return fmt.Appendf(nil, `{"source_id":%q,"destination_id":%q}`, sourceID, destinationID)
+	}
+
+	type sourceOutProcessorOpts struct {
+		enableDedup     bool
+		enableReporting bool
+		dedupAllowedFn  func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error)
+	}
+
+	// newSourceOutProcessor returns a Handle with reporting and, optionally, dedup wired up,
+	// the config it reads the reloadable flag from, and the transformer clients so a case can
+	// attach a tracking-plan validator or a source hydration function.
+	newSourceOutProcessor := func(t *testing.T, opts sourceOutProcessorOpts) (*Handle, *config.Config, *testContext, *transformer.SimpleClients) {
+		t.Helper()
+		conf := config.New()
+		c := &testContext{}
+		c.Setup(t)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
+
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		require.NoError(t, err)
+
+		transformerClients := transformer.NewSimpleClients()
+		processor := NewHandle(conf, transformerClients)
+		processor.isolationStrategy = isolationStrategy
+		processor.config.archivalEnabled = config.SingleValueLoader(false)
+		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+
+		Setup(processor, c, opts.enableDedup, opts.enableReporting, t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+
+		if opts.enableDedup {
+			processor.dedup = c.MockDedup
+			allowedFn := opts.dedupAllowedFn
+			if allowedFn == nil {
+				allowedFn = func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+					allowed := make(map[dedup.BatchKey]bool, len(keys))
+					for _, k := range keys {
+						allowed[k] = true
+					}
+					return allowed, nil
+				}
+			}
+			c.MockDedup.EXPECT().Allowed(gomock.Any()).DoAndReturn(allowedFn).AnyTimes()
+		}
+
+		return processor, conf, c, transformerClients
+	}
+
+	// runSourceOutPipeline drives preprocessStage -> srcHydrationStage -> pretransformStage.
+	runSourceOutPipeline := func(t *testing.T, processor *Handle, jobs []*jobsdb.JobT) *transformationMessage {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		srcHydrationMsg, err := processor.preprocessStage("", subJob{ctx: ctx, subJobs: jobs}, 0)
+		require.NoError(t, err)
+
+		preTransMsg, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
+
+		transMsg, err := processor.pretransformStage("", preTransMsg)
+		require.NoError(t, err)
+		return transMsg
+	}
+
+	// defaultPayload renders a singular event without an "integrations" key, so every
+	// destination of the source is a candidate.
+	defaultPayload := func(e mockEventData) string {
+		return fmt.Sprintf(
+			`{"rudderId":"some-rudder-id","messageId":"message-%s","some-property":"property-%s",`+
+				`"originalTimestamp":%q,"sentAt":%q,"context":{}}`,
+			e.id, e.id, e.originalTimestamp, e.sentAt,
+		)
+	}
+
+	// optOutPayload opts every destination out via "integrations":{"All":false}.
+	optOutPayload := func(e mockEventData) string {
+		return fmt.Sprintf(
+			`{"rudderId":"some-rudder-id","messageId":"message-%s","some-property":"property-%s",`+
+				`"originalTimestamp":%q,"sentAt":%q,"integrations":{"All":false},"context":{}}`,
+			e.id, e.id, e.originalTimestamp, e.sentAt,
+		)
+	}
+
+	// job builds one gateway job with the given parameters carrying the given events, rendered
+	// with eventCreator (defaultPayload when nil).
+	job := func(jobID int64, params []byte, events []mockEventData, eventCreator func(mockEventData) string) *jobsdb.JobT {
+		if eventCreator == nil {
+			eventCreator = defaultPayload
+		}
+		return &jobsdb.JobT{
+			UUID:      uuid.New(),
+			JobID:     jobID,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabled,
+				"2001-01-02T02:23:45.000Z",
+				events,
+				eventCreator,
+			),
+			EventCount: len(events),
+			Parameters: params,
+		}
+	}
+
+	// payloadWithType renders a singular event whose type comes from e.params["type"]
+	// (default "track").
+	payloadWithType := func(e mockEventData) string {
+		eventType := e.params["type"]
+		if eventType == "" {
+			eventType = "track"
+		}
+		return fmt.Sprintf(
+			`{"rudderId":"some-rudder-id","messageId":"message-%s","some-property":"property-%s",`+
+				`"originalTimestamp":%q,"sentAt":%q,"type":%q,"context":{}}`,
+			e.id, e.id, e.originalTimestamp, e.sentAt, eventType,
+		)
+	}
+
+	eventWithID := func(id string) []mockEventData {
+		return []mockEventData{{id: id, originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}}
+	}
+	oneEvent := eventWithID("1")
+	const unavailableDestinationID = "not-connected-destination-id"
+
+	t.Run("a source with destinations gets exactly one source_out succeeded/200 row per event, not one per destination, with empty destinationId and inPU", func(t *testing.T) {
+		processor, conf, c, _ := newSourceOutProcessor(t, sourceOutProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceOutMetrics.enabled", true)
+
+		jobs := []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabled), oneEvent, nil)}
+		transMsg := runSourceOutPipeline(t, processor, jobs)
+
+		rows := sourceOutRows(transMsg.reportMetrics)
+		require.ElementsMatch(t, []sourceOutView{succeeded(SourceIDEnabled, 1)}, viewSourceOut(rows))
+		require.Nil(t, rows[0].StatusDetail.SampleEvent)
+		require.Len(t, destEnterRows(transMsg.reportMetrics), 3, "the event fans out to three destinations")
+	})
+
+	t.Run("a zero-candidate event gets one source_out filtered/298 row and no destination_filter row when the flag is on", func(t *testing.T) {
+		processor, conf, c, _ := newSourceOutProcessor(t, sourceOutProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceOutMetrics.enabled", true)
+
+		jobs := []*jobsdb.JobT{job(1, createBatchParameters(SourceIDDisabled), oneEvent, nil)}
+		transMsg := runSourceOutPipeline(t, processor, jobs)
+
+		rows := sourceOutRows(transMsg.reportMetrics)
+		require.ElementsMatch(t, []sourceOutView{filtered(SourceIDDisabled, 1)}, viewSourceOut(rows))
+		require.Nil(t, rows[0].StatusDetail.SampleEvent)
+		require.Empty(t, destFilterRows(transMsg.reportMetrics))
+		require.Empty(t, destEnterRows(transMsg.reportMetrics))
+		require.Empty(t, transMsg.groupedEvents)
+	})
+
+	t.Run("a RETL event stamped for an unavailable destination gets source_out filtered and no rows for the source's other destinations", func(t *testing.T) {
+		processor, conf, c, _ := newSourceOutProcessor(t, sourceOutProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceOutMetrics.enabled", true)
+
+		jobs := []*jobsdb.JobT{job(1, retlParams(SourceIDEnabled, unavailableDestinationID), oneEvent, nil)}
+		transMsg := runSourceOutPipeline(t, processor, jobs)
+
+		require.ElementsMatch(t, []sourceOutView{filtered(SourceIDEnabled, 1)}, viewSourceOut(sourceOutRows(transMsg.reportMetrics)))
+		require.Empty(t, destFilterRows(transMsg.reportMetrics))
+		require.Empty(t, destEnterRows(transMsg.reportMetrics))
+		require.Empty(t, transMsg.groupedEvents)
+	})
+
+	t.Run("an event every destination opts out of is source_out succeeded and keeps its per-destination filtered_integration rows", func(t *testing.T) {
+		processor, conf, c, _ := newSourceOutProcessor(t, sourceOutProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceOutMetrics.enabled", true)
+
+		jobs := []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabled), oneEvent, optOutPayload)}
+		transMsg := runSourceOutPipeline(t, processor, jobs)
+
+		require.ElementsMatch(t, []sourceOutView{succeeded(SourceIDEnabled, 1)}, viewSourceOut(sourceOutRows(transMsg.reportMetrics)))
+
+		allDestinations := []string{DestinationIDEnabledA, DestinationIDEnabledB, DestinationIDEnabledC}
+		enterIDs := lo.Map(destEnterRows(transMsg.reportMetrics), func(r *reportingtypes.PUReportedMetric, _ int) string { return r.DestinationID })
+		require.ElementsMatch(t, allDestinations, enterIDs)
+
+		type filterTuple struct {
+			DestinationID string
+			Status        string
+			StatusCode    int
+		}
+		gotFilters := lo.Map(perDestFilterRows(transMsg.reportMetrics), func(r *reportingtypes.PUReportedMetric, _ int) filterTuple {
+			return filterTuple{r.DestinationID, r.StatusDetail.Status, r.StatusDetail.StatusCode}
+		})
+		wantFilters := lo.Map(allDestinations, func(id string, _ int) filterTuple {
+			return filterTuple{id, reportingtypes.FilteredIntegrationStatus, reportingtypes.FilterEventCode}
+		})
+		require.ElementsMatch(t, wantFilters, gotFilters)
+		require.Empty(t, sourceLevelDestFilterRows(transMsg.reportMetrics))
+	})
+
+	t.Run("with the flag off a zero-candidate event keeps its filtered_no_destination row and no source_out row, and turning the flag on only moves that row", func(t *testing.T) {
+		buildJobs := func() []*jobsdb.JobT {
+			return []*jobsdb.JobT{
+				job(1, createBatchParameters(SourceIDEnabled), oneEvent, nil),
+				job(2, createBatchParameters(SourceIDEnabled), eventWithID("2"), optOutPayload),
+				job(3, createBatchParameters(SourceIDDisabled), eventWithID("3"), nil),
+			}
+		}
+
+		offProcessor, _, offCtx, _ := newSourceOutProcessor(t, sourceOutProcessorOpts{enableReporting: true})
+		defer offCtx.Finish()
+		off := runSourceOutPipeline(t, offProcessor, buildJobs())
+
+		onProcessor, onConf, onCtx, _ := newSourceOutProcessor(t, sourceOutProcessorOpts{enableReporting: true})
+		defer onCtx.Finish()
+		onConf.Set("Reporting.sourceOutMetrics.enabled", true)
+		on := runSourceOutPipeline(t, onProcessor, buildJobs())
+
+		require.Empty(t, sourceOutRows(off.reportMetrics))
+		offSourceLevel := sourceLevelDestFilterRows(off.reportMetrics)
+		require.Len(t, offSourceLevel, 1)
+		require.Equal(t, SourceIDDisabled, offSourceLevel[0].SourceID)
+		require.Equal(t, "", offSourceLevel[0].DestinationID)
+		require.Equal(t, reportingtypes.FilteredNoDestinationStatus, offSourceLevel[0].StatusDetail.Status)
+		require.Equal(t, reportingtypes.FilterEventCode, offSourceLevel[0].StatusDetail.StatusCode)
+		require.EqualValues(t, 1, offSourceLevel[0].StatusDetail.Count)
+		require.Equal(t, "", offSourceLevel[0].InPU)
+
+		require.Empty(t, sourceLevelDestFilterRows(on.reportMetrics))
+		require.ElementsMatch(
+			t,
+			withoutRows(off.reportMetrics, isSourceLevelDestFilter),
+			withoutRows(on.reportMetrics, isSourceOut),
+		)
+	})
+
+	t.Run("succeeded plus filtered source_out counts equal the events entering the fan-out, and both states of one source share a connection key", func(t *testing.T) {
+		processor, conf, c, _ := newSourceOutProcessor(t, sourceOutProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceOutMetrics.enabled", true)
+
+		jobs := []*jobsdb.JobT{
+			job(1, createBatchParameters(SourceIDEnabled), []mockEventData{
+				{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+				{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+			}, nil),
+			job(2, createBatchParameters(SourceIDEnabled), eventWithID("3"), optOutPayload),
+			job(3, retlParams(SourceIDEnabled, unavailableDestinationID), eventWithID("4"), nil),
+			job(4, createBatchParameters(SourceIDDisabled), eventWithID("5"), nil),
+		}
+		transMsg := runSourceOutPipeline(t, processor, jobs)
+
+		rows := sourceOutRows(transMsg.reportMetrics)
+		require.ElementsMatch(t, []sourceOutView{
+			succeeded(SourceIDEnabled, 3),
+			filtered(SourceIDEnabled, 1),
+			filtered(SourceIDDisabled, 1),
+		}, viewSourceOut(rows))
+		require.EqualValues(t, 5, sumCount(rows))
+
+		enabledRows := lo.Filter(rows, func(r *reportingtypes.PUReportedMetric, _ int) bool { return r.SourceID == SourceIDEnabled })
+		require.Len(t, enabledRows, 2)
+		require.Equal(t, enabledRows[0].ConnectionDetails, enabledRows[1].ConnectionDetails)
+	})
+
+	t.Run("the flag takes effect on the running handle in both directions", func(t *testing.T) {
+		processor, conf, c, _ := newSourceOutProcessor(t, sourceOutProcessorOpts{enableReporting: true})
+		defer c.Finish()
+
+		jobsFor := func(base int64) []*jobsdb.JobT {
+			return []*jobsdb.JobT{
+				job(base, createBatchParameters(SourceIDEnabled), oneEvent, nil),
+				job(base+1, createBatchParameters(SourceIDDisabled), oneEvent, nil),
+			}
+		}
+		requireFlagOff := func(t *testing.T, msg *transformationMessage) {
+			t.Helper()
+			require.Empty(t, sourceOutRows(msg.reportMetrics))
+			sourceLevel := sourceLevelDestFilterRows(msg.reportMetrics)
+			require.Len(t, sourceLevel, 1)
+			require.Equal(t, SourceIDDisabled, sourceLevel[0].SourceID)
+			require.Equal(t, reportingtypes.FilteredNoDestinationStatus, sourceLevel[0].StatusDetail.Status)
+		}
+
+		requireFlagOff(t, runSourceOutPipeline(t, processor, jobsFor(1)))
+
+		conf.Set("Reporting.sourceOutMetrics.enabled", true)
+		on := runSourceOutPipeline(t, processor, jobsFor(3))
+		require.ElementsMatch(t, []sourceOutView{
+			succeeded(SourceIDEnabled, 1),
+			filtered(SourceIDDisabled, 1),
+		}, viewSourceOut(sourceOutRows(on.reportMetrics)))
+		require.Empty(t, sourceLevelDestFilterRows(on.reportMetrics))
+
+		conf.Set("Reporting.sourceOutMetrics.enabled", false)
+		requireFlagOff(t, runSourceOutPipeline(t, processor, jobsFor(5)))
+	})
+
+	t.Run("no source_out or destination_filter row when reporting is disabled, even with the flag on", func(t *testing.T) {
+		processor, conf, c, _ := newSourceOutProcessor(t, sourceOutProcessorOpts{enableReporting: false})
+		defer c.Finish()
+		conf.Set("Reporting.sourceOutMetrics.enabled", true)
+
+		jobs := []*jobsdb.JobT{
+			job(1, createBatchParameters(SourceIDEnabled), oneEvent, nil),
+			job(2, createBatchParameters(SourceIDDisabled), eventWithID("2"), nil),
+		}
+		transMsg := runSourceOutPipeline(t, processor, jobs)
+
+		require.Empty(t, sourceOutRows(transMsg.reportMetrics))
+		require.Empty(t, destFilterRows(transMsg.reportMetrics))
+	})
+
+	t.Run("events of the same name and type from one source aggregate into a single source_out row, split by event type", func(t *testing.T) {
+		processor, conf, c, _ := newSourceOutProcessor(t, sourceOutProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceOutMetrics.enabled", true)
+
+		trackEvents := []mockEventData{
+			{id: "1", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "track"}},
+			{id: "2", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "track"}},
+			{id: "3", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "track"}},
+		}
+		identifyEvents := []mockEventData{
+			{id: "4", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "identify"}},
+			{id: "5", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23", params: map[string]string{"type": "identify"}},
+		}
+		jobs := []*jobsdb.JobT{
+			job(1, createBatchParameters(SourceIDEnabled), append(trackEvents, identifyEvents...), payloadWithType),
+		}
+		transMsg := runSourceOutPipeline(t, processor, jobs)
+
+		rows := sourceOutRows(transMsg.reportMetrics)
+		require.Len(t, rows, 2, "one row per distinct event type")
+		for _, r := range rows {
+			require.Equal(t, jobsdb.Succeeded.State, r.StatusDetail.Status)
+		}
+
+		byType := lo.SliceToMap(rows, func(r *reportingtypes.PUReportedMetric) (string, int64) {
+			return r.StatusDetail.EventType, r.StatusDetail.Count
+		})
+		require.EqualValues(t, 3, byType["track"])
+		require.EqualValues(t, 2, byType["identify"])
+	})
+
+	t.Run("a batch spanning two sources yields one source_out row per source", func(t *testing.T) {
+		processor, conf, c, _ := newSourceOutProcessor(t, sourceOutProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceOutMetrics.enabled", true)
+
+		jobs := []*jobsdb.JobT{
+			job(1, createBatchParameters(SourceIDEnabled), eventWithID("1"), nil),
+			job(2, createBatchParameters(SourceIDEnabledNoUT), eventWithID("2"), nil),
+		}
+		transMsg := runSourceOutPipeline(t, processor, jobs)
+
+		rows := sourceOutRows(transMsg.reportMetrics)
+		require.Len(t, rows, 2, "a batch spanning two sources must not collapse into one row")
+		ids := lo.Map(rows, func(r *reportingtypes.PUReportedMetric, _ int) string { return r.SourceID })
+		require.ElementsMatch(t, []string{SourceIDEnabled, SourceIDEnabledNoUT}, ids)
+		for _, r := range rows {
+			require.EqualValues(t, 1, r.StatusDetail.Count)
+		}
+	})
+
+	t.Run("events dropped by tracking plan validation get no source_out row while the survivor in the same batch does", func(t *testing.T) {
+		// validateEvents runs before the fan-out loop, so tracking-plan drops never reach the
+		// emission site.
+		processor, conf, c, transformerClients := newSourceOutProcessor(t, sourceOutProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceOutMetrics.enabled", true)
+
+		dropOneKeepOne := func(_ context.Context, events []types.TransformerEvent) types.Response {
+			var resp types.Response
+			for _, e := range events {
+				if e.Metadata.MessageID == "message-drop" {
+					resp.FailedEvents = append(resp.FailedEvents, types.TransformerResponse{
+						Output:     e.Message,
+						Metadata:   e.Metadata,
+						StatusCode: reportingtypes.FilterEventCode,
+						Error:      "dropped by tracking plan",
+					})
+					continue
+				}
+				resp.Events = append(resp.Events, types.TransformerResponse{Output: e.Message, Metadata: e.Metadata})
+			}
+			return resp
+		}
+		transformerClients.WithDynamicTrackingPlanValidate(dropOneKeepOne)
+
+		events := []mockEventData{
+			{id: "drop", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+			{id: "keep", originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"},
+		}
+		jobs := []*jobsdb.JobT{job(1, createBatchParameters(SourceIDEnabledTp), events, nil)}
+		transMsg := runSourceOutPipeline(t, processor, jobs)
+
+		rows := sourceOutRows(transMsg.reportMetrics)
+		require.ElementsMatch(t, []sourceOutView{succeeded(SourceIDEnabledTp, 1)}, viewSourceOut(rows))
+	})
+
+	t.Run("events dropped in preprocess by dedup or user suppression get no source_out row", func(t *testing.T) {
+		dedupAllowedFn := func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+			allowed := make(map[dedup.BatchKey]bool, len(keys))
+			for _, k := range keys {
+				allowed[k] = k.Index != 1
+			}
+			return allowed, nil
+		}
+		processor, conf, c, _ := newSourceOutProcessor(t, sourceOutProcessorOpts{
+			enableReporting: true, enableDedup: true, dedupAllowedFn: dedupAllowedFn,
+		})
+		defer c.Finish()
+		conf.Set("Reporting.sourceOutMetrics.enabled", true)
+
+		jobs := []*jobsdb.JobT{
+			job(1, createSuppressionParameters(SourceIDEnabled), eventWithID("1"), nil),
+			job(2, createBatchParameters(SourceIDEnabled), eventWithID("2"), nil),
+			job(3, createBatchParameters(SourceIDEnabled), eventWithID("3"), nil),
+		}
+		transMsg := runSourceOutPipeline(t, processor, jobs)
+
+		rows := sourceOutRows(transMsg.reportMetrics)
+		require.ElementsMatch(t, []sourceOutView{succeeded(SourceIDEnabled, 1)}, viewSourceOut(rows))
+	})
+
+	t.Run("an event whose source hydration fails gets no source_out row while another source in the batch does", func(t *testing.T) {
+		processor, conf, c, transformerClients := newSourceOutProcessor(t, sourceOutProcessorOpts{enableReporting: true})
+		defer c.Finish()
+		conf.Set("Reporting.sourceOutMetrics.enabled", true)
+		transformerClients.WithDynamicSrcHydration(func(context.Context, types.SrcHydrationRequest) (types.SrcHydrationResponse, error) {
+			return types.SrcHydrationResponse{}, fmt.Errorf("hydrating: %w", types.ErrPermanentTransformerFailure)
+		})
+
+		jobs := []*jobsdb.JobT{
+			job(1, createBatchParameters(SourceIDHydrationTp), oneEvent, nil),
+			job(2, createBatchParameters(SourceIDEnabled), eventWithID("2"), nil),
+		}
+		transMsg := runSourceOutPipeline(t, processor, jobs)
+
+		require.ElementsMatch(t, []sourceOutView{succeeded(SourceIDEnabled, 1)}, viewSourceOut(sourceOutRows(transMsg.reportMetrics)))
+	})
+}
+
 func TestClassifyDestinations(t *testing.T) {
 	t.Run("all candidates survive", func(t *testing.T) {
 		sourceID := "source-1"

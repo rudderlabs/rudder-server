@@ -502,6 +502,8 @@ func TestReportingDroppedEvents(t *testing.T) {
 			err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir(), map[string]any{
 				"Dedup.enableDedup": true,
 				"RUDDER_TMPDIR":     dedupTmpDir,
+
+				"Reporting.sourceOutMetrics.enabled": true,
 			})
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
@@ -558,10 +560,18 @@ func TestReportingDroppedEvents(t *testing.T) {
 			// the gw_ingested status code must not leak into the gateway billing row, which
 			// master writes with status_code 0
 			gatewayWithStatusCode := reportCount("source_id = 'source-1' and destination_id = '' and pu = 'gateway' and status_code = 200")
-			t.Logf("gw_ingested count: %d (matching: %d), gateway rows carrying status_code 200: %d", ingested, matching, gatewayWithStatusCode)
+			// source_out closes the source side of the same algebra: only the surviving event
+			// reaches the destination fan-out. source-1 has no connections, so that event is
+			// reported as source_out filtered, and destination_filter emits nothing for it while
+			// the flag is on.
+			sourceOut := reportCount("source_id = 'source-1' and destination_id = '' and pu = 'source_out'")
+			sourceOutMatching := reportCount("source_id = 'source-1' and destination_id = '' and pu = 'source_out' and status = 'filtered' and status_code = 298 and in_pu = '' and terminal_state = false and initial_state = false and error_type = ''")
+			destinationFilter := reportCount("source_id = 'source-1' and pu = 'destination_filter'")
+			t.Logf("gw_ingested count: %d (matching: %d), gateway rows carrying status_code 200: %d, source_out count: %d (matching: %d), destination_filter count: %d", ingested, matching, gatewayWithStatusCode, sourceOut, sourceOutMatching, destinationFilter)
 			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
-			return ingested == 3 && matching == 3 && gatewayWithStatusCode == 0
-		}, 10*time.Second, 1*time.Second, "every ingested event, duplicates included, should get a gw_ingested row")
+			return ingested == 3 && matching == 3 && gatewayWithStatusCode == 0 &&
+				sourceOut == 1 && sourceOutMatching == 1 && destinationFilter == 0
+		}, 10*time.Second, 1*time.Second, "every ingested event, duplicates included, should get a gw_ingested row, and only the survivor a source_out row")
 
 		cancel()
 		_ = wg.Wait()
@@ -576,7 +586,13 @@ func TestReportingDroppedEvents(t *testing.T) {
 	//	3. zero candidates      -> filtered_no_destination/298 with an empty destination_id
 	//	4. consent deny         -> filtered_consent/298 per destination, no source-level row
 	//
-	// Each batch is drained before the next is sent: report rows are committed in the same
+	// Reporting.sourceOutMetrics.enabled is flipped on at
+	// runtime after those four batches, so the same table also carries both of its flag states:
+	//
+	//	5. source_out on -> one succeeded row per event for source-1, not one per destination
+	//	6. source_out on -> one filtered row per event for source-2, which has no destinations, and no new filtered_no_destination row
+	//
+	// Batches are drained before the flag is flipped: report rows are committed in the same
 	// transaction as the gateway job statuses, so "all gw jobs succeeded" is a safe barrier.
 	t.Run("Per destination visibility at the destination filter boundary", func(t *testing.T) {
 		config.Reset()
@@ -780,6 +796,60 @@ func TestReportingDroppedEvents(t *testing.T) {
 			}, 30*time.Second, 500*time.Millisecond, "the consented destinations should still be routed to")
 			require.EqualValues(t, 0, routerJobCount("destination-5"),
 				"the consent-denied destination should not have received this batch")
+		})
+
+		// source_out. The same long-lived server now observes Reporting.sourceOutMetrics.enabled
+		// flipped on at runtime, after four batches have already drained with it off.
+		t.Run("source out flag on at runtime: one succeeded row per event for a source with destinations, not one per destination", func(t *testing.T) {
+			// nothing before the flip may have emitted a row
+			require.EqualValues(t, 0, reportCount("pu = 'source_out'"),
+				"no source_out rows while Reporting.sourceOutMetrics.enabled is off")
+
+			config.Set("Reporting.sourceOutMetrics.enabled", true)
+
+			// source-1 fans out to three enabled destinations; the row is pre-fan-out and per event
+			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-1", url))
+			drainGateway(5 * eventsPerBatch)
+
+			require.Eventually(t, func() bool {
+				// the full row shape is pinned here: in_pu written as NULL, initial_state flipping
+				// to true, or a non-empty destination_id has to fail this assertion
+				return reportCount("source_id = 'source-1' and pu = 'source_out' and status = 'succeeded' and status_code = 200 and in_pu = '' and destination_id = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "every event with a candidate destination should get exactly one source_out succeeded row")
+
+			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
+			// one row per event, not one per destination: a per-destination emission would make
+			// this 3*eventsPerBatch, and a filtered row for this source would push it above
+			// eventsPerBatch
+			require.EqualValues(t, eventsPerBatch, reportCount("source_id = 'source-1' and pu = 'source_out'"),
+				"source_out counts events entering the fan-out, not (event, destination) pairs")
+			// the same batches did fan out: three source-1 batches have entered three destinations each
+			require.EqualValues(t, 3*3*eventsPerBatch,
+				reportCount("source_id = 'source-1' and pu = 'destination_enter' and status = 'succeeded'"),
+				"this batch should still have entered all three destinations")
+			require.EqualValues(t, 0, reportCount("pu = 'source_out' and destination_id != ''"),
+				"source_out is a source-level row and must never carry a destination id")
+		})
+
+		t.Run("source out reports a source with no connections as filtered and stops its filtered_no_destination row", func(t *testing.T) {
+			// source-2 has no connections, so every event is a zero-candidate event. With the flag
+			// on it is reported once, as source_out filtered, instead of as destination_filter
+			// filtered_no_destination.
+			require.NoError(t, sendEvents(eventsPerBatch, "identify", "writekey-2", url))
+			drainGateway(6 * eventsPerBatch)
+
+			require.Eventually(t, func() bool {
+				return reportCount("source_id = 'source-2' and pu = 'source_out' and status = 'filtered' and status_code = 298 and in_pu = '' and destination_id = '' and terminal_state = false and initial_state = false and error_type = ''") == eventsPerBatch
+			}, 30*time.Second, 500*time.Millisecond, "a source with no destinations should get source_out filtered rows")
+
+			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
+			require.EqualValues(t, eventsPerBatch, reportCount("source_id = 'source-2' and pu = 'source_out'"),
+				"a zero-candidate source should get no source_out succeeded row")
+			// only the rows from the earlier zero-candidate batch, sent with the flag off
+			require.EqualValues(t, eventsPerBatch, reportCount("source_id = 'source-2' and pu = 'destination_filter'"),
+				"with the flag on, zero-candidate events should not get a filtered_no_destination row")
+			require.EqualValues(t, 0, reportCount("source_id = 'source-2' and pu = 'destination_enter'"),
+				"a source without destinations has no candidates to enter")
 		})
 
 		cancel()
