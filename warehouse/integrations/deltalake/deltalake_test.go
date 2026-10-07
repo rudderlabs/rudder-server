@@ -1142,6 +1142,60 @@ func TestIntegration(t *testing.T) {
 			)
 			require.Equal(t, records, whth.DiscardTestRecords())
 		})
+		t.Run("carriage return in quoted value", func(t *testing.T) {
+			// A quoted \r\n in the first row must not make Databricks auto-detect \r\n
+			// as the line separator: rows would merge, and the last column (uuid_ts)
+			// would hold the next row's first column.
+			tableName := "crlf_test_table"
+			crlfSchema := model.TableSchema{
+				"id":          "string",
+				"received_at": "datetime",
+				"test_string": "string",
+				"uuid_ts":     "datetime",
+			}
+
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/crlf.csv.gz", tableName)
+
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, crlfSchema, crlfSchema, whutils.LoadFileTypeCsv, false, false)
+
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
+			err := d.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = d.CreateSchema(ctx)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				dropSchema(t, d.DB.DB, namespace)
+			})
+
+			err = d.CreateTable(ctx, tableName, crlfSchema)
+			require.NoError(t, err)
+
+			loadTableStat, err := d.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, int64(3), loadTableStat.RowsInserted)
+			require.Equal(t, int64(0), loadTableStat.RowsUpdated)
+
+			records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
+				fmt.Sprintf(
+					`SELECT
+						id,
+						received_at,
+						test_string,
+						uuid_ts
+					FROM %s.%s
+					ORDER BY id;`,
+					namespace,
+					tableName,
+				),
+			)
+			require.Equal(t, [][]string{
+				{"1", "2026-10-01T08:03:00Z", "550-5.1.1 The email account does not exist.\r\n550 5.1.1 Please try again", "2026-10-01T08:12:01Z"},
+				{"2", "2026-10-01T08:04:00Z", "mailbox full", "2026-10-01T08:12:01Z"},
+				{"3", "2026-10-01T08:05:00Z", "421 4.7.0 try again later\r\n421 4.7.0 rate limited", "2026-10-01T08:12:01Z"},
+			}, records)
+		})
 		t.Run("parquet", func(t *testing.T) {
 			tableName := "parquet_test_table"
 
