@@ -3,18 +3,13 @@ package microsoftfabric
 import (
 	"context"
 	"database/sql"
-	"net/url"
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/microsoft/go-mssqldb/azuread"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -54,7 +49,7 @@ func testWarehouse(preferAppend bool) model.Warehouse {
 		Namespace: "schema.with.dot",
 		Destination: backendconfig.DestinationT{
 			Config: map[string]any{
-				"host":              "configured.fabric.example",
+				"host":              "configured.fabric.microsoft.com",
 				"database":          "warehouse",
 				"tenantId":          "tenant",
 				"clientId":          "client",
@@ -103,33 +98,15 @@ func TestAddColumnsMapsTextToVarcharMax(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestConnectionDSNUsesCompleteHostFixedPortAndEntraSPN(t *testing.T) {
+func TestConnectionConfig(t *testing.T) {
 	fabric := &MicrosoftFabric{warehouse: testWarehouse(false), connectTimeout: 3 * time.Second, conf: config.New()}
-	dsn := fabric.connectionDSN()
-	u, err := url.Parse(dsn)
-	require.NoError(t, err)
-	require.Equal(t, "configured.fabric.example:1433", u.Host)
-	require.Equal(t, "client@tenant", u.User.Username())
-	password, ok := u.User.Password()
-	require.True(t, ok)
-	require.Equal(t, "secret", password)
-	require.Equal(t, azuread.ActiveDirectoryServicePrincipal, u.Query().Get("fedauth"))
-	require.Equal(t, "warehouse", u.Query().Get("database"))
-	require.Equal(t, "true", u.Query().Get("encrypt"))
-	require.NotContains(t, u.Host, ".database.windows.net")
-}
-
-func TestConnectBootstrapsBeforeOpeningSQL(t *testing.T) {
-	bootstrap := newBootstrapper(nil)
-	bootstrap.newCredential = func(_, _, _ string) (azcore.TokenCredential, error) {
-		return nil, context.Canceled
-	}
-	fabric := New(config.New(), logger.NOP, stats.NOP)
-	fabric.bootstrapper = bootstrap
-
-	_, err := fabric.Connect(context.Background(), testWarehouse(false))
-	require.ErrorContains(t, err, "spn_token_bootstrap")
-	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, "configured.fabric.microsoft.com", fabric.connectionConfig().Host)
+	require.Equal(t, "warehouse", fabric.connectionConfig().Database)
+	require.Equal(t, "tenant", fabric.connectionConfig().TenantID)
+	require.Equal(t, "client", fabric.connectionConfig().ClientID)
+	require.Equal(t, "secret", fabric.connectionConfig().ClientSecret)
+	require.Equal(t, "11111111-1111-1111-1111-111111111111", fabric.connectionConfig().FabricWorkspaceID)
+	require.Equal(t, 3*time.Second, fabric.connectionConfig().Timeout)
 }
 
 func TestShouldMerge(t *testing.T) {

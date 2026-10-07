@@ -6,19 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/url"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/microsoft/go-mssqldb/azuread"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
+	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -31,9 +30,8 @@ import (
 )
 
 const (
-	provider        = warehouseutils.MicrosoftFabric
-	tableNameLimit  = 128
-	sqlEndpointPort = 1433
+	provider       = warehouseutils.MicrosoftFabric
+	tableNameLimit = 128
 )
 
 var (
@@ -96,7 +94,6 @@ var (
 		{Type: model.AlterColumnError, Format: regexp.MustCompile(`(?i)schema_evolution`)},
 		{Type: model.ConcurrentQueriesError, Format: regexp.MustCompile(`(?i)merge`)},
 	}
-	defaultBootstrapper = newBootstrapper(nil)
 )
 
 // MicrosoftFabric implements Fabric Warehouse loading through the SQL analytics endpoint.
@@ -109,7 +106,6 @@ type MicrosoftFabric struct {
 	conf           *config.Config
 	logger         logger.Logger
 	stats          stats.Stats
-	bootstrapper   *bootstrapper
 
 	config struct {
 		slowQueryThreshold time.Duration
@@ -118,10 +114,9 @@ type MicrosoftFabric struct {
 
 func New(conf *config.Config, log logger.Logger, stat stats.Stats) *MicrosoftFabric {
 	fabric := &MicrosoftFabric{
-		conf:         conf,
-		logger:       log.Child("integrations").Child("microsoft-fabric"),
-		stats:        stat,
-		bootstrapper: defaultBootstrapper,
+		conf:   conf,
+		logger: log.Child("integrations").Child("microsoft-fabric"),
+		stats:  stat,
 	}
 	fabric.config.slowQueryThreshold = conf.GetDurationVar(5, time.Minute, "Warehouse.microsoft_fabric.slowQueryThreshold")
 	return fabric
@@ -132,51 +127,30 @@ func stringConfig(values map[string]any, key string) string {
 	return value
 }
 
-func (f *MicrosoftFabric) credentials() (host, database, tenantID, clientID, clientSecret, workspaceID string) {
+func (f *MicrosoftFabric) connectionConfig() sqlconnectconfig.Fabric {
 	config := f.warehouse.Destination.Config
-	return f.warehouse.GetStringDestinationConfig(f.conf, model.HostSetting),
-		f.warehouse.GetStringDestinationConfig(f.conf, model.DatabaseSetting),
-		stringConfig(config, "tenantId"), stringConfig(config, "clientId"), stringConfig(config, "clientSecret"),
-		stringConfig(config, "fabricWorkspaceId")
-}
-
-func (f *MicrosoftFabric) bootstrap(ctx context.Context) error {
-	_, _, tenantID, clientID, clientSecret, workspaceID := f.credentials()
-	for name, value := range map[string]string{
-		"tenantId": tenantID, "clientId": clientID, "clientSecret": clientSecret, "fabricWorkspaceId": workspaceID,
-	} {
-		if strings.TrimSpace(value) == "" {
-			return fmt.Errorf("spn_token_bootstrap: %s is required", name)
-		}
+	return sqlconnectconfig.Fabric{
+		Host:              f.warehouse.GetStringDestinationConfig(f.conf, model.HostSetting),
+		Database:          f.warehouse.GetStringDestinationConfig(f.conf, model.DatabaseSetting),
+		TenantID:          stringConfig(config, "tenantId"),
+		ClientID:          stringConfig(config, "clientId"),
+		ClientSecret:      stringConfig(config, "clientSecret"),
+		FabricWorkspaceID: stringConfig(config, "fabricWorkspaceId"),
+		Timeout:           f.connectTimeout,
 	}
-	return f.bootstrapper.Bootstrap(ctx, tenantID, clientID, clientSecret, workspaceID)
-}
-
-func (f *MicrosoftFabric) connectionDSN() string {
-	host, database, tenantID, clientID, clientSecret, _ := f.credentials()
-	query := url.Values{}
-	query.Set("database", database)
-	query.Set("fedauth", azuread.ActiveDirectoryServicePrincipal)
-	query.Set("encrypt", "true")
-	if f.connectTimeout > 0 {
-		query.Set("dial timeout", strconv.FormatInt(int64(f.connectTimeout/time.Second), 10))
-	}
-	return (&url.URL{
-		Scheme:   "sqlserver",
-		User:     url.UserPassword(clientID+"@"+tenantID, clientSecret),
-		Host:     net.JoinHostPort(host, strconv.Itoa(sqlEndpointPort)),
-		RawQuery: query.Encode(),
-	}).String()
 }
 
 func (f *MicrosoftFabric) connect() (*sqlmw.DB, error) {
-	connector, err := azuread.NewConnector(f.connectionDSN())
+	credentialsJSON, err := jsonrs.Marshal(f.connectionConfig())
 	if err != nil {
-		return nil, fmt.Errorf("creating Entra SQL connector: %w", err)
+		return nil, fmt.Errorf("marshalling credentials: %w", err)
 	}
-	db := sql.OpenDB(connector)
+	sqlConnectDB, err := sqlconnect.NewDB("fabric", credentialsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("creating sqlconnect db: %w", err)
+	}
 	return sqlmw.New(
-		db,
+		sqlConnectDB.SqlDB(),
 		sqlmw.WithStats(f.stats),
 		sqlmw.WithLogger(f.logger),
 		sqlmw.WithKeyAndValues(
@@ -213,9 +187,6 @@ func (f *MicrosoftFabric) Setup(ctx context.Context, warehouse model.Warehouse, 
 	f.warehouse = warehouse
 	f.namespace = warehouse.Namespace
 	f.uploader = uploader
-	if err := f.bootstrap(ctx); err != nil {
-		return err
-	}
 	db, err := f.connect()
 	if err != nil {
 		return fmt.Errorf("connecting to Microsoft Fabric: %w", err)
@@ -227,9 +198,6 @@ func (f *MicrosoftFabric) Setup(ctx context.Context, warehouse model.Warehouse, 
 func (f *MicrosoftFabric) Connect(ctx context.Context, warehouse model.Warehouse) (client.Client, error) {
 	f.warehouse = warehouse
 	f.namespace = warehouse.Namespace
-	if err := f.bootstrap(ctx); err != nil {
-		return client.Client{}, err
-	}
 	db, err := f.connect()
 	if err != nil {
 		return client.Client{}, fmt.Errorf("connecting to Microsoft Fabric: %w", err)
