@@ -780,7 +780,8 @@ func (d *Deltalake) copyIntoLoadTable(
 				'compression' = 'gzip',
 				'quote' = '"',
 				'escape' = '"',
-				'multiLine' = 'true'
+				'multiLine' = 'true',
+				'lineSep' = '\n'
 			  )
 			COPY_OPTIONS ('force' = 'true')
 			%s;
@@ -1408,7 +1409,8 @@ func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName strin
 				'compression' = 'gzip',
 				'quote' = '"',
 				'escape' = '"',
-				'multiLine' = 'true'
+				'multiLine' = 'true',
+				'lineSep' = '\n'
 			)
 			COPY_OPTIONS ('force' = 'true')
 			%s;

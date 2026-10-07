@@ -1222,6 +1222,91 @@ func TestIntegration(t *testing.T) {
 			)
 			require.Equal(t, records, whth.DiscardTestRecords())
 		})
+		t.Run("line breaks in quoted values", func(t *testing.T) {
+			// Databricks auto-detects the CSV line separator from the start of the file
+			// unless lineSep is set. A quoted \r\n or \r in the first row must not be
+			// picked as the separator: rows would merge, and the last column (uuid_ts)
+			// would hold the next row's first column. Rows 2-7 cover the other values
+			// encoding/csv quotes.
+			lineBreaksSchema := model.TableSchema{
+				"id":          "string",
+				"received_at": "datetime",
+				"test_string": "string",
+				"uuid_ts":     "datetime",
+			}
+			restRecords := [][]string{
+				{"2", "2026-10-01T08:04:00Z", "mailbox full", "2026-10-01T08:12:01Z"},
+				{"3", "2026-10-01T08:05:00Z", "line one\nline two", "2026-10-01T08:12:01Z"},
+				{"4", "2026-10-01T08:06:00Z", `reply "quota exceeded"`, "2026-10-01T08:12:01Z"},
+				{"5", "2026-10-01T08:07:00Z", "a,b,c", "2026-10-01T08:12:01Z"},
+				{"6", "2026-10-01T08:08:00Z", " leading space", "2026-10-01T08:12:01Z"},
+				{"7", "2026-10-01T08:09:00Z", "mixed, \"quoted\"\r\ncrlf\rcr\nlf", "2026-10-01T08:12:01Z"},
+			}
+
+			testCases := []struct {
+				name           string
+				loadFilePath   string
+				tableName      string
+				firstRowString string
+			}{
+				{
+					name:           "crlf in first row",
+					loadFilePath:   "../testdata/crlf.csv.gz",
+					tableName:      "crlf_test_table",
+					firstRowString: "550-5.1.1 The email account does not exist.\r\n550 5.1.1 Please try again",
+				},
+				{
+					name:           "cr in first row",
+					loadFilePath:   "../testdata/cr.csv.gz",
+					tableName:      "cr_test_table",
+					firstRowString: "550-5.1.1 The email account does not exist.\r550 5.1.1 Please try again",
+				},
+			}
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					uploadOutput := whth.UploadLoadFile(t, fm, tc.loadFilePath, tc.tableName)
+
+					loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+					mockUploader := newMockUploader(t, loadFiles, tc.tableName, lineBreaksSchema, lineBreaksSchema, whutils.LoadFileTypeCsv, false, false)
+
+					d := deltalake.New(config.New(), logger.NOP, stats.NOP)
+					err := d.Setup(ctx, warehouse, mockUploader)
+					require.NoError(t, err)
+
+					err = d.CreateSchema(ctx)
+					require.NoError(t, err)
+					t.Cleanup(func() {
+						dropSchema(t, d.DB.DB, namespace)
+					})
+
+					err = d.CreateTable(ctx, tc.tableName, lineBreaksSchema)
+					require.NoError(t, err)
+
+					loadTableStat, err := d.LoadTable(ctx, tc.tableName)
+					require.NoError(t, err)
+
+					records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
+						fmt.Sprintf(
+							`SELECT
+								id,
+								received_at,
+								test_string,
+								uuid_ts
+							FROM %s.%s
+							ORDER BY id;`,
+							namespace,
+							tc.tableName,
+						),
+					)
+					expected := append([][]string{
+						{"1", "2026-10-01T08:03:00Z", tc.firstRowString, "2026-10-01T08:12:01Z"},
+					}, restRecords...)
+					require.Equal(t, expected, records)
+					require.Equal(t, int64(len(expected)), loadTableStat.RowsInserted)
+					require.Equal(t, int64(0), loadTableStat.RowsUpdated)
+				})
+			}
+		})
 		t.Run("parquet", func(t *testing.T) {
 			tableName := "parquet_test_table"
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.89.2](https://github.com/rudderlabs/rudder-server/compare/v1.89.1...v1.89.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* **warehouse:** set explicit lineSep for deltalake csv copy ([#7455](https://github.com/rudderlabs/rudder-server/issues/7455)) ([1c7dfc2](https://github.com/rudderlabs/rudder-server/commit/1c7dfc22d1630436959c72c8d5260949ab9c7b0f))
+
 ## [1.89.1](https://github.com/rudderlabs/rudder-server/compare/v1.89.0...v1.89.1) (2026-09-29)
 
 
