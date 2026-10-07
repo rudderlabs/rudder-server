@@ -206,6 +206,7 @@ type Handle struct {
 		reportingUTPassThroughMetricsEnabled      config.ValueLoader[bool]
 		reportingDTPassThroughMetricsEnabled      config.ValueLoader[bool]
 		reportingDTDiffMetricsEnabled             config.ValueLoader[bool]
+		reportingEventFilterReasonEnabled         config.ValueLoader[bool]
 
 		dropEventsForDisabledDestAtProcRebuild config.ValueLoader[bool]
 	}
@@ -858,6 +859,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.reportingUTPassThroughMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.userTransformerPassThroughMetrics.enabled")
 	proc.config.reportingDTPassThroughMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.destTransformerPassThroughMetrics.enabled")
 	proc.config.reportingDTDiffMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.destTransformerDiffMetrics.enabled")
+	proc.config.reportingEventFilterReasonEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.eventFilterReasonMetrics.enabled")
 	// Opt-in early drop at the proc rebuild stage for destinations disabled since fan-out;
 	// by default such events keep flowing so the router/batchrouter aborts them with reporting.
 	proc.config.dropEventsForDisabledDestAtProcRebuild = proc.conf.GetReloadableBoolVar(false, "Processor.DestinationIsolation.dropEventsForDisabledDestAtProcRebuild")
@@ -1434,6 +1436,19 @@ func (proc *Handle) getNonSuccessfulMetrics(
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	inPU, pu string,
 ) *NonSuccessfulTransformationMetrics {
+	return proc.getNonSuccessfulMetricsByFilteredState(response, inputEvents, commonMetaData, eventsByMessageID, inPU, pu, nil)
+}
+
+// getNonSuccessfulMetricsByFilteredState builds the failed and filtered metrics of a response.
+// The filtered responses are reported per state returned by filteredState, or all as jobsdb.Filtered.State if it is nil.
+func (proc *Handle) getNonSuccessfulMetricsByFilteredState(
+	response types.Response,
+	inputEvents []types.TransformerEvent,
+	commonMetaData *types.Metadata,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+	inPU, pu string,
+	filteredState func(types.TransformerResponse) string,
+) *NonSuccessfulTransformationMetrics {
 	m := &NonSuccessfulTransformationMetrics{}
 
 	grouped := lo.GroupBy(
@@ -1449,15 +1464,28 @@ func (proc *Handle) getNonSuccessfulMetrics(
 		metadataByMessageID[event.Metadata.MessageID] = &event.Metadata
 	}
 
-	m.filteredJobs, m.filteredMetrics, m.filteredCountMap = proc.getTransformationMetrics(
-		filtered,
-		jobsdb.Filtered.State,
-		commonMetaData,
-		eventsByMessageID,
-		metadataByMessageID,
-		inPU,
-		pu,
-	)
+	if filteredState == nil {
+		filteredState = func(types.TransformerResponse) string { return jobsdb.Filtered.State }
+	}
+	filteredByState := lo.GroupBy(filtered, filteredState)
+	m.filteredMetrics = make([]*reportingtypes.PUReportedMetric, 0)
+	m.filteredCountMap = make(map[string]int64)
+	for _, state := range slices.Sorted(maps.Keys(filteredByState)) {
+		jobs, metrics, countMap := proc.getTransformationMetrics(
+			filteredByState[state],
+			state,
+			commonMetaData,
+			eventsByMessageID,
+			metadataByMessageID,
+			inPU,
+			pu,
+		)
+		m.filteredJobs = append(m.filteredJobs, jobs...)
+		m.filteredMetrics = append(m.filteredMetrics, metrics...)
+		for k, v := range countMap {
+			m.filteredCountMap[k] += v
+		}
+	}
 
 	m.failedJobs, m.failedMetrics, m.failedCountMap = proc.getTransformationMetrics(
 		failed,
@@ -1510,7 +1538,8 @@ func (proc *Handle) getTransformationMetrics(
 	countMap := make(map[string]int64)
 	var jobs []procErrorJob
 	statFunc := procErrorCountsStat
-	if state == jobsdb.Filtered.State {
+	// every filtered_* state is a filtered outcome, so the state prefix selects the filtered stat
+	if strings.HasPrefix(state, jobsdb.Filtered.State) {
 		statFunc = procFilteredCountStat
 	}
 	for i := range transformerResponses {
@@ -3762,12 +3791,21 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 	var successMetrics []*reportingtypes.PUReportedMetric
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
-	nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, inPU, reportingtypes.EVENT_FILTER)
+	// with the reason metrics enabled, filtered responses are reported per reason and the succeeded rows are not reported
+	eventFilterReasonMetrics := proc.config.reportingEventFilterReasonEnabled.Load()
+	var filteredState func(types.TransformerResponse) string
+	if eventFilterReasonMetrics {
+		filteredState = func(r types.TransformerResponse) string { return eventfilter.FilteredStateForReason(r.Error) }
+	}
+	nonSuccessMetrics := proc.getNonSuccessfulMetricsByFilteredState(response, eventList, commonMetaData, eventsByMessageID, inPU, reportingtypes.EVENT_FILTER, filteredState)
 	allNonSuccess := append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)
 	droppedJobs = append(droppedJobs, proc.getDroppedJobs(response, eventsToTransform)...)
 	droppedJobs = append(droppedJobs, procErrorJobs(allNonSuccess)...)
 	procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], nonSuccessMetrics.failedJobs...)
 	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, reportingtypes.EVENT_FILTER)
+	if eventFilterReasonMetrics {
+		successMetrics = nil
+	}
 	proc.logger.Debugn("Supported messages filtering output size", logger.NewIntField("eventCount", int64(len(eventsToTransform))))
 
 	// REPORTING - START
@@ -4184,7 +4222,7 @@ func ConvertToFilteredTransformerResponse(
 							Output:     event.Message,
 							StatusCode: reportingtypes.FilterEventCode,
 							Metadata:   event.Metadata,
-							Error:      "Event not supported",
+							Error:      eventfilter.MessageEventNotSupportedReason,
 						},
 					)
 					continue

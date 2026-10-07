@@ -49,6 +49,11 @@ const (
 	FilteredIntegrationStatus   = "filtered_integration"
 	FilteredConsentStatus       = "filtered_consent"
 	FilteredNoDestinationStatus = "filtered_no_destination"
+
+	// event_filter statuses (one per filtered reason, all with FilterEventCode)
+	FilteredEventTypeStatus = "filtered_evnt_type"
+	FilteredEventNameStatus = "filtered_evnt_name"
+	FilteredHybridStatus    = "filtered_hybrid"
 )
 
 var (

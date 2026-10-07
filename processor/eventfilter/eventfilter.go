@@ -7,6 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -16,6 +17,28 @@ const (
 	hybridModeEventsFilterKey = "hybridModeCloudEventsFilter"
 	hybridMode                = "hybrid"
 )
+
+// Reasons set on the filtered (status code 298) responses produced by the event filter.
+const (
+	MessageTypeNotSupportedReason  = "Message type not supported"
+	HybridModeFilterReason         = "Filtering event based on hybridModeFilter"
+	MessageEventNotSupportedReason = "Event not supported"
+)
+
+// FilteredStateForReason maps the reason of a filtered event filter response to its reporting state.
+// An unrecognised reason maps to the generic filtered state.
+func FilteredStateForReason(reason string) string {
+	switch reason {
+	case MessageTypeNotSupportedReason:
+		return reportingtypes.FilteredEventTypeStatus
+	case MessageEventNotSupportedReason:
+		return reportingtypes.FilteredEventNameStatus
+	case HybridModeFilterReason:
+		return reportingtypes.FilteredHybridStatus
+	default:
+		return jobsdb.Filtered.State
+	}
+}
 
 var pkgLogger = logger.NewLogger().Child("eventfilter")
 
@@ -145,7 +168,7 @@ func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, su
 		return false, &types.TransformerResponse{
 			Output: transformerEvent.Message, StatusCode: reportingtypes.FilterEventCode,
 			Metadata: transformerEvent.Metadata,
-			Error:    "Message type not supported",
+			Error:    MessageTypeNotSupportedReason,
 		}
 	}
 	// MessageType filtering -- ENDS
@@ -169,7 +192,7 @@ func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, su
 		return allow, &types.TransformerResponse{
 			Output: transformerEvent.Message, StatusCode: reportingtypes.FilterEventCode,
 			Metadata: transformerEvent.Metadata,
-			Error:    "Filtering event based on hybridModeFilter",
+			Error:    HybridModeFilterReason,
 		}
 	}
 	// hybridModeCloudEventsFilter.srcType.[eventProperty] filtering -- ENDS
