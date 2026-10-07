@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -7467,6 +7468,427 @@ func TestUserTransformerPassThroughReporting(t *testing.T) {
 		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
 
 		require.Empty(t, utRows(storeMsg.reportMetrics))
+	})
+}
+
+// routerTransformFeatures fakes the transformer features service so a case can force
+// RouterTransform to true for chosen destination types, without setting up gomock
+// expectations for every other method on the real interface.
+type routerTransformFeatures struct {
+	transformerFeaturesService.FeaturesService
+	destTypes []string
+}
+
+func (r routerTransformFeatures) RouterTransform(destType string) bool {
+	return slices.Contains(r.destTypes, destType)
+}
+
+// TestDestTransformerPassThroughReporting covers the dest_transformer pass-through rows
+// emitted from the branch of destTransform that does not run the destination transformer
+// (transformAt == "none", or transformAt == "router" with router transform supported), gated
+// by Reporting.destTransformerPassThroughMetrics.enabled. SourceIDEnabled's destination C has
+// transformAtV1 "none" configured on its definition and takes the pass-through branch; A and B
+// have no such override and run the real dest_transformer block unless a subtest points A at
+// router transform, which this test must leave untouched for B. B additionally carries a Transformation, so echoUserTransform is wired
+// throughout to keep B flowing.
+func TestDestTransformerPassThroughReporting(t *testing.T) {
+	dtRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.DEST_TRANSFORMER
+		})
+	}
+	dtRowsFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(dtRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.DestinationID == destinationID
+		})
+	}
+	efSucceededFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.EVENT_FILTER &&
+				m.DestinationID == destinationID &&
+				m.StatusDetail.Status == jobsdb.Succeeded.State
+		})
+	}
+	efAbortedFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.EVENT_FILTER &&
+				m.DestinationID == destinationID &&
+				m.StatusDetail.Status == jobsdb.Aborted.State
+		})
+	}
+	sumCount := func(rows []*reportingtypes.PUReportedMetric) int64 {
+		return lo.SumBy(rows, func(r *reportingtypes.PUReportedMetric) int64 { return r.StatusDetail.Count })
+	}
+
+	// payload builds a singular event JSON of the given type, letting a case set the event
+	// name (empty renders an identify event that carries none).
+	payload := func(msgID, eventType, eventName string) string {
+		event := map[string]any{
+			"rudderId":  "some-rudder-id",
+			"messageId": msgID,
+			"type":      eventType,
+		}
+		if eventName != "" {
+			event["event"] = eventName
+		}
+		b, err := jsonrs.Marshal(event)
+		require.NoError(t, err)
+		return string(b)
+	}
+
+	// job builds a gateway job carrying one or more singular events for sourceID, merging in
+	// any extra source-level parameters (for example source_job_run_id).
+	job := func(jobID int64, sourceID string, singularPayloads []string, extraParams map[string]any) *jobsdb.JobT {
+		params := map[string]any{"source_id": sourceID}
+		maps.Copy(params, extraParams)
+		paramBytes, err := jsonrs.Marshal(params)
+		require.NoError(t, err)
+		batch := strings.Join(singularPayloads, ",")
+		eventPayload := fmt.Appendf(nil, `{"writeKey":%q,"batch":[%s],"requestIP":"1.2.3.4","receivedAt":"2001-01-02T02:23:45.000Z"}`, WriteKeyEnabled, batch)
+		return &jobsdb.JobT{
+			UUID:         uuid.New(),
+			JobID:        jobID,
+			CreatedAt:    time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:     time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal:    gatewayCustomVal[0],
+			EventPayload: eventPayload,
+			EventCount:   len(singularPayloads),
+			Parameters:   paramBytes,
+		}
+	}
+
+	echoUserTransform := func(_ context.Context, events []types.TransformerEvent) types.Response {
+		return types.Response{
+			Events: lo.Map(events, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+				return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata}
+			}),
+		}
+	}
+	// echoDestTransform stands in for the real destination transformer so a processor-path
+	// destination produces a succeeded dest_transformer row instead of an empty response.
+	echoDestTransform := func(_ context.Context, events []types.TransformerEvent) types.Response {
+		return types.Response{
+			Events: lo.Map(events, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+				return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata, StatusCode: 200}
+			}),
+		}
+	}
+	// recordingDestTransform behaves like echoDestTransform but also records the destination
+	// IDs of every event it is invoked with, so a case can assert a destination's events never
+	// reached it.
+	recordingDestTransform := func(calledDestIDs *[]string, mu *sync.Mutex) func(context.Context, []types.TransformerEvent) types.Response {
+		return func(ctx context.Context, events []types.TransformerEvent) types.Response {
+			mu.Lock()
+			for _, e := range events {
+				*calledDestIDs = append(*calledDestIDs, e.Metadata.DestinationID)
+			}
+			mu.Unlock()
+			return echoDestTransform(ctx, events)
+		}
+	}
+
+	twoEventsSameName := func() []*jobsdb.JobT {
+		return []*jobsdb.JobT{job(1, SourceIDEnabled, []string{
+			payload("m1", "track", "Some Event"),
+			payload("m2", "track", "Some Event"),
+		}, nil)}
+	}
+
+	// withRouterTransformOverride points destination A at "router" and makes the transformer
+	// features service report router-transform support for it, so A takes the pass-through
+	// branch of destTransform without the destination transformer being called.
+	withRouterTransformOverride := func(processor *Handle, conf *config.Config) {
+		conf.Set("Processor.enabled-destination-a-definition-name.transformAt", "router")
+		processor.transformerFeaturesService = routerTransformFeatures{
+			FeaturesService: transformerFeaturesService.NewNoOpService(),
+			destTypes:       []string{"enabled-destination-a-definition-name"},
+		}
+	}
+
+	t.Run("with the flag off (default) no dest_transformer row is emitted for a destination without a destination transformation", func(t *testing.T) {
+		processor, _, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(echoDestTransform)
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		require.Empty(t, dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledC))
+		require.NotEmpty(t, dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA),
+			"destination A runs the real dest_transformer block and reports from it")
+	})
+
+	t.Run("with the flag on a transformAt none destination gets one succeeded/200 dest_transformer row with an empty inPU", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Reporting.destTransformerPassThroughMetrics.enabled", true)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(echoDestTransform)
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		rows := dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledC)
+		require.Len(t, rows, 1)
+		r := rows[0]
+		require.Equal(t, reportingtypes.DEST_TRANSFORMER, r.PU)
+		require.Equal(t, jobsdb.Succeeded.State, r.StatusDetail.Status)
+		require.Equal(t, reportingtypes.SuccessEventCode, r.StatusDetail.StatusCode)
+		require.Equal(t, "", r.InPU)
+		require.False(t, r.InitialPU)
+		require.False(t, r.TerminalPU)
+		require.Equal(t, SourceIDEnabled, r.SourceID)
+		require.Equal(t, DestinationIDEnabledC, r.DestinationID)
+		require.Equal(t, "Some Event", r.StatusDetail.EventName)
+		require.Equal(t, "track", r.StatusDetail.EventType)
+		require.EqualValues(t, 2, r.StatusDetail.Count)
+
+		for _, r := range rows {
+			require.Equal(t, jobsdb.Succeeded.State, r.StatusDetail.Status)
+		}
+	})
+
+	t.Run("with the flag on counts are keyed per event name and type and sum to the event_filter succeeded count for that destination", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Reporting.destTransformerPassThroughMetrics.enabled", true)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(echoDestTransform)
+
+		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, []string{
+			payload("m1", "track", "Event One"),
+			payload("m2", "track", "Event One"),
+			payload("m3", "track", "Event Two"),
+			payload("m4", "identify", ""),
+		}, nil)}
+		storeMsg := runVisibilityThroughUT(t, processor, jobs)
+
+		type eventKey struct{ name, typ string }
+		cRows := dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledC)
+		require.Len(t, cRows, 3)
+
+		dtByKey := make(map[eventKey]int64)
+		for _, r := range cRows {
+			dtByKey[eventKey{r.StatusDetail.EventName, r.StatusDetail.EventType}] += r.StatusDetail.Count
+		}
+		efByKey := make(map[eventKey]int64)
+		for _, r := range efSucceededFor(storeMsg.reportMetrics, DestinationIDEnabledC) {
+			efByKey[eventKey{r.StatusDetail.EventName, r.StatusDetail.EventType}] += r.StatusDetail.Count
+		}
+
+		require.ElementsMatch(t, lo.Keys(dtByKey), lo.Keys(efByKey))
+		for k, count := range dtByKey {
+			require.Equal(t, efByKey[k], count, "key %+v", k)
+		}
+		require.EqualValues(t, 4, lo.Sum(lo.Values(dtByKey)))
+		require.EqualValues(t, 4, lo.Sum(lo.Values(efByKey)))
+	})
+
+	t.Run("with the flag on only events that survived the event filter get a pass-through row", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Reporting.destTransformerPassThroughMetrics.enabled", true)
+		conf.Set("drain.jobRunIDs", []string{"job_run_id_drained"})
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(echoDestTransform)
+
+		jobs := []*jobsdb.JobT{
+			job(1, SourceIDEnabled, []string{payload("m1", "track", "Some Event")}, map[string]any{"source_job_run_id": "job_run_id_drained"}),
+			job(2, SourceIDEnabled, []string{payload("m2", "track", "Some Event")}, map[string]any{"source_job_run_id": "job_run_id_kept"}),
+		}
+		storeMsg := runVisibilityThroughUT(t, processor, jobs)
+
+		cRows := dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledC)
+		require.EqualValues(t, 1, sumCount(cRows))
+		for _, r := range cRows {
+			require.Equal(t, "job_run_id_kept", r.SourceJobRunID)
+		}
+
+		require.EqualValues(t, 1, sumCount(efSucceededFor(storeMsg.reportMetrics, DestinationIDEnabledC)))
+
+		abortedRows := efAbortedFor(storeMsg.reportMetrics, DestinationIDEnabledC)
+		require.NotEmpty(t, abortedRows, "the drained job is reported as aborted by event_filter")
+		for _, r := range abortedRows {
+			require.Equal(t, reportingtypes.DrainEventCode, r.StatusDetail.StatusCode)
+		}
+	})
+
+	t.Run("a transformAt router destination with router transform enabled gets the pass-through row and the destination transformer is not called", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Reporting.destTransformerPassThroughMetrics.enabled", true)
+		withRouterTransformOverride(processor, conf)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+		var mu sync.Mutex
+		var calledDestIDs []string
+		transformerClients.WithDynamicDestinationTransform(recordingDestTransform(&calledDestIDs, &mu))
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		rows := dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA)
+		require.Len(t, rows, 1)
+		require.Equal(t, jobsdb.Succeeded.State, rows[0].StatusDetail.Status)
+		require.Equal(t, reportingtypes.SuccessEventCode, rows[0].StatusDetail.StatusCode)
+		require.Equal(t, "", rows[0].InPU)
+		require.EqualValues(t, 2, rows[0].StatusDetail.Count)
+
+		mu.Lock()
+		require.NotContains(t, calledDestIDs, DestinationIDEnabledA)
+		mu.Unlock()
+		require.Contains(t, storeMsg.routerDestIDs, DestinationIDEnabledA,
+			"the event must have continued on to the router, not been dropped")
+	})
+
+	t.Run("a transformAt processor destination produces exactly the same dest_transformer rows with the flag on as with it off", func(t *testing.T) {
+		off, _, cOff, transformerClientsOff := newVisibilityProcessor(t, true)
+		defer cOff.Finish()
+		transformerClientsOff.WithDynamicUserTransform(echoUserTransform)
+		transformerClientsOff.WithDynamicDestinationTransform(echoDestTransform)
+		offMsg := runVisibilityThroughUT(t, off, twoEventsSameName())
+
+		on, conf, cOn, transformerClientsOn := newVisibilityProcessor(t, true)
+		defer cOn.Finish()
+		conf.Set("Reporting.destTransformerPassThroughMetrics.enabled", true)
+		transformerClientsOn.WithDynamicUserTransform(echoUserTransform)
+		transformerClientsOn.WithDynamicDestinationTransform(echoDestTransform)
+		onMsg := runVisibilityThroughUT(t, on, twoEventsSameName())
+
+		for _, destID := range []string{DestinationIDEnabledA, DestinationIDEnabledB} {
+			offRows := dtRowsFor(offMsg.reportMetrics, destID)
+			require.NotEmpty(t, offRows, "destination %s reports dest_transformer rows with the flag off", destID)
+			onRows := dtRowsFor(onMsg.reportMetrics, destID)
+			require.ElementsMatch(t, offRows, onRows)
+			for _, r := range onRows {
+				require.Equal(t, reportingtypes.EVENT_FILTER, r.InPU)
+			}
+		}
+	})
+
+	t.Run("the transformAt override forces a destination to none and it gets the pass-through row", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Reporting.destTransformerPassThroughMetrics.enabled", true)
+		conf.Set("Processor.enabled-destination-a-definition-name.transformAt", "none")
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+
+		var mu sync.Mutex
+		var calledDestIDs []string
+		transformerClients.WithDynamicDestinationTransform(recordingDestTransform(&calledDestIDs, &mu))
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		rows := dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA)
+		require.Len(t, rows, 1)
+		require.Equal(t, jobsdb.Succeeded.State, rows[0].StatusDetail.Status)
+		require.Equal(t, reportingtypes.SuccessEventCode, rows[0].StatusDetail.StatusCode)
+		require.Equal(t, "", rows[0].InPU)
+		require.EqualValues(t, 2, rows[0].StatusDetail.Count)
+
+		mu.Lock()
+		require.NotContains(t, calledDestIDs, DestinationIDEnabledA)
+		mu.Unlock()
+	})
+
+	t.Run("a batch mixing none, router-transform and processor destinations gets the right dest_transformer rows for each", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Reporting.destTransformerPassThroughMetrics.enabled", true)
+		withRouterTransformOverride(processor, conf)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(echoDestTransform)
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		cRows := dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledC)
+		require.Len(t, cRows, 1)
+		require.Equal(t, jobsdb.Succeeded.State, cRows[0].StatusDetail.Status)
+		require.Equal(t, reportingtypes.SuccessEventCode, cRows[0].StatusDetail.StatusCode)
+		require.Equal(t, "", cRows[0].InPU)
+		require.EqualValues(t, 2, cRows[0].StatusDetail.Count)
+
+		aRows := dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledA)
+		require.Len(t, aRows, 1)
+		require.Equal(t, jobsdb.Succeeded.State, aRows[0].StatusDetail.Status)
+		require.Equal(t, reportingtypes.SuccessEventCode, aRows[0].StatusDetail.StatusCode)
+		require.Equal(t, "", aRows[0].InPU)
+		require.EqualValues(t, 2, aRows[0].StatusDetail.Count)
+
+		bRows := dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledB)
+		require.NotEmpty(t, bRows)
+		for _, r := range bRows {
+			require.Equal(t, reportingtypes.EVENT_FILTER, r.InPU)
+		}
+
+		offProcessor, offConf, cOff, transformerClientsOff := newVisibilityProcessor(t, true)
+		defer cOff.Finish()
+		withRouterTransformOverride(offProcessor, offConf)
+		transformerClientsOff.WithDynamicUserTransform(echoUserTransform)
+		transformerClientsOff.WithDynamicDestinationTransform(echoDestTransform)
+		offMsg := runVisibilityThroughUT(t, offProcessor, twoEventsSameName())
+
+		require.ElementsMatch(t, dtRowsFor(offMsg.reportMetrics, DestinationIDEnabledB), bRows)
+	})
+
+	t.Run("with the flag on every row other than the pass-through rows is identical to a flag-off run", func(t *testing.T) {
+		off, _, cOff, transformerClientsOff := newVisibilityProcessor(t, true)
+		defer cOff.Finish()
+		transformerClientsOff.WithDynamicUserTransform(echoUserTransform)
+		transformerClientsOff.WithDynamicDestinationTransform(echoDestTransform)
+		offMsg := runVisibilityThroughUT(t, off, twoEventsSameName())
+
+		on, conf, cOn, transformerClientsOn := newVisibilityProcessor(t, true)
+		defer cOn.Finish()
+		conf.Set("Reporting.destTransformerPassThroughMetrics.enabled", true)
+		transformerClientsOn.WithDynamicUserTransform(echoUserTransform)
+		transformerClientsOn.WithDynamicDestinationTransform(echoDestTransform)
+		onMsg := runVisibilityThroughUT(t, on, twoEventsSameName())
+
+		isPassThrough := func(m *reportingtypes.PUReportedMetric) bool {
+			return m.PU == reportingtypes.DEST_TRANSFORMER && m.InPU == ""
+		}
+		onWithoutPassThrough := lo.Filter(onMsg.reportMetrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return !isPassThrough(m)
+		})
+		require.ElementsMatch(t, offMsg.reportMetrics, onWithoutPassThrough)
+
+		offPassThrough := lo.Filter(offMsg.reportMetrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return isPassThrough(m)
+		})
+		require.Empty(t, offPassThrough)
+	})
+
+	t.Run("toggling the flag at runtime on the same handle takes effect without a restart", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(echoDestTransform)
+
+		buildJob := func(jobID int64, msgID string) []*jobsdb.JobT {
+			return []*jobsdb.JobT{job(jobID, SourceIDEnabled, []string{payload(msgID, "track", "Some Event")}, nil)}
+		}
+
+		msg1 := runVisibilityThroughUT(t, processor, buildJob(1, "m1"))
+		require.Empty(t, dtRowsFor(msg1.reportMetrics, DestinationIDEnabledC))
+
+		conf.Set("Reporting.destTransformerPassThroughMetrics.enabled", true)
+		msg2 := runVisibilityThroughUT(t, processor, buildJob(2, "m2"))
+		require.NotEmpty(t, dtRowsFor(msg2.reportMetrics, DestinationIDEnabledC))
+
+		conf.Set("Reporting.destTransformerPassThroughMetrics.enabled", false)
+		msg3 := runVisibilityThroughUT(t, processor, buildJob(3, "m3"))
+		require.Empty(t, dtRowsFor(msg3.reportMetrics, DestinationIDEnabledC))
+	})
+
+	t.Run("with the flag on but reporting disabled no dest_transformer row is emitted", func(t *testing.T) {
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, false)
+		defer c.Finish()
+		conf.Set("Reporting.destTransformerPassThroughMetrics.enabled", true)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(echoDestTransform)
+
+		storeMsg := runVisibilityThroughUT(t, processor, twoEventsSameName())
+
+		require.Empty(t, dtRows(storeMsg.reportMetrics))
 	})
 }
 
