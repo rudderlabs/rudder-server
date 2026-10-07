@@ -13,7 +13,7 @@ import (
 const assembleTestConnKey = "conn1"
 
 // statusDetailsMapWith builds a single-connection, single-event status-details map, the
-// shape assembleSideStatusDetailMetrics expects for each of its eight map arguments.
+// shape assembleSideStatusDetailMetrics expects for each of its seven map arguments.
 func statusDetailsMapWith(eventName string, count int64) map[string]map[string]*reportingtypes.StatusDetail {
 	return map[string]map[string]*reportingtypes.StatusDetail{
 		assembleTestConnKey: {
@@ -95,14 +95,6 @@ func TestAssembleSideStatusDetailMetrics(t *testing.T) {
 				expectedInitial:  false,
 				expectedTerminal: false,
 			},
-			{
-				name:             "destFilterStatusDetailMap emits a DESTINATION_FILTER row chained from GATEWAY",
-				mapName:          "destFilterStatusDetailMap",
-				expectedInPU:     reportingtypes.GATEWAY,
-				expectedPU:       reportingtypes.DESTINATION_FILTER,
-				expectedInitial:  false,
-				expectedTerminal: false,
-			},
 		}
 
 		for _, tc := range testCases {
@@ -119,7 +111,6 @@ func TestAssembleSideStatusDetailMetrics(t *testing.T) {
 					"userSuppressionStatusDetailsMap": empty,
 					"dedupStatusDetailsMap":           empty,
 					"gatewayIngestedStatusDetailsMap": empty,
-					"destFilterStatusDetailMap":       empty,
 				}
 				args[tc.mapName] = populated
 
@@ -133,7 +124,6 @@ func TestAssembleSideStatusDetailMetrics(t *testing.T) {
 					args["userSuppressionStatusDetailsMap"],
 					args["dedupStatusDetailsMap"],
 					args["gatewayIngestedStatusDetailsMap"],
-					args["destFilterStatusDetailMap"],
 				)
 
 				require.Len(t, metrics, 1)
@@ -147,7 +137,7 @@ func TestAssembleSideStatusDetailMetrics(t *testing.T) {
 		}
 	})
 
-	t.Run("all eight maps populated for one connection key emit exactly eight rows, one per PU, with counts carried through", func(t *testing.T) {
+	t.Run("all seven maps populated for one connection key emit exactly seven rows, one per PU, with counts carried through", func(t *testing.T) {
 		connectionDetailsMap := map[string]*reportingtypes.ConnectionDetails{assembleTestConnKey: cd}
 
 		statusDetailsMap := statusDetailsMapWith("gw-evt", 1)
@@ -157,7 +147,6 @@ func TestAssembleSideStatusDetailMetrics(t *testing.T) {
 		userSuppressionStatusDetailsMap := statusDetailsMapWith("suppress-evt", 5)
 		dedupStatusDetailsMap := statusDetailsMapWith("dedup-evt", 6)
 		gatewayIngestedStatusDetailsMap := statusDetailsMapWith("ingest-evt", 7)
-		destFilterStatusDetailMap := statusDetailsMapWith("filter-evt", 8)
 
 		proc := &Handle{}
 		metrics := proc.assembleSideStatusDetailMetrics(
@@ -169,10 +158,9 @@ func TestAssembleSideStatusDetailMetrics(t *testing.T) {
 			userSuppressionStatusDetailsMap,
 			dedupStatusDetailsMap,
 			gatewayIngestedStatusDetailsMap,
-			destFilterStatusDetailMap,
 		)
 
-		require.Len(t, metrics, 8)
+		require.Len(t, metrics, 7)
 
 		expected := map[string]struct {
 			inPU     string
@@ -188,7 +176,6 @@ func TestAssembleSideStatusDetailMetrics(t *testing.T) {
 			"suppress-evt": {"", reportingtypes.USER_SUPPRESSION, false, false, 5},
 			"dedup-evt":    {"", reportingtypes.DEDUP, false, false, 6},
 			"ingest-evt":   {"", reportingtypes.GATEWAY_INGESTED, false, false, 7},
-			"filter-evt":   {reportingtypes.GATEWAY, reportingtypes.DESTINATION_FILTER, false, false, 8},
 		}
 
 		seen := make(map[string]bool, len(expected))
@@ -206,7 +193,7 @@ func TestAssembleSideStatusDetailMetrics(t *testing.T) {
 			require.Equal(t, exp.terminal, m.TerminalPU, "terminal for %q", eventName)
 			require.Equal(t, exp.count, m.StatusDetail.Count, "count for %q", eventName)
 		}
-		require.Len(t, seen, 8)
+		require.Len(t, seen, 7)
 
 		// ConnectionDetails must be copied per row, not shared: mutating one row's
 		// ConnectionDetails must not leak into any other row.
