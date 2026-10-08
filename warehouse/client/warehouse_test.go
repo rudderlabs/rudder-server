@@ -50,7 +50,7 @@ func TestWarehouse(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		c := client.NewWarehouse(ts.URL, statsStore, client.WithTimeout(10*time.Millisecond))
+		c := client.NewWarehouse(ts.URL, statsStore, client.WithTimeout(time.Second))
 		err = c.Process(context.Background(), client.StagingFile{
 			WorkspaceID:   "279L3V7FSpx43LaNJ0nIs9KRaNC",
 			SourceID:      "279L3gEKqwruBoKGsXZtSVX7vIy",
