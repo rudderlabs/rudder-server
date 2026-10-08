@@ -209,6 +209,45 @@ func TestLoadTableUsesUniqueStagingAndSingleMerge(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestLoadUserTablesUsesSingleWindowPassForLatestTraits(t *testing.T) {
+	db, mock := newSQLMock(t)
+	location := "https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222/Files/load/identifies.parquet"
+	mock.ExpectExec(`SELECT TOP 0 \* INTO \[schema\.with\.dot\]\.\[rudder_staging_identifies_[0-9a-f]+\] FROM \[schema\.with\.dot\]\.\[identifies\];`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`COPY INTO \[schema\.with\.dot\]\.\[rudder_staging_identifies_[0-9a-f]+\] \(\[enabled\],\[id\],\[name\],\[received_at\],\[user_id\]\) FROM 'https://onelake\.dfs\.fabric\.microsoft\.com/.+' WITH \(FILE_TYPE = 'PARQUET'\);`).WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectQuery(`(?s)SELECT COUNT\(\*\) FROM \[schema\.with\.dot\]\.\[identifies\] AS target WHERE EXISTS \(.*FROM \[schema\.with\.dot\]\.\[rudder_staging_identifies_[0-9a-f]+\] AS source.*\);`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectExec(`(?s)MERGE INTO \[schema\.with\.dot\]\.\[identifies\] AS target USING .*WHEN MATCHED THEN UPDATE SET.*WHEN NOT MATCHED THEN INSERT`).WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectExec(`(?s)SELECT \* INTO \[schema\.with\.dot\]\.\[rudder_staging_users_identifies_union_[0-9a-f]+\] FROM \(.*UNION ALL.*\) AS users_identifies;`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`(?s)SELECT DISTINCT \[id\],FIRST_VALUE\(\[enabled\]\) IGNORE NULLS OVER \(PARTITION BY \[id\] ORDER BY \[received_at\] DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING\) AS \[enabled\],FIRST_VALUE\(\[name\]\) IGNORE NULLS OVER .* AS \[name\],FIRST_VALUE\(\[received_at\]\) IGNORE NULLS OVER .* AS \[received_at\] INTO \[schema\.with\.dot\]\.\[rudder_staging_users_[0-9a-f]+\] FROM \[schema\.with\.dot\]\.\[rudder_staging_users_identifies_union_[0-9a-f]+\];`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`(?s)MERGE INTO \[schema\.with\.dot\]\.\[users\] AS target USING .*WHEN MATCHED THEN UPDATE SET.*WHEN NOT MATCHED THEN INSERT`).WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectExec(`IF OBJECT_ID\(N'\[schema\.with\.dot\]\.\[rudder_staging_users_identifies_union_[0-9a-f]+\]', 'U'\) IS NOT NULL DROP TABLE \[schema\.with\.dot\]\.\[rudder_staging_users_identifies_union_[0-9a-f]+\];`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`IF OBJECT_ID\(N'\[schema\.with\.dot\]\.\[rudder_staging_users_[0-9a-f]+\]', 'U'\) IS NOT NULL DROP TABLE \[schema\.with\.dot\]\.\[rudder_staging_users_[0-9a-f]+\];`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`IF OBJECT_ID\(N'\[schema\.with\.dot\]\.\[rudder_staging_identifies_[0-9a-f]+\]', 'U'\) IS NOT NULL DROP TABLE \[schema\.with\.dot\]\.\[rudder_staging_identifies_[0-9a-f]+\];`).WillReturnResult(sqlmock.NewResult(0, 0))
+
+	userSchema := model.TableSchema{
+		"id": model.StringDataType, "enabled": model.BooleanDataType, "name": model.StringDataType, "received_at": model.DateTimeDataType,
+	}
+	identifySchema := model.TableSchema{
+		"id": model.StringDataType, "user_id": model.StringDataType, "enabled": model.BooleanDataType, "name": model.StringDataType, "received_at": model.DateTimeDataType,
+	}
+	fabric := &MicrosoftFabric{
+		db:        sqlmw.New(db),
+		namespace: "schema.with.dot",
+		warehouse: testWarehouse(false),
+		uploader: &uploaderStub{
+			schemasInUpload: map[string]model.TableSchema{
+				warehouseutils.IdentifiesTable: identifySchema,
+				warehouseutils.UsersTable:      userSchema,
+			},
+			schemasInWH: map[string]model.TableSchema{warehouseutils.UsersTable: userSchema},
+			loadFiles: map[string][]warehouseutils.LoadFile{
+				warehouseutils.IdentifiesTable: {{Location: location}},
+			},
+		},
+	}
+	require.Equal(t, map[string]error{warehouseutils.IdentifiesTable: nil, warehouseutils.UsersTable: nil}, fabric.LoadUserTables(context.Background()))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestAlterColumnIsExplicitlyBlocked(t *testing.T) {
 	_, err := (&MicrosoftFabric{}).AlterColumn(context.Background(), "tracks", "value", "string")
 	require.ErrorContains(t, err, "automatic ALTER COLUMN is unsupported")

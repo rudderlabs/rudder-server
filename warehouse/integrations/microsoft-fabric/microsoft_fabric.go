@@ -499,15 +499,16 @@ SELECT %[5]s AS %[2]s, %[7]s FROM %[6]s WHERE %[5]s IS NOT NULL
 	}
 
 	latestColumns := make([]string, 0, len(columns)+1)
-	latestColumns = append(latestColumns, "x."+warehouseutils.BracketQuoteIdentifier("id"))
+	latestColumns = append(latestColumns, warehouseutils.BracketQuoteIdentifier("id"))
 	for _, column := range columns {
-		quoted := warehouseutils.BracketQuoteIdentifier(column)
-		latestColumns = append(latestColumns, fmt.Sprintf(`(SELECT TOP 1 s.%[1]s FROM %[2]s AS s WHERE s.%[3]s = x.%[3]s AND s.%[1]s IS NOT NULL ORDER BY s.%[4]s DESC) AS %[1]s`,
-			quoted, qualified(f.namespace, unionTable), warehouseutils.BracketQuoteIdentifier("id"), warehouseutils.BracketQuoteIdentifier("received_at")))
+		latestColumns = append(latestColumns, fmt.Sprintf(
+			`FIRST_VALUE(%[1]s) IGNORE NULLS OVER (PARTITION BY %[2]s ORDER BY %[3]s DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`,
+			warehouseutils.BracketQuoteIdentifier(column),
+			warehouseutils.BracketQuoteIdentifier("id"),
+			warehouseutils.BracketQuoteIdentifier("received_at")))
 	}
-	// Drive the per-column lookups from distinct ids so each runs once per user, not once per union row.
-	latestStatement := fmt.Sprintf(`SELECT %[1]s INTO %[2]s FROM (SELECT DISTINCT %[4]s FROM %[3]s) AS x;`,
-		strings.Join(latestColumns, ","), qualified(f.namespace, latestTable), qualified(f.namespace, unionTable), warehouseutils.BracketQuoteIdentifier("id"))
+	latestStatement := fmt.Sprintf(`SELECT DISTINCT %s INTO %s FROM %s;`,
+		strings.Join(latestColumns, ","), qualified(f.namespace, latestTable), qualified(f.namespace, unionTable))
 	if _, err := f.db.ExecContext(ctx, latestStatement); err != nil {
 		return usersResult(fmt.Errorf("creating latest users staging table: %w", err))
 	}

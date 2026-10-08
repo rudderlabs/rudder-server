@@ -165,9 +165,7 @@ func testFabricEventsFlow(t *testing.T, credentials fabricTestCredentials) {
 				WithWorkspaceID(workspaceID).
 				Build()
 
-			// Serialize loads against the capacity-constrained shared CI tenant. The
-			// configurable production default remains covered separately.
-			t.Setenv("RSERVER_WAREHOUSE_MICROSOFT_FABRIC_MAX_PARALLEL_LOADS", "1")
+			t.Setenv("RSERVER_WAREHOUSE_MICROSOFT_FABRIC_MAX_PARALLEL_LOADS", "8")
 			t.Setenv("RSERVER_WAREHOUSE_MICROSOFT_FABRIC_SLOW_QUERY_THRESHOLD", "0s")
 			jobsDBPort := c.Port("jobsDb", 5432)
 			whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
