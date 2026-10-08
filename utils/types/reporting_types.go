@@ -263,9 +263,10 @@ func PUReportedMetricToEDReportsDB(
 	}
 }
 
-func CreatePUDetails(inPU, pu string, terminalPU, initialPU bool) *PUDetails {
+// CreatePUDetails creates the details of a processing unit. Producers no longer set InPU: the field
+// stays on PUDetails for the wire and the reports table, and is always empty.
+func CreatePUDetails(pu string, terminalPU, initialPU bool) *PUDetails {
 	return &PUDetails{
-		InPU:       inPU,
 		PU:         pu,
 		TerminalPU: terminalPU,
 		InitialPU:  initialPU,

@@ -110,15 +110,9 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		sourceSteps.trackingPlanValidation = true
 		sourcePipelineSteps[sourceId] = sourceSteps
 
-		// inPU stays empty when no earlier reporting stage ran for the event.
-		inPU := ""
-		if sourcePipelineSteps[sourceId].srcHydration {
-			inPU = reportingtypes.SOURCE_HYDRATION
-		}
-
 		var successMetrics []*reportingtypes.PUReportedMetric
-		eventsToTransform, successMetrics, _, _ := proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, &transformerEvent.Destination, backendconfig.Connection{}, inPU, reportingtypes.TRACKINGPLAN_VALIDATOR) // Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
-		nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, inPU, reportingtypes.TRACKINGPLAN_VALIDATOR)
+		eventsToTransform, successMetrics, _, _ := proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, &transformerEvent.Destination, backendconfig.Connection{}, reportingtypes.TRACKINGPLAN_VALIDATOR) // Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
+		nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, reportingtypes.TRACKINGPLAN_VALIDATOR)
 
 		validationStat.numValidationSuccessEvents.Count(len(eventsToTransform))
 		validationStat.numValidationFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
