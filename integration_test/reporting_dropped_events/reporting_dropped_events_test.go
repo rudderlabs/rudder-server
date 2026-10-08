@@ -460,10 +460,13 @@ func TestReportingDroppedEvents(t *testing.T) {
 					if initialState || terminalState {
 						return false
 					}
+					if inPU != "" {
+						return false
+					}
 					tuples++
 				}
 				return rows.Err() == nil && tuples == 1
-			}, 10*time.Second, 500*time.Millisecond, "every event_filter row should share the same non initial, non terminal in_pu chain")
+			}, 10*time.Second, 500*time.Millisecond, "every event_filter row is non initial, non terminal with an empty in_pu")
 			require.Eventually(t, func() bool {
 				return reportCount("pu = 'dest_transformer' and destination_id = 'destination-1' and status = 'succeeded'") == 1
 			}, 10*time.Second, 500*time.Millisecond, "only the allowed event should reach the destination transformer")
@@ -636,11 +639,20 @@ func TestReportingDroppedEvents(t *testing.T) {
 
 			require.Eventually(t, func() bool {
 				var droppedCount sql.NullInt64
-				require.NoError(t, postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE source_id = 'source-1' and destination_id = 'destination-1' AND pu = 'router' and status = 'aborted' and error_type = ''").Scan(&droppedCount))
+				require.NoError(t, postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE source_id = 'source-1' and destination_id = 'destination-1' AND pu = 'router' and status = 'aborted' and error_type = '' and in_pu = ''").Scan(&droppedCount))
 				t.Logf("router aborted count: %d", droppedCount.Int64)
 				logRows(t, postgresContainer.DB, "SELECT * FROM reports")
 				return droppedCount.Int64 == 10
 			}, 10*time.Second, 1*time.Second, "all events should be aborted in router stage")
+
+			// The processor commits its dest_transformer rows before the router aborts, so they are
+			// already present and guarantee the whole-table check below runs over a populated table.
+			var dtSucceeded sql.NullInt64
+			require.NoError(t, postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE source_id = 'source-1' AND destination_id = 'destination-1' AND pu = 'dest_transformer' AND status = 'succeeded' AND in_pu = ''").Scan(&dtSucceeded))
+			require.EqualValues(t, 10, dtSucceeded.Int64, "all events should succeed in dest_transformer with an empty in_pu")
+			var nonEmptyInPU int
+			require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM reports WHERE in_pu IS DISTINCT FROM ''").Scan(&nonEmptyInPU))
+			require.Zero(t, nonEmptyInPU, "no report row carries a non-empty in_pu")
 
 			cancel()
 			_ = wg.Wait()
@@ -940,8 +952,8 @@ func TestReportingDroppedEvents(t *testing.T) {
 			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
 			require.EqualValues(t, 0, reportCount("pu = 'destination_filter' and status = 'filtered'"),
 				"the destination filter never emits a plain filtered row")
-			require.EqualValues(t, 0, reportCount("pu = 'destination_filter' and in_pu = 'gateway'"),
-				"the destination filter emits only from fan-out, never from preprocess")
+			require.EqualValues(t, 0, reportCount("in_pu IS DISTINCT FROM ''"),
+				"no report row carries a non-empty in_pu")
 			require.EqualValues(t, 0, reportCount("source_id = 'source-2' and pu = 'destination_enter'"),
 				"a source without destinations has no candidates to enter")
 		})

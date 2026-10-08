@@ -219,7 +219,7 @@ func (proc *Handle) getHydrationFailedReports(source *backendconfig.SourceT, job
 				SourceID:           source.ID,
 				SourceDefinitionID: source.SourceDefinition.ID,
 				SourceCategory:     source.SourceDefinition.Category,
-				PUDetails:          *reportingtypes.CreatePUDetails("", reportingtypes.SOURCE_HYDRATION, false, false),
+				PUDetails:          *reportingtypes.CreatePUDetails(reportingtypes.SOURCE_HYDRATION, false, false),
 				StatusDetail: &reportingtypes.StatusDetail{
 					Status:         jobsdb.Aborted.State,
 					Count:          1,

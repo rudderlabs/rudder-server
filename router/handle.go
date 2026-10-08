@@ -447,7 +447,6 @@ func (rt *Handle) stopIteration(err error, destinationID string) bool {
 func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
-	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
@@ -478,7 +477,6 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 				SourceCategory:          parameters.SourceCategory,
 			}
 			connectionDetailsMap[key] = cd
-			transformedAtMap[key] = parameters.TransformAt
 		}
 		sd, ok := statusDetailsMap[key]
 		if !ok {
@@ -541,15 +539,9 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	// REPORTING - ROUTER - START
 	utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 	for k, cd := range connectionDetailsMap {
-		var inPu string
-		if transformedAtMap[k] == "processor" {
-			inPu = utilTypes.DEST_TRANSFORMER
-		} else {
-			inPu = utilTypes.EVENT_FILTER
-		}
 		m := &utilTypes.PUReportedMetric{
 			ConnectionDetails: *cd,
-			PUDetails:         *utilTypes.CreatePUDetails(inPu, utilTypes.ROUTER, true, false),
+			PUDetails:         *utilTypes.CreatePUDetails(utilTypes.ROUTER, true, false),
 			StatusDetail:      statusDetailsMap[k],
 		}
 		if m.StatusDetail.Count != 0 {
