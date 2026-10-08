@@ -92,12 +92,13 @@ func TestIntegration(t *testing.T) {
 
 func testFabricEventsFlow(t *testing.T, credentials fabricTestCredentials) {
 	testCases := []struct {
-		name           string
-		preferAppend   bool
-		storeFullEvent bool
-		eventsFile2    string
-		mode           eventRecordMode
-		secondCounts   whth.EventsCountMap
+		name            string
+		preferAppend    bool
+		storeFullEvent  bool
+		eventsFile2     string
+		mode            eventRecordMode
+		secondCounts    whth.EventsCountMap
+		freshSecondUser bool
 	}{
 		{
 			name:        "merge",
@@ -115,10 +116,11 @@ func testFabricEventsFlow(t *testing.T, credentials fabricTestCredentials) {
 			},
 		},
 		{
-			name:           "store full event",
-			storeFullEvent: true,
-			eventsFile2:    "../testdata/upload-job.events-2.json",
-			mode:           recordsNormal,
+			name:            "store full event",
+			storeFullEvent:  true,
+			eventsFile2:     "../testdata/upload-job.events-2.json",
+			mode:            recordsNormal,
+			freshSecondUser: true,
 		},
 	}
 
@@ -165,9 +167,7 @@ func testFabricEventsFlow(t *testing.T, credentials fabricTestCredentials) {
 				WithWorkspaceID(workspaceID).
 				Build()
 
-			// Serialize event-flow loads against the capacity-constrained shared CI tenant.
-			// The production default and configurable parallelism remain covered separately.
-			t.Setenv("RSERVER_WAREHOUSE_MICROSOFT_FABRIC_MAX_PARALLEL_LOADS", "1")
+			t.Setenv("RSERVER_WAREHOUSE_MICROSOFT_FABRIC_MAX_PARALLEL_LOADS", "8")
 			t.Setenv("RSERVER_WAREHOUSE_MICROSOFT_FABRIC_SLOW_QUERY_THRESHOLD", "0s")
 			jobsDBPort := c.Port("jobsDb", 5432)
 			whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
@@ -201,6 +201,9 @@ func testFabricEventsFlow(t *testing.T, credentials fabricTestCredentials) {
 			second := first
 			second.EventsFilePath = tc.eventsFile2
 			second.WarehouseEventsMap = tc.secondCounts
+			if tc.freshSecondUser {
+				second.UserID = whth.GetUserId(whutils.MicrosoftFabric)
+			}
 			second.VerifyEvents(t)
 
 			verifyFabricEventSchema(t, db, namespace, tc.storeFullEvent)
