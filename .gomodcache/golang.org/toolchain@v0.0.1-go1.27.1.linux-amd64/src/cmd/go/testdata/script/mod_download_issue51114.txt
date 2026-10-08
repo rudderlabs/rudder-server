@@ -1,0 +1,14 @@
+[short] skip
+[!git] skip
+
+env GOPROXY=direct
+
+! go mod download
+stderr '^go: vcs-test.golang.org/notexist.git/subdir@v0.1.0: reading vcs-test\.golang\.org/notexist.git/subdir/go\.mod at revision subdir/v0\.1\.0: '
+
+-- go.mod --
+module test
+
+go 1.18
+
+require vcs-test.golang.org/notexist.git/subdir v0.1.0

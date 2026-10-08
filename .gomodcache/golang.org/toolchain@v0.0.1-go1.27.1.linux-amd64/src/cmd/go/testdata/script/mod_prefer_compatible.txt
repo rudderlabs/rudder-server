@@ -1,0 +1,77 @@
+# Regression test for golang.org/issue/34189 and golang.org/issue/34165:
+# @latest, @upgrade, and @patch should prefer compatible versions over
+# +incompatible ones, even if offered by a proxy.
+
+env GO111MODULE=on
+env GOSUMDB=off
+
+# vcs-test.golang.org/git/prefercompatible.git v2.0.0+incompatible exists,
+# and should be resolved if we ask for it explicitly.
+
+go list -m vcs-test.golang.org/git/prefercompatible.git@v2.0.0+incompatible
+stdout '^vcs-test.golang.org/git/prefercompatible.git v2\.0\.0\+incompatible$'
+
+# prefercompatible v1.5.2 has a go.mod file, so v1.5.2 should be preferred over
+# v2.0.0+incompatible when resolving latest, upgrade, and patch.
+
+go list -m vcs-test.golang.org/git/prefercompatible.git@latest
+stdout '^vcs-test.golang.org/git/prefercompatible.git v1\.'
+
+go list -m vcs-test.golang.org/git/prefercompatible.git@upgrade
+stdout '^vcs-test.golang.org/git/prefercompatible.git v1\.'
+
+! go list -m vcs-test.golang.org/git/prefercompatible.git@patch
+stderr '^go: vcs-test.golang.org/git/prefercompatible.git@patch: can''t query version "patch" of module vcs-test.golang.org/git/prefercompatible.git: no existing version is required$'
+
+
+# If we're fetching directly from version control, ignored +incompatible
+# versions should also be omitted by 'go list'.
+
+# (Note that they may still be included in results from a proxy: in proxy mode,
+# we would need to fetch the whole zipfile for the latest compatible version in
+# order to determine whether it contains a go.mod file, and part of the point of
+# the proxy is to avoid fetching unnecessary data.)
+
+[short] stop
+[!git] stop
+env GOPROXY=direct
+
+go list -versions -m vcs-test.golang.org/git/prefercompatible.git
+stdout '^vcs-test.golang.org/git/prefercompatible.git v1\.5\.1 v1\.5\.2' # and possibly others
+! stdout ' v2\.'
+
+# For this module, v2.1.0 exists and has a go.mod file.
+# 'go list -m vcs-test.golang.org/git/prefercompatible.git@v2.0' will check
+# the latest v2.0 tag, discover that it isn't the right module, and stop there
+# (instead of spending the time to check O(N) previous tags).
+
+! go list -m vcs-test.golang.org/git/prefercompatible.git@v2.0
+stderr '^go: module vcs-test.golang.org/git/prefercompatible.git: no matching versions for query "v2\.0\"'
+
+# (But asking for exactly v2.0.0+incompatible should still succeed.)
+go list -m vcs-test.golang.org/git/prefercompatible.git@v2.0.0+incompatible
+stdout '^vcs-test.golang.org/git/prefercompatible.git v2\.0\.0\+incompatible$'
+
+
+# However, if the latest compatible version does not include a go.mod file,
+# +incompatible versions should still be listed, as they may still reflect the
+# intent of the module author.
+
+go list -versions -m vcs-test.golang.org/git/legacytest.git
+stdout '^vcs-test.golang.org/git/legacytest.git v1\.0\.0 v1\.1\.0-pre v1\.2\.0 v2\.0\.0\+incompatible'
+
+# If we're fetching directly from version control, asking for a commit hash
+# corresponding to a +incompatible version should continue to produce the
+# +incompatible version tagged for that commit, even if it is no longer listed.
+
+go list -m vcs-test.golang.org/git/prefercompatible.git@7a6f627326
+stdout '^vcs-test.golang.org/git/prefercompatible.git v2\.0\.0\+incompatible$'
+
+# Similarly, requesting an untagged commit should continue to produce a +incompatible
+# pseudo-version.
+
+go list -m vcs-test.golang.org/git/legacytest.git@7303f7796364
+stdout '^vcs-test.golang.org/git/legacytest.git v2\.0\.1-0\.20180717164253-7303f7796364\+incompatible$'
+
+-- go.mod --
+module github.com/golang.org/issue/34165

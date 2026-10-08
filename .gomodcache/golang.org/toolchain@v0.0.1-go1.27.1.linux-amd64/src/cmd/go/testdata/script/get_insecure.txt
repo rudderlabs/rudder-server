@@ -1,0 +1,41 @@
+# Test for #15410
+[short] skip 'builds a go program and a git repo'
+[!git] skip
+
+env PATH=$WORK/tmp/bin${:}$PATH
+go build -o $WORK/tmp/bin/ssh ssh.go
+
+# Modules: Set up
+env GOPATH=$WORK/m/gp
+mkdir $WORK/m
+cp module_file $WORK/m/go.mod
+cd $WORK/m
+env GOPROXY=${GOPROXY},direct
+
+# Modules: Try go get of HTTP-only repo (should fail).
+! go get -d vcs-test.golang.org/insecure/go/insecure@6fecd21
+
+# Modules: Try again with GOINSECURE (should succeed).
+env GOINSECURE=vcs-test.golang.org/insecure/go/insecure
+env GONOSUMDB=vcs-test.golang.org/insecure
+go get -d vcs-test.golang.org/insecure/go/insecure@6fecd21
+
+# Modules: Try updating without GOINSECURE (should fail).
+env GOINSECURE=''
+env GONOSUMDB=''
+! go get -d -u -f vcs-test.golang.org/insecure/go/insecure@6fecd21
+
+go list -m ...
+stdout 'vcs-test.golang.org/insecure/go/insecure'
+
+-- ssh.go --
+// stub out uses of ssh by go get
+package main
+
+import "os"
+
+func main() {
+	os.Exit(1)
+}
+-- module_file --
+module m

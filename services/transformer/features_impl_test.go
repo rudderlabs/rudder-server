@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
@@ -34,6 +35,96 @@ func parseTestFeatures(rawFeatures string) *featuresPayload {
 
 var _ = Describe("Transformer features", func() {
 	Context("Transformer features service", func() {
+		It("preserves absent, null, and empty secret path representations with jsonrs", func() {
+			type payload struct {
+				SecretPaths *map[string][]string `json:"secretPaths"`
+			}
+
+			var absent payload
+			Expect(jsonrs.Unmarshal([]byte(`{}`), &absent)).To(Succeed())
+			Expect(absent.SecretPaths).To(BeNil())
+
+			var entries payload
+			Expect(jsonrs.Unmarshal([]byte(`{"secretPaths":{"KLAVIYO":null,"BRAZE":[]}}`), &entries)).To(Succeed())
+			Expect(entries.SecretPaths).ToNot(BeNil())
+			Expect((*entries.SecretPaths)["KLAVIYO"]).To(BeNil())
+			Expect((*entries.SecretPaths)["BRAZE"]).ToNot(BeNil())
+			Expect((*entries.SecretPaths)["BRAZE"]).To(BeEmpty())
+		})
+
+		Describe("SecretPaths", func() {
+			It("distinguishes listed, empty, null, missing destination, and unavailable states", func() {
+				handler := newTestFeaturesService(parseTestFeatures(`{
+					"secretPaths": {
+						"KLAVIYO": ["headers.Authorization", "params.api_key"],
+						"EMPTY": [],
+						"UNRESOLVED": null
+					}
+				}`))
+
+				state, paths := handler.SecretPaths("KLAVIYO")
+				Expect(state).To(Equal(SecretPathsMaskListed))
+				Expect(paths).To(Equal([]string{"headers.Authorization", "params.api_key"}))
+
+				state, paths = handler.SecretPaths("EMPTY")
+				Expect(state).To(Equal(SecretPathsMaskListed))
+				Expect(paths).ToNot(BeNil())
+				Expect(paths).To(BeEmpty())
+
+				state, paths = handler.SecretPaths("UNRESOLVED")
+				Expect(state).To(Equal(SecretPathsMaskAll))
+				Expect(paths).To(BeNil())
+
+				state, paths = handler.SecretPaths("MISSING")
+				Expect(state).To(Equal(SecretPathsMaskAll))
+				Expect(paths).To(BeNil())
+
+				state, paths = newTestFeaturesService(parseTestFeatures(`{}`)).SecretPaths("KLAVIYO")
+				Expect(state).To(Equal(SecretPathsUnavailable))
+				Expect(paths).To(BeNil())
+			})
+
+			It("treats top-level null as unavailable", func() {
+				state, paths := newTestFeaturesService(parseTestFeatures(`{"secretPaths":null}`)).SecretPaths("KLAVIYO")
+				Expect(state).To(Equal(SecretPathsUnavailable))
+				Expect(paths).To(BeNil())
+			})
+
+			It("fails only malformed entries closed while preserving valid siblings", func() {
+				handler := newTestFeaturesService(parseTestFeatures(`{
+					"secretPaths": {
+						"KLAVIYO": "bad",
+						"BRAZE": ["headers.Authorization"]
+					}
+				}`))
+
+				state, paths := handler.SecretPaths("KLAVIYO")
+				Expect(state).To(Equal(SecretPathsMaskAll))
+				Expect(paths).To(BeNil())
+				Expect(handler.secretPathsMalformed("KLAVIYO")).To(BeTrue())
+				state, paths = handler.SecretPaths("BRAZE")
+				Expect(state).To(Equal(SecretPathsMaskListed))
+				Expect(paths).To(Equal([]string{"headers.Authorization"}))
+			})
+
+			It("returns a clone of listed paths", func() {
+				handler := newTestFeaturesService(parseTestFeatures(`{"secretPaths":{"KLAVIYO":["headers.Authorization"]}}`))
+				_, paths := handler.SecretPaths("KLAVIYO")
+				paths[0] = "body.secret"
+				_, paths = handler.SecretPaths("KLAVIYO")
+				Expect(paths).To(Equal([]string{"headers.Authorization"}))
+			})
+
+			It("is unavailable for the default and no-op services", func() {
+				state, paths := newTestFeaturesService(defaultTransformerFeatures).SecretPaths("KLAVIYO")
+				Expect(state).To(Equal(SecretPathsUnavailable))
+				Expect(paths).To(BeNil())
+				state, paths = NewNoOpService().SecretPaths("KLAVIYO")
+				Expect(state).To(Equal(SecretPathsUnavailable))
+				Expect(paths).To(BeNil())
+			})
+		})
+
 		It("defaultTransformerFeatures must advertise a non-deprecated source transformer version", func() {
 			Expect(defaultTransformerFeatures.sourceTransformerVersion()).To(Equal(V2))
 		})
@@ -121,6 +212,9 @@ var _ = Describe("Transformer features", func() {
 			Eventually(handler.Wait(), time.Second).Should(BeClosed())
 			Expect(handler.RouterTransform("MARKETO")).To(BeTrue())
 			Expect(handler.RouterTransform("CUSTOMERIO")).To(BeFalse())
+			state, paths := handler.SecretPaths("KLAVIYO")
+			Expect(state).To(Equal(SecretPathsUnavailable))
+			Expect(paths).To(BeNil())
 		})
 
 		It("should release Wait() when the context is cancelled before the first successful fetch", func() {

@@ -1,0 +1,18 @@
+env GOPROXY=direct
+env GOSUMDB=off
+[short] skip
+[!git] skip
+
+# fetch commit hash reachable from refs/heads/* and refs/tags/* is OK
+go list -m vcs-test.golang.org/git/unreachable-hash.git@6c0e37b1dcaab081b5c413108a46669027fcf02b # on main branch
+
+# fetch other commit hash, even with a non-standard ref, is not OK
+! go list -m vcs-test.golang.org/git/unreachable-hash.git@cbd2996c52d20dac558bc3b49c342c7c8320a1fc
+stderr 'unknown revision'
+! go list -m vcs-test.golang.org/git/unreachable-hash.git@v0.0.0-20170424233410-cbd2996c52d2
+stderr 'unknown revision'
+! go list -m vcs-test.golang.org/git/unreachable-hash.git@cbd2996c52d2
+stderr 'unknown revision'
+
+-- go.mod --
+module m

@@ -1,0 +1,22 @@
+# Testing mod download with non semantic versions; turn off proxy.
+[short] skip
+[!git] skip
+env GOPROXY=direct
+env GOSUMDB=off
+
+go mod download vcs-test.golang.org/git/hello.git@fc3a09f
+exists $GOPATH/pkg/mod/cache/download/vcs-test.golang.org/git/hello.git/@v/v0.0.0-20170922010558-fc3a09f3dc5c.info
+exists $GOPATH/pkg/mod/cache/download/vcs-test.golang.org/git/hello.git/@v/v0.0.0-20170922010558-fc3a09f3dc5c.mod
+exists $GOPATH/pkg/mod/cache/download/vcs-test.golang.org/git/hello.git/@v/v0.0.0-20170922010558-fc3a09f3dc5c.zip
+
+go mod download vcs-test.golang.org/git/hello.git@master
+exists $GOPATH/pkg/mod/cache/download/vcs-test.golang.org/git/hello.git/@v/v0.0.0-20170922010558-fc3a09f3dc5c.info
+exists $GOPATH/pkg/mod/cache/download/vcs-test.golang.org/git/hello.git/@v/v0.0.0-20170922010558-fc3a09f3dc5c.mod
+exists $GOPATH/pkg/mod/cache/download/vcs-test.golang.org/git/hello.git/@v/v0.0.0-20170922010558-fc3a09f3dc5c.zip
+
+
+-- go.mod --
+module m
+
+-- m.go --
+package m

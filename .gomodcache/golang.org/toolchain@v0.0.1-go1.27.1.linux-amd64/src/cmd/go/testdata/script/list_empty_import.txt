@@ -1,0 +1,14 @@
+! go list a.go
+! stdout .
+stderr 'invalid import path'
+! stderr panic
+
+! go list ''
+stderr 'invalid package'
+! go list -m ''
+stderr 'invalid package'
+
+-- a.go --
+package a
+
+import ""

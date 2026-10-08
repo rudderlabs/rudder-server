@@ -57,6 +57,7 @@ SourceDebugger:
   disableEventUploads: false
 DestinationDebugger:
   disableEventDeliveryStatusUploads: false
+  disableEventDeliveryUploadMasking: true
 TransformationDebugger:
   disableTransformationStatusUploads: false
 Archiver:

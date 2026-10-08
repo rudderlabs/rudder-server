@@ -24,10 +24,23 @@ type FeaturesServiceOptions struct {
 	TransformerURL string
 }
 
+type SecretPathsState int
+
+const (
+	// SecretPathsMaskAll is the zero value on purpose: an unset state must fail closed.
+	SecretPathsMaskAll SecretPathsState = iota
+	SecretPathsUnavailable
+	SecretPathsMaskListed
+)
+
 type FeaturesService interface {
 	Regulations() []string
 	SourceTransformerVersion() string
 	RouterTransform(destType string) bool
+	// SecretPaths reports how destType's Live Events delivery-payload copy must be masked.
+	// paths is meaningful only when state is SecretPathsMaskListed, and may be empty,
+	// which means the transformer positively concluded there is nothing to mask.
+	SecretPaths(destType string) (state SecretPathsState, paths []string)
 	// TransformerProxy reports whether the transformer declares destType deliverable through the
 	// transformer proxy. Distinct from TransformerProxyVersion, which reports the proxy protocol
 	// the transformer speaks.
@@ -97,6 +110,10 @@ func (*noopService) Wait() chan struct{} {
 
 func (*noopService) RouterTransform(_ string) bool {
 	return false
+}
+
+func (*noopService) SecretPaths(_ string) (SecretPathsState, []string) {
+	return SecretPathsUnavailable, nil
 }
 
 func (*noopService) TransformerProxy(_ string) bool {

@@ -1,0 +1,13 @@
+env GOSUMDB=off
+
+env LOCALMODPROXY=$GOPROXY
+env GOPROXY=$LOCALMODPROXY,direct
+
+go get -x -v vcs-test.golang.org/git/hello.git
+stderr '# get '$LOCALMODPROXY'/vcs-test.golang.org/git/hello.git/@v/list'
+! stderr '# get https://vcs-test.golang.org'
+
+-- go.mod --
+module m
+
+go 1.18

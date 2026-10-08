@@ -12,6 +12,7 @@ package mock_features
 import (
 	reflect "reflect"
 
+	transformer "github.com/rudderlabs/rudder-server/services/transformer"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -65,6 +66,21 @@ func (m *MockFeaturesService) RouterTransform(destType string) bool {
 func (mr *MockFeaturesServiceMockRecorder) RouterTransform(destType any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RouterTransform", reflect.TypeOf((*MockFeaturesService)(nil).RouterTransform), destType)
+}
+
+// SecretPaths mocks base method.
+func (m *MockFeaturesService) SecretPaths(destType string) (transformer.SecretPathsState, []string) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SecretPaths", destType)
+	ret0, _ := ret[0].(transformer.SecretPathsState)
+	ret1, _ := ret[1].([]string)
+	return ret0, ret1
+}
+
+// SecretPaths indicates an expected call of SecretPaths.
+func (mr *MockFeaturesServiceMockRecorder) SecretPaths(destType any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SecretPaths", reflect.TypeOf((*MockFeaturesService)(nil).SecretPaths), destType)
 }
 
 // SourceTransformerVersion mocks base method.

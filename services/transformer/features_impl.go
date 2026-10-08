@@ -27,17 +27,41 @@ import (
 type featuresPayload struct {
 	raw json.RawMessage
 
-	RouterTransform                        map[string]bool `json:"routerTransform"`
-	TransformerProxy                       map[string]bool `json:"transformerProxy"`
-	Regulations                            []string        `json:"regulations"`
-	SupportSourceTransformV1               bool            `json:"supportSourceTransformV1"`
-	UpgradedToSourceTransformV2            bool            `json:"upgradedToSourceTransformV2"`
-	SupportTransformerProxyV1              bool            `json:"supportTransformerProxyV1"`
-	SupportDestTransformCompactedPayloadV1 bool            `json:"supportDestTransformCompactedPayloadV1"`
+	RouterTransform                        map[string]bool              `json:"routerTransform"`
+	TransformerProxy                       map[string]bool              `json:"transformerProxy"`
+	Regulations                            []string                     `json:"regulations"`
+	SupportSourceTransformV1               bool                         `json:"supportSourceTransformV1"`
+	UpgradedToSourceTransformV2            bool                         `json:"upgradedToSourceTransformV2"`
+	SupportTransformerProxyV1              bool                         `json:"supportTransformerProxyV1"`
+	SupportDestTransformCompactedPayloadV1 bool                         `json:"supportDestTransformCompactedPayloadV1"`
+	SecretPaths                            *map[string]secretPathsEntry `json:"-"`
 }
 
-// sourceTransformerVersion resolves the source transformer version advertised by the snapshot,
-// panicking if the transformer only speaks the deprecated v0 protocol.
+type secretPathsEntry struct {
+	state     SecretPathsState
+	paths     []string
+	malformed bool
+}
+
+func (f *featuresPayload) secretPaths(destType string) (SecretPathsState, []string) {
+	if f.SecretPaths == nil {
+		return SecretPathsUnavailable, nil
+	}
+	entry, ok := (*f.SecretPaths)[destType]
+	if !ok {
+		return SecretPathsMaskAll, nil
+	}
+	return entry.state, slices.Clone(entry.paths)
+}
+
+func (f *featuresPayload) secretPathsMalformed(destType string) bool {
+	if f.SecretPaths == nil {
+		return false
+	}
+	entry, ok := (*f.SecretPaths)[destType]
+	return ok && entry.malformed
+}
+
 func (f *featuresPayload) sourceTransformerVersion() string {
 	if f.UpgradedToSourceTransformV2 {
 		return V2
@@ -53,8 +77,41 @@ func parseFeatures(body []byte) (*featuresPayload, error) {
 	if err := jsonrs.Unmarshal(body, &f); err != nil {
 		return nil, err
 	}
+	f.SecretPaths = parseSecretPaths(body)
 	f.raw = body
 	return &f, nil
+}
+
+func parseSecretPaths(body []byte) *map[string]secretPathsEntry {
+	var envelope struct {
+		SecretPaths json.RawMessage `json:"secretPaths"`
+	}
+	if err := jsonrs.Unmarshal(body, &envelope); err != nil {
+		return nil
+	}
+	if len(envelope.SecretPaths) == 0 || bytes.Equal(bytes.TrimSpace(envelope.SecretPaths), []byte("null")) {
+		return nil
+	}
+
+	var rawEntries map[string]json.RawMessage
+	if err := jsonrs.Unmarshal(envelope.SecretPaths, &rawEntries); err != nil {
+		entries := make(map[string]secretPathsEntry)
+		return &entries
+	}
+	entries := make(map[string]secretPathsEntry, len(rawEntries))
+	for destType, rawEntry := range rawEntries {
+		if bytes.Equal(bytes.TrimSpace(rawEntry), []byte("null")) {
+			entries[destType] = secretPathsEntry{state: SecretPathsMaskAll}
+			continue
+		}
+		var paths []string
+		if err := jsonrs.Unmarshal(rawEntry, &paths); err != nil || paths == nil {
+			entries[destType] = secretPathsEntry{state: SecretPathsMaskAll, malformed: true}
+			continue
+		}
+		entries[destType] = secretPathsEntry{state: SecretPathsMaskListed, paths: slices.Clone(paths)}
+	}
+	return &entries
 }
 
 type featuresService struct {
@@ -82,6 +139,24 @@ func (t *featuresService) TransformerProxyVersion() string {
 
 func (t *featuresService) RouterTransform(destType string) bool {
 	return t.features.Load().RouterTransform[destType]
+}
+
+func (t *featuresService) SecretPaths(destType string) (SecretPathsState, []string) {
+	return t.features.Load().secretPaths(destType)
+}
+
+func (t *featuresService) secretPathsMalformed(destType string) bool {
+	return t.features.Load().secretPathsMalformed(destType)
+}
+
+type secretPathsMalformedProvider interface {
+	secretPathsMalformed(destType string) bool
+}
+
+// SecretPathsMalformed reports whether provider normalized destType as a malformed secret-path entry.
+func SecretPathsMalformed(provider any, destType string) bool {
+	malformedProvider, ok := provider.(secretPathsMalformedProvider)
+	return ok && malformedProvider.secretPathsMalformed(destType)
 }
 
 // TransformerProxy reports whether the transformer declares destType deliverable via the proxy.

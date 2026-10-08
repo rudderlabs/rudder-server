@@ -123,12 +123,17 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 
 	a.log.Infon("Clearing DB", logger.NewBoolField("clearDB", options.ClearDB))
 
+	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
+		PollInterval:   config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
+		TransformerURL: config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"),
+	})
+
 	transformationhandle, err := transformationdebugger.NewHandle(backendconfig.DefaultBackendConfig)
 	if err != nil {
 		return err
 	}
 	defer transformationhandle.Stop()
-	destinationHandle, err := destinationdebugger.NewHandle(backendconfig.DefaultBackendConfig)
+	destinationHandle, err := destinationdebugger.NewHandle(backendconfig.DefaultBackendConfig, transformerFeaturesService)
 	if err != nil {
 		return err
 	}
@@ -153,11 +158,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		return err
 	}
 	defer stopRsourcesSyncSettings()
-
-	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
-		PollInterval:   config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
-		TransformerURL: config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"),
-	})
 
 	var (
 		jobsdbPool      *sql.DB

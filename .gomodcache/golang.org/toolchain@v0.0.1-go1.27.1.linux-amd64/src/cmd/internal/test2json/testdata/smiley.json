@@ -1,0 +1,183 @@
+{"Action":"start"}
+{"Action":"run","Test":"Test☺☹"}
+{"Action":"output","Test":"Test☺☹","Output":"=== RUN   Test☺☹\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹","Output":"=== PAUSE Test☺☹\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹"}
+{"Action":"run","Test":"Test☺☹Asm"}
+{"Action":"output","Test":"Test☺☹Asm","Output":"=== RUN   Test☺☹Asm\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹Asm","Output":"=== PAUSE Test☺☹Asm\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹Asm"}
+{"Action":"run","Test":"Test☺☹Dirs"}
+{"Action":"output","Test":"Test☺☹Dirs","Output":"=== RUN   Test☺☹Dirs\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹Dirs","Output":"=== PAUSE Test☺☹Dirs\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹Dirs"}
+{"Action":"run","Test":"TestTags"}
+{"Action":"output","Test":"TestTags","Output":"=== RUN   TestTags\n","OutputType":"frame"}
+{"Action":"output","Test":"TestTags","Output":"=== PAUSE TestTags\n","OutputType":"frame"}
+{"Action":"pause","Test":"TestTags"}
+{"Action":"run","Test":"Test☺☹Verbose"}
+{"Action":"output","Test":"Test☺☹Verbose","Output":"=== RUN   Test☺☹Verbose\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹Verbose","Output":"=== PAUSE Test☺☹Verbose\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹Verbose"}
+{"Action":"cont","Test":"Test☺☹"}
+{"Action":"output","Test":"Test☺☹","Output":"=== CONT  Test☺☹\n","OutputType":"frame"}
+{"Action":"cont","Test":"TestTags"}
+{"Action":"output","Test":"TestTags","Output":"=== CONT  TestTags\n","OutputType":"frame"}
+{"Action":"cont","Test":"Test☺☹Verbose"}
+{"Action":"output","Test":"Test☺☹Verbose","Output":"=== CONT  Test☺☹Verbose\n","OutputType":"frame"}
+{"Action":"run","Test":"TestTags/testtag"}
+{"Action":"output","Test":"TestTags/testtag","Output":"=== RUN   TestTags/testtag\n","OutputType":"frame"}
+{"Action":"output","Test":"TestTags/testtag","Output":"=== PAUSE TestTags/testtag\n","OutputType":"frame"}
+{"Action":"pause","Test":"TestTags/testtag"}
+{"Action":"cont","Test":"Test☺☹Dirs"}
+{"Action":"output","Test":"Test☺☹Dirs","Output":"=== CONT  Test☺☹Dirs\n","OutputType":"frame"}
+{"Action":"cont","Test":"Test☺☹Asm"}
+{"Action":"output","Test":"Test☺☹Asm","Output":"=== CONT  Test☺☹Asm\n","OutputType":"frame"}
+{"Action":"run","Test":"Test☺☹/0"}
+{"Action":"output","Test":"Test☺☹/0","Output":"=== RUN   Test☺☹/0\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/0","Output":"=== PAUSE Test☺☹/0\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹/0"}
+{"Action":"run","Test":"Test☺☹/1"}
+{"Action":"output","Test":"Test☺☹/1","Output":"=== RUN   Test☺☹/1\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/1","Output":"=== PAUSE Test☺☹/1\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹/1"}
+{"Action":"run","Test":"Test☺☹/2"}
+{"Action":"output","Test":"Test☺☹/2","Output":"=== RUN   Test☺☹/2\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/2","Output":"=== PAUSE Test☺☹/2\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹/2"}
+{"Action":"run","Test":"Test☺☹/3"}
+{"Action":"output","Test":"Test☺☹/3","Output":"=== RUN   Test☺☹/3\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/3","Output":"=== PAUSE Test☺☹/3\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹/3"}
+{"Action":"run","Test":"Test☺☹/4"}
+{"Action":"output","Test":"Test☺☹/4","Output":"=== RUN   Test☺☹/4\n","OutputType":"frame"}
+{"Action":"run","Test":"TestTags/x_testtag_y"}
+{"Action":"output","Test":"TestTags/x_testtag_y","Output":"=== RUN   TestTags/x_testtag_y\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/4","Output":"=== PAUSE Test☺☹/4\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹/4"}
+{"Action":"run","Test":"Test☺☹/5"}
+{"Action":"output","Test":"Test☺☹/5","Output":"=== RUN   Test☺☹/5\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/5","Output":"=== PAUSE Test☺☹/5\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹/5"}
+{"Action":"output","Test":"TestTags/x_testtag_y","Output":"=== PAUSE TestTags/x_testtag_y\n","OutputType":"frame"}
+{"Action":"pause","Test":"TestTags/x_testtag_y"}
+{"Action":"run","Test":"Test☺☹/6"}
+{"Action":"output","Test":"Test☺☹/6","Output":"=== RUN   Test☺☹/6\n","OutputType":"frame"}
+{"Action":"run","Test":"TestTags/x,testtag,y"}
+{"Action":"output","Test":"TestTags/x,testtag,y","Output":"=== RUN   TestTags/x,testtag,y\n","OutputType":"frame"}
+{"Action":"output","Test":"TestTags/x,testtag,y","Output":"=== PAUSE TestTags/x,testtag,y\n","OutputType":"frame"}
+{"Action":"pause","Test":"TestTags/x,testtag,y"}
+{"Action":"run","Test":"Test☺☹Dirs/testingpkg"}
+{"Action":"output","Test":"Test☺☹Dirs/testingpkg","Output":"=== RUN   Test☺☹Dirs/testingpkg\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/6","Output":"=== PAUSE Test☺☹/6\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹/6"}
+{"Action":"cont","Test":"TestTags/x,testtag,y"}
+{"Action":"output","Test":"TestTags/x,testtag,y","Output":"=== CONT  TestTags/x,testtag,y\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹Dirs/testingpkg","Output":"=== PAUSE Test☺☹Dirs/testingpkg\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹Dirs/testingpkg"}
+{"Action":"run","Test":"Test☺☹Dirs/divergent"}
+{"Action":"output","Test":"Test☺☹Dirs/divergent","Output":"=== RUN   Test☺☹Dirs/divergent\n","OutputType":"frame"}
+{"Action":"run","Test":"Test☺☹/7"}
+{"Action":"output","Test":"Test☺☹/7","Output":"=== RUN   Test☺☹/7\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/7","Output":"=== PAUSE Test☺☹/7\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹/7"}
+{"Action":"output","Test":"Test☺☹Dirs/divergent","Output":"=== PAUSE Test☺☹Dirs/divergent\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹Dirs/divergent"}
+{"Action":"cont","Test":"TestTags/x_testtag_y"}
+{"Action":"output","Test":"TestTags/x_testtag_y","Output":"=== CONT  TestTags/x_testtag_y\n","OutputType":"frame"}
+{"Action":"cont","Test":"TestTags/testtag"}
+{"Action":"output","Test":"TestTags/testtag","Output":"=== CONT  TestTags/testtag\n","OutputType":"frame"}
+{"Action":"run","Test":"Test☺☹Dirs/buildtag"}
+{"Action":"output","Test":"Test☺☹Dirs/buildtag","Output":"=== RUN   Test☺☹Dirs/buildtag\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹Dirs/buildtag","Output":"=== PAUSE Test☺☹Dirs/buildtag\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹Dirs/buildtag"}
+{"Action":"cont","Test":"Test☺☹/0"}
+{"Action":"output","Test":"Test☺☹/0","Output":"=== CONT  Test☺☹/0\n","OutputType":"frame"}
+{"Action":"cont","Test":"Test☺☹/4"}
+{"Action":"output","Test":"Test☺☹/4","Output":"=== CONT  Test☺☹/4\n","OutputType":"frame"}
+{"Action":"run","Test":"Test☺☹Dirs/incomplete"}
+{"Action":"output","Test":"Test☺☹Dirs/incomplete","Output":"=== RUN   Test☺☹Dirs/incomplete\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹Dirs/incomplete","Output":"=== PAUSE Test☺☹Dirs/incomplete\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹Dirs/incomplete"}
+{"Action":"run","Test":"Test☺☹Dirs/cgo"}
+{"Action":"output","Test":"Test☺☹Dirs/cgo","Output":"=== RUN   Test☺☹Dirs/cgo\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹Dirs/cgo","Output":"=== PAUSE Test☺☹Dirs/cgo\n","OutputType":"frame"}
+{"Action":"pause","Test":"Test☺☹Dirs/cgo"}
+{"Action":"cont","Test":"Test☺☹/7"}
+{"Action":"output","Test":"Test☺☹/7","Output":"=== CONT  Test☺☹/7\n","OutputType":"frame"}
+{"Action":"cont","Test":"Test☺☹/6"}
+{"Action":"output","Test":"Test☺☹/6","Output":"=== CONT  Test☺☹/6\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹Verbose","Output":"--- PASS: Test☺☹Verbose (0.04s)\n","OutputType":"frame"}
+{"Action":"pass","Test":"Test☺☹Verbose"}
+{"Action":"cont","Test":"Test☺☹/5"}
+{"Action":"output","Test":"Test☺☹/5","Output":"=== CONT  Test☺☹/5\n","OutputType":"frame"}
+{"Action":"cont","Test":"Test☺☹/3"}
+{"Action":"output","Test":"Test☺☹/3","Output":"=== CONT  Test☺☹/3\n","OutputType":"frame"}
+{"Action":"cont","Test":"Test☺☹/2"}
+{"Action":"output","Test":"Test☺☹/2","Output":"=== CONT  Test☺☹/2\n","OutputType":"frame"}
+{"Action":"output","Test":"TestTags","Output":"--- PASS: TestTags (0.00s)\n","OutputType":"frame"}
+{"Action":"output","Test":"TestTags/x_testtag_y","Output":"    --- PASS: TestTags/x_testtag_y (0.04s)\n","OutputType":"frame"}
+{"Action":"output","Test":"TestTags/x_testtag_y","Output":"        vet_test.go:187: -tags=x testtag y\n"}
+{"Action":"pass","Test":"TestTags/x_testtag_y"}
+{"Action":"output","Test":"TestTags/x,testtag,y","Output":"    --- PASS: TestTags/x,testtag,y (0.04s)\n","OutputType":"frame"}
+{"Action":"output","Test":"TestTags/x,testtag,y","Output":"        vet_test.go:187: -tags=x,testtag,y\n"}
+{"Action":"pass","Test":"TestTags/x,testtag,y"}
+{"Action":"output","Test":"TestTags/testtag","Output":"    --- PASS: TestTags/testtag (0.04s)\n","OutputType":"frame"}
+{"Action":"output","Test":"TestTags/testtag","Output":"        vet_test.go:187: -tags=testtag\n"}
+{"Action":"pass","Test":"TestTags/testtag"}
+{"Action":"pass","Test":"TestTags"}
+{"Action":"cont","Test":"Test☺☹/1"}
+{"Action":"output","Test":"Test☺☹/1","Output":"=== CONT  Test☺☹/1\n","OutputType":"frame"}
+{"Action":"cont","Test":"Test☺☹Dirs/testingpkg"}
+{"Action":"output","Test":"Test☺☹Dirs/testingpkg","Output":"=== CONT  Test☺☹Dirs/testingpkg\n","OutputType":"frame"}
+{"Action":"cont","Test":"Test☺☹Dirs/buildtag"}
+{"Action":"output","Test":"Test☺☹Dirs/buildtag","Output":"=== CONT  Test☺☹Dirs/buildtag\n","OutputType":"frame"}
+{"Action":"cont","Test":"Test☺☹Dirs/divergent"}
+{"Action":"output","Test":"Test☺☹Dirs/divergent","Output":"=== CONT  Test☺☹Dirs/divergent\n","OutputType":"frame"}
+{"Action":"cont","Test":"Test☺☹Dirs/incomplete"}
+{"Action":"output","Test":"Test☺☹Dirs/incomplete","Output":"=== CONT  Test☺☹Dirs/incomplete\n","OutputType":"frame"}
+{"Action":"cont","Test":"Test☺☹Dirs/cgo"}
+{"Action":"output","Test":"Test☺☹Dirs/cgo","Output":"=== CONT  Test☺☹Dirs/cgo\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹","Output":"--- PASS: Test☺☹ (0.39s)\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/5","Output":"    --- PASS: Test☺☹/5 (0.07s)\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/5","Output":"        vet_test.go:114: φιλεσ: [\"testdata/copylock_func.go\" \"testdata/rangeloop.go\"]\n"}
+{"Action":"pass","Test":"Test☺☹/5"}
+{"Action":"output","Test":"Test☺☹/3","Output":"    --- PASS: Test☺☹/3 (0.07s)\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/3","Output":"        vet_test.go:114: φιλεσ: [\"testdata/composite.go\" \"testdata/nilfunc.go\"]\n"}
+{"Action":"pass","Test":"Test☺☹/3"}
+{"Action":"output","Test":"Test☺☹/6","Output":"    --- PASS: Test☺☹/6 (0.07s)\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/6","Output":"        vet_test.go:114: φιλεσ: [\"testdata/copylock_range.go\" \"testdata/shadow.go\"]\n"}
+{"Action":"pass","Test":"Test☺☹/6"}
+{"Action":"output","Test":"Test☺☹/2","Output":"    --- PASS: Test☺☹/2 (0.07s)\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/2","Output":"        vet_test.go:114: φιλεσ: [\"testdata/bool.go\" \"testdata/method.go\" \"testdata/unused.go\"]\n"}
+{"Action":"pass","Test":"Test☺☹/2"}
+{"Action":"output","Test":"Test☺☹/0","Output":"    --- PASS: Test☺☹/0 (0.13s)\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/0","Output":"        vet_test.go:114: φιλεσ: [\"testdata/assign.go\" \"testdata/httpresponse.go\" \"testdata/structtag.go\"]\n"}
+{"Action":"pass","Test":"Test☺☹/0"}
+{"Action":"output","Test":"Test☺☹/4","Output":"    --- PASS: Test☺☹/4 (0.16s)\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/4","Output":"        vet_test.go:114: φιλεσ: [\"testdata/copylock.go\" \"testdata/print.go\"]\n"}
+{"Action":"pass","Test":"Test☺☹/4"}
+{"Action":"output","Test":"Test☺☹/1","Output":"    --- PASS: Test☺☹/1 (0.07s)\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/1","Output":"        vet_test.go:114: φιλεσ: [\"testdata/atomic.go\" \"testdata/lostcancel.go\" \"testdata/unsafeptr.go\"]\n"}
+{"Action":"pass","Test":"Test☺☹/1"}
+{"Action":"output","Test":"Test☺☹/7","Output":"    --- PASS: Test☺☹/7 (0.19s)\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹/7","Output":"        vet_test.go:114: φιλεσ: [\"testdata/deadcode.go\" \"testdata/shift.go\"]\n"}
+{"Action":"pass","Test":"Test☺☹/7"}
+{"Action":"pass","Test":"Test☺☹"}
+{"Action":"output","Test":"Test☺☹Dirs","Output":"--- PASS: Test☺☹Dirs (0.01s)\n","OutputType":"frame"}
+{"Action":"output","Test":"Test☺☹Dirs/testingpkg","Output":"    --- PASS: Test☺☹Dirs/testingpkg (0.06s)\n","OutputType":"frame"}
+{"Action":"pass","Test":"Test☺☹Dirs/testingpkg"}
+{"Action":"output","Test":"Test☺☹Dirs/divergent","Output":"    --- PASS: Test☺☹Dirs/divergent (0.05s)\n","OutputType":"frame"}
+{"Action":"pass","Test":"Test☺☹Dirs/divergent"}
+{"Action":"output","Test":"Test☺☹Dirs/buildtag","Output":"    --- PASS: Test☺☹Dirs/buildtag (0.06s)\n","OutputType":"frame"}
+{"Action":"pass","Test":"Test☺☹Dirs/buildtag"}
+{"Action":"output","Test":"Test☺☹Dirs/incomplete","Output":"    --- PASS: Test☺☹Dirs/incomplete (0.05s)\n","OutputType":"frame"}
+{"Action":"pass","Test":"Test☺☹Dirs/incomplete"}
+{"Action":"output","Test":"Test☺☹Dirs/cgo","Output":"    --- PASS: Test☺☹Dirs/cgo (0.04s)\n","OutputType":"frame"}
+{"Action":"pass","Test":"Test☺☹Dirs/cgo"}
+{"Action":"pass","Test":"Test☺☹Dirs"}
+{"Action":"output","Test":"Test☺☹Asm","Output":"--- PASS: Test☺☹Asm (0.75s)\n","OutputType":"frame"}
+{"Action":"pass","Test":"Test☺☹Asm"}
+{"Action":"output","Output":"PASS\n","OutputType":"frame"}
+{"Action":"output","Output":"ok  \tcmd/vet\t(cached)\n"}
+{"Action":"pass"}

@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	oauthv2_http "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
+	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
@@ -318,6 +319,10 @@ func (m *mockTransformerFeaturesService) SourceTransformerVersion() string {
 
 func (m *mockTransformerFeaturesService) RouterTransform(destType string) bool {
 	return false
+}
+
+func (m *mockTransformerFeaturesService) SecretPaths(destType string) (transformer.SecretPathsState, []string) {
+	return transformer.SecretPathsUnavailable, nil
 }
 
 func (m *mockTransformerFeaturesService) TransformerProxy(destType string) bool {

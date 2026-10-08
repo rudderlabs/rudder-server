@@ -1,0 +1,329 @@
+// cmd/7l/list.c and cmd/7l/sub.c from Vita Nuova.
+// https://bitbucket.org/plan9-from-bell-labs/9-cc/src/master/
+//
+// 	Copyright © 1994-1999 Lucent Technologies Inc. All rights reserved.
+// 	Portions Copyright © 1995-1997 C H Forsyth (forsyth@terzarima.net)
+// 	Portions Copyright © 1997-1999 Vita Nuova Limited
+// 	Portions Copyright © 2000-2007 Vita Nuova Holdings Limited (www.vitanuova.com)
+// 	Portions Copyright © 2004,2006 Bruce Ellis
+// 	Portions Copyright © 2005-2007 C H Forsyth (forsyth@terzarima.net)
+// 	Revisions Copyright © 2000-2007 Lucent Technologies Inc. and others
+// 	Portions Copyright © 2009 The Go Authors. All rights reserved.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package arm64
+
+import (
+	"cmd/internal/obj"
+	"fmt"
+)
+
+var strcond = [16]string{
+	"EQ",
+	"NE",
+	"HS",
+	"LO",
+	"MI",
+	"PL",
+	"VS",
+	"VC",
+	"HI",
+	"LS",
+	"GE",
+	"LT",
+	"GT",
+	"LE",
+	"AL",
+	"NV",
+}
+
+func init() {
+	obj.RegisterRegister(obj.RBaseARM64, REG_SPECIAL+1024, rconv)
+	obj.RegisterOpcode(obj.ABaseARM64, Anames)
+	obj.RegisterRegisterList(obj.RegListARM64Lo, obj.RegListARM64Hi, rlconv)
+	obj.RegisterOpSuffix("arm64", obj.CConvARM)
+	obj.RegisterSpecialOperands(int64(SPOP_BEGIN), int64(SPOP_END), SPCconv)
+}
+
+func arrange(a int) string {
+	switch a {
+	case ARNG_8B:
+		return "B8"
+	case ARNG_16B:
+		return "B16"
+	case ARNG_4H:
+		return "H4"
+	case ARNG_8H:
+		return "H8"
+	case ARNG_2S:
+		return "S2"
+	case ARNG_4S:
+		return "S4"
+	case ARNG_1D:
+		return "D1"
+	case ARNG_2D:
+		return "D2"
+	case ARNG_B:
+		return "B"
+	case ARNG_H:
+		return "H"
+	case ARNG_S:
+		return "S"
+	case ARNG_D:
+		return "D"
+	case ARNG_1Q:
+		return "Q1"
+	case ARNG_Q:
+		return "Q"
+	case PRED_M:
+		return "M"
+	case PRED_Z:
+		return "Z"
+	default:
+		return ""
+	}
+}
+
+func rconv(r int) string {
+	ext := (r >> 5) & 7
+	if r == REGG {
+		return "g"
+	}
+	switch {
+	case REG_R0 <= r && r <= REG_R30:
+		return fmt.Sprintf("R%d", r-REG_R0)
+	case r == REG_R31:
+		return "ZR"
+	case REG_F0 <= r && r <= REG_F31:
+		return fmt.Sprintf("F%d", r-REG_F0)
+	case REG_V0 <= r && r <= REG_V31:
+		return fmt.Sprintf("V%d", r-REG_V0)
+	case REG_Z0 <= r && r <= REG_Z31:
+		return fmt.Sprintf("Z%d", r-REG_Z0)
+	case REG_P0 <= r && r <= REG_P15:
+		return fmt.Sprintf("P%d", r-REG_P0)
+	case REG_PN0 <= r && r <= REG_PN15:
+		return fmt.Sprintf("PN%d", r-REG_PN0)
+	case r == REGSP:
+		return "RSP"
+	case REG_UXTB <= r && r < REG_UXTH:
+		if ext != 0 {
+			return fmt.Sprintf("%s.UXTB<<%d", regname(r), ext)
+		} else {
+			return fmt.Sprintf("%s.UXTB", regname(r))
+		}
+	case REG_UXTH <= r && r < REG_UXTW:
+		if ext != 0 {
+			return fmt.Sprintf("%s.UXTH<<%d", regname(r), ext)
+		} else {
+			return fmt.Sprintf("%s.UXTH", regname(r))
+		}
+	case REG_UXTW <= r && r < REG_UXTX:
+		if ext != 0 {
+			return fmt.Sprintf("%s.UXTW<<%d", regname(r), ext)
+		} else {
+			return fmt.Sprintf("%s.UXTW", regname(r))
+		}
+	case REG_UXTX <= r && r < REG_SXTB:
+		if ext != 0 {
+			return fmt.Sprintf("%s.UXTX<<%d", regname(r), ext)
+		} else {
+			return fmt.Sprintf("%s.UXTX", regname(r))
+		}
+	case REG_SXTB <= r && r < REG_SXTH:
+		if ext != 0 {
+			return fmt.Sprintf("%s.SXTB<<%d", regname(r), ext)
+		} else {
+			return fmt.Sprintf("%s.SXTB", regname(r))
+		}
+	case REG_SXTH <= r && r < REG_SXTW:
+		if ext != 0 {
+			return fmt.Sprintf("%s.SXTH<<%d", regname(r), ext)
+		} else {
+			return fmt.Sprintf("%s.SXTH", regname(r))
+		}
+	case REG_SXTW <= r && r < REG_SXTX:
+		if ext != 0 {
+			return fmt.Sprintf("%s.SXTW<<%d", regname(r), ext)
+		} else {
+			return fmt.Sprintf("%s.SXTW", regname(r))
+		}
+	case REG_SXTX <= r && r < REG_SPECIAL:
+		if ext != 0 {
+			return fmt.Sprintf("%s.SXTX<<%d", regname(r), ext)
+		} else {
+			return fmt.Sprintf("%s.SXTX", regname(r))
+		}
+	// bits 0-4 indicate register, bits 5-7 indicate shift amount, bit 8 equals to 0.
+	case REG_LSL <= r && r < (REG_LSL+1<<8):
+		return fmt.Sprintf("R%d<<%d", r&31, (r>>5)&7)
+	case REG_ARNG <= r && r < REG_ELEM:
+		return fmt.Sprintf("V%d.%s", r&31, arrange((r>>5)&15))
+	case REG_ELEM <= r && r < REG_ZARNG:
+		return fmt.Sprintf("V%d.%s", r&31, arrange((r>>5)&15))
+	case REG_ZARNG <= r && r < REG_PZELEM:
+		return fmt.Sprintf("Z%d.%s", r&31, arrange((r>>5)&15))
+	case REG_PZELEM <= r && r < REG_PARNGZM:
+		regPrefix := "Z"
+		reg := r & 31
+		if r&(1<<5) != 0 {
+			regPrefix = "P"
+			if reg >= 16 {
+				regPrefix = "PN"
+				reg -= 16
+			}
+		}
+		return fmt.Sprintf("%s%d", regPrefix, reg)
+	case REG_PARNGZM <= r && r < REG_PARNGZM_END:
+		// SVE predicate register with arrangement.
+		// Pn.<T> or Pn/M, Pn/Z.
+		arng := (r >> 5) & 15
+		suffix := arrange(arng)
+		reg := r & 31
+		if reg >= 16 {
+			// PN registers
+			return fmt.Sprintf("PN%d.%s", reg-16, suffix)
+		}
+		return fmt.Sprintf("P%d.%s", reg, suffix)
+	}
+	// Return system register name.
+	name, _, _ := SysRegEnc(int16(r))
+	if name != "" {
+		return name
+	}
+	return fmt.Sprintf("badreg(%d)", r)
+}
+
+func DRconv(a int) string {
+	if a >= C_NONE && a <= C_NCLASS {
+		return cnames7[a]
+	}
+	return "C_??"
+}
+
+func SPCconv(a int64) string {
+	spc := SpecialOperand(a)
+	if spc >= SPOP_BEGIN && spc < SPOP_END {
+		return fmt.Sprintf("%s", spc)
+	}
+	return "SPC_??"
+}
+
+func rlconv(list int64) string {
+	str := ""
+
+	// For SIMD&FP register list in ARM64, the conv
+	// follows the ARM64 instruction decode schema
+	// | 31 | 30 | ... | 15 - 12 | 11 - 10 | ... |
+	// +----+----+-----+---------+---------+-----+
+	// |    | Q  | ... | opcode  |   size  | ... |
+
+	// For Scalable Vector register lists, the conv
+	// follows:
+	// | 33 - 32 | 31 - 30 | ... | 15 - 12 | 11 - 10 | ... | 5 - 0 |
+	// +----+----+----+----+-----+---------+---------+-----+-------+
+	// |regprefix| class 1 | ... | reg cnt | class 2 | ... |  reg  |
+
+	firstReg := int(list & 31)
+	opcode := (list >> 12) & 15
+	var regCnt int
+	var t string
+	switch opcode {
+	case 0x7:
+		regCnt = 1
+	case 0xa:
+		regCnt = 2
+	case 0x6:
+		regCnt = 3
+	case 0x2:
+		regCnt = 4
+	case 0x1:
+		// 5 is the specifier for register range list, size is 1 register
+		regCnt = 5
+	case 0x3:
+		// 6 is the specifier for register range list, size is 4 register
+		regCnt = 6
+	default:
+		regCnt = -1
+	}
+	// Q:size
+	var regPrefix string
+	regType := (list >> 32) & 3
+	switch regType {
+	case 0:
+		regPrefix = "V"
+	case 1:
+		regPrefix = "Z"
+	case 2:
+		regPrefix = "P"
+	}
+	arng := ((list>>30)&3)<<2 | (list>>10)&3
+	switch arng {
+	case 0:
+		t = "B8"
+	case 4:
+		t = "B16"
+	case 1:
+		t = "H4"
+	case 5:
+		t = "H8"
+	case 2:
+		t = "S2"
+	case 6:
+		t = "S4"
+	case 3:
+		t = "D1"
+	case 7:
+		t = "D2"
+	case 9:
+		t = "B"
+	case 10:
+		t = "H"
+	case 11:
+		t = "S"
+	case 13:
+		t = "D"
+	case 14:
+		t = "Q"
+	}
+	if regCnt > 4 {
+		rangeSize := 2 << (regCnt - 5)
+		str = fmt.Sprintf("[%s%d.%s-%s%d.%s]", regPrefix, firstReg, t, regPrefix, (firstReg+rangeSize-1)&31, t)
+	} else {
+		for i := 0; i < regCnt; i++ {
+			if str == "" {
+				str += "["
+			} else {
+				str += ","
+			}
+			str += fmt.Sprintf("%s%d.", regPrefix, (firstReg+i)&31)
+			str += t
+		}
+		str += "]"
+	}
+	return str
+}
+
+func regname(r int) string {
+	if r&31 == 31 {
+		return "ZR"
+	}
+	return fmt.Sprintf("R%d", r&31)
+}
