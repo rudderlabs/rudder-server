@@ -30,7 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-	"github.com/rudderlabs/rudder-server/warehouse/filemanagerresolver"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
@@ -202,7 +201,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 
 		errorHandler:       ErrorHandler{Mapper: whManager},
 		encodingFactory:    f.encodingFactory,
-		fileManagerFactory: filemanagerresolver.Default,
+		fileManagerFactory: filemanager.New,
 	}
 
 	uj.config.refreshPartitionBatchSize = f.conf.GetIntVar(100, 1, "Warehouse.refreshPartitionBatchSize")

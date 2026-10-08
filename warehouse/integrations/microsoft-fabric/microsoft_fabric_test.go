@@ -57,7 +57,6 @@ func testWarehouse(preferAppend bool) model.Warehouse {
 				"clientSecret":      "secret",
 				"fabricWorkspaceId": "11111111-1111-1111-1111-111111111111",
 				"lakehouseId":       "22222222-2222-2222-2222-222222222222",
-				"oneLakeHost":       "onelake.dfs.fabric.microsoft.com",
 				"preferAppend":      preferAppend,
 			},
 		},
@@ -189,11 +188,11 @@ func TestLoadTableUsesUniqueStagingAndSingleMerge(t *testing.T) {
 func TestCopyRejectsLocationOutsideConfiguredLakehouse(t *testing.T) {
 	fabric := &MicrosoftFabric{warehouse: testWarehouse(false), conf: config.New()}
 	err := fabric.validateOneLakeLocation("https://attacker.example/file.parquet")
-	require.ErrorContains(t, err, "outside the configured OneLake Lakehouse")
+	require.ErrorContains(t, err, "location has an invalid host")
 	err = fabric.validateOneLakeLocation("https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222/Files/f.parquet")
 	require.NoError(t, err)
 	err = fabric.validateOneLakeLocation("https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222.Lakehouse/Files/f.parquet")
-	require.ErrorContains(t, err, "outside the configured OneLake Lakehouse")
+	require.ErrorContains(t, err, "outside the configured Lakehouse Files area")
 }
 
 func TestAlterColumnIsExplicitlyBlocked(t *testing.T) {

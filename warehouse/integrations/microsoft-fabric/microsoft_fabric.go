@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -21,7 +22,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/microsoft-fabric/onelake"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -325,7 +325,19 @@ func (f *MicrosoftFabric) copyInto(ctx context.Context, tableName, location stri
 }
 
 func (f *MicrosoftFabric) validateOneLakeLocation(location string) error {
-	if err := onelake.ValidateLocation(f.warehouse.Destination.Config, location); err != nil {
+	log := f.logger
+	if log == nil {
+		log = logger.NOP
+	}
+	manager, err := filemanager.NewOneLakeManager(
+		f.warehouse.Destination.Config,
+		log,
+		func() time.Duration { return f.connectTimeout },
+	)
+	if err != nil {
+		return fmt.Errorf("copy_into: creating OneLake file manager: %w", err)
+	}
+	if _, err := manager.GetObjectNameFromLocation(location); err != nil {
 		return fmt.Errorf("copy_into: %w", err)
 	}
 	return nil

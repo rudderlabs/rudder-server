@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/filemanagerresolver"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -56,7 +55,7 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 		l.uploader.UseRudderStorage(),
 	)
 
-	fileManager, err := filemanagerresolver.Default(&filemanager.Settings{
+	fileManager, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         storageProvider,

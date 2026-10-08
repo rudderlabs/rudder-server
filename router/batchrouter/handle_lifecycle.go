@@ -41,7 +41,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/filemanagerresolver"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -71,7 +70,7 @@ func (brt *Handle) Setup(
 	}
 	brt.jobsDB = jobsDB
 	brt.reporting = reporting
-	brt.fileManagerFactory = filemanagerresolver.Default
+	brt.fileManagerFactory = filemanager.New
 	brt.transientSources = transientSources
 	brt.rsourcesService = rsourcesService
 	brt.rsourcesSyncSettings = rsourcesSyncSettings

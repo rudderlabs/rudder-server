@@ -21,8 +21,6 @@ require (
 	cloud.google.com/go/bigquery v1.81.0
 	cloud.google.com/go/pubsub/v2 v2.6.2
 	cloud.google.com/go/storage v1.68.0
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.0
-	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go/v2 v2.48.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
@@ -91,7 +89,7 @@ require (
 	github.com/rudderlabs/compose-test v0.1.5
 	github.com/rudderlabs/keydb v1.4.1
 	github.com/rudderlabs/rudder-cp-sdk v1.4.1
-	github.com/rudderlabs/rudder-go-kit v0.81.0
+	github.com/rudderlabs/rudder-go-kit v0.83.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.7
 	github.com/rudderlabs/rudder-schemas v0.12.0
 	github.com/rudderlabs/rudder-transformer/go v1.151.0
@@ -147,8 +145,11 @@ require (
 	github.com/99designs/keyring v1.2.2 // indirect
 	github.com/AthenZ/athenz v1.12.13 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.4.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azdatalake v1.6.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.7.2 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect

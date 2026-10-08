@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-	"github.com/rudderlabs/rudder-server/warehouse/filemanagerresolver"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -100,7 +99,7 @@ func (p *basePayload) fileManager(config any, useRudderStorage bool) (filemanage
 	clonedConfig["uploadIfNotExist"] = true
 
 	storageProvider := warehouseutils.ObjectStorageType(p.DestinationType, config, useRudderStorage)
-	fileManager, err := filemanagerresolver.Default(&filemanager.Settings{
+	fileManager, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:                    storageProvider,

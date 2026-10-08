@@ -12,7 +12,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/filemanagerresolver"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
@@ -50,7 +49,7 @@ type validationFunc struct {
 func Init() {
 	connectionTestingFolder = config.GetStringVar(misc.RudderTestPayload, "RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME")
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("validations")
-	fileManagerFactory = filemanagerresolver.Default
+	fileManagerFactory = filemanager.New
 	objectStorageTimeout = config.GetDurationVar(15, time.Second, "Warehouse.Validations.ObjectStorageTimeout")
 
 	// Since we have a cp-router default timeout of 30 seconds, keeping the query timeout to 25 seconds

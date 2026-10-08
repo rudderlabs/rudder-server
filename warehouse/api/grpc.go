@@ -40,7 +40,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
-	"github.com/rudderlabs/rudder-server/warehouse/filemanagerresolver"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -110,7 +109,7 @@ func NewGRPCServer(
 		tableUploadsRepo:   repo.NewTableUploads(db, conf, repo.WithStats(statsFactory)),
 		schemaRepo:         repo.NewWHSchemas(db, conf, logger, repo.WithStats(statsFactory)),
 		triggerStore:       triggerStore,
-		fileManagerFactory: filemanagerresolver.Default,
+		fileManagerFactory: filemanager.New,
 		now:                timeutil.Now,
 	}
 
