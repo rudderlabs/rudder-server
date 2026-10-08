@@ -22,7 +22,7 @@ const (
 	parquetTimestampMicros = "type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"
 )
 
-// parquetTypesWithText is shared by the warehouses whose load files can carry bigint and text columns.
+// parquetTypesWithText is the Parquet type set used by RS and S3 datalake; Microsoft Fabric extends a copy with json.
 var parquetTypesWithText = map[string]string{
 	"bigint":   parquetInt64,
 	"int":      parquetInt64,
