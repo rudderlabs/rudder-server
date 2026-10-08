@@ -587,7 +587,7 @@ func verifyFabricEventSchema(t testing.TB, db *sql.DB, namespace string, storeFu
 	if !storeFullEvent {
 		return
 	}
-	for _, table := range fabricEventTables() {
+	for _, table := range fabricFullEventTables() {
 		var maxLength int64
 		require.NoError(t, db.QueryRowContext(context.Background(), `SELECT [character_maximum_length] FROM INFORMATION_SCHEMA.COLUMNS WHERE [table_schema] = @schema AND [table_name] = @table AND [column_name] = 'rudder_event';`, sql.Named("schema", namespace), sql.Named("table", table)).Scan(&maxLength))
 		require.Equal(t, int64(-1), maxLength)
@@ -609,7 +609,7 @@ func expectedFabricEventSchema(storeFullEvent bool) model.Schema {
 		"groups":        {"_as": "varchar", "user_id": "varchar", "context_destination_type": "varchar", "sent_at": "datetime2", "context_source_type": "varchar", "received_at": "datetime2", "context_ip": "varchar", "industry": "varchar", "timestamp": "datetime2", "group_id": "varchar", "uuid_ts": "datetime2", "context_source_id": "varchar", "context_request_ip": "varchar", "_between": "varchar", "original_timestamp": "datetime2", "name": "varchar", "_plan": "varchar", "context_destination_id": "varchar", "employees": "bigint", "id": "varchar"},
 	}
 	if storeFullEvent {
-		for _, table := range fabricEventTables() {
+		for _, table := range fabricFullEventTables() {
 			schema[table]["rudder_event"] = "varchar"
 		}
 	}
@@ -652,6 +652,10 @@ func verifyFabricEventRecords(t testing.TB, db *sql.DB, sourceID, destinationID,
 
 func fabricEventTables() []string {
 	return []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+}
+
+func fabricFullEventTables() []string {
+	return []string{"identifies", "users", "tracks", "pages", "screens", "aliases", "groups"}
 }
 
 func dropFabricSchema(t testing.TB, db *sql.DB, namespace string) {
