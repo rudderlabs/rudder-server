@@ -6,9 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 )
 
 const maskedValue = "******"

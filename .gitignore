@@ -28,4 +28,5 @@ ginkgo.report
 *.prof
 .cursor/*
 .claude/settings.local.json
+.gomodcache/
 doc/
