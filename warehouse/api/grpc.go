@@ -703,13 +703,6 @@ func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *pr
 	}
 
 	switch request.Type {
-	case warehouseutils.MicrosoftFabric:
-		for _, key := range []string{"host", "fabricWorkspaceId", "lakehouseId", "tenantId", "clientId", "clientSecret"} {
-			if !checkMapForValidKey(validateRequest.Config, key) {
-				err = fmt.Errorf("%s invalid or not present", key)
-				break
-			}
-		}
 	case warehouseutils.AzureBlob:
 		if !checkMapForValidKey(validateRequest.Config, "containerName") {
 			err = errors.New("containerName invalid or not present")
@@ -755,12 +748,8 @@ func checkMapForValidKey(configMap map[string]any, key string) bool {
 }
 
 func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObjectStorageRequest) error {
-	provider := request.Type
-	if request.Type == warehouseutils.MicrosoftFabric {
-		provider = warehouseutils.OneLake
-	}
 	settings := &filemanager.Settings{
-		Provider: provider,
+		Provider: request.Type,
 		Config:   request.Config,
 		Conf:     g.conf,
 	}
