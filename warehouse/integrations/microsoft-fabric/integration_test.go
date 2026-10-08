@@ -34,6 +34,7 @@ import (
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/router"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -355,12 +356,13 @@ func testFabricLoadTable(t *testing.T, credentials fabricTestCredentials) {
 		tableName := "schema_mismatch_test_table"
 		location := uploadFabricFixture(t, fm, "../testdata/load.parquet", tableName)
 		warehouseSchema := maps.Clone(baseSchema)
-		warehouseSchema["test_float"] = model.StringDataType
+		warehouseSchema["test_string"] = model.FloatDataType
 		fabric := setupFabric(t, warehouse, newFabricUploader(t, []whutils.LoadFile{{Location: location}}, tableName, baseSchema, false, true))
 		require.NoError(t, fabric.CreateTable(ctx, tableName, warehouseSchema))
 		stats, err := fabric.LoadTable(ctx, tableName)
 		require.Error(t, err)
 		require.Nil(t, stats)
+		require.Equal(t, model.AlterColumnError, (&router.ErrorHandler{Mapper: fabric}).MatchUploadJobErrorType(err))
 	})
 
 	t.Run("discards", func(t *testing.T) {
