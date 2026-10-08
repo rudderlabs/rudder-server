@@ -643,7 +643,6 @@ func (brt *Handle) createFakeJob(jobID int64, parameters stdjson.RawMessage) *jo
 func (brt *Handle) getReportMetrics(params getReportMetricsParams) []*utilTypes.PUReportedMetric {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
-	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	routerWorkspaceJobStatusCount := make(map[string]int)
 	jobsMap := lo.SliceToMap(params.JobsList, func(j *jobsdb.JobT) (int64, *jobsdb.JobT) {
@@ -672,7 +671,6 @@ func (brt *Handle) getReportMetrics(params getReportMetricsParams) []*utilTypes.
 				SourceCategory:          parameters.SourceCategory,
 			}
 			connectionDetailsMap[key] = cd
-			transformedAtMap[key] = parameters.TransformAt
 		}
 		sd, ok := statusDetailsMap[key]
 		if !ok {
@@ -714,15 +712,9 @@ func (brt *Handle) getReportMetrics(params getReportMetricsParams) []*utilTypes.
 
 	utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 	for k, cd := range connectionDetailsMap {
-		var inPu string
-		if transformedAtMap[k] == "processor" {
-			inPu = utilTypes.DEST_TRANSFORMER
-		} else {
-			inPu = utilTypes.EVENT_FILTER
-		}
 		m := &utilTypes.PUReportedMetric{
 			ConnectionDetails: *cd,
-			PUDetails:         *utilTypes.CreatePUDetails(inPu, utilTypes.BATCH_ROUTER, true, false),
+			PUDetails:         *utilTypes.CreatePUDetails(utilTypes.BATCH_ROUTER, true, false),
 			StatusDetail:      statusDetailsMap[k],
 		}
 		if m.StatusDetail.Count != 0 {
