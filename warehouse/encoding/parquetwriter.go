@@ -22,25 +22,20 @@ const (
 	parquetTimestampMicros = "type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"
 )
 
+// parquetTypesWithText is shared by the warehouses whose load files can carry bigint and text columns.
+var parquetTypesWithText = map[string]string{
+	"bigint":   parquetInt64,
+	"int":      parquetInt64,
+	"boolean":  parquetBoolean,
+	"float":    parquetDouble,
+	"string":   parquetString,
+	"text":     parquetString,
+	"datetime": parquetTimestampMicros,
+}
+
 var rudderDataTypeToParquetDataType = map[string]map[string]string{
-	warehouseutils.RS: {
-		"bigint":   parquetInt64,
-		"int":      parquetInt64,
-		"boolean":  parquetBoolean,
-		"float":    parquetDouble,
-		"string":   parquetString,
-		"text":     parquetString,
-		"datetime": parquetTimestampMicros,
-	},
-	warehouseutils.S3Datalake: {
-		"bigint":   parquetInt64,
-		"int":      parquetInt64,
-		"boolean":  parquetBoolean,
-		"float":    parquetDouble,
-		"string":   parquetString,
-		"text":     parquetString,
-		"datetime": parquetTimestampMicros,
-	},
+	warehouseutils.RS:         parquetTypesWithText,
+	warehouseutils.S3Datalake: parquetTypesWithText,
 	warehouseutils.GCSDatalake: {
 		"int":      parquetInt64,
 		"boolean":  parquetBoolean,
@@ -62,16 +57,7 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 		"string":   parquetString,
 		"datetime": parquetTimestampMicros,
 	},
-	warehouseutils.MicrosoftFabric: {
-		"bigint":   parquetInt64,
-		"int":      parquetInt64,
-		"boolean":  parquetBoolean,
-		"float":    parquetDouble,
-		"string":   parquetString,
-		"text":     parquetString,
-		"json":     parquetString,
-		"datetime": parquetTimestampMicros,
-	},
+	warehouseutils.MicrosoftFabric: lo.Assign(parquetTypesWithText, map[string]string{"json": parquetString}),
 }
 
 type parquetWriter struct {

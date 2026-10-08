@@ -151,13 +151,21 @@ func (f *MicrosoftFabric) connect() (*sqlmw.DB, error) {
 	), nil
 }
 
+func columnDataType(rudderType, column string) (string, error) {
+	dataType, ok := dataTypesMap[rudderType]
+	if !ok {
+		return "", fmt.Errorf("schema_evolution: unsupported Rudder type %q for column %q", rudderType, column)
+	}
+	return dataType, nil
+}
+
 func columnsWithDataTypes(columns model.TableSchema) (string, error) {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
 	definitions := make([]string, 0, len(keys))
 	for _, name := range keys {
-		dataType, ok := dataTypesMap[columns[name]]
-		if !ok {
-			return "", fmt.Errorf("schema_evolution: unsupported Rudder type %q for column %q", columns[name], name)
+		dataType, err := columnDataType(columns[name], name)
+		if err != nil {
+			return "", err
 		}
 		definitions = append(definitions, fmt.Sprintf("%s %s NULL", warehouseutils.BracketQuoteIdentifier(name), dataType))
 	}
@@ -229,9 +237,9 @@ func (f *MicrosoftFabric) DropTable(ctx context.Context, tableName string) error
 
 func (f *MicrosoftFabric) AddColumns(ctx context.Context, tableName string, columns []warehouseutils.ColumnInfo) error {
 	for _, column := range columns {
-		dataType, ok := dataTypesMap[column.Type]
-		if !ok {
-			return fmt.Errorf("schema_evolution: unsupported Rudder type %q for column %q", column.Type, column.Name)
+		dataType, err := columnDataType(column.Type, column.Name)
+		if err != nil {
+			return err
 		}
 		statement := fmt.Sprintf(`IF COL_LENGTH(%s, %s) IS NULL ALTER TABLE %s ADD %s %s NULL;`,
 			warehouseutils.UnicodeStringLiteral(f.namespace+"."+tableName),
@@ -290,9 +298,6 @@ func (f *MicrosoftFabric) ShouldMerge(tableName string) bool {
 }
 
 func (f *MicrosoftFabric) copyInto(ctx context.Context, tableName, location string, columns []string) error {
-	if len(columns) == 0 {
-		return errors.New("copy_into: target column list is empty")
-	}
 	statement := fmt.Sprintf(`COPY INTO %s (%s) FROM %s WITH (FILE_TYPE = 'PARQUET');`,
 		qualified(f.namespace, tableName),
 		warehouseutils.JoinQuotedIdentifiers(columns, warehouseutils.BracketQuoteIdentifier, ","),
@@ -418,19 +423,19 @@ func (f *MicrosoftFabric) loadTable(ctx context.Context, tableName string) (*typ
 			return nil, stagingTableName, fmt.Errorf("merge: counting affected rows for %q: %w", tableName, err)
 		}
 		return &types.LoadTableStats{RowsInserted: rowsAffected - rowsUpdated, RowsUpdated: rowsUpdated}, stagingTableName, nil
-	} else {
-		quotedColumns := warehouseutils.JoinQuotedIdentifiers(columns, warehouseutils.BracketQuoteIdentifier, ",")
-		statement := fmt.Sprintf(`INSERT INTO %s (%s) SELECT %s FROM %s;`, qualified(f.namespace, tableName), quotedColumns, quotedColumns, qualified(f.namespace, stagingTableName))
-		result, err := f.db.ExecContext(ctx, statement)
-		if err != nil {
-			return nil, stagingTableName, fmt.Errorf("inserting append rows from staging: %w", err)
-		}
-		rowsInserted, err := result.RowsAffected()
-		if err != nil {
-			return nil, stagingTableName, fmt.Errorf("counting appended rows for %q: %w", tableName, err)
-		}
-		return &types.LoadTableStats{RowsInserted: rowsInserted}, stagingTableName, nil
 	}
+
+	quotedColumns := warehouseutils.JoinQuotedIdentifiers(columns, warehouseutils.BracketQuoteIdentifier, ",")
+	statement := fmt.Sprintf(`INSERT INTO %s (%s) SELECT %s FROM %s;`, qualified(f.namespace, tableName), quotedColumns, quotedColumns, qualified(f.namespace, stagingTableName))
+	result, err := f.db.ExecContext(ctx, statement)
+	if err != nil {
+		return nil, stagingTableName, fmt.Errorf("inserting append rows from staging: %w", err)
+	}
+	rowsInserted, err := result.RowsAffected()
+	if err != nil {
+		return nil, stagingTableName, fmt.Errorf("counting appended rows for %q: %w", tableName, err)
+	}
+	return &types.LoadTableStats{RowsInserted: rowsInserted}, stagingTableName, nil
 }
 
 func (f *MicrosoftFabric) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
@@ -494,8 +499,9 @@ SELECT %[5]s AS %[2]s, %[7]s FROM %[6]s WHERE %[5]s IS NOT NULL
 		latestColumns = append(latestColumns, fmt.Sprintf(`(SELECT TOP 1 s.%[1]s FROM %[2]s AS s WHERE s.%[3]s = x.%[3]s AND s.%[1]s IS NOT NULL ORDER BY s.%[4]s DESC) AS %[1]s`,
 			quoted, qualified(f.namespace, unionTable), warehouseutils.BracketQuoteIdentifier("id"), warehouseutils.BracketQuoteIdentifier("received_at")))
 	}
-	latestStatement := fmt.Sprintf(`SELECT DISTINCT %s INTO %s FROM %s AS x;`,
-		strings.Join(latestColumns, ","), qualified(f.namespace, latestTable), qualified(f.namespace, unionTable))
+	// Drive the per-column lookups from distinct ids so each runs once per user, not once per union row.
+	latestStatement := fmt.Sprintf(`SELECT %[1]s INTO %[2]s FROM (SELECT DISTINCT %[4]s FROM %[3]s) AS x;`,
+		strings.Join(latestColumns, ","), qualified(f.namespace, latestTable), qualified(f.namespace, unionTable), warehouseutils.BracketQuoteIdentifier("id"))
 	if _, err := f.db.ExecContext(ctx, latestStatement); err != nil {
 		return usersResult(fmt.Errorf("creating latest users staging table: %w", err))
 	}

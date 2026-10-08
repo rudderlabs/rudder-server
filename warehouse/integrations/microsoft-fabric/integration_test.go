@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"sort"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -23,8 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
-	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -103,10 +102,6 @@ func testFabricEventsFlow(t *testing.T, credentials fabricTestCredentials) {
 			name:        "merge",
 			eventsFile2: "../testdata/upload-job.events-1.json",
 			mode:        recordsMerge,
-			secondCounts: whth.EventsCountMap{
-				"identifies": 4, "users": 1, "tracks": 4, "product_track": 4,
-				"pages": 4, "screens": 4, "aliases": 4, "groups": 4,
-			},
 		},
 		{
 			name:         "append",
@@ -303,7 +298,7 @@ func testFabricLoadTable(t *testing.T, credentials fabricTestCredentials) {
 		tableName := "append_test_table"
 		location := uploadFabricFixture(t, fm, "../testdata/load.parquet", tableName)
 		appendWarehouse := warehouse
-		appendWarehouse.Destination.Config = cloneConfig(warehouse.Destination.Config)
+		appendWarehouse.Destination.Config = maps.Clone(warehouse.Destination.Config)
 		appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
 		fabric := setupFabric(t, appendWarehouse, newFabricUploader(t, []whutils.LoadFile{{Location: location}}, tableName, baseSchema, true, true))
 		require.NoError(t, fabric.CreateTable(ctx, tableName, baseSchema))
@@ -332,7 +327,7 @@ func testFabricLoadTable(t *testing.T, credentials fabricTestCredentials) {
 	t.Run("column count mismatch", func(t *testing.T) {
 		tableName := "column_count_mismatch_test_table"
 		location := uploadFabricFixture(t, fm, "../testdata/load.parquet", tableName)
-		uploadSchema := cloneSchema(baseSchema)
+		uploadSchema := maps.Clone(baseSchema)
 		uploadSchema["unexpected_column"] = model.StringDataType
 		fabric := setupFabric(t, warehouse, newFabricUploader(t, []whutils.LoadFile{{Location: location}}, tableName, uploadSchema, false, true))
 		require.NoError(t, fabric.CreateTable(ctx, tableName, baseSchema))
@@ -344,7 +339,7 @@ func testFabricLoadTable(t *testing.T, credentials fabricTestCredentials) {
 	t.Run("schema mismatch", func(t *testing.T) {
 		tableName := "schema_mismatch_test_table"
 		location := uploadFabricFixture(t, fm, "../testdata/load.parquet", tableName)
-		warehouseSchema := cloneSchema(baseSchema)
+		warehouseSchema := maps.Clone(baseSchema)
 		warehouseSchema["test_float"] = model.StringDataType
 		fabric := setupFabric(t, warehouse, newFabricUploader(t, []whutils.LoadFile{{Location: location}}, tableName, baseSchema, false, true))
 		require.NoError(t, fabric.CreateTable(ctx, tableName, warehouseSchema))
@@ -448,19 +443,11 @@ func fabricWarehouse(credentials fabricTestCredentials, namespace string) model.
 
 func openFabricDB(t testing.TB, credentials fabricTestCredentials) *sql.DB {
 	t.Helper()
-	credentialsJSON, err := jsonrs.Marshal(sqlconnectconfig.Fabric{
-		Host:              credentials.Host,
-		Database:          credentials.Database,
-		TenantID:          credentials.TenantID,
-		ClientID:          credentials.ClientID,
-		ClientSecret:      credentials.ClientSecret,
-		FabricWorkspaceID: credentials.FabricWorkspaceID,
-		Timeout:           time.Minute,
-	})
+	fabric := microsoftfabric.New(config.New(), logger.NOP, stats.NOP)
+	fabric.SetConnectionTimeout(time.Minute)
+	c, err := fabric.Connect(context.Background(), fabricWarehouse(credentials, ""))
 	require.NoError(t, err)
-	connector, err := sqlconnect.NewDB("fabric", credentialsJSON)
-	require.NoError(t, err)
-	db := connector.SqlDB()
+	db := c.SQL
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	require.NoError(t, db.PingContext(ctx))
@@ -541,15 +528,11 @@ func cleanupFabricObjectsForSource(t testing.TB, fm filemanager.FileManager, sou
 
 func writeFabricParquet(t testing.TB, schema model.TableSchema, rows []map[string]any) string {
 	t.Helper()
-	path := fmt.Sprintf("%s/fabric-%d.parquet", t.TempDir(), time.Now().UnixNano())
+	path := filepath.Join(t.TempDir(), "fabric.parquet")
 	factory := encoding.NewFactory(config.New())
 	writer, err := factory.NewLoadFileWriter(whutils.LoadFileTypeParquet, path, schema, whutils.MicrosoftFabric)
 	require.NoError(t, err)
-	columns := make([]string, 0, len(schema))
-	for column := range schema {
-		columns = append(columns, column)
-	}
-	sort.Strings(columns)
+	columns := slices.Sorted(maps.Keys(schema))
 	for _, row := range rows {
 		loader := factory.NewEventLoader(writer, whutils.LoadFileTypeParquet, whutils.MicrosoftFabric)
 		for _, column := range columns {
@@ -578,18 +561,19 @@ func fabricLoadRecords(t testing.TB, db *sql.DB, namespace, tableName string) []
 
 func verifyFabricEventSchema(t testing.TB, db *sql.DB, namespace string, storeFullEvent bool) {
 	t.Helper()
-	records := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT [table_name], [column_name], [data_type] FROM INFORMATION_SCHEMA.COLUMNS WHERE [table_schema] = %s;`, sqlString(namespace)))
+	records := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT [table_name], [column_name], [data_type] FROM INFORMATION_SCHEMA.COLUMNS WHERE [table_schema] = %s;`, whutils.UnicodeStringLiteral(namespace)))
 	schema := whth.ConvertRecordsToSchema(records)
 	require.Equal(t, expectedFabricEventSchema(storeFullEvent), schema)
+	if !storeFullEvent {
+		return
+	}
 	for _, table := range fabricEventTables() {
-		if storeFullEvent {
-			var maxLength int64
-			require.NoError(t, db.QueryRowContext(context.Background(), `SELECT [character_maximum_length] FROM INFORMATION_SCHEMA.COLUMNS WHERE [table_schema] = @schema AND [table_name] = @table AND [column_name] = 'rudder_event';`, sql.Named("schema", namespace), sql.Named("table", table)).Scan(&maxLength))
-			require.Equal(t, int64(-1), maxLength)
-			var invalidJSON int
-			require.NoError(t, db.QueryRowContext(context.Background(), fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE [rudder_event] IS NULL OR ISJSON([rudder_event]) <> 1;`, fabricQualified(namespace, table))).Scan(&invalidJSON))
-			require.Zero(t, invalidJSON)
-		}
+		var maxLength int64
+		require.NoError(t, db.QueryRowContext(context.Background(), `SELECT [character_maximum_length] FROM INFORMATION_SCHEMA.COLUMNS WHERE [table_schema] = @schema AND [table_name] = @table AND [column_name] = 'rudder_event';`, sql.Named("schema", namespace), sql.Named("table", table)).Scan(&maxLength))
+		require.Equal(t, int64(-1), maxLength)
+		var invalidJSON int
+		require.NoError(t, db.QueryRowContext(context.Background(), fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE [rudder_event] IS NULL OR ISJSON([rudder_event]) <> 1;`, fabricQualified(namespace, table))).Scan(&invalidJSON))
+		require.Zero(t, invalidJSON)
 	}
 }
 
@@ -675,31 +659,11 @@ func dropFabricSchema(t testing.TB, db *sql.DB, namespace string) {
 			t.Logf("drop table %q.%q: %v", namespace, table, err)
 		}
 	}
-	if _, err := db.ExecContext(context.Background(), "DROP SCHEMA "+fabricQuote(namespace)); err != nil && !strings.Contains(strings.ToLower(err.Error()), "does not exist") {
+	if _, err := db.ExecContext(context.Background(), "DROP SCHEMA "+whutils.BracketQuoteIdentifier(namespace)); err != nil && !strings.Contains(strings.ToLower(err.Error()), "does not exist") {
 		t.Logf("drop schema %q: %v", namespace, err)
 	}
 }
 
 func fabricQualified(namespace, table string) string {
-	return fabricQuote(namespace) + "." + fabricQuote(table)
-}
-
-func fabricQuote(identifier string) string {
-	return "[" + strings.ReplaceAll(identifier, "]", "]]") + "]"
-}
-
-func sqlString(value string) string {
-	return "N'" + strings.ReplaceAll(value, "'", "''") + "'"
-}
-
-func cloneConfig(config map[string]any) map[string]any {
-	cloned := make(map[string]any, len(config))
-	maps.Copy(cloned, config)
-	return cloned
-}
-
-func cloneSchema(schema model.TableSchema) model.TableSchema {
-	cloned := make(model.TableSchema, len(schema))
-	maps.Copy(cloned, schema)
-	return cloned
+	return whutils.QuoteQualifiedIdentifier(whutils.BracketQuoteIdentifier, namespace, table)
 }
