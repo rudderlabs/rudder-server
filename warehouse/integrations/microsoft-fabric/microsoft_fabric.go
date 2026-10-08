@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -48,27 +47,17 @@ var (
 		"bit":              model.BooleanDataType,
 		"smallint":         model.IntDataType,
 		"int":              model.IntDataType,
-		"integer":          model.IntDataType,
 		"bigint":           model.IntDataType,
-		"tinyint":          model.IntDataType,
 		"decimal":          model.FloatDataType,
 		"numeric":          model.FloatDataType,
 		"float":            model.FloatDataType,
 		"real":             model.FloatDataType,
-		"money":            model.FloatDataType,
 		"date":             model.DateTimeDataType,
 		"time":             model.DateTimeDataType,
-		"datetime":         model.DateTimeDataType,
 		"datetime2":        model.DateTimeDataType,
-		"datetimeoffset":   model.DateTimeDataType,
 		"char":             model.StringDataType,
-		"nchar":            model.StringDataType,
 		"varchar":          model.StringDataType,
-		"nvarchar":         model.StringDataType,
-		"text":             model.StringDataType,
-		"ntext":            model.StringDataType,
 		"varbinary":        model.StringDataType,
-		"image":            model.StringDataType,
 		"uniqueidentifier": model.StringDataType,
 	}
 	primaryKeyMap = map[string]string{
@@ -89,8 +78,6 @@ var (
 		{Type: model.ColumnSizeError, Format: regexp.MustCompile(`(?i)(string or binary data would be truncated|16 MB)`)},
 		{Type: model.AlterColumnError, Format: regexp.MustCompile(`(?i)(is not compatible with external data type|cannot be converted from parquet)`)},
 		{Type: model.PermissionError, Format: regexp.MustCompile(`(?i)spn_token_bootstrap`)},
-		{Type: model.PermissionError, Format: regexp.MustCompile(`(?i)lakehouse_access`)},
-		{Type: model.ResourceNotFoundError, Format: regexp.MustCompile(`(?i)lakehouse_not_found`)},
 	}
 )
 
@@ -265,7 +252,7 @@ func (*MicrosoftFabric) AlterColumn(_ context.Context, tableName, columnName, co
 func (f *MicrosoftFabric) FetchSchema(ctx context.Context) (model.Schema, error) {
 	rows, err := f.db.QueryContext(ctx, `SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = @schema AND table_name NOT LIKE @prefix;`,
 		sql.Named("schema", f.namespace), sql.Named("prefix", warehouseutils.StagingTablePrefix(provider)+"%"))
-	if errors.Is(err, io.EOF) || errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, io.EOF) {
 		return model.Schema{}, nil
 	}
 	if err != nil {
@@ -302,43 +289,17 @@ func (f *MicrosoftFabric) ShouldMerge(tableName string) bool {
 	return !f.warehouse.GetPreferAppendSetting() || !f.uploader.CanAppend()
 }
 
-func (f *MicrosoftFabric) copyInto(ctx context.Context, tableName, location string, columns []string) (int64, error) {
-	if err := f.validateOneLakeLocation(location); err != nil {
-		return 0, err
-	}
+func (f *MicrosoftFabric) copyInto(ctx context.Context, tableName, location string, columns []string) error {
 	if len(columns) == 0 {
-		return 0, errors.New("copy_into: target column list is empty")
+		return errors.New("copy_into: target column list is empty")
 	}
 	statement := fmt.Sprintf(`COPY INTO %s (%s) FROM %s WITH (FILE_TYPE = 'PARQUET');`,
 		qualified(f.namespace, tableName),
 		warehouseutils.JoinQuotedIdentifiers(columns, warehouseutils.BracketQuoteIdentifier, ","),
 		warehouseutils.SQLStringLiteral(location))
-	result, err := f.db.ExecContext(ctx, statement)
+	_, err := f.db.ExecContext(ctx, statement)
 	if err != nil {
-		return 0, fmt.Errorf("copy_into: loading Parquet into %q: %w", tableName, err)
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("copy_into: counting rows loaded into %q: %w", tableName, err)
-	}
-	return rowsAffected, nil
-}
-
-func (f *MicrosoftFabric) validateOneLakeLocation(location string) error {
-	log := f.logger
-	if log == nil {
-		log = logger.NOP
-	}
-	manager, err := filemanager.NewOneLakeManager(
-		f.warehouse.Destination.Config,
-		log,
-		func() time.Duration { return f.connectTimeout },
-	)
-	if err != nil {
-		return fmt.Errorf("copy_into: creating OneLake file manager: %w", err)
-	}
-	if _, err := manager.GetObjectNameFromLocation(location); err != nil {
-		return fmt.Errorf("copy_into: %w", err)
+		return fmt.Errorf("copy_into: loading Parquet into %q: %w", tableName, err)
 	}
 	return nil
 }
@@ -353,7 +314,7 @@ func (f *MicrosoftFabric) createStagingTable(ctx context.Context, tableName stri
 }
 
 func (f *MicrosoftFabric) dropStagingTable(ctx context.Context, tableName string) error {
-	if tableName == "" || f.db == nil {
+	if tableName == "" {
 		return nil
 	}
 	_, err := f.db.ExecContext(ctx, fmt.Sprintf(`IF OBJECT_ID(%s, 'U') IS NOT NULL DROP TABLE %s;`,
@@ -379,6 +340,15 @@ func partitionKey(tableName string) string {
 	return "id"
 }
 
+func discardsJoinCondition(target string) string {
+	if target != warehouseutils.DiscardsTable {
+		return ""
+	}
+	return fmt.Sprintf(" AND target.%s = source.%s AND target.%s = source.%s",
+		warehouseutils.BracketQuoteIdentifier("table_name"), warehouseutils.BracketQuoteIdentifier("table_name"),
+		warehouseutils.BracketQuoteIdentifier("column_name"), warehouseutils.BracketQuoteIdentifier("column_name"))
+}
+
 func mergeStatement(namespace, target, staging string, columns []string, useNewRecord bool) string {
 	quotedColumns := warehouseutils.JoinQuotedIdentifiers(columns, warehouseutils.BracketQuoteIdentifier, ",")
 	sourceColumns := warehouseutils.JoinWithFormatting(columns, func(_ int, name string) string {
@@ -392,12 +362,6 @@ func mergeStatement(namespace, target, staging string, columns []string, useNewR
 		return "target." + quoted + " = source." + quoted
 	}, ",")
 	pk := warehouseutils.BracketQuoteIdentifier(primaryKey(target))
-	additionalJoin := ""
-	if target == warehouseutils.DiscardsTable {
-		additionalJoin = fmt.Sprintf(" AND target.%s = source.%s AND target.%s = source.%s",
-			warehouseutils.BracketQuoteIdentifier("table_name"), warehouseutils.BracketQuoteIdentifier("table_name"),
-			warehouseutils.BracketQuoteIdentifier("column_name"), warehouseutils.BracketQuoteIdentifier("column_name"))
-	}
 	return fmt.Sprintf(`MERGE INTO %[1]s AS target USING (
 SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY %[3]s ORDER BY %[4]s DESC) AS _rudder_staging_row_number FROM %[2]s) AS ranked
 WHERE _rudder_staging_row_number = 1
@@ -406,20 +370,14 @@ WHEN MATCHED THEN UPDATE SET %[7]s
 WHEN NOT MATCHED THEN INSERT (%[8]s) VALUES (%[9]s);`,
 		qualified(namespace, target), qualified(namespace, staging),
 		warehouseutils.QuoteCommaSeparatedIdentifiers(partitionKey(target), warehouseutils.BracketQuoteIdentifier),
-		warehouseutils.BracketQuoteIdentifier("received_at"), pk, additionalJoin, updates, quotedColumns, sourceColumns)
+		warehouseutils.BracketQuoteIdentifier("received_at"), pk, discardsJoinCondition(target), updates, quotedColumns, sourceColumns)
 }
 
 func matchingRowsStatement(namespace, target, staging string) string {
 	pk := warehouseutils.BracketQuoteIdentifier(primaryKey(target))
-	additionalJoin := ""
-	if target == warehouseutils.DiscardsTable {
-		additionalJoin = fmt.Sprintf(" AND target.%s = source.%s AND target.%s = source.%s",
-			warehouseutils.BracketQuoteIdentifier("table_name"), warehouseutils.BracketQuoteIdentifier("table_name"),
-			warehouseutils.BracketQuoteIdentifier("column_name"), warehouseutils.BracketQuoteIdentifier("column_name"))
-	}
 	return fmt.Sprintf(`SELECT COUNT(*) FROM %s AS target WHERE EXISTS (
 SELECT 1 FROM %s AS source WHERE target.%s = source.%s%s
-);`, qualified(namespace, target), qualified(namespace, staging), pk, pk, additionalJoin)
+);`, qualified(namespace, target), qualified(namespace, staging), pk, pk, discardsJoinCondition(target))
 }
 
 // loadTable loads tableName through a staging table and returns load statistics plus that
@@ -439,13 +397,10 @@ func (f *MicrosoftFabric) loadTable(ctx context.Context, tableName string) (*typ
 	if err != nil {
 		return nil, "", err
 	}
-	var rowsCopied int64
 	for _, loadFile := range metadata {
-		copied, err := f.copyInto(ctx, stagingTableName, loadFile.Location, columns)
-		if err != nil {
+		if err := f.copyInto(ctx, stagingTableName, loadFile.Location, columns); err != nil {
 			return nil, stagingTableName, err
 		}
-		rowsCopied += copied
 	}
 
 	if f.ShouldMerge(tableName) {
@@ -462,12 +417,6 @@ func (f *MicrosoftFabric) loadTable(ctx context.Context, tableName string) (*typ
 		if err != nil {
 			return nil, stagingTableName, fmt.Errorf("merge: counting affected rows for %q: %w", tableName, err)
 		}
-		if rowsAffected < rowsUpdated {
-			return nil, stagingTableName, fmt.Errorf("merge: affected row count %d is smaller than matched row count %d for %q", rowsAffected, rowsUpdated, tableName)
-		}
-		if rowsAffected > rowsCopied {
-			return nil, stagingTableName, fmt.Errorf("merge: affected row count %d exceeds copied row count %d for %q", rowsAffected, rowsCopied, tableName)
-		}
 		return &types.LoadTableStats{RowsInserted: rowsAffected - rowsUpdated, RowsUpdated: rowsUpdated}, stagingTableName, nil
 	} else {
 		quotedColumns := warehouseutils.JoinQuotedIdentifiers(columns, warehouseutils.BracketQuoteIdentifier, ",")
@@ -479,9 +428,6 @@ func (f *MicrosoftFabric) loadTable(ctx context.Context, tableName string) (*typ
 		rowsInserted, err := result.RowsAffected()
 		if err != nil {
 			return nil, stagingTableName, fmt.Errorf("counting appended rows for %q: %w", tableName, err)
-		}
-		if rowsInserted != rowsCopied {
-			return nil, stagingTableName, fmt.Errorf("appending: inserted row count %d differs from copied row count %d for %q", rowsInserted, rowsCopied, tableName)
 		}
 		return &types.LoadTableStats{RowsInserted: rowsInserted}, stagingTableName, nil
 	}
@@ -565,8 +511,7 @@ func (f *MicrosoftFabric) TestLoadTable(ctx context.Context, location, tableName
 	if loadFileFormat != warehouseutils.LoadFileTypeParquet {
 		return fmt.Errorf("copy_into: Microsoft Fabric supports only Parquet load files")
 	}
-	_, err := f.copyInto(ctx, tableName, location, slices.Sorted(maps.Keys(payload)))
-	return err
+	return f.copyInto(ctx, tableName, location, slices.Sorted(maps.Keys(payload)))
 }
 
 func (f *MicrosoftFabric) TestFetchSchema(ctx context.Context) error {

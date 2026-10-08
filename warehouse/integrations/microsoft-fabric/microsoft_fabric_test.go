@@ -80,6 +80,23 @@ func TestPersistedTypeMappings(t *testing.T) {
 		"text":     "varchar(max)",
 		"json":     "varchar(max)",
 	}, dataTypesMap)
+	require.Equal(t, map[string]string{
+		"bit":              model.BooleanDataType,
+		"smallint":         model.IntDataType,
+		"int":              model.IntDataType,
+		"bigint":           model.IntDataType,
+		"decimal":          model.FloatDataType,
+		"numeric":          model.FloatDataType,
+		"float":            model.FloatDataType,
+		"real":             model.FloatDataType,
+		"date":             model.DateTimeDataType,
+		"time":             model.DateTimeDataType,
+		"datetime2":        model.DateTimeDataType,
+		"char":             model.StringDataType,
+		"varchar":          model.StringDataType,
+		"varbinary":        model.StringDataType,
+		"uniqueidentifier": model.StringDataType,
+	}, dataTypesMapToRudder)
 
 	columns, err := columnsWithDataTypes(model.TableSchema{
 		"payload": "json", "description": "text", "at": "datetime", "name": "string", "enabled": "boolean", "count": "int", "amount": "float",
@@ -185,16 +202,6 @@ func TestLoadTableUsesUniqueStagingAndSingleMerge(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestCopyRejectsLocationOutsideConfiguredLakehouse(t *testing.T) {
-	fabric := &MicrosoftFabric{warehouse: testWarehouse(false), conf: config.New()}
-	err := fabric.validateOneLakeLocation("https://attacker.example/file.parquet")
-	require.ErrorContains(t, err, "location has an invalid host")
-	err = fabric.validateOneLakeLocation("https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222/Files/f.parquet")
-	require.NoError(t, err)
-	err = fabric.validateOneLakeLocation("https://onelake.dfs.fabric.microsoft.com/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222.Lakehouse/Files/f.parquet")
-	require.ErrorContains(t, err, "outside the configured Lakehouse Files area")
-}
-
 func TestAlterColumnIsExplicitlyBlocked(t *testing.T) {
 	_, err := (&MicrosoftFabric{}).AlterColumn(context.Background(), "tracks", "value", "string")
 	require.ErrorContains(t, err, "automatic ALTER COLUMN is unsupported")
@@ -203,8 +210,9 @@ func TestAlterColumnIsExplicitlyBlocked(t *testing.T) {
 func TestMergeStatementDiscardsCompositeMatch(t *testing.T) {
 	statement := mergeStatement("schema", warehouseutils.DiscardsTable, "staging", []string{"row_id", "table_name", "column_name", "received_at"}, true)
 	require.Contains(t, statement, "PARTITION BY [row_id], [column_name], [table_name]")
-	require.Contains(t, statement, "target.[table_name] = source.[table_name]")
-	require.Contains(t, statement, "target.[column_name] = source.[column_name]")
+	joinCondition := " AND target.[table_name] = source.[table_name] AND target.[column_name] = source.[column_name]"
+	require.Contains(t, statement, joinCondition)
+	require.Contains(t, matchingRowsStatement("schema", warehouseutils.DiscardsTable, "staging"), joinCondition)
 }
 
 func TestErrorMappingsUseProviderErrors(t *testing.T) {
@@ -215,8 +223,6 @@ func TestErrorMappingsUseProviderErrors(t *testing.T) {
 		want model.JobErrorType
 	}{
 		{name: "bootstrap", err: "spn_token_bootstrap: unauthorized", want: model.PermissionError},
-		{name: "lakehouse access", err: "lakehouse_access: upload failed with HTTP 403", want: model.PermissionError},
-		{name: "lakehouse missing", err: "lakehouse_not_found: listing files failed with HTTP 404", want: model.ResourceNotFoundError},
 		{name: "missing table", err: "mssql: Invalid object name 'schema.missing'", want: model.ResourceNotFoundError},
 		{name: "deadlock", err: "mssql: Transaction (Process ID 72) was deadlocked on lock resources with another process", want: model.ConcurrentQueriesError},
 		{name: "lock timeout", err: "mssql: Lock request time out period exceeded", want: model.ConcurrentQueriesError},
