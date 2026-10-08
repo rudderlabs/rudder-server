@@ -71,7 +71,7 @@ var (
 		warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 	}
 	errorsMappings = []model.JobError{
-		{Type: model.PermissionError, Format: regexp.MustCompile(`(?i)(login failed|principal.*not able|permission.*denied|not authorized)`)},
+		{Type: model.PermissionError, Format: regexp.MustCompile(`(?i)(login failed|authentication failed|AADSTS|principal.*not able|permission.*denied|not authorized)`)},
 		{Type: model.ResourceNotFoundError, Format: regexp.MustCompile(`(?i)(cannot open (?:database|server)|invalid object name|could not be found|does not exist)`)},
 		{Type: model.ConcurrentQueriesError, Format: regexp.MustCompile(`(?i)(was deadlocked on .* resources|lock request time out period exceeded)`)},
 		{Type: model.ColumnCountError, Format: regexp.MustCompile(`(?i)(1024 columns|maximum.*columns)`)},
@@ -241,11 +241,17 @@ func (f *MicrosoftFabric) AddColumns(ctx context.Context, tableName string, colu
 		if err != nil {
 			return err
 		}
-		statement := fmt.Sprintf(`IF COL_LENGTH(%s, %s) IS NULL ALTER TABLE %s ADD %s %s NULL;`,
-			warehouseutils.UnicodeStringLiteral(f.namespace+"."+tableName),
-			warehouseutils.UnicodeStringLiteral(column.Name),
-			qualified(f.namespace, tableName), warehouseutils.BracketQuoteIdentifier(column.Name), dataType,
-		)
+		var existingColumns int
+		err = f.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @table AND COLUMN_NAME = @column;`,
+			sql.Named("schema", f.namespace), sql.Named("table", tableName), sql.Named("column", column.Name)).Scan(&existingColumns)
+		if err != nil {
+			return fmt.Errorf("checking nullable column %q: %w", column.Name, err)
+		}
+		if existingColumns > 0 {
+			continue
+		}
+		statement := fmt.Sprintf(`ALTER TABLE %s ADD %s %s NULL;`,
+			qualified(f.namespace, tableName), warehouseutils.BracketQuoteIdentifier(column.Name), dataType)
 		if _, err := f.db.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("adding nullable column %q: %w", column.Name, err)
 		}

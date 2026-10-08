@@ -262,6 +262,19 @@ func testFabricLoadTable(t *testing.T, credentials fabricTestCredentials) {
 	admin := setupFabric(t, warehouse, nil)
 	require.NoError(t, admin.CreateSchema(ctx))
 
+	t.Run("add columns is idempotent", func(t *testing.T) {
+		tableName := "add_columns_idempotent_test_table"
+		column := whutils.ColumnInfo{Name: "new_column", Type: model.StringDataType}
+		require.NoError(t, admin.CreateTable(ctx, tableName, model.TableSchema{"id": model.StringDataType}))
+		require.NoError(t, admin.AddColumns(ctx, tableName, []whutils.ColumnInfo{column}))
+		require.NoError(t, admin.AddColumns(ctx, tableName, []whutils.ColumnInfo{column}))
+
+		var columnCount int
+		require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @table AND COLUMN_NAME = @column;`,
+			sql.Named("schema", namespace), sql.Named("table", tableName), sql.Named("column", column.Name)).Scan(&columnCount))
+		require.Equal(t, 1, columnCount)
+	})
+
 	t.Run("table does not exist", func(t *testing.T) {
 		tableName := "table_not_exists_test_table"
 		location := uploadFabricFixture(t, fm, "../testdata/load.parquet", tableName)
@@ -394,7 +407,7 @@ func testFabricLoadTable(t *testing.T, credentials fabricTestCredentials) {
 			"received_at":   "2025-01-02T03:04:05Z",
 			maliciousColumn: "safe",
 		}})
-		location := uploadFabricFixture(t, fm, maliciousFile, maliciousTable)
+		location := uploadFabricFixture(t, fm, maliciousFile, "malicious_identifiers_fixture")
 		fabric := setupFabric(t, maliciousWarehouse, newFabricUploader(t, []whutils.LoadFile{{Location: location}}, maliciousTable, maliciousSchema, false, true))
 		t.Cleanup(func() { dropFabricSchema(t, db, maliciousNamespace) })
 		require.NoError(t, fabric.CreateSchema(ctx))

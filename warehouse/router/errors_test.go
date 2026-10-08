@@ -75,6 +75,9 @@ func TestErrorHandler_MatchUploadJobErrorType(t *testing.T) {
 				"Microsoft Fabric service-principal bootstrap", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"spn_token_bootstrap: token request failed\"]}}"), model.PermissionError,
 			},
 			{
+				"Microsoft Fabric expired client secret", warehouseutils.MicrosoftFabric, errors.New("{\"fetching_remote_schema_failed\":{\"attempt\":1,\"errors\":[\"pinging Microsoft Fabric: ClientSecretCredential authentication failed: AADSTS7000222: The provided client secret keys are expired\"]}}"), model.PermissionError,
+			},
+			{
 				"Microsoft Fabric missing table", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"mssql: Invalid object name 'schema.missing'\"]}}"), model.ResourceNotFoundError,
 			},
 			{

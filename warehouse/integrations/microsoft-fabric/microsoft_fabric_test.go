@@ -109,8 +109,15 @@ func TestPersistedTypeMappings(t *testing.T) {
 
 func TestAddColumnsMapsTextToVarcharMax(t *testing.T) {
 	db, mock := newSQLMock(t)
-	mock.ExpectExec(`IF COL_LENGTH\(N'schema\.with\.dot\.tracks', N'description'\) IS NULL ALTER TABLE \[schema\.with\.dot\]\.\[tracks\] ADD \[description\] varchar\(max\) NULL;`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM INFORMATION_SCHEMA\.COLUMNS WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @table AND COLUMN_NAME = @column;`).
+		WithArgs(sql.Named("schema", "schema.with.dot"), sql.Named("table", "tracks"), sql.Named("column", "description")).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectExec(`ALTER TABLE \[schema\.with\.dot\]\.\[tracks\] ADD \[description\] varchar\(max\) NULL;`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM INFORMATION_SCHEMA\.COLUMNS WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @table AND COLUMN_NAME = @column;`).
+		WithArgs(sql.Named("schema", "schema.with.dot"), sql.Named("table", "tracks"), sql.Named("column", "description")).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 	fabric := &MicrosoftFabric{db: sqlmw.New(db), namespace: "schema.with.dot"}
+	require.NoError(t, fabric.AddColumns(context.Background(), "tracks", []warehouseutils.ColumnInfo{{Name: "description", Type: model.TextDataType}}))
 	require.NoError(t, fabric.AddColumns(context.Background(), "tracks", []warehouseutils.ColumnInfo{{Name: "description", Type: model.TextDataType}}))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -223,6 +230,7 @@ func TestErrorMappingsUseProviderErrors(t *testing.T) {
 		want model.JobErrorType
 	}{
 		{name: "bootstrap", err: "spn_token_bootstrap: unauthorized", want: model.PermissionError},
+		{name: "expired client secret", err: "pinging Microsoft Fabric: ClientSecretCredential authentication failed: AADSTS7000222: The provided client secret keys are expired", want: model.PermissionError},
 		{name: "missing table", err: "mssql: Invalid object name 'schema.missing'", want: model.ResourceNotFoundError},
 		{name: "deadlock", err: "mssql: Transaction (Process ID 72) was deadlocked on lock resources with another process", want: model.ConcurrentQueriesError},
 		{name: "lock timeout", err: "mssql: Lock request time out period exceeded", want: model.ConcurrentQueriesError},
