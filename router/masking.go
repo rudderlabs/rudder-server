@@ -26,44 +26,51 @@ func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
 	reason := "mask_all"
 	var maskErr bool
 	if paths, ok := w.rt.transformerFeaturesService.SecretPaths(w.rt.destType); ok {
+		var applied int
+		payload, applied, maskErr = maskListedPaths(payload, paths)
 		reason = "listed"
-		payload, maskErr = maskListedPaths(payload, paths)
+		if applied == 0 {
+			reason = "listed_noop"
+		}
 	} else {
 		payload, maskErr = maskAll(payload)
 	}
-	w.rt.deliveryPayloadMaskingStat(reason).Increment()
 	if maskErr {
-		w.rt.deliveryPayloadMaskingStat("mask_error").Increment()
+		reason = "mask_error"
 	}
+	w.rt.deliveryPayloadMaskingStat(reason).Increment()
 	return payload
 }
 
-// maskListedPaths replaces existing values at paths. It falls back to mask-all on malformed
-// payloads or any path application error, so a masking failure never forwards the original value.
-func maskListedPaths(payload json.RawMessage, paths []string) (json.RawMessage, bool) {
+// maskListedPaths replaces existing values at paths and reports how many listed paths changed the
+// payload. It falls back to mask-all on malformed payloads or any path application error, so a
+// masking failure never forwards the original value.
+func maskListedPaths(payload json.RawMessage, paths []string) (json.RawMessage, int, bool) {
 	if len(paths) == 0 {
-		return payload, false
+		return payload, 0, false
 	}
 	if !isJSONObject(payload) {
-		return maskAll(payload)
+		masked, maskErr := maskAll(payload)
+		return masked, 0, maskErr
 	}
-	masked, err := applyListedPaths(payload, paths)
+	masked, applied, err := applyListedPaths(payload, paths)
 	if err != nil {
 		fallback, _ := maskAll(masked)
-		return fallback, true
+		return fallback, applied, true
 	}
-	return masked, false
+	return masked, applied, false
 }
 
 // applyListedPaths never mutates payload: sjson allocates a new slice unless ReplaceInPlace is set.
-func applyListedPaths(masked json.RawMessage, paths []string) (json.RawMessage, error) {
+func applyListedPaths(masked json.RawMessage, paths []string) (json.RawMessage, int, error) {
+	applied := 0
 	var err error
 	for _, path := range paths {
 		if path == "endpoint" {
 			continue
 		}
 		if path == "" {
-			return masked, errPathNotMasked
+			return masked, applied, errPathNotMasked
 		}
 		if !gjson.GetBytes(masked, path).Exists() {
 			continue
@@ -72,21 +79,29 @@ func applyListedPaths(masked json.RawMessage, paths []string) (json.RawMessage, 
 		if parentPath, ok := terminalArrayWildcardParent(path); ok {
 			array := gjson.GetBytes(masked, parentPath)
 			if !array.IsArray() {
-				return masked, errPathNotMasked
+				return masked, applied, errPathNotMasked
 			}
+			before := masked
 			for idx := range array.Array() {
 				if masked, err = setMasked(masked, parentPath+"."+strconv.Itoa(idx)); err != nil {
-					return masked, err
+					return masked, applied, err
 				}
+			}
+			if !bytes.Equal(before, masked) {
+				applied++
 			}
 			continue
 		}
 
+		before := masked
 		if masked, err = setMasked(masked, path); err != nil {
-			return masked, err
+			return masked, applied, err
+		}
+		if !bytes.Equal(before, masked) {
+			applied++
 		}
 	}
-	return masked, nil
+	return masked, applied, nil
 }
 
 func setMasked(payload json.RawMessage, path string) (json.RawMessage, error) {
