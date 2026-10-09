@@ -280,37 +280,38 @@ func unzip(zipFile, targetDir string) ([]string, error) {
 	defer r.Close()
 
 	for _, f := range r.File {
-		rc, err := f.Open()
-		if err != nil {
-			return nil, err
-		}
-		defer rc.Close()
-
-		// Create the corresponding file in the target directory
 		path := filepath.Join(targetDir, uuid.NewString())
 		csvFilePath := fmt.Sprintf(`%s.csv`, path)
 		if f.FileInfo().IsDir() {
-			// Create directories if the file is a directory
-			err = os.MkdirAll(csvFilePath, f.Mode())
-			if err != nil {
+			if err := os.MkdirAll(csvFilePath, f.Mode()); err != nil {
 				return nil, err
 			}
-		} else {
-			// Create the file and copy the contents
+			continue
+		}
+
+		// Wrap extraction in a closure so deferred file descriptor closures
+		// execute per iteration rather than lingering until unzip returns.
+		err := func() error {
+			rc, err := f.Open()
+			if err != nil {
+				return err
+			}
+			defer rc.Close()
+
 			file, err := os.Create(csvFilePath)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			defer file.Close()
 
 			_, err = io.Copy(file, rc)
-			if err != nil {
-				return nil, err
-			}
-
-			// Append the file path to the list
-			filePaths = append(filePaths, csvFilePath)
+			return err
+		}()
+		if err != nil {
+			return nil, err
 		}
+
+		filePaths = append(filePaths, csvFilePath)
 	}
 
 	return filePaths, nil
