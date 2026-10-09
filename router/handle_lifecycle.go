@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
@@ -99,7 +98,7 @@ func (rt *Handle) Setup(
 	rt.telemetry.diagnosisTicker = time.NewTicker(rt.diagnosisTickerTime)
 
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
-		rt.saveDestinationResponse = value
+		rt.saveDestinationResponse.Store(value)
 	}
 	if value, ok := destinationDefinition.Config["supportsDeliveredWithWarnings"].(bool); ok {
 		rt.supportsDeliveredWithWarnings.Store(value)
@@ -332,9 +331,10 @@ func (rt *Handle) Setup(
 		rt.adaptiveLimit = func(limit int64) int64 { return limit }
 	}
 
-	rruntime.Go(func() {
+	rt.backgroundGroup.Go(crash.Wrapper(func() error {
 		rt.backendConfigSubscriber()
-	})
+		return nil
+	}))
 }
 
 func (rt *Handle) setupReloadableVars() {
@@ -466,7 +466,7 @@ func (rt *Handle) statusInsertLoop() {
 }
 
 func (rt *Handle) backendConfigSubscriber() {
-	ch := rt.backendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
+	ch := rt.backendConfig.Subscribe(rt.backgroundCtx, backendconfig.TopicBackendConfig)
 	for configEvent := range ch {
 		destinationsMap := map[string]*routerutils.DestinationWithSources{}
 		connectionsMap := map[types.SourceDest]types.ConnectionWithID{}
@@ -486,7 +486,7 @@ func (rt *Handle) backendConfigSubscriber() {
 						destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, *source)
 
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
-							rt.saveDestinationResponse = value
+							rt.saveDestinationResponse.Store(value)
 						}
 						if value, ok := destination.DestinationDefinition.Config["supportsDeliveredWithWarnings"].(bool); ok {
 							rt.supportsDeliveredWithWarnings.Store(value)
