@@ -225,7 +225,10 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer gwROHandle.Close()
-	var gwRODB jobsdb.JobsDB = gwROHandle
+	gwRODB, err := withGatewayPendingEventsTracker(config, gwROHandle)
+	if err != nil {
+		return err
+	}
 	rtRWHandle := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),

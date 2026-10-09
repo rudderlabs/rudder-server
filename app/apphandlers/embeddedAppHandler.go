@@ -239,7 +239,10 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer gwROHandle.Close()
-	var gwRODB jobsdb.JobsDB = gwROHandle
+	gwRODB, err := withGatewayPendingEventsTracker(config, gwROHandle)
+	if err != nil {
+		return err
+	}
 
 	rtRWHandle := jobsdb.NewForReadWrite(
 		"rt",

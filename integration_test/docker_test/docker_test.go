@@ -367,6 +367,7 @@ func setupMainFlow(svcCtx context.Context, cancel context.CancelFunc, t *testing
 	t.Setenv("RSERVER_GATEWAY_INTERNAL_ENDPOINTS_ENABLED", "true")
 
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
+	t.Setenv("RSERVER_JOBS_DB_GW_PENDING_EVENTS_ENABLED", "true")
 
 	webhook = whUtil.NewRecorder()
 	t.Cleanup(webhook.Close)
