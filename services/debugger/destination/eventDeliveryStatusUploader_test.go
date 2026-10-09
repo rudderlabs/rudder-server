@@ -167,14 +167,14 @@ var faultyData = DeliveryStatusT{
 }
 
 type staticSecretPaths struct {
-	state transformer.SecretPathsState
 	paths []string
+	ok    bool
 	seen  []string
 }
 
-func (s *staticSecretPaths) SecretPaths(destType string) (transformer.SecretPathsState, []string) {
+func (s *staticSecretPaths) SecretPaths(destType string) ([]string, bool) {
 	s.seen = append(s.seen, destType)
-	return s.state, s.paths
+	return s.paths, s.ok
 }
 
 type captureUploader struct {
@@ -277,8 +277,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			config.Set("DestinationDebugger.cacheType", 0)
 			config.Set("DestinationDebugger.disableEventDeliveryUploadMasking", false)
 			provider = &staticSecretPaths{
-				state: transformer.SecretPathsMaskListed,
 				paths: []string{"headers.Authorization"},
+				ok:    true,
 			}
 			created, err := NewHandle(c.mockBackendConfig, provider)
 			Expect(err).ToNot(HaveOccurred())
@@ -305,6 +305,18 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			Expect(provider.seen).To(Equal([]string{"enabled-destination-a-definition-name"}))
 			Expect(gjson.GetBytes(uploader.last().Payload, "headers.Authorization").String()).To(Equal(maskedValue))
 			Expect(status.Payload).To(Equal(original))
+			Expect(counts["enabled-destination-a-definition-name/listed"]).To(Equal(1))
+		})
+
+		It("masks all when the transformer has no destination entry", func() {
+			provider.ok = false
+			status := &DeliveryStatusT{Payload: json.RawMessage(`{"endpoint":"visible","headers":{"Authorization":"secret"},"body":{"token":"secret"}}`)}
+
+			Expect(handle.RecordEventDeliveryStatus(DestinationIDEnabledA, status)).To(BeTrue())
+			Expect(gjson.GetBytes(uploader.last().Payload, "endpoint").String()).To(Equal("visible"))
+			Expect(gjson.GetBytes(uploader.last().Payload, "headers").String()).To(Equal(maskedValue))
+			Expect(gjson.GetBytes(uploader.last().Payload, "body").String()).To(Equal(maskedValue))
+			Expect(counts["enabled-destination-a-definition-name/mask_all"]).To(Equal(1))
 		})
 
 		It("stores only a masked copy for upload-disabled destinations", func() {
@@ -357,8 +369,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(gjson.GetBytes(cached[0].Payload, "endpoint").String()).To(Equal("visible"))
 			Expect(gjson.GetBytes(cached[0].Payload, "headers").String()).To(Equal(maskedValue))
-			Expect(counts["unknown/missing_destination"]).To(Equal(1))
-			Expect(counts).ToNot(HaveKey("customer-specific-id/missing_destination"))
+			Expect(counts["unknown/mask_all"]).To(Equal(1))
+			Expect(counts).ToNot(HaveKey("customer-specific-id/mask_all"))
 		})
 
 		It("uses refreshed destination type mappings", func() {

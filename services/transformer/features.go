@@ -24,28 +24,13 @@ type FeaturesServiceOptions struct {
 	TransformerURL string
 }
 
-type SecretPathsState int
-
-const (
-	// SecretPathsMaskAll is the zero value on purpose: an unset state must fail closed.
-	SecretPathsMaskAll SecretPathsState = iota
-	SecretPathsUnavailable
-	SecretPathsMaskListed
-	// SecretPathsMaskAllMalformed fails closed like SecretPathsMaskAll; it only marks an entry the
-	// transformer sent in an unparseable shape.
-	SecretPathsMaskAllMalformed
-)
-
 type FeaturesService interface {
 	Regulations() []string
 	SourceTransformerVersion() string
 	RouterTransform(destType string) bool
-	// SecretPaths reports how destType's Live Events delivery-payload copy must be masked.
-	// paths is meaningful only when state is SecretPathsMaskListed, and may be empty,
-	// which means the transformer positively concluded there is nothing to mask. Both
-	// SecretPathsMaskAll and SecretPathsMaskAllMalformed mean mask everything. paths is shared
-	// with the current snapshot and must not be modified.
-	SecretPaths(destType string) (state SecretPathsState, paths []string)
+	// SecretPaths returns the paths to mask for destType; ok is false when the transformer has no
+	// entry for it, in which case everything must be masked.
+	SecretPaths(destType string) (paths []string, ok bool)
 	// TransformerProxy reports whether the transformer declares destType deliverable through the
 	// transformer proxy. Distinct from TransformerProxyVersion, which reports the proxy protocol
 	// the transformer speaks.
@@ -117,8 +102,8 @@ func (*noopService) RouterTransform(_ string) bool {
 	return false
 }
 
-func (*noopService) SecretPaths(_ string) (SecretPathsState, []string) {
-	return SecretPathsUnavailable, nil
+func (*noopService) SecretPaths(_ string) ([]string, bool) {
+	return nil, true
 }
 
 func (*noopService) TransformerProxy(_ string) bool {

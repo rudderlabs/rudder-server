@@ -35,7 +35,7 @@ func parseTestFeatures(rawFeatures string) *featuresPayload {
 var _ = Describe("Transformer features", func() {
 	Context("Transformer features service", func() {
 		Describe("SecretPaths", func() {
-			It("distinguishes listed, empty, null, missing destination, and unavailable states", func() {
+			It("distinguishes listed, empty, null, missing destination, and older transformer responses", func() {
 				handler := newTestFeaturesService(parseTestFeatures(`{
 					"secretPaths": {
 						"KLAVIYO": ["headers.Authorization", "params.api_key"],
@@ -44,31 +44,31 @@ var _ = Describe("Transformer features", func() {
 					}
 				}`))
 
-				state, paths := handler.SecretPaths("KLAVIYO")
-				Expect(state).To(Equal(SecretPathsMaskListed))
+				paths, ok := handler.SecretPaths("KLAVIYO")
+				Expect(ok).To(BeTrue())
 				Expect(paths).To(Equal([]string{"headers.Authorization", "params.api_key"}))
 
-				state, paths = handler.SecretPaths("EMPTY")
-				Expect(state).To(Equal(SecretPathsMaskListed))
+				paths, ok = handler.SecretPaths("EMPTY")
+				Expect(ok).To(BeTrue())
 				Expect(paths).ToNot(BeNil())
 				Expect(paths).To(BeEmpty())
 
-				state, paths = handler.SecretPaths("UNRESOLVED")
-				Expect(state).To(Equal(SecretPathsMaskAll))
+				paths, ok = handler.SecretPaths("UNRESOLVED")
+				Expect(ok).To(BeFalse())
 				Expect(paths).To(BeNil())
 
-				state, paths = handler.SecretPaths("MISSING")
-				Expect(state).To(Equal(SecretPathsMaskAll))
+				paths, ok = handler.SecretPaths("MISSING")
+				Expect(ok).To(BeFalse())
 				Expect(paths).To(BeNil())
 
-				state, paths = newTestFeaturesService(parseTestFeatures(`{}`)).SecretPaths("KLAVIYO")
-				Expect(state).To(Equal(SecretPathsUnavailable))
+				paths, ok = newTestFeaturesService(parseTestFeatures(`{}`)).SecretPaths("KLAVIYO")
+				Expect(ok).To(BeTrue())
 				Expect(paths).To(BeNil())
 			})
 
-			It("treats top-level null as unavailable", func() {
-				state, paths := newTestFeaturesService(parseTestFeatures(`{"secretPaths":null}`)).SecretPaths("KLAVIYO")
-				Expect(state).To(Equal(SecretPathsUnavailable))
+			It("treats top-level null like an older transformer response", func() {
+				paths, ok := newTestFeaturesService(parseTestFeatures(`{"secretPaths":null}`)).SecretPaths("KLAVIYO")
+				Expect(ok).To(BeTrue())
 				Expect(paths).To(BeNil())
 			})
 
@@ -80,20 +80,20 @@ var _ = Describe("Transformer features", func() {
 					}
 				}`))
 
-				state, paths := handler.SecretPaths("KLAVIYO")
-				Expect(state).To(Equal(SecretPathsMaskAllMalformed))
+				paths, ok := handler.SecretPaths("KLAVIYO")
+				Expect(ok).To(BeFalse())
 				Expect(paths).To(BeNil())
-				state, paths = handler.SecretPaths("BRAZE")
-				Expect(state).To(Equal(SecretPathsMaskListed))
+				paths, ok = handler.SecretPaths("BRAZE")
+				Expect(ok).To(BeTrue())
 				Expect(paths).To(Equal([]string{"headers.Authorization"}))
 			})
 
-			It("is unavailable for the default and no-op services", func() {
-				state, paths := newTestFeaturesService(defaultTransformerFeatures).SecretPaths("KLAVIYO")
-				Expect(state).To(Equal(SecretPathsUnavailable))
+			It("returns an empty successful lookup for the default and no-op services", func() {
+				paths, ok := newTestFeaturesService(defaultTransformerFeatures).SecretPaths("KLAVIYO")
+				Expect(ok).To(BeTrue())
 				Expect(paths).To(BeNil())
-				state, paths = NewNoOpService().SecretPaths("KLAVIYO")
-				Expect(state).To(Equal(SecretPathsUnavailable))
+				paths, ok = NewNoOpService().SecretPaths("KLAVIYO")
+				Expect(ok).To(BeTrue())
 				Expect(paths).To(BeNil())
 			})
 		})
@@ -185,8 +185,8 @@ var _ = Describe("Transformer features", func() {
 			Eventually(handler.Wait(), time.Second).Should(BeClosed())
 			Expect(handler.RouterTransform("MARKETO")).To(BeTrue())
 			Expect(handler.RouterTransform("CUSTOMERIO")).To(BeFalse())
-			state, paths := handler.SecretPaths("KLAVIYO")
-			Expect(state).To(Equal(SecretPathsUnavailable))
+			paths, ok := handler.SecretPaths("KLAVIYO")
+			Expect(ok).To(BeTrue())
 			Expect(paths).To(BeNil())
 		})
 

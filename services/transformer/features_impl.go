@@ -37,24 +37,16 @@ type featuresPayload struct {
 	SecretPathsRaw                         json.RawMessage `json:"secretPaths"`
 
 	// secretPaths is nil when the transformer does not advertise secretPaths at all.
-	secretPaths map[string]secretPathsEntry
-}
-
-type secretPathsEntry struct {
-	state SecretPathsState
-	paths []string
+	secretPaths map[string][]string
 }
 
 // secretPathsFor returns paths shared with the immutable snapshot; callers must not modify them.
-func (f *featuresPayload) secretPathsFor(destType string) (SecretPathsState, []string) {
+func (f *featuresPayload) secretPathsFor(destType string) ([]string, bool) {
 	if f.secretPaths == nil {
-		return SecretPathsUnavailable, nil
+		return nil, true
 	}
-	entry, ok := f.secretPaths[destType]
-	if !ok {
-		return SecretPathsMaskAll, nil
-	}
-	return entry.state, entry.paths
+	paths, ok := f.secretPaths[destType]
+	return paths, ok
 }
 
 // sourceTransformerVersion resolves the source transformer version advertised by the snapshot,
@@ -79,27 +71,22 @@ func parseFeatures(body []byte) (*featuresPayload, error) {
 	return &f, nil
 }
 
-func parseSecretPaths(raw json.RawMessage) map[string]secretPathsEntry {
+func parseSecretPaths(raw json.RawMessage) map[string][]string {
 	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return nil
 	}
 
 	var rawEntries map[string]json.RawMessage
 	if err := jsonrs.Unmarshal(raw, &rawEntries); err != nil {
-		return map[string]secretPathsEntry{}
+		return map[string][]string{}
 	}
-	entries := make(map[string]secretPathsEntry, len(rawEntries))
+	entries := make(map[string][]string, len(rawEntries))
 	for destType, rawEntry := range rawEntries {
-		if bytes.Equal(bytes.TrimSpace(rawEntry), []byte("null")) {
-			entries[destType] = secretPathsEntry{state: SecretPathsMaskAll}
-			continue
-		}
 		var paths []string
 		if err := jsonrs.Unmarshal(rawEntry, &paths); err != nil || paths == nil {
-			entries[destType] = secretPathsEntry{state: SecretPathsMaskAllMalformed}
 			continue
 		}
-		entries[destType] = secretPathsEntry{state: SecretPathsMaskListed, paths: paths}
+		entries[destType] = paths
 	}
 	return entries
 }
@@ -131,7 +118,7 @@ func (t *featuresService) RouterTransform(destType string) bool {
 	return t.features.Load().RouterTransform[destType]
 }
 
-func (t *featuresService) SecretPaths(destType string) (SecretPathsState, []string) {
+func (t *featuresService) SecretPaths(destType string) ([]string, bool) {
 	return t.features.Load().secretPathsFor(destType)
 }
 

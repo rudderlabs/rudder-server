@@ -18,7 +18,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/services/debugger/cache"
-	"github.com/rudderlabs/rudder-server/services/transformer"
 )
 
 // DeliveryStatusT is a structure to hold everything related to event delivery
@@ -36,7 +35,7 @@ type DeliveryStatusT struct {
 }
 
 type secretPathsProvider interface {
-	SecretPaths(destType string) (transformer.SecretPathsState, []string)
+	SecretPaths(destType string) (paths []string, ok bool)
 }
 
 type DestinationDebugger interface {
@@ -169,27 +168,15 @@ func (h *Handle) maskedDeliveryStatus(destType string, destinationFound bool, de
 		return &debuggerStatus
 	}
 
-	var reason string
+	reason := "mask_all"
 	var maskErr bool
 	if !destinationFound {
-		reason = "missing_destination"
 		debuggerStatus.Payload, maskErr = maskAll(debuggerStatus.Payload)
 	} else {
-		state, paths := h.secretPaths.SecretPaths(destType)
-		switch state {
-		case transformer.SecretPathsUnavailable:
-			h.maskingCounter(destType, "feature_unavailable")
-			return &debuggerStatus
-		case transformer.SecretPathsMaskListed:
-			reason = "listed_success"
-			if debuggerStatus.Payload, maskErr = maskListedPaths(debuggerStatus.Payload, paths); maskErr {
-				reason = "listed_failure"
-			}
-		case transformer.SecretPathsMaskAllMalformed:
-			reason = "malformed_entry"
-			debuggerStatus.Payload, maskErr = maskAll(debuggerStatus.Payload)
-		default:
-			reason = "null_entry"
+		if paths, ok := h.secretPaths.SecretPaths(destType); ok {
+			reason = "listed"
+			debuggerStatus.Payload, maskErr = maskListedPaths(debuggerStatus.Payload, paths)
+		} else {
 			debuggerStatus.Payload, maskErr = maskAll(debuggerStatus.Payload)
 		}
 	}

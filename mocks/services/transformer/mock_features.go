@@ -12,7 +12,6 @@ package mock_features
 import (
 	reflect "reflect"
 
-	transformer "github.com/rudderlabs/rudder-server/services/transformer"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -69,11 +68,11 @@ func (mr *MockFeaturesServiceMockRecorder) RouterTransform(destType any) *gomock
 }
 
 // SecretPaths mocks base method.
-func (m *MockFeaturesService) SecretPaths(destType string) (transformer.SecretPathsState, []string) {
+func (m *MockFeaturesService) SecretPaths(destType string) ([]string, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SecretPaths", destType)
-	ret0, _ := ret[0].(transformer.SecretPathsState)
-	ret1, _ := ret[1].([]string)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
 
