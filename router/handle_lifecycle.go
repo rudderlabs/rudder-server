@@ -146,6 +146,12 @@ func (rt *Handle) Setup(
 			"to":       strconv.Itoa(to),
 		})
 	}
+	rt.deliveryPayloadMaskingCounter = func(reason string) {
+		stats.Default.NewTaggedStat("router_delivery_payload_masking", stats.CountType, stats.Tags{
+			"destType": rt.destType,
+			"reason":   reason,
+		}).Count(1)
+	}
 	rt.processJobsHistogramStat = stats.Default.NewTaggedStat("router_process_jobs_hist", stats.HistogramType, statTags)
 	rt.processJobsCountStat = stats.Default.NewTaggedStat("router_process_jobs_count", stats.CountType, statTags)
 	rt.processRequestsHistogramStat = stats.Default.NewTaggedStat("router_process_requests_hist", stats.HistogramType, statTags)
@@ -348,6 +354,7 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.sourcesRetryTimeWindow = config.GetReloadableDurationVar(1, time.Minute, getRouterConfigKeys("RSources.retryTimeWindow", rt.destType)...)
 	rt.reloadableConfig.maxDSQuerySize = config.GetReloadableIntVar(10, 1, getRouterConfigKeys("maxDSQuery", rt.destType)...)
 	rt.reloadableConfig.transformerProxy = config.GetReloadableBoolVar(false, getRouterConfigKeys("transformerProxy", rt.destType)...)
+	rt.reloadableConfig.disableEventDeliveryUploadMasking = config.GetReloadableBoolVar(true, getRouterConfigKeys("disableEventDeliveryUploadMasking", rt.destType)...)
 	rt.reloadableConfig.skipRtAbortAlertForTransformation = config.GetReloadableBoolVar(false, getRouterConfigKeys("skipRtAbortAlertForTf", rt.destType)...)
 	rt.reloadableConfig.skipRtAbortAlertForDelivery = config.GetReloadableBoolVar(false, getRouterConfigKeys("skipRtAbortAlertForDelivery", rt.destType)...)
 	rt.reloadableConfig.jobQueryBatchSize = config.GetReloadableIntVar(10000, 1, getRouterConfigKeys("jobQueryBatchSize", rt.destType)...)

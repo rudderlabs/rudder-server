@@ -2,9 +2,7 @@ package destinationdebugger
 
 import (
 	"context"
-	"encoding/json"
 	"path"
-	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -17,7 +15,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
@@ -166,45 +163,6 @@ var faultyData = DeliveryStatusT{
 	EventType:     `some_event_type`,
 }
 
-type staticSecretPaths struct {
-	paths []string
-	ok    bool
-	seen  []string
-}
-
-func (s *staticSecretPaths) SecretPaths(destType string) ([]string, bool) {
-	s.seen = append(s.seen, destType)
-	return s.paths, s.ok
-}
-
-type captureUploader struct {
-	mu     sync.Mutex
-	events []*DeliveryStatusT
-}
-
-func (*captureUploader) Start() {}
-func (*captureUploader) Stop()  {}
-func (u *captureUploader) RecordEvent(event *DeliveryStatusT) {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	u.events = append(u.events, event)
-}
-
-func (u *captureUploader) last() *DeliveryStatusT {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	return u.events[len(u.events)-1]
-}
-
-func enableEventDelivery(handle *Handle, destinationID, destType string) {
-	handle.updateConfig(map[string]backendconfig.ConfigT{WorkspaceID: {
-		Sources: []backendconfig.SourceT{{Destinations: []backendconfig.DestinationT{{
-			ID: destinationID, Enabled: true, Config: map[string]any{"eventDelivery": true},
-			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: destType},
-		}}}},
-	}})
-}
-
 type eventDeliveryStatusUploaderContext struct {
 	mockCtrl          *gomock.Controller
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
@@ -265,142 +223,13 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		c.mockCtrl.Finish()
 	})
 
-	Context("delivery payload masking boundary", func() {
-		var (
-			handle   *Handle
-			provider *staticSecretPaths
-			uploader *captureUploader
-			counts   map[string]int
-		)
-
-		BeforeEach(func() {
-			config.Set("DestinationDebugger.cacheType", 0)
-			config.Set("DestinationDebugger.disableEventDeliveryUploadMasking", false)
-			provider = &staticSecretPaths{
-				paths: []string{"headers.Authorization"},
-				ok:    true,
-			}
-			created, err := NewHandle(c.mockBackendConfig, provider)
-			Expect(err).ToNot(HaveOccurred())
-			handle = created.(*Handle)
-			handle.uploader.Stop()
-			uploader = &captureUploader{}
-			handle.uploader = uploader
-			counts = map[string]int{}
-			handle.maskingCounter = func(destType, reason string) {
-				counts[destType+"/"+reason]++
-			}
-			Eventually(handle.initialized).Should(BeClosed())
-		})
-
-		AfterEach(func() {
-			handle.Stop()
-		})
-
-		It("masks the upload copy using destination definition name and preserves the caller payload", func() {
-			original := json.RawMessage(`{"endpoint":"visible","headers":{"Authorization":"secret"}}`)
-			status := &DeliveryStatusT{DestinationID: DestinationIDEnabledA, Payload: append(json.RawMessage(nil), original...)}
-
-			Expect(handle.RecordEventDeliveryStatus(DestinationIDEnabledA, status)).To(BeTrue())
-			Expect(provider.seen).To(Equal([]string{"enabled-destination-a-definition-name"}))
-			Expect(gjson.GetBytes(uploader.last().Payload, "headers.Authorization").String()).To(Equal(maskedValue))
-			Expect(status.Payload).To(Equal(original))
-			Expect(counts["enabled-destination-a-definition-name/listed"]).To(Equal(1))
-		})
-
-		It("masks all when the transformer has no destination entry", func() {
-			provider.ok = false
-			status := &DeliveryStatusT{Payload: json.RawMessage(`{"endpoint":"visible","headers":{"Authorization":"secret"},"body":{"token":"secret"}}`)}
-
-			Expect(handle.RecordEventDeliveryStatus(DestinationIDEnabledA, status)).To(BeTrue())
-			Expect(gjson.GetBytes(uploader.last().Payload, "endpoint").String()).To(Equal("visible"))
-			Expect(gjson.GetBytes(uploader.last().Payload, "headers").String()).To(Equal(maskedValue))
-			Expect(gjson.GetBytes(uploader.last().Payload, "body").String()).To(Equal(maskedValue))
-			Expect(counts["enabled-destination-a-definition-name/mask_all"]).To(Equal(1))
-		})
-
-		It("stores only a masked copy for upload-disabled destinations", func() {
-			status := &DeliveryStatusT{DestinationID: DestinationIDDisabled, Payload: json.RawMessage(`{"headers":{"Authorization":"secret"}}`)}
-			Expect(handle.RecordEventDeliveryStatus(DestinationIDDisabled, status)).To(BeFalse())
-
-			cached, err := handle.eventsDeliveryCache.Read(DestinationIDDisabled)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(cached).To(HaveLen(1))
-			Expect(gjson.GetBytes(cached[0].Payload, "headers.Authorization").String()).To(Equal(maskedValue))
-			Expect(gjson.GetBytes(status.Payload, "headers.Authorization").String()).To(Equal("secret"))
-		})
-
-		It("idempotently remasks cached payloads on replay", func() {
-			status := &DeliveryStatusT{DestinationID: DestinationIDEnabledB, Payload: json.RawMessage(`{"headers":{"Authorization":"secret"}}`)}
-			Expect(handle.RecordEventDeliveryStatus(DestinationIDEnabledB, status)).To(BeFalse())
-			Expect(provider.seen).To(Equal([]string{"MINIO"}))
-
-			provider.seen = nil
-			enableEventDelivery(handle, DestinationIDEnabledB, "MINIO")
-
-			Expect(gjson.GetBytes(uploader.last().Payload, "headers.Authorization").String()).To(Equal(maskedValue))
-			Expect(provider.seen).To(Equal([]string{"MINIO"}))
-		})
-
-		It("masks cached plaintext from a disabled-masking period before replay", func() {
-			handle.disableEventDeliveryUploadMasking = config.SingleValueLoader(true)
-			status := &DeliveryStatusT{DestinationID: DestinationIDEnabledB, Payload: json.RawMessage(`{"headers":{"Authorization":"secret"}}`)}
-			Expect(handle.RecordEventDeliveryStatus(DestinationIDEnabledB, status)).To(BeFalse())
-
-			cached, err := handle.eventsDeliveryCache.Read(DestinationIDEnabledB)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(cached).To(HaveLen(1))
-			Expect(gjson.GetBytes(cached[0].Payload, "headers.Authorization").String()).To(Equal("secret"))
-			Expect(handle.eventsDeliveryCache.Update(DestinationIDEnabledB, cached[0])).To(Succeed())
-
-			provider.seen = nil
-			handle.disableEventDeliveryUploadMasking = config.SingleValueLoader(false)
-			enableEventDelivery(handle, DestinationIDEnabledB, "MINIO")
-
-			Expect(gjson.GetBytes(uploader.last().Payload, "headers.Authorization").String()).To(Equal(maskedValue))
-			Expect(provider.seen).To(Equal([]string{"MINIO"}))
-		})
-
-		It("fails an unknown destination closed using a bounded metric tag", func() {
-			status := &DeliveryStatusT{Payload: json.RawMessage(`{"endpoint":"visible","headers":{"Authorization":"secret"},"body":{"token":"secret"}}`)}
-			Expect(handle.RecordEventDeliveryStatus("customer-specific-id", status)).To(BeFalse())
-
-			cached, err := handle.eventsDeliveryCache.Read("customer-specific-id")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(gjson.GetBytes(cached[0].Payload, "endpoint").String()).To(Equal("visible"))
-			Expect(gjson.GetBytes(cached[0].Payload, "headers").String()).To(Equal(maskedValue))
-			Expect(counts["unknown/mask_all"]).To(Equal(1))
-			Expect(counts).ToNot(HaveKey("customer-specific-id/mask_all"))
-		})
-
-		It("uses refreshed destination type mappings", func() {
-			status := &DeliveryStatusT{Payload: json.RawMessage(`{"headers":{"Authorization":"secret"}}`)}
-			Expect(handle.RecordEventDeliveryStatus(DestinationIDEnabledA, status)).To(BeTrue())
-			enableEventDelivery(handle, DestinationIDEnabledA, "REFRESHED_TYPE")
-			Expect(handle.RecordEventDeliveryStatus(DestinationIDEnabledA, status)).To(BeTrue())
-			Expect(provider.seen).To(Equal([]string{"enabled-destination-a-definition-name", "REFRESHED_TYPE"}))
-		})
-
-		It("bypasses and re-enables masking without restart", func() {
-			status := &DeliveryStatusT{Payload: json.RawMessage(`{"headers":{"Authorization":"secret"}}`)}
-			handle.disableEventDeliveryUploadMasking = config.SingleValueLoader(true)
-			Expect(handle.RecordEventDeliveryStatus(DestinationIDEnabledA, status)).To(BeTrue())
-			Expect(gjson.GetBytes(uploader.last().Payload, "headers.Authorization").String()).To(Equal("secret"))
-			Expect(counts).To(BeEmpty())
-
-			handle.disableEventDeliveryUploadMasking = config.SingleValueLoader(false)
-			Expect(handle.RecordEventDeliveryStatus(DestinationIDEnabledA, status)).To(BeTrue())
-			Expect(gjson.GetBytes(uploader.last().Payload, "headers.Authorization").String()).To(Equal(maskedValue))
-		})
-	})
-
 	Context("RecordEventDeliveryStatus Badger", func() {
 		BeforeEach(func() {
 			var err error
 			config.Reset()
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
 			config.Set("LiveEvent.cache.GCTime", "1s")
-			h, err = NewHandle(c.mockBackendConfig, transformer.NewNoOpService())
+			h, err = NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
 		})
 
@@ -410,7 +239,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			h.Stop()
-			h, err := NewHandle(c.mockBackendConfig, transformer.NewNoOpService())
+			h, err := NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
 			h.(*Handle).disableEventDeliveryStatusUploads = config.SingleValueLoader(true)
 			Expect(h.RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())
@@ -455,7 +284,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			config.Set("DestinationDebugger.cacheType", 0)
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
 			config.Set("LiveEvent.cache.GCTime", "1s")
-			h, err = NewHandle(c.mockBackendConfig, transformer.NewNoOpService())
+			h, err = NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
 		})
 
@@ -465,7 +294,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			h.Stop()
-			h, err := NewHandle(c.mockBackendConfig, transformer.NewNoOpService())
+			h, err := NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
 			h.(*Handle).disableEventDeliveryStatusUploads = config.SingleValueLoader(true)
 			Expect(h.RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())

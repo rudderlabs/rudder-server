@@ -1141,6 +1141,7 @@ func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadata
 func (w *worker) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string) {
 	// Sending destination response to config backend
 	if status.ErrorCode != fmt.Sprint(types.RouterUnMarshalErrorCode) {
+		payload = w.maskDeliveryPayload(payload)
 		deliveryStatus := destinationdebugger.DeliveryStatusT{
 			DestinationID: destinationJobMetadata.DestinationID,
 			SourceID:      strings.Join(sourceIDs, ","),
@@ -1155,6 +1156,26 @@ func (w *worker) sendDestinationResponseToConfigBackend(payload json.RawMessage,
 		}
 		w.rt.debugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
 	}
+}
+
+func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
+	if w.rt.reloadableConfig.disableEventDeliveryUploadMasking.Load() {
+		return payload
+	}
+
+	reason := "mask_all"
+	var maskErr bool
+	if paths, ok := w.rt.transformerFeaturesService.SecretPaths(w.rt.destType); ok {
+		reason = "listed"
+		payload, maskErr = maskListedPaths(payload, paths)
+	} else {
+		payload, maskErr = maskAll(payload)
+	}
+	w.rt.deliveryPayloadMaskingCounter(reason)
+	if maskErr {
+		w.rt.deliveryPayloadMaskingCounter("mask_error")
+	}
+	return payload
 }
 
 // AvailableSlots returns the number of available slots in the worker's input channel

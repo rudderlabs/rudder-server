@@ -11,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -34,10 +33,6 @@ type DeliveryStatusT struct {
 	EventType     string          `json:"eventType"`
 }
 
-type secretPathsProvider interface {
-	SecretPaths(destType string) (paths []string, ok bool)
-}
-
 type DestinationDebugger interface {
 	RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool
 	HasUploadEnabled(destID string) bool
@@ -49,37 +44,23 @@ type Handle struct {
 	log                               logger.Logger
 	started                           bool
 	disableEventDeliveryStatusUploads config.ValueLoader[bool]
-	disableEventDeliveryUploadMasking config.ValueLoader[bool]
 	eventsDeliveryCache               cache.Cache[*DeliveryStatusT]
 	uploader                          debugger.Uploader[*DeliveryStatusT]
-	secretPaths                       secretPathsProvider
 	uploadEnabledDestinationIDs       map[string]bool
-	destinationIDToDestType           map[string]string
-	destinationConfigMu               sync.RWMutex
-	maskingCounter                    func(destType, reason string)
+	uploadEnabledDestinationIDsMu     sync.RWMutex
 	ctx                               context.Context
 	cancel                            func()
 	initialized                       chan struct{}
 	done                              chan struct{}
 }
 
-func NewHandle(backendConfig backendconfig.BackendConfig, secretPaths secretPathsProvider) (DestinationDebugger, error) {
+func NewHandle(backendConfig backendconfig.BackendConfig) (DestinationDebugger, error) {
 	h := &Handle{
 		log:              logger.NewLogger().Child("debugger").Child("destination"),
 		configBackendURL: config.GetStringVar("https://api.rudderstack.com", "CONFIG_BACKEND_URL"),
 		disableEventDeliveryStatusUploads: config.GetReloadableBoolVar(
 			false, "DestinationDebugger.disableEventDeliveryStatusUploads",
 		),
-		disableEventDeliveryUploadMasking: config.GetReloadableBoolVar(
-			true, "DestinationDebugger.disableEventDeliveryUploadMasking",
-		),
-		secretPaths: secretPaths,
-		maskingCounter: func(destType, reason string) {
-			stats.Default.NewTaggedStat("destination_debugger_delivery_payload_masking", stats.CountType, stats.Tags{
-				"destType": destType,
-				"reason":   reason,
-			}).Count(1)
-		},
 	}
 	var err error
 	url := fmt.Sprintf("%s/dataplane/v2/eventDeliveryStatus", h.configBackendURL)
@@ -139,58 +120,23 @@ func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus 
 		return false
 	}
 	<-h.initialized
-	h.destinationConfigMu.RLock()
-	destType, destinationFound := h.destinationIDToDestType[destinationID]
-	_, uploadEnabled := h.uploadEnabledDestinationIDs[destinationID]
-	h.destinationConfigMu.RUnlock()
-	debuggerStatus := h.maskedDeliveryStatus(destType, destinationFound, deliveryStatus)
 	// Check if destinationID part of enabled destinations, if not then push the job in cache to keep track
-	if !uploadEnabled {
-		err := h.eventsDeliveryCache.Update(destinationID, debuggerStatus)
+	if !h.HasUploadEnabled(destinationID) {
+		err := h.eventsDeliveryCache.Update(destinationID, deliveryStatus)
 		if err != nil {
 			h.log.Errorn("DestinationDebugger: Error while updating cache", obskit.Error(err))
 		}
 		return false
 	}
 
-	h.uploader.RecordEvent(debuggerStatus)
+	h.uploader.RecordEvent(deliveryStatus)
 	return true
-}
-
-// maskedDeliveryStatus returns a copy of deliveryStatus for Live Events. The caller's payload bytes
-// are never modified: masking always builds a new slice.
-func (h *Handle) maskedDeliveryStatus(destType string, destinationFound bool, deliveryStatus *DeliveryStatusT) *DeliveryStatusT {
-	debuggerStatus := *deliveryStatus
-	if !destinationFound || destType == "" {
-		destType = "unknown"
-	}
-	if h.disableEventDeliveryUploadMasking.Load() {
-		return &debuggerStatus
-	}
-
-	reason := "mask_all"
-	var maskErr bool
-	if !destinationFound {
-		debuggerStatus.Payload, maskErr = maskAll(debuggerStatus.Payload)
-	} else {
-		if paths, ok := h.secretPaths.SecretPaths(destType); ok {
-			reason = "listed"
-			debuggerStatus.Payload, maskErr = maskListedPaths(debuggerStatus.Payload, paths)
-		} else {
-			debuggerStatus.Payload, maskErr = maskAll(debuggerStatus.Payload)
-		}
-	}
-	h.maskingCounter(destType, reason)
-	if maskErr {
-		h.maskingCounter(destType, "mask_error")
-	}
-	return &debuggerStatus
 }
 
 func (h *Handle) HasUploadEnabled(destID string) bool {
 	<-h.initialized
-	h.destinationConfigMu.RLock()
-	defer h.destinationConfigMu.RUnlock()
+	h.uploadEnabledDestinationIDsMu.RLock()
+	defer h.uploadEnabledDestinationIDsMu.RUnlock()
 	_, ok := h.uploadEnabledDestinationIDs[destID]
 	return ok
 }
@@ -218,12 +164,10 @@ func (e *EventDeliveryStatusUploader) Transform(deliveryStatusesBuffer []*Delive
 
 func (h *Handle) updateConfig(config map[string]backendconfig.ConfigT) {
 	uploadEnabledDestinationIDs := make(map[string]bool)
-	destinationIDToDestType := make(map[string]string)
 	var uploadEnabledDestinationIdsList []string
 	for _, wConfig := range config {
 		for _, source := range wConfig.Sources {
 			for _, destination := range source.Destinations {
-				destinationIDToDestType[destination.ID] = destination.DestinationDefinition.Name
 				if destination.Config != nil {
 					if destination.Enabled && destination.Config["eventDelivery"] == true {
 						uploadEnabledDestinationIdsList = append(uploadEnabledDestinationIdsList, destination.ID)
@@ -233,10 +177,9 @@ func (h *Handle) updateConfig(config map[string]backendconfig.ConfigT) {
 			}
 		}
 	}
-	h.destinationConfigMu.Lock()
+	h.uploadEnabledDestinationIDsMu.Lock()
 	h.uploadEnabledDestinationIDs = uploadEnabledDestinationIDs
-	h.destinationIDToDestType = destinationIDToDestType
-	h.destinationConfigMu.Unlock()
+	h.uploadEnabledDestinationIDsMu.Unlock()
 
 	h.recordHistoricEventsDelivery(uploadEnabledDestinationIdsList)
 }
@@ -260,12 +203,8 @@ func (h *Handle) recordHistoricEventsDelivery(destinationIDs []string) {
 		if err != nil {
 			continue
 		}
-		h.destinationConfigMu.RLock()
-		destType, destinationFound := h.destinationIDToDestType[destinationID]
-		h.destinationConfigMu.RUnlock()
-		for _, cached := range historicEventsDelivery {
-			debuggerStatus := h.maskedDeliveryStatus(destType, destinationFound, cached)
-			h.uploader.RecordEvent(debuggerStatus)
+		for _, event := range historicEventsDelivery {
+			h.uploader.RecordEvent(event)
 		}
 	}
 }

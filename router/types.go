@@ -69,6 +69,7 @@ type reloadableConfig struct {
 	pickupFlushInterval               config.ValueLoader[time.Duration]
 	maxDSQuerySize                    config.ValueLoader[int]
 	transformerProxy                  config.ValueLoader[bool]
+	disableEventDeliveryUploadMasking config.ValueLoader[bool]
 	skipRtAbortAlertForTransformation config.ValueLoader[bool] // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
 	skipRtAbortAlertForDelivery       config.ValueLoader[bool] // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
 	oauthV2ExpirationTimeDiff         config.ValueLoader[time.Duration]
