@@ -88,6 +88,18 @@ var _ = Describe("Transformer features", func() {
 				Expect(paths).To(Equal([]string{"headers.Authorization"}))
 			})
 
+			It("fails a malformed table closed without rejecting sibling features", func() {
+				handler := newTestFeaturesService(parseTestFeatures(`{
+					"routerTransform": {"BRAZE": true},
+					"secretPaths": "oops"
+				}`))
+
+				Expect(handler.RouterTransform("BRAZE")).To(BeTrue())
+				paths, ok := handler.SecretPaths("BRAZE")
+				Expect(ok).To(BeFalse())
+				Expect(paths).To(BeNil())
+			})
+
 			It("returns an empty successful lookup for the default and no-op services", func() {
 				paths, ok := newTestFeaturesService(defaultTransformerFeatures).SecretPaths("KLAVIYO")
 				Expect(ok).To(BeTrue())

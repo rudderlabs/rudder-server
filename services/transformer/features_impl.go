@@ -27,25 +27,50 @@ import (
 type featuresPayload struct {
 	raw json.RawMessage
 
-	RouterTransform                        map[string]bool `json:"routerTransform"`
-	TransformerProxy                       map[string]bool `json:"transformerProxy"`
-	Regulations                            []string        `json:"regulations"`
-	SupportSourceTransformV1               bool            `json:"supportSourceTransformV1"`
-	UpgradedToSourceTransformV2            bool            `json:"upgradedToSourceTransformV2"`
-	SupportTransformerProxyV1              bool            `json:"supportTransformerProxyV1"`
-	SupportDestTransformCompactedPayloadV1 bool            `json:"supportDestTransformCompactedPayloadV1"`
-	SecretPathsRaw                         json.RawMessage `json:"secretPaths"`
+	RouterTransform                        map[string]bool  `json:"routerTransform"`
+	TransformerProxy                       map[string]bool  `json:"transformerProxy"`
+	Regulations                            []string         `json:"regulations"`
+	SupportSourceTransformV1               bool             `json:"supportSourceTransformV1"`
+	UpgradedToSourceTransformV2            bool             `json:"upgradedToSourceTransformV2"`
+	SupportTransformerProxyV1              bool             `json:"supportTransformerProxyV1"`
+	SupportDestTransformCompactedPayloadV1 bool             `json:"supportDestTransformCompactedPayloadV1"`
+	SecretPaths                            secretPathsTable `json:"secretPaths"`
+}
 
-	// secretPaths is nil when the transformer does not advertise secretPaths at all.
-	secretPaths map[string][]string
+// secretPathsTable is nil when the transformer does not send secretPaths (older
+// transformer). A malformed value decodes to an empty table, so every lookup
+// misses and the caller masks everything.
+type secretPathsTable map[string][]string
+
+func (t *secretPathsTable) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		*t = nil
+		return nil
+	}
+
+	var entries map[string]json.RawMessage
+	if err := jsonrs.Unmarshal(data, &entries); err != nil {
+		*t = secretPathsTable{}
+		return nil //nolint:nilerr // malformed secret paths must not reject sibling features
+	}
+
+	table := make(secretPathsTable, len(entries))
+	for destType, raw := range entries {
+		var paths []string
+		if jsonrs.Unmarshal(raw, &paths) == nil && paths != nil {
+			table[destType] = paths
+		}
+	}
+	*t = table
+	return nil
 }
 
 // secretPathsFor returns paths shared with the immutable snapshot; callers must not modify them.
 func (f *featuresPayload) secretPathsFor(destType string) ([]string, bool) {
-	if f.secretPaths == nil {
+	if f.SecretPaths == nil {
 		return nil, true
 	}
-	paths, ok := f.secretPaths[destType]
+	paths, ok := f.SecretPaths[destType]
 	return paths, ok
 }
 
@@ -66,29 +91,8 @@ func parseFeatures(body []byte) (*featuresPayload, error) {
 	if err := jsonrs.Unmarshal(body, &f); err != nil {
 		return nil, err
 	}
-	f.secretPaths = parseSecretPaths(f.SecretPathsRaw)
 	f.raw = body
 	return &f, nil
-}
-
-func parseSecretPaths(raw json.RawMessage) map[string][]string {
-	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-		return nil
-	}
-
-	var rawEntries map[string]json.RawMessage
-	if err := jsonrs.Unmarshal(raw, &rawEntries); err != nil {
-		return map[string][]string{}
-	}
-	entries := make(map[string][]string, len(rawEntries))
-	for destType, rawEntry := range rawEntries {
-		var paths []string
-		if err := jsonrs.Unmarshal(rawEntry, &paths); err != nil || paths == nil {
-			continue
-		}
-		entries[destType] = paths
-	}
-	return entries
 }
 
 type featuresService struct {
