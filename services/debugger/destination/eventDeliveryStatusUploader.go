@@ -35,35 +35,6 @@ type DeliveryStatusT struct {
 	EventType     string          `json:"eventType"`
 }
 
-type cachedDeliveryStatus struct {
-	DeliveryStatus        *DeliveryStatusT `json:"deliveryStatus"`
-	PayloadMaskingApplied bool             `json:"payloadMaskingApplied"`
-}
-
-func (c *cachedDeliveryStatus) UnmarshalJSON(data []byte) error {
-	type cachedDeliveryStatusAlias cachedDeliveryStatus
-	var current cachedDeliveryStatusAlias
-	if err := jsonrs.Unmarshal(data, &current); err != nil {
-		return err
-	}
-	if current.DeliveryStatus != nil {
-		*c = cachedDeliveryStatus(current)
-		return nil
-	}
-
-	var legacy DeliveryStatusT
-	if err := jsonrs.Unmarshal(data, &legacy); err != nil {
-		return err
-	}
-	if legacy.DestinationID != "" || legacy.SourceID != "" || len(legacy.Payload) != 0 {
-		c.DeliveryStatus = &legacy
-		c.PayloadMaskingApplied = false
-		return nil
-	}
-	*c = cachedDeliveryStatus(current)
-	return nil
-}
-
 type secretPathsProvider interface {
 	SecretPaths(destType string) (transformer.SecretPathsState, []string)
 }
@@ -80,7 +51,7 @@ type Handle struct {
 	started                           bool
 	disableEventDeliveryStatusUploads config.ValueLoader[bool]
 	disableEventDeliveryUploadMasking config.ValueLoader[bool]
-	eventsDeliveryCache               cache.Cache[*cachedDeliveryStatus]
+	eventsDeliveryCache               cache.Cache[*DeliveryStatusT]
 	uploader                          debugger.Uploader[*DeliveryStatusT]
 	secretPaths                       secretPathsProvider
 	uploadEnabledDestinationIDs       map[string]bool
@@ -118,7 +89,7 @@ func NewHandle(backendConfig backendconfig.BackendConfig, secretPaths secretPath
 	h.uploader.Start()
 
 	cacheType := cache.CacheType(config.GetIntVar(int(cache.MemoryCacheType), 1, "DestinationDebugger.cacheType"))
-	h.eventsDeliveryCache, err = cache.New[*cachedDeliveryStatus](cacheType, "destination", h.log)
+	h.eventsDeliveryCache, err = cache.New[*DeliveryStatusT](cacheType, "destination", h.log)
 	if err != nil {
 		return nil, err
 	}
@@ -173,13 +144,10 @@ func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus 
 	destType, destinationFound := h.destinationIDToDestType[destinationID]
 	_, uploadEnabled := h.uploadEnabledDestinationIDs[destinationID]
 	h.destinationConfigMu.RUnlock()
-	debuggerStatus, payloadMaskingApplied := h.maskedDeliveryStatus(destType, destinationFound, deliveryStatus)
+	debuggerStatus := h.maskedDeliveryStatus(destType, destinationFound, deliveryStatus)
 	// Check if destinationID part of enabled destinations, if not then push the job in cache to keep track
 	if !uploadEnabled {
-		err := h.eventsDeliveryCache.Update(destinationID, &cachedDeliveryStatus{
-			DeliveryStatus:        debuggerStatus,
-			PayloadMaskingApplied: payloadMaskingApplied,
-		})
+		err := h.eventsDeliveryCache.Update(destinationID, debuggerStatus)
 		if err != nil {
 			h.log.Errorn("DestinationDebugger: Error while updating cache", obskit.Error(err))
 		}
@@ -190,16 +158,15 @@ func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus 
 	return true
 }
 
-// maskedDeliveryStatus returns a copy of deliveryStatus for Live Events and whether its payload was
-// masked. The caller's payload bytes are never modified: masking always builds a new slice.
-func (h *Handle) maskedDeliveryStatus(destType string, destinationFound bool, deliveryStatus *DeliveryStatusT) (*DeliveryStatusT, bool) {
+// maskedDeliveryStatus returns a copy of deliveryStatus for Live Events. The caller's payload bytes
+// are never modified: masking always builds a new slice.
+func (h *Handle) maskedDeliveryStatus(destType string, destinationFound bool, deliveryStatus *DeliveryStatusT) *DeliveryStatusT {
 	debuggerStatus := *deliveryStatus
 	if !destinationFound || destType == "" {
 		destType = "unknown"
 	}
 	if h.disableEventDeliveryUploadMasking.Load() {
-		h.maskingCounter(destType, "flag_disabled")
-		return &debuggerStatus, false
+		return &debuggerStatus
 	}
 
 	var reason string
@@ -212,7 +179,7 @@ func (h *Handle) maskedDeliveryStatus(destType string, destinationFound bool, de
 		switch state {
 		case transformer.SecretPathsUnavailable:
 			h.maskingCounter(destType, "feature_unavailable")
-			return &debuggerStatus, false
+			return &debuggerStatus
 		case transformer.SecretPathsMaskListed:
 			reason = "listed_success"
 			if debuggerStatus.Payload, maskErr = maskListedPaths(debuggerStatus.Payload, paths); maskErr {
@@ -230,7 +197,7 @@ func (h *Handle) maskedDeliveryStatus(destType string, destinationFound bool, de
 	if maskErr {
 		h.maskingCounter(destType, "mask_error")
 	}
-	return &debuggerStatus, true
+	return &debuggerStatus
 }
 
 func (h *Handle) HasUploadEnabled(destID string) bool {
@@ -310,14 +277,7 @@ func (h *Handle) recordHistoricEventsDelivery(destinationIDs []string) {
 		destType, destinationFound := h.destinationIDToDestType[destinationID]
 		h.destinationConfigMu.RUnlock()
 		for _, cached := range historicEventsDelivery {
-			if cached == nil || cached.DeliveryStatus == nil {
-				continue
-			}
-			if cached.PayloadMaskingApplied {
-				h.uploader.RecordEvent(cached.DeliveryStatus)
-				continue
-			}
-			debuggerStatus, _ := h.maskedDeliveryStatus(destType, destinationFound, cached.DeliveryStatus)
+			debuggerStatus := h.maskedDeliveryStatus(destType, destinationFound, cached)
 			h.uploader.RecordEvent(debuggerStatus)
 		}
 	}

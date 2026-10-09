@@ -124,7 +124,7 @@ func isJSONObject(payload json.RawMessage) bool {
 }
 
 func targetsEndpoint(path string) bool {
-	return path == "endpoint" || strings.HasPrefix(path, "endpoint.")
+	return path == "endpoint"
 }
 
 // terminalArrayWildcardParent returns the parent of a path whose last segment is an unescaped "#".

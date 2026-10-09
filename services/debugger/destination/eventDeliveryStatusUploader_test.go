@@ -314,12 +314,11 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			cached, err := handle.eventsDeliveryCache.Read(DestinationIDDisabled)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cached).To(HaveLen(1))
-			Expect(cached[0].PayloadMaskingApplied).To(BeTrue())
-			Expect(gjson.GetBytes(cached[0].DeliveryStatus.Payload, "headers.Authorization").String()).To(Equal(maskedValue))
+			Expect(gjson.GetBytes(cached[0].Payload, "headers.Authorization").String()).To(Equal(maskedValue))
 			Expect(gjson.GetBytes(status.Payload, "headers.Authorization").String()).To(Equal("secret"))
 		})
 
-		It("replays already masked cached payloads without masking again", func() {
+		It("idempotently remasks cached payloads on replay", func() {
 			status := &DeliveryStatusT{DestinationID: DestinationIDEnabledB, Payload: json.RawMessage(`{"headers":{"Authorization":"secret"}}`)}
 			Expect(handle.RecordEventDeliveryStatus(DestinationIDEnabledB, status)).To(BeFalse())
 			Expect(provider.seen).To(Equal([]string{"MINIO"}))
@@ -328,7 +327,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			enableEventDelivery(handle, DestinationIDEnabledB, "MINIO")
 
 			Expect(gjson.GetBytes(uploader.last().Payload, "headers.Authorization").String()).To(Equal(maskedValue))
-			Expect(provider.seen).To(BeEmpty())
+			Expect(provider.seen).To(Equal([]string{"MINIO"}))
 		})
 
 		It("masks cached plaintext from a disabled-masking period before replay", func() {
@@ -339,8 +338,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			cached, err := handle.eventsDeliveryCache.Read(DestinationIDEnabledB)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cached).To(HaveLen(1))
-			Expect(cached[0].PayloadMaskingApplied).To(BeFalse())
-			Expect(gjson.GetBytes(cached[0].DeliveryStatus.Payload, "headers.Authorization").String()).To(Equal("secret"))
+			Expect(gjson.GetBytes(cached[0].Payload, "headers.Authorization").String()).To(Equal("secret"))
 			Expect(handle.eventsDeliveryCache.Update(DestinationIDEnabledB, cached[0])).To(Succeed())
 
 			provider.seen = nil
@@ -357,8 +355,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 			cached, err := handle.eventsDeliveryCache.Read("customer-specific-id")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(gjson.GetBytes(cached[0].DeliveryStatus.Payload, "endpoint").String()).To(Equal("visible"))
-			Expect(gjson.GetBytes(cached[0].DeliveryStatus.Payload, "headers").String()).To(Equal(maskedValue))
+			Expect(gjson.GetBytes(cached[0].Payload, "endpoint").String()).To(Equal("visible"))
+			Expect(gjson.GetBytes(cached[0].Payload, "headers").String()).To(Equal(maskedValue))
 			Expect(counts["unknown/missing_destination"]).To(Equal(1))
 			Expect(counts).ToNot(HaveKey("customer-specific-id/missing_destination"))
 		})
@@ -376,7 +374,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			handle.disableEventDeliveryUploadMasking = config.SingleValueLoader(true)
 			Expect(handle.RecordEventDeliveryStatus(DestinationIDEnabledA, status)).To(BeTrue())
 			Expect(gjson.GetBytes(uploader.last().Payload, "headers.Authorization").String()).To(Equal("secret"))
-			Expect(counts["enabled-destination-a-definition-name/flag_disabled"]).To(Equal(1))
+			Expect(counts).To(BeEmpty())
 
 			handle.disableEventDeliveryUploadMasking = config.SingleValueLoader(false)
 			Expect(handle.RecordEventDeliveryStatus(DestinationIDEnabledA, status)).To(BeTrue())

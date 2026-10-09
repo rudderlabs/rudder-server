@@ -51,7 +51,7 @@ var _ = Describe("Delivery payload masking", func() {
 
 	It("never masks endpoint even when it is listed", func() {
 		payload := json.RawMessage(`{"endpoint":"https://example.test/path?token=visible","headers":{"Authorization":"secret"}}`)
-		masked, maskErr := maskListedPaths(payload, []string{"endpoint", "headers.Authorization"})
+		masked, maskErr := maskListedPaths(payload, []string{"endpoint", "endpoint.token", "headers.Authorization"})
 		Expect(maskErr).To(BeFalse())
 		Expect(gjson.GetBytes(masked, "endpoint").String()).To(Equal("https://example.test/path?token=visible"))
 		Expect(gjson.GetBytes(masked, "headers.Authorization").String()).To(Equal(maskedValue))
