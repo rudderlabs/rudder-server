@@ -46,6 +46,13 @@ func TestSendDestinationResponseMasksLiveEventsPayload(t *testing.T) {
 			want:       `{"endpoint":"visible","headers":"******","body":"******"}`,
 			wantReason: "mask_all",
 		},
+		{
+			name:       "older transformer without the feature",
+			ok:         true,
+			input:      `{"headers":{"Authorization":"secret"}}`,
+			want:       `{"headers":{"Authorization":"secret"}}`,
+			wantReason: "listed",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
@@ -117,13 +124,11 @@ func newDeliveryMaskingTestWorker(
 	}}, statsStore
 }
 
-// maskingCounts returns the non-zero masking counter values keyed by reason.
+// maskingCounts returns the masking counter values keyed by reason.
 func maskingCounts(statsStore *memstats.Store) map[string]float64 {
 	counts := map[string]float64{}
-	for _, reason := range []string{"listed", "mask_all", "mask_error"} {
-		if m := statsStore.Get(deliveryMaskingMetric, stats.Tags{"destType": "TEST_DEST", "reason": reason}); m != nil && m.LastValue() > 0 {
-			counts[reason] = m.LastValue()
-		}
+	for _, m := range statsStore.GetByName(deliveryMaskingMetric) {
+		counts[m.Tags["reason"]] = m.Value
 	}
 	return counts
 }
