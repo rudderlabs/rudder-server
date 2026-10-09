@@ -20,8 +20,10 @@ func TestReservedKeywords(t *testing.T) {
 			{"Select", true},
 			{"not_reserved", false},
 		}
-		for _, tc := range testCases {
-			require.Equal(t, tc.isReserved, reservedkeywords.IsTableOrColumn(whutils.POSTGRES, tc.keyword))
+		for _, destination := range []string{whutils.POSTGRES, whutils.MicrosoftFabric} {
+			for _, tc := range testCases {
+				require.Equal(t, tc.isReserved, reservedkeywords.IsTableOrColumn(destination, tc.keyword))
+			}
 		}
 	})
 	t.Run("IsNamespace", func(t *testing.T) {
@@ -34,8 +36,10 @@ func TestReservedKeywords(t *testing.T) {
 			{"Select", true},
 			{"not_reserved", false},
 		}
-		for _, tc := range testCases {
-			require.Equal(t, tc.isReserved, reservedkeywords.IsNamespace(whutils.POSTGRES, tc.keyword))
+		for _, destination := range []string{whutils.POSTGRES, whutils.MicrosoftFabric} {
+			for _, tc := range testCases {
+				require.Equal(t, tc.isReserved, reservedkeywords.IsNamespace(destination, tc.keyword))
+			}
 		}
 	})
 }
