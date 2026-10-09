@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -57,6 +58,7 @@ func TestFullEventColumnTypeByDestTypeMapping(t *testing.T) {
 	for _, destType := range whutils.WarehouseDestinations {
 		require.NotNilf(t, fullEventColumnTypeByDestType[destType], "Full event column type not found for destination type %s", destType)
 	}
+	require.Equal(t, model.JSONDataType, fullEventColumnTypeByDestType[whutils.MicrosoftFabric])
 }
 
 func TestValidTimestamp(t *testing.T) {

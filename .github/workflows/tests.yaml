@@ -84,7 +84,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        destination: [ bigquery, clickhouse, datalake, deltalake, mssql, azure-synapse, postgres, redshift, snowflake ]
+        destination: [ bigquery, clickhouse, datalake, deltalake, mssql, azure-synapse, microsoft-fabric, postgres, redshift, snowflake ]
         include:
           - package: warehouse/integrations/bigquery
             destination: bigquery
@@ -98,6 +98,8 @@ jobs:
             destination: mssql
           - package: warehouse/integrations/azure-synapse
             destination: azure-synapse
+          - package: warehouse/integrations/microsoft-fabric
+            destination: microsoft-fabric
           - package: warehouse/integrations/postgres
             destination: postgres
           - package: warehouse/integrations/redshift
@@ -159,6 +161,7 @@ jobs:
           BIGQUERY_WIF_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_WIF_INTEGRATION_TEST_CREDENTIALS }}
           DATABRICKS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_INTEGRATION_TEST_CREDENTIALS }}
           DATABRICKS_HIERARCHICAL_NAMESPACE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_HIERARCHICAL_NAMESPACE_INTEGRATION_TEST_CREDENTIALS }}
+          MICROSOFT_FABRIC_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.MICROSOFT_FABRIC_INTEGRATION_TEST_CREDENTIALS }}
           REDSHIFT_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_INTEGRATION_TEST_CREDENTIALS }}
           REDSHIFT_IAM_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_IAM_INTEGRATION_TEST_CREDENTIALS }}
           REDSHIFT_SERVERLESS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_SERVERLESS_INTEGRATION_TEST_CREDENTIALS }}

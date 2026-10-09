@@ -66,6 +66,22 @@ func TestValidationSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "Microsoft Fabric",
+			dest: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: warehouseutils.MicrosoftFabric,
+				},
+			},
+			steps: []string{
+				model.VerifyingObjectStorage,
+				model.VerifyingConnections,
+				model.VerifyingCreateSchema,
+				model.VerifyingCreateAndAlterTable,
+				model.VerifyingFetchSchema,
+				model.VerifyingLoadTable,
+			},
+		},
+		{
 			name: "RS",
 			dest: backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
