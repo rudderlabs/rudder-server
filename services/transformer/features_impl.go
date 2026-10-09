@@ -27,14 +27,15 @@ import (
 type featuresPayload struct {
 	raw json.RawMessage
 
-	RouterTransform                        map[string]bool  `json:"routerTransform"`
-	TransformerProxy                       map[string]bool  `json:"transformerProxy"`
-	Regulations                            []string         `json:"regulations"`
-	SupportSourceTransformV1               bool             `json:"supportSourceTransformV1"`
-	UpgradedToSourceTransformV2            bool             `json:"upgradedToSourceTransformV2"`
-	SupportTransformerProxyV1              bool             `json:"supportTransformerProxyV1"`
-	SupportDestTransformCompactedPayloadV1 bool             `json:"supportDestTransformCompactedPayloadV1"`
-	SecretPaths                            secretPathsTable `json:"secretPaths"`
+	RouterTransform                        map[string]bool `json:"routerTransform"`
+	TransformerProxy                       map[string]bool `json:"transformerProxy"`
+	Regulations                            []string        `json:"regulations"`
+	SupportSourceTransformV1               bool            `json:"supportSourceTransformV1"`
+	UpgradedToSourceTransformV2            bool            `json:"upgradedToSourceTransformV2"`
+	SupportTransformerProxyV1              bool            `json:"supportTransformerProxyV1"`
+	SupportDestTransformCompactedPayloadV1 bool            `json:"supportDestTransformCompactedPayloadV1"`
+
+	SecretPaths secretPathsTable `json:"secretPaths"`
 }
 
 // secretPathsTable is nil when the transformer does not send secretPaths (older
@@ -63,15 +64,6 @@ func (t *secretPathsTable) UnmarshalJSON(data []byte) error {
 	}
 	*t = table
 	return nil
-}
-
-// secretPathsFor returns paths shared with the immutable snapshot; callers must not modify them.
-func (f *featuresPayload) secretPathsFor(destType string) ([]string, bool) {
-	if f.SecretPaths == nil {
-		return nil, true
-	}
-	paths, ok := f.SecretPaths[destType]
-	return paths, ok
 }
 
 // sourceTransformerVersion resolves the source transformer version advertised by the snapshot,
@@ -122,8 +114,14 @@ func (t *featuresService) RouterTransform(destType string) bool {
 	return t.features.Load().RouterTransform[destType]
 }
 
+// SecretPaths returns paths shared with the immutable snapshot; callers must not modify them.
 func (t *featuresService) SecretPaths(destType string) ([]string, bool) {
-	return t.features.Load().secretPathsFor(destType)
+	table := t.features.Load().SecretPaths
+	if table == nil {
+		return nil, true
+	}
+	paths, ok := table[destType]
+	return paths, ok
 }
 
 // TransformerProxy reports whether the transformer declares destType deliverable via the proxy.

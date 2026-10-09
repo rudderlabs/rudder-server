@@ -11,7 +11,10 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-const maskedValue = "******"
+const (
+	maskedValue = "******"
+	maskedJSON  = `"` + maskedValue + `"`
+)
 
 var errPathNotMasked = errors.New("path not masked")
 
@@ -54,8 +57,9 @@ func maskListedPaths(payload json.RawMessage, paths []string) (json.RawMessage, 
 
 // applyListedPaths never mutates payload: sjson allocates a new slice unless ReplaceInPlace is set.
 func applyListedPaths(masked json.RawMessage, paths []string) (json.RawMessage, error) {
+	var err error
 	for _, path := range paths {
-		if targetsEndpoint(path) {
+		if path == "endpoint" {
 			continue
 		}
 		if path == "" {
@@ -71,15 +75,13 @@ func applyListedPaths(masked json.RawMessage, paths []string) (json.RawMessage, 
 				return masked, errPathNotMasked
 			}
 			for idx := range array.Array() {
-				var err error
-				if masked, err = setMasked(masked, appendPathSegment(parentPath, strconv.Itoa(idx))); err != nil {
+				if masked, err = setMasked(masked, parentPath+"."+strconv.Itoa(idx)); err != nil {
 					return masked, err
 				}
 			}
 			continue
 		}
 
-		var err error
 		if masked, err = setMasked(masked, path); err != nil {
 			return masked, err
 		}
@@ -114,7 +116,7 @@ func resultMasked(result gjson.Result) bool {
 // non-object JSON are replaced wholesale with a valid masked JSON string.
 func maskAll(payload json.RawMessage) (json.RawMessage, bool) {
 	if !isJSONObject(payload) {
-		return json.RawMessage(`"******"`), true
+		return json.RawMessage(maskedJSON), true
 	}
 
 	var rebuilt bytes.Buffer
@@ -131,7 +133,7 @@ func maskAll(payload json.RawMessage) (json.RawMessage, bool) {
 		if key.String() == "endpoint" {
 			rebuilt.WriteString(value.Raw)
 		} else {
-			rebuilt.WriteString(`"******"`)
+			rebuilt.WriteString(maskedJSON)
 		}
 		return true
 	})
@@ -145,10 +147,6 @@ func isJSONObject(payload json.RawMessage) bool {
 	}
 	trimmed := bytes.TrimSpace(payload)
 	return len(trimmed) > 0 && trimmed[0] == '{'
-}
-
-func targetsEndpoint(path string) bool {
-	return path == "endpoint"
 }
 
 // terminalArrayWildcardParent returns the parent of a path whose last segment is an unescaped "#".
@@ -165,11 +163,4 @@ func terminalArrayWildcardParent(path string) (string, bool) {
 		return "", false
 	}
 	return parent, true
-}
-
-func appendPathSegment(path, segment string) string {
-	if path == "" {
-		return segment
-	}
-	return path + "." + segment
 }

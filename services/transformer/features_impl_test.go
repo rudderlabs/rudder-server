@@ -35,69 +35,26 @@ func parseTestFeatures(rawFeatures string) *featuresPayload {
 var _ = Describe("Transformer features", func() {
 	Context("Transformer features service", func() {
 		Describe("SecretPaths", func() {
-			It("distinguishes listed, empty, null, missing destination, and older transformer responses", func() {
-				handler := newTestFeaturesService(parseTestFeatures(`{
-					"secretPaths": {
-						"KLAVIYO": ["headers.Authorization", "params.api_key"],
-						"EMPTY": [],
-						"UNRESOLVED": null
-					}
-				}`))
+			DescribeTable("normalizes the transformer response",
+				func(rawFeatures, destType string, wantPaths []string, wantOK bool) {
+					paths, ok := newTestFeaturesService(parseTestFeatures(rawFeatures)).SecretPaths(destType)
+					Expect(ok).To(Equal(wantOK))
+					Expect(paths).To(Equal(wantPaths))
+				},
+				Entry("listed paths", `{"secretPaths":{"KLAVIYO":["headers.Authorization","params.api_key"]}}`, "KLAVIYO", []string{"headers.Authorization", "params.api_key"}, true),
+				Entry("empty list", `{"secretPaths":{"EMPTY":[]}}`, "EMPTY", []string{}, true),
+				Entry("null entry", `{"secretPaths":{"UNRESOLVED":null}}`, "UNRESOLVED", nil, false),
+				Entry("missing destination", `{"secretPaths":{"KLAVIYO":[]}}`, "MISSING", nil, false),
+				Entry("malformed entry", `{"secretPaths":{"KLAVIYO":"bad","BRAZE":["headers.Authorization"]}}`, "KLAVIYO", nil, false),
+				Entry("valid sibling of a malformed entry", `{"secretPaths":{"KLAVIYO":"bad","BRAZE":["headers.Authorization"]}}`, "BRAZE", []string{"headers.Authorization"}, true),
+				Entry("malformed table", `{"secretPaths":"oops"}`, "BRAZE", nil, false),
+				Entry("older transformer", `{}`, "KLAVIYO", nil, true),
+				Entry("top-level null", `{"secretPaths":null}`, "KLAVIYO", nil, true),
+			)
 
-				paths, ok := handler.SecretPaths("KLAVIYO")
-				Expect(ok).To(BeTrue())
-				Expect(paths).To(Equal([]string{"headers.Authorization", "params.api_key"}))
-
-				paths, ok = handler.SecretPaths("EMPTY")
-				Expect(ok).To(BeTrue())
-				Expect(paths).ToNot(BeNil())
-				Expect(paths).To(BeEmpty())
-
-				paths, ok = handler.SecretPaths("UNRESOLVED")
-				Expect(ok).To(BeFalse())
-				Expect(paths).To(BeNil())
-
-				paths, ok = handler.SecretPaths("MISSING")
-				Expect(ok).To(BeFalse())
-				Expect(paths).To(BeNil())
-
-				paths, ok = newTestFeaturesService(parseTestFeatures(`{}`)).SecretPaths("KLAVIYO")
-				Expect(ok).To(BeTrue())
-				Expect(paths).To(BeNil())
-			})
-
-			It("treats top-level null like an older transformer response", func() {
-				paths, ok := newTestFeaturesService(parseTestFeatures(`{"secretPaths":null}`)).SecretPaths("KLAVIYO")
-				Expect(ok).To(BeTrue())
-				Expect(paths).To(BeNil())
-			})
-
-			It("fails only malformed entries closed while preserving valid siblings", func() {
-				handler := newTestFeaturesService(parseTestFeatures(`{
-					"secretPaths": {
-						"KLAVIYO": "bad",
-						"BRAZE": ["headers.Authorization"]
-					}
-				}`))
-
-				paths, ok := handler.SecretPaths("KLAVIYO")
-				Expect(ok).To(BeFalse())
-				Expect(paths).To(BeNil())
-				paths, ok = handler.SecretPaths("BRAZE")
-				Expect(ok).To(BeTrue())
-				Expect(paths).To(Equal([]string{"headers.Authorization"}))
-			})
-
-			It("fails a malformed table closed without rejecting sibling features", func() {
-				handler := newTestFeaturesService(parseTestFeatures(`{
-					"routerTransform": {"BRAZE": true},
-					"secretPaths": "oops"
-				}`))
-
+			It("does not reject sibling features when the table is malformed", func() {
+				handler := newTestFeaturesService(parseTestFeatures(`{"routerTransform":{"BRAZE":true},"secretPaths":"oops"}`))
 				Expect(handler.RouterTransform("BRAZE")).To(BeTrue())
-				paths, ok := handler.SecretPaths("BRAZE")
-				Expect(ok).To(BeFalse())
-				Expect(paths).To(BeNil())
 			})
 
 			It("returns an empty successful lookup for the default and no-op services", func() {
@@ -197,9 +154,6 @@ var _ = Describe("Transformer features", func() {
 			Eventually(handler.Wait(), time.Second).Should(BeClosed())
 			Expect(handler.RouterTransform("MARKETO")).To(BeTrue())
 			Expect(handler.RouterTransform("CUSTOMERIO")).To(BeFalse())
-			paths, ok := handler.SecretPaths("KLAVIYO")
-			Expect(ok).To(BeTrue())
-			Expect(paths).To(BeNil())
 		})
 
 		It("should release Wait() when the context is cancelled before the first successful fetch", func() {

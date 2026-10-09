@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mockdestinationdebugger "github.com/rudderlabs/rudder-server/mocks/services/debugger/destination"
@@ -19,75 +20,54 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 )
 
+const deliveryMaskingMetric = "router_delivery_payload_masking"
+
 func TestSendDestinationResponseMasksLiveEventsPayload(t *testing.T) {
-	t.Run("listed paths", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		features := mockfeatures.NewMockFeaturesService(ctrl)
-		features.EXPECT().SecretPaths("TEST_DEST").Return([]string{"headers.Authorization"}, true)
+	for _, tc := range []struct {
+		name       string
+		paths      []string
+		ok         bool
+		input      string
+		want       string
+		wantReason string
+	}{
+		{
+			name:       "listed paths",
+			paths:      []string{"headers.Authorization"},
+			ok:         true,
+			input:      `{"endpoint":"visible","headers":{"Authorization":"secret"}}`,
+			want:       `{"endpoint":"visible","headers":{"Authorization":"******"}}`,
+			wantReason: "listed",
+		},
+		{
+			name:       "missing manifest entry",
+			ok:         false,
+			input:      `{"endpoint":"visible","headers":{"Authorization":"secret"},"body":{"token":"secret"}}`,
+			want:       `{"endpoint":"visible","headers":"******","body":"******"}`,
+			wantReason: "mask_all",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			features := mockfeatures.NewMockFeaturesService(ctrl)
+			features.EXPECT().SecretPaths("TEST_DEST").Return(tc.paths, tc.ok)
 
-		original := json.RawMessage(`{"endpoint":"visible","headers":{"Authorization":"secret"}}`)
-		debugger := mockdestinationdebugger.NewMockDestinationDebugger(ctrl)
-		debugger.EXPECT().RecordEventDeliveryStatus("destination-id", gomock.Any()).DoAndReturn(
-			func(_ string, status *destinationdebugger.DeliveryStatusT) bool {
-				require.JSONEq(t, `{"endpoint":"visible","headers":{"Authorization":"******"}}`, string(status.Payload))
-				return true
-			},
-		)
+			debugger := mockdestinationdebugger.NewMockDestinationDebugger(ctrl)
+			debugger.EXPECT().RecordEventDeliveryStatus("destination-id", gomock.Any()).DoAndReturn(
+				func(_ string, status *destinationdebugger.DeliveryStatusT) bool {
+					require.JSONEq(t, tc.want, string(status.Payload))
+					return true
+				},
+			)
 
-		worker, reasons := newDeliveryMaskingTestWorker(features, debugger, false)
-		worker.sendDestinationResponseToConfigBackend(original, deliveryStatusMetadata(), deliveryStatusJobStatus(), []string{"source-id"})
+			worker, statsStore := newDeliveryMaskingTestWorker(t, features, debugger, false)
+			original := json.RawMessage(tc.input)
+			worker.sendDestinationResponseToConfigBackend(original, deliveryStatusMetadata(), deliveryStatusJobStatus(), nil)
 
-		require.Equal(t, []string{"listed"}, *reasons)
-		require.True(t, bytes.Equal(original, json.RawMessage(`{"endpoint":"visible","headers":{"Authorization":"secret"}}`)))
-	})
-
-	t.Run("missing manifest entry", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		features := mockfeatures.NewMockFeaturesService(ctrl)
-		features.EXPECT().SecretPaths("TEST_DEST").Return(nil, false)
-
-		debugger := mockdestinationdebugger.NewMockDestinationDebugger(ctrl)
-		debugger.EXPECT().RecordEventDeliveryStatus("destination-id", gomock.Any()).DoAndReturn(
-			func(_ string, status *destinationdebugger.DeliveryStatusT) bool {
-				require.JSONEq(t, `{"endpoint":"visible","headers":"******","body":"******"}`, string(status.Payload))
-				return true
-			},
-		)
-
-		worker, reasons := newDeliveryMaskingTestWorker(features, debugger, false)
-		worker.sendDestinationResponseToConfigBackend(
-			json.RawMessage(`{"endpoint":"visible","headers":{"Authorization":"secret"},"body":{"token":"secret"}}`),
-			deliveryStatusMetadata(),
-			deliveryStatusJobStatus(),
-			[]string{"source-id"},
-		)
-
-		require.Equal(t, []string{"mask_all"}, *reasons)
-	})
-
-	t.Run("older transformer without the feature", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		features := mockfeatures.NewMockFeaturesService(ctrl)
-		features.EXPECT().SecretPaths("TEST_DEST").Return(nil, true)
-
-		debugger := mockdestinationdebugger.NewMockDestinationDebugger(ctrl)
-		debugger.EXPECT().RecordEventDeliveryStatus("destination-id", gomock.Any()).DoAndReturn(
-			func(_ string, status *destinationdebugger.DeliveryStatusT) bool {
-				require.JSONEq(t, `{"headers":{"Authorization":"secret"}}`, string(status.Payload))
-				return true
-			},
-		)
-
-		worker, reasons := newDeliveryMaskingTestWorker(features, debugger, false)
-		worker.sendDestinationResponseToConfigBackend(
-			json.RawMessage(`{"headers":{"Authorization":"secret"}}`),
-			deliveryStatusMetadata(),
-			deliveryStatusJobStatus(),
-			nil,
-		)
-
-		require.Equal(t, []string{"listed"}, *reasons)
-	})
+			require.Equal(t, map[string]float64{tc.wantReason: 1}, maskingCounts(statsStore))
+			require.Equal(t, tc.input, string(original), "caller payload must not be modified")
+		})
+	}
 
 	t.Run("rollback flag", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
@@ -101,7 +81,7 @@ func TestSendDestinationResponseMasksLiveEventsPayload(t *testing.T) {
 			},
 		)
 
-		worker, reasons := newDeliveryMaskingTestWorker(features, debugger, true)
+		worker, statsStore := newDeliveryMaskingTestWorker(t, features, debugger, true)
 		payload := json.RawMessage(`{"headers":{"Authorization":"secret"}}`)
 		worker.sendDestinationResponseToConfigBackend(payload, deliveryStatusMetadata(), deliveryStatusJobStatus(), nil)
 
@@ -111,43 +91,41 @@ func TestSendDestinationResponseMasksLiveEventsPayload(t *testing.T) {
 
 		require.JSONEq(t, `{"headers":{"Authorization":"secret"}}`, string(payloads[0]))
 		require.JSONEq(t, `{"headers":{"Authorization":"******"}}`, string(payloads[1]))
-		require.Equal(t, []string{"listed"}, *reasons)
+		require.Equal(t, map[string]float64{"listed": 1}, maskingCounts(statsStore))
 	})
 }
 
 func newDeliveryMaskingTestWorker(
+	t *testing.T,
 	features *mockfeatures.MockFeaturesService,
 	debugger *mockdestinationdebugger.MockDestinationDebugger,
 	disabled bool,
-) (*worker, *[]string) {
-	reasons := make([]string, 0, 2)
-	w := &worker{rt: &Handle{
+) (*worker, *memstats.Store) {
+	t.Helper()
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+	return &worker{rt: &Handle{
 		destType:                   "TEST_DEST",
 		transformerFeaturesService: features,
 		debugger:                   debugger,
 		reloadableConfig: &reloadableConfig{
 			disableEventDeliveryUploadMasking: config.SingleValueLoader(disabled),
 		},
-	}}
-	w.rt.deliveryPayloadMaskingStat = func(reason string) stats.Counter {
-		return recordingMaskingCounter{reason: reason, reasons: &reasons}
+		deliveryPayloadMaskingStat: func(reason string) stats.Counter {
+			return statsStore.NewTaggedStat(deliveryMaskingMetric, stats.CountType, stats.Tags{"destType": "TEST_DEST", "reason": reason})
+		},
+	}}, statsStore
+}
+
+// maskingCounts returns the non-zero masking counter values keyed by reason.
+func maskingCounts(statsStore *memstats.Store) map[string]float64 {
+	counts := map[string]float64{}
+	for _, reason := range []string{"listed", "mask_all", "mask_error"} {
+		if m := statsStore.Get(deliveryMaskingMetric, stats.Tags{"destType": "TEST_DEST", "reason": reason}); m != nil && m.LastValue() > 0 {
+			counts[reason] = m.LastValue()
+		}
 	}
-	return w, &reasons
-}
-
-type recordingMaskingCounter struct {
-	reason  string
-	reasons *[]string
-}
-
-func (c recordingMaskingCounter) Count(n int) {
-	for range n {
-		*c.reasons = append(*c.reasons, c.reason)
-	}
-}
-
-func (c recordingMaskingCounter) Increment() {
-	c.Count(1)
+	return counts
 }
 
 func deliveryStatusMetadata() *types.JobMetadataT {
