@@ -162,6 +162,8 @@ sql/                        SQL migration files (golang-migrate) — never delet
 
 <!-- AGENTS-GENERATED:END key-decisions -->
 
+- A server talks to one cp-router. `backend-config/backend-config.go:98` reads `CP_ROUTER_URL` (default `https://cp-router.rudderlabs.com`). `namespace_config_v2.go:183` and `namespace_config_v1.go:146` copy it into `ConnectionFlags.URL` for every workspace. The workspace's region does not change it. `warehouse/api/grpc.go:191` and `Connector.apply` in `processor/cpservice/connection.go:124` read that URL and dial it. rudderstack-operator sets `CP_ROUTER_URL` per region from `global.cpRouterURL`. cp-router does not forward between regions, so only that region's control plane reaches this server.
+
 ## Boundaries
 
 ### Always Do
