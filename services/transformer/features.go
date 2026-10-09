@@ -42,7 +42,9 @@ type FeaturesService interface {
 	RouterTransform(destType string) bool
 	// SecretPaths reports how destType's Live Events delivery-payload copy must be masked.
 	// paths is meaningful only when state is SecretPathsMaskListed, and may be empty,
-	// which means the transformer positively concluded there is nothing to mask.
+	// which means the transformer positively concluded there is nothing to mask. Both
+	// SecretPathsMaskAll and SecretPathsMaskAllMalformed mean mask everything. paths is shared
+	// with the current snapshot and must not be modified.
 	SecretPaths(destType string) (state SecretPathsState, paths []string)
 	// TransformerProxy reports whether the transformer declares destType deliverable through the
 	// transformer proxy. Distinct from TransformerProxyVersion, which reports the proxy protocol

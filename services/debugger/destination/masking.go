@@ -72,7 +72,7 @@ func setMasked(payload json.RawMessage, path string) (json.RawMessage, error) {
 	if err != nil {
 		return masked, err
 	}
-	if result := gjson.GetBytes(masked, path); !result.Exists() || !resultMasked(result) {
+	if !resultMasked(gjson.GetBytes(masked, path)) {
 		return masked, errPathNotMasked
 	}
 	return masked, nil
@@ -120,7 +120,11 @@ func maskAll(payload json.RawMessage) (json.RawMessage, bool) {
 }
 
 func isJSONObject(payload json.RawMessage) bool {
-	return gjson.ValidBytes(payload) && gjson.ParseBytes(payload).IsObject()
+	if !gjson.ValidBytes(payload) {
+		return false
+	}
+	trimmed := bytes.TrimSpace(payload)
+	return len(trimmed) > 0 && trimmed[0] == '{'
 }
 
 func targetsEndpoint(path string) bool {
