@@ -86,41 +86,43 @@ type Handle struct {
 
 	// state
 
-	logger                         logger.Logger
-	tracer                         stats.Tracer
-	telemetry                      *Diagnostic
-	netHandle                      NetHandle
-	customDestinationManager       customDestinationManager.DestinationManager
-	transformer                    transformer.Transformer
-	destinationsMapMu              sync.RWMutex
-	destinationsMap                map[string]*routerutils.DestinationWithSources // destinationID -> destination
-	connectionsMap                 map[types.SourceDest]types.ConnectionWithID
-	isBackendConfigInitialized     bool
-	backendConfigInitialized       chan bool
-	responseQ                      chan workerJobStatus
-	throttlingCosts                atomic.Pointer[types.EventTypeThrottlingCost]
-	batchSizeHistogramStat         stats.Measurement
-	batchInputCountStat            stats.Measurement
-	batchOutputCountStat           stats.Measurement
-	routerTransformInputCountStat  stats.Measurement
-	routerTransformOutputCountStat stats.Measurement
-	batchInputOutputDiffCountStat  stats.Measurement
-	routerResponseTransformStat    stats.Measurement
-	processRequestsHistogramStat   stats.Measurement
-	processRequestsCountStat       stats.Measurement
-	processJobsHistogramStat       stats.Measurement
-	processJobsCountStat           stats.Measurement
-	throttlingErrorStat            stats.Measurement
-	throttledStat                  stats.Measurement
-	statusDowngradedStat           func(from, to int) stats.Counter
-	deliveryPayloadMaskingCounter  func(reason string)
-	isolationStrategy              isolation.Strategy
-	backgroundGroup                *errgroup.Group
-	backgroundCtx                  context.Context
-	backgroundCancel               context.CancelFunc
-	backgroundWait                 func() error
-	startEnded                     chan struct{}
-	newBarrierFn                   func() *eventorder.Barrier
+	logger                              logger.Logger
+	tracer                              stats.Tracer
+	telemetry                           *Diagnostic
+	netHandle                           NetHandle
+	customDestinationManager            customDestinationManager.DestinationManager
+	transformer                         transformer.Transformer
+	destinationsMapMu                   sync.RWMutex
+	destinationsMap                     map[string]*routerutils.DestinationWithSources // destinationID -> destination
+	connectionsMap                      map[types.SourceDest]types.ConnectionWithID
+	isBackendConfigInitialized          bool
+	backendConfigInitialized            chan bool
+	responseQ                           chan workerJobStatus
+	throttlingCosts                     atomic.Pointer[types.EventTypeThrottlingCost]
+	batchSizeHistogramStat              stats.Measurement
+	batchInputCountStat                 stats.Measurement
+	batchOutputCountStat                stats.Measurement
+	routerTransformInputCountStat       stats.Measurement
+	routerTransformOutputCountStat      stats.Measurement
+	batchInputOutputDiffCountStat       stats.Measurement
+	routerResponseTransformStat         stats.Measurement
+	processRequestsHistogramStat        stats.Measurement
+	processRequestsCountStat            stats.Measurement
+	processJobsHistogramStat            stats.Measurement
+	processJobsCountStat                stats.Measurement
+	throttlingErrorStat                 stats.Measurement
+	throttledStat                       stats.Measurement
+	statusDowngradedStat                func(from, to int) stats.Counter
+	deliveryPayloadMaskingListedCounter stats.Counter
+	deliveryPayloadMaskingAllCounter    stats.Counter
+	deliveryPayloadMaskingErrorCounter  stats.Counter
+	isolationStrategy                   isolation.Strategy
+	backgroundGroup                     *errgroup.Group
+	backgroundCtx                       context.Context
+	backgroundCancel                    context.CancelFunc
+	backgroundWait                      func() error
+	startEnded                          chan struct{}
+	newBarrierFn                        func() *eventorder.Barrier
 
 	eventOrderingDisabledForWorkspace   func(workspaceID string) bool
 	eventOrderingDisabledForDestination func(destinationID string) bool

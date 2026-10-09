@@ -15,6 +15,26 @@ const maskedValue = "******"
 
 var errPathNotMasked = errors.New("path not masked")
 
+func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
+	if w.rt.reloadableConfig.disableEventDeliveryUploadMasking.Load() {
+		return payload
+	}
+
+	maskingCounter := w.rt.deliveryPayloadMaskingAllCounter
+	var maskErr bool
+	if paths, ok := w.rt.transformerFeaturesService.SecretPaths(w.rt.destType); ok {
+		maskingCounter = w.rt.deliveryPayloadMaskingListedCounter
+		payload, maskErr = maskListedPaths(payload, paths)
+	} else {
+		payload, maskErr = maskAll(payload)
+	}
+	maskingCounter.Increment()
+	if maskErr {
+		w.rt.deliveryPayloadMaskingErrorCounter.Increment()
+	}
+	return payload
+}
+
 // maskListedPaths replaces existing values at paths. It falls back to mask-all on malformed
 // payloads or any path application error, so a masking failure never forwards the original value.
 func maskListedPaths(payload json.RawMessage, paths []string) (json.RawMessage, bool) {

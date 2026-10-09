@@ -120,17 +120,33 @@ func newDeliveryMaskingTestWorker(
 	disabled bool,
 ) (*worker, *[]string) {
 	reasons := make([]string, 0, 2)
-	return &worker{rt: &Handle{
+	w := &worker{rt: &Handle{
 		destType:                   "TEST_DEST",
 		transformerFeaturesService: features,
 		debugger:                   debugger,
 		reloadableConfig: &reloadableConfig{
 			disableEventDeliveryUploadMasking: config.SingleValueLoader(disabled),
 		},
-		deliveryPayloadMaskingCounter: func(reason string) {
-			reasons = append(reasons, reason)
-		},
-	}}, &reasons
+	}}
+	w.rt.deliveryPayloadMaskingListedCounter = recordingMaskingCounter{reason: "listed", reasons: &reasons}
+	w.rt.deliveryPayloadMaskingAllCounter = recordingMaskingCounter{reason: "mask_all", reasons: &reasons}
+	w.rt.deliveryPayloadMaskingErrorCounter = recordingMaskingCounter{reason: "mask_error", reasons: &reasons}
+	return w, &reasons
+}
+
+type recordingMaskingCounter struct {
+	reason  string
+	reasons *[]string
+}
+
+func (c recordingMaskingCounter) Count(n int) {
+	for range n {
+		*c.reasons = append(*c.reasons, c.reason)
+	}
+}
+
+func (c recordingMaskingCounter) Increment() {
+	c.Count(1)
 }
 
 func deliveryStatusMetadata() *types.JobMetadataT {

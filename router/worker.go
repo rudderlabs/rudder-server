@@ -1158,26 +1158,6 @@ func (w *worker) sendDestinationResponseToConfigBackend(payload json.RawMessage,
 	}
 }
 
-func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
-	if w.rt.reloadableConfig.disableEventDeliveryUploadMasking.Load() {
-		return payload
-	}
-
-	reason := "mask_all"
-	var maskErr bool
-	if paths, ok := w.rt.transformerFeaturesService.SecretPaths(w.rt.destType); ok {
-		reason = "listed"
-		payload, maskErr = maskListedPaths(payload, paths)
-	} else {
-		payload, maskErr = maskAll(payload)
-	}
-	w.rt.deliveryPayloadMaskingCounter(reason)
-	if maskErr {
-		w.rt.deliveryPayloadMaskingCounter("mask_error")
-	}
-	return payload
-}
-
 // AvailableSlots returns the number of available slots in the worker's input channel
 func (w *worker) AvailableSlots() int {
 	return w.workerBuffer.AvailableSlots()
