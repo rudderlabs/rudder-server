@@ -67,6 +67,21 @@ func (mr *MockFeaturesServiceMockRecorder) RouterTransform(destType any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RouterTransform", reflect.TypeOf((*MockFeaturesService)(nil).RouterTransform), destType)
 }
 
+// SecretPaths mocks base method.
+func (m *MockFeaturesService) SecretPaths(destType string) ([]string, bool) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SecretPaths", destType)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(bool)
+	return ret0, ret1
+}
+
+// SecretPaths indicates an expected call of SecretPaths.
+func (mr *MockFeaturesServiceMockRecorder) SecretPaths(destType any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SecretPaths", reflect.TypeOf((*MockFeaturesService)(nil).SecretPaths), destType)
+}
+
 // SourceTransformerVersion mocks base method.
 func (m *MockFeaturesService) SourceTransformerVersion() string {
 	m.ctrl.T.Helper()

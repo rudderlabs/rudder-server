@@ -113,6 +113,7 @@ type Handle struct {
 	throttlingErrorStat            stats.Measurement
 	throttledStat                  stats.Measurement
 	statusDowngradedStat           func(from, to int) stats.Counter
+	deliveryPayloadMaskingStat     func(reason string) stats.Counter
 	isolationStrategy              isolation.Strategy
 	backgroundGroup                *errgroup.Group
 	backgroundCtx                  context.Context

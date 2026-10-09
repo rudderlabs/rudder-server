@@ -34,6 +34,39 @@ func parseTestFeatures(rawFeatures string) *featuresPayload {
 
 var _ = Describe("Transformer features", func() {
 	Context("Transformer features service", func() {
+		Describe("SecretPaths", func() {
+			DescribeTable("normalizes the transformer response",
+				func(rawFeatures, destType string, wantPaths []string, wantOK bool) {
+					paths, ok := newTestFeaturesService(parseTestFeatures(rawFeatures)).SecretPaths(destType)
+					Expect(ok).To(Equal(wantOK))
+					Expect(paths).To(Equal(wantPaths))
+				},
+				Entry("listed paths", `{"secretPaths":{"KLAVIYO":["headers.Authorization","params.api_key"]}}`, "KLAVIYO", []string{"headers.Authorization", "params.api_key"}, true),
+				Entry("empty list", `{"secretPaths":{"EMPTY":[]}}`, "EMPTY", []string{}, true),
+				Entry("null entry", `{"secretPaths":{"UNRESOLVED":null}}`, "UNRESOLVED", nil, false),
+				Entry("missing destination", `{"secretPaths":{"KLAVIYO":[]}}`, "MISSING", nil, false),
+				Entry("malformed entry", `{"secretPaths":{"KLAVIYO":"bad","BRAZE":["headers.Authorization"]}}`, "KLAVIYO", nil, false),
+				Entry("valid sibling of a malformed entry", `{"secretPaths":{"KLAVIYO":"bad","BRAZE":["headers.Authorization"]}}`, "BRAZE", []string{"headers.Authorization"}, true),
+				Entry("malformed table", `{"secretPaths":"oops"}`, "BRAZE", nil, false),
+				Entry("older transformer", `{}`, "KLAVIYO", nil, true),
+				Entry("top-level null", `{"secretPaths":null}`, "KLAVIYO", nil, true),
+			)
+
+			It("does not reject sibling features when the table is malformed", func() {
+				handler := newTestFeaturesService(parseTestFeatures(`{"routerTransform":{"BRAZE":true},"secretPaths":"oops"}`))
+				Expect(handler.RouterTransform("BRAZE")).To(BeTrue())
+			})
+
+			It("returns an empty successful lookup for the default and no-op services", func() {
+				paths, ok := newTestFeaturesService(defaultTransformerFeatures).SecretPaths("KLAVIYO")
+				Expect(ok).To(BeTrue())
+				Expect(paths).To(BeNil())
+				paths, ok = NewNoOpService().SecretPaths("KLAVIYO")
+				Expect(ok).To(BeTrue())
+				Expect(paths).To(BeNil())
+			})
+		})
+
 		It("defaultTransformerFeatures must advertise a non-deprecated source transformer version", func() {
 			Expect(defaultTransformerFeatures.sourceTransformerVersion()).To(Equal(V2))
 		})

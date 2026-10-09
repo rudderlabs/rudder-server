@@ -34,6 +34,36 @@ type featuresPayload struct {
 	UpgradedToSourceTransformV2            bool            `json:"upgradedToSourceTransformV2"`
 	SupportTransformerProxyV1              bool            `json:"supportTransformerProxyV1"`
 	SupportDestTransformCompactedPayloadV1 bool            `json:"supportDestTransformCompactedPayloadV1"`
+
+	SecretPaths secretPathsTable `json:"secretPaths"`
+}
+
+// secretPathsTable is nil when the transformer does not send secretPaths (older
+// transformer). A malformed value decodes to an empty table, so every lookup
+// misses and the caller masks everything.
+type secretPathsTable map[string][]string
+
+func (t *secretPathsTable) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		*t = nil
+		return nil
+	}
+
+	var entries map[string]json.RawMessage
+	if err := jsonrs.Unmarshal(data, &entries); err != nil {
+		*t = secretPathsTable{}
+		return nil //nolint:nilerr // malformed secret paths must not reject sibling features
+	}
+
+	table := make(secretPathsTable, len(entries))
+	for destType, raw := range entries {
+		var paths []string
+		if jsonrs.Unmarshal(raw, &paths) == nil && paths != nil {
+			table[destType] = paths
+		}
+	}
+	*t = table
+	return nil
 }
 
 // sourceTransformerVersion resolves the source transformer version advertised by the snapshot,
@@ -82,6 +112,16 @@ func (t *featuresService) TransformerProxyVersion() string {
 
 func (t *featuresService) RouterTransform(destType string) bool {
 	return t.features.Load().RouterTransform[destType]
+}
+
+// SecretPaths returns paths shared with the immutable snapshot; callers must not modify them.
+func (t *featuresService) SecretPaths(destType string) ([]string, bool) {
+	table := t.features.Load().SecretPaths
+	if table == nil {
+		return nil, true
+	}
+	paths, ok := table[destType]
+	return paths, ok
 }
 
 // TransformerProxy reports whether the transformer declares destType deliverable via the proxy.
