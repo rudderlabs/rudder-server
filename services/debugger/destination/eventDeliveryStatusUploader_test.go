@@ -196,6 +196,15 @@ func (u *captureUploader) last() *DeliveryStatusT {
 	return u.events[len(u.events)-1]
 }
 
+func enableEventDelivery(handle *Handle, destinationID, destType string) {
+	handle.updateConfig(map[string]backendconfig.ConfigT{WorkspaceID: {
+		Sources: []backendconfig.SourceT{{Destinations: []backendconfig.DestinationT{{
+			ID: destinationID, Enabled: true, Config: map[string]any{"eventDelivery": true},
+			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: destType},
+		}}}},
+	}})
+}
+
 type eventDeliveryStatusUploaderContext struct {
 	mockCtrl          *gomock.Controller
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
@@ -316,12 +325,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			Expect(provider.seen).To(Equal([]string{"MINIO"}))
 
 			provider.seen = nil
-			handle.updateConfig(map[string]backendconfig.ConfigT{WorkspaceID: {
-				Sources: []backendconfig.SourceT{{Destinations: []backendconfig.DestinationT{{
-					ID: DestinationIDEnabledB, Enabled: true, Config: map[string]any{"eventDelivery": true},
-					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "MINIO"},
-				}}}},
-			}})
+			enableEventDelivery(handle, DestinationIDEnabledB, "MINIO")
 
 			Expect(gjson.GetBytes(uploader.last().Payload, "headers.Authorization").String()).To(Equal(maskedValue))
 			Expect(provider.seen).To(BeEmpty())
@@ -341,12 +345,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 			provider.seen = nil
 			handle.disableEventDeliveryUploadMasking = config.SingleValueLoader(false)
-			handle.updateConfig(map[string]backendconfig.ConfigT{WorkspaceID: {
-				Sources: []backendconfig.SourceT{{Destinations: []backendconfig.DestinationT{{
-					ID: DestinationIDEnabledB, Enabled: true, Config: map[string]any{"eventDelivery": true},
-					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "MINIO"},
-				}}}},
-			}})
+			enableEventDelivery(handle, DestinationIDEnabledB, "MINIO")
 
 			Expect(gjson.GetBytes(uploader.last().Payload, "headers.Authorization").String()).To(Equal(maskedValue))
 			Expect(provider.seen).To(Equal([]string{"MINIO"}))
@@ -367,12 +366,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		It("uses refreshed destination type mappings", func() {
 			status := &DeliveryStatusT{Payload: json.RawMessage(`{"headers":{"Authorization":"secret"}}`)}
 			Expect(handle.RecordEventDeliveryStatus(DestinationIDEnabledA, status)).To(BeTrue())
-			handle.updateConfig(map[string]backendconfig.ConfigT{WorkspaceID: {
-				Sources: []backendconfig.SourceT{{Destinations: []backendconfig.DestinationT{{
-					ID: DestinationIDEnabledA, Enabled: true, Config: map[string]any{"eventDelivery": true},
-					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "REFRESHED_TYPE"},
-				}}}},
-			}})
+			enableEventDelivery(handle, DestinationIDEnabledA, "REFRESHED_TYPE")
 			Expect(handle.RecordEventDeliveryStatus(DestinationIDEnabledA, status)).To(BeTrue())
 			Expect(provider.seen).To(Equal([]string{"enabled-destination-a-definition-name", "REFRESHED_TYPE"}))
 		})
@@ -396,7 +390,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			config.Reset()
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
 			config.Set("LiveEvent.cache.GCTime", "1s")
-			h, err = NewHandle(c.mockBackendConfig, &staticSecretPaths{state: transformer.SecretPathsUnavailable})
+			h, err = NewHandle(c.mockBackendConfig, transformer.NewNoOpService())
 			Expect(err).To(BeNil())
 		})
 
@@ -406,7 +400,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			h.Stop()
-			h, err := NewHandle(c.mockBackendConfig, &staticSecretPaths{state: transformer.SecretPathsUnavailable})
+			h, err := NewHandle(c.mockBackendConfig, transformer.NewNoOpService())
 			Expect(err).To(BeNil())
 			h.(*Handle).disableEventDeliveryStatusUploads = config.SingleValueLoader(true)
 			Expect(h.RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())
@@ -451,7 +445,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			config.Set("DestinationDebugger.cacheType", 0)
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
 			config.Set("LiveEvent.cache.GCTime", "1s")
-			h, err = NewHandle(c.mockBackendConfig, &staticSecretPaths{state: transformer.SecretPathsUnavailable})
+			h, err = NewHandle(c.mockBackendConfig, transformer.NewNoOpService())
 			Expect(err).To(BeNil())
 		})
 
@@ -461,7 +455,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			h.Stop()
-			h, err := NewHandle(c.mockBackendConfig, &staticSecretPaths{state: transformer.SecretPathsUnavailable})
+			h, err := NewHandle(c.mockBackendConfig, transformer.NewNoOpService())
 			Expect(err).To(BeNil())
 			h.(*Handle).disableEventDeliveryStatusUploads = config.SingleValueLoader(true)
 			Expect(h.RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())

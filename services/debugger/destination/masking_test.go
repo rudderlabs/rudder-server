@@ -35,6 +35,20 @@ var _ = Describe("Delivery payload masking", func() {
 		Expect(gjson.GetBytes(masked, "params.bd[0]").String()).To(Equal(maskedValue))
 	})
 
+	DescribeTable("detects only an unescaped terminal array wildcard",
+		func(path, wantParent string, wantOK bool) {
+			parent, ok := terminalArrayWildcardParent(path)
+			Expect(ok).To(Equal(wantOK))
+			Expect(parent).To(Equal(wantParent))
+		},
+		Entry("bare wildcard", "#", "", true),
+		Entry("nested wildcard", "body.tokens.#", "body.tokens", true),
+		Entry("escaped dot before #", `body.tokens\.#`, "", false),
+		Entry("escaped backslash then separator", `body.tokens\\.#`, `body.tokens\\`, true),
+		Entry("escaped #", `body.tokens.\#`, "", false),
+		Entry("non-terminal wildcard", "body.#.from", "", false),
+	)
+
 	It("never masks endpoint even when it is listed", func() {
 		payload := json.RawMessage(`{"endpoint":"https://example.test/path?token=visible","headers":{"Authorization":"secret"}}`)
 		masked, maskErr := maskListedPaths(payload, []string{"endpoint", "headers.Authorization"})

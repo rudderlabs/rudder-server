@@ -27,41 +27,38 @@ import (
 type featuresPayload struct {
 	raw json.RawMessage
 
-	RouterTransform                        map[string]bool              `json:"routerTransform"`
-	TransformerProxy                       map[string]bool              `json:"transformerProxy"`
-	Regulations                            []string                     `json:"regulations"`
-	SupportSourceTransformV1               bool                         `json:"supportSourceTransformV1"`
-	UpgradedToSourceTransformV2            bool                         `json:"upgradedToSourceTransformV2"`
-	SupportTransformerProxyV1              bool                         `json:"supportTransformerProxyV1"`
-	SupportDestTransformCompactedPayloadV1 bool                         `json:"supportDestTransformCompactedPayloadV1"`
-	SecretPaths                            *map[string]secretPathsEntry `json:"-"`
+	RouterTransform                        map[string]bool `json:"routerTransform"`
+	TransformerProxy                       map[string]bool `json:"transformerProxy"`
+	Regulations                            []string        `json:"regulations"`
+	SupportSourceTransformV1               bool            `json:"supportSourceTransformV1"`
+	UpgradedToSourceTransformV2            bool            `json:"upgradedToSourceTransformV2"`
+	SupportTransformerProxyV1              bool            `json:"supportTransformerProxyV1"`
+	SupportDestTransformCompactedPayloadV1 bool            `json:"supportDestTransformCompactedPayloadV1"`
+	SecretPathsRaw                         json.RawMessage `json:"secretPaths"`
+
+	// secretPaths is nil when the transformer does not advertise secretPaths at all.
+	secretPaths map[string]secretPathsEntry
 }
 
 type secretPathsEntry struct {
-	state     SecretPathsState
-	paths     []string
-	malformed bool
+	state SecretPathsState
+	paths []string
 }
 
-func (f *featuresPayload) secretPaths(destType string) (SecretPathsState, []string) {
-	if f.SecretPaths == nil {
+// secretPathsFor returns paths shared with the immutable snapshot; callers must not modify them.
+func (f *featuresPayload) secretPathsFor(destType string) (SecretPathsState, []string) {
+	if f.secretPaths == nil {
 		return SecretPathsUnavailable, nil
 	}
-	entry, ok := (*f.SecretPaths)[destType]
+	entry, ok := f.secretPaths[destType]
 	if !ok {
 		return SecretPathsMaskAll, nil
 	}
-	return entry.state, slices.Clone(entry.paths)
+	return entry.state, entry.paths
 }
 
-func (f *featuresPayload) secretPathsMalformed(destType string) bool {
-	if f.SecretPaths == nil {
-		return false
-	}
-	entry, ok := (*f.SecretPaths)[destType]
-	return ok && entry.malformed
-}
-
+// sourceTransformerVersion resolves the source transformer version advertised by the snapshot,
+// panicking if the transformer only speaks the deprecated v0 protocol.
 func (f *featuresPayload) sourceTransformerVersion() string {
 	if f.UpgradedToSourceTransformV2 {
 		return V2
@@ -77,26 +74,19 @@ func parseFeatures(body []byte) (*featuresPayload, error) {
 	if err := jsonrs.Unmarshal(body, &f); err != nil {
 		return nil, err
 	}
-	f.SecretPaths = parseSecretPaths(body)
+	f.secretPaths = parseSecretPaths(f.SecretPathsRaw)
 	f.raw = body
 	return &f, nil
 }
 
-func parseSecretPaths(body []byte) *map[string]secretPathsEntry {
-	var envelope struct {
-		SecretPaths json.RawMessage `json:"secretPaths"`
-	}
-	if err := jsonrs.Unmarshal(body, &envelope); err != nil {
-		return nil
-	}
-	if len(envelope.SecretPaths) == 0 || bytes.Equal(bytes.TrimSpace(envelope.SecretPaths), []byte("null")) {
+func parseSecretPaths(raw json.RawMessage) map[string]secretPathsEntry {
+	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return nil
 	}
 
 	var rawEntries map[string]json.RawMessage
-	if err := jsonrs.Unmarshal(envelope.SecretPaths, &rawEntries); err != nil {
-		entries := make(map[string]secretPathsEntry)
-		return &entries
+	if err := jsonrs.Unmarshal(raw, &rawEntries); err != nil {
+		return map[string]secretPathsEntry{}
 	}
 	entries := make(map[string]secretPathsEntry, len(rawEntries))
 	for destType, rawEntry := range rawEntries {
@@ -106,12 +96,12 @@ func parseSecretPaths(body []byte) *map[string]secretPathsEntry {
 		}
 		var paths []string
 		if err := jsonrs.Unmarshal(rawEntry, &paths); err != nil || paths == nil {
-			entries[destType] = secretPathsEntry{state: SecretPathsMaskAll, malformed: true}
+			entries[destType] = secretPathsEntry{state: SecretPathsMaskAllMalformed}
 			continue
 		}
-		entries[destType] = secretPathsEntry{state: SecretPathsMaskListed, paths: slices.Clone(paths)}
+		entries[destType] = secretPathsEntry{state: SecretPathsMaskListed, paths: paths}
 	}
-	return &entries
+	return entries
 }
 
 type featuresService struct {
@@ -142,21 +132,7 @@ func (t *featuresService) RouterTransform(destType string) bool {
 }
 
 func (t *featuresService) SecretPaths(destType string) (SecretPathsState, []string) {
-	return t.features.Load().secretPaths(destType)
-}
-
-func (t *featuresService) secretPathsMalformed(destType string) bool {
-	return t.features.Load().secretPathsMalformed(destType)
-}
-
-type secretPathsMalformedProvider interface {
-	secretPathsMalformed(destType string) bool
-}
-
-// SecretPathsMalformed reports whether provider normalized destType as a malformed secret-path entry.
-func SecretPathsMalformed(provider any, destType string) bool {
-	malformedProvider, ok := provider.(secretPathsMalformedProvider)
-	return ok && malformedProvider.secretPathsMalformed(destType)
+	return t.features.Load().secretPathsFor(destType)
 }
 
 // TransformerProxy reports whether the transformer declares destType deliverable via the proxy.

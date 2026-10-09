@@ -190,59 +190,47 @@ func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus 
 	return true
 }
 
+// maskedDeliveryStatus returns a copy of deliveryStatus for Live Events and whether its payload was
+// masked. The caller's payload bytes are never modified: masking always builds a new slice.
 func (h *Handle) maskedDeliveryStatus(destType string, destinationFound bool, deliveryStatus *DeliveryStatusT) (*DeliveryStatusT, bool) {
 	debuggerStatus := *deliveryStatus
-	debuggerStatus.Payload = append(json.RawMessage(nil), deliveryStatus.Payload...)
-
 	if !destinationFound || destType == "" {
 		destType = "unknown"
 	}
-
 	if h.disableEventDeliveryUploadMasking.Load() {
-		h.countMasking(destType, "flag_disabled")
+		h.maskingCounter(destType, "flag_disabled")
 		return &debuggerStatus, false
-	}
-	if !destinationFound {
-		var maskErr bool
-		debuggerStatus.Payload, maskErr = maskAll(debuggerStatus.Payload)
-		h.countMasking("unknown", "missing_destination")
-		if maskErr {
-			h.countMasking("unknown", "mask_error")
-		}
-		return &debuggerStatus, true
 	}
 
-	state, paths := h.secretPaths.SecretPaths(destType)
-	switch state {
-	case transformer.SecretPathsUnavailable:
-		h.countMasking(destType, "feature_unavailable")
-		return &debuggerStatus, false
-	case transformer.SecretPathsMaskListed:
-		var maskErr bool
-		debuggerStatus.Payload, maskErr = maskListedPaths(debuggerStatus.Payload, paths)
-		if maskErr {
-			h.countMasking(destType, "listed_failure")
-			h.countMasking(destType, "mask_error")
-		} else {
-			h.countMasking(destType, "listed_success")
-		}
-	default:
-		var maskErr bool
+	var reason string
+	var maskErr bool
+	if !destinationFound {
+		reason = "missing_destination"
 		debuggerStatus.Payload, maskErr = maskAll(debuggerStatus.Payload)
-		reason := "null_entry"
-		if transformer.SecretPathsMalformed(h.secretPaths, destType) {
+	} else {
+		state, paths := h.secretPaths.SecretPaths(destType)
+		switch state {
+		case transformer.SecretPathsUnavailable:
+			h.maskingCounter(destType, "feature_unavailable")
+			return &debuggerStatus, false
+		case transformer.SecretPathsMaskListed:
+			reason = "listed_success"
+			if debuggerStatus.Payload, maskErr = maskListedPaths(debuggerStatus.Payload, paths); maskErr {
+				reason = "listed_failure"
+			}
+		case transformer.SecretPathsMaskAllMalformed:
 			reason = "malformed_entry"
+			debuggerStatus.Payload, maskErr = maskAll(debuggerStatus.Payload)
+		default:
+			reason = "null_entry"
+			debuggerStatus.Payload, maskErr = maskAll(debuggerStatus.Payload)
 		}
-		h.countMasking(destType, reason)
-		if maskErr {
-			h.countMasking(destType, "mask_error")
-		}
+	}
+	h.maskingCounter(destType, reason)
+	if maskErr {
+		h.maskingCounter(destType, "mask_error")
 	}
 	return &debuggerStatus, true
-}
-
-func (h *Handle) countMasking(destType, reason string) {
-	h.maskingCounter(destType, reason)
 }
 
 func (h *Handle) HasUploadEnabled(destID string) bool {

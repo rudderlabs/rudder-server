@@ -31,6 +31,9 @@ const (
 	SecretPathsMaskAll SecretPathsState = iota
 	SecretPathsUnavailable
 	SecretPathsMaskListed
+	// SecretPathsMaskAllMalformed fails closed like SecretPathsMaskAll; it only marks an entry the
+	// transformer sent in an unparseable shape.
+	SecretPathsMaskAllMalformed
 )
 
 type FeaturesService interface {
