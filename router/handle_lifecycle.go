@@ -146,18 +146,12 @@ func (rt *Handle) Setup(
 			"to":       strconv.Itoa(to),
 		})
 	}
-	rt.deliveryPayloadMaskingListedCounter = stats.Default.NewTaggedStat("router_delivery_payload_masking", stats.CountType, stats.Tags{
-		"destType": rt.destType,
-		"reason":   "listed",
-	})
-	rt.deliveryPayloadMaskingAllCounter = stats.Default.NewTaggedStat("router_delivery_payload_masking", stats.CountType, stats.Tags{
-		"destType": rt.destType,
-		"reason":   "mask_all",
-	})
-	rt.deliveryPayloadMaskingErrorCounter = stats.Default.NewTaggedStat("router_delivery_payload_masking", stats.CountType, stats.Tags{
-		"destType": rt.destType,
-		"reason":   "mask_error",
-	})
+	rt.deliveryPayloadMaskingStat = func(reason string) stats.Counter {
+		return stats.Default.NewTaggedStat("router_delivery_payload_masking", stats.CountType, stats.Tags{
+			"destType": rt.destType,
+			"reason":   reason,
+		})
+	}
 	rt.processJobsHistogramStat = stats.Default.NewTaggedStat("router_process_jobs_hist", stats.HistogramType, statTags)
 	rt.processJobsCountStat = stats.Default.NewTaggedStat("router_process_jobs_count", stats.CountType, statTags)
 	rt.processRequestsHistogramStat = stats.Default.NewTaggedStat("router_process_requests_hist", stats.HistogramType, statTags)

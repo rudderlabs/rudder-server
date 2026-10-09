@@ -10,6 +10,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mockdestinationdebugger "github.com/rudderlabs/rudder-server/mocks/services/debugger/destination"
@@ -128,9 +129,9 @@ func newDeliveryMaskingTestWorker(
 			disableEventDeliveryUploadMasking: config.SingleValueLoader(disabled),
 		},
 	}}
-	w.rt.deliveryPayloadMaskingListedCounter = recordingMaskingCounter{reason: "listed", reasons: &reasons}
-	w.rt.deliveryPayloadMaskingAllCounter = recordingMaskingCounter{reason: "mask_all", reasons: &reasons}
-	w.rt.deliveryPayloadMaskingErrorCounter = recordingMaskingCounter{reason: "mask_error", reasons: &reasons}
+	w.rt.deliveryPayloadMaskingStat = func(reason string) stats.Counter {
+		return recordingMaskingCounter{reason: reason, reasons: &reasons}
+	}
 	return w, &reasons
 }
 

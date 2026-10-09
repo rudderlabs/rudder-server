@@ -20,17 +20,17 @@ func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
 		return payload
 	}
 
-	maskingCounter := w.rt.deliveryPayloadMaskingAllCounter
+	reason := "mask_all"
 	var maskErr bool
 	if paths, ok := w.rt.transformerFeaturesService.SecretPaths(w.rt.destType); ok {
-		maskingCounter = w.rt.deliveryPayloadMaskingListedCounter
+		reason = "listed"
 		payload, maskErr = maskListedPaths(payload, paths)
 	} else {
 		payload, maskErr = maskAll(payload)
 	}
-	maskingCounter.Increment()
+	w.rt.deliveryPayloadMaskingStat(reason).Increment()
 	if maskErr {
-		w.rt.deliveryPayloadMaskingErrorCounter.Increment()
+		w.rt.deliveryPayloadMaskingStat("mask_error").Increment()
 	}
 	return payload
 }
