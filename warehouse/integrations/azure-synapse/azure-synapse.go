@@ -29,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	whmssql "github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
@@ -45,43 +46,10 @@ const (
 
 var errorsMappings []model.JobError
 
-var rudderDataTypesMapToAzureSynapse = map[string]string{
-	"int":      "bigint",
-	"float":    "decimal(28,10)",
-	"string":   "varchar(512)",
-	"datetime": "datetimeoffset",
-	"boolean":  "bit",
-	"json":     "jsonb",
-}
-
-var azureSynapseDataTypesMapToRudder = map[string]string{
-	"integer":                  "int",
-	"smallint":                 "int",
-	"bigint":                   "int",
-	"tinyint":                  "int",
-	"double precision":         "float",
-	"numeric":                  "float",
-	"decimal":                  "float",
-	"real":                     "float",
-	"float":                    "float",
-	"text":                     "string",
-	"varchar":                  "string",
-	"nvarchar":                 "string",
-	"ntext":                    "string",
-	"nchar":                    "string",
-	"char":                     "string",
-	"datetimeoffset":           "datetime",
-	"date":                     "datetime",
-	"datetime2":                "datetime",
-	"timestamp with time zone": "datetime",
-	"timestamp":                "datetime",
-	"jsonb":                    "json",
-	"bit":                      "boolean",
-}
-
-var stringColumns = lo.Keys(lo.PickBy(azureSynapseDataTypesMapToRudder, func(_, value string) bool {
-	return value == "string"
-}))
+// Synapse shares MSSQL's T-SQL type mapping, but stores strings as varchar rather than nvarchar.
+var rudderDataTypesMapToAzureSynapse = lo.Assign(whmssql.DataTypesMap, map[string]string{
+	"string": "varchar(512)",
+})
 
 type AzureSynapse struct {
 	db                 *sqlmw.DB
@@ -363,7 +331,7 @@ func (as *AzureSynapse) loadTable(
 // getVarcharLengthMap retrieves the maximum allowed length for varchar columns in a given table.
 // A `CHARACTER_MAXIMUM_LENGTH` of `-1` indicates that the column has the maximum possible length (i.e., `varchar(max)`).
 func (as *AzureSynapse) getVarcharLengthMap(ctx context.Context, tableName string) (map[string]int, error) {
-	dataTypes := "'" + strings.Join(stringColumns, "', '") + "'"
+	dataTypes := "'" + strings.Join(whmssql.StringColumns, "', '") + "'"
 	query := fmt.Sprintf(`
 		SELECT column_name, CHARACTER_MAXIMUM_LENGTH
 		FROM INFORMATION_SCHEMA.COLUMNS
@@ -1030,7 +998,7 @@ func (as *AzureSynapse) FetchSchema(ctx context.Context) (model.Schema, error) {
 		if _, ok := schema[tableName]; !ok {
 			schema[tableName] = make(model.TableSchema)
 		}
-		if datatype, ok := azureSynapseDataTypesMapToRudder[columnType]; ok {
+		if datatype, ok := whmssql.DataTypesMapToRudder[columnType]; ok {
 			schema[tableName][columnName] = datatype
 		} else {
 			warehouseutils.WHCounterStat(as.stats, warehouseutils.RudderMissingDatatype, &as.warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)

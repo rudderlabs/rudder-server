@@ -43,7 +43,8 @@ const (
 	tableNameLimit       = 127
 )
 
-var rudderDataTypesMapToMssql = map[string]string{
+// DataTypesMap maps rudder data types to MSSQL column types.
+var DataTypesMap = map[string]string{
 	"int":      "bigint",
 	"float":    "decimal(28,10)",
 	"string":   "nvarchar(512)",
@@ -52,7 +53,8 @@ var rudderDataTypesMapToMssql = map[string]string{
 	"json":     "jsonb",
 }
 
-var mssqlDataTypesMapToRudder = map[string]string{
+// DataTypesMapToRudder maps T-SQL column types to rudder data types.
+var DataTypesMapToRudder = map[string]string{
 	"integer":                  "int",
 	"smallint":                 "int",
 	"bigint":                   "int",
@@ -77,7 +79,8 @@ var mssqlDataTypesMapToRudder = map[string]string{
 	"bit":                      "boolean",
 }
 
-var stringColumns = lo.Keys(lo.PickBy(mssqlDataTypesMapToRudder, func(_, value string) bool {
+// StringColumns lists the T-SQL column types that map to the rudder string type.
+var StringColumns = lo.Keys(lo.PickBy(DataTypesMapToRudder, func(_, value string) bool {
 	return value == "string"
 }))
 
@@ -208,7 +211,7 @@ func (ms *MSSQL) connectionCredentials() *credentials {
 
 func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	formattedColumns := lo.MapToSlice(columns, func(name, dataType string) string {
-		return fmt.Sprintf(`%s %s`, warehouseutils.BracketQuoteIdentifier(prefix+name), rudderDataTypesMapToMssql[dataType])
+		return fmt.Sprintf(`%s %s`, warehouseutils.BracketQuoteIdentifier(prefix+name), DataTypesMap[dataType])
 	})
 	return strings.Join(formattedColumns, ",")
 }
@@ -396,7 +399,7 @@ func (ms *MSSQL) loadTable(
 // getVarcharLengthMap retrieves the maximum allowed length for varchar columns in a given table.
 // A `CHARACTER_MAXIMUM_LENGTH` of `-1` indicates that the column has the maximum possible length (i.e., `varchar(max)`).
 func (ms *MSSQL) getVarcharLengthMap(ctx context.Context, tableName string) (map[string]int, error) {
-	dataTypes := "'" + strings.Join(stringColumns, "', '") + "'"
+	dataTypes := "'" + strings.Join(StringColumns, "', '") + "'"
 	query := fmt.Sprintf(`
 		SELECT column_name, CHARACTER_MAXIMUM_LENGTH
 		FROM INFORMATION_SCHEMA.COLUMNS
@@ -917,7 +920,7 @@ func (ms *MSSQL) AddColumns(ctx context.Context, tableName string, columnsInfo [
 	)
 
 	for _, columnInfo := range columnsInfo {
-		fmt.Fprintf(&queryBuilder, ` %s %s,`, warehouseutils.BracketQuoteIdentifier(columnInfo.Name), rudderDataTypesMapToMssql[columnInfo.Type])
+		fmt.Fprintf(&queryBuilder, ` %s %s,`, warehouseutils.BracketQuoteIdentifier(columnInfo.Name), DataTypesMap[columnInfo.Type])
 	}
 
 	query = strings.TrimSuffix(queryBuilder.String(), ",")
@@ -1040,7 +1043,7 @@ func (ms *MSSQL) FetchSchema(ctx context.Context) (model.Schema, error) {
 		if _, ok := schema[tableName]; !ok {
 			schema[tableName] = make(model.TableSchema)
 		}
-		if datatype, ok := mssqlDataTypesMapToRudder[columnType]; ok {
+		if datatype, ok := DataTypesMapToRudder[columnType]; ok {
 			schema[tableName][columnName] = datatype
 		} else {
 			warehouseutils.WHCounterStat(ms.stats, warehouseutils.RudderMissingDatatype, &ms.warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)

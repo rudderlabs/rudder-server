@@ -22,42 +22,28 @@ const (
 	parquetTimestampMicros = "type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"
 )
 
-// parquetTypesWithText is the Parquet type set used by RS and S3 datalake; Microsoft Fabric extends a copy with json.
-var parquetTypesWithText = map[string]string{
-	"bigint":   parquetInt64,
-	"int":      parquetInt64,
-	"boolean":  parquetBoolean,
-	"float":    parquetDouble,
-	"string":   parquetString,
-	"text":     parquetString,
-	"datetime": parquetTimestampMicros,
-}
+// Each destination's Parquet type set is the base set plus the extra rudder types it accepts.
+var (
+	parquetBaseTypes = map[string]string{
+		model.IntDataType:      parquetInt64,
+		model.BooleanDataType:  parquetBoolean,
+		model.FloatDataType:    parquetDouble,
+		model.StringDataType:   parquetString,
+		model.DateTimeDataType: parquetTimestampMicros,
+	}
+	parquetTypesWithText = lo.Assign(parquetBaseTypes, map[string]string{
+		model.BigIntDataType: parquetInt64,
+		model.TextDataType:   parquetString,
+	})
+)
 
 var rudderDataTypeToParquetDataType = map[string]map[string]string{
-	warehouseutils.RS:         parquetTypesWithText,
-	warehouseutils.S3Datalake: parquetTypesWithText,
-	warehouseutils.GCSDatalake: {
-		"int":      parquetInt64,
-		"boolean":  parquetBoolean,
-		"float":    parquetDouble,
-		"string":   parquetString,
-		"datetime": parquetTimestampMicros,
-	},
-	warehouseutils.AzureDatalake: {
-		"int":      parquetInt64,
-		"boolean":  parquetBoolean,
-		"float":    parquetDouble,
-		"string":   parquetString,
-		"datetime": parquetTimestampMicros,
-	},
-	warehouseutils.DELTALAKE: {
-		"int":      parquetInt64,
-		"boolean":  parquetBoolean,
-		"float":    parquetDouble,
-		"string":   parquetString,
-		"datetime": parquetTimestampMicros,
-	},
-	warehouseutils.MicrosoftFabric: lo.Assign(parquetTypesWithText, map[string]string{"json": parquetString}),
+	warehouseutils.RS:              parquetTypesWithText,
+	warehouseutils.S3Datalake:      parquetTypesWithText,
+	warehouseutils.GCSDatalake:     parquetBaseTypes,
+	warehouseutils.AzureDatalake:   parquetBaseTypes,
+	warehouseutils.DELTALAKE:       parquetBaseTypes,
+	warehouseutils.MicrosoftFabric: lo.Assign(parquetTypesWithText, map[string]string{model.JSONDataType: parquetString}),
 }
 
 type parquetWriter struct {
