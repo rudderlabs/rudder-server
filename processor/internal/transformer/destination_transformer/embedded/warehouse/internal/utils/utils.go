@@ -40,6 +40,7 @@ var (
 		whutils.POSTGRES:          model.JSONDataType,
 		whutils.MSSQL:             model.JSONDataType,
 		whutils.AzureSynapse:      model.JSONDataType,
+		whutils.MicrosoftFabric:   model.JSONDataType,
 		whutils.CLICKHOUSE:        model.StringDataType,
 		whutils.S3Datalake:        model.StringDataType,
 		whutils.DELTALAKE:         model.StringDataType,

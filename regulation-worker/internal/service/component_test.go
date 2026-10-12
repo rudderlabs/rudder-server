@@ -320,6 +320,10 @@ func (m *mockTransformerFeaturesService) RouterTransform(destType string) bool {
 	return false
 }
 
+func (m *mockTransformerFeaturesService) SecretPaths(destType string) ([]string, bool) {
+	return nil, true
+}
+
 func (m *mockTransformerFeaturesService) TransformerProxy(destType string) bool {
 	return false
 }

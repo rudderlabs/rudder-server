@@ -22,25 +22,20 @@ const (
 	parquetTimestampMicros = "type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"
 )
 
+// parquetTypesWithText is the Parquet type set used by RS and S3 datalake; Microsoft Fabric extends a copy with json.
+var parquetTypesWithText = map[string]string{
+	"bigint":   parquetInt64,
+	"int":      parquetInt64,
+	"boolean":  parquetBoolean,
+	"float":    parquetDouble,
+	"string":   parquetString,
+	"text":     parquetString,
+	"datetime": parquetTimestampMicros,
+}
+
 var rudderDataTypeToParquetDataType = map[string]map[string]string{
-	warehouseutils.RS: {
-		"bigint":   parquetInt64,
-		"int":      parquetInt64,
-		"boolean":  parquetBoolean,
-		"float":    parquetDouble,
-		"string":   parquetString,
-		"text":     parquetString,
-		"datetime": parquetTimestampMicros,
-	},
-	warehouseutils.S3Datalake: {
-		"bigint":   parquetInt64,
-		"int":      parquetInt64,
-		"boolean":  parquetBoolean,
-		"float":    parquetDouble,
-		"string":   parquetString,
-		"text":     parquetString,
-		"datetime": parquetTimestampMicros,
-	},
+	warehouseutils.RS:         parquetTypesWithText,
+	warehouseutils.S3Datalake: parquetTypesWithText,
 	warehouseutils.GCSDatalake: {
 		"int":      parquetInt64,
 		"boolean":  parquetBoolean,
@@ -62,6 +57,7 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 		"string":   parquetString,
 		"datetime": parquetTimestampMicros,
 	},
+	warehouseutils.MicrosoftFabric: lo.Assign(parquetTypesWithText, map[string]string{"json": parquetString}),
 }
 
 type parquetWriter struct {
@@ -131,7 +127,11 @@ func parquetSchema(schema model.TableSchema, destType string) ([]string, error) 
 
 	var pSchema []string
 	for _, col := range sortedTableColumns(schema) {
-		pType := fmt.Sprintf("name=%s, %s", warehouseutils.ToProviderCase(destType, col), whTypeMap[schema[col]])
+		parquetType, ok := whTypeMap[schema[col]]
+		if !ok {
+			return nil, fmt.Errorf("unsupported data type %q for parquet load files in warehouse %q", schema[col], destType)
+		}
+		pType := fmt.Sprintf("name=%s, %s", warehouseutils.ToProviderCase(destType, col), parquetType)
 		pSchema = append(pSchema, pType)
 	}
 	return pSchema, nil

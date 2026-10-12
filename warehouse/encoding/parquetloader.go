@@ -71,7 +71,7 @@ func parquetValue(val any, colType string) (any, error) {
 		return getFloat64(val)
 	case model.DateTimeDataType:
 		return getUnixTimestamp(val)
-	case model.StringDataType, model.TextDataType:
+	case model.StringDataType, model.TextDataType, model.JSONDataType:
 		return getString(val)
 	}
 	return nil, fmt.Errorf("unsupported type for parquet: %s", colType)

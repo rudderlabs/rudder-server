@@ -26,17 +26,18 @@ const (
 	BotFlaggedStatus  = "bot_flagged"
 	BotDetectedStatus = "bot_detected"
 
-	// Module names
+	// Module names, in the order the pipeline reports them
+	GATEWAY_INGESTED       = "gw_ingested"
+	USER_SUPPRESSION       = "user_suppression"
 	BOT_MANAGEMENT         = "bot_management"
 	EVENT_BLOCKING         = "event_blocking"
-	USER_SUPPRESSION       = "user_suppression"
 	DEDUP                  = "dedup"
 	GATEWAY                = "gateway"
-	GATEWAY_INGESTED       = "gw_ingested"
-	DESTINATION_ENTER      = "destination_enter"
-	DESTINATION_FILTER     = "destination_filter"
 	SOURCE_HYDRATION       = "source_hydration"
 	TRACKINGPLAN_VALIDATOR = "tracking_plan_validator"
+	SOURCE_OUT             = "source_out"
+	DESTINATION_ENTER      = "destination_enter"
+	DESTINATION_FILTER     = "destination_filter"
 	USER_TRANSFORMER       = "user_transformer"
 	EVENT_FILTER           = "event_filter"
 	DEST_TRANSFORMER       = "dest_transformer"

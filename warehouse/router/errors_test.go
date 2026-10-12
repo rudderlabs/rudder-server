@@ -72,6 +72,22 @@ func TestErrorHandler_MatchUploadJobErrorType(t *testing.T) {
 			},
 
 			{
+				"Microsoft Fabric service-principal bootstrap", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"spn_token_bootstrap: token request failed\"]}}"), model.PermissionError,
+			},
+			{
+				"Microsoft Fabric expired client secret", warehouseutils.MicrosoftFabric, errors.New("{\"fetching_remote_schema_failed\":{\"attempt\":1,\"errors\":[\"pinging Microsoft Fabric: ClientSecretCredential authentication failed: AADSTS7000222: The provided client secret keys are expired\"]}}"), model.PermissionError,
+			},
+			{
+				"Microsoft Fabric missing table", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"mssql: Invalid object name 'schema.missing'\"]}}"), model.ResourceNotFoundError,
+			},
+			{
+				"Microsoft Fabric Parquet type mismatch", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"Column 'rating' of type 'DECIMAL(28, 10)' is not compatible with external data type 'Parquet physical type: DOUBLE'\"]}}"), model.AlterColumnError,
+			},
+			{
+				"Microsoft Fabric deadlock", warehouseutils.MicrosoftFabric, errors.New("{\"exporting_data_failed\":{\"attempt\":1,\"errors\":[\"mssql: Transaction (Process ID 72) was deadlocked on lock resources with another process\"]}}"), model.ConcurrentQueriesError,
+			},
+
+			{
 				"Postgres no such host", warehouseutils.POSTGRES, errors.New("{\"fetching_remote_schema_failed\":{\"attempt\":2,\"errors\":[\"dial tcp: lookup *** on ***: no such host\"]}}"), model.ResourceNotFoundError,
 			},
 			{

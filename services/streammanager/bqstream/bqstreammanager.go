@@ -12,6 +12,7 @@ import (
 	"cloud.google.com/go/bigquery"
 	"github.com/tidwall/gjson"
 	gbq "google.golang.org/api/bigquery/v2"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -146,13 +147,24 @@ func (producer *BQStreamProducer) Produce(jsonData json.RawMessage, _ any) (stat
 	defer cancel()
 	err := client.Put(ctx, dsId, tblId, genericRecs)
 	if err != nil {
-		if ctx.Err() != nil && errors.Is(err, context.DeadlineExceeded) {
-			return http.StatusGatewayTimeout, "Failure", createErr(err, "timeout in data insertion").Error()
-		}
-		return http.StatusBadRequest, "Failure", createErr(err, "error in data insertion").Error()
+		statusCode, responseMessage = handleInsertError(err)
+		return statusCode, "Failure", responseMessage
 	}
 
 	return http.StatusOK, "Success", `[BQStream] Successful insertion of data`
+}
+
+func handleInsertError(err error) (statusCode int, responseMessage string) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return http.StatusGatewayTimeout, createErr(err, "timeout in data insertion").Error()
+	}
+	if _, ok := errors.AsType[bigquery.PutMultiError](err); ok {
+		return http.StatusBadRequest, createErr(err, "error in data insertion").Error()
+	}
+	if serviceErr, ok := errors.AsType[*googleapi.Error](err); ok {
+		return serviceErr.Code, createErr(err, "error in data insertion").Error()
+	}
+	return http.StatusInternalServerError, createErr(err, "error in data insertion").Error()
 }
 
 func (producer *BQStreamProducer) Close() error {

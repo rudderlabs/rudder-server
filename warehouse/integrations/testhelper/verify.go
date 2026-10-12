@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -49,17 +50,14 @@ func verifyEventsInStagingFiles(t testing.TB, testConfig *TestConfig) {
 	var count sql.NullInt64
 	expectedCount := int64(testConfig.StagingFilesEventsMap["wh_staging_files"])
 
-	operation := func() bool {
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
 		err = testConfig.JobsDB.QueryRow(sqlStatement,
 			testConfig.WorkspaceID, testConfig.SourceID, testConfig.DestinationID,
 			testConfig.TimestampBeforeSendingEvents,
 		).Scan(&count)
-		return err == nil && count.Int64 == expectedCount
-	}
-	require.Eventuallyf(t, operation, WaitFor2Minute, DefaultQueryFrequency,
-		"Expected staging files events count is %d, got %d: %v",
-		expectedCount, count, err,
-	)
+		assert.NoErrorf(c, err, "querying staging files events count; got %d", count.Int64)
+		assert.Equalf(c, expectedCount, count.Int64, "Expected staging files events count is %d, got %d: %v", expectedCount, count.Int64, err)
+	}, WaitFor2Minute, DefaultQueryFrequency)
 
 	t.Logf("Completed verifying events in staging files")
 }
@@ -96,17 +94,14 @@ func verifyEventsInTableUploads(t testing.TB, testConfig *TestConfig) {
 		var err error
 		var count sql.NullInt64
 		expectedCount := int64(testConfig.TableUploadsEventsMap[table])
-		operation := func() bool {
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
 			err = testConfig.JobsDB.QueryRow(sqlStatement,
 				testConfig.WorkspaceID, testConfig.SourceID, testConfig.DestinationID,
 				testConfig.TimestampBeforeSendingEvents, whutils.ToProviderCase(testConfig.DestinationType, table),
 			).Scan(&count)
-			return err == nil && count.Int64 == expectedCount
-		}
-		require.Eventuallyf(t, operation, WaitFor10Minute, DefaultQueryFrequency,
-			"Expected table uploads events count for table %q is %d, got %d: %v",
-			table, expectedCount, count, err,
-		)
+			assert.NoErrorf(c, err, "querying table uploads events count for table %q; got %d", table, count.Int64)
+			assert.Equalf(c, expectedCount, count.Int64, "Expected table uploads events count for table %q is %d, got %d: %v", table, expectedCount, count.Int64, err)
+		}, WaitFor10Minute, DefaultQueryFrequency)
 	}
 
 	t.Logf("Completed verifying events in table uploads")
@@ -146,16 +141,12 @@ func verifyEventsInWareHouse(t testing.TB, testConfig *TestConfig) {
 
 		var err error
 		var count int64
-		require.Eventuallyf(t,
-			func() bool {
-				count, err = queryCount(testConfig.Client, sqlStatement)
-				return err == nil && count == expectedCount
-			}, WaitFor10Minute, DefaultWarehouseQueryFrequency,
-			"Expected %d events in WH (schema: %s, table: %s, userID: %s), got %d: %v",
-			expectedCount,
-			testConfig.Schema, whutils.ToProviderCase(testConfig.DestinationType, table), testConfig.UserID,
-			count, err,
-		)
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
+			count, err = queryCount(testConfig.Client, sqlStatement)
+			assert.NoErrorf(c, err, "querying warehouse events count for table %q; got %d", table, count)
+			assert.Equalf(c, expectedCount, count, "Expected %d events in WH (schema: %s, table: %s, userID: %s), got %d: %v",
+				expectedCount, testConfig.Schema, whutils.ToProviderCase(testConfig.DestinationType, table), testConfig.UserID, count, err)
+		}, WaitFor10Minute, DefaultWarehouseQueryFrequency)
 	}
 
 	t.Logf("Completed verifying events in warehouse")
@@ -223,9 +214,11 @@ func verifySourceJob(t testing.TB, tc *TestConfig) {
 	)
 	url = fmt.Sprintf("http://localhost:%d/internal/v1/%s", tc.HTTPPort, queryParams)
 
-	operation := func() bool {
+	var lastStatus string
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
 		if req, err = http.NewRequest(http.MethodGet, url, strings.NewReader("")); err != nil {
-			return false
+			assert.NoErrorf(c, err, "creating source job status request")
+			return
 		}
 
 		req.Header.Add("Content-Type", "application/json")
@@ -234,28 +227,26 @@ func verifySourceJob(t testing.TB, tc *TestConfig) {
 		)))
 
 		if res, err = http.DefaultClient.Do(req); err != nil {
-			return false
+			assert.NoErrorf(c, err, "requesting source job status")
+			return
 		}
 		defer func() { httputil.CloseResponse(res) }()
 
 		if res.StatusCode != http.StatusOK {
-			return false
+			assert.Equalf(c, http.StatusOK, res.StatusCode, "source job status request returned %s", res.Status)
+			return
 		}
 
 		var jr jobResponse
 		if err = jsonrs.NewDecoder(res.Body).Decode(&jr); err != nil {
-			return false
+			assert.NoErrorf(c, err, "decoding source job status response")
+			return
 		}
-		return jr.Status == model.SourceJobStatusSucceeded.String()
-	}
-	require.Eventuallyf(t, operation, WaitFor10Minute, SourceJobQueryFrequency,
-		"Failed to get source job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s: %v",
-		tc.JobRunID,
-		tc.TaskRunID,
-		tc.SourceID,
-		tc.DestinationID,
-		err,
-	)
+		lastStatus = jr.Status
+		assert.Equalf(c, model.SourceJobStatusSucceeded.String(), lastStatus,
+			"Failed to get source job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s; got status %q: %v",
+			tc.JobRunID, tc.TaskRunID, tc.SourceID, tc.DestinationID, lastStatus, err)
+	}, WaitFor10Minute, SourceJobQueryFrequency)
 
 	t.Logf("Completed verifying source job")
 }

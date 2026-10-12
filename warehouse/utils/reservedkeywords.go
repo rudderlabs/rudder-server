@@ -2246,4 +2246,5 @@ var reservedKeywords = map[string]map[string]bool{
 var ReservedKeywords = lo.Assign(reservedKeywords, map[string]map[string]bool{
 	"SNOWPIPE_STREAMING":  reservedKeywords["SNOWFLAKE"],
 	"BQSTREAM_ALL_EVENTS": reservedKeywords["BQ"],
+	"MICROSOFT_FABRIC":    reservedKeywords["AZURE_SYNAPSE"],
 })

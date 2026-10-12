@@ -723,6 +723,19 @@ func TestObjectStorageType(t *testing.T) {
 			storageType: "AZURE_BLOB",
 		},
 		{
+			destType: "MICROSOFT_FABRIC",
+			config: map[string]any{
+				"bucketProvider": "S3",
+			},
+			storageType: "ONELAKE",
+		},
+		{
+			destType:         "MICROSOFT_FABRIC",
+			config:           map[string]any{},
+			useRudderStorage: true,
+			storageType:      "ONELAKE",
+		},
+		{
 			destType:    "SNOWFLAKE",
 			config:      map[string]any{},
 			storageType: "S3",
@@ -942,6 +955,10 @@ func TestGetLoadFileFormat(t *testing.T) {
 			whType:   AzureDatalake,
 			expected: "parquet",
 		},
+		{
+			whType:   MicrosoftFabric,
+			expected: "parquet",
+		},
 	}
 	for _, input := range inputs {
 		got := GetLoadFileFormat(GetLoadFileType(input.whType))
@@ -996,6 +1013,10 @@ func TestGetLoadFileType(t *testing.T) {
 		},
 		{
 			whType:   AzureDatalake,
+			expected: "parquet",
+		},
+		{
+			whType:   MicrosoftFabric,
 			expected: "parquet",
 		},
 	}

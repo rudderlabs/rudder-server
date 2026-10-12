@@ -33,6 +33,10 @@ func init() {
 	// SnowpipeStreaming has the same reserved keywords as SNOWFLAKE, so we can use the same map
 	reservedTablesColumns[whutils.SnowpipeStreaming] = reservedTablesColumns[whutils.SNOWFLAKE]
 	reservedNamespaces[whutils.SnowpipeStreaming] = reservedNamespaces[whutils.SNOWFLAKE]
+
+	// Microsoft Fabric Warehouse follows the T-SQL reserved-word surface used by Azure Synapse.
+	reservedTablesColumns[whutils.MicrosoftFabric] = reservedTablesColumns[whutils.AzureSynapse]
+	reservedNamespaces[whutils.MicrosoftFabric] = reservedNamespaces[whutils.AzureSynapse]
 }
 
 func load(file embed.FS, fileName string) map[string]map[string]struct{} {

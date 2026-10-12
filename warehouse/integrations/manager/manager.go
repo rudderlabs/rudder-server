@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
+	microsoftfabric "github.com/rudderlabs/rudder-server/warehouse/integrations/microsoft-fabric"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
@@ -83,6 +84,8 @@ func newManager(destType string, conf *config.Config, logger logger.Logger, stat
 		return mssql.New(conf, logger, stats), nil
 	case warehouseutils.AzureSynapse:
 		return azuresynapse.New(conf, logger, stats), nil
+	case warehouseutils.MicrosoftFabric:
+		return microsoftfabric.New(conf, logger, stats), nil
 	case warehouseutils.S3Datalake, warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
 		return datalake.New(conf, logger), nil
 	case warehouseutils.DELTALAKE:
@@ -108,6 +111,8 @@ func NewWarehouseOperations(destType string, conf *config.Config, logger logger.
 		return mssql.New(conf, logger, stats), nil
 	case warehouseutils.AzureSynapse:
 		return azuresynapse.New(conf, logger, stats), nil
+	case warehouseutils.MicrosoftFabric:
+		return microsoftfabric.New(conf, logger, stats), nil
 	case warehouseutils.S3Datalake, warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
 		return datalake.New(conf, logger), nil
 	case warehouseutils.DELTALAKE:
