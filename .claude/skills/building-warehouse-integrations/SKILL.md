@@ -46,7 +46,6 @@ A spec or plan for a warehouse integration is held to this skill too:
 
 - List every repo the contract puts work in (integrations-config for the destination definition, sqlconnect-go for the driver, rudder-go-kit for the file manager) as an implementation target in the front matter. Never write a constraint that keeps work out of the repo that owns the layer.
 - Write out what the integration will execute: the staging-table and COPY statements, the MERGE with its `ON` key and dedup, the users latest-traits statement, and the full type map, including the load-file writer's entries for every type (`json` too).
-- Once the code has merged, the merged code at its pinned versions is the source for the spec, not the earlier draft or PR descriptions. A rule the code currently breaks stays in the spec, listed as a known gap.
 
 ## Scope
 
