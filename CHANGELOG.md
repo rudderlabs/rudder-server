@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.90.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.89.0...v1.90.0-rc.1) (2026-10-12)
+
+
+### Features
+
+* **processor:** add source_out reporting metric ([#7435](https://github.com/rudderlabs/rudder-server/issues/7435)) ([909fba9](https://github.com/rudderlabs/rudder-server/commit/909fba94eee20feaa700b5c9b93d1f11ff555934))
+* **processor:** allow disabling event schemas v2 per source ([#7429](https://github.com/rudderlabs/rudder-server/issues/7429)) ([a8c12b2](https://github.com/rudderlabs/rudder-server/commit/a8c12b2b04639e8cdc79034659ca47fbfd471263))
+* **processor:** report dest_transformer diff rows for multiplexing destination transformations ([#7446](https://github.com/rudderlabs/rudder-server/issues/7446)) ([cd95c32](https://github.com/rudderlabs/rudder-server/commit/cd95c328e0d01c08cc259bdadaf6cd3062427a4c))
+* **processor:** report dest_transformer succeeded for destinations without a destination transformation ([#7445](https://github.com/rudderlabs/rudder-server/issues/7445)) ([21f7e41](https://github.com/rudderlabs/rudder-server/commit/21f7e410b4f57fdabb522086c25c6b6d72575ddc))
+* **processor:** report user_transformer succeeded for destinations without a user transformation ([#7440](https://github.com/rudderlabs/rudder-server/issues/7440)) ([f424257](https://github.com/rudderlabs/rudder-server/commit/f424257952fb5d599f0c4ae8aee5ca2dfb466ff7))
+* **router:** mask live events destination credentials ([#7460](https://github.com/rudderlabs/rudder-server/issues/7460)) ([5fa5fe2](https://github.com/rudderlabs/rudder-server/commit/5fa5fe24f2e0ac4214111b75e4ec2b3f1c84a478))
+* **warehouse:** add Microsoft Fabric destination ([#7441](https://github.com/rudderlabs/rudder-server/issues/7441)) ([74940c2](https://github.com/rudderlabs/rudder-server/commit/74940c24ae5e2f35ca939f2c18e17fb00c2c82fa))
+
+
+### Bug Fixes
+
+* **batchrouter:** do not abort warehouse jobs on a zero failure timestamp ([#7426](https://github.com/rudderlabs/rudder-server/issues/7426)) ([506f6d5](https://github.com/rudderlabs/rudder-server/commit/506f6d559e86b547d8ed27b6c63a31ae591f1f10))
+* **batchrouter:** recover snowpipe streaming channels for tables dropped externally ([#7434](https://github.com/rudderlabs/rudder-server/issues/7434)) ([93cd81d](https://github.com/rudderlabs/rudder-server/commit/93cd81d96c891742d093bdb5e443743fc9329e9a))
+* **destination:** encode Lytics bulk upload URL values ([#7433](https://github.com/rudderlabs/rudder-server/issues/7433)) ([08e6937](https://github.com/rudderlabs/rudder-server/commit/08e6937496dd7af2d91d8ffa88659d4875de08ba))
+* **destination:** retry bqstream transport failures ([#7464](https://github.com/rudderlabs/rudder-server/issues/7464)) ([cd3dc3e](https://github.com/rudderlabs/rudder-server/commit/cd3dc3e74e8a37f6422809f318db7fde0768c771))
+* **warehouse:** cap deltalake validation schema describes ([#7444](https://github.com/rudderlabs/rudder-server/issues/7444)) ([d119779](https://github.com/rudderlabs/rudder-server/commit/d119779487da0da2f731d48b81f43eb71065a1e5))
+* **warehouse:** keep snowflake copy credentials out of logs ([#7442](https://github.com/rudderlabs/rudder-server/issues/7442)) ([f91747b](https://github.com/rudderlabs/rudder-server/commit/f91747b91312cfc463222fb076cdba9a70e72f83))
+* **warehouse:** set explicit lineSep for deltalake csv copy ([#7455](https://github.com/rudderlabs/rudder-server/issues/7455)) ([cc22d18](https://github.com/rudderlabs/rudder-server/commit/cc22d18c43c2ad2d4f1ea23779ff2f662b12d854))
+
+
+### Miscellaneous
+
+* migrate self-hosted arm64 docker build runners to gha-runner-scale-set ([#7425](https://github.com/rudderlabs/rudder-server/issues/7425)) ([5cdffde](https://github.com/rudderlabs/rudder-server/commit/5cdffdea782c193803973e80e7e1bfeeb6841be6))
+* **processor:** retire the destination-filter reorder, dedup and gw_ingested reporting flags ([#7450](https://github.com/rudderlabs/rudder-server/issues/7450)) ([1040511](https://github.com/rudderlabs/rudder-server/commit/1040511bef57ba60d6da3ca1b400685b2f1096f0))
+* pull openapi-generator through the ECR pull-through cache ([#7449](https://github.com/rudderlabs/rudder-server/issues/7449)) ([6e9f920](https://github.com/rudderlabs/rudder-server/commit/6e9f92093d5aa121a3cf3c966dfe0250dea00d3a))
+
 ## [1.89.2](https://github.com/rudderlabs/rudder-server/compare/v1.89.1...v1.89.2) (2026-10-07)
 
 
