@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -249,9 +252,108 @@ func TestProduceWithMissingTableId(t *testing.T) {
 		Put(gomock.Any(), "bigquery_batching", "", genericRecs).
 		Return(errors.New("invalid data"))
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
-	assert.Equal(t, 400, statusCode)
+	assert.Equal(t, 500, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Contains(t, respMsg, "error in data insertion")
+}
+
+func TestProduceInsertErrors(t *testing.T) {
+	rowError := bigquery.PutMultiError{
+		{
+			RowIndex: 2,
+			Errors: bigquery.MultiError{
+				bigquery.Error{Reason: "invalidValue", Location: "user_id", Message: "expected integer"},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name            string
+		err             error
+		expectedStatus  int
+		expectedMessage string
+	}{
+		{
+			name:            "row rejection",
+			err:             rowError,
+			expectedStatus:  400,
+			expectedMessage: "expected integer",
+		},
+		{
+			name:            "wrapped row rejection",
+			err:             fmt.Errorf("insert failed: %w", rowError),
+			expectedStatus:  400,
+			expectedMessage: "invalidValue",
+		},
+		{
+			name:            "forbidden API response",
+			err:             &googleapi.Error{Code: 403, Message: "access denied"},
+			expectedStatus:  403,
+			expectedMessage: "access denied",
+		},
+		{
+			name:            "wrapped forbidden API response",
+			err:             fmt.Errorf("insert failed: %w", &googleapi.Error{Code: 403, Message: "access denied"}),
+			expectedStatus:  403,
+			expectedMessage: "access denied",
+		},
+		{
+			name:            "rate limited API response",
+			err:             &googleapi.Error{Code: 429, Message: "rate limited"},
+			expectedStatus:  429,
+			expectedMessage: "rate limited",
+		},
+		{
+			name:            "deadline exceeded",
+			err:             context.DeadlineExceeded,
+			expectedStatus:  504,
+			expectedMessage: "timeout in data insertion",
+		},
+		{
+			name:            "wrapped deadline exceeded",
+			err:             fmt.Errorf("insert failed: %w", context.DeadlineExceeded),
+			expectedStatus:  504,
+			expectedMessage: "timeout in data insertion",
+		},
+		{
+			name:            "connection reset",
+			err:             syscall.ECONNRESET,
+			expectedStatus:  500,
+			expectedMessage: "connection reset by peer",
+		},
+		{
+			name:            "network operation connection reset",
+			err:             &net.OpError{Op: "write", Net: "tcp", Err: syscall.ECONNRESET},
+			expectedStatus:  500,
+			expectedMessage: "connection reset by peer",
+		},
+		{
+			name:            "HTTP2 client connection closed",
+			err:             errors.New("http2: client connection force closed via ClientConn.Close"),
+			expectedStatus:  500,
+			expectedMessage: "ClientConn.Close",
+		},
+	}
+
+	payload := json.RawMessage(`{"datasetId":"bigquery_batching","tableId":"Streaming","properties":{"id":"25"}}`)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mockClient := mock_bqstream.NewMockBQClient(ctrl)
+			producer := &bqstream.BQStreamProducer{
+				Client: mockClient,
+				Opts:   common.Opts{Timeout: time.Second},
+			}
+			mockClient.EXPECT().Put(gomock.Any(), "bigquery_batching", "Streaming", gomock.Any()).Return(tc.err)
+
+			statusCode, statusMsg, respMsg := producer.Produce(payload, nil)
+
+			assert.Equal(t, tc.expectedStatus, statusCode)
+			assert.Equal(t, "Failure", statusMsg)
+			assert.Contains(t, respMsg, "[BQStream] error ::")
+			assert.Contains(t, respMsg, tc.expectedMessage)
+		})
+	}
 }
 
 func TestProduceWithArrayOfRecords(t *testing.T) {
