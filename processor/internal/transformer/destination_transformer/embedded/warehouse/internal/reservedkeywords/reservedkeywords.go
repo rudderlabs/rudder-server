@@ -26,17 +26,10 @@ func init() {
 	reservedTablesColumns = load(tablesColumnsFile, "tablescolumns.json")
 	reservedNamespaces = load(namespacesFile, "namespaces.json")
 
-	// BQStreamAllEvents has the same reserved keywords as BQ, so we can use the same map
-	reservedTablesColumns[whutils.BQStreamAllEvents] = reservedTablesColumns[whutils.BQ]
-	reservedNamespaces[whutils.BQStreamAllEvents] = reservedNamespaces[whutils.BQ]
-
-	// SnowpipeStreaming has the same reserved keywords as SNOWFLAKE, so we can use the same map
-	reservedTablesColumns[whutils.SnowpipeStreaming] = reservedTablesColumns[whutils.SNOWFLAKE]
-	reservedNamespaces[whutils.SnowpipeStreaming] = reservedNamespaces[whutils.SNOWFLAKE]
-
-	// Microsoft Fabric Warehouse follows the T-SQL reserved-word surface used by Azure Synapse.
-	reservedTablesColumns[whutils.MicrosoftFabric] = reservedTablesColumns[whutils.AzureSynapse]
-	reservedNamespaces[whutils.MicrosoftFabric] = reservedNamespaces[whutils.AzureSynapse]
+	for alias, base := range whutils.ReservedKeywordsAliases {
+		reservedTablesColumns[alias] = reservedTablesColumns[base]
+		reservedNamespaces[alias] = reservedNamespaces[base]
+	}
 }
 
 func load(file embed.FS, fileName string) map[string]map[string]struct{} {

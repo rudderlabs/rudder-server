@@ -2243,8 +2243,13 @@ var reservedKeywords = map[string]map[string]bool{
 	"CLICKHOUSE": {},
 }
 
-var ReservedKeywords = lo.Assign(reservedKeywords, map[string]map[string]bool{
-	"SNOWPIPE_STREAMING":  reservedKeywords["SNOWFLAKE"],
-	"BQSTREAM_ALL_EVENTS": reservedKeywords["BQ"],
-	"MICROSOFT_FABRIC":    reservedKeywords["AZURE_SYNAPSE"],
-})
+// ReservedKeywordsAliases maps a destination type to the destination type whose reserved keywords it shares.
+var ReservedKeywordsAliases = map[string]string{
+	SnowpipeStreaming: SNOWFLAKE,
+	BQStreamAllEvents: BQ,
+	MicrosoftFabric:   AzureSynapse, // Fabric Warehouse follows the T-SQL reserved-word surface used by Azure Synapse.
+}
+
+var ReservedKeywords = lo.Assign(reservedKeywords, lo.MapValues(ReservedKeywordsAliases, func(base, _ string) map[string]bool {
+	return reservedKeywords[base]
+}))

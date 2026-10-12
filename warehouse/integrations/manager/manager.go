@@ -61,37 +61,11 @@ type WarehouseOperations interface {
 
 // New is a Factory function that returns a Manager of a given destination-type
 func New(destType string, conf *config.Config, logger logger.Logger, stats stats.Stats) (Manager, error) {
-	m, err := newManager(destType, conf, logger, stats)
+	m, err := NewWarehouseOperations(destType, conf, logger, stats)
 	if err != nil {
 		return nil, fmt.Errorf("creating warehouse manager: %w", err)
 	}
 	return newStatsManager(m, stats), nil
-}
-
-func newManager(destType string, conf *config.Config, logger logger.Logger, stats stats.Stats) (Manager, error) {
-	switch destType {
-	case warehouseutils.RS:
-		return redshift.New(conf, logger, stats), nil
-	case warehouseutils.BQ, warehouseutils.BQStreamAllEvents:
-		return bigquery.New(conf, logger), nil
-	case warehouseutils.SNOWFLAKE, warehouseutils.SnowpipeStreaming:
-		return snowflake.New(conf, logger, stats), nil
-	case warehouseutils.POSTGRES:
-		return postgres.New(conf, logger, stats), nil
-	case warehouseutils.CLICKHOUSE:
-		return clickhouse.New(conf, logger, stats), nil
-	case warehouseutils.MSSQL:
-		return mssql.New(conf, logger, stats), nil
-	case warehouseutils.AzureSynapse:
-		return azuresynapse.New(conf, logger, stats), nil
-	case warehouseutils.MicrosoftFabric:
-		return microsoftfabric.New(conf, logger, stats), nil
-	case warehouseutils.S3Datalake, warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
-		return datalake.New(conf, logger), nil
-	case warehouseutils.DELTALAKE:
-		return deltalake.New(conf, logger, stats), nil
-	}
-	return nil, fmt.Errorf("provider of type %s is not configured for WarehouseManager", destType)
 }
 
 // NewWarehouseOperations is a Factory function that returns a WarehouseOperations of a given destination-type
