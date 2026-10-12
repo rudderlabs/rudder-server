@@ -28,6 +28,9 @@ type FeaturesService interface {
 	Regulations() []string
 	SourceTransformerVersion() string
 	RouterTransform(destType string) bool
+	// SecretPaths returns the paths to mask for destType; ok is false when the transformer has no
+	// entry for it, in which case everything must be masked.
+	SecretPaths(destType string) (paths []string, ok bool)
 	// TransformerProxy reports whether the transformer declares destType deliverable through the
 	// transformer proxy. Distinct from TransformerProxyVersion, which reports the proxy protocol
 	// the transformer speaks.
@@ -97,6 +100,10 @@ func (*noopService) Wait() chan struct{} {
 
 func (*noopService) RouterTransform(_ string) bool {
 	return false
+}
+
+func (*noopService) SecretPaths(_ string) ([]string, bool) {
+	return nil, true
 }
 
 func (*noopService) TransformerProxy(_ string) bool {

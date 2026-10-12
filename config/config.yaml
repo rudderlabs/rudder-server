@@ -90,6 +90,7 @@ JobsDB:
     enableWriterQueue: false
     maxOpenConnections: 64
 Router:
+  disableEventDeliveryUploadMasking: true
   jobQueryBatchSize: 10000
   updateStatusBatchSize: 1000
   readSleep: 1000ms
