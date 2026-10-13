@@ -89,21 +89,20 @@ var _ = Describe("Delivery payload masking", func() {
 
 	It("fails closed for a non-empty object array when listed paths do not match", func() {
 		payload := json.RawMessage(`[{ "endpoint": "visible", "headers": { "Authorization": "secret" } }]`)
-		masked, maskErr, listedPathFound := maskListedPathsWithResult(payload, []string{"params.missing"})
+		masked, maskErr := maskListedPaths(payload, []string{"params.missing"})
 
 		Expect(maskErr).To(BeTrue())
-		Expect(listedPathFound).To(BeFalse())
 		Expect(masked).To(MatchJSON(`{"masked":"******"}`))
 		Expect(string(masked)).ToNot(ContainSubstring("Authorization"))
 		Expect(string(masked)).ToNot(ContainSubstring("secret"))
 	})
 
 	It("preserves an empty array as a successful no-op", func() {
-		masked, maskErr, listedPathFound := maskListedPathsWithResult(json.RawMessage(`[]`), []string{"headers.Authorization"})
+		payload := json.RawMessage(`[ ]`)
+		masked, maskErr := maskListedPaths(payload, []string{"headers.Authorization"})
 
 		Expect(maskErr).To(BeFalse())
-		Expect(listedPathFound).To(BeFalse())
-		Expect(masked).To(MatchJSON(`[]`))
+		Expect(masked).To(Equal(payload))
 	})
 
 	It("preserves bytes for an empty listed-path result", func() {
