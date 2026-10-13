@@ -610,6 +610,7 @@ func runRudderServer(t testing.TB, ctx context.Context, cancel context.CancelFun
 	t.Setenv(configKeyToEnv("DB.name"), postgresContainer.Database)
 	t.Setenv(configKeyToEnv("DB.password"), postgresContainer.Password)
 	t.Setenv(configKeyToEnv("Warehouse.mode"), "off")
+	t.Setenv(configKeyToEnv("JobsDB.gw.pendingEvents.enabled"), "true")
 	t.Setenv(configKeyToEnv("DestinationDebugger.disableEventDeliveryStatusUploads"), "true")
 	t.Setenv(configKeyToEnv("SourceDebugger.disableEventUploads"), "true")
 	t.Setenv(configKeyToEnv("TransformationDebugger.disableTransformationStatusUploads"), "true")
