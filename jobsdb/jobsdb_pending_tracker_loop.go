@@ -189,17 +189,14 @@ func (t *pendingEventsTracker) doTransition(ctx context.Context, ranges dataSetR
 		t.afterCount()
 	}
 
-	t.mu.RLock()
-	registry := t.registry
-	t.mu.RUnlock()
 	if !live { // the live share stays until the transition that reaches the last sealed dataset replaces it
 		for key, count := range counts {
-			t.add(registry, key, count)
+			t.add(key, count)
 		}
 		return nil
 	}
 	for _, key := range lo.UniqKeys(counts, liveCounts, t.liveInGauge) {
-		t.add(registry, key, counts[key]+liveCounts[key]-t.liveInGauge[key])
+		t.add(key, counts[key]+liveCounts[key]-t.liveInGauge[key])
 	}
 	t.liveInGauge, t.liveFingerprint = liveCounts, fp
 	return nil
@@ -216,14 +213,20 @@ func (t *pendingEventsTracker) readSnapshot(ctx context.Context, tx *sql.Tx) (pg
 	return parsePgSnapshot(text)
 }
 
-// reset discards the tracked state after a failed transition. The gauges are discarded, not set to
-// zero: zero would report that nothing is pending, which the tracker cannot know. While the boundary
-// is 0 every listener sees a live job and does nothing, so the new gauges collect no subtractions.
+// reset discards the tracked state after a failed transition and sets every gauge to zero, so that the
+// recount starts from nothing. Nothing is exported until the recount completes, so the exported series
+// keep their last values meanwhile, and a key that drained exports zero afterwards. While the boundary
+// is 0 every listener sees a live job and does nothing, so the gauges collect no subtractions.
 func (t *pendingEventsTracker) reset() {
 	t.mu.Lock()
 	t.boundary = 0
 	t.transitions = nil
-	t.registry = metric.NewRegistry()
+	t.registry.Range(func(_, value any) bool {
+		if g, ok := value.(metric.Gauge); ok {
+			g.Set(0)
+		}
+		return true
+	})
 	t.mu.Unlock()
 	t.liveInGauge, t.liveFingerprint = nil, nil
 	t.stats.reset.Increment()
@@ -261,11 +264,8 @@ func (t *pendingEventsTracker) poll(ctx context.Context) (bool, error) {
 	if err := t.countInto(ctx, db, last, boundary, liveCounts); err != nil {
 		return false, err
 	}
-	t.mu.RLock()
-	registry := t.registry
-	t.mu.RUnlock()
 	for _, key := range lo.UniqKeys(liveCounts, t.liveInGauge) {
-		t.add(registry, key, liveCounts[key]-t.liveInGauge[key])
+		t.add(key, liveCounts[key]-t.liveInGauge[key])
 	}
 	t.liveInGauge, t.liveFingerprint = liveCounts, fp
 	return false, nil
@@ -276,10 +276,7 @@ func (t *pendingEventsTracker) export() {
 	if t.liveFingerprint == nil {
 		return
 	}
-	t.mu.RLock()
-	registry := t.registry
-	t.mu.RUnlock()
-	registry.Range(func(key, value any) bool {
+	t.registry.Range(func(key, value any) bool {
 		m := key.(metric.Measurement)
 		if g, ok := value.(metric.Gauge); ok {
 			t.h.stats.NewTaggedStat(m.GetName(), stats.GaugeType, m.GetTags()).Gauge(g.Value())

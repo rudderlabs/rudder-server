@@ -69,7 +69,7 @@ func (t *pendingEventsTracker) subtract(xid uint64, statuses []*JobStatusT) {
 		}]--
 	}
 	for key, delta := range deltas {
-		t.add(t.registry, key, delta)
+		t.add(key, delta)
 	}
 }
 

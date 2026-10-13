@@ -483,6 +483,28 @@ func TestPendingTracker(t *testing.T) {
 		require.EqualValues(t, 13, env.tracker.currentBoundary())
 	})
 
+	t.Run("a key that drains during a reset exports zero after the recount", func(t *testing.T) {
+		env := newPendingTrackerEnv(t, false)
+		env.store("A", 8)
+		env.store("B", 4)
+		env.iterate() // single dataset: A 8, B 4, exported
+		require.EqualValues(t, 4, env.gauge("B", ""))
+		env.rotate()
+		env.store("A", 1)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		env.tracker.afterSnapshot = cancel // the boundary has moved, then the count fails: reset
+		require.Error(t, env.tracker.iterate(ctx))
+		env.tracker.afterSnapshot = nil
+		require.EqualValues(t, 4, env.gauge("B", ""), "nothing is exported until the recount completes")
+
+		env.succeed(env.unprocessed("B"), "") // B drains while the tracker has no counts
+		env.iterate()                         // the recount: B has no pending jobs, so it returns no row for B
+		require.EqualValues(t, 9, env.gauge("A", ""))
+		require.EqualValues(t, 0, env.gauge("B", ""), "an exported series must not keep its value from before the reset")
+		require.EqualValues(t, 9, env.gaugeAll(""))
+	})
+
 	t.Run("the catch-up counts up to maxDSPerTransition sealed datasets per transition", func(t *testing.T) {
 		env := newPendingTrackerEnv(t, false, maxDSPerTransition(2))
 		for range 3 { // ds_1: job ids 1-12, ds_2: 13-24, ds_3: 25-36

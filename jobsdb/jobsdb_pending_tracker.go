@@ -68,12 +68,13 @@ type pendingEventsTracker struct {
 		maxDSPerTransition config.ValueLoader[int]           // maximum number of sealed datasets that one transition counts
 	}
 
-	// mu protects boundary, transitions and the registry pointer. Listeners take it for reading, the
-	// loop takes it for writing only to read a transition's snapshot and to reset.
+	registry metric.Registry // one gauge per key, plus one _all gauge per consumer. Gauges are thread-safe
+
+	// mu protects boundary and transitions. Listeners take it for reading, the loop takes it for writing
+	// only to read a transition's snapshot and to reset.
 	mu          sync.RWMutex
 	boundary    int64             // first job id of the live region, 0 before the first transition
 	transitions []transitionRange // one entry per transition, sorted by job id, non-overlapping
-	registry    metric.Registry   // one gauge per key, plus one _all gauge per consumer
 
 	// inflightMu protects inflight: the xids of status transactions whose listeners have not run yet.
 	inflightMu sync.Mutex
@@ -144,10 +145,10 @@ func (m pendingMeasurement) GetTags() map[string]string {
 }
 
 // add applies delta to the gauge of key and to the _all gauge of its consumer.
-func (t *pendingEventsTracker) add(registry metric.Registry, key pendingKey, delta int64) {
+func (t *pendingEventsTracker) add(key pendingKey, delta int64) {
 	if delta == 0 {
 		return
 	}
-	registry.MustGetGauge(pendingMeasurement{name: t.measurementName, workspaceID: key.workspaceID, sourceID: key.sourceID, consumer: key.consumer}).Add(float64(delta))
-	registry.MustGetGauge(pendingMeasurement{name: t.measurementName, consumer: key.consumer, all: true}).Add(float64(delta))
+	t.registry.MustGetGauge(pendingMeasurement{name: t.measurementName, workspaceID: key.workspaceID, sourceID: key.sourceID, consumer: key.consumer}).Add(float64(delta))
+	t.registry.MustGetGauge(pendingMeasurement{name: t.measurementName, consumer: key.consumer, all: true}).Add(float64(delta))
 }
