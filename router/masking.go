@@ -63,7 +63,7 @@ func maskListedPaths(payload json.RawMessage, paths []string) (json.RawMessage, 
 		return maskedFallback, true
 	}
 	if parsed.IsArray() {
-		return maskListedPathsInArray(payload, parsed, paths)
+		return maskListedPathsInArray(payload, paths)
 	}
 	masked, err := applyListedPaths(payload, paths)
 	if err != nil {
@@ -73,10 +73,10 @@ func maskListedPaths(payload json.RawMessage, paths []string) (json.RawMessage, 
 	return masked, false
 }
 
-func maskListedPathsInArray(payload json.RawMessage, requests gjson.Result, paths []string) (json.RawMessage, bool) {
+func maskListedPathsInArray(payload json.RawMessage, paths []string) (json.RawMessage, bool) {
 	var maskedRequests [][]byte
 	changed, failed := false, false
-	requests.ForEach(func(_, request gjson.Result) bool {
+	gjson.ParseBytes(payload).ForEach(func(_, request gjson.Result) bool {
 		if !request.IsObject() {
 			failed = true
 			return false
