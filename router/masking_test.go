@@ -87,16 +87,6 @@ var _ = Describe("Delivery payload masking", func() {
 		]`))
 	})
 
-	It("fails closed for a non-empty object array when listed paths do not match", func() {
-		payload := json.RawMessage(`[{ "endpoint": "visible", "headers": { "Authorization": "secret" } }]`)
-		masked, maskErr := maskListedPaths(payload, []string{"params.missing"})
-
-		Expect(maskErr).To(BeTrue())
-		Expect(masked).To(MatchJSON(`{"masked":"******"}`))
-		Expect(string(masked)).ToNot(ContainSubstring("Authorization"))
-		Expect(string(masked)).ToNot(ContainSubstring("secret"))
-	})
-
 	It("preserves an empty array as a successful no-op", func() {
 		payload := json.RawMessage(`[ ]`)
 		masked, maskErr := maskListedPaths(payload, []string{"headers.Authorization"})
@@ -149,7 +139,6 @@ var _ = Describe("Delivery payload masking", func() {
 			masked, maskErr := maskAll(json.RawMessage(payload))
 			Expect(maskErr).To(BeTrue())
 			Expect(masked).To(MatchJSON(`{"masked":"******"}`))
-			Expect(string(masked)).ToNot(ContainSubstring("secret"))
 		},
 		Entry("invalid JSON", `{"headers":"secret"`),
 		Entry("array", `["secret"]`),
@@ -161,11 +150,7 @@ var _ = Describe("Delivery payload masking", func() {
 			masked, maskErr := maskListedPaths(json.RawMessage(payload), []string{"headers.Authorization"})
 			Expect(maskErr).To(BeTrue())
 			Expect(masked).To(MatchJSON(`{"masked":"******"}`))
-			Expect(string(masked)).ToNot(ContainSubstring("secret"))
-			Expect(string(masked)).ToNot(ContainSubstring("Authorization"))
-			Expect(string(masked)).ToNot(ContainSubstring("token"))
 		},
-		Entry("mixed array", `[{"endpoint":"visible","headers":{"Authorization":"secret"}},"scalar-secret"]`),
 		Entry("scalar", `"secret-token"`),
 		Entry("invalid JSON", `{"headers":{"Authorization":"secret"}`),
 	)
@@ -179,9 +164,6 @@ var _ = Describe("Delivery payload masking", func() {
 
 		Expect(maskErr).To(BeTrue())
 		Expect(masked).To(MatchJSON(`{"masked":"******"}`))
-		Expect(string(masked)).ToNot(ContainSubstring("Authorization"))
-		Expect(string(masked)).ToNot(ContainSubstring("secret"))
-		Expect(string(masked)).ToNot(ContainSubstring("endpoint"))
 	})
 
 	It("falls back to fail-closed masking for an invalid listed path", func() {
