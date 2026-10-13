@@ -59,7 +59,7 @@ func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
 // back to a non-leaking object so masking never forwards an unmodified multi-request payload.
 func maskListedPaths(payload json.RawMessage, paths []string) (json.RawMessage, bool) {
 	parsed := gjson.ParseBytes(payload)
-	if !gjson.ValidBytes(payload) || !(parsed.IsObject() || parsed.IsArray()) {
+	if !gjson.ValidBytes(payload) || (!parsed.IsObject() && !parsed.IsArray()) {
 		return maskedFallback, true
 	}
 	if parsed.IsArray() {
