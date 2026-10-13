@@ -120,7 +120,9 @@ func (t *pendingEventsTracker) transition(ctx context.Context) (bool, error) {
 		t.afterPin()
 	}
 	newBoundary := nextBoundary(ranges, t.currentBoundary(), t.conf.maxDSPerTransition.Load())
-	live := newBoundary == sealedBoundary(ranges)
+	// >=, not ==: a compaction between two transitions of a catch-up can leave the sealed boundary below
+	// the boundary, and the catch-up must still end with a live count.
+	live := newBoundary >= sealedBoundary(ranges)
 	return live, t.doTransition(ctx, ranges, dsList[len(dsList)-1], newBoundary, live)
 }
 

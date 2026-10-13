@@ -613,6 +613,40 @@ func TestPendingTracker(t *testing.T) {
 		require.EqualValues(t, 25, env.gauge("A", ""))
 	})
 
+	t.Run("a compaction between catch-up transitions that lowers the sealed boundary ends the catch-up", func(t *testing.T) {
+		env := newPendingTrackerEnv(t, false, maxDSPerTransition(1), func(c *config.Config) {
+			c.Set("JobsDB.maxDSRetention", "1ms") // a sealed dataset with a terminal status is eligible for compaction at once
+		})
+		env.store("A", 12) // ds_1: job ids 1-12
+		env.rotate()
+		env.store("A", 2) // ds_2: 13-14
+		env.rotate()
+		env.store("A", 1) // ds_3: 15, live
+		jobs := env.unprocessed("A")
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		locks := 0
+		env.tracker.beforeCompactionLock = func() {
+			switch locks++; locks {
+			case 2: // after the first transition moved the boundary to 13, still catching up
+				env.succeed(jobs[10:14], "") // ds_1's two highest jobs, and both ds_2 jobs
+				for range 3 {                // ds_1's pending jobs 1-10 move to a new dataset, the completed ds_2 is dropped
+					env.compact <- time.Now()
+				}
+				require.NoError(t, env.reader.RefreshDSList(context.Background()))
+				_, ranges := env.reader.dsList.snapshot()
+				require.EqualValues(t, 11, sealedBoundary(ranges), "the sealed boundary is now below the boundary")
+			case 10:
+				cancel() // the catch-up never ends: stop it
+			}
+		}
+		require.NoError(t, env.tracker.iterate(ctx), "the catch-up must end with a live count")
+		env.tracker.beforeCompactionLock = nil
+		require.EqualValues(t, 13, env.tracker.currentBoundary(), "the boundary never moves backwards")
+		require.EqualValues(t, 11, env.gauge("A", ""), "ds_1's pending 1-10 and the live 15")
+	})
+
 	t.Run("compaction between catch-up transitions keeps the gauge", func(t *testing.T) {
 		env := newPendingTrackerEnv(t, false, maxDSPerTransition(1), func(c *config.Config) {
 			c.Set("JobsDB.maxDSRetention", "1ms") // a sealed dataset with a terminal status is eligible for compaction at once
