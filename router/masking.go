@@ -9,6 +9,8 @@ import (
 
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
@@ -72,10 +74,8 @@ func maskListedPaths(payload json.RawMessage, paths []string) (json.RawMessage, 
 }
 
 func maskListedPathsInArray(payload json.RawMessage, requests gjson.Result, paths []string) (json.RawMessage, bool) {
-	var maskedArray bytes.Buffer
-	maskedArray.Grow(len(payload))
-	maskedArray.WriteByte('[')
-	empty, changed, failed := true, false, false
+	var maskedRequests [][]byte
+	changed, failed := false, false
 	requests.ForEach(func(_, request gjson.Result) bool {
 		if !request.IsObject() {
 			failed = true
@@ -86,24 +86,19 @@ func maskListedPathsInArray(payload json.RawMessage, requests gjson.Result, path
 			failed = true
 			return false
 		}
-		if !empty {
-			maskedArray.WriteByte(',')
-		}
-		empty = false
-		maskedArray.Write(masked)
+		maskedRequests = append(maskedRequests, masked)
 		changed = changed || string(masked) != request.Raw
 		return true
 	})
 	switch {
 	case failed:
 		return maskedFallback, true
-	case empty:
+	case len(maskedRequests) == 0:
 		return payload, false
 	case !changed:
 		return maskedFallback, true
 	}
-	maskedArray.WriteByte(']')
-	return maskedArray.Bytes(), false
+	return misc.MakeJSONArray(maskedRequests), false
 }
 
 // applyListedPaths never mutates payload: sjson allocates a new slice unless ReplaceInPlace is set.
