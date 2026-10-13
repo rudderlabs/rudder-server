@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	maskedValue = "******"
-	maskedJSON  = `"` + maskedValue + `"`
+	maskedValue          = "******"
+	maskedJSON           = `"` + maskedValue + `"`
+	fallbackMaskedObject = `{"masked":"` + maskedValue + `"}`
 )
 
 var errPathNotMasked = errors.New("path not masked")
@@ -25,9 +26,9 @@ func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
 
 	paths, ok := w.rt.transformerFeaturesService.SecretPaths(w.rt.destType)
 	var masked json.RawMessage
-	var maskErr bool
+	var maskErr, maskedListedPath bool
 	if ok {
-		masked, maskErr = maskListedPaths(payload, paths)
+		masked, maskErr, maskedListedPath = maskListedPathsWithResult(payload, paths)
 	} else {
 		masked, maskErr = maskAll(payload)
 	}
@@ -38,7 +39,7 @@ func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
 		reason = "mask_error"
 	case !ok:
 		reason = "mask_all"
-	case bytes.Equal(masked, payload): // masking only ever writes maskedValue, so equal bytes mean nothing matched
+	case !maskedListedPath:
 		reason = "listed_noop"
 	default:
 		reason = "listed"
@@ -47,32 +48,73 @@ func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
 	return masked
 }
 
-// maskListedPaths replaces existing values at paths. It falls back to mask-all on malformed
-// payloads or any path application error, so a masking failure never forwards the original value.
+// maskListedPaths replaces existing values at paths. Router-transform request arrays are returned
+// as arrays after masking each request object because Live Events accepts that payload shape.
+// Malformed payloads, mixed arrays, no-match non-empty arrays, and any path application error fall
+// back to a non-leaking object so masking never forwards an unmodified multi-request payload.
 func maskListedPaths(payload json.RawMessage, paths []string) (json.RawMessage, bool) {
-	if len(paths) == 0 {
-		return payload, false
+	masked, maskErr, _ := maskListedPathsWithResult(payload, paths)
+	return masked, maskErr
+}
+
+func maskListedPathsWithResult(payload json.RawMessage, paths []string) (json.RawMessage, bool, bool) {
+	if !gjson.ValidBytes(payload) {
+		return json.RawMessage(fallbackMaskedObject), true, false
 	}
-	if !isJSONObject(payload) {
-		return maskAll(payload)
+	parsed := gjson.ParseBytes(payload)
+	switch {
+	case parsed.IsObject():
+		if len(paths) == 0 {
+			return payload, false, false
+		}
+		masked, listedPathFound, err := applyListedPaths(payload, paths)
+		if err != nil {
+			fallback, _ := maskAll(masked)
+			return fallback, true, false
+		}
+		return masked, false, listedPathFound
+	case parsed.IsArray():
+		return maskListedPathsInArray(parsed.Array(), paths)
+	default:
+		return json.RawMessage(fallbackMaskedObject), true, false
 	}
-	masked, err := applyListedPaths(payload, paths)
-	if err != nil {
-		fallback, _ := maskAll(masked)
-		return fallback, true
+}
+
+func maskListedPathsInArray(requests []gjson.Result, paths []string) (json.RawMessage, bool, bool) {
+	var maskedArray bytes.Buffer
+	maskedArray.WriteByte('[')
+	listedPathFound := false
+	for i, request := range requests {
+		if !request.IsObject() {
+			return json.RawMessage(fallbackMaskedObject), true, false
+		}
+		masked, requestPathFound, err := applyListedPaths(json.RawMessage(request.Raw), paths)
+		if err != nil {
+			return json.RawMessage(fallbackMaskedObject), true, false
+		}
+		if i > 0 {
+			maskedArray.WriteByte(',')
+		}
+		maskedArray.Write(masked)
+		listedPathFound = listedPathFound || requestPathFound
 	}
-	return masked, false
+	maskedArray.WriteByte(']')
+	if len(requests) > 0 && !listedPathFound {
+		return json.RawMessage(fallbackMaskedObject), true, false
+	}
+	return maskedArray.Bytes(), false, listedPathFound
 }
 
 // applyListedPaths never mutates payload: sjson allocates a new slice unless ReplaceInPlace is set.
-func applyListedPaths(masked json.RawMessage, paths []string) (json.RawMessage, error) {
+func applyListedPaths(masked json.RawMessage, paths []string) (json.RawMessage, bool, error) {
 	var err error
+	listedPathFound := false
 	for _, path := range paths {
 		if path == "endpoint" {
 			continue
 		}
 		if path == "" {
-			return masked, errPathNotMasked
+			return masked, listedPathFound, errPathNotMasked
 		}
 		if !gjson.GetBytes(masked, path).Exists() {
 			continue
@@ -81,21 +123,23 @@ func applyListedPaths(masked json.RawMessage, paths []string) (json.RawMessage, 
 		if parentPath, ok := terminalArrayWildcardParent(path); ok {
 			array := gjson.GetBytes(masked, parentPath)
 			if !array.IsArray() {
-				return masked, errPathNotMasked
+				return masked, listedPathFound, errPathNotMasked
 			}
 			for idx := range array.Array() {
 				if masked, err = setMasked(masked, parentPath+"."+strconv.Itoa(idx)); err != nil {
-					return masked, err
+					return masked, listedPathFound, err
 				}
+				listedPathFound = true
 			}
 			continue
 		}
 
 		if masked, err = setMasked(masked, path); err != nil {
-			return masked, err
+			return masked, listedPathFound, err
 		}
+		listedPathFound = true
 	}
-	return masked, nil
+	return masked, listedPathFound, nil
 }
 
 func setMasked(payload json.RawMessage, path string) (json.RawMessage, error) {
@@ -122,10 +166,10 @@ func resultMasked(result gjson.Result) bool {
 }
 
 // maskAll preserves endpoint and replaces every other existing top-level value. Invalid JSON and
-// non-object JSON are replaced wholesale with a valid masked JSON string.
+// non-object JSON are replaced wholesale with a minimal object so Live Events can always parse it.
 func maskAll(payload json.RawMessage) (json.RawMessage, bool) {
 	if !isJSONObject(payload) {
-		return json.RawMessage(maskedJSON), true
+		return json.RawMessage(fallbackMaskedObject), true
 	}
 
 	var rebuilt bytes.Buffer
@@ -151,11 +195,7 @@ func maskAll(payload json.RawMessage) (json.RawMessage, bool) {
 }
 
 func isJSONObject(payload json.RawMessage) bool {
-	if !gjson.ValidBytes(payload) {
-		return false
-	}
-	trimmed := bytes.TrimSpace(payload)
-	return len(trimmed) > 0 && trimmed[0] == '{'
+	return gjson.ValidBytes(payload) && gjson.ParseBytes(payload).IsObject()
 }
 
 // terminalArrayWildcardParent returns the parent of a path whose last segment is an unescaped "#".

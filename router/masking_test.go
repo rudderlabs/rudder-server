@@ -65,6 +65,47 @@ var _ = Describe("Delivery payload masking", func() {
 		Expect(gjson.GetBytes(masked, "params").Exists()).To(BeFalse())
 	})
 
+	It("masks a one-request array while preserving the Live Events payload shape", func() {
+		payload := json.RawMessage(`[{"endpoint":"https://zendesk.test/users","headers":{"Authorization":"Bearer secret"},"body":{"name":"Ada"}}]`)
+		masked, maskErr := maskListedPaths(payload, []string{"headers.Authorization"})
+
+		Expect(maskErr).To(BeFalse())
+		Expect(masked).To(MatchJSON(`[{"endpoint":"https://zendesk.test/users","headers":{"Authorization":"******"},"body":{"name":"Ada"}}]`))
+	})
+
+	It("masks every element of a multi-request array independently", func() {
+		payload := json.RawMessage(`[
+			{"endpoint":"https://sfmc.test/contacts","headers":{"Authorization":"Bearer first"},"body":{"token":"first-token"}},
+			{"endpoint":"https://sfmc.test/data","headers":{"Authorization":"Bearer second"},"body":{"token":"second-token"}}
+		]`)
+		masked, maskErr := maskListedPaths(payload, []string{"headers.Authorization", "body.token"})
+
+		Expect(maskErr).To(BeFalse())
+		Expect(masked).To(MatchJSON(`[
+			{"endpoint":"https://sfmc.test/contacts","headers":{"Authorization":"******"},"body":{"token":"******"}},
+			{"endpoint":"https://sfmc.test/data","headers":{"Authorization":"******"},"body":{"token":"******"}}
+		]`))
+	})
+
+	It("fails closed for a non-empty object array when listed paths do not match", func() {
+		payload := json.RawMessage(`[{ "endpoint": "visible", "headers": { "Authorization": "secret" } }]`)
+		masked, maskErr, listedPathFound := maskListedPathsWithResult(payload, []string{"params.missing"})
+
+		Expect(maskErr).To(BeTrue())
+		Expect(listedPathFound).To(BeFalse())
+		Expect(masked).To(MatchJSON(`{"masked":"******"}`))
+		Expect(string(masked)).ToNot(ContainSubstring("Authorization"))
+		Expect(string(masked)).ToNot(ContainSubstring("secret"))
+	})
+
+	It("preserves an empty array as a successful no-op", func() {
+		masked, maskErr, listedPathFound := maskListedPathsWithResult(json.RawMessage(`[]`), []string{"headers.Authorization"})
+
+		Expect(maskErr).To(BeFalse())
+		Expect(listedPathFound).To(BeFalse())
+		Expect(masked).To(MatchJSON(`[]`))
+	})
+
 	It("preserves bytes for an empty listed-path result", func() {
 		payload := json.RawMessage("{ \"body\" : { \"token\" : \"secret\" } }")
 		masked, maskErr := maskListedPaths(payload, []string{})
@@ -104,16 +145,45 @@ var _ = Describe("Delivery payload masking", func() {
 		Expect(string(masked)).ToNot(ContainSubstring("second"))
 	})
 
-	DescribeTable("replaces malformed or non-object payloads wholesale",
+	DescribeTable("replaces malformed or non-object payloads with a masked object",
 		func(payload string) {
 			masked, maskErr := maskAll(json.RawMessage(payload))
 			Expect(maskErr).To(BeTrue())
-			Expect(string(masked)).To(Equal(`"******"`))
+			Expect(masked).To(MatchJSON(`{"masked":"******"}`))
+			Expect(string(masked)).ToNot(ContainSubstring("secret"))
 		},
-		Entry("invalid JSON", `{"headers":`),
+		Entry("invalid JSON", `{"headers":"secret"`),
 		Entry("array", `["secret"]`),
 		Entry("scalar", `"secret"`),
 	)
+
+	DescribeTable("listed masking fails closed with a masked object for unsupported payloads",
+		func(payload string) {
+			masked, maskErr := maskListedPaths(json.RawMessage(payload), []string{"headers.Authorization"})
+			Expect(maskErr).To(BeTrue())
+			Expect(masked).To(MatchJSON(`{"masked":"******"}`))
+			Expect(string(masked)).ToNot(ContainSubstring("secret"))
+			Expect(string(masked)).ToNot(ContainSubstring("Authorization"))
+			Expect(string(masked)).ToNot(ContainSubstring("token"))
+		},
+		Entry("mixed array", `[{"endpoint":"visible","headers":{"Authorization":"secret"}},"scalar-secret"]`),
+		Entry("scalar", `"secret-token"`),
+		Entry("invalid JSON", `{"headers":{"Authorization":"secret"}`),
+	)
+
+	It("fails closed for the whole array when applying a listed path fails", func() {
+		payload := json.RawMessage(`[
+			{"endpoint":"first","headers":{"Authorization":"secret"}},
+			{"endpoint":"second","headers":{"Authorization":"other-secret"}}
+		]`)
+		masked, maskErr := maskListedPaths(payload, []string{"headers.Authorization|@reverse"})
+
+		Expect(maskErr).To(BeTrue())
+		Expect(masked).To(MatchJSON(`{"masked":"******"}`))
+		Expect(string(masked)).ToNot(ContainSubstring("Authorization"))
+		Expect(string(masked)).ToNot(ContainSubstring("secret"))
+		Expect(string(masked)).ToNot(ContainSubstring("endpoint"))
+	})
 
 	It("falls back to fail-closed masking for an invalid listed path", func() {
 		payload := json.RawMessage(`{"endpoint":"visible","headers":{"Authorization":"secret"}}`)
