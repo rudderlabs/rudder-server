@@ -21,7 +21,7 @@ Router/BatchRouter → 90+ destinations and warehouses. Segment API-compatible. 
 | Build                   | `make build`                                                  | Also builds `wait-for-go` and `regulation-worker`                      |
 | Run                     | `make run` (`go run main.go`)                                 | `make run-mt` for multi-tenant via devtool+etcd                        |
 | Format                  | `make fmt`                                                    | gofumpt + gci + matrixchecker; CI fails on `git diff` after this       |
-| Lint                    | `make lint`                                                   | golangci-lint v2.9.0 + actionlint + `make sec` (gitleaks, govulncheck) |
+| Lint                    | `make lint`                                                   | golangci-lint v2.14.0 + actionlint + `make sec` (gitleaks, govulncheck) |
 | Test (all)              | `make test`                                                   | gotestsum, `-p=1 -failfast -shuffle=on`, 15m timeout                   |
 | Test (one package)      | `make test package=gateway`                                   | Path relative to repo root; `exclude=` regex also supported            |
 | Test (single test)      | `go test -count 1 -run TestName ./gateway/...`                |                                                                        |
