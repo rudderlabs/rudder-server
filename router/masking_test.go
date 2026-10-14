@@ -95,6 +95,14 @@ var _ = Describe("Delivery payload masking", func() {
 		Expect(masked).To(Equal(payload))
 	})
 
+	It("preserves the bytes of a non-empty array when no listed path matches", func() {
+		payload := json.RawMessage(`[ {"endpoint":"first","headers":{"Authorization":"secret"}} , {"endpoint":"second"} ]`)
+		masked, maskErr := maskListedPaths(payload, []string{"params.missing"})
+
+		Expect(maskErr).To(BeFalse())
+		Expect(masked).To(Equal(payload))
+	})
+
 	It("preserves bytes for an empty listed-path result", func() {
 		payload := json.RawMessage("{ \"body\" : { \"token\" : \"secret\" } }")
 		masked, maskErr := maskListedPaths(payload, []string{})

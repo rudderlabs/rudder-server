@@ -74,24 +74,19 @@ func maskListedPaths(payload json.RawMessage, paths []string) (json.RawMessage, 
 
 func maskListedPathsInArray(payload json.RawMessage, paths []string) (json.RawMessage, bool) {
 	var maskedRequests [][]byte
-	failed := false
-	gjson.ParseBytes(payload).ForEach(func(_, request gjson.Result) bool {
+	changed := false
+	for _, request := range gjson.ParseBytes(payload).Array() {
 		if !request.IsObject() {
-			failed = true
-			return false
+			return maskedFallback, true
 		}
 		masked, err := applyListedPaths(json.RawMessage(request.Raw), paths)
 		if err != nil {
-			failed = true
-			return false
+			return maskedFallback, true
 		}
+		changed = changed || string(masked) != request.Raw
 		maskedRequests = append(maskedRequests, masked)
-		return true
-	})
-	switch {
-	case failed:
-		return maskedFallback, true
-	case len(maskedRequests) == 0:
+	}
+	if !changed { // return the original bytes so maskDeliveryPayload's bytes.Equal reports listed_noop
 		return payload, false
 	}
 	return misc.MakeJSONArray(maskedRequests), false
