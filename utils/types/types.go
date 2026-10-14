@@ -16,9 +16,25 @@ const (
 	SuccessEventCode         = 200
 	DeliveredWithWarningCode = 296
 
+	// Status codes of the filtered report rows of event_filter, one per filtered reason.
+	// The filtered responses themselves keep FilterEventCode.
+	FilteredMessageTypeCode = 291
+	FilteredEventNameCode   = 292
+	FilteredHybridModeCode  = 293
+
 	FlagBotEventAction = "flag"
 	DropBotEventAction = "drop"
 )
+
+// IsFilteredCode reports whether code is FilterEventCode or one of the per-reason codes of event_filter.
+func IsFilteredCode(code int) bool {
+	switch code {
+	case FilterEventCode, FilteredMessageTypeCode, FilteredEventNameCode, FilteredHybridModeCode:
+		return true
+	default:
+		return false
+	}
+}
 
 // UserSuppression is interface to access Suppress user feature
 type UserSuppression interface {
