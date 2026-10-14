@@ -61,6 +61,7 @@ func NewManager(
 	backendConfig backendconfig.BackendConfig,
 ) (*BingAdsBulkUploader, error) {
 	oauthClientV2 := oauthv2.NewOAuthHandler(backendConfig,
+		oauthv2.WithReauthEviction(backendConfig),
 		oauthv2.WithLogger(logger),
 		oauthv2.WithCPClientTimeout(conf.GetDurationVar(30, time.Second, "HttpClient.oauth.timeout")),
 		oauthv2.WithStats(statsFactory),

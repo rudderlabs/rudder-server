@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	oauthv2_http "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
@@ -50,6 +51,9 @@ func runIntegrationTest(
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+	ch := make(chan pubsub.DataEvent)
+	t.Cleanup(func() { close(ch) })
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).Return(pubsub.DataChannel(ch)).AnyTimes()
 	mockBackendConfig.EXPECT().AccessToken().AnyTimes().Return("test-token")
 	mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&mockIdentifier{workspaceID: workspaceID})
 

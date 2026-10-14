@@ -14,6 +14,7 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	mock_backendconfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mockoauthv2 "github.com/rudderlabs/rudder-server/mocks/services/oauthV2"
 	rtTf "github.com/rudderlabs/rudder-server/router/transformer"
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
@@ -21,6 +22,7 @@ import (
 	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	httpClient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
 var oauthDefinitionConfig = map[string]any{
@@ -31,13 +33,22 @@ var oauthDefinitionConfig = map[string]any{
 }
 
 var _ = Describe("Http/Client", func() {
+	newBackendConfig := func() backendconfig.BackendConfig {
+		ctrl := gomock.NewController(GinkgoT())
+		bc := mock_backendconfig.NewMockBackendConfig(ctrl)
+		ch := make(chan pubsub.DataEvent)
+		DeferCleanup(func() { close(ch) })
+		bc.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).Return(pubsub.DataChannel(ch)).Times(1)
+		return bc
+	}
+
 	Describe("OAuthHttpClient", func() {
 		It("should return an http client", func() {
 			cache := v2.NewOauthTokenCache()
 			optionalArgs := httpClient.HttpClientOptionalArgs{
 				Augmenter: extensions.RouterBodyAugmenter,
 			}
-			httpClient := httpClient.NewOAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, rtTf.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
+			httpClient := httpClient.NewOAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, newBackendConfig(), rtTf.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 			Expect(httpClient).ToNot(BeNil())
 		})
 	})
@@ -55,7 +66,7 @@ var _ = Describe("Http/Client", func() {
 				Transport: mockRoundTrip,
 				Augmenter: extensions.RouterBodyAugmenter,
 			}
-			httpClient := httpClient.NewOAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, rtTf.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
+			httpClient := httpClient.NewOAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, newBackendConfig(), rtTf.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"anonymousId":"anon_id","type":"identify","traits":{"email":"jamesDoe@gmail.com","name":"James Doe","phone":"92374162212","gender":"M","address":{"city":"kolkata","country":"India","postalCode":789223,"state":"WB","street":""}}},"metadata":{"jobId":1},"destination":{"config":{},"name":"CleverTap","destinationDefinition":{"config":{},"category":null}}}],"destType":"clevertap"}`)))
 			destination := &backendconfig.DestinationT{
 				ID:     "25beoSzcLFmimO8FgiVqTNwBG12",

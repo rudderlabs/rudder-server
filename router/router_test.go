@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -135,10 +136,13 @@ func (c *testContext) Setup() {
 
 	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")
 
-	// During Setup, router subscribes to backend config
+	// During Setup, router subscribes to backend config. So does the OAuth handlers' secret-version mirror
+	// (services/oauth/v2.SecretVersionsFor), once per backend config, when Setup builds the real transformer.
+	// Every subscriber gets its own channel carrying the configuration; the async helper is notified once.
+	var notifyOnce sync.Once
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-			tFunc()
+			notifyOnce.Do(func() { tFunc() })
 			ch := make(chan pubsub.DataEvent, 1)
 			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{workspaceID: sampleBackendConfig}, Topic: string(topic)}
 			// on Subscribe, emulate a backend configuration event
@@ -147,7 +151,7 @@ func (c *testContext) Setup() {
 				close(ch)
 			}()
 			return ch
-		})
+		}).MinTimes(1)
 	c.dbReadBatchSize = 10000
 }
 

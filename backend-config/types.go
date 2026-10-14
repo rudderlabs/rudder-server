@@ -172,6 +172,7 @@ type Account struct {
 	AccountDefinitionName string             `json:"accountDefinitionName"`
 	Options               map[string]any     `json:"options"`
 	Secret                map[string]any     `json:"secret"`
+	SecretVersion         int                `json:"secretVersion"` // bumped by config-backend on every re-authorization and on every routine token refresh; 0 when the account has no secret
 	AccountDefinition     *AccountDefinition `json:"accountDefinition"`
 }
 
