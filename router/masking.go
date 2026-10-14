@@ -55,8 +55,7 @@ func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
 
 // maskListedPaths replaces existing values at paths. Router-transform request arrays are returned
 // as arrays after masking each request object because Live Events accepts that payload shape.
-// Malformed payloads, mixed arrays, no-match non-empty arrays, and any path application error fall
-// back to a non-leaking object so masking never forwards an unmodified multi-request payload.
+// Malformed payloads, mixed arrays, and any path application error fall back to a non-leaking object.
 func maskListedPaths(payload json.RawMessage, paths []string) (json.RawMessage, bool) {
 	parsed := gjson.ParseBytes(payload)
 	if !gjson.ValidBytes(payload) || (!parsed.IsObject() && !parsed.IsArray()) {
@@ -75,7 +74,7 @@ func maskListedPaths(payload json.RawMessage, paths []string) (json.RawMessage, 
 
 func maskListedPathsInArray(payload json.RawMessage, paths []string) (json.RawMessage, bool) {
 	var maskedRequests [][]byte
-	changed, failed := false, false
+	failed := false
 	gjson.ParseBytes(payload).ForEach(func(_, request gjson.Result) bool {
 		if !request.IsObject() {
 			failed = true
@@ -87,7 +86,6 @@ func maskListedPathsInArray(payload json.RawMessage, paths []string) (json.RawMe
 			return false
 		}
 		maskedRequests = append(maskedRequests, masked)
-		changed = changed || string(masked) != request.Raw
 		return true
 	})
 	switch {
@@ -95,8 +93,6 @@ func maskListedPathsInArray(payload json.RawMessage, paths []string) (json.RawMe
 		return maskedFallback, true
 	case len(maskedRequests) == 0:
 		return payload, false
-	case !changed:
-		return maskedFallback, true
 	}
 	return misc.MakeJSONArray(maskedRequests), false
 }

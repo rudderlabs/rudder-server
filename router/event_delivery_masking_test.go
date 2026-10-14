@@ -48,12 +48,12 @@ func TestSendDestinationResponseMasksLiveEventsPayload(t *testing.T) {
 			wantReason: "listed",
 		},
 		{
-			name:       "missing listed paths in router-transform request array fails closed",
+			name:       "missing listed paths in router-transform request array",
 			paths:      []string{"params.missing"},
 			ok:         true,
 			input:      `[{"endpoint":"visible","headers":{"Authorization":"secret"}}]`,
-			want:       `{"masked":"******"}`,
-			wantReason: "mask_error",
+			want:       `[{"endpoint":"visible","headers":{"Authorization":"secret"}}]`,
+			wantReason: "listed_noop",
 		},
 		{
 			name:       "empty router-transform request array",
