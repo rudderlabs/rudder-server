@@ -176,6 +176,7 @@ func (h *oauthHandler) FetchToken(params *OAuthTokenParams) (json.RawMessage, St
 	authStats := &OAuthStats{
 		stats:           h.stats,
 		id:              params.AccountID,
+		destinationID:   params.DestinationID,
 		workspaceID:     params.WorkspaceID,
 		rudderCategory:  "destination",
 		statName:        "",
@@ -201,6 +202,7 @@ func (h *oauthHandler) RefreshToken(params *OAuthTokenParams, previousSecret jso
 	authStats := &OAuthStats{
 		stats:           h.stats,
 		id:              params.AccountID,
+		destinationID:   params.DestinationID,
 		workspaceID:     params.WorkspaceID,
 		rudderCategory:  "destination",
 		statName:        "",
