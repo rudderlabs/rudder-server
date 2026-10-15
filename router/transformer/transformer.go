@@ -123,6 +123,7 @@ type ProxyRequestResponse struct {
 	RespBodys                map[int64]string
 	DontBatchDirectives      map[int64]bool
 	OAuthErrorCategory       string
+	OAuthErrorType           string // see common.CredentialErrorType
 }
 
 // DeliveryStatusCode returns the destination's status when the proxy reported one, else the proxy call's status.
@@ -344,6 +345,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 				if transResp.InterceptorResponse.Response != "" {
 					destinationJobs[i].Error = transResp.InterceptorResponse.Response
 				}
+				destinationJobs[i].OAuthErrorType = common.CredentialErrorType(transResp.InterceptorResponse.ErrorType)
 			}
 			if len(destinationJobs[i].JobMetadataArray) == 0 {
 				emptyMetadataCount++
@@ -403,13 +405,13 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		}
 		errBody := string(respData)
 		// invalid_grant means the refresh token has been revoked: retrying cannot help, so the
-		// job is aborted instead of being retried as a generic 500. The error type alone
-		// decides this — not the status the interceptor attached, which is 400 for a token
+		// job is aborted with a 401 instead of being retried as a generic 500. The error type
+		// alone decides this — not the status the interceptor attached, which is 401 for a token
 		// fetch but 500 when the control plane reports the same error type at the top level.
 		// Every other interceptor outcome, terminal-looking or not, keeps the default
 		// retryable path so that no unrelated failure changes behaviour or message.
 		if transResp.InterceptorResponse.ErrorType == common.RefTokenInvalidGrant {
-			statusCode = http.StatusBadRequest
+			statusCode = common.CredentialErrorStatusCode(common.RefTokenInvalidGrant)
 			if transResp.InterceptorResponse.Response != "" {
 				errBody = transResp.InterceptorResponse.Response
 			}
@@ -423,6 +425,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 				Connection:       routerJob.Connection,
 				StatusCode:       statusCode,
 				Error:            errBody,
+				OAuthErrorType:   common.CredentialErrorType(transResp.InterceptorResponse.ErrorType),
 			}
 			destinationJobs = append(destinationJobs, resp)
 		}
@@ -671,6 +674,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		RespBodys:                transResp.routerJobResponseBodys,
 		DontBatchDirectives:      transResp.routerJobDontBatchDirectives,
 		OAuthErrorCategory:       transResp.authErrorCategory,
+		OAuthErrorType:           common.CredentialErrorType(transportResponse.InterceptorResponse.ErrorType),
 	}
 }
 

@@ -58,6 +58,9 @@ type DestinationJobT struct {
 	Error             string                     `json:"error"`
 	AuthErrorCategory string                     `json:"authErrorCategory"`
 	StatTags          map[string]string          `json:"statTags"`
+	// OAuthErrorType is set by the router, never by the transformer, when the OAuth credential is dead
+	// (see common.CredentialErrorType); it is reported as the jobs' oauthErrorType.
+	OAuthErrorType string `json:"-"`
 }
 
 func (dj *DestinationJobT) MinJobID() int64 {

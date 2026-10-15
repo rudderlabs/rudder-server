@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -50,6 +51,7 @@ func (b *BingAdsBulkUploader) Upload(_ context.Context, asyncDestStruct *common.
 	var successJobs []int64
 	var importIds []string
 	var errors []string
+	var oauthErrorType string // the token is fetched inside the bulk service calls, so their errors can carry it
 	audienceId, _ := misc.MapLookup(destination.Config, "audienceId").(string)
 	actionFiles, err := b.createZipFile(asyncDestStruct.FileName, audienceId)
 	if err != nil {
@@ -75,6 +77,7 @@ func (b *BingAdsBulkUploader) Upload(_ context.Context, asyncDestStruct *common.
 			b.logger.Errorn("Error in getting bulk upload url", obskit.Error(err))
 			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
 			errors = append(errors, fmt.Sprintf("%s:error in getting bulk upload url: %s", actionFile.Action, err.Error()))
+			oauthErrorType = lo.CoalesceOrEmpty(oauthErrorType, oauthv2.CredentialErrorType(err))
 			continue
 		}
 
@@ -91,6 +94,7 @@ func (b *BingAdsBulkUploader) Upload(_ context.Context, asyncDestStruct *common.
 			b.logger.Errorn("error in uploading the bulk file", obskit.Error(errorDuringUpload))
 			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
 			errors = append(errors, fmt.Sprintf("%s:error in uploading the bulk file: %v", actionFile.Action, errorDuringUpload))
+			oauthErrorType = lo.CoalesceOrEmpty(oauthErrorType, oauthv2.CredentialErrorType(errorDuringUpload))
 
 			// remove the file that could not be uploaded
 			err = os.Remove(actionFile.ZipFilePath)
@@ -129,6 +133,7 @@ func (b *BingAdsBulkUploader) Upload(_ context.Context, asyncDestStruct *common.
 		ImportingCount:      len(successJobs),
 		FailedCount:         len(asyncDestStruct.FailedJobIDs) + len(failedJobs),
 		DestinationID:       destination.ID,
+		OAuthErrorType:      oauthErrorType,
 	}
 }
 
@@ -136,8 +141,9 @@ func (b *BingAdsBulkUploader) pollSingleImport(requestId string) common.PollStat
 	uploadStatusResp, err := b.service.GetBulkUploadStatus(requestId)
 	if err != nil {
 		return common.PollStatusResponse{
-			StatusCode: 500,
-			HasFailed:  true,
+			StatusCode:     500,
+			HasFailed:      true,
+			OAuthErrorType: oauthv2.CredentialErrorType(err),
 		}
 	}
 	switch uploadStatusResp.RequestStatus {
@@ -173,6 +179,7 @@ func (b *BingAdsBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll
 	var pollStatusCode []int
 	var cumulativeProgressStatus, cumulativeFailureStatus bool
 	var cumulativeStatusCode int
+	var oauthErrorType string
 	requestIdsArray := lo.Reject(strings.Split(pollInput.ImportId, commaSeparator), func(url string, _ int) bool {
 		return url == ""
 	})
@@ -191,6 +198,7 @@ func (b *BingAdsBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll
 		failedJobURLs = append(failedJobURLs, resp.FailedJobParameters)
 		cumulativeProgressStatus = cumulativeProgressStatus || resp.InProgress
 		cumulativeFailureStatus = cumulativeFailureStatus || resp.HasFailed
+		oauthErrorType = lo.CoalesceOrEmpty(oauthErrorType, resp.OAuthErrorType)
 	}
 	if lo.Contains(pollStatusCode, 500) {
 		cumulativeStatusCode = 500
@@ -203,6 +211,7 @@ func (b *BingAdsBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll
 		StatusCode:          cumulativeStatusCode,
 		HasFailed:           cumulativeFailureStatus,
 		FailedJobParameters: strings.Join(failedJobURLs, commaSeparator), // creating a comma separated string of all the result file urls
+		OAuthErrorType:      oauthErrorType,
 	}
 
 	return cumulativeResp

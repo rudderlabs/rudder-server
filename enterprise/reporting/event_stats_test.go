@@ -139,6 +139,19 @@ func TestEventStatsReporter(t *testing.T) {
 				StatusCode: 200,
 			},
 		},
+		{
+			SourceID:       sourceID,
+			DestinationID:  destinationID,
+			SourceCategory: sourceCategory,
+			PU:             reportedBy,
+			TerminalPU:     true,
+			StatusDetail: &types.StatusDetail{
+				Count:          7,
+				Status:         jobsdb.Aborted.State,
+				StatusCode:     400,
+				OAuthErrorType: "ref_token_invalid_grant",
+			},
+		},
 	}
 	esr := NewEventStatsReporter(cs, statsStore)
 	esr.Record(testReports)
@@ -153,6 +166,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"terminal":        "true",
 		"status":          jobsdb.Succeeded.State,
 		"trackingPlanId":  "",
+		"oauthErrorType":  "",
 	}).LastValue(), float64(10))
 	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
@@ -165,6 +179,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"terminal":        "true",
 		"status":          jobsdb.Aborted.State,
 		"trackingPlanId":  "",
+		"oauthErrorType":  "",
 	}).LastValue(), float64(50))
 	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
@@ -177,6 +192,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"terminal":        "true",
 		"status":          jobsdb.Migrated.State,
 		"trackingPlanId":  trackingPlanID,
+		"oauthErrorType":  "",
 	}).LastValue(), float64(150))
 	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
@@ -189,6 +205,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"terminal":        "false",
 		"status":          "non-terminal",
 		"trackingPlanId":  trackingPlanID,
+		"oauthErrorType":  "",
 	}).LastValue(), float64(100))
 	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
@@ -201,8 +218,22 @@ func TestEventStatsReporter(t *testing.T) {
 		"terminal":        "true",
 		"status":          jobsdb.Succeeded.State,
 		"trackingPlanId":  "",
+		"oauthErrorType":  "",
 	}).LastValue(), float64(20))
-	require.Len(t, statsStore.GetAll(), 5)
+	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
+		"workspaceId":     workspaceID,
+		"sourceId":        sourceID,
+		"destinationId":   destinationID,
+		"reportedBy":      reportedBy,
+		"sourceCategory":  sourceCategory,
+		"statusCode":      "400",
+		"destinationType": "test-destination-name",
+		"terminal":        "true",
+		"status":          jobsdb.Aborted.State,
+		"trackingPlanId":  "",
+		"oauthErrorType":  "ref_token_invalid_grant",
+	}).LastValue(), float64(7))
+	require.Len(t, statsStore.GetAll(), 6)
 	t.Cleanup(func() {
 		cancel()
 		<-subscribeDone

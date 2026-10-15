@@ -539,7 +539,7 @@ var oauthV2RtTcs = []oauthV2TestCase{
 		},
 	},
 	{
-		description: "should only set the jobs with '400' where AuthErrorCategory is defined",
+		description: "should only set the jobs with '401' where AuthErrorCategory is defined",
 		cpResponses: []testutils.CpResponseParams{
 			// fetch token http request
 			{
@@ -564,9 +564,9 @@ var oauthV2RtTcs = []oauthV2TestCase{
 		},
 		expected: []types.DestinationJobT{
 			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
-			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
+			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, OAuthErrorType: common.RefTokenInvalidGrant, Message: []byte("{}")},
 			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
-			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
+			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, OAuthErrorType: common.RefTokenInvalidGrant, Message: []byte("{}")},
 		},
 		inputEvents: []types.RouterJobT{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
@@ -628,7 +628,7 @@ var oauthV2RtTcs = []oauthV2TestCase{
 		},
 	},
 	{
-		description: "when proactive fetch token fails with invalid_grant, all jobs abort with 400 instead of retrying with 500",
+		description: "when proactive fetch token fails with invalid_grant, all jobs abort with 401 instead of retrying with 500",
 		cpResponses: []testutils.CpResponseParams{
 			// fetch token http request -> invalid_grant
 			{
@@ -641,8 +641,8 @@ var oauthV2RtTcs = []oauthV2TestCase{
 			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
 		},
 		expected: []types.DestinationJobT{
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`},
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, OAuthErrorType: common.RefTokenInvalidGrant},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, OAuthErrorType: common.RefTokenInvalidGrant},
 		},
 	},
 	{
@@ -664,7 +664,7 @@ var oauthV2RtTcs = []oauthV2TestCase{
 		},
 	},
 	{
-		description: "when fetch token fails with invalid_grant reported at the top level (status 500), jobs still abort with 400",
+		description: "when fetch token fails with invalid_grant reported at the top level (status 500), jobs still abort with 401",
 		cpResponses: []testutils.CpResponseParams{
 			// fetch token http request -> invalid_grant surfaced via the top-level errorType key,
 			// which the oauth handler maps to a 500. The error type, not the status, decides.
@@ -677,7 +677,7 @@ var oauthV2RtTcs = []oauthV2TestCase{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
 		},
 		expected: []types.DestinationJobT{
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, Error: "refresh token has been revoked"},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, Error: "refresh token has been revoked", OAuthErrorType: common.RefTokenInvalidGrant},
 		},
 	},
 	{
@@ -695,7 +695,7 @@ var oauthV2RtTcs = []oauthV2TestCase{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
 		},
 		expected: []types.DestinationJobT{
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, Error: authStatusInactiveBody},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, Error: authStatusInactiveBody, OAuthErrorType: common.CategoryAuthStatusInactive},
 		},
 	},
 }
@@ -777,6 +777,7 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 					require.Equalf(t, ex.JobMetadataArray, transformerResponse[i].JobMetadataArray, "[%i] JobMetadataArray assertion failed", i)
 					require.Equalf(t, ex.Error, transformerResponse[i].Error, "[%i] Error field assertion failed", i)
 					require.Equalf(t, ex.StatusCode, transformerResponse[i].StatusCode, "[%i] StatusCode assertion failed", i)
+					require.Equalf(t, ex.OAuthErrorType, transformerResponse[i].OAuthErrorType, "[%i] OAuthErrorType assertion failed", i)
 				}
 				return
 			}
@@ -994,7 +995,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		destination: oauthDests[0],
 	},
 	{
-		description:  "[v1proxy] when authStatusInactive succeeds, should have respStatus as 400, respBody should have the error thrown from transformer",
+		description:  "[v1proxy] when authStatusInactive succeeds, should have respStatus as 403, respBody should have the error thrown from transformer",
 		proxyVersion: "v1",
 		transformerProxyResponseV1: ProxyResponseV1{
 			Message:           "some message that we got from transformer",
@@ -1070,17 +1071,18 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespContentType:          "application/json",
 			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","authErrorCategory":"AUTH_STATUS_INACTIVE","response":[{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":2}},{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":1}}]}`,
-			ProxyRequestStatusCode:   http.StatusBadRequest,
+			ProxyRequestStatusCode:   http.StatusForbidden,
 			RespStatusCodes: map[int64]int{
-				1: http.StatusBadRequest,
-				2: http.StatusBadRequest,
+				1: http.StatusForbidden,
+				2: http.StatusForbidden,
 			},
 			OAuthErrorCategory: common.CategoryAuthStatusInactive,
+			OAuthErrorType:     common.CategoryAuthStatusInactive,
 		},
 		destination: oauthDests[0],
 	},
 	{
-		description:  "[v1proxy] when authStatusInactive fails, should have respStatus as 400, respBody should have the error thrown from transformer",
+		description:  "[v1proxy] when authStatusInactive fails, should have respStatus as 403, respBody should have the error thrown from transformer",
 		proxyVersion: "v1",
 		transformerProxyResponseV1: ProxyResponseV1{
 			Message:           "some message that we got from transformer",
@@ -1156,12 +1158,13 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespContentType:          "application/json",
 			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","authErrorCategory":"AUTH_STATUS_INACTIVE","response":[{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":2}},{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":1}}]}`,
-			ProxyRequestStatusCode:   http.StatusBadRequest,
+			ProxyRequestStatusCode:   http.StatusForbidden,
 			RespStatusCodes: map[int64]int{
-				1: http.StatusBadRequest,
-				2: http.StatusBadRequest,
+				1: http.StatusForbidden,
+				2: http.StatusForbidden,
 			},
 			OAuthErrorCategory: common.CategoryAuthStatusInactive,
+			OAuthErrorType:     common.CategoryAuthStatusInactive,
 		},
 		destination: oauthDests[0],
 	},
@@ -2369,6 +2372,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 			require.NotNil(t, proxyResp)
 			require.Equal(t, tc.expected.DontBatchDirectives, proxyResp.DontBatchDirectives)
 			require.Equal(t, tc.expected.OAuthErrorCategory, proxyResp.OAuthErrorCategory)
+			require.Equal(t, tc.expected.OAuthErrorType, proxyResp.OAuthErrorType)
 			require.Equal(t, tc.expected.RespBodys, proxyResp.RespBodys)
 			require.Equal(t, tc.expected.RespStatusCodes, proxyResp.RespStatusCodes)
 			require.Equal(t, tc.expected.RespContentType, proxyResp.RespContentType)

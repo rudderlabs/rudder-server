@@ -74,6 +74,9 @@ type StatusDetail struct {
 	ViolationCount int64             `json:"violationCount"`
 	StatTags       map[string]string `json:"-"`
 	FailedMessages []*FailedMessage  `json:"-"`
+	// OAuthErrorType is non-empty when the events failed because their OAuth credential is dead. Only
+	// events_processed_total reports it; it is not part of the reporting label set.
+	OAuthErrorType string `json:"-"`
 }
 
 type ErrorDetails struct {

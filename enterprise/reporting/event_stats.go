@@ -49,6 +49,7 @@ func (es *EventStatsReporter) Record(metrics []*types.PUReportedMetric) {
 			"destinationType": es.configSubscriber.GetDestDetail(metrics[index].DestinationID).destType,
 			"status":          status,
 			"trackingPlanId":  metrics[index].TrackingPlanID,
+			"oauthErrorType":  metrics[index].StatusDetail.OAuthErrorType,
 		}
 		es.stats.NewTaggedStat(EventsProcessedMetricName, stats.CountType, tags).Count(int(metrics[index].StatusDetail.Count))
 	}

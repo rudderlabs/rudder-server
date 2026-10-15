@@ -524,6 +524,7 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 								attemptedRequests++
 								attemptedJobs += len(destinationJob.JobMetadataArray)
 								resp := w.proxyRequest(ctx, destinationJob, val)
+								destinationJob.OAuthErrorType = resp.OAuthErrorType
 								// Record the new transformer_outgoing_request metrics
 								w.recordTransformerOutgoingRequestMetrics(val, destinationJob, resp.DeliveryStatusCode(), time.Since(rdlTime))
 
@@ -1073,13 +1074,14 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 	}
 	w.logger.Debugn("sending failed/aborted state as response")
 	w.rt.responseQ <- workerJobStatus{
-		userID:     destinationJobMetadata.UserID,
-		worker:     w,
-		job:        destinationJobMetadata.JobT,
-		status:     status,
-		payload:    payload,
-		statTags:   destinationJob.StatTags,
-		parameters: destinationJobMetadata.Parameters,
+		userID:         destinationJobMetadata.UserID,
+		worker:         w,
+		job:            destinationJobMetadata.JobT,
+		status:         status,
+		payload:        payload,
+		statTags:       destinationJob.StatTags,
+		parameters:     destinationJobMetadata.Parameters,
+		oauthErrorType: destinationJob.OAuthErrorType,
 	}
 }
 

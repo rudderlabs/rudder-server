@@ -38,7 +38,7 @@ func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destinat
 	}
 	secret, err := token.GenerateTokenV2()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate oauth token: %v", err)
+		return nil, fmt.Errorf("failed to generate oauth token: %w", err)
 	}
 	sessionConfig := bingads.SessionConfig{
 		DeveloperToken: secret.DeveloperToken,

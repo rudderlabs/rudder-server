@@ -59,6 +59,9 @@ type PollStatusResponse struct {
 	FailedJobParameters  string
 	WarningJobParameters string
 	Error                string `json:"error"`
+	// OAuthErrorType is non-empty when the poll failed because the destination's OAuth credential is
+	// dead (see oauth common.CredentialErrorType).
+	OAuthErrorType string
 }
 
 type AsyncUploadOutput struct {
@@ -75,6 +78,9 @@ type AsyncUploadOutput struct {
 	AbortCount             int
 	DestinationID          string
 	JobImportingParameters map[int64]stdjson.RawMessage
+	// OAuthErrorType is non-empty when the failed and aborted jobs failed because the destination's
+	// OAuth credential is dead (see oauth common.CredentialErrorType).
+	OAuthErrorType string
 }
 
 type AsyncPoll struct {

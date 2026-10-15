@@ -175,6 +175,13 @@ func (s *Uploader) failedJobs(asyncDestStruct *common.AsyncDestinationStruct, fa
 	}
 }
 
+// failedAPIJobs is failedJobs for a failed Salesforce API call, carrying its OAuth error type.
+func (s *Uploader) failedAPIJobs(asyncDestStruct *common.AsyncDestinationStruct, failedReason string, apiError *APIError) common.AsyncUploadOutput {
+	output := s.failedJobs(asyncDestStruct, failedReason)
+	output.OAuthErrorType = apiError.OAuthErrorType
+	return output
+}
+
 func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destinationID := asyncDestStruct.Destination.ID
 	filePath := asyncDestStruct.FileName
@@ -226,7 +233,7 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 	)
 	if apiError != nil {
 		s.logger.Errorn("Error creating Salesforce job for operation upsert.", logger.NewStringField("apiErrorMessage", apiError.Message), logger.NewStringField("category", apiError.Category), logger.NewIntField("statusCode", int64(apiError.StatusCode)))
-		return s.failedJobs(asyncDestStruct, fmt.Sprintf("creating Salesforce job: %v", apiError.Message))
+		return s.failedAPIJobs(asyncDestStruct, fmt.Sprintf("creating Salesforce job: %v", apiError.Message), apiError)
 	}
 
 	uploadStartTime := time.Now()
@@ -237,7 +244,7 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 		if err := s.apiService.DeleteJob(sfJobID); err != nil {
 			s.logger.Errorn("Error deleting Salesforce job.", logger.NewStringField("apiErrorMessage", err.Message))
 		}
-		return s.failedJobs(asyncDestStruct, fmt.Sprintf("uploading data: %v", apiError.Message))
+		return s.failedAPIJobs(asyncDestStruct, fmt.Sprintf("uploading data: %v", apiError.Message), apiError)
 	}
 
 	apiError = s.apiService.CloseJob(sfJobID)
@@ -246,7 +253,7 @@ func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestin
 		if err := s.apiService.DeleteJob(sfJobID); err != nil {
 			s.logger.Errorn("Error deleting Salesforce job.", logger.NewStringField("apiErrorMessage", err.Message))
 		}
-		return s.failedJobs(asyncDestStruct, fmt.Sprintf("closing job: %v", apiError.Message))
+		return s.failedAPIJobs(asyncDestStruct, fmt.Sprintf("closing job: %v", apiError.Message), apiError)
 	}
 
 	s.logger.Infon("Successfully created and closed Salesforce Bulk job", logger.NewStringField("jobID", sfJobID))
@@ -366,6 +373,14 @@ func (s *Uploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUp
 }
 
 func (s *Uploader) handlePollError(apiError *APIError) common.PollStatusResponse {
+	// a dead credential answers 401 too, but refreshing cannot help: keep it terminal
+	if apiError.OAuthErrorType != "" {
+		return common.PollStatusResponse{
+			StatusCode:     http.StatusBadRequest,
+			Error:          apiError.Message,
+			OAuthErrorType: apiError.OAuthErrorType,
+		}
+	}
 	if apiError.Category == "RefreshToken" {
 		return common.PollStatusResponse{
 			StatusCode: http.StatusInternalServerError,

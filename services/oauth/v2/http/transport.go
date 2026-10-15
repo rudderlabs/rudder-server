@@ -218,6 +218,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 			interceptorResp.Response = scErr.Error()
 			if typeMessageError, ok := errors.AsType[*v2.TypeMessageError](scErr); ok { // use the message from the underlying TypeMessageError if possible
 				interceptorResp.Response = typeMessageError.Message
+				interceptorResp.ErrorType = typeMessageError.Type
 			}
 			applyInterceptorRespToHttpResp()
 			return rts.res
@@ -225,7 +226,8 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 		// token refresh was successful, so we return a 500 to the caller to retry the request
 		interceptorResp.StatusCode = http.StatusInternalServerError
 	case common.CategoryAuthStatusInactive:
-		interceptorResp.StatusCode = http.StatusBadRequest
+		interceptorResp.StatusCode = common.CredentialErrorStatusCode(common.CategoryAuthStatusInactive)
+		interceptorResp.ErrorType = common.CategoryAuthStatusInactive
 	}
 	applyInterceptorRespToHttpResp()
 	// when error is not nil, the response sent will be ignored(downstream)

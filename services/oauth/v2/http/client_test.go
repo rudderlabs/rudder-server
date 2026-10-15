@@ -240,7 +240,7 @@ var _ = Describe("Http/Client", func() {
 			Expect(err).To(BeNil())
 			respData, err := io.ReadAll(res.Body)
 			Expect(err).To(BeNil())
-			Expect(respData).To(Equal([]byte(`{"originalResponse":"{\"output\":[{\"authErrorCategory\":\"AUTH_STATUS_INACTIVE\"}]}","interceptorResponse":{"statusCode":400}}`)))
+			Expect(respData).To(Equal([]byte(`{"originalResponse":"{\"output\":[{\"authErrorCategory\":\"AUTH_STATUS_INACTIVE\"}]}","interceptorResponse":{"statusCode":403,"errorType":"AUTH_STATUS_INACTIVE"}}`)))
 		})
 
 		It("Use OAuthHttpClient to transform event for a oauth destination with success in transforming and secret sent through routerHeaderAugmenter", func() {

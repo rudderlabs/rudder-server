@@ -464,7 +464,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			SourceID:      parameters.SourceID,
 			DestinationID: parameters.DestinationID,
 		}
-		key := parameters.SourceID + ":" + parameters.DestinationID + ":" + parameters.SourceJobRunID + ":" + workerJobStatus.status.JobState + ":" + workerJobStatus.status.ErrorCode + ":" + eventName + ":" + eventType
+		key := parameters.SourceID + ":" + parameters.DestinationID + ":" + parameters.SourceJobRunID + ":" + workerJobStatus.status.JobState + ":" + workerJobStatus.status.ErrorCode + ":" + eventName + ":" + eventType + ":" + workerJobStatus.oauthErrorType
 		_, ok := connectionDetailsMap[key]
 		if !ok {
 			cd := &utilTypes.ConnectionDetails{
@@ -493,6 +493,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 				EventName:      eventName,
 				EventType:      eventType,
 				StatTags:       workerJobStatus.statTags,
+				OAuthErrorType: workerJobStatus.oauthErrorType,
 			}
 			statusDetailsMap[key] = sd
 		}

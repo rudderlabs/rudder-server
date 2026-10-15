@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	oauthv2common "github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 )
 
@@ -241,9 +242,10 @@ func (s *apiService) makeRequest(
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		return nil, &APIError{
-			StatusCode: resp.StatusCode,
-			Message:    string(respBody),
-			Category:   categorizeError(resp.StatusCode),
+			StatusCode:     resp.StatusCode,
+			Message:        string(respBody),
+			Category:       categorizeError(resp.StatusCode),
+			OAuthErrorType: oauthv2common.CredentialErrorType(gjson.GetBytes(respBody, "interceptorResponse.errorType").String()),
 		}
 	}
 

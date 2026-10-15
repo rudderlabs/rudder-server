@@ -34,6 +34,7 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -281,8 +282,9 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 		})
 		destInitFailStat.Count(1)
 		manager = &asynccommon.InvalidManager{
-			Error:    fmt.Errorf("%s initialization failed with error: %v", destination.Name, err),
-			FailedAt: brt.now(),
+			Error:          fmt.Errorf("%s initialization failed with error: %v", destination.Name, err),
+			FailedAt:       brt.now(),
+			OAuthErrorType: oauthv2.CredentialErrorType(err),
 		}
 	}
 	_, ok := brt.asyncDestinationStruct[destination.ID]

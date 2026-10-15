@@ -20,6 +20,8 @@ type workerJobStatus struct {
 	payload    json.RawMessage
 	statTags   map[string]string
 	parameters routerutils.JobParameters
+	// oauthErrorType is non-empty when the job failed because its OAuth credential is dead
+	oauthErrorType string
 }
 type Diagnostic struct {
 	diagnosisTicker    *time.Ticker

@@ -232,7 +232,7 @@ var _ = Describe("Oauth", func() {
 			response, err := oauthHandler.FetchToken(fetchTokenParams)
 			Expect(err).ToNot(BeNil())
 			Expect(response).To(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusBadRequest))
+			Expect(err.StatusCode()).To(Equal(http.StatusUnauthorized))
 			Expect(err).To(MatchError(common.ErrInvalidGrant))
 		})
 		It("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend service is not available", func() {
@@ -501,7 +501,7 @@ var _ = Describe("Oauth", func() {
 			response, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
 			Expect(err).ToNot(BeNil())
 			Expect(response).To(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusBadRequest))
+			Expect(err.StatusCode()).To(Equal(http.StatusUnauthorized))
 			Expect(err).To(MatchError(common.ErrInvalidGrant))
 		})
 		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response due to config backend service is not available", func() {
@@ -722,7 +722,7 @@ var _ = Describe("Oauth", func() {
 			response, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
 			Expect(err).ToNot(BeNil())
 			Expect(response).To(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusBadRequest))
+			Expect(err.StatusCode()).To(Equal(http.StatusUnauthorized))
 			Expect(err).To(MatchError(common.ErrInvalidGrant))
 		})
 	})

@@ -28,6 +28,8 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	MockAuthorizer "github.com/rudderlabs/rudder-server/mocks/services/oauthV2"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	oauthv2common "github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -343,6 +345,25 @@ var _ = Describe("Bing ads Audience", func() {
 				HasFailed:  true,
 			}
 			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
+			Expect(recievedResponse).To(Equal(expectedResp))
+		})
+
+		It("TestBingAdsPollDeadOAuthCredential", func() {
+			initBingads()
+			ctrl := gomock.NewController(GinkgoT())
+			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+			clientI := Client{}
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+
+			// the bulk service fetches the token itself, so a refused refresh surfaces as its error
+			tokenErr := oauthv2.NewStatusCodeError(http.StatusUnauthorized, &oauthv2.TypeMessageError{Type: oauthv2common.RefTokenInvalidGrant, Message: "refresh token revoked"})
+			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(nil, fmt.Errorf("generating the accessToken: %w", tokenErr))
+			expectedResp := common.PollStatusResponse{
+				StatusCode:     500,
+				HasFailed:      true,
+				OAuthErrorType: oauthv2common.RefTokenInvalidGrant,
+			}
+			recievedResponse := bulkUploader.Poll(context.Background(), common.AsyncPoll{ImportId: "dummyRequestId123"})
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
 

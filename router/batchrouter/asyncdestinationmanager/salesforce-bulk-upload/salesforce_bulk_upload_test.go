@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"net/http"
 	"os"
 	"testing"
 
@@ -628,4 +629,29 @@ func TestSalesforceBulk_NewManager(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, manager)
 	})
+}
+
+func TestSalesforceBulk_Poll_DeadOAuthCredential(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
+	mockAPI.EXPECT().GetJobStatus("job-123").Return(nil, &salesforcebulkupload.APIError{
+		StatusCode:     http.StatusUnauthorized,
+		Message:        "refresh token revoked",
+		Category:       "RefreshToken",
+		OAuthErrorType: "ref_token_invalid_grant",
+	})
+	mockAPI.EXPECT().GetJobStatus("job-456").Return(nil, &salesforcebulkupload.APIError{
+		StatusCode: http.StatusUnauthorized,
+		Message:    "token expired",
+		Category:   "RefreshToken",
+	})
+
+	uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, &backendconfig.DestinationT{})
+
+	result := uploader.Poll(context.Background(), common.AsyncPoll{ImportId: `{"id":"job-123","headers":["Email"]}`})
+	require.Equal(t, http.StatusBadRequest, result.StatusCode, "a dead credential stays terminal although it answers 401")
+	require.Equal(t, "ref_token_invalid_grant", result.OAuthErrorType)
+
+	result = uploader.Poll(context.Background(), common.AsyncPoll{ImportId: `{"id":"job-456","headers":["Email"]}`})
+	require.Equal(t, http.StatusInternalServerError, result.StatusCode, "an expired token is still retried")
 }

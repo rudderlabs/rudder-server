@@ -296,7 +296,7 @@ func getRefreshTokenFromResponse(response string, l logger.Logger) (oauthToken *
 	message := gjson.Get(response, "body.message").String()
 	switch errorType {
 	case common.RefTokenInvalidGrant:
-		statusCode = http.StatusBadRequest
+		statusCode = common.CredentialErrorStatusCode(common.RefTokenInvalidGrant)
 		if message == "" {
 			// User (or) AccessToken (or) RefreshToken has been revoked
 			l.Debugn("Unable to get body.message", logger.NewStringField("response", response))

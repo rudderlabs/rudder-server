@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
+	oauthv2common "github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -79,11 +80,13 @@ func (brt *Handle) getImportingJobs(ctx context.Context, augmentQueryParams func
 	return jobsResult, nil
 }
 
-func (brt *Handle) updateJobStatuses(ctx context.Context, allJobs, completedJobs []*jobsdb.JobT, statusList []*jobsdb.JobStatusT) error {
+// updateJobStatuses reports oauthErrorType, when non-empty, on the failed and aborted statuses.
+func (brt *Handle) updateJobStatuses(ctx context.Context, allJobs, completedJobs []*jobsdb.JobT, statusList []*jobsdb.JobStatusT, oauthErrorType string) error {
 	reportMetrics := brt.getReportMetrics(getReportMetricsParams{
-		StatusList:    statusList,
-		ParametersMap: brt.getParamertsFromJobs(allJobs),
-		JobsList:      allJobs,
+		StatusList:     statusList,
+		ParametersMap:  brt.getParamertsFromJobs(allJobs),
+		JobsList:       allJobs,
+		OAuthErrorType: oauthErrorType,
 	})
 
 	return misc.RetryWithNotify(ctx, brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
@@ -200,7 +203,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sour
 	if pollResp.StatusCode == http.StatusOK && pollResp.Complete {
 		if !pollResp.HasFailed && !pollResp.HasWarning {
 			statusList, _, jobIDConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Succeeded.State}, sourceID, destinationID)
-			if err := brt.updateJobStatuses(ctx, importingList, importingList, statusList); err != nil {
+			if err := brt.updateJobStatuses(ctx, importingList, importingList, statusList, ""); err != nil {
 				brt.logger.Errorn("[Batch Router] Failed to update job status", obskit.DestinationType(brt.destType), obskit.Error(err))
 				return statusList, err
 			}
@@ -305,14 +308,18 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sour
 			brt.asyncSuccessfulJobCount.Count(len(statusList) - len(failedJobs) - len(abortedJobs))
 			brt.asyncFailedJobCount.Count(len(failedJobs))
 			brt.asyncAbortedJobCount.Count(len(abortedJobs))
-			if err := brt.updateJobStatuses(ctx, importingList, completedJobsList, statusList); err != nil {
+			if err := brt.updateJobStatuses(ctx, importingList, completedJobsList, statusList, ""); err != nil {
 				brt.logger.Errorn("[Batch Router] Failed to update job status", obskit.DestinationType(brt.destType), obskit.Error(err))
 				return statusList, err
 			}
 		}
 	} else if pollResp.StatusCode == http.StatusBadRequest {
-		statusList, _, jobIDConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Aborted.State, ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", pollResp.Error)}, sourceID, destinationID)
-		if err := brt.updateJobStatuses(ctx, importingList, importingList, statusList); err != nil {
+		var abortErrorCode string // empty, as before, unless the credential is dead
+		if code := oauthv2common.CredentialErrorStatusCode(pollResp.OAuthErrorType); code != 0 {
+			abortErrorCode = strconv.Itoa(code)
+		}
+		statusList, _, jobIDConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Aborted.State, ErrorCode: abortErrorCode, ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", pollResp.Error)}, sourceID, destinationID)
+		if err := brt.updateJobStatuses(ctx, importingList, importingList, statusList, pollResp.OAuthErrorType); err != nil {
 			brt.logger.Errorn("[Batch Router] Failed to update job status", obskit.DestinationType(brt.destType), obskit.Error(err))
 			return statusList, err
 		}
@@ -320,7 +327,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sour
 	} else {
 		var abortedJobsList []*jobsdb.JobT
 		statusList, abortedJobsList, jobIDConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Failed.State, ErrorCode: strconv.Itoa(pollResp.StatusCode), ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", pollResp.Error)}, sourceID, destinationID)
-		if err := brt.updateJobStatuses(ctx, importingList, abortedJobsList, statusList); err != nil {
+		if err := brt.updateJobStatuses(ctx, importingList, abortedJobsList, statusList, pollResp.OAuthErrorType); err != nil {
 			brt.logger.Errorn("[Batch Router] Failed to update job status", obskit.DestinationType(brt.destType), obskit.Error(err))
 			return statusList, err
 		}
@@ -657,7 +664,11 @@ func (brt *Handle) getReportMetrics(params getReportMetricsParams) []*utilTypes.
 		workspaceID := status.WorkspaceId
 		eventName := parameters.EventName
 		eventType := parameters.EventType
-		key := parameters.SourceID + ":" + parameters.DestinationID + ":" + parameters.SourceJobRunID + ":" + status.JobState + ":" + status.ErrorCode + ":" + eventName + ":" + eventType
+		var oauthErrorType string
+		if status.JobState == jobsdb.Failed.State || status.JobState == jobsdb.Aborted.State {
+			oauthErrorType = params.OAuthErrorType
+		}
+		key := parameters.SourceID + ":" + parameters.DestinationID + ":" + parameters.SourceJobRunID + ":" + status.JobState + ":" + status.ErrorCode + ":" + eventName + ":" + eventType + ":" + oauthErrorType
 		_, ok := connectionDetailsMap[key]
 		if !ok {
 			cd := &utilTypes.ConnectionDetails{
@@ -689,6 +700,7 @@ func (brt *Handle) getReportMetrics(params getReportMetricsParams) []*utilTypes.
 				SampleEvent:    sampleEvent,
 				EventName:      eventName,
 				EventType:      eventType,
+				OAuthErrorType: oauthErrorType,
 			}
 			statusDetailsMap[key] = sd
 		}
@@ -847,6 +859,10 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 		}
 	}
 	if len(params.AsyncOutput.AbortJobIDs) > 0 {
+		abortErrorCode := "400"
+		if code := oauthv2common.CredentialErrorStatusCode(params.AsyncOutput.OAuthErrorType); code != 0 {
+			abortErrorCode = strconv.Itoa(code)
+		}
 		toAbortJobIDs := lo.Uniq(params.AsyncOutput.AbortJobIDs)
 		if len(params.AsyncOutput.SucceededJobIDs) > 0 {
 			if common := lo.Intersect(lo.Uniq(params.AsyncOutput.SucceededJobIDs), toAbortJobIDs); len(common) > 0 {
@@ -871,7 +887,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 				AttemptNum:    params.AttemptNums[jobId],
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
-				ErrorCode:     "400",
+				ErrorCode:     abortErrorCode,
 				ErrorResponse: routerutils.EnhanceJsonWithTime(params.FirstAttemptedAts[jobId], "firstAttemptedAt", stdjson.RawMessage(resp)),
 				Parameters:    routerutils.EmptyPayload,
 				JobParameters: jobParameters,
@@ -902,9 +918,10 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 	}
 
 	reportMetrics := brt.getReportMetrics(getReportMetricsParams{
-		StatusList:    statusList,
-		ParametersMap: params.JobParameters,
-		JobsList:      params.JobsList,
+		StatusList:     statusList,
+		ParametersMap:  params.JobParameters,
+		JobsList:       params.JobsList,
+		OAuthErrorType: params.AsyncOutput.OAuthErrorType,
 	})
 
 	// Mark the status of the jobs

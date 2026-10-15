@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"go.uber.org/mock/gomock"
@@ -29,6 +30,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type mockAsyncDestinationManager struct {
@@ -916,6 +918,66 @@ func TestAsyncDestinationManager(t *testing.T) {
 				FailedReason:  "transient failure",
 			},
 		})
+	})
+
+	t.Run("setMultipleJobStatus aborts with the credential status code when the OAuth credential is dead", func(t *testing.T) {
+		mockCtrl := gomock.NewController(t)
+		mockBatchRouterJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+
+		batchRouter := defaultHandle(destType)
+		batchRouter.jobsDB = mockBatchRouterJobsDB
+		batchRouter.rsourcesService = rsources.NewNoOpService()
+		batchRouter.destinationsMap["destinationID"] = &routerutils.DestinationWithSources{
+			Destination: backendconfig.DestinationT{ID: "destinationID"},
+			Sources: []backendconfig.SourceT{
+				{ID: "sourceID", WorkspaceID: "workspaceID"},
+			},
+		}
+
+		jobID := int64(102)
+		jobParameters := []byte(`{"source_id":"sourceID","destination_id":"destinationID","workspaceId":"workspaceID"}`)
+
+		mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) error {
+			return f(jobsdb.EmptyUpdateSafeTx())
+		})
+		mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, tx any, statuses []*jobsdb.JobStatusT) {
+			require.Len(t, statuses, 1)
+			require.Equal(t, jobsdb.Aborted.State, statuses[0].JobState)
+			require.Equal(t, "401", statuses[0].ErrorCode)
+		}).Return(nil)
+
+		batchRouter.setMultipleJobStatus(setMultipleJobStatusParams{
+			AttemptNums:       map[int64]int{jobID: 1},
+			FirstAttemptedAts: map[int64]time.Time{jobID: time.Now()},
+			JobParameters:     map[int64]stdjson.RawMessage{jobID: jobParameters},
+			PartitionIDs:      map[int64]string{jobID: "partition-1"},
+			AsyncOutput: common.AsyncUploadOutput{
+				DestinationID:  "destinationID",
+				AbortJobIDs:    []int64{jobID},
+				AbortReason:    "refresh token revoked",
+				OAuthErrorType: "ref_token_invalid_grant",
+			},
+		})
+	})
+
+	t.Run("getReportMetrics reports the OAuth error type on failed and aborted statuses only", func(t *testing.T) {
+		batchRouter := defaultHandle(destType)
+		parameters := []byte(`{"source_id":"sourceID","destination_id":"destinationID"}`)
+		metrics := batchRouter.getReportMetrics(getReportMetricsParams{
+			StatusList: []*jobsdb.JobStatusT{
+				{JobID: 1, JobState: jobsdb.Aborted.State, ErrorCode: "401", AttemptNum: 1},
+				{JobID: 2, JobState: jobsdb.Succeeded.State, ErrorCode: "200", AttemptNum: 1},
+			},
+			ParametersMap:  map[int64]stdjson.RawMessage{1: parameters, 2: parameters},
+			OAuthErrorType: "ref_token_invalid_grant",
+		})
+		byStatus := lo.SliceToMap(metrics, func(m *utilTypes.PUReportedMetric) (string, string) {
+			return m.StatusDetail.Status, m.StatusDetail.OAuthErrorType
+		})
+		require.Equal(t, map[string]string{
+			jobsdb.Aborted.State:   "ref_token_invalid_grant",
+			jobsdb.Succeeded.State: "",
+		}, byStatus)
 	})
 
 	t.Run("prepareJobStatusList marks failed jobs as drained when retry limit is reached", func(t *testing.T) {

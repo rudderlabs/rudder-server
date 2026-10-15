@@ -77,6 +77,8 @@ type APIError struct {
 	StatusCode int
 	Message    string
 	Category   string
+	// OAuthErrorType is non-empty when the request failed because the OAuth credential is dead
+	OAuthErrorType string
 }
 
 type ObjectInfo struct {

@@ -357,7 +357,9 @@ func (ym *YandexMetricaBulkUploader) Upload(_ context.Context, asyncDestStruct *
 	uploadTimeStat.Since(startTime)
 
 	if resp.StatusCode != http.StatusOK { // error scenario
-		return ym.generateErrorOutput("got non 200 response from the destination", errors.New(string(bodyBytes)), importingJobIDs)
+		output := ym.generateErrorOutput("got non 200 response from the destination", errors.New(string(bodyBytes)), importingJobIDs)
+		output.OAuthErrorType = oauthv2common.CredentialErrorType(transResp.InterceptorResponse.ErrorType)
+		return output
 	}
 	eventsSuccessStat.Count(len(asyncDestStruct.ImportingJobIDs))
 	return common.AsyncUploadOutput{

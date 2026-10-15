@@ -1,6 +1,9 @@
 package common
 
-import "errors"
+import (
+	"errors"
+	"net/http"
+)
 
 const (
 	CategoryRefreshToken = "REFRESH_TOKEN"
@@ -22,3 +25,26 @@ const (
 
 // ErrInvalidGrant is a sentinel error returned when the token is invalid.
 var ErrInvalidGrant = errors.New("invalid grant")
+
+// CredentialErrorType returns errorType when it means the OAuth credential itself is dead (the
+// refresh token was refused, or the destination reported the account inactive), and "" for every
+// other error type. Callers report its result as the delivery's oauthErrorType, a bounded label.
+func CredentialErrorType(errorType string) string {
+	switch errorType {
+	case RefTokenInvalidGrant, CategoryAuthStatusInactive:
+		return errorType
+	}
+	return ""
+}
+
+// CredentialErrorStatusCode is the status a job gets when its OAuth credential is dead: 401 when the
+// refresh token was refused, 403 when the destination reported the account inactive.
+func CredentialErrorStatusCode(errorType string) int {
+	switch errorType {
+	case RefTokenInvalidGrant:
+		return http.StatusUnauthorized
+	case CategoryAuthStatusInactive:
+		return http.StatusForbidden
+	}
+	return 0
+}

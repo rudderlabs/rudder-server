@@ -67,6 +67,8 @@ type getReportMetricsParams struct {
 	StatusList    []*jobsdb.JobStatusT
 	ParametersMap map[int64]stdjson.RawMessage
 	JobsList      []*jobsdb.JobT
+	// OAuthErrorType is reported on the failed and aborted statuses
+	OAuthErrorType string
 }
 
 type setMultipleJobStatusParams struct {

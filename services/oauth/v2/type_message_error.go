@@ -25,3 +25,12 @@ func (e *TypeMessageError) Unwrap() error {
 		return errors.New(e.Type)
 	}
 }
+
+// CredentialErrorType returns the common.CredentialErrorType of the TypeMessageError in err's chain,
+// or "" when there is none.
+func CredentialErrorType(err error) string {
+	if typeMessageError, ok := errors.AsType[*TypeMessageError](err); ok {
+		return common.CredentialErrorType(typeMessageError.Type)
+	}
+	return ""
+}

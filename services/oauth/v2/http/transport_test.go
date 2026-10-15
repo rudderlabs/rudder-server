@@ -416,12 +416,12 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 				// OriginalResponse keeps the raw error text for the callers that fall back to it
 				Expect(transportResponse.OriginalResponse).To(Equal(expectedOriginalResponse))
 			},
-			Entry("terminal: invalid_grant is tagged as such and propagated as a 400 so the caller can abort",
+			Entry("terminal: invalid_grant is tagged as such and propagated as a 401 so the caller can abort",
 				403,
 				`{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant"}`,
-				http.StatusBadRequest,
+				http.StatusUnauthorized,
 				`[google_analytics] "invalid_grant" error, refresh token has been revoked`,
-				`status 400: type: ref_token_invalid_grant, message: [google_analytics] "invalid_grant" error, refresh token has been revoked`,
+				`status 401: type: ref_token_invalid_grant, message: [google_analytics] "invalid_grant" error, refresh token has been revoked`,
 				common.RefTokenInvalidGrant,
 			),
 			Entry("retryable: a different error type is tagged with its own type and stays a 500",
