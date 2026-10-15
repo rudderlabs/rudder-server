@@ -48,6 +48,17 @@ func WithCache(cache OauthTokenCache) func(*oauthHandler) {
 	}
 }
 
+// WithReauthEviction makes the handler treat a cached token as stale when the workspace config reports
+// a secretVersion newer than the one the token carries. Config-backend stores a new version on every
+// re-authorization and on every routine refresh, so "changed" is not the test: the pod that just
+// refreshed already holds the newest version and must not re-fetch. Until now a pod kept an old token
+// until it expired or a delivery failed with the 401 class; the 403 class never re-asked (INT-6859).
+func WithReauthEviction(bc backendconfig.BackendConfig) func(*oauthHandler) {
+	return func(h *oauthHandler) {
+		h.secretVersions = SecretVersionsFor(bc)
+	}
+}
+
 // WithLocker sets the locker for the OAuthHandler
 func WithLocker(lock *kitsync.PartitionRWLocker) func(*oauthHandler) {
 	return func(h *oauthHandler) {
@@ -157,8 +168,9 @@ type oauthHandler struct {
 	rudderFlowType common.RudderFlow
 	cpClient       controlplane.Connector
 
-	cacheMu *kitsync.PartitionRWLocker
-	cache   OauthTokenCache
+	cacheMu        *kitsync.PartitionRWLocker
+	cache          OauthTokenCache
+	secretVersions *SecretVersions
 
 	refreshBeforeExpiry time.Duration
 	cbeURL              string
@@ -215,6 +227,17 @@ func (h *oauthHandler) RefreshToken(params *OAuthTokenParams, previousSecret jso
 	return h.getToken(params, previousSecret, action, statsHandler)
 }
 
+// newerSecretVersion reports whether the control plane holds a newer secret than the cached token, and
+// that version. An entry cached before this release carries version 0 and is left alone until it
+// expires; an account missing from the config reads 0 and is never newer.
+func (h *oauthHandler) newerSecretVersion(accountID string, cached OAuthToken) (int, bool) {
+	if h.secretVersions == nil || cached.SecretVersion == 0 {
+		return 0, false
+	}
+	v := h.secretVersions.Get(accountID)
+	return v, v > cached.SecretVersion
+}
+
 func (h *oauthHandler) getToken(params *OAuthTokenParams, previousSecret json.RawMessage, action string, statsHandler OAuthStatsHandler) (json.RawMessage, StatusCodeError) {
 	// Create a logger with all context fields
 	log := h.logger.Withn(
@@ -253,12 +276,22 @@ func (h *oauthHandler) getToken(params *OAuthTokenParams, previousSecret json.Ra
 		ExpiredSecret: nil,  // we are not forcing upstream service to refresh the token by default, which will only happen if hasExpired is true and expiredSecret is equal to the upstream service's stored secret
 	}
 	if cached, ok := h.cache.Load(params.AccountID); ok {
-		if !isOauthTokenExpired(cached, previousSecret, h.refreshBeforeExpiry, statsHandler) {
+		if configVersion, superseded := h.newerSecretVersion(params.AccountID, cached); superseded {
+			// A re-authorization, or a refresh by another pod: fetch the stored secret instead of serving
+			// the stale one. A plain fetch (expiredSecret nil, the default body above), not a forced
+			// refresh: the stored secret is already fresh, so no provider call follows. If that fetch fails
+			// the call fails, as a failed forced refresh does today, and the stale secret is not served; the
+			// caller retries the job and the next token use tries again.
+			log.Infon("cached OAuth token superseded by a newer secret in the control plane",
+				logger.NewIntField("cachedSecretVersion", int64(cached.SecretVersion)),
+				logger.NewIntField("configSecretVersion", int64(configVersion)))
+		} else if !isOauthTokenExpired(cached, previousSecret, h.refreshBeforeExpiry, statsHandler) {
 			return cached.Secret, nil
-		}
-		refTokenBody = OauthTokenRequestBody{ // forcing refresh of token as it is expired or about to expire, or previousSecret matches the cached secret
-			HasExpired:    true,
-			ExpiredSecret: cached.Secret,
+		} else {
+			refTokenBody = OauthTokenRequestBody{ // forcing refresh of token as it is expired or about to expire, or previousSecret matches the cached secret
+				HasExpired:    true,
+				ExpiredSecret: cached.Secret,
+			}
 		}
 	}
 	token, err := h.getTokenFromAPI(params, refTokenBody, statsHandler, action)

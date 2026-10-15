@@ -31,6 +31,7 @@ func NewOAuthHttpClient(client *http.Client, flowType common.RudderFlow, tokenCa
 	if oauthHandler == nil {
 		oauthHandler = oauth.NewOAuthHandler(backendConfig,
 			oauth.WithCache(*tokenCache),
+			oauth.WithReauthEviction(backendConfig),
 			oauth.WithLocker(opArgs.Locker),
 			oauth.WithRefreshBeforeExpiry(opArgs.ExpirationTimeDiff),
 			oauth.WithLogger(opArgs.Logger),

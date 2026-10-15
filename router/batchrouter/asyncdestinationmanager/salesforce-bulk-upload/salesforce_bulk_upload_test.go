@@ -22,6 +22,7 @@ import (
 	salesforcebulkupload_mocks "github.com/rudderlabs/rudder-server/mocks/router/salesforcebulkupload"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	salesforcebulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/salesforce-bulk-upload"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
 func TestSalesforceBulk_Transform(t *testing.T) {
@@ -616,6 +617,9 @@ func TestSalesforceBulk_NewManager(t *testing.T) {
 
 		ctrl := gomock.NewController(t)
 		mockBackendConfig := mockBackendConfig.NewMockBackendConfig(ctrl)
+		ch := make(chan pubsub.DataEvent)
+		t.Cleanup(func() { close(ch) })
+		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).Return(pubsub.DataChannel(ch)).AnyTimes()
 
 		manager, err := salesforcebulkupload.NewManager(
 			config.New(),

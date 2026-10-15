@@ -14,6 +14,7 @@ import (
 type OAuthToken struct {
 	ExpirationDate string          `json:"expirationDate"`
 	Secret         json.RawMessage `json:"secret"`
+	SecretVersion  int             `json:"secretVersion"` // the control plane's version of this secret: bumped on every refresh and on re-authorization
 }
 
 func (at *OAuthToken) IsEmpty() bool {

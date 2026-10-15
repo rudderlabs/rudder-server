@@ -29,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -716,6 +717,9 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+	ch := make(chan pubsub.DataEvent)
+	t.Cleanup(func() { close(ch) })
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).Return(pubsub.DataChannel(ch)).AnyTimes()
 
 	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 	mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&mockIdentifier{})
@@ -2226,6 +2230,9 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+	ch := make(chan pubsub.DataEvent)
+	t.Cleanup(func() { close(ch) })
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).Return(pubsub.DataChannel(ch)).AnyTimes()
 
 	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 	mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&mockIdentifier{})

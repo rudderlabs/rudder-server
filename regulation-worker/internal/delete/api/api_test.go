@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	oauthv2_http "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 	"github.com/rudderlabs/rudder-server/services/transformer"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
@@ -289,6 +290,9 @@ func (*mockIdentifier) Type() deployment.Type         { return "mockType" }
 func TestOAuth(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+	ch := make(chan pubsub.DataEvent)
+	t.Cleanup(func() { close(ch) })
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).Return(pubsub.DataChannel(ch)).AnyTimes()
 
 	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 	mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&mockIdentifier{})
