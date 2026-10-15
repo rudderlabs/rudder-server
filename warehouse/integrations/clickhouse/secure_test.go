@@ -32,13 +32,11 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
-// TestSecureConnection covers the TLS path against the v1 implementation, and
-// TestSecureConnectionV2 covers it against v2.
-//
-// It stands apart from TestIntegration because the server needs a certificate
-// that only exists for the duration of the run. The shared compose files cannot
-// mount one, so this test starts the go-kit ClickHouse resource instead.
-func TestSecureConnection(t *testing.T) {
+// TestIntegrationSecureConnection covers the TLS path. Its name starts with
+// TestIntegration so the CI warehouse job (-run TestIntegration) runs it. It needs
+// a server certificate that exists only for this run, so it starts its own go-kit
+// ClickHouse resource with WithTLS.
+func TestIntegrationSecureConnection(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
