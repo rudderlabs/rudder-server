@@ -88,7 +88,7 @@ require (
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.5
 	github.com/rudderlabs/keydb v1.4.1
-	github.com/rudderlabs/rudder-cp-sdk v1.4.1
+	github.com/rudderlabs/rudder-cp-sdk v1.4.2-0.20261016115046-457065804c8c
 	github.com/rudderlabs/rudder-go-kit v0.84.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.7
 	github.com/rudderlabs/rudder-schemas v0.12.0
