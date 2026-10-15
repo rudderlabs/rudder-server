@@ -1995,6 +1995,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			return nil, err
 		}
 	}
+	nonDroppedJobIDs := make(map[int64]struct{}, len(jobList))
 	for _, event := range jobsWithMetaData {
 		sourceId := event.eventParams.SourceId
 		if event.eventParams.DestinationID != "" {
@@ -2277,6 +2278,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		transformerEvent.Metadata.MergedTpConfig = event.source.DgSourceTrackingPlanConfig.GetMergedConfig(singularEventMetadata.EventType)
 
 		groupedEventsBySourceId[SourceIDT(sourceId)] = append(groupedEventsBySourceId[SourceIDT(sourceId)], transformerEvent)
+		nonDroppedJobIDs[event.jobID] = struct{}{}
 	}
 
 	if len(statusList) != len(jobList) {
@@ -2319,9 +2321,15 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		eventsByMessageID:          eventsByMessageID,
 		jobIDToSpecificDestMapOnly: jobIDToSpecificDestMapOnly,
 		statusList:                 statusList,
-		jobList:                    jobList,
-		sourceDupStats:             sourceDupStats,
-		dedupKeys:                  dedupKeys,
+		// only jobs that still have at least one event after the drop gates above (suppression,
+		// bot drop, event blocking, dedup) move on, so dropped traffic never counts towards
+		// tracked users or activation records
+		jobList: lo.Filter(jobList, func(job *jobsdb.JobT, _ int) bool {
+			_, ok := nonDroppedJobIDs[job.JobID]
+			return ok
+		}),
+		sourceDupStats: sourceDupStats,
+		dedupKeys:      dedupKeys,
 	}, nil
 }
 
