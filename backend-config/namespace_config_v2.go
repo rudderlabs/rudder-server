@@ -63,6 +63,8 @@ func newV2ConfigFetcher(nc *namespaceConfig) (*v2ConfigFetcher, error) {
 			doer:             &fetchStatsDoer{doer: nc.client, stats: nc.stats, version: "v2"},
 			configEnvHandler: nc.configEnvHandler,
 		}),
+		// without updatedAfter the control plane sends every catalogue anyway
+		cpsdk.WithIncrementalDefinitions(nc.incrementalConfigUpdates && nc.incrementalDefinitions),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating control plane client: %w", err)
