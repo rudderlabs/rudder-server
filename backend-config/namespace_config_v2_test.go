@@ -227,6 +227,88 @@ func TestV2ConfigFetcher(t *testing.T) {
 		require.Equal(t, 3, counting.calls["ws-2"])
 	})
 
+	t.Run("incremental definitions", func(t *testing.T) {
+		ctx := context.Background()
+		const cursor = "2026-08-01T10:00:00.000Z"
+		enabled := func(nc *namespaceConfig) { nc.incrementalDefinitions = true }
+
+		t.Run("unchanged catalogues are kept, sent ones replaced, and the cursor drives updatedAfter", func(t *testing.T) {
+			srv := &v2Server{t: t, secret: "service-secret", cursor: cursor}
+			srv.responses = [][]byte{
+				v2Doc{Workspaces: map[string]any{
+					"ws-1": v2Workspaceof("2026-07-24T17:01:55.777Z"),
+					"ws-2": v2Workspaceof("2026-07-20T10:00:00.000Z"),
+				}}.json(t),
+				v2Doc{omitDefinitions: true, Workspaces: map[string]any{
+					"ws-1": nil,
+					"ws-2": v2Workspaceof("2026-07-26T10:00:00.000Z"),
+				}}.json(t),
+				v2Doc{
+					omitDefinitions:        true,
+					DestinationDefinitions: map[string]any{"WEBHOOK": v2Definition("dst-1", "2026-08-01T00:00:00.000Z")},
+					Workspaces:             map[string]any{"ws-1": nil, "ws-2": nil},
+				}.json(t),
+			}
+			fetcher, counting := newV2TestFetcher(t, srv, enabled)
+
+			_, err := fetcher.Get(ctx)
+			require.NoError(t, err)
+			configs, err := fetcher.Get(ctx)
+			require.NoError(t, err)
+
+			for i, header := range srv.headers {
+				require.Equal(t, "true", header.Get(incrementalDefinitionsHeader), "request %d must opt in", i)
+			}
+			require.Equal(t, cursor, srv.requests[1].Query().Get("updatedAfter"), "the cursor, not the newest workspace")
+			require.Equal(t, cursor, fetcher.lastUpdatedAt.Format(updatedAfterTimeFormat))
+
+			require.Len(t, configs, 2)
+			require.Equal(t, "2026-07-26T10:00:00.000Z", configs["ws-2"].UpdatedAt.Format(updatedAfterTimeFormat))
+			require.Contains(t, fetcher.cache.SourceDefinitions, "webhook")
+			require.Contains(t, fetcher.cache.DestinationDefinitions, "WEBHOOK")
+			require.Contains(t, fetcher.cache.AccountDefinitions, "ACC")
+			require.Equal(t, 1, counting.calls["ws-1"], "kept catalogues leave the generation, and the memo, as they were")
+
+			_, err = fetcher.Get(ctx)
+			require.NoError(t, err)
+			require.Equal(t, 2, counting.calls["ws-1"], "a sent catalogue changes the generation")
+			require.Equal(t, "2026-08-01T00:00:00.000Z",
+				fetcher.cache.DestinationDefinitions["WEBHOOK"].UpdatedAt.Format(updatedAfterTimeFormat))
+			require.Equal(t, "2026-01-01T00:00:00.000Z",
+				fetcher.cache.SourceDefinitions["webhook"].UpdatedAt.Format(updatedAfterTimeFormat))
+			require.Equal(t, "2026-01-03T00:00:00.000Z",
+				fetcher.cache.AccountDefinitions["ACC"].UpdatedAt.Format(updatedAfterTimeFormat))
+		})
+
+		t.Run("null catalogues on a cold cache reset and refetch", func(t *testing.T) {
+			srv := &v2Server{t: t, secret: "service-secret", cursor: cursor}
+			workspaces := map[string]any{"ws-1": v2Workspaceof("2026-07-24T17:01:55.777Z")}
+			srv.responses = [][]byte{
+				v2Doc{omitDefinitions: true, Workspaces: workspaces}.json(t),
+				v2Doc{Workspaces: workspaces}.json(t),
+			}
+			fetcher, _ := newV2TestFetcher(t, srv, enabled)
+
+			configs, err := fetcher.Get(ctx)
+			require.NoError(t, err)
+			require.Len(t, configs, 1)
+			require.Len(t, srv.requests, 2)
+		})
+
+		t.Run("disabled without incremental config updates", func(t *testing.T) {
+			srv := &v2Server{t: t, secret: "service-secret", cursor: cursor}
+			srv.responses = [][]byte{v2Doc{Workspaces: map[string]any{"ws-1": v2Workspaceof("2026-07-24T17:01:55.777Z")}}.json(t)}
+			fetcher, _ := newV2TestFetcher(t, srv, enabled, func(nc *namespaceConfig) {
+				nc.incrementalConfigUpdates = false
+			})
+
+			_, err := fetcher.Get(ctx)
+			require.NoError(t, err)
+			require.Empty(t, srv.headers[0].Get(incrementalDefinitionsHeader))
+			require.Equal(t, "2026-07-24T17:01:55.777Z", fetcher.lastUpdatedAt.Format(updatedAfterTimeFormat))
+		})
+	})
+
 	t.Run("updatedAfter across polls", func(t *testing.T) {
 		ctx := context.Background()
 		srv := &v2Server{t: t, secret: "service-secret"}
@@ -419,6 +501,22 @@ func TestV2ConfigFetcher(t *testing.T) {
 			require.NotContains(t, configs, "ws-PLACEHOLDER")
 		})
 
+		t.Run("the response headers survive the rewrite", func(t *testing.T) {
+			srv := &v2Server{t: t, secret: "service-secret", cursor: "2026-08-01T10:00:00.000Z"}
+			srv.responses = [][]byte{v2Doc{Workspaces: map[string]any{
+				"ws-1": v2Workspaceof("2026-07-24T17:01:55.777Z"),
+			}}.json(t)}
+			fetcher, _ := newV2TestFetcher(t, srv, func(nc *namespaceConfig) {
+				nc.configEnvHandler = &replacingConfigEnv{old: "PLACEHOLDER", new: "1"}
+				nc.incrementalDefinitions = true
+			})
+
+			_, err := fetcher.Get(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "2026-08-01T10:00:00.000Z", fetcher.lastUpdatedAt.Format(updatedAfterTimeFormat),
+				"the cursor is only read off the confirmed response's headers")
+		})
+
 		t.Run("a non 200 still surfaces, body and all", func(t *testing.T) {
 			srv := &v2Server{t: t, secret: "service-secret"}
 			srv.responses = [][]byte{v2Doc{Workspaces: map[string]any{
@@ -444,6 +542,8 @@ type v2Doc struct {
 	DestinationDefinitions map[string]any `json:"destinationDefinitions"`
 	AccountDefinitions     map[string]any `json:"accountDefinitions"`
 	Workspaces             map[string]any `json:"workspaces"`
+
+	omitDefinitions bool // unset catalogues are sent as null, as an incremental response does when unchanged
 }
 
 func v2Definition(id, updatedAt string) map[string]any {
@@ -457,14 +557,16 @@ func v2Workspaceof(updatedAt string) map[string]any {
 func (d v2Doc) json(t *testing.T) []byte {
 	t.Helper()
 	d.Version = v2ConfigVersion
-	if d.SourceDefinitions == nil {
-		d.SourceDefinitions = map[string]any{"webhook": v2Definition("src-1", "2026-01-01T00:00:00.000Z")}
-	}
-	if d.DestinationDefinitions == nil {
-		d.DestinationDefinitions = map[string]any{"WEBHOOK": v2Definition("dst-1", "2026-01-02T00:00:00.000Z")}
-	}
-	if d.AccountDefinitions == nil {
-		d.AccountDefinitions = map[string]any{"ACC": v2Definition("acc-1", "2026-01-03T00:00:00.000Z")}
+	if !d.omitDefinitions {
+		if d.SourceDefinitions == nil {
+			d.SourceDefinitions = map[string]any{"webhook": v2Definition("src-1", "2026-01-01T00:00:00.000Z")}
+		}
+		if d.DestinationDefinitions == nil {
+			d.DestinationDefinitions = map[string]any{"WEBHOOK": v2Definition("dst-1", "2026-01-02T00:00:00.000Z")}
+		}
+		if d.AccountDefinitions == nil {
+			d.AccountDefinitions = map[string]any{"ACC": v2Definition("acc-1", "2026-01-03T00:00:00.000Z")}
+		}
 	}
 	body, err := jsonrs.Marshal(d)
 	require.NoError(t, err)
@@ -476,8 +578,10 @@ type v2Server struct {
 	t         *testing.T
 	responses [][]byte
 	requests  []*url.URL
+	headers   []http.Header
 	secret    string
-	failFirst int // how many of the first requests to answer with a 500
+	failFirst int    // how many of the first requests to answer with a 500
+	cursor    string // when set, incremental definitions are confirmed with this cursor
 }
 
 func (s *v2Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -485,6 +589,7 @@ func (s *v2Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	require.True(s.t, ok)
 
 	s.requests = append(s.requests, r.URL)
+	s.headers = append(s.headers, r.Header)
 	if user != s.secret {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"message":"Unauthorized"}`))
@@ -498,8 +603,17 @@ func (s *v2Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if i >= len(s.responses) {
 		i = len(s.responses) - 1 // keep serving the last one
 	}
+	if s.cursor != "" && r.Header.Get(incrementalDefinitionsHeader) == "true" {
+		w.Header().Set(incrementalDefinitionsHeader, "true")
+		w.Header().Set(configUpdatedAtHeader, s.cursor)
+	}
 	_, _ = w.Write(s.responses[i])
 }
+
+const (
+	incrementalDefinitionsHeader = "X-Rudder-Incremental-Definitions"
+	configUpdatedAtHeader        = "X-Rudder-Config-Updated-At"
+)
 
 func (s *v2Server) lastQuery() url.Values { return s.requests[len(s.requests)-1].Query() }
 
