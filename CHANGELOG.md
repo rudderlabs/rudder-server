@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.90.1](https://github.com/rudderlabs/rudder-server/compare/v1.90.0...v1.90.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **router:** mask multi-request delivery payloads ([#7476](https://github.com/rudderlabs/rudder-server/issues/7476)) ([955580f](https://github.com/rudderlabs/rudder-server/commit/955580f720e440e0aee17035bce4cd1c942c9988))
+
 ## [1.90.0](https://github.com/rudderlabs/rudder-server/compare/v1.89.0...v1.90.0) (2026-10-12)
 
 
