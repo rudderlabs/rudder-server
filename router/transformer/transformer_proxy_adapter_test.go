@@ -183,6 +183,7 @@ func TestV1Adapter(t *testing.T) {
 			},
 		}
 		resp := ProxyResponseV1{
+			Status:  429,
 			Message: "test",
 			Response: []TPDestResponse{
 				{
@@ -223,6 +224,7 @@ func TestV1Adapter(t *testing.T) {
 		require.Equal(t, true, response.routerJobDontBatchDirectives[21])
 
 		require.Equal(t, "oauth123", response.authErrorCategory)
+		require.Equal(t, 429, response.destinationStatusCode)
 	})
 
 	t.Run("should map every response entry by its jobID, including jobIDs not in the request", func(t *testing.T) {

@@ -525,7 +525,7 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 								attemptedJobs += len(destinationJob.JobMetadataArray)
 								resp := w.proxyRequest(ctx, destinationJob, val)
 								// Record the new transformer_outgoing_request metrics
-								w.recordTransformerOutgoingRequestMetrics(val, destinationJob, resp.ProxyRequestStatusCode, time.Since(rdlTime))
+								w.recordTransformerOutgoingRequestMetrics(val, destinationJob, resp.DeliveryStatusCode(), time.Since(rdlTime))
 
 								maps.Copy(dontBatchDirectives, resp.DontBatchDirectives)
 								respStatusCodes, respBodyTemps, respContentType = resp.RespStatusCodes, resp.RespBodys, resp.RespContentType
