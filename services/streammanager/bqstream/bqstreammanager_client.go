@@ -54,8 +54,8 @@ func baseTransport() *http.Transport {
 	}
 	trans.MaxIdleConns = config.GetIntVar(64, 1, "Router.BQSTREAM.httpMaxIdleConns", "Router.BQSTREAM.noOfWorkers", "Router.noOfWorkers")
 	trans.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.BQSTREAM.httpMaxIdleConnsPerHost", "Router.BQSTREAM.noOfWorkers", "Router.noOfWorkers")
-	if http2Trans, err := http2.ConfigureTransports(trans); err == nil {
-		http2Trans.ReadIdleTimeout = 31 * time.Second
+	if http2Trans, err := http2.ConfigureTransports(trans); err == nil { //nolint:staticcheck // x/net API still works; migration to http.Transport.Protocols / HTTP2Config is a separate change.
+		http2Trans.ReadIdleTimeout = 31 * time.Second //nolint:staticcheck // x/net API still works; migration to http.Transport.Protocols / HTTP2Config is a separate change.
 	}
 	return trans
 }

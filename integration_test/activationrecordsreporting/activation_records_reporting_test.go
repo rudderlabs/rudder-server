@@ -366,6 +366,7 @@ func runRudderServer(t testing.TB, ctx context.Context, cancel context.CancelFun
 
 	// Disable noise so the pipeline is deterministic and fast.
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.mode"), "off")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.gw.pendingEvents.enabled"), "true")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DestinationDebugger.disableEventDeliveryStatusUploads"), "true")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "SourceDebugger.disableEventUploads"), "true")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "TransformationDebugger.disableTransformationStatusUploads"), "true")

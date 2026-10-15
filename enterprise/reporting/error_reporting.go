@@ -249,7 +249,7 @@ func (edr *ErrorDetailReporter) GetSyncer(syncerKey string) *types.SyncSource {
 
 func shouldReport(metric types.PUReportedMetric) bool {
 	switch {
-	case metric.StatusDetail.StatusCode >= http.StatusBadRequest, metric.StatusDetail.StatusCode == types.FilterEventCode, metric.StatusDetail.StatusCode == types.SuppressEventCode:
+	case metric.StatusDetail.StatusCode >= http.StatusBadRequest, types.IsFilteredCode(metric.StatusDetail.StatusCode), metric.StatusDetail.StatusCode == types.SuppressEventCode:
 		return true
 	default:
 		return false

@@ -308,6 +308,199 @@ func TestReportingDroppedEvents(t *testing.T) {
 			cancel()
 			_ = wg.Wait()
 		})
+
+		// With Reporting.eventFilterReasonMetrics.enabled the event_filter stage stops reporting
+		// succeeded rows and reports each filtered event under the filtered state with the status
+		// code of its reason (291 message type, 292 event name, 293 hybrid mode), while the aborted
+		// rows stay as they are. The flag is reloadable: switching it off at runtime brings back
+		// the succeeded rows and the filtered rows with status code 298.
+		t.Run("filtered events are reported per reason code when the reason metrics are enabled", func(t *testing.T) {
+			config.Reset()
+			defer config.Reset()
+
+			// track and identify are supported, but the hybrid filter of web sources only lets
+			// track through to the cloud, and only the "Allowed Event" conversion is accepted
+			dest := backendconfigtest.NewDestinationBuilder("WEBHOOK").
+				WithID("destination-1").
+				WithDefinitionConfigOption("supportedMessageTypes", []string{"track", "identify"}).
+				WithDefinitionConfigOption("hybridModeCloudEventsFilter", map[string]any{"web": map[string]any{"messageType": []string{"track"}}}).
+				WithConfigOption("connectionMode", "hybrid").
+				WithConfigOption("listOfConversions", []map[string]any{{"conversions": "Allowed Event"}}).
+				Build()
+			src := backendconfigtest.NewSourceBuilder().
+				WithID("source-1").
+				WithWriteKey("writekey-1").
+				WithConnection(dest).
+				Build()
+			src.SourceDefinition.Type = "web"
+
+			bcserver := backendconfigtest.NewBuilder().
+				WithWorkspaceConfig(
+					backendconfigtest.NewConfigBuilder().
+						WithSource(src).
+						Build()).
+				Build()
+			defer bcserver.Close()
+
+			trServer := transformertest.NewBuilder().Build()
+			defer trServer.Close()
+
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
+			postgresContainer, err := postgres.Setup(pool, t)
+			require.NoError(t, err)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			wg, ctx := errgroup.WithContext(ctx)
+			gwPort, err := kithelper.GetFreePort()
+			require.NoError(t, err)
+			wg.Go(func() error {
+				err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir(), map[string]any{
+					"Reporting.eventFilterReasonMetrics.enabled": true,
+					"drain.jobRunIDs": []string{"run-drained"},
+					// keep the router from retrying against the mirrored (undeliverable) payloads
+					"Router.toAbortDestinationIDs": "destination-1",
+				})
+				if err != nil {
+					t.Logf("rudder-server exited with error: %v", err)
+				}
+				return err
+			})
+			url := fmt.Sprintf("http://localhost:%d", gwPort)
+			health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
+
+			// reportCount sums the reports rows matching where, returning -1 on any query error so
+			// that it can be used inside a require.Eventually callback without asserting there.
+			reportCount := func(where string) int64 {
+				var count sql.NullInt64
+				if err := postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE " + where).Scan(&count); err != nil {
+					return -1
+				}
+				return count.Int64
+			}
+			// reportRows counts the reports rows matching where, returning -1 on any query error.
+			reportRows := func(where string) int64 {
+				var count int64
+				if err := postgresContainer.DB.QueryRow("SELECT count(*) FROM reports WHERE " + where).Scan(&count); err != nil {
+					return -1
+				}
+				return count
+			}
+			// drainGateway waits until every event sent so far has been processed. Reports are
+			// committed in the same transaction as the gateway job statuses, so once this returns
+			// every report row of the batch is visible.
+			drainGateway := func(total int) {
+				t.Helper()
+				require.Eventually(t, func() bool {
+					var jobsCount int
+					if err := postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('gw',1) WHERE job_state = 'succeeded'").Scan(&jobsCount); err != nil {
+						return false
+					}
+					t.Logf("gw processedJobCount: %d (expecting %d)", jobsCount, total)
+					return jobsCount == total
+				}, 60*time.Second, 500*time.Millisecond, "all gw events should be successfully processed")
+			}
+
+			events := []string{
+				// passes the event filter
+				`{"userId":"user-1","type":"track","event":"Allowed Event"}`,
+				// filtered with 291: page is not a supported message type
+				`{"userId":"user-2","type":"page","name":"Home"}`,
+				// filtered with 293: identify is supported, but not sent to the cloud for web sources
+				`{"userId":"user-3","type":"identify"}`,
+				// filtered with 292: not in the list of conversions
+				`{"userId":"user-4","type":"track","event":"Other Event"}`,
+				// aborted with 400: the message type is not a string
+				`{"userId":"user-5","type":123}`,
+				// aborted with 400: the message event is not a string
+				`{"userId":"user-6","type":"track","event":123}`,
+				// aborted with 410: the job run is drained
+				`{"userId":"user-7","type":"track","event":"Allowed Event","context":{"sources":{"job_run_id":"run-drained"}}}`,
+			}
+			sendAll := func() {
+				t.Helper()
+				for _, event := range events {
+					require.NoError(t, sendEventPayload("writekey-1", url, event))
+				}
+			}
+
+			sendAll()
+			drainGateway(len(events))
+
+			for _, code := range []int{291, 292, 293} {
+				require.Eventually(t, func() bool {
+					return reportCount(fmt.Sprintf("pu = 'event_filter' and destination_id = 'destination-1' and status = 'filtered' and status_code = %d", code)) == 1
+				}, 10*time.Second, 500*time.Millisecond, "one event should be reported as filtered with status code %d in event_filter stage", code)
+			}
+			require.EqualValues(t, 3, reportCount("pu = 'event_filter' and status = 'filtered'"),
+				"the three filtered events should be reported under the filtered state")
+			// drainGateway has already waited for the batch, so its report rows are visible and
+			// the absence of rows can be checked directly
+			require.EqualValues(t, 0, reportRows("pu = 'event_filter' and status_code = 298"),
+				"no event_filter row should keep status code 298")
+			require.EqualValues(t, 0, reportRows("pu = 'event_filter' and status not in ('filtered', 'aborted')"),
+				"event_filter should report only filtered and aborted rows")
+			require.Eventually(t, func() bool {
+				return reportCount("pu = 'event_filter' and status = 'aborted' and status_code = 400") == 2
+			}, 10*time.Second, 500*time.Millisecond, "the invalid type and invalid event should be aborted in event_filter stage")
+			require.Eventually(t, func() bool {
+				return reportCount("pu = 'event_filter' and status = 'aborted' and status_code = 410") == 1
+			}, 10*time.Second, 500*time.Millisecond, "the drained event should be aborted in event_filter stage")
+			require.Eventually(t, func() bool {
+				rows, err := postgresContainer.DB.Query("SELECT DISTINCT in_pu, initial_state, terminal_state FROM reports WHERE pu = 'event_filter'")
+				if err != nil {
+					return false
+				}
+				defer func() { _ = rows.Close() }()
+				var tuples int
+				for rows.Next() {
+					var inPU string
+					var initialState, terminalState bool
+					if err := rows.Scan(&inPU, &initialState, &terminalState); err != nil {
+						return false
+					}
+					if initialState || terminalState {
+						return false
+					}
+					if inPU != "" {
+						return false
+					}
+					tuples++
+				}
+				return rows.Err() == nil && tuples == 1
+			}, 10*time.Second, 500*time.Millisecond, "every event_filter row is non initial, non terminal with an empty in_pu")
+			require.Eventually(t, func() bool {
+				return reportCount("pu = 'dest_transformer' and destination_id = 'destination-1' and status = 'succeeded'") == 1
+			}, 10*time.Second, 500*time.Millisecond, "only the allowed event should reach the destination transformer")
+
+			config.Set("Reporting.eventFilterReasonMetrics.enabled", false)
+			sendAll()
+			drainGateway(2 * len(events))
+
+			require.Eventually(t, func() bool {
+				return reportCount("pu = 'event_filter' and status = 'filtered' and status_code = 298") == 3
+			}, 10*time.Second, 500*time.Millisecond, "with the flag off the filtered events should be reported as filtered with status code 298")
+			require.EqualValues(t, 6, reportCount("pu = 'event_filter' and status = 'filtered'"),
+				"the filtered rows of both batches should add up to six")
+			require.Eventually(t, func() bool {
+				return reportCount("pu = 'event_filter' and status = 'succeeded'") == 1
+			}, 10*time.Second, 500*time.Millisecond, "with the flag off the allowed event should be reported as succeeded")
+			for _, code := range []int{291, 292, 293} {
+				require.EqualValues(t, 1, reportCount(fmt.Sprintf("pu = 'event_filter' and status = 'filtered' and status_code = %d", code)),
+					"with the flag off no new rows with status code %d should be reported", code)
+			}
+			require.EqualValues(t, 4, reportCount("pu = 'event_filter' and status = 'aborted' and status_code = 400"),
+				"the 400 aborted rows should not depend on the flag")
+			require.EqualValues(t, 2, reportCount("pu = 'event_filter' and status = 'aborted' and status_code = 410"),
+				"the 410 aborted rows should not depend on the flag")
+			require.Eventually(t, func() bool {
+				return reportCount("pu = 'dest_transformer' and destination_id = 'destination-1' and status = 'succeeded'") == 2
+			}, 10*time.Second, 500*time.Millisecond, "only the allowed events should reach the destination transformer")
+
+			cancel()
+			_ = wg.Wait()
+		})
 	})
 
 	t.Run("Events dropped in destination transformation stage", func(t *testing.T) {
@@ -451,11 +644,20 @@ func TestReportingDroppedEvents(t *testing.T) {
 
 			require.Eventually(t, func() bool {
 				var droppedCount sql.NullInt64
-				require.NoError(t, postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE source_id = 'source-1' and destination_id = 'destination-1' AND pu = 'router' and status = 'aborted' and error_type = ''").Scan(&droppedCount))
+				require.NoError(t, postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE source_id = 'source-1' and destination_id = 'destination-1' AND pu = 'router' and status = 'aborted' and error_type = '' and in_pu = ''").Scan(&droppedCount))
 				t.Logf("router aborted count: %d", droppedCount.Int64)
 				logRows(t, postgresContainer.DB, "SELECT * FROM reports")
 				return droppedCount.Int64 == 10
 			}, 10*time.Second, 1*time.Second, "all events should be aborted in router stage")
+
+			// The processor commits its dest_transformer rows before the router aborts, so they are
+			// already present and guarantee the whole-table check below runs over a populated table.
+			var dtSucceeded sql.NullInt64
+			require.NoError(t, postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE source_id = 'source-1' AND destination_id = 'destination-1' AND pu = 'dest_transformer' AND status = 'succeeded' AND in_pu = ''").Scan(&dtSucceeded))
+			require.EqualValues(t, 10, dtSucceeded.Int64, "all events should succeed in dest_transformer with an empty in_pu")
+			var nonEmptyInPU int
+			require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM reports WHERE in_pu IS DISTINCT FROM ''").Scan(&nonEmptyInPU))
+			require.Zero(t, nonEmptyInPU, "no report row carries a non-empty in_pu")
 
 			cancel()
 			_ = wg.Wait()
@@ -755,8 +957,8 @@ func TestReportingDroppedEvents(t *testing.T) {
 			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
 			require.EqualValues(t, 0, reportCount("pu = 'destination_filter' and status = 'filtered'"),
 				"the destination filter never emits a plain filtered row")
-			require.EqualValues(t, 0, reportCount("pu = 'destination_filter' and in_pu = 'gateway'"),
-				"the destination filter emits only from fan-out, never from preprocess")
+			require.EqualValues(t, 0, reportCount("in_pu IS DISTINCT FROM ''"),
+				"no report row carries a non-empty in_pu")
 			require.EqualValues(t, 0, reportCount("source_id = 'source-2' and pu = 'destination_enter'"),
 				"a source without destinations has no candidates to enter")
 		})
@@ -1116,6 +1318,7 @@ func runRudderServer(ctx context.Context, cancel context.CancelFunc, port int, p
 	config.Set("DEST_TRANSFORM_URL", transformerURL)
 
 	config.Set("Warehouse.mode", "off")
+	config.Set("JobsDB.gw.pendingEvents.enabled", true)
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
 	config.Set("SourceDebugger.disableEventUploads", true)
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
@@ -1189,6 +1392,27 @@ func sendEvents(num int, eventType, writeKey, url string) error { // nolint:unpa
 		func() { kithttputil.CloseResponse(resp) }()
 	}
 
+	return nil
+}
+
+// sendEventPayload sends a single, already serialised event in a batch request.
+func sendEventPayload(writeKey, url, event string) error {
+	payload := fmt.Appendf(nil, `{"batch": [%s]}`, event)
+	req, err := http.NewRequest("POST", url+"/v1/batch", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(writeKey, "password")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { kithttputil.CloseResponse(resp) }()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to send event to rudder server, status code: %d: %s", resp.StatusCode, string(b))
+	}
 	return nil
 }
 

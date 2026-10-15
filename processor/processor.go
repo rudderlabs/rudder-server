@@ -206,6 +206,7 @@ type Handle struct {
 		reportingUTPassThroughMetricsEnabled      config.ValueLoader[bool]
 		reportingDTPassThroughMetricsEnabled      config.ValueLoader[bool]
 		reportingDTDiffMetricsEnabled             config.ValueLoader[bool]
+		reportingEventFilterReasonEnabled         config.ValueLoader[bool]
 
 		dropEventsForDisabledDestAtProcRebuild config.ValueLoader[bool]
 	}
@@ -858,6 +859,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.reportingUTPassThroughMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.userTransformerPassThroughMetrics.enabled")
 	proc.config.reportingDTPassThroughMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.destTransformerPassThroughMetrics.enabled")
 	proc.config.reportingDTDiffMetricsEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.destTransformerDiffMetrics.enabled")
+	proc.config.reportingEventFilterReasonEnabled = proc.conf.GetReloadableBoolVar(false, "Reporting.eventFilterReasonMetrics.enabled")
 	// Opt-in early drop at the proc rebuild stage for destinations disabled since fan-out;
 	// by default such events keep flowing so the router/batchrouter aborts them with reporting.
 	proc.config.dropEventsForDisabledDestAtProcRebuild = proc.conf.GetReloadableBoolVar(false, "Processor.DestinationIsolation.dropEventsForDisabledDestAtProcRebuild")
@@ -1165,7 +1167,7 @@ func (proc *Handle) getTransformerEvents(
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	destination *backendconfig.DestinationT,
 	connection backendconfig.Connection,
-	inPU, pu string,
+	pu string,
 ) (
 	[]types.TransformerEvent,
 	[]*reportingtypes.PUReportedMetric,
@@ -1267,7 +1269,7 @@ func (proc *Handle) getTransformerEvents(
 			for _, sd := range statusDetailsMap[k] {
 				m := &reportingtypes.PUReportedMetric{
 					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails(inPU, pu, false, false),
+					PUDetails:         *reportingtypes.CreatePUDetails(pu, false, false),
 					StatusDetail:      sd,
 				}
 				successMetrics = append(successMetrics, m)
@@ -1427,12 +1429,18 @@ func (proc *Handle) updateMetricMaps(
 	sd.ViolationCount += int64(veCount)
 }
 
+// responseStatusCode reports a response under its own status code.
+func responseStatusCode(r types.TransformerResponse) int { return r.StatusCode }
+
+// getNonSuccessfulMetrics builds the failed and filtered metrics of a response.
+// filteredReportStatusCode sets the status code of the report rows built for filtered responses.
 func (proc *Handle) getNonSuccessfulMetrics(
 	response types.Response,
 	inputEvents []types.TransformerEvent,
 	commonMetaData *types.Metadata,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
-	inPU, pu string,
+	pu string,
+	filteredReportStatusCode func(types.TransformerResponse) int,
 ) *NonSuccessfulTransformationMetrics {
 	m := &NonSuccessfulTransformationMetrics{}
 
@@ -1455,8 +1463,9 @@ func (proc *Handle) getNonSuccessfulMetrics(
 		commonMetaData,
 		eventsByMessageID,
 		metadataByMessageID,
-		inPU,
 		pu,
+		procFilteredCountStat,
+		filteredReportStatusCode,
 	)
 
 	m.failedJobs, m.failedMetrics, m.failedCountMap = proc.getTransformationMetrics(
@@ -1465,8 +1474,9 @@ func (proc *Handle) getNonSuccessfulMetrics(
 		commonMetaData,
 		eventsByMessageID,
 		metadataByMessageID,
-		inPU,
 		pu,
+		procErrorCountsStat,
+		responseStatusCode,
 	)
 
 	return m
@@ -1502,17 +1512,15 @@ func (proc *Handle) getTransformationMetrics(
 	commonMetaData *types.Metadata,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	metadataByMessageID map[string]*types.Metadata,
-	inPU, pu string,
+	pu string,
+	statFunc func(destType, pu, statusCode string),
+	reportStatusCode func(types.TransformerResponse) int,
 ) ([]procErrorJob, []*reportingtypes.PUReportedMetric, map[string]int64) {
 	metrics := make([]*reportingtypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 	statusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	countMap := make(map[string]int64)
 	var jobs []procErrorJob
-	statFunc := procErrorCountsStat
-	if state == jobsdb.Filtered.State {
-		statFunc = procFilteredCountStat
-	}
 	for i := range transformerResponses {
 		failedEvent := &transformerResponses[i]
 		messages := lo.Map(
@@ -1528,6 +1536,8 @@ func (proc *Handle) getTransformationMetrics(
 			if metadata, ok := metadataByMessageID[messageID]; ok {
 				failedEventWithMetadata.Metadata = *metadata
 			}
+			// the report row, and its key, carry the reported status code; jobs and stats keep the response's own
+			failedEventWithMetadata.StatusCode = reportStatusCode(*failedEvent)
 
 			proc.updateMetricMaps(
 				nil,
@@ -1603,7 +1613,7 @@ func (proc *Handle) getTransformationMetrics(
 			for _, sd := range statusDetailsMap[k] {
 				m := &reportingtypes.PUReportedMetric{
 					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails(inPU, pu, false, false),
+					PUDetails:         *reportingtypes.CreatePUDetails(pu, false, false),
 					StatusDetail:      sd,
 				}
 				metrics = append(metrics, m)
@@ -1663,7 +1673,7 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 }
 
 func getDiffMetrics(
-	inPU, pu string,
+	pu string,
 	inCountMetadataMap map[string]MetricMetadata,
 	successCountMetadataMap map[string]MetricMetadata,
 	inCountMap, successCountMap, failedCountMap, filteredCountMap map[string]int64,
@@ -1693,7 +1703,6 @@ func getDiffMetrics(
 			TransformationVersionID: metadata.transformationVersionID,
 			TrackingPlanID:          metadata.trackingPlanID,
 			TrackingPlanVersion:     metadata.trackingPlanVersion,
-			InPU:                    inPU,
 			PU:                      pu,
 			StatusDetail: &reportingtypes.StatusDetail{
 				Status:      reportingtypes.DiffStatus,
@@ -2343,7 +2352,7 @@ func (proc *Handle) assembleSideStatusDetailMetrics(
 		for _, sd := range botManagementStatusDetailsMap[k] {
 			metrics = append(metrics, &reportingtypes.PUReportedMetric{
 				ConnectionDetails: *cd,
-				PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.BOT_MANAGEMENT, false, false),
+				PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.BOT_MANAGEMENT, false, false),
 				StatusDetail:      sd,
 			})
 		}
@@ -2351,7 +2360,7 @@ func (proc *Handle) assembleSideStatusDetailMetrics(
 		for _, sd := range eventBlockingStatusDetailsMap[k] {
 			metrics = append(metrics, &reportingtypes.PUReportedMetric{
 				ConnectionDetails: *cd,
-				PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.EVENT_BLOCKING, false, false),
+				PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.EVENT_BLOCKING, false, false),
 				StatusDetail:      sd,
 			})
 		}
@@ -2359,7 +2368,7 @@ func (proc *Handle) assembleSideStatusDetailMetrics(
 		for _, sd := range userSuppressionStatusDetailsMap[k] {
 			metrics = append(metrics, &reportingtypes.PUReportedMetric{
 				ConnectionDetails: *cd,
-				PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.USER_SUPPRESSION, false, false),
+				PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.USER_SUPPRESSION, false, false),
 				StatusDetail:      sd,
 			})
 		}
@@ -2367,7 +2376,7 @@ func (proc *Handle) assembleSideStatusDetailMetrics(
 		for _, sd := range dedupStatusDetailsMap[k] {
 			metrics = append(metrics, &reportingtypes.PUReportedMetric{
 				ConnectionDetails: *cd,
-				PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DEDUP, false, false),
+				PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.DEDUP, false, false),
 				StatusDetail:      sd,
 			})
 		}
@@ -2375,7 +2384,7 @@ func (proc *Handle) assembleSideStatusDetailMetrics(
 		for _, sd := range gatewayIngestedStatusDetailsMap[k] {
 			metrics = append(metrics, &reportingtypes.PUReportedMetric{
 				ConnectionDetails: *cd,
-				PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.GATEWAY_INGESTED, false, false),
+				PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.GATEWAY_INGESTED, false, false),
 				StatusDetail:      sd,
 			})
 		}
@@ -2383,7 +2392,7 @@ func (proc *Handle) assembleSideStatusDetailMetrics(
 		for _, sd := range statusDetailsMap[k] {
 			metrics = append(metrics, &reportingtypes.PUReportedMetric{
 				ConnectionDetails: *cd,
-				PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.GATEWAY, false, true),
+				PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.GATEWAY, false, true),
 				StatusDetail:      sd,
 			})
 		}
@@ -2391,7 +2400,7 @@ func (proc *Handle) assembleSideStatusDetailMetrics(
 		for _, sd := range enricherStatusDetailsMap[k] {
 			metrics = append(metrics, &reportingtypes.PUReportedMetric{
 				ConnectionDetails: *cd,
-				PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.GATEWAY, false, true),
+				PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.GATEWAY, false, true),
 				StatusDetail:      sd,
 			})
 		}
@@ -2415,9 +2424,6 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	groupedEvents := make(map[string][]types.TransformerEvent)
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 
-	// destination_enter and destination_filter rows emitted from fan-out carry an empty inPU:
-	// the field is slated for deprecation, so no chain value is computed for the rows introduced
-	// here.
 	destEnterConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 	destEnterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	// source_out: one row per event that reaches the destination fan-out loop below, succeeded
@@ -2507,7 +2513,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			//   - succeeded/200 when the event has at least one candidate destination, available or
 			//     excluded (excluded candidates still get their per-destination rows below);
 			//   - filtered/298 when it has no candidate destination at all.
-			// destinationId and inPU stay empty. The filtered row replaces the source-level
+			// destinationId stays empty. The filtered row replaces the source-level
 			// destination_filter/filtered_no_destination row emitted below, so a zero-candidate
 			// event is never reported by both PUs.
 			sourceOutEnabled := proc.isReportingEnabled() && proc.config.reportingSourceOutMetricsEnabled.Load()
@@ -2627,7 +2633,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			for _, sd := range sourceOutStatusDetailMap[k] {
 				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
 					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.SOURCE_OUT, false, false),
+					PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.SOURCE_OUT, false, false),
 					StatusDetail:      sd,
 				})
 			}
@@ -2641,7 +2647,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			for _, sd := range destEnterStatusDetailMap[k] {
 				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
 					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DESTINATION_ENTER, false, false),
+					PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.DESTINATION_ENTER, false, false),
 					StatusDetail:      sd,
 				})
 			}
@@ -2651,7 +2657,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			for _, sd := range destFilterPerDestStatusDetailMap[k] {
 				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
 					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DESTINATION_FILTER, false, false),
+					PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.DESTINATION_FILTER, false, false),
 					StatusDetail:      sd,
 				})
 			}
@@ -2661,7 +2667,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			for _, sd := range sourceLevelDestFilterStatusDetailMap[k] {
 				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
 					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DESTINATION_FILTER, false, false),
+					PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.DESTINATION_FILTER, false, false),
 					StatusDetail:      sd,
 				})
 			}
@@ -2888,7 +2894,6 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 				partition,
 				srcAndDestKey,
 				eventList,
-				in.srcPipelineSteps,
 				in.eventsByMessageID,
 				in.uniqueMessageIdsBySrcDestKey,
 			)
@@ -3403,7 +3408,7 @@ type userTransformAndFilterOutput struct {
 	inCountMetadataMap map[string]MetricMetadata
 }
 
-func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAndDestKey string, eventList []types.TransformerEvent, srcPipelineSteps sourceIDPipelineSteps, eventsByMessageID map[string]types.SingularEventWithReceivedAt, uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}) userTransformAndFilterOutput {
+func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAndDestKey string, eventList []types.TransformerEvent, eventsByMessageID map[string]types.SingularEventWithReceivedAt, uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}) userTransformAndFilterOutput {
 	if len(eventList) == 0 {
 		return userTransformAndFilterOutput{
 			eventsToTransform: eventList,
@@ -3423,8 +3428,6 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 	proc.config.configSubscriberLock.RLock()
 	transformationEnabled := len(destination.Transformations) > 0
 	proc.config.configSubscriberLock.RUnlock()
-
-	sourceSteps := srcPipelineSteps[SourceIDT(sourceID)]
 
 	var inCountMap map[string]int64
 	var inCountMetadataMap map[string]MetricMetadata
@@ -3469,16 +3472,6 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 
 	var response types.Response
 	var eventsToTransform []types.TransformerEvent
-	var inPU string
-	switch {
-	case sourceSteps.trackingPlanValidation:
-		inPU = reportingtypes.TRACKINGPLAN_VALIDATOR
-	case sourceSteps.srcHydration:
-		inPU = reportingtypes.SOURCE_HYDRATION
-	default:
-		// no earlier reporting stage ran for the event, so inPU stays empty
-		inPU = ""
-	}
 	// Send to custom transformer only if the destination has a transformer enabled
 	if transformationEnabled {
 		noOfEvents := len(eventList)
@@ -3642,8 +3635,8 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 			var successMetrics []*reportingtypes.PUReportedMetric
 			var successCountMap map[string]int64
 			var successCountMetadataMap map[string]MetricMetadata
-			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, reportingtypes.USER_TRANSFORMER)
-			nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, inPU, reportingtypes.USER_TRANSFORMER)
+			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, reportingtypes.USER_TRANSFORMER)
+			nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, reportingtypes.USER_TRANSFORMER, responseStatusCode)
 			allNonSuccess := append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)
 			droppedJobs = append(droppedJobs, proc.getDroppedJobs(response, eventList)...)
 			droppedJobs = append(droppedJobs, procErrorJobs(allNonSuccess)...)
@@ -3659,7 +3652,6 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 			// REPORTING - START
 			if proc.isReportingEnabled() {
 				diffMetrics := getDiffMetrics(
-					inPU,
 					reportingtypes.USER_TRANSFORMER,
 					inCountMetadataMap,
 					successCountMetadataMap,
@@ -3680,7 +3672,6 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 				inCountMetadataMap = successCountMetadataMap
 			}
 			// REPORTING - END
-			inPU = reportingtypes.USER_TRANSFORMER // for the next step in the pipeline
 		})
 	} else {
 		proc.logger.Debugn("No custom transformation")
@@ -3691,8 +3682,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 		// runs and user_transformer's succeeded count would otherwise be undefined here. Every
 		// event that entered this stage passes through unchanged, so one succeeded row per event
 		// is enough - nothing can fail or get filtered in a stage that never executes. The row
-		// carries inPU="" and initialState=false (not the switch computed above), because this
-		// stage did no work of its own.
+		// carries initialState=false, because this stage did no work of its own.
 		if proc.isReportingEnabled() && proc.config.reportingUTPassThroughMetricsEnabled.Load() {
 			passThroughConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 			passThroughStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
@@ -3707,7 +3697,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 				for _, sd := range passThroughStatusDetailsMap[key] {
 					reportMetrics = append(reportMetrics, &reportingtypes.PUReportedMetric{
 						ConnectionDetails: *cd,
-						PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.USER_TRANSFORMER, false, false),
+						PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.USER_TRANSFORMER, false, false),
 						StatusDetail:      sd,
 					})
 				}
@@ -3762,12 +3752,27 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 	var successMetrics []*reportingtypes.PUReportedMetric
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
-	nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, inPU, reportingtypes.EVENT_FILTER)
+	// with the reason metrics enabled, filtered responses are reported under a per-reason status code
+	// and the succeeded rows are not reported
+	eventFilterReasonMetrics := proc.config.reportingEventFilterReasonEnabled.Load()
+	filteredReportStatusCode := responseStatusCode
+	if eventFilterReasonMetrics {
+		filteredReportStatusCode = func(r types.TransformerResponse) int {
+			if r.StatusCode != reportingtypes.FilterEventCode {
+				return r.StatusCode
+			}
+			return eventfilter.FilteredCodeForReason(r.Error)
+		}
+	}
+	nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, reportingtypes.EVENT_FILTER, filteredReportStatusCode)
 	allNonSuccess := append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)
 	droppedJobs = append(droppedJobs, proc.getDroppedJobs(response, eventsToTransform)...)
 	droppedJobs = append(droppedJobs, procErrorJobs(allNonSuccess)...)
 	procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], nonSuccessMetrics.failedJobs...)
-	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, reportingtypes.EVENT_FILTER)
+	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, reportingtypes.EVENT_FILTER)
+	if eventFilterReasonMetrics {
+		successMetrics = nil
+	}
 	proc.logger.Debugn("Supported messages filtering output size", logger.NewIntField("eventCount", int64(len(eventsToTransform))))
 
 	// REPORTING - START
@@ -3851,7 +3856,7 @@ func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilt
 
 			nonSuccessMetrics := proc.getNonSuccessfulMetrics(
 				response, data.eventsToTransform, data.commonMetaData, eventsByMessageID,
-				reportingtypes.EVENT_FILTER, reportingtypes.DEST_TRANSFORMER,
+				reportingtypes.DEST_TRANSFORMER, responseStatusCode,
 			)
 			destTransformationStat.numEvents.Count(len(data.eventsToTransform))
 			destTransformationStat.numOutputSuccessEvents.Count(len(response.Events))
@@ -3879,7 +3884,7 @@ func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilt
 					for _, sd := range statusDetailsMap[k] {
 						m := &reportingtypes.PUReportedMetric{
 							ConnectionDetails: *cd,
-							PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.EVENT_FILTER, reportingtypes.DEST_TRANSFORMER, false, false),
+							PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.DEST_TRANSFORMER, false, false),
 							StatusDetail:      sd,
 						}
 						successMetrics = append(successMetrics, m)
@@ -3895,7 +3900,6 @@ func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilt
 				// stage's input - emit a diff row to account for the gap, same as USER_TRANSFORMER.
 				if proc.config.reportingDTDiffMetricsEnabled.Load() {
 					diffMetrics := getDiffMetrics(
-						"",
 						reportingtypes.DEST_TRANSFORMER,
 						data.inCountMetadataMap,
 						successCountMetadataMap,
@@ -3917,8 +3921,8 @@ func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilt
 		// dest_transformer row of its own, so this row is the stage's only succeeded count for
 		// these destinations. Every event that entered this stage passes through unchanged, so one
 		// succeeded row per event is enough - nothing can fail or get filtered in a stage that
-		// never executes. The row carries inPU="" and initialState=false, because this stage did
-		// no work of its own.
+		// never executes. The row carries initialState=false, because this stage did no work of
+		// its own.
 		if proc.isReportingEnabled() && proc.config.reportingDTPassThroughMetricsEnabled.Load() {
 			passThroughConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 			passThroughStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
@@ -3933,7 +3937,7 @@ func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilt
 				for _, sd := range passThroughStatusDetailsMap[key] {
 					data.reportMetrics = append(data.reportMetrics, &reportingtypes.PUReportedMetric{
 						ConnectionDetails: *cd,
-						PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.DEST_TRANSFORMER, false, false),
+						PUDetails:         *reportingtypes.CreatePUDetails(reportingtypes.DEST_TRANSFORMER, false, false),
 						StatusDetail:      sd,
 					})
 				}
@@ -4184,7 +4188,7 @@ func ConvertToFilteredTransformerResponse(
 							Output:     event.Message,
 							StatusCode: reportingtypes.FilterEventCode,
 							Metadata:   event.Metadata,
-							Error:      "Event not supported",
+							Error:      eventfilter.MessageEventNotSupportedReason,
 						},
 					)
 					continue

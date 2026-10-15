@@ -1029,6 +1029,7 @@ func runRudderServer(
 	config.Set("Processor.verifyWarehouseTransformations", false)
 	config.Set("BatchRouter.isolationMode", "none")
 	config.Set("Warehouse.mode", "off")
+	config.Set("JobsDB.gw.pendingEvents.enabled", true)
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
 	config.Set("SourceDebugger.disableEventUploads", true)
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)

@@ -456,7 +456,6 @@ func (job *UploadJob) run() (err error) {
 				SourceTaskRunID: job.upload.SourceTaskRunID,
 				SourceJobID:     job.upload.SourceJobID,
 				SourceJobRunID:  job.upload.SourceJobRunID,
-				InPU:            types.BATCH_ROUTER,
 				PU:              types.WAREHOUSE,
 				TerminalPU:      true,
 				StatusDetail: &types.StatusDetail{
@@ -835,7 +834,6 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		SourceTaskRunID: job.upload.SourceTaskRunID,
 		SourceJobID:     job.upload.SourceJobID,
 		SourceJobRunID:  job.upload.SourceJobRunID,
-		InPU:            types.BATCH_ROUTER,
 		PU:              types.WAREHOUSE,
 		TerminalPU:      isTerminalPU,
 		StatusDetail: &types.StatusDetail{
@@ -853,7 +851,6 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 			SourceTaskRunID: job.upload.SourceTaskRunID,
 			SourceJobID:     job.upload.SourceJobID,
 			SourceJobRunID:  job.upload.SourceJobRunID,
-			InPU:            types.BATCH_ROUTER,
 			PU:              types.WAREHOUSE,
 			TerminalPU:      isTerminalPU,
 			StatusDetail: &types.StatusDetail{

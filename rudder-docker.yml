@@ -46,7 +46,7 @@ services:
       - STATSD_SERVER_HOST=metrics-exporter
       - STATSD_SERVER_PORT="9125"
   # minio:
-  #   image: pgsty/minio
+  #   image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z@sha256:635197cb9f36d01bee221d34d1c7d7960f6a95c48b0b6c01d99cd13bdae51a46
   #   ports:
   #     - "9000:9000"
   #   command: server /data
