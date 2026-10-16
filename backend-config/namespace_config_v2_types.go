@@ -8,6 +8,7 @@ import (
 	"maps"
 	"time"
 
+	"github.com/rudderlabs/rudder-cp-sdk/diff"
 	kitjsonparser "github.com/rudderlabs/rudder-go-kit/jsonparser"
 )
 
@@ -26,6 +27,8 @@ var jsonparser = kitjsonparser.NewWithLibrary(kitjsonparser.TidwallLib)
 // The definitions that v1 embeds in every source and destination are hoisted here into three
 // namespace-global catalogues sent once, and each workspace references them by name.
 type v2NamespaceConfig struct {
+	diff.IncrementalDefinitionsState
+
 	Version int `json:"version"`
 	v2Catalogues
 	Workspaces v2Workspaces `json:"workspaces"`
