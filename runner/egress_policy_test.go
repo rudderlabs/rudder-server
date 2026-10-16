@@ -8,6 +8,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
+
+	"github.com/rudderlabs/rudder-server/app"
 )
 
 func TestSetupSQLConnectEgressPolicyFromEnv(t *testing.T) {
@@ -117,6 +119,37 @@ func TestSetupSQLConnectEgressPolicyFromEnv(t *testing.T) {
 		require.NoError(t, setupSQLConnectEgressPolicyFromEnv())
 		require.False(t, called)
 	})
+}
+
+func TestRunnerSetupSQLConnectEgressPolicyFromEnv(t *testing.T) {
+	t.Setenv("RSERVER_WAREHOUSE_EGRESS_POLICY_REQUIRED", "true")
+
+	for _, blockedCIDRs := range []string{"", "not-a-cidr"} {
+		t.Run("non-warehouse mode skips invalid policy", func(t *testing.T) {
+			t.Setenv("RSERVER_WAREHOUSE_EGRESS_BLOCKED_CIDRS", blockedCIDRs)
+
+			called := false
+			stubSetSQLConnectEgressPolicy(t, func([]string) error {
+				called = true
+				return errors.New("invalid CIDR")
+			})
+
+			r := &Runner{appType: app.GATEWAY, warehouseMode: config.EmbeddedMode}
+			require.NoError(t, r.setupSQLConnectEgressPolicyFromEnv())
+			require.False(t, called)
+		})
+
+		t.Run("warehouse mode rejects invalid policy", func(t *testing.T) {
+			t.Setenv("RSERVER_WAREHOUSE_EGRESS_BLOCKED_CIDRS", blockedCIDRs)
+
+			stubSetSQLConnectEgressPolicy(t, func([]string) error {
+				return errors.New("invalid CIDR")
+			})
+
+			r := &Runner{appType: app.EMBEDDED, warehouseMode: config.EmbeddedMode}
+			require.Error(t, r.setupSQLConnectEgressPolicyFromEnv())
+		})
+	}
 }
 
 func stubSetSQLConnectEgressPolicy(t *testing.T, stub func([]string) error) {

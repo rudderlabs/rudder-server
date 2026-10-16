@@ -137,15 +137,14 @@ func (r *Runner) Run(ctx context.Context, shutdownFn func(), args []string) int 
 
 	runAllInit()
 
-	if err := setupSQLConnectEgressPolicyFromEnv(); err != nil {
-		r.logger.Errorn("Unable to set SQL connection egress policy", obskit.Error(err))
-		return 1
-	}
-
 	options := app.LoadOptions(args)
 	if options.VersionFlag {
 		r.printVersion()
 		return 0
+	}
+	if err := r.setupSQLConnectEgressPolicyFromEnv(); err != nil {
+		r.logger.Errorn("Unable to set SQL connection egress policy", obskit.Error(err))
+		return 1
 	}
 
 	options.EnterpriseToken = r.releaseInfo.EnterpriseToken
@@ -310,6 +309,13 @@ func (r *Runner) Run(ctx context.Context, shutdownFn func(), args []string) int 
 	}
 
 	return 0
+}
+
+func (r *Runner) setupSQLConnectEgressPolicyFromEnv() error {
+	if !r.canStartWarehouse() {
+		return nil
+	}
+	return setupSQLConnectEgressPolicyFromEnv()
 }
 
 func setupSQLConnectEgressPolicyFromEnv() error {
