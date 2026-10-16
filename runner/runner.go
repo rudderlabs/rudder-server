@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
@@ -51,6 +53,8 @@ type ReleaseInfo struct {
 	BuiltBy         string
 	EnterpriseToken string
 }
+
+var setSQLConnectEgressPolicy = sqlconnect.SetEgressPolicy
 
 // Runner is responsible for running the application
 type Runner struct {
@@ -132,6 +136,11 @@ func (r *Runner) Run(ctx context.Context, shutdownFn func(), args []string) int 
 	}
 
 	runAllInit()
+
+	if err := setupSQLConnectEgressPolicyFromEnv(); err != nil {
+		r.logger.Errorn("Unable to set SQL connection egress policy", obskit.Error(err))
+		return 1
+	}
 
 	options := app.LoadOptions(args)
 	if options.VersionFlag {
@@ -301,6 +310,40 @@ func (r *Runner) Run(ctx context.Context, shutdownFn func(), args []string) int 
 	}
 
 	return 0
+}
+
+func setupSQLConnectEgressPolicyFromEnv() error {
+	requiredRaw := os.Getenv("RSERVER_WAREHOUSE_EGRESS_POLICY_REQUIRED")
+	if requiredRaw == "" {
+		return nil
+	}
+
+	required, err := strconv.ParseBool(requiredRaw)
+	if err != nil {
+		return fmt.Errorf("parsing RSERVER_WAREHOUSE_EGRESS_POLICY_REQUIRED: %w", err)
+	}
+	if !required {
+		return nil
+	}
+
+	blockedCIDRs := parseBlockedCIDRs(os.Getenv("RSERVER_WAREHOUSE_EGRESS_BLOCKED_CIDRS"))
+	if len(blockedCIDRs) == 0 {
+		return fmt.Errorf("RSERVER_WAREHOUSE_EGRESS_BLOCKED_CIDRS must contain at least one CIDR when egress policy is required")
+	}
+	if err := setSQLConnectEgressPolicy(blockedCIDRs); err != nil {
+		return fmt.Errorf("setting SQL connection egress policy: %w", err)
+	}
+	return nil
+}
+
+func parseBlockedCIDRs(raw string) []string {
+	var blockedCIDRs []string
+	for cidr := range strings.SplitSeq(raw, ",") {
+		if cidr = strings.TrimSpace(cidr); cidr != "" {
+			blockedCIDRs = append(blockedCIDRs, cidr)
+		}
+	}
+	return blockedCIDRs
 }
 
 func runAllInit() {
