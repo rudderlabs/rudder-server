@@ -272,7 +272,7 @@ func (brt *Handle) shouldRetryInvalidManager(invalidManager *asynccommon.Invalid
 }
 
 func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
-	manager, err := brt.asyncManagerFactory(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig)
+	manager, err := brt.asyncManagerFactory(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig, &brt.secretVersions)
 	if err != nil {
 		brt.logger.Errorn("BRT: Error initializing async destination struct", obskit.DestinationType(destination.Name), obskit.Error(err))
 		destInitFailStat := stats.Default.NewTaggedStat("destination_initialization_fail", stats.CountType, map[string]string{
@@ -402,6 +402,7 @@ func (brt *Handle) backendConfigSubscriber() {
 		destinationsMap := map[string]*routerutils.DestinationWithSources{}
 		connectionWHNamespaceMap := map[string]string{}
 		uploadIntervalMap := map[string]time.Duration{}
+		secretVersions := map[string]int{}
 		config := data.Data.(map[string]backendconfig.ConfigT)
 		for _, wConfig := range config {
 			for _, source := range wConfig.Sources {
@@ -412,6 +413,9 @@ func (brt *Handle) backendConfigSubscriber() {
 								destinationsMap[destination.ID] = &routerutils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}
 								if asynccommon.IsAsyncDestination(brt.destType) {
 									uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
+									if account := destination.DeliveryAccount; account != nil {
+										secretVersions[account.ID] = account.SecretVersion
+									}
 								}
 							}
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
@@ -428,6 +432,7 @@ func (brt *Handle) backendConfigSubscriber() {
 				}
 			}
 		}
+		brt.secretVersions.set(secretVersions)
 		brt.configSubscriberMu.Lock()
 		brt.destinationsMap = destinationsMap
 		brt.connectionWHNamespaceMap = connectionWHNamespaceMap

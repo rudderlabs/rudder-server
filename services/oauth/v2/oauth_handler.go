@@ -48,6 +48,14 @@ func WithCache(cache OauthTokenCache) func(*oauthHandler) {
 	}
 }
 
+// WithSecretVersions sets the provider of the accounts' latest secretVersion, for callers whose
+// OAuthTokenParams.SecretVersion may lag behind the workspace config.
+func WithSecretVersions(provider SecretVersionProvider) func(*oauthHandler) {
+	return func(h *oauthHandler) {
+		h.secretVersions = provider
+	}
+}
+
 // WithLocker sets the locker for the OAuthHandler
 func WithLocker(lock *kitsync.PartitionRWLocker) func(*oauthHandler) {
 	return func(h *oauthHandler) {
@@ -157,8 +165,9 @@ type oauthHandler struct {
 	rudderFlowType common.RudderFlow
 	cpClient       controlplane.Connector
 
-	cacheMu *kitsync.PartitionRWLocker
-	cache   OauthTokenCache
+	cacheMu        *kitsync.PartitionRWLocker
+	cache          OauthTokenCache
+	secretVersions SecretVersionProvider
 
 	refreshBeforeExpiry time.Duration
 	cbeURL              string
@@ -253,12 +262,19 @@ func (h *oauthHandler) getToken(params *OAuthTokenParams, previousSecret json.Ra
 		ExpiredSecret: nil,  // we are not forcing upstream service to refresh the token by default, which will only happen if hasExpired is true and expiredSecret is equal to the upstream service's stored secret
 	}
 	if cached, ok := h.cache.Load(params.AccountID); ok {
-		if !isOauthTokenExpired(cached, previousSecret, h.refreshBeforeExpiry, statsHandler) {
+		if latest := h.latestSecretVersion(params); cached.SecretVersion != 0 && latest > cached.SecretVersion {
+			// the control plane holds a newer secret (a re-authorization, or a refresh by another pod):
+			// fetch it with the default body, which does not force a refresh
+			log.Infon("cached OAuth token superseded by a newer secret in the control plane",
+				logger.NewIntField("cachedSecretVersion", int64(cached.SecretVersion)),
+				logger.NewIntField("configSecretVersion", int64(latest)))
+		} else if !isOauthTokenExpired(cached, previousSecret, h.refreshBeforeExpiry, statsHandler) {
 			return cached.Secret, nil
-		}
-		refTokenBody = OauthTokenRequestBody{ // forcing refresh of token as it is expired or about to expire, or previousSecret matches the cached secret
-			HasExpired:    true,
-			ExpiredSecret: cached.Secret,
+		} else {
+			refTokenBody = OauthTokenRequestBody{ // forcing refresh of token as it is expired or about to expire, or previousSecret matches the cached secret
+				HasExpired:    true,
+				ExpiredSecret: cached.Secret,
+			}
 		}
 	}
 	token, err := h.getTokenFromAPI(params, refTokenBody, statsHandler, action)
@@ -266,6 +282,15 @@ func (h *oauthHandler) getToken(params *OAuthTokenParams, previousSecret json.Ra
 		return nil, err
 	}
 	return token.Secret, nil
+}
+
+// latestSecretVersion is the newest secretVersion known for the account: versions only grow, so the
+// larger of the caller's and the provider's is the latest.
+func (h *oauthHandler) latestSecretVersion(params *OAuthTokenParams) int {
+	if h.secretVersions == nil {
+		return params.SecretVersion
+	}
+	return max(params.SecretVersion, h.secretVersions.SecretVersion(params.AccountID))
 }
 
 // getRefreshTokenFromResponse parses the response from control plane and returns either the token or an error

@@ -55,7 +55,7 @@ var (
 var _ = Describe("Antisymmetric", func() {
 	Describe("NewManager function test", func() {
 		It("should return yandexmetrica manager", func() {
-			yandexmetrica, err := yandexmetrica.NewManager(config.New(), logger.NOP, stats.NOP, destination, backendconfig.DefaultBackendConfig)
+			yandexmetrica, err := yandexmetrica.NewManager(config.New(), logger.NOP, stats.NOP, destination, backendconfig.DefaultBackendConfig, nil)
 			Expect(err).To(BeNil())
 			Expect(yandexmetrica).NotTo(BeNil())
 		})
@@ -89,7 +89,7 @@ var _ = Describe("Antisymmetric", func() {
 				OAuthHandler: oauthHandler,
 			}
 			httpClient := httpClient.NewOAuthHttpClient(&http.Client{}, oauthv2common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, augmenter.GetAuthErrorCategoryForYandex, &optionalArgs)
-			yandexmetrica, _ := yandexmetrica.NewManager(config.New(), logger.NOP, stats.NOP, destination, backendconfig.DefaultBackendConfig)
+			yandexmetrica, _ := yandexmetrica.NewManager(config.New(), logger.NOP, stats.NOP, destination, backendconfig.DefaultBackendConfig, nil)
 			yandexmetrica.Client = httpClient
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
@@ -131,7 +131,7 @@ var _ = Describe("Antisymmetric", func() {
 				OAuthHandler: oauthHandler,
 			}
 			httpClient := httpClient.NewOAuthHttpClient(&http.Client{}, oauthv2common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, augmenter.GetAuthErrorCategoryForYandex, &optionalArgs)
-			yandexmetrica, _ := yandexmetrica.NewManager(config.New(), logger.NOP, stats.NOP, destination, backendconfig.DefaultBackendConfig)
+			yandexmetrica, _ := yandexmetrica.NewManager(config.New(), logger.NOP, stats.NOP, destination, backendconfig.DefaultBackendConfig, nil)
 			yandexmetrica.Client = httpClient
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},

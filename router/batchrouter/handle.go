@@ -37,6 +37,7 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -55,6 +56,7 @@ type asyncManagerFactory func(
 	stats.Stats,
 	*backendconfig.DestinationT,
 	backendconfig.BackendConfig,
+	oauthv2.SecretVersionProvider,
 ) (asynccommon.AsyncDestinationManager, error)
 
 type Handle struct {
@@ -78,6 +80,7 @@ type Handle struct {
 	isolationStrategy    isolation.Strategy
 	now                  func() time.Time
 	asyncManagerFactory  asyncManagerFactory
+	secretVersions       secretVersions
 
 	// configuration
 
