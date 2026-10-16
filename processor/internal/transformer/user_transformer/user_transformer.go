@@ -41,7 +41,11 @@ const (
 	// transport's retry budget was spent. Distinct from coldStartErrorsMetric, which no longer fires for these:
 	// without it, the two very different causes of a 503 are indistinguishable from rudder-server's own metrics.
 	retryableErrorsMetric = "processor_user_transformer_retryable_errors_total"
-	languagePython        = "python"
+	// misdirectedRequestsMetric counts 421s from pyt pods refusing work that isn't theirs. Deliberately separate from
+	// coldStartErrorsMetric, which KEDA scales on: a 421 says nothing about whether the workspace is up.
+	misdirectedRequestsMetric = "processor_user_transformer_misdirected_requests_total"
+	clientResetsMetric        = "processor_user_transformer_client_resets_total"
+	languagePython            = "python"
 )
 
 // ErrEmptyForwardBaseURL is returned by the test-forwarding methods ([Client.Test]
@@ -65,8 +69,12 @@ func PerWorkspacePyTBaseURL(template, workspaceID string) string {
 
 type Opt func(*Client)
 
+// WithClient makes every request use client, the per-target pyt clients included; it is never closed.
 func WithClient(client transformerclient.Client) Opt {
-	return func(s *Client) { s.client = client }
+	return func(s *Client) {
+		s.client = client
+		s.newPyTClient = func(string) (transformerclient.Client, func()) { return client, func() {} }
+	}
 }
 
 func ForMirroring() Opt {
@@ -92,7 +100,13 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.conf = conf
 	handle.log = log.Child("user_transformer")
 	handle.stat = stat
-	handle.client = transformerclient.NewClient("UserTransformer", transformerutils.TransformerClientConfig(conf, "UserTransformer"))
+	clientConfig := transformerutils.TransformerClientConfig(conf, "UserTransformer")
+	handle.client = transformerclient.NewClient("UserTransformer", clientConfig)
+	handle.newPyTClient = func(string) (transformerclient.Client, func()) {
+		return transformerclient.NewClosableClient("UserTransformer", clientConfig)
+	}
+	handle.config.pytClientIdleTimeout = conf.GetReloadableDurationVar(5, time.Minute,
+		"Processor.UserTransformer.pytClientIdleTimeout")
 	handle.config.userTransformationURL = handle.conf.GetStringVar(handle.conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"), "USER_TRANSFORM_URL")
 	handle.config.perWorkspacePyTEnabled = handle.conf.GetReloadableBoolVar(false, "Processor.UserTransformer.perWorkspacePyTEnabled")
 	handle.config.perWorkspacePyTURLTemplate = handle.conf.GetStringVar(DefaultPerWorkspacePyTURLTemplate, "Processor.UserTransformer.perWorkspacePyTURLTemplate")
@@ -113,6 +127,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	if handle.config.forMirroring {
 		handle.config.userTransformationURL = handle.conf.GetStringVar("", "USER_TRANSFORM_MIRROR_URL")
 	}
+	handle.pytClients = newPyTClients(handle.newPyTClient, handle.config.pytClientIdleTimeout)
 
 	return handle
 }
@@ -132,11 +147,16 @@ type Client struct {
 		perWorkspacePyTEnabled        config.ValueLoader[bool]
 		perWorkspacePyTURLTemplate    string
 		perWorkspacePyTEndlessRetries config.ValueLoader[bool]
+		pytClientIdleTimeout          config.ValueLoader[time.Duration]
 	}
-	conf   *config.Config
-	log    logger.Logger
-	stat   stats.Stats
+	conf *config.Config
+	log  logger.Logger
+	stat stats.Stats
+	// client serves JS traffic, which rudder-transformer answers and which never sees a 421.
 	client transformerclient.Client
+	// pytClients serves pyt traffic with one client per target, so a 421 can reset one target's client alone.
+	pytClients   *pytClients
+	newPyTClient func(target string) (transformerclient.Client, func())
 }
 
 func (u *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
@@ -371,6 +391,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 		resp       *http.Response
 		respData   []byte
 	)
+	perWorkspacePyT := u.isPerWorkspacePyT(labels)
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = u.config.maxRetryBackoffInterval.Load()
 
@@ -391,13 +412,32 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			// Header to let transformer know that the client understands event filter code
 			req.Header.Set("X-Feature-Filter-Code", "?1")
 
-			resp, reqErr = u.client.Do(req)
-			defer func() { httputil.CloseResponse(resp) }()
+			// Acquired per attempt, so a retry after a 421 picks up the target's fresh client.
+			client := u.client
+			var pytClient *pytClient
+			if perWorkspacePyT {
+				pytClient = u.pytClients.acquire(pytTarget(req.URL))
+				client = pytClient
+			}
+			resp, reqErr = client.Do(req)
+			defer func() {
+				httputil.CloseResponse(resp)
+				if pytClient != nil {
+					u.pytClients.release(pytClient)
+				}
+			}()
 			// Record metrics with labels
 			tags := labels.ToStatsTag()
 			duration := time.Since(requestStartTime)
 			u.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
 			u.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
+
+			// Checked before the cold-start and final-status checks: a 421 must neither count as a cold start nor end
+			// the batch as a final 4xx. Outside per-workspace PyT it stays a final 4xx, as rudder-transformer never
+			// sends one.
+			if perWorkspacePyT && reqErr == nil && resp.StatusCode == http.StatusMisdirectedRequest {
+				return u.onMisdirected(pytClient, resp, labels.WorkspaceID, "", labels.ToLoggerFields())
+			}
 
 			// This metric is to track cold start errors for PyT, which are expected to be higher than usual due to the nature of PyT scaling.
 			if u.shouldThrowPythonColdStartErr(labels, reqErr, resp) {
@@ -480,6 +520,12 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 		if errors.Is(err, transformerutils.ErrColdStart) {
 			return fmt.Appendf(nil, "workspace transformer not reachable: %s", err), transformerutils.StatusColdStartWindowFailure, nil
 		}
+		// The 421s outlasted the retries, each retry made on a fresh client: the right pod isn't reachable yet, as in a
+		// cold start, so sendBatch keeps retrying instead of panicking.
+		if errors.Is(err, transformerutils.ErrMisdirected) {
+			return fmt.Appendf(nil, "workspace transformer misdirected the request: %s", err),
+				transformerutils.StatusColdStartWindowFailure, nil
+		}
 		// Deliberately no special case for a spent retryable-response budget here: it falls through to the bare
 		// error below, which sendBatch turns into a panic. Retries are effectively infinite in production
 		// (retryRudderErrors maxRetry=-1, maxElapsedTime=0); maxRetry exists to stop the contract tests running
@@ -557,6 +603,9 @@ func (u *Client) ExtractLibs(ctx context.Context, baseURL, workspaceID string, p
 // A 502/503 carrying [transformerclient.HeaderShouldRetry] is not a cold start (see [isColdStartError]): pyt is up and
 // reporting a transient downstream failure, so the retryable transport owns retrying it and whatever it finally
 // returns is passed through here rather than retried again.
+//
+// A 421 resets the target's client and is retried like a cold start (see [Client.onMisdirected]); one that persists
+// returns [transformerutils.ErrMisdirected].
 func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path string, payload []byte) (int, []byte, error) {
 	if baseURL == "" {
 		return 0, nil, ErrEmptyForwardBaseURL
@@ -582,7 +631,9 @@ func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path str
 			}
 			req.Header.Set("Content-Type", "application/json")
 
-			resp, err := u.client.Do(req)
+			client := u.pytClients.acquire(pytTarget(req.URL))
+			defer u.pytClients.release(client)
+			resp, err := client.Do(req)
 			if err != nil {
 				// No response at all — retry. Transient network
 				// conditions dominate here, and the loop is bounded by maxRetry
@@ -595,6 +646,10 @@ func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path str
 				return err
 			}
 			defer func() { httputil.CloseResponse(resp) }()
+			if resp.StatusCode == http.StatusMisdirectedRequest {
+				return u.onMisdirected(client, resp, workspaceID, path,
+					[]logger.Field{obskit.WorkspaceID(workspaceID), logger.NewStringField("path", path)})
+			}
 			if isColdStartError(nil, resp) {
 				u.stat.NewTaggedStat(coldStartErrorsMetric, stats.CountType,
 					stats.Tags{"workspaceID": workspaceID, "language": languagePython, "path": path}).Increment()
@@ -640,10 +695,46 @@ func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path str
 //
 // The mirroring client is excluded because mirroring is JavaScript-only (see Handle.isUserTransformMirroringEnabled).
 func (u *Client) shouldThrowPythonColdStartErr(labels types.TransformerMetricLabels, err error, resp *http.Response) bool {
+	return u.isPerWorkspacePyT(labels) && isColdStartError(err, resp)
+}
+
+// isPerWorkspacePyT reports whether an event-path request goes to a per-workspace PyT deployment.
+func (u *Client) isPerWorkspacePyT(labels types.TransformerMetricLabels) bool {
 	return u.config.perWorkspacePyTEnabled.Load() &&
 		labels.WorkspaceID != "" &&
-		transformerutils.IsPythonLanguage(labels.Language) &&
-		isColdStartError(err, resp)
+		transformerutils.IsPythonLanguage(labels.Language)
+}
+
+// onMisdirected handles a 421 Misdirected Request: a pyt pod refused work that isn't its own, so c reached it through
+// an address that no longer belongs to the target. httplb keeps the last known addresses when DNS answers empty or
+// fails, so c would keep going there: c is retired instead, and the caller's retry builds a fresh client that resolves
+// the target again. If the workspace is at zero that lookup fails, which the cold-start path already counts and KEDA
+// already scales on.
+//
+// It returns the error the caller retries with. path is empty on the event path and tags the forward-path counter.
+func (u *Client) onMisdirected(
+	c *pytClient, resp *http.Response, workspaceID, path string, fields []logger.Field,
+) error {
+	tags := stats.Tags{"workspaceID": workspaceID, "language": languagePython}
+	if path != "" {
+		tags["path"] = path
+	}
+	u.stat.NewTaggedStat(misdirectedRequestsMetric, stats.CountType, tags).Increment()
+	// Concurrent requests that got a 421 from the same client share one reset. A 421 from an already-replaced client
+	// resets nothing: its retry simply picks up the current one.
+	reset := u.pytClients.retire(c)
+	if reset {
+		u.stat.NewTaggedStat(clientResetsMetric, stats.CountType,
+			stats.Tags{"workspaceID": workspaceID, "reason": "misdirected"}).Increment()
+	}
+	reason := resp.Header.Get(transformerclient.HeaderErrorReason)
+	u.log.Warnn("pyt refused a misdirected request",
+		append(fields,
+			logger.NewStringField("reason", reason),
+			logger.NewStringField("target", c.target),
+			logger.NewBoolField("clientReset", reset),
+		)...)
+	return fmt.Errorf("%w: %s=%q", transformerutils.ErrMisdirected, transformerclient.HeaderErrorReason, reason)
 }
 
 // isColdStartError returns true for transient errors that mean the target

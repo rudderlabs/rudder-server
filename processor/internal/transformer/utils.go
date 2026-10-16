@@ -26,6 +26,11 @@ const (
 
 var ErrColdStart = errors.New("cold start error")
 
+// ErrMisdirected means a pyt pod refused the request with 421 Misdirected Request because it isn't the pod the request
+// was meant for: the client reached it through a stale address. It maps to [StatusColdStartWindowFailure] like
+// [ErrColdStart], since both mean the right pod isn't reachable yet.
+var ErrMisdirected = errors.New("misdirected request")
+
 func IsJobTerminated(status int) bool {
 	if status == http.StatusTooManyRequests || status == http.StatusRequestTimeout {
 		return false

@@ -714,3 +714,99 @@ func TestClient_ResponseBodyReadableAfterRetriesExhausted(t *testing.T) {
 			"upstream behaviour: change this expectation if rudder-go-kit stops returning a stale response")
 	})
 }
+
+// TestNewClosableClient pins what user_transformer relies on when it discards a per-target pyt client: closing an
+// httplb client waits for a request already in flight instead of breaking it, and a closed httplb client fails new
+// requests, which is why nothing may be about to use a client when it is closed.
+func TestNewClosableClient(t *testing.T) {
+	for _, retry := range []bool{false, true} {
+		t.Run(fmt.Sprintf("httplb with retryRudderErrors=%t", retry), func(t *testing.T) {
+			arrived, unblock := make(chan struct{}), make(chan struct{})
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/slow" {
+					close(arrived)
+					<-unblock
+				}
+				_, _ = w.Write([]byte("ok"))
+			}))
+			defer server.Close()
+
+			cfg := &ClientConfig{ClientType: "httplb"}
+			cfg.RetryRudderErrors.Enabled = retry
+			client, closeClient := NewClosableClient("testClient", cfg)
+
+			inFlight := make(chan error, 1)
+			go func() {
+				req, err := http.NewRequest(http.MethodGet, server.URL+"/slow", nil)
+				if err != nil {
+					inFlight <- err
+					return
+				}
+				resp, err := client.Do(req)
+				if err != nil {
+					inFlight <- err
+					return
+				}
+				defer func() { httputil.CloseResponse(resp) }()
+				body, err := io.ReadAll(resp.Body)
+				if err == nil && string(body) != "ok" {
+					err = fmt.Errorf("unexpected body %q", body)
+				}
+				inFlight <- err
+			}()
+			<-arrived
+
+			closed := make(chan struct{})
+			go func() {
+				closeClient()
+				close(closed)
+			}()
+			require.Never(t, func() bool {
+				select {
+				case <-closed:
+					return true
+				default:
+					return false
+				}
+			}, 100*time.Millisecond, 10*time.Millisecond, "close must wait for the request in flight")
+
+			close(unblock)
+			require.NoError(t, <-inFlight, "the request in flight must complete normally")
+			require.Eventually(t, func() bool {
+				select {
+				case <-closed:
+					return true
+				default:
+					return false
+				}
+			}, 5*time.Second, 10*time.Millisecond, "close must return once the request in flight is done")
+
+			req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+			require.NoError(t, err)
+			resp, err := client.Do(req) //nolint:bodyclose // resp is nil: Do must fail
+			require.ErrorContains(t, err, "closed")
+			require.Nil(t, resp)
+		})
+	}
+
+	t.Run("stdlib keeps working after close, which only drops idle connections", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("ok"))
+		}))
+		defer server.Close()
+
+		client, closeClient := NewClosableClient("testClient", &ClientConfig{ClientType: "stdlib"})
+		get := func() {
+			t.Helper()
+			req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+			require.NoError(t, err)
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			defer func() { httputil.CloseResponse(resp) }()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+		}
+		get()
+		closeClient()
+		get()
+	})
+}
