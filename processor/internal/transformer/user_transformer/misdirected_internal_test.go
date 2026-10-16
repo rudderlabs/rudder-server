@@ -2,12 +2,14 @@ package user_transformer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -35,6 +37,7 @@ import (
 type fakeDNS struct {
 	mu      sync.Mutex
 	answers map[string]string
+	failed  atomic.Int32 // lookups that found no answer
 }
 
 func (d *fakeDNS) point(host, addr string) {
@@ -58,24 +61,25 @@ func (d *fakeDNS) ResolveOnce(_ context.Context, _, hostPort string) ([]resolver
 	defer d.mu.Unlock()
 	addr, ok := d.answers[host]
 	if !ok {
+		d.failed.Add(1)
 		return nil, 0, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
 	}
 	return []resolver.Address{{HostPort: addr}}, 0, nil
 }
 
-// httplbFactory builds real httplb clients resolving through fakeDNS, and records per target how many were built and
-// closed.
-type httplbFactory struct {
-	t      testing.TB
-	dns    *fakeDNS
-	mu     sync.Mutex
-	built  map[string]int
-	closed map[string]int
+// testHTTPLBFactory builds real httplb clients resolving through fakeDNS every refresh, and records per target how many
+// were built and closed.
+type testHTTPLBFactory struct {
+	t       testing.TB
+	dns     *fakeDNS
+	refresh time.Duration
+	mu      sync.Mutex
+	built   map[string]int
+	closed  map[string]int
 }
 
-func (f *httplbFactory) newClient(target string) (transformerclient.Client, func()) {
-	// A short TTL so clients keep re-resolving during a test: that is when httplb holds on to a stale address.
-	client := httplb.NewClient(httplb.WithResolver(resolver.NewPollingResolver(f.dns, 10*time.Millisecond)))
+func (f *testHTTPLBFactory) newClient(target string) (transformerclient.Client, func()) {
+	client := httplb.NewClient(httplb.WithResolver(resolver.NewPollingResolver(f.dns, f.refresh)))
 	f.mu.Lock()
 	f.built[target]++
 	f.mu.Unlock()
@@ -92,22 +96,22 @@ func (f *httplbFactory) newClient(target string) (transformerclient.Client, func
 	return client, closeClient
 }
 
-func (f *httplbFactory) counts(target string) (built, closed int) {
+func (f *testHTTPLBFactory) counts(target string) (built, closed int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.built[target], f.closed[target]
 }
 
-// pod stands in for a pyt pod. It refuses the hits misdirect picks with 421, the way a pod refuses work that isn't its
-// own, and serves every other hit: /customTransform echoes the events, any other path answers "done".
-type pod struct {
+// testPod stands in for a pyt pod. It refuses the hits misdirect picks with 421, the way a pod refuses work that isn't
+// its own, and serves every other hit: /customTransform echoes the events, any other path answers "done".
+type testPod struct {
 	srv  *httptest.Server
 	hits atomic.Int32
 }
 
-func newPod(t *testing.T, misdirect func(hit int32) bool) *pod {
+func newTestPod(t *testing.T, misdirect func(hit int32) bool) *testPod {
 	t.Helper()
-	p := &pod{}
+	p := &testPod{}
 	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hit := p.hits.Add(1)
 		if misdirect != nil && misdirect(hit) {
@@ -138,17 +142,17 @@ func newPod(t *testing.T, misdirect func(hit int32) bool) *pod {
 	return p
 }
 
-func (p *pod) addr() string { return p.srv.Listener.Addr().String() }
+func (p *testPod) addr() string { return p.srv.Listener.Addr().String() }
 
-func always(int32) bool { return true }
+func misdirectAlways(int32) bool { return true }
 
-func firstHits(n int32) func(int32) bool { return func(hit int32) bool { return hit <= n } }
+func misdirectFirstHits(n int32) func(int32) bool { return func(hit int32) bool { return hit <= n } }
 
 type misdirectFixture struct {
 	conf    *config.Config
 	stats   *memstats.Store
 	dns     *fakeDNS
-	factory *httplbFactory
+	factory *testHTTPLBFactory
 }
 
 func newMisdirectFixture(t *testing.T) *misdirectFixture {
@@ -163,10 +167,13 @@ func newMisdirectFixture(t *testing.T) *misdirectFixture {
 	conf.Set("Processor.UserTransformer.maxRetryBackoffInterval", "1ms")
 	dns := &fakeDNS{answers: map[string]string{}}
 	return &misdirectFixture{
-		conf:    conf,
-		stats:   statsStore,
-		dns:     dns,
-		factory: &httplbFactory{t: t, dns: dns, built: map[string]int{}, closed: map[string]int{}},
+		conf:  conf,
+		stats: statsStore,
+		dns:   dns,
+		// A short refresh so clients keep re-resolving during a test: that is when httplb holds on to a stale address.
+		factory: &testHTTPLBFactory{
+			t: t, dns: dns, refresh: 10 * time.Millisecond, built: map[string]int{}, closed: map[string]int{},
+		},
 	}
 }
 
@@ -179,7 +186,7 @@ func (f *misdirectFixture) client(opts ...Opt) *Client {
 
 func (f *misdirectFixture) metrics(name string) []memstats.Metric { return f.stats.GetByName(name) }
 
-func events(language, workspaceID string, n int) []types.TransformerEvent {
+func testTransformerEvents(language, workspaceID string, n int) []types.TransformerEvent {
 	evs := make([]types.TransformerEvent, n)
 	for i := range evs {
 		msgID := fmt.Sprintf("%s-msg-%d", workspaceID, i)
@@ -197,7 +204,7 @@ func events(language, workspaceID string, n int) []types.TransformerEvent {
 	return evs
 }
 
-func counter(name string, tags stats.Tags, value int) memstats.Metric {
+func testCounter(name string, tags stats.Tags, value int) memstats.Metric {
 	return memstats.Metric{Name: name, Tags: tags, Value: float64(value)}
 }
 
@@ -207,17 +214,17 @@ func TestMisdirectedEventPath(t *testing.T) {
 		targetB = "http://pyt-ws-b:8080"
 	)
 	misdirectedA := func(n int) memstats.Metric {
-		return counter(misdirectedRequestsMetric, stats.Tags{"workspaceID": "ws-a", "language": "python"}, n)
+		return testCounter(misdirectedRequestsMetric, stats.Tags{"workspaceID": "ws-a", "language": "python"}, n)
 	}
 	resetsA := func(n int) memstats.Metric {
-		return counter(clientResetsMetric, stats.Tags{"workspaceID": "ws-a", "reason": "misdirected"}, n)
+		return testCounter(clientResetsMetric, stats.Tags{"workspaceID": "ws-a", "reason": "misdirected"}, n)
 	}
 
 	t.Run("a 421 resets only its target's client, once however many chunks got it", func(t *testing.T) {
 		const chunks = 4
 		// Hold the first 421s until every chunk is waiting on one, so they all got it from the same client.
 		allArrived := make(chan struct{})
-		podA := newPod(t, func(hit int32) bool {
+		podA := newTestPod(t, func(hit int32) bool {
 			if hit > chunks {
 				return false
 			}
@@ -230,7 +237,7 @@ func TestMisdirectedEventPath(t *testing.T) {
 			}
 			return true
 		})
-		podB := newPod(t, nil)
+		podB := newTestPod(t, nil)
 		f := newMisdirectFixture(t)
 		f.conf.Set("Processor.UserTransformer.batchSize", 1)
 		f.dns.point("pyt-ws-a", podA.addr())
@@ -238,9 +245,9 @@ func TestMisdirectedEventPath(t *testing.T) {
 		u := f.client()
 
 		// ws-b first, so it holds a client the ws-a reset could disturb.
-		require.Len(t, u.Transform(context.Background(), events("pythonfaas", "ws-b", 1)).Events, 1)
+		require.Len(t, u.Transform(context.Background(), testTransformerEvents("pythonfaas", "ws-b", 1)).Events, 1)
 
-		rsp := u.Transform(context.Background(), events("pythonfaas", "ws-a", chunks))
+		rsp := u.Transform(context.Background(), testTransformerEvents("pythonfaas", "ws-a", chunks))
 		require.Len(t, rsp.Events, chunks)
 		require.Empty(t, rsp.FailedEvents)
 		require.Equal(t, []memstats.Metric{misdirectedA(chunks)}, f.metrics(misdirectedRequestsMetric))
@@ -253,7 +260,7 @@ func TestMisdirectedEventPath(t *testing.T) {
 			return closed == 1
 		}, 5*time.Second, 10*time.Millisecond, "the replaced client is closed")
 
-		require.Len(t, u.Transform(context.Background(), events("pythonfaas", "ws-b", 1)).Events, 1)
+		require.Len(t, u.Transform(context.Background(), testTransformerEvents("pythonfaas", "ws-b", 1)).Events, 1)
 		built, closed := f.factory.counts(targetB)
 		require.Equal(t, 1, built, "ws-b keeps its client")
 		require.Zero(t, closed)
@@ -261,12 +268,12 @@ func TestMisdirectedEventPath(t *testing.T) {
 	})
 
 	t.Run("a 421 from rudder-transformer stays a final 4xx", func(t *testing.T) {
-		js := newPod(t, always)
+		js := newTestPod(t, misdirectAlways)
 		f := newMisdirectFixture(t)
 		f.conf.Set("USER_TRANSFORM_URL", js.srv.URL)
 		u := f.client()
 
-		rsp := u.Transform(context.Background(), events("javascript", "ws-a", 1))
+		rsp := u.Transform(context.Background(), testTransformerEvents("javascript", "ws-a", 1))
 		require.Empty(t, rsp.Events)
 		require.Len(t, rsp.FailedEvents, 1)
 		require.Equal(t, http.StatusMisdirectedRequest, rsp.FailedEvents[0].StatusCode)
@@ -278,7 +285,7 @@ func TestMisdirectedEventPath(t *testing.T) {
 
 	t.Run("premise: an httplb client keeps a stale address once DNS stops answering", func(t *testing.T) {
 		// Why a 421 resets the client rather than just retrying: this client would keep going to the same pod.
-		stale := newPod(t, nil)
+		stale := newTestPod(t, nil)
 		f := newMisdirectFixture(t)
 		f.dns.point("pyt-ws-a", stale.addr())
 		client, _ := f.factory.newClient(targetA)
@@ -296,7 +303,8 @@ func TestMisdirectedEventPath(t *testing.T) {
 		require.NoError(t, get())
 
 		f.dns.remove("pyt-ws-a")
-		time.Sleep(50 * time.Millisecond) // several resolver TTLs, each failing
+		require.Eventually(t, func() bool { return f.dns.failed.Load() > 0 }, 5*time.Second, 5*time.Millisecond,
+			"the client must have re-resolved and failed")
 		require.NoError(t, get())
 		require.EqualValues(t, 2, stale.hits.Load())
 	})
@@ -305,7 +313,7 @@ func TestMisdirectedEventPath(t *testing.T) {
 		f := newMisdirectFixture(t)
 		// The workspace is at zero: its name stopped resolving, and only the old client still has the stale IP,
 		// which another pod now holds.
-		stale := newPod(t, func(int32) bool {
+		stale := newTestPod(t, func(int32) bool {
 			f.dns.remove("pyt-ws-a")
 			return true
 		})
@@ -313,7 +321,7 @@ func TestMisdirectedEventPath(t *testing.T) {
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEndlessRetries", false)
 		u := f.client()
 
-		rsp := u.Transform(context.Background(), events("pythonfaas", "ws-a", 1))
+		rsp := u.Transform(context.Background(), testTransformerEvents("pythonfaas", "ws-a", 1))
 		require.Empty(t, rsp.Events)
 		require.Len(t, rsp.FailedEvents, 1)
 		require.Equal(t, transformerutils.StatusColdStartWindowFailure, rsp.FailedEvents[0].StatusCode)
@@ -322,37 +330,47 @@ func TestMisdirectedEventPath(t *testing.T) {
 		require.Equal(t, []memstats.Metric{misdirectedA(1)}, f.metrics(misdirectedRequestsMetric))
 		require.Equal(t, []memstats.Metric{resetsA(1)}, f.metrics(clientResetsMetric))
 		require.Equal(t, []memstats.Metric{
-			counter(coldStartErrorsMetric, stats.Tags{"workspaceID": "ws-a", "language": "python"}, 2),
+			testCounter(coldStartErrorsMetric, stats.Tags{"workspaceID": "ws-a", "language": "python"}, 2),
 		}, f.metrics(coldStartErrorsMetric), "the two attempts after the reset failed the lookup")
 	})
 
 	t.Run("after a reset, the retry reaches the target's current pod", func(t *testing.T) {
 		f := newMisdirectFixture(t)
-		current := newPod(t, nil)
-		stale := newPod(t, func(int32) bool {
+		// Clients never re-resolve on their own here, so only a fresh client can learn the new address.
+		f.factory.refresh = time.Hour
+		// Bounded, so a missing reset fails the test instead of retrying the stale pod forever.
+		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEndlessRetries", false)
+		current := newTestPod(t, nil)
+		stale := newTestPod(t, func(int32) bool {
 			f.dns.point("pyt-ws-a", current.addr())
 			return true
 		})
 		f.dns.point("pyt-ws-a", stale.addr())
 		u := f.client()
 
-		rsp := u.Transform(context.Background(), events("pythonfaas", "ws-a", 1))
+		rsp := u.Transform(context.Background(), testTransformerEvents("pythonfaas", "ws-a", 1))
 		require.Len(t, rsp.Events, 1)
 		require.Empty(t, rsp.FailedEvents)
 		require.EqualValues(t, 1, stale.hits.Load())
 		require.EqualValues(t, 1, current.hits.Load())
 		require.Equal(t, []memstats.Metric{resetsA(1)}, f.metrics(clientResetsMetric))
 		require.Empty(t, f.metrics(coldStartErrorsMetric))
+		built, _ := f.factory.counts(targetA)
+		require.Equal(t, 2, built)
+		require.Eventually(t, func() bool {
+			_, closed := f.factory.counts(targetA)
+			return closed == 1
+		}, 5*time.Second, 10*time.Millisecond, "the replaced client is closed")
 	})
 
 	t.Run("a 421 that outlasts the retries becomes 819", func(t *testing.T) {
-		stale := newPod(t, always)
+		stale := newTestPod(t, misdirectAlways)
 		f := newMisdirectFixture(t)
 		f.dns.point("pyt-ws-a", stale.addr())
 		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEndlessRetries", false)
 		u := f.client()
 
-		rsp := u.Transform(context.Background(), events("pythonfaas", "ws-a", 1))
+		rsp := u.Transform(context.Background(), testTransformerEvents("pythonfaas", "ws-a", 1))
 		require.Empty(t, rsp.Events)
 		require.Len(t, rsp.FailedEvents, 1)
 		require.Equal(t, transformerutils.StatusColdStartWindowFailure, rsp.FailedEvents[0].StatusCode)
@@ -367,12 +385,12 @@ func TestMisdirectedEventPath(t *testing.T) {
 	t.Run("with endless retries, a 421 that outlasts doPost's retries is retried until it clears", func(t *testing.T) {
 		// Five 421s span two doPost calls (three attempts each), so the second one only runs because sendBatch
 		// retried the 819 instead of panicking.
-		stale := newPod(t, firstHits(5))
+		stale := newTestPod(t, misdirectFirstHits(5))
 		f := newMisdirectFixture(t)
 		f.dns.point("pyt-ws-a", stale.addr())
 		u := f.client()
 
-		rsp := u.Transform(context.Background(), events("pythonfaas", "ws-a", 1))
+		rsp := u.Transform(context.Background(), testTransformerEvents("pythonfaas", "ws-a", 1))
 		require.Len(t, rsp.Events, 1)
 		require.Empty(t, rsp.FailedEvents)
 		require.EqualValues(t, 6, stale.hits.Load())
@@ -387,16 +405,16 @@ func TestMisdirectedForwardTest(t *testing.T) {
 		target = "http://" + host + ":8080"
 	)
 	misdirected := func(n int) memstats.Metric {
-		return counter(misdirectedRequestsMetric,
+		return testCounter(misdirectedRequestsMetric,
 			stats.Tags{"workspaceID": "ws-a", "language": "python", "path": "/test"}, n)
 	}
 	resets := func(n int) memstats.Metric {
-		return counter(clientResetsMetric, stats.Tags{"workspaceID": "ws-a", "reason": "misdirected"}, n)
+		return testCounter(clientResetsMetric, stats.Tags{"workspaceID": "ws-a", "reason": "misdirected"}, n)
 	}
 	fastBackoff := WithMaxRetryBackoffInterval(config.SingleValueLoader(5 * time.Millisecond))
 
 	t.Run("a 421 resets the target's client and is retried", func(t *testing.T) {
-		p := newPod(t, firstHits(1))
+		p := newTestPod(t, misdirectFirstHits(1))
 		f := newMisdirectFixture(t)
 		f.dns.point(host, p.addr())
 		u := f.client(fastBackoff)
@@ -416,8 +434,30 @@ func TestMisdirectedForwardTest(t *testing.T) {
 		}, 5*time.Second, 10*time.Millisecond, "the replaced client is closed")
 	})
 
+	t.Run("after a reset, a test pod name that no longer resolves is a cold start", func(t *testing.T) {
+		f := newMisdirectFixture(t)
+		// The ephemeral test pod was deleted and its IP handed to another pod.
+		p := newTestPod(t, func(int32) bool {
+			f.dns.remove(host)
+			return true
+		})
+		f.dns.point(host, p.addr())
+		u := f.client(fastBackoff, WithMaxRetry(config.SingleValueLoader(2)))
+
+		_, _, err := u.Test(context.Background(), target, "ws-a", []byte(`{}`))
+		_, isDNSErr := errors.AsType[*net.DNSError](err)
+		require.True(t, isDNSErr, "the lookup failure is what ends the retries: %v", err)
+		require.EqualValues(t, 1, p.hits.Load())
+		require.Equal(t, []memstats.Metric{misdirected(1)}, f.metrics(misdirectedRequestsMetric))
+		require.Equal(t, []memstats.Metric{resets(1)}, f.metrics(clientResetsMetric))
+		require.Equal(t, []memstats.Metric{
+			testCounter(coldStartErrorsMetric,
+				stats.Tags{"workspaceID": "ws-a", "language": "python", "path": "/test"}, 2),
+		}, f.metrics(coldStartErrorsMetric), "the two attempts after the reset failed the lookup")
+	})
+
 	t.Run("a 421 that outlasts maxRetry fails with ErrMisdirected", func(t *testing.T) {
-		p := newPod(t, always)
+		p := newTestPod(t, misdirectAlways)
 		f := newMisdirectFixture(t)
 		f.dns.point(host, p.addr())
 		u := f.client(fastBackoff, WithMaxRetry(config.SingleValueLoader(2)))
@@ -430,7 +470,7 @@ func TestMisdirectedForwardTest(t *testing.T) {
 	})
 
 	t.Run("a 421 is retried no longer than the caller's deadline", func(t *testing.T) {
-		p := newPod(t, always)
+		p := newTestPod(t, misdirectAlways)
 		f := newMisdirectFixture(t)
 		f.dns.point(host, p.addr())
 		u := f.client(fastBackoff, WithMaxRetry(config.SingleValueLoader(1000)))
@@ -441,4 +481,48 @@ func TestMisdirectedForwardTest(t *testing.T) {
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 		require.Greater(t, p.hits.Load(), int32(1))
 	})
+}
+
+// TestMisdirectedRealClients runs a reset through the clients New builds itself, so it covers the production factory:
+// each pyt client is an httplb client of its own, separate from the shared JS one, and a reset closes only the old one.
+func TestMisdirectedRealClients(t *testing.T) {
+	pyt := newTestPod(t, misdirectFirstHits(1))
+	js := newTestPod(t, nil)
+	conf := config.New()
+	conf.Set("Transformer.Client.UserTransformer.type", "httplb")
+	conf.Set("USER_TRANSFORM_URL", js.srv.URL)
+	conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+	conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", pyt.srv.URL)
+	conf.Set("Processor.UserTransformer.maxRetry", 2)
+	conf.Set("Processor.UserTransformer.maxRetryBackoffInterval", "1ms")
+	u := New(conf, logger.NOP, stats.NOP)
+	target := pyt.srv.URL // already scheme://host:port
+
+	stale := u.pytClients.acquire(target)
+	u.pytClients.release(stale)
+	require.NotSame(t, u.client, stale.Client, "pyt traffic must not share the JS client")
+
+	rsp := u.Transform(context.Background(), testTransformerEvents("pythonfaas", "ws-a", 1))
+	require.Len(t, rsp.Events, 1)
+	require.EqualValues(t, 2, pyt.hits.Load(), "a 421, then the retry")
+
+	fresh := u.pytClients.acquire(target)
+	u.pytClients.release(fresh)
+	require.NotSame(t, stale, fresh)
+	require.NotSame(t, stale.Client, fresh.Client, "the reset must build a new client")
+	require.NotSame(t, u.client, fresh.Client)
+	require.Eventually(t, func() bool {
+		req, err := http.NewRequest(http.MethodGet, pyt.srv.URL+"/health", nil)
+		require.NoError(t, err)
+		resp, err := stale.Do(req)
+		if err != nil {
+			return strings.Contains(err.Error(), "closed")
+		}
+		_ = resp.Body.Close()
+		return false
+	}, 5*time.Second, 10*time.Millisecond, "the replaced client is closed")
+
+	rsp = u.Transform(context.Background(), testTransformerEvents("javascript", "ws-a", 1))
+	require.Len(t, rsp.Events, 1, "the shared JS client still works")
+	require.EqualValues(t, 1, js.hits.Load())
 }

@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -719,6 +722,17 @@ func TestClient_ResponseBodyReadableAfterRetriesExhausted(t *testing.T) {
 // httplb client waits for a request already in flight instead of breaking it, and a closed httplb client fails new
 // requests, which is why nothing may be about to use a client when it is closed.
 func TestNewClosableClient(t *testing.T) {
+	isClosed := func(ch <-chan struct{}) func() bool {
+		return func() bool {
+			select {
+			case <-ch:
+				return true
+			default:
+				return false
+			}
+		}
+	}
+
 	for _, retry := range []bool{false, true} {
 		t.Run(fmt.Sprintf("httplb with retryRudderErrors=%t", retry), func(t *testing.T) {
 			arrived, unblock := make(chan struct{}), make(chan struct{})
@@ -730,6 +744,10 @@ func TestNewClosableClient(t *testing.T) {
 				_, _ = w.Write([]byte("ok"))
 			}))
 			defer server.Close()
+			// Deferred after server.Close so it runs first: if close regresses and the test bails out early, the
+			// blocked handler must not hang server.Close.
+			release := sync.OnceFunc(func() { close(unblock) })
+			defer release()
 
 			cfg := &ClientConfig{ClientType: "httplb"}
 			cfg.RetryRudderErrors.Enabled = retry
@@ -754,32 +772,29 @@ func TestNewClosableClient(t *testing.T) {
 				}
 				inFlight <- err
 			}()
-			<-arrived
+			select {
+			case <-arrived:
+			case <-time.After(5 * time.Second):
+				require.FailNow(t, "the request never reached the server")
+			}
 
 			closed := make(chan struct{})
 			go func() {
 				closeClient()
 				close(closed)
 			}()
-			require.Never(t, func() bool {
-				select {
-				case <-closed:
-					return true
-				default:
-					return false
-				}
-			}, 100*time.Millisecond, 10*time.Millisecond, "close must wait for the request in flight")
+			require.Never(t, isClosed(closed), 100*time.Millisecond, 10*time.Millisecond,
+				"close must wait for the request in flight")
 
-			close(unblock)
-			require.NoError(t, <-inFlight, "the request in flight must complete normally")
-			require.Eventually(t, func() bool {
-				select {
-				case <-closed:
-					return true
-				default:
-					return false
-				}
-			}, 5*time.Second, 10*time.Millisecond, "close must return once the request in flight is done")
+			release()
+			select {
+			case err := <-inFlight:
+				require.NoError(t, err, "the request in flight must complete normally")
+			case <-time.After(5 * time.Second):
+				require.FailNow(t, "the request in flight never completed")
+			}
+			require.Eventually(t, isClosed(closed), 5*time.Second, 10*time.Millisecond,
+				"close must return once the request in flight is done")
 
 			req, err := http.NewRequest(http.MethodGet, server.URL, nil)
 			require.NoError(t, err)
@@ -789,10 +804,20 @@ func TestNewClosableClient(t *testing.T) {
 		})
 	}
 
-	t.Run("stdlib keeps working after close, which only drops idle connections", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	t.Run("stdlib close drops idle connections and the client keeps working", func(t *testing.T) {
+		var opened, closed atomic.Int32
+		server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte("ok"))
 		}))
+		server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+			switch state {
+			case http.StateNew:
+				opened.Add(1)
+			case http.StateClosed:
+				closed.Add(1)
+			}
+		}
+		server.Start()
 		defer server.Close()
 
 		client, closeClient := NewClosableClient("testClient", &ClientConfig{ClientType: "stdlib"})
@@ -806,7 +831,14 @@ func TestNewClosableClient(t *testing.T) {
 			require.Equal(t, http.StatusOK, resp.StatusCode)
 		}
 		get()
-		closeClient()
+		require.EqualValues(t, 1, opened.Load())
+		// Retried because the transport parks the connection as idle asynchronously, after the body is closed.
+		require.Eventually(t, func() bool {
+			closeClient()
+			return closed.Load() == 1
+		}, 5*time.Second, 10*time.Millisecond, "close must drop the idle connection")
+
 		get()
+		require.EqualValues(t, 2, opened.Load(), "the next request opens a new connection")
 	})
 }

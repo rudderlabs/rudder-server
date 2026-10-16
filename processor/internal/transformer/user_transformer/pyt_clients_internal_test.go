@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 )
@@ -59,8 +61,8 @@ func newTestPyTClients(idleTimeout time.Duration) (*pytClients, *stubFactory) {
 
 func stubOf(c *pytClient) *stubClient { return c.Client.(*stubClient) }
 
-// use sends a request on c, which fails if c was closed under the caller holding it.
-func use(c *pytClient) error {
+// sendOnStub sends a request on c, which fails if c was closed under the caller holding it.
+func sendOnStub(c *pytClient) error {
 	resp, err := c.Do(nil)
 	if err != nil {
 		return err
@@ -90,6 +92,7 @@ func TestPyTClients(t *testing.T) {
 		p, f := newTestPyTClients(time.Hour)
 		a, b := p.acquire(targetA), p.acquire(targetB)
 		other := p.acquire(targetA) // a second request that got the same 421 from a
+		require.Same(t, a, other)
 
 		require.True(t, p.retire(a), "the first 421 from a client resets it")
 		require.False(t, p.retire(other), "a 421 from an already-retired client must not reset again")
@@ -105,16 +108,17 @@ func TestPyTClients(t *testing.T) {
 
 	t.Run("a retired client is closed only once its last holder releases it", func(t *testing.T) {
 		p, _ := newTestPyTClients(time.Hour)
-		first, second := p.acquire(targetA), p.acquire(targetA)
-		require.True(t, p.retire(first))
+		held := p.acquire(targetA)
+		require.Same(t, held, p.acquire(targetA), "two requests hold the same client")
+		require.True(t, p.retire(held))
 
-		p.release(first)
-		require.Never(t, stubOf(second).closed, 50*time.Millisecond, 5*time.Millisecond,
+		p.release(held)
+		require.Never(t, stubOf(held).closed, 50*time.Millisecond, 5*time.Millisecond,
 			"closed while a request still held it")
-		require.NoError(t, use(second))
+		require.NoError(t, sendOnStub(held))
 
-		p.release(second)
-		require.Eventually(t, stubOf(second).closed, time.Second, 5*time.Millisecond)
+		p.release(held)
+		require.Eventually(t, stubOf(held).closed, time.Second, 5*time.Millisecond)
 	})
 
 	t.Run("an idle client is closed after the idle timeout and rebuilt on next use", func(t *testing.T) {
@@ -130,15 +134,7 @@ func TestPyTClients(t *testing.T) {
 		require.EqualValues(t, 1, stubOf(a).closes.Load(), "closed exactly once")
 	})
 
-	t.Run("a client in use is never closed for idleness", func(t *testing.T) {
-		p, _ := newTestPyTClients(time.Millisecond)
-		a := p.acquire(targetA)
-		require.Never(t, stubOf(a).closed, 50*time.Millisecond, 5*time.Millisecond)
-		p.release(a)
-		require.Eventually(t, stubOf(a).closed, time.Second, 5*time.Millisecond)
-	})
-
-	t.Run("using a client again cancels its idle close", func(t *testing.T) {
+	t.Run("a client used again before its idle timeout is not closed while held", func(t *testing.T) {
 		p, _ := newTestPyTClients(50 * time.Millisecond)
 		a := p.acquire(targetA)
 		p.release(a)
@@ -176,7 +172,7 @@ func TestPyTClients(t *testing.T) {
 			wg.Go(func() {
 				for range 200 {
 					c := p.acquire(targets[rand.IntN(len(targets))])
-					if err := use(c); err != nil {
+					if err := sendOnStub(c); err != nil {
 						closedUnderRequest.Add(1)
 					}
 					if rand.IntN(4) == 0 {
@@ -199,4 +195,13 @@ func TestPyTClients(t *testing.T) {
 			return true
 		}, 5*time.Second, 10*time.Millisecond, "every client that left the registry is closed exactly once")
 	})
+}
+
+func TestPyTClientIdleTimeoutConfig(t *testing.T) {
+	conf := config.New()
+	u := New(conf, logger.NOP, stats.NOP)
+	require.Equal(t, 5*time.Minute, u.pytClients.idleTimeout.Load(), "default")
+
+	conf.Set("Processor.UserTransformer.pytClientIdleTimeout", "42s")
+	require.Equal(t, 42*time.Second, u.pytClients.idleTimeout.Load(), "reloaded without a restart")
 }

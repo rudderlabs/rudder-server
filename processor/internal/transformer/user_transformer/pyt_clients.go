@@ -10,15 +10,12 @@ import (
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 )
 
-// pytClients hands out one transformer client per pyt target, so a 421 can discard what the client knows about one
-// target's addresses without disturbing any other target. A client is built on first use and closed once nothing has
-// used it for the idle timeout, which keeps the per-run hosts of ephemeral test pods from piling up.
+// pytClients hands out one transformer client per pyt target, built on first use and closed once idle, so a 421 can
+// reset one target's client alone and the per-run hosts of ephemeral test pods don't pile up.
 //
 // Clients are reference counted: one is closed only once it has left the registry (idle, or retired after a 421) and
-// its last holder has released it, so a close never lands under a request.
-//
-// There is no janitor to stop on shutdown, only a timer per idle client: like the shared JS client, the registry lives
-// as long as the process.
+// its last holder has released it, so a close never lands under a request. There is no janitor to stop on shutdown,
+// only a timer per idle client: like the shared JS client, the registry lives as long as the process.
 type pytClients struct {
 	newClient   func(target string) (client transformerclient.Client, closeClient func())
 	idleTimeout config.ValueLoader[time.Duration]
@@ -27,7 +24,8 @@ type pytClients struct {
 	clients map[string]*pytClient
 }
 
-// pytClient is a client checked out of [pytClients]. All fields but the embedded client are guarded by pytClients.mu.
+// pytClient is a client checked out of [pytClients]. The embedded client, target and closeClient never change after
+// construction; the other fields are guarded by pytClients.mu.
 type pytClient struct {
 	transformerclient.Client
 	target      string

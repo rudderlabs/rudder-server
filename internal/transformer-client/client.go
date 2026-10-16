@@ -115,8 +115,8 @@ func NewClient(name string, config *ClientConfig) Client {
 // NewClosableClient is [NewClient] for owners that discard clients while the process runs. The returned func releases
 // what the client holds: httplb's resolver and connection goroutines, otherwise its idle connections.
 //
-// Call it only once no request is in flight or about to start on the client: a closed httplb client waits for
-// in-flight requests, but fails any new one.
+// No new request may start on the client once it is called: closing an httplb client waits for the requests already
+// in flight, but fails any that start afterwards.
 func NewClosableClient(name string, config *ClientConfig) (Client, func()) {
 	switch config.ClientType {
 	case "httplb":
