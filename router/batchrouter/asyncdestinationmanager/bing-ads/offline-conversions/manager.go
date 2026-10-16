@@ -52,8 +52,9 @@ func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destinat
 	return bingUploader, nil
 }
 
-func NewManager(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (asynccommon.AsyncDestinationManager, error) {
+func NewManager(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig, secretVersions oauthv2.SecretVersionProvider) (asynccommon.AsyncDestinationManager, error) {
 	oauthClientV2 := oauthv2.NewOAuthHandler(backendConfig,
+		oauthv2.WithSecretVersions(secretVersions),
 		oauthv2.WithLogger(logger),
 		oauthv2.WithCPClientTimeout(conf.GetDurationVar(30, time.Second, "HttpClient.oauth.timeout")),
 		oauthv2.WithStats(statsFactory),

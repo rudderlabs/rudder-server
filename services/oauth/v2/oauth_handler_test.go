@@ -428,7 +428,8 @@ var _ = Describe("Oauth", func() {
 			Expect(err).To(BeNil())
 			token, _ := cache.Load(tokenParams.AccountID)
 			expectedResponse := v2.OAuthToken{
-				Secret: []byte(`{"access_token":"newAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				Secret:        []byte(`{"access_token":"newAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				SecretVersion: 50,
 			}
 			Expect(token).To(Equal(expectedResponse))
 		})

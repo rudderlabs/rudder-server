@@ -169,3 +169,13 @@ func TestDestinationT_IsOAuthDestination(t *testing.T) {
 		})
 	}
 }
+
+func TestGetSecretVersion(t *testing.T) {
+	dest := &DestinationT{
+		DeliveryAccount: &Account{ID: "delivery", SecretVersion: 8},
+		DeleteAccount:   &Account{ID: "delete", SecretVersion: 3},
+	}
+	require.Equal(t, 8, dest.GetSecretVersion(common.RudderFlowDelivery))
+	require.Equal(t, 3, dest.GetSecretVersion(common.RudderFlowDelete))
+	require.Zero(t, (&DestinationT{}).GetSecretVersion(common.RudderFlowDelivery), "no account")
+}

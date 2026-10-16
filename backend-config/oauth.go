@@ -29,6 +29,14 @@ func (d *DestinationT) GetAccountID(flow common.RudderFlow) (string, error) {
 	return account.ID, nil
 }
 
+// GetSecretVersion returns the secretVersion of the destination's account for the flow, 0 when there is none.
+func (d *DestinationT) GetSecretVersion(flow common.RudderFlow) int {
+	if account := d.resolveAccount(flow); account != nil {
+		return account.SecretVersion
+	}
+	return 0
+}
+
 // IsOAuthDestination checks if a destination is configured for OAuth authentication.
 // If the destination has an account with an account definition for the given flow,
 // the account definition's AuthenticationType is used to determine if it is OAuth.
