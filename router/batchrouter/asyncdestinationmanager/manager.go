@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/sftp"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/yandexmetrica"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
 func newRegularManager(
@@ -28,18 +29,19 @@ func newRegularManager(
 	statsFactory stats.Stats,
 	destination *backendconfig.DestinationT,
 	backendConfig backendconfig.BackendConfig,
+	secretVersions oauthv2.SecretVersionProvider,
 ) (common.AsyncDestinationManager, error) {
 	switch destination.DestinationDefinition.Name {
 	case "BINGADS_AUDIENCE":
-		return bingadsaudience.NewManager(conf, logger, statsFactory, destination, backendConfig)
+		return bingadsaudience.NewManager(conf, logger, statsFactory, destination, backendConfig, secretVersions)
 	case "BINGADS_OFFLINE_CONVERSIONS":
-		return bingadsofflineconversions.NewManager(conf, logger, statsFactory, destination, backendConfig)
+		return bingadsofflineconversions.NewManager(conf, logger, statsFactory, destination, backendConfig, secretVersions)
 	case "MARKETO_BULK_UPLOAD":
 		return marketobulkupload.NewManager(logger, statsFactory, destination)
 	case "ELOQUA":
 		return eloqua.NewManager(logger, statsFactory, destination)
 	case "YANDEX_METRICA_OFFLINE_EVENTS":
-		return yandexmetrica.NewManager(conf, logger, statsFactory, destination, backendConfig)
+		return yandexmetrica.NewManager(conf, logger, statsFactory, destination, backendConfig, secretVersions)
 	case "KLAVIYO_BULK_UPLOAD":
 		return klaviyobulkupload.NewManager(logger, statsFactory, destination)
 	case "LYTICS_BULK_UPLOAD":
@@ -47,7 +49,7 @@ func newRegularManager(
 	case "SNOWPIPE_STREAMING":
 		return snowpipestreaming.New(conf, logger, statsFactory, destination), nil
 	case "SALESFORCE_BULK_UPLOAD":
-		return salesforcebulkupload.NewManager(conf, logger, statsFactory, destination, backendConfig)
+		return salesforcebulkupload.NewManager(conf, logger, statsFactory, destination, backendConfig, secretVersions)
 	case "BQSTREAM_ALL_EVENTS":
 		return bqstreamallevents.NewManager(conf, logger, statsFactory, destination), nil
 	}
@@ -68,10 +70,11 @@ func NewManager(
 	statsFactory stats.Stats,
 	destination *backendconfig.DestinationT,
 	backendConfig backendconfig.BackendConfig,
+	secretVersions oauthv2.SecretVersionProvider,
 ) (common.AsyncDestinationManager, error) {
 	switch {
 	case common.IsAsyncRegularDestination(destination.DestinationDefinition.Name):
-		return newRegularManager(conf, logger, statsFactory, destination, backendConfig)
+		return newRegularManager(conf, logger, statsFactory, destination, backendConfig, secretVersions)
 	case common.IsSFTPDestination(destination.DestinationDefinition.Name):
 		return newSFTPManager(logger, statsFactory, destination)
 	}
