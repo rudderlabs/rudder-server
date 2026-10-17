@@ -247,6 +247,7 @@ func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filem
 	}
 
 	if err = w.encodeToParquet(f, payloads); err != nil {
+		_ = f.Close()
 		return nil, fmt.Errorf("writing to file: %w", err)
 	}
 	if err = f.Close(); err != nil {
@@ -257,6 +258,7 @@ func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filem
 	if err != nil {
 		return nil, fmt.Errorf("opening file: %w", err)
 	}
+	defer func() { _ = f.Close() }()
 
 	prefixes := []string{w.sourceID, minFailedAt.Format("2006-01-02"), strconv.Itoa(minFailedAt.Hour())}
 	uploadOutput, err := w.uploader.Upload(ctx, f, prefixes...)
