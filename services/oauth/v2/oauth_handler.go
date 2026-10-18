@@ -33,6 +33,9 @@ type OAuthHandler interface {
 	// RefreshToken refreshes the OAuth token for a given account ID. The previousSecret is used to check if the token has already been rotated or not.
 	// Token refresh is skipped if the token has already been rotated and previous secret is returned instead.
 	RefreshToken(params *OAuthTokenParams, previousSecret json.RawMessage) (json.RawMessage, StatusCodeError)
+	// ReportAuthStatusInactive counts an AUTH_STATUS_INACTIVE outcome for the account on oauth_action_request.
+	// The caller decides the class from the destination's response; this only records it.
+	ReportAuthStatusInactive(params *OAuthTokenParams)
 }
 
 type refreshTokenResponseError struct {
@@ -224,6 +227,27 @@ func (h *oauthHandler) RefreshToken(params *OAuthTokenParams, previousSecret jso
 	}
 	statsHandler := NewStatsHandlerFromOAuthStats(authStats)
 	return h.getToken(params, previousSecret, action, statsHandler)
+}
+
+// ReportAuthStatusInactive counts an AUTH_STATUS_INACTIVE outcome for the account on oauth_action_request.
+func (h *oauthHandler) ReportAuthStatusInactive(params *OAuthTokenParams) {
+	authStats := &OAuthStats{
+		stats:           h.stats,
+		id:              params.AccountID,
+		destinationID:   params.DestinationID,
+		workspaceID:     params.WorkspaceID,
+		rudderCategory:  "destination",
+		isCallToCpApi:   false,
+		authErrCategory: common.CategoryAuthStatusInactive,
+		destType:        params.DestType,
+		flowType:        h.rudderFlowType,
+		action:          "auth_status_inactive",
+	}
+	statsHandler := NewStatsHandlerFromOAuthStats(authStats)
+	statsHandler.Increment("request", stats.Tags{
+		"errorMessage":  common.CategoryAuthStatusInactive,
+		"isCallToCpApi": "false",
+	})
 }
 
 func (h *oauthHandler) getToken(params *OAuthTokenParams, previousSecret json.RawMessage, action string, statsHandler OAuthStatsHandler) (json.RawMessage, StatusCodeError) {

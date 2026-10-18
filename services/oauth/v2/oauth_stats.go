@@ -72,27 +72,3 @@ func (m *OAuthStatsHandler) SendTiming(startTime time.Time, statSuffix string, t
 	statName := strings.Join([]string{OAUTH_V2_STAT_PREFIX, statSuffix}, "_")
 	m.stats.NewTaggedStat(statName, stats.TimerType, lo.Assign(m.defaultTags, tags)).SendTiming(time.Since(startTime))
 }
-
-// RecordAuthStatusInactive counts an AUTH_STATUS_INACTIVE outcome on oauth_action_request. This class is
-// classified in the transport (postRoundTrip), never inside FetchToken/RefreshToken, so until now it
-// emitted nothing. It uses the same metric name and tag set as the token paths so a single errorMessage
-// selector covers both failure classes.
-func RecordAuthStatusInactive(s stats.Stats, params *OAuthTokenParams, flow common.RudderFlow) {
-	authStats := &OAuthStats{
-		stats:           s,
-		id:              params.AccountID,
-		destinationID:   params.DestinationID,
-		workspaceID:     params.WorkspaceID,
-		rudderCategory:  "destination",
-		isCallToCpApi:   false,
-		authErrCategory: common.CategoryAuthStatusInactive,
-		destType:        params.DestType,
-		flowType:        flow,
-		action:          "auth_status_inactive",
-	}
-	handler := NewStatsHandlerFromOAuthStats(authStats)
-	handler.Increment("request", stats.Tags{
-		"errorMessage":  common.CategoryAuthStatusInactive,
-		"isCallToCpApi": "false",
-	})
-}

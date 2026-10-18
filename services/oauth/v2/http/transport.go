@@ -36,17 +36,17 @@ type TransportArgs struct {
 	GetAuthErrorCategory func([]byte) (string, error)
 	// Augmenter is an interface for augmenting requests with OAuth tokens.
 	oauthexts.Augmenter
-	// OAuthHandler handles refreshToken and fetchToken requests.
+	// OAuthHandler handles refreshToken and fetchToken requests and records the inactive auth status. It is
+	// required for OAuth destinations, including when Augmenter is nil.
 	OAuthHandler v2.OAuthHandler
 	// OriginalTransport is the underlying HTTP transport.
 	OriginalTransport http.RoundTripper
 	logger            logger.Logger
-	// Stats is the sink for the transport's own metrics; nil selects stats.Default.
-	Stats stats.Stats
+	stats             stats.Stats
 }
 
 // OAuthTransport is a http.RoundTripper that adds the appropriate authorization information to oauth requests.
-// Also, it makes the calls to the actual endpoint and handles the response by refreshing the token if required, or by reporting an inactive auth status to the caller and recording it on oauth_action_request.
+// Also, it makes the calls to the actual endpoint and handles the response by refreshing the token if required or by reporting an inactive auth status to the caller.
 type OAuthTransport struct {
 	oauthHandler v2.OAuthHandler
 	oauthexts.Augmenter
@@ -89,7 +89,7 @@ func NewOAuthTransport(args *TransportArgs) *OAuthTransport {
 		log:                  args.logger,
 		flow:                 args.FlowType,
 		getAuthErrorCategory: args.GetAuthErrorCategory,
-		stats:                args.Stats,
+		stats:                args.stats,
 	}
 	if t.log == nil {
 		t.log = logger.NewLogger()
@@ -227,8 +227,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 		interceptorResp.StatusCode = http.StatusInternalServerError
 	case common.CategoryAuthStatusInactive:
 		interceptorResp.StatusCode = http.StatusBadRequest
-		// The revoked-access class is decided here, not in the token handler, so it is recorded here.
-		v2.RecordAuthStatusInactive(t.stats, rts.tokenParams, t.flow)
+		t.oauthHandler.ReportAuthStatusInactive(rts.tokenParams)
 	}
 	applyInterceptorRespToHttpResp()
 	// when error is not nil, the response sent will be ignored(downstream)

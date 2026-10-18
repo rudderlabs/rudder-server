@@ -55,30 +55,58 @@ func TestOAuthStatsHandlerCarriesDestinationIDOnCountersOnly(t *testing.T) {
 	}
 }
 
-func TestRecordAuthStatusInactiveEmitsOAuthActionRequest(t *testing.T) {
+func TestOAuthHandlerReportAuthStatusInactive(t *testing.T) {
+	testReportAuthStatusInactive(t, common.RudderFlowDelivery)
+}
+
+func testReportAuthStatusInactive(t *testing.T, flow common.RudderFlow, options ...func(*oauthHandler)) {
+	t.Helper()
+
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
 
-	RecordAuthStatusInactive(statsStore, &OAuthTokenParams{
+	options = append(options, WithStats(statsStore))
+	handler := NewOAuthHandler(nil, options...)
+	handler.ReportAuthStatusInactive(&OAuthTokenParams{
 		AccountID:     "acct-1",
 		WorkspaceID:   "ws-1",
 		DestType:      "SALESFORCE_OAUTH",
 		DestinationID: "dest-1",
-	}, common.RudderFlowDelivery)
+	})
 
-	metrics := statsStore.GetByName("oauth_action_request")
-	require.Len(t, metrics, 1)
-	m := metrics[0]
-	require.Equal(t, float64(1), m.Value)
-	require.Equal(t, common.CategoryAuthStatusInactive, m.Tags["errorMessage"], "one errorMessage regex must cover both failure classes")
-	require.Equal(t, common.CategoryAuthStatusInactive, m.Tags["authErrCategory"])
-	require.Equal(t, "auth_status_inactive", m.Tags["action"])
-	require.Equal(t, "dest-1", m.Tags["destinationId"])
-	require.Equal(t, "acct-1", m.Tags["id"])
-	require.Equal(t, "ws-1", m.Tags["workspaceId"])
-	require.Equal(t, "SALESFORCE_OAUTH", m.Tags["destType"])
-	require.Equal(t, "delivery", m.Tags["flowType"])
-	require.Equal(t, "false", m.Tags["isCallToCpApi"])
-	require.Equal(t, "v2", m.Tags["oauthVersion"])
-	require.Equal(t, "destination", m.Tags["rudderCategory"])
+	// comparing the whole store proves that nothing else (a timer, another counter) is emitted
+	require.Equal(t, []memstats.Metric{
+		{
+			Name: "oauth_action_request",
+			Tags: stats.Tags{
+				"id":              "acct-1",
+				"destinationId":   "dest-1",
+				"workspaceId":     "ws-1",
+				"rudderCategory":  "destination",
+				"isCallToCpApi":   "false",
+				"authErrCategory": common.CategoryAuthStatusInactive,
+				"destType":        "SALESFORCE_OAUTH",
+				"flowType":        string(flow),
+				"action":          "auth_status_inactive",
+				"oauthVersion":    "v2",
+				"errorMessage":    common.CategoryAuthStatusInactive,
+			},
+			Value: 1,
+		},
+	}, statsStore.GetAll())
+}
+
+func TestNewOAuthHandlerWithNilStats(t *testing.T) {
+	handler := NewOAuthHandler(nil, WithStats(nil)).(*oauthHandler)
+
+	require.NotNil(t, handler.stats)
+	require.Equal(t, stats.Default, handler.stats)
+	require.NotPanics(t, func() {
+		handler.ReportAuthStatusInactive(&OAuthTokenParams{
+			AccountID:     "acct-nil-stats",
+			WorkspaceID:   "ws-nil-stats",
+			DestType:      "SALESFORCE_OAUTH",
+			DestinationID: "dest-nil-stats",
+		})
+	})
 }
