@@ -79,6 +79,7 @@ var _ = DescribeTable("AUTH_STATUS_INACTIVE metric (auth alert)",
 			v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
 			v2.WithCpClient(mockCpConnector),
 			v2.WithOauthBreakerOptions(&v2.OAuthBreakerOptions{}),
+			v2.WithRudderFlow(flow),
 		)
 
 		// the destination answers with a body the injected classifier maps to the category under test
@@ -217,4 +218,7 @@ var _ = DescribeTable("AUTH_STATUS_INACTIVE metric (auth alert)",
 	Entry("does not report inactive when classification fails",
 		common.RudderFlowDelivery, true, common.CategoryAuthStatusInactive,
 		true, http.StatusInternalServerError, false),
+	Entry("reports delete inactive",
+		common.RudderFlowDelete, true, common.CategoryAuthStatusInactive,
+		false, http.StatusBadRequest, true),
 )

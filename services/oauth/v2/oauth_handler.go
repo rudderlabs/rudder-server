@@ -94,6 +94,14 @@ func WithStats(stats stats.Stats) func(*oauthHandler) {
 	}
 }
 
+// WithRudderFlow sets the flow (delivery or delete) the handler serves: the flowType tag of its token and
+// inactive-status metrics. Defaults to delivery.
+func WithRudderFlow(flow common.RudderFlow) func(*oauthHandler) {
+	return func(h *oauthHandler) {
+		h.rudderFlowType = flow
+	}
+}
+
 // WithCpClient sets the control plane client for the OAuthHandler
 func WithCpClient(cpClient controlplane.Connector) func(*oauthHandler) {
 	return func(h *oauthHandler) {

@@ -15,9 +15,11 @@ import (
 )
 
 type HttpClientOptionalArgs struct {
-	Transport           http.RoundTripper
-	Augmenter           oauthexts.Augmenter
-	Locker              *sync.PartitionRWLocker
+	Transport http.RoundTripper
+	Augmenter oauthexts.Augmenter
+	Locker    *sync.PartitionRWLocker
+	// OAuthHandler replaces the handler the client would build. A caller that injects one must build it with
+	// oauth.WithRudderFlow(flowType), so the handler's metrics carry the same flow as the transport.
 	OAuthHandler        oauth.OAuthHandler
 	ExpirationTimeDiff  time.Duration
 	Logger              logger.Logger
@@ -33,6 +35,7 @@ func NewOAuthHttpClient(client *http.Client, flowType common.RudderFlow, tokenCa
 	originalTransport := opArgs.Transport
 	if oauthHandler == nil {
 		oauthHandler = oauth.NewOAuthHandler(backendConfig,
+			oauth.WithRudderFlow(flowType),
 			oauth.WithCache(*tokenCache),
 			oauth.WithLocker(opArgs.Locker),
 			oauth.WithRefreshBeforeExpiry(opArgs.ExpirationTimeDiff),

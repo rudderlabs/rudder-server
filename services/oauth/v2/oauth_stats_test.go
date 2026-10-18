@@ -59,6 +59,10 @@ func TestOAuthHandlerReportAuthStatusInactive(t *testing.T) {
 	testReportAuthStatusInactive(t, common.RudderFlowDelivery)
 }
 
+func TestOAuthHandlerReportAuthStatusInactiveDelete(t *testing.T) {
+	testReportAuthStatusInactive(t, common.RudderFlowDelete, WithRudderFlow(common.RudderFlowDelete))
+}
+
 func testReportAuthStatusInactive(t *testing.T, flow common.RudderFlow, options ...func(*oauthHandler)) {
 	t.Helper()
 
