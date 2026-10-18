@@ -193,7 +193,7 @@ type oauthHandler struct {
 //   - If the token is not present in the cache, it fetches the token from the control plane using a hint to refresh the token if it is expired
 func (h *oauthHandler) FetchToken(params *OAuthTokenParams) (json.RawMessage, StatusCodeError) {
 	const action = "fetch_token"
-	authStats := &OAuthStats{
+	authStats := &oauthStats{
 		stats:           h.stats,
 		id:              params.AccountID,
 		destinationID:   params.DestinationID,
@@ -207,7 +207,7 @@ func (h *oauthHandler) FetchToken(params *OAuthTokenParams) (json.RawMessage, St
 		flowType:        h.rudderFlowType,
 		action:          action,
 	}
-	statshandler := NewStatsHandlerFromOAuthStats(authStats)
+	statshandler := newOAuthStatsHandler(authStats)
 	return h.getToken(params, nil, action, statshandler)
 }
 
@@ -219,7 +219,7 @@ func (h *oauthHandler) FetchToken(params *OAuthTokenParams) (json.RawMessage, St
 //   - If the token is not present in the cache, it fetches the token from the control plane using a hint to refresh the token if it is expired
 func (h *oauthHandler) RefreshToken(params *OAuthTokenParams, previousSecret json.RawMessage) (json.RawMessage, StatusCodeError) {
 	const action = "refresh_token"
-	authStats := &OAuthStats{
+	authStats := &oauthStats{
 		stats:           h.stats,
 		id:              params.AccountID,
 		destinationID:   params.DestinationID,
@@ -233,13 +233,13 @@ func (h *oauthHandler) RefreshToken(params *OAuthTokenParams, previousSecret jso
 		flowType:        h.rudderFlowType,
 		action:          action,
 	}
-	statsHandler := NewStatsHandlerFromOAuthStats(authStats)
+	statsHandler := newOAuthStatsHandler(authStats)
 	return h.getToken(params, previousSecret, action, statsHandler)
 }
 
 // ReportAuthStatusInactive counts an AUTH_STATUS_INACTIVE outcome for the account on oauth_action_request.
 func (h *oauthHandler) ReportAuthStatusInactive(params *OAuthTokenParams) {
-	authStats := &OAuthStats{
+	authStats := &oauthStats{
 		stats:           h.stats,
 		id:              params.AccountID,
 		destinationID:   params.DestinationID,
@@ -251,14 +251,14 @@ func (h *oauthHandler) ReportAuthStatusInactive(params *OAuthTokenParams) {
 		flowType:        h.rudderFlowType,
 		action:          "auth_status_inactive",
 	}
-	statsHandler := NewStatsHandlerFromOAuthStats(authStats)
+	statsHandler := newOAuthStatsHandler(authStats)
 	statsHandler.Increment("request", stats.Tags{
 		"errorMessage":  common.CategoryAuthStatusInactive,
 		"isCallToCpApi": "false",
 	})
 }
 
-func (h *oauthHandler) getToken(params *OAuthTokenParams, previousSecret json.RawMessage, action string, statsHandler OAuthStatsHandler) (json.RawMessage, StatusCodeError) {
+func (h *oauthHandler) getToken(params *OAuthTokenParams, previousSecret json.RawMessage, action string, statsHandler oauthStatsHandler) (json.RawMessage, StatusCodeError) {
 	// Create a logger with all context fields
 	log := h.logger.Withn(
 		logger.NewStringField("action", action),
@@ -380,7 +380,7 @@ func getRefreshTokenFromResponse(response string, l logger.Logger) (oauthToken *
 }
 
 // This method hits the Control Plane to get the token
-func (h *oauthHandler) getTokenFromAPI(params *OAuthTokenParams, body OauthTokenRequestBody, statsHandler OAuthStatsHandler, action string) (*OAuthToken, StatusCodeError) {
+func (h *oauthHandler) getTokenFromAPI(params *OAuthTokenParams, body OauthTokenRequestBody, statsHandler oauthStatsHandler, action string) (*OAuthToken, StatusCodeError) {
 	url := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", h.cbeURL, params.WorkspaceID, params.AccountID)
 	resBody, err := jsonrs.Marshal(body)
 	if err != nil {

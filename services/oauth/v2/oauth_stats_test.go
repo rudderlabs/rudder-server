@@ -16,7 +16,7 @@ func TestOAuthStatsHandlerCarriesDestinationIDOnCountersOnly(t *testing.T) {
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
 
-	s := &OAuthStats{
+	s := &oauthStats{
 		stats:         statsStore,
 		id:            "acct-1",
 		destinationID: "dest-1",
@@ -30,7 +30,7 @@ func TestOAuthStatsHandlerCarriesDestinationIDOnCountersOnly(t *testing.T) {
 	require.NotContains(t, tags, "destinationId", "the shared tag set stays per account: it is what the latency histograms carry")
 	require.Equal(t, "acct-1", tags["id"], "id keeps carrying the accountId; one account can back several destinations")
 
-	handler := NewStatsHandlerFromOAuthStats(s)
+	handler := newOAuthStatsHandler(s)
 	for _, suffix := range []string{"request", "request_sent", "proactive_token_refresh"} {
 		handler.Increment(suffix, stats.Tags{"errorMessage": "ref_token_invalid_grant", "isCallToCpApi": "true"})
 
