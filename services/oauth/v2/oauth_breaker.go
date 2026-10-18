@@ -85,8 +85,7 @@ func (b *oauthBreaker) RefreshToken(params *OAuthTokenParams, previousSecret jso
 	})
 }
 
-// ReportAuthStatusInactive forwards the report to the delegate outside the breakers: it is a count, not a
-// control-plane call, so an open circuit must neither block it nor count it.
+// ReportAuthStatusInactive forwards to the delegate without consulting the breakers: a count, not a control-plane call.
 func (b *oauthBreaker) ReportAuthStatusInactive(params *OAuthTokenParams) {
 	b.delegate.ReportAuthStatusInactive(params)
 }

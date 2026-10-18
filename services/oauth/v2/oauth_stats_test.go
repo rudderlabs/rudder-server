@@ -18,7 +18,7 @@ func TestOAuthStatsHandlerCarriesDestinationIDOnCountersOnly(t *testing.T) {
 
 	s := &oauthStats{
 		stats:         statsStore,
-		id:            "acct-1",
+		accountID:     "acct-1",
 		destinationID: "dest-1",
 		workspaceID:   "ws-1",
 		destType:      "GOOGLE_ADWORDS_ENHANCED_CONVERSIONS",

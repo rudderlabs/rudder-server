@@ -15,11 +15,9 @@ import (
 )
 
 type HttpClientOptionalArgs struct {
-	Transport http.RoundTripper
-	Augmenter oauthexts.Augmenter
-	Locker    *sync.PartitionRWLocker
-	// OAuthHandler replaces the handler the client would build. A caller that injects one must build it with
-	// oauth.WithRudderFlow(flowType), so the handler's metrics carry the same flow as the transport.
+	Transport           http.RoundTripper
+	Augmenter           oauthexts.Augmenter
+	Locker              *sync.PartitionRWLocker
 	OAuthHandler        oauth.OAuthHandler
 	ExpirationTimeDiff  time.Duration
 	Logger              logger.Logger

@@ -36,8 +36,7 @@ type TransportArgs struct {
 	GetAuthErrorCategory func([]byte) (string, error)
 	// Augmenter is an interface for augmenting requests with OAuth tokens.
 	oauthexts.Augmenter
-	// OAuthHandler handles refreshToken and fetchToken requests and records the inactive auth status. It is
-	// required for OAuth destinations, including when Augmenter is nil.
+	// OAuthHandler handles refreshToken and fetchToken requests.
 	OAuthHandler v2.OAuthHandler
 	// OriginalTransport is the underlying HTTP transport.
 	OriginalTransport http.RoundTripper
