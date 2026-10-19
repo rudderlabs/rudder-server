@@ -48,8 +48,8 @@ var _ = Describe("Transformer features", func() {
 				Entry("malformed entry", `{"secretPaths":{"KLAVIYO":"bad","BRAZE":["headers.Authorization"]}}`, "KLAVIYO", nil, false),
 				Entry("valid sibling of a malformed entry", `{"secretPaths":{"KLAVIYO":"bad","BRAZE":["headers.Authorization"]}}`, "BRAZE", []string{"headers.Authorization"}, true),
 				Entry("malformed table", `{"secretPaths":"oops"}`, "BRAZE", nil, false),
-				Entry("older transformer", `{}`, "KLAVIYO", nil, true),
-				Entry("top-level null", `{"secretPaths":null}`, "KLAVIYO", nil, true),
+				Entry("older transformer", `{}`, "KLAVIYO", nil, false),
+				Entry("top-level null", `{"secretPaths":null}`, "KLAVIYO", nil, false),
 			)
 
 			It("does not reject sibling features when the table is malformed", func() {
@@ -57,12 +57,12 @@ var _ = Describe("Transformer features", func() {
 				Expect(handler.RouterTransform("BRAZE")).To(BeTrue())
 			})
 
-			It("returns an empty successful lookup for the default and no-op services", func() {
+			It("returns a missing lookup for the default and no-op services", func() {
 				paths, ok := newTestFeaturesService(defaultTransformerFeatures).SecretPaths("KLAVIYO")
-				Expect(ok).To(BeTrue())
+				Expect(ok).To(BeFalse())
 				Expect(paths).To(BeNil())
 				paths, ok = NewNoOpService().SecretPaths("KLAVIYO")
-				Expect(ok).To(BeTrue())
+				Expect(ok).To(BeFalse())
 				Expect(paths).To(BeNil())
 			})
 		})

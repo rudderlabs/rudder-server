@@ -39,8 +39,8 @@ type featuresPayload struct {
 }
 
 // secretPathsTable is nil when the transformer does not send secretPaths (older
-// transformer). A malformed value decodes to an empty table, so every lookup
-// misses and the caller masks everything.
+// transformer). Nil and malformed tables make every lookup miss, so the caller
+// masks everything.
 type secretPathsTable map[string][]string
 
 func (t *secretPathsTable) UnmarshalJSON(data []byte) error {
@@ -118,7 +118,7 @@ func (t *featuresService) RouterTransform(destType string) bool {
 func (t *featuresService) SecretPaths(destType string) ([]string, bool) {
 	table := t.features.Load().SecretPaths
 	if table == nil {
-		return nil, true
+		return nil, false
 	}
 	paths, ok := table[destType]
 	return paths, ok

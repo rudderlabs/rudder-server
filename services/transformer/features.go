@@ -103,7 +103,7 @@ func (*noopService) RouterTransform(_ string) bool {
 }
 
 func (*noopService) SecretPaths(_ string) ([]string, bool) {
-	return nil, true
+	return nil, false
 }
 
 func (*noopService) TransformerProxy(_ string) bool {
