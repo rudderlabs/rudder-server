@@ -62,6 +62,7 @@ func (p *pytClients) acquire(target string) *pytClient {
 		c = &pytClient{Client: client, target: target, closeClient: closeClient}
 		p.clients[target] = c
 	}
+	// Not for correctness (closeIfIdle rechecks): it keeps one pending AfterFunc per client, not one per release.
 	if c.idle != nil {
 		c.idle.Stop()
 		c.idle = nil
