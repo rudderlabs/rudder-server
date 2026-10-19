@@ -1518,6 +1518,61 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		},
 		destination: oauthDests[0],
 	},
+	{
+		description:  "[v1proxy] when the destination rate limits, should keep proxy status as 200 and expose the destination status from output.status",
+		proxyVersion: "v1",
+		transformerProxyResponseV1: ProxyResponseV1{
+			Status:  http.StatusTooManyRequests,
+			Message: "Request failed for BRAZE with status: 429",
+			Response: []TPDestResponse{
+				{
+					StatusCode: http.StatusTooManyRequests,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         1,
+					},
+					Error: "rate limited",
+				},
+			},
+		},
+		destType: "braze",
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.braze.domain.com/users/track",
+				RequestMethod: http.MethodPost,
+				EndpointPath:  "users/track",
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON":       map[string]any{"key_1": "val_1"},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
+				},
+				Files: map[string]any{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         1,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives:      map[int64]bool{1: false},
+			RespBodys:                map[int64]string{1: "rate limited"},
+			RespContentType:          "application/json",
+			ProxyRequestResponseBody: `{"status":429,"message":"Request failed for BRAZE with status: 429","response":[{"statusCode":429,"error":"rate limited","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":1}}]}`,
+			ProxyRequestStatusCode:   http.StatusOK,
+			DestinationStatusCode:    http.StatusTooManyRequests,
+			RespStatusCodes:          map[int64]int{1: http.StatusTooManyRequests},
+		},
+		destination: oauthDests[0],
+	},
 
 	{
 		description:  "[v1proxy] when the transformer answers for a different set of jobIDs than were sent, should page with reason in out mismatch",
@@ -2319,6 +2374,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 			require.Equal(t, tc.expected.RespContentType, proxyResp.RespContentType)
 
 			require.Equal(t, tc.expected.ProxyRequestStatusCode, proxyResp.ProxyRequestStatusCode)
+			require.Equal(t, tc.expected.DestinationStatusCode, proxyResp.DestinationStatusCode)
 			// Assert of ProxyRequestPayload
 			var expectedPrxResp, actualPrxResp ProxyRequestPayload
 			e1 := jsonrs.Unmarshal([]byte(tc.expected.ProxyRequestResponseBody), &expectedPrxResp)
@@ -2684,4 +2740,15 @@ func TestTransformerMetrics(t *testing.T) {
 	require.Len(t, failureMetrics, 1)
 	require.Equal(t, stats.Tags{"workspaceId": "workspace_1", "destinationId": "destination_1", "errorCategory": "network"}, failureMetrics[0].Tags)
 	require.Equal(t, float64(1), failureMetrics[0].Value)
+}
+
+func TestProxyRequestResponse_DeliveryStatusCode(t *testing.T) {
+	t.Run("prefers the destination status", func(t *testing.T) {
+		r := ProxyRequestResponse{ProxyRequestStatusCode: http.StatusOK, DestinationStatusCode: http.StatusTooManyRequests}
+		require.Equal(t, http.StatusTooManyRequests, r.DeliveryStatusCode())
+	})
+	t.Run("falls back to the proxy status when the destination status is missing", func(t *testing.T) {
+		r := ProxyRequestResponse{ProxyRequestStatusCode: http.StatusBadGateway}
+		require.Equal(t, http.StatusBadGateway, r.DeliveryStatusCode())
+	})
 }
