@@ -32,190 +32,6 @@ import (
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
-// fakeDNS stands in for cluster DNS: a host resolves to the address it points at, and fails like NXDOMAIN, as the name
-// of a workspace scaled to zero does, when it points nowhere.
-type fakeDNS struct {
-	mu      sync.Mutex
-	answers map[string]string
-	failed  atomic.Int32 // lookups that found no answer
-}
-
-func (d *fakeDNS) point(host, addr string) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.answers[host] = addr
-}
-
-func (d *fakeDNS) remove(host string) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	delete(d.answers, host)
-}
-
-func (d *fakeDNS) ResolveOnce(_ context.Context, _, hostPort string) ([]resolver.Address, time.Duration, error) {
-	host, _, err := net.SplitHostPort(hostPort)
-	if err != nil {
-		host = hostPort
-	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	addr, ok := d.answers[host]
-	if !ok {
-		d.failed.Add(1)
-		return nil, 0, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
-	}
-	return []resolver.Address{{HostPort: addr}}, 0, nil
-}
-
-// testHTTPLBFactory builds real httplb clients resolving through fakeDNS every refresh, and records per target how many
-// were built and closed.
-type testHTTPLBFactory struct {
-	t       testing.TB
-	dns     *fakeDNS
-	refresh time.Duration
-	mu      sync.Mutex
-	built   map[string]int
-	closed  map[string]int
-}
-
-func (f *testHTTPLBFactory) newClient(target string) (transformerclient.Client, func()) {
-	client := httplb.NewClient(httplb.WithResolver(resolver.NewPollingResolver(f.dns, f.refresh)))
-	f.mu.Lock()
-	f.built[target]++
-	f.mu.Unlock()
-	var once sync.Once
-	closeClient := func() {
-		once.Do(func() {
-			_ = client.Close()
-			f.mu.Lock()
-			f.closed[target]++
-			f.mu.Unlock()
-		})
-	}
-	f.t.Cleanup(closeClient)
-	return client, closeClient
-}
-
-func (f *testHTTPLBFactory) counts(target string) (built, closed int) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.built[target], f.closed[target]
-}
-
-// testPod stands in for a pyt pod. It refuses the hits misdirect picks with 421, the way a pod refuses work that isn't
-// its own, and serves every other hit: /customTransform echoes the events, any other path answers "done".
-type testPod struct {
-	srv  *httptest.Server
-	hits atomic.Int32
-}
-
-func newTestPod(t *testing.T, misdirect func(hit int32) bool) *testPod {
-	t.Helper()
-	return newTestPodWithReason(t, "workspace_mismatch", misdirect)
-}
-
-// newTestPodWithReason is newTestPod with the X-Rudder-Error-Reason its 421s carry; an empty reason sends none.
-func newTestPodWithReason(t *testing.T, reason string, misdirect func(hit int32) bool) *testPod {
-	t.Helper()
-	p := &testPod{}
-	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hit := p.hits.Add(1)
-		if misdirect != nil && misdirect(hit) {
-			if reason != "" {
-				w.Header().Set(transformerclient.HeaderErrorReason, reason)
-			}
-			w.Header().Set("Connection", "close")
-			http.Error(w, "misdirected", http.StatusMisdirectedRequest)
-			return
-		}
-		if r.URL.Path != "/customTransform" {
-			_, _ = w.Write([]byte("done"))
-			return
-		}
-		var events []types.TransformerEvent
-		if err := jsonrs.NewDecoder(r.Body).Decode(&events); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		responses := make([]types.TransformerResponse, len(events))
-		for i := range events {
-			responses[i] = types.TransformerResponse{
-				Output: events[i].Message, Metadata: events[i].Metadata, StatusCode: http.StatusOK,
-			}
-		}
-		w.Header().Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
-		_ = jsonrs.NewEncoder(w).Encode(responses)
-	}))
-	t.Cleanup(p.srv.Close)
-	return p
-}
-
-func (p *testPod) addr() string { return p.srv.Listener.Addr().String() }
-
-func misdirectAlways(int32) bool { return true }
-
-func misdirectFirstHits(n int32) func(int32) bool { return func(hit int32) bool { return hit <= n } }
-
-type misdirectFixture struct {
-	conf    *config.Config
-	stats   *memstats.Store
-	dns     *fakeDNS
-	factory *testHTTPLBFactory
-}
-
-func newMisdirectFixture(t *testing.T) *misdirectFixture {
-	t.Helper()
-	statsStore, err := memstats.New()
-	require.NoError(t, err)
-	conf := config.New()
-	conf.Set("USER_TRANSFORM_URL", "http://js-stub:9090")
-	conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
-	conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", "http://pyt-{workspaceID}:8080")
-	conf.Set("Processor.UserTransformer.maxRetry", 2)
-	conf.Set("Processor.UserTransformer.maxRetryBackoffInterval", "1ms")
-	dns := &fakeDNS{answers: map[string]string{}}
-	return &misdirectFixture{
-		conf:  conf,
-		stats: statsStore,
-		dns:   dns,
-		// A short refresh so clients keep re-resolving during a test: that is when httplb holds on to a stale address.
-		factory: &testHTTPLBFactory{
-			t: t, dns: dns, refresh: 10 * time.Millisecond, built: map[string]int{}, closed: map[string]int{},
-		},
-	}
-}
-
-// client builds the user transformer on the fixture's config; set any config before calling it.
-func (f *misdirectFixture) client(opts ...Opt) *Client {
-	u := New(f.conf, logger.NOP, f.stats, opts...)
-	u.pytClients.newClient = f.factory.newClient
-	return u
-}
-
-func (f *misdirectFixture) metrics(name string) []memstats.Metric { return f.stats.GetByName(name) }
-
-func testTransformerEvents(language, workspaceID string, n int) []types.TransformerEvent {
-	evs := make([]types.TransformerEvent, n)
-	for i := range evs {
-		msgID := fmt.Sprintf("%s-msg-%d", workspaceID, i)
-		evs[i] = types.TransformerEvent{
-			Metadata: types.Metadata{MessageID: msgID, WorkspaceID: workspaceID},
-			Message:  map[string]any{"messageId": msgID},
-			Destination: backendconfig.DestinationT{
-				DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "test-destination"},
-				Transformations: []backendconfig.TransformationT{{
-					ID: "transformation-1", VersionID: "version-1", Language: language,
-				}},
-			},
-		}
-	}
-	return evs
-}
-
-func testCounter(name string, tags stats.Tags, value int) memstats.Metric {
-	return memstats.Metric{Name: name, Tags: tags, Value: float64(value)}
-}
-
 func TestMisdirectedEventPath(t *testing.T) {
 	const (
 		targetA = "http://pyt-ws-a:8080"
@@ -567,4 +383,188 @@ func TestMisdirectedReasonIsSanitised(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fakeDNS stands in for cluster DNS: a host resolves to the address it points at, and fails like NXDOMAIN, as the name
+// of a workspace scaled to zero does, when it points nowhere.
+type fakeDNS struct {
+	mu      sync.Mutex
+	answers map[string]string
+	failed  atomic.Int32 // lookups that found no answer
+}
+
+func (d *fakeDNS) point(host, addr string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.answers[host] = addr
+}
+
+func (d *fakeDNS) remove(host string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.answers, host)
+}
+
+func (d *fakeDNS) ResolveOnce(_ context.Context, _, hostPort string) ([]resolver.Address, time.Duration, error) {
+	host, _, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		host = hostPort
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	addr, ok := d.answers[host]
+	if !ok {
+		d.failed.Add(1)
+		return nil, 0, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+	}
+	return []resolver.Address{{HostPort: addr}}, 0, nil
+}
+
+// testHTTPLBFactory builds real httplb clients resolving through fakeDNS every refresh, and records per target how many
+// were built and closed.
+type testHTTPLBFactory struct {
+	t       testing.TB
+	dns     *fakeDNS
+	refresh time.Duration
+	mu      sync.Mutex
+	built   map[string]int
+	closed  map[string]int
+}
+
+func (f *testHTTPLBFactory) newClient(target string) (transformerclient.Client, func()) {
+	client := httplb.NewClient(httplb.WithResolver(resolver.NewPollingResolver(f.dns, f.refresh)))
+	f.mu.Lock()
+	f.built[target]++
+	f.mu.Unlock()
+	var once sync.Once
+	closeClient := func() {
+		once.Do(func() {
+			_ = client.Close()
+			f.mu.Lock()
+			f.closed[target]++
+			f.mu.Unlock()
+		})
+	}
+	f.t.Cleanup(closeClient)
+	return client, closeClient
+}
+
+func (f *testHTTPLBFactory) counts(target string) (built, closed int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.built[target], f.closed[target]
+}
+
+// testPod stands in for a pyt pod. It refuses the hits misdirect picks with 421, the way a pod refuses work that isn't
+// its own, and serves every other hit: /customTransform echoes the events, any other path answers "done".
+type testPod struct {
+	srv  *httptest.Server
+	hits atomic.Int32
+}
+
+func newTestPod(t *testing.T, misdirect func(hit int32) bool) *testPod {
+	t.Helper()
+	return newTestPodWithReason(t, "workspace_mismatch", misdirect)
+}
+
+// newTestPodWithReason is newTestPod with the X-Rudder-Error-Reason its 421s carry; an empty reason sends none.
+func newTestPodWithReason(t *testing.T, reason string, misdirect func(hit int32) bool) *testPod {
+	t.Helper()
+	p := &testPod{}
+	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit := p.hits.Add(1)
+		if misdirect != nil && misdirect(hit) {
+			if reason != "" {
+				w.Header().Set(transformerclient.HeaderErrorReason, reason)
+			}
+			w.Header().Set("Connection", "close")
+			http.Error(w, "misdirected", http.StatusMisdirectedRequest)
+			return
+		}
+		if r.URL.Path != "/customTransform" {
+			_, _ = w.Write([]byte("done"))
+			return
+		}
+		var events []types.TransformerEvent
+		if err := jsonrs.NewDecoder(r.Body).Decode(&events); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		responses := make([]types.TransformerResponse, len(events))
+		for i := range events {
+			responses[i] = types.TransformerResponse{
+				Output: events[i].Message, Metadata: events[i].Metadata, StatusCode: http.StatusOK,
+			}
+		}
+		w.Header().Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
+		_ = jsonrs.NewEncoder(w).Encode(responses)
+	}))
+	t.Cleanup(p.srv.Close)
+	return p
+}
+
+func (p *testPod) addr() string { return p.srv.Listener.Addr().String() }
+
+func misdirectAlways(int32) bool { return true }
+
+func misdirectFirstHits(n int32) func(int32) bool { return func(hit int32) bool { return hit <= n } }
+
+type misdirectFixture struct {
+	conf    *config.Config
+	stats   *memstats.Store
+	dns     *fakeDNS
+	factory *testHTTPLBFactory
+}
+
+func newMisdirectFixture(t *testing.T) *misdirectFixture {
+	t.Helper()
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+	conf := config.New()
+	conf.Set("USER_TRANSFORM_URL", "http://js-stub:9090")
+	conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", true)
+	conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", "http://pyt-{workspaceID}:8080")
+	conf.Set("Processor.UserTransformer.maxRetry", 2)
+	conf.Set("Processor.UserTransformer.maxRetryBackoffInterval", "1ms")
+	dns := &fakeDNS{answers: map[string]string{}}
+	return &misdirectFixture{
+		conf:  conf,
+		stats: statsStore,
+		dns:   dns,
+		// A short refresh so clients keep re-resolving during a test: that is when httplb holds on to a stale address.
+		factory: &testHTTPLBFactory{
+			t: t, dns: dns, refresh: 10 * time.Millisecond, built: map[string]int{}, closed: map[string]int{},
+		},
+	}
+}
+
+// client builds the user transformer on the fixture's config; set any config before calling it.
+func (f *misdirectFixture) client(opts ...Opt) *Client {
+	u := New(f.conf, logger.NOP, f.stats, opts...)
+	u.pytClients.newClient = f.factory.newClient
+	return u
+}
+
+func (f *misdirectFixture) metrics(name string) []memstats.Metric { return f.stats.GetByName(name) }
+
+func testTransformerEvents(language, workspaceID string, n int) []types.TransformerEvent {
+	evs := make([]types.TransformerEvent, n)
+	for i := range evs {
+		msgID := fmt.Sprintf("%s-msg-%d", workspaceID, i)
+		evs[i] = types.TransformerEvent{
+			Metadata: types.Metadata{MessageID: msgID, WorkspaceID: workspaceID},
+			Message:  map[string]any{"messageId": msgID},
+			Destination: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "test-destination"},
+				Transformations: []backendconfig.TransformationT{{
+					ID: "transformation-1", VersionID: "version-1", Language: language,
+				}},
+			},
+		}
+	}
+	return evs
+}
+
+func testCounter(name string, tags stats.Tags, value int) memstats.Metric {
+	return memstats.Metric{Name: name, Tags: tags, Value: float64(value)}
 }
