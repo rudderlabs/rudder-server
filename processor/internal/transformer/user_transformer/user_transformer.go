@@ -103,8 +103,8 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	clientConfig := transformerutils.TransformerClientConfig(conf, "UserTransformer")
 	handle.client = transformerclient.NewClient("UserTransformer", clientConfig)
 	// 5m is below KEDA's 300s cooldown plus the 1m rate window of its triggers, so a workspace's client is usually
-	// closed before the workspace reaches zero and its next request takes the cold-start path. Longer loses that. A
-	// value <=0 closes a client as soon as it is idle, i.e. after every request.
+	// closed before the workspace reaches zero and its next request takes the cold-start path. Longer loses that.
+	// A value <=0 closes a client as soon as it is idle, i.e. after every request.
 	handle.config.pytClientIdleTimeout = conf.GetReloadableDurationVar(5, time.Minute,
 		"Processor.UserTransformer.pytClientIdleTimeout")
 	handle.pytClients = newPyTClients(func(string) (transformerclient.Client, func()) {
