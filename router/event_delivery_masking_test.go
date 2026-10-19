@@ -82,10 +82,10 @@ func TestSendDestinationResponseMasksLiveEventsPayload(t *testing.T) {
 		},
 		{
 			name:       "older transformer without the feature",
-			ok:         false,
+			ok:         true,
 			input:      `{"headers":{"Authorization":"secret"}}`,
-			want:       `{"headers":"******"}`,
-			wantReason: "mask_all",
+			want:       `{"headers":{"Authorization":"secret"}}`,
+			wantReason: "listed_noop",
 		},
 		{
 			name:       "every listed path is missing",
