@@ -182,6 +182,9 @@ func TestPostStatusOnResponseQStoreDeliveredWithWarningPayload(t *testing.T) {
 				responseQ:                        make(chan workerJobStatus, 1),
 				reportJobsdbPayload:              config.SingleValueLoader(true),
 				storeDeliveredWithWarningPayload: config.SingleValueLoader(storePayload),
+				reloadableConfig: &reloadableConfig{
+					enableReportingSampleEventMasking: config.SingleValueLoader(false),
+				},
 			},
 		}
 	}

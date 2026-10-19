@@ -16,86 +16,116 @@ const (
 	maskedJSON  = `"` + maskedValue + `"`
 )
 
-var errPathNotMasked = errors.New("path not masked")
+// maskMode selects what happens when the transformer publishes no usable secret paths
+// for a destination, or when a listed path cannot be applied.
+type maskMode int
+
+const (
+	// maskModeFallbackAll masks every top-level field except endpoint. Live events use
+	// this: an unknown destination must never forward a raw credential.
+	maskModeFallbackAll maskMode = iota
+	// maskModeSkip leaves the payload untouched. Reporting sample events use this: a
+	// blanket-masked sample destroys the error-triage value the sample exists for.
+	maskModeSkip
+)
 
 func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
 	if w.rt.reloadableConfig.disableEventDeliveryUploadMasking.Load() {
 		return payload
 	}
-
 	paths, ok := w.rt.transformerFeaturesService.SecretPaths(w.rt.destType)
-	var masked json.RawMessage
-	var maskErr bool
-	if ok {
-		masked, maskErr = maskListedPaths(payload, paths)
-	} else {
-		masked, maskErr = maskAll(payload)
-	}
-
-	var reason string
-	switch {
-	case maskErr:
-		reason = "mask_error"
-	case !ok:
-		reason = "mask_all"
-	case bytes.Equal(masked, payload): // masking only ever writes maskedValue, so equal bytes mean nothing matched
-		reason = "listed_noop"
-	default:
-		reason = "listed"
-	}
+	masked, reason := maskSecrets(payload, paths, ok, maskModeFallbackAll)
 	w.rt.deliveryPayloadMaskingStat(reason).Increment()
 	return masked
 }
 
-// maskListedPaths replaces existing values at paths. It falls back to mask-all on malformed
-// payloads or any path application error, so a masking failure never forwards the original value.
-func maskListedPaths(payload json.RawMessage, paths []string) (json.RawMessage, bool) {
-	if len(paths) == 0 {
-		return payload, false
+func (w *worker) maskReportingSampleEvent(payload json.RawMessage) json.RawMessage {
+	if !w.rt.reloadableConfig.enableReportingSampleEventMasking.Load() {
+		return payload
 	}
-	if !isJSONObject(payload) {
-		return maskAll(payload)
-	}
-	masked, err := applyListedPaths(payload, paths)
-	if err != nil {
-		fallback, _ := maskAll(masked)
-		return fallback, true
-	}
-	return masked, false
+	paths, ok := w.rt.transformerFeaturesService.SecretPaths(w.rt.destType)
+	masked, reason := maskSecrets(payload, paths, ok, maskModeSkip)
+	w.rt.reportingSampleEventMaskingStat(reason).Increment()
+	return masked
 }
 
-// applyListedPaths never mutates payload: sjson allocates a new slice unless ReplaceInPlace is set.
-func applyListedPaths(masked json.RawMessage, paths []string) (json.RawMessage, error) {
-	var err error
+// maskSecrets masks paths in payload; paths and ok come from
+// transformerFeaturesService.SecretPaths. Returns the masked payload and a stats reason.
+func maskSecrets(payload json.RawMessage, paths []string, ok bool, mode maskMode) (json.RawMessage, string) {
+	if !ok {
+		if mode == maskModeSkip {
+			return payload, "no_paths"
+		}
+		masked, maskErr := maskAll(payload)
+		if maskErr {
+			return masked, "mask_error"
+		}
+		return masked, "mask_all"
+	}
+	if len(paths) == 0 {
+		return payload, "listed_noop"
+	}
+	if !isJSONObject(payload) {
+		if mode == maskModeSkip {
+			return payload, "not_object"
+		}
+		masked, _ := maskAll(payload)
+		return masked, "mask_error"
+	}
+
+	masked, applied, failed := applyPaths(payload, paths)
+	switch {
+	case failed && mode == maskModeFallbackAll:
+		fallback, _ := maskAll(payload)
+		return fallback, "mask_error"
+	case failed:
+		return masked, "partial"
+	case applied:
+		return masked, "listed"
+	default:
+		return masked, "listed_noop"
+	}
+}
+
+// applyPaths masks every listed path that exists. A path that is absent is skipped and a
+// path that fails to apply never contributes its partial write.
+func applyPaths(payload json.RawMessage, paths []string) (_ json.RawMessage, applied, failed bool) {
+	masked := payload
 	for _, path := range paths {
 		if path == "endpoint" {
 			continue
 		}
 		if path == "" {
-			return masked, errPathNotMasked
+			failed = true
+			continue
 		}
 		if !gjson.GetBytes(masked, path).Exists() {
 			continue
 		}
-
 		if parentPath, ok := terminalArrayWildcardParent(path); ok {
 			array := gjson.GetBytes(masked, parentPath)
 			if !array.IsArray() {
-				return masked, errPathNotMasked
+				failed = true
+				continue
 			}
 			for idx := range array.Array() {
-				if masked, err = setMasked(masked, parentPath+"."+strconv.Itoa(idx)); err != nil {
-					return masked, err
+				next, err := setMasked(masked, parentPath+"."+strconv.Itoa(idx))
+				if err != nil {
+					failed = true
+					continue
 				}
+				masked, applied = next, true
 			}
 			continue
 		}
-
-		if masked, err = setMasked(masked, path); err != nil {
-			return masked, err
+		next, err := setMasked(masked, path)
+		if err != nil {
+			failed = true
+			continue
 		}
+		masked, applied = next, true
 	}
-	return masked, nil
+	return masked, applied, failed
 }
 
 func setMasked(payload json.RawMessage, path string) (json.RawMessage, error) {
@@ -104,7 +134,7 @@ func setMasked(payload json.RawMessage, path string) (json.RawMessage, error) {
 		return masked, err
 	}
 	if !resultMasked(gjson.GetBytes(masked, path)) {
-		return masked, errPathNotMasked
+		return masked, errors.New("path not masked")
 	}
 	return masked, nil
 }
