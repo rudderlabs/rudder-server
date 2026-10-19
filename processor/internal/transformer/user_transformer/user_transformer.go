@@ -515,10 +515,9 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	if err != nil {
 		u.log.Errorn("User transformation post error",
 			append(labels.ToLoggerFields(), obskit.Error(err))...)
-		// Per-workspace PyT: a persistent transport failure on the workspace-
-		// scoped URL is most likely a cold-start window (pod not yet scaled by
-		// HPA, EndpointSlice lag, kube-proxy 5xx). Surface a dedicated status
-		// code so sendBatch retries the whole call until the pod is up instead of treating it as a failed transformation.
+		// Per-workspace PyT: a persistent transport failure on the workspace-scoped URL is most likely a cold-start
+		// window (pod not yet scaled by HPA, EndpointSlice lag, kube-proxy 5xx). Surface a dedicated status code so
+		// sendBatch retries the whole call until the pod is up instead of treating it as a failed transformation.
 		if errors.Is(err, transformerutils.ErrColdStart) || errors.Is(err, transformerutils.ErrMisdirected) {
 			return fmt.Appendf(nil, "workspace transformer not reachable: %s", err), transformerutils.StatusColdStartWindowFailure, nil
 		}
