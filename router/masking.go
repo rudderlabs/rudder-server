@@ -16,6 +16,8 @@ const (
 	maskedJSON  = `"` + maskedValue + `"`
 )
 
+var errPathNotMasked = errors.New("path not masked")
+
 func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
 	if w.rt.reloadableConfig.disableEventDeliveryUploadMasking.Load() {
 		return payload
@@ -61,20 +63,20 @@ func maskSecrets(payload json.RawMessage, paths []string, ok bool) (json.RawMess
 	if !isJSONObject(payload) {
 		return payload, "not_object"
 	}
-	masked, applied, failed := applyPaths(payload, paths)
+	masked, failed := applyPaths(payload, paths)
 	switch {
 	case failed:
 		return masked, "partial"
-	case applied:
-		return masked, "listed"
-	default:
+	case bytes.Equal(masked, payload): // masking only ever writes maskedValue, so equal bytes mean nothing matched
 		return masked, "listed_noop"
+	default:
+		return masked, "listed"
 	}
 }
 
 // applyPaths masks every listed path that exists. A path that is absent is skipped and a
 // path that fails to apply never contributes its partial write.
-func applyPaths(payload json.RawMessage, paths []string) (_ json.RawMessage, applied, failed bool) {
+func applyPaths(payload json.RawMessage, paths []string) (_ json.RawMessage, failed bool) {
 	masked := payload
 	for _, path := range paths {
 		if path == "endpoint" {
@@ -99,7 +101,7 @@ func applyPaths(payload json.RawMessage, paths []string) (_ json.RawMessage, app
 					failed = true
 					continue
 				}
-				masked, applied = next, true
+				masked = next
 			}
 			continue
 		}
@@ -108,9 +110,9 @@ func applyPaths(payload json.RawMessage, paths []string) (_ json.RawMessage, app
 			failed = true
 			continue
 		}
-		masked, applied = next, true
+		masked = next
 	}
-	return masked, applied, failed
+	return masked, failed
 }
 
 func setMasked(payload json.RawMessage, path string) (json.RawMessage, error) {
@@ -119,7 +121,7 @@ func setMasked(payload json.RawMessage, path string) (json.RawMessage, error) {
 		return masked, err
 	}
 	if !resultMasked(gjson.GetBytes(masked, path)) {
-		return masked, errors.New("path not masked")
+		return masked, errPathNotMasked
 	}
 	return masked, nil
 }
