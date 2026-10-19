@@ -23,16 +23,18 @@ func TestTransportPassesTheAccountSecretVersion(t *testing.T) {
 		t.Run(string(flow), func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			handler := mockoauthv2.NewMockOAuthHandler(ctrl)
-			handler.EXPECT().FetchToken(gomock.Any()).DoAndReturn(func(params *v2.OAuthTokenParams) ([]byte, v2.StatusCodeError) {
-				require.Equal(t, "acct-"+string(flow), params.AccountID)
-				require.Equal(t, map[common.RudderFlow]int{common.RudderFlowDelivery: 8, common.RudderFlowDelete: 3}[flow], params.SecretVersion)
-				return []byte(`{"access_token":"t"}`), nil
-			})
+			handler.EXPECT().FetchToken(gomock.Any()).
+				Do(func(params *v2.OAuthTokenParams) {
+					require.Equal(t, "acct-"+string(flow), params.AccountID)
+					require.Equal(t, map[common.RudderFlow]int{common.RudderFlowDelivery: 8, common.RudderFlowDelete: 3}[flow], params.SecretVersion)
+				}).
+				// Return, not DoAndReturn: the mock asserts json.RawMessage and a []byte from DoAndReturn would read as nil
+				Return([]byte(`{"access_token":"t"}`), nil)
 			roundTripper := mockoauthv2.NewMockRoundTripper(ctrl)
 			roundTripper.EXPECT().RoundTrip(gomock.Any()).Return(&http.Response{
 				StatusCode: http.StatusOK,
 				Body:       io.NopCloser(bytes.NewReader([]byte(`{}`))),
-			}, nil).AnyTimes() // only the token params matter here
+			}, nil).Times(1)
 			cache := v2.NewOauthTokenCache()
 			transport := httpClient.NewOAuthTransport(&httpClient.TransportArgs{
 				FlowType:             flow,
@@ -55,6 +57,7 @@ func TestTransportPassesTheAccountSecretVersion(t *testing.T) {
 			}))
 			res, err := transport.RoundTrip(req)
 			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, res.StatusCode, "the token must have reached the augmenter and the request the destination")
 			require.NoError(t, res.Body.Close())
 		})
 	}

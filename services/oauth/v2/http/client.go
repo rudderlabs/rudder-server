@@ -22,7 +22,8 @@ type HttpClientOptionalArgs struct {
 	ExpirationTimeDiff  time.Duration
 	Logger              logger.Logger
 	OAuthBreakerOptions *oauth.OAuthBreakerOptions
-	// SecretVersions, when set, provides the accounts' latest secretVersion to the OAuth handler
+	// SecretVersions, when set, provides the accounts' latest secretVersion to the OAuth handler the client
+	// builds; an injected OAuthHandler is not wired to it
 	SecretVersions oauth.SecretVersionProvider
 }
 

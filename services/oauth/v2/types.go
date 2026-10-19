@@ -52,6 +52,8 @@ type OAuthTokenParams struct {
 }
 
 // SecretVersionProvider returns an account's secretVersion in the latest workspace config, 0 when unknown.
+// Implementations must be safe for concurrent use. Pass a nil interface, not a typed nil pointer, to leave
+// the handler without a provider.
 type SecretVersionProvider interface {
 	SecretVersion(accountID string) int
 }

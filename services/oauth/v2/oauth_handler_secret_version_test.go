@@ -106,6 +106,7 @@ var _ = Describe("OAuth secret version check", func() {
 		Entry("the caller's destination carries the newer version (router)", 8, nil),
 		Entry("the provider holds the newer version (async destinations)", 0, fakeSecretVersions{"acct-1": 8}),
 		Entry("the caller's snapshot is stale and the provider is newer", 7, fakeSecretVersions{"acct-1": 8}),
+		Entry("the caller's version is newer than the provider's", 8, fakeSecretVersions{"acct-1": 7}),
 	)
 
 	DescribeTable("serves cached secrets that are not superseded",
@@ -128,7 +129,7 @@ var _ = Describe("OAuth secret version check", func() {
 	)
 
 	It("fetches normally when nothing is cached and keeps the response's version", func() {
-		params.SecretVersion = 8
+		params.SecretVersion = 7 // the config poll lags the response, which carries 8: the response wins
 		expectFetch()
 		mockLogger.EXPECT().Infon(gomock.Any(), gomock.Any()).Times(0)
 
@@ -138,5 +139,6 @@ var _ = Describe("OAuth secret version check", func() {
 		token, ok := cache.Load(params.AccountID)
 		Expect(ok).To(BeTrue())
 		Expect(token.SecretVersion).To(Equal(8))
+		Expect(token.ExpirationDate).To(Equal(expirationDate))
 	})
 })
