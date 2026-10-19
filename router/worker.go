@@ -105,7 +105,7 @@ func (w *worker) acceptWorkerJob(workerJob workerJob) *types.RouterJobT {
 			worker:     w,
 			job:        job,
 			status:     &status,
-			payload:    w.maskReportingSampleEvent(job.EventPayload),
+			payload:    job.EventPayload,
 			parameters: *parameters,
 		}
 		stats.Default.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
@@ -1015,7 +1015,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 			worker:     w,
 			job:        destinationJobMetadata.JobT,
 			status:     status,
-			payload:    w.maskReportingSampleEvent(payload),
+			payload:    payload,
 			statTags:   destinationJob.StatTags,
 			parameters: destinationJobMetadata.Parameters,
 		}
@@ -1077,7 +1077,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 		worker:     w,
 		job:        destinationJobMetadata.JobT,
 		status:     status,
-		payload:    w.maskReportingSampleEvent(payload),
+		payload:    payload,
 		statTags:   destinationJob.StatTags,
 		parameters: destinationJobMetadata.Parameters,
 	}

@@ -482,9 +482,9 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		}
 		sd, ok := statusDetailsMap[key]
 		if !ok {
-			sampleEvent := workerJobStatus.payload
-			if rt.transientSources.Apply(parameters.SourceID) {
-				sampleEvent = routerutils.EmptyPayload
+			sampleEvent := routerutils.EmptyPayload
+			if !rt.transientSources.Apply(parameters.SourceID) {
+				sampleEvent = rt.maskReportingSampleEvent(workerJobStatus.payload)
 			}
 			sd = &utilTypes.StatusDetail{
 				Status:         workerJobStatus.status.JobState,

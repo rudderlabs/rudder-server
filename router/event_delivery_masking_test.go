@@ -103,7 +103,7 @@ func TestSendDestinationResponseMasksLiveEventsPayload(t *testing.T) {
 			original := json.RawMessage(tc.input)
 			worker.sendDestinationResponseToConfigBackend(original, deliveryStatusMetadata(), deliveryStatusJobStatus(), nil)
 
-			require.Equal(t, map[string]float64{tc.wantReason: 1}, maskingCounts(statsStore))
+			require.Equal(t, map[string]float64{tc.wantReason: 1}, maskingCounts(statsStore, deliveryMaskingMetric))
 			require.Equal(t, tc.input, string(original), "caller payload must not be modified")
 		})
 	}
@@ -130,7 +130,7 @@ func TestSendDestinationResponseMasksLiveEventsPayload(t *testing.T) {
 
 		require.JSONEq(t, `{"headers":{"Authorization":"secret"}}`, string(payloads[0]))
 		require.JSONEq(t, `{"headers":{"Authorization":"******"}}`, string(payloads[1]))
-		require.Equal(t, map[string]float64{"listed": 1}, maskingCounts(statsStore))
+		require.Equal(t, map[string]float64{"listed": 1}, maskingCounts(statsStore, deliveryMaskingMetric))
 	})
 }
 
@@ -157,9 +157,9 @@ func newDeliveryMaskingTestWorker(
 }
 
 // maskingCounts returns the masking counter values keyed by reason.
-func maskingCounts(statsStore *memstats.Store) map[string]float64 {
+func maskingCounts(statsStore *memstats.Store, metric string) map[string]float64 {
 	counts := map[string]float64{}
-	for _, m := range statsStore.GetByName(deliveryMaskingMetric) {
+	for _, m := range statsStore.GetByName(metric) {
 		counts[m.Tags["reason"]] = m.Value
 	}
 	return counts

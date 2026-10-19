@@ -20,13 +20,13 @@ func TestMaskReportingSampleEvent(t *testing.T) {
 	t.Run("flag off leaves payload byte-identical", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		features := mockfeatures.NewMockFeaturesService(ctrl)
-		worker, statsStore := newReportingSampleEventMaskingTestWorker(t, features, false)
+		rt, statsStore := newReportingSampleEventMaskingTestHandle(t, features, false)
 		payload := json.RawMessage("{ \"headers\" : { \"Authorization\" : \"secret\" } }")
 
-		masked := worker.maskReportingSampleEvent(payload)
+		masked := rt.maskReportingSampleEvent(payload)
 
 		require.Equal(t, payload, masked)
-		require.Empty(t, reportingSampleEventMaskingCounts(statsStore))
+		require.Empty(t, maskingCounts(statsStore, reportingSampleEventMaskingMetric))
 	})
 
 	for _, tc := range []struct {
@@ -78,11 +78,19 @@ func TestMaskReportingSampleEvent(t *testing.T) {
 		},
 		{
 			name:       "unsettable path retains successful masks",
-			paths:      []string{"headers.Authorization", "body.token|@reverse"},
+			paths:      []string{"headers.Authorization", "", "body.token|@reverse"},
 			ok:         true,
 			input:      `{"headers":{"Authorization":"secret"},"body":{"token":"also-secret","name":"Ada"}}`,
 			want:       `{"headers":{"Authorization":"******"},"body":{"token":"also-secret","name":"Ada"}}`,
 			wantReason: "partial",
+		},
+		{
+			name:       "pre-transform event has no delivery-shaped secrets",
+			paths:      []string{"headers.Authorization", "params.api_key", "body.access_token", "payload.apiKey"},
+			ok:         true,
+			input:      `{ "type" : "track", "event" : "Order Completed", "userId" : "user-1", "properties" : { "order_id" : "order-1" } }`,
+			want:       `{ "type" : "track", "event" : "Order Completed", "userId" : "user-1", "properties" : { "order_id" : "order-1" } }`,
+			wantReason: "listed_noop",
 		},
 		{
 			name:       "endpoint is never masked",
@@ -97,92 +105,27 @@ func TestMaskReportingSampleEvent(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			features := mockfeatures.NewMockFeaturesService(ctrl)
 			features.EXPECT().SecretPaths("TEST_DEST").Return(tc.paths, tc.ok)
-			worker, statsStore := newReportingSampleEventMaskingTestWorker(t, features, true)
+			rt, statsStore := newReportingSampleEventMaskingTestHandle(t, features, true)
 			payload := json.RawMessage(tc.input)
 
-			masked := worker.maskReportingSampleEvent(payload)
+			masked := rt.maskReportingSampleEvent(payload)
 
 			require.Equal(t, tc.want, string(masked))
 			require.Equal(t, tc.input, string(payload), "caller payload must not be modified")
-			require.Equal(t, map[string]float64{tc.wantReason: 1}, reportingSampleEventMaskingCounts(statsStore))
+			require.Equal(t, map[string]float64{tc.wantReason: 1}, maskingCounts(statsStore, reportingSampleEventMaskingMetric))
 		})
 	}
 }
 
-func TestMaskSecretsModeDivergence(t *testing.T) {
-	for _, tc := range []struct {
-		name           string
-		input          string
-		paths          []string
-		ok             bool
-		wantFallback   string
-		fallbackReason string
-		wantSkip       string
-		skipReason     string
-	}{
-		{
-			name:           "missing manifest entry",
-			input:          `{"endpoint":"visible","headers":{"Authorization":"secret"}}`,
-			ok:             false,
-			wantFallback:   `{"endpoint":"visible","headers":"******"}`,
-			fallbackReason: "mask_all",
-			wantSkip:       `{"endpoint":"visible","headers":{"Authorization":"secret"}}`,
-			skipReason:     "no_paths",
-		},
-		{
-			name:           "non-object payload",
-			input:          `["secret"]`,
-			paths:          []string{"headers.Authorization"},
-			ok:             true,
-			wantFallback:   `"******"`,
-			fallbackReason: "mask_error",
-			wantSkip:       `["secret"]`,
-			skipReason:     "not_object",
-		},
-		{
-			name:           "path application failure",
-			input:          `{"endpoint":"visible","headers":{"Authorization":"secret"},"body":{"token":"also-secret"}}`,
-			paths:          []string{"headers.Authorization", "body.token|@reverse"},
-			ok:             true,
-			wantFallback:   `{"endpoint":"visible","headers":"******","body":"******"}`,
-			fallbackReason: "mask_error",
-			wantSkip:       `{"endpoint":"visible","headers":{"Authorization":"******"},"body":{"token":"also-secret"}}`,
-			skipReason:     "partial",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			payload := json.RawMessage(tc.input)
-
-			fallback, fallbackReason := maskSecrets(payload, tc.paths, tc.ok, maskModeFallbackAll)
-			skipped, skipReason := maskSecrets(payload, tc.paths, tc.ok, maskModeSkip)
-
-			require.JSONEq(t, tc.wantFallback, string(fallback))
-			require.Equal(t, tc.fallbackReason, fallbackReason)
-			require.JSONEq(t, tc.wantSkip, string(skipped))
-			require.Equal(t, tc.skipReason, skipReason)
-		})
-	}
-}
-
-func TestMaskSecretsPreTransformEventNoop(t *testing.T) {
-	payload := json.RawMessage(`{ "type" : "track", "event" : "Order Completed", "userId" : "user-1", "context" : { "library" : { "name" : "analytics-go" } }, "properties" : { "order_id" : "order-1" } }`)
-	paths := []string{"headers.Authorization", "params.api_key", "body.access_token", "payload.apiKey"}
-
-	masked, reason := maskSecrets(payload, paths, true, maskModeSkip)
-
-	require.Equal(t, payload, masked)
-	require.Equal(t, "listed_noop", reason)
-}
-
-func newReportingSampleEventMaskingTestWorker(
+func newReportingSampleEventMaskingTestHandle(
 	t *testing.T,
 	features *mockfeatures.MockFeaturesService,
 	enabled bool,
-) (*worker, *memstats.Store) {
+) (*Handle, *memstats.Store) {
 	t.Helper()
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
-	return &worker{rt: &Handle{
+	return &Handle{
 		destType:                   "TEST_DEST",
 		transformerFeaturesService: features,
 		reloadableConfig: &reloadableConfig{
@@ -191,13 +134,5 @@ func newReportingSampleEventMaskingTestWorker(
 		reportingSampleEventMaskingStat: func(reason string) stats.Counter {
 			return statsStore.NewTaggedStat(reportingSampleEventMaskingMetric, stats.CountType, stats.Tags{"destType": "TEST_DEST", "reason": reason})
 		},
-	}}, statsStore
-}
-
-func reportingSampleEventMaskingCounts(statsStore *memstats.Store) map[string]float64 {
-	counts := map[string]float64{}
-	for _, m := range statsStore.GetByName(reportingSampleEventMaskingMetric) {
-		counts[m.Tags["reason"]] = m.Value
-	}
-	return counts
+	}, statsStore
 }

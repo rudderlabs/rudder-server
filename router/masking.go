@@ -16,68 +16,53 @@ const (
 	maskedJSON  = `"` + maskedValue + `"`
 )
 
-// maskMode selects what happens when the transformer publishes no usable secret paths
-// for a destination, or when a listed path cannot be applied.
-type maskMode int
-
-const (
-	// maskModeFallbackAll masks every top-level field except endpoint. Live events use
-	// this: an unknown destination must never forward a raw credential.
-	maskModeFallbackAll maskMode = iota
-	// maskModeSkip leaves the payload untouched. Reporting sample events use this: a
-	// blanket-masked sample destroys the error-triage value the sample exists for.
-	maskModeSkip
-)
-
 func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
 	if w.rt.reloadableConfig.disableEventDeliveryUploadMasking.Load() {
 		return payload
 	}
 	paths, ok := w.rt.transformerFeaturesService.SecretPaths(w.rt.destType)
-	masked, reason := maskSecrets(payload, paths, ok, maskModeFallbackAll)
+	masked, reason := maskSecrets(payload, paths, ok)
+	switch reason {
+	case "no_paths", "not_object", "partial":
+		// fail closed: an unknown destination or an unmaskable path must never forward a raw credential
+		var maskErr bool
+		masked, maskErr = maskAll(payload)
+		if !ok && !maskErr {
+			reason = "mask_all"
+		} else {
+			reason = "mask_error"
+		}
+	}
 	w.rt.deliveryPayloadMaskingStat(reason).Increment()
 	return masked
 }
 
-func (w *worker) maskReportingSampleEvent(payload json.RawMessage) json.RawMessage {
-	if !w.rt.reloadableConfig.enableReportingSampleEventMasking.Load() {
+// maskReportingSampleEvent leaves the sample untouched where it cannot mask precisely:
+// a blanket-masked sample destroys the error-triage value the sample exists for.
+func (rt *Handle) maskReportingSampleEvent(payload json.RawMessage) json.RawMessage {
+	if !rt.reloadableConfig.enableReportingSampleEventMasking.Load() {
 		return payload
 	}
-	paths, ok := w.rt.transformerFeaturesService.SecretPaths(w.rt.destType)
-	masked, reason := maskSecrets(payload, paths, ok, maskModeSkip)
-	w.rt.reportingSampleEventMaskingStat(reason).Increment()
+	paths, ok := rt.transformerFeaturesService.SecretPaths(rt.destType)
+	masked, reason := maskSecrets(payload, paths, ok)
+	rt.reportingSampleEventMaskingStat(reason).Increment()
 	return masked
 }
 
-// maskSecrets masks paths in payload; paths and ok come from
+// maskSecrets masks every listed path it can; paths and ok come from
 // transformerFeaturesService.SecretPaths. Returns the masked payload and a stats reason.
-func maskSecrets(payload json.RawMessage, paths []string, ok bool, mode maskMode) (json.RawMessage, string) {
+func maskSecrets(payload json.RawMessage, paths []string, ok bool) (json.RawMessage, string) {
 	if !ok {
-		if mode == maskModeSkip {
-			return payload, "no_paths"
-		}
-		masked, maskErr := maskAll(payload)
-		if maskErr {
-			return masked, "mask_error"
-		}
-		return masked, "mask_all"
+		return payload, "no_paths"
 	}
 	if len(paths) == 0 {
 		return payload, "listed_noop"
 	}
 	if !isJSONObject(payload) {
-		if mode == maskModeSkip {
-			return payload, "not_object"
-		}
-		masked, _ := maskAll(payload)
-		return masked, "mask_error"
+		return payload, "not_object"
 	}
-
 	masked, applied, failed := applyPaths(payload, paths)
 	switch {
-	case failed && mode == maskModeFallbackAll:
-		fallback, _ := maskAll(payload)
-		return fallback, "mask_error"
 	case failed:
 		return masked, "partial"
 	case applied:
