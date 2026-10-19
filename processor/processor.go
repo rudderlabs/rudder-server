@@ -1777,7 +1777,7 @@ type preTransformationMessage struct {
 	eventsByMessageID          map[string]types.SingularEventWithReceivedAt
 	jobIDToSpecificDestMapOnly map[int64]string
 	statusList                 []*jobsdb.JobStatusT
-	jobList                    []*jobsdb.JobT
+	nonDroppedJobs             []*jobsdb.JobT
 	sourceDupStats             map[dupStatKey]int
 	dedupKeys                  map[string]struct{}
 	srcHydrationEnabledMap     map[SourceIDT]bool
@@ -2324,7 +2324,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		// only jobs that still have at least one event after the drop gates above (suppression,
 		// bot drop, event blocking, dedup) move on, so dropped traffic never counts towards
 		// tracked users or activation records
-		jobList: lo.Filter(jobList, func(job *jobsdb.JobT, _ int) bool {
+		nonDroppedJobs: lo.Filter(jobList, func(job *jobsdb.JobT, _ int) bool {
 			_, ok := nonDroppedJobIDs[job.JobID]
 			return ok
 		}),
@@ -2455,7 +2455,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	var gwParamsByJobID map[int64]json.RawMessage
 	gwParams := func(jobID int64) json.RawMessage {
 		if gwParamsByJobID == nil {
-			gwParamsByJobID = lo.SliceToMap(preTrans.jobList, func(job *jobsdb.JobT) (int64, json.RawMessage) {
+			gwParamsByJobID = lo.SliceToMap(preTrans.nonDroppedJobs, func(job *jobsdb.JobT) (int64, json.RawMessage) {
 				return job.JobID, job.Parameters
 			})
 		}
@@ -2684,7 +2684,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	// REPORTING - DESTINATION_ENTER / DESTINATION_FILTER (per-destination visibility) - END
 
 	trackedUsersReportGenStart := time.Now()
-	trackedUsersReports := proc.trackedUsersReporter.GenerateReportsFromJobs(preTrans.jobList, proc.getNonEventStreamSources())
+	trackedUsersReports := proc.trackedUsersReporter.GenerateReportsFromJobs(preTrans.nonDroppedJobs, proc.getNonEventStreamSources())
 	proc.stats.trackedUsersReportGeneration(preTrans.partition).SendTiming(time.Since(trackedUsersReportGenStart))
 
 	// GenerateReportsFromJobs reads context.activation from the raw job payloads
@@ -2694,7 +2694,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	// atomically on config change), then pass it to the reporter, which indexes it
 	// per job to classify reverse-ETL sources.
 	sourceCategoriesBySourceID := proc.getSourceCategoriesBySourceID()
-	activationRecordsReports := proc.activationRecordsReporter.GenerateReportsFromJobs(preTrans.jobList, sourceCategoriesBySourceID)
+	activationRecordsReports := proc.activationRecordsReporter.GenerateReportsFromJobs(preTrans.nonDroppedJobs, sourceCategoriesBySourceID)
 
 	return &transformationMessage{
 		ctx:                          preTrans.subJobs.ctx,
