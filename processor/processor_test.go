@@ -2182,18 +2182,12 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					}
 				})
 
+			// jobs 1002, 2002 and 2003 carry no event payload, so they produce no events and
+			// must not be handed to the tracked users reporter
+			trackedUsersJobs := []*jobsdb.JobT{unprocessedJobsList[1], unprocessedJobsList[4]}
 			trackerUsersReports := []*trackedusers.UsersReport{
 				{
-					SourceID: SourceIDEnabled,
-				},
-				{
 					SourceID: SourceIDEnabledNoUT,
-				},
-				{
-					SourceID: SourceIDEnabled,
-				},
-				{
-					SourceID: SourceIDEnabled,
 				},
 				{
 					SourceID: SourceIDEnabledNoUT,
@@ -2208,7 +2202,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 			GinkgoT().Log("Processor setup and init done")
 			handlePendingGatewayJobs(processor)
 			Expect(c.mockTrackedUsersReporter.generateCalls).To(HaveLen(1))
-			Expect(c.mockTrackedUsersReporter.generateCalls[0].jobs).Should(Equal(unprocessedJobsList))
+			Expect(c.mockTrackedUsersReporter.generateCalls[0].jobs).Should(Equal(trackedUsersJobs))
 			Expect(c.mockTrackedUsersReporter.reportCalls).To(HaveLen(1))
 			Expect(c.mockTrackedUsersReporter.reportCalls[0].reportedReports).Should(Equal(trackerUsersReports))
 			// The strip is gated on source category: for this non-rETL (webhook) source
@@ -9717,5 +9711,116 @@ func TestEventSchemasV2DisabledSourceIDs(t *testing.T) {
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "1"), job(2, SourceIDEnabledNoUT, "2")}
 		schemaJobs := run(t, []string{SourceIDEnabled, SourceIDEnabledNoUT}, jobs)
 		require.Empty(t, schemaJobs)
+	})
+}
+
+// TestTrackedUsersExcludeDroppedJobs verifies that only the gateway jobs that survive the
+// preprocess drop gates (user suppression, bot drop, event blocking, dedup) are handed to the
+// tracked users reporter, so dropped traffic never counts towards MTU.
+func TestTrackedUsersExcludeDroppedJobs(t *testing.T) {
+	params := func(sourceID, extra string) []byte {
+		return fmt.Appendf(nil, `{"source_id":%q%s}`, sourceID, extra)
+	}
+	job := func(jobID int64, params []byte, events []mockEventData) *jobsdb.JobT {
+		return &jobsdb.JobT{
+			UUID:      uuid.New(),
+			JobID:     jobID,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabled,
+				"2001-01-02T02:23:45.000Z",
+				events,
+				createMessagePayloadWithoutSources,
+			),
+			EventCount:  len(events),
+			Parameters:  params,
+			WorkspaceId: sampleWorkspaceID,
+		}
+	}
+	event := func(id string) mockEventData {
+		return mockEventData{id: id, originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}
+	}
+
+	newProcessor := func(t *testing.T, dedupAllowedFn func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error)) (*Handle, *testContext) {
+		t.Helper()
+		c := &testContext{}
+		c.Setup(t)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
+
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		require.NoError(t, err)
+
+		processor := NewHandle(config.New(), transformer.NewSimpleClients())
+		processor.isolationStrategy = isolationStrategy
+		processor.config.archivalEnabled = config.SingleValueLoader(false)
+		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+
+		enableDedup := dedupAllowedFn != nil
+		Setup(processor, c, enableDedup, false, t)
+		processor.trackedUsersReporter = c.mockTrackedUsersReporter
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+
+		if enableDedup {
+			processor.dedup = c.MockDedup
+			c.MockDedup.EXPECT().Allowed(gomock.Any()).DoAndReturn(dedupAllowedFn).AnyTimes()
+		}
+		return processor, c
+	}
+
+	reportedJobIDs := func(t *testing.T, processor *Handle, c *testContext, jobs []*jobsdb.JobT) []int64 {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		srcHydrationMsg, err := processor.preprocessStage("", subJob{ctx: ctx, subJobs: jobs}, 0)
+		require.NoError(t, err)
+		preTransMsg, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
+		_, err = processor.pretransformStage("", preTransMsg)
+		require.NoError(t, err)
+
+		require.Len(t, c.mockTrackedUsersReporter.generateCalls, 1)
+		return lo.Map(c.mockTrackedUsersReporter.generateCalls[0].jobs, func(j *jobsdb.JobT, _ int) int64 { return j.JobID })
+	}
+
+	t.Run("should not report suppressed, dropped bot and blocked jobs", func(t *testing.T) {
+		processor, c := newProcessor(t, nil)
+		defer c.Finish()
+
+		jobs := []*jobsdb.JobT{
+			job(1, params(SourceIDEnabled, ""), []mockEventData{event("1")}),
+			job(2, params(SourceIDEnabled, `,"is_user_suppressed":true`), []mockEventData{event("2")}),
+			job(3, params(SourceIDEnabled, `,"is_bot":true,"bot_action":"drop"`), []mockEventData{event("3")}),
+			job(4, params(SourceIDEnabled, `,"is_bot":true,"bot_action":"flag"`), []mockEventData{event("4")}),
+			job(5, params(SourceIDEnabled, `,"is_event_blocked":true`), []mockEventData{event("5")}),
+		}
+		require.Equal(t, []int64{1, 4}, reportedJobIDs(t, processor, c, jobs))
+	})
+
+	t.Run("should not report jobs whose every event is a duplicate", func(t *testing.T) {
+		// dedup keys are indexed per event in batch order: job 1 has indexes 0 and 1, job 2 has
+		// index 2 and job 3 has index 3. Deny index 1 and 2 so job 1 keeps one event and job 2
+		// loses its only event.
+		dedupAllowedFn := func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+			allowed := make(map[dedup.BatchKey]bool, len(keys))
+			for _, k := range keys {
+				allowed[k] = k.Index != 1 && k.Index != 2
+			}
+			return allowed, nil
+		}
+		processor, c := newProcessor(t, dedupAllowedFn)
+		defer c.Finish()
+
+		jobs := []*jobsdb.JobT{
+			job(1, params(SourceIDEnabled, ""), []mockEventData{event("1"), event("2")}),
+			job(2, params(SourceIDEnabled, ""), []mockEventData{event("3")}),
+			job(3, params(SourceIDEnabled, ""), []mockEventData{event("4")}),
+		}
+		require.Equal(t, []int64{1, 3}, reportedJobIDs(t, processor, c, jobs))
 	})
 }
