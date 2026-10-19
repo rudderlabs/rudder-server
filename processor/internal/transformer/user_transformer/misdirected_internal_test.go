@@ -111,11 +111,19 @@ type testPod struct {
 
 func newTestPod(t *testing.T, misdirect func(hit int32) bool) *testPod {
 	t.Helper()
+	return newTestPodWithReason(t, "workspace_mismatch", misdirect)
+}
+
+// newTestPodWithReason is newTestPod with the X-Rudder-Error-Reason its 421s carry; an empty reason sends none.
+func newTestPodWithReason(t *testing.T, reason string, misdirect func(hit int32) bool) *testPod {
+	t.Helper()
 	p := &testPod{}
 	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hit := p.hits.Add(1)
 		if misdirect != nil && misdirect(hit) {
-			w.Header().Set(transformerclient.HeaderErrorReason, "workspace_mismatch")
+			if reason != "" {
+				w.Header().Set(transformerclient.HeaderErrorReason, reason)
+			}
 			w.Header().Set("Connection", "close")
 			http.Error(w, "misdirected", http.StatusMisdirectedRequest)
 			return
@@ -271,6 +279,8 @@ func TestMisdirectedEventPath(t *testing.T) {
 		js := newTestPod(t, misdirectAlways)
 		f := newMisdirectFixture(t)
 		f.conf.Set("USER_TRANSFORM_URL", js.srv.URL)
+		// Bounded, so a 421 wrongly treated as misdirected fails the test instead of retrying until it times out.
+		f.conf.Set("Processor.UserTransformer.perWorkspacePyTEndlessRetries", false)
 		u := f.client()
 
 		rsp := u.Transform(context.Background(), testTransformerEvents("javascript", "ws-a", 1))
@@ -464,7 +474,7 @@ func TestMisdirectedForwardTest(t *testing.T) {
 
 		_, _, err := u.Test(context.Background(), target, "ws-a", []byte(`{}`))
 		require.ErrorIs(t, err, transformerutils.ErrMisdirected)
-		require.ErrorContains(t, err, "workspace_mismatch")
+		require.ErrorContains(t, err, `reason "workspace_mismatch"`)
 		require.EqualValues(t, 3, p.hits.Load())
 		require.Equal(t, []memstats.Metric{resets(3)}, f.metrics(clientResetsMetric))
 	})
@@ -511,12 +521,12 @@ func TestMisdirectedRealClients(t *testing.T) {
 	require.NotSame(t, stale, fresh)
 	require.NotSame(t, stale.Client, fresh.Client, "the reset must build a new client")
 	require.NotSame(t, u.client, fresh.Client)
+	health, err := http.NewRequest(http.MethodGet, pyt.srv.URL+"/health", nil)
+	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		req, err := http.NewRequest(http.MethodGet, pyt.srv.URL+"/health", nil)
-		require.NoError(t, err)
-		resp, err := stale.Do(req)
+		resp, err := stale.Do(health)
 		if err != nil {
-			return strings.Contains(err.Error(), "closed")
+			return strings.Contains(err.Error(), "transport is closed")
 		}
 		_ = resp.Body.Close()
 		return false
@@ -525,4 +535,36 @@ func TestMisdirectedRealClients(t *testing.T) {
 	rsp = u.Transform(context.Background(), testTransformerEvents("javascript", "ws-a", 1))
 	require.Len(t, rsp.Events, 1, "the shared JS client still works")
 	require.EqualValues(t, 1, js.hits.Load())
+}
+
+// TestMisdirectedReasonIsSanitised pins that X-Rudder-Error-Reason, chosen by the peer, is bounded before it reaches
+// the error, and from there the 819 body and the failed event.
+func TestMisdirectedReasonIsSanitised(t *testing.T) {
+	for _, tc := range []struct{ name, reason, want string }{
+		{name: "an over-long reason", reason: strings.Repeat("x", 65), want: "other"},
+		{name: "a per-request message", reason: "failed for message 0b41-9f2a at 12:04:11", want: "other"},
+		{name: "no reason", reason: "", want: "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newTestPodWithReason(t, tc.reason, misdirectAlways)
+			f := newMisdirectFixture(t)
+			f.dns.point("pyt-ws-a", p.addr())
+			f.conf.Set("Processor.UserTransformer.perWorkspacePyTEndlessRetries", false)
+			u := f.client(WithMaxRetry(config.SingleValueLoader(0)))
+			want := fmt.Sprintf("reason %q", tc.want)
+
+			_, _, err := u.Test(context.Background(), "http://pyt-ws-a:8080", "ws-a", []byte(`{}`))
+			require.ErrorIs(t, err, transformerutils.ErrMisdirected)
+			require.ErrorContains(t, err, want)
+
+			rsp := u.Transform(context.Background(), testTransformerEvents("pythonfaas", "ws-a", 1))
+			require.Len(t, rsp.FailedEvents, 1)
+			require.Equal(t, transformerutils.StatusColdStartWindowFailure, rsp.FailedEvents[0].StatusCode)
+			require.Contains(t, rsp.FailedEvents[0].Error, want)
+			if tc.reason != "" {
+				require.NotContains(t, err.Error(), tc.reason)
+				require.NotContains(t, rsp.FailedEvents[0].Error, tc.reason)
+			}
+		})
+	}
 }

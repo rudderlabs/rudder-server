@@ -205,3 +205,100 @@ func TestPyTClientIdleTimeoutConfig(t *testing.T) {
 	conf.Set("Processor.UserTransformer.pytClientIdleTimeout", "42s")
 	require.Equal(t, 42*time.Second, u.pytClients.idleTimeout.Load(), "reloaded without a restart")
 }
+
+// newSlowClosePyTClients builds a registry whose clients take until the end of the test to close, like an httplb Close
+// waiting on a slow request still in flight. It reports how many closes have started.
+func newSlowClosePyTClients(t *testing.T, idleTimeout time.Duration) (*pytClients, *atomic.Int32) {
+	t.Helper()
+	var closesStarted atomic.Int32
+	unblock := make(chan struct{})
+	t.Cleanup(func() { close(unblock) })
+	return newPyTClients(func(string) (transformerclient.Client, func()) {
+		return &stubClient{}, func() {
+			closesStarted.Add(1)
+			<-unblock
+		}
+	}, config.SingleValueLoader(idleTimeout)), &closesStarted
+}
+
+// requireReturns fails the test unless f returns promptly. f runs in its own goroutine, so a regression fails the test
+// instead of hanging it.
+func requireReturns(t *testing.T, f func(), msg string) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f()
+	}()
+	require.Eventually(t, func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, time.Millisecond, msg)
+}
+
+func TestPyTClientsSlowCloseStaysOffTheRequestPath(t *testing.T) {
+	const (
+		targetA = "http://pyt-ws-a:8080"
+		targetB = "http://pyt-ws-b:8080"
+	)
+
+	t.Run("closing a retired client holds up neither its release nor other targets", func(t *testing.T) {
+		p, closesStarted := newSlowClosePyTClients(t, time.Hour)
+		a := p.acquire(targetA)
+		require.True(t, p.retire(a))
+
+		requireReturns(t, func() { p.release(a) }, "release waited for the close")
+		require.Eventually(t, func() bool { return closesStarted.Load() == 1 }, time.Second, time.Millisecond)
+		requireReturns(t, func() { p.release(p.acquire(targetB)) }, "another target waited for the close")
+	})
+
+	t.Run("an idle close holds up no other target", func(t *testing.T) {
+		p, closesStarted := newSlowClosePyTClients(t, time.Millisecond)
+		p.release(p.acquire(targetA))
+		require.Eventually(t, func() bool { return closesStarted.Load() == 1 }, time.Second, time.Millisecond)
+
+		requireReturns(t, func() { p.release(p.acquire(targetB)) }, "another target waited for the idle close")
+	})
+}
+
+// callerOwnedClient is a client passed to WithClient. Its caller owns it, so any close through the methods httplb's and
+// the stdlib's clients have counts against the registry.
+type callerOwnedClient struct{ stubClient }
+
+func (c *callerOwnedClient) Close() error {
+	c.closes.Add(1)
+	return nil
+}
+
+func (c *callerOwnedClient) CloseIdleConnections() { c.closes.Add(1) }
+
+func TestWithClientServesPyTTargetsWithoutClosingTheClient(t *testing.T) {
+	const target = "http://pyt-ws-a:8080"
+	injected := &callerOwnedClient{}
+	conf := config.New()
+	conf.Set("Processor.UserTransformer.pytClientIdleTimeout", "1ms")
+	u := New(conf, logger.NOP, stats.NOP, WithClient(injected))
+
+	retired := u.pytClients.acquire(target)
+	require.Same(t, injected, retired.Client)
+	require.True(t, u.pytClients.retire(retired))
+	u.pytClients.release(retired) // its close func runs in the background
+
+	idle := u.pytClients.acquire(target)
+	require.NotSame(t, retired, idle)
+	require.Same(t, injected, idle.Client)
+	u.pytClients.release(idle) // its close func runs from the idle timer
+	require.Eventually(t, func() bool {
+		u.pytClients.mu.Lock()
+		defer u.pytClients.mu.Unlock()
+		_, current := u.pytClients.clients[target]
+		return !current
+	}, time.Second, time.Millisecond, "the idle client must have left the registry")
+
+	require.Never(t, injected.closed, 50*time.Millisecond, 5*time.Millisecond, "the caller owns the client")
+	require.NoError(t, sendOnStub(idle))
+}

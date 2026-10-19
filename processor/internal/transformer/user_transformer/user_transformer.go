@@ -103,7 +103,8 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	clientConfig := transformerutils.TransformerClientConfig(conf, "UserTransformer")
 	handle.client = transformerclient.NewClient("UserTransformer", clientConfig)
 	// 5m is below KEDA's 300s cooldown plus the 1m rate window of its triggers, so a workspace's client is usually
-	// closed before the workspace reaches zero and its next request takes the cold-start path. Longer loses that.
+	// closed before the workspace reaches zero and its next request takes the cold-start path. Longer loses that. A
+	// value <=0 closes a client as soon as it is idle, i.e. after every request.
 	handle.config.pytClientIdleTimeout = conf.GetReloadableDurationVar(5, time.Minute,
 		"Processor.UserTransformer.pytClientIdleTimeout")
 	handle.pytClients = newPyTClients(func(string) (transformerclient.Client, func()) {
@@ -673,6 +674,7 @@ func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path str
 		backoff.WithNotify(func(err error, delay time.Duration) {
 			u.stat.NewTaggedStat(testForwardRetriesMetric, stats.CountType,
 				stats.Tags{"workspaceID": workspaceID, "language": languagePython, "path": path}).Increment()
+			// Unlike doPost's, logged for a 421 too: a test-flow dashboard panel reads this line.
 			u.log.Warnn("retrying pyt test forward",
 				obskit.WorkspaceID(workspaceID),
 				logger.NewStringField("path", path),
@@ -722,7 +724,8 @@ func (u *Client) onMisdirected(
 		u.stat.NewTaggedStat(clientResetsMetric, stats.CountType,
 			stats.Tags{"workspaceID": workspaceID, "reason": "misdirected"}).Increment()
 	}
-	reason := resp.Header.Get(transformerclient.HeaderErrorReason)
+	// Peer-supplied, and from the error it reaches the 819 body, sendBatch's retry log and failed events.
+	reason := retryReasonTag(resp.Header)
 	u.log.Warnn("pyt refused a misdirected request",
 		append(fields,
 			logger.NewStringField("reason", reason),
@@ -769,11 +772,12 @@ func isColdStartError(err error, resp *http.Response) bool {
 	return false
 }
 
-// retryReasonTag returns [transformerclient.HeaderErrorReason] in a form that is safe to use as a stats tag.
+// retryReasonTag returns [transformerclient.HeaderErrorReason] in a form that is safe to use as a stats tag, and in
+// logs and error texts.
 //
 // The value is chosen by the transformer, so it must not reach the metrics backend unbounded: one unexpected
 // per-request string there is a new time series per request. Anything that isn't a short, plain identifier
-// becomes "other" — the tag is for grouping, and the exact string is already in the log line beside it.
+// becomes "other".
 func retryReasonTag(header http.Header) string {
 	const maxReasonLen = 64
 	reason := header.Get(transformerclient.HeaderErrorReason)
