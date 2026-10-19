@@ -114,5 +114,4 @@ var _ = Describe("Delivery payload masking", func() {
 		Entry("array", `["secret"]`),
 		Entry("scalar", `"secret"`),
 	)
-
 })
