@@ -815,6 +815,11 @@ func TestNewClosableClient(t *testing.T) {
 				opened.Add(1)
 			case http.StateClosed:
 				closed.Add(1)
+			case http.StateActive, http.StateIdle:
+				// every request passes through both
+			default:
+				// t.Errorf, not require: this runs on the server's goroutine
+				t.Errorf("unexpected connection state %v", state)
 			}
 		}
 		server.Start()
