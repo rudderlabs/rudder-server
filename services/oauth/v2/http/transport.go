@@ -295,6 +295,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		WorkspaceID:   rts.destination.WorkspaceID,
 		DestType:      rts.destination.DestinationDefinition.Name,
 		DestinationID: rts.destination.ID,
+		SecretVersion: rts.destination.GetSecretVersion(t.flow),
 	}
 	rts.req = req
 	preRoundTripStartTime := time.Now()

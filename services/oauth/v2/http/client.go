@@ -22,6 +22,9 @@ type HttpClientOptionalArgs struct {
 	ExpirationTimeDiff  time.Duration
 	Logger              logger.Logger
 	OAuthBreakerOptions *oauth.OAuthBreakerOptions
+	// SecretVersions, when set, provides the accounts' latest secretVersion to the OAuth handler the client
+	// builds; an injected OAuthHandler is not wired to it
+	SecretVersions oauth.SecretVersionProvider
 }
 
 // NewOAuthHttpClient returns a http client that will add the appropriate authorization information to oauth requests.
@@ -36,6 +39,7 @@ func NewOAuthHttpClient(client *http.Client, flowType common.RudderFlow, tokenCa
 			oauth.WithLogger(opArgs.Logger),
 			oauth.WithStats(stats.Default),
 			oauth.WithOauthBreakerOptions(opArgs.OAuthBreakerOptions),
+			oauth.WithSecretVersions(opArgs.SecretVersions),
 		)
 	}
 	if originalTransport == nil {
