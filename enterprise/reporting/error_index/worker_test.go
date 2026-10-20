@@ -727,3 +727,29 @@ func BenchmarkFileFormat(b *testing.B) {
 		b.Log("parquet size:", buf.Len()) // parquet size: 13.8 MB
 	})
 }
+
+type fileCapturingUploader struct {
+	file *os.File
+}
+
+func (u *fileCapturingUploader) Upload(_ context.Context, f *os.File, _ ...string) (filemanager.UploadedFile, error) {
+	u.file = f
+	return filemanager.UploadedFile{Location: f.Name()}, nil
+}
+
+func TestWorkerUploadPayloadsClosesFile(t *testing.T) {
+	t.Setenv("RUDDER_TMPDIR", t.TempDir())
+
+	p := payload{MessageID: "message-id", SourceID: "source-id"}
+	p.SetReceivedAt(time.Now())
+	p.SetFailedAt(time.Now())
+
+	u := &fileCapturingUploader{}
+	w := newWorker("source-id", config.New(), logger.NOP, stats.NOP, nil, newMockConfigSubscriber(), u, nil, nil, nil)
+	defer w.Stop()
+
+	_, err := w.uploadPayloads(context.Background(), []payload{p})
+	require.NoError(t, err)
+	require.NotNil(t, u.file)
+	require.ErrorIs(t, u.file.Close(), os.ErrClosed, "file passed to uploader should be closed after uploadPayloads returns")
+}
