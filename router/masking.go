@@ -9,6 +9,8 @@ import (
 
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
@@ -16,14 +18,35 @@ const (
 	maskedJSON  = `"` + maskedValue + `"`
 )
 
-var errPathNotMasked = errors.New("path not masked")
+var (
+	errPathNotMasked = errors.New("path not masked")
+	// maskedFallback replaces payloads that cannot be masked in place; it is an object so Live Events can always parse it.
+	maskedFallback = json.RawMessage(`{"masked":"` + maskedValue + `"}`)
+)
 
 func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
 	if w.rt.reloadableConfig.disableEventDeliveryUploadMasking.Load() {
 		return payload
 	}
 	paths, ok := w.rt.transformerFeaturesService.SecretPaths(w.rt.destType)
-	masked, reason := maskSecrets(payload, paths, ok)
+	masked, reason := maskForDelivery(payload, paths, ok)
+	w.rt.deliveryPayloadMaskingStat(reason).Increment()
+	return masked
+}
+
+// maskForDelivery masks a delivery payload and returns it with a stats reason. Router-transform
+// request arrays stay arrays because Live Events accepts that payload shape.
+func maskForDelivery(payload json.RawMessage, paths []string, ok bool) (json.RawMessage, string) {
+	var masked json.RawMessage
+	var reason string
+	switch {
+	case ok && gjson.ValidBytes(payload) && gjson.ParseBytes(payload).IsArray():
+		masked, reason = maskSecretsInArray(payload, paths)
+	case ok && !isJSONObject(payload): // checked here because maskSecrets passes any payload through when no paths are listed
+		masked, reason = payload, "not_object"
+	default:
+		masked, reason = maskSecrets(payload, paths, ok)
+	}
 	switch reason {
 	case "no_paths", "not_object", "partial":
 		// fail closed: an unknown destination or an unmaskable path must never forward a raw credential
@@ -35,8 +58,31 @@ func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
 			reason = "mask_error"
 		}
 	}
-	w.rt.deliveryPayloadMaskingStat(reason).Increment()
-	return masked
+	return masked, reason
+}
+
+// maskSecretsInArray masks each request object independently; a request that cannot be
+// fully masked fails the whole array.
+func maskSecretsInArray(payload json.RawMessage, paths []string) (json.RawMessage, string) {
+	var maskedRequests [][]byte
+	changed := false
+	for _, request := range gjson.ParseBytes(payload).Array() {
+		if !request.IsObject() {
+			return payload, "not_object"
+		}
+		masked, reason := maskSecrets(json.RawMessage(request.Raw), paths, true)
+		switch reason {
+		case "not_object", "partial":
+			return payload, reason
+		case "listed":
+			changed = true
+		}
+		maskedRequests = append(maskedRequests, masked)
+	}
+	if !changed { // return the original bytes so the reason is listed_noop, not a re-serialized array
+		return payload, "listed_noop"
+	}
+	return misc.MakeJSONArray(maskedRequests), "listed"
 }
 
 // maskReportingSampleEvent leaves the sample untouched where it cannot mask precisely:
@@ -139,10 +185,10 @@ func resultMasked(result gjson.Result) bool {
 }
 
 // maskAll preserves endpoint and replaces every other existing top-level value. Invalid JSON and
-// non-object JSON are replaced wholesale with a valid masked JSON string.
+// non-object JSON are replaced wholesale with maskedFallback.
 func maskAll(payload json.RawMessage) (json.RawMessage, bool) {
 	if !isJSONObject(payload) {
-		return json.RawMessage(maskedJSON), true
+		return maskedFallback, true
 	}
 
 	var rebuilt bytes.Buffer
