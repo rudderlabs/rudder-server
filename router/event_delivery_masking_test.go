@@ -3,6 +3,7 @@ package router
 import (
 	"bytes"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -21,6 +22,39 @@ import (
 )
 
 const deliveryMaskingMetric = "router_delivery_payload_masking"
+
+func TestEventDeliveryUploadMaskingDefaults(t *testing.T) {
+	t.Cleanup(config.Reset)
+
+	newHandle := func() *Handle {
+		rt := &Handle{
+			destType:         "TEST_DEST",
+			reloadableConfig: &reloadableConfig{},
+		}
+		rt.setupReloadableVars()
+		return rt
+	}
+
+	t.Run("runtime config enables masking", func(t *testing.T) {
+		configPath, err := filepath.Abs("../config/config.yaml")
+		require.NoError(t, err)
+		t.Setenv("CONFIG_PATH", configPath)
+		config.Reset()
+		_, err = config.Default.ConfigFileUsed()
+		require.NoError(t, err)
+
+		require.False(t, newHandle().reloadableConfig.disableEventDeliveryUploadMasking.Load())
+	})
+
+	t.Run("in-code fallback enables masking", func(t *testing.T) {
+		t.Setenv("CONFIG_PATH", filepath.Join(t.TempDir(), "missing.yaml"))
+		config.Reset()
+		_, err := config.Default.ConfigFileUsed()
+		require.Error(t, err)
+
+		require.False(t, newHandle().reloadableConfig.disableEventDeliveryUploadMasking.Load())
+	})
+}
 
 func TestSendDestinationResponseMasksLiveEventsPayload(t *testing.T) {
 	for _, tc := range []struct {
@@ -135,7 +169,7 @@ func TestSendDestinationResponseMasksLiveEventsPayload(t *testing.T) {
 			original := json.RawMessage(tc.input)
 			worker.sendDestinationResponseToConfigBackend(original, deliveryStatusMetadata(), deliveryStatusJobStatus(), nil)
 
-			require.Equal(t, map[string]float64{tc.wantReason: 1}, maskingCounts(statsStore))
+			require.Equal(t, map[string]float64{tc.wantReason: 1}, maskingCounts(statsStore, deliveryMaskingMetric))
 			require.Equal(t, tc.input, string(original), "caller payload must not be modified")
 		})
 	}
@@ -162,7 +196,7 @@ func TestSendDestinationResponseMasksLiveEventsPayload(t *testing.T) {
 
 		require.JSONEq(t, `{"headers":{"Authorization":"secret"}}`, string(payloads[0]))
 		require.JSONEq(t, `{"headers":{"Authorization":"******"}}`, string(payloads[1]))
-		require.Equal(t, map[string]float64{"listed": 1}, maskingCounts(statsStore))
+		require.Equal(t, map[string]float64{"listed": 1}, maskingCounts(statsStore, deliveryMaskingMetric))
 	})
 }
 
@@ -189,9 +223,9 @@ func newDeliveryMaskingTestWorker(
 }
 
 // maskingCounts returns the masking counter values keyed by reason.
-func maskingCounts(statsStore *memstats.Store) map[string]float64 {
+func maskingCounts(statsStore *memstats.Store, metric string) map[string]float64 {
 	counts := map[string]float64{}
-	for _, m := range statsStore.GetByName(deliveryMaskingMetric) {
+	for _, m := range statsStore.GetByName(metric) {
 		counts[m.Tags["reason"]] = m.Value
 	}
 	return counts

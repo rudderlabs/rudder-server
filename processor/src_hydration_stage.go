@@ -36,7 +36,7 @@ type srcHydrationMessage struct {
 	eventsByMessageID          map[string]types.SingularEventWithReceivedAt
 	jobIDToSpecificDestMapOnly map[int64]string
 	statusList                 []*jobsdb.JobStatusT
-	jobList                    []*jobsdb.JobT
+	nonDroppedJobs             []*jobsdb.JobT
 	sourceDupStats             map[dupStatKey]int
 	dedupKeys                  map[string]struct{}
 }
@@ -163,7 +163,7 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 		eventsByMessageID:          message.eventsByMessageID,
 		jobIDToSpecificDestMapOnly: message.jobIDToSpecificDestMapOnly,
 		statusList:                 message.statusList,
-		jobList:                    message.jobList,
+		nonDroppedJobs:             message.nonDroppedJobs,
 		sourceDupStats:             message.sourceDupStats,
 		dedupKeys:                  message.dedupKeys,
 		srcHydrationEnabledMap:     srcHydrationEnabledMap,
@@ -219,7 +219,7 @@ func (proc *Handle) getHydrationFailedReports(source *backendconfig.SourceT, job
 				SourceID:           source.ID,
 				SourceDefinitionID: source.SourceDefinition.ID,
 				SourceCategory:     source.SourceDefinition.Category,
-				PUDetails:          *reportingtypes.CreatePUDetails("", reportingtypes.SOURCE_HYDRATION, false, false),
+				PUDetails:          *reportingtypes.CreatePUDetails(reportingtypes.SOURCE_HYDRATION, false, false),
 				StatusDetail: &reportingtypes.StatusDetail{
 					Status:         jobsdb.Aborted.State,
 					Count:          1,

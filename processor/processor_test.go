@@ -40,6 +40,7 @@ import (
 	mockDedup "github.com/rudderlabs/rudder-server/mocks/services/dedup"
 	mockFeatures "github.com/rudderlabs/rudder-server/mocks/services/transformer"
 	mockreportingtypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
+	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -928,9 +929,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						DisplayName: "enabled-destination-a-definition-display-name",
 						Config:      map[string]any{},
 					},
-					// TestDestinationVisibilityReporting's TP-inPU cases need a
-					// user-transformer row to check inPU on; that only fires when the
-					// destination has a Transformation configured.
+					// A tracking-plan source whose destination has a Transformation, so a
+					// user_transformer row fires.
 					Transformations: []backendconfig.TransformationT{
 						{
 							VersionID: "tp-transformation-version-id",
@@ -947,11 +947,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 		{
-			// Hydration-enabled and tracking-plan-enabled: gives
-			// TestDestinationVisibilityReporting a source that exercises the
-			// source_hydration arm of the tracking-plan inPU selection, which
-			// SourceIDEnabledTp (no hydration) and fblaSourceId (no TP, no
-			// destinations) cannot reach on their own.
+			// Hydration-enabled and tracking-plan-enabled: a source that runs
+			// hydration and tracking-plan validation ahead of the user transformer.
 			ID:       SourceIDHydrationTp,
 			Name:     SourceIDHydrationTpName,
 			WriteKey: WriteKeyHydrationTp,
@@ -992,11 +989,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 		{
-			// Hydration-enabled and tracking-plan-enabled: gives
-			// TestDestinationVisibilityReporting a source that exercises the
-			// source_hydration arm of the tracking-plan inPU selection, which
-			// SourceIDEnabledTp (no hydration) and fblaSourceId (no TP, no
-			// destinations) cannot reach on their own.
+			// Hydration-enabled and tracking-plan-enabled: a source that runs
+			// hydration and tracking-plan validation ahead of the user transformer.
 			ID:       SourceIDHydrationTp,
 			Name:     SourceIDHydrationTpName,
 			WriteKey: WriteKeyHydrationTp,
@@ -2188,18 +2182,12 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					}
 				})
 
+			// jobs 1002, 2002 and 2003 carry no event payload, so they produce no events and
+			// must not be handed to the tracked users reporter
+			trackedUsersJobs := []*jobsdb.JobT{unprocessedJobsList[1], unprocessedJobsList[4]}
 			trackerUsersReports := []*trackedusers.UsersReport{
 				{
-					SourceID: SourceIDEnabled,
-				},
-				{
 					SourceID: SourceIDEnabledNoUT,
-				},
-				{
-					SourceID: SourceIDEnabled,
-				},
-				{
-					SourceID: SourceIDEnabled,
 				},
 				{
 					SourceID: SourceIDEnabledNoUT,
@@ -2214,7 +2202,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 			GinkgoT().Log("Processor setup and init done")
 			handlePendingGatewayJobs(processor)
 			Expect(c.mockTrackedUsersReporter.generateCalls).To(HaveLen(1))
-			Expect(c.mockTrackedUsersReporter.generateCalls[0].jobs).Should(Equal(unprocessedJobsList))
+			Expect(c.mockTrackedUsersReporter.generateCalls[0].jobs).Should(Equal(trackedUsersJobs))
 			Expect(c.mockTrackedUsersReporter.reportCalls).To(HaveLen(1))
 			Expect(c.mockTrackedUsersReporter.reportCalls[0].reportedReports).Should(Equal(trackerUsersReports))
 			// The strip is gated on source category: for this non-rETL (webhook) source
@@ -3927,8 +3915,8 @@ var _ = Describe("Processor", Ordered, func() {
 				inputEvents,
 				&commonMetadata,
 				eventsByMessageID,
-				reportingtypes.EVENT_FILTER,
 				reportingtypes.DEST_TRANSFORMER,
+				responseStatusCode,
 			)
 
 			key := strings.Join([]string{
@@ -3951,6 +3939,8 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(len(m.filteredJobs)).To(Equal(1))
 			Expect(len(m.filteredMetrics)).To(Equal(1))
 			Expect(int(m.filteredCountMap[key])).To(Equal(1))
+			Expect(m.filteredMetrics[0].StatusDetail.StatusCode).To(Equal(298))
+			Expect(m.filteredMetrics[0].StatusDetail.Status).To(Equal(jobsdb.Filtered.State))
 		})
 	})
 })
@@ -4095,7 +4085,6 @@ var _ = Describe("Static Function Tests", func() {
 			statsStore, err := memstats.New()
 			Expect(err).To(BeNil())
 			response := getDiffMetrics(
-				"inPU",
 				"outPU",
 				inCountMetadataMap,
 				successCountMetadataMap,
@@ -5954,7 +5943,7 @@ func TestDedupReporting(t *testing.T) {
 
 	// runDedupPipeline drives preprocessStage -> srcHydrationStage -> pretransformStage,
 	// which is where the new AssertKeysSubset(connectionDetailsMap, dedupStatusDetailsMap)
-	// panics and where the CreatePUDetails("", DEDUP, false, false) row is built.
+	// panics and where the CreatePUDetails(DEDUP, false, false) row is built.
 	runDedupPipeline := func(t *testing.T, processor *Handle, events []mockEventData) *transformationMessage {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -6063,7 +6052,7 @@ func TestDedupReporting(t *testing.T) {
 
 // TestUserSuppressionReporting exercises the USER_SUPPRESSION reporting added at the very top
 // of the preprocess loop (processor.go:2055-2079): a job whose parsed EventParams.IsUserSuppressed
-// is true emits a filtered/298 row under CreatePUDetails("", USER_SUPPRESSION, false, false) when
+// is true emits a filtered/298 row under CreatePUDetails(USER_SUPPRESSION, false, false) when
 // reporting is enabled, and is unconditionally dropped before bot management, event blocking,
 // dedup, event schemas, archival and the GATEWAY billing metric. Modelled directly on
 // TestDedupReporting.
@@ -6400,7 +6389,7 @@ func TestUserSuppressionReporting(t *testing.T) {
 
 // TestGatewayIngestedReporting exercises the gw_ingested reporting added at the very top
 // of the preprocess loop (processor.go:2059-2079), above the IsUserSuppressed check: every event
-// accumulates a succeeded/200 row under CreatePUDetails("", gw_ingested, false, false),
+// accumulates a succeeded/200 row under CreatePUDetails(gw_ingested, false, false),
 // gated by proc.isReportingEnabled(),
 // regardless of whether it later survives suppression/bot/blocking/dedup. Modelled directly on
 // TestUserSuppressionReporting.
@@ -6831,8 +6820,7 @@ func runVisibilityThroughUT(t *testing.T, processor *Handle, jobs []*jobsdb.JobT
 // TestDestinationVisibilityReporting exercises the fan-out reporting added for
 // per-destination visibility (destination_enter / destination_filter), emitted where the
 // destination filter runs, at fan-out in pretransformStage. The rows introduced here carry an
-// empty inPU (the field is slated for deprecation), and pre-existing tracking-plan and
-// user-transformer rows keep their inPU chain. Dedup is off throughout; SourceIDEnabled's three enabled destinations
+// empty inPU, like every report row. Dedup is off throughout; SourceIDEnabled's three enabled destinations
 // (A, B, C — three distinct destination types plus one disabled) are reused as-is.
 func TestDestinationVisibilityReporting(t *testing.T) {
 	destEnterRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
@@ -6987,25 +6975,6 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.ElementsMatch(t, []string{DestinationIDEnabledA, DestinationIDEnabledB, DestinationIDEnabledC}, ids)
 	})
 
-	t.Run("destination_enter inPU stays empty regardless of the source's pipeline steps", func(t *testing.T) {
-		// SourceIDHydrationTp runs both source hydration and TP validation ahead of fan-out —
-		// even then no chain value is computed for destination_enter (inPU is slated for
-		// deprecation).
-		processor, _, c, transformerClients := newVisibilityProcessor(t, true)
-		defer c.Finish()
-		transformerClients.WithDynamicSrcHydration(echoHydration)
-		transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
-
-		jobs := []*jobsdb.JobT{job(1, SourceIDHydrationTp, "", []string{payload("m1", nil, nil)})}
-		msg := runVisibilityPretransform(t, processor, jobs)
-
-		rows := destEnterRows(msg.reportMetrics)
-		require.NotEmpty(t, rows)
-		for _, r := range rows {
-			require.Equal(t, "", r.InPU)
-		}
-	})
-
 	t.Run("destination_enter is emitted for a forked destination that produces no inline clone", func(t *testing.T) {
 		processor, conf, c, _ := newVisibilityProcessor(t, true)
 		defer c.Finish()
@@ -7151,69 +7120,25 @@ func TestDestinationVisibilityReporting(t *testing.T) {
 		require.NotEmpty(t, tpRows(msg.reportMetrics), "an event with no surviving destination still reaches tracking-plan validation")
 	})
 
-	t.Run("pre-existing tracking-plan and user-transformer rows carry an empty inPU unless an earlier reporting stage ran", func(t *testing.T) {
-		// Rows carry an empty inPU when neither TP validation nor hydration ran ahead of them;
-		// when one did, the following row chains from it. SourceIDEnabled has neither, and its
-		// destination B carries a Transformation so a UT row is actually emitted.
-		t.Run("no TP, no hydration: user-transformer inPU is empty", func(t *testing.T) {
-			processor, _, c, transformerClients := newVisibilityProcessor(t, true)
-			defer c.Finish()
-			transformerClients.WithDynamicUserTransform(echoUserTransform)
+	t.Run("every report row carries an empty inPU even when hydration, tracking-plan validation and a user transformation ran", func(t *testing.T) {
+		processor, _, c, transformerClients := newVisibilityProcessor(t, true)
+		defer c.Finish()
+		transformerClients.WithDynamicSrcHydration(echoHydration)
+		transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
 
-			jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "", []string{payload("m1", nil, nil)})}
-			utMsg := runVisibilityThroughUT(t, processor, jobs)
+		jobs := []*jobsdb.JobT{job(1, SourceIDHydrationTp, "", []string{payload("m1", nil, nil)})}
+		utMsg := runVisibilityThroughUT(t, processor, jobs)
 
-			uRows := lo.Filter(utRows(utMsg.reportMetrics), func(r *reportingtypes.PUReportedMetric, _ int) bool {
-				return r.DestinationID == DestinationIDEnabledB // only B has a Transformation configured
-			})
-			require.NotEmpty(t, uRows)
-			for _, r := range uRows {
-				require.Equal(t, "", r.InPU)
-			}
-		})
-
-		t.Run("TP only (no hydration): tracking-plan inPU is empty, user-transformer chains from tracking_plan_validator", func(t *testing.T) {
-			processor, _, c, transformerClients := newVisibilityProcessor(t, true)
-			defer c.Finish()
-			transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
-			transformerClients.WithDynamicUserTransform(echoUserTransform)
-
-			jobs := []*jobsdb.JobT{job(1, SourceIDEnabledTp, "", []string{payload("m1", nil, nil)})}
-			utMsg := runVisibilityThroughUT(t, processor, jobs)
-
-			tRows := tpRows(utMsg.reportMetrics)
-			require.NotEmpty(t, tRows)
-			for _, r := range tRows {
-				require.Equal(t, "", r.InPU)
-			}
-			uRows := utRows(utMsg.reportMetrics)
-			require.NotEmpty(t, uRows)
-			for _, r := range uRows {
-				require.Equal(t, reportingtypes.TRACKINGPLAN_VALIDATOR, r.InPU)
-			}
-		})
-
-		t.Run("TP and hydration: tracking-plan inPU source_hydration, user-transformer chains from tracking_plan_validator", func(t *testing.T) {
-			processor, _, c, transformerClients := newVisibilityProcessor(t, true)
-			defer c.Finish()
-			transformerClients.WithDynamicSrcHydration(echoHydration)
-			transformerClients.WithDynamicTrackingPlanValidate(echoTrackingPlan)
-			transformerClients.WithDynamicUserTransform(echoUserTransform)
-
-			jobs := []*jobsdb.JobT{job(1, SourceIDHydrationTp, "", []string{payload("m1", nil, nil)})}
-			utMsg := runVisibilityThroughUT(t, processor, jobs)
-
-			tRows := tpRows(utMsg.reportMetrics)
-			require.NotEmpty(t, tRows)
-			for _, r := range tRows {
-				require.Equal(t, reportingtypes.SOURCE_HYDRATION, r.InPU)
-			}
-			uRows := utRows(utMsg.reportMetrics)
-			require.NotEmpty(t, uRows)
-			for _, r := range uRows {
-				require.Equal(t, reportingtypes.TRACKINGPLAN_VALIDATOR, r.InPU)
-			}
-		})
+		require.NotEmpty(t, tpRows(utMsg.reportMetrics))
+		require.NotEmpty(t, utRows(utMsg.reportMetrics))
+		require.NotEmpty(t, destEnterRows(utMsg.reportMetrics))
+		require.NotEmpty(t, lo.Filter(utMsg.reportMetrics, func(r *reportingtypes.PUReportedMetric, _ int) bool {
+			return r.PU == reportingtypes.EVENT_FILTER && r.DestinationID == DestinationIDEnabledA
+		}))
+		for _, r := range utMsg.reportMetrics {
+			require.Empty(t, r.InPU, "%s/%s", r.PU, r.StatusDetail.Status)
+		}
 	})
 }
 
@@ -7336,7 +7261,7 @@ func TestUserTransformerPassThroughReporting(t *testing.T) {
 			require.Equal(t, destID, r.DestinationID)
 			require.Equal(t, jobsdb.Succeeded.State, r.StatusDetail.Status)
 			require.Equal(t, reportingtypes.SuccessEventCode, r.StatusDetail.StatusCode)
-			require.Equal(t, "", r.InPU, "a bug reusing the TP/hydration/destination_filter switch would fail here")
+			require.Equal(t, "", r.InPU)
 			require.False(t, r.InitialPU)
 			require.False(t, r.TerminalPU)
 			require.EqualValues(t, 2, r.StatusDetail.Count)
@@ -7758,9 +7683,6 @@ func TestDestTransformerPassThroughReporting(t *testing.T) {
 			require.NotEmpty(t, offRows, "destination %s reports dest_transformer rows with the flag off", destID)
 			onRows := dtRowsFor(onMsg.reportMetrics, destID)
 			require.ElementsMatch(t, offRows, onRows)
-			for _, r := range onRows {
-				require.Equal(t, reportingtypes.EVENT_FILTER, r.InPU)
-			}
 		}
 	})
 
@@ -7815,9 +7737,6 @@ func TestDestTransformerPassThroughReporting(t *testing.T) {
 
 		bRows := dtRowsFor(storeMsg.reportMetrics, DestinationIDEnabledB)
 		require.NotEmpty(t, bRows)
-		for _, r := range bRows {
-			require.Equal(t, reportingtypes.EVENT_FILTER, r.InPU)
-		}
 
 		offProcessor, offConf, cOff, transformerClientsOff := newVisibilityProcessor(t, true)
 		defer cOff.Finish()
@@ -7844,7 +7763,7 @@ func TestDestTransformerPassThroughReporting(t *testing.T) {
 		onMsg := runVisibilityThroughUT(t, on, twoEventsSameName())
 
 		isPassThrough := func(m *reportingtypes.PUReportedMetric) bool {
-			return m.PU == reportingtypes.DEST_TRANSFORMER && m.InPU == ""
+			return m.PU == reportingtypes.DEST_TRANSFORMER && m.DestinationID == DestinationIDEnabledC
 		}
 		onWithoutPassThrough := lo.Filter(onMsg.reportMetrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
 			return !isPassThrough(m)
@@ -8096,7 +8015,7 @@ func TestDestTransformerDiffReporting(t *testing.T) {
 		require.Len(t, rows, 1)
 		r := rows[0]
 		require.Equal(t, reportingtypes.DEST_TRANSFORMER, r.PU)
-		require.Equal(t, reportingtypes.EVENT_FILTER, r.InPU)
+		require.Equal(t, "", r.InPU)
 		require.Equal(t, reportingtypes.SuccessEventCode, r.StatusDetail.StatusCode)
 		require.Equal(t, "Some Event", r.StatusDetail.EventName)
 		require.Equal(t, "track", r.StatusDetail.EventType)
@@ -8379,6 +8298,543 @@ func TestDestTransformerDiffReporting(t *testing.T) {
 		conf.Set(flagKey, false)
 		msg3 := runVisibilityThroughUT(t, processor, buildJob(3, "m3"))
 		require.Empty(t, dtDiffRowsFor(msg3.reportMetrics, DestinationIDEnabledA))
+	})
+}
+
+// TestEventFilterReasonReporting covers the event_filter reporting under
+// Reporting.eventFilterReasonMetrics.enabled: filtered events are reported under the filtered
+// state with one status code per reason (291 message type, 292 event name, 293 hybrid mode) and
+// the event_filter succeeded rows are not reported. The responses, proc_error jobs, dropped jobs,
+// job statuses, routing, stats tags and the other processing units are the same as with the flag
+// off.
+func TestEventFilterReasonReporting(t *testing.T) {
+	const flagKey = "Reporting.eventFilterReasonMetrics.enabled"
+
+	job := func(jobID int64, sourceID string, singularPayloads []string, extraParams map[string]any) *jobsdb.JobT {
+		params := map[string]any{"source_id": sourceID}
+		maps.Copy(params, extraParams)
+		paramBytes, err := jsonrs.Marshal(params)
+		require.NoError(t, err)
+		batch := strings.Join(singularPayloads, ",")
+		eventPayload := fmt.Appendf(nil, `{"writeKey":%q,"batch":[%s],"requestIP":"1.2.3.4","receivedAt":"2001-01-02T02:23:45.000Z"}`, WriteKeyEnabled, batch)
+		return &jobsdb.JobT{
+			UUID:         uuid.New(),
+			JobID:        jobID,
+			CreatedAt:    time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:     time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal:    gatewayCustomVal[0],
+			EventPayload: eventPayload,
+			EventCount:   len(singularPayloads),
+			Parameters:   paramBytes,
+		}
+	}
+	// raw marshals the event as is, so type and event can be non-strings.
+	raw := func(event map[string]any) string {
+		b, err := jsonrs.Marshal(event)
+		require.NoError(t, err)
+		return string(b)
+	}
+	echoUserTransform := func(_ context.Context, events []types.TransformerEvent) types.Response {
+		return types.Response{
+			Events: lo.Map(events, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+				return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata}
+			}),
+		}
+	}
+	echoDestTransform := func(_ context.Context, events []types.TransformerEvent) types.Response {
+		return types.Response{
+			Events: lo.Map(events, func(e types.TransformerEvent, _ int) types.TransformerResponse {
+				return types.TransformerResponse{Output: e.Message, Metadata: e.Metadata, StatusCode: 200}
+			}),
+		}
+	}
+	sumCount := func(rows []*reportingtypes.PUReportedMetric) int64 {
+		return lo.SumBy(rows, func(r *reportingtypes.PUReportedMetric) int64 { return r.StatusDetail.Count })
+	}
+
+	efRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.EVENT_FILTER
+		})
+	}
+	efRowsFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(efRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.DestinationID == destinationID
+		})
+	}
+	efByStatus := func(metrics []*reportingtypes.PUReportedMetric, status string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(efRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.StatusDetail.Status == status
+		})
+	}
+	efByCode := func(metrics []*reportingtypes.PUReportedMetric, code int) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(efRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.StatusDetail.StatusCode == code
+		})
+	}
+	reasonCodeRows := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(efRows(metrics), func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return lo.Contains([]int{291, 292, 293}, m.StatusDetail.StatusCode)
+		})
+	}
+	type filteredRow struct {
+		status    string
+		code      int
+		eventType string
+		eventName string
+		count     int64
+	}
+	filteredRows := func(rows []*reportingtypes.PUReportedMetric) []filteredRow {
+		return lo.Map(rows, func(r *reportingtypes.PUReportedMetric, _ int) filteredRow {
+			return filteredRow{r.StatusDetail.Status, r.StatusDetail.StatusCode, r.StatusDetail.EventType, r.StatusDetail.EventName, r.StatusDetail.Count}
+		})
+	}
+	nonEF := func(metrics []*reportingtypes.PUReportedMetric) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU != reportingtypes.EVENT_FILTER
+		})
+	}
+	dtDiffRowsFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.DEST_TRANSFORMER &&
+				m.StatusDetail.Status == reportingtypes.DiffStatus &&
+				m.DestinationID == destinationID
+		})
+	}
+	dtSucceededFor := func(metrics []*reportingtypes.PUReportedMetric, destinationID string) []*reportingtypes.PUReportedMetric {
+		return lo.Filter(metrics, func(m *reportingtypes.PUReportedMetric, _ int) bool {
+			return m.PU == reportingtypes.DEST_TRANSFORMER &&
+				m.StatusDetail.Status == jobsdb.Succeeded.State &&
+				m.DestinationID == destinationID
+		})
+	}
+
+	// withEventFilterConfigOnA restricts destination A to the track and identify message types,
+	// to the track message type in hybrid mode for web sources and to the "Allowed Event" event
+	// name. B has no supported message types and C has the event filter off, so both let every
+	// event through. New maps are assigned so the shared backend config is left untouched.
+	withEventFilterConfigOnA := func(processor *Handle) {
+		processor.config.configSubscriberLock.Lock()
+		defer processor.config.configSubscriberLock.Unlock()
+		dests := slices.Clone(processor.config.sourceIdDestinationMap[SourceIDEnabled])
+		for i := range dests {
+			if dests[i].ID != DestinationIDEnabledA {
+				continue
+			}
+			dests[i].DestinationDefinition.Config = map[string]any{
+				"supportedMessageTypes": []any{"track", "identify"},
+				"hybridModeCloudEventsFilter": map[string]any{
+					"web": map[string]any{"messageType": []any{"track"}},
+				},
+			}
+			dests[i].Config = map[string]any{
+				"connectionMode":    "hybrid",
+				"listOfConversions": []any{map[string]any{"conversions": "Allowed Event"}},
+			}
+		}
+		processor.config.sourceIdDestinationMap[SourceIDEnabled] = dests
+		src := processor.config.sourceIdSourceMap[SourceIDEnabled]
+		src.SourceDefinition.Type = "web"
+		processor.config.sourceIdSourceMap[SourceIDEnabled] = src
+	}
+
+	// mixedBatch returns a job whose events cover every event_filter outcome on destination A
+	// and a second job that is drained.
+	mixedBatch := func(jobIDBase int64, prefix string) []*jobsdb.JobT {
+		event := func(id string, fields map[string]any) string {
+			e := map[string]any{"rudderId": "some-rudder-id", "messageId": prefix + id}
+			maps.Copy(e, fields)
+			return raw(e)
+		}
+		return []*jobsdb.JobT{
+			job(jobIDBase, SourceIDEnabled, []string{
+				event("pass", map[string]any{"type": "track", "event": "Allowed Event"}),
+				event("type", map[string]any{"type": "page"}),
+				event("hybrid", map[string]any{"type": "identify"}),
+				event("name", map[string]any{"type": "track", "event": "Other Event"}),
+				event("invtype", map[string]any{"type": 123}),
+				event("invevent", map[string]any{"type": "track", "event": 123}),
+			}, map[string]any{"source_job_run_id": "run-kept"}),
+			job(jobIDBase+1, SourceIDEnabled, []string{
+				event("drained", map[string]any{"type": "track", "event": "Allowed Event"}),
+			}, map[string]any{"source_job_run_id": "run-drained"}),
+		}
+	}
+
+	newMixedProcessor := func(t *testing.T, flagOn bool) (*Handle, *config.Config, *testContext) {
+		t.Helper()
+		processor, conf, c, transformerClients := newVisibilityProcessor(t, true)
+		conf.Set("drain.jobRunIDs", []string{"run-drained"})
+		conf.Set(flagKey, flagOn)
+		transformerClients.WithDynamicUserTransform(echoUserTransform)
+		transformerClients.WithDynamicDestinationTransform(echoDestTransform)
+		withEventFilterConfigOnA(processor)
+		return processor, conf, c
+	}
+	runMixed := func(t *testing.T, flagOn bool) *storeMessage {
+		t.Helper()
+		processor, _, c := newMixedProcessor(t, flagOn)
+		defer c.Finish()
+		return runVisibilityThroughUT(t, processor, mixedBatch(1, ""))
+	}
+
+	type rowKey struct{ eventType, eventName string }
+	countsByKey := func(rows []*reportingtypes.PUReportedMetric) map[rowKey]int64 {
+		out := make(map[rowKey]int64)
+		for _, r := range rows {
+			out[rowKey{r.StatusDetail.EventType, r.StatusDetail.EventName}] += r.StatusDetail.Count
+		}
+		return out
+	}
+
+	type normalisedJob struct {
+		Parameters, UserID, CustomVal, WorkspaceID string
+	}
+	normalise := func(jobs []*jobsdb.JobT) []normalisedJob {
+		return lo.Map(jobs, func(j *jobsdb.JobT, _ int) normalisedJob {
+			return normalisedJob{string(j.Parameters), j.UserID, j.CustomVal, j.WorkspaceId}
+		})
+	}
+	normaliseProcErrors := func(jobs []procErrorJob) []normalisedJob {
+		return normalise(procErrorJobs(jobs))
+	}
+	type routedEvent struct{ destinationID, messageID string }
+	routed := func(jobs []*jobsdb.JobT) []routedEvent {
+		return lo.Map(jobs, func(j *jobsdb.JobT, _ int) routedEvent {
+			var params map[string]any
+			require.NoError(t, jsonrs.Unmarshal(j.Parameters, &params))
+			destinationID, _ := params["destination_id"].(string)
+			messageID, _ := params["message_id"].(string)
+			return routedEvent{destinationID, messageID}
+		})
+	}
+
+	t.Run("with the flag off (default) event_filter emits succeeded rows and one filtered/298 row per filtered event", func(t *testing.T) {
+		msg := runMixed(t, false)
+
+		rowsA := efRowsFor(msg.reportMetrics, DestinationIDEnabledA)
+		require.EqualValues(t, 1, sumCount(efByStatus(rowsA, jobsdb.Succeeded.State)))
+
+		filtered := efByStatus(rowsA, jobsdb.Filtered.State)
+		require.Len(t, filtered, 3)
+		for _, r := range filtered {
+			require.EqualValues(t, 1, r.StatusDetail.Count)
+			require.Equal(t, reportingtypes.FilterEventCode, r.StatusDetail.StatusCode)
+		}
+		require.Equal(t, map[rowKey]int64{
+			{"page", ""}:             1,
+			{"identify", ""}:         1,
+			{"track", "Other Event"}: 1,
+		}, countsByKey(filtered))
+
+		abortedWithCode := func(code int) []*reportingtypes.PUReportedMetric {
+			return lo.Filter(efByStatus(rowsA, jobsdb.Aborted.State), func(r *reportingtypes.PUReportedMetric, _ int) bool {
+				return r.StatusDetail.StatusCode == code
+			})
+		}
+		require.EqualValues(t, 2, sumCount(abortedWithCode(400)))
+		drained := abortedWithCode(410)
+		require.EqualValues(t, 1, sumCount(drained))
+		for _, r := range drained {
+			require.Equal(t, "run-drained", r.SourceJobRunID)
+		}
+
+		require.Empty(t, reasonCodeRows(msg.reportMetrics))
+	})
+
+	t.Run("with the flag on the three filtered reasons are reported under the filtered state with status codes 291, 292 and 293", func(t *testing.T) {
+		msg := runMixed(t, true)
+		rowsA := efRowsFor(msg.reportMetrics, DestinationIDEnabledA)
+
+		require.ElementsMatch(t, []filteredRow{
+			{"filtered", 291, "page", "", 1},
+			{"filtered", 293, "identify", "", 1},
+			{"filtered", 292, "track", "Other Event", 1},
+		}, filteredRows(efByStatus(rowsA, jobsdb.Filtered.State)))
+	})
+
+	t.Run("with the flag on no event_filter row carries status code 298", func(t *testing.T) {
+		msg := runMixed(t, true)
+		require.Empty(t, efByCode(msg.reportMetrics, 298))
+	})
+
+	t.Run("with the flag on no event_filter succeeded row is emitted for any destination", func(t *testing.T) {
+		msg := runMixed(t, true)
+
+		require.Empty(t, efByStatus(msg.reportMetrics, jobsdb.Succeeded.State))
+		require.Contains(t, msg.routerDestIDs, DestinationIDEnabledA)
+		require.Contains(t, msg.routerDestIDs, DestinationIDEnabledC)
+		require.NotEmpty(t, msg.batchDestJobs, "B's events still reach the destination stage")
+	})
+
+	t.Run("with the flag on the per-reason code rows carry the same state, initial and terminal state as the flag-off filtered rows", func(t *testing.T) {
+		off := runMixed(t, false)
+		on := runMixed(t, true)
+
+		offFiltered := efByStatus(efRowsFor(off.reportMetrics, DestinationIDEnabledA), jobsdb.Filtered.State)
+		require.Len(t, offFiltered, 3)
+		onRows := efRowsFor(on.reportMetrics, DestinationIDEnabledA)
+		for _, offRow := range offFiltered {
+			matching := lo.Filter(onRows, func(r *reportingtypes.PUReportedMetric, _ int) bool {
+				return r.StatusDetail.EventName == offRow.StatusDetail.EventName &&
+					r.StatusDetail.EventType == offRow.StatusDetail.EventType &&
+					r.StatusDetail.Status == jobsdb.Filtered.State
+			})
+			require.Len(t, matching, 1, "%+v", offRow.StatusDetail)
+			onRow := matching[0]
+			require.Equal(t, offRow.InitialPU, onRow.InitialPU)
+			require.Equal(t, offRow.TerminalPU, onRow.TerminalPU)
+			require.Equal(t, offRow.SourceID, onRow.SourceID)
+			require.Equal(t, offRow.DestinationID, onRow.DestinationID)
+			require.Equal(t, offRow.StatusDetail.Count, onRow.StatusDetail.Count)
+			require.Equal(t, offRow.StatusDetail.Status, onRow.StatusDetail.Status)
+			require.Equal(t, 298, offRow.StatusDetail.StatusCode)
+			require.Contains(t, []int{291, 292, 293}, onRow.StatusDetail.StatusCode)
+			require.Equal(t, offRow.StatusDetail.SampleResponse, onRow.StatusDetail.SampleResponse)
+		}
+	})
+
+	t.Run("the reason code comes from the response reason within the 298 group, and a non-298 response with a filtered reason stays aborted with its own code", func(t *testing.T) {
+		processor, _, c, _ := newVisibilityProcessor(t, true)
+		defer c.Finish()
+
+		commonMetadata := types.Metadata{SourceID: SourceIDEnabled, DestinationID: DestinationIDEnabledA}
+		reasons := []struct {
+			statusCode int
+			reason     string
+		}{
+			{298, eventfilter.MessageTypeNotSupportedReason},
+			{298, eventfilter.MessageEventNotSupportedReason},
+			{298, eventfilter.HybridModeFilterReason},
+			{298, "some unrecognised reason"},
+			{400, eventfilter.MessageTypeNotSupportedReason},
+		}
+		var inputEvents []types.TransformerEvent
+		var failedEvents []types.TransformerResponse
+		eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
+		for i, r := range reasons {
+			msgID := fmt.Sprintf("msg%d", i+1)
+			event := types.SingularEventT{"messageId": msgID}
+			metadata := commonMetadata
+			metadata.MessageID = msgID
+			eventsByMessageID[msgID] = types.SingularEventWithReceivedAt{SingularEvent: event, ReceivedAt: time.Now()}
+			inputEvents = append(inputEvents, types.TransformerEvent{Metadata: metadata, Message: event})
+			failedEvents = append(failedEvents, types.TransformerResponse{
+				StatusCode: r.statusCode, Metadata: metadata, Output: event, Error: r.reason,
+			})
+		}
+
+		m := processor.getNonSuccessfulMetrics(
+			types.Response{FailedEvents: failedEvents},
+			inputEvents,
+			&commonMetadata,
+			eventsByMessageID,
+			reportingtypes.EVENT_FILTER,
+			func(r types.TransformerResponse) int { return eventfilter.FilteredCodeForReason(r.Error) },
+		)
+
+		require.Len(t, m.failedJobs, 1)
+		require.Len(t, m.failedMetrics, 1)
+		require.Equal(t, jobsdb.Aborted.State, m.failedMetrics[0].StatusDetail.Status)
+		require.Equal(t, 400, m.failedMetrics[0].StatusDetail.StatusCode)
+
+		require.Len(t, m.filteredJobs, 4)
+		require.ElementsMatch(
+			t,
+			[]int{291, 292, 293, 298},
+			lo.Map(m.filteredMetrics, func(r *reportingtypes.PUReportedMetric, _ int) int { return r.StatusDetail.StatusCode }),
+		)
+		for _, r := range m.filteredMetrics {
+			require.Equal(t, jobsdb.Filtered.State, r.StatusDetail.Status)
+			require.EqualValues(t, 1, r.StatusDetail.Count)
+		}
+		statusCodeOf := func(j *jobsdb.JobT) any {
+			var params map[string]any
+			require.NoError(t, jsonrs.Unmarshal(j.Parameters, &params))
+			return params["status_code"]
+		}
+		for _, j := range m.filteredJobs {
+			require.EqualValues(t, 298, statusCodeOf(j.JobT))
+		}
+		require.EqualValues(t, 400, statusCodeOf(m.failedJobs[0].JobT))
+
+		key := strings.Join([]string{
+			commonMetadata.SourceID,
+			commonMetadata.DestinationID,
+			commonMetadata.SourceJobRunID,
+			commonMetadata.EventName,
+			commonMetadata.EventType,
+		}, "!<<#>>!")
+		require.EqualValues(t, 4, m.filteredCountMap[key])
+		require.EqualValues(t, 1, m.failedCountMap[key])
+	})
+
+	t.Run("proc_error jobs, dropped jobs and gw job statuses are identical with the flag on and off", func(t *testing.T) {
+		off := runMixed(t, false)
+		on := runMixed(t, true)
+
+		require.ElementsMatch(t, lo.Keys(off.procErrorJobsByDestID), lo.Keys(on.procErrorJobsByDestID))
+		for destID, offJobs := range off.procErrorJobsByDestID {
+			require.ElementsMatch(t, normaliseProcErrors(offJobs), normaliseProcErrors(on.procErrorJobsByDestID[destID]), destID)
+		}
+		require.Len(t, on.procErrorJobsByDestID[DestinationIDEnabledA], 3)
+		require.Len(t, on.procErrorJobsByDestID[DestinationIDEnabledB], 1)
+		require.Len(t, on.procErrorJobsByDestID[DestinationIDEnabledC], 1)
+
+		require.ElementsMatch(t, normalise(off.droppedJobs), normalise(on.droppedJobs))
+		require.Len(t, on.droppedJobs, len(off.droppedJobs))
+		require.NotEmpty(t, on.droppedJobs)
+
+		filterReasons := []string{
+			eventfilter.MessageTypeNotSupportedReason,
+			eventfilter.MessageEventNotSupportedReason,
+			eventfilter.HybridModeFilterReason,
+		}
+		filteredDropped := lo.Filter(on.droppedJobs, func(j *jobsdb.JobT, _ int) bool {
+			var params map[string]any
+			require.NoError(t, jsonrs.Unmarshal(j.Parameters, &params))
+			reason, _ := params["error"].(string)
+			return params["stage"] == "event_filter" &&
+				params["destination_id"] == DestinationIDEnabledA &&
+				lo.Contains(filterReasons, reason)
+		})
+		require.Len(t, filteredDropped, 3)
+		for _, j := range filteredDropped {
+			var params map[string]any
+			require.NoError(t, jsonrs.Unmarshal(j.Parameters, &params))
+			require.EqualValues(t, 298, params["status_code"])
+		}
+
+		type status struct {
+			jobID     int64
+			jobState  string
+			errorCode string
+		}
+		statuses := func(list []*jobsdb.JobStatusT) []status {
+			return lo.Map(list, func(s *jobsdb.JobStatusT, _ int) status { return status{s.JobID, s.JobState, s.ErrorCode} })
+		}
+		require.ElementsMatch(t, statuses(off.statusList), statuses(on.statusList))
+	})
+
+	t.Run("with the flag on the same events reach the destination stage", func(t *testing.T) {
+		off := runMixed(t, false)
+		on := runMixed(t, true)
+
+		require.ElementsMatch(t, off.routerDestIDs, on.routerDestIDs)
+		require.ElementsMatch(t, routed(off.destJobs), routed(on.destJobs))
+		require.ElementsMatch(t, routed(off.batchDestJobs), routed(on.batchDestJobs))
+
+		var aMessages []string
+		for _, r := range append(routed(on.destJobs), routed(on.batchDestJobs)...) {
+			if r.destinationID == DestinationIDEnabledA {
+				aMessages = append(aMessages, r.messageID)
+			}
+		}
+		require.Equal(t, []string{"pass"}, aMessages)
+	})
+
+	t.Run("with the flag on every row outside event_filter, and every event_filter aborted row, is identical to a flag-off run", func(t *testing.T) {
+		off := runMixed(t, false)
+		on := runMixed(t, true)
+
+		require.NotEmpty(t, nonEF(off.reportMetrics))
+		require.ElementsMatch(t, nonEF(off.reportMetrics), nonEF(on.reportMetrics))
+		require.NotEmpty(t, efByStatus(off.reportMetrics, jobsdb.Aborted.State))
+		require.ElementsMatch(t, efByStatus(off.reportMetrics, jobsdb.Aborted.State), efByStatus(on.reportMetrics, jobsdb.Aborted.State))
+	})
+
+	t.Run("with the flag on filtered outcomes increment proc_filtered_counts tagged with status code 298 and never proc_error_counts, and proc_event_filter stats are unchanged", func(t *testing.T) {
+		orig := stats.Default
+		t.Cleanup(func() { stats.Default = orig })
+
+		runWithStore := func(flagOn bool) *memstats.Store {
+			store, err := memstats.New()
+			require.NoError(t, err)
+			stats.Default = store
+			runMixed(t, flagOn)
+			return store
+		}
+		type metricValue struct {
+			tags  stats.Tags
+			value float64
+		}
+		metricValues := func(store *memstats.Store, name string) []metricValue {
+			return lo.Map(store.GetByName(name), func(m memstats.Metric, _ int) metricValue {
+				return metricValue{m.Tags, m.Value}
+			})
+		}
+		tagsFor := func(statusCode string) stats.Tags {
+			return stats.Tags{"destName": "enabled-destination-a-definition-name", "statusCode": statusCode, "stage": "event_filter"}
+		}
+
+		off := runWithStore(false)
+		on := runWithStore(true)
+		for name, store := range map[string]*memstats.Store{"off": off, "on": on} {
+			filtered := store.Get("proc_filtered_counts", tagsFor("298"))
+			require.NotNil(t, filtered, name)
+			require.EqualValues(t, 3, filtered.LastValue(), name)
+
+			aborted400 := store.Get("proc_error_counts", tagsFor("400"))
+			require.NotNil(t, aborted400, name)
+			require.EqualValues(t, 2, aborted400.LastValue(), name)
+			aborted410 := store.Get("proc_error_counts", tagsFor("410"))
+			require.NotNil(t, aborted410, name)
+			require.EqualValues(t, 1, aborted410.LastValue(), name)
+
+			for _, m := range store.GetByName("proc_error_counts") {
+				require.NotEqual(t, "298", m.Tags["statusCode"], name)
+			}
+			for _, m := range store.GetByName("proc_filtered_counts") {
+				require.Equal(t, "298", m.Tags["statusCode"], name)
+			}
+		}
+
+		require.ElementsMatch(t, metricValues(off, "proc_event_filter_in_count"), metricValues(on, "proc_event_filter_in_count"))
+		require.ElementsMatch(t, metricValues(off, "proc_event_filter_out_count"), metricValues(on, "proc_event_filter_out_count"))
+		require.NotEmpty(t, metricValues(on, "proc_event_filter_in_count"))
+	})
+
+	t.Run("with the flag and Reporting.destTransformerDiffMetrics.enabled both on, a one-to-one destination transformation after event-filter drops produces no diff row", func(t *testing.T) {
+		processor, conf, c := newMixedProcessor(t, true)
+		defer c.Finish()
+		conf.Set("Reporting.destTransformerDiffMetrics.enabled", true)
+
+		msg := runVisibilityThroughUT(t, processor, mixedBatch(1, ""))
+
+		require.Empty(t, dtDiffRowsFor(msg.reportMetrics, DestinationIDEnabledA))
+		require.EqualValues(t, 1, sumCount(dtSucceededFor(msg.reportMetrics, DestinationIDEnabledA)))
+		require.Len(t, efByCode(efRowsFor(msg.reportMetrics, DestinationIDEnabledA), 291), 1)
+	})
+
+	t.Run("toggling the flag at runtime on the same handle takes effect both ways without a restart", func(t *testing.T) {
+		processor, conf, c := newMixedProcessor(t, false)
+		defer c.Finish()
+
+		msg1 := runVisibilityThroughUT(t, processor, mixedBatch(1, "r1-"))
+		rows1 := efRowsFor(msg1.reportMetrics, DestinationIDEnabledA)
+		require.NotEmpty(t, efByStatus(rows1, jobsdb.Succeeded.State))
+		require.EqualValues(t, 3, sumCount(efByStatus(rows1, jobsdb.Filtered.State)))
+		require.EqualValues(t, 3, sumCount(efByCode(rows1, 298)))
+		require.Empty(t, reasonCodeRows(rows1))
+
+		conf.Set(flagKey, true)
+		msg2 := runVisibilityThroughUT(t, processor, mixedBatch(10, "r2-"))
+		rows2 := efRowsFor(msg2.reportMetrics, DestinationIDEnabledA)
+		require.Empty(t, efByStatus(rows2, jobsdb.Succeeded.State))
+		require.Empty(t, efByCode(rows2, 298))
+		require.ElementsMatch(
+			t,
+			[]int{291, 293, 292},
+			lo.Map(efByStatus(rows2, jobsdb.Filtered.State), func(r *reportingtypes.PUReportedMetric, _ int) int { return r.StatusDetail.StatusCode }),
+		)
+
+		conf.Set(flagKey, false)
+		msg3 := runVisibilityThroughUT(t, processor, mixedBatch(20, "r3-"))
+		rows3 := efRowsFor(msg3.reportMetrics, DestinationIDEnabledA)
+		require.NotEmpty(t, efByStatus(rows3, jobsdb.Succeeded.State))
+		require.EqualValues(t, 3, sumCount(efByStatus(rows3, jobsdb.Filtered.State)))
+		require.EqualValues(t, 3, sumCount(efByCode(rows3, 298)))
+		require.Empty(t, reasonCodeRows(rows3))
 	})
 }
 
@@ -9255,5 +9711,116 @@ func TestEventSchemasV2DisabledSourceIDs(t *testing.T) {
 		jobs := []*jobsdb.JobT{job(1, SourceIDEnabled, "1"), job(2, SourceIDEnabledNoUT, "2")}
 		schemaJobs := run(t, []string{SourceIDEnabled, SourceIDEnabledNoUT}, jobs)
 		require.Empty(t, schemaJobs)
+	})
+}
+
+// TestTrackedUsersExcludeDroppedJobs verifies that only the gateway jobs that survive the
+// preprocess drop gates (user suppression, bot drop, event blocking, dedup) are handed to the
+// tracked users reporter, so dropped traffic never counts towards MTU.
+func TestTrackedUsersExcludeDroppedJobs(t *testing.T) {
+	params := func(sourceID, extra string) []byte {
+		return fmt.Appendf(nil, `{"source_id":%q%s}`, sourceID, extra)
+	}
+	job := func(jobID int64, params []byte, events []mockEventData) *jobsdb.JobT {
+		return &jobsdb.JobT{
+			UUID:      uuid.New(),
+			JobID:     jobID,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabled,
+				"2001-01-02T02:23:45.000Z",
+				events,
+				createMessagePayloadWithoutSources,
+			),
+			EventCount:  len(events),
+			Parameters:  params,
+			WorkspaceId: sampleWorkspaceID,
+		}
+	}
+	event := func(id string) mockEventData {
+		return mockEventData{id: id, originalTimestamp: "2000-01-02T01:23:45", sentAt: "2000-01-02 01:23"}
+	}
+
+	newProcessor := func(t *testing.T, dedupAllowedFn func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error)) (*Handle, *testContext) {
+		t.Helper()
+		c := &testContext{}
+		c.Setup(t)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
+
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		require.NoError(t, err)
+
+		processor := NewHandle(config.New(), transformer.NewSimpleClients())
+		processor.isolationStrategy = isolationStrategy
+		processor.config.archivalEnabled = config.SingleValueLoader(false)
+		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+
+		enableDedup := dedupAllowedFn != nil
+		Setup(processor, c, enableDedup, false, t)
+		processor.trackedUsersReporter = c.mockTrackedUsersReporter
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+
+		if enableDedup {
+			processor.dedup = c.MockDedup
+			c.MockDedup.EXPECT().Allowed(gomock.Any()).DoAndReturn(dedupAllowedFn).AnyTimes()
+		}
+		return processor, c
+	}
+
+	reportedJobIDs := func(t *testing.T, processor *Handle, c *testContext, jobs []*jobsdb.JobT) []int64 {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		srcHydrationMsg, err := processor.preprocessStage("", subJob{ctx: ctx, subJobs: jobs}, 0)
+		require.NoError(t, err)
+		preTransMsg, err := processor.srcHydrationStage("", srcHydrationMsg)
+		require.NoError(t, err)
+		_, err = processor.pretransformStage("", preTransMsg)
+		require.NoError(t, err)
+
+		require.Len(t, c.mockTrackedUsersReporter.generateCalls, 1)
+		return lo.Map(c.mockTrackedUsersReporter.generateCalls[0].jobs, func(j *jobsdb.JobT, _ int) int64 { return j.JobID })
+	}
+
+	t.Run("should not report suppressed, dropped bot and blocked jobs", func(t *testing.T) {
+		processor, c := newProcessor(t, nil)
+		defer c.Finish()
+
+		jobs := []*jobsdb.JobT{
+			job(1, params(SourceIDEnabled, ""), []mockEventData{event("1")}),
+			job(2, params(SourceIDEnabled, `,"is_user_suppressed":true`), []mockEventData{event("2")}),
+			job(3, params(SourceIDEnabled, `,"is_bot":true,"bot_action":"drop"`), []mockEventData{event("3")}),
+			job(4, params(SourceIDEnabled, `,"is_bot":true,"bot_action":"flag"`), []mockEventData{event("4")}),
+			job(5, params(SourceIDEnabled, `,"is_event_blocked":true`), []mockEventData{event("5")}),
+		}
+		require.Equal(t, []int64{1, 4}, reportedJobIDs(t, processor, c, jobs))
+	})
+
+	t.Run("should not report jobs whose every event is a duplicate", func(t *testing.T) {
+		// dedup keys are indexed per event in batch order: job 1 has indexes 0 and 1, job 2 has
+		// index 2 and job 3 has index 3. Deny index 1 and 2 so job 1 keeps one event and job 2
+		// loses its only event.
+		dedupAllowedFn := func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+			allowed := make(map[dedup.BatchKey]bool, len(keys))
+			for _, k := range keys {
+				allowed[k] = k.Index != 1 && k.Index != 2
+			}
+			return allowed, nil
+		}
+		processor, c := newProcessor(t, dedupAllowedFn)
+		defer c.Finish()
+
+		jobs := []*jobsdb.JobT{
+			job(1, params(SourceIDEnabled, ""), []mockEventData{event("1"), event("2")}),
+			job(2, params(SourceIDEnabled, ""), []mockEventData{event("3")}),
+			job(3, params(SourceIDEnabled, ""), []mockEventData{event("4")}),
+		}
+		require.Equal(t, []int64{1, 3}, reportedJobIDs(t, processor, c, jobs))
 	})
 }

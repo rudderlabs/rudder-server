@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -249,6 +250,60 @@ func TestTrackedUsersReporting(t *testing.T) {
 	require.NoError(t, wg.Wait())
 }
 
+func TestTrackedUsersReportingExcludesDroppedEvents(t *testing.T) {
+	tc := setup(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	wg, ctx := errgroup.WithContext(ctx)
+	wg.Go(func() error {
+		err := runRudderServer(t, ctx, cancel, tc)
+		if err != nil {
+			t.Logf("rudder-server exited with error: %v", err)
+		}
+		return err
+	})
+
+	url := fmt.Sprintf("http://localhost:%d", tc.gwPort)
+	health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
+
+	// bot events with the drop action are dropped by the processor and must not be tracked,
+	// while flagged bot events and regular events are delivered and tracked
+	_, err := sendInternalBatchEvents([]userIdentifier{
+		{userID: "bot-user-1", anonymousID: "bot-anon-1"},
+		{anonymousID: "bot-anon-2"},
+	}, botProperties{isBot: true, botAction: "drop"}, url)
+	require.NoError(t, err)
+	deliveredCount, err := sendInternalBatchEvents([]userIdentifier{
+		{userID: "flagged-user-1", anonymousID: "flagged-anon-1"},
+	}, botProperties{isBot: true, botAction: "flag"}, url)
+	require.NoError(t, err)
+	regularCount, err := sendInternalBatchEvents([]userIdentifier{
+		{userID: "user-1", anonymousID: "anon-1"},
+		{anonymousID: "anon-2"},
+	}, botProperties{}, url)
+	require.NoError(t, err)
+	deliveredCount += regularCount
+
+	require.Eventuallyf(t, func() bool {
+		return tc.webhook.RequestsCount() == deliveredCount
+	}, 1*time.Minute, 5*time.Second, "unexpected number of events received, count of events: %d", tc.webhook.RequestsCount())
+
+	require.Eventuallyf(t, func() bool {
+		return getCardinalityOfReportingTable(t, tc.postgresResource) == 0
+	}, 1*time.Minute, 5*time.Second, "data not reported to reporting service")
+
+	cardinalityMap := tc.reportingServer.getCardinalityFromReportingServer()
+	// flagged-user-1, flagged-anon-1, user-1, anon-1, anon-2
+	require.Equal(t, 5, cardinalityMap[workspaceID][sourceID].userIDCount)
+	require.Equal(t, 0, cardinalityMap[workspaceID][sourceID].anonIDCount)
+	// flagged-anon-1, anon-1
+	require.Equal(t, 2, cardinalityMap[workspaceID][sourceID].identifiedUsersCount)
+	cancel()
+	require.NoError(t, wg.Wait())
+}
+
 func getCardinalityOfReportingTable(t *testing.T, db *postgres.Resource) int {
 	var count int
 	err := db.DB.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", "tracked_users_reports")).Scan(&count)
@@ -332,6 +387,7 @@ func runRudderServer(
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.password"), tc.postgresResource.Password)
 
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.mode"), "off")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.gw.pendingEvents.enabled"), "true")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DestinationDebugger.disableEventDeliveryStatusUploads"), "true")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "SourceDebugger.disableEventUploads"), "true")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "TransformationDebugger.disableTransformationStatusUploads"), "true")
@@ -472,5 +528,75 @@ func sendEvents(
 			kithttputil.CloseResponse(resp)
 		}
 	}
+	return count, nil
+}
+
+type botProperties struct {
+	isBot     bool
+	botAction string
+}
+
+// sendInternalBatchEvents sends 1 or more identify events per identifier through the gateway's
+// internal batch endpoint, which is the only path that carries the bot flags set upstream by the
+// ingestion service. It returns the number of events sent.
+// nolint: bodyclose
+func sendInternalBatchEvents(identifiers []userIdentifier, bot botProperties, url string) (int, error) {
+	count := 0
+	messages := make([]string, 0)
+	for _, identifier := range identifiers {
+		num := 1 + rand.Intn(100)
+		for range num {
+			count++
+			messages = append(messages, fmt.Sprintf(`{
+			  "properties": {
+				"isBot": %[1]t,
+				"botAction": %[2]q,
+				"routingKey": "a1",
+				"requestType": "identify",
+				"workspaceID": %[3]q,
+				"userID": %[4]q,
+				"sourceID": %[5]q,
+				"requestIP": "1.2.3.4",
+				"receivedAt": "2024-01-01T01:01:01.000000001Z"
+			  },
+			  "payload": {
+				"userId": %[4]q,
+				"anonymousId": %[6]q,
+				"type": "identify",
+				"messageId": %[7]q,
+				"context": {
+				  "traits": {
+					"trait1": "new-val"
+				  },
+				  "ip": "14.5.67.21",
+				  "library": {
+					"name": "http"
+				  }
+				},
+				"request_ip": "1.2.3.4",
+				"rudderId": "rudder-id-1",
+				"receivedAt": "2024-01-01T01:01:01.000000001Z",
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			  }
+			}`, bot.isBot, bot.botAction, workspaceID, identifier.userID, sourceID, identifier.anonymousID, fmt.Sprintf("message-%d-%s", count, identifier.anonymousID)))
+		}
+	}
+	payload := fmt.Appendf(nil, "[%s]", strings.Join(messages, ",\n"))
+
+	req, err := http.NewRequest(http.MethodPost, url+"/internal/v1/batch", bytes.NewReader(payload))
+	if err != nil {
+		return 0, err
+	}
+	req.SetBasicAuth(writeKey, "password")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("sending internal batch to rudder server: status code %d: %s", resp.StatusCode, string(b))
+	}
+	kithttputil.CloseResponse(resp)
 	return count, nil
 }

@@ -672,7 +672,7 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: jobsdb.Succeeded.State},
 				{A: "status_code", B: 200},
-				{A: "in_pu", B: "batch_router"},
+				{A: "in_pu", B: ""},
 				{A: "pu", B: "warehouse"},
 				{A: "initial_state", B: false},
 				{A: "terminal_state", B: true},
@@ -733,7 +733,7 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: jobsdb.Failed.State},
 				{A: "status_code", B: 400},
-				{A: "in_pu", B: "batch_router"},
+				{A: "in_pu", B: ""},
 				{A: "pu", B: "warehouse"},
 				{A: "initial_state", B: false},
 				{A: "terminal_state", B: false},
@@ -743,7 +743,7 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: jobsdb.Aborted.State},
 				{A: "status_code", B: 400},
-				{A: "in_pu", B: "batch_router"},
+				{A: "in_pu", B: ""},
 				{A: "pu", B: "warehouse"},
 				{A: "initial_state", B: false},
 				{A: "terminal_state", B: true},
@@ -2190,6 +2190,7 @@ func runRudderServer(
 	config.Set("DEST_TRANSFORM_URL", transformerURL)
 
 	config.Set("Warehouse.mode", "embedded")
+	config.Set("JobsDB.gw.pendingEvents.enabled", true)
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
 	config.Set("SourceDebugger.disableEventUploads", true)
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)

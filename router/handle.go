@@ -86,41 +86,42 @@ type Handle struct {
 
 	// state
 
-	logger                         logger.Logger
-	tracer                         stats.Tracer
-	telemetry                      *Diagnostic
-	netHandle                      NetHandle
-	customDestinationManager       customDestinationManager.DestinationManager
-	transformer                    transformer.Transformer
-	destinationsMapMu              sync.RWMutex
-	destinationsMap                map[string]*routerutils.DestinationWithSources // destinationID -> destination
-	connectionsMap                 map[types.SourceDest]types.ConnectionWithID
-	isBackendConfigInitialized     bool
-	backendConfigInitialized       chan bool
-	responseQ                      chan workerJobStatus
-	throttlingCosts                atomic.Pointer[types.EventTypeThrottlingCost]
-	batchSizeHistogramStat         stats.Measurement
-	batchInputCountStat            stats.Measurement
-	batchOutputCountStat           stats.Measurement
-	routerTransformInputCountStat  stats.Measurement
-	routerTransformOutputCountStat stats.Measurement
-	batchInputOutputDiffCountStat  stats.Measurement
-	routerResponseTransformStat    stats.Measurement
-	processRequestsHistogramStat   stats.Measurement
-	processRequestsCountStat       stats.Measurement
-	processJobsHistogramStat       stats.Measurement
-	processJobsCountStat           stats.Measurement
-	throttlingErrorStat            stats.Measurement
-	throttledStat                  stats.Measurement
-	statusDowngradedStat           func(from, to int) stats.Counter
-	deliveryPayloadMaskingStat     func(reason string) stats.Counter
-	isolationStrategy              isolation.Strategy
-	backgroundGroup                *errgroup.Group
-	backgroundCtx                  context.Context
-	backgroundCancel               context.CancelFunc
-	backgroundWait                 func() error
-	startEnded                     chan struct{}
-	newBarrierFn                   func() *eventorder.Barrier
+	logger                          logger.Logger
+	tracer                          stats.Tracer
+	telemetry                       *Diagnostic
+	netHandle                       NetHandle
+	customDestinationManager        customDestinationManager.DestinationManager
+	transformer                     transformer.Transformer
+	destinationsMapMu               sync.RWMutex
+	destinationsMap                 map[string]*routerutils.DestinationWithSources // destinationID -> destination
+	connectionsMap                  map[types.SourceDest]types.ConnectionWithID
+	isBackendConfigInitialized      bool
+	backendConfigInitialized        chan bool
+	responseQ                       chan workerJobStatus
+	throttlingCosts                 atomic.Pointer[types.EventTypeThrottlingCost]
+	batchSizeHistogramStat          stats.Measurement
+	batchInputCountStat             stats.Measurement
+	batchOutputCountStat            stats.Measurement
+	routerTransformInputCountStat   stats.Measurement
+	routerTransformOutputCountStat  stats.Measurement
+	batchInputOutputDiffCountStat   stats.Measurement
+	routerResponseTransformStat     stats.Measurement
+	processRequestsHistogramStat    stats.Measurement
+	processRequestsCountStat        stats.Measurement
+	processJobsHistogramStat        stats.Measurement
+	processJobsCountStat            stats.Measurement
+	throttlingErrorStat             stats.Measurement
+	throttledStat                   stats.Measurement
+	statusDowngradedStat            func(from, to int) stats.Counter
+	deliveryPayloadMaskingStat      func(reason string) stats.Counter
+	reportingSampleEventMaskingStat func(reason string) stats.Counter
+	isolationStrategy               isolation.Strategy
+	backgroundGroup                 *errgroup.Group
+	backgroundCtx                   context.Context
+	backgroundCancel                context.CancelFunc
+	backgroundWait                  func() error
+	startEnded                      chan struct{}
+	newBarrierFn                    func() *eventorder.Barrier
 
 	eventOrderingDisabledForWorkspace   func(workspaceID string) bool
 	eventOrderingDisabledForDestination func(destinationID string) bool
@@ -448,7 +449,6 @@ func (rt *Handle) stopIteration(err error, destinationID string) bool {
 func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
-	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
@@ -479,13 +479,12 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 				SourceCategory:          parameters.SourceCategory,
 			}
 			connectionDetailsMap[key] = cd
-			transformedAtMap[key] = parameters.TransformAt
 		}
 		sd, ok := statusDetailsMap[key]
 		if !ok {
-			sampleEvent := workerJobStatus.payload
-			if rt.transientSources.Apply(parameters.SourceID) {
-				sampleEvent = routerutils.EmptyPayload
+			sampleEvent := routerutils.EmptyPayload
+			if !rt.transientSources.Apply(parameters.SourceID) {
+				sampleEvent = rt.maskReportingSampleEvent(workerJobStatus.payload)
 			}
 			sd = &utilTypes.StatusDetail{
 				Status:         workerJobStatus.status.JobState,
@@ -542,15 +541,9 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	// REPORTING - ROUTER - START
 	utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 	for k, cd := range connectionDetailsMap {
-		var inPu string
-		if transformedAtMap[k] == "processor" {
-			inPu = utilTypes.DEST_TRANSFORMER
-		} else {
-			inPu = utilTypes.EVENT_FILTER
-		}
 		m := &utilTypes.PUReportedMetric{
 			ConnectionDetails: *cd,
-			PUDetails:         *utilTypes.CreatePUDetails(inPu, utilTypes.ROUTER, true, false),
+			PUDetails:         *utilTypes.CreatePUDetails(utilTypes.ROUTER, true, false),
 			StatusDetail:      statusDetailsMap[k],
 		}
 		if m.StatusDetail.Count != 0 {

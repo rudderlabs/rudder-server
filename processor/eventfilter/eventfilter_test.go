@@ -515,3 +515,29 @@ func TestAllowEventToDestTransformation(t *testing.T) {
 		})
 	}
 }
+
+func TestFilteredCodeForReason(t *testing.T) {
+	testCases := []struct {
+		name   string
+		reason string
+		want   int
+	}{
+		{name: "message type not supported maps to 291", reason: "Message type not supported", want: 291},
+		{name: "event not supported maps to 292", reason: "Event not supported", want: 292},
+		{name: "hybrid mode filter maps to 293", reason: "Filtering event based on hybridModeFilter", want: 293},
+		{name: "an unrecognised reason falls back to 298", reason: "some other reason", want: 298},
+		{name: "an empty reason falls back to 298", reason: "", want: 298},
+		{name: "matching is exact, a reason differing only in case falls back to 298", reason: "message type not supported", want: 298},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, FilteredCodeForReason(tc.reason))
+		})
+	}
+
+	t.Run("the reason constants keep their wire text", func(t *testing.T) {
+		require.Equal(t, "Message type not supported", MessageTypeNotSupportedReason)
+		require.Equal(t, "Event not supported", MessageEventNotSupportedReason)
+		require.Equal(t, "Filtering event based on hybridModeFilter", HybridModeFilterReason)
+	})
+}
