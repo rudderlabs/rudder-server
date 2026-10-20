@@ -163,6 +163,9 @@ func TestRunOnEphemeral(t *testing.T) {
 					{Name: "PYT_MODE", Value: "test"},
 					{Name: "WORKSPACE_ID", Value: "ws-1"},
 				}, findCreatedDeployment(t, cs).Spec.Template.Spec.Containers[0].Env)
+				// Load hands every concurrent run the same map, so a write to it would be a data race.
+				require.Equal(t, tc.env, conf.GetStringMapVar(nil, "Processor.pytDeployer.pytTestEnv"),
+					"the deployer must not write to the shared config map")
 			})
 		}
 	})
