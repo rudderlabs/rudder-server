@@ -38,17 +38,8 @@ linters:
           files:
             - $all
             # files still using ginkgo; drop entries as they are migrated
-            - '!${base-path}/enterprise/reporting/error_reporting_core_test.go'
-            - '!${base-path}/enterprise/reporting/reporting_suite_test.go'
-            - '!${base-path}/enterprise/reporting/reporting_test.go'
-            - '!${base-path}/gateway/gateway_suite_test.go'
-            - '!${base-path}/gateway/gateway_test.go'
-            - '!${base-path}/processor/manager_test.go'
             - '!${base-path}/processor/processor_suite_test.go'
             - '!${base-path}/processor/processor_test.go'
-            - '!${base-path}/router/batchrouter/batchrouter_suite_test.go'
-            - '!${base-path}/router/batchrouter/batchrouter_test.go'
-            - '!${base-path}/router/manager/manager_test.go'
             - '!${base-path}/router/masking_test.go'
             - '!${base-path}/router/router_suite_test.go'
             - '!${base-path}/router/router_test.go'
@@ -62,9 +53,6 @@ linters:
             - '!${base-path}/services/oauth/v2/oauth_handler_test.go'
             - '!${base-path}/services/oauth/v2/utils_test.go'
             - '!${base-path}/services/oauth/v2/v2_suite_test.go'
-            - '!${base-path}/services/rsources/handler_test.go'
-            - '!${base-path}/services/rsources/rsources_suite_test.go'
-            - '!${base-path}/services/rsources/stats_collector_test.go'
             - '!${base-path}/testhelper/log/log.go'
             - '!${base-path}/utils/tests/async-helper.go'
             - '!${base-path}/utils/tests/matchers.go'

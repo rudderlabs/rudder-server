@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -29,9 +27,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-var _ = Describe("Reporting", func() {
-	Context("transformMetricForPII Tests", func() {
-		It("Should match transformMetricForPII response for a valid metric", func() {
+func TestReporting(t *testing.T) {
+	t.Run("transformMetricForPII Tests", func(t *testing.T) {
+		t.Run("Should match transformMetricForPII response for a valid metric", func(t *testing.T) {
 			inputMetric := types.PUReportedMetric{
 				SourceID:        "some-source-id",
 				DestinationID:   "some-destination-id",
@@ -76,28 +74,29 @@ var _ = Describe("Reporting", func() {
 
 			piiColumnsToExclude := []string{"sample_response", "sample_event", "event_name", "event_type"}
 			transformedMetric := transformMetricForPII(inputMetric, piiColumnsToExclude)
-			assertReportMetric(expectedResponse, transformedMetric)
+			assertReportMetric(t, expectedResponse, transformedMetric)
 		})
 	})
-})
+}
 
-func assertReportMetric(expectedMetric, actualMetric types.PUReportedMetric) {
-	Expect(expectedMetric.SourceID).To(Equal(actualMetric.SourceID))
-	Expect(expectedMetric.DestinationID).To(Equal(actualMetric.DestinationID))
-	Expect(expectedMetric.SourceJobID).To(Equal(actualMetric.SourceJobID))
-	Expect(expectedMetric.SourceJobRunID).To(Equal(actualMetric.SourceJobRunID))
-	Expect(expectedMetric.SourceTaskRunID).To(Equal(actualMetric.SourceTaskRunID))
-	Expect(expectedMetric.InPU).To(Equal(actualMetric.InPU))
-	Expect(expectedMetric.PU).To(Equal(actualMetric.PU))
-	Expect(expectedMetric.TerminalPU).To(Equal(actualMetric.TerminalPU))
-	Expect(expectedMetric.InitialPU).To(Equal(actualMetric.InitialPU))
-	Expect(expectedMetric.StatusDetail.Status).To(Equal(actualMetric.StatusDetail.Status))
-	Expect(expectedMetric.StatusDetail.StatusCode).To(Equal(actualMetric.StatusDetail.StatusCode))
-	Expect(expectedMetric.StatusDetail.Count).To(Equal(actualMetric.StatusDetail.Count))
-	Expect(expectedMetric.StatusDetail.SampleResponse).To(Equal(actualMetric.StatusDetail.SampleResponse))
-	Expect(expectedMetric.StatusDetail.SampleEvent).To(Equal(actualMetric.StatusDetail.SampleEvent))
-	Expect(expectedMetric.StatusDetail.EventName).To(Equal(actualMetric.StatusDetail.EventName))
-	Expect(expectedMetric.StatusDetail.EventType).To(Equal(actualMetric.StatusDetail.EventType))
+func assertReportMetric(t *testing.T, expectedMetric, actualMetric types.PUReportedMetric) {
+	t.Helper()
+	require.Equal(t, expectedMetric.SourceID, actualMetric.SourceID)
+	require.Equal(t, expectedMetric.DestinationID, actualMetric.DestinationID)
+	require.Equal(t, expectedMetric.SourceJobID, actualMetric.SourceJobID)
+	require.Equal(t, expectedMetric.SourceJobRunID, actualMetric.SourceJobRunID)
+	require.Equal(t, expectedMetric.SourceTaskRunID, actualMetric.SourceTaskRunID)
+	require.Equal(t, expectedMetric.InPU, actualMetric.InPU)
+	require.Equal(t, expectedMetric.PU, actualMetric.PU)
+	require.Equal(t, expectedMetric.TerminalPU, actualMetric.TerminalPU)
+	require.Equal(t, expectedMetric.InitialPU, actualMetric.InitialPU)
+	require.Equal(t, expectedMetric.StatusDetail.Status, actualMetric.StatusDetail.Status)
+	require.Equal(t, expectedMetric.StatusDetail.StatusCode, actualMetric.StatusDetail.StatusCode)
+	require.Equal(t, expectedMetric.StatusDetail.Count, actualMetric.StatusDetail.Count)
+	require.Equal(t, expectedMetric.StatusDetail.SampleResponse, actualMetric.StatusDetail.SampleResponse)
+	require.Equal(t, expectedMetric.StatusDetail.SampleEvent, actualMetric.StatusDetail.SampleEvent)
+	require.Equal(t, expectedMetric.StatusDetail.EventName, actualMetric.StatusDetail.EventName)
+	require.Equal(t, expectedMetric.StatusDetail.EventType, actualMetric.StatusDetail.EventType)
 }
 
 func TestGetAggregatedReports(t *testing.T) {
@@ -456,7 +455,8 @@ func TestDefaultReporter_Report_EventNameTrimming(t *testing.T) {
 			defer db.Close()
 
 			dbMock.ExpectBegin()
-			tx, _ := db.Begin()
+			// The transaction is never committed; its context ends it when the test finishes.
+			tx, _ := db.BeginTx(t.Context(), nil)
 			mockTx := &utilsTx.Tx{Tx: tx}
 
 			// Setup mock backend config
@@ -617,7 +617,8 @@ func TestDefaultReporter_Report_EventNameTrimming_InvalidConfig(t *testing.T) {
 			defer db.Close()
 
 			dbMock.ExpectBegin()
-			tx, _ := db.Begin()
+			// The transaction is never committed; its context ends it when the test finishes.
+			tx, _ := db.BeginTx(t.Context(), nil)
 			mockTx := &utilsTx.Tx{Tx: tx}
 
 			// Setup mock backend config
