@@ -163,6 +163,17 @@ var _ = Describe("Delivery payload masking", func() {
 		Entry("invalid JSON", `{"headers":{"Authorization":"secret"}`),
 	)
 
+	DescribeTable("delivery masking fails closed for unsupported payloads even when no paths are listed",
+		func(payload string) {
+			masked, reason := maskForDelivery(json.RawMessage(payload), []string{}, true)
+			Expect(reason).To(Equal("mask_error"))
+			Expect(masked).To(MatchJSON(`{"masked":"******"}`))
+		},
+		Entry("scalar", `"secret-token"`),
+		Entry("invalid JSON", `{"headers":{"Authorization":"secret"}`),
+		Entry("array with a non-object request", `[{"endpoint":"first"},"secret-token"]`),
+	)
+
 	It("fails closed for the whole array when applying a listed path fails", func() {
 		payload := json.RawMessage(`[
 			{"endpoint":"first","headers":{"Authorization":"secret"}},

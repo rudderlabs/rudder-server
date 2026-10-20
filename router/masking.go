@@ -39,9 +39,12 @@ func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
 func maskForDelivery(payload json.RawMessage, paths []string, ok bool) (json.RawMessage, string) {
 	var masked json.RawMessage
 	var reason string
-	if ok && gjson.ValidBytes(payload) && gjson.ParseBytes(payload).IsArray() {
+	switch {
+	case ok && gjson.ValidBytes(payload) && gjson.ParseBytes(payload).IsArray():
 		masked, reason = maskSecretsInArray(payload, paths)
-	} else {
+	case ok && !isJSONObject(payload): // checked here because maskSecrets passes any payload through when no paths are listed
+		masked, reason = payload, "not_object"
+	default:
 		masked, reason = maskSecrets(payload, paths, ok)
 	}
 	switch reason {
@@ -64,6 +67,9 @@ func maskSecretsInArray(payload json.RawMessage, paths []string) (json.RawMessag
 	var maskedRequests [][]byte
 	changed := false
 	for _, request := range gjson.ParseBytes(payload).Array() {
+		if !request.IsObject() {
+			return payload, "not_object"
+		}
 		masked, reason := maskSecrets(json.RawMessage(request.Raw), paths, true)
 		switch reason {
 		case "not_object", "partial":
