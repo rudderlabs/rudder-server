@@ -34,6 +34,81 @@ linters:
               desc: use "aws-sdk-go-v2" instead
             - pkg: github.com/aws/aws-sdk-go/
               desc: use "aws-sdk-go-v2" instead
+        ginkgo:
+          files:
+            - $all
+            # files still using ginkgo; drop entries as they are migrated
+            - '!${base-path}/enterprise/reporting/error_reporting_core_test.go'
+            - '!${base-path}/enterprise/reporting/reporting_suite_test.go'
+            - '!${base-path}/enterprise/reporting/reporting_test.go'
+            - '!${base-path}/enterprise/suppress-user/suppress_user_suite_test.go'
+            - '!${base-path}/enterprise/suppress-user/suppress_user_test.go'
+            - '!${base-path}/gateway/gateway_suite_test.go'
+            - '!${base-path}/gateway/gateway_test.go'
+            - '!${base-path}/processor/manager_test.go'
+            - '!${base-path}/processor/processor_suite_test.go'
+            - '!${base-path}/processor/processor_test.go'
+            - '!${base-path}/router/batchrouter/asyncdestinationmanager/bing-ads/audience/bingads_suite_test.go'
+            - '!${base-path}/router/batchrouter/asyncdestinationmanager/bing-ads/audience/bingads_test.go'
+            - '!${base-path}/router/batchrouter/asyncdestinationmanager/bing-ads/common/common_suite_test.go'
+            - '!${base-path}/router/batchrouter/asyncdestinationmanager/bing-ads/common/token_test.go'
+            - '!${base-path}/router/batchrouter/asyncdestinationmanager/bing-ads/offline-conversions/bingads_suite_test.go'
+            - '!${base-path}/router/batchrouter/asyncdestinationmanager/bing-ads/offline-conversions/bingads_test.go'
+            - '!${base-path}/router/batchrouter/asyncdestinationmanager/eloqua/eloqua_suite_test.go'
+            - '!${base-path}/router/batchrouter/asyncdestinationmanager/eloqua/eloqua_test.go'
+            - '!${base-path}/router/batchrouter/asyncdestinationmanager/lytics_bulk_upload/lytics_suite_test.go'
+            - '!${base-path}/router/batchrouter/asyncdestinationmanager/lytics_bulk_upload/lytics_test.go'
+            - '!${base-path}/router/batchrouter/asyncdestinationmanager/yandexmetrica/yandexmetrica_suite_test.go'
+            - '!${base-path}/router/batchrouter/asyncdestinationmanager/yandexmetrica/yandexmetrica_test.go'
+            - '!${base-path}/router/batchrouter/batchrouter_suite_test.go'
+            - '!${base-path}/router/batchrouter/batchrouter_test.go'
+            - '!${base-path}/router/manager/manager_test.go'
+            - '!${base-path}/router/masking_test.go'
+            - '!${base-path}/router/router_suite_test.go'
+            - '!${base-path}/router/router_test.go'
+            - '!${base-path}/router/worker_test.go'
+            - '!${base-path}/services/debugger/cache/internal/badger/badger_suite_test.go'
+            - '!${base-path}/services/debugger/cache/internal/badger/badger_test.go'
+            - '!${base-path}/services/debugger/cache/internal/memory/memory_suite_test.go'
+            - '!${base-path}/services/debugger/cache/internal/memory/memory_test.go'
+            - '!${base-path}/services/debugger/debugger_suite_test.go'
+            - '!${base-path}/services/debugger/destination/destination_suite_test.go'
+            - '!${base-path}/services/debugger/destination/eventDeliveryStatusUploader_test.go'
+            - '!${base-path}/services/debugger/source/eventUploader_test.go'
+            - '!${base-path}/services/debugger/source/source_suite_test.go'
+            - '!${base-path}/services/debugger/transformation/transformation_suite_test.go'
+            - '!${base-path}/services/debugger/transformation/transformationStatusUploader_test.go'
+            - '!${base-path}/services/debugger/uploader_test.go'
+            - '!${base-path}/services/fileuploader/fileuploader_test.go'
+            - '!${base-path}/services/oauth/v2/cache_test.go'
+            - '!${base-path}/services/oauth/v2/controlplane/controlplane_suite_test.go'
+            - '!${base-path}/services/oauth/v2/controlplane/cp_connector_test.go'
+            - '!${base-path}/services/oauth/v2/http/client_test.go'
+            - '!${base-path}/services/oauth/v2/http/http_suite_test.go'
+            - '!${base-path}/services/oauth/v2/http/transport_test.go'
+            - '!${base-path}/services/oauth/v2/oauth_handler_test.go'
+            - '!${base-path}/services/oauth/v2/utils_test.go'
+            - '!${base-path}/services/oauth/v2/v2_suite_test.go'
+            - '!${base-path}/services/rsources/handler_test.go'
+            - '!${base-path}/services/rsources/rsources_suite_test.go'
+            - '!${base-path}/services/rsources/stats_collector_test.go'
+            - '!${base-path}/services/streammanager/kinesis/kinesis_suite_test.go'
+            - '!${base-path}/services/streammanager/streammanager_suite_test.go'
+            - '!${base-path}/services/transformer/features_impl_test.go'
+            - '!${base-path}/services/transformer/features_suite_test.go'
+            - '!${base-path}/services/transientsource/transientsource_test.go'
+            - '!${base-path}/testhelper/log/log.go'
+            - '!${base-path}/utils/misc/misc_suite_test.go'
+            - '!${base-path}/utils/misc/misc_test.go'
+            - '!${base-path}/utils/tests/async-helper.go'
+            - '!${base-path}/utils/tests/matchers.go'
+            - '!${base-path}/warehouse/utils/utils_suite_test.go'
+            - '!${base-path}/warehouse/utils/utils_test.go'
+          deny:
+            - pkg: github.com/onsi/ginkgo
+              desc: use the standard testing package with testify
+            - pkg: github.com/onsi/gomega
+              desc: use testify
     forbidigo:
       forbid:
         - pattern: ^json\.Marshal.*$
