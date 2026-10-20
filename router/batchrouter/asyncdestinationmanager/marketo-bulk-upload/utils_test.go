@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -207,106 +209,64 @@ func TestSendHTTPRequest(t *testing.T) {
 	)
 
 	csvFilePath := filepath.Join(t.TempDir(), "leads.csv")
-	if err := os.WriteFile(csvFilePath, []byte(csvContents), 0o600); err != nil {
-		t.Fatalf("writing test CSV file: %v", err)
+	require.NoError(t, os.WriteFile(csvFilePath, []byte(csvContents), 0o600))
+
+	type capturedRequest struct {
+		authorization string
+		form          map[string][]string
+		fileName      string
+		fileContents  string
 	}
 
 	tests := []struct {
 		name               string
 		deduplicationField string
-		wantLookupField    bool
 	}{
-		{
-			name:               "with deduplication field",
-			deduplicationField: "email",
-			wantLookupField:    true,
-		},
-		{
-			name: "without deduplication field",
-		},
+		{name: "with deduplication field", deduplicationField: "email"},
+		{name: "without deduplication field"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			type capturedRequest struct {
-				authorization string
-				formValues    map[string][]string
-				fileName      string
-				fileContents  string
-				err           error
-			}
-
 			captured := make(chan capturedRequest, 1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				request := capturedRequest{authorization: r.Header.Get("Authorization")}
 				r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-				// Request body is bounded above before multipart parsing.
-				if err := r.ParseMultipartForm(1 << 20); err != nil { //nolint:gosec
-					request.err = fmt.Errorf("parsing multipart form: %w", err)
-					captured <- request
-					http.Error(w, request.err.Error(), http.StatusBadRequest)
+				file, header, err := r.FormFile("file")
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
 				}
-
-				request.formValues = r.MultipartForm.Value
-				files := r.MultipartForm.File["file"]
-				if len(files) != 1 {
-					request.err = fmt.Errorf("got %d file parts, want 1", len(files))
-				} else {
-					request.fileName = files[0].Filename
-					file, err := files[0].Open()
-					if err != nil {
-						request.err = fmt.Errorf("opening uploaded file: %w", err)
-					} else {
-						contents, readErr := io.ReadAll(file)
-						closeErr := file.Close()
-						if readErr != nil {
-							request.err = fmt.Errorf("reading uploaded file: %w", readErr)
-						} else if closeErr != nil {
-							request.err = fmt.Errorf("closing uploaded file: %w", closeErr)
-						} else {
-							request.fileContents = string(contents)
-						}
-					}
+				defer file.Close()
+				contents, err := io.ReadAll(file)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
 				}
-
-				captured <- request
-				w.WriteHeader(http.StatusOK)
+				captured <- capturedRequest{
+					authorization: r.Header.Get("Authorization"),
+					form:          r.MultipartForm.Value,
+					fileName:      header.Filename,
+					fileContents:  string(contents),
+				}
 			}))
 			defer server.Close()
 
 			resp, err := sendHTTPRequest(server.URL, csvFilePath, accessToken, tt.deduplicationField)
-			if err != nil {
-				t.Fatalf("sendHTTPRequest() error = %v", err)
-			}
+			require.NoError(t, err)
 			defer resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
 
-			request := <-captured
-			if request.err != nil {
-				t.Fatal(request.err)
+			req := <-captured
+			require.Equal(t, "Bearer "+accessToken, req.authorization)
+			require.NotContains(t, req.form, "access_token")
+			require.Equal(t, []string{"csv"}, req.form["format"])
+			if tt.deduplicationField != "" {
+				require.Equal(t, []string{tt.deduplicationField}, req.form["lookupField"])
+			} else {
+				require.NotContains(t, req.form, "lookupField")
 			}
-			if request.authorization != "Bearer "+accessToken {
-				t.Errorf("Authorization header = %q, want %q", request.authorization, "Bearer "+accessToken)
-			}
-			if _, ok := request.formValues["access_token"]; ok {
-				t.Error("multipart form contains access_token field")
-			}
-			if got := request.formValues["format"]; !reflect.DeepEqual(got, []string{"csv"}) {
-				t.Errorf("format field = %v, want [csv]", got)
-			}
-			lookupField, lookupFieldPresent := request.formValues["lookupField"]
-			if lookupFieldPresent != tt.wantLookupField {
-				t.Errorf("lookupField presence = %t, want %t", lookupFieldPresent, tt.wantLookupField)
-			}
-			if tt.wantLookupField && !reflect.DeepEqual(lookupField, []string{tt.deduplicationField}) {
-				t.Errorf("lookupField = %v, want [%s]", lookupField, tt.deduplicationField)
-			}
-			if request.fileName != filepath.Base(csvFilePath) {
-				t.Errorf("uploaded file name = %q, want %q", request.fileName, filepath.Base(csvFilePath))
-			}
-			if request.fileContents != csvContents {
-				t.Errorf("uploaded file contents = %q, want %q", request.fileContents, csvContents)
-			}
+			require.Equal(t, filepath.Base(csvFilePath), req.fileName)
+			require.Equal(t, csvContents, req.fileContents)
 		})
 	}
 }
