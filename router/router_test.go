@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -43,7 +41,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	txutils "github.com/rudderlabs/rudder-server/utils/tx"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -115,9 +112,8 @@ var (
 	}
 )
 
-type testContext struct {
-	asyncHelper     testutils.AsyncTestHelper
-	dbReadBatchSize int
+type routerFixture struct {
+	conf *config.Config
 
 	mockCtrl          *gomock.Controller
 	mockRouterJobsDB  *mocksJobsDB.MockJobsDB
@@ -125,35 +121,64 @@ type testContext struct {
 	mockReporting     *mockutils.MockReporting
 }
 
-// Initialize mocks and common expectations
-func (c *testContext) Setup() {
-	c.asyncHelper.Setup()
-	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	c.mockReporting = mockutils.NewMockReporting(c.mockCtrl)
+// newRouterFixture resets the global config, initializes mocks and common expectations.
+// On cleanup it resets the global config again, waits for the router to have subscribed to the backend config
+// and closes the subscription channel.
+func newRouterFixture(t *testing.T) *routerFixture {
+	t.Helper()
+	mockCtrl := gomock.NewController(t)
+	c := &routerFixture{
+		conf:              config.New(),
+		mockCtrl:          mockCtrl,
+		mockRouterJobsDB:  mocksJobsDB.NewMockJobsDB(mockCtrl),
+		mockBackendConfig: mocksBackendConfig.NewMockBackendConfig(mockCtrl),
+		mockReporting:     mockutils.NewMockReporting(mockCtrl),
+	}
 
-	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")
-
+	subscribed := make(chan struct{})
+	unsubscribed := make(chan struct{})
 	// During Setup, router subscribes to backend config
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-			tFunc()
+			close(subscribed)
 			ch := make(chan pubsub.DataEvent, 1)
 			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{workspaceID: sampleBackendConfig}, Topic: string(topic)}
 			// on Subscribe, emulate a backend configuration event
 			go func() {
-				<-ctx.Done()
+				defer close(unsubscribed)
+				// The router subscribes with a context that is never cancelled, so the channel is also closed
+				// when the test ends; otherwise the router's backendConfigSubscriber goroutine never returns.
+				select {
+				case <-ctx.Done():
+				case <-t.Context().Done():
+				}
 				close(ch)
 			}()
 			return ch
 		})
-	c.dbReadBatchSize = 10000
+	t.Cleanup(func() {
+		select {
+		case <-subscribed:
+		case <-time.After(testTimeout):
+			t.Fatal("timed out waiting for the backend config subscription")
+			return
+		}
+		<-unsubscribed
+	})
+
+	config.Reset()
+	t.Cleanup(config.Reset)
+	return c
 }
 
-func (c *testContext) Finish() {
-	c.asyncHelper.WaitWithTimeout(testTimeout)
-	c.mockCtrl.Finish()
+// stopRouter cancels the router's background context and waits for its status-update goroutines once the test ends.
+// Handle.Shutdown only stops a router that was started, while these tests drive partition workers directly.
+func stopRouter(t *testing.T, rt *Handle) {
+	t.Cleanup(func() {
+		rt.backgroundCancel()
+		close(rt.responseQ)
+		_ = rt.backgroundWait()
+	})
 }
 
 func initRouter() {
@@ -501,28 +526,20 @@ func TestBackoff(t *testing.T) {
 	})
 }
 
-var _ = Describe("router", func() {
+func TestRouter(t *testing.T) {
 	initRouter()
 
-	var c *testContext
-	var conf *config.Config
-
-	BeforeEach(func() {
-		conf = config.New()
-		config.Reset()
+	setup := func(t *testing.T) *routerFixture {
+		t.Helper()
+		c := newRouterFixture(t)
 		config.Set("Router.jobRetention", "175200h") // 20 Years(20*365*24)
 		config.Set("Router.enableDynamicBufferSizeCalculator", false)
-		c = &testContext{}
-		c.Setup()
-	})
+		return c
+	}
 
-	AfterEach(func() {
-		config.Reset()
-		c.Finish()
-	})
-
-	Context("initialization", func() {
-		It("should initialize and recover after crash", func() {
+	t.Run("initialization", func(t *testing.T) {
+		t.Run("should initialize and recover after crash", func(t *testing.T) {
+			c := setup(t)
 			router := &Handle{
 				Reporting: &reporting.NOOP{},
 			}
@@ -530,7 +547,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -540,15 +557,15 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
+			// backendConfigSubscriber blocks on this unbuffered send until it is received
+			<-router.backendConfigInitialized
 		})
 	})
 
-	Context("normal operation", func() {
-		BeforeEach(func() {
-			conf.Set("Router.maxStatusUpdateWait", "2s")
-		})
-
-		It("should send failed and unprocessed jobs to ga destination", func() {
+	t.Run("normal operation", func(t *testing.T) {
+		t.Run("should send failed and unprocessed jobs to ga destination", func(t *testing.T) {
+			c := setup(t)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router := &Handle{
 				Reporting: &reporting.NOOP{},
@@ -559,7 +576,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -569,6 +586,7 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
@@ -620,8 +638,8 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil).After(callGetAllJobs)
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(
@@ -634,26 +652,27 @@ var _ = Describe("router", func() {
 			}).Return(nil)
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"content-type":"","response": "","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 2)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"content-type":"","response": "","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 1)
+					assertJobStatus(t, toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"content-type":"","response": "","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 2)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"content-type":"","response": "","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 1)
 				})
 
 			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			worker := newPartitionWorker(t.Context(), router, gaDestinationID)
 			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(2))
-			Eventually(func() bool {
+			require.True(t, worker.Work())
+			require.Equal(t, 2, worker.pickupCount)
+			require.Eventually(t, func() bool {
 				select {
 				case <-done:
 					return true
 				default:
 					return false
 				}
-			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
+			}, 20*time.Second, 100*time.Millisecond)
 		})
 
-		It("should abort unprocessed jobs to ga destination because of bad payload", func() {
+		t.Run("should abort unprocessed jobs to ga destination because of bad payload", func(t *testing.T) {
+			c := setup(t)
 			router := &Handle{
 				Reporting: &reporting.NOOP{},
 			}
@@ -662,7 +681,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -672,6 +691,7 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router.netHandle = mockNetHandle
@@ -706,7 +726,7 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
 				}).After(callGetAllJobs)
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&routerutils.SendPostResponse{StatusCode: 400, ResponseBody: []byte("")})
@@ -719,25 +739,26 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Aborted.State, "400", `{"content-type":"","response":"","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 1)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[0], jobsdb.Aborted.State, "400", `{"content-type":"","response":"","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 1)
 				})
 
 			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			worker := newPartitionWorker(t.Context(), router, gaDestinationID)
 			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(1))
-			Eventually(func() bool {
+			require.True(t, worker.Work())
+			require.Equal(t, 1, worker.pickupCount)
+			require.Eventually(t, func() bool {
 				select {
 				case <-done:
 					return true
 				default:
 					return false
 				}
-			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
+			}, 20*time.Second, 100*time.Millisecond)
 		})
 
-		It("aborts events that are older than a configurable duration", func() {
+		t.Run("aborts events that are older than a configurable duration", func(t *testing.T) {
+			c := setup(t)
 			config.Set("Router.jobRetention", "24h")
 			router := &Handle{
 				Reporting: &reporting.NOOP{},
@@ -747,7 +768,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -757,6 +778,7 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router.netHandle = mockNetHandle
 
@@ -788,7 +810,7 @@ var _ = Describe("router", func() {
 				JobsLimit:        10000,
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: unprocessedJobsList}, nil)
 
-			var routerAborted bool
+			var routerAborted atomic.Bool
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1)
 
@@ -798,21 +820,22 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT) {
-					Expect(drainList).To(HaveLen(1))
-					assertJobStatus(unprocessedJobsList[0], drainList[0], jobsdb.Aborted.State, "410", `{"reason": "job expired"}`, 0)
-					routerAborted = true
+					assert.Len(t, drainList, 1)
+					assertJobStatus(t, unprocessedJobsList[0], drainList[0], jobsdb.Aborted.State, "410", `{"reason": "job expired"}`, 0)
+					routerAborted.Store(true)
 				})
 
 			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			worker := newPartitionWorker(t.Context(), router, gaDestinationID)
 			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(len(unprocessedJobsList)))
-			Eventually(func() bool { return routerAborted }, 5*time.Second, 100*time.Millisecond).Should(Equal(true))
+			require.True(t, worker.Work())
+			require.Equal(t, len(unprocessedJobsList), worker.pickupCount)
+			require.Eventually(t, routerAborted.Load, 5*time.Second, 100*time.Millisecond)
 		})
 
-		It("aborts jobs that bear a abort configured jobRunId", func() {
-			conf.Set("drain.jobRunIDs", "someJobRunId")
+		t.Run("aborts jobs that bear a abort configured jobRunId", func(t *testing.T) {
+			c := setup(t)
+			c.conf.Set("drain.jobRunIDs", "someJobRunId")
 			router := &Handle{
 				Reporting: &reporting.NOOP{},
 			}
@@ -821,7 +844,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -831,6 +854,7 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router.netHandle = mockNetHandle
 
@@ -862,7 +886,7 @@ var _ = Describe("router", func() {
 				JobsLimit:        10000,
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: unprocessedJobsList}, nil)
 
-			var routerAborted bool
+			var routerAborted atomic.Bool
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1)
 
@@ -872,20 +896,21 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT) {
-					Expect(drainList).To(HaveLen(1))
-					assertJobStatus(unprocessedJobsList[0], drainList[0], jobsdb.Aborted.State, "410", `{"reason": "job expired"}`, 0)
-					routerAborted = true
+					assert.Len(t, drainList, 1)
+					assertJobStatus(t, unprocessedJobsList[0], drainList[0], jobsdb.Aborted.State, "410", `{"reason": "job expired"}`, 0)
+					routerAborted.Store(true)
 				})
 
 			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			worker := newPartitionWorker(t.Context(), router, gaDestinationID)
 			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(len(unprocessedJobsList)))
-			Eventually(func() bool { return routerAborted }, 5*time.Second, 100*time.Millisecond).Should(Equal(true))
+			require.True(t, worker.Work())
+			require.Equal(t, len(unprocessedJobsList), worker.pickupCount)
+			require.Eventually(t, routerAborted.Load, 5*time.Second, 100*time.Millisecond)
 		})
 
-		It("aborts events that have reached max retries", func() {
+		t.Run("aborts events that have reached max retries", func(t *testing.T) {
+			c := setup(t)
 			config.Set("Router.jobRetention", "24h")
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
@@ -896,7 +921,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -906,6 +931,7 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 			router.netHandle = mockNetHandle
 
 			firstAttemptedAt := time.Now().Add(-router.reloadableConfig.retryTimeWindow.Load())
@@ -943,7 +969,7 @@ var _ = Describe("router", func() {
 				JobsLimit:        10000,
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: jobs}, nil)
 
-			var routerAborted bool
+			var routerAborted atomic.Bool
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1)
 
@@ -953,8 +979,9 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT) {
-					Expect(drainList).To(HaveLen(1))
+					assert.Len(t, drainList, 1)
 					assertJobStatus(
+						t,
 						jobs[0],
 						drainList[0],
 						jobsdb.Aborted.State,
@@ -966,21 +993,19 @@ var _ = Describe("router", func() {
 						),
 						jobs[0].LastJobStatus.AttemptNum,
 					)
-					routerAborted = true
+					routerAborted.Store(true)
 				})
 
 			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			worker := newPartitionWorker(t.Context(), router, gaDestinationID)
 			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(len(jobs)))
-			Eventually(func() bool {
-				return routerAborted
-			}, 60*time.Second, 10*time.Millisecond).
-				Should(Equal(true), fmt.Sprintf("Router should abort (actual: %t)", routerAborted))
+			require.True(t, worker.Work())
+			require.Equal(t, len(jobs), worker.pickupCount)
+			require.Eventually(t, routerAborted.Load, 60*time.Second, 10*time.Millisecond, "Router should abort")
 		})
 
-		It("aborts sources events that have reached max retries - different limits", func() {
+		t.Run("aborts sources events that have reached max retries - different limits", func(t *testing.T) {
+			c := setup(t)
 			config.Set("Router.jobRetention", "24h")
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
@@ -991,7 +1016,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -1001,6 +1026,7 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 			router.netHandle = mockNetHandle
 
 			firstAttemptedAt := time.Now().Add(-router.reloadableConfig.sourcesRetryTimeWindow.Load())
@@ -1047,7 +1073,7 @@ var _ = Describe("router", func() {
 				JobsLimit:        10000,
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{Jobs: jobs}, nil)
 
-			var routerAborted bool
+			var routerAborted atomic.Bool
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1)
 
@@ -1057,8 +1083,9 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT) {
-					Expect(drainList).To(HaveLen(1))
+					assert.Len(t, drainList, 1)
 					assertJobStatus(
+						t,
 						jobs[0],
 						drainList[0],
 						jobsdb.Aborted.State,
@@ -1070,20 +1097,18 @@ var _ = Describe("router", func() {
 						),
 						jobs[0].LastJobStatus.AttemptNum,
 					)
-					routerAborted = true
+					routerAborted.Store(true)
 				})
 
 			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			worker := newPartitionWorker(t.Context(), router, gaDestinationID)
 			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(len(jobs)))
-			Eventually(func() bool {
-				return routerAborted
-			}, 60*time.Second, 10*time.Millisecond).
-				Should(Equal(true), fmt.Sprintf("Router should abort (actual: %t)", routerAborted))
+			require.True(t, worker.Work())
+			require.Equal(t, len(jobs), worker.pickupCount)
+			require.Eventually(t, routerAborted.Load, 60*time.Second, 10*time.Millisecond, "Router should abort")
 		})
-		It("aborts jobs if destination is not found in config", func() {
+		t.Run("aborts jobs if destination is not found in config", func(t *testing.T) {
+			c := setup(t)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
@@ -1094,7 +1119,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -1104,6 +1129,7 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 			router.transformer = mockTransformer
 			router.defaultNoOfWorkers = 1
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(5)
@@ -1142,7 +1168,7 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 3)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 3)
 				}).Return(nil).After(callAllJobs)
 
 			done := make(chan struct{})
@@ -1162,6 +1188,7 @@ var _ = Describe("router", func() {
 				Times(1).
 				Do(func(ctx context.Context, _ jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(
+						t,
 						unprocessedJobsList[0],
 						statuses[0],
 						jobsdb.Aborted.State,
@@ -1171,27 +1198,24 @@ var _ = Describe("router", func() {
 					)
 				}).Return(nil)
 			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			worker := newPartitionWorker(t.Context(), router, gaDestinationID)
 			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(1))
-			Eventually(func() bool {
+			require.True(t, worker.Work())
+			require.Equal(t, 1, worker.pickupCount)
+			require.Eventually(t, func() bool {
 				select {
 				case <-done:
 					return true
 				default:
 					return false
 				}
-			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
+			}, 20*time.Second, 100*time.Millisecond)
 		})
 	})
 
-	Context("router batching", func() {
-		BeforeEach(func() {
-			conf.Set("Router.maxStatusUpdateWait", "2s")
-		})
-
-		It("can batch jobs together", func() {
+	t.Run("router batching", func(t *testing.T) {
+		t.Run("can batch jobs together", func(t *testing.T) {
+			c := setup(t)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
@@ -1202,7 +1226,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -1212,6 +1236,7 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 
 			router.transformer = mockTransformer
 
@@ -1281,17 +1306,17 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
-					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil)
 
 			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callAllJobs).Times(1).
 				DoAndReturn(
 					func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-						assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
-						assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
-						assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[1])
+						assertRouterJobs(t, &transformMessage.Data[0], toRetryJobsList[0])
+						assertRouterJobs(t, &transformMessage.Data[1], unprocessedJobsList[0])
+						assertRouterJobs(t, &transformMessage.Data[2], unprocessedJobsList[1])
 						return []types.DestinationJobT{
 							{
 								Message: []byte(`{"message": "some transformed message"}`),
@@ -1327,36 +1352,37 @@ var _ = Describe("router", func() {
 			}).Return(nil)
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
-					assertTransformJobStatuses(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", 1)
-					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", 1)
-					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Succeeded.State, "200", 1)
+					assertTransformJobStatuses(t, toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", 1)
+					assertTransformJobStatuses(t, unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", 1)
+					assertTransformJobStatuses(t, unprocessedJobsList[1], statuses[2], jobsdb.Succeeded.State, "200", 1)
 				})
 			c.mockReporting.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
 				func(_ context.Context, metrics []*utilTypes.PUReportedMetric, _ *txutils.Tx) error {
-					Expect(metrics).To(HaveLen(1))
-					Expect(metrics[0].StatusDetail.StatusCode).To(Equal(200))
-					Expect(metrics[0].StatusDetail.Status).To(Equal(jobsdb.Succeeded.State))
-					Expect(metrics[0].StatusDetail.SampleEvent).To(Equal(toRetryJobsList[0].EventPayload))
+					assert.Len(t, metrics, 1)
+					assert.Equal(t, 200, metrics[0].StatusDetail.StatusCode)
+					assert.Equal(t, jobsdb.Succeeded.State, metrics[0].StatusDetail.Status)
+					assert.Equal(t, toRetryJobsList[0].EventPayload, metrics[0].StatusDetail.SampleEvent)
 					return nil
 				},
 			)
 
 			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			worker := newPartitionWorker(t.Context(), router, gaDestinationID)
 			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(3))
-			Eventually(func() bool {
+			require.True(t, worker.Work())
+			require.Equal(t, 3, worker.pickupCount)
+			require.Eventually(t, func() bool {
 				select {
 				case <-done:
 					return true
 				default:
 					return false
 				}
-			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
+			}, 20*time.Second, 100*time.Millisecond)
 		})
 
-		It("fails jobs if batching fails for few of the jobs", func() {
+		t.Run("fails jobs if batching fails for few of the jobs", func(t *testing.T) {
+			c := setup(t)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
@@ -1367,7 +1393,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -1377,6 +1403,7 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 
 			router.transformer = mockTransformer
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
@@ -1438,16 +1465,16 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
-					assertJobStatus(unprocessedJobsList[1], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
-					assertJobStatus(unprocessedJobsList[2], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, unprocessedJobsList[1], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, unprocessedJobsList[2], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil).After(callAllJobs)
 
 			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-					assertRouterJobs(&transformMessage.Data[0], unprocessedJobsList[0])
-					assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[1])
-					assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[2])
+					assertRouterJobs(t, &transformMessage.Data[0], unprocessedJobsList[0])
+					assertRouterJobs(t, &transformMessage.Data[1], unprocessedJobsList[1])
+					assertRouterJobs(t, &transformMessage.Data[2], unprocessedJobsList[2])
 
 					return []types.DestinationJobT{
 						{
@@ -1493,43 +1520,39 @@ var _ = Describe("router", func() {
 			}).Return(nil)
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
-					assertTransformJobStatuses(unprocessedJobsList[0], statuses[0], jobsdb.Failed.State, "500", 1)
-					assertTransformJobStatuses(unprocessedJobsList[1], statuses[1], jobsdb.Waiting.State, "", 0)
-					assertTransformJobStatuses(unprocessedJobsList[2], statuses[2], jobsdb.Waiting.State, "", 0)
+					assertTransformJobStatuses(t, unprocessedJobsList[0], statuses[0], jobsdb.Failed.State, "500", 1)
+					assertTransformJobStatuses(t, unprocessedJobsList[1], statuses[1], jobsdb.Waiting.State, "", 0)
+					assertTransformJobStatuses(t, unprocessedJobsList[2], statuses[2], jobsdb.Waiting.State, "", 0)
 				})
 			c.mockReporting.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
 				func(_ context.Context, metrics []*utilTypes.PUReportedMetric, _ *txutils.Tx) error {
-					Expect(metrics).To(HaveLen(1))
-					Expect(metrics[0].StatusDetail.StatusCode).To(Equal(500))
-					Expect(metrics[0].StatusDetail.Status).To(Equal(jobsdb.Failed.State))
-					Expect(metrics[0].StatusDetail.SampleEvent).To(Equal(json.RawMessage(gaPayload)))
-					Expect(metrics[0].StatusDetail.SampleResponse).To(ContainSubstring(`"routerSubStage":"router_dest_transformer"`))
+					assert.Len(t, metrics, 1)
+					assert.Equal(t, 500, metrics[0].StatusDetail.StatusCode)
+					assert.Equal(t, jobsdb.Failed.State, metrics[0].StatusDetail.Status)
+					assert.Equal(t, json.RawMessage(gaPayload), metrics[0].StatusDetail.SampleEvent)
+					assert.Contains(t, metrics[0].StatusDetail.SampleResponse, `"routerSubStage":"router_dest_transformer"`)
 
 					return nil
 				},
 			)
 
 			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			worker := newPartitionWorker(t.Context(), router, gaDestinationID)
 			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(3))
-			Eventually(func() bool {
+			require.True(t, worker.Work())
+			require.Equal(t, 3, worker.pickupCount)
+			require.Eventually(t, func() bool {
 				select {
 				case <-done:
 					return true
 				default:
 					return false
 				}
-			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
+			}, 20*time.Second, 100*time.Millisecond)
 		})
 	})
 
-	Context("router transform", func() {
-		BeforeEach(func() {
-			conf.Set("Router.maxStatusUpdateWait", "2s")
-			conf.Set("Router.jobsBatchTimeout", "10s")
-		})
+	t.Run("router transform", func(t *testing.T) {
 		/*
 			Router transform
 				Job1 u1
@@ -1545,7 +1568,8 @@ var _ = Describe("router", func() {
 			[4] should be dropped
 			[5] should be sent
 		*/
-		It("can transform jobs at router", func() {
+		t.Run("can transform jobs at router", func(t *testing.T) {
+			c := setup(t)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
@@ -1556,7 +1580,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -1566,6 +1590,7 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 			router.transformer = mockTransformer
 			router.defaultNoOfWorkers = 1
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(5)
@@ -1658,20 +1683,20 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
-					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
-					assertJobStatus(unprocessedJobsList[2], statuses[3], jobsdb.Executing.State, "", `{}`, 0)
-					assertJobStatus(unprocessedJobsList[3], statuses[4], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, unprocessedJobsList[2], statuses[3], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, unprocessedJobsList[3], statuses[4], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil).After(callAllJobs)
 
 			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-					assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
-					assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
-					assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[1])
-					assertRouterJobs(&transformMessage.Data[3], unprocessedJobsList[2])
-					assertRouterJobs(&transformMessage.Data[4], unprocessedJobsList[3])
+					assertRouterJobs(t, &transformMessage.Data[0], toRetryJobsList[0])
+					assertRouterJobs(t, &transformMessage.Data[1], unprocessedJobsList[0])
+					assertRouterJobs(t, &transformMessage.Data[2], unprocessedJobsList[1])
+					assertRouterJobs(t, &transformMessage.Data[3], unprocessedJobsList[2])
+					assertRouterJobs(t, &transformMessage.Data[4], unprocessedJobsList[3])
 
 					return []types.DestinationJobT{
 						{
@@ -1752,21 +1777,22 @@ var _ = Describe("router", func() {
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			worker := newPartitionWorker(t.Context(), router, gaDestinationID)
 			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(5))
-			Eventually(func() bool {
+			require.True(t, worker.Work())
+			require.Equal(t, 5, worker.pickupCount)
+			require.Eventually(t, func() bool {
 				select {
 				case <-done:
 					return true
 				default:
 					return false
 				}
-			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
+			}, 20*time.Second, 100*time.Millisecond)
 		})
 
-		It("skip sendpost && (if statusCode returned is 298 then mark as filtered & if statusCode returned is 299 then mark as succeeded)", func() {
+		t.Run("skip sendpost && (if statusCode returned is 298 then mark as filtered & if statusCode returned is 299 then mark as succeeded)", func(t *testing.T) {
+			c := setup(t)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
@@ -1777,7 +1803,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -1787,6 +1813,7 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 			router.transformer = mockTransformer
 			router.defaultNoOfWorkers = 1
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
@@ -1853,16 +1880,16 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
-					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil).After(callAllJobs)
 
 			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-					assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
-					assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
-					assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[1])
+					assertRouterJobs(t, &transformMessage.Data[0], toRetryJobsList[0])
+					assertRouterJobs(t, &transformMessage.Data[1], unprocessedJobsList[0])
+					assertRouterJobs(t, &transformMessage.Data[2], unprocessedJobsList[1])
 
 					return []types.DestinationJobT{
 						{
@@ -1916,24 +1943,24 @@ var _ = Describe("router", func() {
 			}).Return(nil)
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList))).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT) {
-					assertTransformJobStatuses(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", 2)
-					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Filtered.State, "298", 1)
-					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Succeeded.State, "299", 1)
+					assertTransformJobStatuses(t, toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", 2)
+					assertTransformJobStatuses(t, unprocessedJobsList[0], statuses[1], jobsdb.Filtered.State, "298", 1)
+					assertTransformJobStatuses(t, unprocessedJobsList[1], statuses[2], jobsdb.Succeeded.State, "299", 1)
 				})
 
 			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			worker := newPartitionWorker(t.Context(), router, gaDestinationID)
 			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(3))
-			Eventually(func() bool {
+			require.True(t, worker.Work())
+			require.Equal(t, 3, worker.pickupCount)
+			require.Eventually(t, func() bool {
 				select {
 				case <-done:
 					return true
 				default:
 					return false
 				}
-			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
+			}, 20*time.Second, 100*time.Millisecond)
 		})
 
 		/*
@@ -1946,7 +1973,8 @@ var _ = Describe("router", func() {
 				[2] should be dropped
 				[3] should be dropped
 		*/
-		It("marks all jobs of a user failed if a preceding job fails due to transformation failure", func() {
+		t.Run("marks all jobs of a user failed if a preceding job fails due to transformation failure", func(t *testing.T) {
+			c := setup(t)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router := &Handle{
 				Reporting: &reporting.NOOP{},
@@ -1956,7 +1984,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -1966,6 +1994,7 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
 
@@ -2034,16 +2063,16 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
-					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil).After(callAllJobs)
 
 			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-					assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
-					assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
-					assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[1])
+					assertRouterJobs(t, &transformMessage.Data[0], toRetryJobsList[0])
+					assertRouterJobs(t, &transformMessage.Data[1], unprocessedJobsList[0])
+					assertRouterJobs(t, &transformMessage.Data[2], unprocessedJobsList[1])
 
 					return []types.DestinationJobT{
 						{
@@ -2098,26 +2127,24 @@ var _ = Describe("router", func() {
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			worker := newPartitionWorker(t.Context(), router, gaDestinationID)
 			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(3))
-			Eventually(func() bool {
+			require.True(t, worker.Work())
+			require.Equal(t, 3, worker.pickupCount)
+			require.Eventually(t, func() bool {
 				select {
 				case <-done:
 					return true
 				default:
 					return false
 				}
-			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
+			}, 20*time.Second, 100*time.Millisecond)
 		})
 	})
 
-	Context("transformer proxy", func() {
-		BeforeEach(func() {
-			conf.Set("Router.maxStatusUpdateWait", "2s")
-		})
-		It("all jobs should go through transformer proxy and succeed", func() {
+	t.Run("transformer proxy", func(t *testing.T) {
+		t.Run("all jobs should go through transformer proxy and succeed", func(t *testing.T) {
+			c := setup(t)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router := &Handle{
 				Reporting: &reporting.NOOP{},
@@ -2127,7 +2154,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -2137,6 +2164,7 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
 
@@ -2193,14 +2221,14 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil).After(callAllJobs)
 
 			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-					assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
-					assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
+					assertRouterJobs(t, &transformMessage.Data[0], toRetryJobsList[0])
+					assertRouterJobs(t, &transformMessage.Data[1], unprocessedJobsList[0])
 
 					return []types.DestinationJobT{
 						{
@@ -2262,20 +2290,21 @@ var _ = Describe("router", func() {
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			worker := newPartitionWorker(t.Context(), router, gaDestinationID)
 			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(2))
-			Eventually(func() bool {
+			require.True(t, worker.Work())
+			require.Equal(t, 2, worker.pickupCount)
+			require.Eventually(t, func() bool {
 				select {
 				case <-done:
 					return true
 				default:
 					return false
 				}
-			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
+			}, 20*time.Second, 100*time.Millisecond)
 		})
-		It("all jobs should be marked failed when partial 5xx failure occurred", func() {
+		t.Run("all jobs should be marked failed when partial 5xx failure occurred", func(t *testing.T) {
+			c := setup(t)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router := &Handle{
 				Reporting: &reporting.NOOP{},
@@ -2285,7 +2314,7 @@ var _ = Describe("router", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -2295,6 +2324,7 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
 
@@ -2351,14 +2381,14 @@ var _ = Describe("router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(t, toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil).After(callAllJobs)
 
 			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-					assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
-					assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
+					assertRouterJobs(t, &transformMessage.Data[0], toRetryJobsList[0])
+					assertRouterJobs(t, &transformMessage.Data[1], unprocessedJobsList[0])
 
 					return []types.DestinationJobT{
 						{
@@ -2415,60 +2445,63 @@ var _ = Describe("router", func() {
 			}).Return(nil)
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Failed.State, "500", `{"content-type":"application/json","response": "{\"message\": \"some message1\"}","firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`, 2)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Waiting.State, "", `{"content-type":"application/json","response": "{\"message\": \"some message2\"}","firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`, 0)
+					assertJobStatus(t, toRetryJobsList[0], statuses[0], jobsdb.Failed.State, "500", `{"content-type":"application/json","response": "{\"message\": \"some message1\"}","firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`, 2)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[1], jobsdb.Waiting.State, "", `{"content-type":"application/json","response": "{\"message\": \"some message2\"}","firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`, 0)
 				})
 
 			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			worker := newPartitionWorker(t.Context(), router, gaDestinationID)
 			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(2))
-			Eventually(func() bool {
+			require.True(t, worker.Work())
+			require.Equal(t, 2, worker.pickupCount)
+			require.Eventually(t, func() bool {
 				select {
 				case <-done:
 					return true
 				default:
 					return false
 				}
-			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
+			}, 20*time.Second, 100*time.Millisecond)
 		})
 	})
-})
+}
 
-func assertRouterJobs(routerJob *types.RouterJobT, job *jobsdb.JobT) {
-	Expect(routerJob.JobMetadata.JobID).To(Equal(job.JobID))
-	Expect(routerJob.JobMetadata.UserID).To(Equal(job.UserID))
-	Expect(routerJob.Connection).To(Equal(backendconfig.Connection{
+// The assertion helpers below run inside mock callbacks, which the router may invoke from its own
+// goroutines, so they use assert.
+
+func assertRouterJobs(t assert.TestingT, routerJob *types.RouterJobT, job *jobsdb.JobT) {
+	assert.Equal(t, job.JobID, routerJob.JobMetadata.JobID)
+	assert.Equal(t, job.UserID, routerJob.JobMetadata.UserID)
+	assert.Equal(t, backendconfig.Connection{
 		Enabled:          true,
 		SourceID:         sourceIDEnabled,
 		DestinationID:    gaDestinationID,
 		ProcessorEnabled: true,
 		Config:           map[string]any{"key": "value"},
-	}))
+	}, routerJob.Connection)
 }
 
-func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode, errorResponse string, attemptNum int) {
-	Expect(status.JobID).To(Equal(job.JobID))
-	Expect(status.JobState).To(Equal(expectedState))
-	Expect(status.ErrorCode).To(Equal(errorCode))
+func assertJobStatus(t assert.TestingT, job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode, errorResponse string, attemptNum int) {
+	assert.Equal(t, job.JobID, status.JobID)
+	assert.Equal(t, expectedState, status.JobState)
+	assert.Equal(t, errorCode, status.ErrorCode)
 	if attemptNum >= 1 {
-		Expect(gjson.GetBytes(status.ErrorResponse, "content-type").String()).To(Equal(gjson.Get(errorResponse, "content-type").String()))
-		Expect(gjson.GetBytes(status.ErrorResponse, "response").String()).To(Equal(gjson.Get(errorResponse, "response").String()))
-		Expect(gjson.Get(string(status.ErrorResponse), "reason").String()).To(Equal(gjson.Get(errorResponse, "reason").String()))
+		assert.Equal(t, gjson.Get(errorResponse, "content-type").String(), gjson.GetBytes(status.ErrorResponse, "content-type").String())
+		assert.Equal(t, gjson.Get(errorResponse, "response").String(), gjson.GetBytes(status.ErrorResponse, "response").String())
+		assert.Equal(t, gjson.Get(errorResponse, "reason").String(), gjson.Get(string(status.ErrorResponse), "reason").String())
 	}
-	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 10*time.Second))
-	Expect(status.RetryTime).To(BeTemporally(">=", status.ExecTime, 10*time.Second))
-	Expect(status.AttemptNum).To(Equal(attemptNum))
+	assert.WithinDuration(t, time.Now(), status.ExecTime, 10*time.Second)
+	assert.GreaterOrEqual(t, status.RetryTime, status.ExecTime)
+	assert.Equal(t, attemptNum, status.AttemptNum)
 }
 
-func assertTransformJobStatuses(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode string, attemptNum int) {
-	Expect(status.JobID).To(Equal(job.JobID))
-	Expect(status.JobState).To(Equal(expectedState))
-	Expect(status.ErrorCode).To(Equal(errorCode))
-	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 10*time.Second))
-	Expect(status.RetryTime).To(BeTemporally(">=", status.ExecTime, 10*time.Second))
-	Expect(status.AttemptNum).To(Equal(attemptNum))
+func assertTransformJobStatuses(t assert.TestingT, job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode string, attemptNum int) {
+	assert.Equal(t, job.JobID, status.JobID)
+	assert.Equal(t, expectedState, status.JobState)
+	assert.Equal(t, errorCode, status.ErrorCode)
+	assert.WithinDuration(t, time.Now(), status.ExecTime, 10*time.Second)
+	assert.GreaterOrEqual(t, status.RetryTime, status.ExecTime)
+	assert.Equal(t, attemptNum, status.AttemptNum)
 }
 
 func Benchmark_SJSON_SET(b *testing.B) {

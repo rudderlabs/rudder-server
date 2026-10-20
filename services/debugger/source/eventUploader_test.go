@@ -21,7 +21,7 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
 const (
@@ -34,12 +34,6 @@ const (
 	DestinationIDEnabledB = "enabled-destination-b" // test destination batch router
 	DestinationIDDisabled = "disabled-destination"
 )
-
-type basicAuthMock struct{}
-
-func (*basicAuthMock) BasicAuth() (string, string) { return "test", "test" }
-func (*basicAuthMock) ID() string                  { return "test" }
-func (*basicAuthMock) Type() deployment.Type       { return "test" }
 
 type eventUploaderFixture struct {
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
@@ -54,7 +48,7 @@ func newEventUploaderFixture(t *testing.T) *eventUploaderFixture {
 		mockBackendConfig: mocksBackendConfig.NewMockBackendConfig(ctrl),
 		recordingEvent:    `{"t":"a"}`,
 	}
-	f.mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&basicAuthMock{})
+	f.mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&testutils.BasicAuthMock{})
 	f.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).AnyTimes().
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 			ch := make(chan pubsub.DataEvent, 1)
