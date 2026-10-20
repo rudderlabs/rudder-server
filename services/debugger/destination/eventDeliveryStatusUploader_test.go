@@ -2,10 +2,13 @@ package destinationdebugger
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"path"
+	"testing"
+	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"go.uber.org/mock/gomock"
 
@@ -17,7 +20,7 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 const (
@@ -163,173 +166,192 @@ var faultyData = DeliveryStatusT{
 	EventType:     `some_event_type`,
 }
 
-type eventDeliveryStatusUploaderContext struct {
-	mockCtrl          *gomock.Controller
+type basicAuthMock struct{}
+
+func (*basicAuthMock) BasicAuth() (string, string) { return "test", "test" }
+func (*basicAuthMock) ID() string                  { return "test" }
+func (*basicAuthMock) Type() deployment.Type       { return "test" }
+
+type eventDeliveryStatusUploaderFixture struct {
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
+	deliveryStatus    DeliveryStatusT
+	h                 DestinationDebugger
 }
 
-func (c *eventDeliveryStatusUploaderContext) Setup() {
-	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	c.mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&testutils.BasicAuthMock{})
+func newEventDeliveryStatusUploaderFixture(t *testing.T) *eventDeliveryStatusUploaderFixture {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	f := &eventDeliveryStatusUploaderFixture{
+		mockBackendConfig: mocksBackendConfig.NewMockBackendConfig(ctrl),
+	}
+	f.mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&basicAuthMock{})
+	f.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+			// on Subscribe, emulate a backend configuration event
+			ch := make(chan pubsub.DataEvent, 1)
+			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{WorkspaceID: sampleBackendConfig}, Topic: string(topic)}
+			go func() {
+				<-ctx.Done()
+				close(ch)
+			}()
+			return ch
+		}).AnyTimes()
+
+	f.deliveryStatus = DeliveryStatusT{
+		DestinationID: DestinationIDEnabledA,
+		SourceID:      SourceIDEnabled,
+		Payload:       []byte(`{"t":"a"}`),
+		AttemptNum:    1,
+		JobState:      `failed`,
+		ErrorCode:     `404`,
+		ErrorResponse: []byte(`{"name": "error"}`),
+		SentAt:        "",
+		EventName:     `some_event_name`,
+		EventType:     `some_event_type`,
+	}
+	return f
 }
 
-func initEventDeliveryStatusUploader() {
+func (f *eventDeliveryStatusUploaderFixture) withBadgerHandle(t *testing.T) {
+	t.Helper()
+	config.Reset()
+	t.Cleanup(config.Reset)
+	config.Set("RUDDER_TMPDIR", path.Join(t.TempDir(), rand.String(10)))
+	config.Set("LiveEvent.cache.GCTime", "1s")
+	f.startHandle(t)
+}
+
+func (f *eventDeliveryStatusUploaderFixture) withMemoryHandle(t *testing.T) {
+	t.Helper()
+	config.Reset()
+	t.Cleanup(config.Reset)
+	config.Set("DestinationDebugger.cacheType", 0)
+	config.Set("RUDDER_TMPDIR", path.Join(t.TempDir(), rand.String(10)))
+	config.Set("LiveEvent.cache.GCTime", "1s")
+	f.startHandle(t)
+}
+
+func (f *eventDeliveryStatusUploaderFixture) startHandle(t *testing.T) {
+	t.Helper()
+	// The uploader flushes recorded events on Stop; keep them off the real config backend.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	config.Set("CONFIG_BACKEND_URL", srv.URL)
+	h, err := NewHandle(f.mockBackendConfig)
+	require.NoError(t, err)
+	f.h = h
+	t.Cleanup(h.Stop)
+}
+
+func TestEventDeliveryStatusUploader(t *testing.T) {
 	config.Reset()
 	logger.Reset()
 	misc.Init()
-}
 
-var _ = Describe("eventDeliveryStatusUploader", func() {
-	initEventDeliveryStatusUploader()
-
-	var (
-		c              *eventDeliveryStatusUploaderContext
-		deliveryStatus DeliveryStatusT
-		h              DestinationDebugger
-	)
-
-	BeforeEach(func() {
-		c = &eventDeliveryStatusUploaderContext{}
-		c.Setup()
-
-		c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
-			DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-				// on Subscribe, emulate a backend configuration event
-				ch := make(chan pubsub.DataEvent, 1)
-				ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{WorkspaceID: sampleBackendConfig}, Topic: string(topic)}
-				go func() {
-					<-ctx.Done()
-					close(ch)
-				}()
-				return ch
-			}).AnyTimes()
-
-		deliveryStatus = DeliveryStatusT{
-			DestinationID: DestinationIDEnabledA,
-			SourceID:      SourceIDEnabled,
-			Payload:       []byte(`{"t":"a"}`),
-			AttemptNum:    1,
-			JobState:      `failed`,
-			ErrorCode:     `404`,
-			ErrorResponse: []byte(`{"name": "error"}`),
-			SentAt:        "",
-			EventName:     `some_event_name`,
-			EventType:     `some_event_type`,
-		}
-	})
-
-	AfterEach(func() {
-		c.mockCtrl.Finish()
-	})
-
-	Context("RecordEventDeliveryStatus Badger", func() {
-		BeforeEach(func() {
-			var err error
-			config.Reset()
-			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
-			config.Set("LiveEvent.cache.GCTime", "1s")
-			h, err = NewHandle(c.mockBackendConfig)
-			Expect(err).To(BeNil())
-		})
-
-		AfterEach(func() {
-			h.Stop()
-		})
-
-		It("returns false if disableEventDeliveryStatusUploads is true", func() {
-			h.Stop()
-			h, err := NewHandle(c.mockBackendConfig)
-			Expect(err).To(BeNil())
+	t.Run("RecordEventDeliveryStatus Badger", func(t *testing.T) {
+		t.Run("returns false if disableEventDeliveryStatusUploads is true", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withBadgerHandle(t)
+			f.h.Stop()
+			h, err := NewHandle(f.mockBackendConfig)
+			require.NoError(t, err)
+			t.Cleanup(h.Stop)
 			h.(*Handle).disableEventDeliveryStatusUploads = config.SingleValueLoader(true)
-			Expect(h.RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())
+			require.False(t, h.RecordEventDeliveryStatus(DestinationIDEnabledA, &f.deliveryStatus))
 		})
 
-		It("returns false if destination_id is not in uploadEnabledDestinationIDs", func() {
-			Expect(h.RecordEventDeliveryStatus(DestinationIDEnabledB, &deliveryStatus)).To(BeFalse())
+		t.Run("returns false if destination_id is not in uploadEnabledDestinationIDs", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withBadgerHandle(t)
+			require.False(t, f.h.RecordEventDeliveryStatus(DestinationIDEnabledB, &f.deliveryStatus))
 		})
 
-		It("records events", func() {
-			eventuallyFunc := func() bool { return h.RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus) }
-			Eventually(eventuallyFunc).Should(BeTrue())
+		t.Run("records events", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withBadgerHandle(t)
+			eventuallyFunc := func() bool { return f.h.RecordEventDeliveryStatus(DestinationIDEnabledA, &f.deliveryStatus) }
+			require.Eventually(t, eventuallyFunc, time.Second, 10*time.Millisecond)
 		})
 
-		It("transforms payload properly", func() {
+		t.Run("transforms payload properly", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withBadgerHandle(t)
 			var edsUploader EventDeliveryStatusUploader
 			var payload []*DeliveryStatusT
-			payload = append(payload, &deliveryStatus)
+			payload = append(payload, &f.deliveryStatus)
 			rawJSON, err := edsUploader.Transform(payload)
-			Expect(err).To(BeNil())
-			Expect(gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventName`).String()).To(Equal("some_event_name"))
-			Expect(gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventType`).String()).To(Equal("some_event_type"))
+			require.NoError(t, err)
+			require.Equal(t, "some_event_name", gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventName`).String())
+			require.Equal(t, "some_event_type", gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventType`).String())
 		})
 
-		It("sends empty json if transformation fails", func() {
+		t.Run("sends empty json if transformation fails", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withBadgerHandle(t)
 			edsUploader := NewEventDeliveryStatusUploader(logger.NOP)
 			var payload []*DeliveryStatusT
 			payload = append(payload, &faultyData)
 			rawJSON, err := edsUploader.Transform(payload)
 			if err != nil {
-				Expect(err.Error()).To(Not(BeNil()))
+				require.Error(t, err)
 			} else { // jsoniter doesn't return an error, just sets null for invalid json.RawMessage
-				Expect(gjson.GetBytes(rawJSON, DestinationIDEnabledA+".0.payload").Raw).To(Equal("null"))
+				require.Equal(t, "null", gjson.GetBytes(rawJSON, DestinationIDEnabledA+".0.payload").Raw)
 			}
 		})
 	})
 
-	Context("RecordEventDeliveryStatus Memory", func() {
-		BeforeEach(func() {
-			var err error
-			config.Reset()
-			config.Set("DestinationDebugger.cacheType", 0)
-			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
-			config.Set("LiveEvent.cache.GCTime", "1s")
-			h, err = NewHandle(c.mockBackendConfig)
-			Expect(err).To(BeNil())
-		})
-
-		AfterEach(func() {
-			h.Stop()
-		})
-
-		It("returns false if disableEventDeliveryStatusUploads is true", func() {
-			h.Stop()
-			h, err := NewHandle(c.mockBackendConfig)
-			Expect(err).To(BeNil())
+	t.Run("RecordEventDeliveryStatus Memory", func(t *testing.T) {
+		t.Run("returns false if disableEventDeliveryStatusUploads is true", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withMemoryHandle(t)
+			f.h.Stop()
+			h, err := NewHandle(f.mockBackendConfig)
+			require.NoError(t, err)
+			t.Cleanup(h.Stop)
 			h.(*Handle).disableEventDeliveryStatusUploads = config.SingleValueLoader(true)
-			Expect(h.RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())
+			require.False(t, h.RecordEventDeliveryStatus(DestinationIDEnabledA, &f.deliveryStatus))
 		})
 
-		It("returns false if destination_id is not in uploadEnabledDestinationIDs", func() {
-			Expect(h.RecordEventDeliveryStatus(DestinationIDEnabledB, &deliveryStatus)).To(BeFalse())
+		t.Run("returns false if destination_id is not in uploadEnabledDestinationIDs", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withMemoryHandle(t)
+			require.False(t, f.h.RecordEventDeliveryStatus(DestinationIDEnabledB, &f.deliveryStatus))
 		})
 
-		It("records events", func() {
-			eventuallyFunc := func() bool { return h.RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus) }
-			Eventually(eventuallyFunc).Should(BeTrue())
+		t.Run("records events", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withMemoryHandle(t)
+			eventuallyFunc := func() bool { return f.h.RecordEventDeliveryStatus(DestinationIDEnabledA, &f.deliveryStatus) }
+			require.Eventually(t, eventuallyFunc, time.Second, 10*time.Millisecond)
 		})
 
-		It("transforms payload properly", func() {
+		t.Run("transforms payload properly", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withMemoryHandle(t)
 			var edsUploader EventDeliveryStatusUploader
 			var payload []*DeliveryStatusT
-			payload = append(payload, &deliveryStatus)
+			payload = append(payload, &f.deliveryStatus)
 			rawJSON, err := edsUploader.Transform(payload)
-			Expect(err).To(BeNil())
-			Expect(gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventName`).String()).To(Equal("some_event_name"))
-			Expect(gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventType`).String()).To(Equal("some_event_type"))
+			require.NoError(t, err)
+			require.Equal(t, "some_event_name", gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventName`).String())
+			require.Equal(t, "some_event_type", gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventType`).String())
 		})
 
-		It("sends empty json if transformation fails", func() {
+		t.Run("sends empty json if transformation fails", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withMemoryHandle(t)
 			edsUploader := NewEventDeliveryStatusUploader(logger.NOP)
 			var payload []*DeliveryStatusT
 			payload = append(payload, &faultyData)
 			rawJSON, err := edsUploader.Transform(payload)
 			if err != nil {
-				Expect(rawJSON).To(BeNil())
+				require.Nil(t, rawJSON)
 			} else {
 				// jsoniter doesn't return an error, just sets null for invalid json.RawMessage
-				Expect(gjson.GetBytes(rawJSON, DestinationIDEnabledA+".0.payload").Raw).To(Equal("null"))
+				require.Equal(t, "null", gjson.GetBytes(rawJSON, DestinationIDEnabledA+".0.payload").Raw)
 			}
 		})
 	})
-})
+}

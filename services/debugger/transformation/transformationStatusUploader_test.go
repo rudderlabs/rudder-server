@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"go.uber.org/mock/gomock"
@@ -20,7 +18,7 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 const (
@@ -157,16 +155,26 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	},
 }
 
-type eventDeliveryStatusUploaderContext struct {
-	mockCtrl          *gomock.Controller
+type basicAuthMock struct{}
+
+func (*basicAuthMock) BasicAuth() (string, string) { return "test", "test" }
+func (*basicAuthMock) ID() string                  { return "test" }
+func (*basicAuthMock) Type() deployment.Type       { return "test" }
+
+type eventDeliveryStatusUploaderFixture struct {
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
+	h                 TransformationDebugger
+	deliveryStatus    TransformStatusT
 }
 
-func (c *eventDeliveryStatusUploaderContext) Setup() {
-	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	c.mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&testutils.BasicAuthMock{})
-	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
+func newEventDeliveryStatusUploaderFixture(t *testing.T) *eventDeliveryStatusUploaderFixture {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	f := &eventDeliveryStatusUploaderFixture{
+		mockBackendConfig: mocksBackendConfig.NewMockBackendConfig(ctrl),
+	}
+	f.mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&basicAuthMock{})
+	f.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 			// on Subscribe, emulate a backend configuration event
 			ch := make(chan pubsub.DataEvent, 1)
@@ -174,151 +182,153 @@ func (c *eventDeliveryStatusUploaderContext) Setup() {
 			close(ch)
 			return ch
 		}).AnyTimes()
-}
-
-func initEventDeliveryStatusUploader() {
-	config.Reset()
-	logger.Reset()
-}
-
-var _ = Describe("eventDeliveryStatusUploader", func() {
-	initEventDeliveryStatusUploader()
-
-	var (
-		c              *eventDeliveryStatusUploaderContext
-		h              TransformationDebugger
-		deliveryStatus TransformStatusT
-	)
-
-	BeforeEach(func() {
-		c = &eventDeliveryStatusUploaderContext{}
-		c.Setup()
-		deliveryStatus = TransformStatusT{
-			DestinationID:    DestinationIDEnabledB,
-			SourceID:         SourceIDEnabled,
-			IsError:          false,
-			TransformationID: "enabled-id",
-			EventBefore: &EventBeforeTransform{
-				ReceivedAt: time.Now().String(),
-				EventName:  "event-name",
-				EventType:  "event-type",
-				Payload:    types.SingularEventT{},
-			},
-			EventsAfter: &EventsAfterTransform{
-				ReceivedAt: time.Now().String(),
-				IsDropped:  false,
-				Error:      "",
-				StatusCode: 200,
-				EventPayloads: []*EventPayloadAfterTransform{
-					{
-						EventName: "event-name",
-						EventType: "event-type",
-						Payload:   types.SingularEventT{},
-					},
+	f.deliveryStatus = TransformStatusT{
+		DestinationID:    DestinationIDEnabledB,
+		SourceID:         SourceIDEnabled,
+		IsError:          false,
+		TransformationID: "enabled-id",
+		EventBefore: &EventBeforeTransform{
+			ReceivedAt: time.Now().String(),
+			EventName:  "event-name",
+			EventType:  "event-type",
+			Payload:    types.SingularEventT{},
+		},
+		EventsAfter: &EventsAfterTransform{
+			ReceivedAt: time.Now().String(),
+			IsDropped:  false,
+			Error:      "",
+			StatusCode: 200,
+			EventPayloads: []*EventPayloadAfterTransform{
+				{
+					EventName: "event-name",
+					EventType: "event-type",
+					Payload:   types.SingularEventT{},
 				},
 			},
-		}
-	})
+		},
+	}
+	return f
+}
 
-	AfterEach(func() {
-		c.mockCtrl.Finish()
-	})
+func (f *eventDeliveryStatusUploaderFixture) withBadgerHandle(t *testing.T) {
+	t.Helper()
+	config.Reset()
+	t.Cleanup(config.Reset)
+	config.Set("RUDDER_TMPDIR", path.Join(t.TempDir(), rand.String(10)))
+	f.startHandle(t)
+}
 
-	Context("Transformation Debugger Badger", func() {
-		BeforeEach(func() {
-			var err error
-			config.Reset()
-			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
-			h, err = NewHandle(c.mockBackendConfig)
-			Expect(err).To(BeNil())
-		})
+func (f *eventDeliveryStatusUploaderFixture) withMemoryHandle(t *testing.T) {
+	t.Helper()
+	config.Reset()
+	t.Cleanup(config.Reset)
+	config.Set("RUDDER_TMPDIR", path.Join(t.TempDir(), rand.String(10)))
+	config.Set("TransformationDebugger.cacheType", 0)
+	f.startHandle(t)
+}
 
-		AfterEach(func() {
-			h.Stop()
-		})
+func (f *eventDeliveryStatusUploaderFixture) startHandle(t *testing.T) {
+	t.Helper()
+	h, err := NewHandle(f.mockBackendConfig)
+	require.NoError(t, err)
+	f.h = h
+	t.Cleanup(h.Stop)
+}
 
-		It("returns false if disableEventDeliveryStatusUploads is true", func() {
-			h.Stop()
-			h, err := NewHandle(c.mockBackendConfig)
-			Expect(err).To(BeNil())
+func TestTransformationStatusUploader(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+
+	t.Run("Transformation Debugger Badger", func(t *testing.T) {
+		t.Run("returns false if disableEventDeliveryStatusUploads is true", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withBadgerHandle(t)
+			f.h.Stop()
+			h, err := NewHandle(f.mockBackendConfig)
+			require.NoError(t, err)
+			t.Cleanup(h.Stop)
 			h.(*Handle).disableTransformationUploads = config.SingleValueLoader(true)
-			Expect(h.UploadTransformationStatus(&TransformationStatusT{})).To(BeFalse())
+			require.False(t, h.UploadTransformationStatus(&TransformationStatusT{}))
 		})
 
-		It("records events", func() {
+		t.Run("records events", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withBadgerHandle(t)
+			// UploadTransformationStatus mutates the destination it is given (see Limit), while the
+			// handle's config subscriber reads sampleBackendConfig concurrently, so it gets a copy.
+			destination := sampleBackendConfig.Sources[1].Destinations[1]
 			eventuallyFunc := func() bool {
-				return h.UploadTransformationStatus(
+				return f.h.UploadTransformationStatus(
 					&TransformationStatusT{
-						Destination: &sampleBackendConfig.Sources[1].Destinations[1],
+						Destination: &destination,
 						DestID:      sampleBackendConfig.Sources[1].Destinations[1].ID,
 						SourceID:    sampleBackendConfig.Sources[1].ID,
 					},
 				)
 			}
-			Eventually(eventuallyFunc).Should(BeTrue())
+			require.Eventually(t, eventuallyFunc, time.Second, 10*time.Millisecond)
 		})
 
-		It("transforms payload properly", func() {
+		t.Run("transforms payload properly", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withBadgerHandle(t)
 			var edsUploader TransformationStatusUploader
 			var payload []*TransformStatusT
-			payload = append(payload, &deliveryStatus)
+			payload = append(payload, &f.deliveryStatus)
 			rawJSON, err := edsUploader.Transform(payload)
-			Expect(err).To(BeNil())
-			Expect(gjson.GetBytes(rawJSON, `payload.0.eventBefore.eventName`).String()).To(Equal("event-name"))
-			Expect(gjson.GetBytes(rawJSON, `payload.0.eventBefore.eventType`).String()).To(Equal("event-type"))
-			Expect(gjson.GetBytes(rawJSON, `payload.0.eventsAfter.payload.0.eventName`).String()).To(Equal("event-name"))
-			Expect(gjson.GetBytes(rawJSON, `payload.0.eventsAfter.payload.0.eventType`).String()).To(Equal("event-type"))
+			require.NoError(t, err)
+			require.Equal(t, "event-name", gjson.GetBytes(rawJSON, `payload.0.eventBefore.eventName`).String())
+			require.Equal(t, "event-type", gjson.GetBytes(rawJSON, `payload.0.eventBefore.eventType`).String())
+			require.Equal(t, "event-name", gjson.GetBytes(rawJSON, `payload.0.eventsAfter.payload.0.eventName`).String())
+			require.Equal(t, "event-type", gjson.GetBytes(rawJSON, `payload.0.eventsAfter.payload.0.eventType`).String())
 		})
 	})
 
-	Context("Transformation Debugger Memory", func() {
-		BeforeEach(func() {
-			var err error
-			config.Reset()
-			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
-			config.Set("TransformationDebugger.cacheType", 0)
-			h, err = NewHandle(c.mockBackendConfig)
-			Expect(err).To(BeNil())
-		})
-
-		AfterEach(func() {
-			h.Stop()
-		})
-
-		It("returns false if disableEventDeliveryStatusUploads is true", func() {
-			h.Stop()
-			h, err := NewHandle(c.mockBackendConfig)
-			Expect(err).To(BeNil())
+	t.Run("Transformation Debugger Memory", func(t *testing.T) {
+		t.Run("returns false if disableEventDeliveryStatusUploads is true", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withMemoryHandle(t)
+			f.h.Stop()
+			h, err := NewHandle(f.mockBackendConfig)
+			require.NoError(t, err)
+			t.Cleanup(h.Stop)
 			h.(*Handle).disableTransformationUploads = config.SingleValueLoader(true)
-			Expect(h.UploadTransformationStatus(&TransformationStatusT{})).To(BeFalse())
+			require.False(t, h.UploadTransformationStatus(&TransformationStatusT{}))
 		})
 
-		It("records events", func() {
+		t.Run("records events", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withMemoryHandle(t)
+			// UploadTransformationStatus mutates the destination it is given (see Limit), while the
+			// handle's config subscriber reads sampleBackendConfig concurrently, so it gets a copy.
+			destination := sampleBackendConfig.Sources[1].Destinations[1]
 			eventuallyFunc := func() bool {
-				return h.UploadTransformationStatus(
+				return f.h.UploadTransformationStatus(
 					&TransformationStatusT{
-						Destination: &sampleBackendConfig.Sources[1].Destinations[1],
+						Destination: &destination,
 						DestID:      sampleBackendConfig.Sources[1].Destinations[1].ID,
 						SourceID:    sampleBackendConfig.Sources[1].ID,
 					},
 				)
 			}
-			Eventually(eventuallyFunc).Should(BeTrue())
+			require.Eventually(t, eventuallyFunc, time.Second, 10*time.Millisecond)
 		})
 
-		It("transforms payload properly", func() {
+		t.Run("transforms payload properly", func(t *testing.T) {
+			f := newEventDeliveryStatusUploaderFixture(t)
+			f.withMemoryHandle(t)
 			var edsUploader TransformationStatusUploader
 			var payload []*TransformStatusT
-			payload = append(payload, &deliveryStatus)
+			payload = append(payload, &f.deliveryStatus)
 			rawJSON, err := edsUploader.Transform(payload)
-			Expect(err).To(BeNil())
-			Expect(gjson.GetBytes(rawJSON, `payload.0.eventBefore.eventName`).String()).To(Equal("event-name"))
-			Expect(gjson.GetBytes(rawJSON, `payload.0.eventBefore.eventType`).String()).To(Equal("event-type"))
-			Expect(gjson.GetBytes(rawJSON, `payload.0.eventsAfter.payload.0.eventName`).String()).To(Equal("event-name"))
-			Expect(gjson.GetBytes(rawJSON, `payload.0.eventsAfter.payload.0.eventType`).String()).To(Equal("event-type"))
+			require.NoError(t, err)
+			require.Equal(t, "event-name", gjson.GetBytes(rawJSON, `payload.0.eventBefore.eventName`).String())
+			require.Equal(t, "event-type", gjson.GetBytes(rawJSON, `payload.0.eventBefore.eventType`).String())
+			require.Equal(t, "event-name", gjson.GetBytes(rawJSON, `payload.0.eventsAfter.payload.0.eventName`).String())
+			require.Equal(t, "event-type", gjson.GetBytes(rawJSON, `payload.0.eventsAfter.payload.0.eventType`).String())
 		})
 	})
-})
+}
 
 func TestLimit(t *testing.T) {
 	var (

@@ -3,10 +3,10 @@ package common_test
 import (
 	"encoding/json"
 	"fmt"
+	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	MockAuthorizer "github.com/rudderlabs/rudder-server/mocks/services/oauthV2"
@@ -14,9 +14,9 @@ import (
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
-var _ = Describe("Token", func() {
-	It("Successfully generates a token with valid access and refresh tokens", func() {
-		ctrl := gomock.NewController(GinkgoT())
+func TestToken(t *testing.T) {
+	t.Run("Successfully generates a token with valid access and refresh tokens", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
 		oauthClient := MockAuthorizer.NewMockOAuthHandler(ctrl)
 
 		tokenSource := common.TokenSource{
@@ -35,13 +35,13 @@ var _ = Describe("Token", func() {
 			nil,
 		)
 		token, _ := tokenSource.Token()
-		Expect(token.AccessToken).To(Equal("validAccessToken"))
-		Expect(token.RefreshToken).To(Equal("validRefreshToken"))
-		Expect(token.Expiry).To(BeTemporally("~", time.Date(2025, time.March, 12, 12, 34, 47, 758000000, time.UTC), 1*time.Second))
+		require.Equal(t, "validAccessToken", token.AccessToken)
+		require.Equal(t, "validRefreshToken", token.RefreshToken)
+		require.WithinDuration(t, time.Date(2025, time.March, 12, 12, 34, 47, 758000000, time.UTC), token.Expiry, 1*time.Second)
 	})
 
-	It("Handle error when FetchToken returns an error", func() {
-		ctrl := gomock.NewController(GinkgoT())
+	t.Run("Handle error when FetchToken returns an error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
 		oauthClient := MockAuthorizer.NewMockOAuthHandler(ctrl)
 
 		tokenSource := common.TokenSource{
@@ -57,8 +57,9 @@ var _ = Describe("Token", func() {
 
 		oauthClient.EXPECT().FetchToken(gomock.Any()).Return(nil, v2.NewStatusCodeError(400, fmt.Errorf("error fetching token")))
 		_, err := tokenSource.Token()
-		Expect(err).To(Equal(
-			fmt.Errorf("generating the accessToken: %w", fmt.Errorf("fetching access token: %w", v2.NewStatusCodeError(400, fmt.Errorf("error fetching token"))))),
+		require.Equal(t,
+			fmt.Errorf("generating the accessToken: %w", fmt.Errorf("fetching access token: %w", v2.NewStatusCodeError(400, fmt.Errorf("error fetching token")))),
+			err,
 		)
 	})
-})
+}

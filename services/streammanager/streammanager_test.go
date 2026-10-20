@@ -8,8 +8,6 @@ import (
 	"sync"
 	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -33,11 +31,6 @@ func initStreamManager() {
 		logger.Reset()
 		kafka.Init()
 	})
-}
-
-func TestStreammanager(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Streammanager Suite")
 }
 
 func TestNewProducerWithNilDestination(t *testing.T) {
@@ -118,6 +111,9 @@ func TestNewProducerWithEventBridgeDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
+	if producer != nil {
+		t.Cleanup(func() { _ = producer.Close() })
+	}
 }
 
 func TestNewProducerWithFirehoseDestination(t *testing.T) {
@@ -132,6 +128,9 @@ func TestNewProducerWithFirehoseDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
+	if producer != nil {
+		t.Cleanup(func() { _ = producer.Close() })
+	}
 }
 
 func TestNewProducerWithKinesisDestination(t *testing.T) {
@@ -146,6 +145,9 @@ func TestNewProducerWithKinesisDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
+	if producer != nil {
+		t.Cleanup(func() { _ = producer.Close() })
+	}
 }
 
 func TestNewProducerWithLambdaDestination(t *testing.T) {
@@ -160,6 +162,9 @@ func TestNewProducerWithLambdaDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
+	if producer != nil {
+		t.Cleanup(func() { _ = producer.Close() })
+	}
 }
 
 func TestNewProducerWithPersonalizeDestination(t *testing.T) {
@@ -174,6 +179,9 @@ func TestNewProducerWithPersonalizeDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
+	if producer != nil {
+		t.Cleanup(func() { _ = producer.Close() })
+	}
 }
 
 func TestNewProducerWithBQStreamDestination(t *testing.T) {
@@ -202,6 +210,9 @@ func TestNewProducerWithBQStreamDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
+	if producer != nil {
+		t.Cleanup(func() { _ = producer.Close() })
+	}
 	assert.IsType(t, producer, &bqstream.BQStreamProducer{})
 }
 
@@ -244,6 +255,9 @@ func TestNewProducerWithGooglePubsubDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
+	if producer != nil {
+		t.Cleanup(func() { _ = producer.Close() })
+	}
 	assert.IsType(t, producer, &googlepubsub.GooglePubSubProducer{})
 }
 
@@ -289,5 +303,8 @@ func TestNewProducerWithGoogleCloudFunctionDestination(t *testing.T) {
 
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
+	if producer != nil {
+		t.Cleanup(func() { _ = producer.Close() })
+	}
 	assert.IsType(t, producer, &cloudfunctions.GoogleCloudFunctionProducer{})
 }

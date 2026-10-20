@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -16,7 +15,6 @@ import (
 )
 
 func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
-	RegisterTestingT(t)
 	ctrl := gomock.NewController(t)
 	config := mock_backendconfig.NewMockBackendConfig(ctrl)
 
@@ -42,8 +40,8 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	// When the config backend has not published any event yet
 	ctx2, cancel2 := context.WithTimeout(ctx, 50*time.Millisecond)
 	preferences, err = fileUploaderProvider.GetStoragePreferences(ctx2, "testWorkspaceId-1")
-	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
-	Expect(err).To(Equal(context.DeadlineExceeded))
+	require.EqualValues(t, backendconfig.StoragePreferences{}, preferences)
+	require.Equal(t, context.DeadlineExceeded, err)
 	cancel2()
 
 	t.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "S3") // default rudder storage provider
@@ -192,7 +190,6 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 }
 
 func TestFileUploaderWithoutConfigUpdates(t *testing.T) {
-	RegisterTestingT(t)
 	ctrl := gomock.NewController(t)
 	config := mock_backendconfig.NewMockBackendConfig(ctrl)
 
@@ -210,14 +207,13 @@ func TestFileUploaderWithoutConfigUpdates(t *testing.T) {
 		return configCh
 	})
 
-	p := NewProvider(context.Background(), config)
+	p := NewProvider(t.Context(), config)
 	ready.Wait()
-	_, err := p.GetFileManager(context.Background(), "testWorkspaceId-1")
-	Expect(err).To(Equal(ErrNotSubscribed))
+	_, err := p.GetFileManager(t.Context(), "testWorkspaceId-1")
+	require.Equal(t, ErrNotSubscribed, err)
 }
 
 func TestStaticProvider(t *testing.T) {
-	RegisterTestingT(t)
 	prefs := backendconfig.StoragePreferences{
 		GatewayDumps: true,
 	}
@@ -233,30 +229,28 @@ func TestStaticProvider(t *testing.T) {
 	}
 	p := NewStaticProvider(storageSettings)
 
-	prefs, err := p.GetStoragePreferences(context.Background(), "testWorkspaceId-1")
-	Expect(err).To(BeNil())
-	Expect(prefs).To(BeEquivalentTo(prefs))
+	gotPrefs, err := p.GetStoragePreferences(t.Context(), "testWorkspaceId-1")
+	require.NoError(t, err)
+	require.EqualValues(t, prefs, gotPrefs)
 
-	_, err = p.GetFileManager(context.Background(), "testWorkspaceId-1")
-	Expect(err).To(BeNil())
+	_, err = p.GetFileManager(t.Context(), "testWorkspaceId-1")
+	require.NoError(t, err)
 }
 
 func TestDefaultProvider(t *testing.T) {
-	RegisterTestingT(t)
 	d := NewDefaultProvider()
 
-	prefs, err := d.GetStoragePreferences(context.Background(), "")
-	Expect(err).To(BeNil())
-	Expect(prefs).To(BeEquivalentTo(backendconfig.StoragePreferences{
+	prefs, err := d.GetStoragePreferences(t.Context(), "")
+	require.NoError(t, err)
+	require.EqualValues(t, backendconfig.StoragePreferences{
 		GatewayDumps: true,
-	}))
+	}, prefs)
 
-	_, err = d.GetFileManager(context.Background(), "")
-	Expect(err).To(BeNil())
+	_, err = d.GetFileManager(t.Context(), "")
+	require.NoError(t, err)
 }
 
 func TestOverride(t *testing.T) {
-	RegisterTestingT(t)
 	config := map[string]any{
 		"a": "1",
 		"b": "2",
@@ -270,12 +264,12 @@ func TestOverride(t *testing.T) {
 		},
 	}
 	bucket := overrideWithSettings(config, settings, "wrk-1")
-	Expect(bucket.Config).To(Equal(map[string]any{
+	require.Equal(t, map[string]any{
 		"a": "1",
 		"b": "4",
 		"c": "3",
 		"d": "5",
-	}))
+	}, bucket.Config)
 
 	config = map[string]any{
 		"a":          "1",
@@ -292,14 +286,14 @@ func TestOverride(t *testing.T) {
 	}
 
 	bucket = overrideWithSettings(config, settings, "wrk-1")
-	Expect(bucket.Config).To(Equal(map[string]any{
+	require.Equal(t, map[string]any{
 		"a":          "1",
 		"b":          "4",
 		"c":          "3",
 		"d":          "5",
 		"iamRoleArn": "abc",
 		"externalID": "wrk-1",
-	}))
+	}, bucket.Config)
 
 	config = map[string]any{
 		"a":      "1",
@@ -311,11 +305,11 @@ func TestOverride(t *testing.T) {
 		Type: "S3",
 	}
 	bucket = overrideWithSettings(config, settings, "wrk-1")
-	Expect(bucket.Config).To(Equal(map[string]any{
+	require.Equal(t, map[string]any{
 		"a": "1",
 		"b": "2",
 		"c": "3",
-	}))
+	}, bucket.Config)
 
 	config = map[string]any{
 		"a":      "1",
@@ -327,10 +321,10 @@ func TestOverride(t *testing.T) {
 		Type: "MINIO",
 	}
 	bucket = overrideWithSettings(config, settings, "wrk-1")
-	Expect(bucket.Config).To(Equal(map[string]any{
+	require.Equal(t, map[string]any{
 		"a":      "1",
 		"b":      "2",
 		"c":      "3",
 		"region": "us-east-1",
-	}))
+	}, bucket.Config)
 }

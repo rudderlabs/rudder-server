@@ -1,15 +1,14 @@
 package eloqua_test
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
@@ -60,27 +59,37 @@ func initEloqua() {
 	})
 }
 
-var _ = Describe("Eloqua test", func() {
-	Context("When uploading the file", func() {
-		BeforeEach(func() {
-			config.Reset()
-			config.Set("BatchRouter.ELOQUA.MaxUploadLimit", 200*bytesize.B)
-		})
+type eloquaFixture struct {
+	ctrl          *gomock.Controller
+	eloquaService *mockeloquaservice.MockEloquaService
+	bulkUploader  *eloqua.EloquaBulkUploader
+}
 
-		AfterEach(func() {
-			config.Reset()
-		})
-		It("TestEloquaUploadWrongFilepath", func() {
-			initEloqua()
-			ctrl := gomock.NewController(GinkgoT())
-			eloquaService := mockeloquaservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
+func newEloquaFixture(t *testing.T) *eloquaFixture {
+	t.Helper()
+	config.Reset()
+	config.Set("BatchRouter.ELOQUA.MaxUploadLimit", 200*bytesize.B)
+	t.Cleanup(config.Reset)
+	initEloqua()
+	ctrl := gomock.NewController(t)
+	eloquaService := mockeloquaservice.NewMockEloquaService(ctrl)
+	return &eloquaFixture{
+		ctrl:          ctrl,
+		eloquaService: eloquaService,
+		bulkUploader:  eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService),
+	}
+}
+
+func TestEloqua(t *testing.T) {
+	t.Run("When uploading the file", func(t *testing.T) {
+		t.Run("TestEloquaUploadWrongFilepath", func(t *testing.T) {
+			f := newEloquaFixture(t)
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
 				FailedJobIDs:    []int64{},
 				FileName:        "",
 				Destination:     &destination,
-				Manager:         bulkUploader,
+				Manager:         f.bulkUploader,
 			}
 			expected := common.AsyncUploadOutput{
 				FailedReason:        "got error while opening the file. open : no such file or directory",
@@ -90,22 +99,19 @@ var _ = Describe("Eloqua test", func() {
 				ImportingCount:      0,
 				FailedCount:         10,
 			}
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
-			Expect(received).To(Equal(expected))
+			received := f.bulkUploader.Upload(t.Context(), &asyncDestination)
+			require.Equal(t, expected, received)
 		})
-		It("TestEloquaErrorWhileFetchingFields", func() {
-			initEloqua()
-			ctrl := gomock.NewController(GinkgoT())
-			eloquaService := mockeloquaservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
+		t.Run("TestEloquaErrorWhileFetchingFields", func(t *testing.T) {
+			f := newEloquaFixture(t)
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "testdata/uploadDataIdentify.txt"),
 				Destination:     &destination,
-				Manager:         bulkUploader,
+				Manager:         f.bulkUploader,
 			}
-			eloquaService.EXPECT().FetchFields(gomock.Any()).Return(nil, fmt.Errorf("either authorization is wrong or the object is not found"))
+			f.eloquaService.EXPECT().FetchFields(gomock.Any()).Return(nil, fmt.Errorf("either authorization is wrong or the object is not found"))
 
 			expected := common.AsyncUploadOutput{
 				FailedReason:        "got error while fetching fields. either authorization is wrong or the object is not found",
@@ -115,24 +121,21 @@ var _ = Describe("Eloqua test", func() {
 				ImportingCount:      0,
 				FailedCount:         10,
 			}
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
-			Expect(received).To(Equal(expected))
+			received := f.bulkUploader.Upload(t.Context(), &asyncDestination)
+			require.Equal(t, expected, received)
 		})
 
-		It("TestEloquaErrorWhileCreatingImportDefinition", func() {
-			initEloqua()
-			ctrl := gomock.NewController(GinkgoT())
-			eloquaService := mockeloquaservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
+		t.Run("TestEloquaErrorWhileCreatingImportDefinition", func(t *testing.T) {
+			f := newEloquaFixture(t)
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "testdata/uploadDataIdentify.txt"),
 				Destination:     &destination,
-				Manager:         bulkUploader,
+				Manager:         f.bulkUploader,
 			}
 
-			eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
+			f.eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
 				Items: []eloqua.Item{
 					{
 						Statement:    "{{CustomObject[172].Field[976]}}",
@@ -149,7 +152,7 @@ var _ = Describe("Eloqua test", func() {
 				Count:        4,
 				HasMore:      false,
 			}, nil)
-			eloquaService.EXPECT().CreateImportDefinition(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("some error while creating the importDefinition"))
+			f.eloquaService.EXPECT().CreateImportDefinition(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("some error while creating the importDefinition"))
 			expected := common.AsyncUploadOutput{
 				FailedReason:        "unable to create importdefinition. some error while creating the importDefinition",
 				ImportingJobIDs:     nil,
@@ -158,24 +161,21 @@ var _ = Describe("Eloqua test", func() {
 				ImportingCount:      0,
 				FailedCount:         10,
 			}
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
-			Expect(received).To(Equal(expected))
+			received := f.bulkUploader.Upload(t.Context(), &asyncDestination)
+			require.Equal(t, expected, received)
 		})
 
-		It("TestEloquaErrorWhileUploadingData", func() {
-			initEloqua()
-			ctrl := gomock.NewController(GinkgoT())
-			eloquaService := mockeloquaservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
+		t.Run("TestEloquaErrorWhileUploadingData", func(t *testing.T) {
+			f := newEloquaFixture(t)
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "testdata/uploadDataIdentify.txt"),
 				Destination:     &destination,
-				Manager:         bulkUploader,
+				Manager:         f.bulkUploader,
 			}
 
-			eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
+			f.eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
 				Items: []eloqua.Item{
 					{
 						Statement:    "{{CustomObject[172].Field[976]}}",
@@ -192,11 +192,11 @@ var _ = Describe("Eloqua test", func() {
 				Count:        4,
 				HasMore:      false,
 			}, nil)
-			eloquaService.EXPECT().CreateImportDefinition(gomock.Any(), gomock.Any()).Return(
+			f.eloquaService.EXPECT().CreateImportDefinition(gomock.Any(), gomock.Any()).Return(
 				&eloqua.ImportDefinition{
 					URI: "/contacts/imports/384",
 				}, nil)
-			eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(fmt.Errorf("some error while uploading the data"))
+			f.eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(fmt.Errorf("some error while uploading the data"))
 			expected := common.AsyncUploadOutput{
 				FailedReason:        "unable to upload the data. some error while uploading the data",
 				ImportingJobIDs:     nil,
@@ -205,24 +205,21 @@ var _ = Describe("Eloqua test", func() {
 				ImportingCount:      0,
 				FailedCount:         10,
 			}
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
-			Expect(received).To(Equal(expected))
+			received := f.bulkUploader.Upload(t.Context(), &asyncDestination)
+			require.Equal(t, expected, received)
 		})
 
-		It("TestEloquaErrorWhileRunningSync", func() {
-			initEloqua()
-			ctrl := gomock.NewController(GinkgoT())
-			eloquaService := mockeloquaservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
+		t.Run("TestEloquaErrorWhileRunningSync", func(t *testing.T) {
+			f := newEloquaFixture(t)
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "testdata/uploadDataIdentify.txt"),
 				Destination:     &destination,
-				Manager:         bulkUploader,
+				Manager:         f.bulkUploader,
 			}
 
-			eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
+			f.eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
 				Items: []eloqua.Item{
 					{
 						Statement:    "{{CustomObject[172].Field[976]}}",
@@ -239,12 +236,12 @@ var _ = Describe("Eloqua test", func() {
 				Count:        4,
 				HasMore:      false,
 			}, nil)
-			eloquaService.EXPECT().CreateImportDefinition(gomock.Any(), gomock.Any()).Return(
+			f.eloquaService.EXPECT().CreateImportDefinition(gomock.Any(), gomock.Any()).Return(
 				&eloqua.ImportDefinition{
 					URI: "/contacts/imports/384",
 				}, nil)
-			eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
-			eloquaService.EXPECT().RunSync(gomock.Any()).Return("", fmt.Errorf("some error occurred while running the sync"))
+			f.eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
+			f.eloquaService.EXPECT().RunSync(gomock.Any()).Return("", fmt.Errorf("some error occurred while running the sync"))
 			expected := common.AsyncUploadOutput{
 				FailedReason:        "unable to run the sync after uploading the file. some error occurred while running the sync",
 				ImportingJobIDs:     nil,
@@ -253,23 +250,20 @@ var _ = Describe("Eloqua test", func() {
 				ImportingCount:      0,
 				FailedCount:         10,
 			}
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
-			Expect(received).To(Equal(expected))
+			received := f.bulkUploader.Upload(t.Context(), &asyncDestination)
+			require.Equal(t, expected, received)
 		})
-		It("TestEloquaSuccessfulIdentify", func() {
-			initEloqua()
-			ctrl := gomock.NewController(GinkgoT())
-			eloquaService := mockeloquaservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
+		t.Run("TestEloquaSuccessfulIdentify", func(t *testing.T) {
+			f := newEloquaFixture(t)
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "testdata/uploadDataIdentify.txt"),
 				Destination:     &destination,
-				Manager:         bulkUploader,
+				Manager:         f.bulkUploader,
 			}
 
-			eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
+			f.eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
 				Items: []eloqua.Item{
 					{
 						Statement:    "{{CustomObject[172].Field[976]}}",
@@ -286,20 +280,17 @@ var _ = Describe("Eloqua test", func() {
 				Count:        4,
 				HasMore:      false,
 			}, nil)
-			eloquaService.EXPECT().CreateImportDefinition(gomock.Any(), gomock.Any()).Return(
+			f.eloquaService.EXPECT().CreateImportDefinition(gomock.Any(), gomock.Any()).Return(
 				&eloqua.ImportDefinition{
 					URI: "/contacts/imports/384",
 				}, nil)
-			eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
-			eloquaService.EXPECT().RunSync(gomock.Any()).Return("/syncs/384", nil)
+			f.eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
+			f.eloquaService.EXPECT().RunSync(gomock.Any()).Return("/syncs/384", nil)
 			var parameters common.ImportParameters
 			parameters.ImportId = "/syncs/384:/contacts/imports/384"
 			parameters.ImportCount = 9
 			importParameters, err := jsonrs.Marshal(parameters)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
+			require.NoError(t, err)
 			expected := common.AsyncUploadOutput{
 				FailedReason:        "failed as the fileSizeLimit has over",
 				ImportingJobIDs:     []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022},
@@ -308,27 +299,17 @@ var _ = Describe("Eloqua test", func() {
 				ImportingCount:      9,
 				FailedCount:         1,
 			}
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
-			Expect(received).To(Equal(expected))
+			received := f.bulkUploader.Upload(t.Context(), &asyncDestination)
+			require.Equal(t, expected, received)
 		})
 	})
-	Context("When poling the file", func() {
-		BeforeEach(func() {
-			config.Reset()
-			config.Set("BatchRouter.ELOQUA.MaxUploadLimit", 200*bytesize.B)
-		})
-
-		AfterEach(func() {
-			config.Reset()
-		})
-		It("TestEloquaFailedToGetSyncStatus", func() {
-			ctrl := gomock.NewController(GinkgoT())
-			eloquaService := mockeloquaservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
+	t.Run("When poling the file", func(t *testing.T) {
+		t.Run("TestEloquaFailedToGetSyncStatus", func(t *testing.T) {
+			f := newEloquaFixture(t)
 			pollInput := common.AsyncPoll{
 				ImportId: "/syncs/384:/contacts/imports/384",
 			}
-			eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("", fmt.Errorf("some error occurred while fetching the sync status"))
+			f.eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("", fmt.Errorf("some error occurred while fetching the sync status"))
 			expected := common.PollStatusResponse{
 				Complete:   false,
 				InProgress: false,
@@ -336,18 +317,16 @@ var _ = Describe("Eloqua test", func() {
 				HasFailed:  false,
 				HasWarning: false,
 			}
-			received := bulkUploader.Poll(context.Background(), pollInput)
-			Expect(received).To(Equal(expected))
+			received := f.bulkUploader.Poll(t.Context(), pollInput)
+			require.Equal(t, expected, received)
 		})
-		It("TestEloquaReceivedSuccess", func() {
-			ctrl := gomock.NewController(GinkgoT())
-			eloquaService := mockeloquaservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
+		t.Run("TestEloquaReceivedSuccess", func(t *testing.T) {
+			f := newEloquaFixture(t)
 			pollInput := common.AsyncPoll{
 				ImportId: "/syncs/384:/contacts/imports/384",
 			}
-			eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("success", nil)
-			eloquaService.EXPECT().DeleteImportDefinition(gomock.Any()).Return(nil)
+			f.eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("success", nil)
+			f.eloquaService.EXPECT().DeleteImportDefinition(gomock.Any()).Return(nil)
 			expected := common.PollStatusResponse{
 				Complete:   true,
 				InProgress: false,
@@ -355,38 +334,26 @@ var _ = Describe("Eloqua test", func() {
 				HasFailed:  false,
 				HasWarning: false,
 			}
-			received := bulkUploader.Poll(context.Background(), pollInput)
-			Expect(received).To(Equal(expected))
+			received := f.bulkUploader.Poll(t.Context(), pollInput)
+			require.Equal(t, expected, received)
 		})
-		It("TestEloquaReceivedPending", func() {
-			ctrl := gomock.NewController(GinkgoT())
-			eloquaService := mockeloquaservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
+		t.Run("TestEloquaReceivedPending", func(t *testing.T) {
+			f := newEloquaFixture(t)
 			pollInput := common.AsyncPoll{
 				ImportId: "/syncs/384:/contacts/imports/384",
 			}
-			eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("pending", nil)
+			f.eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("pending", nil)
 			expected := common.PollStatusResponse{
 				InProgress: true,
 			}
-			received := bulkUploader.Poll(context.Background(), pollInput)
-			Expect(received).To(Equal(expected))
+			received := f.bulkUploader.Poll(t.Context(), pollInput)
+			require.Equal(t, expected, received)
 		})
 	})
 
-	Context("While poling the failed events", func() {
-		BeforeEach(func() {
-			config.Reset()
-			config.Set("BatchRouter.ELOQUA.MaxUploadLimit", 200*bytesize.B)
-		})
-
-		AfterEach(func() {
-			config.Reset()
-		})
-		It("TestEloquaErrorOccurredWhileUploading", func() {
-			ctrl := gomock.NewController(GinkgoT())
-			eloquaService := mockeloquaservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
+	t.Run("While poling the failed events", func(t *testing.T) {
+		t.Run("TestEloquaErrorOccurredWhileUploading", func(t *testing.T) {
+			f := newEloquaFixture(t)
 
 			pollInput := common.GetUploadStatsInput{
 				FailedJobParameters: "/syncs/384",
@@ -412,35 +379,31 @@ var _ = Describe("Eloqua test", func() {
 				StatusCode: 200,
 				Metadata:   metadata,
 			}
-			received := bulkUploader.GetUploadStats(pollInput)
-			Expect(received).To(Equal(expected))
+			received := f.bulkUploader.GetUploadStats(pollInput)
+			require.Equal(t, expected, received)
 		})
-		It("TestEloquaFailedToFetchRejectedData", func() {
-			ctrl := gomock.NewController(GinkgoT())
-			eloquaService := mockeloquaservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
+		t.Run("TestEloquaFailedToFetchRejectedData", func(t *testing.T) {
+			f := newEloquaFixture(t)
 
 			pollInput := common.GetUploadStatsInput{
 				WarningJobParameters: "/syncs/384",
 				ImportingList:        jobs,
 			}
 
-			eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(nil, fmt.Errorf("some error occurred while fetching the data"))
+			f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(nil, fmt.Errorf("some error occurred while fetching the data"))
 			expected := common.GetUploadStatsResponse{
 				StatusCode: 500,
 			}
-			received := bulkUploader.GetUploadStats(pollInput)
-			Expect(received).To(Equal(expected))
+			received := f.bulkUploader.GetUploadStats(pollInput)
+			require.Equal(t, expected, received)
 		})
-		It("TestEloquaSucceedToFetchRejectedData", func() {
-			ctrl := gomock.NewController(GinkgoT())
-			eloquaService := mockeloquaservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
+		t.Run("TestEloquaSucceedToFetchRejectedData", func(t *testing.T) {
+			f := newEloquaFixture(t)
 			pollInput := common.GetUploadStatsInput{
 				WarningJobParameters: "/syncs/384",
 				ImportingList:        jobs,
 			}
-			eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(&eloqua.RejectResponse{
+			f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(&eloqua.RejectResponse{
 				Count:        2,
 				TotalResults: 2,
 				Limit:        1000,
@@ -482,7 +445,7 @@ var _ = Describe("Eloqua test", func() {
 				StatusCode: 200,
 				Metadata:   metadata,
 			}
-			eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
+			f.eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
 				Items: []eloqua.Item{
 					{
 						Statement:    "{{CustomObject[172].Field[976]}}",
@@ -499,21 +462,21 @@ var _ = Describe("Eloqua test", func() {
 				Count:        4,
 				HasMore:      false,
 			}, nil)
-			eloquaService.EXPECT().CreateImportDefinition(gomock.Any(), gomock.Any()).Return(
+			f.eloquaService.EXPECT().CreateImportDefinition(gomock.Any(), gomock.Any()).Return(
 				&eloqua.ImportDefinition{
 					URI: "/contacts/imports/384",
 				}, nil)
-			eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
-			eloquaService.EXPECT().RunSync(gomock.Any()).Return("/syncs/384", nil)
-			bulkUploader.Upload(context.Background(), &common.AsyncDestinationStruct{
+			f.eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
+			f.eloquaService.EXPECT().RunSync(gomock.Any()).Return("/syncs/384", nil)
+			f.bulkUploader.Upload(t.Context(), &common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "testdata/uploadDataIdentify.txt"),
 				Destination:     &destination,
-				Manager:         bulkUploader,
+				Manager:         f.bulkUploader,
 			})
-			received := bulkUploader.GetUploadStats(pollInput)
-			Expect(received).To(Equal(expected))
+			received := f.bulkUploader.GetUploadStats(pollInput)
+			require.Equal(t, expected, received)
 		})
 	})
-})
+}

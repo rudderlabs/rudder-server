@@ -2,14 +2,13 @@ package yandexmetrica_test
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -52,18 +51,18 @@ var (
 	}
 )
 
-var _ = Describe("Antisymmetric", func() {
-	Describe("NewManager function test", func() {
-		It("should return yandexmetrica manager", func() {
+func TestYandexMetrica(t *testing.T) {
+	t.Run("NewManager function test", func(t *testing.T) {
+		t.Run("should return yandexmetrica manager", func(t *testing.T) {
 			yandexmetrica, err := yandexmetrica.NewManager(config.New(), logger.NOP, stats.NOP, destination, backendconfig.DefaultBackendConfig, nil)
-			Expect(err).To(BeNil())
-			Expect(yandexmetrica).NotTo(BeNil())
+			require.NoError(t, err)
+			require.NotNil(t, yandexmetrica)
 		})
 	})
-	Describe("Upload function test", func() {
-		It("Testing a successful scenario", func() {
+	t.Run("Upload function test", func(t *testing.T) {
+		t.Run("Testing a successful scenario", func(t *testing.T) {
 			cache := oauthv2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).Return(&http.Response{
 				StatusCode: 200,
@@ -98,13 +97,13 @@ var _ = Describe("Antisymmetric", func() {
 				Destination:     destination,
 				Manager:         yandexmetrica,
 			}
-			res := yandexmetrica.Upload(context.Background(), &asyncDestination)
-			Expect(res.SuccessResponse).To(Equal("{\"uploading\":{\"id\":719450782,\"source_quantity\":11,\"line_quantity\":11,\"client_id_type\":\"USER_ID\",\"status\":\"UPLOADED\"}}"))
-			Expect(res.SucceededJobIDs).To(Equal([]int64{1, 2, 3, 4}))
+			res := yandexmetrica.Upload(t.Context(), &asyncDestination)
+			require.Equal(t, "{\"uploading\":{\"id\":719450782,\"source_quantity\":11,\"line_quantity\":11,\"client_id_type\":\"USER_ID\",\"status\":\"UPLOADED\"}}", res.SuccessResponse)
+			require.Equal(t, []int64{1, 2, 3, 4}, res.SucceededJobIDs)
 		})
-		It("Testing a failure scenario when the accessToken is invalid", func() {
+		t.Run("Testing a failure scenario when the accessToken is invalid", func(t *testing.T) {
 			cache := oauthv2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).Return(&http.Response{
 				StatusCode: 403,
@@ -140,9 +139,9 @@ var _ = Describe("Antisymmetric", func() {
 				Destination:     destination,
 				Manager:         yandexmetrica,
 			}
-			res := yandexmetrica.Upload(context.Background(), &asyncDestination)
-			Expect(res.AbortReason).To(Equal("got non 200 response from the destination {\"errors\":[{\"error_type\":\"invalid_token\",\"message\":\"Invalid oauth_token\"}],\"code\":403,\"message\":\"Invalid oauth_token\"}"))
-			Expect(res.AbortJobIDs).To(Equal([]int64{1, 2, 3, 4}))
+			res := yandexmetrica.Upload(t.Context(), &asyncDestination)
+			require.Equal(t, "got non 200 response from the destination {\"errors\":[{\"error_type\":\"invalid_token\",\"message\":\"Invalid oauth_token\"}],\"code\":403,\"message\":\"Invalid oauth_token\"}", res.AbortReason)
+			require.Equal(t, []int64{1, 2, 3, 4}, res.AbortJobIDs)
 		})
 	})
-})
+}

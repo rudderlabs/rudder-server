@@ -13,8 +13,6 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
@@ -1152,150 +1150,170 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 	}
 }
 
-var _ = Describe("Utils", func() {
-	DescribeTable("Get columns from table schema", func(schema model.TableSchema, expected []string) {
-		columns := GetColumnsFromTableSchema(schema)
-		sort.Strings(columns)
-		sort.Strings(expected)
-		Expect(columns).To(Equal(expected))
-	},
-		Entry(nil, model.TableSchema{"k1": "v1", "k2": "v2"}, []string{"k1", "k2"}),
-		Entry(nil, model.TableSchema{"k2": "v1", "k1": "v2"}, []string{"k2", "k1"}),
-	)
+func TestWarehouseUtils(t *testing.T) {
+	providers := []string{BQ, RS, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, DELTALAKE, S3Datalake, GCSDatalake, AzureDatalake}
 
-	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected model.Schema) {
-		Expect(JSONSchemaToMap(rawMsg)).To(Equal(expected))
-	},
-		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), model.Schema{"k1": {"k2": "v2"}}),
-	)
+	t.Run("Get columns from table schema", func(t *testing.T) {
+		testCases := []struct {
+			name     string
+			schema   model.TableSchema
+			expected []string
+		}{
+			{name: "k1:v1,k2:v2", schema: model.TableSchema{"k1": "v1", "k2": "v2"}, expected: []string{"k1", "k2"}},
+			{name: "k2:v1,k1:v2", schema: model.TableSchema{"k2": "v1", "k1": "v2"}, expected: []string{"k2", "k1"}},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				columns := GetColumnsFromTableSchema(tc.schema)
+				sort.Strings(columns)
+				sort.Strings(tc.expected)
+				require.Equal(t, tc.expected, columns)
+			})
+		}
+	})
 
-	DescribeTable("Staging table prefix", func(provider string) {
-		Expect(StagingTablePrefix(provider)).To(Equal(ToProviderCase(provider, "rudder_staging_")))
-	},
-		Entry(nil, BQ),
-		Entry(nil, RS),
-		Entry(nil, SNOWFLAKE),
-		Entry(nil, POSTGRES),
-		Entry(nil, CLICKHOUSE),
-		Entry(nil, MSSQL),
-		Entry(nil, AzureSynapse),
-		Entry(nil, DELTALAKE),
-		Entry(nil, S3Datalake),
-		Entry(nil, GCSDatalake),
-		Entry(nil, AzureDatalake),
-	)
+	t.Run("JSON schema to Map", func(t *testing.T) {
+		testCases := []struct {
+			name     string
+			rawMsg   json.RawMessage
+			expected model.Schema
+		}{
+			{name: "nested object", rawMsg: json.RawMessage(`{"k1": { "k2": "v2" }}`), expected: model.Schema{"k1": {"k2": "v2"}}},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				require.Equal(t, tc.expected, JSONSchemaToMap(tc.rawMsg))
+			})
+		}
+	})
 
-	DescribeTable("Staging table name", func(provider string, limit int) {
-		By("Within limits")
-		tableName := ToProviderCase(provider, "demo")
-		expectedTableName := ToProviderCase(provider, "rudder_staging_demo_")
-		Expect(StagingTableName(provider, tableName, limit)).To(HavePrefix(expectedTableName))
+	t.Run("Staging table prefix", func(t *testing.T) {
+		for _, provider := range providers {
+			t.Run(provider, func(t *testing.T) {
+				require.Equal(t, ToProviderCase(provider, "rudder_staging_"), StagingTablePrefix(provider))
+			})
+		}
+	})
 
-		By("Beyond limits")
-		tableName = ToProviderCase(provider, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz")
-		expectedTableName = ToProviderCase(provider, "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"[:limit])
-		Expect(StagingTableName(provider, tableName, limit)).To(HavePrefix(expectedTableName))
-	},
-		Entry(nil, BQ, 127),
-		Entry(nil, RS, 127),
-		Entry(nil, SNOWFLAKE, 127),
-		Entry(nil, POSTGRES, 63),
-		Entry(nil, CLICKHOUSE, 127),
-		Entry(nil, MSSQL, 127),
-		Entry(nil, AzureSynapse, 127),
-		Entry(nil, DELTALAKE, 127),
-		Entry(nil, S3Datalake, 127),
-		Entry(nil, GCSDatalake, 127),
-		Entry(nil, AzureDatalake, 127),
-	)
+	t.Run("Staging table name", func(t *testing.T) {
+		testCases := []struct {
+			name     string
+			provider string
+			limit    int
+		}{
+			{name: BQ, provider: BQ, limit: 127},
+			{name: RS, provider: RS, limit: 127},
+			{name: SNOWFLAKE, provider: SNOWFLAKE, limit: 127},
+			{name: POSTGRES, provider: POSTGRES, limit: 63},
+			{name: CLICKHOUSE, provider: CLICKHOUSE, limit: 127},
+			{name: MSSQL, provider: MSSQL, limit: 127},
+			{name: AzureSynapse, provider: AzureSynapse, limit: 127},
+			{name: DELTALAKE, provider: DELTALAKE, limit: 127},
+			{name: S3Datalake, provider: S3Datalake, limit: 127},
+			{name: GCSDatalake, provider: GCSDatalake, limit: 127},
+			{name: AzureDatalake, provider: AzureDatalake, limit: 127},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				// Within limits
+				tableName := ToProviderCase(tc.provider, "demo")
+				expectedTableName := ToProviderCase(tc.provider, "rudder_staging_demo_")
+				stagingTableName := StagingTableName(tc.provider, tableName, tc.limit)
+				require.Truef(t, strings.HasPrefix(stagingTableName, expectedTableName), "%q does not have prefix %q", stagingTableName, expectedTableName)
 
-	DescribeTable("Identity mapping unique mapping constraints name", func(warehouse model.Warehouse, expected string) {
-		Expect(IdentityMappingsUniqueMappingConstraintName(warehouse)).To(Equal(expected))
-	},
-		Entry(nil, model.Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "unique_merge_property_namespace_id"),
-	)
+				// Beyond limits
+				tableName = ToProviderCase(tc.provider, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz")
+				expectedTableName = ToProviderCase(tc.provider, "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"[:tc.limit])
+				stagingTableName = StagingTableName(tc.provider, tableName, tc.limit)
+				require.Truef(t, strings.HasPrefix(stagingTableName, expectedTableName), "%q does not have prefix %q", stagingTableName, expectedTableName)
+			})
+		}
+	})
 
-	DescribeTable("Identity mapping table name", func(warehouse model.Warehouse, expected string) {
-		Expect(IdentityMappingsTableName(warehouse)).To(Equal(expected))
-	},
-		Entry(nil, model.Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_mappings_namespace_id"),
-	)
+	warehouse := model.Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}
 
-	DescribeTable("Identity merge rules table name", func(warehouse model.Warehouse, expected string) {
-		Expect(IdentityMergeRulesTableName(warehouse)).To(Equal(expected))
-	},
-		Entry(nil, model.Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_merge_rules_namespace_id"),
-	)
+	t.Run("Identity mapping unique mapping constraints name", func(t *testing.T) {
+		require.Equal(t, "unique_merge_property_namespace_id", IdentityMappingsUniqueMappingConstraintName(warehouse))
+	})
 
-	DescribeTable("Identity merge rules warehouse table name", func(provider string) {
-		Expect(IdentityMergeRulesWarehouseTableName(provider)).To(Equal(ToProviderCase(provider, IdentityMergeRulesTable)))
-	},
-		Entry(nil, BQ),
-		Entry(nil, RS),
-		Entry(nil, SNOWFLAKE),
-		Entry(nil, POSTGRES),
-		Entry(nil, CLICKHOUSE),
-		Entry(nil, MSSQL),
-		Entry(nil, AzureSynapse),
-		Entry(nil, DELTALAKE),
-		Entry(nil, S3Datalake),
-		Entry(nil, GCSDatalake),
-		Entry(nil, AzureDatalake),
-	)
+	t.Run("Identity mapping table name", func(t *testing.T) {
+		require.Equal(t, "rudder_identity_mappings_namespace_id", IdentityMappingsTableName(warehouse))
+	})
 
-	DescribeTable("Identity mappings warehouse table name", func(provider string) {
-		Expect(IdentityMappingsWarehouseTableName(provider)).To(Equal(ToProviderCase(provider, IdentityMappingsTable)))
-	},
-		Entry(nil, BQ),
-		Entry(nil, RS),
-		Entry(nil, SNOWFLAKE),
-		Entry(nil, POSTGRES),
-		Entry(nil, CLICKHOUSE),
-		Entry(nil, MSSQL),
-		Entry(nil, AzureSynapse),
-		Entry(nil, DELTALAKE),
-		Entry(nil, S3Datalake),
-		Entry(nil, GCSDatalake),
-		Entry(nil, AzureDatalake),
-	)
+	t.Run("Identity merge rules table name", func(t *testing.T) {
+		require.Equal(t, "rudder_identity_merge_rules_namespace_id", IdentityMergeRulesTableName(warehouse))
+	})
 
-	DescribeTable("Get object name", func(location string, config any, objectProvider, objectName string) {
-		Expect(GetObjectName(location, config, objectProvider)).To(Equal(objectName))
-	},
-		Entry(GCS, "https://storage.googleapis.com/bucket-name/key", map[string]any{"bucketName": "bucket-name"}, GCS, "key"),
-		Entry(S3, "https://bucket-name.s3.amazonaws.com/key", map[string]any{"bucketName": "bucket-name"}, S3, "key"),
-		Entry(AzureBlob, "https://account-name.blob.core.windows.net/container-name/key", map[string]any{"containerName": "container-name"}, AzureBlob, "key"),
-		Entry(MINIO, "https://minio-endpoint/bucket-name/key", map[string]any{"bucketName": "bucket-name", "useSSL": true, "endPoint": "minio-endpoint"}, MINIO, "key"),
-	)
+	t.Run("Identity merge rules warehouse table name", func(t *testing.T) {
+		for _, provider := range providers {
+			t.Run(provider, func(t *testing.T) {
+				require.Equal(t, ToProviderCase(provider, IdentityMergeRulesTable), IdentityMergeRulesWarehouseTableName(provider))
+			})
+		}
+	})
 
-	It("SSL keys", func() {
+	t.Run("Identity mappings warehouse table name", func(t *testing.T) {
+		for _, provider := range providers {
+			t.Run(provider, func(t *testing.T) {
+				require.Equal(t, ToProviderCase(provider, IdentityMappingsTable), IdentityMappingsWarehouseTableName(provider))
+			})
+		}
+	})
+
+	t.Run("Get object name", func(t *testing.T) {
+		testCases := []struct {
+			name           string
+			location       string
+			config         any
+			objectProvider string
+			objectName     string
+		}{
+			{name: GCS, location: "https://storage.googleapis.com/bucket-name/key", config: map[string]any{"bucketName": "bucket-name"}, objectProvider: GCS, objectName: "key"},
+			{name: S3, location: "https://bucket-name.s3.amazonaws.com/key", config: map[string]any{"bucketName": "bucket-name"}, objectProvider: S3, objectName: "key"},
+			{name: AzureBlob, location: "https://account-name.blob.core.windows.net/container-name/key", config: map[string]any{"containerName": "container-name"}, objectProvider: AzureBlob, objectName: "key"},
+			{name: MINIO, location: "https://minio-endpoint/bucket-name/key", config: map[string]any{"bucketName": "bucket-name", "useSSL": true, "endPoint": "minio-endpoint"}, objectProvider: MINIO, objectName: "key"},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				objectName, err := GetObjectName(tc.location, tc.config, tc.objectProvider)
+				require.NoError(t, err)
+				require.Equal(t, tc.objectName, objectName)
+			})
+		}
+	})
+
+	t.Run("SSL keys", func(t *testing.T) {
+		t.Cleanup(config.Reset)
+		config.Set("RUDDER_TMPDIR", t.TempDir())
 		destinationID := "destID"
 		clientKey, clientCert, serverCA := misc.FastUUID().String(), misc.FastUUID().String(), misc.FastUUID().String()
 
 		err := WriteSSLKeys(backendconfig.DestinationT{ID: destinationID, Config: map[string]any{"clientKey": clientKey, "clientCert": clientCert, "serverCA": serverCA}})
-		Expect(err).To(Equal(WriteSSLKeyError{}))
+		require.Equal(t, WriteSSLKeyError{}, err)
 
 		path := GetSSLKeyDirPath(destinationID)
-		Expect(path).NotTo(BeEmpty())
+		require.NotEmpty(t, path)
 
-		Expect(os.RemoveAll(path)).NotTo(HaveOccurred())
+		require.NoError(t, os.RemoveAll(path))
 	})
 
-	It("SSL keys with path traversal destination ID", func() {
+	t.Run("SSL keys with path traversal destination ID", func(t *testing.T) {
+		t.Cleanup(config.Reset)
+		config.Set("RUDDER_TMPDIR", t.TempDir())
 		clientKey, clientCert, serverCA := misc.FastUUID().String(), misc.FastUUID().String(), misc.FastUUID().String()
 
 		tmpDir, tmpDirErr := misc.GetTmpDir()
-		Expect(tmpDirErr).NotTo(HaveOccurred())
+		require.NoError(t, tmpDirErr)
 		escapedPath := filepath.Join(tmpDir, "escaped-destID")
-		defer os.RemoveAll(escapedPath)
+		t.Cleanup(func() { _ = os.RemoveAll(escapedPath) })
 
 		destinationID := "../escaped-destID"
 		err := WriteSSLKeys(backendconfig.DestinationT{ID: destinationID, Config: map[string]any{"clientKey": clientKey, "clientCert": clientCert, "serverCA": serverCA}})
-		Expect(err.GetErrTag()).To(Equal("invalid_destination_id"))
+		require.Equal(t, "invalid_destination_id", err.GetErrTag())
 
-		Expect(escapedPath).NotTo(BeADirectory())
+		require.NoDirExists(t, escapedPath)
 	})
-})
+}
 
 func TestMain(m *testing.M) {
 	config.Reset()

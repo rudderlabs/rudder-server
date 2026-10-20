@@ -2,7 +2,6 @@ package offline_conversions
 
 import (
 	"archive/zip"
-	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -14,9 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	mockbingads "github.com/rudderlabs/bing-ads-go-sdk/bingads"
@@ -56,53 +55,60 @@ func initBingads() {
 	})
 }
 
-var _ = Describe("Bing ads Offline Conversions", func() {
-	Context("Bing ads", func() {
-		BeforeEach(func() {
-			config.Reset()
-			config.Set("BatchRouter.BING_ADS_OFFLINE_CONVERSIONS.MaxUploadLimit", 1*bytesize.KB)
-		})
+type bingAdsFixture struct {
+	ctrl           *gomock.Controller
+	bingAdsService *mockbulkservice.MockBulkServiceI
+}
 
-		AfterEach(func() {
-			config.Reset()
-		})
+func newBingAdsFixture(t *testing.T) *bingAdsFixture {
+	t.Helper()
+	config.Reset()
+	config.Set("BatchRouter.BING_ADS_OFFLINE_CONVERSIONS.MaxUploadLimit", 1*bytesize.KB)
+	t.Cleanup(config.Reset)
+	initBingads()
+	ctrl := gomock.NewController(t)
+	return &bingAdsFixture{
+		ctrl:           ctrl,
+		bingAdsService: mockbulkservice.NewMockBulkServiceI(ctrl),
+	}
+}
 
-		It("TestBingAdsUploadPartialSuccessCase", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, true)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&mockbingads.GetBulkUploadUrlResponse{
+// setupRudderTmpDir points RUDDER_TMPDIR to a fresh directory that contains the async destination logs folder.
+func setupRudderTmpDir(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "rudder-async-destination-logs"), 0o755), "Creating the directory 'something'")
+	t.Setenv("RUDDER_TMPDIR", dir)
+}
+
+func TestBingAdsOfflineConversions(t *testing.T) {
+	t.Run("Bing ads", func(t *testing.T) {
+		t.Run("TestBingAdsUploadPartialSuccessCase", func(t *testing.T) {
+			f := newBingAdsFixture(t)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, true)
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(&mockbingads.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload1",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&mockbingads.GetBulkUploadUrlResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(&mockbingads.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload2",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&mockbingads.GetBulkUploadUrlResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(&mockbingads.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload3",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
 
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload1", gomock.Any()).Return(&mockbingads.UploadBulkFileResponse{
+			f.bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload1", gomock.Any()).Return(&mockbingads.UploadBulkFileResponse{
 				TrackingId: "randomTrackingId1",
 				RequestId:  "randomRequestId1",
 			}, nil)
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload2", gomock.Any()).Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload3", gomock.Any()).Return(&mockbingads.UploadBulkFileResponse{
+			f.bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload2", gomock.Any()).Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
+			f.bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload3", gomock.Any()).Return(&mockbingads.UploadBulkFileResponse{
 				TrackingId: "randomTrackingId3",
 				RequestId:  "randomRequestId3",
 			}, nil)
-			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			Expect(err).ShouldNot(HaveOccurred(), "creating temporary directory")
-
-			subDir := filepath.Join(dir, "rudder-async-destination-logs")
-			err = os.Mkdir(subDir, 0o755)
-			Expect(err).ShouldNot(HaveOccurred(), "Creating the directory 'something'")
-
-			Expect(err).To(BeNil())
-			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
+			setupRudderTmpDir(t)
 
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4, 5, 6},
@@ -121,25 +127,19 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			}
 
 			// making upload function call
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
+			received := bulkUploader.Upload(t.Context(), &asyncDestination)
 			received.ImportingParameters = json.RawMessage{}
 
-			// Remove the directory and its contents
-			err = os.RemoveAll(dir)
-			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
-
-			Expect(received).To(Equal(expected))
+			require.Equal(t, expected, received)
 		})
 
-		It("TestBingAdsUploadFailedGetBulkUploadUrl", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, true)
+		t.Run("TestBingAdsUploadFailedGetBulkUploadUrl", func(t *testing.T) {
+			f := newBingAdsFixture(t)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, true)
 			errorMsg := "Error in getting bulk upload url"
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errorMsg))
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errorMsg))
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errorMsg))
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errorMsg))
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errorMsg))
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errorMsg))
 
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4, 5, 6},
@@ -151,7 +151,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
 			importParameters, err := jsonrs.Marshal(parameters)
-			Expect(err).ShouldNot(HaveOccurred(), "unmarshalling parameters")
+			require.NoError(t, err, "unmarshalling parameters")
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
 				FailedReason:        "{\"error\":\"update:error in getting bulk upload url: Error in getting bulk upload url,insert:error in getting bulk upload url: Error in getting bulk upload url,delete:error in getting bulk upload url: Error in getting bulk upload url\"}",
@@ -160,30 +160,20 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				AbortCount:          0,
 				ImportingParameters: json.RawMessage(importParameters),
 			}
-			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			Expect(err).ShouldNot(HaveOccurred(), "creating temporary directory")
-
-			subDir := filepath.Join(dir, "rudder-async-destination-logs")
-			err = os.Mkdir(subDir, 0o755)
-			Expect(err).ShouldNot(HaveOccurred(), "Creating the directory 'something'")
-			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
-			err = os.RemoveAll(dir)
-			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
-			Expect(received).To(Equal(expected))
+			setupRudderTmpDir(t)
+			received := bulkUploader.Upload(t.Context(), &asyncDestination)
+			require.Equal(t, expected, received)
 		})
 
-		It("TestBingAdsUploadEmptyGetBulkUploadUrl", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, true)
+		t.Run("TestBingAdsUploadEmptyGetBulkUploadUrl", func(t *testing.T) {
+			f := newBingAdsFixture(t)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, true)
 			errMsg := "unable to get bulk upload url, check your credentials"
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errMsg))
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errMsg))
 
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errMsg))
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errMsg))
 
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errMsg))
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errMsg))
 
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4, 5, 6},
@@ -195,7 +185,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
 			importParameters, err := jsonrs.Marshal(parameters)
-			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
+			require.NoError(t, err, "removing temporary directory")
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
 				FailedReason:        "{\"error\":\"update:error in getting bulk upload url: unable to get bulk upload url, check your credentials,insert:error in getting bulk upload url: unable to get bulk upload url, check your credentials,delete:error in getting bulk upload url: unable to get bulk upload url, check your credentials\"}",
@@ -204,50 +194,31 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				ImportingParameters: json.RawMessage(importParameters),
 			}
 
-			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-
-			Expect(err).ShouldNot(HaveOccurred(), "creating temporary directory")
-
-			subDir := filepath.Join(dir, "rudder-async-destination-logs")
-			err = os.Mkdir(subDir, 0o755)
-			Expect(err).ShouldNot(HaveOccurred(), "Creating the directory 'something'")
-			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
-			err = os.RemoveAll(dir)
-			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
-			Expect(received).To(Equal(expected))
+			setupRudderTmpDir(t)
+			received := bulkUploader.Upload(t.Context(), &asyncDestination)
+			require.Equal(t, expected, received)
 		})
 
-		It("TestBingAdsUploadFailedUploadBulkFile", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, true)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&mockbingads.GetBulkUploadUrlResponse{
+		t.Run("TestBingAdsUploadFailedUploadBulkFile", func(t *testing.T) {
+			f := newBingAdsFixture(t)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, true)
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(&mockbingads.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload1",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&mockbingads.GetBulkUploadUrlResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(&mockbingads.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload2",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&mockbingads.GetBulkUploadUrlResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(&mockbingads.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload3",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload1", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload2", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload3", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
+			f.bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload1", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
+			f.bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload2", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
+			f.bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload3", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
 
-			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			Expect(err).ShouldNot(HaveOccurred(), "creating temporary directory")
-
-			subDir := filepath.Join(dir, "rudder-async-destination-logs")
-			err = os.Mkdir(subDir, 0o755)
-			Expect(err).ShouldNot(HaveOccurred(), "Creating the directory 'something'")
-
-			Expect(err).To(BeNil())
-			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
+			setupRudderTmpDir(t)
 
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4, 5, 6},
@@ -259,7 +230,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
 			importParameters, err := jsonrs.Marshal(parameters)
-			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
+			require.NoError(t, err, "removing temporary directory")
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
 				FailedReason:        "{\"error\":\"update:error in uploading the bulk file: Error in uploading bulk file,insert:error in uploading the bulk file: Error in uploading bulk file,delete:error in uploading the bulk file: Error in uploading bulk file\"}",
@@ -267,21 +238,16 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				DestinationID:       destination.ID,
 				ImportingParameters: json.RawMessage(importParameters),
 			}
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
+			received := bulkUploader.Upload(t.Context(), &asyncDestination)
 
-			// Remove the directory and its contents
-			err = os.RemoveAll(dir)
-			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
-			Expect(received).To(Equal(expected))
+			require.Equal(t, expected, received)
 		})
 
-		It("TestBingAdsPollSuccessCase", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, true)
+		t.Run("TestBingAdsPollSuccessCase", func(t *testing.T) {
+			f := newBingAdsFixture(t)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, true)
 
-			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&mockbingads.GetBulkUploadStatusResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&mockbingads.GetBulkUploadStatusResponse{
 				PercentComplete: int64(100),
 				RequestStatus:   "Completed",
 				ResultFileUrl:   "http://dummyurl.com",
@@ -293,17 +259,15 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				Complete:   true,
 				StatusCode: 200,
 			}
-			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
-			Expect(recievedResponse).To(Equal(expectedResp))
+			recievedResponse := bulkUploader.Poll(t.Context(), pollInput)
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestBingAdsPollFailureCase", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, true)
+		t.Run("TestBingAdsPollFailureCase", func(t *testing.T) {
+			f := newBingAdsFixture(t)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, true)
 
-			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(nil, fmt.Errorf("failed to get bulk upload status:"))
+			f.bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(nil, fmt.Errorf("failed to get bulk upload status:"))
 			pollInput := common.AsyncPoll{
 				ImportId: "dummyRequestId123",
 			}
@@ -311,17 +275,15 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				StatusCode: 500,
 				HasFailed:  true,
 			}
-			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
-			Expect(recievedResponse).To(Equal(expectedResp))
+			recievedResponse := bulkUploader.Poll(t.Context(), pollInput)
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestBingAdsPollPartialFailureCase", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, true)
+		t.Run("TestBingAdsPollPartialFailureCase", func(t *testing.T) {
+			f := newBingAdsFixture(t)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, true)
 
-			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&mockbingads.GetBulkUploadStatusResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&mockbingads.GetBulkUploadStatusResponse{
 				PercentComplete: int64(100),
 				RequestStatus:   "CompletedWithErrors",
 				ResultFileUrl:   "https://dummy.url.com",
@@ -336,20 +298,18 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				HasFailed:           true,
 				FailedJobParameters: "https://dummy.url.com",
 			}
-			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
+			recievedResponse := bulkUploader.Poll(t.Context(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
-			Expect(recievedResponse).To(Equal(expectedResp))
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestBingAdsPollPendingStatusCase", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, true)
+		t.Run("TestBingAdsPollPendingStatusCase", func(t *testing.T) {
+			f := newBingAdsFixture(t)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, true)
 
-			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&mockbingads.GetBulkUploadStatusResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&mockbingads.GetBulkUploadStatusResponse{
 				PercentComplete: int64(0),
 				RequestStatus:   "InProgress",
 				ResultFileUrl:   "",
@@ -362,20 +322,18 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				InProgress: true,
 				StatusCode: 200,
 			}
-			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
+			recievedResponse := bulkUploader.Poll(t.Context(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
-			Expect(recievedResponse).To(Equal(expectedResp))
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestBingAdsPollFailedStatusCase", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, true)
+		t.Run("TestBingAdsPollFailedStatusCase", func(t *testing.T) {
+			f := newBingAdsFixture(t)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, true)
 
-			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&mockbingads.GetBulkUploadStatusResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&mockbingads.GetBulkUploadStatusResponse{
 				PercentComplete: int64(0),
 				RequestStatus:   "Failed",
 				ResultFileUrl:   "",
@@ -388,26 +346,24 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				HasFailed:  true,
 				StatusCode: 500,
 			}
-			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
+			recievedResponse := bulkUploader.Poll(t.Context(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
-			Expect(recievedResponse).To(Equal(expectedResp))
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestBingAdsPollSuccessAndFailedStatusCase", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, true)
+		t.Run("TestBingAdsPollSuccessAndFailedStatusCase", func(t *testing.T) {
+			f := newBingAdsFixture(t)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, true)
 
-			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId456").Return(&mockbingads.GetBulkUploadStatusResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId456").Return(&mockbingads.GetBulkUploadStatusResponse{
 				PercentComplete: int64(100),
 				RequestStatus:   "Completed",
 				ResultFileUrl:   "",
 			}, nil)
 
-			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&mockbingads.GetBulkUploadStatusResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&mockbingads.GetBulkUploadStatusResponse{
 				PercentComplete: int64(0),
 				RequestStatus:   "Failed",
 				ResultFileUrl:   "",
@@ -422,17 +378,15 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				StatusCode:          500,
 				FailedJobParameters: ",", // empty file
 			}
-			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
+			recievedResponse := bulkUploader.Poll(t.Context(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
-			Expect(recievedResponse).To(Equal(expectedResp))
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestBingAdsGetUploadStats", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+		t.Run("TestBingAdsGetUploadStats", func(t *testing.T) {
+			f := newBingAdsFixture(t)
 			errorsTemplateFilePath := filepath.Join(currentDir, "testdata/status-check.zip") // Path of the source file
 			// Create a test server with a custom handler function
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -443,7 +397,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			}))
 			defer ts.Close()
 			modifiedURL := ts.URL // Use the test server URL
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, true)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, true)
 
 			UploadStatsInput := common.GetUploadStatsInput{
 				FailedJobParameters: modifiedURL,
@@ -479,13 +433,12 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				},
 			}
 			recievedResponse := bulkUploader.GetUploadStats(UploadStatsInput)
-			Expect(recievedResponse).To(Equal(expectedResp))
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestNewManagerInternal", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			oauthV2Service := MockAuthorizer.NewMockOAuthHandler(ctrl)
+		t.Run("TestNewManagerInternal", func(t *testing.T) {
+			f := newBingAdsFixture(t)
+			oauthV2Service := MockAuthorizer.NewMockOAuthHandler(f.ctrl)
 			oauthV2Service.EXPECT().FetchToken(gomock.Any()).Return(
 				json.RawMessage(`
 							{
@@ -498,10 +451,12 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			)
 
 			bingAdsUploader, err := newManagerInternal(logger.NOP, stats.NOP, &destination, oauthV2Service)
-			Expect(err).To(BeNil())
-			Expect(bingAdsUploader).ToNot(BeNil())
+			require.NoError(t, err)
+			require.NotNil(t, bingAdsUploader)
 		})
-		It("Transform() Test -> successful ", func() {
+
+		t.Run("Transform() Test -> successful ", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\n  \"type\": \"record\",\n  \"action\": \"insert\",\n  \"fields\": {\n    \"conversionName\": \"Test-Integration\",\n    \"conversionTime\": \"2023-05-22T06:27:54Z\",\n    \"conversionValue\": \"100\",\n    \"microsoftClickId\": \"click_id\",\n    \"conversionCurrencyCode\": \"USD\",\n    \"email\":\"test@testmail.com\",\n    \"phone\":\"+911234567890\"\n  }\n}"),
 			}
@@ -511,11 +466,12 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			expectedResp := `{"message":{"fields":{"conversionCurrencyCode":"USD","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 AM","conversionValue":"100","email":"28a4da98f8812110001ab8ffacde3b38b4725a9e3570c39299fbf2d12c5aa70e","microsoftClickId":"click_id","phone":"8c229df83de8ab269e90918846e326c4008c86481393223d17a30ff5a407b08e"},"action":"insert"},"metadata":{"jobId":0}}`
 			// Execute
 			resp, err := uploader.Transform(job)
-			Expect(resp).To(Equal(expectedResp))
-			Expect(err).To(BeNil())
+			require.Equal(t, expectedResp, resp)
+			require.NoError(t, err)
 		})
 
-		It("Transform() Test -> adjustedConversionTime not available", func() {
+		t.Run("Transform() Test -> adjustedConversionTime not available", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\", \"conversionCurrencyCode\": \"USD\"}}"),
 			}
@@ -523,10 +479,11 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			// Execute
 			_, err := uploader.Transform(job)
 			expectedResult := fmt.Errorf(" adjustedConversionTime field not defined")
-			Expect(err.Error()).To(Equal(expectedResult.Error()))
+			require.Equal(t, expectedResult.Error(), err.Error())
 		})
 
-		It("Transform() Test -> update reformats and preserves adjustedConversionTime", func() {
+		t.Run("Transform() Test -> update reformats and preserves adjustedConversionTime", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"adjustedConversionTime\": \"2023-05-22T18:27:54Z\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\", \"conversionCurrencyCode\": \"USD\"}}"),
 			}
@@ -534,11 +491,12 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			expectedResp := `{"message":{"fields":{"adjustedConversionTime":"5/22/2023 6:27:54 PM","conversionCurrencyCode":"USD","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 AM","conversionValue":"100","microsoftClickId":"click_id"},"action":"update"},"metadata":{"jobId":0}}`
 			// Execute
 			resp, err := uploader.Transform(job)
-			Expect(err).To(BeNil())
-			Expect(resp).To(Equal(expectedResp))
+			require.NoError(t, err)
+			require.Equal(t, expectedResp, resp)
 		})
 
-		It("Transform() Test -> insert ignores a malformed adjustedConversionTime", func() {
+		t.Run("Transform() Test -> insert ignores a malformed adjustedConversionTime", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\"type\": \"record\", \"action\": \"insert\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"adjustedConversionTime\": \"not-a-timestamp\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\"}}"),
 			}
@@ -548,11 +506,12 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			expectedResp := `{"message":{"fields":{"adjustedConversionTime":"not-a-timestamp","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 AM","conversionValue":"100","microsoftClickId":"click_id"},"action":"insert"},"metadata":{"jobId":0}}`
 			// Execute
 			resp, err := uploader.Transform(job)
-			Expect(err).To(BeNil())
-			Expect(resp).To(Equal(expectedResp))
+			require.NoError(t, err)
+			require.Equal(t, expectedResp, resp)
 		})
 
-		It("Transform() Test -> insert leaves a valid adjustedConversionTime untouched", func() {
+		t.Run("Transform() Test -> insert leaves a valid adjustedConversionTime untouched", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\"type\": \"record\", \"action\": \"insert\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"adjustedConversionTime\": \"2023-05-22T18:27:54Z\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\"}}"),
 			}
@@ -562,22 +521,24 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			expectedResp := `{"message":{"fields":{"adjustedConversionTime":"2023-05-22T18:27:54Z","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 AM","conversionValue":"100","microsoftClickId":"click_id"},"action":"insert"},"metadata":{"jobId":0}}`
 			// Execute
 			resp, err := uploader.Transform(job)
-			Expect(err).To(BeNil())
-			Expect(resp).To(Equal(expectedResp))
+			require.NoError(t, err)
+			require.Equal(t, expectedResp, resp)
 		})
 
-		It("Transform() Test -> update errors naming a malformed adjustedConversionTime", func() {
+		t.Run("Transform() Test -> update errors naming a malformed adjustedConversionTime", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"adjustedConversionTime\": \"not-a-timestamp\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\", \"conversionCurrencyCode\": \"USD\"}}"),
 			}
 			uploader := &BingAdsBulkUploader{}
 			// Execute
 			_, err := uploader.Transform(job)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("adjustedConversionTime must be in ISO 8601"))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "adjustedConversionTime must be in ISO 8601")
 		})
 
-		It("Transform() Test -> microsoftClickId is required(email and phone undefined) but not present", func() {
+		t.Run("Transform() Test -> microsoftClickId is required(email and phone undefined) but not present", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"conversionValue\": \"100\", \"conversionCurrencyCode\": \"USD\"}}"),
 			}
@@ -585,10 +546,11 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			// Execute
 			_, err := uploader.Transform(job)
 			expectedResult := fmt.Errorf("missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)")
-			Expect(err.Error()).To(Equal(expectedResult.Error()))
+			require.Equal(t, expectedResult.Error(), err.Error())
 		})
 
-		It("Transform() Test -> microsoftClickId is required(email and phone empty) but not present", func() {
+		t.Run("Transform() Test -> microsoftClickId is required(email and phone empty) but not present", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"2023-05-22T06:27:54Z\", \"conversionValue\": \"100\", \"conversionCurrencyCode\": \"USD\",\n    \"email\":\"\"}}"),
 			}
@@ -596,10 +558,11 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			// Execute
 			_, err := uploader.Transform(job)
 			expectedResult := fmt.Errorf("missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)")
-			Expect(err.Error()).To(Equal(expectedResult.Error()))
+			require.Equal(t, expectedResult.Error(), err.Error())
 		})
 
-		It("Transform() Test -> successful even when microsoftClickId is missing as email/phone is present", func() {
+		t.Run("Transform() Test -> successful even when microsoftClickId is missing as email/phone is present", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\n  \"type\": \"record\",\n  \"action\": \"insert\",\n  \"fields\": {\n    \"conversionName\": \"Test-Integration\",\n    \"conversionTime\": \"2023-05-22T18:27:54Z\",\n    \"adjustedConversionTime\": \"2023-05-22T18:27:54Z\",\n    \"conversionValue\": \"100\",\n    \"conversionCurrencyCode\": \"USD\",\n    \"email\": \"test@testmail.com\",\n    \"phone\": \"+911234567890\"\n  }\n}"),
 			}
@@ -611,11 +574,12 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			expectedResp := `{"message":{"fields":{"adjustedConversionTime":"2023-05-22T18:27:54Z","conversionCurrencyCode":"USD","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 PM","conversionValue":"100","email":"28a4da98f8812110001ab8ffacde3b38b4725a9e3570c39299fbf2d12c5aa70e","phone":"8c229df83de8ab269e90918846e326c4008c86481393223d17a30ff5a407b08e"},"action":"insert"},"metadata":{"jobId":0}}`
 			// Execute
 			resp, err := uploader.Transform(job)
-			Expect(resp).To(Equal(expectedResp))
-			Expect(err).To(BeNil())
+			require.Equal(t, expectedResp, resp)
+			require.NoError(t, err)
 		})
 
-		It("Transform() Test -> null microsoftClickId falls back to email/phone and writes empty CSV cells", func() {
+		t.Run("Transform() Test -> null microsoftClickId falls back to email/phone and writes empty CSV cells", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				JobID: 42,
 				EventPayload: []byte(`{
@@ -637,32 +601,32 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			uploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", nil, false)
 
 			resp, err := uploader.Transform(job)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			var data Data
 			err = jsonrs.Unmarshal([]byte(resp), &data)
-			Expect(err).ShouldNot(HaveOccurred())
+			require.NoError(t, err)
 
 			var transformedFields map[string]string
 			err = jsonrs.Unmarshal(data.Message.Fields, &transformedFields)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(transformedFields["microsoftClickId"]).To(Equal(""))
-			Expect(transformedFields["externalAttributionCredit"]).To(Equal(""))
+			require.NoError(t, err)
+			require.Equal(t, "", transformedFields["microsoftClickId"])
+			require.Equal(t, "", transformedFields["externalAttributionCredit"])
 
 			actionFile, err := createActionFile("insert")
-			Expect(err).ShouldNot(HaveOccurred())
+			require.NoError(t, err)
 			defer os.Remove(actionFile.CSVFilePath)
 			defer os.Remove(actionFile.ZipFilePath)
 
 			err = uploader.populateZipFile(actionFile, resp, data)
-			Expect(err).ShouldNot(HaveOccurred())
+			require.NoError(t, err)
 			actionFile.CSVWriter.Flush()
 
 			csvContent, err := os.ReadFile(actionFile.CSVFilePath)
-			Expect(err).ShouldNot(HaveOccurred())
+			require.NoError(t, err)
 			records, err := csv.NewReader(strings.NewReader(string(csvContent))).ReadAll()
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(records).To(HaveLen(3))
+			require.NoError(t, err)
+			require.Len(t, records, 3)
 
 			columnIndex := func(column string) int {
 				for index, header := range records[0] {
@@ -670,16 +634,17 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 						return index
 					}
 				}
-				Fail(fmt.Sprintf("missing CSV column %q", column))
+				t.Fatalf("missing CSV column %q", column)
 				return -1
 			}
 			dataRow := records[2]
-			Expect(dataRow[columnIndex("Microsoft Click Id")]).To(Equal(""))
-			Expect(dataRow[columnIndex("External Attribution Credit")]).To(Equal(""))
-			Expect(dataRow).NotTo(ContainElement("<nil>"))
+			require.Equal(t, "", dataRow[columnIndex("Microsoft Click Id")])
+			require.Equal(t, "", dataRow[columnIndex("External Attribution Credit")])
+			require.NotContains(t, dataRow, "<nil>")
 		})
 
-		It("Transform() Test -> null microsoftClickId without email/phone is invalid", func() {
+		t.Run("Transform() Test -> null microsoftClickId without email/phone is invalid", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				EventPayload: []byte(`{
 						"type": "record",
@@ -696,14 +661,12 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			uploader := &BingAdsBulkUploader{}
 
 			_, err := uploader.Transform(job)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(Equal("missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)"))
+			require.Error(t, err)
+			require.Equal(t, "missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)", err.Error())
 		})
 
-		It("TestBingAdsTransformWithInvalidTimestamp", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			defer ctrl.Finish()
+		t.Run("TestBingAdsTransformWithInvalidTimestamp", func(t *testing.T) {
+			newBingAdsFixture(t)
 
 			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", nil, true)
 
@@ -720,12 +683,13 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 
 			result, err := bulkUploader.Transform(job)
 
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("conversionTime must be in ISO 8601"))
-			Expect(result).To(Equal(string(job.EventPayload)))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "conversionTime must be in ISO 8601")
+			require.Equal(t, string(job.EventPayload), result)
 		})
 
-		It("Transform() Test -> conversionTime is not a string", func() {
+		t.Run("Transform() Test -> conversionTime is not a string", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": 12345, \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\", \"conversionCurrencyCode\": \"USD\"}}"),
 			}
@@ -733,10 +697,11 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			// Execute
 			_, err := uploader.Transform(job)
 			expectedResult := fmt.Errorf("conversionTime field is either not string or an empty string")
-			Expect(err.Error()).To(Equal(expectedResult.Error()))
+			require.Equal(t, expectedResult.Error(), err.Error())
 		})
 
-		It("Transform() Test -> successful even when some fields are an integer", func() {
+		t.Run("Transform() Test -> successful even when some fields are an integer", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\n  \"type\": \"record\",\n  \"action\": \"insert\",\n  \"fields\": {\n    \"conversionName\": \"Test-Integration\",\n    \"conversionTime\": \"2023-05-22T06:27:54Z\",\n    \"conversionValue\": 100,\n    \"microsoftClickId\": 54321,\n    \"conversionCurrencyCode\": \"USD\",\n    \"email\":\"test@testmail.com\",\n    \"phone\": 911234567890\n  }\n}"),
 			}
@@ -746,11 +711,12 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			expectedResp := `{"message":{"fields":{"conversionCurrencyCode":"USD","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 AM","conversionValue":"100","email":"28a4da98f8812110001ab8ffacde3b38b4725a9e3570c39299fbf2d12c5aa70e","microsoftClickId":"54321","phone":"b7a259e2dd78c8492f72e2c61c60f965b1e2d796b2645de6b5f8109792fab686"},"action":"insert"},"metadata":{"jobId":0}}`
 			// Execute
 			resp, err := uploader.Transform(job)
-			Expect(resp).To(Equal(expectedResp))
-			Expect(err).To(BeNil())
+			require.Equal(t, expectedResp, resp)
+			require.NoError(t, err)
 		})
 
-		It("Transform() Test -> successful with isHashRequired false", func() {
+		t.Run("Transform() Test -> successful with isHashRequired false", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\n  \"type\": \"record\",\n  \"action\": \"insert\",\n  \"fields\": {\n    \"conversionName\": \"Test-Integration\",\n    \"conversionTime\": \"2025-12-06T10:15:03+00:00\",\n    \"conversionValue\": \"15.942148760330578\",\n    \"microsoftClickId\": \"43d27c9a7f43100dcedc159df987176b\"\n  }\n}"),
 			}
@@ -760,11 +726,12 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			expectedResp := `{"message":{"fields":{"conversionName":"Test-Integration","conversionTime":"12/6/2025 10:15:03 AM","conversionValue":"15.942148760330578","microsoftClickId":"43d27c9a7f43100dcedc159df987176b"},"action":"insert"},"metadata":{"jobId":0}}`
 
 			resp, err := uploader.Transform(job)
-			Expect(err).To(BeNil())
-			Expect(resp).To(Equal(expectedResp))
+			require.NoError(t, err)
+			require.Equal(t, expectedResp, resp)
 		})
 
-		It("Transform() Test -> successful with email and phone when isHashRequired false", func() {
+		t.Run("Transform() Test -> successful with email and phone when isHashRequired false", func(t *testing.T) {
+			newBingAdsFixture(t)
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\n  \"type\": \"record\",\n  \"action\": \"insert\",\n  \"fields\": {\n    \"conversionName\": \"Test-Integration\",\n    \"conversionTime\": \"2025-12-06T10:15:03+00:00\",\n    \"conversionValue\": \"15.942148760330578\",\n    \"microsoftClickId\": \"43d27c9a7f43100dcedc159df987176b\",\n    \"email\": \"test@example.com\",\n    \"phone\": \"+1234567890\"\n  }\n}"),
 			}
@@ -774,98 +741,111 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			expectedResp := `{"message":{"fields":{"conversionName":"Test-Integration","conversionTime":"12/6/2025 10:15:03 AM","conversionValue":"15.942148760330578","email":"test@example.com","microsoftClickId":"43d27c9a7f43100dcedc159df987176b","phone":"+1234567890"},"action":"insert"},"metadata":{"jobId":0}}`
 
 			resp, err := uploader.Transform(job)
-			Expect(err).To(BeNil())
-			Expect(resp).To(Equal(expectedResp))
+			require.NoError(t, err)
+			require.Equal(t, expectedResp, resp)
 		})
+
 		// populateZipFile writes one record into the action-specific CSV. Each case below
 		// supplies the input fields and the FULL expected CSV (header + format version +
 		// data row) so we compare the entire file, catching any column shift or drop.
 		// The canonical field name emitted by rETL/VDM is `adjustedConversionTime`
 		// (rudder-integrations-info/src/routes/bingads_offline_conversions/index.ts:46).
-		DescribeTable("populateZipFile() -> writes the full expected CSV per action",
-			func(action string, fields map[string]string, expectedCSV [][]string) {
-				initBingads()
-				bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", nil, false)
+		t.Run("populateZipFile() -> writes the full expected CSV per action", func(t *testing.T) {
+			testCases := []struct {
+				name        string
+				action      string
+				fields      map[string]string
+				expectedCSV [][]string
+			}{
+				{
+					name:   "insert",
+					action: "insert",
+					fields: map[string]string{
+						"conversionCurrencyCode":    "USD",
+						"conversionName":            "Test-Integration",
+						"conversionTime":            "4/19/2024 5:01:20 AM",
+						"conversionValue":           "10",
+						"microsoftClickId":          "click_id",
+						"email":                     "hashed_email",
+						"phone":                     "hashed_phone",
+						"externalAttributionCredit": "0.5",
+						"externalAttributionModel":  "dummy goal name",
+					},
+					expectedCSV: [][]string{
+						{"Type", "Status", "Id", "Parent Id", "Client Id", "Name", "Conversion Currency Code", "Conversion Name", "Conversion Time", "Conversion Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "External Attribution Credit", "External Attribution Model"},
+						{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""},
+						{"Offline Conversion", "", "7", "", "", "", "USD", "Test-Integration", "4/19/2024 5:01:20 AM", "10", "click_id", "hashed_email", "hashed_phone", "0.5", "dummy goal name"},
+					},
+				},
+				{
+					name:   "update (Restate)",
+					action: "update",
+					fields: map[string]string{
+						"conversionCurrencyCode": "USD",
+						"conversionName":         "Test-Integration",
+						"conversionTime":         "4/1/2024 9:23:54 AM",
+						"conversionValue":        "100",
+						"adjustedConversionTime": "4/1/2024 9:33:54 AM",
+						"microsoftClickId":       "click_id",
+						"email":                  "hashed_email",
+						"phone":                  "hashed_phone",
+					},
+					expectedCSV: [][]string{
+						{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Adjustment Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjusted Currency Code", "Adjustment Time"},
+						{"Format Version", "", "", "", "6.0", "", "", "", "", "", "", "", ""},
+						{"Offline Conversion", "Restate", "", "7", "", "Test-Integration", "4/1/2024 9:23:54 AM", "100", "click_id", "hashed_email", "hashed_phone", "USD", "4/1/2024 9:33:54 AM"},
+					},
+				},
+				{
+					name:   "delete (Retract)",
+					action: "delete",
+					fields: map[string]string{
+						"conversionName":         "Test-Integration",
+						"conversionTime":         "4/1/2024 9:23:54 AM",
+						"adjustedConversionTime": "4/1/2024 9:33:54 AM",
+						"microsoftClickId":       "click_id",
+						"email":                  "hashed_email",
+						"phone":                  "hashed_phone",
+					},
+					expectedCSV: [][]string{
+						{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjustment Time"},
+						{"Format Version", "", "", "", "6.0", "", "", "", "", "", ""},
+						{"Offline Conversion", "Retract", "", "7", "", "Test-Integration", "4/1/2024 9:23:54 AM", "click_id", "hashed_email", "hashed_phone", "4/1/2024 9:33:54 AM"},
+					},
+				},
+			}
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					newBingAdsFixture(t)
+					bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", nil, false)
 
-				actionFile, err := createActionFile(action)
-				Expect(err).ShouldNot(HaveOccurred())
-				defer os.Remove(actionFile.CSVFilePath)
-				defer os.Remove(actionFile.ZipFilePath)
+					actionFile, err := createActionFile(tc.action)
+					require.NoError(t, err)
+					defer os.Remove(actionFile.CSVFilePath)
+					defer os.Remove(actionFile.ZipFilePath)
 
-				fieldsJSON, err := jsonrs.Marshal(fields)
-				Expect(err).ShouldNot(HaveOccurred())
+					fieldsJSON, err := jsonrs.Marshal(tc.fields)
+					require.NoError(t, err)
 
-				err = bulkUploader.populateZipFile(actionFile, "some line", Data{
-					Message:  Message{Action: action, Fields: fieldsJSON},
-					Metadata: Metadata{JobID: 7},
+					err = bulkUploader.populateZipFile(actionFile, "some line", Data{
+						Message:  Message{Action: tc.action, Fields: fieldsJSON},
+						Metadata: Metadata{JobID: 7},
+					})
+					require.NoError(t, err)
+					actionFile.CSVWriter.Flush()
+
+					csvContent, err := os.ReadFile(actionFile.CSVFilePath)
+					require.NoError(t, err)
+					records, err := csv.NewReader(strings.NewReader(string(csvContent))).ReadAll()
+					require.NoError(t, err)
+
+					// Full comparison of every row (header, format version, data row).
+					require.Equal(t, tc.expectedCSV, records)
 				})
-				Expect(err).ShouldNot(HaveOccurred())
-				actionFile.CSVWriter.Flush()
-
-				csvContent, err := os.ReadFile(actionFile.CSVFilePath)
-				Expect(err).ShouldNot(HaveOccurred())
-				records, err := csv.NewReader(strings.NewReader(string(csvContent))).ReadAll()
-				Expect(err).ShouldNot(HaveOccurred())
-
-				// Full comparison of every row (header, format version, data row).
-				Expect(records).To(Equal(expectedCSV))
-			},
-			Entry("insert",
-				"insert",
-				map[string]string{
-					"conversionCurrencyCode":    "USD",
-					"conversionName":            "Test-Integration",
-					"conversionTime":            "4/19/2024 5:01:20 AM",
-					"conversionValue":           "10",
-					"microsoftClickId":          "click_id",
-					"email":                     "hashed_email",
-					"phone":                     "hashed_phone",
-					"externalAttributionCredit": "0.5",
-					"externalAttributionModel":  "dummy goal name",
-				},
-				[][]string{
-					{"Type", "Status", "Id", "Parent Id", "Client Id", "Name", "Conversion Currency Code", "Conversion Name", "Conversion Time", "Conversion Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "External Attribution Credit", "External Attribution Model"},
-					{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""},
-					{"Offline Conversion", "", "7", "", "", "", "USD", "Test-Integration", "4/19/2024 5:01:20 AM", "10", "click_id", "hashed_email", "hashed_phone", "0.5", "dummy goal name"},
-				},
-			),
-			Entry("update (Restate)",
-				"update",
-				map[string]string{
-					"conversionCurrencyCode": "USD",
-					"conversionName":         "Test-Integration",
-					"conversionTime":         "4/1/2024 9:23:54 AM",
-					"conversionValue":        "100",
-					"adjustedConversionTime": "4/1/2024 9:33:54 AM",
-					"microsoftClickId":       "click_id",
-					"email":                  "hashed_email",
-					"phone":                  "hashed_phone",
-				},
-				[][]string{
-					{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Adjustment Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjusted Currency Code", "Adjustment Time"},
-					{"Format Version", "", "", "", "6.0", "", "", "", "", "", "", "", ""},
-					{"Offline Conversion", "Restate", "", "7", "", "Test-Integration", "4/1/2024 9:23:54 AM", "100", "click_id", "hashed_email", "hashed_phone", "USD", "4/1/2024 9:33:54 AM"},
-				},
-			),
-			Entry("delete (Retract)",
-				"delete",
-				map[string]string{
-					"conversionName":         "Test-Integration",
-					"conversionTime":         "4/1/2024 9:23:54 AM",
-					"adjustedConversionTime": "4/1/2024 9:33:54 AM",
-					"microsoftClickId":       "click_id",
-					"email":                  "hashed_email",
-					"phone":                  "hashed_phone",
-				},
-				[][]string{
-					{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjustment Time"},
-					{"Format Version", "", "", "", "6.0", "", "", "", "", "", ""},
-					{"Offline Conversion", "Retract", "", "7", "", "Test-Integration", "4/1/2024 9:23:54 AM", "click_id", "hashed_email", "hashed_phone", "4/1/2024 9:33:54 AM"},
-				},
-			),
-		)
+			}
+		})
 	})
-})
+}
 
 func DuplicateFile(sourcePath, destinationPath string) error {
 	// Open the source file
