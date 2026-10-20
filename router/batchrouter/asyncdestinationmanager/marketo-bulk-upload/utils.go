@@ -265,7 +265,6 @@ func sendHTTPRequest(uploadURL, csvFilePath, accessToken, deduplicationField str
 	}
 
 	_ = writer.WriteField("format", "csv")
-	_ = writer.WriteField("access_token", accessToken)
 	if deduplicationField != "" {
 		_ = writer.WriteField("lookupField", deduplicationField)
 	}
@@ -280,6 +279,7 @@ func sendHTTPRequest(uploadURL, csvFilePath, accessToken, deduplicationField str
 		return nil, fmt.Errorf("error while creating request: %v", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+accessToken)
 
 	client := &http.Client{}
 	return client.Do(req)
