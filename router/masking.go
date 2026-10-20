@@ -22,80 +22,97 @@ func (w *worker) maskDeliveryPayload(payload json.RawMessage) json.RawMessage {
 	if w.rt.reloadableConfig.disableEventDeliveryUploadMasking.Load() {
 		return payload
 	}
-
 	paths, ok := w.rt.transformerFeaturesService.SecretPaths(w.rt.destType)
-	var masked json.RawMessage
-	var maskErr bool
-	if ok {
-		masked, maskErr = maskListedPaths(payload, paths)
-	} else {
+	masked, reason := maskSecrets(payload, paths, ok)
+	switch reason {
+	case "no_paths", "not_object", "partial":
+		// fail closed: an unknown destination or an unmaskable path must never forward a raw credential
+		var maskErr bool
 		masked, maskErr = maskAll(payload)
-	}
-
-	var reason string
-	switch {
-	case maskErr:
-		reason = "mask_error"
-	case !ok:
-		reason = "mask_all"
-	case bytes.Equal(masked, payload): // masking only ever writes maskedValue, so equal bytes mean nothing matched
-		reason = "listed_noop"
-	default:
-		reason = "listed"
+		if !ok && !maskErr {
+			reason = "mask_all"
+		} else {
+			reason = "mask_error"
+		}
 	}
 	w.rt.deliveryPayloadMaskingStat(reason).Increment()
 	return masked
 }
 
-// maskListedPaths replaces existing values at paths. It falls back to mask-all on malformed
-// payloads or any path application error, so a masking failure never forwards the original value.
-func maskListedPaths(payload json.RawMessage, paths []string) (json.RawMessage, bool) {
-	if len(paths) == 0 {
-		return payload, false
+// maskReportingSampleEvent leaves the sample untouched where it cannot mask precisely:
+// a blanket-masked sample destroys the error-triage value the sample exists for.
+func (rt *Handle) maskReportingSampleEvent(payload json.RawMessage) json.RawMessage {
+	if !rt.reloadableConfig.enableReportingSampleEventMasking.Load() {
+		return payload
 	}
-	if !isJSONObject(payload) {
-		return maskAll(payload)
-	}
-	masked, err := applyListedPaths(payload, paths)
-	if err != nil {
-		fallback, _ := maskAll(masked)
-		return fallback, true
-	}
-	return masked, false
+	paths, ok := rt.transformerFeaturesService.SecretPaths(rt.destType)
+	masked, reason := maskSecrets(payload, paths, ok)
+	rt.reportingSampleEventMaskingStat(reason).Increment()
+	return masked
 }
 
-// applyListedPaths never mutates payload: sjson allocates a new slice unless ReplaceInPlace is set.
-func applyListedPaths(masked json.RawMessage, paths []string) (json.RawMessage, error) {
-	var err error
+// maskSecrets masks every listed path it can; paths and ok come from
+// transformerFeaturesService.SecretPaths. Returns the masked payload and a stats reason.
+func maskSecrets(payload json.RawMessage, paths []string, ok bool) (json.RawMessage, string) {
+	if !ok {
+		return payload, "no_paths"
+	}
+	if len(paths) == 0 {
+		return payload, "listed_noop"
+	}
+	if !isJSONObject(payload) {
+		return payload, "not_object"
+	}
+	masked, failed := applyPaths(payload, paths)
+	switch {
+	case failed:
+		return masked, "partial"
+	case bytes.Equal(masked, payload): // masking only ever writes maskedValue, so equal bytes mean nothing matched
+		return masked, "listed_noop"
+	default:
+		return masked, "listed"
+	}
+}
+
+// applyPaths masks every listed path that exists. A path that is absent is skipped and a
+// path that fails to apply never contributes its partial write.
+func applyPaths(payload json.RawMessage, paths []string) (_ json.RawMessage, failed bool) {
+	masked := payload
 	for _, path := range paths {
 		if path == "endpoint" {
 			continue
 		}
 		if path == "" {
-			return masked, errPathNotMasked
+			failed = true
+			continue
 		}
 		if !gjson.GetBytes(masked, path).Exists() {
 			continue
 		}
-
 		if parentPath, ok := terminalArrayWildcardParent(path); ok {
 			array := gjson.GetBytes(masked, parentPath)
 			if !array.IsArray() {
-				return masked, errPathNotMasked
+				failed = true
+				continue
 			}
 			for idx := range array.Array() {
-				if masked, err = setMasked(masked, parentPath+"."+strconv.Itoa(idx)); err != nil {
-					return masked, err
+				next, err := setMasked(masked, parentPath+"."+strconv.Itoa(idx))
+				if err != nil {
+					failed = true
+					continue
 				}
+				masked = next
 			}
 			continue
 		}
-
-		if masked, err = setMasked(masked, path); err != nil {
-			return masked, err
+		next, err := setMasked(masked, path)
+		if err != nil {
+			failed = true
+			continue
 		}
+		masked = next
 	}
-	return masked, nil
+	return masked, failed
 }
 
 func setMasked(payload json.RawMessage, path string) (json.RawMessage, error) {
