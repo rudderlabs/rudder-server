@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.91.0-rc.2](https://github.com/rudderlabs/rudder-server/compare/v1.90.0...v1.91.0-rc.2) (2026-10-20)
+
+
+### Features
+
+* **jobsdb:** pending events gauge for the gw jobsdb ([#7447](https://github.com/rudderlabs/rudder-server/issues/7447)) ([fc539c4](https://github.com/rudderlabs/rudder-server/commit/fc539c46b69e79d49981aa8ec7ac3c05335e47f2))
+* **processor:** report event_filter drops per reason and stop its succeeded rows ([#7454](https://github.com/rudderlabs/rudder-server/issues/7454)) ([5caff53](https://github.com/rudderlabs/rudder-server/commit/5caff53e9923c65edde3780dc4e552c3766efd89))
+
+
+### Bug Fixes
+
+* **destination:** authenticate marketo bulk uploads with bearer token ([#7510](https://github.com/rudderlabs/rudder-server/issues/7510)) ([3eaffad](https://github.com/rudderlabs/rudder-server/commit/3eaffadba1b87c274fd62031d87bdc954fa253a7))
+* **processor:** exclude dropped jobs from tracked users and activation records ([#7485](https://github.com/rudderlabs/rudder-server/issues/7485)) ([526602c](https://github.com/rudderlabs/rudder-server/commit/526602c874d1e8adb98605d19397685a9821e266))
+* **router:** enable live events payload masking by default ([#7500](https://github.com/rudderlabs/rudder-server/issues/7500)) ([8b5c22d](https://github.com/rudderlabs/rudder-server/commit/8b5c22d45339e88010af2d6f6c0c91803a87b999))
+* **router:** mask multi-request delivery payloads ([#7476](https://github.com/rudderlabs/rudder-server/issues/7476)) ([f65572e](https://github.com/rudderlabs/rudder-server/commit/f65572e60651af6181e2741663b194cab681dabc))
+* **router:** mask reporting sample event secrets ([#7497](https://github.com/rudderlabs/rudder-server/issues/7497)) ([833d694](https://github.com/rudderlabs/rudder-server/commit/833d6949ac725f42c3668bb12ec63945d87b5044))
+* **router:** report destination status for v1 proxy deliveries in transformer_outgoing_request_count ([#7482](https://github.com/rudderlabs/rudder-server/issues/7482)) ([bba1c21](https://github.com/rudderlabs/rudder-server/commit/bba1c2169d44174d727794de1fd6d64e78f209fa))
+
+
+### Miscellaneous
+
+* bump sqlconnect-go to v1.34.0 ([#7479](https://github.com/rudderlabs/rudder-server/issues/7479)) ([71e8cfa](https://github.com/rudderlabs/rudder-server/commit/71e8cfaed951a296b1638e5a6fdea0f59958ac3f))
+* stop setting in_reported_by on report rows ([#7458](https://github.com/rudderlabs/rudder-server/issues/7458)) ([814d149](https://github.com/rudderlabs/rudder-server/commit/814d149ff5e6ef1e13af52cd3d92174f7f0e14a7))
+* sync release v1.90.0 to main branch ([#7475](https://github.com/rudderlabs/rudder-server/issues/7475)) ([d05fcbb](https://github.com/rudderlabs/rudder-server/commit/d05fcbb2a6df9dd215cf63cf46531ab973da2b09))
+* **tooling:** move rudder-server test MinIO to Silo ([#7469](https://github.com/rudderlabs/rudder-server/issues/7469)) ([935bf59](https://github.com/rudderlabs/rudder-server/commit/935bf592f3caedb5c5b990f429fd0ffe25ccfefa))
+
 ## [1.90.1](https://github.com/rudderlabs/rudder-server/compare/v1.90.0...v1.90.1) (2026-10-14)
 
 
