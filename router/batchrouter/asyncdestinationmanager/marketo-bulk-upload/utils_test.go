@@ -237,7 +237,7 @@ func TestSendHTTPRequest(t *testing.T) {
 			}
 
 			captured := make(chan capturedRequest, 1)
-			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				request := capturedRequest{authorization: r.Header.Get("Authorization")}
 				r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 				// Request body is bounded above before multipart parsing.
@@ -275,7 +275,7 @@ func TestSendHTTPRequest(t *testing.T) {
 			}))
 			defer server.Close()
 
-			resp, err := sendHTTPRequest(server.Client(), server.URL, csvFilePath, accessToken, tt.deduplicationField)
+			resp, err := sendHTTPRequest(server.URL, csvFilePath, accessToken, tt.deduplicationField)
 			if err != nil {
 				t.Fatalf("sendHTTPRequest() error = %v", err)
 			}

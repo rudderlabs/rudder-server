@@ -48,7 +48,7 @@ func (m *MarketoAPIService) attemptImport(uploadURL, csvFilePath, deduplicationF
 	}
 
 	startTime := time.Now()
-	resp, err := sendHTTPRequest(m.httpClient, uploadURL, csvFilePath, token, deduplicationField)
+	resp, err := sendHTTPRequest(uploadURL, csvFilePath, token, deduplicationField)
 	uploadTimeStat.Since(startTime)
 
 	if err != nil {
