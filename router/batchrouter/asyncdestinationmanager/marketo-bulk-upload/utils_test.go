@@ -3,11 +3,16 @@ package marketobulkupload
 import (
 	"bufio"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
@@ -196,6 +201,75 @@ func TestParseMarketoResponse(t *testing.T) {
 }
 
 // ==== Response Parsing End ====
+
+func TestSendHTTPRequest(t *testing.T) {
+	const (
+		accessToken = "test-access-token"
+		csvContents = "email,firstName\nuser@example.com,Ada\n"
+	)
+
+	csvFilePath := filepath.Join(t.TempDir(), "leads.csv")
+	require.NoError(t, os.WriteFile(csvFilePath, []byte(csvContents), 0o600))
+
+	type capturedRequest struct {
+		authorization string
+		form          map[string][]string
+		fileName      string
+		fileContents  string
+	}
+
+	tests := []struct {
+		name               string
+		deduplicationField string
+	}{
+		{name: "with deduplication field", deduplicationField: "email"},
+		{name: "without deduplication field"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			captured := make(chan capturedRequest, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+				file, header, err := r.FormFile("file")
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				defer file.Close()
+				contents, err := io.ReadAll(file)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				captured <- capturedRequest{
+					authorization: r.Header.Get("Authorization"),
+					form:          r.MultipartForm.Value,
+					fileName:      header.Filename,
+					fileContents:  string(contents),
+				}
+			}))
+			defer server.Close()
+
+			resp, err := sendHTTPRequest(server.URL, csvFilePath, accessToken, tt.deduplicationField)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			req := <-captured
+			require.Equal(t, "Bearer "+accessToken, req.authorization)
+			require.NotContains(t, req.form, "access_token")
+			require.Equal(t, []string{"csv"}, req.form["format"])
+			if tt.deduplicationField != "" {
+				require.Equal(t, []string{tt.deduplicationField}, req.form["lookupField"])
+			} else {
+				require.NotContains(t, req.form, "lookupField")
+			}
+			require.Equal(t, filepath.Base(csvFilePath), req.fileName)
+			require.Equal(t, csvContents, req.fileContents)
+		})
+	}
+}
 
 // ==== Hashing Test Start ====
 func TestCalculateHashCode(t *testing.T) {
