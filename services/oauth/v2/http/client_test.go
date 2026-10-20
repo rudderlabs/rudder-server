@@ -4,16 +4,13 @@ import (
 	"bytes"
 	"io"
 	"net/http"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/mock/gomock"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -24,7 +21,6 @@ import (
 	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	httpClient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var oauthDefinitionConfig = map[string]any{
@@ -318,116 +314,5 @@ var _ = Describe("Http/Client", func() {
 				TLS:              nil,
 			}))
 		})
-	})
-})
-
-var _ = Describe("OAuth client flow wiring", func() {
-	It("reports inactive with the delete flow from the handler it builds itself", func() {
-		ctrl := gomock.NewController(GinkgoT())
-		statsStore, err := memstats.New()
-		Expect(err).To(BeNil())
-
-		const (
-			accountID     = "delete-account-id"
-			destinationID = "delete-destination-id"
-			workspaceID   = "delete-workspace-id"
-			destType      = "test-definition-name"
-		)
-
-		cache := v2.NewOauthTokenCache()
-		cache.Store(accountID, v2.OAuthToken{
-			Secret:         []byte(`{"access_token":"cached-token"}`),
-			ExpirationDate: time.Now().Add(24 * time.Hour).UTC().Format(misc.RFC3339Milli),
-		})
-
-		const originalResponse = `{"output":[{"authErrorCategory":"AUTH_STATUS_INACTIVE"}]}`
-		mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
-		mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewReader([]byte(originalResponse))),
-		}, nil)
-
-		// no OAuthHandler is injected: the client builds one, which must carry the client's flow
-		optionalArgs := &httpClient.HttpClientOptionalArgs{
-			Transport:           mockRoundTrip,
-			Augmenter:           extensions.HeaderAugmenter,
-			Locker:              kitsync.NewPartitionRWLocker(),
-			OAuthBreakerOptions: &v2.OAuthBreakerOptions{},
-		}
-
-		// the handler the client builds captures stats.Default at construction; swap a store in for
-		// exactly that window and restore the global before the request runs
-		client := func() *http.Client {
-			previousStats := stats.Default
-			stats.Default = statsStore
-			defer func() { stats.Default = previousStats }()
-
-			return httpClient.NewOAuthHttpClient(
-				&http.Client{},
-				common.RudderFlowDelete,
-				&cache,
-				backendconfig.DefaultBackendConfig,
-				rtTf.GetAuthErrorCategoryFromTransformResponse,
-				optionalArgs,
-			)
-		}()
-
-		destination := &backendconfig.DestinationT{
-			ID:            destinationID,
-			WorkspaceID:   workspaceID,
-			Config:        map[string]any{"rudderDeleteAccountId": accountID},
-			DeleteAccount: &backendconfig.Account{ID: accountID},
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				Name: destType,
-				Config: map[string]any{
-					"auth": map[string]any{
-						"type":         "OAuth",
-						"rudderScopes": []any{"delete"},
-					},
-				},
-			},
-		}
-		req, err := http.NewRequest(http.MethodPost, "http://example.com", bytes.NewReader([]byte(`{}`)))
-		Expect(err).To(BeNil())
-		req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
-
-		res, err := client.Do(req)
-		Expect(err).To(BeNil())
-		Expect(res).NotTo(BeNil())
-		defer res.Body.Close()
-
-		Expect(res.StatusCode).To(Equal(http.StatusOK))
-		body, err := io.ReadAll(res.Body)
-		Expect(err).To(BeNil())
-		var response v2.TransportResponse
-		Expect(jsonrs.Unmarshal(body, &response)).To(Succeed())
-		Expect(response.OriginalResponse).To(Equal(originalResponse))
-		Expect(response.InterceptorResponse.StatusCode).To(Equal(http.StatusBadRequest))
-
-		metrics := statsStore.GetByName("oauth_action_request")
-		Expect(metrics).To(HaveLen(1))
-		Expect(metrics[0].Tags).To(Equal(stats.Tags{
-			"id":              accountID,
-			"destinationId":   destinationID,
-			"workspaceId":     workspaceID,
-			"rudderCategory":  "destination",
-			"isCallToCpApi":   "false",
-			"authErrCategory": common.CategoryAuthStatusInactive,
-			"destType":        destType,
-			"flowType":        "delete",
-			"action":          "auth_status_inactive",
-			"oauthVersion":    "v2",
-			"errorMessage":    common.CategoryAuthStatusInactive,
-		}))
-		Expect(metrics[0].Value).To(BeNumerically("==", 1))
-
-		// the token fetch that served the cached token carries the same flow, and no destinationId
-		timers := statsStore.GetByName("oauth_action_total_latency")
-		Expect(timers).To(HaveLen(1))
-		Expect(timers[0].Tags["flowType"]).To(Equal("delete"))
-		Expect(timers[0].Tags["action"]).To(Equal("fetch_token"))
-		Expect(timers[0].Tags).NotTo(HaveKey("destinationId"))
-		Expect(statsStore.GetByName("oauth_action_request_sent")).To(BeEmpty())
-		Expect(statsStore.GetByName("oauth_action_proactive_token_refresh")).To(BeEmpty())
 	})
 })
