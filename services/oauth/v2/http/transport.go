@@ -45,7 +45,7 @@ type TransportArgs struct {
 }
 
 // OAuthTransport is a http.RoundTripper that adds the appropriate authorization information to oauth requests.
-// Also, it makes the calls to the actual endpoint and handles the response by refreshing the token if required or by updating the authStatus to "inactive".
+// Also, it makes the calls to the actual endpoint and handles the response by refreshing the token if required or by reporting an inactive auth status to the caller.
 type OAuthTransport struct {
 	oauthHandler v2.OAuthHandler
 	oauthexts.Augmenter
@@ -226,6 +226,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 		interceptorResp.StatusCode = http.StatusInternalServerError
 	case common.CategoryAuthStatusInactive:
 		interceptorResp.StatusCode = http.StatusBadRequest
+		t.oauthHandler.ReportAuthStatusInactive(rts.tokenParams)
 	}
 	applyInterceptorRespToHttpResp()
 	// when error is not nil, the response sent will be ignored(downstream)

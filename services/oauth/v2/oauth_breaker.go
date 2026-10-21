@@ -85,6 +85,11 @@ func (b *oauthBreaker) RefreshToken(params *OAuthTokenParams, previousSecret jso
 	})
 }
 
+// ReportAuthStatusInactive forwards to the delegate without consulting the breakers: a count, not a control-plane call.
+func (b *oauthBreaker) ReportAuthStatusInactive(params *OAuthTokenParams) {
+	b.delegate.ReportAuthStatusInactive(params)
+}
+
 // accountBreakers manages circuit breakers for different accounts.
 type accountBreakers struct {
 	breakersMu sync.RWMutex
