@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	pulsarType "github.com/apache/pulsar-client-go/pulsar"
@@ -44,6 +43,7 @@ type JobsForwarder struct {
 	initialRetryInterval config.ValueLoader[time.Duration]   // initial retry interval for the backoff mechanism
 	maxRetryInterval     config.ValueLoader[time.Duration]   // max retry interval for the backoff mechanism
 	maxRetryElapsedTime  config.ValueLoader[time.Duration]   // max retry elapsed time for the backoff mechanism
+	callbackTimeout      config.ValueLoader[time.Duration]   // max time to wait for the producer callbacks of a forwarding attempt after flushing
 	conf                 *config.Config                      // config used to resolve hierarchical settings at runtime
 	fullOrderKeyCache    map[string]*config.Reloadable[bool] // sourceID -> reloadable "full order key" setting, resolved hierarchically; only accessed by the single forwarder goroutine
 }
@@ -68,6 +68,7 @@ func (jf *JobsForwarder) setupReloadableVars() {
 	jf.initialRetryInterval = config.GetReloadableDurationVar(10, time.Second, "SchemaForwarder.initialRetryInterval")
 	jf.maxRetryInterval = config.GetReloadableDurationVar(60, time.Second, "SchemaForwarder.maxRetryInterval")
 	jf.maxRetryElapsedTime = config.GetReloadableDurationVar(60, time.Minute, "SchemaForwarder.maxRetryElapsedTime")
+	jf.callbackTimeout = config.GetReloadableDurationVar(10, time.Second, "SchemaForwarder.callbackTimeout")
 	jf.maxSampleSize = config.GetReloadableInt64Var(10*bytesize.KB, 1, "SchemaForwarder.maxSampleSize")
 	jf.fullOrderKeyCache = make(map[string]*config.Reloadable[bool])
 }
@@ -82,7 +83,12 @@ func (jf *JobsForwarder) Start() error {
 		return err
 	}
 	jf.pulsarProducer = producer
+	jf.start()
+	return nil
+}
 
+// start starts forwarding jobs using the configured pulsar producer
+func (jf *JobsForwarder) start() {
 	jf.transformer.Start()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -105,7 +111,6 @@ func (jf *JobsForwarder) Start() error {
 					jf.terminalErrFn(err) // we are signaling to shut down the app
 					return err
 				}
-				var mu sync.Mutex // protects statuses and toRetry
 				var statuses []*jobsdb.JobStatusT
 				schemaBatcher := batcher.NewEventSchemaMessageBatcher(jf.transformer)
 				for _, job := range jobs {
@@ -145,49 +150,56 @@ func (jf *JobsForwarder) Start() error {
 						return nil //nolint:nilerr
 					}
 					toForward := append([]*batcher.EventSchemaMessageBatch{}, messageBatches...)
+					resultsCh := make(chan lo.Tuple2[*batcher.EventSchemaMessageBatch, error], len(toForward)) // buffered so that callbacks never block, even after the attempt stops reading
 					for _, batch := range toForward {
 						msg := batch.Message
 						orderKey := jf.orderKey(batch)
 						jf.pulsarProducer.SendMessageAsync(ctx, orderKey, orderKey, msg.MustMarshal(),
 							func(_ pulsarType.MessageID, _ *pulsarType.ProducerMessage, err error) {
-								if err == nil { // mark job as succeeded and remove from toRetry
-									mu.Lock()
-									defer mu.Unlock()
-
-									_, idx, _ := lo.FindIndexOf(messageBatches, func(item *batcher.EventSchemaMessageBatch) bool {
-										return item.Index == batch.Index
-									})
-									messageBatches = slices.Delete(messageBatches, idx, idx+1)
-									for _, job := range batch.Jobs {
-										statuses = append(statuses, &jobsdb.JobStatusT{
-											JobID:         job.JobID,
-											JobState:      jobsdb.Succeeded.State,
-											AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-											ExecTime:      time.Now(),
-											RetryTime:     time.Now(),
-											ErrorCode:     "200",
-											ErrorResponse: []byte(`{}`),
-											Parameters:    []byte(`{}`),
-											JobParameters: job.Parameters,
-											WorkspaceId:   job.WorkspaceId,
-											PartitionID:   job.PartitionID,
-											CustomVal:     job.CustomVal,
-										})
-									}
-
-									jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "succeeded"}).Count(len(batch.Jobs))
-								} else {
-									jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "failed"}).Count(len(batch.Jobs))
-									jf.log.Errorn("failed to forward jobs",
-										logger.NewIntField("noOfJobs", int64(len(batch.Jobs))),
-										obskit.Error(err))
-								}
+								resultsCh <- lo.T2(batch, err)
 							})
 					}
-					if err := jf.pulsarProducer.Flush(); err != nil {
-						return fmt.Errorf("failed to flush pulsar producer: %w", err)
+					flushErr := jf.pulsarProducer.Flush()
+
+					// Flush can return before all callbacks have run, and pulsar never calls back for messages
+					// still batched when it closes the producer
+					waitCtx, cancel := context.WithTimeout(ctx, jf.callbackTimeout.Load())
+					defer cancel()
+					results, _, _, _ := lo.BufferWithContext(waitCtx, resultsCh, len(toForward))
+					for _, result := range results {
+						batch, err := result.Unpack()
+						if err != nil {
+							jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "failed"}).Count(len(batch.Jobs))
+							jf.log.Errorn("failed to forward jobs",
+								logger.NewIntField("noOfJobs", int64(len(batch.Jobs))),
+								obskit.Error(err))
+							continue
+						}
+						messageBatches = slices.DeleteFunc(messageBatches, func(item *batcher.EventSchemaMessageBatch) bool {
+							return item.Index == batch.Index
+						})
+						for _, job := range batch.Jobs {
+							statuses = append(statuses, &jobsdb.JobStatusT{
+								JobID:         job.JobID,
+								JobState:      jobsdb.Succeeded.State,
+								AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+								ExecTime:      time.Now(),
+								RetryTime:     time.Now(),
+								ErrorCode:     "200",
+								ErrorResponse: []byte(`{}`),
+								Parameters:    []byte(`{}`),
+								JobParameters: job.Parameters,
+								WorkspaceId:   job.WorkspaceId,
+								PartitionID:   job.PartitionID,
+								CustomVal:     job.CustomVal,
+							})
+						}
+						jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "succeeded"}).Count(len(batch.Jobs))
 					}
 					if len(messageBatches) > 0 {
+						if flushErr != nil {
+							return fmt.Errorf("failed to flush pulsar producer: %w", flushErr)
+						}
 						return fmt.Errorf("failed to forward %d jobs", len(messageBatches))
 					}
 					return nil
@@ -237,7 +249,6 @@ func (jf *JobsForwarder) Start() error {
 			}
 		}
 	}))
-	return nil
 }
 
 // Stop stops the forwarder
