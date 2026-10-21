@@ -2,9 +2,13 @@ package forwarder
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
+	pulsarType "github.com/apache/pulsar-client-go/pulsar"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -20,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
+	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/testdata"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
@@ -124,7 +129,241 @@ func Test_JobsForwarder(t *testing.T) {
 			return len(jobs.Jobs) == 10
 		}, 20*time.Second, 100*time.Millisecond)
 	})
+
+	t.Run("late producer callbacks after a failed flush are collected", func(t *testing.T) {
+		const numOfJobs = 20
+		jf, statusesCh := newMockedJobsForwarder(t, numOfJobs)
+		collecting := &collectingSignal{started: make(chan struct{}), timeout: 10 * time.Second}
+		jf.callbackTimeout = collecting
+		producer := &lateAckProducer{release: make(chan struct{})}
+		jf.pulsarProducer = producer
+		jf.start()
+		t.Cleanup(jf.Stop)
+		t.Cleanup(producer.releaseCallbacks)
+
+		select {
+		case <-collecting.started:
+		case <-time.After(10 * time.Second):
+			t.Fatal("timed out waiting for the forwarder to collect producer callbacks")
+		}
+		producer.releaseCallbacks()
+
+		statuses := receiveStatuses(t, statusesCh)
+		require.Len(t, statuses, numOfJobs)
+		seen := make(map[int64]struct{}, numOfJobs)
+		for _, status := range statuses {
+			require.Equal(t, jobsdb.Succeeded.State, status.JobState, "job %d", status.JobID)
+			seen[status.JobID] = struct{}{}
+		}
+		require.Len(t, seen, numOfJobs, "every job should have a status")
+	})
+
+	t.Run("stopping while waiting for producer callbacks neither waits for them nor blocks them", func(t *testing.T) {
+		jf, _ := newMockedJobsForwarder(t, 20)
+		collecting := &collectingSignal{started: make(chan struct{}), timeout: time.Minute}
+		jf.callbackTimeout = collecting
+		producer := &lateAckProducer{release: make(chan struct{})}
+		jf.pulsarProducer = producer
+		jf.start()
+		stop := sync.OnceFunc(jf.Stop)
+		t.Cleanup(stop)
+		t.Cleanup(producer.releaseCallbacks)
+
+		select {
+		case <-collecting.started:
+		case <-time.After(10 * time.Second):
+			t.Fatal("timed out waiting for the forwarder to collect producer callbacks")
+		}
+
+		stopped := make(chan struct{})
+		go func() {
+			stop()
+			close(stopped)
+		}()
+		select {
+		case <-stopped:
+		case <-time.After(5 * time.Second):
+			t.Fatal("stopping the forwarder waited for the producer callbacks")
+		}
+
+		producer.releaseCallbacks()
+		callbacksReturned := make(chan struct{})
+		go func() {
+			producer.running.Wait()
+			close(callbacksReturned)
+		}()
+		select {
+		case <-callbacksReturned:
+		case <-time.After(5 * time.Second):
+			t.Fatal("producer callbacks blocked after the forwarder stopped")
+		}
+	})
+
+	t.Run("jobs whose producer callbacks never arrive are aborted", func(t *testing.T) {
+		const numOfJobs = 20
+		jf, statusesCh := newMockedJobsForwarder(t, numOfJobs)
+		jf.callbackTimeout = config.SingleValueLoader(50 * time.Millisecond)
+		jf.pulsarProducer = &silentProducer{}
+		jf.start()
+		stopped := make(chan struct{})
+		var stopOnce sync.Once
+		stop := func() bool {
+			stopOnce.Do(func() {
+				go func() {
+					jf.Stop()
+					close(stopped)
+				}()
+			})
+			select {
+			case <-stopped:
+				return true
+			case <-time.After(10 * time.Second):
+				return false
+			}
+		}
+		t.Cleanup(func() {
+			if !stop() {
+				t.Error("timed out waiting for the forwarder to stop")
+			}
+		})
+
+		statuses := receiveStatuses(t, statusesCh)
+		require.Len(t, statuses, numOfJobs)
+		for _, status := range statuses {
+			require.Equal(t, jobsdb.Aborted.State, status.JobState, "job %d", status.JobID)
+		}
+		require.True(t, stop(), "timed out waiting for the forwarder to stop")
+	})
 }
+
+// newMockedJobsForwarder returns a forwarder that is not started, without a producer, whose jobsdb returns numOfJobs
+// jobs once and sends every non-empty batch of job statuses it marks to the returned channel
+func newMockedJobsForwarder(t *testing.T, numOfJobs int) (*JobsForwarder, <-chan []*jobsdb.JobStatusT) {
+	t.Helper()
+	jobs := make([]*jobsdb.JobT, numOfJobs)
+	for i := range jobs {
+		jobs[i] = &jobsdb.JobT{
+			JobID:        int64(i + 1),
+			Parameters:   []byte(`{"source_id":"enabled-source"}`),
+			EventPayload: []byte(fmt.Sprintf(`{"type":"track","event":"test","properties":{"key%d":"value"}}`, i)), // distinct schemas produce distinct batches
+			WorkspaceId:  testdata.SampleWorkspaceID,
+		}
+	}
+
+	ctrl := gomock.NewController(t)
+	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(ctrl)
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
+		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+			ch := make(chan pubsub.DataEvent, 1)
+			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{testdata.SampleWorkspaceID: testdata.SampleBackendConfig}, Topic: string(topic)}
+			close(ch)
+			return ch
+		})
+
+	statusesCh := make(chan []*jobsdb.JobStatusT, 1)
+	mockJobsDB := mocksJobsDB.NewMockJobsDB(ctrl)
+	mockJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: jobs}, nil).Times(1)
+	mockJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{}, nil).AnyTimes()
+	mockJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, f func(jobsdb.UpdateSafeTx) error) error {
+			return f(nil)
+		}).AnyTimes()
+	mockJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT) error {
+			if len(statuses) > 0 {
+				statusesCh <- statuses
+			}
+			return nil
+		}).AnyTimes()
+
+	conf := config.New()
+	conf.Set("SchemaForwarder.loopSleepTime", time.Millisecond)
+	jf := NewJobsForwarder(func(error) {}, mockJobsDB, nil, conf, mockBackendConfig, logger.NOP, stats.NOP)
+	jf.maxRetryElapsedTime = config.SingleValueLoader(time.Millisecond)
+	return jf, statusesCh
+}
+
+func receiveStatuses(t *testing.T, statusesCh <-chan []*jobsdb.JobStatusT) []*jobsdb.JobStatusT {
+	t.Helper()
+	select {
+	case statuses := <-statusesCh:
+		return statuses
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for job statuses")
+		return nil
+	}
+}
+
+// collectingSignal is a callback timeout loader that closes started on its first Load, i.e. once the forwarder has
+// flushed the producer and starts collecting producer callbacks
+type collectingSignal struct {
+	started chan struct{}
+	once    sync.Once
+	timeout time.Duration
+}
+
+func (s *collectingSignal) Load() time.Duration {
+	s.once.Do(func() { close(s.started) })
+	return s.timeout
+}
+
+// lateAckProducer is a [pulsar.ProducerAdapter] whose Flush fails without acknowledging any message.
+// Pending messages succeed from other goroutines once releaseCallbacks is called.
+type lateAckProducer struct {
+	release     chan struct{} // closed by releaseCallbacks
+	releaseOnce sync.Once
+	running     sync.WaitGroup // goroutines that run the callbacks
+
+	mu        sync.Mutex
+	callbacks []func(pulsarType.MessageID, *pulsarType.ProducerMessage, error)
+}
+
+func (p *lateAckProducer) releaseCallbacks() {
+	p.releaseOnce.Do(func() { close(p.release) })
+}
+
+func (*lateAckProducer) SendMessage(context.Context, string, string, []byte) error {
+	return errors.New("not implemented")
+}
+
+func (p *lateAckProducer) SendMessageAsync(_ context.Context, _, _ string, _ []byte, statusFunc func(pulsarType.MessageID, *pulsarType.ProducerMessage, error)) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.callbacks = append(p.callbacks, statusFunc)
+}
+
+func (p *lateAckProducer) Flush() error {
+	p.mu.Lock()
+	callbacks := p.callbacks
+	p.callbacks = nil
+	p.mu.Unlock()
+	if len(callbacks) == 0 {
+		return nil
+	}
+	for _, cb := range callbacks {
+		p.running.Go(func() {
+			<-p.release
+			cb(nil, nil, nil)
+		})
+	}
+	return errors.New("flush timed out")
+}
+
+func (*lateAckProducer) Close() {}
+
+// silentProducer is a [pulsar.ProducerAdapter] that never calls back for the messages it is sent
+type silentProducer struct{}
+
+func (*silentProducer) SendMessage(context.Context, string, string, []byte) error {
+	return errors.New("not implemented")
+}
+
+func (*silentProducer) SendMessageAsync(context.Context, string, string, []byte, func(pulsarType.MessageID, *pulsarType.ProducerMessage, error)) {
+}
+
+func (*silentProducer) Flush() error { return nil }
+
+func (*silentProducer) Close() {}
 
 // PulsarResource returns a pulsar container resource
 func PulsarResource(t *testing.T) *pulsardocker.Resource {
