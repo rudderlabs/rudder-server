@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.91.1](https://github.com/rudderlabs/rudder-server/compare/v1.91.0...v1.91.1) (2026-10-21)
+
+
+### Miscellaneous
+
+* go 1.27.3 ([#7516](https://github.com/rudderlabs/rudder-server/issues/7516)) ([e97067f](https://github.com/rudderlabs/rudder-server/commit/e97067f9003bf8eb73affdff40b211716f3f608f))
+
 ## [1.91.0](https://github.com/rudderlabs/rudder-server/compare/v1.90.0...v1.91.0) (2026-10-20)
 
 
