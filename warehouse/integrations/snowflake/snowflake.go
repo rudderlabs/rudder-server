@@ -264,8 +264,7 @@ func (sf *Snowflake) createSchema(ctx context.Context) (err error) {
 func checkAndIgnoreAlreadyExistError(err error) bool {
 	if err != nil {
 		// TODO: throw error if column already exists but of different type
-		var e *snowflake.SnowflakeError
-		if errors.As(err, &e) && e.SQLState == "42601" {
+		if e, ok := errors.AsType[*snowflake.SnowflakeError](err); ok && e.SQLState == "42601" {
 			return true
 		}
 		return false

@@ -576,6 +576,6 @@ func isRetryableSendError(err error) bool {
 		errors.Is(err, syscall.ECONNRESET) {
 		return true
 	}
-	var opErr *net.OpError
-	return errors.As(err, &opErr)
+	_, ok := errors.AsType[*net.OpError](err)
+	return ok
 }

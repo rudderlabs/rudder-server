@@ -291,8 +291,7 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 		return updatedStates, err
 	}
 	err = store()
-	var e *pq.Error
-	if err != nil && errors.As(err, &e) {
+	if e, ok := errors.AsType[*pq.Error](err); ok {
 		if e.Code == pgErrorCodeTableReadonly {
 			if _, err = tx.ExecContext(ctx, rollbackSql); err != nil {
 				return updatedStates, err

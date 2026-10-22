@@ -123,8 +123,7 @@ func (jd *Handle) execStmtInTxAllowMissing(tx *sql.Tx, sqlStatement string) {
 
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
-		var pqError *pq.Error
-		ok := errors.As(err, &pqError)
+		pqError, ok := errors.AsType[*pq.Error](err)
 		if ok && pqError.Code == pqerror.UndefinedTable {
 			jd.logger.Infon("sql statement exec failed because table doesn't exist",
 				logger.NewStringField("tablePrefix", jd.tablePrefix),

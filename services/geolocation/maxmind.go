@@ -25,7 +25,7 @@ func NewMaxmindDBReader(dbLoc string) (*maxmindDBReader, error) {
 		if _, ok := err.(*fs.PathError); ok {
 			return nil, ErrInvalidDatabase
 		}
-		if errors.As(err, &maxminddb.InvalidDatabaseError{}) {
+		if _, ok := errors.AsType[maxminddb.InvalidDatabaseError](err); ok {
 			return nil, ErrInvalidDatabase
 		}
 

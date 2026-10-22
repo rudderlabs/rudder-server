@@ -133,10 +133,10 @@ func (m *Manager) Run(ctx context.Context) error {
 	}
 
 	if err := m.process(ctx); err != nil {
-		var pqErr *pq.Error
+		pqErr, isPQErr := errors.AsType[*pq.Error](err)
 
 		switch {
-		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.As(err, &pqErr) && pqErr.Code == "57014":
+		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), isPQErr && pqErr.Code == "57014":
 			return nil
 		default:
 			return fmt.Errorf("processing source jobs with error %w", err)
