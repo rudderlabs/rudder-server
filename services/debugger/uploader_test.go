@@ -6,10 +6,10 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -18,77 +18,67 @@ import (
 
 	mocksDebugger "github.com/rudderlabs/rudder-server/mocks/services/debugger"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
-	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
-type uploaderContext struct {
-	mockCtrl *gomock.Controller
+type basicAuthMock struct{}
+
+func (*basicAuthMock) BasicAuth() (string, string) {
+	return "test", "test"
 }
 
-// Initialize mocks and common expectations
-func (c *uploaderContext) Setup() {
-	c.mockCtrl = gomock.NewController(GinkgoT())
+type uploaderFixture struct {
+	recordingEvent  []byte
+	recordingEvent1 []byte
+	mockHTTPClient  *mocksSysUtils.MockHTTPClientI
+	mockTransformer *mocksDebugger.MockTransformerAny
+	mockHTTP        *mocksSysUtils.MockHttpI
+	uploader        Uploader[any]
 }
 
-func (c *uploaderContext) Finish() {
-	c.mockCtrl.Finish()
+func newUploaderFixture(t *testing.T) *uploaderFixture {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	f := &uploaderFixture{
+		recordingEvent:  []byte(`{"t":"a"}`),
+		recordingEvent1: []byte(`{"t1":"a1"}`),
+		mockHTTPClient:  mocksSysUtils.NewMockHTTPClientI(ctrl),
+		mockHTTP:        mocksSysUtils.NewMockHttpI(ctrl),
+		mockTransformer: mocksDebugger.NewMockTransformerAny(ctrl),
+	}
+	f.uploader = New[any]("http://test", &basicAuthMock{}, f.mockTransformer)
+	return f
 }
 
-func initUploader() {
+// impl gives access to the uploader's fields, which may only be overridden before start is called.
+func (f *uploaderFixture) impl() *uploaderImpl[any] {
+	return f.uploader.(*uploaderImpl[any])
+}
+
+func (f *uploaderFixture) start(t *testing.T) {
+	t.Helper()
+	f.uploader.Start()
+	t.Cleanup(f.uploader.Stop)
+}
+
+func TestUploader(t *testing.T) {
 	config.Reset()
 	logger.Reset()
-}
 
-var _ = Describe("Uploader", func() {
-	initUploader()
-
-	var c *uploaderContext
-
-	BeforeEach(func() {
-		c = &uploaderContext{}
-		c.Setup()
-	})
-
-	AfterEach(func() {
-		c.Finish()
-	})
-
-	Context("Send live requests", func() {
-		var (
-			recordingEvent  []byte
-			recordingEvent1 []byte
-			mockHTTPClient  *mocksSysUtils.MockHTTPClientI
-			mockTransformer *mocksDebugger.MockTransformerAny
-			mockHTTP        *mocksSysUtils.MockHttpI
-			uploader        Uploader[any]
-		)
-
-		BeforeEach(func() {
-			recordingEvent = []byte(`{"t":"a"}`)
-			recordingEvent1 = []byte(`{"t1":"a1"}`)
-			mockHTTPClient = mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
-			mockHTTP = mocksSysUtils.NewMockHttpI(c.mockCtrl)
-			mockTransformer = mocksDebugger.NewMockTransformerAny(c.mockCtrl)
-			uploader = New[any]("http://test", &testutils.BasicAuthMock{}, mockTransformer)
-			uploader.Start()
-		})
-
-		AfterEach(func() {
-			uploader.Stop()
-		})
-
-		It("should successfully send the live events request", func() {
-			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
-			uploader.RecordEvent(recordingEvent)
-			mockTransformer.EXPECT().Transform(gomock.Any()).
+	t.Run("Send live requests", func(t *testing.T) {
+		t.Run("should successfully send the live events request", func(t *testing.T) {
+			f := newUploaderFixture(t)
+			f.impl().Client = f.mockHTTPClient
+			f.start(t)
+			f.uploader.RecordEvent(f.recordingEvent)
+			f.mockTransformer.EXPECT().Transform(gomock.Any()).
 				DoAndReturn(func(data any) ([]byte, error) {
 					eventBuffer := data.([]any)
 					for _, e := range eventBuffer {
-						Expect(e).To(Equal(recordingEvent))
+						assert.Equal(t, f.recordingEvent, e)
 					}
 
 					rawJSON, err := jsonrs.Marshal(data)
-					Expect(err).To(BeNil())
+					assert.NoError(t, err)
 					return rawJSON, nil
 				}).AnyTimes()
 
@@ -97,27 +87,29 @@ var _ = Describe("Uploader", func() {
 			// New reader with that JSON
 			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
-			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
+			f.mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				assertRequest(req)
+				assertRequest(t, req)
 			}).Return(&http.Response{
 				StatusCode: 200,
 				Body:       r,
 			}, nil).AnyTimes()
 		})
 
-		It("should log error message from config backend if post request returns non 200", func() {
-			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
-			uploader.RecordEvent(recordingEvent)
-			mockTransformer.EXPECT().Transform(gomock.Any()).
+		t.Run("should log error message from config backend if post request returns non 200", func(t *testing.T) {
+			f := newUploaderFixture(t)
+			f.impl().Client = f.mockHTTPClient
+			f.start(t)
+			f.uploader.RecordEvent(f.recordingEvent)
+			f.mockTransformer.EXPECT().Transform(gomock.Any()).
 				DoAndReturn(func(data any) ([]byte, error) {
 					eventBuffer := data.([]any)
 					for _, e := range eventBuffer {
-						Expect(e).To(Equal(recordingEvent))
+						assert.Equal(t, f.recordingEvent, e)
 					}
 
 					rawJSON, err := jsonrs.Marshal(data)
-					Expect(err).To(BeNil())
+					assert.NoError(t, err)
 					return rawJSON, nil
 				}).AnyTimes()
 
@@ -126,61 +118,66 @@ var _ = Describe("Uploader", func() {
 			// New reader with that JSON
 			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
-			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
+			f.mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				assertRequest(req)
+				assertRequest(t, req)
 			}).Return(&http.Response{
 				StatusCode: 400,
 				Body:       r,
 			}, nil).AnyTimes()
 		})
 
-		It("should not send the live events request if transform data fails", func() {
-			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
-			uploader.RecordEvent(recordingEvent)
+		t.Run("should not send the live events request if transform data fails", func(t *testing.T) {
+			f := newUploaderFixture(t)
+			f.impl().Client = f.mockHTTPClient
+			f.start(t)
+			f.uploader.RecordEvent(f.recordingEvent)
 
-			mockTransformer.EXPECT().Transform(gomock.Any()).
+			f.mockTransformer.EXPECT().Transform(gomock.Any()).
 				DoAndReturn(func(data any) ([]byte, error) {
 					eventBuffer := data.([]any)
 					for _, e := range eventBuffer {
-						Expect(e).To(Equal(recordingEvent))
+						assert.Equal(t, f.recordingEvent, e)
 					}
 
 					rawJSON, err := jsonrs.Marshal(data)
-					Expect(err).To(BeNil())
+					assert.NoError(t, err)
 					return rawJSON, errors.New("transform error")
 				}).AnyTimes()
 		})
 
-		It("should not send the live events request if http new request fails", func() {
-			uploader.RecordEvent(recordingEvent)
+		t.Run("should not send the live events request if http new request fails", func(t *testing.T) {
+			f := newUploaderFixture(t)
+			f.start(t)
+			f.uploader.RecordEvent(f.recordingEvent)
 
-			mockTransformer.EXPECT().Transform(gomock.Any()).
+			f.mockTransformer.EXPECT().Transform(gomock.Any()).
 				DoAndReturn(func(data any) ([]byte, error) {
 					eventBuffer := data.([]any)
 					for _, e := range eventBuffer {
-						Expect(e).To(Equal(recordingEvent))
+						assert.Equal(t, f.recordingEvent, e)
 					}
 
 					rawJSON, err := jsonrs.Marshal(data)
-					Expect(err).To(BeNil())
+					assert.NoError(t, err)
 					return rawJSON, nil
 				}).AnyTimes()
-			mockHTTP.EXPECT().NewRequest("POST", "http://test", gomock.Any()).
+			f.mockHTTP.EXPECT().NewRequest("POST", "http://test", gomock.Any()).
 				Return(nil, errors.New("http new request error")).AnyTimes()
 		})
 
-		It("should not send the live events request if client do fails. Retry 3 times.", func() {
-			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
-			mockTransformer.EXPECT().Transform(gomock.Any()).
+		t.Run("should not send the live events request if client do fails. Retry 3 times.", func(t *testing.T) {
+			f := newUploaderFixture(t)
+			f.impl().Client = f.mockHTTPClient
+			f.mockTransformer.EXPECT().Transform(gomock.Any()).
 				DoAndReturn(func(data any) ([]byte, error) {
 					eventBuffer := data.([]any)
 					for _, e := range eventBuffer {
-						Expect(e).To(Equal(recordingEvent))
+						assert.Equal(t, f.recordingEvent, e)
 					}
 
 					rawJSON, err := jsonrs.Marshal(data)
-					Expect(err).To(BeNil())
+					assert.NoError(t, err)
 					return rawJSON, nil
 				})
 
@@ -189,39 +186,42 @@ var _ = Describe("Uploader", func() {
 			// New reader with that JSON
 			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
-			uploader.(*uploaderImpl[any]).batchTimeout = config.SingleValueLoader(time.Millisecond)
-			uploader.(*uploaderImpl[any]).retrySleep = config.SingleValueLoader(time.Millisecond)
+			f.impl().batchTimeout = config.SingleValueLoader(time.Millisecond)
+			f.impl().retrySleep = config.SingleValueLoader(time.Millisecond)
+			f.start(t)
 
 			var wg sync.WaitGroup
 			wg.Add(3)
 
-			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
+			f.mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				assertRequest(req)
+				assertRequest(t, req)
 				wg.Done()
 			}).Return(&http.Response{
 				StatusCode: 200,
 				Body:       r,
 			}, errors.New("client do failed")).Times(3)
 
-			uploader.RecordEvent(recordingEvent)
+			f.uploader.RecordEvent(f.recordingEvent)
 			wg.Wait()
 		})
 
-		It("should drop some events if number of events to record is more than queue size", func() {
-			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
-			uploader.(*uploaderImpl[any]).maxESQueueSize = config.SingleValueLoader(1)
+		t.Run("should drop some events if number of events to record is more than queue size", func(t *testing.T) {
+			f := newUploaderFixture(t)
+			f.impl().Client = f.mockHTTPClient
+			f.impl().maxESQueueSize = config.SingleValueLoader(1)
+			f.start(t)
 
-			mockTransformer.EXPECT().Transform(gomock.Any()).
+			f.mockTransformer.EXPECT().Transform(gomock.Any()).
 				DoAndReturn(func(data any) ([]byte, error) {
 					eventBuffer := data.([]any)
-					Expect(len(eventBuffer)).To(Equal(1))
+					assert.Len(t, eventBuffer, 1)
 					for _, e := range eventBuffer {
-						Expect(e).To(Equal(recordingEvent))
+						assert.Equal(t, f.recordingEvent, e)
 					}
 
 					rawJSON, err := jsonrs.Marshal(data)
-					Expect(err).To(BeNil())
+					assert.NoError(t, err)
 					return rawJSON, nil
 				})
 
@@ -230,44 +230,46 @@ var _ = Describe("Uploader", func() {
 			// New reader with that JSON
 			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
-			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
+			f.mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				assertRequest(req)
+				assertRequest(t, req)
 			}).Return(&http.Response{
 				StatusCode: 200,
 				Body:       r,
 			}, nil).AnyTimes()
 
-			uploader.RecordEvent(recordingEvent)
-			uploader.RecordEvent(recordingEvent)
+			f.uploader.RecordEvent(f.recordingEvent)
+			f.uploader.RecordEvent(f.recordingEvent)
 		})
 
-		It("should send events in batches", func() {
-			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
-			uploader.(*uploaderImpl[any]).maxBatchSize = config.SingleValueLoader(1)
-			uploader.(*uploaderImpl[any]).batchTimeout = config.SingleValueLoader(time.Millisecond)
+		t.Run("should send events in batches", func(t *testing.T) {
+			f := newUploaderFixture(t)
+			f.impl().Client = f.mockHTTPClient
+			f.impl().maxBatchSize = config.SingleValueLoader(1)
+			f.impl().batchTimeout = config.SingleValueLoader(time.Millisecond)
+			f.start(t)
 
 			var wg sync.WaitGroup
 			wg.Add(2)
 
 			i := 0
-			mockTransformer.EXPECT().Transform(gomock.Any()).
+			f.mockTransformer.EXPECT().Transform(gomock.Any()).
 				DoAndReturn(func(data any) ([]byte, error) {
 					eventBuffer := data.([]any)
-					Expect(len(eventBuffer)).To(Equal(1))
+					assert.Len(t, eventBuffer, 1)
 					for _, e := range eventBuffer {
 						var re []byte
 						if i == 0 {
-							re = recordingEvent
+							re = f.recordingEvent
 						} else {
-							re = recordingEvent1
+							re = f.recordingEvent1
 						}
-						Expect(e).To(Equal(re))
+						assert.Equal(t, re, e)
 						i++
 					}
 
 					rawJSON, err := jsonrs.Marshal(data)
-					Expect(err).To(BeNil())
+					assert.NoError(t, err)
 					return rawJSON, nil
 				}).Times(2)
 
@@ -276,28 +278,30 @@ var _ = Describe("Uploader", func() {
 			// New reader with that JSON
 			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
-			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
+			f.mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				assertRequest(req)
+				assertRequest(t, req)
 				wg.Done()
 			}).Return(&http.Response{
 				StatusCode: 200,
 				Body:       r,
 			}, nil).AnyTimes()
 
-			uploader.RecordEvent(recordingEvent)
-			uploader.RecordEvent(recordingEvent1)
+			f.uploader.RecordEvent(f.recordingEvent)
+			f.uploader.RecordEvent(f.recordingEvent1)
 
 			wg.Wait()
 		})
 	})
-})
+}
 
-func assertRequest(req *http.Request) {
+// assertRequest runs on the uploader's goroutine, where require must not be used.
+func assertRequest(t *testing.T, req *http.Request) {
+	t.Helper()
 	username, password, ok := req.BasicAuth()
-	Expect(ok).To(BeTrue())
-	Expect(username).To(Equal("test"))
-	Expect(password).To(Equal("test"))
-	Expect(req.Method).To(Equal("POST"))
-	Expect(req.URL.Host).To(Equal("test"))
+	assert.True(t, ok)
+	assert.Equal(t, "test", username)
+	assert.Equal(t, "test", password)
+	assert.Equal(t, "POST", req.Method)
+	assert.Equal(t, "test", req.URL.Host)
 }

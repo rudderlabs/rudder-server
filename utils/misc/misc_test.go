@@ -12,8 +12,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/iancoleman/strcase"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/spaolacci/murmur3"
 	"github.com/stretchr/testify/require"
 
@@ -29,36 +27,45 @@ func initMisc() {
 	Init()
 }
 
-var _ = Describe("Misc", func() {
+func TestMisc(t *testing.T) {
 	initMisc()
+	t.Cleanup(config.Reset)
+	config.Set("RUDDER_TMPDIR", t.TempDir())
 
 	tmpDirPath, err := GetTmpDir()
-	Expect(err).To(BeNil())
+	require.NoError(t, err)
 
-	Context("Remove Empty Folder Paths", func() {
-		createFile := func(path, targetDir string) {
+	t.Run("Remove Empty Folder Paths", func(t *testing.T) {
+		createFile := func(t *testing.T, path, targetDir string) {
+			t.Helper()
 			dirPath := filepath.Dir(path)
 
 			err := os.MkdirAll(dirPath, os.ModePerm)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			var file *os.File
 			file, err = os.Create(path)
+			require.NoError(t, err)
 
-			Expect(err).To(BeNil())
-			Expect(FileExists(path)).To(BeTrue())
-			Expect(FolderExists(targetDir)).To(BeTrue())
+			fileExists, err := FileExists(path)
+			require.NoError(t, err)
+			require.True(t, fileExists)
+
+			folderExists, err := FolderExists(targetDir)
+			require.NoError(t, err)
+			require.True(t, folderExists)
 			_ = file.Close()
 		}
-		onPostFileCreation := func(sourceFile, targetDir string) {
+		onPostFileCreation := func(t *testing.T, sourceFile, targetDir string) {
+			t.Helper()
 			RemoveFilePaths(sourceFile)
 
 			empty, err := FolderExists(targetDir)
-			Expect(err).To(BeNil())
-			Expect(empty).To(BeTrue())
+			require.NoError(t, err)
+			require.True(t, empty)
 		}
 
-		It("Rudder Async Destination Logs", func() {
+		t.Run("Rudder Async Destination Logs", func(t *testing.T) {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderAsyncDestinationLogs)
 			uuid := uuid.New()
 
@@ -72,11 +79,11 @@ var _ = Describe("Misc", func() {
 				tmpDirPath+localTmpDirName,
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 		})
 
-		It("Rudder Archives for Warehouse", func() {
+		t.Run("Rudder Archives for Warehouse", func(t *testing.T) {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderArchives)
 			pathPrefix := strcase.ToKebab("wh_staging_files")
 
@@ -94,11 +101,11 @@ var _ = Describe("Misc", func() {
 				tmpDirPath+localTmpDirName,
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 		})
 
-		It("Rudder Archives for Archiver", func() {
+		t.Run("Rudder Archives for Archiver", func(t *testing.T) {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderArchives)
 			pathPrefix := strcase.ToKebab("wh_staging_files")
 
@@ -115,11 +122,11 @@ var _ = Describe("Misc", func() {
 				tmpDirPath+localTmpDirName,
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 		})
 
-		It("Rudder Warehouse Staging Uploads", func() {
+		t.Run("Rudder Warehouse Staging Uploads", func(t *testing.T) {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderWarehouseStagingUploads)
 			uuid := uuid.New()
 
@@ -133,11 +140,11 @@ var _ = Describe("Misc", func() {
 				tmpDirPath+localTmpDirName,
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 		})
 
-		It("Rudder Raw Data Destination Logs", func() {
+		t.Run("Rudder Raw Data Destination Logs", func(t *testing.T) {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderRawDataDestinationLogs)
 			uuid := uuid.New()
 
@@ -151,11 +158,11 @@ var _ = Describe("Misc", func() {
 				tmpDirPath+localTmpDirName,
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 		})
 
-		It("Rudder Warehouse Load Upload Tmp", func() {
+		t.Run("Rudder Warehouse Load Upload Tmp", func(t *testing.T) {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderWarehouseLoadUploadsTmp)
 
 			// /tmp/rudder-warehouse-load-uploads-tmp/DestinationName_DestinationId_1640923547/rudderstack-events/rudder-warehouse-staging-logs/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
@@ -169,8 +176,8 @@ var _ = Describe("Misc", func() {
 				tmpDirPath+localTmpDirName,
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 
 			// /tmp/rudder-warehouse-load-uploads-tmp/DestinationName_DestinationId_1640923547/rudder-warehouse-staging-logs/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
 			// /tmp/rudder-warehouse-load-uploads-tmp/
@@ -183,8 +190,8 @@ var _ = Describe("Misc", func() {
 				tmpDirPath+localTmpDirName,
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 
 			// /tmp/rudder-warehouse-load-uploads-tmp/DestinationName_DestinationId_1640923547/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
 			// /tmp/rudder-warehouse-load-uploads-tmp/
@@ -197,8 +204,8 @@ var _ = Describe("Misc", func() {
 				tmpDirPath+localTmpDirName,
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 
 			// /tmp/rudder-warehouse-load-uploads-tmp/DestinationName_DestinationId_1640923547/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
 			// /tmp/rudder-warehouse-load-uploads-tmp/
@@ -211,8 +218,8 @@ var _ = Describe("Misc", func() {
 				tmpDirPath+localTmpDirName,
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 
 			// /tmp/rudder-warehouse-load-uploads-tmp/DestinationName_DestinationId_1640923547/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
 			// /tmp/rudder-warehouse-load-uploads-tmp/
@@ -225,11 +232,11 @@ var _ = Describe("Misc", func() {
 				tmpDirPath+localTmpDirName,
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 		})
 
-		It("Rudder Identity Merge Rules Tmp", func() {
+		t.Run("Rudder Identity Merge Rules Tmp", func(t *testing.T) {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderIdentityMergeRulesTmp)
 			uuid := uuid.New()
 
@@ -246,8 +253,8 @@ var _ = Describe("Misc", func() {
 				fmt.Sprintf(`%s_%s/`, "DestinationName", "DestinationId"),
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 
 			// /tmp/rudder-identity-merge-rules-tmp/DestinationName_DestinationId/71a855c2-0535-43d1-9f00-556ecc971cc7.csv.gz
 			// /tmp/rudder-identity-merge-rules-tmp/DestinationName_DestinationId/
@@ -262,11 +269,11 @@ var _ = Describe("Misc", func() {
 				fmt.Sprintf(`%s_%s/`, "DestinationName", "DestinationId"),
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 		})
 
-		It("Rudder Identity Mappings Tmp", func() {
+		t.Run("Rudder Identity Mappings Tmp", func(t *testing.T) {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderIdentityMappingsTmp)
 			uuid := uuid.New()
 
@@ -283,8 +290,8 @@ var _ = Describe("Misc", func() {
 				fmt.Sprintf(`%s_%s/`, "DestinationName", "DestinationId"),
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 
 			// /tmp/rudder-identity-mappings-tmp/DestinationName_DestinationId/b012ad98-1cde-4d27-a415-cdb84021180c.csv.gz
 			// /tmp/rudder-identity-mappings-tmp/DestinationName_DestinationId/
@@ -299,11 +306,11 @@ var _ = Describe("Misc", func() {
 				fmt.Sprintf(`%s_%s/`, "DestinationName", "DestinationId"),
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 		})
 
-		It("Rudder Redshift Manifests", func() {
+		t.Run("Rudder Redshift Manifests", func(t *testing.T) {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderRedshiftManifests)
 			uuid := uuid.New()
 
@@ -318,11 +325,11 @@ var _ = Describe("Misc", func() {
 				tmpDirPath+localTmpDirName,
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 		})
 
-		It("Rudder Warehouse Json Uploads Tmp", func() {
+		t.Run("Rudder Warehouse Json Uploads Tmp", func(t *testing.T) {
 			localTmpDirName := fmt.Sprintf(`/%s/_0/`, RudderWarehouseJsonUploadsTmp)
 
 			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/rudderstack-events/rudder-warehouse-staging-logs/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
@@ -338,8 +345,8 @@ var _ = Describe("Misc", func() {
 				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 
 			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/rudder-warehouse-staging-logs/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
 			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/
@@ -354,8 +361,8 @@ var _ = Describe("Misc", func() {
 				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 
 			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
 			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/
@@ -370,8 +377,8 @@ var _ = Describe("Misc", func() {
 				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 
 			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
 			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/
@@ -386,8 +393,8 @@ var _ = Describe("Misc", func() {
 				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 
 			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
 			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/
@@ -402,11 +409,11 @@ var _ = Describe("Misc", func() {
 				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 		})
 
-		It("Rudder Connection Test", func() {
+		t.Run("Rudder Connection Test", func(t *testing.T) {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderTestPayload)
 
 			// /tmp/rudder-test-payload/DestinationID.638853fe-2d60-46d3-86bb-8e6d728ecb33.1640981723.csv.gz
@@ -422,11 +429,11 @@ var _ = Describe("Misc", func() {
 				tmpDirPath+localTmpDirName,
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 		})
 
-		It("Random Test", func() {
+		t.Run("Random Test", func(t *testing.T) {
 			localTmpDirName := fmt.Sprintf(`/%s/`, "random")
 
 			// /tmp/random/Folder1/Folder2/Folder3/Folder4/Folder5/Folder6/Folder7/Folder8/SourceID.DestinationID.638853fe-2d60-46d3-86bb-8e6d728ecb33.1640981723.csv.gz
@@ -450,8 +457,8 @@ var _ = Describe("Misc", func() {
 				tmpDirPath,
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 
 			// /tmp/random/SourceID.DestinationID.638853fe-2d60-46d3-86bb-8e6d728ecb33.1640981723.csv.gz
 			// /tmp/
@@ -466,8 +473,8 @@ var _ = Describe("Misc", func() {
 				tmpDirPath,
 			)
 
-			createFile(sourceFile, targetDir)
-			onPostFileCreation(sourceFile, targetDir)
+			createFile(t, sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 
 			// /tmp/random/
 			// /tmp/
@@ -479,7 +486,7 @@ var _ = Describe("Misc", func() {
 				tmpDirPath,
 			)
 
-			onPostFileCreation(sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 
 			// /tmp/
 			// /tmp/
@@ -491,19 +498,26 @@ var _ = Describe("Misc", func() {
 				tmpDirPath,
 			)
 
-			onPostFileCreation(sourceFile, targetDir)
+			onPostFileCreation(t, sourceFile, targetDir)
 		})
 	})
 
-	_ = DescribeTable("Unique tests",
-		func(input, expected []string) {
-			actual := Unique(input)
-			Expect(actual).To(Equal(expected))
-		},
-		Entry("Unique Test 1 : ", []string{"a", "b", "a", "c", "d", "d"}, []string{"a", "b", "c", "d"}),
-		Entry("Unique Test 2 : ", []string{"a", "b", "c"}, []string{"a", "b", "c"}),
-	)
-})
+	t.Run("Unique tests", func(t *testing.T) {
+		testCases := []struct {
+			name     string
+			input    []string
+			expected []string
+		}{
+			{name: "Unique Test 1 : ", input: []string{"a", "b", "a", "c", "d", "d"}, expected: []string{"a", "b", "c", "d"}},
+			{name: "Unique Test 2 : ", input: []string{"a", "b", "c"}, expected: []string{"a", "b", "c"}},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				require.Equal(t, tc.expected, Unique(tc.input))
+			})
+		}
+	})
+}
 
 func TestHasAWSRoleARNInConfig(t *testing.T) {
 	t.Run("Config has valid IAM Role ARN", func(t *testing.T) {
