@@ -115,6 +115,7 @@ func TestRunOnEphemeral(t *testing.T) {
 		require.Equal(t, []corev1.EnvVar{
 			{Name: "CONFIG_BACKEND_URL", Value: "http://cb:5000"},
 			{Name: "LOG_LEVEL", Value: "info"},
+			{Name: "PYT_MODE", Value: "test"},
 			{Name: "WORKSPACE_ID", Value: "ws-1"},
 		}, created.Spec.Template.Spec.Containers[0].Env)
 	})
@@ -129,9 +130,44 @@ func TestRunOnEphemeral(t *testing.T) {
 			func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
 		require.NoError(t, err)
 
-		require.Equal(t, []corev1.EnvVar{{Name: "WORKSPACE_ID", Value: "WS-Original-Case"}},
-			findCreatedDeployment(t, cs).Spec.Template.Spec.Containers[0].Env,
+		require.Equal(t, []corev1.EnvVar{
+			{Name: "PYT_MODE", Value: "test"},
+			{Name: "WORKSPACE_ID", Value: "WS-Original-Case"},
+		}, findCreatedDeployment(t, cs).Spec.Template.Spec.Containers[0].Env,
 			"exactly one WORKSPACE_ID, the per-run one, original case (matching prod)")
+	})
+
+	t.Run("sets PYT_MODE=test with no env configured, and over any config-provided value", func(t *testing.T) {
+		// Keys are lowercased: the form the config layer delivers a configured key in.
+		for _, tc := range []struct {
+			name string
+			env  map[string]any
+		}{
+			{name: "no env configured"},
+			{name: "config sets another mode", env: map[string]any{"pyt_mode": "traffic"}},
+			{name: "config sets an empty mode", env: map[string]any{"pyt_mode": ""}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				conf := baseConfig()
+				if tc.env != nil {
+					conf.Set("Processor.pytDeployer.pytTestEnv", tc.env)
+				}
+				cs := newAutoReadyClient()
+				dep := newDeployer(t, cs, conf)
+
+				_, _, err := dep.RunOnEphemeral(context.Background(), "ws-1",
+					func(context.Context, string) (int, []byte, error) { return 200, nil, nil })
+				require.NoError(t, err)
+
+				require.Equal(t, []corev1.EnvVar{
+					{Name: "PYT_MODE", Value: "test"},
+					{Name: "WORKSPACE_ID", Value: "ws-1"},
+				}, findCreatedDeployment(t, cs).Spec.Template.Spec.Containers[0].Env)
+				// Load hands every concurrent run the same map, so a write to it would be a data race.
+				require.Equal(t, tc.env, conf.GetStringMapVar(nil, "Processor.pytDeployer.pytTestEnv"),
+					"the deployer must not write to the shared config map")
+			})
+		}
 	})
 
 	t.Run("matches the production pod spec: kata scheduling, hardening, probes, resources, /tmp", func(t *testing.T) {
