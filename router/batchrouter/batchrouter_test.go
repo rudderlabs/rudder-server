@@ -15,10 +15,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -42,7 +41,6 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 )
 
@@ -86,8 +84,7 @@ var (
 	}
 )
 
-type testContext struct {
-	asyncHelper       testutils.AsyncTestHelper
+type batchRouterFixture struct {
 	jobQueryBatchSize int
 
 	mockCtrl               *gomock.Controller
@@ -99,21 +96,25 @@ type testContext struct {
 	mockFileObjects        []*filemanager.FileInfo
 }
 
-// Initiaze mocks and common expectations
-func (c *testContext) Setup() {
-	c.asyncHelper.Setup()
-	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockBatchRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	c.mockFileManager = mock_filemanager.NewMockFileManager(c.mockCtrl)
-	c.mockFileManagerFactory = func(settings *filemanager.Settings) (filemanager.FileManager, error) { return c.mockFileManager, nil }
+// newBatchRouterFixture initializes mocks and common expectations
+func newBatchRouterFixture(t *testing.T) *batchRouterFixture {
+	t.Helper()
+	config.Reset()
+	config.Set("Router.jobRetention", "175200h") // 20 Years(20*365*24)
 
-	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")
+	f := &batchRouterFixture{}
+	f.mockCtrl = gomock.NewController(t)
+	f.mockBatchRouterJobsDB = mocksJobsDB.NewMockJobsDB(f.mockCtrl)
+	f.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(f.mockCtrl)
+	f.mockFileManager = mock_filemanager.NewMockFileManager(f.mockCtrl)
+	f.mockFileManagerFactory = func(settings *filemanager.Settings) (filemanager.FileManager, error) { return f.mockFileManager, nil }
+
+	subscribed := make(chan struct{})
 
 	// During Setup, router subscribes to backend config
-	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+	f.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-			tFunc()
+			close(subscribed)
 
 			ch := make(chan pubsub.DataEvent, 1)
 			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{workspaceID: sampleBackendConfig}, Topic: string(topic)}
@@ -124,14 +125,26 @@ func (c *testContext) Setup() {
 			}()
 			return ch
 		})
-	c.jobQueryBatchSize = 20000
-	c.mockConfigPrefix = sampleConfigPrefix
-	c.mockFileObjects = sampleFileObjects
+	f.jobQueryBatchSize = 20000
+	f.mockConfigPrefix = sampleConfigPrefix
+	f.mockFileObjects = sampleFileObjects
+
+	t.Cleanup(func() {
+		config.Reset()
+		select {
+		case <-subscribed:
+		case <-time.After(testTimeout):
+			t.Fatal("timed out waiting for the backend config subscription")
+		}
+	})
+	return f
 }
 
-func (c *testContext) Finish() {
-	c.asyncHelper.WaitWithTimeout(testTimeout)
-	c.mockCtrl.Finish()
+// withIsolationModeNone configures the batch router with isolation mode none and expects a crash recovery check
+func (f *batchRouterFixture) withIsolationModeNone() {
+	config.Set("BatchRouter.isolationMode", "none")
+	// crash recovery check
+	f.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 }
 
 var (
@@ -146,33 +159,20 @@ func initBatchRouter() {
 	misc.Init()
 }
 
-var _ = Describe("BatchRouter", func() {
+func TestBatchRouterWithMocks(t *testing.T) {
 	initBatchRouter()
 
-	var c *testContext
-
-	BeforeEach(func() {
-		config.Reset()
-		config.Set("Router.jobRetention", "175200h") // 20 Years(20*365*24)
-		c = &testContext{}
-		c.Setup()
-	})
-
-	AfterEach(func() {
-		config.Reset()
-		c.Finish()
-	})
-
-	Context("Initialization", func() {
-		It("should initialize and recover after crash", func() {
+	t.Run("Initialization", func(t *testing.T) {
+		t.Run("should initialize and recover after crash", func(t *testing.T) {
+			f := newBatchRouterFixture(t)
 			batchrouter := &Handle{}
 
-			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
+			f.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 
 			batchrouter.Setup(
 				s3DestinationDefinition.Name,
-				c.mockBackendConfig,
-				c.mockBatchRouterJobsDB,
+				f.mockBackendConfig,
+				f.mockBatchRouterJobsDB,
 				nil,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
@@ -180,22 +180,19 @@ var _ = Describe("BatchRouter", func() {
 				destinationdebugger.NewNoOpService(),
 				config.Default,
 			)
+			t.Cleanup(batchrouter.Shutdown)
 		})
 	})
 
-	Context("normal operation - s3 - isolation mode none", func() {
-		BeforeEach(func() {
-			config.Set("BatchRouter.isolationMode", "none")
-			// crash recovery check
-			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
-		})
-
-		It("should send failed, unprocessed jobs to s3 destination", func() {
+	t.Run("normal operation - s3 - isolation mode none", func(t *testing.T) {
+		t.Run("should send failed, unprocessed jobs to s3 destination", func(t *testing.T) {
+			f := newBatchRouterFixture(t)
+			f.withIsolationModeNone()
 			batchrouter := &Handle{}
 			batchrouter.Setup(
 				s3DestinationDefinition.Name,
-				c.mockBackendConfig,
-				c.mockBatchRouterJobsDB,
+				f.mockBackendConfig,
+				f.mockBatchRouterJobsDB,
 				nil,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
@@ -203,12 +200,13 @@ var _ = Describe("BatchRouter", func() {
 				destinationdebugger.NewNoOpService(),
 				config.Default,
 			)
+			t.Cleanup(batchrouter.Shutdown)
 
-			batchrouter.fileManagerFactory = c.mockFileManagerFactory
+			batchrouter.fileManagerFactory = f.mockFileManagerFactory
 
-			c.mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any(), gomock.Any()).Return(filemanager.UploadedFile{Location: "local", ObjectName: "file"}, nil)
-			c.mockFileManager.EXPECT().Prefix().Return(c.mockConfigPrefix)
-			c.mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(filemanager.MockListSession(c.mockFileObjects, nil))
+			f.mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any(), gomock.Any()).Return(filemanager.UploadedFile{Location: "local", ObjectName: "file"}, nil)
+			f.mockFileManager.EXPECT().Prefix().Return(f.mockConfigPrefix)
+			f.mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(filemanager.MockListSession(f.mockFileObjects, nil))
 
 			s3Payload := `{
 				"userId": "identified user id",
@@ -261,7 +259,7 @@ var _ = Describe("BatchRouter", func() {
 
 			payloadLimit := batchrouter.payloadLimit
 			var getJobsListCalled bool
-			c.mockBatchRouterJobsDB.EXPECT().GetJobs(gomock.Any(), []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, jobsdb.GetQueryParams{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit.Load()}).DoAndReturn(func(ctx context.Context, states []string, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
+			f.mockBatchRouterJobsDB.EXPECT().GetJobs(gomock.Any(), []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, jobsdb.GetQueryParams{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: f.jobQueryBatchSize, PayloadSizeLimit: payloadLimit.Load()}).DoAndReturn(func(ctx context.Context, states []string, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
 				var res jobsdb.JobsResult
 				if !getJobsListCalled {
 					getJobsListCalled = true
@@ -272,30 +270,30 @@ var _ = Describe("BatchRouter", func() {
 				return res, nil
 			}).AnyTimes()
 
-			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
+			f.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, `{}`, 2)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, `{}`, 1)
+					assertJobStatus(t, toRetryJobsList[0], statuses[0], jobsdb.Executing.State, `{}`, 2)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, `{}`, 1)
 				}).Return(nil)
 
-			c.mockBatchRouterJobsDB.EXPECT().JournalMarkStart(gomock.Any(), gomock.Any()).Times(1).Return(int64(1), nil)
+			f.mockBatchRouterJobsDB.EXPECT().JournalMarkStart(gomock.Any(), gomock.Any()).Times(1).Return(int64(1), nil)
 
-			c.mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
-				_ = f(jobsdb.EmptyUpdateSafeTx())
+			f.mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, fn func(tx jobsdb.UpdateSafeTx) error) {
+				_ = fn(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil)
-			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+			f.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30", "success": "OK"}`, 2)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30, "success": "OK""}`, 1)
+					assertJobStatus(t, toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30", "success": "OK"}`, 2)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30, "success": "OK""}`, 1)
 				}).Return(nil)
 
-			c.mockBatchRouterJobsDB.EXPECT().JournalDeleteEntry(gomock.Any()).Times(1)
+			f.mockBatchRouterJobsDB.EXPECT().JournalDeleteEntry(gomock.Any()).Times(1)
 
 			<-batchrouter.backendConfigInitialized
 			batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
 			batchrouter.uploadFreq = config.SingleValueLoader(5 * time.Millisecond)
 			batchrouter.pingFrequency = config.SingleValueLoader(time.Microsecond)
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(t.Context())
 			var wg sync.WaitGroup
 			wg.Go(func() {
 				batchrouter.mainLoop(ctx)
@@ -305,13 +303,15 @@ var _ = Describe("BatchRouter", func() {
 			wg.Wait()
 		})
 
-		It("should abort jobs that have retry limits, with lesser(default) limits for rSources jobs", func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		t.Run("should abort jobs that have retry limits, with lesser(default) limits for rSources jobs", func(t *testing.T) {
+			f := newBatchRouterFixture(t)
+			f.withIsolationModeNone()
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			batchrouter := &Handle{}
 			batchrouter.Setup(
 				s3DestinationDefinition.Name,
-				c.mockBackendConfig,
-				c.mockBatchRouterJobsDB,
+				f.mockBackendConfig,
+				f.mockBatchRouterJobsDB,
 				nil,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
@@ -319,8 +319,9 @@ var _ = Describe("BatchRouter", func() {
 				destinationdebugger.NewNoOpService(),
 				config.New(),
 			)
+			t.Cleanup(batchrouter.Shutdown)
 
-			batchrouter.fileManagerFactory = c.mockFileManagerFactory
+			batchrouter.fileManagerFactory = f.mockFileManagerFactory
 
 			s3Payload := `{
 				"userId": "identified user id",
@@ -378,12 +379,12 @@ var _ = Describe("BatchRouter", func() {
 
 			payloadLimit := batchrouter.payloadLimit
 			var getJobsListCalled bool
-			c.mockBatchRouterJobsDB.EXPECT().GetJobs(
+			f.mockBatchRouterJobsDB.EXPECT().GetJobs(
 				gomock.Any(),
 				[]string{jobsdb.Failed.State, jobsdb.Unprocessed.State},
 				jobsdb.GetQueryParams{
 					CustomValFilters: []string{CustomVal["S3"]},
-					JobsLimit:        c.jobQueryBatchSize,
+					JobsLimit:        f.jobQueryBatchSize,
 					PayloadSizeLimit: payloadLimit.Load(),
 				},
 			).DoAndReturn(
@@ -397,13 +398,13 @@ var _ = Describe("BatchRouter", func() {
 				},
 			).AnyTimes()
 
-			c.mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
-				_ = f(jobsdb.EmptyUpdateSafeTx())
+			f.mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, fn func(tx jobsdb.UpdateSafeTx) error) {
+				_ = fn(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil)
-			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+			f.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Aborted.State, fmt.Sprintf(`{"firstAttemptedAt": %q, "reason":"source_not_found"}`, attempt1.Format(misc.RFC3339Milli)), 130)
-					assertJobStatus(toRetryJobsList[1], statuses[1], jobsdb.Aborted.State, fmt.Sprintf(`{"firstAttemptedAt": %q, "reason":"source_not_found"}`, attempt2.Format(misc.RFC3339Milli)), 4)
+					assertJobStatus(t, toRetryJobsList[0], statuses[0], jobsdb.Aborted.State, fmt.Sprintf(`{"firstAttemptedAt": %q, "reason":"source_not_found"}`, attempt1.Format(misc.RFC3339Milli)), 130)
+					assertJobStatus(t, toRetryJobsList[1], statuses[1], jobsdb.Aborted.State, fmt.Sprintf(`{"firstAttemptedAt": %q, "reason":"source_not_found"}`, attempt2.Format(misc.RFC3339Milli)), 4)
 					cancel()
 				}).Return(nil)
 
@@ -419,17 +420,19 @@ var _ = Describe("BatchRouter", func() {
 			<-done
 		})
 	})
-})
+}
 
-func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorResponse string, attemptNum int) {
-	Expect(status.JobID).To(Equal(job.JobID))
-	Expect(status.JobState).To(Equal(expectedState))
+// assertJobStatus uses assert since it is called from the batch router's goroutines.
+func assertJobStatus(t *testing.T, job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorResponse string, attemptNum int) {
+	t.Helper()
+	assert.Equal(t, job.JobID, status.JobID)
+	assert.Equal(t, expectedState, status.JobState)
 	if attemptNum > 1 {
-		Expect(status.ErrorResponse).To(MatchJSON(errorResponse))
+		assert.JSONEq(t, errorResponse, string(status.ErrorResponse))
 	}
-	Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 10*time.Second))
-	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 10*time.Second))
-	Expect(status.AttemptNum).To(Equal(attemptNum))
+	assert.WithinDuration(t, time.Now(), status.RetryTime, 10*time.Second)
+	assert.WithinDuration(t, time.Now(), status.ExecTime, 10*time.Second)
+	assert.Equal(t, attemptNum, status.AttemptNum)
 }
 
 func TestPostToWarehouse(t *testing.T) {
