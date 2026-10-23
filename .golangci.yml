@@ -34,33 +34,6 @@ linters:
               desc: use "aws-sdk-go-v2" instead
             - pkg: github.com/aws/aws-sdk-go/
               desc: use "aws-sdk-go-v2" instead
-        ginkgo:
-          files:
-            - $all
-            # files still using ginkgo; drop entries as they are migrated
-            - '!${base-path}/processor/processor_suite_test.go'
-            - '!${base-path}/processor/processor_test.go'
-            - '!${base-path}/router/masking_test.go'
-            - '!${base-path}/router/router_suite_test.go'
-            - '!${base-path}/router/router_test.go'
-            - '!${base-path}/router/worker_test.go'
-            - '!${base-path}/services/oauth/v2/cache_test.go'
-            - '!${base-path}/services/oauth/v2/controlplane/controlplane_suite_test.go'
-            - '!${base-path}/services/oauth/v2/controlplane/cp_connector_test.go'
-            - '!${base-path}/services/oauth/v2/http/client_test.go'
-            - '!${base-path}/services/oauth/v2/http/http_suite_test.go'
-            - '!${base-path}/services/oauth/v2/http/transport_test.go'
-            - '!${base-path}/services/oauth/v2/oauth_handler_test.go'
-            - '!${base-path}/services/oauth/v2/utils_test.go'
-            - '!${base-path}/services/oauth/v2/v2_suite_test.go'
-            - '!${base-path}/testhelper/log/log.go'
-            - '!${base-path}/utils/tests/async-helper.go'
-            - '!${base-path}/utils/tests/matchers.go'
-          deny:
-            - pkg: github.com/onsi/ginkgo
-              desc: use the standard testing package with testify
-            - pkg: github.com/onsi/gomega
-              desc: use testify
     forbidigo:
       forbid:
         - pattern: ^errors\.As$

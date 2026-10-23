@@ -18,13 +18,8 @@ import (
 
 	mocksDebugger "github.com/rudderlabs/rudder-server/mocks/services/debugger"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
-
-type basicAuthMock struct{}
-
-func (*basicAuthMock) BasicAuth() (string, string) {
-	return "test", "test"
-}
 
 type uploaderFixture struct {
 	recordingEvent  []byte
@@ -45,7 +40,7 @@ func newUploaderFixture(t *testing.T) *uploaderFixture {
 		mockHTTP:        mocksSysUtils.NewMockHttpI(ctrl),
 		mockTransformer: mocksDebugger.NewMockTransformerAny(ctrl),
 	}
-	f.uploader = New[any]("http://test", &basicAuthMock{}, f.mockTransformer)
+	f.uploader = New[any]("http://test", &testutils.BasicAuthMock{}, f.mockTransformer)
 	return f
 }
 
