@@ -190,6 +190,7 @@ sql/                        SQL migration files (golang-migrate) — never delet
 - Delete SQL migration files under `sql/`
 - Use `encoding/json` (→ `jsonrs`), `github.com/gofrs/uuid` (→ `google/uuid`), `golang.org/x/exp/slices` (→ stdlib
   `slices`), `aws-sdk-go` v1 (→ v2), `cenkalti/backoff` < v5 (→ v5) — all linter-enforced
+- Use `errors.As` — use `errors.AsType[T](err)`, which returns the typed value and an `ok` bool (linter-enforced)
 - Use sugared logger methods (`Logger.Info`, `Logger.Errorf`, …) — use `Infon`/`Errorn` with typed field constructors
   and `obskit.Error(err)`
 - Write new tests with Ginkgo/Gomega: use plain `testing` + testify (`require`/`assert`). Existing Ginkgo suites are legacy; don't add new `_test.go` files that import `github.com/onsi/ginkgo` and try to avoid adding `Describe`/`It` blocks to existing ones.

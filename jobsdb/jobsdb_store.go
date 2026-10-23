@@ -199,8 +199,8 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 		if err == nil {
 			return nil
 		}
-		var e *pq.Error
-		if !errors.As(err, &e) {
+		e, ok := errors.AsType[*pq.Error](err)
+		if !ok {
 			return err
 		}
 		// The table might be in read-only mode or might no longer exist (dropped by compaction goroutine).

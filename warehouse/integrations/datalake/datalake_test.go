@@ -784,10 +784,8 @@ func TestIntegration(t *testing.T) {
 				t.Log("select count with where clause: ", err)
 			}
 
-			var e *trino.ErrQueryFailed
-			if err != nil && errors.As(err, &e) && e.StatusCode == 200 {
-				var ei *trino.ErrTrino
-				if errors.As(e.Reason, &ei) && ei.ErrorName == "HIVE_CURSOR_ERROR" {
+			if e, ok := errors.AsType[*trino.ErrQueryFailed](err); ok && e.StatusCode == 200 {
+				if ei, ok := errors.AsType[*trino.ErrTrino](e.Reason); ok && ei.ErrorName == "HIVE_CURSOR_ERROR" {
 					return true
 				}
 			}
