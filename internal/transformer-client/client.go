@@ -108,6 +108,16 @@ type Client interface {
 }
 
 func NewClient(name string, config *ClientConfig) Client {
+	client, _ := NewClosableClient(name, config)
+	return client
+}
+
+// NewClosableClient is [NewClient] for owners that discard clients while the process runs. The returned func releases
+// what the client holds: httplb's resolver and connection goroutines, otherwise its idle connections.
+//
+// No new request may start on the client once it is called: closing an httplb client waits for the requests already
+// in flight, but fails any that start afterwards.
+func NewClosableClient(name string, config *ClientConfig) (Client, func()) {
 	switch config.ClientType {
 	case "httplb":
 		return buildHTTPLBClient(name, config)
@@ -117,7 +127,7 @@ func NewClient(name string, config *ClientConfig) Client {
 }
 
 // buildStandardClient creates a standard HTTP client with configuration applied
-func buildStandardClient(name string, config *ClientConfig) Client {
+func buildStandardClient(name string, config *ClientConfig) (Client, func()) {
 	transport := buildConfiguredTransport(config)
 	client := &http.Client{
 		Transport: transport,
@@ -126,13 +136,13 @@ func buildStandardClient(name string, config *ClientConfig) Client {
 
 	retryableConfig := buildRetryableConfig(config)
 	if retryableConfig != nil {
-		return newRetryableHTTPClient(name, client, retryableConfig)
+		return newRetryableHTTPClient(name, client, retryableConfig), transport.CloseIdleConnections
 	}
-	return client
+	return client, transport.CloseIdleConnections
 }
 
 // buildHTTPLBClient creates an HTTP load balancer client
-func buildHTTPLBClient(name string, config *ClientConfig) Client {
+func buildHTTPLBClient(name string, config *ClientConfig) (Client, func()) {
 	transport := buildConfiguredTransport(config)
 
 	tr := &httplbtransport{
@@ -154,12 +164,13 @@ func buildHTTPLBClient(name string, config *ClientConfig) Client {
 	}
 
 	client := httplb.NewClient(options...)
+	closeClient := func() { _ = client.Close() }
 	retryableConfig := buildRetryableConfig(config)
 
 	if retryableConfig != nil {
-		return newRetryableHTTPClient(name, client, retryableConfig)
+		return newRetryableHTTPClient(name, client, retryableConfig), closeClient
 	}
-	return client
+	return client, closeClient
 }
 
 // buildConfiguredTransport creates a transport with configuration applied
