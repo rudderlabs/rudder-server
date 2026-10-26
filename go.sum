@@ -1146,8 +1146,8 @@ github.com/rudderlabs/rudder-observability-kit v0.0.8 h1:K/4sSuvLHy6P2hSvDpLx6zP
 github.com/rudderlabs/rudder-observability-kit v0.0.8/go.mod h1:kACGy+jiPLV/DUz9YukipOW3ysvxklb41shPB54fxg0=
 github.com/rudderlabs/rudder-schemas v0.12.1 h1:oVzy6hRQ0MiNVxYZC2rF9QjB2oU1KVT3ZdpqNgwDNQ8=
 github.com/rudderlabs/rudder-schemas v0.12.1/go.mod h1:6Px7LOlAeX5YwG/tkgNo+geGzQmhrRxOWbDqmeFN/vY=
-github.com/rudderlabs/rudder-transformer/go v1.164.0 h1:GTdj6nUROl217an7FIhDu+pJ4+kZH9HtEgEYfcva6p8=
-github.com/rudderlabs/rudder-transformer/go v1.164.0/go.mod h1:3NGitPz4pYRRZ6Xt09S+8hb0tHK/9pZcKJ3OgOTaSmE=
+github.com/rudderlabs/rudder-transformer/go v1.165.0 h1:KiPCRBg2gtaRxaqzbj50TRgKIgvJMWmHxZasCaUMim0=
+github.com/rudderlabs/rudder-transformer/go v1.165.0/go.mod h1:3NGitPz4pYRRZ6Xt09S+8hb0tHK/9pZcKJ3OgOTaSmE=
 github.com/rudderlabs/sonnet v1.0.2 h1:nPfmDKD9gUwT571Dwtcsx0VIglSchvyNjuRLju4Xs3s=
 github.com/rudderlabs/sonnet v1.0.2/go.mod h1:tjQmKEGAo/xwmhw9AwLkazP5b5m8VpUvWNzPSx4ve0g=
 github.com/rudderlabs/sql-tunnels v0.1.8 h1:owX5QL9BEXxtRW3a+JwMGlGQwpDUQGGtDOvnJG4evgs=
