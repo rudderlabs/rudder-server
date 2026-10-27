@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.92.0](https://github.com/rudderlabs/rudder-server/compare/v1.91.0...v1.92.0) (2026-10-26)
+
+
+### Features
+
+* **processor:** pyt test-pod deployer sets PYT_MODE=test ([#7506](https://github.com/rudderlabs/rudder-server/issues/7506)) ([a050ed6](https://github.com/rudderlabs/rudder-server/commit/a050ed6f2ff965108f5aaa2937b5d3575884033f))
+* **processor:** reset the per-workspace pyt client on 421 ([#7494](https://github.com/rudderlabs/rudder-server/issues/7494)) ([83db4d6](https://github.com/rudderlabs/rudder-server/commit/83db4d69db3cb6bb1ce8d4e4cfc0ccd58ef39f81))
+* **router:** re-fetch the cached OAuth token when the control plane holds a newer secret (PRO-5947) ([#7478](https://github.com/rudderlabs/rudder-server/issues/7478)) ([742779d](https://github.com/rudderlabs/rudder-server/commit/742779d042bb7004e5419dacfc8841d02c0bb419))
+* **router:** tag oauth_action counters with destinationId and count AUTH_STATUS_INACTIVE (PRO-5946) ([#7477](https://github.com/rudderlabs/rudder-server/issues/7477)) ([0e15eb4](https://github.com/rudderlabs/rudder-server/commit/0e15eb49dfea1912f61d399866a0e4a28837b125))
+
+
+### Bug Fixes
+
+* flaky TestDrainConfigRoutine failing with "database is closed" ([#7489](https://github.com/rudderlabs/rudder-server/issues/7489)) ([9baa89f](https://github.com/rudderlabs/rudder-server/commit/9baa89f6783373eedf255c4ef90e108f87bf17b5))
+
+
+### Miscellaneous
+
+* block new ginkgo/gomega usage in tests ([#7502](https://github.com/rudderlabs/rudder-server/issues/7502)) ([e1c9d38](https://github.com/rudderlabs/rudder-server/commit/e1c9d38ea147b84a8737c2e7b5b7084342f9ef0d))
+* bump dependency versions ([#7522](https://github.com/rudderlabs/rudder-server/issues/7522)) ([1067ff4](https://github.com/rudderlabs/rudder-server/commit/1067ff4ce12cfedc20fe15fb1a54f36f4c9ee442))
+* enforce errors.AsType and point CLAUDE.md at AGENTS.md ([#7521](https://github.com/rudderlabs/rudder-server/issues/7521)) ([5c7e088](https://github.com/rudderlabs/rudder-server/commit/5c7e0886967072e7a484450eba72fe685f50d2d9))
+* go 1.27.3 ([#7516](https://github.com/rudderlabs/rudder-server/issues/7516)) ([3c240a3](https://github.com/rudderlabs/rudder-server/commit/3c240a3e1222e4fa00aa2c7a277fa4a2e39480a2))
+* migrate debugger, services, async destination and utils tests from ginkgo to testify ([#7503](https://github.com/rudderlabs/rudder-server/issues/7503)) ([1a8c85a](https://github.com/rudderlabs/rudder-server/commit/1a8c85add234533e98610ee9cb14cff8ca8e318d))
+* migrate gateway, rsources, reporting, batchrouter and manager tests from ginkgo to testify ([#7507](https://github.com/rudderlabs/rudder-server/issues/7507)) ([ffdd505](https://github.com/rudderlabs/rudder-server/commit/ffdd50592c781f0fce8182622b97152217c7f64b))
+* remove ginkgo and gomega from tests ([#7508](https://github.com/rudderlabs/rudder-server/issues/7508)) ([d3e7e0f](https://github.com/rudderlabs/rudder-server/commit/d3e7e0f3ed154a031c238c5af87f8e54c232d53b))
+
 ## [1.91.1](https://github.com/rudderlabs/rudder-server/compare/v1.91.0...v1.91.1) (2026-10-21)
 
 
