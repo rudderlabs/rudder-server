@@ -132,8 +132,7 @@ func Test_JobsForwarder(t *testing.T) {
 	})
 
 	t.Run("late producer callbacks after a failed flush are collected", func(t *testing.T) {
-		const numOfJobs = 20
-		jf, statusesCh := newMockedJobsForwarder(t, numOfJobs)
+		jf, statusesCh := newMockedJobsForwarder(t)
 		collecting := &collectingSignal{started: make(chan struct{}), timeout: 10 * time.Second}
 		jf.callbackTimeout = collecting
 		producer := &lateAckProducer{release: make(chan struct{})}
@@ -150,17 +149,17 @@ func Test_JobsForwarder(t *testing.T) {
 		producer.releaseCallbacks()
 
 		statuses := receiveStatuses(t, statusesCh)
-		require.Len(t, statuses, numOfJobs)
-		seen := make(map[int64]struct{}, numOfJobs)
+		require.Len(t, statuses, mockedNumOfJobs)
+		seen := make(map[int64]struct{}, mockedNumOfJobs)
 		for _, status := range statuses {
 			require.Equal(t, jobsdb.Succeeded.State, status.JobState, "job %d", status.JobID)
 			seen[status.JobID] = struct{}{}
 		}
-		require.Len(t, seen, numOfJobs, "every job should have a status")
+		require.Len(t, seen, mockedNumOfJobs, "every job should have a status")
 	})
 
 	t.Run("stopping while waiting for producer callbacks neither waits for them, blocks them nor aborts jobs", func(t *testing.T) {
-		jf, _ := newMockedJobsForwarder(t, 20)
+		jf, _ := newMockedJobsForwarder(t)
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 		jf.stat = statsStore
@@ -205,8 +204,7 @@ func Test_JobsForwarder(t *testing.T) {
 	})
 
 	t.Run("jobs whose producer callbacks never arrive are aborted", func(t *testing.T) {
-		const numOfJobs = 20
-		jf, statusesCh := newMockedJobsForwarder(t, numOfJobs)
+		jf, statusesCh := newMockedJobsForwarder(t)
 		jf.callbackTimeout = config.SingleValueLoader(50 * time.Millisecond)
 		jf.pulsarProducer = &silentProducer{}
 		jf.start()
@@ -233,7 +231,7 @@ func Test_JobsForwarder(t *testing.T) {
 		})
 
 		statuses := receiveStatuses(t, statusesCh)
-		require.Len(t, statuses, numOfJobs)
+		require.Len(t, statuses, mockedNumOfJobs)
 		for _, status := range statuses {
 			require.Equal(t, jobsdb.Aborted.State, status.JobState, "job %d", status.JobID)
 		}
@@ -241,25 +239,27 @@ func Test_JobsForwarder(t *testing.T) {
 	})
 
 	t.Run("jobs whose producer callbacks fail are aborted", func(t *testing.T) {
-		const numOfJobs = 20
-		jf, statusesCh := newMockedJobsForwarder(t, numOfJobs)
+		jf, statusesCh := newMockedJobsForwarder(t)
 		jf.pulsarProducer = &failingProducer{}
 		jf.start()
 		t.Cleanup(jf.Stop)
 
 		statuses := receiveStatuses(t, statusesCh)
-		require.Len(t, statuses, numOfJobs)
+		require.Len(t, statuses, mockedNumOfJobs)
 		for _, status := range statuses {
 			require.Equal(t, jobsdb.Aborted.State, status.JobState, "job %d", status.JobID)
 		}
 	})
 }
 
-// newMockedJobsForwarder returns a forwarder that is not started, without a producer, whose jobsdb returns numOfJobs
-// jobs once and sends every non-empty batch of job statuses it marks to the returned channel
-func newMockedJobsForwarder(t *testing.T, numOfJobs int) (*JobsForwarder, <-chan []*jobsdb.JobStatusT) {
+// mockedNumOfJobs is the number of jobs that the jobsdb of [newMockedJobsForwarder] returns
+const mockedNumOfJobs = 20
+
+// newMockedJobsForwarder returns a forwarder that is not started, without a producer, whose jobsdb returns
+// mockedNumOfJobs jobs once and sends every non-empty batch of job statuses it marks to the returned channel
+func newMockedJobsForwarder(t *testing.T) (*JobsForwarder, <-chan []*jobsdb.JobStatusT) {
 	t.Helper()
-	jobs := make([]*jobsdb.JobT, numOfJobs)
+	jobs := make([]*jobsdb.JobT, mockedNumOfJobs)
 	for i := range jobs {
 		jobs[i] = &jobsdb.JobT{
 			JobID:        int64(i + 1),
