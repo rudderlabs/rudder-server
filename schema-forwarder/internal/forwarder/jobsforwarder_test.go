@@ -234,6 +234,20 @@ func Test_JobsForwarder(t *testing.T) {
 		}
 		require.True(t, stop(), "timed out waiting for the forwarder to stop")
 	})
+
+	t.Run("jobs whose producer callbacks fail are aborted", func(t *testing.T) {
+		const numOfJobs = 20
+		jf, statusesCh := newMockedJobsForwarder(t, numOfJobs)
+		jf.pulsarProducer = &failingProducer{}
+		jf.start()
+		t.Cleanup(jf.Stop)
+
+		statuses := receiveStatuses(t, statusesCh)
+		require.Len(t, statuses, numOfJobs)
+		for _, status := range statuses {
+			require.Equal(t, jobsdb.Aborted.State, status.JobState, "job %d", status.JobID)
+		}
+	})
 }
 
 // newMockedJobsForwarder returns a forwarder that is not started, without a producer, whose jobsdb returns numOfJobs
@@ -364,6 +378,22 @@ func (*silentProducer) SendMessageAsync(context.Context, string, string, []byte,
 func (*silentProducer) Flush() error { return nil }
 
 func (*silentProducer) Close() {}
+
+// failingProducer is a [pulsar.ProducerAdapter] that fails every message from within SendMessageAsync,
+// as pulsar does e.g. when the producer is closed
+type failingProducer struct{}
+
+func (*failingProducer) SendMessage(context.Context, string, string, []byte) error {
+	return errors.New("not implemented")
+}
+
+func (*failingProducer) SendMessageAsync(_ context.Context, _, _ string, _ []byte, statusFunc func(pulsarType.MessageID, *pulsarType.ProducerMessage, error)) {
+	statusFunc(nil, nil, pulsarType.ErrProducerClosed)
+}
+
+func (*failingProducer) Flush() error { return pulsarType.ErrProducerClosed }
+
+func (*failingProducer) Close() {}
 
 // PulsarResource returns a pulsar container resource
 func PulsarResource(t *testing.T) *pulsardocker.Resource {
