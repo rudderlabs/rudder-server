@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -40,7 +41,7 @@ func maskForDelivery(payload json.RawMessage, paths []string, ok bool) (json.Raw
 	var masked json.RawMessage
 	var reason string
 	switch {
-	case ok && gjson.ValidBytes(payload) && gjson.ParseBytes(payload).IsArray():
+	case ok && isJSONArray(payload):
 		masked, reason = maskSecretsInArray(payload, paths)
 	case ok && !isJSONObject(payload): // checked here because maskSecrets passes any payload through when no paths are listed
 		masked, reason = payload, "not_object"
@@ -78,18 +79,13 @@ func maskSecretsInArray(payload json.RawMessage, paths []string) (json.RawMessag
 		changed = changed || string(masked) != request.Raw
 		maskedRequests = append(maskedRequests, masked)
 	}
-	masked := payload // keep the original bytes rather than a re-serialized array when nothing changed
-	reason := "listed_noop"
-	if changed {
-		masked, reason = misc.MakeJSONArray(maskedRequests), "listed"
+	if !changed { // keep the original bytes rather than a re-serialized array
+		return payload, cmp.Or(failure, "listed_noop")
 	}
-	if failure != "" {
-		reason = failure
-	}
-	return masked, reason
+	return misc.MakeJSONArray(maskedRequests), cmp.Or(failure, "listed")
 }
 
-// maskReportingSampleEvent leaves the sample untouched where it cannot mask precisely:
+// maskReportingSampleEvent masks every path it can but never blanket-masks:
 // a blanket-masked sample destroys the error-triage value the sample exists for.
 func (rt *Handle) maskReportingSampleEvent(payload json.RawMessage) json.RawMessage {
 	if !rt.reloadableConfig.enableReportingSampleEventMasking.Load() {
@@ -97,7 +93,7 @@ func (rt *Handle) maskReportingSampleEvent(payload json.RawMessage) json.RawMess
 	}
 	paths, ok := rt.transformerFeaturesService.SecretPaths(rt.destType)
 	masked, reason := maskSecrets(payload, paths, ok)
-	if reason == "not_object" && gjson.ValidBytes(payload) && gjson.ParseBytes(payload).IsArray() {
+	if reason == "not_object" && isJSONArray(payload) {
 		masked, reason = maskSecretsInArray(payload, paths)
 	}
 	rt.reportingSampleEventMaskingStat(reason).Increment()
@@ -218,6 +214,10 @@ func maskAll(payload json.RawMessage) (json.RawMessage, bool) {
 	})
 	rebuilt.WriteByte('}')
 	return rebuilt.Bytes(), false
+}
+
+func isJSONArray(payload json.RawMessage) bool {
+	return gjson.ValidBytes(payload) && gjson.ParseBytes(payload).IsArray()
 }
 
 func isJSONObject(payload json.RawMessage) bool {

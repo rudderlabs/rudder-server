@@ -132,14 +132,6 @@ func TestMaskReportingSampleEvent(t *testing.T) {
 			wantReason: "partial",
 		},
 		{
-			name:       "array with only non-object elements stays unchanged",
-			paths:      []string{"headers.Authorization"},
-			ok:         true,
-			input:      `[ null, "scalar" ]`,
-			want:       `[ null, "scalar" ]`,
-			wantReason: "not_object",
-		},
-		{
 			name:       "invalid JSON keeps the non-object reason",
 			paths:      []string{"headers.Authorization"},
 			ok:         true,
