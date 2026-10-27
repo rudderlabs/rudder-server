@@ -71,16 +71,15 @@ func GetDestinationSupportedMessageTypes(destination *backendconfig.DestinationT
 	if destination.Version != 2 || destination.DestinationDefinition.Name != "HTTP" {
 		return nil, false
 	}
-	switch types := destination.Config["supportedMessageTypes"].(type) {
-	case []string:
-		return types, true
-	case []any:
-		messageTypes := ConvertToArrayOfType[string](types)
-		if len(messageTypes) == len(types) {
-			return messageTypes, true
-		}
+	configured, ok := destination.Config["supportedMessageTypes"].([]any)
+	if !ok {
+		return nil, false
 	}
-	return nil, false
+	messageTypes := ConvertToArrayOfType[string](configured)
+	if len(messageTypes) != len(configured) {
+		return nil, false
+	}
+	return messageTypes, true
 }
 
 func identifyDisabled(destination *backendconfig.DestinationT) bool {
@@ -164,7 +163,7 @@ Currently this method supports below validations(executed in the same order):
 2. Validate if the event is sendable to destination based on connectionMode, sourceType & messageType
 */
 func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, supportedMsgTypes []string) (bool, *types.TransformerResponse) {
-	messageType, failedEvent := checkMessageType(transformerEvent, supportedMsgTypes)
+	messageType, failedEvent := CheckMessageType(transformerEvent, supportedMsgTypes)
 	if failedEvent != nil {
 		return false, failedEvent
 	}
@@ -174,13 +173,8 @@ func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, su
 		Destination: &transformerEvent.Destination,
 		SrcType:     transformerEvent.Metadata.SourceDefinitionType,
 		Event:       &EventParams{MessageType: messageType},
-		// Default behavior
-		// When something is missing in "supportedConnectionModes" or if "supportedConnectionModes" is not defined
-		// We would be checking for below things
-		// 1. Check if the event.type value is present in destination.DestinationDefinition.Config["supportedMessageTypes"]
-		// 2. Check if the connectionMode of destination is cloud or hybrid(evaluated through `IsProcessorEnabled`)
-		// Only when 1 & 2 are true, we would allow the event to flow through to server
-		// As when this will be called, we would have already checked if event.type in supportedMessageTypes
+		// Default behavior, when "supportedConnectionModes" is missing or incomplete: the message type
+		// was validated above, so allow the event if the destination is cloud or hybrid (IsProcessorEnabled)
 		DefaultBehaviour: transformerEvent.Destination.IsProcessorEnabled,
 	})
 
@@ -196,13 +190,9 @@ func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, su
 	return true, nil
 }
 
-// AllowMessageType validates only the event's message type against a supported list.
-func AllowMessageType(transformerEvent *types.TransformerEvent, supportedMsgTypes []string) (bool, *types.TransformerResponse) {
-	_, failedEvent := checkMessageType(transformerEvent, supportedMsgTypes)
-	return failedEvent == nil, failedEvent
-}
-
-func checkMessageType(transformerEvent *types.TransformerEvent, supportedMsgTypes []string) (string, *types.TransformerResponse) {
+// CheckMessageType returns the event's normalized message type, or a failed response when the type is
+// missing (400) or not in supportedMsgTypes (filtered).
+func CheckMessageType(transformerEvent *types.TransformerEvent, supportedMsgTypes []string) (string, *types.TransformerResponse) {
 	messageType := strings.TrimSpace(strings.ToLower(getMessageType(&transformerEvent.Message)))
 	if messageType == "" {
 		// We will abort the event

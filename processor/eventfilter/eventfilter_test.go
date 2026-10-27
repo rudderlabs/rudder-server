@@ -526,7 +526,6 @@ func TestGetDestinationSupportedMessageTypes(t *testing.T) {
 		valid    bool
 	}{
 		{name: "configured", version: 2, typeName: "HTTP", config: map[string]any{"supportedMessageTypes": []any{"track", "page"}}, want: []string{"track", "page"}, valid: true},
-		{name: "native slice", version: 2, typeName: "HTTP", config: map[string]any{"supportedMessageTypes": []string{"track"}}, want: []string{"track"}, valid: true},
 		{name: "empty", version: 2, typeName: "HTTP", config: map[string]any{"supportedMessageTypes": []any{}}, want: []string{}, valid: true},
 		{name: "missing", version: 2, typeName: "HTTP"},
 		{name: "wrong type", version: 2, typeName: "HTTP", config: map[string]any{"supportedMessageTypes": "track"}},

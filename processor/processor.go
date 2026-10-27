@@ -4167,12 +4167,9 @@ func ConvertToFilteredTransformerResponse(
 				}
 			}
 
-			// The customer list is an additional HTTP v2 constraint, separate from
-			// the definition-level and hybrid-mode filters above. Read the event's
-			// snapshot: a batch may contain revisions of the same destination.
+			// HTTP v2 customer list. Not cached by Destination.ID: a batch may hold revisions of the same destination.
 			if destinationTypes, ok := eventfilter.GetDestinationSupportedMessageTypes(&event.Destination); ok {
-				allow, failedEvent := eventfilter.AllowMessageType(event, destinationTypes)
-				if !allow {
+				if _, failedEvent := eventfilter.CheckMessageType(event, destinationTypes); failedEvent != nil {
 					failedEvents = append(failedEvents, *failedEvent)
 					continue
 				}
