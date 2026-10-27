@@ -24,13 +24,15 @@ Primary consumers: Router Transformer and the Regulation Service.
     - Detects if the destination is OAuth‑enabled for the current flow.
     - Pre‑roundtrip: fetches token (or uses cache) and augments the request via `extensions.Augmenter`.
     - Post‑roundtrip: interprets destination responses, handles refresh‑token and auth‑inactive cases and emits metrics.
-- `v2/oauth.go`:
+- `v2/oauth_handler.go`:
   - `OAuthHandler`: orchestration for token fetch/refresh, CP calls, cache, locking, and metrics.
+- `v2/oauth_breaker.go`:
+  - Per-account circuit breakers wrapped around `FetchToken`/`RefreshToken`.
 - `v2/controlplane/cp_connector.go`:
   - `Connector`: thin client to Control Plane; adds basic auth, handles timeouts/retries metadata, normalizes responses.
 - `v2/context/context.go`:
   - Helpers to embed and retrieve `backendconfig.DestinationT` and token `secret` on `context.Context`.
-- `v2/utils.go`, `v2/types.go`, `v2/common/constants.go`, `v2/cache.go`, `v2/stats.go`:
+- `v2/utils.go`, `v2/types.go`, `v2/common/constants.go`, `v2/cache.go`, `v2/oauth_stats.go`:
   - Shared types, constants, cache interface, and small utilities.
 
 ### Request Lifecycle
@@ -42,6 +44,8 @@ Primary consumers: Router Transformer and the Regulation Service.
    - Pre‑roundtrip: `OAuthHandler.FetchToken` returns an access token (from cache or CP). The request is augmented via `extensions.Augmenter`.
    - Roundtrip: underlying transport executes the request.
    - Post‑roundtrip: response is parsed to detect `REFRESH_TOKEN` or `AUTH_STATUS_INACTIVE` categories and react accordingly (refresh token, return actionable status codes to caller). A structured interceptor payload is set on the response body to communicate outcomes.
+
+See [retry-and-abort.md](retry-and-abort.md) for every pre/post-roundtrip outcome, how each caller applies it, and when a job is retried or aborted.
 
 ### Control Plane Contracts
 
@@ -62,7 +66,7 @@ Primary consumers: Router Transformer and the Regulation Service.
 - Transport:
   - `OAuthTransport` is injected into `client.Transport` and handles all OAuth logic.
 - OAuth orchestration:
-  - `OAuthHandler` methods: `FetchToken`, `RefreshToken`.
+  - `OAuthHandler` methods: `FetchToken`, `RefreshToken`, `ReportAuthStatusInactive` (metric only).
 - Extensions:
   - `extensions.Augmenter` augments requests with provider‑specific auth material from the retrieved `secret`.
 
