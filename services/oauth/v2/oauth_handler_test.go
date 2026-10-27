@@ -12,10 +12,11 @@ import (
 	"runtime"
 	"sync"
 	"syscall"
+	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -42,13 +43,13 @@ var Destination = &backendconfig.DestinationT{
 	},
 }
 
-var _ = Describe("Oauth", func() {
+func TestOauth(t *testing.T) {
 	timeoutError := "connection timed out"
 	if runtime.GOOS == "darwin" {
 		timeoutError = "operation timed out"
 	}
-	Describe("Test FetchToken function", func() {
-		It("fetch token function call when cache is empty", func() {
+	t.Run("Test FetchToken function", func(t *testing.T) {
+		t.Run("fetch token function call when cache is empty", func(t *testing.T) {
 			fetchTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
 				WorkspaceID:   "456",
@@ -56,7 +57,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"newaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}}`)
 			mockAuthIdentityProvider := mock_oauthV2.NewMockAuthIdentityProvider(ctrl)
@@ -74,13 +75,13 @@ var _ = Describe("Oauth", func() {
 			)
 			response, err := oauthHandler.FetchToken(fetchTokenParams)
 			// Assertions
-			Expect(err).To(BeNil())
-			Expect(response).To(MatchJSON(expectedResponse))
+			require.NoError(t, err)
+			require.JSONEq(t, string(expectedResponse), string(response))
 			token, _ := cache.Load(fetchTokenParams.AccountID)
-			Expect(token.Secret).To(MatchJSON(expectedResponse))
+			require.JSONEq(t, string(expectedResponse), string(token.Secret))
 		})
 
-		It("fetch token function call when cache is not empty and token is not expired", func() {
+		t.Run("fetch token function call when cache is not empty and token is not expired", func(t *testing.T) {
 			fetchTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
 				WorkspaceID:   "456",
@@ -103,14 +104,14 @@ var _ = Describe("Oauth", func() {
 			cache.Store(fetchTokenParams.AccountID, storedAuthToken)
 			response, err := oauthHandler.FetchToken(fetchTokenParams)
 			// Assertions
-			Expect(err).To(BeNil())
-			Expect(response).To(MatchJSON(expectedResponse))
+			require.NoError(t, err)
+			require.JSONEq(t, string(expectedResponse), string(response))
 			token, _ := cache.Load(fetchTokenParams.AccountID)
 			// We are checking if the token is updated in the cache or not
-			Expect(token).To(Equal(storedAuthToken))
+			require.Equal(t, storedAuthToken, token)
 		})
 
-		It("fetch token function call when cache is not empty and token is expired", func() {
+		t.Run("fetch token function call when cache is not empty and token is expired", func(t *testing.T) {
 			fetchTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
 				WorkspaceID:   "456",
@@ -118,7 +119,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"NewDummyaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}}`)
 			mockAuthIdentityProvider := mock_oauthV2.NewMockAuthIdentityProvider(ctrl)
@@ -138,14 +139,14 @@ var _ = Describe("Oauth", func() {
 			}
 			cache.Store(fetchTokenParams.AccountID, storedAuthToken)
 			response, err := oauthHandler.FetchToken(fetchTokenParams)
-			Expect(err).To(BeNil())
-			Expect(response).To(MatchJSON(expectedResponse))
+			require.NoError(t, err)
+			require.JSONEq(t, string(expectedResponse), string(response))
 			token, _ := cache.Load(fetchTokenParams.AccountID)
 			// We are checking if the token is updated in the cache or not
-			Expect(token).NotTo(Equal(storedAuthToken))
+			require.NotEqual(t, storedAuthToken, token)
 		})
 
-		It("fetch token function call is successful and token is returned with 'expirationDate', should contain ExpirationDate information in AccountSecret{}", func() {
+		t.Run("fetch token function call is successful and token is returned with 'expirationDate', should contain ExpirationDate information in AccountSecret{}", func(t *testing.T) {
 			fetchTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
 				WorkspaceID:   "456",
@@ -153,7 +154,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"NewDummyaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken","expirationDate":"2022-06-29T16:34:47.758Z"}}`)
 			mockAuthIdentityProvider := mock_oauthV2.NewMockAuthIdentityProvider(ctrl)
@@ -170,14 +171,14 @@ var _ = Describe("Oauth", func() {
 			)
 
 			_, err := oauthHandler.FetchToken(fetchTokenParams)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			oauthToken, _ := cache.Load(fetchTokenParams.AccountID)
 			// We are checking if the token is updated in the cache or not
-			Expect(oauthToken.ExpirationDate).To(Equal(expectedExpirationDate))
-			Expect(oauthToken.Secret).To(MatchJSON(expectedResponse))
+			require.Equal(t, expectedExpirationDate, oauthToken.ExpirationDate)
+			require.JSONEq(t, string(expectedResponse), string(oauthToken.Secret))
 		})
 
-		It("fetch token function call when cache is empty and cpApiCall returns empty response", func() {
+		t.Run("fetch token function call when cache is empty and cpApiCall returns empty response", func(t *testing.T) {
 			fetchTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
 				WorkspaceID:   "456",
@@ -185,7 +186,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusNoContent, ``)
 			mockAuthIdentityProvider := mock_oauthV2.NewMockAuthIdentityProvider(ctrl)
@@ -198,13 +199,13 @@ var _ = Describe("Oauth", func() {
 				v2.WithCpClient(mockCpConnector),
 			)
 			response, err := oauthHandler.FetchToken(fetchTokenParams)
-			Expect(err).ToNot(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusInternalServerError))
-			Expect(response).To(BeNil())
-			Expect(err).To(MatchError(errors.New("empty secret in response from control plane")))
+			require.Error(t, err)
+			require.Equal(t, http.StatusInternalServerError, err.StatusCode())
+			require.Nil(t, response)
+			requireErrorInChain(t, err, "empty secret in response from control plane")
 		})
 
-		It("fetch token function call when cache is empty and cpApiCall returns a failed response", func() {
+		t.Run("fetch token function call when cache is empty and cpApiCall returns a failed response", func(t *testing.T) {
 			fetchTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
 				WorkspaceID:   "456",
@@ -212,7 +213,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusNoContent, `{
 				"body":{
@@ -230,12 +231,12 @@ var _ = Describe("Oauth", func() {
 				v2.WithCpClient(mockCpConnector),
 			)
 			response, err := oauthHandler.FetchToken(fetchTokenParams)
-			Expect(err).ToNot(BeNil())
-			Expect(response).To(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusBadRequest))
-			Expect(err).To(MatchError(common.ErrInvalidGrant))
+			require.Error(t, err)
+			require.Nil(t, response)
+			require.Equal(t, http.StatusBadRequest, err.StatusCode())
+			require.ErrorIs(t, err, common.ErrInvalidGrant)
 		})
-		It("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend service is not available", func() {
+		t.Run("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend service is not available", func(t *testing.T) {
 			fetchTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
 				WorkspaceID:   "456",
@@ -243,7 +244,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
 			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{}, &net.OpError{
 				Op:     "mock",
@@ -268,12 +269,15 @@ var _ = Describe("Oauth", func() {
 				v2.WithCpClient(cpConnector),
 			)
 			response, err := oauthHandler.FetchToken(fetchTokenParams)
-			Expect(err).ToNot(BeNil())
-			Expect(response).To(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusInternalServerError))
-			Expect(err).To(MatchError(&v2.TypeMessageError{Type: "econnrefused", Message: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused"}))
+			require.Error(t, err)
+			require.Nil(t, response)
+			require.Equal(t, http.StatusInternalServerError, err.StatusCode())
+			var target *v2.TypeMessageError
+			require.ErrorAs(t, err, &target)
+			require.Equal(t, &v2.TypeMessageError{Type: "econnrefused", Message: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused"}, target)
+			require.NotErrorIs(t, err, common.ErrInvalidGrant)
 		})
-		It("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend call failed due to timeout error", func() {
+		t.Run("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend call failed due to timeout error", func(t *testing.T) {
 			fetchTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
 				WorkspaceID:   "456",
@@ -281,7 +285,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
 			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{}, &net.OpError{
 				Op:     "mock",
@@ -306,13 +310,16 @@ var _ = Describe("Oauth", func() {
 				v2.WithCpClient(cpConnector),
 			)
 			response, err := oauthHandler.FetchToken(fetchTokenParams)
-			Expect(err).ToNot(BeNil())
-			Expect(response).To(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusInternalServerError))
-			Expect(err).To(MatchError(&v2.TypeMessageError{Type: "timeout", Message: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: " + timeoutError}))
+			require.Error(t, err)
+			require.Nil(t, response)
+			require.Equal(t, http.StatusInternalServerError, err.StatusCode())
+			var target *v2.TypeMessageError
+			require.ErrorAs(t, err, &target)
+			require.Equal(t, &v2.TypeMessageError{Type: "timeout", Message: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: " + timeoutError}, target)
+			require.NotErrorIs(t, err, common.ErrInvalidGrant)
 		})
 
-		It("fetch token function call when cache is empty and cpApiCall returns empty secret", func() {
+		t.Run("fetch token function call when cache is empty and cpApiCall returns empty secret", func(t *testing.T) {
 			fetchTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
 				WorkspaceID:   "456",
@@ -320,7 +327,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"secret":{}}`)
 			mockAuthIdentityProvider := mock_oauthV2.NewMockAuthIdentityProvider(ctrl)
@@ -333,13 +340,13 @@ var _ = Describe("Oauth", func() {
 				v2.WithCpClient(mockCpConnector),
 			)
 			response, err := oauthHandler.FetchToken(fetchTokenParams)
-			Expect(err).ToNot(BeNil())
-			Expect(response).To(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusInternalServerError))
-			Expect(err).To(MatchError(errors.New("empty secret received from CP")))
+			require.Error(t, err)
+			require.Nil(t, response)
+			require.Equal(t, http.StatusInternalServerError, err.StatusCode())
+			requireErrorInChain(t, err, "empty secret received from CP")
 		})
 
-		It("fetch token function call when cache is empty and cpApiCall returns empty string", func() {
+		t.Run("fetch token function call when cache is empty and cpApiCall returns empty string", func(t *testing.T) {
 			fetchTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
 				WorkspaceID:   "456",
@@ -347,7 +354,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"secret":""}`)
 			mockAuthIdentityProvider := mock_oauthV2.NewMockAuthIdentityProvider(ctrl)
@@ -360,13 +367,13 @@ var _ = Describe("Oauth", func() {
 				v2.WithCpClient(mockCpConnector),
 			)
 			response, err := oauthHandler.FetchToken(fetchTokenParams)
-			Expect(err).ToNot(BeNil())
-			Expect(response).To(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusInternalServerError))
-			Expect(err).To(MatchError(errors.New("empty secret received from CP")))
+			require.Error(t, err)
+			require.Nil(t, response)
+			require.Equal(t, http.StatusInternalServerError, err.StatusCode())
+			requireErrorInChain(t, err, "empty secret received from CP")
 		})
 
-		It("fetch token function call when cache is empty and cpApiCall returns nil secret", func() {
+		t.Run("fetch token function call when cache is empty and cpApiCall returns nil secret", func(t *testing.T) {
 			fetchTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
 				WorkspaceID:   "456",
@@ -374,7 +381,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"secret": null}`)
 			mockAuthIdentityProvider := mock_oauthV2.NewMockAuthIdentityProvider(ctrl)
@@ -387,14 +394,14 @@ var _ = Describe("Oauth", func() {
 				v2.WithCpClient(mockCpConnector),
 			)
 			response, err := oauthHandler.FetchToken(fetchTokenParams)
-			Expect(err).ToNot(BeNil())
-			Expect(response).To(BeNil())
-			Expect(err).To(MatchError(errors.New("empty secret received from CP")))
+			require.Error(t, err)
+			require.Nil(t, response)
+			requireErrorInChain(t, err, "empty secret received from CP")
 		})
 	})
 
-	Describe("Test RefreshToken function", func() {
-		It("refreshToken function call when stored cache is same as provided secret", func() {
+	t.Run("Test RefreshToken function", func(t *testing.T) {
+		t.Run("refreshToken function call when stored cache is same as provided secret", func(t *testing.T) {
 			previousSecret := []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)
 			tokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
@@ -403,7 +410,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"newAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}}`)
 
@@ -425,16 +432,16 @@ var _ = Describe("Oauth", func() {
 			cache.Store(tokenParams.AccountID, storedAuthToken)
 			_, err := oauthHandler.RefreshToken(tokenParams, previousSecret)
 			// Assertions
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			token, _ := cache.Load(tokenParams.AccountID)
 			expectedResponse := v2.OAuthToken{
 				Secret:        []byte(`{"access_token":"newAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
 				SecretVersion: 50,
 			}
-			Expect(token).To(Equal(expectedResponse))
+			require.Equal(t, expectedResponse, token)
 		})
 
-		It("refreshToken function call when stored cache is different as provided secret", func() {
+		t.Run("refreshToken function call when stored cache is different as provided secret", func(t *testing.T) {
 			previousSecret := []byte(`{"access_token":"providedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)
 			refreshTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
@@ -460,11 +467,11 @@ var _ = Describe("Oauth", func() {
 			}
 			_, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
 			token, _ := cache.Load(refreshTokenParams.AccountID)
-			Expect(err).To(BeNil())
-			Expect(token).To(Equal(expectedResponse))
+			require.NoError(t, err)
+			require.Equal(t, expectedResponse, token)
 		})
 
-		It("refreshToken function call when stored cache is same as provided secret but the cpApiCall failed with ref_token_invalid_grant error", func() {
+		t.Run("refreshToken function call when stored cache is same as provided secret but the cpApiCall failed with ref_token_invalid_grant error", func(t *testing.T) {
 			previousSecret := []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)
 			refreshTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
@@ -473,7 +480,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusBadRequest, `{
@@ -500,12 +507,12 @@ var _ = Describe("Oauth", func() {
 			}
 			cache.Store(refreshTokenParams.AccountID, storedAuthToken)
 			response, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
-			Expect(err).ToNot(BeNil())
-			Expect(response).To(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusBadRequest))
-			Expect(err).To(MatchError(common.ErrInvalidGrant))
+			require.Error(t, err)
+			require.Nil(t, response)
+			require.Equal(t, http.StatusBadRequest, err.StatusCode())
+			require.ErrorIs(t, err, common.ErrInvalidGrant)
 		})
-		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response due to config backend service is not available", func() {
+		t.Run("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response due to config backend service is not available", func(t *testing.T) {
 			previousSecret := []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)
 			refreshTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
@@ -514,7 +521,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
 			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{}, &net.OpError{
 				Op:     "mock",
@@ -539,13 +546,16 @@ var _ = Describe("Oauth", func() {
 				v2.WithCpClient(cpConnector),
 			)
 			response, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
-			Expect(err).ToNot(BeNil())
-			Expect(response).To(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusInternalServerError))
-			Expect(err).To(MatchError(&v2.TypeMessageError{Type: "econnrefused", Message: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused"}))
+			require.Error(t, err)
+			require.Nil(t, response)
+			require.Equal(t, http.StatusInternalServerError, err.StatusCode())
+			var target *v2.TypeMessageError
+			require.ErrorAs(t, err, &target)
+			require.Equal(t, &v2.TypeMessageError{Type: "econnrefused", Message: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused"}, target)
+			require.NotErrorIs(t, err, common.ErrInvalidGrant)
 		})
 
-		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response due to config backend service is failed due to timeout", func() {
+		t.Run("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response due to config backend service is failed due to timeout", func(t *testing.T) {
 			previousSecret := []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)
 			refreshTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
@@ -554,7 +564,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
 			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{}, &net.OpError{
 				Op:     "mock",
@@ -579,13 +589,16 @@ var _ = Describe("Oauth", func() {
 				v2.WithCpClient(cpConnector),
 			)
 			response, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
-			Expect(err).ToNot(BeNil())
-			Expect(response).To(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusInternalServerError))
-			Expect(err).To(MatchError(&v2.TypeMessageError{Type: "timeout", Message: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: " + timeoutError}))
+			require.Error(t, err)
+			require.Nil(t, response)
+			require.Equal(t, http.StatusInternalServerError, err.StatusCode())
+			var target *v2.TypeMessageError
+			require.ErrorAs(t, err, &target)
+			require.Equal(t, &v2.TypeMessageError{Type: "timeout", Message: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: " + timeoutError}, target)
+			require.NotErrorIs(t, err, common.ErrInvalidGrant)
 		})
 
-		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of faulty implementation in some downstream service", func() {
+		t.Run("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of faulty implementation in some downstream service", func(t *testing.T) {
 			previousSecret := []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)
 			refreshTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
@@ -594,7 +607,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
 			cpResponseString := `{
 				"status": 500,
@@ -627,13 +640,16 @@ var _ = Describe("Oauth", func() {
 				v2.WithCpClient(cpConnector),
 			)
 			response, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
-			Expect(err).ToNot(BeNil())
-			Expect(response).To(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusInternalServerError))
-			Expect(err).To(MatchError(&v2.TypeMessageError{Type: "INVALID_REFRESH_RESPONSE", Message: "Missing required token fields in refresh response"}))
+			require.Error(t, err)
+			require.Nil(t, response)
+			require.Equal(t, http.StatusInternalServerError, err.StatusCode())
+			var target *v2.TypeMessageError
+			require.ErrorAs(t, err, &target)
+			require.Equal(t, &v2.TypeMessageError{Type: "INVALID_REFRESH_RESPONSE", Message: "Missing required token fields in refresh response"}, target)
+			require.NotErrorIs(t, err, common.ErrInvalidGrant)
 		})
 
-		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of invalid refresh response without message", func() {
+		t.Run("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of invalid refresh response without message", func(t *testing.T) {
 			previousSecret := []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)
 			refreshTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
@@ -642,7 +658,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
 			cpResponseString := `{
 				"status": 500,
@@ -674,13 +690,16 @@ var _ = Describe("Oauth", func() {
 				v2.WithCpClient(cpConnector),
 			)
 			response, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
-			Expect(err).ToNot(BeNil())
-			Expect(response).To(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusInternalServerError))
-			Expect(err).To(MatchError(&v2.TypeMessageError{Type: "INVALID_REFRESH_RESPONSE", Message: "invalid auth token refresh response"}))
+			require.Error(t, err)
+			require.Nil(t, response)
+			require.Equal(t, http.StatusInternalServerError, err.StatusCode())
+			var target *v2.TypeMessageError
+			require.ErrorAs(t, err, &target)
+			require.Equal(t, &v2.TypeMessageError{Type: "INVALID_REFRESH_RESPONSE", Message: "invalid auth token refresh response"}, target)
+			require.NotErrorIs(t, err, common.ErrInvalidGrant)
 		})
 
-		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of invalid refresh response without message", func() {
+		t.Run("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of invalid refresh response without message", func(t *testing.T) {
 			previousSecret := []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)
 			refreshTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
@@ -689,7 +708,7 @@ var _ = Describe("Oauth", func() {
 				DestinationID: Destination.ID,
 			}
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
 			cpResponseString := fmt.Sprintf(`{
 				"status": 500,
@@ -721,15 +740,15 @@ var _ = Describe("Oauth", func() {
 				v2.WithCpClient(cpConnector),
 			)
 			response, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
-			Expect(err).ToNot(BeNil())
-			Expect(response).To(BeNil())
-			Expect(err.StatusCode()).To(Equal(http.StatusBadRequest))
-			Expect(err).To(MatchError(common.ErrInvalidGrant))
+			require.Error(t, err)
+			require.Nil(t, response)
+			require.Equal(t, http.StatusBadRequest, err.StatusCode())
+			require.ErrorIs(t, err, common.ErrInvalidGrant)
 		})
 	})
 
-	Describe("Test FetchToken with multiple go routines", func() {
-		It("fetch token function call when cache is not empty", func() {
+	t.Run("Test FetchToken with multiple go routines", func(t *testing.T) {
+		t.Run("fetch token function call when cache is not empty", func(t *testing.T) {
 			fetchTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
 				WorkspaceID:   "456",
@@ -739,7 +758,7 @@ var _ = Describe("Oauth", func() {
 			// Invoke code under test
 			expectedResponse := []byte(`{"access_token":"new acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}`)
 
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Times(0)
 
@@ -760,10 +779,10 @@ var _ = Describe("Oauth", func() {
 					time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
 					response, err := oauthHandler.FetchToken(fetchTokenParams)
 					// Assertions
-					Expect(err).To(BeNil())
-					Expect(response).To(MatchJSON(expectedResponse))
+					assert.NoError(t, err)
+					assert.JSONEq(t, string(expectedResponse), string(response))
 					token, _ := cache.Load(fetchTokenParams.AccountID)
-					Expect(token.Secret).To(MatchJSON(expectedResponse))
+					assert.JSONEq(t, string(expectedResponse), string(token.Secret))
 				})
 			}
 			wg.Wait()
@@ -771,7 +790,7 @@ var _ = Describe("Oauth", func() {
 			// Invoke code under test
 		})
 
-		It("fetch token function call when cache is empty", func() {
+		t.Run("fetch token function call when cache is empty", func(t *testing.T) {
 			fetchTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
 				WorkspaceID:   "456",
@@ -780,7 +799,7 @@ var _ = Describe("Oauth", func() {
 			}
 			// Invoke code under test
 			expectedResponse := []byte(`{"access_token":"new 1234 acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}`)
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":""},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"new 1234 acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}}`).Times(1)
 			mockAuthIdentityProvider := mock_oauthV2.NewMockAuthIdentityProvider(ctrl)
@@ -795,26 +814,23 @@ var _ = Describe("Oauth", func() {
 			)
 			wg := sync.WaitGroup{}
 			for range 200 {
-				wg.Add(1)
-				go func() {
-					defer GinkgoRecover()
-					defer wg.Done()
+				wg.Go(func() {
 					response, err := oauthHandler.FetchToken(fetchTokenParams)
 					// Assertions
-					Expect(err).To(BeNil())
-					Expect(response).To(MatchJSON(expectedResponse))
+					assert.NoError(t, err)
+					assert.JSONEq(t, string(expectedResponse), string(response))
 					token, _ := cache.Load(fetchTokenParams.AccountID)
-					Expect(token.Secret).To(MatchJSON(expectedResponse))
-					Expect(token.ExpirationDate).To(BeZero())
-				}()
+					assert.JSONEq(t, string(expectedResponse), string(token.Secret))
+					assert.Zero(t, token.ExpirationDate)
+				})
 			}
 			wg.Wait()
 
 			// Invoke code under test
 		})
 	})
-	Describe("Test RefreshToken with multiple go routines", func() {
-		It("refresh token function call when stored cache is same as provided secret", func() {
+	t.Run("Test RefreshToken with multiple go routines", func(t *testing.T) {
+		t.Run("refresh token function call when stored cache is same as provided secret", func(t *testing.T) {
 			previousSecret := []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyAccessToken","developer_token":"dummyDeveloperToken"}`)
 			refreshTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
@@ -824,7 +840,7 @@ var _ = Describe("Oauth", func() {
 			}
 			// Invoke code under test
 			expectedResponse := []byte(`{"access_token":"new acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}`)
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":""},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"new acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}}`).Times(1)
 			mockAuthIdentityProvider := mock_oauthV2.NewMockAuthIdentityProvider(ctrl)
@@ -847,17 +863,17 @@ var _ = Describe("Oauth", func() {
 				wg.Go(func() {
 					response, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
 					// Assertions
-					Expect(err).To(BeNil())
-					Expect(response).To(MatchJSON(expectedResponse))
+					assert.NoError(t, err)
+					assert.JSONEq(t, string(expectedResponse), string(response))
 					token, _ := cache.Load(refreshTokenParams.AccountID)
-					Expect(token.Secret).To(MatchJSON(expectedResponse))
-					Expect(token.ExpirationDate).To(BeZero())
+					assert.JSONEq(t, string(expectedResponse), string(token.Secret))
+					assert.Zero(t, token.ExpirationDate)
 				})
 			}
 			wg.Wait()
 		})
 
-		It("refresh token function call when stored cache is same as provided secret with sequential and concurrent access", func() {
+		t.Run("refresh token function call when stored cache is same as provided secret with sequential and concurrent access", func(t *testing.T) {
 			previousSecret := []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyAccessToken","developer_token":"dummyDeveloperToken"}`)
 			refreshTokenParams := &v2.OAuthTokenParams{
 				AccountID:     "123",
@@ -867,7 +883,7 @@ var _ = Describe("Oauth", func() {
 			}
 			// Invoke code under test
 			expectedResponse := []byte(`{"access_token":"new acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}`)
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":""},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"new acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}}`).Times(1)
 			mockAuthIdentityProvider := mock_oauthV2.NewMockAuthIdentityProvider(ctrl)
@@ -890,25 +906,36 @@ var _ = Describe("Oauth", func() {
 			for range 20 {
 				response, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
 				// Assertions
-				Expect(err).To(BeNil())
-				Expect(response).To(MatchJSON(expectedResponse))
+				require.NoError(t, err)
+				require.JSONEq(t, string(expectedResponse), string(response))
 				token, _ := cache.Load(refreshTokenParams.AccountID)
-				Expect(token.Secret).To(MatchJSON(expectedResponse))
-				Expect(token.ExpirationDate).To(BeZero())
+				require.JSONEq(t, string(expectedResponse), string(token.Secret))
+				require.Zero(t, token.ExpirationDate)
 			}
 
 			for range 20 {
 				wg.Go(func() {
 					response, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
 					// Assertions
-					Expect(err).To(BeNil())
-					Expect(response).To(MatchJSON(expectedResponse))
+					assert.NoError(t, err)
+					assert.JSONEq(t, string(expectedResponse), string(response))
 					token, _ := cache.Load(refreshTokenParams.AccountID)
-					Expect(token.Secret).To(MatchJSON(expectedResponse))
-					Expect(token.ExpirationDate).To(BeZero())
+					assert.JSONEq(t, string(expectedResponse), string(token.Secret))
+					assert.Zero(t, token.ExpirationDate)
 				})
 			}
 			wg.Wait()
 		})
 	})
-})
+}
+
+// requireErrorInChain requires an error in err's chain whose message is exactly msg.
+func requireErrorInChain(t *testing.T, err error, msg string) {
+	t.Helper()
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if e.Error() == msg {
+			return
+		}
+	}
+	require.Failf(t, "no error in the chain has the expected message", "want %q in the chain of %q", msg, err)
+}

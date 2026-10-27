@@ -8,9 +8,9 @@ import (
 	"os"
 	"runtime"
 	"syscall"
+	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -20,13 +20,13 @@ import (
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
-var _ = Describe("CpConnector", func() {
+func TestCpConnector(t *testing.T) {
 	timeoutError := "connection timed out"
 	if runtime.GOOS == "darwin" {
 		timeoutError = "operation timed out"
 	}
-	It("Test CpApiCall function to test success scenario", func() {
-		ctrl := gomock.NewController(GinkgoT())
+	t.Run("Test CpApiCall function to test success scenario", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
 		mockHttpClient := mockhttp.NewMockHttpClient(ctrl)
 		mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
 			StatusCode: http.StatusOK,
@@ -43,12 +43,12 @@ var _ = Describe("CpConnector", func() {
 			URL:          "https://www.google.com",
 			AuthIdentity: &testutils.BasicAuthMock{},
 		})
-		Expect(statusCode).To(Equal(http.StatusOK))
-		Expect(respBody).To(Equal("test"))
+		require.Equal(t, http.StatusOK, statusCode)
+		require.Equal(t, "test", respBody)
 	})
 
-	It("Test CpApiCall function to test timeout situation", func() {
-		ctrl := gomock.NewController(GinkgoT())
+	t.Run("Test CpApiCall function to test timeout situation", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
 		mockHttpClient := mockhttp.NewMockHttpClient(ctrl)
 		mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
 			StatusCode: http.StatusServiceUnavailable,
@@ -69,12 +69,12 @@ var _ = Describe("CpConnector", func() {
 			URL:          "https://www.google.com",
 			AuthIdentity: &testutils.BasicAuthMock{},
 		})
-		Expect(statusCode).To(Equal(http.StatusInternalServerError))
-		Expect(`{"errorType":"timeout","message":"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: ` + timeoutError + `"}`).To(MatchJSON(respBody))
+		require.Equal(t, http.StatusInternalServerError, statusCode)
+		require.JSONEq(t, `{"errorType":"timeout","message":"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: `+timeoutError+`"}`, respBody)
 	})
 
-	It("Test CpApiCall function to test connection reset by peer", func() {
-		ctrl := gomock.NewController(GinkgoT())
+	t.Run("Test CpApiCall function to test connection reset by peer", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
 		mockHttpClient := mockhttp.NewMockHttpClient(ctrl)
 		mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
 			StatusCode: http.StatusServiceUnavailable,
@@ -95,12 +95,12 @@ var _ = Describe("CpConnector", func() {
 			URL:          "https://www.google.com",
 			AuthIdentity: &testutils.BasicAuthMock{},
 		})
-		Expect(statusCode).To(Equal(http.StatusInternalServerError))
-		Expect(`{"errorType":"econnreset","message":"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection reset by peer"}`).To(MatchJSON(respBody))
+		require.Equal(t, http.StatusInternalServerError, statusCode)
+		require.JSONEq(t, `{"errorType":"econnreset","message":"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection reset by peer"}`, respBody)
 	})
 
-	Describe("Test GetErrorType function", func() {
-		It("Call GetErrorType with invalid_grant response from control-plane", func() {
+	t.Run("Test GetErrorType function", func(t *testing.T) {
+		t.Run("Call GetErrorType with invalid_grant response from control-plane", func(t *testing.T) {
 			err := &net.OpError{
 				Op:     "mock",
 				Net:    "mock",
@@ -109,9 +109,9 @@ var _ = Describe("CpConnector", func() {
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 			}
 			errType := GetErrorType(err)
-			Expect(errType).To(Equal("timeout"))
+			require.Equal(t, "timeout", errType)
 		})
-		It("Call GetErrorType with invalid_grant response from control-plane", func() {
+		t.Run("Call GetErrorType with invalid_grant response from control-plane", func(t *testing.T) {
 			err := &net.OpError{
 				Op:     "mock",
 				Net:    "mock",
@@ -120,7 +120,7 @@ var _ = Describe("CpConnector", func() {
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNREFUSED},
 			}
 			errType := GetErrorType(err)
-			Expect(errType).To(Equal("econnrefused"))
+			require.Equal(t, "econnrefused", errType)
 		})
 	})
-})
+}
