@@ -92,12 +92,9 @@ func (rt *Handle) maskReportingSampleEvent(payload json.RawMessage) json.RawMess
 		return payload
 	}
 	paths, ok := rt.transformerFeaturesService.SecretPaths(rt.destType)
-	var masked json.RawMessage
-	var reason string
-	if ok && len(paths) > 0 && gjson.ValidBytes(payload) && gjson.ParseBytes(payload).IsArray() {
+	masked, reason := maskSecrets(payload, paths, ok)
+	if reason == "not_object" && gjson.ValidBytes(payload) && gjson.ParseBytes(payload).IsArray() {
 		masked, reason = maskSecretsInArray(payload, paths)
-	} else {
-		masked, reason = maskSecrets(payload, paths, ok)
 	}
 	rt.reportingSampleEventMaskingStat(reason).Increment()
 	return masked
