@@ -163,7 +163,8 @@ func (jf *JobsForwarder) start() {
 
 					// Flush can return before all callbacks have run, and pulsar never calls back for messages
 					// still batched when it closes the producer
-					waitCtx, cancel := context.WithTimeout(ctx, jf.callbackTimeout.Load())
+					callbackTimeout := jf.callbackTimeout.Load()
+					waitCtx, cancel := context.WithTimeout(ctx, callbackTimeout)
 					defer cancel()
 					results, _, _, _ := lo.BufferWithContext(waitCtx, resultsCh, len(toForward))
 					for _, result := range results {
@@ -197,10 +198,12 @@ func (jf *JobsForwarder) start() {
 						jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "succeeded"}).Count(len(batch.Jobs))
 					}
 					if len(messageBatches) > 0 {
+						err := fmt.Errorf("%d of %d batches not forwarded, %d without a producer callback within %s",
+							len(messageBatches), len(toForward), len(toForward)-len(results), callbackTimeout)
 						if flushErr != nil {
-							return fmt.Errorf("failed to flush pulsar producer: %w", flushErr)
+							return fmt.Errorf("%w: flushing pulsar producer: %w", err, flushErr)
 						}
-						return fmt.Errorf("failed to forward %d jobs", len(messageBatches))
+						return err
 					}
 					return nil
 				}
@@ -213,6 +216,11 @@ func (jf *JobsForwarder) start() {
 					tryForward,
 					backoff.WithBackOff(bo),
 					backoff.WithMaxElapsedTime(jf.maxRetryElapsedTime.Load()),
+					backoff.WithNotify(func(err error, next time.Duration) {
+						jf.log.Warnn("retrying to forward schema batches",
+							logger.NewDurationField("retryIn", next),
+							obskit.Error(err))
+					}),
 				); err != nil {
 					if ctx.Err() != nil { // we are shutting down
 						return nil //nolint:nilerr
@@ -239,6 +247,9 @@ func (jf *JobsForwarder) start() {
 						}
 					}
 					jf.stat.NewTaggedStat("schema_forwarder_jobs", stats.CountType, stats.Tags{"state": "abort"}).Count(abortedCount)
+					jf.log.Errorn("aborting jobs after retrying to forward them",
+						logger.NewIntField("noOfJobs", int64(abortedCount)),
+						obskit.Error(err))
 				}
 				if err := jf.MarkJobStatuses(ctx, statuses); err != nil {
 					if ctx.Err() != nil { // we are shutting down
