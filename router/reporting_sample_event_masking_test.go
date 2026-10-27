@@ -100,11 +100,11 @@ func TestMaskReportingSampleEvent(t *testing.T) {
 			wantReason: "listed",
 		},
 		{
-			name:       "non-object array element leaves entire sample unchanged",
+			name:       "non-object array element does not stop object elements being masked",
 			paths:      []string{"headers.Authorization"},
 			ok:         true,
 			input:      `[ {"headers":{"Authorization":"secret"}}, "scalar-secret" ]`,
-			want:       `[ {"headers":{"Authorization":"secret"}}, "scalar-secret" ]`,
+			want:       `[{"headers":{"Authorization":"******"}},"scalar-secret"]`,
 			wantReason: "not_object",
 		},
 		{
@@ -124,12 +124,20 @@ func TestMaskReportingSampleEvent(t *testing.T) {
 			wantReason: "listed_noop",
 		},
 		{
-			name:       "unsettable array path leaves entire sample unchanged",
+			name:       "unsettable array path still masks every settable path",
 			paths:      []string{"headers.Authorization", "body.token|@reverse"},
 			ok:         true,
 			input:      `[{"headers":{"Authorization":"first"}},{"headers":{"Authorization":"second"},"body":{"token":"secret"}}]`,
-			want:       `[{"headers":{"Authorization":"first"}},{"headers":{"Authorization":"second"},"body":{"token":"secret"}}]`,
+			want:       `[{"headers":{"Authorization":"******"}},{"headers":{"Authorization":"******"},"body":{"token":"secret"}}]`,
 			wantReason: "partial",
+		},
+		{
+			name:       "array with only non-object elements stays unchanged",
+			paths:      []string{"headers.Authorization"},
+			ok:         true,
+			input:      `[ null, "scalar" ]`,
+			want:       `[ null, "scalar" ]`,
+			wantReason: "not_object",
 		},
 		{
 			name:       "invalid JSON keeps the non-object reason",

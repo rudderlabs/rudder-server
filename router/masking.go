@@ -61,28 +61,32 @@ func maskForDelivery(payload json.RawMessage, paths []string, ok bool) (json.Raw
 	return masked, reason
 }
 
-// maskSecretsInArray masks each request object independently; a request that cannot be
-// fully masked fails the whole array.
+// maskSecretsInArray masks every request object it can, even when another element fails, and
+// reports the first failure as the reason, mirroring maskSecrets.
 func maskSecretsInArray(payload json.RawMessage, paths []string) (json.RawMessage, string) {
 	var maskedRequests [][]byte
+	var failure string
 	changed := false
 	for _, request := range gjson.ParseBytes(payload).Array() {
-		if !request.IsObject() {
-			return payload, "not_object"
+		masked, reason := json.RawMessage(request.Raw), "not_object"
+		if request.IsObject() {
+			masked, reason = maskSecrets(masked, paths, true)
 		}
-		masked, reason := maskSecrets(json.RawMessage(request.Raw), paths, true)
-		switch reason {
-		case "not_object", "partial":
-			return payload, reason
-		case "listed":
-			changed = true
+		if (reason == "not_object" || reason == "partial") && failure == "" {
+			failure = reason
 		}
+		changed = changed || string(masked) != request.Raw
 		maskedRequests = append(maskedRequests, masked)
 	}
-	if !changed { // return the original bytes so the reason is listed_noop, not a re-serialized array
-		return payload, "listed_noop"
+	masked := payload // keep the original bytes rather than a re-serialized array when nothing changed
+	reason := "listed_noop"
+	if changed {
+		masked, reason = misc.MakeJSONArray(maskedRequests), "listed"
 	}
-	return misc.MakeJSONArray(maskedRequests), "listed"
+	if failure != "" {
+		reason = failure
+	}
+	return masked, reason
 }
 
 // maskReportingSampleEvent leaves the sample untouched where it cannot mask precisely:
