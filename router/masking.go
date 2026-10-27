@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -40,7 +41,7 @@ func maskForDelivery(payload json.RawMessage, paths []string, ok bool) (json.Raw
 	var masked json.RawMessage
 	var reason string
 	switch {
-	case ok && gjson.ValidBytes(payload) && gjson.ParseBytes(payload).IsArray():
+	case ok && isJSONArray(payload):
 		masked, reason = maskSecretsInArray(payload, paths)
 	case ok && !isJSONObject(payload): // checked here because maskSecrets passes any payload through when no paths are listed
 		masked, reason = payload, "not_object"
@@ -61,31 +62,30 @@ func maskForDelivery(payload json.RawMessage, paths []string, ok bool) (json.Raw
 	return masked, reason
 }
 
-// maskSecretsInArray masks each request object independently; a request that cannot be
-// fully masked fails the whole array.
+// maskSecretsInArray masks every request object it can, even when another element fails, and
+// reports the first failure as the reason, mirroring maskSecrets.
 func maskSecretsInArray(payload json.RawMessage, paths []string) (json.RawMessage, string) {
 	var maskedRequests [][]byte
+	var failure string
 	changed := false
 	for _, request := range gjson.ParseBytes(payload).Array() {
-		if !request.IsObject() {
-			return payload, "not_object"
+		masked, reason := json.RawMessage(request.Raw), "not_object"
+		if request.IsObject() {
+			masked, reason = maskSecrets(masked, paths, true)
 		}
-		masked, reason := maskSecrets(json.RawMessage(request.Raw), paths, true)
-		switch reason {
-		case "not_object", "partial":
-			return payload, reason
-		case "listed":
-			changed = true
+		if (reason == "not_object" || reason == "partial") && failure == "" {
+			failure = reason
 		}
+		changed = changed || string(masked) != request.Raw
 		maskedRequests = append(maskedRequests, masked)
 	}
-	if !changed { // return the original bytes so the reason is listed_noop, not a re-serialized array
-		return payload, "listed_noop"
+	if !changed { // keep the original bytes rather than a re-serialized array
+		return payload, cmp.Or(failure, "listed_noop")
 	}
-	return misc.MakeJSONArray(maskedRequests), "listed"
+	return misc.MakeJSONArray(maskedRequests), cmp.Or(failure, "listed")
 }
 
-// maskReportingSampleEvent leaves the sample untouched where it cannot mask precisely:
+// maskReportingSampleEvent masks every path it can but never blanket-masks:
 // a blanket-masked sample destroys the error-triage value the sample exists for.
 func (rt *Handle) maskReportingSampleEvent(payload json.RawMessage) json.RawMessage {
 	if !rt.reloadableConfig.enableReportingSampleEventMasking.Load() {
@@ -93,6 +93,9 @@ func (rt *Handle) maskReportingSampleEvent(payload json.RawMessage) json.RawMess
 	}
 	paths, ok := rt.transformerFeaturesService.SecretPaths(rt.destType)
 	masked, reason := maskSecrets(payload, paths, ok)
+	if reason == "not_object" && isJSONArray(payload) {
+		masked, reason = maskSecretsInArray(payload, paths)
+	}
 	rt.reportingSampleEventMaskingStat(reason).Increment()
 	return masked
 }
@@ -211,6 +214,10 @@ func maskAll(payload json.RawMessage) (json.RawMessage, bool) {
 	})
 	rebuilt.WriteByte('}')
 	return rebuilt.Bytes(), false
+}
+
+func isJSONArray(payload json.RawMessage) bool {
+	return gjson.ValidBytes(payload) && gjson.ParseBytes(payload).IsArray()
 }
 
 func isJSONObject(payload json.RawMessage) bool {
