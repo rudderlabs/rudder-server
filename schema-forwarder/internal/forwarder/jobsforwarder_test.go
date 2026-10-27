@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	pgdocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	pulsardocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/pulsar"
 
@@ -158,8 +159,11 @@ func Test_JobsForwarder(t *testing.T) {
 		require.Len(t, seen, numOfJobs, "every job should have a status")
 	})
 
-	t.Run("stopping while waiting for producer callbacks neither waits for them nor blocks them", func(t *testing.T) {
+	t.Run("stopping while waiting for producer callbacks neither waits for them, blocks them nor aborts jobs", func(t *testing.T) {
 		jf, _ := newMockedJobsForwarder(t, 20)
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		jf.stat = statsStore
 		collecting := &collectingSignal{started: make(chan struct{}), timeout: time.Minute}
 		jf.callbackTimeout = collecting
 		producer := &lateAckProducer{release: make(chan struct{})}
@@ -185,6 +189,7 @@ func Test_JobsForwarder(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("stopping the forwarder waited for the producer callbacks")
 		}
+		require.Nil(t, statsStore.Get("schema_forwarder_jobs", stats.Tags{"state": "abort"}), "no job should be counted as aborted on shutdown")
 
 		producer.releaseCallbacks()
 		callbacksReturned := make(chan struct{})

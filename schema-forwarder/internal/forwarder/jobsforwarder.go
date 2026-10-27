@@ -214,6 +214,9 @@ func (jf *JobsForwarder) start() {
 					backoff.WithBackOff(bo),
 					backoff.WithMaxElapsedTime(jf.maxRetryElapsedTime.Load()),
 				); err != nil {
+					if ctx.Err() != nil { // we are shutting down
+						return nil //nolint:nilerr
+					}
 					errorResponse, _ := jsonrs.Marshal(map[string]string{"error": err.Error()})
 					var abortedCount int
 					for _, schemaBatch := range messageBatches { // mark all messageBatches left over as aborted
