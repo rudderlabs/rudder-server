@@ -65,6 +65,24 @@ func GetSupportedMessageTypes(destination *backendconfig.DestinationT) ([]string
 	return nil, false
 }
 
+// GetDestinationSupportedMessageTypes returns the customer-configured message types for an HTTP v2 destination.
+// A valid empty array supports no message types; missing or malformed values do not impose a filter.
+func GetDestinationSupportedMessageTypes(destination *backendconfig.DestinationT) ([]string, bool) {
+	if destination.Version != 2 || destination.DestinationDefinition.Name != "HTTP" {
+		return nil, false
+	}
+	switch types := destination.Config["supportedMessageTypes"].(type) {
+	case []string:
+		return types, true
+	case []any:
+		messageTypes := ConvertToArrayOfType[string](types)
+		if len(messageTypes) == len(types) {
+			return messageTypes, true
+		}
+	}
+	return nil, false
+}
+
 func identifyDisabled(destination *backendconfig.DestinationT) bool {
 	if serverSideIdentify, flag := destination.Config["enableServerSideIdentify"]; flag {
 		if v, ok := serverSideIdentify.(bool); ok {
@@ -146,31 +164,10 @@ Currently this method supports below validations(executed in the same order):
 2. Validate if the event is sendable to destination based on connectionMode, sourceType & messageType
 */
 func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, supportedMsgTypes []string) (bool, *types.TransformerResponse) {
-	// MessageType filtering -- STARTS
-	messageType := strings.TrimSpace(strings.ToLower(getMessageType(&transformerEvent.Message)))
-	if messageType == "" {
-		// We will abort the event
-		return false, &types.TransformerResponse{
-			Output: transformerEvent.Message, StatusCode: 400,
-			Metadata: transformerEvent.Metadata,
-			Error:    "Invalid message type. Type assertion failed",
-		}
+	messageType, failedEvent := checkMessageType(transformerEvent, supportedMsgTypes)
+	if failedEvent != nil {
+		return false, failedEvent
 	}
-
-	isSupportedMsgType := slices.Contains(supportedMsgTypes, messageType)
-	if !isSupportedMsgType {
-		pkgLogger.Debugn("event filtered out due to unsupported msg types",
-			logger.NewStringField("supportedMsgTypes", strings.Join(supportedMsgTypes, ",")),
-			logger.NewStringField("messageType", messageType),
-		)
-		// We will not allow the event
-		return false, &types.TransformerResponse{
-			Output: transformerEvent.Message, StatusCode: reportingtypes.FilterEventCode,
-			Metadata: transformerEvent.Metadata,
-			Error:    MessageTypeNotSupportedReason,
-		}
-	}
-	// MessageType filtering -- ENDS
 
 	// hybridModeCloudEventsFilter.srcType.[eventProperty] filtering -- STARTS
 	allow := FilterEventsForHybridMode(ConnectionModeFilterParams{
@@ -184,7 +181,7 @@ func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, su
 		// 2. Check if the connectionMode of destination is cloud or hybrid(evaluated through `IsProcessorEnabled`)
 		// Only when 1 & 2 are true, we would allow the event to flow through to server
 		// As when this will be called, we would have already checked if event.type in supportedMessageTypes
-		DefaultBehaviour: transformerEvent.Destination.IsProcessorEnabled && isSupportedMsgType,
+		DefaultBehaviour: transformerEvent.Destination.IsProcessorEnabled,
 	})
 
 	if !allow {
@@ -197,6 +194,39 @@ func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, su
 	// hybridModeCloudEventsFilter.srcType.[eventProperty] filtering -- ENDS
 
 	return true, nil
+}
+
+// AllowMessageType validates only the event's message type against a supported list.
+func AllowMessageType(transformerEvent *types.TransformerEvent, supportedMsgTypes []string) (bool, *types.TransformerResponse) {
+	_, failedEvent := checkMessageType(transformerEvent, supportedMsgTypes)
+	return failedEvent == nil, failedEvent
+}
+
+func checkMessageType(transformerEvent *types.TransformerEvent, supportedMsgTypes []string) (string, *types.TransformerResponse) {
+	messageType := strings.TrimSpace(strings.ToLower(getMessageType(&transformerEvent.Message)))
+	if messageType == "" {
+		// We will abort the event
+		return "", &types.TransformerResponse{
+			Output: transformerEvent.Message, StatusCode: 400,
+			Metadata: transformerEvent.Metadata,
+			Error:    "Invalid message type. Type assertion failed",
+		}
+	}
+
+	isSupportedMsgType := slices.Contains(supportedMsgTypes, messageType)
+	if !isSupportedMsgType {
+		pkgLogger.Debugn("event filtered out due to unsupported msg types",
+			logger.NewStringField("supportedMsgTypes", strings.Join(supportedMsgTypes, ",")),
+			logger.NewStringField("messageType", messageType),
+		)
+		// We will not allow the event
+		return "", &types.TransformerResponse{
+			Output: transformerEvent.Message, StatusCode: reportingtypes.FilterEventCode,
+			Metadata: transformerEvent.Metadata,
+			Error:    MessageTypeNotSupportedReason,
+		}
+	}
+	return messageType, nil
 }
 
 /*

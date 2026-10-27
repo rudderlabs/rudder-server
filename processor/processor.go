@@ -4167,6 +4167,17 @@ func ConvertToFilteredTransformerResponse(
 				}
 			}
 
+			// The customer list is an additional HTTP v2 constraint, separate from
+			// the definition-level and hybrid-mode filters above. Read the event's
+			// snapshot: a batch may contain revisions of the same destination.
+			if destinationTypes, ok := eventfilter.GetDestinationSupportedMessageTypes(&event.Destination); ok {
+				allow, failedEvent := eventfilter.AllowMessageType(event, destinationTypes)
+				if !allow {
+					failedEvents = append(failedEvents, *failedEvent)
+					continue
+				}
+			}
+
 			// filter unsupported message events
 			supportedEvents, ok := supportedMessageEventsCache[event.Destination.ID]
 			if !ok {
