@@ -203,6 +203,36 @@ func Test_JobsForwarder(t *testing.T) {
 		}
 	})
 
+	t.Run("stopping before the first forwarding attempt neither forwards nor aborts jobs", func(t *testing.T) {
+		jf, statusesCh := newMockedJobsForwarder(t)
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		jf.stat = statsStore
+		producer := &lateAckProducer{release: make(chan struct{})}
+		jf.pulsarProducer = producer
+		cancelled := make(chan struct{})
+		jf.initialRetryInterval = durationLoaderFunc(func() time.Duration { // loaded right before the first attempt
+			jf.cancel()
+			close(cancelled)
+			return time.Second
+		})
+		jf.start()
+		t.Cleanup(jf.Stop)
+
+		select {
+		case <-cancelled:
+		case <-time.After(10 * time.Second):
+			t.Fatal("timed out waiting for the forwarder to start forwarding")
+		}
+		require.NoError(t, jf.g.Wait())
+
+		producer.mu.Lock()
+		require.Zero(t, producer.sent, "no message should be sent after stopping")
+		producer.mu.Unlock()
+		require.Nil(t, statsStore.Get("schema_forwarder_jobs", stats.Tags{"state": "abort"}), "no job should be counted as aborted on shutdown")
+		require.Empty(t, statusesCh, "no job status should be marked on shutdown")
+	})
+
 	t.Run("jobs whose producer callbacks never arrive are aborted", func(t *testing.T) {
 		jf, statusesCh := newMockedJobsForwarder(t)
 		jf.callbackTimeout = config.SingleValueLoader(50 * time.Millisecond)
@@ -326,6 +356,11 @@ func (s *collectingSignal) Load() time.Duration {
 	return s.timeout
 }
 
+// durationLoaderFunc is a [config.ValueLoader] that calls itself on every Load
+type durationLoaderFunc func() time.Duration
+
+func (f durationLoaderFunc) Load() time.Duration { return f() }
+
 // lateAckProducer is a [pulsar.ProducerAdapter] whose Flush fails without acknowledging any message.
 // Pending messages succeed from other goroutines once releaseCallbacks is called.
 type lateAckProducer struct {
@@ -334,7 +369,8 @@ type lateAckProducer struct {
 	running     sync.WaitGroup // goroutines that run the callbacks
 
 	mu        sync.Mutex
-	callbacks []func(pulsarType.MessageID, *pulsarType.ProducerMessage, error)
+	sent      int                                                              // messages sent so far
+	callbacks []func(pulsarType.MessageID, *pulsarType.ProducerMessage, error) // callbacks of the messages sent since the last Flush
 }
 
 func (p *lateAckProducer) releaseCallbacks() {
@@ -348,6 +384,7 @@ func (*lateAckProducer) SendMessage(context.Context, string, string, []byte) err
 func (p *lateAckProducer) SendMessageAsync(_ context.Context, _, _ string, _ []byte, statusFunc func(pulsarType.MessageID, *pulsarType.ProducerMessage, error)) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.sent++
 	p.callbacks = append(p.callbacks, statusFunc)
 }
 

@@ -146,8 +146,8 @@ func (jf *JobsForwarder) start() {
 
 				// try to forward messageBatches to pulsar. Succeeded jobs are removed from messageBatches
 				tryForward := func() error {
-					if ctx.Err() != nil { // we are shutting down
-						return nil //nolint:nilerr
+					if err := ctx.Err(); err != nil { // we are shutting down
+						return err
 					}
 					toForward := append([]*batcher.EventSchemaMessageBatch{}, messageBatches...)
 					resultsCh := make(chan lo.Tuple2[*batcher.EventSchemaMessageBatch, error], len(toForward)) // buffered so that callbacks never block, even after the attempt stops reading
