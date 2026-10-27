@@ -43,7 +43,7 @@ type JobsForwarder struct {
 	initialRetryInterval config.ValueLoader[time.Duration]   // initial retry interval for the backoff mechanism
 	maxRetryInterval     config.ValueLoader[time.Duration]   // max retry interval for the backoff mechanism
 	maxRetryElapsedTime  config.ValueLoader[time.Duration]   // max retry elapsed time for the backoff mechanism
-	callbackTimeout      config.ValueLoader[time.Duration]   // max time to wait for the producer callbacks of a forwarding attempt after flushing
+	callbackTimeout      config.ValueLoader[time.Duration]   // max time to wait for the producer callbacks of a forwarding attempt after flushing; matches pulsar's default SendTimeout, within which pulsar calls back for every pending message
 	conf                 *config.Config                      // config used to resolve hierarchical settings at runtime
 	fullOrderKeyCache    map[string]*config.Reloadable[bool] // sourceID -> reloadable "full order key" setting, resolved hierarchically; only accessed by the single forwarder goroutine
 }
@@ -68,7 +68,7 @@ func (jf *JobsForwarder) setupReloadableVars() {
 	jf.initialRetryInterval = config.GetReloadableDurationVar(10, time.Second, "SchemaForwarder.initialRetryInterval")
 	jf.maxRetryInterval = config.GetReloadableDurationVar(60, time.Second, "SchemaForwarder.maxRetryInterval")
 	jf.maxRetryElapsedTime = config.GetReloadableDurationVar(60, time.Minute, "SchemaForwarder.maxRetryElapsedTime")
-	jf.callbackTimeout = config.GetReloadableDurationVar(10, time.Second, "SchemaForwarder.callbackTimeout")
+	jf.callbackTimeout = config.GetReloadableDurationVar(30, time.Second, "SchemaForwarder.callbackTimeout")
 	jf.maxSampleSize = config.GetReloadableInt64Var(10*bytesize.KB, 1, "SchemaForwarder.maxSampleSize")
 	jf.fullOrderKeyCache = make(map[string]*config.Reloadable[bool])
 }
