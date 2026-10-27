@@ -85,12 +85,12 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.5
-	github.com/rudderlabs/keydb v1.5.0
-	github.com/rudderlabs/rudder-cp-sdk v1.4.2
+	github.com/rudderlabs/keydb v1.5.1
+	github.com/rudderlabs/rudder-cp-sdk v1.5.0
 	github.com/rudderlabs/rudder-go-kit v0.84.2
 	github.com/rudderlabs/rudder-observability-kit v0.0.8
 	github.com/rudderlabs/rudder-schemas v0.12.1
-	github.com/rudderlabs/rudder-transformer/go v1.164.0
+	github.com/rudderlabs/rudder-transformer/go v1.165.0
 	github.com/rudderlabs/sql-tunnels v0.1.8
 	github.com/rudderlabs/sqlconnect-go v1.35.0
 	github.com/samber/lo v1.53.0
