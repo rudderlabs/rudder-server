@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -268,9 +269,13 @@ func Test_JobsForwarder(t *testing.T) {
 		require.True(t, stop(), "timed out waiting for the forwarder to stop")
 	})
 
-	t.Run("jobs whose producer callbacks fail are aborted", func(t *testing.T) {
+	t.Run("jobs whose producer callbacks fail are retried and then aborted", func(t *testing.T) {
 		jf, statusesCh := newMockedJobsForwarder(t)
-		jf.pulsarProducer = &failingProducer{}
+		jf.initialRetryInterval = config.SingleValueLoader(time.Millisecond)
+		jf.maxRetryInterval = config.SingleValueLoader(time.Millisecond)
+		jf.maxRetryElapsedTime = config.SingleValueLoader(100 * time.Millisecond)
+		producer := &failingProducer{}
+		jf.pulsarProducer = producer
 		jf.start()
 		t.Cleanup(jf.Stop)
 
@@ -279,6 +284,71 @@ func Test_JobsForwarder(t *testing.T) {
 		for _, status := range statuses {
 			require.Equal(t, jobsdb.Aborted.State, status.JobState, "job %d", status.JobID)
 		}
+		require.Greater(t, producer.sent.Load(), int64(mockedNumOfJobs), "failed batches should be retried")
+	})
+
+	t.Run("failing to read jobs is terminal", func(t *testing.T) {
+		readErr := errors.New("read error")
+		mockJobsDB := mocksJobsDB.NewMockJobsDB(gomock.NewController(t))
+		mockJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{}, readErr)
+		terminalErrs := make(chan error, 1)
+		jf := newJobsForwarderWithJobsDB(t, mockJobsDB, func(err error) { terminalErrs <- err })
+		jf.pulsarProducer = &silentProducer{}
+		jf.start()
+		t.Cleanup(jf.Stop)
+
+		require.ErrorIs(t, jf.g.Wait(), readErr)
+		require.ErrorIs(t, <-terminalErrs, readErr)
+	})
+
+	t.Run("failing to read jobs while stopping is not terminal", func(t *testing.T) {
+		mockJobsDB := mocksJobsDB.NewMockJobsDB(gomock.NewController(t))
+		terminalErrs := make(chan error, 1)
+		jf := newJobsForwarderWithJobsDB(t, mockJobsDB, func(err error) { terminalErrs <- err })
+		mockJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(context.Context, jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
+				jf.cancel()
+				return jobsdb.JobsResult{}, context.Canceled
+			})
+		jf.pulsarProducer = &silentProducer{}
+		jf.start()
+		t.Cleanup(jf.Stop)
+
+		require.NoError(t, jf.g.Wait())
+		require.Empty(t, terminalErrs)
+	})
+
+	t.Run("failing to mark job statuses is terminal", func(t *testing.T) {
+		markErr := errors.New("mark error")
+		mockJobsDB := mocksJobsDB.NewMockJobsDB(gomock.NewController(t))
+		mockJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{}, nil)
+		mockJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Return(markErr)
+		terminalErrs := make(chan error, 1)
+		jf := newJobsForwarderWithJobsDB(t, mockJobsDB, func(err error) { terminalErrs <- err })
+		jf.pulsarProducer = &silentProducer{}
+		jf.start()
+		t.Cleanup(jf.Stop)
+
+		require.ErrorIs(t, jf.g.Wait(), markErr)
+		require.ErrorIs(t, <-terminalErrs, markErr)
+	})
+
+	t.Run("failing to mark job statuses while stopping is not terminal", func(t *testing.T) {
+		mockJobsDB := mocksJobsDB.NewMockJobsDB(gomock.NewController(t))
+		terminalErrs := make(chan error, 1)
+		jf := newJobsForwarderWithJobsDB(t, mockJobsDB, func(err error) { terminalErrs <- err })
+		mockJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{}, nil)
+		mockJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(context.Context, func(jobsdb.UpdateSafeTx) error) error {
+				jf.cancel()
+				return context.Canceled
+			})
+		jf.pulsarProducer = &silentProducer{}
+		jf.start()
+		t.Cleanup(jf.Stop)
+
+		require.NoError(t, jf.g.Wait())
+		require.Empty(t, terminalErrs)
 	})
 }
 
@@ -299,18 +369,8 @@ func newMockedJobsForwarder(t *testing.T) (*JobsForwarder, <-chan []*jobsdb.JobS
 		}
 	}
 
-	ctrl := gomock.NewController(t)
-	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(ctrl)
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
-		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-			ch := make(chan pubsub.DataEvent, 1)
-			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{testdata.SampleWorkspaceID: testdata.SampleBackendConfig}, Topic: string(topic)}
-			close(ch)
-			return ch
-		})
-
 	statusesCh := make(chan []*jobsdb.JobStatusT, 1)
-	mockJobsDB := mocksJobsDB.NewMockJobsDB(ctrl)
+	mockJobsDB := mocksJobsDB.NewMockJobsDB(gomock.NewController(t))
 	mockJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: jobs}, nil).Times(1)
 	mockJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{}, nil).AnyTimes()
 	mockJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).
@@ -324,12 +384,27 @@ func newMockedJobsForwarder(t *testing.T) (*JobsForwarder, <-chan []*jobsdb.JobS
 			}
 			return nil
 		}).AnyTimes()
+	return newJobsForwarderWithJobsDB(t, mockJobsDB, func(error) {}), statusesCh
+}
+
+// newJobsForwarderWithJobsDB returns a forwarder that is not started, without a producer, which reads jobs from
+// jobsDB and reports terminal errors to terminalErrFn
+func newJobsForwarderWithJobsDB(t *testing.T, jobsDB jobsdb.JobsDB, terminalErrFn func(error)) *JobsForwarder {
+	t.Helper()
+	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
+		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+			ch := make(chan pubsub.DataEvent, 1)
+			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{testdata.SampleWorkspaceID: testdata.SampleBackendConfig}, Topic: string(topic)}
+			close(ch)
+			return ch
+		})
 
 	conf := config.New()
 	conf.Set("SchemaForwarder.loopSleepTime", time.Millisecond)
-	jf := NewJobsForwarder(func(error) {}, mockJobsDB, nil, conf, mockBackendConfig, logger.NOP, stats.NOP)
+	jf := NewJobsForwarder(terminalErrFn, jobsDB, nil, conf, mockBackendConfig, logger.NOP, stats.NOP)
 	jf.maxRetryElapsedTime = config.SingleValueLoader(time.Millisecond)
-	return jf, statusesCh
+	return jf
 }
 
 func receiveStatuses(t *testing.T, statusesCh <-chan []*jobsdb.JobStatusT) []*jobsdb.JobStatusT {
@@ -423,13 +498,16 @@ func (*silentProducer) Close() {}
 
 // failingProducer is a [pulsar.ProducerAdapter] that fails every message from within SendMessageAsync,
 // as pulsar does e.g. when the producer is closed
-type failingProducer struct{}
+type failingProducer struct {
+	sent atomic.Int64 // messages sent so far
+}
 
 func (*failingProducer) SendMessage(context.Context, string, string, []byte) error {
 	return errors.New("not implemented")
 }
 
-func (*failingProducer) SendMessageAsync(_ context.Context, _, _ string, _ []byte, statusFunc func(pulsarType.MessageID, *pulsarType.ProducerMessage, error)) {
+func (p *failingProducer) SendMessageAsync(_ context.Context, _, _ string, _ []byte, statusFunc func(pulsarType.MessageID, *pulsarType.ProducerMessage, error)) {
+	p.sent.Add(1)
 	statusFunc(nil, nil, pulsarType.ErrProducerClosed)
 }
 
