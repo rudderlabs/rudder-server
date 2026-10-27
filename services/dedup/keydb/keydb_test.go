@@ -81,8 +81,11 @@ func startKeydb(t testing.TB, conf *config.Config) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	address := "localhost:" + strconv.Itoa(freePort)
-	conf.Set("KeyDB.Dedup.Addresses", address)
+	// the processors' seed is the keydb Service, an address no node advertises: the client must discover the
+	// node's own address from it and send its requests there
+	seed := "localhost:" + strconv.Itoa(freePort)
+	address := "127.0.0.1:" + strconv.Itoa(freePort)
+	conf.Set("KeyDB.Dedup.Addresses", seed)
 	conf.Set("KeyDB.Dedup.RetryCount", 3)
 
 	nodeConfig := keydbnode.Config{
@@ -115,7 +118,7 @@ func startKeydb(t testing.TB, conf *config.Config) {
 	})
 
 	c, err := keydbclient.NewClient(keydbclient.Config{
-		Addresses:       []string{address},
+		Addresses:       []string{seed},
 		TotalHashRanges: 128,
 		RetryPolicy: keydbclient.RetryPolicy{
 			Disabled: true,
