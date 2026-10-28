@@ -92,7 +92,7 @@ require (
 	github.com/rudderlabs/rudder-schemas v0.12.1
 	github.com/rudderlabs/rudder-transformer/go v1.164.0
 	github.com/rudderlabs/sql-tunnels v0.1.8
-	github.com/rudderlabs/sqlconnect-go v1.35.1-0.20261028040144-1e0827851b39
+	github.com/rudderlabs/sqlconnect-go v1.36.0
 	github.com/samber/lo v1.53.0
 	github.com/segmentio/go-hll v1.0.1
 	github.com/segmentio/kafka-go v0.4.51
