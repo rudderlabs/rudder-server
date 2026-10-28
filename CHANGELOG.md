@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.92.1](https://github.com/rudderlabs/rudder-server/compare/v1.92.0...v1.92.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **warehouse:** migrate snowflake to gosnowflake v2.3.0 ([#7542](https://github.com/rudderlabs/rudder-server/issues/7542)) ([7d33b66](https://github.com/rudderlabs/rudder-server/commit/7d33b665655aef816d9a4c9a9bc60212afbaa53d))
+
 ## [1.92.0](https://github.com/rudderlabs/rudder-server/compare/v1.91.0...v1.92.0) (2026-10-26)
 
 
