@@ -29,15 +29,15 @@ require (
 	github.com/allisson/go-pglock/v3 v3.2.0
 	github.com/apache/pulsar-client-go v0.21.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/aws/aws-sdk-go-v2 v1.47.3
-	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.55.4
-	github.com/aws/aws-sdk-go-v2/service/firehose v1.52.5
+	github.com/aws/aws-sdk-go-v2 v1.47.4
+	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.55.5
+	github.com/aws/aws-sdk-go-v2/service/firehose v1.52.6
 	github.com/aws/aws-sdk-go-v2/service/glue v1.171.1
-	github.com/aws/aws-sdk-go-v2/service/kinesis v1.56.6
-	github.com/aws/aws-sdk-go-v2/service/lambda v1.113.2
-	github.com/aws/aws-sdk-go-v2/service/personalizeevents v1.40.5
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.4
-	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4
+	github.com/aws/aws-sdk-go-v2/service/kinesis v1.56.7
+	github.com/aws/aws-sdk-go-v2/service/lambda v1.113.3
+	github.com/aws/aws-sdk-go-v2/service/personalizeevents v1.40.6
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.5
+	github.com/aws/aws-sdk-go-v2/service/sts v1.51.5
 	github.com/aws/smithy-go v1.28.6
 	github.com/bufbuild/httplb v0.4.1
 	github.com/cenkalti/backoff/v5 v5.0.3
@@ -85,14 +85,14 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.5
-	github.com/rudderlabs/keydb v1.5.0
-	github.com/rudderlabs/rudder-cp-sdk v1.4.2
+	github.com/rudderlabs/keydb v1.5.1
+	github.com/rudderlabs/rudder-cp-sdk v1.5.0
 	github.com/rudderlabs/rudder-go-kit v0.84.2
 	github.com/rudderlabs/rudder-observability-kit v0.0.8
 	github.com/rudderlabs/rudder-schemas v0.12.1
-	github.com/rudderlabs/rudder-transformer/go v1.164.0
+	github.com/rudderlabs/rudder-transformer/go v1.166.0
 	github.com/rudderlabs/sql-tunnels v0.1.8
-	github.com/rudderlabs/sqlconnect-go v1.35.0
+	github.com/rudderlabs/sqlconnect-go v1.35.1
 	github.com/samber/lo v1.53.0
 	github.com/segmentio/go-hll v1.0.1
 	github.com/segmentio/kafka-go v0.4.51
@@ -109,8 +109,8 @@ require (
 	github.com/viney-shih/go-lock v1.1.2
 	github.com/xitongsys/parquet-go v1.6.2
 	github.com/xitongsys/parquet-go-source v0.0.0-20241021075129-b732d2ac9c9b
-	go.etcd.io/etcd/api/v3 v3.7.2
-	go.etcd.io/etcd/client/v3 v3.7.2
+	go.etcd.io/etcd/api/v3 v3.7.3
+	go.etcd.io/etcd/client/v3 v3.7.3
 	go.uber.org/atomic v1.12.0
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/goleak v1.3.0
@@ -169,18 +169,18 @@ require (
 	github.com/apache/thrift v0.24.0 // indirect
 	github.com/ardielle/ardielle-go v1.5.2 // indirect
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.23 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.24 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.33.9 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.9 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.3 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.23.15 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.6 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.6 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.6 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.21 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.6 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.6 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.7 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.7 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.22 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/redshiftdata v1.40.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.10.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.38.4 // indirect
@@ -366,7 +366,7 @@ require (
 	go.duckdb.org/libduckdb/linux-amd64 v0.20000.0 // indirect
 	go.duckdb.org/libduckdb/linux-arm64 v0.20000.0 // indirect
 	go.duckdb.org/libduckdb/windows-amd64 v0.20000.0 // indirect
-	go.etcd.io/etcd/client/pkg/v3 v3.7.2 // indirect
+	go.etcd.io/etcd/client/pkg/v3 v3.7.3 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.45.0 // indirect
