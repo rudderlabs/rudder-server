@@ -25,7 +25,7 @@ func Test_KeyDB(t *testing.T) {
 	conf := config.New()
 	startKeydb(t, conf)
 
-	db, err := NewKeyDB(conf, stats.NOP, logger.NOP)
+	db, err := NewKeyDB(t.Context(), conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
 	require.NotNil(t, db)
 	defer db.Close()
@@ -117,7 +117,7 @@ func startKeydb(t testing.TB, conf *config.Config) {
 		service.Close()
 	})
 
-	c, err := keydbclient.NewClient(keydbclient.Config{
+	c, err := keydbclient.NewClient(t.Context(), keydbclient.Config{
 		Addresses:       []string{seed},
 		TotalHashRanges: 128,
 		RetryPolicy: keydbclient.RetryPolicy{
@@ -125,9 +125,9 @@ func startKeydb(t testing.TB, conf *config.Config) {
 		},
 	}, logger.NOP)
 	require.NoError(t, err)
-	size := c.ClusterSize()
+	_, err = c.Get(t.Context(), []string{"startup-check"}) // the first answer settles the client's node list
 	require.NoError(t, err)
-	require.EqualValues(t, 1, size)
+	require.EqualValues(t, 1, c.ClusterSize())
 	require.NoError(t, c.Close())
 
 	t.Logf("keydb address: %s", address)

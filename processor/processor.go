@@ -637,7 +637,7 @@ func (proc *Handle) Setup(
 
 	if proc.config.enableDedup {
 		var err error
-		proc.dedup, err = dedup.New(proc.conf, proc.statsFactory, proc.logger)
+		proc.dedup, err = dedup.New(ctx, proc.conf, proc.statsFactory, proc.logger)
 		if err != nil {
 			return err
 		}
