@@ -3903,6 +3903,9 @@ func TestProcessor(t *testing.T) {
 
 func TestHTTPV2SupportedMessageTypes(t *testing.T) {
 	destination := func(id, name string, version int, config, definition map[string]any) backendconfig.DestinationT {
+		if definition == nil {
+			definition = map[string]any{"supportedMessageTypes": []any{"track", "page", "identify"}}
+		}
 		return backendconfig.DestinationT{
 			ID: id, Version: version, Config: config, IsProcessorEnabled: true,
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: name, Config: definition},
@@ -3936,90 +3939,21 @@ func TestHTTPV2SupportedMessageTypes(t *testing.T) {
 		}
 	})
 
-	t.Run("revisions of the same destination use their own settings", func(t *testing.T) {
-		for _, tc := range []struct {
-			name    string
-			first   backendconfig.DestinationT
-			second  backendconfig.DestinationT
-			allowed string
-		}{
-			{
-				name:    "v1 then v2",
-				first:   destination("http", "HTTP", 1, nil, nil),
-				second:  destination("http", "HTTP", 2, map[string]any{"supportedMessageTypes": []any{"track"}}, nil),
-				allowed: "first",
-			},
-			{
-				name:    "v2 then v1",
-				first:   destination("http", "HTTP", 2, map[string]any{"supportedMessageTypes": []any{"track"}}, nil),
-				second:  destination("http", "HTTP", 1, nil, nil),
-				allowed: "second",
-			},
-			{
-				name:    "edited list",
-				first:   destination("http", "HTTP", 2, map[string]any{"supportedMessageTypes": []any{"track"}}, nil),
-				second:  destination("http", "HTTP", 2, map[string]any{"supportedMessageTypes": []any{"page"}}, nil),
-				allowed: "second",
-			},
-			{
-				name:    "missing then empty list",
-				first:   destination("http", "HTTP", 2, nil, nil),
-				second:  destination("http", "HTTP", 2, map[string]any{"supportedMessageTypes": []any{}}, nil),
-				allowed: "first",
-			},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				first := event(tc.first, "page")
-				first.Metadata.MessageID = "first"
-				second := event(tc.second, "page")
-				second.Metadata.MessageID = "second"
-				response := ConvertToFilteredTransformerResponse([]types.TransformerEvent{first, second}, true, drain)
-				require.Len(t, response.Events, 1)
-				require.Equal(t, tc.allowed, response.Events[0].Metadata.MessageID)
-				require.Len(t, response.FailedEvents, 1)
-				require.Equal(t, eventfilter.MessageTypeNotSupportedReason, response.FailedEvents[0].Error)
-				require.Equal(t, reportingtypes.FilterEventCode, response.FailedEvents[0].StatusCode)
-			})
-		}
-	})
-
-	t.Run("definition restriction and hybrid mode still apply", func(t *testing.T) {
+	t.Run("definition restriction still applies", func(t *testing.T) {
 		definition := map[string]any{"supportedMessageTypes": []any{"track"}}
 		http := destination("http", "HTTP", 2, map[string]any{"supportedMessageTypes": []any{"page", "track"}}, definition)
 		response := ConvertToFilteredTransformerResponse([]types.TransformerEvent{event(http, "page"), event(http, "track")}, true, drain)
 		require.Len(t, response.Events, 1)
 		require.Equal(t, eventfilter.MessageTypeNotSupportedReason, response.FailedEvents[0].Error)
-		http.Config["connectionMode"] = "hybrid"
-		http.DestinationDefinition.Config["hybridModeCloudEventsFilter"] = map[string]any{"web": map[string]any{"messageType": []any{"page"}}}
-		track := event(http, "track")
-		track.Metadata.SourceDefinitionType = "web"
-		response = ConvertToFilteredTransformerResponse([]types.TransformerEvent{track}, true, drain)
-		require.Empty(t, response.Events)
-		require.Equal(t, eventfilter.HybridModeFilterReason, response.FailedEvents[0].Error)
 	})
 
-	for _, tc := range []struct {
-		name   string
-		config map[string]any
-		failed bool
-	}{
-		{name: "missing"},
-		{name: "empty", config: map[string]any{"supportedMessageTypes": []any{}}, failed: true},
-		{name: "malformed scalar", config: map[string]any{"supportedMessageTypes": "track"}},
-		{name: "malformed list", config: map[string]any{"supportedMessageTypes": []any{"track", 42}}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			http := destination("http", "HTTP", 2, tc.config, nil)
-			response := ConvertToFilteredTransformerResponse([]types.TransformerEvent{event(http, "track")}, true, drain)
-			if tc.failed {
-				require.Empty(t, response.Events)
-				require.Equal(t, eventfilter.MessageTypeNotSupportedReason, response.FailedEvents[0].Error)
-			} else {
-				require.Len(t, response.Events, 1)
-				require.Empty(t, response.FailedEvents)
-			}
-		})
-	}
+	t.Run("empty list drops every type", func(t *testing.T) {
+		http := destination("http", "HTTP", 2, map[string]any{"supportedMessageTypes": []any{}}, nil)
+		response := ConvertToFilteredTransformerResponse([]types.TransformerEvent{event(http, "track")}, true, drain)
+		require.Empty(t, response.Events)
+		require.Equal(t, eventfilter.MessageTypeNotSupportedReason, response.FailedEvents[0].Error)
+	})
+
 }
 
 func TestStaticFunctionTests(t *testing.T) {

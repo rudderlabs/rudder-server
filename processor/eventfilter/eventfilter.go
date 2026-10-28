@@ -48,12 +48,16 @@ func GetSupportedMessageTypes(destination *backendconfig.DestinationT) ([]string
 	if supportedTypes, ok := destination.DestinationDefinition.Config["supportedMessageTypes"]; ok {
 		if supportedTypeInterface, ok := supportedTypes.([]any); ok {
 			supportedTypesArr := misc.ConvertInterfaceToStringArray(supportedTypeInterface)
+			destinationTypes, filterByDestination := destinationSupportedMessageTypes(destination)
 			for _, supportedType := range supportedTypesArr {
 				var skip bool
 				switch supportedType {
 				case "identify":
 					skip = identifyDisabled(destination)
 				default:
+				}
+				if filterByDestination && !slices.Contains(destinationTypes, supportedType) {
+					skip = true
 				}
 				if !skip {
 					supportedMessageTypes = append(supportedMessageTypes, supportedType)
@@ -65,9 +69,9 @@ func GetSupportedMessageTypes(destination *backendconfig.DestinationT) ([]string
 	return nil, false
 }
 
-// GetDestinationSupportedMessageTypes returns the customer-configured message types for an HTTP v2 destination.
+// destinationSupportedMessageTypes returns the customer-configured message types for an HTTP v2 destination.
 // A valid empty array supports no message types; missing or malformed values do not impose a filter.
-func GetDestinationSupportedMessageTypes(destination *backendconfig.DestinationT) ([]string, bool) {
+func destinationSupportedMessageTypes(destination *backendconfig.DestinationT) ([]string, bool) {
 	if destination.Version != 2 || destination.DestinationDefinition.Name != "HTTP" {
 		return nil, false
 	}
@@ -75,9 +79,13 @@ func GetDestinationSupportedMessageTypes(destination *backendconfig.DestinationT
 	if !ok {
 		return nil, false
 	}
-	messageTypes := ConvertToArrayOfType[string](configured)
-	if len(messageTypes) != len(configured) {
-		return nil, false
+	messageTypes := make([]string, 0, len(configured))
+	for _, v := range configured {
+		messageType, ok := v.(string)
+		if !ok {
+			return nil, false
+		}
+		messageTypes = append(messageTypes, messageType)
 	}
 	return messageTypes, true
 }
@@ -163,40 +171,11 @@ Currently this method supports below validations(executed in the same order):
 2. Validate if the event is sendable to destination based on connectionMode, sourceType & messageType
 */
 func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, supportedMsgTypes []string) (bool, *types.TransformerResponse) {
-	messageType, failedEvent := CheckMessageType(transformerEvent, supportedMsgTypes)
-	if failedEvent != nil {
-		return false, failedEvent
-	}
-
-	// hybridModeCloudEventsFilter.srcType.[eventProperty] filtering -- STARTS
-	allow := FilterEventsForHybridMode(ConnectionModeFilterParams{
-		Destination: &transformerEvent.Destination,
-		SrcType:     transformerEvent.Metadata.SourceDefinitionType,
-		Event:       &EventParams{MessageType: messageType},
-		// Default behavior, when "supportedConnectionModes" is missing or incomplete: the message type
-		// was validated above, so allow the event if the destination is cloud or hybrid (IsProcessorEnabled)
-		DefaultBehaviour: transformerEvent.Destination.IsProcessorEnabled,
-	})
-
-	if !allow {
-		return allow, &types.TransformerResponse{
-			Output: transformerEvent.Message, StatusCode: reportingtypes.FilterEventCode,
-			Metadata: transformerEvent.Metadata,
-			Error:    HybridModeFilterReason,
-		}
-	}
-	// hybridModeCloudEventsFilter.srcType.[eventProperty] filtering -- ENDS
-
-	return true, nil
-}
-
-// CheckMessageType returns the event's normalized message type, or a failed response when the type is
-// missing (400) or not in supportedMsgTypes (filtered).
-func CheckMessageType(transformerEvent *types.TransformerEvent, supportedMsgTypes []string) (string, *types.TransformerResponse) {
+	// MessageType filtering -- STARTS
 	messageType := strings.TrimSpace(strings.ToLower(getMessageType(&transformerEvent.Message)))
 	if messageType == "" {
 		// We will abort the event
-		return "", &types.TransformerResponse{
+		return false, &types.TransformerResponse{
 			Output: transformerEvent.Message, StatusCode: 400,
 			Metadata: transformerEvent.Metadata,
 			Error:    "Invalid message type. Type assertion failed",
@@ -210,13 +189,39 @@ func CheckMessageType(transformerEvent *types.TransformerEvent, supportedMsgType
 			logger.NewStringField("messageType", messageType),
 		)
 		// We will not allow the event
-		return "", &types.TransformerResponse{
+		return false, &types.TransformerResponse{
 			Output: transformerEvent.Message, StatusCode: reportingtypes.FilterEventCode,
 			Metadata: transformerEvent.Metadata,
 			Error:    MessageTypeNotSupportedReason,
 		}
 	}
-	return messageType, nil
+	// MessageType filtering -- ENDS
+
+	// hybridModeCloudEventsFilter.srcType.[eventProperty] filtering -- STARTS
+	allow := FilterEventsForHybridMode(ConnectionModeFilterParams{
+		Destination: &transformerEvent.Destination,
+		SrcType:     transformerEvent.Metadata.SourceDefinitionType,
+		Event:       &EventParams{MessageType: messageType},
+		// Default behavior
+		// When something is missing in "supportedConnectionModes" or if "supportedConnectionModes" is not defined
+		// We would be checking for below things
+		// 1. Check if the event.type value is present in destination.DestinationDefinition.Config["supportedMessageTypes"]
+		// 2. Check if the connectionMode of destination is cloud or hybrid(evaluated through `IsProcessorEnabled`)
+		// Only when 1 & 2 are true, we would allow the event to flow through to server
+		// As when this will be called, we would have already checked if event.type in supportedMessageTypes
+		DefaultBehaviour: transformerEvent.Destination.IsProcessorEnabled && isSupportedMsgType,
+	})
+
+	if !allow {
+		return allow, &types.TransformerResponse{
+			Output: transformerEvent.Message, StatusCode: reportingtypes.FilterEventCode,
+			Metadata: transformerEvent.Metadata,
+			Error:    HybridModeFilterReason,
+		}
+	}
+	// hybridModeCloudEventsFilter.srcType.[eventProperty] filtering -- ENDS
+
+	return true, nil
 }
 
 /*

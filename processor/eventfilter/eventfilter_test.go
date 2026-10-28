@@ -516,7 +516,7 @@ func TestAllowEventToDestTransformation(t *testing.T) {
 	}
 }
 
-func TestGetDestinationSupportedMessageTypes(t *testing.T) {
+func TestDestinationSupportedMessageTypes(t *testing.T) {
 	tests := []struct {
 		name     string
 		version  int
@@ -537,7 +537,7 @@ func TestGetDestinationSupportedMessageTypes(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			destination := backendconfig.DestinationT{Version: tc.version, Config: tc.config, DestinationDefinition: backendconfig.DestinationDefinitionT{Name: tc.typeName}}
-			got, valid := GetDestinationSupportedMessageTypes(&destination)
+			got, valid := destinationSupportedMessageTypes(&destination)
 			require.Equal(t, tc.want, got)
 			require.Equal(t, tc.valid, valid)
 		})

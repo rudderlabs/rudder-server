@@ -4167,14 +4167,6 @@ func ConvertToFilteredTransformerResponse(
 				}
 			}
 
-			// HTTP v2 customer list. Not cached by Destination.ID: a batch may hold revisions of the same destination.
-			if destinationTypes, ok := eventfilter.GetDestinationSupportedMessageTypes(&event.Destination); ok {
-				if _, failedEvent := eventfilter.CheckMessageType(event, destinationTypes); failedEvent != nil {
-					failedEvents = append(failedEvents, *failedEvent)
-					continue
-				}
-			}
-
 			// filter unsupported message events
 			supportedEvents, ok := supportedMessageEventsCache[event.Destination.ID]
 			if !ok {
