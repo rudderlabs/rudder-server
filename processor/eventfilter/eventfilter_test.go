@@ -518,26 +518,20 @@ func TestAllowEventToDestTransformation(t *testing.T) {
 
 func TestDestinationSupportedMessageTypes(t *testing.T) {
 	tests := []struct {
-		name     string
-		version  int
-		typeName string
-		config   map[string]any
-		want     []string
-		valid    bool
+		name   string
+		config map[string]any
+		want   []string
+		valid  bool
 	}{
-		{name: "configured", version: 2, typeName: "HTTP", config: map[string]any{"supportedMessageTypes": []any{"track", "page"}}, want: []string{"track", "page"}, valid: true},
-		{name: "empty", version: 2, typeName: "HTTP", config: map[string]any{"supportedMessageTypes": []any{}}, want: []string{}, valid: true},
-		{name: "missing", version: 2, typeName: "HTTP"},
-		{name: "wrong type", version: 2, typeName: "HTTP", config: map[string]any{"supportedMessageTypes": "track"}},
-		{name: "mixed array", version: 2, typeName: "HTTP", config: map[string]any{"supportedMessageTypes": []any{"track", 123}}},
-		{name: "v1", version: 1, typeName: "HTTP", config: map[string]any{"supportedMessageTypes": []any{"track"}}},
-		{name: "unspecified version", typeName: "HTTP", config: map[string]any{"supportedMessageTypes": []any{"track"}}},
-		{name: "other destination", version: 2, typeName: "WEBHOOK", config: map[string]any{"supportedMessageTypes": []any{"track"}}},
+		{name: "configured", config: map[string]any{"supportedMessageTypes": []any{"track", "page"}}, want: []string{"track", "page"}, valid: true},
+		{name: "empty", config: map[string]any{"supportedMessageTypes": []any{}}, want: []string{}, valid: true},
+		{name: "missing"},
+		{name: "wrong type", config: map[string]any{"supportedMessageTypes": "track"}},
+		{name: "mixed array", config: map[string]any{"supportedMessageTypes": []any{"track", 123}}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			destination := backendconfig.DestinationT{Version: tc.version, Config: tc.config, DestinationDefinition: backendconfig.DestinationDefinitionT{Name: tc.typeName}}
-			got, valid := destinationSupportedMessageTypes(&destination)
+			got, valid := destinationSupportedMessageTypes(&backendconfig.DestinationT{Config: tc.config})
 			require.Equal(t, tc.want, got)
 			require.Equal(t, tc.valid, valid)
 		})

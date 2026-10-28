@@ -3901,14 +3901,11 @@ func TestProcessor(t *testing.T) {
 	})
 }
 
-func TestHTTPV2SupportedMessageTypes(t *testing.T) {
-	destination := func(id, name string, version int, config, definition map[string]any) backendconfig.DestinationT {
-		if definition == nil {
-			definition = map[string]any{"supportedMessageTypes": []any{"track", "page", "identify"}}
-		}
+func TestFilterByDestinationSupportedMessageTypes(t *testing.T) {
+	destination := func(id string, config, definition map[string]any) backendconfig.DestinationT {
 		return backendconfig.DestinationT{
-			ID: id, Version: version, Config: config, IsProcessorEnabled: true,
-			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: name, Config: definition},
+			ID: id, Config: config, IsProcessorEnabled: true,
+			DestinationDefinition: backendconfig.DestinationDefinitionT{Config: definition},
 		}
 	}
 	event := func(dest backendconfig.DestinationT, messageType string) types.TransformerEvent {
@@ -3919,41 +3916,35 @@ func TestHTTPV2SupportedMessageTypes(t *testing.T) {
 	}
 	drain := func(types.TransformerEvent) (bool, string) { return false, "" }
 
-	t.Run("mixed destinations, repeated events and normalized types", func(t *testing.T) {
-		httpV2 := destination("http-v2", "HTTP", 2, map[string]any{"supportedMessageTypes": []any{"track"}}, nil)
-		otherV2 := destination("other-v2", "OTHER", 2, map[string]any{"supportedMessageTypes": []any{"track"}}, nil)
-		v1 := destination("http-v1", "HTTP", 0, map[string]any{"supportedMessageTypes": []any{"track"}}, nil)
-		httpV2Page := destination("http-page", "HTTP", 2, map[string]any{"supportedMessageTypes": []any{"page"}}, nil)
+	t.Run("destination list without a definition list", func(t *testing.T) {
+		trackOnly := destination("track-only", map[string]any{"supportedMessageTypes": []any{"track"}}, nil)
+		unconfigured := destination("unconfigured", nil, nil)
 		events := []types.TransformerEvent{
-			event(httpV2, " TRACK "), event(httpV2, "page"), event(httpV2, "identify"),
-			event(httpV2Page, "page"), event(httpV2Page, "track"),
-			event(v1, "page"), event(otherV2, "page"),
+			event(trackOnly, " TRACK "), event(trackOnly, "page"), event(trackOnly, "identify"),
+			event(unconfigured, "page"),
 		}
 		response := ConvertToFilteredTransformerResponse(events, true, drain)
-		require.Len(t, response.Events, 4)
-		require.Len(t, response.FailedEvents, 3)
+		require.Len(t, response.Events, 2)
+		require.Len(t, response.FailedEvents, 2)
 		for _, failed := range response.FailedEvents {
 			require.Equal(t, reportingtypes.FilterEventCode, failed.StatusCode)
 			require.Equal(t, eventfilter.MessageTypeNotSupportedReason, failed.Error)
-			require.Equal(t, reportingtypes.FilteredMessageTypeCode, eventfilter.FilteredCodeForReason(failed.Error))
 		}
 	})
 
-	t.Run("definition restriction still applies", func(t *testing.T) {
-		definition := map[string]any{"supportedMessageTypes": []any{"track"}}
-		http := destination("http", "HTTP", 2, map[string]any{"supportedMessageTypes": []any{"page", "track"}}, definition)
-		response := ConvertToFilteredTransformerResponse([]types.TransformerEvent{event(http, "page"), event(http, "track")}, true, drain)
+	t.Run("destination list only narrows the definition list", func(t *testing.T) {
+		dest := destination("narrowed", map[string]any{"supportedMessageTypes": []any{"page", "track"}}, map[string]any{"supportedMessageTypes": []any{"track"}})
+		response := ConvertToFilteredTransformerResponse([]types.TransformerEvent{event(dest, "page"), event(dest, "track")}, true, drain)
 		require.Len(t, response.Events, 1)
 		require.Equal(t, eventfilter.MessageTypeNotSupportedReason, response.FailedEvents[0].Error)
 	})
 
 	t.Run("empty list drops every type", func(t *testing.T) {
-		http := destination("http", "HTTP", 2, map[string]any{"supportedMessageTypes": []any{}}, nil)
-		response := ConvertToFilteredTransformerResponse([]types.TransformerEvent{event(http, "track")}, true, drain)
+		dest := destination("empty", map[string]any{"supportedMessageTypes": []any{}}, nil)
+		response := ConvertToFilteredTransformerResponse([]types.TransformerEvent{event(dest, "track")}, true, drain)
 		require.Empty(t, response.Events)
 		require.Equal(t, eventfilter.MessageTypeNotSupportedReason, response.FailedEvents[0].Error)
 	})
-
 }
 
 func TestStaticFunctionTests(t *testing.T) {

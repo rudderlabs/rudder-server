@@ -44,21 +44,14 @@ var pkgLogger = logger.NewLogger().Child("eventfilter")
 // GetSupportedMessageTypes returns the supported message types for the given event, based on configuration.
 // If no relevant configuration is found, returns false
 func GetSupportedMessageTypes(destination *backendconfig.DestinationT) ([]string, bool) {
+	destinationTypes, filterByDestination := destinationSupportedMessageTypes(destination)
 	var supportedMessageTypes []string
 	if supportedTypes, ok := destination.DestinationDefinition.Config["supportedMessageTypes"]; ok {
 		if supportedTypeInterface, ok := supportedTypes.([]any); ok {
 			supportedTypesArr := misc.ConvertInterfaceToStringArray(supportedTypeInterface)
-			destinationTypes, filterByDestination := destinationSupportedMessageTypes(destination)
 			for _, supportedType := range supportedTypesArr {
-				var skip bool
-				switch supportedType {
-				case "identify":
-					skip = identifyDisabled(destination)
-				default:
-				}
-				if filterByDestination && !slices.Contains(destinationTypes, supportedType) {
-					skip = true
-				}
+				skip := (supportedType == "identify" && identifyDisabled(destination)) ||
+					(filterByDestination && !slices.Contains(destinationTypes, supportedType))
 				if !skip {
 					supportedMessageTypes = append(supportedMessageTypes, supportedType)
 				}
@@ -66,15 +59,13 @@ func GetSupportedMessageTypes(destination *backendconfig.DestinationT) ([]string
 			return supportedMessageTypes, true
 		}
 	}
-	return nil, false
+	// No definition-level list (e.g. HTTP v2): the destination's own list is the filter.
+	return destinationTypes, filterByDestination
 }
 
-// destinationSupportedMessageTypes returns the customer-configured message types for an HTTP v2 destination.
+// destinationSupportedMessageTypes returns the message types configured on the destination itself.
 // A valid empty array supports no message types; missing or malformed values do not impose a filter.
 func destinationSupportedMessageTypes(destination *backendconfig.DestinationT) ([]string, bool) {
-	if destination.Version != 2 || destination.DestinationDefinition.Name != "HTTP" {
-		return nil, false
-	}
 	configured, ok := destination.Config["supportedMessageTypes"].([]any)
 	if !ok {
 		return nil, false
