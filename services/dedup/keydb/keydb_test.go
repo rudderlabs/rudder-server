@@ -81,8 +81,8 @@ func startKeydb(t testing.TB, conf *config.Config) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	// the processors' seed is the keydb Service, an address no node advertises: the client must discover the
-	// node's own address from it and send its requests there
+	// the processors are given the keydb headless Service, an address no node advertises: the client must learn the
+	// node's own address from the node behind it and send its requests there
 	seed := "localhost:" + strconv.Itoa(freePort)
 	address := "127.0.0.1:" + strconv.Itoa(freePort)
 	conf.Set("KeyDB.Dedup.Addresses", seed)
