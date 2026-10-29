@@ -2,6 +2,7 @@ package bqstreamallevents
 
 import (
 	"errors"
+	"slices"
 	"strings"
 
 	"golang.org/x/oauth2"
@@ -101,10 +102,8 @@ func shouldAbort(err error) bool {
 	// transient or already-exists branch cannot hide a terminal sibling.
 	type multiError interface{ Unwrap() []error }
 	if joined, ok := err.(multiError); ok {
-		for _, branch := range joined.Unwrap() {
-			if shouldAbort(branch) {
-				return true
-			}
+		if slices.ContainsFunc(joined.Unwrap(), shouldAbort) {
+			return true
 		}
 	} else if wrapped := errors.Unwrap(err); wrapped != nil && shouldAbort(wrapped) {
 		return true
