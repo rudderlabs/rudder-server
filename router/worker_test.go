@@ -602,6 +602,9 @@ func TestTransformForDestination(t *testing.T) {
 	nonOauthDestDef := backendconfig.DestinationDefinitionT{
 		Config: map[string]any{},
 	}
+	machineOauthAccount := &backendconfig.Account{
+		AccountDefinition: &backendconfig.AccountDefinition{AuthenticationType: "machine_oauth"},
+	}
 
 	routerJobs := []types.RouterJobT{
 		{
@@ -663,6 +666,30 @@ func TestTransformForDestination(t *testing.T) {
 			JobMetadata: types.JobMetadataT{
 				JobID: 6,
 			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID:                    "d4",
+				DestinationDefinition: nonOauthDestDef,
+				DeliveryAccount:       machineOauthAccount,
+			},
+			JobMetadata: types.JobMetadataT{JobID: 7},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID:                    "d5",
+				DestinationDefinition: nonOauthDestDef,
+				DeliveryAccount:       machineOauthAccount,
+			},
+			JobMetadata: types.JobMetadataT{JobID: 8},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID:                    "d4",
+				DestinationDefinition: nonOauthDestDef,
+				DeliveryAccount:       machineOauthAccount,
+			},
+			JobMetadata: types.JobMetadataT{JobID: 9},
 		},
 	}
 	// Expect call for OAuth destination d1 (jobs grouped by destination ID)
@@ -727,6 +754,14 @@ func TestTransformForDestination(t *testing.T) {
 			},
 		},
 	})
+	mockTransformer.EXPECT().Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{
+		Data:     []types.RouterJobT{routerJobs[6], routerJobs[8]},
+		DestType: worker.rt.destType,
+	}).Return(nil)
+	mockTransformer.EXPECT().Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{
+		Data:     []types.RouterJobT{routerJobs[7]},
+		DestType: worker.rt.destType,
+	}).Return(nil)
 	destinationJobs := worker.transform(routerJobs)
 	require.Equal(t, 4, len(destinationJobs))
 	destinationIDJobsMap := lo.GroupBy(destinationJobs, func(job types.DestinationJobT) string {

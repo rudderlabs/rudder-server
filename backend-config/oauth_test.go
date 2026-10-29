@@ -32,6 +32,17 @@ func TestDestinationT_IsOAuthDestination(t *testing.T) {
 			expectedErr:    nil,
 		},
 		{
+			name: "should return 'true' for delivery flow when DeliveryAccount has machine_oauth AccountDefinition",
+			flow: common.RudderFlowDelivery,
+			deliveryAccount: &Account{
+				AccountDefinition: &AccountDefinition{
+					AuthenticationType: "machine_oauth",
+				},
+			},
+			inputDefConfig: map[string]any{},
+			expectedOAuth:  true,
+		},
+		{
 			name: "should return 'false' for delivery flow when DeliveryAccount has non-OAuth AccountDefinition",
 			flow: common.RudderFlowDelivery,
 			deliveryAccount: &Account{
@@ -39,7 +50,7 @@ func TestDestinationT_IsOAuthDestination(t *testing.T) {
 					AuthenticationType: "BasicAuth",
 				},
 			},
-			inputDefConfig: map[string]any{},
+			inputDefConfig: map[string]any{"auth": map[string]any{"type": "OAuth"}},
 			expectedOAuth:  false,
 			expectedErr:    nil,
 		},
@@ -56,6 +67,17 @@ func TestDestinationT_IsOAuthDestination(t *testing.T) {
 			expectedErr:    nil,
 		},
 		{
+			name: "should return 'true' for delete flow when DeleteAccount has machine_oauth AccountDefinition",
+			flow: common.RudderFlowDelete,
+			deleteAccount: &Account{
+				AccountDefinition: &AccountDefinition{
+					AuthenticationType: "machine_oauth",
+				},
+			},
+			inputDefConfig: map[string]any{},
+			expectedOAuth:  true,
+		},
+		{
 			name: "should fall back to dest definition config when DeliveryAccount has no AccountDefinition",
 			flow: common.RudderFlowDelivery,
 			deliveryAccount: &Account{
@@ -68,6 +90,17 @@ func TestDestinationT_IsOAuthDestination(t *testing.T) {
 			},
 			expectedOAuth: true,
 			expectedErr:   nil,
+		},
+		{
+			name: "should fall back to dest definition config when account is absent",
+			flow: common.RudderFlowDelete,
+			inputDefConfig: map[string]any{
+				"auth": map[string]any{
+					"type":         "OAuth",
+					"rudderScopes": []any{"delete"},
+				},
+			},
+			expectedOAuth: true,
 		},
 		{
 			name: "should pass for a destination which contains OAuth and rudderScopes",
