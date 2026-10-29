@@ -308,6 +308,30 @@ func TestMisdirectedForwardTest(t *testing.T) {
 		})
 	}
 
+	for _, m := range []struct{ name, path string }{{"TestLibrary", "/test-library"}, {"ExtractLibs", "/extract-libs"}} {
+		t.Run(m.name+": a 421 from a pod of another mode resets the target's client and is retried", func(t *testing.T) {
+			p := newTestPodWithReason(t, "misdirected_endpoint_not_served", misdirectFirstHits(1))
+			f := newMisdirectFixture(t)
+			f.dns.point(host, p.addr())
+			u := f.client(fastBackoff)
+			call := u.TestLibrary
+			if m.name == "ExtractLibs" {
+				call = u.ExtractLibs
+			}
+
+			status, body, err := call(context.Background(), target, "ws-a", []byte(`{}`))
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, status)
+			require.Equal(t, "done", string(body))
+			require.Equal(t, []string{"", ""}, p.receivedWorkspaceIDs(), "the shared AST pods get no workspace")
+			require.Equal(t, []memstats.Metric{
+				testCounter(misdirectedRequestsMetric,
+					stats.Tags{"workspaceID": "ws-a", "language": "python", "path": m.path}, 1),
+			}, f.metrics(misdirectedRequestsMetric))
+			require.Equal(t, []memstats.Metric{resets(1)}, f.metrics(clientResetsMetric))
+		})
+	}
+
 	t.Run("after a reset, a test pod name that no longer resolves is a cold start", func(t *testing.T) {
 		f := newMisdirectFixture(t)
 		// The ephemeral test pod was deleted and its IP handed to another pod.
