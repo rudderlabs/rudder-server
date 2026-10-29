@@ -3,7 +3,6 @@ package bqstreamallevents
 import (
 	"errors"
 	"net/url"
-	"slices"
 	"strings"
 
 	"cloud.google.com/go/auth"
@@ -41,58 +40,22 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return false
 }
 
-// terminalTokenError reports whether the OAuth token endpoint rejected the
-// service-account credentials themselves (e.g. a deleted key or account).
-func terminalTokenError(err error) bool {
+// invalidGrantError reports whether the OAuth token endpoint rejected the
+// service-account credentials (e.g. an unknown key or account).
+func invalidGrantError(err error) bool {
 	e, ok := errors.AsType[*auth.Error](err)
 	if !ok {
 		return false
 	}
 	var response struct {
-		Error       string `json:"error"`
-		Description string `json:"error_description"`
+		Error string `json:"error"`
 	}
-	if jsonrs.Unmarshal(e.Body, &response) != nil {
-		return false
-	}
-	switch response.Error {
-	case "invalid_client", "unauthorized_client":
-		return true
-	case "invalid_grant":
-		// invalid_grant also covers host clock skew ("Check your iat and exp values"),
-		// which a retry can fix, so only abort when Google names the key or account.
-		return strings.Contains(response.Description, "Invalid JWT Signature") ||
-			strings.Contains(response.Description, "account not found")
-	}
-	return false
-}
-
-// rateLimitedBigQueryError reports whether a 403 is BigQuery throttling rather than a permission denial.
-func rateLimitedBigQueryError(e *googleapi.Error) bool {
-	return slices.ContainsFunc(e.Errors, func(item googleapi.ErrorItem) bool {
-		return item.Reason == "rateLimitExceeded" || item.Reason == "userRateLimitExceeded" || item.Reason == "quotaExceeded"
-	})
+	return jsonrs.Unmarshal(e.Body, &response) == nil && response.Error == "invalid_grant"
 }
 
 // shouldAbort classifies an error as terminal (abort the jobs) vs retryable.
 func shouldAbort(err error) bool {
-	// AsType sees only the first match; walk joined errors so an earlier
-	// transient branch cannot hide a terminal sibling.
-	type multiError interface{ Unwrap() []error }
-	if joined, ok := err.(multiError); ok {
-		if slices.ContainsFunc(joined.Unwrap(), shouldAbort) {
-			return true
-		}
-	} else if wrapped := errors.Unwrap(err); wrapped != nil && shouldAbort(wrapped) {
-		return true
-	}
-	if terminalTokenError(err) {
-		return true
-	}
-	if e, ok := errors.AsType[*googleapi.Error](err); ok {
-		return e.Code == 401 || (e.Code == 403 && !rateLimitedBigQueryError(e))
-	}
-	if errors.Is(err, bigqueryintegration.ErrIncompatibleCredentials) {
+	if invalidGrantError(err) || errors.Is(err, bigqueryintegration.ErrIncompatibleCredentials) {
 		return true
 	}
 	// The auth library reports an unparseable key as a plain string inside the

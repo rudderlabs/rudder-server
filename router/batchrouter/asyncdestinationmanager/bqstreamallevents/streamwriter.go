@@ -11,7 +11,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/googleutil"
 
-	bigqueryintegration "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -31,7 +30,7 @@ func NewTableStreamWriterFactory(maxInflightRequests int, maxInflightBytes int64
 func (s *streamWriterFactoryImpl) NewTableStreamWriter(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) {
 	credBytes := []byte(destConf.Credentials)
 	if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
-		return nil, fmt.Errorf("%w: %w", bigqueryintegration.ErrIncompatibleCredentials, err)
+		return nil, fmt.Errorf("incompatible credentials: %w", err)
 	}
 
 	client, err := managedwriter.NewClient(ctx, destConf.ProjectID, option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes))
