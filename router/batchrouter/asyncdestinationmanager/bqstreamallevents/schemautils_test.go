@@ -141,6 +141,8 @@ func TestShouldAbort(t *testing.T) {
 		{"unavailable", status.Error(codes.Unavailable, "retryable"), false},
 		{"plain error", errors.New("plain error"), false},
 		{"token invalid grant", tokenError(`{"error":"invalid_grant","error_description":"Invalid grant: account not found"}`), true},
+		{"token invalid JWT signature", tokenError(`{"error":"invalid_grant","error_description":"Invalid JWT Signature."}`), true},
+		{"token clock skew", tokenError(`{"error":"invalid_grant","error_description":"Invalid JWT: Token must be a short-lived token (60 minutes) and in a reasonable timeframe. Check your iat and exp values in the JWT claim."}`), false},
 		{"token invalid client", tokenError(`{"error":"invalid_client"}`), true},
 		{"token unauthorized client", tokenError(`{"error":"unauthorized_client"}`), true},
 		{"token server error", tokenError(`{"error":"server_error"}`), false},

@@ -47,14 +47,20 @@ func terminalTokenError(err error) bool {
 		return false
 	}
 	var response struct {
-		Error string `json:"error"`
+		Error       string `json:"error"`
+		Description string `json:"error_description"`
 	}
 	if jsonrs.Unmarshal(e.Body, &response) != nil {
 		return false
 	}
 	switch response.Error {
-	case "invalid_grant", "invalid_client", "unauthorized_client":
+	case "invalid_client", "unauthorized_client":
 		return true
+	case "invalid_grant":
+		// invalid_grant also covers host clock skew ("Check your iat and exp values"),
+		// which a retry can fix, so only abort when Google names the key or account.
+		return strings.Contains(response.Description, "Invalid JWT Signature") ||
+			strings.Contains(response.Description, "account not found")
 	}
 	return false
 }
