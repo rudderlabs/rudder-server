@@ -25,6 +25,52 @@ import (
 	httpClient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 )
 
+func TestMachineOAuthTransportFetchesFlowAccountToken(t *testing.T) {
+	for _, flow := range []common.RudderFlow{common.RudderFlowDelivery, common.RudderFlowDelete} {
+		t.Run(string(flow), func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			handler := mockoauthv2.NewMockOAuthHandler(ctrl)
+			handler.EXPECT().FetchToken(gomock.Any()).
+				Do(func(params *v2.OAuthTokenParams) {
+					require.Equal(t, "acct-"+string(flow), params.AccountID)
+					require.Equal(t, map[common.RudderFlow]int{common.RudderFlowDelivery: 8, common.RudderFlowDelete: 3}[flow], params.SecretVersion)
+				}).Return([]byte(`{"access_token":"t"}`), nil)
+			roundTripper := mockoauthv2.NewMockRoundTripper(ctrl)
+			roundTripper.EXPECT().RoundTrip(gomock.Any()).DoAndReturn(func(req *http.Request) (*http.Response, error) {
+				require.JSONEq(t, `{"expirationDate":"","secret":{"access_token":"t"},"secretVersion":0}`, req.Header.Get("X-Rudder-Dest-Info"))
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader([]byte(`{}`)))}, nil
+			})
+			cache := v2.NewOauthTokenCache()
+			transport := httpClient.NewOAuthTransport(&httpClient.TransportArgs{
+				FlowType:             flow,
+				TokenCache:           &cache,
+				GetAuthErrorCategory: func([]byte) (string, error) { return "", nil },
+				Augmenter:            extensions.HeaderAugmenter,
+				OAuthHandler:         handler,
+				OriginalTransport:    roundTripper,
+			})
+			destination := &backendconfig.DestinationT{
+				ID: "dest-1",
+				DeliveryAccount: &backendconfig.Account{
+					ID: "acct-delivery", SecretVersion: 8,
+					AccountDefinition: &backendconfig.AccountDefinition{AuthenticationType: "machine_oauth"},
+				},
+				DeleteAccount: &backendconfig.Account{
+					ID: "acct-delete", SecretVersion: 3,
+					AccountDefinition: &backendconfig.AccountDefinition{AuthenticationType: "machine_oauth"},
+				},
+			}
+			req, err := http.NewRequest(http.MethodPost, "http://example.com", bytes.NewReader([]byte(`{}`)))
+			require.NoError(t, err)
+			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
+			res, err := transport.RoundTrip(req)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, res.StatusCode)
+			require.NoError(t, res.Body.Close())
+		})
+	}
+}
+
 // errorReadCloser is a mock io.ReadCloser that returns an error when Read is called
 type errorReadCloser struct {
 	err error
