@@ -158,6 +158,12 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 		)
 		return m.abortJobs(asyncDest, fmt.Errorf("decoding destination config: %w", err).Error())
 	}
+	if err := validateBigQueryCredentials([]byte(cfg.Credentials)); err != nil {
+		m.logger.Warnn("Invalid BigQuery credentials",
+			obskit.Error(err),
+		)
+		return m.abortJobs(asyncDest, fmt.Errorf("validating credentials: %w", err).Error())
+	}
 
 	// One integration manager is shared by every schema operation in this
 	// upload, created lazily on first use and cleaned up once, instead of

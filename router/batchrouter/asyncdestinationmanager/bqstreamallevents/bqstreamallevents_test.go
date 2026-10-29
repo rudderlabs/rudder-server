@@ -2,14 +2,15 @@ package bqstreamallevents
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"cloud.google.com/go/auth"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
@@ -106,7 +107,7 @@ func TestBQStreamAllEvents(t *testing.T) {
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			Name: "BQSTREAM_ALL_EVENTS",
 		},
-		Config: make(map[string]any),
+		Config: map[string]any{"credentials": string(testServiceAccountCredentials(t))},
 	}
 	validations.Init()
 
@@ -376,60 +377,41 @@ func TestBQStreamAllEvents(t *testing.T) {
 		require.Contains(t, output.AbortReason, "failed to create discards table")
 	})
 
-	t.Run("Upload: terminal auth error creating stream writer", func(t *testing.T) {
+	t.Run("Upload: invalid credentials", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		sm := newManager(config.New(), logger.NOP, statsStore, destination)
-		sm.integrationManagerCreator = func(context.Context, destConfig) (IntegrationManager, error) {
-			return &mockIntegrationManager{}, nil
-		}
-		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newTableStreamWriterOutputMap: map[string]func(context.Context, destConfig, string, whutils.ModelTableSchema) (*tableStreamWriter, error){
-				"users": func(context.Context, destConfig, string, whutils.ModelTableSchema) (*tableStreamWriter, error) {
-					return nil, fmt.Errorf("fetching BigQuery token: %w", errors.Join(errTerminalAuth, errors.New("Invalid JWT Signature")))
-				},
-				"products": noOpStreamWriterFn,
-			},
-		}
+		invalidDestination := *destination
+		invalidDestination.Config = map[string]any{"credentials": `{"type":"service_account","client_email":"test@example.com","private_key":"invalid"}`}
+		sm := newManager(config.New(), logger.NOP, statsStore, &invalidDestination)
 		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			ImportingJobIDs: []int64{1},
-			Destination:     destination,
+			Destination:     &invalidDestination,
 			FileName:        "testdata/successful_records.txt",
 		})
-		require.ElementsMatch(t, []int64{1001, 1003}, output.AbortJobIDs)
-		require.Empty(t, output.FailedJobIDs)
-		require.NotEmpty(t, output.AbortReason)
+		require.Equal(t, []int64{1}, output.AbortJobIDs)
+		require.Contains(t, output.AbortReason, "validating credentials")
 	})
 
-	t.Run("Upload: terminal auth error appending on a cached writer", func(t *testing.T) {
+	t.Run("Upload: terminal token error fetching schema", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
 		sm := newManager(config.New(), logger.NOP, statsStore, destination)
 		sm.integrationManagerCreator = func(context.Context, destConfig) (IntegrationManager, error) {
-			return &mockIntegrationManager{}, nil
-		}
-		sm.streamWriterFactory = &mockStreamWriterFactory{
-			newTableStreamWriterOutputMap: map[string]func(context.Context, destConfig, string, whutils.ModelTableSchema) (*tableStreamWriter, error){
-				"users": func(_ context.Context, _ destConfig, _ string, schema whutils.ModelTableSchema) (*tableStreamWriter, error) {
-					return &tableStreamWriter{descriptor: requireDescriptorForSchema(t, schema), writer: &mockStreamWriter{
-						appendRowsOutput: func(context.Context, [][]byte) (AppendResult, error) {
-							return nil, status.Error(codes.Unavailable, "transport: per-RPC creds failed due to error: oauth2: cannot fetch token: 400 Bad Request Response: Invalid JWT Signature")
-						},
-					}}, nil
+			return &mockIntegrationManager{
+				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
+					return nil, fmt.Errorf("fetching schema: %w", &auth.Error{Response: &http.Response{StatusCode: http.StatusBadRequest}, Body: []byte(`{"error":"invalid_grant","error_description":"Invalid grant: account not found"}`)})
 				},
-				"products": noOpStreamWriterFn,
-			},
+			}, nil
 		}
 		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			ImportingJobIDs: []int64{1},
 			Destination:     destination,
 			FileName:        "testdata/successful_records.txt",
 		})
-		require.ElementsMatch(t, []int64{1001, 1003}, output.AbortJobIDs)
+		require.Equal(t, []int64{1}, output.AbortJobIDs)
 		require.Empty(t, output.FailedJobIDs)
-		require.NotEmpty(t, output.AbortReason)
 	})
 
 	t.Run("Upload: ignore already exist error during discards table creation", func(t *testing.T) {

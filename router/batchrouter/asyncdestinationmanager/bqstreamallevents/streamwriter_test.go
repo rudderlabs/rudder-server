@@ -18,25 +18,20 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestValidateBigQueryCredentials(t *testing.T) {
+// testServiceAccountCredentials returns service-account JSON with a freshly
+// generated key and an unreachable token endpoint.
+func testServiceAccountCredentials(t testing.TB) []byte {
+	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	privateKey := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	return fmt.Appendf(nil, `{"type":"service_account","client_email":"test@example.com","private_key":%q,"token_uri":"http://127.0.0.1:1"}`, privateKey)
+}
 
-	t.Run("valid key signs without a token endpoint", func(t *testing.T) {
-		credentials := fmt.Appendf(nil, `{"type":"service_account","client_email":"test@example.com","private_key":%q,"token_uri":"http://127.0.0.1:1"}`, privateKey)
-		require.NoError(t, validateBigQueryCredentials(credentials))
-	})
-	t.Run("invalid key is terminal", func(t *testing.T) {
-		credentials := []byte(`{"type":"service_account","client_email":"test@example.com","private_key":"invalid"}`)
-		err := validateBigQueryCredentials(credentials)
-		require.ErrorIs(t, err, errTerminalAuth)
-		require.True(t, shouldAbort(err))
-	})
-	t.Run("invalid credentials are terminal", func(t *testing.T) {
-		err := validateBigQueryCredentials([]byte(`{"type":"service_account"}`))
-		require.ErrorIs(t, err, errTerminalAuth)
-	})
+func TestValidateBigQueryCredentials(t *testing.T) {
+	require.NoError(t, validateBigQueryCredentials(testServiceAccountCredentials(t)))
+	require.ErrorContains(t, validateBigQueryCredentials([]byte(`{"type":"service_account","client_email":"test@example.com","private_key":"invalid"}`)), "parsing credentials")
+	require.ErrorContains(t, validateBigQueryCredentials([]byte(`{"type":"external_account"}`)), "incompatible credentials")
 }
 
 func TestStreamWriterIntegration(t *testing.T) {

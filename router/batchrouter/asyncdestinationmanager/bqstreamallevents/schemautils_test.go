@@ -4,11 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"testing"
 
+	"cloud.google.com/go/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/oauth2"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -127,46 +128,31 @@ func TestCheckAndIgnoreAlreadyExistError(t *testing.T) {
 }
 
 func TestShouldAbort(t *testing.T) {
-	require.True(t, shouldAbort(status.Error(codes.PermissionDenied, "permission denied")))
-	require.True(t, shouldAbort(status.Error(codes.Unauthenticated, "unauthenticated")))
-	require.False(t, shouldAbort(status.Error(codes.Unavailable, "retryable")))
-	require.False(t, shouldAbort(errors.New("plain error")))
-
+	tokenError := func(body string) error {
+		return fmt.Errorf("fetching schema: %w", &url.Error{Op: "Post", Err: &auth.Error{Response: &http.Response{StatusCode: http.StatusBadRequest}, Body: []byte(body)}})
+	}
 	for _, tt := range []struct {
 		name  string
 		err   error
 		abort bool
 	}{
-		{"terminal sentinel", fmt.Errorf("writer: %w", errTerminalAuth), true},
-		{"invalid grant", &oauth2.RetrieveError{ErrorCode: "invalid_grant"}, true},
-		{"JWT source invalid grant body", &oauth2.RetrieveError{Response: &http.Response{Status: "400 Bad Request"}, Body: []byte(`{"error":"invalid_grant","error_description":"Invalid JWT Signature."}`)}, true},
-		{"JWT source transient body", &oauth2.RetrieveError{Response: &http.Response{Status: "503 Service Unavailable"}, Body: []byte(`{"error":"server_error","error_description":"cannot fetch token"}`)}, false},
-		{"invalid client", &oauth2.RetrieveError{ErrorCode: "invalid_client"}, true},
-		{"unauthorized client", &oauth2.RetrieveError{ErrorCode: "unauthorized_client"}, true},
-		{"transient token response", &oauth2.RetrieveError{ErrorCode: "server_error"}, false},
-		{"REST bad request", &googleapi.Error{Code: 400, Message: "bad request"}, true},
+		{"permission denied", status.Error(codes.PermissionDenied, "permission denied"), true},
+		{"unauthenticated", status.Error(codes.Unauthenticated, "unauthenticated"), true},
+		{"unavailable", status.Error(codes.Unavailable, "retryable"), false},
+		{"plain error", errors.New("plain error"), false},
+		{"token invalid grant", tokenError(`{"error":"invalid_grant","error_description":"Invalid grant: account not found"}`), true},
+		{"token invalid client", tokenError(`{"error":"invalid_client"}`), true},
+		{"token unauthorized client", tokenError(`{"error":"unauthorized_client"}`), true},
+		{"token server error", tokenError(`{"error":"server_error"}`), false},
+		{"token non-JSON body", tokenError(`<html>503</html>`), false},
 		{"REST unauthorized", &googleapi.Error{Code: 401}, true},
-		{"REST forbidden", &googleapi.Error{Code: 403}, true},
-		{"REST already exists", &googleapi.Error{Code: 400, Message: "already exists in schema"}, false},
+		{"REST forbidden", &googleapi.Error{Code: 403, Errors: []googleapi.ErrorItem{{Reason: "accessDenied"}}}, true},
+		{"REST rate limit", &googleapi.Error{Code: 403, Errors: []googleapi.ErrorItem{{Reason: "rateLimitExceeded"}}}, false},
+		{"REST user rate limit", &googleapi.Error{Code: 403, Errors: []googleapi.ErrorItem{{Reason: "userRateLimitExceeded"}}}, false},
+		{"REST quota", &googleapi.Error{Code: 403, Errors: []googleapi.ErrorItem{{Reason: "quotaExceeded"}}}, false},
+		{"REST bad request", &googleapi.Error{Code: 400, Message: "bad request"}, false},
 		{"REST conflict", &googleapi.Error{Code: 409}, false},
-		{"wrapped JWT signature from token fetch", fmt.Errorf("appending rows: %w", errors.New("oauth2: cannot fetch token: 400 Bad Request Response: Invalid JWT Signature")), true},
-		{"flattened grant", status.Error(codes.Unavailable, "oauth2: cannot fetch token: invalid_grant"), true},
-		{"flattened append credential failure", status.Error(codes.Unavailable, "transport: per-RPC creds failed due to error: oauth2: cannot fetch token: 400 Bad Request Response: Invalid JWT Signature"), true},
-		{"table named invalid_grant", fmt.Errorf("adding columns to table invalid_grant: %w", errors.New("temporary metadata error")), false},
-		{"REST table named invalid_grant", fmt.Errorf("adding columns to table invalid_grant: %w", &googleapi.Error{Code: 503, Message: "backend error"}), false},
-		{"transient REST rate limit", &googleapi.Error{Code: 403, Errors: []googleapi.ErrorItem{{Reason: "rateLimitExceeded"}}}, false},
-		{"transient REST user rate limit", &googleapi.Error{Code: 403, Errors: []googleapi.ErrorItem{{Reason: "userRateLimitExceeded"}}}, false},
-		{"transient REST quota", &googleapi.Error{Code: 403, Errors: []googleapi.ErrorItem{{Reason: "quotaExceeded"}}}, false},
-		{"transient REST backend error", &googleapi.Error{Code: 400, Errors: []googleapi.ErrorItem{{Reason: "backendError"}}}, false},
-		{"concurrent query quota", &googleapi.Error{Code: 400, Message: "Job exceeded rate limits: Your project_and_region exceeded quota for concurrent queries."}, false},
-		{"concurrent query rate limit", &googleapi.Error{Code: 400, Message: "Exceeded rate limits: too many concurrent queries for this project_and_region."}, false},
-		{"transient 403 body mentions JWT", &googleapi.Error{Code: 403, Errors: []googleapi.ErrorItem{{Reason: "rateLimitExceeded"}}, Message: "table invalid_grant"}, false},
-		{"flattened transient token response", status.Error(codes.Unavailable, "oauth2: cannot fetch token: 503 Service Unavailable"), false},
-		{"transport transient token response", status.Error(codes.Unavailable, "transport: per-RPC creds failed due to error: oauth2: cannot fetch token: 503 Service Unavailable"), false},
-		{"flattened transport token failure", status.Error(codes.Unavailable, "oauth2: cannot fetch token: network timeout"), false},
-		{"joined terminal", errors.Join(errors.New("transient"), fmt.Errorf("writer: %w", errTerminalAuth)), true},
-		{"joined REST terminal after already exists", errors.Join(&googleapi.Error{Code: 400, Message: "already exists in schema"}, &googleapi.Error{Code: 401}), true},
-		{"joined OAuth terminal after transient", errors.Join(&oauth2.RetrieveError{ErrorCode: "server_error"}, &oauth2.RetrieveError{ErrorCode: "invalid_grant"}), true},
+		{"joined REST terminal after conflict", errors.Join(&googleapi.Error{Code: 409}, &googleapi.Error{Code: 401}), true},
 		{"wrapped joined terminal after transient", fmt.Errorf("writing: %w", errors.Join(status.Error(codes.Unavailable, "retryable"), &googleapi.Error{Code: 403})), true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

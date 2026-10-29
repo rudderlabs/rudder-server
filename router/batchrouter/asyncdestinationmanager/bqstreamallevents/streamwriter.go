@@ -32,10 +32,7 @@ func NewTableStreamWriterFactory(maxInflightRequests int, maxInflightBytes int64
 func (s *streamWriterFactoryImpl) NewTableStreamWriter(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) {
 	credBytes := []byte(destConf.Credentials)
 	if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
-		return nil, fmt.Errorf("incompatible credentials: %w", errors.Join(errTerminalAuth, err))
-	}
-	if err := validateBigQueryCredentials(credBytes); err != nil {
-		return nil, fmt.Errorf("validating BigQuery writer credentials: %w", err)
+		return nil, fmt.Errorf("incompatible credentials: %w", err)
 	}
 
 	client, err := managedwriter.NewClient(ctx, destConf.ProjectID, option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes))
@@ -72,16 +69,19 @@ func (s *streamWriterFactoryImpl) NewTableStreamWriter(ctx context.Context, dest
 	return &tableStreamWriter{writer: &streamWriterImpl{stream: stream, client: client}, descriptor: descriptor}, nil
 }
 
-// validateBigQueryCredentials signs a scoped JWT locally, just as the Storage
-// Write client does. It never contacts the OAuth endpoint: a token exchange
-// would not exercise the writer's authentication path.
+// validateBigQueryCredentials rejects credentials no retry can fix: an
+// unsupported credential type or a private key that cannot sign a JWT. It runs
+// locally; a revoked key is only detected by the token endpoint.
 func validateBigQueryCredentials(credBytes []byte) error {
+	if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
+		return fmt.Errorf("incompatible credentials: %w", err)
+	}
 	tokenSource, err := google.JWTAccessTokenSourceWithScope(credBytes, bigquery.Scope)
 	if err != nil {
-		return fmt.Errorf("parsing BigQuery credentials: %w", errors.Join(errTerminalAuth, err))
+		return fmt.Errorf("parsing credentials: %w", err)
 	}
 	if _, err := tokenSource.Token(); err != nil {
-		return fmt.Errorf("signing BigQuery JWT: %w", errors.Join(errTerminalAuth, err))
+		return fmt.Errorf("signing JWT: %w", err)
 	}
 	return nil
 }
