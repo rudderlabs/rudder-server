@@ -2,6 +2,10 @@ package bqstreamallevents
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"testing"
@@ -13,6 +17,27 @@ import (
 	bqhelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+func TestValidateBigQueryCredentials(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	privateKey := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+
+	t.Run("valid key signs without a token endpoint", func(t *testing.T) {
+		credentials := fmt.Appendf(nil, `{"type":"service_account","client_email":"test@example.com","private_key":%q,"token_uri":"http://127.0.0.1:1"}`, privateKey)
+		require.NoError(t, validateBigQueryCredentials(credentials))
+	})
+	t.Run("invalid key is terminal", func(t *testing.T) {
+		credentials := []byte(`{"type":"service_account","client_email":"test@example.com","private_key":"invalid"}`)
+		err := validateBigQueryCredentials(credentials)
+		require.ErrorIs(t, err, errTerminalAuth)
+		require.True(t, shouldAbort(err))
+	})
+	t.Run("invalid credentials are terminal", func(t *testing.T) {
+		err := validateBigQueryCredentials([]byte(`{"type":"service_account"}`))
+		require.ErrorIs(t, err, errTerminalAuth)
+	})
+}
 
 func TestStreamWriterIntegration(t *testing.T) {
 	if _, exists := os.LookupEnv(bqhelper.TestKey); !exists {

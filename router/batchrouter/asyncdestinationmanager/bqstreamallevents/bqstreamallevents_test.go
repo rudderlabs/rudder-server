@@ -2,6 +2,7 @@ package bqstreamallevents
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -373,6 +374,62 @@ func TestBQStreamAllEvents(t *testing.T) {
 		require.ElementsMatch(t, []int64{1}, output.AbortJobIDs)
 		require.Equal(t, 1, output.AbortCount)
 		require.Contains(t, output.AbortReason, "failed to create discards table")
+	})
+
+	t.Run("Upload: terminal auth error creating stream writer", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
+		sm.integrationManagerCreator = func(context.Context, destConfig) (IntegrationManager, error) {
+			return &mockIntegrationManager{}, nil
+		}
+		sm.streamWriterFactory = &mockStreamWriterFactory{
+			newTableStreamWriterOutputMap: map[string]func(context.Context, destConfig, string, whutils.ModelTableSchema) (*tableStreamWriter, error){
+				"users": func(context.Context, destConfig, string, whutils.ModelTableSchema) (*tableStreamWriter, error) {
+					return nil, fmt.Errorf("fetching BigQuery token: %w", errors.Join(errTerminalAuth, errors.New("Invalid JWT Signature")))
+				},
+				"products": noOpStreamWriterFn,
+			},
+		}
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			ImportingJobIDs: []int64{1},
+			Destination:     destination,
+			FileName:        "testdata/successful_records.txt",
+		})
+		require.ElementsMatch(t, []int64{1001, 1003}, output.AbortJobIDs)
+		require.Empty(t, output.FailedJobIDs)
+		require.NotEmpty(t, output.AbortReason)
+	})
+
+	t.Run("Upload: terminal auth error appending on a cached writer", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
+		sm.integrationManagerCreator = func(context.Context, destConfig) (IntegrationManager, error) {
+			return &mockIntegrationManager{}, nil
+		}
+		sm.streamWriterFactory = &mockStreamWriterFactory{
+			newTableStreamWriterOutputMap: map[string]func(context.Context, destConfig, string, whutils.ModelTableSchema) (*tableStreamWriter, error){
+				"users": func(_ context.Context, _ destConfig, _ string, schema whutils.ModelTableSchema) (*tableStreamWriter, error) {
+					return &tableStreamWriter{descriptor: requireDescriptorForSchema(t, schema), writer: &mockStreamWriter{
+						appendRowsOutput: func(context.Context, [][]byte) (AppendResult, error) {
+							return nil, status.Error(codes.Unavailable, "transport: per-RPC creds failed due to error: oauth2: cannot fetch token: 400 Bad Request Response: Invalid JWT Signature")
+						},
+					}}, nil
+				},
+				"products": noOpStreamWriterFn,
+			},
+		}
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			ImportingJobIDs: []int64{1},
+			Destination:     destination,
+			FileName:        "testdata/successful_records.txt",
+		})
+		require.ElementsMatch(t, []int64{1001, 1003}, output.AbortJobIDs)
+		require.Empty(t, output.FailedJobIDs)
+		require.NotEmpty(t, output.AbortReason)
 	})
 
 	t.Run("Upload: ignore already exist error during discards table creation", func(t *testing.T) {
