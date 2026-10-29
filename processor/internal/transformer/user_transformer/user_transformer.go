@@ -414,6 +414,9 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			req.Header.Set("X-Feature-Gzip-Support", "?1")
 			// Header to let transformer know that the client understands event filter code
 			req.Header.Set("X-Feature-Filter-Code", "?1")
+			if perWorkspacePyT {
+				req.Header.Set(transformerclient.HeaderWorkspaceID, labels.WorkspaceID)
+			}
 
 			// Acquired per attempt, so a retry after a 421 picks up the target's fresh client.
 			client := u.client
@@ -556,12 +559,6 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 // and never reach here; if JS is ever moved onto this path it will need
 // separate handling for the test endpoints — we will have to identify from
 // the request which language is being tested and route accordingly.
-//
-// baseURL is resolved by the caller (cpservice): for execution ops (test,
-// testRun) it is the freshly created ephemeral pyt Service's address; for AST
-// ops (testLibrary, extractLibs) it is the shared static AST deployment.
-// workspaceID is not used to build the URL — it is carried through only for
-// logging/metric tagging (cold-start counter).
 func (u *Client) Test(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error) {
 	return u.forwardTest(ctx, baseURL, workspaceID, "/test", payload)
 }
@@ -627,6 +624,9 @@ func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path str
 				return backoff.Permanent(err)
 			}
 			req.Header.Set("Content-Type", "application/json")
+			if path == "/test" || path == "/testRun" { // the AST pods are shared by every workspace
+				req.Header.Set(transformerclient.HeaderWorkspaceID, workspaceID)
+			}
 
 			client := u.pytClients.acquire(pytTarget(req.URL))
 			defer u.pytClients.release(client)
