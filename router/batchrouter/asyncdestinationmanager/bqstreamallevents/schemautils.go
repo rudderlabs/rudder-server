@@ -55,18 +55,18 @@ func invalidGrantError(err error) bool {
 
 // shouldAbort classifies an error as terminal (abort the jobs) vs retryable.
 func shouldAbort(err error) bool {
-	if invalidGrantError(err) || errors.Is(err, bigqueryintegration.ErrIncompatibleCredentials) {
-		return true
-	}
-	// The auth library reports an unparseable key as a plain string inside the
-	// HTTP transport error. Match only there: other error text can carry event values.
-	if e, ok := errors.AsType[*url.Error](err); ok && strings.HasPrefix(e.Err.Error(), "failed to parse private key") {
-		return true
-	}
 	switch status.Code(err) {
 	case codes.PermissionDenied, codes.Unauthenticated, codes.FailedPrecondition, codes.Unimplemented, codes.DataLoss:
 		return true
 	default:
-		return false
+		// Credential failures from the REST client and our own checks carry no gRPC
+		// status (status.Code reports Unknown), so classify them by error type.
+		if invalidGrantError(err) || errors.Is(err, bigqueryintegration.ErrIncompatibleCredentials) {
+			return true
+		}
+		// The auth library reports an unparseable key as a plain string inside the
+		// HTTP transport error. Match only there: other error text can carry event values.
+		e, ok := errors.AsType[*url.Error](err)
+		return ok && strings.HasPrefix(e.Err.Error(), "failed to parse private key")
 	}
 }
