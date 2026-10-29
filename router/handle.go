@@ -482,15 +482,11 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		}
 		sd, ok := statusDetailsMap[key]
 		if !ok {
-			sampleEvent := routerutils.EmptyPayload
-			if !rt.transientSources.Apply(parameters.SourceID) {
-				sampleEvent = rt.maskReportingSampleEvent(workerJobStatus.payload)
-			}
 			sd = &utilTypes.StatusDetail{
 				Status:         workerJobStatus.status.JobState,
 				StatusCode:     errorCode,
 				SampleResponse: string(workerJobStatus.status.ErrorResponse),
-				SampleEvent:    sampleEvent,
+				SampleEvent:    routerutils.EmptyPayload,
 				EventName:      eventName,
 				EventType:      eventType,
 				StatTags:       workerJobStatus.statTags,
@@ -498,6 +494,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			statusDetailsMap[key] = sd
 		}
 
+		previousCount := sd.Count
 		switch workerJobStatus.status.JobState {
 		case jobsdb.Failed.State:
 			if workerJobStatus.status.ErrorCode != strconv.Itoa(types.RouterUnMarshalErrorCode) {
@@ -512,6 +509,15 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			sd.Count++
 			sd.FailedMessages = append(sd.FailedMessages, &utilTypes.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()})
 			completedJobsList = append(completedJobsList, workerJobStatus.job)
+		}
+		if previousCount == 0 && sd.Count > 0 && !rt.transientSources.Apply(parameters.SourceID) {
+			// A retry or waiting status may create this key without contributing to reporting.
+			// Keep the sample, response and tags from the first status that actually counts.
+			sd.SampleEvent = rt.maskReportingSampleEvent(workerJobStatus.payload)
+			if ok { // an earlier, unreported status supplied the initial response and tags
+				sd.SampleResponse = string(workerJobStatus.status.ErrorResponse)
+				sd.StatTags = workerJobStatus.statTags
+			}
 		}
 
 		// REPORTING - ROUTER - END

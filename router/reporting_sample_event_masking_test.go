@@ -1,17 +1,29 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	mockjobsdb "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mockfeatures "github.com/rudderlabs/rudder-server/mocks/services/transformer"
+	mocktypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
+	"github.com/rudderlabs/rudder-server/router/throttler"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
+	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
+	txutils "github.com/rudderlabs/rudder-server/utils/tx"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 const reportingSampleEventMaskingMetric = "router_reporting_sample_event_masking"
@@ -184,6 +196,115 @@ func TestMaskReportingSampleEvent(t *testing.T) {
 			require.Equal(t, tc.want, string(masked))
 			require.Equal(t, tc.input, string(payload), "caller payload must not be modified")
 			require.Equal(t, map[string]float64{tc.wantReason: 1}, maskingCounts(statsStore, reportingSampleEventMaskingMetric))
+		})
+	}
+}
+
+func TestCommitStatusListReportingSampleMasking(t *testing.T) {
+	const (
+		secretPaths = "headers.Authorization"
+		first       = `{"headers":{"Authorization":"first"}}`
+		second      = `{"headers":{"Authorization":"second"},"marker":"counted"}`
+		maskedFirst = `{"headers":{"Authorization":"******"}}`
+		maskedLast  = `{"headers":{"Authorization":"******"},"marker":"counted"}`
+	)
+	type statusSample struct {
+		state    string
+		code     string
+		attempt  int
+		payload  json.RawMessage
+		response string
+		tags     map[string]string
+	}
+	firstFailure := statusSample{state: jobsdb.Failed.State, code: "500", attempt: 1, payload: json.RawMessage(first), response: "first failure", tags: map[string]string{"attempt": "first"}}
+	for _, tc := range []struct {
+		name         string
+		statuses     []statusSample
+		transient    bool
+		wantCount    int64
+		wantSample   json.RawMessage
+		wantResponse string
+		wantTags     map[string]string
+		wantReason   string
+	}{
+		{name: "waiting with nil payload", statuses: []statusSample{{state: jobsdb.Waiting.State}}},
+		{name: "failed retry", statuses: []statusSample{{state: jobsdb.Failed.State, code: "500", attempt: 2, payload: json.RawMessage(first)}}},
+		{name: "excluded unmarshal error", statuses: []statusSample{{state: jobsdb.Failed.State, code: "599", attempt: 1, payload: json.RawMessage(first)}}},
+		{name: "first failure", statuses: []statusSample{firstFailure}, wantCount: 1, wantSample: json.RawMessage(maskedFirst), wantResponse: firstFailure.response, wantTags: firstFailure.tags, wantReason: "listed"},
+		{name: "success", statuses: []statusSample{{state: jobsdb.Succeeded.State, code: "200", payload: json.RawMessage(first)}}, wantCount: 1, wantSample: json.RawMessage(maskedFirst), wantReason: "listed"},
+		{name: "filtered", statuses: []statusSample{{state: jobsdb.Filtered.State, code: "200", payload: json.RawMessage(first)}}, wantCount: 1, wantSample: json.RawMessage(maskedFirst), wantReason: "listed"},
+		{name: "aborted", statuses: []statusSample{{state: jobsdb.Aborted.State, code: "400", payload: json.RawMessage(first)}}, wantCount: 1, wantSample: json.RawMessage(maskedFirst), wantReason: "listed"},
+		{
+			name: "retry before first counted failure",
+			statuses: []statusSample{
+				{state: jobsdb.Failed.State, code: "500", attempt: 2, payload: json.RawMessage(`not json`), response: "retry response", tags: map[string]string{"attempt": "retry"}},
+				{state: jobsdb.Failed.State, code: "500", attempt: 1, payload: json.RawMessage(second), response: "counted response", tags: map[string]string{"attempt": "counted"}},
+				firstFailure,
+			},
+			wantCount: 2, wantSample: json.RawMessage(maskedLast), wantResponse: "counted response", wantTags: map[string]string{"attempt": "counted"}, wantReason: "listed",
+		},
+		{name: "reported non-object", statuses: []statusSample{{state: jobsdb.Succeeded.State, payload: json.RawMessage(`not json`)}}, wantCount: 1, wantSample: json.RawMessage(`not json`), wantReason: "not_object"},
+		{name: "transient source", statuses: []statusSample{firstFailure}, transient: true, wantCount: 1, wantSample: json.RawMessage(routerutils.EmptyPayload), wantResponse: firstFailure.response, wantTags: firstFailure.tags},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			features := mockfeatures.NewMockFeaturesService(ctrl)
+			if tc.wantReason != "" {
+				features.EXPECT().SecretPaths("TEST_DEST").Return([]string{secretPaths}, true).Times(1)
+			}
+			rt, statsStore := newReportingSampleEventMaskingTestHandle(t, features, true)
+			mockDB := mockjobsdb.NewMockJobsDB(ctrl)
+			reporter := mocktypes.NewMockReporting(ctrl)
+			rt.jobsDB = mockDB
+			rt.Reporting = reporter
+			rt.logger = logger.NOP
+			rt.throttlerFactory = throttler.NewNoOpThrottlerFactory()
+			rt.transientSources = transientsource.NewEmptyService()
+			if tc.transient {
+				rt.transientSources = transientsource.NewStaticService([]string{"source"})
+			}
+			rt.rsourcesService = rsources.NewNoOpService()
+			rt.rsourcesSyncSettings = rsources.NewStaticSyncSettingDelegate("", nil)
+			rt.reloadableConfig.jobsDBCommandTimeout = config.SingleValueLoader(time.Second)
+			rt.reloadableConfig.jobdDBMaxRetries = config.SingleValueLoader(1)
+			rt.reloadableConfig.updateStatusBatchSize = config.SingleValueLoader(10)
+
+			var statuses []workerJobStatus
+			for i, sample := range tc.statuses {
+				jobID := int64(i + 1)
+				statuses = append(statuses, workerJobStatus{
+					job:        &jobsdb.JobT{JobID: jobID, Parameters: json.RawMessage(`{"event_name":"Order Completed","event_type":"track"}`)},
+					status:     &jobsdb.JobStatusT{JobID: jobID, JobState: sample.state, ErrorCode: sample.code, AttemptNum: sample.attempt, ErrorResponse: json.RawMessage(sample.response)},
+					parameters: routerutils.JobParameters{SourceID: "source", DestinationID: "destination"},
+					payload:    sample.payload,
+					statTags:   sample.tags,
+				})
+			}
+			mockDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, fn func(jobsdb.UpdateSafeTx) error) error {
+				return fn(jobsdb.EmptyUpdateSafeTx())
+			})
+			mockDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+			reporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, metrics []*utilTypes.PUReportedMetric, _ *txutils.Tx) error {
+				if tc.wantCount == 0 {
+					require.Empty(t, metrics)
+					return nil
+				}
+				require.Len(t, metrics, 1)
+				detail := metrics[0].StatusDetail
+				require.Equal(t, tc.wantCount, detail.Count)
+				require.Equal(t, tc.wantSample, detail.SampleEvent)
+				require.Equal(t, tc.wantResponse, detail.SampleResponse)
+				require.Equal(t, tc.wantTags, detail.StatTags)
+				return nil
+			})
+
+			rt.commitStatusList(&statuses)
+
+			if tc.wantReason == "" {
+				require.Empty(t, maskingCounts(statsStore, reportingSampleEventMaskingMetric))
+			} else {
+				require.Equal(t, map[string]float64{tc.wantReason: 1}, maskingCounts(statsStore, reportingSampleEventMaskingMetric))
+			}
 		})
 	}
 }
