@@ -5,14 +5,13 @@ import (
 	"errors"
 	"fmt"
 
-	"cloud.google.com/go/bigquery"
 	managedwriter "cloud.google.com/go/bigquery/storage/managedwriter"
 	"cloud.google.com/go/bigquery/storage/managedwriter/adapt"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 
 	"github.com/rudderlabs/rudder-go-kit/googleutil"
 
+	bigqueryintegration "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -32,7 +31,7 @@ func NewTableStreamWriterFactory(maxInflightRequests int, maxInflightBytes int64
 func (s *streamWriterFactoryImpl) NewTableStreamWriter(ctx context.Context, destConf destConfig, tableName string, tableSchema whutils.ModelTableSchema) (*tableStreamWriter, error) {
 	credBytes := []byte(destConf.Credentials)
 	if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
-		return nil, fmt.Errorf("incompatible credentials: %w", err)
+		return nil, fmt.Errorf("%w: %w", bigqueryintegration.ErrIncompatibleCredentials, err)
 	}
 
 	client, err := managedwriter.NewClient(ctx, destConf.ProjectID, option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes))
@@ -67,23 +66,6 @@ func (s *streamWriterFactoryImpl) NewTableStreamWriter(ctx context.Context, dest
 		return nil, fmt.Errorf("creating managed stream: %w", err)
 	}
 	return &tableStreamWriter{writer: &streamWriterImpl{stream: stream, client: client}, descriptor: descriptor}, nil
-}
-
-// validateBigQueryCredentials rejects credentials no retry can fix: an
-// unsupported credential type or a private key that cannot sign a JWT. It runs
-// locally; a revoked key is only detected by the token endpoint.
-func validateBigQueryCredentials(credBytes []byte) error {
-	if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
-		return fmt.Errorf("incompatible credentials: %w", err)
-	}
-	tokenSource, err := google.JWTAccessTokenSourceWithScope(credBytes, bigquery.Scope)
-	if err != nil {
-		return fmt.Errorf("parsing credentials: %w", err)
-	}
-	if _, err := tokenSource.Token(); err != nil {
-		return fmt.Errorf("signing JWT: %w", err)
-	}
-	return nil
 }
 
 // AppendRows appends the given data to the stream.

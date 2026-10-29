@@ -2,10 +2,6 @@ package bqstreamallevents
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"fmt"
 	"os"
 	"testing"
@@ -17,22 +13,6 @@ import (
 	bqhelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-// testServiceAccountCredentials returns service-account JSON with a freshly
-// generated key and an unreachable token endpoint.
-func testServiceAccountCredentials(t testing.TB) []byte {
-	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
-	privateKey := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
-	return fmt.Appendf(nil, `{"type":"service_account","client_email":"test@example.com","private_key":%q,"token_uri":"http://127.0.0.1:1"}`, privateKey)
-}
-
-func TestValidateBigQueryCredentials(t *testing.T) {
-	require.NoError(t, validateBigQueryCredentials(testServiceAccountCredentials(t)))
-	require.ErrorContains(t, validateBigQueryCredentials([]byte(`{"type":"service_account","client_email":"test@example.com","private_key":"invalid"}`)), "parsing credentials")
-	require.ErrorContains(t, validateBigQueryCredentials([]byte(`{"type":"external_account"}`)), "incompatible credentials")
-}
 
 func TestStreamWriterIntegration(t *testing.T) {
 	if _, exists := os.LookupEnv(bqhelper.TestKey); !exists {

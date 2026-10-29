@@ -2,6 +2,7 @@ package bqstreamallevents
 
 import (
 	"errors"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
+	bigqueryintegration "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -89,6 +91,14 @@ func shouldAbort(err error) bool {
 	}
 	if e, ok := errors.AsType[*googleapi.Error](err); ok {
 		return e.Code == 401 || (e.Code == 403 && !rateLimitedBigQueryError(e))
+	}
+	if errors.Is(err, bigqueryintegration.ErrIncompatibleCredentials) {
+		return true
+	}
+	// The auth library reports an unparseable key as a plain string inside the
+	// HTTP transport error. Match only there: other error text can carry event values.
+	if e, ok := errors.AsType[*url.Error](err); ok && strings.HasPrefix(e.Err.Error(), "failed to parse private key") {
+		return true
 	}
 	switch status.Code(err) {
 	case codes.PermissionDenied, codes.Unauthenticated, codes.FailedPrecondition, codes.Unimplemented, codes.DataLoss:

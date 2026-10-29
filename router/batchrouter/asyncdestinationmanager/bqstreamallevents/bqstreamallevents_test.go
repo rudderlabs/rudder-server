@@ -107,7 +107,7 @@ func TestBQStreamAllEvents(t *testing.T) {
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			Name: "BQSTREAM_ALL_EVENTS",
 		},
-		Config: map[string]any{"credentials": string(testServiceAccountCredentials(t))},
+		Config: make(map[string]any),
 	}
 	validations.Init()
 
@@ -375,22 +375,6 @@ func TestBQStreamAllEvents(t *testing.T) {
 		require.ElementsMatch(t, []int64{1}, output.AbortJobIDs)
 		require.Equal(t, 1, output.AbortCount)
 		require.Contains(t, output.AbortReason, "failed to create discards table")
-	})
-
-	t.Run("Upload: invalid credentials", func(t *testing.T) {
-		statsStore, err := memstats.New()
-		require.NoError(t, err)
-
-		invalidDestination := *destination
-		invalidDestination.Config = map[string]any{"credentials": `{"type":"service_account","client_email":"test@example.com","private_key":"invalid"}`}
-		sm := newManager(config.New(), logger.NOP, statsStore, &invalidDestination)
-		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
-			ImportingJobIDs: []int64{1},
-			Destination:     &invalidDestination,
-			FileName:        "testdata/successful_records.txt",
-		})
-		require.Equal(t, []int64{1}, output.AbortJobIDs)
-		require.Contains(t, output.AbortReason, "validating credentials")
 	})
 
 	t.Run("Upload: terminal token error fetching schema", func(t *testing.T) {

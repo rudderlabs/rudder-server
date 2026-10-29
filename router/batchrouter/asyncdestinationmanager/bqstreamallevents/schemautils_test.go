@@ -1,6 +1,7 @@
 package bqstreamallevents
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -8,12 +9,14 @@ import (
 	"testing"
 
 	"cloud.google.com/go/auth"
+	"cloud.google.com/go/auth/credentials"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	bigqueryintegration "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -147,6 +150,9 @@ func TestShouldAbort(t *testing.T) {
 		{"token unauthorized client", tokenError(`{"error":"unauthorized_client"}`), true},
 		{"token server error", tokenError(`{"error":"server_error"}`), false},
 		{"token non-JSON body", tokenError(`<html>503</html>`), false},
+		{"malformed private key", fmt.Errorf("fetching schema: %w", &url.Error{Op: "Post", Err: malformedKeyError(t)}), true},
+		{"incompatible credentials", fmt.Errorf("setting up bigquery manager: %w", fmt.Errorf("%w: %w", bigqueryintegration.ErrIncompatibleCredentials, errors.New("unsupported credential type"))), true},
+		{"event value naming credential errors", errors.Join(fmt.Errorf(`parsing datetime string "incompatible credentials: failed to parse private key"`), status.Error(codes.Unavailable, "retryable")), false},
 		{"REST unauthorized", &googleapi.Error{Code: 401}, true},
 		{"REST forbidden", &googleapi.Error{Code: 403, Errors: []googleapi.ErrorItem{{Reason: "accessDenied"}}}, true},
 		{"REST rate limit", &googleapi.Error{Code: 403, Errors: []googleapi.ErrorItem{{Reason: "rateLimitExceeded"}}}, false},
@@ -161,4 +167,18 @@ func TestShouldAbort(t *testing.T) {
 			require.Equal(t, tt.abort, shouldAbort(tt.err))
 		})
 	}
+}
+
+// malformedKeyError returns the auth library's own error for an unparseable
+// service-account key, so a rewording upstream fails this test.
+func malformedKeyError(t *testing.T) error {
+	t.Helper()
+	creds, err := credentials.NewCredentialsFromJSON(credentials.ServiceAccount,
+		[]byte(`{"type":"service_account","client_email":"test@example.com","private_key":"invalid","token_uri":"http://127.0.0.1:1"}`),
+		&credentials.DetectOptions{Scopes: []string{"https://www.googleapis.com/auth/bigquery"}},
+	)
+	require.NoError(t, err)
+	_, err = creds.Token(context.Background())
+	require.Error(t, err)
+	return err
 }
