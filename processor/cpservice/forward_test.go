@@ -3,8 +3,12 @@ package cpservice
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -17,6 +21,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
+	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/user_transformer"
 	proto "github.com/rudderlabs/rudder-server/proto/processor"
 )
 
@@ -138,6 +144,8 @@ func TestForward(t *testing.T) {
 			require.Zero(t, deployer.calls.Load(), "a prod-routed workspace must never touch the deployer")
 			require.Equal(t, "http://pyt-ws-prod-routed:8080", fwd.gotBaseURL,
 				"the forward must target the workspace's production pyt deployment")
+			require.Equal(t, "ws-prod-routed", fwd.gotWorkspaceID,
+				"the production pod checks the forwarded workspace against its own")
 		}
 
 		// AST ops stay on the static AST deployment even for flagged workspaces.
@@ -325,6 +333,57 @@ func TestForward(t *testing.T) {
 
 		require.Empty(t, statsStore.GetByName("processor_pyt_forward_rpc_time"))
 	})
+}
+
+// TestForwardProductionRouteSendsWorkspaceHeader runs Forward with the real user_transformer client, so the header the
+// production pod checks is asserted on the wire rather than on a fake forwarder's arguments.
+func TestForwardProductionRouteSendsWorkspaceHeader(t *testing.T) {
+	type hit struct{ path, workspaceID string }
+	var (
+		mu   sync.Mutex
+		hits []hit
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		mu.Lock()
+		hits = append(hits, hit{r.URL.Path, r.Header.Get(transformerclient.HeaderWorkspaceID)})
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	conf := config.New()
+	conf.Set("Processor.pytTestOverrides.routeToProduction", map[string]any{"WS-Prod-Routed": true})
+	// No {workspaceID} placeholder: every production URL is the test server.
+	conf.Set("Processor.UserTransformer.perWorkspacePyTURLTemplate", srv.URL)
+	forwarder := user_transformer.New(conf, logger.NOP, stats.NOP)
+	deployer := &fakeDeployer{err: errors.New("must never be called")}
+	svc := newService(t, conf, deployer, forwarder)
+
+	for _, tc := range []struct {
+		op       proto.Op
+		wantPath string
+	}{
+		{proto.Op_OP_TEST, "/test"},
+		{proto.Op_OP_TEST_RUN, "/testRun"},
+	} {
+		t.Run(tc.op.String(), func(t *testing.T) {
+			mu.Lock()
+			hits = nil
+			mu.Unlock()
+
+			resp, err := svc.Forward(context.Background(),
+				&proto.ForwardRequest{Op: tc.op, WorkspaceId: "WS-Prod-Routed", Payload: []byte(`{}`)})
+			require.NoError(t, err)
+			require.Equal(t, int32(http.StatusOK), resp.StatusCode)
+			require.Zero(t, deployer.calls.Load(), "a prod-routed workspace must never touch the deployer")
+
+			mu.Lock()
+			defer mu.Unlock()
+			require.Equal(t, []hit{{tc.wantPath, "WS-Prod-Routed"}}, hits,
+				"the workspace id goes out as the request gave it, case included")
+		})
+	}
 }
 
 // fakeForwarder records which endpoint method was called (and the baseURL it
