@@ -1136,8 +1136,8 @@ github.com/rudderlabs/compose-test v0.1.5 h1:yQ3ZlCN6/R28RgYN02+VzQaLVpLUbcBS7wF
 github.com/rudderlabs/compose-test v0.1.5/go.mod h1:DXv1yN7iWchR2CQ6OFzKZyxaeX/V6YibC1l0+4iASOw=
 github.com/rudderlabs/goqu/v10 v10.3.1 h1:rnfX+b4EwBWQ2UQfIGeEW299JBBkK5biEbnf7Kq4/Gg=
 github.com/rudderlabs/goqu/v10 v10.3.1/go.mod h1:LH2vI5gGHBxEQuESqFyk5ZA2anGINc8o25hbidDWOYw=
-github.com/rudderlabs/keydb v1.5.2-0.20261030125920-d501f194a26c h1:6K67vC2rCQrUOm+SOUUMeYQS/VFO7vSIc4WcGebE4aU=
-github.com/rudderlabs/keydb v1.5.2-0.20261030125920-d501f194a26c/go.mod h1:LkAvSmnElCU5o5WkAb06ZA9L3hN2M/Ic4crkXuXjbsY=
+github.com/rudderlabs/keydb v1.5.2-0.20261030144744-cd4d845b8d2c h1:nqjRf6BT7Os5jVomsB08+sx0GZsSWGe49cdFnXA/PMQ=
+github.com/rudderlabs/keydb v1.5.2-0.20261030144744-cd4d845b8d2c/go.mod h1:LkAvSmnElCU5o5WkAb06ZA9L3hN2M/Ic4crkXuXjbsY=
 github.com/rudderlabs/parquet-go v0.0.3 h1:/zgRj929pGKHsthc0kw8stVEcFu1JUcpxDRlhxjSLic=
 github.com/rudderlabs/parquet-go v0.0.3/go.mod h1:WmwBOdvwpXl2aZGRk3NxxgzC/DaWGfax3jrCRhKhtSo=
 github.com/rudderlabs/rudder-cp-sdk v1.5.0 h1:8rtcz/csaNxSkQUKBPjjmgLVAgIF86tWJYFquTTwyG4=
