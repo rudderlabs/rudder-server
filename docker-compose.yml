@@ -30,7 +30,10 @@ services:
     ports:
       - "9090:9090"
   minio:
-    image: pgsty/minio
+    # pgsty/minio stopped at its 2026-08 rename to Silo. Silo keeps MinIO's
+    # command, env and data format. The digest pin keeps a re-tag from
+    # changing the build.
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z@sha256:635197cb9f36d01bee221d34d1c7d7960f6a95c48b0b6c01d99cd13bdae51a46
     profiles:
       - storage
     ports:
