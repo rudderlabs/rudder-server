@@ -61,6 +61,15 @@ func (jd *Handle) deleteJobStatus() {
 	jd.assertError(err)
 }
 
+// lastStatusView returns the view of the latest status of each job in ds, of each of its consumers on a
+// multi-consumer handle.
+func (jd *Handle) lastStatusView(ds dataSetT) string {
+	if jd.conf.multiConsumer {
+		return "v_last_c_" + ds.JobStatusTable
+	}
+	return "v_last_" + ds.JobStatusTable
+}
+
 func (jd *Handle) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT) error {
 	defer jd.getTimerStat(
 		"jobsdb_delete_job_status_ds_time",
@@ -72,9 +81,9 @@ func (jd *Handle) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSet
 		fmt.Sprintf(
 			`DELETE FROM %[1]q
 				WHERE id = ANY(
-					SELECT id from "v_last_%[1]s" where job_state='executing'
+					SELECT id from %[2]q where job_state='executing'
 				)`,
-			ds.JobStatusTable,
+			ds.JobStatusTable, jd.lastStatusView(ds),
 		),
 	)
 	return err
@@ -130,9 +139,9 @@ func (jd *Handle) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT)
 		fmt.Sprintf(
 			`UPDATE %[1]q SET job_state='failed'
 				WHERE id = ANY(
-					SELECT id from "v_last_%[1]s" where job_state='executing'
+					SELECT id from %[2]q where job_state='executing'
 				)`,
-			ds.JobStatusTable,
+			ds.JobStatusTable, jd.lastStatusView(ds),
 		),
 	)
 	return err

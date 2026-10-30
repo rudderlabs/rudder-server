@@ -170,6 +170,73 @@ func TestMultiConsumerJobsDB_ConsumerIsolation(t *testing.T) {
 	require.Empty(t, resC.Jobs, "consumer C is not in the job's consumers list")
 }
 
+// TestMultiConsumerJobsDB_RecoverExecuting verifies that recovery on start finds a consumer's executing status
+// even when another consumer has a later status for the same job.
+func TestMultiConsumerJobsDB_RecoverExecuting(t *testing.T) {
+	postgres := startPostgres(t)
+	ctx := context.Background()
+	customVal := "REC"
+
+	setup := func(t *testing.T) (*Handle, int64) {
+		jd := NewForReadWrite(strings.ToLower(rand.String(5)), WithDBHandle(postgres.DB), WithConfig(config.New()), WithMultiConsumer())
+		require.NoError(t, jd.Start())
+		t.Cleanup(jd.TearDown)
+		require.NoError(t, jd.Store(ctx, []*JobT{{
+			UUID:         uuid.New(),
+			UserID:       "user-1",
+			CustomVal:    customVal,
+			Parameters:   []byte(`{"source_id":"src1"}`),
+			EventPayload: []byte(`{}`),
+			EventCount:   1,
+			WorkspaceId:  defaultWorkspaceID,
+			Consumers:    []string{"A", "B"},
+		}}))
+		res, err := jd.GetUnprocessed(ctx, GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10, Consumer: "A"})
+		require.NoError(t, err)
+		require.Len(t, res.Jobs, 1)
+		jobID := res.Jobs[0].JobID
+		for _, s := range []struct{ consumer, state string }{{"A", Executing.State}, {"B", Succeeded.State}} { // B's status is the job's latest
+			require.NoError(t, jd.UpdateJobStatus(ctx, []*JobStatusT{{
+				JobID:         jobID,
+				JobState:      s.state,
+				AttemptNum:    1,
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorResponse: []byte(`{}`),
+				Parameters:    []byte(`{}`),
+				WorkspaceId:   defaultWorkspaceID,
+				CustomVal:     customVal,
+				Consumer:      s.consumer,
+			}}))
+		}
+		return jd, jobID
+	}
+	toProcess := func(t *testing.T, jd *Handle, consumer string) []*JobT {
+		res, err := jd.GetToProcess(ctx, GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 10, Consumer: consumer}, nil)
+		require.NoError(t, err)
+		return res.Jobs
+	}
+
+	t.Run("DeleteExecuting", func(t *testing.T) {
+		jd, jobID := setup(t)
+		jd.DeleteExecuting()
+		jobs := toProcess(t, jd, "A")
+		require.Len(t, jobs, 1, "A's executing status is deleted")
+		require.Equal(t, jobID, jobs[0].JobID)
+		require.Empty(t, toProcess(t, jd, "B"))
+	})
+
+	t.Run("FailExecuting", func(t *testing.T) {
+		jd, jobID := setup(t)
+		jd.FailExecuting()
+		jobs := toProcess(t, jd, "A")
+		require.Len(t, jobs, 1, "A's executing status is failed")
+		require.Equal(t, jobID, jobs[0].JobID)
+		require.Equal(t, Failed.State, jobs[0].LastJobStatus.JobState)
+		require.Empty(t, toProcess(t, jd, "B"))
+	})
+}
+
 // TestMultiConsumerJobsDB_Conversion verifies the single → multi-consumer upgrade path.
 //
 // A plain handle stores and processes jobs using the legacy schema. When the same prefix
