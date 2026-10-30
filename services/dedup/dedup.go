@@ -3,6 +3,7 @@
 package dedup
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -29,8 +30,8 @@ func SingleKey(key string) BatchKey {
 }
 
 // New creates a new deduplication service. The service needs to be closed after use.
-func New(conf *config.Config, stats stats.Stats, log logger.Logger) (types.Dedup, error) {
-	db, err := NewDB(conf, stats, log)
+func New(ctx context.Context, conf *config.Config, stats stats.Stats, log logger.Logger) (types.Dedup, error) {
+	db, err := NewDB(ctx, conf, stats, log)
 	if err != nil {
 		return nil, fmt.Errorf("create dedup DB: %w", err)
 	}
