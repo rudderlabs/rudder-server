@@ -530,6 +530,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		c.Set("ErrorIndex.storage.SecretAccessKey", minioResource.AccessKeySecret)
 		c.Set("ErrorIndex.storage.S3ForcePathStyle", true)
 		c.Set("ErrorIndex.storage.DisableSSL", true)
+		c.Set("JobsDB.err_idx.readCursor.enabled", true)
 
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()

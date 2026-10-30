@@ -207,7 +207,11 @@ func (eir *ErrorIndexReporter) DatabaseSyncer(c types.SyncerConfig) types.Report
 		jobsdb.WithSkipMaintenanceErr(eir.conf.GetBoolVar(false, "Reporting.errorIndexReporting.skipMaintenanceError")),
 		jobsdb.WithJobMaxAge(config.GetReloadableDurationVar(24, time.Hour, "Reporting.errorIndexReporting.jobRetention")),
 	)
-	if err := errIndexDB.Start(); err != nil {
+	var errIndexReadDB jobsdb.JobsDB = errIndexDB
+	if eir.conf.GetBoolVar(false, "JobsDB."+errIndexDB.Identifier()+".readCursor.enabled", "JobsDB.readCursor.enabled") {
+		errIndexReadDB = jobsdb.NewReadCursor(errIndexDB, errIndexDB)
+	}
+	if err := errIndexReadDB.Start(); err != nil {
 		panic(fmt.Errorf("failed to start error index db: %w", err))
 	}
 	eir.dbs[c.ConnInfo] = &handleWithSqlDB{
@@ -218,19 +222,19 @@ func (eir *ErrorIndexReporter) DatabaseSyncer(c types.SyncerConfig) types.Report
 	if !eir.conf.GetBoolVar(true, "Reporting.errorIndexReporting.syncer.enabled") {
 		return func() {
 			<-eir.ctx.Done()
-			errIndexDB.Stop()
+			errIndexReadDB.Stop()
 		}
 	}
 
 	return func() {
 		eir.g.Go(func() error {
-			defer errIndexDB.Stop()
-			return eir.mainLoop(eir.ctx, errIndexDB)
+			defer errIndexReadDB.Stop()
+			return eir.mainLoop(eir.ctx, errIndexReadDB)
 		})
 	}
 }
 
-func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.Handle) error {
+func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB jobsdb.JobsDB) error {
 	eir.log.Infon("Starting main loop for error index reporting")
 
 	var (

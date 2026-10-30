@@ -161,6 +161,12 @@ func ArchivalScenario(
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
 	config.Set("JobsDB.backup.enabled", false)
 	config.Set("JobsDB.compactionLoopSleepDuration", "60m")
+	// read cursors, with many small datasets for them to skip
+	config.Set("JobsDB.readCursor.enabled", true)
+	config.Set("JobsDB.readCursor.persistInterval", "1s")
+	config.Set("JobsDB.readCursor.persistMinSkippedDatasets", 1)
+	config.Set("JobsDB.maxDSSize", 20000) // several datasets, but within the 20 that unionjobsdbmetadata counts
+	config.Set("JobsDB.addNewDSLoopSleepDuration", "1s")
 	config.Set("JobsDB.enableWriterQueue", false)
 	config.Set("RUDDER_TMPDIR", os.TempDir())
 	config.Set("archival.ArchiveSleepDuration", "1s")

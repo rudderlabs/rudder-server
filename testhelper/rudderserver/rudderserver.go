@@ -33,6 +33,15 @@ func StartRudderServer(t *testing.T, ctx context.Context, g *errgroup.Group, nam
 	if _, ok := configs["JobsDB.gw.pendingEvents.enabled"]; !ok { // exercise the gw pending events tracker in every test, unless a test decides otherwise
 		configs["JobsDB.gw.pendingEvents.enabled"] = "true"
 	}
+	for key, value := range map[string]string{ // exercise the read cursors in every test, skipping within its runtime, unless a test decides otherwise
+		"JobsDB.readCursor.enabled":                   "true",
+		"JobsDB.readCursor.persistInterval":           "1s",
+		"JobsDB.readCursor.persistMinSkippedDatasets": "1",
+	} {
+		if _, ok := configs[key]; !ok {
+			configs[key] = value
+		}
+	}
 	// Don't use exec.CommandContext - it sends SIGKILL on context cancellation,
 	// which prevents the process from writing coverage data.
 	cmd := exec.Command(binaryPath)

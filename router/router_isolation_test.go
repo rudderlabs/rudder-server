@@ -223,6 +223,12 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
 	config.Set("JobsDB.backup.enabled", false)
 	config.Set("JobsDB.compactionLoopSleepDuration", "60m")
+	// read cursors, with many small datasets for them to skip
+	config.Set("JobsDB.readCursor.enabled", true)
+	config.Set("JobsDB.readCursor.persistInterval", "1s")
+	config.Set("JobsDB.readCursor.persistMinSkippedDatasets", 1)
+	config.Set("JobsDB.maxDSSize", 100)
+	config.Set("JobsDB.addNewDSLoopSleepDuration", "1s")
 
 	config.Set("Router.isolationMode", string(spec.isolationMode))
 	config.Set("Router.Limiter.statsPeriod", "1s")

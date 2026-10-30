@@ -157,6 +157,14 @@ func TestEventOrderGuarantee(t *testing.T) {
 			config.Set("Router.updateStatusBatchSize", 100)
 			config.Set("Router.maxStatusUpdateWait", "10ms")
 
+			// read cursors, with many small datasets for them to skip
+			config.Set("JobsDB.readCursor.enabled", true)
+			config.Set("JobsDB.readCursor.persistInterval", "1s")
+			config.Set("JobsDB.readCursor.persistMinSkippedDatasets", 1)
+			config.Set("JobsDB.maxDSSize", 100)
+			config.Set("JobsDB.addNewDSLoopSleepDuration", "1s")
+			config.Set("JobsDB.compactionLoopSleepDuration", "60m") // drained jobs are counted from the status tables that compaction drops
+
 			// find free port for gateway http server to listen on
 			httpPortInt, err := kithelper.GetFreePort()
 			require.NoError(t, err)
@@ -467,7 +475,7 @@ func (eventOrderMethods) countDrainedJobs(db *sql.DB) int {
 
 	for _, table := range tables {
 		var dsCount int
-		_ = db.QueryRow(`SELECT COUNT(*) FROM `+table+` WHERE error_code = $1`, utils.DRAIN_ERROR_CODE).Scan(&count)
+		_ = db.QueryRow(`SELECT COUNT(*) FROM `+table+` WHERE error_code = $1`, utils.DRAIN_ERROR_CODE).Scan(&dsCount)
 		count += dsCount
 	}
 	return count
