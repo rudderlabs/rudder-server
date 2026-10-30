@@ -48,6 +48,13 @@ const (
 	languagePython            = "python"
 )
 
+const (
+	testPath        = "/test"
+	testRunPath     = "/testRun"
+	testLibraryPath = "/test-library"
+	extractLibsPath = "/extract-libs"
+)
+
 // ErrEmptyForwardBaseURL is returned by the test-forwarding methods ([Client.Test]
 // et al.) when called with an empty baseURL, so callers can reject the request
 // explicitly instead of it being forwarded to a malformed URL.
@@ -560,25 +567,25 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 // separate handling for the test endpoints — we will have to identify from
 // the request which language is being tested and route accordingly.
 func (u *Client) Test(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error) {
-	return u.forwardTest(ctx, baseURL, workspaceID, "/test", payload)
+	return u.forwardTest(ctx, baseURL, workspaceID, testPath, payload)
 }
 
 // TestRun forwards a control-plane "testRun" request to baseURL (POST /testRun)
 // and returns its HTTP status and body unchanged.
 func (u *Client) TestRun(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error) {
-	return u.forwardTest(ctx, baseURL, workspaceID, "/testRun", payload)
+	return u.forwardTest(ctx, baseURL, workspaceID, testRunPath, payload)
 }
 
 // TestLibrary forwards a control-plane "testLibrary" request to baseURL
 // (POST /test-library) and returns its HTTP status and body unchanged.
 func (u *Client) TestLibrary(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error) {
-	return u.forwardTest(ctx, baseURL, workspaceID, "/test-library", payload)
+	return u.forwardTest(ctx, baseURL, workspaceID, testLibraryPath, payload)
 }
 
 // ExtractLibs forwards a control-plane "extractLibs" request to baseURL
 // (POST /extract-libs) and returns its HTTP status and body unchanged.
 func (u *Client) ExtractLibs(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error) {
-	return u.forwardTest(ctx, baseURL, workspaceID, "/extract-libs", payload)
+	return u.forwardTest(ctx, baseURL, workspaceID, extractLibsPath, payload)
 }
 
 // forwardTest is the shared machinery behind the per-endpoint test methods: it POSTs payload to baseURL+path and
@@ -624,7 +631,7 @@ func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path str
 				return backoff.Permanent(err)
 			}
 			req.Header.Set("Content-Type", "application/json")
-			if path == "/test" || path == "/testRun" { // the AST pods are shared by every workspace
+			if path == testPath || path == testRunPath { // the AST pods are shared by every workspace
 				req.Header.Set(transformerclient.HeaderWorkspaceID, workspaceID)
 			}
 
