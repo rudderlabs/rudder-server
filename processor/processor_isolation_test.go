@@ -245,6 +245,12 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	config.Set("AdaptivePayloadLimiter.enabled", false)
 	config.Set("JobsDB.backup.enabled", false)
 	config.Set("JobsDB.compactionLoopSleepDuration", "60m")
+	// read cursors, with many small datasets for them to skip
+	config.Set("JobsDB.readCursor.enabled", true)
+	config.Set("JobsDB.readCursor.persistInterval", "1s")
+	config.Set("JobsDB.readCursor.persistMinSkippedDatasets", 1)
+	config.Set("JobsDB.maxDSSize", 100)
+	config.Set("JobsDB.addNewDSLoopSleepDuration", "1s")
 	config.Set("Router.toAbortDestinationIDs", destinationIDs)
 	config.Set("archival.Enabled", false)
 	config.Set("enableStats", false)

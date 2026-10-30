@@ -368,6 +368,10 @@ func setupMainFlow(svcCtx context.Context, cancel context.CancelFunc, t *testing
 
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_JOBS_DB_GW_PENDING_EVENTS_ENABLED", "true")
+	t.Setenv("RSERVER_JOBS_DB_GW_READ_CURSOR_ENABLED", "true")
+	t.Setenv("RSERVER_JOBS_DB_RT_READ_CURSOR_ENABLED", "true")
+	t.Setenv("RSERVER_JOBS_DB_BATCH_RT_READ_CURSOR_ENABLED", "true")
+	t.Setenv("RSERVER_JOBS_DB_ARC_READ_CURSOR_ENABLED", "true")
 
 	webhook = whUtil.NewRecorder()
 	t.Cleanup(webhook.Close)

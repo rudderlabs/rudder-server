@@ -56,6 +56,8 @@ func (jd *Handle) dropDatabaseTables(l lock.LockToken) {
 	jd.dropSchemaMigrationTables()
 	jd.assertError(jd.dropAllDS(l))
 	jd.dropJournal()
+	_, err := jd.dbHandle.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, jd.readCursorsTable()))
+	jd.assertError(err)
 }
 
 func (jd *Handle) dropSchemaMigrationTables() {

@@ -191,6 +191,14 @@ func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.
 	return enrichers, nil
 }
 
+// withReadCursor wraps db, a decorator chain over h, with read cursors, if enabled for h, see [jobsdb.NewReadCursor].
+func withReadCursor(conf *config.Config, db jobsdb.JobsDB, h *jobsdb.Handle) jobsdb.JobsDB {
+	if !conf.GetBoolVar(false, "JobsDB."+h.Identifier()+".readCursor.enabled", "JobsDB.readCursor.enabled") {
+		return db
+	}
+	return jobsdb.NewReadCursor(db, h)
+}
+
 // withGatewayPendingEventsTracker wraps the gateway reader handle with the pending events tracker, if enabled.
 func withGatewayPendingEventsTracker(conf *config.Config, gwROHandle *jobsdb.Handle) (jobsdb.JobsDB, error) {
 	if !conf.GetBoolVar(false, "JobsDB.gw.pendingEvents.enabled") {

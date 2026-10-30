@@ -76,7 +76,7 @@ func TestProcessorDestinationIsolation(t *testing.T) {
 		{name: "none_forked", destinations: 2, events: 300, forked: 0},
 		{name: "some_forked", destinations: 2, events: 300, forked: 1},
 		{name: "all_forked", destinations: 2, events: 300, forked: 2},
-		{name: "fanout_50", destinations: 50, events: 300, forked: 50, filtered: 48},
+		{name: "fanout_50", destinations: 50, events: 300, forked: 50, filtered: 48, maxProcDSSize: 100},
 	} {
 		t.Run(sc.name, func(t *testing.T) {
 			procDestinationIsolationScenario(t, sc)
@@ -237,6 +237,9 @@ func procDestinationIsolationScenario(tb testing.TB, sc destIsolationScenario) {
 	}
 	config.Set("JobsDB.proc.maxDSSize", maxDSSize)
 	config.Set("JobsDB.proc.addNewDSLoopSleepDuration", "1s")
+	config.Set("JobsDB.readCursor.enabled", true)
+	config.Set("JobsDB.readCursor.persistInterval", "1s")
+	config.Set("JobsDB.readCursor.persistMinSkippedDatasets", 1)
 	if sc.procCompaction {
 		// enable compaction for proc only (prefix key wins over the global disable above):
 		// reclaim drained datasets as the fan-out drains, as it would in production.
