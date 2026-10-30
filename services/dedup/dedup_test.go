@@ -346,8 +346,11 @@ func Test_Dedup_MirrorMode_KeyDB_Error(t *testing.T) {
 	conf.Set("KeyDB.Dedup.Addresses", "ransjkaljkl:12345") // Invalid address to simulate KeyDB failure
 	conf.Set("KeyDB.Dedup.RetryPolicy.Disabled", true)
 
-	// the keydb client learns the cluster when it is created, so the primary's failure shows at once
-	_, err := dedup.New(t.Context(), conf, stats.NOP, logger.NOP)
+	d, err := dedup.New(t.Context(), conf, stats.NOP, logger.NOP)
+	require.NoError(t, err)
+
+	key := dedup.SingleKey("test_mirror_keydb_error")
+	_, err = d.Allowed(key)
 	require.Error(t, err)
 }
 
