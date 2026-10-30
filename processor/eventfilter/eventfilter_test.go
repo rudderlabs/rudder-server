@@ -516,6 +516,28 @@ func TestAllowEventToDestTransformation(t *testing.T) {
 	}
 }
 
+func TestDestinationSupportedMessageTypes(t *testing.T) {
+	tests := []struct {
+		name   string
+		config map[string]any
+		want   []string
+		valid  bool
+	}{
+		{name: "configured", config: map[string]any{"supportedMessageTypes": []any{"track", "page"}}, want: []string{"track", "page"}, valid: true},
+		{name: "empty", config: map[string]any{"supportedMessageTypes": []any{}}, want: []string{}, valid: true},
+		{name: "missing"},
+		{name: "wrong type", config: map[string]any{"supportedMessageTypes": "track"}},
+		{name: "mixed array", config: map[string]any{"supportedMessageTypes": []any{"track", 123}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, valid := destinationSupportedMessageTypes(&backendconfig.DestinationT{Config: tc.config})
+			require.Equal(t, tc.want, got)
+			require.Equal(t, tc.valid, valid)
+		})
+	}
+}
+
 func TestFilteredCodeForReason(t *testing.T) {
 	testCases := []struct {
 		name   string

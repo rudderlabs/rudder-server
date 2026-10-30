@@ -3901,6 +3901,52 @@ func TestProcessor(t *testing.T) {
 	})
 }
 
+func TestFilterByDestinationSupportedMessageTypes(t *testing.T) {
+	destination := func(id string, config, definition map[string]any) backendconfig.DestinationT {
+		return backendconfig.DestinationT{
+			ID: id, Config: config, IsProcessorEnabled: true,
+			DestinationDefinition: backendconfig.DestinationDefinitionT{Config: definition},
+		}
+	}
+	event := func(dest backendconfig.DestinationT, messageType string) types.TransformerEvent {
+		return types.TransformerEvent{
+			Destination: dest, Message: map[string]any{"type": messageType},
+			Metadata: types.Metadata{MessageID: dest.ID + ":" + messageType},
+		}
+	}
+	drain := func(types.TransformerEvent) (bool, string) { return false, "" }
+
+	t.Run("destination list without a definition list", func(t *testing.T) {
+		trackOnly := destination("track-only", map[string]any{"supportedMessageTypes": []any{"track"}}, nil)
+		unconfigured := destination("unconfigured", nil, nil)
+		events := []types.TransformerEvent{
+			event(trackOnly, " TRACK "), event(trackOnly, "page"), event(trackOnly, "identify"),
+			event(unconfigured, "page"),
+		}
+		response := ConvertToFilteredTransformerResponse(events, true, drain)
+		require.Len(t, response.Events, 2)
+		require.Len(t, response.FailedEvents, 2)
+		for _, failed := range response.FailedEvents {
+			require.Equal(t, reportingtypes.FilterEventCode, failed.StatusCode)
+			require.Equal(t, eventfilter.MessageTypeNotSupportedReason, failed.Error)
+		}
+	})
+
+	t.Run("destination list only narrows the definition list", func(t *testing.T) {
+		dest := destination("narrowed", map[string]any{"supportedMessageTypes": []any{"page", "track"}}, map[string]any{"supportedMessageTypes": []any{"track"}})
+		response := ConvertToFilteredTransformerResponse([]types.TransformerEvent{event(dest, "page"), event(dest, "track")}, true, drain)
+		require.Len(t, response.Events, 1)
+		require.Equal(t, eventfilter.MessageTypeNotSupportedReason, response.FailedEvents[0].Error)
+	})
+
+	t.Run("empty list drops every type", func(t *testing.T) {
+		dest := destination("empty", map[string]any{"supportedMessageTypes": []any{}}, nil)
+		response := ConvertToFilteredTransformerResponse([]types.TransformerEvent{event(dest, "track")}, true, drain)
+		require.Empty(t, response.Events)
+		require.Equal(t, eventfilter.MessageTypeNotSupportedReason, response.FailedEvents[0].Error)
+	})
+}
+
 func TestStaticFunctionTests(t *testing.T) {
 	initProcessor()
 
