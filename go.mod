@@ -18,6 +18,7 @@ replace (
 )
 
 require (
+	cloud.google.com/go/auth v0.24.1
 	cloud.google.com/go/bigquery v1.85.0
 	cloud.google.com/go/pubsub/v2 v2.8.0
 	cloud.google.com/go/storage v1.70.0
@@ -131,7 +132,6 @@ require (
 require (
 	cel.dev/expr v0.25.2 // indirect
 	cloud.google.com/go v0.123.0 // indirect
-	cloud.google.com/go/auth v0.24.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.3.0 // indirect
 	cloud.google.com/go/compute/metadata v0.10.0 // indirect
 	cloud.google.com/go/iam v1.12.0 // indirect

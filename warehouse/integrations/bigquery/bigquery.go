@@ -34,6 +34,9 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+// ErrIncompatibleCredentials marks credentials that are not a service account key.
+var ErrIncompatibleCredentials = errors.New("incompatible credentials")
+
 type BigQuery struct {
 	db        *middleware.Client
 	namespace string
@@ -803,7 +806,7 @@ func (bq *BigQuery) authOptions(ctx context.Context, credentials string) ([]opti
 	}
 	credBytes := []byte(credentials)
 	if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
-		return nil, fmt.Errorf("incompatible credentials: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrIncompatibleCredentials, err)
 	}
 	return []option.ClientOption{option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes)}, nil
 }

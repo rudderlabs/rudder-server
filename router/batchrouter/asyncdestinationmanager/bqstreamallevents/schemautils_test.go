@@ -1,16 +1,22 @@
 package bqstreamallevents
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"testing"
 
+	"cloud.google.com/go/auth"
+	"cloud.google.com/go/auth/credentials"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	bigqueryintegration "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -125,8 +131,41 @@ func TestCheckAndIgnoreAlreadyExistError(t *testing.T) {
 }
 
 func TestShouldAbort(t *testing.T) {
-	require.True(t, shouldAbort(status.Error(codes.PermissionDenied, "permission denied")))
-	require.True(t, shouldAbort(status.Error(codes.Unauthenticated, "unauthenticated")))
-	require.False(t, shouldAbort(status.Error(codes.Unavailable, "retryable")))
-	require.False(t, shouldAbort(errors.New("plain error")))
+	tokenError := func(body string) error {
+		return fmt.Errorf("fetching schema: %w", &url.Error{Op: "Post", Err: &auth.Error{Response: &http.Response{StatusCode: http.StatusBadRequest}, Body: []byte(body)}})
+	}
+	for _, tt := range []struct {
+		name  string
+		err   error
+		abort bool
+	}{
+		{"permission denied", status.Error(codes.PermissionDenied, "permission denied"), true},
+		{"unauthenticated", status.Error(codes.Unauthenticated, "unauthenticated"), true},
+		{"unavailable", status.Error(codes.Unavailable, "retryable"), false},
+		{"plain error", errors.New("plain error"), false},
+		{"token invalid grant", tokenError(`{"error":"invalid_grant","error_description":"Invalid grant: account not found"}`), true},
+		{"token server error", tokenError(`{"error":"server_error"}`), false},
+		{"token non-JSON body", tokenError(`<html>503</html>`), false},
+		{"malformed private key", fmt.Errorf("fetching schema: %w", &url.Error{Op: "Post", Err: malformedKeyError(t)}), true},
+		{"incompatible credentials", fmt.Errorf("setting up bigquery manager: %w", fmt.Errorf("%w: %w", bigqueryintegration.ErrIncompatibleCredentials, errors.New("unsupported credential type"))), true},
+		{"event value naming credential errors", errors.Join(fmt.Errorf(`parsing datetime string "incompatible credentials: failed to parse private key"`), status.Error(codes.Unavailable, "retryable")), false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.abort, shouldAbort(tt.err))
+		})
+	}
+}
+
+// malformedKeyError returns the auth library's own error for an unparseable
+// service-account key, so a rewording upstream fails this test.
+func malformedKeyError(t *testing.T) error {
+	t.Helper()
+	creds, err := credentials.NewCredentialsFromJSON(credentials.ServiceAccount,
+		[]byte(`{"type":"service_account","client_email":"test@example.com","private_key":"invalid","token_uri":"http://127.0.0.1:1"}`),
+		&credentials.DetectOptions{Scopes: []string{"https://www.googleapis.com/auth/bigquery"}},
+	)
+	require.NoError(t, err)
+	_, err = creds.Token(context.Background())
+	require.Error(t, err)
+	return err
 }
