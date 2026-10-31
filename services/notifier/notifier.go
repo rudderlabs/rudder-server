@@ -506,13 +506,13 @@ func (n *Notifier) Subscribe(
 		for {
 			job, err := n.claim(ctx, workerId)
 			if err != nil {
-				var pqErr *pq.Error
+				pqErr, isPQErr := errors.AsType[*pq.Error](err)
 
 				switch {
 				case errors.Is(err, sql.ErrNoRows),
 					errors.Is(err, context.Canceled),
 					errors.Is(err, context.DeadlineExceeded),
-					errors.As(err, &pqErr) && pqErr.Code == "57014":
+					isPQErr && pqErr.Code == "57014":
 				default:
 					n.logger.Warnn("claiming job", obskit.Error(err))
 				}
@@ -629,12 +629,12 @@ func (n *Notifier) RunMaintenance(ctx context.Context) error {
 	for {
 		orphanJobIDs, err := n.repo.orphanJobIDs(ctx, int(n.config.jobOrphanTimeout.Load()/time.Second))
 		if err != nil {
-			var pqErr *pq.Error
+			pqErr, isPQErr := errors.AsType[*pq.Error](err)
 
 			switch {
 			case errors.Is(err, context.Canceled),
 				errors.Is(err, context.DeadlineExceeded),
-				errors.As(err, &pqErr) && pqErr.Code == "57014":
+				isPQErr && pqErr.Code == "57014":
 				return nil
 			default:
 				return fmt.Errorf("fetching orphan job ids: %w", err)

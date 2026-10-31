@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -30,22 +30,22 @@ var oauthDefinitionConfig = map[string]any{
 	},
 }
 
-var _ = Describe("Http/Client", func() {
-	Describe("OAuthHttpClient", func() {
-		It("should return an http client", func() {
+func TestHttpClient(t *testing.T) {
+	t.Run("OAuthHttpClient", func(t *testing.T) {
+		t.Run("should return an http client", func(t *testing.T) {
 			cache := v2.NewOauthTokenCache()
 			optionalArgs := httpClient.HttpClientOptionalArgs{
 				Augmenter: extensions.RouterBodyAugmenter,
 			}
 			httpClient := httpClient.NewOAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, rtTf.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
-			Expect(httpClient).ToNot(BeNil())
+			require.NotNil(t, httpClient)
 		})
 	})
-	Describe("OAuthHttpClient uses", func() {
-		It("Use OAuthHttpClient to transform event for a non oauth destination", func() {
+	t.Run("OAuthHttpClient uses", func(t *testing.T) {
+		t.Run("Use OAuthHttpClient to transform event for a non oauth destination", func(t *testing.T) {
 			// mockRoundTrip := mockRoundTrip{}
 			cache := v2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).Return(&http.Response{
 				StatusCode: 200,
@@ -71,17 +71,18 @@ var _ = Describe("Http/Client", func() {
 			}
 			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 			res, err := httpClient.Do(req)
-			Expect(res.StatusCode).To(Equal(200))
-			Expect(err).To(BeNil())
+			require.Equal(t, 200, res.StatusCode)
+			require.NoError(t, err)
+			defer func() { _ = res.Body.Close() }()
 			respData, err := io.ReadAll(res.Body)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			var header http.Header
-			Expect(res.Header).To(Equal(header))
-			Expect(respData).To(Equal([]byte(`{"version":"1","type":"REST","method":"POST","endpoint":"https://api.clevertap.com/1/upload","headers":{"X-CleverTap-Account-Id":"476550467","X-CleverTap-Passcode":"sample_passcode","Content-Type":"application/json"},"params":{},"body":{"JSON":{"d":[{"type":"profile","profileData":{"Email":"jamesDoe@gmail.com","Name":"James Doe","Phone":"92374162212","Gender":"M","address":"{\"city\":\"kolkata\",\"country\":\"India\",\"postalCode\":789223,\"state\":\"WB\",\"street\":\"\"}"},"identity":"anon_id"}]},"JSON_ARRAY":{},"XML":{},"FORM":{}},"files":{},"userId":""}`)))
+			require.Equal(t, header, res.Header)
+			require.Equal(t, []byte(`{"version":"1","type":"REST","method":"POST","endpoint":"https://api.clevertap.com/1/upload","headers":{"X-CleverTap-Account-Id":"476550467","X-CleverTap-Passcode":"sample_passcode","Content-Type":"application/json"},"params":{},"body":{"JSON":{"d":[{"type":"profile","profileData":{"Email":"jamesDoe@gmail.com","Name":"James Doe","Phone":"92374162212","Gender":"M","address":"{\"city\":\"kolkata\",\"country\":\"India\",\"postalCode\":789223,\"state\":\"WB\",\"street\":\"\"}"},"identity":"anon_id"}]},"JSON_ARRAY":{},"XML":{},"FORM":{}},"files":{},"userId":""}`), respData)
 		})
-		It("Use OAuthHttpClient to transform event for a oauth destination with success in transforming", func() {
+		t.Run("Use OAuthHttpClient to transform event for a oauth destination with success in transforming", func(t *testing.T) {
 			cache := v2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).Return(&http.Response{
 				StatusCode: 200,
@@ -124,9 +125,10 @@ var _ = Describe("Http/Client", func() {
 			}
 			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 			res, err := httpClient.Do(req)
-			Expect(res.StatusCode).To(Equal(200))
-			Expect(err).To(BeNil())
-			Expect(res).To(Equal(&http.Response{
+			require.Equal(t, 200, res.StatusCode)
+			require.NoError(t, err)
+			defer func() { _ = res.Body.Close() }()
+			require.Equal(t, &http.Response{
 				Status:           "",
 				StatusCode:       200,
 				Proto:            "",
@@ -141,11 +143,11 @@ var _ = Describe("Http/Client", func() {
 				Trailer:          nil,
 				Request:          nil,
 				TLS:              nil,
-			}))
+			}, res)
 		})
-		It("Use OAuthHttpClient to transform event for a oauth destination with returned oauthStatus as REFRESH_TOKEN", func() {
+		t.Run("Use OAuthHttpClient to transform event for a oauth destination with returned oauthStatus as REFRESH_TOKEN", func(t *testing.T) {
 			cache := v2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).Return(&http.Response{
 				StatusCode: 200,
@@ -187,15 +189,16 @@ var _ = Describe("Http/Client", func() {
 			}
 			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 			res, err := httpClient.Do(req)
-			Expect(res.StatusCode).To(Equal(http.StatusOK))
-			Expect(err).To(BeNil())
+			require.Equal(t, http.StatusOK, res.StatusCode)
+			require.NoError(t, err)
+			defer func() { _ = res.Body.Close() }()
 			respData, err := io.ReadAll(res.Body)
-			Expect(err).To(BeNil())
-			Expect(respData).To(Equal([]byte(`{"originalResponse":"{\"output\":[{\"authErrorCategory\":\"REFRESH_TOKEN\"}]}","interceptorResponse":{"statusCode":500}}`)))
+			require.NoError(t, err)
+			require.Equal(t, []byte(`{"originalResponse":"{\"output\":[{\"authErrorCategory\":\"REFRESH_TOKEN\"}]}","interceptorResponse":{"statusCode":500}}`), respData)
 		})
-		It("Use OAuthHttpClient to transform event for a oauth destination with returned oauthStatus as AUTH_STATUS_INACTIVE", func() {
+		t.Run("Use OAuthHttpClient to transform event for a oauth destination with returned oauthStatus as AUTH_STATUS_INACTIVE", func(t *testing.T) {
 			cache := v2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).Return(&http.Response{
 				StatusCode: 200,
@@ -236,23 +239,24 @@ var _ = Describe("Http/Client", func() {
 			}
 			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 			res, err := httpClient.Do(req)
-			Expect(res.StatusCode).To(Equal(http.StatusOK))
-			Expect(err).To(BeNil())
+			require.Equal(t, http.StatusOK, res.StatusCode)
+			require.NoError(t, err)
+			defer func() { _ = res.Body.Close() }()
 			respData, err := io.ReadAll(res.Body)
-			Expect(err).To(BeNil())
-			Expect(respData).To(Equal([]byte(`{"originalResponse":"{\"output\":[{\"authErrorCategory\":\"AUTH_STATUS_INACTIVE\"}]}","interceptorResponse":{"statusCode":400}}`)))
+			require.NoError(t, err)
+			require.Equal(t, []byte(`{"originalResponse":"{\"output\":[{\"authErrorCategory\":\"AUTH_STATUS_INACTIVE\"}]}","interceptorResponse":{"statusCode":400}}`), respData)
 		})
 
-		It("Use OAuthHttpClient to transform event for a oauth destination with success in transforming and secret sent through routerHeaderAugmenter", func() {
+		t.Run("Use OAuthHttpClient to transform event for a oauth destination with success in transforming and secret sent through routerHeaderAugmenter", func(t *testing.T) {
 			// Define the secret once
 			secretJSON := `{"access_token":"newaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`
 			cache := v2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).
 				Do(func(req *http.Request) {
 					// Verify headers here
-					Expect(req.Header.Get("OAuth-Secret")).To(Equal(secretJSON))
+					require.Equal(t, secretJSON, req.Header.Get("OAuth-Secret"))
 				}).Return(&http.Response{
 				StatusCode: 200,
 				Body:       io.NopCloser(bytes.NewReader([]byte(`{"output":[{"version":"1","type":"REST","method":"POST","endpoint":"https://googleads.googleapis.com/v15/customers/7693729833/offlineUserDataJobs","headers":{"Authorization":"Bearer dummy-access","Content-Type":"application/json","developer-token":"dummy-dev-token"},"params":{"listId":"list111","customerId":"7693729833","consent":{}},"body":{"JSON":{"enablePartialFailure":true,"operations":[{"create":{"userIdentifiers":[{"hashedEmail":"d3142c8f9c9129484daf28df80cc5c955791efed5e69afabb603bc8cb9ffd419"},{"hashedPhoneNumber":"8846dcb6ab2d73a0e67dbd569fa17cec2d9d391e5b05d1dd42919bc21ae82c45"},{"addressInfo":{"hashedFirstName":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","hashedLastName":"dcf000c2386fb76d22cefc0d118a8511bb75999019cd373df52044bccd1bd251","countryCode":"US","postalCode":"1245"}}]}}]},"JSON_ARRAY":{},"XML":{},"FORM":{}},"files":{},"userId":""}]}`))),
@@ -295,9 +299,10 @@ var _ = Describe("Http/Client", func() {
 			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 			res, err := httpClient.Do(req)
 
-			Expect(res.StatusCode).To(Equal(200))
-			Expect(err).To(BeNil())
-			Expect(res).To(Equal(&http.Response{
+			require.Equal(t, 200, res.StatusCode)
+			require.NoError(t, err)
+			defer func() { _ = res.Body.Close() }()
+			require.Equal(t, &http.Response{
 				Status:           "",
 				StatusCode:       200,
 				Proto:            "",
@@ -312,7 +317,7 @@ var _ = Describe("Http/Client", func() {
 				Trailer:          nil,
 				Request:          nil,
 				TLS:              nil,
-			}))
+			}, res)
 		})
 	})
-})
+}

@@ -2,205 +2,239 @@ package router
 
 import (
 	"encoding/json"
+	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
 
-var _ = Describe("Delivery payload masking", func() {
-	It("masks paths across request fields and composes replacements", func() {
+func TestDeliveryPayloadMasking(t *testing.T) {
+	t.Run("masks paths across request fields and composes replacements", func(t *testing.T) {
 		payload := json.RawMessage(`{"endpoint":"https://example.test","headers":{"Authorization":"Bearer secret"},"params":{"api_key":"param-secret"},"body":{"token":"body-secret"},"custom":"top-secret"}`)
 		masked, reason := maskSecrets(payload, []string{"headers.Authorization", "params.api_key", "body.token", "custom"}, true)
 
-		Expect(reason).To(Equal("listed"))
-		Expect(gjson.GetBytes(masked, "headers.Authorization").String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, "params.api_key").String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, "body.token").String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, "custom").String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, "endpoint").String()).To(Equal("https://example.test"))
+		require.Equal(t, "listed", reason)
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, "headers.Authorization").String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, "params.api_key").String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, "body.token").String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, "custom").String())
+		require.Equal(t, "https://example.test", gjson.GetBytes(masked, "endpoint").String())
 	})
 
-	It("supports escaped key characters, array members, scalar array members, and literal bracketed keys", func() {
+	t.Run("supports escaped key characters, array members, scalar array members, and literal bracketed keys", func(t *testing.T) {
 		payload := json.RawMessage(`{"body":{"literal.key":"dot","star*key":"star","question?key":"question","tokens":["one","two"],"JSON":{"messages":[{"from":"one"},{"from":"two"}]}},"params":{"bd[0]":"bracket"}}`)
 		masked, reason := maskSecrets(payload, []string{`body.literal\.key`, `body.star\*key`, `body.question\?key`, "body.JSON.messages.#.from", "body.tokens.#", "params.bd[0]"}, true)
 
-		Expect(reason).To(Equal("listed"))
-		Expect(gjson.GetBytes(masked, `body.literal\.key`).String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, `body.star\*key`).String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, `body.question\?key`).String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, "body.JSON.messages.#.from").Array()).To(HaveEach(HaveField("Str", maskedValue)))
-		Expect(gjson.GetBytes(masked, "body.tokens.0").String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, "body.tokens.1").String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, "params.bd[0]").String()).To(Equal(maskedValue))
+		require.Equal(t, "listed", reason)
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, `body.literal\.key`).String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, `body.star\*key`).String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, `body.question\?key`).String())
+		froms := gjson.GetBytes(masked, "body.JSON.messages.#.from").Array()
+		require.NotEmpty(t, froms)
+		for _, from := range froms {
+			require.Equal(t, maskedValue, from.Str)
+		}
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, "body.tokens.0").String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, "body.tokens.1").String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, "params.bd[0]").String())
 	})
 
-	DescribeTable("detects only an unescaped terminal array wildcard",
-		func(path, wantParent string, wantOK bool) {
-			parent, ok := terminalArrayWildcardParent(path)
-			Expect(ok).To(Equal(wantOK))
-			Expect(parent).To(Equal(wantParent))
-		},
-		Entry("bare wildcard", "#", "", true),
-		Entry("nested wildcard", "body.tokens.#", "body.tokens", true),
-		Entry("escaped dot before #", `body.tokens\.#`, "", false),
-		Entry("escaped backslash then separator", `body.tokens\\.#`, `body.tokens\\`, true),
-		Entry("escaped #", `body.tokens.\#`, "", false),
-		Entry("non-terminal wildcard", "body.#.from", "", false),
-	)
+	t.Run("detects only an unescaped terminal array wildcard", func(t *testing.T) {
+		testCases := []struct {
+			name       string
+			path       string
+			wantParent string
+			wantOK     bool
+		}{
+			{name: "bare wildcard", path: "#", wantParent: "", wantOK: true},
+			{name: "nested wildcard", path: "body.tokens.#", wantParent: "body.tokens", wantOK: true},
+			{name: "escaped dot before #", path: `body.tokens\.#`, wantParent: "", wantOK: false},
+			{name: "escaped backslash then separator", path: `body.tokens\\.#`, wantParent: `body.tokens\\`, wantOK: true},
+			{name: "escaped #", path: `body.tokens.\#`, wantParent: "", wantOK: false},
+			{name: "non-terminal wildcard", path: "body.#.from", wantParent: "", wantOK: false},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				parent, ok := terminalArrayWildcardParent(tc.path)
+				require.Equal(t, tc.wantOK, ok)
+				require.Equal(t, tc.wantParent, parent)
+			})
+		}
+	})
 
-	It("never masks endpoint even when it is listed", func() {
+	t.Run("never masks endpoint even when it is listed", func(t *testing.T) {
 		payload := json.RawMessage(`{"endpoint":"https://example.test/path?token=visible","headers":{"Authorization":"secret"}}`)
 		masked, reason := maskSecrets(payload, []string{"endpoint", "endpoint.token", "headers.Authorization"}, true)
-		Expect(reason).To(Equal("listed"))
-		Expect(gjson.GetBytes(masked, "endpoint").String()).To(Equal("https://example.test/path?token=visible"))
-		Expect(gjson.GetBytes(masked, "headers.Authorization").String()).To(Equal(maskedValue))
+		require.Equal(t, "listed", reason)
+		require.Equal(t, "https://example.test/path?token=visible", gjson.GetBytes(masked, "endpoint").String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, "headers.Authorization").String())
 	})
 
-	It("does not fabricate missing paths", func() {
+	t.Run("does not fabricate missing paths", func(t *testing.T) {
 		payload := json.RawMessage(`{"headers":{"Authorization":"secret"}}`)
 		masked, reason := maskSecrets(payload, []string{"params.api_key"}, true)
-		Expect(reason).To(Equal("listed_noop"))
-		Expect(masked).To(MatchJSON(payload))
-		Expect(gjson.GetBytes(masked, "params").Exists()).To(BeFalse())
+		require.Equal(t, "listed_noop", reason)
+		require.JSONEq(t, string(payload), string(masked))
+		require.False(t, gjson.GetBytes(masked, "params").Exists())
 	})
 
-	It("masks a one-request array while preserving the Live Events payload shape", func() {
+	t.Run("masks a one-request array while preserving the Live Events payload shape", func(t *testing.T) {
 		payload := json.RawMessage(`[{"endpoint":"https://zendesk.test/users","headers":{"Authorization":"Bearer secret"},"body":{"name":"Ada"}}]`)
 		masked, reason := maskForDelivery(payload, []string{"headers.Authorization"}, true)
 
-		Expect(reason).To(Equal("listed"))
-		Expect(masked).To(MatchJSON(`[{"endpoint":"https://zendesk.test/users","headers":{"Authorization":"******"},"body":{"name":"Ada"}}]`))
+		require.Equal(t, "listed", reason)
+		require.JSONEq(t, `[{"endpoint":"https://zendesk.test/users","headers":{"Authorization":"******"},"body":{"name":"Ada"}}]`, string(masked))
 	})
 
-	It("masks every element of a multi-request array independently", func() {
+	t.Run("masks every element of a multi-request array independently", func(t *testing.T) {
 		payload := json.RawMessage(`[
 			{"endpoint":"https://sfmc.test/contacts","headers":{"Authorization":"Bearer first"},"body":{"token":"first-token"}},
 			{"endpoint":"https://sfmc.test/data","headers":{"Authorization":"Bearer second"},"body":{"token":"second-token"}}
 		]`)
 		masked, reason := maskForDelivery(payload, []string{"headers.Authorization", "body.token"}, true)
 
-		Expect(reason).To(Equal("listed"))
-		Expect(masked).To(MatchJSON(`[
+		require.Equal(t, "listed", reason)
+		require.JSONEq(t, `[
 			{"endpoint":"https://sfmc.test/contacts","headers":{"Authorization":"******"},"body":{"token":"******"}},
 			{"endpoint":"https://sfmc.test/data","headers":{"Authorization":"******"},"body":{"token":"******"}}
-		]`))
+		]`, string(masked))
 	})
 
-	It("preserves an empty array as a successful no-op", func() {
+	t.Run("preserves an empty array as a successful no-op", func(t *testing.T) {
 		payload := json.RawMessage(`[ ]`)
 		masked, reason := maskForDelivery(payload, []string{"headers.Authorization"}, true)
 
-		Expect(reason).To(Equal("listed_noop"))
-		Expect(masked).To(Equal(payload))
+		require.Equal(t, "listed_noop", reason)
+		require.Equal(t, payload, masked)
 	})
 
-	It("preserves the bytes of a non-empty array when no listed path matches", func() {
+	t.Run("preserves the bytes of a non-empty array when no listed path matches", func(t *testing.T) {
 		payload := json.RawMessage(`[ {"endpoint":"first","headers":{"Authorization":"secret"}} , {"endpoint":"second"} ]`)
 		masked, reason := maskForDelivery(payload, []string{"params.missing"}, true)
 
-		Expect(reason).To(Equal("listed_noop"))
-		Expect(masked).To(Equal(payload))
+		require.Equal(t, "listed_noop", reason)
+		require.Equal(t, payload, masked)
 	})
 
-	It("preserves bytes for an empty listed-path result", func() {
+	t.Run("preserves bytes for an empty listed-path result", func(t *testing.T) {
 		payload := json.RawMessage("{ \"body\" : { \"token\" : \"secret\" } }")
 		masked, reason := maskSecrets(payload, []string{}, true)
-		Expect(reason).To(Equal("listed_noop"))
-		Expect(masked).To(Equal(payload))
+		require.Equal(t, "listed_noop", reason)
+		require.Equal(t, payload, masked)
 	})
 
-	It("masks all top-level fields except endpoint", func() {
+	t.Run("masks all top-level fields except endpoint", func(t *testing.T) {
 		payload := json.RawMessage(`{"endpoint":"https://example.test","headers":{"Authorization":"secret"},"params":{"key":"secret"},"body":{"token":"secret"},"custom":"secret"}`)
 		masked, maskErr := maskAll(payload)
 
-		Expect(maskErr).To(BeFalse())
-		Expect(gjson.GetBytes(masked, "endpoint").String()).To(Equal("https://example.test"))
+		require.False(t, maskErr)
+		require.Equal(t, "https://example.test", gjson.GetBytes(masked, "endpoint").String())
 		for _, key := range []string{"headers", "params", "body", "custom"} {
-			Expect(gjson.GetBytes(masked, key).String()).To(Equal(maskedValue))
+			require.Equal(t, maskedValue, gjson.GetBytes(masked, key).String())
 		}
 	})
 
-	It("handles escaped and operator-like top-level keys in fail-closed mode", func() {
+	t.Run("handles escaped and operator-like top-level keys in fail-closed mode", func(t *testing.T) {
 		payload := json.RawMessage(`{"endpoint":"visible","secret.key":"dot","secret*key":"star","secret?key":"question","secret\\key":"slash","@this":"operator","a|b":"pipe"}`)
 		masked, maskErr := maskAll(payload)
-		Expect(maskErr).To(BeFalse())
-		Expect(gjson.GetBytes(masked, `secret\.key`).String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, `secret\*key`).String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, `secret\?key`).String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, `secret\\key`).String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, `\@this`).String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, `a\|b`).String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, "endpoint").String()).To(Equal("visible"))
+		require.False(t, maskErr)
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, `secret\.key`).String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, `secret\*key`).String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, `secret\?key`).String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, `secret\\key`).String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, `\@this`).String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, `a\|b`).String())
+		require.Equal(t, "visible", gjson.GetBytes(masked, "endpoint").String())
 	})
 
-	It("masks duplicate non-endpoint top-level keys in fail-closed mode", func() {
+	t.Run("masks duplicate non-endpoint top-level keys in fail-closed mode", func(t *testing.T) {
 		masked, maskErr := maskAll(json.RawMessage(`{"token":"first","endpoint":"visible","token":"second"}`))
-		Expect(maskErr).To(BeFalse())
-		Expect(string(masked)).To(ContainSubstring(`"endpoint":"visible"`))
-		Expect(string(masked)).ToNot(ContainSubstring("first"))
-		Expect(string(masked)).ToNot(ContainSubstring("second"))
+		require.False(t, maskErr)
+		require.Contains(t, string(masked), `"endpoint":"visible"`)
+		require.NotContains(t, string(masked), "first")
+		require.NotContains(t, string(masked), "second")
 	})
 
-	DescribeTable("replaces malformed or non-object payloads with a masked object",
-		func(payload string) {
-			masked, maskErr := maskAll(json.RawMessage(payload))
-			Expect(maskErr).To(BeTrue())
-			Expect(masked).To(MatchJSON(`{"masked":"******"}`))
-		},
-		Entry("invalid JSON", `{"headers":"secret"`),
-		Entry("array", `["secret"]`),
-		Entry("scalar", `"secret"`),
-	)
+	t.Run("replaces malformed or non-object payloads with a masked object", func(t *testing.T) {
+		testCases := []struct {
+			name    string
+			payload string
+		}{
+			{name: "invalid JSON", payload: `{"headers":"secret"`},
+			{name: "array", payload: `["secret"]`},
+			{name: "scalar", payload: `"secret"`},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				masked, maskErr := maskAll(json.RawMessage(tc.payload))
+				require.True(t, maskErr)
+				require.JSONEq(t, `{"masked":"******"}`, string(masked))
+			})
+		}
+	})
 
-	DescribeTable("listed masking fails closed with a masked object for unsupported payloads",
-		func(payload string) {
-			masked, reason := maskForDelivery(json.RawMessage(payload), []string{"headers.Authorization"}, true)
-			Expect(reason).To(Equal("mask_error"))
-			Expect(masked).To(MatchJSON(`{"masked":"******"}`))
-		},
-		Entry("scalar", `"secret-token"`),
-		Entry("invalid JSON", `{"headers":{"Authorization":"secret"}`),
-	)
+	t.Run("listed masking fails closed with a masked object for unsupported payloads", func(t *testing.T) {
+		testCases := []struct {
+			name    string
+			payload string
+		}{
+			{name: "scalar", payload: `"secret-token"`},
+			{name: "invalid JSON", payload: `{"headers":{"Authorization":"secret"}`},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				masked, reason := maskForDelivery(json.RawMessage(tc.payload), []string{"headers.Authorization"}, true)
+				require.Equal(t, "mask_error", reason)
+				require.JSONEq(t, `{"masked":"******"}`, string(masked))
+			})
+		}
+	})
 
-	DescribeTable("delivery masking fails closed for unsupported payloads even when no paths are listed",
-		func(payload string) {
-			masked, reason := maskForDelivery(json.RawMessage(payload), []string{}, true)
-			Expect(reason).To(Equal("mask_error"))
-			Expect(masked).To(MatchJSON(`{"masked":"******"}`))
-		},
-		Entry("scalar", `"secret-token"`),
-		Entry("invalid JSON", `{"headers":{"Authorization":"secret"}`),
-		Entry("array with a non-object request", `[{"endpoint":"first"},"secret-token"]`),
-	)
+	t.Run("delivery masking fails closed for unsupported payloads even when no paths are listed", func(t *testing.T) {
+		testCases := []struct {
+			name    string
+			payload string
+		}{
+			{name: "scalar", payload: `"secret-token"`},
+			{name: "invalid JSON", payload: `{"headers":{"Authorization":"secret"}`},
+			{name: "array with a non-object request", payload: `[{"endpoint":"first"},"secret-token"]`},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				masked, reason := maskForDelivery(json.RawMessage(tc.payload), []string{}, true)
+				require.Equal(t, "mask_error", reason)
+				require.JSONEq(t, `{"masked":"******"}`, string(masked))
+			})
+		}
+	})
 
-	It("fails closed for the whole array when applying a listed path fails", func() {
+	t.Run("fails closed for the whole array when applying a listed path fails", func(t *testing.T) {
 		payload := json.RawMessage(`[
 			{"endpoint":"first","headers":{"Authorization":"secret"}},
 			{"endpoint":"second","headers":{"Authorization":"other-secret"}}
 		]`)
 		masked, reason := maskForDelivery(payload, []string{"headers.Authorization|@reverse"}, true)
 
-		Expect(reason).To(Equal("mask_error"))
-		Expect(masked).To(MatchJSON(`{"masked":"******"}`))
+		require.Equal(t, "mask_error", reason)
+		require.JSONEq(t, `{"masked":"******"}`, string(masked))
 	})
 
-	It("falls back to fail-closed masking for an invalid listed path", func() {
+	t.Run("falls back to fail-closed masking for an invalid listed path", func(t *testing.T) {
 		payload := json.RawMessage(`{"endpoint":"visible","headers":{"Authorization":"secret"}}`)
 		masked, reason := maskForDelivery(payload, []string{""}, true)
-		Expect(reason).To(Equal("mask_error"))
-		Expect(gjson.GetBytes(masked, "endpoint").String()).To(Equal("visible"))
-		Expect(gjson.GetBytes(masked, "headers").String()).To(Equal(maskedValue))
-		Expect(string(masked)).ToNot(ContainSubstring("secret"))
+		require.Equal(t, "mask_error", reason)
+		require.Equal(t, "visible", gjson.GetBytes(masked, "endpoint").String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, "headers").String())
+		require.NotContains(t, string(masked), "secret")
 	})
 
-	It("falls back to fail-closed masking when sjson leaves an existing listed path unchanged", func() {
+	t.Run("falls back to fail-closed masking when sjson leaves an existing listed path unchanged", func(t *testing.T) {
 		payload := json.RawMessage(`{"endpoint":"visible","headers":{"Authorization":"secret"},"body":{"token":"secret"}}`)
 		masked, reason := maskForDelivery(payload, []string{"headers.Authorization|@reverse"}, true)
-		Expect(reason).To(Equal("mask_error"))
-		Expect(gjson.GetBytes(masked, "endpoint").String()).To(Equal("visible"))
-		Expect(gjson.GetBytes(masked, "headers").String()).To(Equal(maskedValue))
-		Expect(gjson.GetBytes(masked, "body").String()).To(Equal(maskedValue))
-		Expect(string(masked)).ToNot(ContainSubstring("secret"))
+		require.Equal(t, "mask_error", reason)
+		require.Equal(t, "visible", gjson.GetBytes(masked, "endpoint").String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, "headers").String())
+		require.Equal(t, maskedValue, gjson.GetBytes(masked, "body").String())
+		require.NotContains(t, string(masked), "secret")
 	})
-})
+}

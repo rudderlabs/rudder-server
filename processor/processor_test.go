@@ -13,10 +13,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/format"
 	"github.com/samber/lo"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -54,7 +52,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	"github.com/rudderlabs/rudder-server/utils/tracing"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -117,14 +114,8 @@ type testContext struct {
 	mockTrackedUsersReporter *mockTrackedUsersReporter
 }
 
-func (c *testContext) Setup(testReporters ...gomock.TestReporter) {
-	var tr gomock.TestReporter
-	if len(testReporters) > 0 {
-		tr = testReporters[0]
-	} else {
-		tr = GinkgoT()
-	}
-	c.mockCtrl = gomock.NewController(tr)
+func (c *testContext) Setup(t testing.TB) {
+	c.mockCtrl = gomock.NewController(t)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockGatewayJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
@@ -153,6 +144,29 @@ func (c *testContext) Setup(testReporters ...gomock.TestReporter) {
 
 func (c *testContext) Finish() {
 	c.mockCtrl.Finish()
+}
+
+func newTestContext(t testing.TB) *testContext {
+	t.Helper()
+	c := &testContext{}
+	c.Setup(t)
+	return c
+}
+
+// expectCrashRecovery expects the gateway jobsdb cleanup that Handle.Setup performs on startup.
+func (c *testContext) expectCrashRecovery() *testContext {
+	c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+	return c
+}
+
+// prepareTestHandle configures proc with no isolation and sequential stores.
+func prepareTestHandle(t testing.TB, proc *Handle) *Handle {
+	t.Helper()
+	isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+	require.NoError(t, err)
+	proc.isolationStrategy = isolationStrategy
+	proc.config.enableConcurrentStore = config.SingleValueLoader(false)
+	return proc
 }
 
 const (
@@ -1107,41 +1121,31 @@ func initProcessor() {
 	logger.Reset()
 	admin.Init()
 	misc.Init()
-	format.MaxLength = 100000
-	format.MaxDepth = 10
 }
 
-var _ = Describe("Tracking Plan Validation", Ordered, func() {
+func TestTrackingPlanValidation(t *testing.T) {
 	initProcessor()
 
-	var c *testContext
-	BeforeEach(func() {
-		c = &testContext{}
-		c.Setup()
-		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
-	})
-	AfterEach(func() {
-		c.Finish()
-	})
-
-	Context("RudderTyper", func() {
-		It("Tracking plan id and version from DgSourceTrackingPlanConfig", func() {
+	t.Run("RudderTyper", func(t *testing.T) {
+		t.Run("Tracking plan id and version from DgSourceTrackingPlanConfig", func(t *testing.T) {
+			c := newTestContext(t).expectCrashRecovery()
 			mockTransformerClients := transformer.NewSimpleClients()
 			mockTransformerClients.SetTrackingPlanValidateOutput(types.Response{})
 			isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			processor := NewHandle(config.Default, mockTransformerClients)
 			processor.isolationStrategy = isolationStrategy
 			processor.config.archivalEnabled = config.SingleValueLoader(false)
 			processor.config.enableConcurrentStore = config.SingleValueLoader(false)
-			Setup(processor, c, false, false)
+			Setup(processor, c, false, false, t)
+			t.Cleanup(processor.Shutdown)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
 
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
-			GinkgoT().Log("Processor setup and init done")
+			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+			t.Log("Processor setup and init done")
 
 			srcHydrationMsg, err := processor.preprocessStage(
 				"",
@@ -1193,37 +1197,39 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 				},
 				0,
 			)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			_, _ = processor.pretransformStage("", preTransMessage)
 
-			Expect(c.MockObserver.calls).To(HaveLen(1))
+			require.Len(t, c.MockObserver.calls, 1)
 			for _, v := range c.MockObserver.calls {
 				for _, e := range v.events {
-					Expect(e.Metadata.TrackingPlanID).To(BeEquivalentTo("tracking-plan-id"))
-					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(100)) // from DgSourceTrackingPlanConfig
+					require.EqualValues(t, "tracking-plan-id", e.Metadata.TrackingPlanID)
+					require.EqualValues(t, 100, e.Metadata.TrackingPlanVersion) // from DgSourceTrackingPlanConfig
 				}
 			}
 		})
-		It("Tracking plan version override from context.ruddertyper", func() {
+		t.Run("Tracking plan version override from context.ruddertyper", func(t *testing.T) {
+			c := newTestContext(t).expectCrashRecovery()
 			mockTransformerClients := transformer.NewSimpleClients()
 			mockTransformerClients.SetTrackingPlanValidateOutput(types.Response{})
 			isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			processor := NewHandle(config.Default, mockTransformerClients)
 			processor.isolationStrategy = isolationStrategy
 			processor.config.archivalEnabled = config.SingleValueLoader(false)
 			processor.config.enableConcurrentStore = config.SingleValueLoader(false)
-			Setup(processor, c, false, false)
+			Setup(processor, c, false, false, t)
+			t.Cleanup(processor.Shutdown)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
 
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
-			GinkgoT().Log("Processor setup and init done")
+			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+			t.Log("Processor setup and init done")
 
 			srcHydrationMsg, err := processor.preprocessStage(
 				"",
@@ -1281,50 +1287,34 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 				},
 				0,
 			)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			_, _ = processor.pretransformStage("", preTransMessage)
 
-			Expect(c.MockObserver.calls).To(HaveLen(1))
+			require.Len(t, c.MockObserver.calls, 1)
 			for _, v := range c.MockObserver.calls {
 				for _, e := range v.events {
-					Expect(e.Metadata.TrackingPlanID).To(BeEquivalentTo("tracking-plan-id"))
-					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(123)) // Overridden happens when tracking plan id is same in context.ruddertyper and DgSourceTrackingPlanConfig
+					require.EqualValues(t, "tracking-plan-id", e.Metadata.TrackingPlanID)
+					require.EqualValues(t, 123, e.Metadata.TrackingPlanVersion) // Overridden happens when tracking plan id is same in context.ruddertyper and DgSourceTrackingPlanConfig
 				}
 			}
 		})
 	})
-})
+}
 
-var _ = Describe("Processor with event schemas v2", Ordered, func() {
+func TestProcessorWithEventSchemasV2(t *testing.T) {
 	initProcessor()
 
-	var c *testContext
-
-	prepareHandle := func(proc *Handle) *Handle {
+	prepareHandle := func(t *testing.T, c *testContext, proc *Handle) *Handle {
 		proc.eventSchemaDB = c.mockEventSchemasDB
 		proc.config.eventSchemaV2Enabled = true
-		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
-		Expect(err).To(BeNil())
-		proc.isolationStrategy = isolationStrategy
-		proc.config.enableConcurrentStore = config.SingleValueLoader(false)
-		return proc
+		return prepareTestHandle(t, proc)
 	}
 
-	BeforeEach(func() {
-		c = &testContext{}
-		c.Setup()
-		// crash recovery check
-		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-	})
-
-	AfterEach(func() {
-		c.Finish()
-	})
-
-	Context("event schemas DB", func() {
-		It("should process events and write to event schemas DB", func() {
+	t.Run("event schemas DB", func(t *testing.T) {
+		t.Run("should process events and write to event schemas DB", func(t *testing.T) {
+			c := newTestContext(t).expectCrashRecovery()
 			messages := map[string]mockEventData{
 				// this message should be delivered only to destination A
 				"message-1": {
@@ -1465,7 +1455,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(2))
+					assert.Len(t, jobs, 2)
 				})
 
 			c.mockArchivalDB.EXPECT().
@@ -1478,13 +1468,14 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				Times(0)
 
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareHandle(t, c, NewHandle(config.Default, mockTransformerClients))
 
-			Setup(processor, c, false, false)
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			Setup(processor, c, false, false, t)
+			t.Cleanup(processor.Shutdown)
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
-			GinkgoT().Log("Processor setup and init done")
+			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+			t.Log("Processor setup and init done")
 			srcHydrationMsg, err := processor.preprocessStage(
 				"",
 				subJob{
@@ -1493,15 +1484,15 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				},
 				0,
 			)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			_, _ = processor.pretransformStage("", preTransMessage)
 
-			Expect(c.MockObserver.calls).To(HaveLen(1))
+			require.Len(t, c.MockObserver.calls, 1)
 		})
 	})
-})
+}
 
 func TestArchival(t *testing.T) {
 	initProcessor()
@@ -1866,34 +1857,12 @@ func TestArchival(t *testing.T) {
 	})
 }
 
-var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() {
+func TestProcessorWithTrackedUsersFeatureEnabled(t *testing.T) {
 	initProcessor()
 
-	var c *testContext
-
-	prepareHandle := func(proc *Handle) *Handle {
-		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
-		Expect(err).To(BeNil())
-		proc.isolationStrategy = isolationStrategy
-		proc.config.enableConcurrentStore = config.SingleValueLoader(false)
-		return proc
-	}
-	BeforeEach(func() {
-		c = &testContext{}
-		c.Setup()
-	})
-
-	AfterEach(func() {
-		c.Finish()
-	})
-
-	Context("trackedUsers", func() {
-		BeforeEach(func() {
-			// crash recovery check
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-		})
-
-		It("should track Users from unprocessed jobs", func() {
+	t.Run("trackedUsers", func(t *testing.T) {
+		t.Run("should track Users from unprocessed jobs", func(t *testing.T) {
+			c := newTestContext(t).expectCrashRecovery()
 			messages := map[string]mockEventData{
 				// this message should be delivered only to destination A
 				"message-1": {
@@ -2038,11 +2007,11 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 				"batch.1.context.activation",
 				map[string]string{"fingerprint": "fp-2", "custom": "keep-me"},
 			)
-			Expect(len(jsonparser.GetValueOrEmpty(unprocessedJobsList[4].EventPayload, "batch", "[0]", "context", "activation"))).To(BeNumerically(">", 0))
-			Expect(len(jsonparser.GetValueOrEmpty(unprocessedJobsList[4].EventPayload, "batch", "[1]", "context", "activation"))).To(BeNumerically(">", 0))
+			require.Greater(t, len(jsonparser.GetValueOrEmpty(unprocessedJobsList[4].EventPayload, "batch", "[0]", "context", "activation")), 0)
+			require.Greater(t, len(jsonparser.GetValueOrEmpty(unprocessedJobsList[4].EventPayload, "batch", "[1]", "context", "activation")), 0)
 
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
 			processor.activationRecordsReporter = activationrecords.NewNoopActivationRecordsReporter()
 
@@ -2091,13 +2060,13 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 				}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
-				Expect(job.UUID.String()).To(testutils.BeValidUUID())
-				Expect(job.JobID).To(Equal(int64(0)))
-				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination)))
-				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				require.JSONEq(GinkgoT(), fmt.Sprintf(`{
+				assert.True(t, misc.IsValidUUID(job.UUID.String()))
+				assert.Equal(t, int64(0), job.JobID)
+				assert.WithinDuration(t, time.Now(), job.CreatedAt, 200*time.Millisecond)
+				assert.WithinDuration(t, time.Now(), job.ExpireAt, 200*time.Millisecond)
+				assert.Equal(t, fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination), string(job.EventPayload))
+				assert.Len(t, job.LastJobStatus.JobState, 0)
+				assert.JSONEq(t, fmt.Sprintf(`{
 					"source_id":"source-from-transformer",
 					"source_name": "%s",
 					"destination_id":"destination-from-transformer",
@@ -2126,7 +2095,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 
 			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(2))
+					assert.Len(t, jobs, 2)
 					for i, job := range jobs {
 						assertStoreJob(job, i, "value-enabled-destination-a")
 					}
@@ -2168,7 +2137,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(2))
+					assert.Len(t, jobs, 2)
 				})
 
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
@@ -2178,7 +2147,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT) {
 					// jobs should be sorted by jobid, so order of statuses is different from order of jobs
 					for i := range unprocessedJobsList {
-						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
+						assertJobStatus(t, unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
 
@@ -2193,23 +2162,24 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					SourceID: SourceIDEnabledNoUT,
 				},
 			}
-			Setup(processor, c, false, false)
+			Setup(processor, c, false, false, t)
+			t.Cleanup(processor.Shutdown)
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
 			processor.activationRecordsReporter = activationrecords.NewNoopActivationRecordsReporter()
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
-			GinkgoT().Log("Processor setup and init done")
-			handlePendingGatewayJobs(processor)
-			Expect(c.mockTrackedUsersReporter.generateCalls).To(HaveLen(1))
-			Expect(c.mockTrackedUsersReporter.generateCalls[0].jobs).Should(Equal(trackedUsersJobs))
-			Expect(c.mockTrackedUsersReporter.reportCalls).To(HaveLen(1))
-			Expect(c.mockTrackedUsersReporter.reportCalls[0].reportedReports).Should(Equal(trackerUsersReports))
+			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+			t.Log("Processor setup and init done")
+			handlePendingGatewayJobs(t, processor)
+			require.Len(t, c.mockTrackedUsersReporter.generateCalls, 1)
+			require.Equal(t, trackedUsersJobs, c.mockTrackedUsersReporter.generateCalls[0].jobs)
+			require.Len(t, c.mockTrackedUsersReporter.reportCalls, 1)
+			require.Equal(t, trackerUsersReports, c.mockTrackedUsersReporter.reportCalls[0].reportedReports)
 			// The strip is gated on source category: for this non-rETL (webhook) source
 			// preprocessStage must NOT touch context.activation, so every destination-bound
 			// event keeps exactly what it carried. The captured slice holds every event routed
 			// to destination A (across the whole batch), not just the two we injected.
-			Expect(capturedDestinationEvents).ToNot(BeEmpty())
+			require.NotEmpty(t, capturedDestinationEvents)
 			seenInjectedMessages := map[string]bool{}
 			for _, event := range capturedDestinationEvents {
 				ctxMap, _ := event.Message["context"].(map[string]any)
@@ -2217,12 +2187,12 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 				switch msgID {
 				case "message-3":
 					// non-rETL source: fingerprint-shaped value is preserved untouched
-					Expect(ctxMap).To(HaveKey("activation"))
-					Expect(ctxMap["activation"]).To(Equal(map[string]any{"fingerprint": "fp-1"}))
+					require.Contains(t, ctxMap, "activation")
+					require.Equal(t, map[string]any{"fingerprint": "fp-1"}, ctxMap["activation"])
 				case "message-4":
 					// non-rETL source: full context.activation preserved untouched
-					Expect(ctxMap).To(HaveKey("activation"))
-					Expect(ctxMap["activation"]).To(Equal(map[string]any{"fingerprint": "fp-2", "custom": "keep-me"}))
+					require.Contains(t, ctxMap, "activation")
+					require.Equal(t, map[string]any{"fingerprint": "fp-2", "custom": "keep-me"}, ctxMap["activation"])
 				}
 				if msgID != "" {
 					seenInjectedMessages[msgID] = true
@@ -2230,11 +2200,11 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 			}
 			// Both messages we injected context.activation into (batch.0/message-3 and
 			// batch.1/message-4) must have reached the destination transformer (preserved).
-			Expect(seenInjectedMessages).To(HaveKey("message-3"))
-			Expect(seenInjectedMessages).To(HaveKey("message-4"))
+			require.Contains(t, seenInjectedMessages, "message-3")
+			require.Contains(t, seenInjectedMessages, "message-4")
 		})
 	})
-})
+}
 
 // enabledDestinations returns the enabled destinations of sourceID whose definition is the
 // fixture's "destination-definition-name-enabled", the input the consent filters operate on.
@@ -2258,37 +2228,20 @@ func destinationAvailable(proc *Handle, event types.SingularEventT, sourceID, sp
 	return len(available) > 0
 }
 
-var _ = Describe("Processor", Ordered, func() {
+func TestProcessor(t *testing.T) {
 	initProcessor()
 
-	var c *testContext
-
-	prepareHandle := func(proc *Handle) *Handle {
-		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
-		Expect(err).To(BeNil())
-		proc.isolationStrategy = isolationStrategy
-		proc.config.enableConcurrentStore = config.SingleValueLoader(false)
-		return proc
-	}
-	BeforeEach(func() {
-		c = &testContext{}
-		c.Setup()
-	})
-
-	AfterEach(func() {
-		c.Finish()
-	})
-
-	Context("Initialization", func() {
-		It("should initialize (no jobs to recover)", func() {
+	t.Run("Initialization", func(t *testing.T) {
+		t.Run("should initialize (no jobs to recover)", func(t *testing.T) {
+			c := newTestContext(t)
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			err := processor.Setup(
-				context.Background(),
+				t.Context(),
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -2308,20 +2261,22 @@ var _ = Describe("Processor", Ordered, func() {
 				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
-			Expect(err).To(BeNil())
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			require.NoError(t, err)
+			t.Cleanup(processor.Shutdown)
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
 		})
 
-		It("should recover after crash", func() {
+		t.Run("should recover after crash", func(t *testing.T) {
+			c := newTestContext(t)
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			err := processor.Setup(
-				context.Background(),
+				t.Context(),
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -2341,25 +2296,22 @@ var _ = Describe("Processor", Ordered, func() {
 				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
-			Expect(err).To(BeNil())
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			require.NoError(t, err)
+			t.Cleanup(processor.Shutdown)
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
 		})
 	})
 
-	Context("normal operation", func() {
-		BeforeEach(func() {
-			// crash recovery check
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-		})
-
-		It("should only send proper stats, if not pending jobs are returned", func() {
+	t.Run("normal operation", func(t *testing.T) {
+		t.Run("should only send proper stats, if not pending jobs are returned", func(t *testing.T) {
+			c := newTestContext(t).expectCrashRecovery()
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
 			err := processor.Setup(
-				context.Background(),
+				t.Context(),
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -2379,10 +2331,11 @@ var _ = Describe("Processor", Ordered, func() {
 				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
-			Expect(err).To(BeNil())
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			require.NoError(t, err)
+			t.Cleanup(processor.Shutdown)
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
@@ -2394,10 +2347,11 @@ var _ = Describe("Processor", Ordered, func() {
 				}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
 
 			didWork := processor.handlePendingGatewayJobs("")
-			Expect(didWork).To(Equal(false))
+			require.False(t, didWork)
 		})
 
-		It("should process unprocessed jobs to destination without user transformation", func() {
+		t.Run("should process unprocessed jobs to destination without user transformation", func(t *testing.T) {
+			c := newTestContext(t).expectCrashRecovery()
 			messages := map[string]mockEventData{
 				// this message should be delivered only to destination A
 				"message-1": {
@@ -2526,7 +2480,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
 				jobsdb.GetQueryParams{
@@ -2566,13 +2520,13 @@ var _ = Describe("Processor", Ordered, func() {
 			)
 
 			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
-				Expect(job.UUID.String()).To(testutils.BeValidUUID())
-				Expect(job.JobID).To(Equal(int64(0)))
-				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination)))
-				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				require.JSONEq(GinkgoT(), fmt.Sprintf(`{
+				assert.True(t, misc.IsValidUUID(job.UUID.String()))
+				assert.Equal(t, int64(0), job.JobID)
+				assert.WithinDuration(t, time.Now(), job.CreatedAt, 200*time.Millisecond)
+				assert.WithinDuration(t, time.Now(), job.ExpireAt, 200*time.Millisecond)
+				assert.Equal(t, fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination), string(job.EventPayload))
+				assert.Len(t, job.LastJobStatus.JobState, 0)
+				assert.JSONEq(t, fmt.Sprintf(`{
 					"source_id":"source-from-transformer",
 					"source_name": "%s",
 					"destination_id":"destination-from-transformer",
@@ -2601,7 +2555,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(2))
+					assert.Len(t, jobs, 2)
 					for i, job := range jobs {
 						assertStoreJob(job, i, "value-enabled-destination-a")
 					}
@@ -2643,7 +2597,7 @@ var _ = Describe("Processor", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(2))
+					assert.Len(t, jobs, 2)
 				})
 
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
@@ -2653,14 +2607,15 @@ var _ = Describe("Processor", Ordered, func() {
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT) {
 					// jobs should be sorted by jobid, so order of statuses is different from order of jobs
 					for i := range unprocessedJobsList {
-						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
+						assertJobStatus(t, unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
 
-			processorSetupAndAssertJobHandling(processor, c)
+			processorSetupAndAssertJobHandling(t, processor, c)
 		})
 
-		It("should process unprocessed jobs to destination with only user transformation", func() {
+		t.Run("should process unprocessed jobs to destination with only user transformation", func(t *testing.T) {
+			c := newTestContext(t).expectCrashRecovery()
 			messages := map[string]mockEventData{
 				// this message should only be delivered to destination B
 				"message-1": {
@@ -2783,7 +2738,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -2816,18 +2771,18 @@ var _ = Describe("Processor", Ordered, func() {
 			})
 
 			mockTransformerClients.WithDynamicDestinationTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
-				return assertDestinationTransform(messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB])(ctx, clientEvents, 1)
+				return assertDestinationTransform(t, messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB])(ctx, clientEvents, 1)
 			})
 
 			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
-				Expect(job.UUID.String()).To(testutils.BeValidUUID())
-				Expect(job.JobID).To(Equal(int64(0)))
-				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-				// Expect(job.CustomVal).To(Equal("destination-definition-name-a"))
-				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination)))
-				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				require.JSONEq(GinkgoT(), fmt.Sprintf(`{
+				assert.True(t, misc.IsValidUUID(job.UUID.String()))
+				assert.Equal(t, int64(0), job.JobID)
+				assert.WithinDuration(t, time.Now(), job.CreatedAt, 200*time.Millisecond)
+				assert.WithinDuration(t, time.Now(), job.ExpireAt, 200*time.Millisecond)
+				// assert.Equal(t, "destination-definition-name-a", job.CustomVal)
+				assert.Equal(t, fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination), string(job.EventPayload))
+				assert.Len(t, job.LastJobStatus.JobState, 0)
+				assert.JSONEq(t, fmt.Sprintf(`{
 					"source_id": "source-from-transformer",
 					"source_name": "%s",
 					"destination_id": "destination-from-transformer",
@@ -2855,7 +2810,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}).Return(nil)
 			callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(2))
+					assert.Len(t, jobs, 2)
 					for i, job := range jobs {
 						assertStoreJob(job, i, "value-enabled-destination-b")
 					}
@@ -2874,14 +2829,15 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList))).Times(1).After(callStoreBatchRouter).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT) {
 					for i := range unprocessedJobsList {
-						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
+						assertJobStatus(t, unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
 
-			processorSetupAndAssertJobHandling(processor, c)
+			processorSetupAndAssertJobHandling(t, processor, c)
 		})
 
-		It("should process unprocessed jobs to destination without user transformation with enabled Dedup", func() {
+		t.Run("should process unprocessed jobs to destination without user transformation with enabled Dedup", func(t *testing.T) {
+			c := newTestContext(t).expectCrashRecovery()
 			messages := map[string]mockEventData{
 				// this message should be delivered only to destination A
 				"message-some-id-1": {
@@ -2983,21 +2939,25 @@ var _ = Describe("Processor", Ordered, func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList))).Times(1).After(callStoreRouter)
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
-			Setup(processor, c, true, false)
+			Setup(processor, c, true, false, t)
+			t.Cleanup(processor.Shutdown)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
 
+			t.Cleanup(processor.dedup.Close)
 			processor.dedup = c.MockDedup
-			handlePendingGatewayJobs(processor)
+			c.MockDedup.EXPECT().Close().Times(1) // called by processor.Shutdown
+			handlePendingGatewayJobs(t, processor)
 		})
 	})
 
-	Context("transformations", func() {
-		It("messages should be skipped on destination transform failures, without failing the job", func() {
+	t.Run("transformations", func(t *testing.T) {
+		t.Run("messages should be skipped on destination transform failures, without failing the job", func(t *testing.T) {
+			c := newTestContext(t)
 			messages := map[string]mockEventData{
 				"message-1": {
 					id:                        "1",
@@ -3061,7 +3021,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -3081,7 +3041,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList))).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT) {
 					// job should be marked as successful regardless of transformer response
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
 			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
@@ -3092,10 +3052,11 @@ var _ = Describe("Processor", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				AnyTimes()
 
-			processorSetupAndAssertJobHandling(processor, c)
+			processorSetupAndAssertJobHandling(t, processor, c)
 		})
 
-		It("messages should be skipped on user transform failures, without failing the job", func() {
+		t.Run("messages should be skipped on user transform failures, without failing the job", func(t *testing.T) {
+			c := newTestContext(t)
 			messages := map[string]mockEventData{
 				"message-1": {
 					id:                        "1",
@@ -3154,7 +3115,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -3183,13 +3144,14 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList))).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT) {
 					// job should be marked as successful regardless of transformer response
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
-			processorSetupAndAssertJobHandling(processor, c)
+			processorSetupAndAssertJobHandling(t, processor, c)
 		})
 
-		It("should drop messages that the destination doesn't support", func() {
+		t.Run("should drop messages that the destination doesn't support", func(t *testing.T) {
+			c := newTestContext(t)
 			messages := map[string]mockEventData{
 				"message-1": {
 					id:                        "1",
@@ -3230,7 +3192,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -3245,7 +3207,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList))).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT) {
 					// job should be marked as successful regardless of transformer response
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
 			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
@@ -3256,10 +3218,11 @@ var _ = Describe("Processor", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				AnyTimes()
 
-			processorSetupAndAssertJobHandling(processor, c)
+			processorSetupAndAssertJobHandling(t, processor, c)
 		})
 
-		It("should drop messages where jobRunID is cancelled", func() {
+		t.Run("should drop messages where jobRunID is cancelled", func(t *testing.T) {
+			c := newTestContext(t)
 			messages := map[string]mockEventData{
 				"message-1": {
 					id:                        "1",
@@ -3300,7 +3263,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -3317,7 +3280,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList))).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT) {
 					// job should be marked as successful regardless of transformer response
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
+					assertJobStatus(t, unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
 			c.MockRsourcesService.EXPECT().
@@ -3353,21 +3316,22 @@ var _ = Describe("Processor", Ordered, func() {
 
 			config.Set("drain.jobRunIDs", "job_run_id_1")
 			defer config.Reset()
-			processorSetupAndAssertJobHandling(processor, c)
+			processorSetupAndAssertJobHandling(t, processor, c)
 		})
 	})
 
-	Context("MainLoop Tests", func() {
-		It("Should not handle jobs when transformer features are not set", func() {
+	t.Run("MainLoop Tests", func(t *testing.T) {
+		t.Run("Should not handle jobs when transformer features are not set", func(t *testing.T) {
+			c := newTestContext(t)
 			mockTransformerFeaturesService := mockFeatures.NewMockFeaturesService(c.mockCtrl)
 			mockTransformerFeaturesService.EXPECT().Wait().Return(make(chan struct{})).AnyTimes()
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			err := processor.Setup(
-				context.Background(),
+				t.Context(),
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -3387,10 +3351,11 @@ var _ = Describe("Processor", Ordered, func() {
 				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
+			t.Cleanup(processor.Shutdown)
 			setMainLoopTimeout(processor, 1*time.Second)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 			defer cancel()
 
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
@@ -3400,30 +3365,31 @@ var _ = Describe("Processor", Ordered, func() {
 			var wg sync.WaitGroup
 			wg.Go(func() {
 				err := processor.Start(ctx)
-				Expect(err).To(BeNil())
+				assert.NoError(t, err)
 			})
 
-			Consistently(func() bool {
+			require.Never(t, func() bool {
 				select {
 				case <-processor.transformerFeaturesService.Wait():
 					return true
 				default:
 					return false
 				}
-			}, 2*time.Second, 10*time.Millisecond).Should(BeFalse())
+			}, 2*time.Second, 10*time.Millisecond)
 			wg.Wait()
 		})
 	})
 
-	Context("ProcessorLoop Tests", func() {
-		It("Should not handle jobs when transformer features are not set", func() {
+	t.Run("ProcessorLoop Tests", func(t *testing.T) {
+		t.Run("Should not handle jobs when transformer features are not set", func(t *testing.T) {
+			c := newTestContext(t)
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			err := processor.Setup(
-				context.Background(),
+				t.Context(),
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -3443,8 +3409,8 @@ var _ = Describe("Processor", Ordered, func() {
 				activationrecords.NewNoopActivationRecordsReporter(),
 				rmetrics.NewPendingEventsRegistry(),
 			)
-			Expect(err).To(BeNil())
-			defer processor.Shutdown()
+			require.NoError(t, err)
+			t.Cleanup(processor.Shutdown)
 
 			processor.config.readLoopSleep = config.SingleValueLoader(time.Millisecond)
 
@@ -3453,15 +3419,16 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockBatchRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Times(0)
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
 			defer cancel()
 
-			Expect(processor.Start(ctx)).To(BeNil())
+			require.NoError(t, processor.Start(ctx))
 		})
 	})
 
-	Context("getConsentFilteredDestinations", func() {
-		It("should filter based on oneTrust consent management preferences", func() {
+	t.Run("getConsentFilteredDestinations", func(t *testing.T) {
+		t.Run("should filter based on oneTrust consent management preferences", func(t *testing.T) {
+			c := newTestContext(t)
 			eventWithDeniedConsents := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
@@ -3487,7 +3454,7 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 			_, err1 := jsonrs.Marshal(eventWithDeniedConsents)
-			Expect(err1).To(BeNil())
+			require.NoError(t, err1)
 
 			eventWithoutDeniedConsents := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
@@ -3514,7 +3481,7 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 			_, err2 := jsonrs.Marshal(eventWithoutDeniedConsents)
-			Expect(err2).To(BeNil())
+			require.NoError(t, err2)
 
 			eventWithoutConsentManagementData := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
@@ -3537,56 +3504,50 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 			_, err3 := jsonrs.Marshal(eventWithoutConsentManagementData)
-			Expect(err3).To(BeNil())
+			require.NoError(t, err3)
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
-			Setup(processor, c, false, false)
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			Setup(processor, c, false, false, t)
+			t.Cleanup(processor.Shutdown)
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
 
-			Expect(destinationAvailable(processor, eventWithDeniedConsents, SourceIDOneTrustConsent, "")).To(BeTrue())
-			Expect(
-				len(processor.getConsentFilteredDestinations(
-					eventWithDeniedConsents,
-					SourceIDOneTrustConsent,
-					enabledDestinations(processor, SourceIDOneTrustConsent),
-				)),
-			).To(Equal(3)) // all except D1 and D3
+			require.True(t, destinationAvailable(processor, eventWithDeniedConsents, SourceIDOneTrustConsent, ""))
+			require.Len(t, processor.getConsentFilteredDestinations(
+				eventWithDeniedConsents,
+				SourceIDOneTrustConsent,
+				enabledDestinations(processor, SourceIDOneTrustConsent),
+			), 3) // all except D1 and D3
 
-			Expect(destinationAvailable(processor, eventWithoutDeniedConsents, SourceIDOneTrustConsent, "")).To(BeTrue())
-			Expect(
-				len(processor.getConsentFilteredDestinations(
-					eventWithoutDeniedConsents,
-					SourceIDOneTrustConsent,
-					enabledDestinations(processor, SourceIDOneTrustConsent),
-				)),
-			).To(Equal(5)) // all
+			require.True(t, destinationAvailable(processor, eventWithoutDeniedConsents, SourceIDOneTrustConsent, ""))
+			require.Len(t, processor.getConsentFilteredDestinations(
+				eventWithoutDeniedConsents,
+				SourceIDOneTrustConsent,
+				enabledDestinations(processor, SourceIDOneTrustConsent),
+			), 5) // all
 
-			Expect(destinationAvailable(processor, eventWithoutConsentManagementData, SourceIDOneTrustConsent, "")).To(BeTrue())
-			Expect(
-				len(processor.getConsentFilteredDestinations(
-					eventWithoutConsentManagementData,
-					SourceIDOneTrustConsent,
-					enabledDestinations(processor, SourceIDOneTrustConsent),
-				)),
-			).To(Equal(5)) // all
+			require.True(t, destinationAvailable(processor, eventWithoutConsentManagementData, SourceIDOneTrustConsent, ""))
+			require.Len(t, processor.getConsentFilteredDestinations(
+				eventWithoutConsentManagementData,
+				SourceIDOneTrustConsent,
+				enabledDestinations(processor, SourceIDOneTrustConsent),
+			), 5) // all
 
-			Expect(destinationAvailable(processor, eventWithoutConsentManagementData, SourceIDOneTrustConsent, "dest-id-1")).To(BeTrue())
-			Expect(
-				len(processor.getConsentFilteredDestinations(
-					eventWithoutConsentManagementData,
-					SourceIDOneTrustConsent,
-					enabledDestinations(processor, SourceIDOneTrustConsent),
-				)),
-			).To(Equal(5)) // all
+			require.True(t, destinationAvailable(processor, eventWithoutConsentManagementData, SourceIDOneTrustConsent, "dest-id-1"))
+			require.Len(t, processor.getConsentFilteredDestinations(
+				eventWithoutConsentManagementData,
+				SourceIDOneTrustConsent,
+				enabledDestinations(processor, SourceIDOneTrustConsent),
+			), 5) // all
 		})
 
-		It("should filter based on ketch consent management preferences", func() {
+		t.Run("should filter based on ketch consent management preferences", func(t *testing.T) {
+			c := newTestContext(t)
 			event := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
@@ -3612,30 +3573,32 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 			_, err := jsonrs.Marshal(event)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
-			Setup(processor, c, false, false)
+			Setup(processor, c, false, false, t)
+			t.Cleanup(processor.Shutdown)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
 
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
 
 			filteredDestinations := processor.getConsentFilteredDestinations(
 				event,
 				SourceIDKetchConsent,
 				enabledDestinations(processor, SourceIDKetchConsent),
 			)
-			Expect(len(filteredDestinations)).To(Equal(4)) // all except dest-id-5 since both purpose1 and purpose2 are denied
-			Expect(destinationAvailable(processor, event, SourceIDKetchConsent, "")).To(BeTrue())
+			require.Len(t, filteredDestinations, 4) // all except dest-id-5 since both purpose1 and purpose2 are denied
+			require.True(t, destinationAvailable(processor, event, SourceIDKetchConsent, ""))
 		})
 
-		It("should filter based on generic consent management preferences", func() {
+		t.Run("should filter based on generic consent management preferences", func(t *testing.T) {
+			c := newTestContext(t)
 			eventWithoutConsentManagementData := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
@@ -3657,7 +3620,7 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 			_, err3 := jsonrs.Marshal(eventWithoutConsentManagementData)
-			Expect(err3).To(BeNil())
+			require.NoError(t, err3)
 
 			eventWithDeniedConsentsGCM := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
@@ -3687,7 +3650,7 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 			_, err4 := jsonrs.Marshal(eventWithDeniedConsentsGCM)
-			Expect(err4).To(BeNil())
+			require.NoError(t, err4)
 
 			eventWithoutDeniedConsentsGCM := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
@@ -3717,7 +3680,7 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 			_, err5 := jsonrs.Marshal(eventWithoutDeniedConsentsGCM)
-			Expect(err5).To(BeNil())
+			require.NoError(t, err5)
 
 			eventWithCustomConsentsGCM := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
@@ -3746,7 +3709,7 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 			_, err6 := jsonrs.Marshal(eventWithCustomConsentsGCM)
-			Expect(err6).To(BeNil())
+			require.NoError(t, err6)
 
 			eventWithDeniedConsentsGCMKetch := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
@@ -3776,76 +3739,68 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 			_, err7 := jsonrs.Marshal(eventWithDeniedConsentsGCMKetch)
-			Expect(err7).To(BeNil())
+			require.NoError(t, err7)
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
-			Setup(processor, c, false, false)
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			Setup(processor, c, false, false, t)
+			t.Cleanup(processor.Shutdown)
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
 
-			Expect(destinationAvailable(processor, eventWithoutConsentManagementData, SourceIDGCM, "")).To(BeTrue())
-			Expect(
-				len(processor.getConsentFilteredDestinations(
-					eventWithoutConsentManagementData,
-					SourceIDGCM,
-					enabledDestinations(processor, SourceIDGCM),
-				)),
-			).To(Equal(9)) // all
+			require.True(t, destinationAvailable(processor, eventWithoutConsentManagementData, SourceIDGCM, ""))
+			require.Len(t, processor.getConsentFilteredDestinations(
+				eventWithoutConsentManagementData,
+				SourceIDGCM,
+				enabledDestinations(processor, SourceIDGCM),
+			), 9) // all
 
-			Expect(destinationAvailable(processor, eventWithoutDeniedConsentsGCM, SourceIDGCM, "")).To(BeTrue())
-			Expect(
-				len(processor.getConsentFilteredDestinations(
-					eventWithoutDeniedConsentsGCM,
-					SourceIDGCM,
-					enabledDestinations(processor, SourceIDGCM),
-				)),
-			).To(Equal(9)) // all
+			require.True(t, destinationAvailable(processor, eventWithoutDeniedConsentsGCM, SourceIDGCM, ""))
+			require.Len(t, processor.getConsentFilteredDestinations(
+				eventWithoutDeniedConsentsGCM,
+				SourceIDGCM,
+				enabledDestinations(processor, SourceIDGCM),
+			), 9) // all
 
-			Expect(destinationAvailable(processor, eventWithCustomConsentsGCM, SourceIDGCM, "")).To(BeTrue())
-			Expect(
-				len(processor.getConsentFilteredDestinations(
-					eventWithCustomConsentsGCM,
-					SourceIDGCM,
-					enabledDestinations(processor, SourceIDGCM),
-				)),
-			).To(Equal(8)) // all except D13
+			require.True(t, destinationAvailable(processor, eventWithCustomConsentsGCM, SourceIDGCM, ""))
+			require.Len(t, processor.getConsentFilteredDestinations(
+				eventWithCustomConsentsGCM,
+				SourceIDGCM,
+				enabledDestinations(processor, SourceIDGCM),
+			), 8) // all except D13
 
-			Expect(destinationAvailable(processor, eventWithDeniedConsentsGCM, SourceIDGCM, "")).To(BeTrue())
-			Expect(
-				len(processor.getConsentFilteredDestinations(
-					eventWithDeniedConsentsGCM,
-					SourceIDGCM,
-					enabledDestinations(processor, SourceIDGCM),
-				)),
-			).To(Equal(7)) // all except D6 and D7
+			require.True(t, destinationAvailable(processor, eventWithDeniedConsentsGCM, SourceIDGCM, ""))
+			require.Len(t, processor.getConsentFilteredDestinations(
+				eventWithDeniedConsentsGCM,
+				SourceIDGCM,
+				enabledDestinations(processor, SourceIDGCM),
+			), 7) // all except D6 and D7
 
-			Expect(destinationAvailable(processor, eventWithDeniedConsentsGCMKetch, SourceIDGCM, "")).To(BeTrue())
-			Expect(
-				len(processor.getConsentFilteredDestinations(
-					eventWithDeniedConsentsGCMKetch,
-					SourceIDGCM,
-					enabledDestinations(processor, SourceIDGCM),
-				)),
-			).To(Equal(8)) // all except D7
+			require.True(t, destinationAvailable(processor, eventWithDeniedConsentsGCMKetch, SourceIDGCM, ""))
+			require.Len(t, processor.getConsentFilteredDestinations(
+				eventWithDeniedConsentsGCMKetch,
+				SourceIDGCM,
+				enabledDestinations(processor, SourceIDGCM),
+			), 8) // all except D7
 
 			// some unknown destination ID is passed destination will be unavailable
-			Expect(destinationAvailable(processor, eventWithDeniedConsentsGCMKetch, SourceIDGCM, "unknown-destination")).To(BeFalse())
+			require.False(t, destinationAvailable(processor, eventWithDeniedConsentsGCMKetch, SourceIDGCM, "unknown-destination"))
 
 			// known destination ID is passed and destination is enabled
-			Expect(destinationAvailable(processor, eventWithDeniedConsentsGCMKetch, SourceIDTransient, DestinationIDEnabledA)).To(BeTrue())
+			require.True(t, destinationAvailable(processor, eventWithDeniedConsentsGCMKetch, SourceIDTransient, DestinationIDEnabledA))
 
 			// know destination ID is passed and destination is not enabled
-			Expect(destinationAvailable(processor, eventWithDeniedConsentsGCMKetch, SourceIDTransient, DestinationIDDisabled)).To(BeFalse())
+			require.False(t, destinationAvailable(processor, eventWithDeniedConsentsGCMKetch, SourceIDTransient, DestinationIDDisabled))
 		})
 	})
 
-	Context("getNonSuccessfulMetrics", func() {
-		It("getNonSuccessfulMetrics", func() {
+	t.Run("getNonSuccessfulMetrics", func(t *testing.T) {
+		t.Run("getNonSuccessfulMetrics", func(t *testing.T) {
+			c := newTestContext(t)
 			event1 := types.SingularEventT{
 				"event":     "Demo Track1",
 				"messageId": "msg1",
@@ -3862,12 +3817,13 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformerClients := transformer.NewSimpleClients()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
+			processor := prepareTestHandle(t, NewHandle(config.Default, mockTransformerClients))
 
-			Setup(processor, c, false, true)
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			Setup(processor, c, false, true, t)
+			t.Cleanup(processor.Shutdown)
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
 
 			commonMetadata := types.Metadata{SourceID: SourceIDEnabled, DestinationID: DestinationIDEnabledA}
 			singularEventWithReceivedAt1 := types.SingularEventWithReceivedAt{
@@ -3927,29 +3883,75 @@ var _ = Describe("Processor", Ordered, func() {
 				commonMetadata.EventType,
 			}, "!<<#>>!")
 
-			Expect(len(m.failedJobs)).To(Equal(2))
-			Expect(len(m.failedMetrics)).To(Equal(2))
+			require.Len(t, m.failedJobs, 2)
+			require.Len(t, m.failedMetrics, 2)
 			slices.SortFunc(m.failedMetrics, func(a, b *reportingtypes.PUReportedMetric) int {
 				return a.StatusDetail.StatusCode - b.StatusDetail.StatusCode
 			})
-			Expect(m.failedMetrics[0].StatusDetail.StatusCode).To(Equal(299))
-			Expect(m.failedMetrics[1].StatusDetail.StatusCode).To(Equal(400))
-			Expect(int(m.failedCountMap[key])).To(Equal(2))
+			require.Equal(t, 299, m.failedMetrics[0].StatusDetail.StatusCode)
+			require.Equal(t, 400, m.failedMetrics[1].StatusDetail.StatusCode)
+			require.Equal(t, 2, int(m.failedCountMap[key]))
 
-			Expect(len(m.filteredJobs)).To(Equal(1))
-			Expect(len(m.filteredMetrics)).To(Equal(1))
-			Expect(int(m.filteredCountMap[key])).To(Equal(1))
-			Expect(m.filteredMetrics[0].StatusDetail.StatusCode).To(Equal(298))
-			Expect(m.filteredMetrics[0].StatusDetail.Status).To(Equal(jobsdb.Filtered.State))
+			require.Len(t, m.filteredJobs, 1)
+			require.Len(t, m.filteredMetrics, 1)
+			require.Equal(t, 1, int(m.filteredCountMap[key]))
+			require.Equal(t, 298, m.filteredMetrics[0].StatusDetail.StatusCode)
+			require.Equal(t, jobsdb.Filtered.State, m.filteredMetrics[0].StatusDetail.Status)
 		})
 	})
-})
+}
 
-var _ = Describe("Static Function Tests", func() {
+func TestFilterByDestinationSupportedMessageTypes(t *testing.T) {
+	destination := func(id string, config, definition map[string]any) backendconfig.DestinationT {
+		return backendconfig.DestinationT{
+			ID: id, Config: config, IsProcessorEnabled: true,
+			DestinationDefinition: backendconfig.DestinationDefinitionT{Config: definition},
+		}
+	}
+	event := func(dest backendconfig.DestinationT, messageType string) types.TransformerEvent {
+		return types.TransformerEvent{
+			Destination: dest, Message: map[string]any{"type": messageType},
+			Metadata: types.Metadata{MessageID: dest.ID + ":" + messageType},
+		}
+	}
+	drain := func(types.TransformerEvent) (bool, string) { return false, "" }
+
+	t.Run("destination list without a definition list", func(t *testing.T) {
+		trackOnly := destination("track-only", map[string]any{"supportedMessageTypes": []any{"track"}}, nil)
+		unconfigured := destination("unconfigured", nil, nil)
+		events := []types.TransformerEvent{
+			event(trackOnly, " TRACK "), event(trackOnly, "page"), event(trackOnly, "identify"),
+			event(unconfigured, "page"),
+		}
+		response := ConvertToFilteredTransformerResponse(events, true, drain)
+		require.Len(t, response.Events, 2)
+		require.Len(t, response.FailedEvents, 2)
+		for _, failed := range response.FailedEvents {
+			require.Equal(t, reportingtypes.FilterEventCode, failed.StatusCode)
+			require.Equal(t, eventfilter.MessageTypeNotSupportedReason, failed.Error)
+		}
+	})
+
+	t.Run("destination list only narrows the definition list", func(t *testing.T) {
+		dest := destination("narrowed", map[string]any{"supportedMessageTypes": []any{"page", "track"}}, map[string]any{"supportedMessageTypes": []any{"track"}})
+		response := ConvertToFilteredTransformerResponse([]types.TransformerEvent{event(dest, "page"), event(dest, "track")}, true, drain)
+		require.Len(t, response.Events, 1)
+		require.Equal(t, eventfilter.MessageTypeNotSupportedReason, response.FailedEvents[0].Error)
+	})
+
+	t.Run("empty list drops every type", func(t *testing.T) {
+		dest := destination("empty", map[string]any{"supportedMessageTypes": []any{}}, nil)
+		response := ConvertToFilteredTransformerResponse([]types.TransformerEvent{event(dest, "track")}, true, drain)
+		require.Empty(t, response.Events)
+		require.Equal(t, eventfilter.MessageTypeNotSupportedReason, response.FailedEvents[0].Error)
+	})
+}
+
+func TestStaticFunctionTests(t *testing.T) {
 	initProcessor()
 
-	Context("TransformerFormatResponse Tests", func() {
-		It("Should match ConvertToTransformerResponse without filtering", func() {
+	t.Run("TransformerFormatResponse Tests", func(t *testing.T) {
+		t.Run("Should match ConvertToTransformerResponse without filtering", func(t *testing.T) {
 			events := []types.TransformerEvent{
 				{
 					Metadata: types.Metadata{
@@ -3991,17 +3993,17 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 			response := ConvertToFilteredTransformerResponse(events, false, func(event types.TransformerEvent) (bool, string) { return false, "" })
-			Expect(response.Events[0].StatusCode).To(Equal(expectedResponses.Events[0].StatusCode))
-			Expect(response.Events[0].Metadata.MessageID).To(Equal(expectedResponses.Events[0].Metadata.MessageID))
-			Expect(response.Events[0].Output["some-key-1"]).To(Equal(expectedResponses.Events[0].Output["some-key-1"]))
-			Expect(response.Events[1].StatusCode).To(Equal(expectedResponses.Events[1].StatusCode))
-			Expect(response.Events[1].Metadata.MessageID).To(Equal(expectedResponses.Events[1].Metadata.MessageID))
-			Expect(response.Events[1].Output["some-key-2"]).To(Equal(expectedResponses.Events[1].Output["some-key-2"]))
+			require.Equal(t, expectedResponses.Events[0].StatusCode, response.Events[0].StatusCode)
+			require.Equal(t, expectedResponses.Events[0].Metadata.MessageID, response.Events[0].Metadata.MessageID)
+			require.Equal(t, expectedResponses.Events[0].Output["some-key-1"], response.Events[0].Output["some-key-1"])
+			require.Equal(t, expectedResponses.Events[1].StatusCode, response.Events[1].StatusCode)
+			require.Equal(t, expectedResponses.Events[1].Metadata.MessageID, response.Events[1].Metadata.MessageID)
+			require.Equal(t, expectedResponses.Events[1].Output["some-key-2"], response.Events[1].Output["some-key-2"])
 		})
 	})
 
-	Context("getDiffMetrics Tests", func() {
-		It("Should match diffMetrics response for Valid Inputs", func() {
+	t.Run("getDiffMetrics Tests", func(t *testing.T) {
+		t.Run("Should match diffMetrics response for Valid Inputs", func(t *testing.T) {
 			// Case 1: Event name transformation (10 in -> 10 transformed)
 			key1Input := strings.Join([]string{
 				"source1", "dest1", "", "event1", "track",
@@ -4083,7 +4085,7 @@ var _ = Describe("Static Function Tests", func() {
 			}
 
 			statsStore, err := memstats.New()
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			response := getDiffMetrics(
 				"outPU",
 				inCountMetadataMap,
@@ -4104,42 +4106,42 @@ var _ = Describe("Static Function Tests", func() {
 			})
 
 			// Should include metrics for all cases
-			Expect(len(response)).To(Equal(3))
+			require.Len(t, response, 3)
 
 			// Case 1: Event name transformation
 			diffMetric1Input := response[0]
-			Expect(diffMetric1Input.SourceID).To(Equal("source1"))
-			Expect(diffMetric1Input.StatusDetail.EventName).To(Equal("event1"))
-			Expect(diffMetric1Input.StatusDetail.Count).To(Equal(int64(-10))) // All input events transformed
+			require.Equal(t, "source1", diffMetric1Input.SourceID)
+			require.Equal(t, "event1", diffMetric1Input.StatusDetail.EventName)
+			require.Equal(t, int64(-10), diffMetric1Input.StatusDetail.Count) // All input events transformed
 
 			diffMetric1Output := response[1]
-			Expect(diffMetric1Output.SourceID).To(Equal("source1"))
-			Expect(diffMetric1Output.StatusDetail.EventName).To(Equal("updated_event1"))
-			Expect(diffMetric1Output.StatusDetail.Count).To(Equal(int64(10))) // All events transformed to new name
+			require.Equal(t, "source1", diffMetric1Output.SourceID)
+			require.Equal(t, "updated_event1", diffMetric1Output.StatusDetail.EventName)
+			require.Equal(t, int64(10), diffMetric1Output.StatusDetail.Count) // All events transformed to new name
 
 			// Case 2: Event splitting
 			diffMetric2New := response[2]
-			Expect(diffMetric2New.SourceID).To(Equal("source2"))
-			Expect(diffMetric2New.StatusDetail.EventName).To(Equal("new_event2"))
-			Expect(diffMetric2New.StatusDetail.Count).To(Equal(int64(10))) // 10 new events added
+			require.Equal(t, "source2", diffMetric2New.SourceID)
+			require.Equal(t, "new_event2", diffMetric2New.StatusDetail.EventName)
+			require.Equal(t, int64(10), diffMetric2New.StatusDetail.Count) // 10 new events added
 
 			// Verify stats were recorded
-			Expect(statsStore.Get("processor_diff_count", stats.Tags{
+			require.Equal(t, float64(0), statsStore.Get("processor_diff_count", stats.Tags{
 				"stage":         "outPU",
 				"sourceId":      "source1",
 				"destinationId": "dest1",
-			}).LastValue()).To(Equal(float64(0))) // Net change is 0 for transformation
+			}).LastValue()) // Net change is 0 for transformation
 
-			Expect(statsStore.Get("processor_diff_count", stats.Tags{
+			require.Equal(t, float64(10), statsStore.Get("processor_diff_count", stats.Tags{
 				"stage":         "outPU",
 				"sourceId":      "source2",
 				"destinationId": "dest2",
-			}).LastValue()).To(Equal(float64(10))) // Net addition of 10 new events
+			}).LastValue()) // Net addition of 10 new events
 		})
 	})
 
-	Context("updateMetricMaps Tests", func() {
-		It("Should update metric maps", func() {
+	t.Run("updateMetricMaps Tests", func(t *testing.T) {
+		t.Run("Should update metric maps", func(t *testing.T) {
 			proc := NewHandle(config.Default, nil)
 			proc.reportingEnabled = true
 			proc.reporting = &mockreportingtypes.MockReporting{}
@@ -4205,24 +4207,24 @@ var _ = Describe("Static Function Tests", func() {
 			// update metric maps
 			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, reportingtypes.TRACKINGPLAN_VALIDATOR, func() json.RawMessage { return nil }, nil)
 
-			Expect(len(countMetadataMap)).To(Equal(1))
-			Expect(len(countMap)).To(Equal(1))
+			require.Len(t, countMetadataMap, 1)
+			require.Len(t, countMap, 1)
 			for k := range countMetadataMap {
-				Expect(countMetadataMap[k]).To(Equal(expectedMetricMetadata))
-				Expect(countMap[k]).To(Equal(int64(1)))
+				require.Equal(t, expectedMetricMetadata, countMetadataMap[k])
+				require.Equal(t, int64(1), countMap[k])
 			}
 
-			Expect(len(connectionDetailsMap)).To(Equal(1))
-			Expect(len(statusDetailsMap)).To(Equal(1))
+			require.Len(t, connectionDetailsMap, 1)
+			require.Len(t, statusDetailsMap, 1)
 			for k := range connectionDetailsMap {
-				Expect(connectionDetailsMap[k]).To(Equal(expectedConnectionDetails))
-				Expect(len(statusDetailsMap[k])).To(Equal(3)) // count of distinct error types: "type-1", "type-2", ""
+				require.Equal(t, expectedConnectionDetails, connectionDetailsMap[k])
+				require.Len(t, statusDetailsMap[k], 3) // count of distinct error types: "type-1", "type-2", ""
 			}
 		})
 	})
 
-	Context("ConvertToTransformerResponse Tests", func() {
-		It("Should filter out unsupported message types", func() {
+	t.Run("ConvertToTransformerResponse Tests", func(t *testing.T) {
+		t.Run("Should filter out unsupported message types", func(t *testing.T) {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -4288,10 +4290,10 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 			response := ConvertToFilteredTransformerResponse(events, true, func(_ types.TransformerEvent) (bool, string) { return false, "" })
-			Expect(response).To(Equal(expectedResponse))
+			require.Equal(t, expectedResponse, response)
 		})
 
-		It("Should filter out identify events when it is supported but serverSideIdentify is disabled", func() {
+		t.Run("Should filter out identify events when it is supported but serverSideIdentify is disabled", func(t *testing.T) {
 			destinationConfig := backendconfig.DestinationT{
 				ID: "some-destination-id",
 				Config: map[string]any{
@@ -4361,10 +4363,10 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
-			Expect(response).To(Equal(expectedResponse))
+			require.Equal(t, expectedResponse, response)
 		})
 
-		It("Should allow all events when no supportedMessageTypes key is present in config", func() {
+		t.Run("Should allow all events when no supportedMessageTypes key is present in config", func(t *testing.T) {
 			destinationConfig := backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]any{},
@@ -4424,9 +4426,9 @@ var _ = Describe("Static Function Tests", func() {
 				FailedEvents: nil,
 			}
 			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
-			Expect(response).To(Equal(expectedResponse))
+			require.Equal(t, expectedResponse, response)
 		})
-		It("Should allow all events when supportedMessageTypes is not an array", func() {
+		t.Run("Should allow all events when supportedMessageTypes is not an array", func(t *testing.T) {
 			destinationConfig := backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]any{
@@ -4488,10 +4490,10 @@ var _ = Describe("Static Function Tests", func() {
 				FailedEvents: nil,
 			}
 			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
-			Expect(response).To(Equal(expectedResponse))
+			require.Equal(t, expectedResponse, response)
 		})
 
-		It("Should filter out messages containing unsupported events", func() {
+		t.Run("Should filter out messages containing unsupported events", func(t *testing.T) {
 			destinationConfig := backendconfig.DestinationT{
 				Config: map[string]any{
 					"enableServerSideIdentify": false,
@@ -4559,10 +4561,10 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
-			Expect(response).To(Equal(expectedResponse))
+			require.Equal(t, expectedResponse, response)
 		})
 
-		It("Shouldn;t filter out messages if listOfConversions config is corrupted", func() {
+		t.Run("Shouldn;t filter out messages if listOfConversions config is corrupted", func(t *testing.T) {
 			destinationConfig := backendconfig.DestinationT{
 				Config: map[string]any{
 					"enableServerSideIdentify": false,
@@ -4629,10 +4631,10 @@ var _ = Describe("Static Function Tests", func() {
 				FailedEvents: nil,
 			}
 			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
-			Expect(response).To(Equal(expectedResponse))
+			require.Equal(t, expectedResponse, response)
 		})
 
-		It("When web sourceType is sending events to cloud-mode destination, should filter out any event types that are not track/group", func() {
+		t.Run("When web sourceType is sending events to cloud-mode destination, should filter out any event types that are not track/group", func(t *testing.T) {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
 				Config: map[string]any{
@@ -4725,10 +4727,10 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
-			Expect(response).To(Equal(expectedResponse))
+			require.Equal(t, expectedResponse, response)
 		})
 
-		It("When web sourceType is sending events to device-mode destination, should filter out all the events to this destination", func() {
+		t.Run("When web sourceType is sending events to device-mode destination, should filter out all the events to this destination", func(t *testing.T) {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: false,
 				Config: map[string]any{
@@ -4821,10 +4823,10 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
-			Expect(response).To(Equal(expectedResponse))
+			require.Equal(t, expectedResponse, response)
 		})
 
-		It("When web sourceType is sending events to hybrid-mode destination, should filter out any event types that are not track/group", func() {
+		t.Run("When web sourceType is sending events to hybrid-mode destination, should filter out any event types that are not track/group", func(t *testing.T) {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
 				Config: map[string]any{
@@ -4916,10 +4918,10 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
-			Expect(response).To(Equal(expectedResponse))
+			require.Equal(t, expectedResponse, response)
 		})
 
-		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter is not present, should filter out all the events with event.type not in supportedMessageTypes to this destination", func() {
+		t.Run("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter is not present, should filter out all the events with event.type not in supportedMessageTypes to this destination", func(t *testing.T) {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
 				Config: map[string]any{
@@ -5006,10 +5008,10 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
-			Expect(response).To(Equal(expectedResponse))
+			require.Equal(t, expectedResponse, response)
 		})
 
-		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter.web is a string, should filter out all the events with event.type not in supportedMessageTypes to this destination", func() {
+		t.Run("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter.web is a string, should filter out all the events with event.type not in supportedMessageTypes to this destination", func(t *testing.T) {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
 				Config: map[string]any{
@@ -5099,11 +5101,11 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
-			Expect(response).To(Equal(expectedResponse))
+			require.Equal(t, expectedResponse, response)
 		})
 
 		// source-type(in sourceDefinition) is empty string
-		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter.web.messageType supports track only but sourceType is coming up as empty string, should filter out all the events with event.type not in supportedMessageTypes", func() {
+		t.Run("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter.web.messageType supports track only but sourceType is coming up as empty string, should filter out all the events with event.type not in supportedMessageTypes", func(t *testing.T) {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
 				Config: map[string]any{
@@ -5195,10 +5197,10 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
-			Expect(response).To(Equal(expectedResponse))
+			require.Equal(t, expectedResponse, response)
 		})
 	})
-})
+}
 
 type mockEventData struct {
 	id                        string
@@ -5266,41 +5268,32 @@ func createBatchParametersWithSources(sourceId string) []byte {
 	return fmt.Appendf(nil, `{"source_id":%q,"source_job_run_id":"job_run_id_1","source_task_run_id":"task_run_id_1"}`, sourceId)
 }
 
-func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string) {
-	Expect(status.JobID).To(Equal(job.JobID))
-	Expect(status.JobState).To(Equal(expectedState))
-	Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
+// assertJobStatus uses assert because it runs inside mock callbacks invoked from processor goroutines.
+func assertJobStatus(t assert.TestingT, job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string) {
+	assert.Equal(t, job.JobID, status.JobID)
+	assert.Equal(t, expectedState, status.JobState)
+	assert.WithinDuration(t, time.Now(), status.RetryTime, 200*time.Millisecond)
+	assert.WithinDuration(t, time.Now(), status.ExecTime, 200*time.Millisecond)
 }
 
+// assertDestinationTransform returns a destination transform mock that asserts on its input.
+// It uses assert because the processor invokes destination transforms from its own goroutines.
 func assertDestinationTransform(
+	t assert.TestingT,
 	messages map[string]mockEventData,
 	sourceId, destinationID string, // nolint: unparam
 	expectations transformExpectation,
-	tb ...require.TestingT,
 ) func(
 	ctx context.Context,
 	clientEvents []types.TransformerEvent,
 	batchSize int,
 ) types.Response {
-	var ginkgo bool
-	var t require.TestingT
-	if len(tb) == 0 {
-		t = GinkgoT()
-		ginkgo = true
-	} else {
-		t = tb[0]
-	}
 	return func(
 		ctx context.Context,
 		clientEvents []types.TransformerEvent,
 		batchSize int,
 	) types.Response {
-		if ginkgo {
-			defer GinkgoRecover()
-		}
-
-		require.Len(t, clientEvents, expectations.events)
+		assert.Len(t, clientEvents, expectations.events)
 
 		messageIDs := make([]string, 0)
 		for i := range clientEvents {
@@ -5308,41 +5301,41 @@ func assertDestinationTransform(
 			messageID := event.Message["messageId"].(string)
 			messageIDs = append(messageIDs, messageID)
 			// Expect all messages belong to same destination
-			require.Equal(t, destinationID, event.Destination.ID)
+			assert.Equal(t, destinationID, event.Destination.ID)
 			// Expect metadata
-			require.Equal(t, destinationID, event.Metadata.DestinationID)
+			assert.Equal(t, destinationID, event.Metadata.DestinationID)
 			// Metadata are stripped from destination transform, if a user transform occurred before.
 			if expectations.receiveMetadata {
-				require.Equal(t, fmt.Sprintf("%s-definition-name", destinationID), event.Metadata.DestinationType)
-				require.Equal(t, messages[messageID].jobid, event.Metadata.JobID)
-				require.Equal(t, messageID, event.Metadata.MessageID)
-				require.Equal(t, sourceId, event.Metadata.SourceID)
-				require.Equal(t, sourceIDToName[sourceId], event.Metadata.SourceName)
+				assert.Equal(t, fmt.Sprintf("%s-definition-name", destinationID), event.Metadata.DestinationType)
+				assert.Equal(t, messages[messageID].jobid, event.Metadata.JobID)
+				assert.Equal(t, messageID, event.Metadata.MessageID)
+				assert.Equal(t, sourceId, event.Metadata.SourceID)
+				assert.Equal(t, sourceIDToName[sourceId], event.Metadata.SourceName)
 				rawEvent, err := jsonrs.Marshal(event)
-				require.NoError(t, err)
+				assert.NoError(t, err)
 				recordID := gjson.GetBytes(rawEvent, "message.recordId").Value()
 				if recordID == nil {
-					require.Nil(t, event.Metadata.RecordID)
+					assert.Nil(t, event.Metadata.RecordID)
 				} else {
-					require.Equal(t, recordID, event.Metadata.RecordID)
+					assert.Equal(t, recordID, event.Metadata.RecordID)
 				}
 				jobRunID := messages[messageID].params["source_job_run_id"]
-				require.Equal(t, jobRunID, event.Metadata.SourceJobRunID)
+				assert.Equal(t, jobRunID, event.Metadata.SourceJobRunID)
 				taskRunID := messages[messageID].params["source_task_run_id"]
-				require.Equal(t, taskRunID, event.Metadata.SourceTaskRunID)
+				assert.Equal(t, taskRunID, event.Metadata.SourceTaskRunID)
 				sourcesJobID := gjson.GetBytes(rawEvent, "message.context.sources.job_id").String()
-				require.Equal(t, sourcesJobID, event.Metadata.SourceJobID)
+				assert.Equal(t, sourcesJobID, event.Metadata.SourceJobID)
 			} else {
-				require.EqualValues(t, 0, event.Metadata.JobID)
-				require.Equal(t, "", event.Metadata.MessageID)
-				require.Equal(t, sourceId, event.Metadata.SourceID)
-				require.Equal(t, sourceIDToName[sourceId], event.Metadata.SourceName)
+				assert.EqualValues(t, 0, event.Metadata.JobID)
+				assert.Equal(t, "", event.Metadata.MessageID)
+				assert.Equal(t, sourceId, event.Metadata.SourceID)
+				assert.Equal(t, sourceIDToName[sourceId], event.Metadata.SourceName)
 			}
 
 			// Expect timestamp fields
 			expectTimestamp := func(input string, expected time.Time) {
 				inputTime, _ := time.Parse(misc.RFC3339Milli, input)
-				requireTimeCirca(t, expected, inputTime, time.Second)
+				assertTimeCirca(t, expected, inputTime, time.Second)
 			}
 
 			parseTimestamp := func(timestamp string, defaultTimeStamp time.Time) time.Time {
@@ -5364,14 +5357,14 @@ func assertDestinationTransform(
 			expectTimestamp(event.Message["timestamp"].(string), misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp))
 
 			// Expect message properties
-			require.Equal(t, fmt.Sprintf("property-%s", messages[messageID].id), event.Message["some-property"].(string))
+			assert.Equal(t, fmt.Sprintf("property-%s", messages[messageID].id), event.Message["some-property"].(string))
 
 			if destinationID == "enabled-destination-b" {
-				require.Equal(t, "value", event.Message["user-transform"].(string))
+				assert.Equal(t, "value", event.Message["user-transform"].(string))
 			}
 		}
 
-		require.Equal(t, expectations.messageIds, strings.Join(messageIDs, ","))
+		assert.Equal(t, expectations.messageIds, strings.Join(messageIDs, ","))
 
 		return types.Response{
 			Events: []types.TransformerResponse{
@@ -5402,19 +5395,22 @@ func assertDestinationTransform(
 	}
 }
 
-func processorSetupAndAssertJobHandling(processor *Handle, c *testContext) {
-	Setup(processor, c, false, false)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+func processorSetupAndAssertJobHandling(t testing.TB, processor *Handle, c *testContext) {
+	t.Helper()
+	Setup(processor, c, false, false, t)
+	t.Cleanup(processor.Shutdown)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
-	GinkgoT().Log("Processor setup and init done")
-	handlePendingGatewayJobs(processor)
+	require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+	t.Log("Processor setup and init done")
+	handlePendingGatewayJobs(t, processor)
 }
 
-func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool, t ...testing.TB) {
+func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool, t testing.TB) {
+	t.Helper()
 	setDisableDedupFeature(processor, enableDedup)
 	err := processor.Setup(
-		context.Background(),
+		t.Context(),
 		c.mockBackendConfig,
 		c.mockGatewayJobsDB,
 		c.mockRouterJobsDB,
@@ -5434,19 +5430,16 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool,
 		activationrecords.NewNoopActivationRecordsReporter(),
 		rmetrics.NewPendingEventsRegistry(),
 	)
-	if len(t) == 0 {
-		Expect(err).To(BeNil())
-	} else {
-		require.NoError(t[0], err)
-	}
+	require.NoError(t, err)
 	processor.reportingEnabled = enableReporting
 	processor.sourceObservers = []sourceObserver{c.MockObserver}
 	processor.tracer = tracing.New(stats.NOPTracer)
 }
 
-func handlePendingGatewayJobs(processor *Handle) {
+func handlePendingGatewayJobs(t testing.TB, processor *Handle) {
+	t.Helper()
 	didWork := processor.handlePendingGatewayJobs("")
-	Expect(didWork).To(Equal(true))
+	require.True(t, didWork)
 }
 
 func TestJobSplitter(t *testing.T) {
@@ -5532,9 +5525,9 @@ func TestJobSplitter(t *testing.T) {
 	})
 }
 
-var _ = Describe("TestConfigFilter", func() {
-	Context("testing config filter", func() {
-		It("success-full test", func() {
+func TestConfigFilter(t *testing.T) {
+	t.Run("testing config filter", func(t *testing.T) {
+		t.Run("success-full test", func(t *testing.T) {
 			intgConfig := backendconfig.DestinationT{
 				ID:   "1",
 				Name: "test",
@@ -5577,10 +5570,10 @@ var _ = Describe("TestConfigFilter", func() {
 				Destination: intgConfig,
 			}
 			filterConfig(&event)
-			Expect(event).To(Equal(expectedEvent))
+			require.Equal(t, expectedEvent, event)
 		})
 
-		It("success-full test with marshalling", func() {
+		t.Run("success-full test with marshalling", func(t *testing.T) {
 			var intgConfig backendconfig.DestinationT
 			var destDef backendconfig.DestinationDefinitionT
 			intgConfigStr := `{
@@ -5599,8 +5592,8 @@ var _ = Describe("TestConfigFilter", func() {
 					"configFilters": ["long_config1", "long_config2"]
 				}
 			}`
-			Expect(jsonrs.Unmarshal([]byte(intgConfigStr), &intgConfig)).To(BeNil())
-			Expect(jsonrs.Unmarshal([]byte(destDefStr), &destDef)).To(BeNil())
+			require.NoError(t, jsonrs.Unmarshal([]byte(intgConfigStr), &intgConfig))
+			require.NoError(t, jsonrs.Unmarshal([]byte(destDefStr), &destDef))
 			intgConfig.DestinationDefinition = destDef
 			expectedEvent := types.TransformerEvent{
 				Message: types.SingularEventT{
@@ -5628,10 +5621,10 @@ var _ = Describe("TestConfigFilter", func() {
 				Destination: intgConfig,
 			}
 			filterConfig(&event)
-			Expect(event).To(Equal(expectedEvent))
+			require.Equal(t, expectedEvent, event)
 		})
 
-		It("failure test", func() {
+		t.Run("failure test", func(t *testing.T) {
 			intgConfig := backendconfig.DestinationT{
 				ID:   "1",
 				Name: "test",
@@ -5676,10 +5669,10 @@ var _ = Describe("TestConfigFilter", func() {
 				Destination: intgConfig,
 			}
 			filterConfig(&event)
-			Expect(event).To(Equal(expectedEvent))
+			require.Equal(t, expectedEvent, event)
 		})
 	})
-})
+}
 
 func Test_GetTimestampFromEvent(t *testing.T) {
 	input := []struct {

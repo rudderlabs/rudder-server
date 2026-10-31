@@ -712,6 +712,7 @@ func (*mockIdentifier) Type() deployment.Type         { return "mockType" }
 func TestRouterTransformationWithOAuthV2(t *testing.T) {
 	initMocks(t)
 	config.Reset()
+	t.Cleanup(config.Reset)
 	loggerOverride = logger.NOP
 
 	mockCtrl := gomock.NewController(t)
@@ -2551,6 +2552,7 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 func TestDehydrateHydrate(t *testing.T) {
 	initMocks(t)
 	config.Reset()
+	t.Cleanup(config.Reset)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -2579,6 +2581,7 @@ func TestDehydrateHydrate(t *testing.T) {
 		_, err = w.Write(b)
 		require.NoError(t, err)
 	}))
+	t.Cleanup(srv.Close)
 	config.Set("DEST_TRANSFORM_URL", srv.URL)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 	tr := NewTransformer("destType", time.Minute, time.Minute, nil, expTimeDiff, nil, config.New())

@@ -47,8 +47,7 @@ func redactErrorText(err error) string {
 		return ""
 	}
 	text := err.Error()
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) && urlErr.URL != "" {
+	if urlErr, ok := errors.AsType[*url.Error](err); ok && urlErr.URL != "" {
 		text = strings.ReplaceAll(text, urlErr.URL, redactURL(urlErr.URL))
 	}
 	return text

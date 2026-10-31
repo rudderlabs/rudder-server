@@ -721,7 +721,7 @@ func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *pr
 
 	err = g.validateObjectStorage(ctx, validateRequest)
 	if err != nil {
-		if errors.As(err, &invalidDestinationCredErr{}) {
+		if _, ok := errors.AsType[invalidDestinationCredErr](err); ok {
 			return &proto.ValidateObjectStorageResponse{
 				Error: err.Error(),
 			}, nil
