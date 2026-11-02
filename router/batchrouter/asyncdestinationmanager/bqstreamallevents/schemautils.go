@@ -2,12 +2,17 @@ package bqstreamallevents
 
 import (
 	"errors"
+	"net/url"
 	"strings"
 
+	"cloud.google.com/go/auth"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
+	bigqueryintegration "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -35,12 +40,33 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return false
 }
 
-// shouldAbort classifies an error as terminal (abort the jobs) vs retryable
+// invalidGrantError reports whether the OAuth token endpoint rejected the
+// service-account credentials (e.g. an unknown key or account).
+func invalidGrantError(err error) bool {
+	e, ok := errors.AsType[*auth.Error](err)
+	if !ok {
+		return false
+	}
+	var response struct {
+		Error string `json:"error"`
+	}
+	return jsonrs.Unmarshal(e.Body, &response) == nil && response.Error == "invalid_grant"
+}
+
+// shouldAbort classifies an error as terminal (abort the jobs) vs retryable.
 func shouldAbort(err error) bool {
 	switch status.Code(err) {
 	case codes.PermissionDenied, codes.Unauthenticated, codes.FailedPrecondition, codes.Unimplemented, codes.DataLoss:
 		return true
 	default:
-		return false
+		// Credential failures from the REST client and our own checks carry no gRPC
+		// status (status.Code reports Unknown), so classify them by error type.
+		if invalidGrantError(err) || errors.Is(err, bigqueryintegration.ErrIncompatibleCredentials) {
+			return true
+		}
+		// The auth library reports an unparseable key as a plain string inside the
+		// HTTP transport error. Match only there: other error text can carry event values.
+		e, ok := errors.AsType[*url.Error](err)
+		return ok && strings.HasPrefix(e.Err.Error(), "failed to parse private key")
 	}
 }
