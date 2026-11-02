@@ -19,7 +19,7 @@ replace (
 
 require (
 	cloud.google.com/go/auth v0.24.1
-	cloud.google.com/go/bigquery v1.85.0
+	cloud.google.com/go/bigquery v1.86.0
 	cloud.google.com/go/pubsub/v2 v2.8.0
 	cloud.google.com/go/storage v1.70.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
@@ -120,7 +120,7 @@ require (
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/time v0.16.0
-	google.golang.org/api v0.307.0
+	google.golang.org/api v0.308.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
