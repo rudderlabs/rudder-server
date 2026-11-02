@@ -153,3 +153,29 @@ func TestUpdateProcessedEventsMetrics(t *testing.T) {
 		"destinationId": destinationID3,
 	}).LastValue())
 }
+
+func TestUpdateProcessedEventsMetricsDrainReason(t *testing.T) {
+	statusList := []*jobsdb.JobStatusT{
+		{JobID: 1, JobState: jobsdb.Aborted.State, ErrorCode: "410", DrainReason: routerutils.DrainReasonJobRunIDCancelled},
+		{JobID: 2, JobState: jobsdb.Aborted.State, ErrorCode: "410", DrainReason: routerutils.DrainReasonJobRunIDCancelled},
+		{JobID: 3, JobState: jobsdb.Aborted.State, ErrorCode: "410", DrainReason: routerutils.DrainReasonJobExpired},
+		{JobID: 4, JobState: jobsdb.Aborted.State, ErrorCode: "410", ErrorResponse: []byte(`{"reason":"cancelled jobRunID"}`)}, // not drained: a 410 from elsewhere
+	}
+	c := jobsdb.ConnectionID{SourceID: "s", DestinationID: "d"}
+	connections := map[int64]jobsdb.ConnectionID{1: c, 2: c, 3: c, 4: c}
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+	routerutils.UpdateProcessedEventsMetrics(statsStore, "batch_router", "dt", statusList, connections)
+
+	tags := func(drainReason string) map[string]string {
+		tags := map[string]string{"module": "batch_router", "destType": "dt", "state": jobsdb.Aborted.State, "code": "410", "sourceId": "s", "destinationId": "d"}
+		if drainReason != "" {
+			tags["drainReason"] = drainReason
+		}
+		return tags
+	}
+	require.Len(t, statsStore.GetAll(), 3)
+	require.Equal(t, 2.0, statsStore.Get("pipeline_processed_events", tags(routerutils.DrainReasonJobRunIDCancelled)).LastValue())
+	require.Equal(t, 1.0, statsStore.Get("pipeline_processed_events", tags(routerutils.DrainReasonJobExpired)).LastValue())
+	require.Equal(t, 1.0, statsStore.Get("pipeline_processed_events", tags("")).LastValue())
+}
