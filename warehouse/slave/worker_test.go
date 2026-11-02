@@ -991,14 +991,16 @@ func TestSlaveWorker(t *testing.T) {
 		bcm := bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP)
 		ef := encoding.NewFactory(config.New())
 
+		startCtx, stopStart := context.WithCancel(ctx)
 		setupCh := make(chan struct{})
 		go func() {
 			defer close(setupCh)
 
-			bcm.Start(ctx)
+			bcm.Start(startCtx)
 		}()
 
 		<-bcm.InitialConfigFetched
+		stopStart()
 		<-setupCh
 
 		t.Run("success", func(t *testing.T) {
