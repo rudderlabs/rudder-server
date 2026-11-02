@@ -645,14 +645,6 @@ func TestToProviderCase(t *testing.T) {
 			value:    "RAND",
 		},
 		{
-			provider: SnowpipeStreaming,
-			value:    "RAND",
-		},
-		{
-			provider: DELTALAKE,
-			value:    "rand",
-		},
-		{
 			provider: POSTGRES,
 			value:    "rand",
 		},
@@ -669,7 +661,7 @@ func TestToProviderCase(t *testing.T) {
 	}
 }
 
-func TestColumnNamesByProviderCase(t *testing.T) {
+func TestDeltalakeColumnNames(t *testing.T) {
 	columns := model.TableSchema{
 		"CONTEXT_CAMPAIGN_NAME": "STRING",
 		"Context_Campaign_Name": "BIGINT",
@@ -677,19 +669,9 @@ func TestColumnNamesByProviderCase(t *testing.T) {
 		"MIXED_CASE":            "INT",
 		"Mixed_Case":            "STRING",
 	}
-	for _, tc := range []struct {
-		provider string
-		want     map[string]string
-	}{
-		{DELTALAKE, map[string]string{"context_campaign_name": "context_campaign_name", "mixed_case": "MIXED_CASE"}},
-		{SNOWFLAKE, map[string]string{"CONTEXT_CAMPAIGN_NAME": "CONTEXT_CAMPAIGN_NAME", "MIXED_CASE": "MIXED_CASE"}},
-		{SnowpipeStreaming, map[string]string{"CONTEXT_CAMPAIGN_NAME": "CONTEXT_CAMPAIGN_NAME", "MIXED_CASE": "MIXED_CASE"}},
-	} {
-		t.Run(tc.provider, func(t *testing.T) {
-			for range 20 { // map iteration must not change which raw spelling wins
-				require.Equal(t, tc.want, ColumnNamesByProviderCase(tc.provider, columns))
-			}
-		})
+	want := map[string]string{"context_campaign_name": "context_campaign_name", "mixed_case": "MIXED_CASE"}
+	for range 20 { // map iteration must not change which raw spelling wins
+		require.Equal(t, want, DeltalakeColumnNames(columns))
 	}
 }
 

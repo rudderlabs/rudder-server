@@ -538,14 +538,13 @@ func ToProviderCase(provider, str string) string {
 	return str
 }
 
-// ColumnNamesByProviderCase indexes raw column names by their case-insensitive provider key.
-// When several names share a key, prefer the provider-case spelling, then the lexical first.
-func ColumnNamesByProviderCase(provider string, columns model.TableSchema) map[string]string {
+// DeltalakeColumnNames indexes raw column names by their lowercase key, since Deltalake column names are case-insensitive.
+// When several names share a key, prefer the lowercase spelling, then the lexical first.
+func DeltalakeColumnNames(columns model.TableSchema) map[string]string {
 	names := make(map[string]string, len(columns))
 	for name := range columns {
-		key := ToProviderCase(provider, strings.ToLower(name))
-		previous, exists := names[key]
-		if !exists || (name == key && previous != key) || (previous != key && name < previous) {
+		key := strings.ToLower(name)
+		if previous, exists := names[key]; !exists || (previous != key && (name == key || name < previous)) {
 			names[key] = name
 		}
 	}

@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -149,18 +148,15 @@ func (sh *schema) normalizeSchema(warehouseSchema model.Schema) model.Schema {
 	if sh.warehouse.Type != whutils.DELTALAKE {
 		return warehouseSchema
 	}
-	canonical := make(model.Schema, len(warehouseSchema))
-	for tableName, columns := range warehouseSchema {
-		canonical[tableName] = normalizeDeltalakeTableSchema(columns)
-	}
-	return canonical
+	return lo.MapValues(warehouseSchema, func(columns model.TableSchema, _ string) model.TableSchema {
+		return normalizeDeltalakeTableSchema(columns)
+	})
 }
 
 func normalizeDeltalakeTableSchema(columns model.TableSchema) model.TableSchema {
 	canonical := make(model.TableSchema, len(columns))
-	for key, name := range whutils.ColumnNamesByProviderCase(whutils.DELTALAKE, columns) {
-		trimmed := strings.TrimSpace(name)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") || key == "event_date" {
+	for key, name := range whutils.DeltalakeColumnNames(columns) {
+		if key == "event_date" { // mirrors deltalake's excludeColumnsMap
 			continue
 		}
 		canonical[key] = columns[name]

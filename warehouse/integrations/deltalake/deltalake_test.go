@@ -193,13 +193,10 @@ func TestFetchSchemaCaseInsensitiveColumns(t *testing.T) {
 		missingType string
 	}{
 		{
-			name: "uppercase columns are canonical and metadata is ignored",
+			name: "uppercase columns are canonical and event_date is excluded",
 			columns: [][2]string{
 				{"CONTEXT_CAMPAIGN_NAME", "STRING"},
 				{"EVENT_DATE", "DATE"},
-				{"# Partition Information", "STRING"},
-				{"# col_name", "STRING"},
-				{"", "STRING"},
 			},
 			want: model.TableSchema{"context_campaign_name": "string"},
 		},

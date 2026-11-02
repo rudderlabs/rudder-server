@@ -391,12 +391,9 @@ func (d *Deltalake) fetchSchema(ctx context.Context, maxTables int) (model.Schem
 
 		mappedColumns := make(model.TableSchema)
 		seenNames := make(map[string]struct{}, len(tableSchema))
+		duplicates := 0
 		for colName, dataType := range tableSchema {
-			// DESCRIBE may include partition metadata, not just actual columns.
-			if name := strings.TrimSpace(colName); name == "" || strings.HasPrefix(name, "#") {
-				continue
-			}
-			key := warehouseutils.ToProviderCase(provider, strings.ToLower(colName))
+			key := strings.ToLower(colName)
 			if _, excluded := excludeColumnsMap[key]; excluded {
 				continue
 			}
@@ -404,17 +401,20 @@ func (d *Deltalake) fetchSchema(ctx context.Context, maxTables int) (model.Schem
 				schema[tableName] = make(model.TableSchema)
 			}
 			if _, exists := seenNames[key]; exists {
-				warehouseutils.WHCounterStat(d.stats, "warehouse_deltalake_duplicate_columns", &d.Warehouse).Count(1)
+				duplicates++
 			}
 			seenNames[key] = struct{}{}
-			if _, ok := dataTypesMapToRudder[dataType]; ok {
-				mappedColumns[colName] = dataType
+			if rudderType, ok := dataTypesMapToRudder[dataType]; ok {
+				mappedColumns[colName] = rudderType
 			} else {
 				d.sendStatForMissingDatatype(dataType)
 			}
 		}
-		for key, name := range warehouseutils.ColumnNamesByProviderCase(provider, mappedColumns) {
-			schema[tableName][key] = dataTypesMapToRudder[mappedColumns[name]]
+		if duplicates > 0 {
+			warehouseutils.WHCounterStat(d.stats, "warehouse_deltalake_duplicate_columns", &d.Warehouse).Count(duplicates)
+		}
+		for key, name := range warehouseutils.DeltalakeColumnNames(mappedColumns) {
+			schema[tableName][key] = mappedColumns[name]
 		}
 	}
 	return schema, nil
@@ -609,14 +609,13 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 	if err != nil {
 		return fmt.Errorf("fetch table attributes: %w", err)
 	}
-	existingColumns := warehouseutils.ColumnNamesByProviderCase(provider, tableSchema)
+	existingColumns := warehouseutils.DeltalakeColumnNames(tableSchema)
 	columnsToAddInfo := lo.Filter(columnsInfo, func(columnInfo warehouseutils.ColumnInfo, _ int) bool {
-		key := warehouseutils.ToProviderCase(provider, strings.ToLower(columnInfo.Name))
-		existingName, ok := existingColumns[key]
+		existingName, ok := existingColumns[strings.ToLower(columnInfo.Name)]
 		if ok && existingName != columnInfo.Name {
 			d.logger.Infon("Skipping column already present with different case",
 				logger.NewStringField(logfield.DestinationID, d.Warehouse.Destination.ID),
-				logger.NewStringField("tableName", tableName),
+				logger.NewStringField(logfield.TableName, tableName),
 				logger.NewStringField("requestedColumn", columnInfo.Name),
 				logger.NewStringField("existingColumn", existingName),
 			)
