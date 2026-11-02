@@ -183,6 +183,138 @@ func TestFetchSchemaValidationTableLimit(t *testing.T) {
 	}
 }
 
+func TestFetchSchemaCaseInsensitiveColumns(t *testing.T) {
+	const namespace, tableName = "test_namespace", "events"
+	for _, tc := range []struct {
+		name        string
+		columns     [][2]string
+		want        model.TableSchema
+		collisions  int64
+		missingType string
+	}{
+		{
+			name: "uppercase columns are canonical and metadata is ignored",
+			columns: [][2]string{
+				{"CONTEXT_CAMPAIGN_NAME", "STRING"},
+				{"EVENT_DATE", "DATE"},
+				{"# Partition Information", "STRING"},
+				{"# col_name", "STRING"},
+				{"", "STRING"},
+			},
+			want: model.TableSchema{"context_campaign_name": "string"},
+		},
+		{
+			name: "mapped provider-case spelling wins",
+			columns: [][2]string{
+				{"CONTEXT_TRAITS_NAME", "BIGINT"},
+				{"context_traits_name", "STRING"},
+				{"CONTEXT_VALUE", "INT"},
+				{"Context_Value", "STRING"},
+			},
+			want:       model.TableSchema{"context_traits_name": "string", "context_value": "int"},
+			collisions: 2,
+		},
+		{
+			name: "mapped type wins over provider-case spelling",
+			columns: [][2]string{
+				{"CONTEXT_DEVICE_ATT_TRACKING_STATUS", "BIGINT"},
+				{"context_device_att_tracking_status", "decimal(38,0)"},
+			},
+			want:        model.TableSchema{"context_device_att_tracking_status": "int"},
+			collisions:  1,
+			missingType: "decimal(38,0)",
+		},
+		{
+			name: "only unmapped types are omitted but still counted",
+			columns: [][2]string{
+				{"CONTEXT_COST", "decimal(38,0)"}, {"context_cost", "binary"},
+			},
+			want:       model.TableSchema{},
+			collisions: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for range 5 { // test selection independently of map iteration order
+				db, mock, err := sqlmock.New()
+				require.NoError(t, err)
+				statsStore, err := memstats.New()
+				require.NoError(t, err)
+				d := deltalake.New(config.New(), logger.NOP, statsStore)
+				d.DB = sqlquerywrapper.New(db)
+				d.Namespace = namespace
+				d.Warehouse.Type = whutils.DELTALAKE
+				mock.ExpectQuery(regexp.QuoteMeta("SHOW SCHEMAS LIKE '" + namespace + "';")).
+					WillReturnRows(sqlmock.NewRows([]string{"databaseName"}).AddRow(namespace))
+				mock.ExpectQuery(regexp.QuoteMeta("SHOW tables FROM `" + namespace + "` LIKE '^(?!rudder_staging_.*$).*';")).
+					WillReturnRows(sqlmock.NewRows([]string{"database", "tableName", "isTemporary"}).AddRow(namespace, tableName, false))
+				rows := sqlmock.NewRows([]string{"col_name", "data_type"})
+				for _, col := range tc.columns {
+					rows.AddRow(col[0], col[1])
+				}
+				mock.ExpectQuery(regexp.QuoteMeta("DESCRIBE QUERY TABLE `" + namespace + "`.`" + tableName + "`;")).WillReturnRows(rows)
+				schema, err := d.FetchSchema(context.Background())
+				require.NoError(t, err)
+				require.Equal(t, tc.want, schema[tableName])
+				collisionStats := statsStore.GetByName("warehouse_deltalake_duplicate_columns")
+				if tc.collisions == 0 {
+					require.Empty(t, collisionStats)
+				} else {
+					require.Len(t, collisionStats, 1)
+					require.Equal(t, float64(tc.collisions), collisionStats[0].Value)
+					require.Equal(t, whutils.DELTALAKE, collisionStats[0].Tags["destType"])
+				}
+				if tc.missingType != "" {
+					missingStats := statsStore.GetByName(whutils.RudderMissingDatatype)
+					require.Contains(t, lo.Map(missingStats, func(metric memstats.Metric, _ int) string { return metric.Tags["datatype"] }), tc.missingType)
+				}
+				require.NoError(t, mock.ExpectationsWereMet())
+				_ = db.Close()
+			}
+		})
+	}
+}
+
+func TestAddColumnsCaseInsensitive(t *testing.T) {
+	const namespace, tableName = "test_namespace", "events"
+	for _, tc := range []struct {
+		name       string
+		columns    [][2]string
+		requested  []whutils.ColumnInfo
+		alterQuery string
+	}{
+		{
+			name:      "uppercase unmapped type prevents duplicate ALTER",
+			columns:   [][2]string{{"CONTEXT_DEVICE_ATT_TRACKING_STATUS", "decimal(38,0)"}},
+			requested: []whutils.ColumnInfo{{Name: "context_device_att_tracking_status", Type: "int"}},
+		},
+		{
+			name:       "case-only match is skipped and new column added",
+			columns:    [][2]string{{"CONTEXT_CAMPAIGN_NAME", "STRING"}},
+			requested:  []whutils.ColumnInfo{{Name: "context_campaign_name", Type: "string"}, {Name: "new_column", Type: "int"}},
+			alterQuery: `ALTER TABLE\s+` + regexp.QuoteMeta("`test_namespace`.`events`") + `\s+ADD COLUMNS\( ` + regexp.QuoteMeta("`new_column` BIGINT") + `\);`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
+			d.DB = sqlquerywrapper.New(db)
+			d.Namespace = namespace
+			rows := sqlmock.NewRows([]string{"col_name", "data_type"})
+			for _, col := range tc.columns {
+				rows.AddRow(col[0], col[1])
+			}
+			mock.ExpectQuery(regexp.QuoteMeta("DESCRIBE QUERY TABLE `" + namespace + "`.`" + tableName + "`;")).WillReturnRows(rows)
+			if tc.alterQuery != "" {
+				mock.ExpectExec(tc.alterQuery).WillReturnResult(sqlmock.NewResult(0, 0))
+			}
+			require.NoError(t, d.AddColumns(context.Background(), tableName, tc.requested))
+			require.NoError(t, mock.ExpectationsWereMet())
+			_ = db.Close()
+		})
+	}
+}
+
 func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")

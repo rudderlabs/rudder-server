@@ -538,6 +538,20 @@ func ToProviderCase(provider, str string) string {
 	return str
 }
 
+// ColumnNamesByProviderCase indexes raw column names by their case-insensitive provider key.
+// When several names share a key, prefer the provider-case spelling, then the lexical first.
+func ColumnNamesByProviderCase(provider string, columns model.TableSchema) map[string]string {
+	names := make(map[string]string, len(columns))
+	for name := range columns {
+		key := ToProviderCase(provider, strings.ToLower(name))
+		previous, exists := names[key]
+		if !exists || (name == key && previous != key) || (previous != key && name < previous) {
+			names[key] = name
+		}
+	}
+	return names
+}
+
 func SnowflakeCloudProvider(config any) string {
 	c := config.(map[string]any)
 	provider, ok := c["cloudProvider"].(string)

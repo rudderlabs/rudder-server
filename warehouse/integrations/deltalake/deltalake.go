@@ -389,19 +389,32 @@ func (d *Deltalake) fetchSchema(ctx context.Context, maxTables int) (model.Schem
 			return model.Schema{}, fmt.Errorf("fetching table attributes: %w", err)
 		}
 
+		mappedColumns := make(model.TableSchema)
+		seenNames := make(map[string]struct{}, len(tableSchema))
 		for colName, dataType := range tableSchema {
-			if _, ok := excludeColumnsMap[colName]; ok {
+			// DESCRIBE may include partition metadata, not just actual columns.
+			if name := strings.TrimSpace(colName); name == "" || strings.HasPrefix(name, "#") {
 				continue
 			}
-
+			key := warehouseutils.ToProviderCase(provider, strings.ToLower(colName))
+			if _, excluded := excludeColumnsMap[key]; excluded {
+				continue
+			}
 			if _, ok := schema[tableName]; !ok {
 				schema[tableName] = make(model.TableSchema)
 			}
-			if datatype, ok := dataTypesMapToRudder[dataType]; ok {
-				schema[tableName][colName] = datatype
+			if _, exists := seenNames[key]; exists {
+				warehouseutils.WHCounterStat(d.stats, "warehouse_deltalake_duplicate_columns", &d.Warehouse).Count(1)
+			}
+			seenNames[key] = struct{}{}
+			if _, ok := dataTypesMapToRudder[dataType]; ok {
+				mappedColumns[colName] = dataType
 			} else {
 				d.sendStatForMissingDatatype(dataType)
 			}
+		}
+		for key, name := range warehouseutils.ColumnNamesByProviderCase(provider, mappedColumns) {
+			schema[tableName][key] = dataTypesMapToRudder[mappedColumns[name]]
 		}
 	}
 	return schema, nil
@@ -596,8 +609,18 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 	if err != nil {
 		return fmt.Errorf("fetch table attributes: %w", err)
 	}
+	existingColumns := warehouseutils.ColumnNamesByProviderCase(provider, tableSchema)
 	columnsToAddInfo := lo.Filter(columnsInfo, func(columnInfo warehouseutils.ColumnInfo, _ int) bool {
-		_, ok := tableSchema[columnInfo.Name]
+		key := warehouseutils.ToProviderCase(provider, strings.ToLower(columnInfo.Name))
+		existingName, ok := existingColumns[key]
+		if ok && existingName != columnInfo.Name {
+			d.logger.Infon("Skipping column already present with different case",
+				logger.NewStringField(logfield.DestinationID, d.Warehouse.Destination.ID),
+				logger.NewStringField("tableName", tableName),
+				logger.NewStringField("requestedColumn", columnInfo.Name),
+				logger.NewStringField("existingColumn", existingName),
+			)
+		}
 		return !ok
 	})
 	if len(columnsToAddInfo) == 0 {

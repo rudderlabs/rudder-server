@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -134,12 +135,37 @@ func New(
 		return sh, nil
 	}
 	if whSchema.ExpiresAt.After(sh.now()) {
-		sh.cachedSchema = whSchema.Schema
+		sh.cachedSchema = sh.normalizeSchema(whSchema.Schema)
 		sh.cachedSchemaExpiresAt = whSchema.ExpiresAt
 		return sh, nil
 	}
 	sh.log.Infon("Schema expired", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Namespace), logger.NewTimeField("expiresAt", whSchema.ExpiresAt))
 	return sh, sh.fetchSchemaFromWarehouse(ctx)
+}
+
+// normalizeSchema ensures old Deltalake snapshots use the same column keys as current schema reads.
+// Do not mutate the repository's schema: other connections can read the same snapshot.
+func (sh *schema) normalizeSchema(warehouseSchema model.Schema) model.Schema {
+	if sh.warehouse.Type != whutils.DELTALAKE {
+		return warehouseSchema
+	}
+	canonical := make(model.Schema, len(warehouseSchema))
+	for tableName, columns := range warehouseSchema {
+		canonical[tableName] = normalizeDeltalakeTableSchema(columns)
+	}
+	return canonical
+}
+
+func normalizeDeltalakeTableSchema(columns model.TableSchema) model.TableSchema {
+	canonical := make(model.TableSchema, len(columns))
+	for key, name := range whutils.ColumnNamesByProviderCase(whutils.DELTALAKE, columns) {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || key == "event_date" {
+			continue
+		}
+		canonical[key] = columns[name]
+	}
+	return canonical
 }
 
 func (sh *schema) fetchSchemaFromWarehouse(ctx context.Context) error {
@@ -177,6 +203,7 @@ func (sh *schema) GetTableSchema(ctx context.Context, tableName string) model.Ta
 func (sh *schema) UpdateSchema(ctx context.Context, updatedSchema model.Schema) error {
 	sh.cachedSchemaMu.Lock()
 	defer sh.cachedSchemaMu.Unlock()
+	updatedSchema = sh.normalizeSchema(updatedSchema)
 	err := sh.saveSchema(ctx, updatedSchema, sh.cachedSchemaExpiresAt)
 	if err != nil {
 		return fmt.Errorf("saving schema: %w", err)
@@ -188,6 +215,9 @@ func (sh *schema) UpdateSchema(ctx context.Context, updatedSchema model.Schema) 
 func (sh *schema) UpdateTableSchema(ctx context.Context, tableName string, tableSchema model.TableSchema) error {
 	sh.cachedSchemaMu.Lock()
 	defer sh.cachedSchemaMu.Unlock()
+	if sh.warehouse.Type == whutils.DELTALAKE {
+		tableSchema = normalizeDeltalakeTableSchema(tableSchema)
+	}
 	sh.cachedSchema[tableName] = tableSchema
 	err := sh.saveSchema(ctx, sh.cachedSchema, sh.cachedSchemaExpiresAt)
 	if err != nil {
