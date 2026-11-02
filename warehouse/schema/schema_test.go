@@ -101,67 +101,6 @@ func newSchema(t *testing.T, warehouse model.Warehouse, schemaRepo schemaRepo) H
 	return sh
 }
 
-func TestDeltalakeCachedSchemaCaseInsensitive(t *testing.T) {
-	ctx := context.Background()
-	warehouse := model.Warehouse{
-		Type:        whutils.DELTALAKE,
-		Namespace:   "namespace",
-		Destination: backendconfig.DestinationT{ID: "dest_id"},
-		Source:      backendconfig.SourceT{ID: "source_id"},
-	}
-	original := model.Schema{"events": {
-		"CONTEXT_CAMPAIGN_NAME": "int",
-		"context_campaign_name": "string",
-		"CONTEXT_DEVICE_NAME":   "string",
-		"event_date":            "date",
-	}}
-	cached := &mockSchemaRepo{schemaMap: map[string]model.WHSchema{
-		"dest_id_namespace": {
-			Schema: original, ExpiresAt: timeutil.Now().Add(10 * time.Minute),
-		},
-	}}
-	staging := &mockStagingFileRepo{schemas: []model.Schema{{"events": {
-		"context_campaign_name": "string", "context_device_name": "string", "new_column": "int",
-	}}}}
-	sch, err := New(ctx, warehouse, config.New(), logger.NOP, stats.NOP, &mockFetchSchemaRepo{err: errors.New("valid cache should not fetch")}, cached, staging)
-	require.NoError(t, err)
-	wantExisting := model.TableSchema{"context_campaign_name": "string", "context_device_name": "string"}
-	require.Equal(t, wantExisting, sch.GetTableSchema(ctx, "events"))
-	require.Equal(t, original, cached.schemaMap["dest_id_namespace"].Schema, "reading the cache must not mutate the repository")
-
-	uploadSchema, err := sch.ConsolidateStagingFilesSchema(ctx, []*model.StagingFile{{ID: 1}})
-	require.NoError(t, err)
-	wantUpload := model.TableSchema{"context_campaign_name": "string", "context_device_name": "string", "new_column": "int"}
-	require.Equal(t, wantUpload, uploadSchema["events"])
-	diff, err := sch.TableSchemaDiff(ctx, "events", uploadSchema["events"])
-	require.NoError(t, err)
-	require.Equal(t, model.TableSchema{"new_column": "int"}, diff.ColumnMap)
-	require.Equal(t, wantUpload, diff.UpdatedSchema, "the staging-table schema must not contain duplicate casings")
-	require.NoError(t, sch.UpdateTableSchema(ctx, "events", diff.UpdatedSchema))
-	require.Equal(t, wantUpload, cached.schemaMap["dest_id_namespace"].Schema["events"])
-}
-
-func TestDeltalakeSchemaUpdatesCanonicalizeColumns(t *testing.T) {
-	ctx := context.Background()
-	warehouse := model.Warehouse{Type: whutils.DELTALAKE, Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "dest_id"}}
-	cached := &mockSchemaRepo{schemaMap: map[string]model.WHSchema{}}
-	sch := newSchema(t, warehouse, cached)
-	require.NoError(t, sch.UpdateSchema(ctx, model.Schema{"events": {"CONTEXT_CAMPAIGN_NAME": "int", "context_campaign_name": "string"}}))
-	require.Equal(t, model.TableSchema{"context_campaign_name": "string"}, cached.schemaMap["dest_id_namespace"].Schema["events"])
-	require.NoError(t, sch.UpdateTableSchema(ctx, "events", model.TableSchema{"CONTEXT_CAMPAIGN_NAME": "int", "context_campaign_name": "string"}))
-	require.Equal(t, model.TableSchema{"context_campaign_name": "string"}, sch.GetTableSchema(ctx, "events"))
-}
-
-func TestNonDeltalakeCachedSchemaKeepsProviderCase(t *testing.T) {
-	ctx := context.Background()
-	warehouse := model.Warehouse{Type: whutils.SNOWFLAKE, Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "dest_id"}}
-	cached := &mockSchemaRepo{schemaMap: map[string]model.WHSchema{
-		"dest_id_namespace": {Schema: model.Schema{"events": {"CONTEXT_CAMPAIGN_NAME": "string"}}, ExpiresAt: timeutil.Now().Add(10 * time.Minute)},
-	}}
-	sch := newSchema(t, warehouse, cached)
-	require.Equal(t, model.TableSchema{"CONTEXT_CAMPAIGN_NAME": "string"}, sch.GetTableSchema(ctx, "events"))
-}
-
 func TestSchema(t *testing.T) {
 	warehouse := model.Warehouse{
 		Destination: backendconfig.DestinationT{

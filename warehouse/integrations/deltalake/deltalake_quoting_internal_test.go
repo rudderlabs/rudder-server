@@ -70,3 +70,17 @@ func TestTableLocationQuery(t *testing.T) {
 		require.Equal(t, `LOCATION 's3://bucket/evil\\\\/table'`, locationQuery(t, `evil\\`, "s3://bucket", true))
 	})
 }
+
+func TestColumnNamesByLowercase(t *testing.T) {
+	columns := model.TableSchema{
+		"CONTEXT_CAMPAIGN_NAME": "STRING",
+		"Context_Campaign_Name": "BIGINT",
+		"context_campaign_name": "BOOLEAN",
+		"MIXED_CASE":            "INT",
+		"Mixed_Case":            "STRING",
+	}
+	want := map[string]string{"context_campaign_name": "context_campaign_name", "mixed_case": "MIXED_CASE"}
+	for range 20 { // map iteration must not change which raw spelling wins
+		require.Equal(t, want, columnNamesByLowercase(columns))
+	}
+}

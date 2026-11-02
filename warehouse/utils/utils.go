@@ -538,19 +538,6 @@ func ToProviderCase(provider, str string) string {
 	return str
 }
 
-// DeltalakeColumnNames indexes raw column names by their lowercase key, since Deltalake column names are case-insensitive.
-// When several names share a key, prefer the lowercase spelling, then the lexical first.
-func DeltalakeColumnNames(columns model.TableSchema) map[string]string {
-	names := make(map[string]string, len(columns))
-	for name := range columns {
-		key := strings.ToLower(name)
-		if previous, exists := names[key]; !exists || (previous != key && (name == key || name < previous)) {
-			names[key] = name
-		}
-	}
-	return names
-}
-
 func SnowflakeCloudProvider(config any) string {
 	c := config.(map[string]any)
 	provider, ok := c["cloudProvider"].(string)
