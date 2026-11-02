@@ -41,6 +41,125 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+// TestDegradedWorkspaceRemovalPickup checks the interval between a hot reload and router consumption.
+func TestDegradedWorkspaceRemovalPickup(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pgResource, err := postgres.Setup(pool, t)
+	require.NoError(t, err)
+	require.NoError(t, (&migrator.Migrator{Handle: pgResource.DB, MigrationsTable: "wh_schema_migrations"}).Migrate("warehouse"))
+	db := sqlmiddleware.New(pgResource.DB)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	const workspaceID, sourceID, destinationID = "workspace", "source", "destination"
+	const destType = warehouseutils.RS
+	full := map[string]backendconfig.ConfigT{
+		workspaceID: {WorkspaceID: workspaceID, Sources: []backendconfig.SourceT{{
+			ID: sourceID, Destinations: []backendconfig.DestinationT{{
+				ID: destinationID, DestinationDefinition: backendconfig.DestinationDefinitionT{Name: destType},
+			}},
+		}}},
+	}
+	ctrl := gomock.NewController(t)
+	bc := mocksBackendConfig.NewMockBackendConfig(ctrl)
+	bc.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).DoAndReturn(func(context.Context, backendconfig.Topic) pubsub.DataChannel {
+		ch := make(chan pubsub.DataEvent, 1)
+		ch <- pubsub.DataEvent{Data: full}
+		close(ch)
+		return ch
+	}).AnyTimes()
+	conf := config.New()
+	conf.Set("Warehouse.degradedWorkspaceIDs", []string{workspaceID})
+	tenant := multitenant.New(conf, bc)
+	watch := tenant.WatchConfig(ctx) // Deliver the BCM snapshot before Run's independent subscription.
+	require.Empty(t, <-watch)
+
+	uploadRepo := repo.NewUploads(db)
+	staging := &model.StagingFile{WorkspaceID: workspaceID, SourceID: sourceID, DestinationID: destinationID}
+	stagingRepo := repo.NewStagingFiles(db, conf)
+	staging.ID, err = stagingRepo.Insert(ctx, &model.StagingFileWithSchema{StagingFile: *staging})
+	require.NoError(t, err)
+	uploadID, err := uploadRepo.CreateWithStagingFiles(ctx, model.Upload{
+		WorkspaceID: workspaceID, SourceID: sourceID, DestinationID: destinationID, DestinationType: destType, Status: model.Waiting,
+	}, []*model.StagingFile{staging})
+	require.NoError(t, err)
+
+	r := &Router{
+		uploadRepo: uploadRepo, stagingRepo: stagingRepo, conf: conf, logger: logger.NOP,
+		statsFactory: stats.NOP, destType: destType, tenantManager: tenant,
+		uploadJobFactory: UploadJobFactory{reporting: &reporting.NOOP{}, conf: conf, logger: logger.NOP, statsFactory: stats.NOP, db: db},
+	}
+	r.loadStats()
+
+	conf.Set("Warehouse.degradedWorkspaceIDs", []string{})
+	// Before BCM/router see the re-send, this connection is still in the full snapshot.
+	jobs, err := r.uploadsToProcess(ctx, 1, nil)
+	require.NoError(t, err)
+	require.Empty(t, jobs)
+	upload, err := uploadRepo.Get(ctx, uploadID)
+	require.NoError(t, err)
+	require.Equal(t, model.Waiting, upload.Status)
+
+	// An allocator may run before either subscription has received its first
+	// backend snapshot. Lack of evidence must not abort the upload.
+	unknownTenant := multitenant.New(config.New(), bc)
+	r.tenantManager = unknownTenant
+	jobs, err = r.uploadsToProcess(ctx, 1, nil)
+	require.NoError(t, err)
+	require.Empty(t, jobs)
+	upload, err = uploadRepo.Get(ctx, uploadID)
+	require.NoError(t, err)
+	require.Equal(t, model.Waiting, upload.Status)
+	r.tenantManager = tenant
+
+	refreshed := <-watch
+	require.Contains(t, refreshed, workspaceID)
+	// A router started for the first time on removal subscribes independently
+	// from its allocator. Exercise its actual subscription before retrying pickup.
+	bcmManager := bcm.New(conf, db, tenant, logger.NOP, stats.NOP)
+	go bcmManager.Start(ctx)
+	r.bcManager = bcmManager
+	go r.backendConfigSubscriber(ctx)
+	require.Eventually(t, func() bool {
+		r.configSubscriberLock.RLock()
+		defer r.configSubscriberLock.RUnlock()
+		return len(r.warehouses) == 1
+	}, 5*time.Second, 10*time.Millisecond)
+	jobs, err = r.uploadsToProcess(ctx, 1, nil)
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	require.Equal(t, uploadID, jobs[0].upload.ID)
+
+	// Legacy uploads can have no workspace ID, and the filtered source map is
+	// empty while this workspace is degraded. The full connection still defers it.
+	r.configSubscriberLock.Lock()
+	r.warehouses = nil
+	r.configSubscriberLock.Unlock()
+	legacyID, err := uploadRepo.CreateWithStagingFiles(ctx, model.Upload{
+		SourceID: sourceID, DestinationID: destinationID, DestinationType: destType, Status: model.Waiting,
+	}, []*model.StagingFile{staging})
+	require.NoError(t, err)
+	jobs, err = r.uploadsToProcess(ctx, 2, nil)
+	require.NoError(t, err)
+	require.Empty(t, jobs)
+	legacy, err := uploadRepo.Get(ctx, legacyID)
+	require.NoError(t, err)
+	require.Equal(t, model.Waiting, legacy.Status)
+
+	// A genuinely absent connection still takes the existing abort path.
+	otherID, err := uploadRepo.CreateWithStagingFiles(ctx, model.Upload{
+		WorkspaceID: workspaceID, SourceID: sourceID, DestinationID: "removed", DestinationType: destType, Status: model.Waiting,
+	}, []*model.StagingFile{staging})
+	require.NoError(t, err)
+	jobs, err = r.uploadsToProcess(ctx, 2, nil)
+	require.NoError(t, err)
+	require.Empty(t, jobs)
+	absent, err := uploadRepo.Get(ctx, otherID)
+	require.NoError(t, err)
+	require.Equal(t, model.Aborted, absent.Status)
+}
+
 func TestRouter(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)

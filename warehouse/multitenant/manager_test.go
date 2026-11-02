@@ -3,6 +3,7 @@ package multitenant_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -13,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var _ backendconfig.BackendConfig = (*mockBackendConfig)(nil)
@@ -116,6 +118,133 @@ func TestDegradeWorkspace(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDegradedWorkspaceReload(t *testing.T) {
+	c := config.New()
+	m := multitenant.New(c, &mockBackendConfig{})
+	require.False(t, m.DegradedWorkspace("workspace1"))
+
+	c.Set("Warehouse.degradedWorkspaceIDs", []string{"workspace1"})
+	require.True(t, m.DegradedWorkspace("workspace1"))
+	require.Equal(t, []string{"workspace1"}, m.DegradedWorkspaces())
+
+	list := m.DegradedWorkspaces()
+	list[0] = "other"
+	list = append(list, "workspace2")
+	require.Equal(t, []string{"other", "workspace2"}, list)
+	require.Equal(t, []string{"workspace1"}, m.DegradedWorkspaces())
+
+	c.Set("Warehouse.degradedWorkspaceIDs", []string{"workspace2"})
+	require.False(t, m.DegradedWorkspace("workspace1"))
+	require.True(t, m.DegradedWorkspace("workspace2"))
+}
+
+func TestWatchConfigReload(t *testing.T) {
+	full := map[string]backendconfig.ConfigT{
+		"workspace1": {WorkspaceID: "workspace1"},
+		"workspace2": {WorkspaceID: "workspace2"},
+	}
+	c := config.New()
+	m := multitenant.New(c, &mockBackendConfig{config: full})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	first, second := m.WatchConfig(ctx), m.WatchConfig(ctx)
+	for _, ch := range []<-chan map[string]backendconfig.ConfigT{first, second} {
+		require.Equal(t, full, receiveConfig(t, ch))
+	}
+
+	c.Set("Warehouse.degradedWorkspaceIDs", []string{"workspace1"})
+	filtered := map[string]backendconfig.ConfigT{"workspace2": full["workspace2"]}
+	for _, ch := range []<-chan map[string]backendconfig.ConfigT{first, second} {
+		require.Equal(t, filtered, receiveConfig(t, ch))
+	}
+
+	c.Set("Warehouse.degradedWorkspaceIDs", []string{})
+	for _, ch := range []<-chan map[string]backendconfig.ConfigT{first, second} {
+		require.Equal(t, full, receiveConfig(t, ch))
+	}
+
+	cancel()
+	for _, ch := range []<-chan map[string]backendconfig.ConfigT{first, second} {
+		_, ok := <-ch
+		require.False(t, ok)
+	}
+	// Reloading after subscribers exit cannot block the synchronous Set callback.
+	c.Set("Warehouse.degradedWorkspaceIDs", []string{"workspace2"})
+}
+
+func TestWatchConfigCanceledSubscriber(t *testing.T) {
+	full := map[string]backendconfig.ConfigT{"workspace1": {WorkspaceID: "workspace1"}}
+	c := config.New()
+	m := multitenant.New(c, &mockBackendConfig{config: full})
+	ctx, cancel := context.WithCancel(t.Context())
+	closed := m.WatchConfig(ctx)
+	require.Equal(t, full, receiveConfig(t, closed))
+	active := m.WatchConfig(t.Context())
+	require.Equal(t, full, receiveConfig(t, active))
+
+	cancel()
+	_, ok := <-closed
+	require.False(t, ok)
+	c.Set("Warehouse.degradedWorkspaceIDs", []string{"workspace1"})
+	require.Empty(t, receiveConfig(t, active))
+}
+
+func receiveConfig(t *testing.T, ch <-chan map[string]backendconfig.ConfigT) map[string]backendconfig.ConfigT {
+	t.Helper()
+	select {
+	case cfg, ok := <-ch:
+		require.True(t, ok)
+		return cfg
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for filtered config")
+		return nil
+	}
+}
+
+func TestHasConnection(t *testing.T) {
+	const workspace, source, destination = "workspace", "source", "destination"
+	full := map[string]backendconfig.ConfigT{
+		workspace: {WorkspaceID: workspace, Sources: []backendconfig.SourceT{{
+			ID: source, Destinations: []backendconfig.DestinationT{{
+				ID: destination, DestinationDefinition: backendconfig.DestinationDefinitionT{Name: warehouseutils.RS},
+			}, {
+				ID: "unsupported", DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "UNSUPPORTED"},
+			}},
+		}}},
+	}
+	c := config.New()
+	m := multitenant.New(c, &mockBackendConfig{config: full})
+	// A delayed Run subscription must not make an already-published WatchConfig
+	// snapshot unavailable to an allocator.
+	exists, known := m.HasConnection(workspace, source, destination, warehouseutils.RS)
+	require.False(t, known)
+	require.False(t, exists)
+	ch := m.WatchConfig(t.Context())
+	require.Equal(t, full, receiveConfig(t, ch))
+
+	for _, tc := range []struct {
+		name, workspace, source, destination, destType string
+		exists                                         bool
+	}{
+		{"exact connection", workspace, source, destination, warehouseutils.RS, true},
+		{"legacy upload", "", source, destination, warehouseutils.RS, true},
+		{"other workspace", "other", source, destination, warehouseutils.RS, false},
+		{"absent destination", workspace, source, "removed", warehouseutils.RS, false},
+		{"other router", workspace, source, destination, warehouseutils.BQ, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			exists, known := m.HasConnection(tc.workspace, tc.source, tc.destination, tc.destType)
+			require.True(t, known)
+			require.Equal(t, tc.exists, exists)
+		})
+	}
+
+	exists, known = m.HasConnection("", source, "unsupported", "UNSUPPORTED")
+	require.True(t, known)
+	require.False(t, exists)
 }
 
 func TestSourceToWorkspace(t *testing.T) {
