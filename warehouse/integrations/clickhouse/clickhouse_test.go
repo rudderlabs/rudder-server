@@ -183,11 +183,10 @@ func TestIntegration(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				httpPort, err := kithelper.GetFreePort()
-				require.NoError(t, err)
-
 				c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 				c.Start(context.Background())
+				httpPort, err := kithelper.GetFreePort()
+				require.NoError(t, err)
 
 				workspaceID := whutils.RandHex()
 				sourceID := whutils.RandHex()
@@ -346,11 +345,10 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Events flow (cluster mode)", func(t *testing.T) {
-		httpPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
-
 		c := testcompose.New(t, compose.FilePaths([]string{clusterCompose, "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
+		httpPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
 
 		workspaceID := whutils.RandHex()
 		jobsDBPort := c.Port("jobsDb", 5432)
@@ -551,11 +549,10 @@ func TestIntegration(t *testing.T) {
 	// the other: this one puts events in at the gateway and reads the column
 	// type back out of ClickHouse.
 	t.Run("Events flow (JSON paths)", func(t *testing.T) {
-		httpPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
-
 		c := testcompose.New(t, compose.FilePaths([]string{clickhouseCompose, "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
+		httpPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
 
 		workspaceID := whutils.RandHex()
 		sourceID := whutils.RandHex()
