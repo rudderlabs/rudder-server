@@ -23,8 +23,9 @@ type Manager struct {
 	sourceIDToWorkspaceID map[string]string
 	// fullConfig is the unfiltered snapshot. Run is its only writer, and
 	// WatchConfig subscribers filter it, so it is stored before any filtered snapshot.
-	fullConfig map[string]backendconfig.ConfigT
-	sourceMu   sync.RWMutex
+	fullConfig        map[string]backendconfig.ConfigT
+	fullConfigVersion uint64
+	sourceMu          sync.RWMutex
 
 	subscribersMu sync.Mutex
 	subscribers   map[chan struct{}]struct{}
@@ -75,6 +76,7 @@ func (m *Manager) Run(ctx context.Context) {
 		m.sourceMu.Lock()
 		wConfig := data.Data.(map[string]backendconfig.ConfigT)
 		m.fullConfig = wConfig
+		m.fullConfigVersion++
 		for workspaceID := range wConfig {
 			for _, source := range wConfig[workspaceID].Sources {
 				m.sourceIDToWorkspaceID[source.ID] = workspaceID
@@ -178,6 +180,8 @@ func (m *Manager) WatchConfig(ctx context.Context) <-chan map[string]backendconf
 			m.subscribersMu.Unlock()
 		}()
 
+		var sentVersion uint64
+		var sentDegraded []string
 		for {
 			select {
 			case <-ctx.Done():
@@ -185,15 +189,18 @@ func (m *Manager) WatchConfig(ctx context.Context) <-chan map[string]backendconf
 			case <-signal:
 			}
 			m.sourceMu.RLock()
-			input := m.fullConfig
+			input, version := m.fullConfig, m.fullConfigVersion
 			m.sourceMu.RUnlock()
-			if input == nil {
+			degraded := m.degradedWorkspaceIDs.Load()
+			// The startup signal and Run's notification can both observe the same snapshot.
+			if input == nil || (version == sentVersion && slices.Equal(degraded, sentDegraded)) {
 				continue
 			}
 
-			filteredConfig := lo.OmitByKeys(input, m.degradedWorkspaceIDs.Load())
+			filteredConfig := lo.OmitByKeys(input, degraded)
 			select {
 			case chOut <- filteredConfig:
+				sentVersion, sentDegraded = version, degraded
 			case <-ctx.Done():
 				return
 			}
