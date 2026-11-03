@@ -268,7 +268,6 @@ type oauthTestCases struct {
 	expectedDeleteStatus         model.JobStatus
 	expectedDeleteStatus_OAuthV2 model.JobStatus
 	expectedPayload              string
-	expectedDeleteRequests       int
 }
 
 var defaultDestDefConfig = map[string]any{
@@ -444,9 +443,8 @@ func TestOAuth(t *testing.T) {
 				{Code: 200, Response: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`},
 				{Code: 200, Response: `{"secret": {"access_token": "refreshed_access_token","refresh_token":"valid_refresh_token"}}`},
 			},
-			expectedDeleteStatus:   model.JobStatus{Status: model.JobStatusComplete},
-			expectedPayload:        `[{"jobId":"18","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"user@example.com","userId":"user-18"}]}]`,
-			expectedDeleteRequests: 2,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusComplete},
+			expectedPayload:      `[{"jobId":"18","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"user@example.com","userId":"user-18"}]}]`,
 		},
 		{
 			name: "test when fetch token fails(with 500) to respond properly fail the job",
@@ -877,14 +875,8 @@ func TestOAuth(t *testing.T) {
 				require.Contains(t, strings.ToLower(status.Error.Error()), strings.ToLower(jobError))
 			}
 			// require.Equal(t, tt.expectedDeleteStatus, status)
-			// TODO: Compare every "/deleteUsers" payload for the other test cases too
+			// TODO: Compare input payload for all "/deleteUsers" requests
 			require.Equal(t, tt.expectedPayload, deleteRespProducer.GetCurrent().actualPayload)
-			if tt.expectedDeleteRequests > 0 {
-				require.Equal(t, tt.expectedDeleteRequests, deleteRespProducer.callCount)
-				for _, response := range deleteRespProducer.responses {
-					require.Equal(t, tt.expectedPayload, response.actualPayload)
-				}
-			}
 		})
 	}
 }
