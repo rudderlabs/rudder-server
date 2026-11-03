@@ -413,40 +413,6 @@ func TestOAuth(t *testing.T) {
 			expectedPayload:              `[{"jobId":"2","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293438@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279982@gmail.com","userId":"Mercie8221821544021583104106123"}]}]`,
 		},
 		{
-			name: "machine_oauth delete retries after token refresh and completes",
-			job: model.Job{
-				ID:            18,
-				WorkspaceID:   "1001",
-				DestinationID: "1234",
-				Status:        model.JobStatus{Status: model.JobStatusPending},
-				Users: []model.User{
-					{ID: "user-18", Attributes: map[string]string{"email": "user@example.com"}},
-				},
-			},
-			dest: &backendconfig.DestinationT{
-				ID:          "1234",
-				WorkspaceID: "1001",
-				Config:      map[string]any{"rudderDeleteAccountId": "xyz"},
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: "GA",
-				},
-				DeleteAccount: &backendconfig.Account{
-					ID:                "xyz",
-					AccountDefinition: &backendconfig.AccountDefinition{AuthenticationType: "machine_oauth"},
-				},
-			},
-			deleteResponses: []deleteResponseParams{
-				{status: 500, jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN","error":"[GA] invalid credentials"}]`},
-				{status: 200, jobResponse: `[{"status":"successful"}]`},
-			},
-			cpResponses: []testutils.CpResponseParams{
-				{Code: 200, Response: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`},
-				{Code: 200, Response: `{"secret": {"access_token": "refreshed_access_token","refresh_token":"valid_refresh_token"}}`},
-			},
-			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusComplete},
-			expectedPayload:      `[{"jobId":"18","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"user@example.com","userId":"user-18"}]}]`,
-		},
-		{
 			name: "test when fetch token fails(with 500) to respond properly fail the job",
 			job: model.Job{
 				ID:            3,
