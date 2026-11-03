@@ -1308,6 +1308,7 @@ func TestRouter(t *testing.T) {
 		r.scheduledTimesCache = make(map[string][]int)
 		r.backgroundGroup = g
 
+		go r.tenantManager.Run(ctx)
 		go func() {
 			r.bcManager.Start(ctx)
 		}()
