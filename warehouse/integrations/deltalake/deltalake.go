@@ -390,8 +390,6 @@ func (d *Deltalake) fetchSchema(ctx context.Context, maxTables int) (model.Schem
 		}
 
 		for colName, dataType := range tableSchema {
-			// Deltalake column names are case-insensitive; key them the way Rudder names columns.
-			colName = strings.ToLower(colName)
 			if _, ok := excludeColumnsMap[colName]; ok {
 				continue
 			}
@@ -472,7 +470,8 @@ func (d *Deltalake) fetchTableAttributes(ctx context.Context, tableName string) 
 			return nil, fmt.Errorf("datatype is not a string: %v", scanDest[datatypeIndex])
 		}
 
-		tableSchema[colName] = datatype
+		// Deltalake column names are case-insensitive, while Rudder always writes them in lowercase.
+		tableSchema[strings.ToLower(colName)] = datatype
 	}
 
 	if err = rows.Err(); err != nil {
@@ -598,9 +597,8 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 	if err != nil {
 		return fmt.Errorf("fetch table attributes: %w", err)
 	}
-	existingColumns := lo.MapKeys(tableSchema, func(_ string, name string) string { return strings.ToLower(name) })
 	columnsToAddInfo := lo.Filter(columnsInfo, func(columnInfo warehouseutils.ColumnInfo, _ int) bool {
-		_, ok := existingColumns[strings.ToLower(columnInfo.Name)]
+		_, ok := tableSchema[columnInfo.Name]
 		return !ok
 	})
 	if len(columnsToAddInfo) == 0 {
