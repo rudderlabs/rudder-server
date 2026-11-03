@@ -6,10 +6,11 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const degradedWorkspaceIDsKey = "Warehouse.degradedWorkspaceIDs"
@@ -20,8 +21,8 @@ type Manager struct {
 	degradedWorkspaceIDs *config.Reloadable[[]string]
 
 	sourceIDToWorkspaceID map[string]string
-	// fullConfig is updated by each WatchConfig subscription before publishing its
-	// filtered snapshot. Run also updates it for SourceToWorkspace callers.
+	// fullConfig is the unfiltered snapshot, written by each WatchConfig
+	// subscription before it publishes its filtered snapshot.
 	fullConfig map[string]backendconfig.ConfigT
 	sourceMu   sync.RWMutex
 
@@ -70,7 +71,6 @@ func (m *Manager) Run(ctx context.Context) {
 	for data := range chIn {
 		m.sourceMu.Lock()
 		wConfig := data.Data.(map[string]backendconfig.ConfigT)
-		m.fullConfig = wConfig
 		for workspaceID := range wConfig {
 			for _, source := range wConfig[workspaceID].Sources {
 				m.sourceIDToWorkspaceID[source.ID] = workspaceID
@@ -90,31 +90,28 @@ func (m *Manager) DegradedWorkspace(workspaceID string) bool {
 
 // DegradedWorkspaces returns a list of degraded workspaceIDs.
 func (m *Manager) DegradedWorkspaces() []string {
-	return slices.Clone(m.degradedWorkspaceIDs.Load())
+	return m.degradedWorkspaceIDs.Load()
 }
 
-// HasConnection reports whether the full snapshot contains a connection eligible
-// for destType. A missing snapshot is not evidence that a connection was removed.
+// ConnectionRemoved reports whether the full snapshot lacks the connection for destType.
+// A missing snapshot is not evidence that a connection was removed.
 // Empty workspace IDs on legacy uploads are resolved by source and destination IDs.
-func (m *Manager) HasConnection(workspaceID, sourceID, destinationID, destType string) (exists, known bool) {
+func (m *Manager) ConnectionRemoved(workspaceID, sourceID, destinationID, destType string) bool {
 	m.sourceMu.RLock()
 	defer m.sourceMu.RUnlock()
 
 	if m.fullConfig == nil {
-		return false, false
-	}
-	if _, eligible := warehouseutils.PseudoWarehouseDestinationMap[destType]; !eligible {
-		return false, true
+		return false
 	}
 	if workspaceID != "" {
-		return connectionInWorkspace(m.fullConfig[workspaceID], sourceID, destinationID, destType), true
+		return !connectionInWorkspace(m.fullConfig[workspaceID], sourceID, destinationID, destType)
 	}
 	for _, config := range m.fullConfig {
 		if connectionInWorkspace(config, sourceID, destinationID, destType) {
-			return true, true
+			return false
 		}
 	}
-	return false, true
+	return true
 }
 
 func connectionInWorkspace(config backendconfig.ConfigT, sourceID, destinationID, destType string) bool {
@@ -184,8 +181,7 @@ func (m *Manager) WatchConfig(ctx context.Context) <-chan map[string]backendconf
 				return
 			case data, ok := <-chIn:
 				if !ok {
-					chIn = nil // Retain the snapshot for future reloads until the context is canceled.
-					continue
+					return
 				}
 				input = data.Data.(map[string]backendconfig.ConfigT)
 				// The filtered consumer cannot act on this snapshot until chOut receives it.
@@ -199,13 +195,7 @@ func (m *Manager) WatchConfig(ctx context.Context) <-chan map[string]backendconf
 				}
 			}
 
-			filteredConfig := make(map[string]backendconfig.ConfigT, len(input))
-			degraded := m.degradedWorkspaceIDs.Load()
-			for workspaceID, cfg := range input {
-				if !slices.Contains(degraded, workspaceID) {
-					filteredConfig[workspaceID] = cfg
-				}
-			}
+			filteredConfig := lo.OmitByKeys(input, m.degradedWorkspaceIDs.Load())
 			select {
 			case chOut <- filteredConfig:
 			case <-ctx.Done():

@@ -66,13 +66,12 @@ func TestDegradedWorkspaceRemovalPickup(t *testing.T) {
 	bc.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).DoAndReturn(func(context.Context, backendconfig.Topic) pubsub.DataChannel {
 		ch := make(chan pubsub.DataEvent, 1)
 		ch <- pubsub.DataEvent{Data: full}
-		close(ch)
 		return ch
 	}).AnyTimes()
 	conf := config.New()
 	conf.Set("Warehouse.degradedWorkspaceIDs", []string{workspaceID})
 	tenant := multitenant.New(conf, bc)
-	watch := tenant.WatchConfig(ctx) // Deliver the BCM snapshot before Run's independent subscription.
+	watch := tenant.WatchConfig(ctx)
 	require.Empty(t, <-watch)
 
 	uploadRepo := repo.NewUploads(db)
@@ -91,15 +90,19 @@ func TestDegradedWorkspaceRemovalPickup(t *testing.T) {
 		uploadJobFactory: UploadJobFactory{reporting: &reporting.NOOP{}, conf: conf, logger: logger.NOP, statsFactory: stats.NOP, db: db},
 	}
 	r.loadStats()
+	requireStatus := func(id int64, want string) {
+		t.Helper()
+		upload, err := uploadRepo.Get(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, want, upload.Status)
+	}
 
 	conf.Set("Warehouse.degradedWorkspaceIDs", []string{})
 	// Before BCM/router see the re-send, this connection is still in the full snapshot.
 	jobs, err := r.uploadsToProcess(ctx, 1, nil)
 	require.NoError(t, err)
 	require.Empty(t, jobs)
-	upload, err := uploadRepo.Get(ctx, uploadID)
-	require.NoError(t, err)
-	require.Equal(t, model.Waiting, upload.Status)
+	requireStatus(uploadID, model.Waiting)
 
 	// An allocator may run before either subscription has received its first
 	// backend snapshot. Lack of evidence must not abort the upload.
@@ -108,9 +111,7 @@ func TestDegradedWorkspaceRemovalPickup(t *testing.T) {
 	jobs, err = r.uploadsToProcess(ctx, 1, nil)
 	require.NoError(t, err)
 	require.Empty(t, jobs)
-	upload, err = uploadRepo.Get(ctx, uploadID)
-	require.NoError(t, err)
-	require.Equal(t, model.Waiting, upload.Status)
+	requireStatus(uploadID, model.Waiting)
 	r.tenantManager = tenant
 
 	refreshed := <-watch
@@ -143,9 +144,7 @@ func TestDegradedWorkspaceRemovalPickup(t *testing.T) {
 	jobs, err = r.uploadsToProcess(ctx, 2, nil)
 	require.NoError(t, err)
 	require.Empty(t, jobs)
-	legacy, err := uploadRepo.Get(ctx, legacyID)
-	require.NoError(t, err)
-	require.Equal(t, model.Waiting, legacy.Status)
+	requireStatus(legacyID, model.Waiting)
 
 	// A genuinely absent connection still takes the existing abort path.
 	otherID, err := uploadRepo.CreateWithStagingFiles(ctx, model.Upload{
@@ -155,9 +154,7 @@ func TestDegradedWorkspaceRemovalPickup(t *testing.T) {
 	jobs, err = r.uploadsToProcess(ctx, 2, nil)
 	require.NoError(t, err)
 	require.Empty(t, jobs)
-	absent, err := uploadRepo.Get(ctx, otherID)
-	require.NoError(t, err)
-	require.Equal(t, model.Aborted, absent.Status)
+	requireStatus(otherID, model.Aborted)
 }
 
 func TestRouter(t *testing.T) {

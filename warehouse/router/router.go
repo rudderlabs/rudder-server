@@ -440,8 +440,7 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 		if !found {
 			// The reloadable degraded list may become visible before BCM and this router
 			// consume the restored configuration. Keep the upload waiting in that gap.
-			exists, known := r.tenantManager.HasConnection(upload.WorkspaceID, upload.SourceID, upload.DestinationID, r.destType)
-			if !known || exists {
+			if !r.tenantManager.ConnectionRemoved(upload.WorkspaceID, upload.SourceID, upload.DestinationID, r.destType) {
 				continue
 			}
 			uploadJob := r.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
