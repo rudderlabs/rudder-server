@@ -389,48 +389,24 @@ func (d *Deltalake) fetchSchema(ctx context.Context, maxTables int) (model.Schem
 			return model.Schema{}, fmt.Errorf("fetching table attributes: %w", err)
 		}
 
-		mappedColumns := make(model.TableSchema)
-		seenNames := make(map[string]struct{}, len(tableSchema))
-		duplicates := 0
 		for colName, dataType := range tableSchema {
-			key := strings.ToLower(colName)
-			if _, excluded := excludeColumnsMap[key]; excluded {
+			// Deltalake column names are case-insensitive; key them the way Rudder names columns.
+			colName = strings.ToLower(colName)
+			if _, ok := excludeColumnsMap[colName]; ok {
 				continue
 			}
+
 			if _, ok := schema[tableName]; !ok {
 				schema[tableName] = make(model.TableSchema)
 			}
-			if _, exists := seenNames[key]; exists {
-				duplicates++
-			}
-			seenNames[key] = struct{}{}
-			if rudderType, ok := dataTypesMapToRudder[dataType]; ok {
-				mappedColumns[colName] = rudderType
+			if datatype, ok := dataTypesMapToRudder[dataType]; ok {
+				schema[tableName][colName] = datatype
 			} else {
 				d.sendStatForMissingDatatype(dataType)
 			}
 		}
-		if duplicates > 0 {
-			warehouseutils.WHCounterStat(d.stats, "warehouse_deltalake_duplicate_columns", &d.Warehouse).Count(duplicates)
-		}
-		for key, name := range columnNamesByLowercase(mappedColumns) {
-			schema[tableName][key] = mappedColumns[name]
-		}
 	}
 	return schema, nil
-}
-
-// columnNamesByLowercase indexes raw column names by their lowercase key, since Deltalake column names are case-insensitive.
-// When several names share a key, prefer the lowercase spelling, then the lexical first.
-func columnNamesByLowercase(columns model.TableSchema) map[string]string {
-	names := make(map[string]string, len(columns))
-	for name := range columns {
-		key := strings.ToLower(name)
-		if previous, exists := names[key]; !exists || (previous != key && (name == key || name < previous)) {
-			names[key] = name
-		}
-	}
-	return names
 }
 
 func (d *Deltalake) sendStatForMissingDatatype(missingDatatype string) {
@@ -622,17 +598,9 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 	if err != nil {
 		return fmt.Errorf("fetch table attributes: %w", err)
 	}
-	existingColumns := columnNamesByLowercase(tableSchema)
+	existingColumns := lo.MapKeys(tableSchema, func(_ string, name string) string { return strings.ToLower(name) })
 	columnsToAddInfo := lo.Filter(columnsInfo, func(columnInfo warehouseutils.ColumnInfo, _ int) bool {
-		existingName, ok := existingColumns[strings.ToLower(columnInfo.Name)]
-		if ok && existingName != columnInfo.Name {
-			d.logger.Infon("Skipping column already present with different case",
-				logger.NewStringField(logfield.DestinationID, d.Warehouse.Destination.ID),
-				logger.NewStringField(logfield.TableName, tableName),
-				logger.NewStringField("requestedColumn", columnInfo.Name),
-				logger.NewStringField("existingColumn", existingName),
-			)
-		}
+		_, ok := existingColumns[strings.ToLower(columnInfo.Name)]
 		return !ok
 	})
 	if len(columnsToAddInfo) == 0 {
