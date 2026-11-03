@@ -105,6 +105,7 @@ func TestDegradeWorkspace(t *testing.T) {
 			})
 
 			ctx := t.Context()
+			go m.Run(ctx)
 
 			ch := m.WatchConfig(ctx)
 			config := <-ch
@@ -144,6 +145,7 @@ func TestWatchConfigReload(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
+	go m.Run(ctx)
 	subs := []<-chan map[string]backendconfig.ConfigT{m.WatchConfig(ctx), m.WatchConfig(ctx)}
 	for _, ch := range subs {
 		require.Equal(t, full, receiveConfig(t, ch))
@@ -194,6 +196,7 @@ func TestConnectionRemoved(t *testing.T) {
 	m := multitenant.New(c, &mockBackendConfig{config: full})
 	// Without a snapshot there is no evidence that the connection was removed.
 	require.False(t, m.ConnectionRemoved(workspace, source, destination, warehouseutils.RS))
+	go m.Run(t.Context())
 	ch := m.WatchConfig(t.Context())
 	require.Equal(t, full, receiveConfig(t, ch))
 

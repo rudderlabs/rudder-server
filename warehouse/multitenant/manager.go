@@ -21,8 +21,8 @@ type Manager struct {
 	degradedWorkspaceIDs *config.Reloadable[[]string]
 
 	sourceIDToWorkspaceID map[string]string
-	// fullConfig is the unfiltered snapshot, written by each WatchConfig
-	// subscription before it publishes its filtered snapshot.
+	// fullConfig is the unfiltered snapshot. Run is its only writer, and
+	// WatchConfig subscribers filter it, so it is stored before any filtered snapshot.
 	fullConfig map[string]backendconfig.ConfigT
 	sourceMu   sync.RWMutex
 
@@ -48,19 +48,22 @@ func (m *Manager) init() {
 		m.ready = make(chan struct{})
 		m.subscribers = make(map[chan struct{}]struct{})
 		m.conf.OnReloadableConfigChange(func(key string, _, _ any) {
-			if key != degradedWorkspaceIDsKey {
-				return
-			}
-			m.subscribersMu.Lock()
-			defer m.subscribersMu.Unlock()
-			for ch := range m.subscribers {
-				select {
-				case ch <- struct{}{}:
-				default:
-				}
+			if key == degradedWorkspaceIDsKey {
+				m.notifySubscribers()
 			}
 		})
 	})
+}
+
+func (m *Manager) notifySubscribers() {
+	m.subscribersMu.Lock()
+	defer m.subscribersMu.Unlock()
+	for ch := range m.subscribers {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // Run is a blocking function that executes manager background logic.
@@ -71,6 +74,7 @@ func (m *Manager) Run(ctx context.Context) {
 	for data := range chIn {
 		m.sourceMu.Lock()
 		wConfig := data.Data.(map[string]backendconfig.ConfigT)
+		m.fullConfig = wConfig
 		for workspaceID := range wConfig {
 			for _, source := range wConfig[workspaceID].Sources {
 				m.sourceIDToWorkspaceID[source.ID] = workspaceID
@@ -80,6 +84,7 @@ func (m *Manager) Run(ctx context.Context) {
 		m.readyOnce.Do(func() {
 			close(m.ready)
 		})
+		m.notifySubscribers()
 	}
 }
 
@@ -158,10 +163,9 @@ func (m *Manager) SourceToWorkspace(ctx context.Context, sourceID string) (strin
 func (m *Manager) WatchConfig(ctx context.Context) <-chan map[string]backendconfig.ConfigT {
 	m.init()
 
-	chIn := m.backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
-
 	chOut := make(chan map[string]backendconfig.ConfigT)
 	signal := make(chan struct{}, 1)
+	signal <- struct{}{} // emit Run's current snapshot, if any
 	m.subscribersMu.Lock()
 	m.subscribers[signal] = struct{}{}
 	m.subscribersMu.Unlock()
@@ -174,25 +178,17 @@ func (m *Manager) WatchConfig(ctx context.Context) <-chan map[string]backendconf
 			m.subscribersMu.Unlock()
 		}()
 
-		var input map[string]backendconfig.ConfigT
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case data, ok := <-chIn:
-				if !ok {
-					return
-				}
-				input = data.Data.(map[string]backendconfig.ConfigT)
-				// The filtered consumer cannot act on this snapshot until chOut receives it.
-				// Publish the full snapshot first, even if Run's subscription is delayed.
-				m.sourceMu.Lock()
-				m.fullConfig = input
-				m.sourceMu.Unlock()
 			case <-signal:
-				if input == nil {
-					continue
-				}
+			}
+			m.sourceMu.RLock()
+			input := m.fullConfig
+			m.sourceMu.RUnlock()
+			if input == nil {
+				continue
 			}
 
 			filteredConfig := lo.OmitByKeys(input, m.degradedWorkspaceIDs.Load())

@@ -71,6 +71,7 @@ func TestDegradedWorkspaceRemovalPickup(t *testing.T) {
 	conf := config.New()
 	conf.Set("Warehouse.degradedWorkspaceIDs", []string{workspaceID})
 	tenant := multitenant.New(conf, bc)
+	go tenant.Run(ctx)
 	watch := tenant.WatchConfig(ctx)
 	require.Empty(t, <-watch)
 
