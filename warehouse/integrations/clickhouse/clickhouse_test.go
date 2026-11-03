@@ -22,6 +22,7 @@ import (
 	clickhousev2 "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/google/uuid"
 	miniocredentials "github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -33,6 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	chresource "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/clickhouse"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -56,12 +58,9 @@ func TestIntegration(t *testing.T) {
 	validations.Init()
 	whutils.Init()
 
-	// The single node server needs 25.3+ for native JSON. The cluster keeps the
-	// 21.x server it has always used, along with the node configs written for
-	// it: the driver only logs "unsupported clickhouse version" below
-	// MinSupportedVersion and connects regardless.
+	// The single node server needs 25.3+ for native JSON. The cluster runs on
+	// the go-kit ClickHouse resource instead of a compose file.
 	clickhouseCompose := "testdata/docker-compose.clickhouse.yml"
-	clusterCompose := "testdata/docker-compose.clickhouse-cluster.yml"
 
 	newClickhouse := func(conf *config.Config) manager.WarehouseOperations {
 		return clickhouse.New(conf, logger.NOP, stats.NOP)
@@ -349,15 +348,42 @@ func TestIntegration(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{clusterCompose, "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+
+		// Two shards of two replicas. The resource coordinates them through an
+		// embedded ClickHouse Keeper and names the cluster rudder_cluster.
+		chCluster, err := chresource.Setup(pool, t,
+			chresource.WithCluster(2, 2),
+			chresource.WithUser(user),
+			chresource.WithPassword(password),
+			chresource.WithDatabase(database),
+			chresource.WithConfig(`<clickhouse><timezone>UTC</timezone></clickhouse>`),
+			chresource.WithPrintLogsOnError(true),
+		)
+		require.NoError(t, err)
+		require.Equal(t, cluster, chCluster.ClusterName)
+
+		c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
+
+		clusterHost := chCluster.Host
+		nodePorts := lo.Map(chCluster.Nodes, func(node *chresource.Node, _ int) int {
+			port, err := strconv.Atoi(node.NativePort)
+			require.NoError(t, err)
+			return port
+		})
+		connectClusterDB := func(t testing.TB, port int) *sql.DB {
+			t.Helper()
+			return connectClickhouseDBV2(t, clusterHost, port, database, user, password)
+		}
 
 		workspaceID := whutils.RandHex()
 		jobsDBPort := c.Port("jobsDb", 5432)
-		clickhouseClusterPort1 := c.Port("clickhouse01", 9000)
-		clickhouseClusterPort2 := c.Port("clickhouse02", 9000)
-		clickhouseClusterPort3 := c.Port("clickhouse03", 9000)
-		clickhouseClusterPort4 := c.Port("clickhouse04", 9000)
+		clickhouseClusterPort1 := nodePorts[0]
+		clickhouseClusterPort2 := nodePorts[1]
+		clickhouseClusterPort3 := nodePorts[2]
+		clickhouseClusterPort4 := nodePorts[3]
 		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
 		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
@@ -377,7 +403,7 @@ func TestIntegration(t *testing.T) {
 				name: "Cluster Mode Setup",
 				setupDB: func(t testing.TB) *sql.DB {
 					t.Helper()
-					return connectDB(t, clickhouseClusterPort1)
+					return connectClusterDB(t, clickhouseClusterPort1)
 				},
 				warehouseEvents2: whth.EventsCountMap{
 					"identifies": 8, "users": 2, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "groups": 8,
@@ -387,14 +413,15 @@ func TestIntegration(t *testing.T) {
 
 					clusterPorts := []int{clickhouseClusterPort2, clickhouseClusterPort3, clickhouseClusterPort4}
 					dbs := lo.Map(clusterPorts, func(port, _ int) *sql.DB {
-						return connectDB(t, port)
+						return connectClusterDB(t, port)
 					})
 					tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-					initializeClickhouseClusterMode(t, dbs, tables, clickhouseClusterPort1, connectDB)
+					initializeClickhouseClusterMode(t, dbs, tables, clickhouseClusterPort1, connectClusterDB)
 				},
 				eventFilePrefix: "../testdata/upload-job",
 				configOverride: map[string]any{
 					"cluster": cluster,
+					"host":    clusterHost,
 					"port":    strconv.Itoa(clickhouseClusterPort1),
 				},
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
