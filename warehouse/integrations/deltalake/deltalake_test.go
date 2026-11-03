@@ -1777,6 +1777,7 @@ func TestIntegration(t *testing.T) {
 		columns := map[string]string{
 			"col1": "int",
 			"col2": "string",
+			"COL4": "string", // created outside Rudder in uppercase; Deltalake matches column names case-insensitively
 		}
 
 		err = d.CreateTable(ctx, tableName, columns)
@@ -1791,6 +1792,10 @@ func TestIntegration(t *testing.T) {
 				Name: "col3",
 				Type: "int",
 			},
+			{
+				Name: "col4",
+				Type: "string",
+			},
 		}
 
 		require.NoError(t, d.AddColumns(ctx, tableName, columnsToAdd))
@@ -1803,6 +1808,7 @@ func TestIntegration(t *testing.T) {
 			"col1": "int",
 			"col2": "string",
 			"col3": "int",
+			"col4": "string",
 		}, schema[tableName])
 	})
 }
