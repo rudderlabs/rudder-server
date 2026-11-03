@@ -598,7 +598,7 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 	if err != nil {
 		return fmt.Errorf("fetch table attributes: %w", err)
 	}
-	existingColumns := lo.MapKeys(tableSchema, func(_ string, name string) string { return strings.ToLower(name) })
+	existingColumns := lo.MapKeys(tableSchema, func(_, name string) string { return strings.ToLower(name) })
 	columnsToAddInfo := lo.Filter(columnsInfo, func(columnInfo warehouseutils.ColumnInfo, _ int) bool {
 		_, ok := existingColumns[strings.ToLower(columnInfo.Name)]
 		return !ok
