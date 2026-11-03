@@ -514,7 +514,8 @@ func (r *Router) mainLoop(ctx context.Context) {
 
 				r.logger.Debugn("[WH] Processing Jobs for warehouse", logger.NewStringField("id", w.Identifier))
 				err := r.createJobs(ctx, w)
-				if err != nil {
+				// on shutdown lib/pq surfaces "canceling statement due to user request", not context.Canceled
+				if err != nil && ctx.Err() == nil {
 					r.logger.Errorn("[WH] Failed to process warehouse Jobs", obskit.Error(err))
 				}
 			})
