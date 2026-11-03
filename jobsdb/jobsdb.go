@@ -228,6 +228,7 @@ type JobStatusT struct {
 	WorkspaceId   string          `json:"WorkspaceId"` // not stored in DB
 	PartitionID   string          `json:"-"`           // not stored in DB
 	CustomVal     string          `json:"-"`           // not stored in DB
+	DrainReason   string          `json:"-"`           // not stored in DB; set on drained statuses for metrics
 }
 
 type ConnectionID struct {

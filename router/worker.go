@@ -96,6 +96,7 @@ func (w *worker) acceptWorkerJob(workerJob workerJob) *types.RouterJobT {
 			WorkspaceId:   job.WorkspaceId,
 			PartitionID:   job.PartitionID,
 			CustomVal:     job.CustomVal,
+			DrainReason:   abortReason,
 		}
 		// Enhancing job parameter with the drain reason.
 		job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "router")

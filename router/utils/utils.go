@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -180,41 +181,23 @@ func (d *drainer) getRetentionTimeForDestination(destID string) time.Duration {
 }
 
 func UpdateProcessedEventsMetrics(statsHandle stats.Stats, module, destType string, statusList []*jobsdb.JobStatusT, jobIDConnectionDetailsMap map[int64]jobsdb.ConnectionID) {
-	eventsPerConnectionInfoAndStateAndCode := map[string]map[string]map[string]int{}
-	for i := range statusList {
-		sourceID := jobIDConnectionDetailsMap[statusList[i].JobID].SourceID
-		destinationID := jobIDConnectionDetailsMap[statusList[i].JobID].DestinationID
-		connectionKey := strings.Join([]string{sourceID, destinationID}, ",")
-		state := statusList[i].JobState
-		code := statusList[i].ErrorCode
-		if _, ok := eventsPerConnectionInfoAndStateAndCode[connectionKey]; !ok {
-			eventsPerConnectionInfoAndStateAndCode[connectionKey] = map[string]map[string]int{}
-			eventsPerStateAndCode := eventsPerConnectionInfoAndStateAndCode[connectionKey]
-			eventsPerStateAndCode[state] = map[string]int{}
-			eventsPerStateAndCode[state][code]++
-
-		} else {
-			eventsPerStateAndCode := eventsPerConnectionInfoAndStateAndCode[connectionKey]
-			if _, ok := eventsPerStateAndCode[state]; !ok {
-				eventsPerStateAndCode[state] = map[string]int{}
-			}
-			eventsPerStateAndCode[state][code]++
+	type key struct{ sourceID, destinationID, state, code, drainReason string }
+	counts := lo.CountValuesBy(statusList, func(status *jobsdb.JobStatusT) key {
+		connection := jobIDConnectionDetailsMap[status.JobID]
+		return key{connection.SourceID, connection.DestinationID, status.JobState, status.ErrorCode, status.DrainReason}
+	})
+	for k, count := range counts {
+		tags := stats.Tags{
+			"module":        module,
+			"destType":      destType,
+			"state":         k.state,
+			"code":          k.code,
+			"sourceId":      k.sourceID,
+			"destinationId": k.destinationID,
 		}
-
-	}
-	for connectionKey, eventsPerStateAndCode := range eventsPerConnectionInfoAndStateAndCode {
-		sourceID, destinationID, _ := strings.Cut(connectionKey, ",")
-		for state, codes := range eventsPerStateAndCode {
-			for code, count := range codes {
-				statsHandle.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
-					"module":        module,
-					"destType":      destType,
-					"state":         state,
-					"code":          code,
-					"sourceId":      sourceID,
-					"destinationId": destinationID,
-				}).Count(count)
-			}
+		if k.drainReason != "" {
+			tags["drainReason"] = k.drainReason
 		}
+		statsHandle.NewTaggedStat(`pipeline_processed_events`, stats.CountType, tags).Count(count)
 	}
 }
