@@ -216,26 +216,46 @@ func TestODPSQueryHints(t *testing.T) {
 }
 
 // SDK signing is performed before sending a request. A failing role provider
-// must not leak its refresh error through Query.
+// must not leak its refresh error through Query or send a request.
 func TestODPSQueryCredentialFailure(t *testing.T) {
 	id, key, token := "SECRET id", "SECRET key", "SECRET token"
 	provider := &odpsTestCredential{model: &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &key, SecurityToken: &token}}
-	instance, err := NewODPSClient("project", "cn-shanghai", provider)
-	require.NoError(t, err)
 	provider.err = errors.New("SECRET refresh failure")
-	_, err = (&Client{Type: ODPSClient, ODPS: instance}).Query("SELECT 1")
+	guarded := GuardODPSCredentials(provider)
+	_, guardErr := guarded.GetCredential()
+	require.EqualError(t, guardErr, "ODPS credentials unavailable")
+	var calls atomic.Int32
+	server := newODPSTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	defer server.Close()
+	instance := odps.NewOdps(account.NewStsAccountWithCredential(guarded, "cn-shanghai"), server.URL)
+	instance.SetDefaultProjectName("project")
+	_, err := (&Client{Type: ODPSClient, ODPS: instance}).Query("SELECT 1")
 	require.EqualError(t, err, "ODPS request failed")
+	require.Zero(t, calls.Load(), "credential failure must stop before the HTTP request")
 }
 
 func TestODPSRoleRefreshWithoutTokenFailsBeforeSigning(t *testing.T) {
 	id, secret, token := "SECRET id", "SECRET secret", "SECRET token"
 	provider := &odpsTestCredential{model: &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &secret, SecurityToken: &token}}
-	instance, err := NewODPSClient("project", "cn-shanghai", provider)
-	require.NoError(t, err)
 	provider.model.SecurityToken = nil
-	_, err = (&Client{Type: ODPSClient, ODPS: instance}).Query("SELECT 1")
+	guarded := GuardODPSCredentials(provider)
+	_, guardErr := guarded.GetCredential()
+	require.EqualError(t, guardErr, "ODPS credentials unavailable")
+	var calls atomic.Int32
+	server := newODPSTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	defer server.Close()
+	instance := odps.NewOdps(account.NewStsAccountWithCredential(guarded, "cn-shanghai"), server.URL)
+	instance.SetDefaultProjectName("project")
+	_, err := (&Client{Type: ODPSClient, ODPS: instance}).Query("SELECT 1")
 	require.EqualError(t, err, "ODPS request failed")
 	require.NotContains(t, err.Error(), "SECRET")
+	require.Zero(t, calls.Load(), "missing STS token must stop before the HTTP request")
 }
 
 // The SDK supplies no context-aware requests, so test the polling state

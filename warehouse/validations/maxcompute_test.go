@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -39,10 +40,15 @@ func TestMaxComputeValidationFixture(t *testing.T) {
 	dest.Config["namespace"] = "MySchema"
 	require.Equal(t, "MySchema", configuredNamespaceInDestination(dest))
 	require.NotEqual(t, getTable(dest), getTable(dest))
-	path, err := CreateTempLoadFile(dest)
+	path, expectedHash, err := createTempLoadFile(dest)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.Remove(path) })
+	compressed, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, sha256.Sum256(compressed), expectedHash)
 	require.True(t, strings.HasSuffix(path, ".json.gz"))
+	require.Regexp(t, `^validation-[^/]+\.json\.gz$`, filepath.Base(path))
+	require.Equal(t, connectionTestingFolder, filepath.Base(filepath.Dir(path)))
 	f, err := os.Open(path)
 	require.NoError(t, err)
 	defer func() { _ = f.Close() }()
@@ -126,7 +132,10 @@ func (*validationFileManager) SetTimeout(time.Duration) {}
 func TestMaxComputeReadbackHash(t *testing.T) {
 	path := t.TempDir() + "/fixture"
 	require.NoError(t, os.WriteFile(path, []byte("fixture"), 0o600))
-	hash, err := hashValidationFile(path)
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+	hash, err := hashValidationFile(f)
 	require.NoError(t, err)
 	require.Equal(t, sha256.Sum256([]byte("fixture")), hash)
 	different := sha256.Sum256([]byte("different"))

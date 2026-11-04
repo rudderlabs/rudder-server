@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -713,6 +714,13 @@ func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *pr
 		}
 	case warehouseutils.AlibabaOSS:
 		err = warehouseutils.ValidateMaxComputeOSSConfig(validateRequest.Config)
+		if err == nil {
+			role, _ := warehouseutils.MaxComputeRoleMode(validateRequest.Config)
+			workspaceID, _ := validateRequest.Config["workspaceID"].(string)
+			if role && strings.TrimSpace(workspaceID) == "" {
+				err = errors.New("workspaceID is required for Alibaba OSS role validation")
+			}
+		}
 	default:
 		err = fmt.Errorf("type: %v not supported", request.Type)
 	}
@@ -752,9 +760,14 @@ func checkMapForValidKey(configMap map[string]any, key string) bool {
 func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObjectStorageRequest) error {
 	storageConfig := request.Config
 	if request.Type == warehouseutils.AlibabaOSS {
-		storageConfig = misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider: request.Type, Config: request.Config,
+		workspaceID, _ := request.Config["workspaceID"].(string)
+		var err error
+		storageConfig, err = misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider: request.Type, Config: request.Config, WorkspaceID: workspaceID,
 		})
+		if err != nil {
+			return fmt.Errorf("converting object storage config: %w", err)
+		}
 	}
 	settings := &filemanager.Settings{
 		Provider: request.Type,

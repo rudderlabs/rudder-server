@@ -53,10 +53,13 @@ func (m *MaxCompute) loadTable(ctx context.Context, table, validationLocation st
 	if err := validateOSSSettings(m.warehouse.Destination.Config, m.warehouse.Destination.WorkspaceID); err != nil {
 		return nil, err
 	}
-	converted := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+	converted, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 		Provider: warehouseutils.AlibabaOSS, Config: m.warehouse.Destination.Config,
 		WorkspaceID: m.warehouse.Destination.WorkspaceID,
 	})
+	if err != nil {
+		return nil, err
+	}
 	fm, err := filemanager.New(&filemanager.Settings{Provider: warehouseutils.AlibabaOSS, Config: converted, Conf: m.conf})
 	if err != nil {
 		return nil, errors.New("creating MaxCompute OSS filemanager failed")

@@ -661,22 +661,59 @@ type ObjectStorageOptsT struct {
 	WorkspaceID                 string
 }
 
-func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
-	objectStorageConfigMap := opts.Config.(map[string]any)
+func AlibabaOSSRoleMode(conf map[string]any) (bool, error) {
+	if conf == nil {
+		return false, fmt.Errorf("MaxCompute OSS configuration is required")
+	}
+	for _, field := range []string{"accessKeyId", "accessKeySecret", "iamRoleARN"} {
+		if value, present := conf[field]; present && value != nil {
+			if _, ok := value.(string); !ok {
+				return false, fmt.Errorf("%s must be a string for MaxCompute", field)
+			}
+		}
+	}
+	keyID, _ := conf["accessKeyId"].(string)
+	key, _ := conf["accessKeySecret"].(string)
+	arn, _ := conf["iamRoleARN"].(string)
+	role := strings.TrimSpace(arn) != ""
+	hasID, hasSecret := strings.TrimSpace(keyID) != "", strings.TrimSpace(key) != ""
+	if role && (hasID || hasSecret) {
+		return false, fmt.Errorf("iamRoleARN and access keys cannot be combined for MaxCompute")
+	}
+	if hasID != hasSecret {
+		return false, fmt.Errorf("accessKeyId and accessKeySecret must be a complete pair for MaxCompute")
+	}
+	if !role && !hasID {
+		return false, fmt.Errorf("iamRoleARN or accessKeyId and accessKeySecret are required for MaxCompute")
+	}
+	return role, nil
+}
+
+func GetObjectStorageConfig(opts ObjectStorageOptsT) (map[string]any, error) {
+	objectStorageConfigMap, ok := opts.Config.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("object storage config must be a map[string]any")
+	}
 	// MaxCompute always stages in customer-owned OSS, even when a destination
 	// enables RudderStack storage for other providers. Pass only keys understood
 	// by go-kit's OSS manager; never forward ODPS bootstrap keys in role mode.
 	if opts.Provider == "ALIBABA_OSS" {
+		role, err := AlibabaOSSRoleMode(objectStorageConfigMap)
+		if err != nil {
+			return nil, err
+		}
+		if role && strings.TrimSpace(opts.WorkspaceID) == "" {
+			return nil, fmt.Errorf("workspace ID is required for MaxCompute OSS role authentication")
+		}
 		ossConfig := make(map[string]any)
 		for _, key := range []string{"bucketName", "prefix", "region"} {
 			if value, ok := objectStorageConfigMap[key]; ok {
 				ossConfig[key] = value
 			}
 		}
-		arn, _ := objectStorageConfigMap["iamRoleARN"].(string)
-		if strings.TrimSpace(arn) != "" {
+		if role {
 			ossConfig["roleBasedAuth"] = true
-			ossConfig["iamRoleARN"] = arn
+			ossConfig["iamRoleARN"] = objectStorageConfigMap["iamRoleARN"]
 			ossConfig["externalID"] = opts.WorkspaceID
 		} else {
 			ossConfig["roleBasedAuth"] = false
@@ -685,13 +722,13 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
 		}
 		ossConfig["endPoint"] = ""
 		ossConfig["useInternalEndpoint"] = false
-		return ossConfig
+		return ossConfig, nil
 	}
 	if opts.Provider == "ONELAKE" {
-		return objectStorageConfigMap
+		return objectStorageConfigMap, nil
 	}
 	if opts.UseRudderStorage {
-		return GetRudderObjectStorageConfig(opts.RudderStoragePrefixOverride)
+		return GetRudderObjectStorageConfig(opts.RudderStoragePrefixOverride), nil
 	}
 	if opts.Provider == "S3" {
 		clonedObjectStorageConfig := make(map[string]any)
@@ -715,7 +752,7 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
 		clonedObjectStorageConfig["workloadIdentityAWSRoleARN"], clonedObjectStorageConfig["workloadIdentityAWSRegion"] = GetRudderGCPFederationAWSRoleAndRegion(config.Default)
 		objectStorageConfigMap = clonedObjectStorageConfig
 	}
-	return objectStorageConfigMap
+	return objectStorageConfigMap, nil
 }
 
 // GetParsedTimestamp returns the parsed timestamp

@@ -3,6 +3,8 @@ package slave
 import (
 	"compress/gzip"
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -21,6 +24,48 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
 )
+
+func TestMaxComputeSlaveOSSConfig(t *testing.T) {
+	stop := errors.New("factory reached")
+	for _, useRudderStorage := range []bool{false, true} {
+		for _, mode := range []string{"role", "accessKey", "mixed", "missing", "partial"} {
+			t.Run(fmt.Sprintf("%s/useRudderStorage=%t", mode, useRudderStorage), func(t *testing.T) {
+				conf := map[string]any{"bucketName": "customer-bucket", "region": "cn-hangzhou", "ossRoleArn": "read-role"}
+				switch mode {
+				case "role":
+					conf["iamRoleARN"] = "role"
+				case "accessKey":
+					conf["accessKeyId"], conf["accessKeySecret"] = "id", "secret"
+				case "mixed":
+					conf["iamRoleARN"], conf["accessKeyId"], conf["accessKeySecret"] = "role", "id", "secret"
+				case "partial":
+					conf["accessKeyId"] = "id"
+				}
+				called := false
+				payload := &basePayload{DestinationType: whutils.MAXCOMPUTE, WorkspaceID: "workspace-id"}
+				_, err := payload.fileManagerWithFactory(conf, useRudderStorage, func(s *filemanager.Settings) (filemanager.FileManager, error) {
+					called = true
+					require.Equal(t, whutils.AlibabaOSS, s.Provider)
+					require.Equal(t, "customer-bucket", s.Config["bucketName"])
+					require.Equal(t, mode == "role", s.Config["roleBasedAuth"])
+					if mode == "role" {
+						require.Equal(t, "workspace-id", s.Config["externalID"])
+					} else {
+						require.NotContains(t, s.Config, "externalID")
+					}
+					return nil, stop
+				})
+				if mode == "role" || mode == "accessKey" {
+					require.ErrorIs(t, err, stop)
+					require.True(t, called)
+				} else {
+					require.Error(t, err)
+					require.False(t, called)
+				}
+			})
+		}
+	}
+}
 
 func TestNormalizeMaxComputeDateTime(t *testing.T) {
 	for input, want := range map[string]string{

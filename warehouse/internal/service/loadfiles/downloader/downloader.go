@@ -22,9 +22,10 @@ type Downloader interface {
 }
 
 type downloaderImpl struct {
-	warehouse  *model.Warehouse
-	uploader   warehouseutils.Uploader
-	numWorkers int
+	warehouse          *model.Warehouse
+	uploader           warehouseutils.Uploader
+	numWorkers         int
+	fileManagerFactory filemanager.Factory
 }
 
 func NewDownloader(
@@ -33,9 +34,8 @@ func NewDownloader(
 	numWorkers int,
 ) Downloader {
 	return &downloaderImpl{
-		warehouse:  warehouse,
-		uploader:   uploader,
-		numWorkers: numWorkers,
+		warehouse: warehouse, uploader: uploader, numWorkers: numWorkers,
+		fileManagerFactory: filemanager.New,
 	}
 }
 
@@ -54,16 +54,18 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 		l.warehouse.Destination.Config,
 		l.uploader.UseRudderStorage(),
 	)
+	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+		Provider: storageProvider, Config: l.warehouse.Destination.Config,
+		UseRudderStorage: l.uploader.UseRudderStorage(), WorkspaceID: l.warehouse.Destination.WorkspaceID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("converting object storage config: %w", err)
+	}
 
-	fileManager, err := filemanager.New(&filemanager.Settings{
+	fileManager, err := l.fileManagerFactory(&filemanager.Settings{
 		Provider: storageProvider,
-		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         storageProvider,
-			Config:           l.warehouse.Destination.Config,
-			UseRudderStorage: l.uploader.UseRudderStorage(),
-			WorkspaceID:      l.warehouse.Destination.WorkspaceID,
-		}),
-		Conf: config.Default,
+		Config:   storageConfig,
+		Conf:     config.Default,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating filemanager for destination: %w", err)

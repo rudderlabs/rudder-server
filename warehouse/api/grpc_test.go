@@ -51,6 +51,8 @@ import (
 )
 
 func TestValidateMaxComputeRoleReachesValidationSteps(t *testing.T) {
+	validations.Init()
+	misc.Init()
 	g := &GRPC{logger: logger.NOP}
 	for _, workspaceID := range []string{"workspace-id", "another-workspace"} {
 		t.Run("role with workspace "+workspaceID, func(t *testing.T) {
@@ -66,6 +68,9 @@ func TestValidateMaxComputeRoleReachesValidationSteps(t *testing.T) {
 			})
 			require.NoError(t, err)
 			res, err := g.Validate(context.Background(), &proto.WHValidationRequest{Body: string(body), Path: "steps"})
+			require.NoError(t, err)
+			require.Contains(t, res.GetData(), "Verifying Object Storage")
+			res, err = g.Validate(context.Background(), &proto.WHValidationRequest{Body: string(body), Path: "validate", Step: "1"})
 			require.NoError(t, err)
 			require.Contains(t, res.GetData(), "Verifying Object Storage")
 		})
@@ -96,7 +101,7 @@ func TestValidateAlibabaOSSRoleUsesConvertedConfig(t *testing.T) {
 		require.Equal(t, roleExpected, settings.Config["roleBasedAuth"])
 		require.Equal(t, "", settings.Config["endPoint"])
 		if roleExpected {
-			require.Equal(t, "", settings.Config["externalID"])
+			require.Equal(t, "workspace-id", settings.Config["externalID"])
 		} else {
 			require.NotContains(t, settings.Config, "externalID")
 		}
@@ -107,7 +112,7 @@ func TestValidateAlibabaOSSRoleUsesConvertedConfig(t *testing.T) {
 			cfg, err := structpb.NewStruct(map[string]any{
 				"bucketName": "customer-bucket", "region": "cn-hangzhou",
 				"iamRoleARN": "acs:ram::123:role/customer", "ossRoleArn": "read-role",
-				"externalID": externalID,
+				"externalID": externalID, "workspaceID": "workspace-id",
 			})
 			require.NoError(t, err)
 			_, err = g.ValidateObjectStorageDestination(context.Background(), &proto.ValidateObjectStorageRequest{
@@ -117,6 +122,17 @@ func TestValidateAlibabaOSSRoleUsesConvertedConfig(t *testing.T) {
 			require.True(t, called)
 		})
 	}
+	called = false
+	missingWorkspace, err := structpb.NewStruct(map[string]any{
+		"bucketName": "customer-bucket", "region": "cn-hangzhou",
+		"iamRoleARN": "acs:ram::123:role/customer", "ossRoleArn": "read-role",
+	})
+	require.NoError(t, err)
+	_, err = g.ValidateObjectStorageDestination(context.Background(), &proto.ValidateObjectStorageRequest{
+		Type: whutils.AlibabaOSS, Config: missingWorkspace,
+	})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.False(t, called)
 
 	roleExpected = false
 	cfg, err := structpb.NewStruct(map[string]any{

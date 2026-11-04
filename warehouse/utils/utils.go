@@ -364,9 +364,12 @@ func GetObjectName(location string, providerConfig any, objectProvider string, w
 		if err := ValidateMaxComputeOSSConfig(destConfig); err != nil {
 			return "", err
 		}
-		destConfig = misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+		destConfig, err = misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider: objectProvider, Config: destConfig, WorkspaceID: workspaceID[0],
 		})
+		if err != nil {
+			return "", err
+		}
 	}
 	fm, err := filemanager.New(&filemanager.Settings{
 		Provider: objectProvider,

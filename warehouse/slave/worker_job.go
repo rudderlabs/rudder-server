@@ -91,6 +91,10 @@ func (p *basePayload) sortedColumnMapForAllTables() map[string][]string {
 }
 
 func (p *basePayload) fileManager(config any, useRudderStorage bool) (filemanager.FileManager, error) {
+	return p.fileManagerWithFactory(config, useRudderStorage, filemanager.New)
+}
+
+func (p *basePayload) fileManagerWithFactory(config any, useRudderStorage bool, factory filemanager.Factory) (filemanager.FileManager, error) {
 	configMap, ok := config.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("config is not a map[string]any: %T", config)
@@ -101,16 +105,17 @@ func (p *basePayload) fileManager(config any, useRudderStorage bool) (filemanage
 	clonedConfig["uploadIfNotExist"] = true
 
 	storageProvider := warehouseutils.ObjectStorageType(p.DestinationType, config, useRudderStorage)
-	fileManager, err := filemanager.New(&filemanager.Settings{
+	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+		Provider: storageProvider, Config: clonedConfig, UseRudderStorage: useRudderStorage,
+		RudderStoragePrefixOverride: p.RudderStoragePrefix, WorkspaceID: p.WorkspaceID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("converting object storage config: %w", err)
+	}
+	fileManager, err := factory(&filemanager.Settings{
 		Provider: storageProvider,
-		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:                    storageProvider,
-			Config:                      clonedConfig,
-			UseRudderStorage:            useRudderStorage,
-			RudderStoragePrefixOverride: p.RudderStoragePrefix,
-			WorkspaceID:                 p.WorkspaceID,
-		}),
-		Conf: appConfig.Default,
+		Config:   storageConfig,
+		Conf:     appConfig.Default,
 	})
 	return fileManager, err
 }

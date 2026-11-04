@@ -251,17 +251,11 @@ func (os *objectStorage) Validate(ctx context.Context) error {
 		uploadObject filemanager.UploadedFile
 	)
 
-	if tempPath, err = CreateTempLoadFile(os.destination); err != nil {
+	var expectedHash [sha256.Size]byte
+	if tempPath, expectedHash, err = createTempLoadFile(os.destination); err != nil {
 		return fmt.Errorf("creating temp load file: %w", err)
 	}
 	defer misc.RemoveFilePaths(tempPath)
-
-	var expectedHash [sha256.Size]byte
-	if os.destination.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
-		if expectedHash, err = hashValidationFile(tempPath); err != nil {
-			return fmt.Errorf("hash OSS fixture: %w", err)
-		}
-	}
 	if uploadObject, err = uploadFile(ctx, os.destination, tempPath); err != nil {
 		return fmt.Errorf("upload file: %w", err)
 	}
@@ -403,6 +397,12 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 
 // CreateTempLoadFile creates a temporary load file
 func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
+	path, _, err := createTempLoadFile(dest)
+	return path, err
+}
+
+func createTempLoadFile(dest *backendconfig.DestinationT) (string, [sha256.Size]byte, error) {
+	var emptyHash [sha256.Size]byte
 	var (
 		tmpDirPath string
 		filePath   string
@@ -414,20 +414,21 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	)
 
 	if tmpDirPath, err = misc.GetTmpDir(); err != nil {
-		return "", fmt.Errorf("create tmp dir: %w", err)
+		return "", emptyHash, fmt.Errorf("create tmp dir: %w", err)
 	}
 
-	filePath = fmt.Sprintf("%v/%v/%v.%v.%v.%v",
-		tmpDirPath,
-		connectionTestingFolder,
-		destinationType,
-		warehouseutils.RandHex(),
-		time.Now().Unix(),
-		warehouseutils.GetLoadFileFormat(loadFileType),
-	)
-	if err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
-		return "", fmt.Errorf("create directory: %w", err)
+	validationDir := filepath.Join(tmpDirPath, connectionTestingFolder)
+	if err = os.MkdirAll(validationDir, os.ModePerm); err != nil {
+		return "", emptyHash, fmt.Errorf("create directory: %w", err)
 	}
+	// Destination input cannot become a local path component. Keep this file
+	// descriptor for hashing after the load writer closes.
+	tempFile, err := os.CreateTemp(validationDir, "validation-*."+warehouseutils.GetLoadFileFormat(loadFileType))
+	if err != nil {
+		return "", emptyHash, fmt.Errorf("create validation file: %w", err)
+	}
+	filePath = tempFile.Name()
+	defer func() { _ = tempFile.Close() }()
 
 	ef := encoding.NewFactory(config.Default)
 	fixtureSchema := tableSchemaMap
@@ -436,7 +437,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	}
 	writer, err = ef.NewLoadFileWriter(loadFileType, filePath, fixtureSchema, destinationType)
 	if err != nil {
-		return "", fmt.Errorf("creating writer for file: %s with error: %w", filePath, err)
+		return "", emptyHash, fmt.Errorf("creating writer for file: %s with error: %w", filePath, err)
 	}
 
 	eventLoader := ef.NewEventLoader(writer, loadFileType, destinationType)
@@ -448,14 +449,20 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	}
 
 	if err = eventLoader.Write(); err != nil {
-		return "", fmt.Errorf("writing to file: %w", err)
+		return "", emptyHash, fmt.Errorf("writing to file: %w", err)
 	}
 
 	if err = writer.Close(); err != nil {
-		return "", fmt.Errorf("closing writer: %w", err)
+		return "", emptyHash, fmt.Errorf("closing writer: %w", err)
 	}
-
-	return filePath, nil
+	if destinationType == warehouseutils.MAXCOMPUTE {
+		hash, err := hashValidationFile(tempFile)
+		if err != nil {
+			return "", emptyHash, fmt.Errorf("hash OSS fixture: %w", err)
+		}
+		return filePath, hash, nil
+	}
+	return filePath, emptyHash, nil
 }
 
 func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath string) (filemanager.UploadedFile, error) {
@@ -548,14 +555,12 @@ func downloadFile(ctx context.Context, dest *backendconfig.DestinationT, locatio
 	return nil
 }
 
-func hashValidationFile(path string) ([sha256.Size]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
+func hashValidationFile(f *os.File) ([sha256.Size]byte, error) {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return [sha256.Size]byte{}, err
 	}
-	defer func() { _ = f.Close() }()
 	hash := sha256.New()
-	if _, err = io.Copy(hash, f); err != nil {
+	if _, err := io.Copy(hash, f); err != nil {
 		return [sha256.Size]byte{}, err
 	}
 	return [sha256.Size]byte(hash.Sum(nil)), nil
@@ -620,15 +625,17 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 		provider = warehouseutils.ObjectStorageType(destType, conf, misc.IsConfiguredToUseRudderObjectStorage(conf))
 	)
 
+	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+		Provider: provider, Config: conf,
+		UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(conf), WorkspaceID: dest.WorkspaceID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("converting object storage config: %w", err)
+	}
 	fileManager, err := fileManagerFactory(&filemanager.Settings{
 		Provider: provider,
-		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         provider,
-			Config:           conf,
-			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(conf),
-			WorkspaceID:      dest.WorkspaceID,
-		}),
-		Conf: config.Default,
+		Config:   storageConfig,
+		Conf:     config.Default,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating file manager: %w", err)

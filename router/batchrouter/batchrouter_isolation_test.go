@@ -304,19 +304,21 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	if spec.verifyDestinations {
 		t.Logf("Verifying the destinations")
 		verify := func(prefix, workspaceID, destType string, count int) {
+			storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+				Provider: "MINIO",
+				Config: map[string]any{
+					"bucketName":      minioDestination.BucketName,
+					"prefix":          "",
+					"endPoint":        minioDestination.Endpoint,
+					"accessKeyID":     minioDestination.AccessKeyID,
+					"secretAccessKey": minioDestination.AccessKeySecret,
+				},
+			})
+			require.NoError(t, err)
 			fm, err := filemanager.New(&filemanager.Settings{
 				Provider: "MINIO",
-				Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-					Provider: "MINIO",
-					Config: map[string]any{
-						"bucketName":      minioDestination.BucketName,
-						"prefix":          "",
-						"endPoint":        minioDestination.Endpoint,
-						"accessKeyID":     minioDestination.AccessKeyID,
-						"secretAccessKey": minioDestination.AccessKeySecret,
-					},
-				}),
-				Conf: config.Default,
+				Config:   storageConfig,
+				Conf:     config.Default,
 			})
 			require.NoError(t, err, "it should be able to create a file manager")
 			fileObjects, err := fm.ListFilesWithPrefix(context.Background(), "", prefix+"/"+workspaceID+"/", int64(count)).Next()
