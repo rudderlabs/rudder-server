@@ -1022,11 +1022,66 @@ func (job *UploadJob) GetLoadFileType() string {
 	return job.upload.LoadFileType
 }
 
+func (job *UploadJob) partitionSettings() (map[string]string, map[string]string) {
+	if job.warehouse.Type != whutils.MAXCOMPUTE {
+		return nil, nil
+	}
+	modes := make(map[string]string, len(job.upload.UploadSchema))
+	granularities := make(map[string]string, len(job.upload.UploadSchema))
+	for table, planned := range job.upload.UploadSchema {
+		mode := model.PartitionModeForTable(job.warehouse.Destination.Config, table)
+		granularity := model.PartitionGranularityForTable(job.warehouse.Destination.Config, table)
+		// An existing table's partition expression is fixed at creation time.
+		// The cached catalog schema identifies its mode by _partitiontime; do not
+		// let a pipeline override change the load-file format for that table.
+		var existing model.TableSchema
+		if job.schemaHandle != nil {
+			existing = job.schemaHandle.GetTableSchema(job.ctx, table)
+		}
+		if len(existing) != 0 {
+			if _, fixed := existing[encoding.PartitionTimeColumn]; fixed {
+				mode = encoding.FixedPartitionMode
+			} else {
+				mode = "dynamic"
+			}
+			// The catalog schema does not carry TRUNC_TIME's granularity. Use
+			// the destination's table-specific setting (or default) rather than
+			// allowing a pipeline override to conflict with the existing table.
+		} else {
+			if mode == "" {
+				if _, fixed := planned[encoding.PartitionTimeColumn]; fixed {
+					mode = encoding.FixedPartitionMode
+				}
+			}
+			if job.conf != nil {
+				prefix := fmt.Sprintf("Warehouse.pipeline.%s.%s.", job.warehouse.Source.ID, job.warehouse.Destination.ID)
+				if key := prefix + "partitionMode." + table; job.conf.IsSet(key) {
+					mode = job.conf.GetStringVar("", key)
+				} else if key := prefix + "partitionMode"; job.conf.IsSet(key) {
+					mode = job.conf.GetStringVar("", key)
+				}
+				if key := prefix + "partitionType." + table; job.conf.IsSet(key) {
+					granularity = job.conf.GetStringVar("", key)
+				} else if job.conf.IsSet(prefix+"partitionType") || granularity == "" {
+					granularity = job.warehouse.GetStringDestinationConfig(job.conf, model.PartitionTypeSetting)
+				}
+			}
+		}
+		if mode != "" {
+			modes[table] = mode
+		}
+		if granularity != "" {
+			granularities[table] = granularity
+		}
+	}
+	return modes, granularities
+}
+
 func (job *UploadJob) DTO() *model.UploadJob {
+	modes, granularities := job.partitionSettings()
 	return &model.UploadJob{
-		Warehouse:    job.warehouse,
-		Upload:       job.upload,
-		StagingFiles: job.stagingFiles,
+		Warehouse: job.warehouse, Upload: job.upload, StagingFiles: job.stagingFiles,
+		PartitionModes: modes, PartitionGranularities: granularities,
 	}
 }
 

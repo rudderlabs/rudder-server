@@ -1,0 +1,667 @@
+package maxcompute
+
+import (
+	"context"
+	"encoding/xml"
+	"errors"
+	"fmt"
+	"net/http"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/aliyun/aliyun-odps-go-sdk/odps"
+	"github.com/aliyun/aliyun-odps-go-sdk/odps/restclient"
+	"github.com/aliyun/credentials-go/credentials"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+)
+
+const provider = warehouseutils.MAXCOMPUTE
+
+var (
+	errNotImplemented = errors.New(warehouseutils.NotImplementedErrorCode)
+	identifierPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+	errorsMappings    = []model.JobError{
+		{Type: model.PermissionError, Format: regexp.MustCompile(`(?i)(accessdenied|permission denied|not authorized|invalid accesskey|signaturedoesnotmatch)`)},
+		{Type: model.ResourceNotFoundError, Format: regexp.MustCompile(`(?i)(projectnotfound|tablenotfound|schemanotfound)`)},
+	}
+)
+
+// MaxCompute stores RudderStack tables in the configured ODPS project. A
+// separate schema is optional: in one-schema projects the project itself is
+// the warehouse namespace. All SDK network operations have bounded request
+// timeouts; SQL tasks are polled with context cancellation.
+type MaxCompute struct {
+	warehouse      model.Warehouse
+	uploader       warehouseutils.Uploader
+	conf           *config.Config
+	odps           *odps.Odps
+	logger         logger.Logger
+	connectTimeout time.Duration
+	queryTimeout   time.Duration
+	pollInterval   time.Duration
+
+	// exec and catalog are replaceable in tests. The production implementations
+	// use the SDK rather than parsing SHOW output for schema discovery.
+	exec       func(context.Context, string) error
+	catalog    func(context.Context) (model.Schema, error)
+	partitions func(context.Context, string) ([]string, error) // replaceable in tests; SDK lists staging partitions in production.
+	principal  func(context.Context) (string, error)           // replaceable in tests; SDK security WHOAMI in production.
+}
+
+func New(conf *config.Config, log logger.Logger) *MaxCompute {
+	m := &MaxCompute{logger: log.Child("integrations").Child("maxcompute"), conf: conf}
+	m.connectTimeout = conf.GetDurationVar(30, time.Second, "Warehouse.maxcompute.connectionTimeout")
+	m.queryTimeout = conf.GetDurationVar(5, time.Minute, "Warehouse.maxcompute.queryTimeout")
+	m.pollInterval = conf.GetDurationVar(1, time.Second, "Warehouse.maxcompute.pollInterval")
+	return m
+}
+
+func validateOSSSettings(settings map[string]any, workspaceID string) error {
+	if err := warehouseutils.ValidateMaxComputeOSSConfig(settings); err != nil {
+		return err
+	}
+	if role, _ := settings["roleBasedAuth"].(bool); role && strings.TrimSpace(workspaceID) == "" {
+		return errors.New("MaxCompute role authentication requires workspace ID")
+	}
+	return nil
+}
+
+func (m *MaxCompute) init(warehouse model.Warehouse) error {
+	m.warehouse = warehouse
+	settings := warehouse.Destination.Config
+	project, _ := settings["project"].(string)
+	region, _ := settings["region"].(string)
+	if project == "" || warehouse.Namespace != "" && warehouse.Namespace != project && !identifierPattern.MatchString(warehouse.Namespace) {
+		return errors.New("invalid MaxCompute project or schema")
+	}
+	if err := validateOSSSettings(settings, warehouse.Destination.WorkspaceID); err != nil {
+		return fmt.Errorf("validating MaxCompute OSS configuration: %w", err)
+	}
+	var cred credentials.Credential
+	role, _ := settings["roleBasedAuth"].(bool)
+	if role {
+		// A RAM role uses server-configured caller credentials and Alibaba's
+		// refreshable credential chain, never destination-supplied keys.
+		arn, _ := settings["iamRoleARN"].(string)
+		id := config.Default.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeyID")
+		secret := config.Default.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeySecret")
+		if id == "" || secret == "" {
+			return errors.New("MaxCompute role caller credentials unavailable")
+		}
+		// ODPS and OSS both assume the configured RAM role with server-side
+		// caller credentials, never with keys supplied by the destination.
+		kind := "ram_role_arn"
+		config := (&credentials.Config{Type: &kind}).SetRoleArn(arn).SetRoleSessionName("rudder-warehouse").SetAccessKeyId(id).SetAccessKeySecret(secret)
+		externalID := warehouse.Destination.WorkspaceID
+		config.ExternalId = &externalID
+		var err error
+		cred, err = credentials.NewCredential(config)
+		if err != nil {
+			return errors.New("MaxCompute role credentials unavailable")
+		}
+	} else {
+		id, _ := settings["accessKeyID"].(string)
+		secret, _ := settings["accessKey"].(string)
+		if id == "" || secret == "" {
+			return errors.New("MaxCompute access keys are required")
+		}
+		kind := "access_key"
+		var err error
+		cred, err = credentials.NewCredential((&credentials.Config{Type: &kind}).SetAccessKeyId(id).SetAccessKeySecret(secret))
+		if err != nil {
+			return errors.New("MaxCompute credentials unavailable")
+		}
+	}
+	endpoint, _ := settings["odpsEndpoint"].(string)
+	if settings["odpsEndpoint"] != nil {
+		if _, ok := settings["odpsEndpoint"].(string); !ok {
+			return errors.New("invalid ODPS endpoint")
+		}
+	}
+	instance, err := client.NewODPSClientWithEndpoint(project, region, endpoint, client.GuardODPSCredentials(cred))
+	if err != nil {
+		return err
+	}
+	m.applyConnectionTimeout(instance)
+	if warehouse.Namespace != "" && warehouse.Namespace != project {
+		instance.SetCurrentSchemaName(warehouse.Namespace)
+	}
+	m.odps = instance
+	return nil
+}
+
+func (m *MaxCompute) Setup(_ context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) error {
+	m.uploader = uploader
+	return m.init(warehouse)
+}
+
+func (m *MaxCompute) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
+	if err := m.init(warehouse); err != nil {
+		return client.Client{}, err
+	}
+	return client.Client{Type: client.ODPSClient, ODPS: m.odps}, nil
+}
+
+func (m *MaxCompute) TestConnection(ctx context.Context, warehouse model.Warehouse) error {
+	if m.odps == nil || m.warehouse.Destination.ID != warehouse.Destination.ID || m.warehouse.Namespace != warehouse.Namespace {
+		if err := m.init(warehouse); err != nil {
+			return err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Project.Load checks both access and project existence without creating a
+	// table, so a connection validation needs only project metadata permission.
+	project := m.odps.DefaultProject()
+	if err := project.Load(); err != nil {
+		return fmt.Errorf("loading MaxCompute project: %w", client.ODPSSafeError(err))
+	}
+	if project.Owner() == "" {
+		return errors.New("MaxCompute project owner unavailable")
+	}
+	return m.checkNamespaceOwner(ctx)
+}
+
+// checkNamespaceOwner rejects validation writes to an existing schema owned by
+// someone else. The project itself is not a schema; only check schema ownership
+// when an explicit namespace is configured. New schemas have no owner yet.
+func (m *MaxCompute) checkNamespaceOwner(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.odps == nil {
+		return errors.New("MaxCompute client is not initialized")
+	}
+	if m.namespace() == "" {
+		return nil
+	}
+	schema := m.odps.Schema(m.namespace())
+	if err := schema.Load(); err != nil {
+		var httpErr restclient.HttpError
+		if errors.As(err, &httpErr) && httpErr.StatusCode == 404 {
+			return ctx.Err() // no existing schema to write to
+		}
+		return fmt.Errorf("loading MaxCompute schema: %w", client.ODPSSafeError(err))
+	}
+	owner := strings.TrimSpace(schema.Owner())
+	if owner == "" {
+		return errors.New("MaxCompute schema owner unavailable")
+	}
+	// ODPS security WHOAMI reports the effective principal, including assumed
+	// roles. Do not infer identity from an access key or the project owner.
+	principal, err := m.currentPrincipal(ctx)
+	if err != nil {
+		return err
+	}
+	if owner != principal {
+		return errors.New("MaxCompute schema is not owned by the current principal")
+	}
+	return ctx.Err()
+}
+
+func (m *MaxCompute) currentPrincipal(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if m.principal != nil {
+		return m.principal(ctx)
+	}
+	// The SDK's authorization query hides whether the response is async, and
+	// WaitForSuccess polls async responses forever. Use its signed REST client
+	// and accept only a synchronous WHOAMI response; fail closed otherwise.
+	rest := m.odps.RestClient()
+	resource := "/projects/" + m.odps.DefaultProjectName() + "/authorization"
+	body := strings.NewReader("<Authorization><Query>whoami;</Query><ResponseInJsonFormat>false</ResponseInJsonFormat></Authorization>")
+	req, err := rest.NewRequest(http.MethodPost, resource, body)
+	if err != nil {
+		return "", errors.New("creating MaxCompute principal request failed")
+	}
+	req = req.WithContext(ctx)
+	req.Header.Set("Content-Type", "application/xml")
+	var principal string
+	err = rest.DoWithParseRes(req, func(response *http.Response) error {
+		if response.StatusCode != http.StatusOK {
+			return errors.New("MaxCompute principal lookup did not complete synchronously")
+		}
+		var result struct {
+			Result string `xml:"Result"`
+		}
+		if err := xml.NewDecoder(response.Body).Decode(&result); err != nil {
+			return errors.New("invalid MaxCompute principal response")
+		}
+		principal = strings.TrimSpace(result.Result)
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("getting MaxCompute principal: %w", client.ODPSSafeError(err))
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if principal == "" {
+		return "", errors.New("MaxCompute principal unavailable")
+	}
+	return principal, nil
+}
+
+func (m *MaxCompute) namespace() string {
+	project := m.odps.DefaultProjectName()
+	if m.warehouse.Namespace == "" || m.warehouse.Namespace == project {
+		return ""
+	}
+	return m.warehouse.Namespace
+}
+
+func quote(name string) (string, error) {
+	if !identifierPattern.MatchString(name) {
+		return "", fmt.Errorf("invalid MaxCompute identifier %q", name)
+	}
+	return "`" + name + "`", nil
+}
+
+func (m *MaxCompute) qualified(table string) (string, error) {
+	if m.odps == nil {
+		return "", errors.New("MaxCompute client is not initialized")
+	}
+	name, err := quote(table)
+	if err != nil {
+		return "", err
+	}
+	project, err := quote(m.odps.DefaultProjectName())
+	if err != nil {
+		return "", err
+	}
+	if schema := m.namespace(); schema != "" {
+		part, err := quote(schema)
+		if err != nil {
+			return "", err
+		}
+		return project + "." + part + "." + name, nil
+	}
+	return project + "." + name, nil
+}
+
+func (m *MaxCompute) run(ctx context.Context, statement string) error {
+	_, err := m.runSQL(ctx, statement, false)
+	return err
+}
+
+func loadSummaryRows(text string) (int64, error) {
+	var parsed any
+	if err := jsonrs.Unmarshal([]byte(text), &parsed); err != nil {
+		return 0, errors.New("invalid MaxCompute load task summary")
+	}
+	// ODPS summaries vary by execution engine. Only accept an explicit
+	// non-negative integer record count; never use file size as a row count.
+	var search func(any) (int64, bool)
+	search = func(value any) (int64, bool) {
+		switch value := value.(type) {
+		case map[string]any:
+			for _, key := range []string{"inputRecords", "input_records", "rowsInserted", "rows_inserted"} {
+				if count, ok := value[key].(float64); ok && count >= 0 && count < 1<<53 && count == float64(int64(count)) {
+					return int64(count), true
+				}
+			}
+			for _, child := range value {
+				if count, ok := search(child); ok {
+					return count, true
+				}
+			}
+		case []any:
+			for _, child := range value {
+				if count, ok := search(child); ok {
+					return count, true
+				}
+			}
+		}
+		return 0, false
+	}
+	if count, ok := search(parsed); ok {
+		return count, nil
+	}
+	return 0, errors.New("MaxCompute load task summary has no row count")
+}
+
+func (m *MaxCompute) runSQL(ctx context.Context, statement string, summary bool) (int64, error) {
+	if m.exec != nil {
+		return 0, m.exec(ctx, statement)
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	if m.odps == nil {
+		return 0, errors.New("MaxCompute client is not initialized")
+	}
+	timeout := m.queryTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ins, err := client.RunODPSSQL(ctx, m.odps, statement, timeout, m.pollInterval)
+	if err != nil {
+		return 0, fmt.Errorf("running MaxCompute SQL: %w", err)
+	}
+	if !summary {
+		return 0, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	// Fetch the completed task names for the manager's load-summary parser.
+	tasks, err := ins.GetTasks()
+	if err != nil {
+		return 0, client.ODPSSafeError(err)
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	if len(tasks) == 0 {
+		return 0, errors.New("MaxCompute load has no tasks")
+	}
+	var total int64
+	for _, task := range tasks {
+		if task.Status != odps.TaskSuccess {
+			return 0, errors.New("MaxCompute SQL task failed")
+		}
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		result, err := ins.GetTaskSummary(task.Name)
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		if err != nil {
+			return 0, client.ODPSSafeError(err)
+		}
+		if result == nil {
+			return 0, errors.New("MaxCompute load task summary unavailable")
+		}
+		count, err := loadSummaryRows(result.JsonSummary)
+		if err != nil {
+			return 0, err
+		}
+		if count > (1<<63-1)-total {
+			return 0, errors.New("MaxCompute load row count overflow")
+		}
+		total += count
+	}
+	return total, nil
+}
+
+func (m *MaxCompute) CreateSchema(ctx context.Context) error {
+	if m.odps == nil {
+		return errors.New("MaxCompute client is not initialized")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.namespace() == "" {
+		return m.TestConnection(ctx, m.warehouse)
+	}
+	if err := m.checkNamespaceOwner(ctx); err != nil {
+		return err
+	}
+	part, err := quote(m.namespace())
+	if err != nil {
+		return err
+	}
+	project, err := quote(m.odps.DefaultProjectName())
+	if err != nil {
+		return err
+	}
+	return m.run(ctx, "CREATE SCHEMA IF NOT EXISTS "+project+"."+part)
+}
+
+func (m *MaxCompute) CreateTable(ctx context.Context, table string, columns model.TableSchema) error {
+	name, err := m.qualified(table)
+	if err != nil {
+		return err
+	}
+	if len(columns) == 0 {
+		return errors.New("MaxCompute table has no columns")
+	}
+	if len(columns) > 1200 {
+		return errors.New("MaxCompute table exceeds 1200 columns")
+	}
+	definitions := make([]string, 0, len(columns))
+	for _, key := range warehouseutils.SortColumnKeysFromColumnMap(columns) {
+		field, err := quote(key)
+		if err != nil {
+			return err
+		}
+		kind, err := columnType(columns[key])
+		if err != nil {
+			return fmt.Errorf("column %q: %w", key, err)
+		}
+		definitions = append(definitions, field+" "+kind)
+	}
+	statement := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s)", name, strings.Join(definitions, ", "))
+	// Every table is append-only Delta with a time-derived pt partition.
+	// A configured source takes precedence over the mode-based default. BigQuery's
+	// ingestion-time sentinel has no ODPS column equivalent: use ingestion time.
+	partitionColumn, configured := m.partitionColumn(table)
+	if strings.EqualFold(partitionColumn, "_PARTITIONTIME") {
+		partitionColumn = ""
+	} else if partitionColumn == "" && !configured && m.partitionMode(table) == "fixed" {
+		partitionColumn = "_partitiontime"
+	}
+	if partitionColumn != "" {
+		if _, err := quote(partitionColumn); err != nil {
+			return err
+		}
+		// Event-derived columns are normalized by the transformer before CREATE.
+		// A configured source that is absent at CREATE falls back to ingestion time;
+		// subsequent batches missing an existing source instead get __NULL__ pt.
+		if _, ok := columns[partitionColumn]; !ok {
+			// Resolve a configured event property through the same lower-case,
+			// reserved-keyword-escaped identifier space as uploaded columns.
+			partitionColumn = warehouseutils.ToSafeNamespace(provider, partitionColumn)
+		}
+		if _, ok := columns[partitionColumn]; !ok {
+			partitionColumn = ""
+		} else if columns[partitionColumn] != "datetime" {
+			return fmt.Errorf("MaxCompute auto partition requires datetime column %q", partitionColumn)
+		}
+	}
+	granularity := model.PartitionGranularityForTable(m.warehouse.Destination.Config, table)
+	if m.conf != nil {
+		key := fmt.Sprintf("Warehouse.pipeline.%s.%s.partitionType.%s", m.warehouse.Source.ID, m.warehouse.Destination.ID, table)
+		if m.conf.IsSet(key) {
+			granularity = m.conf.GetStringVar("", key)
+		} else if m.conf.IsSet(fmt.Sprintf("Warehouse.pipeline.%s.%s.partitionType", m.warehouse.Source.ID, m.warehouse.Destination.ID)) {
+			granularity = m.warehouse.GetStringDestinationConfig(m.conf, model.PartitionTypeSetting)
+		}
+	}
+	if partitionColumn == "" || granularity == "" {
+		granularity = "day"
+	}
+	if granularity != "day" && granularity != "hour" {
+		return fmt.Errorf("unsupported MaxCompute partition type %q", granularity)
+	}
+	if partitionColumn == "" {
+		statement += " AUTO PARTITIONED BY (TRUNC_TIME(GETDATE(), '" + granularity + "') AS `pt`)"
+	} else {
+		statement += " AUTO PARTITIONED BY (TRUNC_TIME(`" + partitionColumn + "`, '" + granularity + "') AS `pt`)"
+	}
+	statement += " TBLPROPERTIES ('transactional'='true')"
+	if err := m.run(ctx, statement); err != nil {
+		return err
+	}
+	return m.createTableView(ctx, table, columns)
+}
+
+func (m *MaxCompute) DropTable(ctx context.Context, table string) error {
+	name, err := m.qualified(table)
+	if err != nil {
+		return err
+	}
+	view, err := m.qualified(viewName(table))
+	if err != nil {
+		return err
+	}
+	if err := m.run(ctx, "DROP VIEW IF EXISTS "+view); err != nil {
+		return err
+	}
+	return m.run(ctx, "DROP TABLE IF EXISTS "+name)
+}
+
+func (m *MaxCompute) AddColumns(ctx context.Context, table string, columns []warehouseutils.ColumnInfo) error {
+	name, err := m.qualified(table)
+	if err != nil {
+		return err
+	}
+	for _, col := range columns {
+		if col.Name == "_partitiontime" && m.partitionMode(table) == "fixed" {
+			return errors.New("cannot add the fixed MaxCompute partition column after table creation")
+		}
+		field, err := quote(col.Name)
+		if err != nil {
+			return err
+		}
+		kind, err := columnType(col.Type)
+		if err != nil {
+			return fmt.Errorf("column %q: %w", col.Name, err)
+		}
+		if err := m.run(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMNS (%s %s)", name, field, kind)); err != nil {
+			return fmt.Errorf("adding column %q: %w", col.Name, err)
+		}
+	}
+	return nil
+}
+
+func (*MaxCompute) AlterColumn(context.Context, string, string, string) (model.AlterTableResponse, error) {
+	return model.AlterTableResponse{}, fmt.Errorf("MaxCompute ALTER COLUMN: %w", errNotImplemented)
+}
+
+// DeleteBy is intentionally a no-op: MaxCompute loads are append-only.
+func (*MaxCompute) DeleteBy(context.Context, []string, warehouseutils.DeleteByParams) error {
+	return nil
+}
+
+func (*MaxCompute) DownloadIdentityRules(context.Context, *misc.GZipWriter) error {
+	return errNotImplemented
+}
+func (*MaxCompute) LoadIdentityMergeRulesTable(context.Context) error { return nil }
+func (*MaxCompute) LoadIdentityMappingsTable(context.Context) error   { return nil }
+func (*MaxCompute) Cleanup(context.Context)                           {}
+func (m *MaxCompute) SetConnectionTimeout(timeout time.Duration) {
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	if timeout > 2*time.Minute {
+		timeout = 2 * time.Minute
+	}
+	m.connectTimeout = timeout
+	m.applyConnectionTimeout(m.odps)
+}
+
+func (m *MaxCompute) applyConnectionTimeout(instance *odps.Odps) {
+	if instance != nil {
+		if m.connectTimeout <= 0 {
+			m.connectTimeout = 30 * time.Second
+		}
+		instance.SetHttpTimeout(m.connectTimeout)
+		instance.SetTcpConnectTimeout(m.connectTimeout)
+	}
+}
+
+// partitionColumn resolves the table-specific destination setting first, then
+// the pipeline override and destination default. An unset source uses ingestion
+// time for dynamic tables, rather than guessing from unrelated timestamp fields.
+func (m *MaxCompute) partitionColumn(table string) (string, bool) {
+	settings := m.warehouse.Destination.Config
+	for _, key := range []string{"partitionColumns", "partitionColumn"} {
+		if columns, ok := settings[key].(map[string]any); ok {
+			if column, ok := columns[table].(string); ok {
+				return column, true
+			}
+		}
+		if columns, ok := settings[key].(map[string]string); ok {
+			if column, ok := columns[table]; ok {
+				return column, true
+			}
+		}
+	}
+	if m.conf != nil {
+		key := fmt.Sprintf("Warehouse.pipeline.%s.%s.partitionColumn.%s", m.warehouse.Source.ID, m.warehouse.Destination.ID, table)
+		if m.conf.IsSet(key) {
+			return m.conf.GetStringVar("", key), true
+		}
+		key = fmt.Sprintf("Warehouse.pipeline.%s.%s.partitionColumn", m.warehouse.Source.ID, m.warehouse.Destination.ID)
+		if m.conf.IsSet(key) {
+			return m.warehouse.GetStringDestinationConfig(m.conf, model.PartitionColumnSetting), true
+		}
+	}
+	column, ok := settings[model.PartitionColumnSetting.String()].(string)
+	return column, ok
+}
+
+func (m *MaxCompute) partitionMode(table string) string {
+	mode := model.PartitionModeForTable(m.warehouse.Destination.Config, table)
+	if mode == "" && m.uploader != nil {
+		columns := m.uploader.GetTableSchemaInWarehouse(table)
+		if len(columns) == 0 {
+			columns = m.uploader.GetTableSchemaInUpload(table)
+		}
+		if _, ok := columns["_partitiontime"]; ok {
+			return "fixed"
+		}
+	}
+	return mode
+}
+func (*MaxCompute) ErrorMappings() []model.JobError { return errorsMappings }
+func (m *MaxCompute) TestFetchSchema(ctx context.Context) error {
+	_, err := m.FetchSchema(ctx)
+	return err
+}
+
+func (m *MaxCompute) IsEmpty(ctx context.Context, warehouse model.Warehouse) (bool, error) {
+	if m.odps == nil || m.warehouse.Destination.ID != warehouse.Destination.ID || m.warehouse.Namespace != warehouse.Namespace {
+		if err := m.init(warehouse); err != nil {
+			return false, err
+		}
+	}
+	schema, err := m.FetchSchema(ctx)
+	return len(schema) == 0, err
+}
+
+func (m *MaxCompute) LoadUserTables(ctx context.Context) map[string]error {
+	result := map[string]error{warehouseutils.IdentifiesTable: nil}
+	_, result[warehouseutils.IdentifiesTable] = m.LoadTable(ctx, warehouseutils.IdentifiesTable)
+	if result[warehouseutils.IdentifiesTable] != nil || m.uploader == nil {
+		return result
+	}
+	if skip, _ := m.warehouse.Destination.Config["skipUsersTable"].(bool); skip {
+		return result
+	}
+	users := m.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)
+	if len(users) == 0 {
+		return result
+	}
+	result[warehouseutils.UsersTable] = m.loadUsersWithCarryForward(ctx)
+	return result
+}
+
+func (m *MaxCompute) LoadTable(ctx context.Context, table string) (*types.LoadTableStats, error) {
+	return m.loadTable(ctx, table, "")
+}
+
+func (m *MaxCompute) TestLoadTable(ctx context.Context, location, table string, _ map[string]any, format string) error {
+	if format != warehouseutils.LoadFileTypeJson {
+		return fmt.Errorf("MaxCompute validation expects JSON load files, got %q", format)
+	}
+	_, err := m.loadTable(ctx, table, location)
+	return err
+}

@@ -36,27 +36,29 @@ import (
 )
 
 type basePayload struct {
-	BatchID                      string         `json:"batch_id"`
-	UploadID                     int64          `json:"upload_id"`
-	UploadSchema                 model.Schema   `json:"upload_schema"`
-	WorkspaceID                  string         `json:"workspace_id"`
-	SourceID                     string         `json:"source_id"`
-	SourceName                   string         `json:"source_name"`
-	DestinationID                string         `json:"destination_id"`
-	DestinationName              string         `json:"destination_name"`
-	DestinationType              string         `json:"destination_type"`
-	DestinationNamespace         string         `json:"destination_namespace"`
-	DestinationRevisionID        string         `json:"destination_revision_id"`
-	StagingDestinationRevisionID string         `json:"staging_destination_revision_id"`
-	DestinationConfig            map[string]any `json:"destination_config"`
-	StagingDestinationConfig     any            `json:"staging_destination_config"`
-	UseRudderStorage             bool           `json:"use_rudder_storage"`
-	StagingUseRudderStorage      bool           `json:"staging_use_rudder_storage"`
-	UniqueLoadGenID              string         `json:"unique_load_gen_id"`
-	RudderStoragePrefix          string         `json:"rudder_storage_prefix"`
-	Output                       []uploadResult `json:"output"`
-	LoadFilePrefix               string         `json:"load_file_prefix"`
-	LoadFileType                 string         `json:"load_file_type"`
+	BatchID                      string            `json:"batch_id"`
+	UploadID                     int64             `json:"upload_id"`
+	UploadSchema                 model.Schema      `json:"upload_schema"`
+	WorkspaceID                  string            `json:"workspace_id"`
+	SourceID                     string            `json:"source_id"`
+	SourceName                   string            `json:"source_name"`
+	DestinationID                string            `json:"destination_id"`
+	DestinationName              string            `json:"destination_name"`
+	DestinationType              string            `json:"destination_type"`
+	DestinationNamespace         string            `json:"destination_namespace"`
+	DestinationRevisionID        string            `json:"destination_revision_id"`
+	StagingDestinationRevisionID string            `json:"staging_destination_revision_id"`
+	DestinationConfig            map[string]any    `json:"destination_config"`
+	StagingDestinationConfig     any               `json:"staging_destination_config"`
+	UseRudderStorage             bool              `json:"use_rudder_storage"`
+	StagingUseRudderStorage      bool              `json:"staging_use_rudder_storage"`
+	UniqueLoadGenID              string            `json:"unique_load_gen_id"`
+	RudderStoragePrefix          string            `json:"rudder_storage_prefix"`
+	Output                       []uploadResult    `json:"output"`
+	LoadFilePrefix               string            `json:"load_file_prefix"`
+	LoadFileType                 string            `json:"load_file_type"`
+	PartitionModes               map[string]string `json:"partition_modes,omitempty"`
+	PartitionGranularities       map[string]string `json:"partition_granularities,omitempty"`
 }
 
 // payloadV2 represents the job payload for upload_v2 type jobs
@@ -574,6 +576,16 @@ func (jr *jobRun) closeLoadFiles() {
 	}
 }
 
+// fixedPartitionTime matches the UTC bucket used by MaxCompute's TRUNC_TIME partition.
+// Missing granularity uses the destination's default day partition.
+func (jr *jobRun) fixedPartitionTime(tableName string) time.Time {
+	utc := jr.uuidTS.UTC()
+	if jr.job.PartitionGranularities[tableName] == "hour" {
+		return utc.Truncate(time.Hour)
+	}
+	return utc.Truncate(24 * time.Hour)
+}
+
 func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal any, columnData types.Data, violatedConstraints *constraints.Violation, discardWriter encoding.LoadFileWriter, reason string) error {
 	rowID, hasID := columnData[jr.job.columnName("id")]
 	receivedAt, hasReceivedAt := columnData[jr.job.columnName("received_at")]
@@ -589,21 +601,31 @@ func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal any
 		}
 	}
 	if hasID && hasReceivedAt {
-		eventLoader := jr.encodingFactory.NewEventLoader(discardWriter, jr.job.LoadFileType, jr.job.DestinationType)
+		eventLoader := jr.encodingFactory.NewEventLoader(discardWriter, jr.job.LoadFileType, jr.job.DestinationType, jr.job.PartitionModes[jr.job.discardsTable()])
 		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
 		eventLoader.AddColumn("reason", warehouseutils.DiscardsSchema["reason"], reason)
+		if jr.job.DestinationType == encoding.MaxCompute {
+			if normalized, ok := normalizeMaxComputeDateTime(receivedAt); ok {
+				receivedAt = normalized
+			} else {
+				receivedAt = jr.uuidTS.UTC().Format(encoding.MaxComputeTimeFormat)
+			}
+		}
 		eventLoader.AddColumn("received_at", warehouseutils.DiscardsSchema["received_at"], receivedAt)
 		eventLoader.AddColumn("row_id", warehouseutils.DiscardsSchema["row_id"], rowID)
 		eventLoader.AddColumn("table_name", warehouseutils.DiscardsSchema["table_name"], tableName)
 
 		if eventLoader.IsLoadTimeColumn("uuid_ts") {
 			timestampFormat := eventLoader.GetLoadTimeFormat("uuid_ts")
-			eventLoader.AddColumn("uuid_ts", warehouseutils.DiscardsSchema["uuid_ts"], jr.uuidTS.Format(timestampFormat))
+			eventLoader.AddColumn("uuid_ts", warehouseutils.DiscardsSchema["uuid_ts"], jr.uuidTS.UTC().Format(timestampFormat))
 		}
 		if eventLoader.IsLoadTimeColumn("loaded_at") {
 			timestampFormat := eventLoader.GetLoadTimeFormat("loaded_at")
-			eventLoader.AddColumn("loaded_at", "datetime", jr.uuidTS.Format(timestampFormat))
+			eventLoader.AddColumn("loaded_at", "datetime", jr.uuidTS.UTC().Format(timestampFormat))
+		}
+		if eventLoader.IsLoadTimeColumn(encoding.PartitionTimeColumn) {
+			eventLoader.AddColumn(encoding.PartitionTimeColumn, "datetime", jr.fixedPartitionTime(jr.job.discardsTable()).Format(eventLoader.GetLoadTimeFormat(encoding.PartitionTimeColumn)))
 		}
 
 		if err := eventLoader.Write(); err != nil {

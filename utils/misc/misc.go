@@ -104,7 +104,7 @@ func Init() {
 func BatchDestinations() []string {
 	batchDestinations := []string{
 		"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES",
-		"CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "MICROSOFT_FABRIC", "S3_DATALAKE",
+		"CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "MICROSOFT_FABRIC", "MAXCOMPUTE", "S3_DATALAKE",
 		"MARKETO_BULK_UPLOAD", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE", "BINGADS_AUDIENCE",
 		"ELOQUA", "YANDEX_METRICA_OFFLINE_EVENTS", "SFTP", "BINGADS_OFFLINE_CONVERSIONS", "KLAVIYO_BULK_UPLOAD",
 		"LYTICS_BULK_UPLOAD", "SNOWPIPE_STREAMING", "SALESFORCE_BULK_UPLOAD", "BQSTREAM_ALL_EVENTS",
@@ -663,6 +663,28 @@ type ObjectStorageOptsT struct {
 
 func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
 	objectStorageConfigMap := opts.Config.(map[string]any)
+	// MaxCompute always stages in customer-owned OSS, even when a destination
+	// enables RudderStack storage for other providers. Pass only keys understood
+	// by go-kit's OSS manager; never forward ODPS bootstrap keys in role mode.
+	if opts.Provider == "ALIBABA_OSS" {
+		ossConfig := make(map[string]any)
+		for _, key := range []string{"bucketName", "prefix", "region", "roleBasedAuth", "iamRoleARN"} {
+			if value, ok := objectStorageConfigMap[key]; ok {
+				ossConfig[key] = value
+			}
+		}
+		if role, _ := objectStorageConfigMap["roleBasedAuth"].(bool); !role {
+			for _, key := range []string{"accessKeyID", "accessKey"} {
+				if value, ok := objectStorageConfigMap[key]; ok {
+					ossConfig[key] = value
+				}
+			}
+		}
+		ossConfig["endPoint"] = ""
+		ossConfig["useInternalEndpoint"] = false
+		ossConfig["externalID"] = opts.WorkspaceID
+		return ossConfig
+	}
 	if opts.Provider == "ONELAKE" {
 		return objectStorageConfigMap
 	}

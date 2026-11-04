@@ -328,7 +328,7 @@ func (w *worker) processSingleStagingFile(
 			return err
 		}
 
-		eventLoader := w.encodingFactory.NewEventLoader(writer, job.LoadFileType, job.DestinationType)
+		eventLoader := w.encodingFactory.NewEventLoader(writer, job.LoadFileType, job.DestinationType, job.PartitionModes[tableName])
 
 		// Duplicate detection by id column
 		// skip duplicate detection for users table as multiple identifies events can be present for same user	id
@@ -350,7 +350,11 @@ func (w *worker) processSingleStagingFile(
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
 				timestampFormat := eventLoader.GetLoadTimeFormat(columnName)
-				eventLoader.AddColumn(job.columnName(columnName), job.UploadSchema[tableName][columnName], jr.uuidTS.Format(timestampFormat))
+				loadTime := jr.uuidTS.UTC()
+				if job.DestinationType == encoding.MaxCompute && columnName == encoding.PartitionTimeColumn {
+					loadTime = jr.fixedPartitionTime(tableName)
+				}
+				eventLoader.AddColumn(job.columnName(columnName), job.UploadSchema[tableName][columnName], loadTime.Format(timestampFormat))
 				continue
 			}
 
@@ -402,6 +406,27 @@ func (w *worker) processSingleStagingFile(
 			}
 
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
+			if job.DestinationType == encoding.MaxCompute && dataTypeInSchema == model.DateTimeDataType {
+				value, valid := normalizeMaxComputeDateTime(columnVal)
+				if !valid {
+					eventLoader.AddEmptyColumn(columnName)
+					discardWriter, releaseDiscardWriter, err := jr.writer(discardsTable, stagingFile, loadFileNamePrefix)
+					if err != nil {
+						releaseWriter()
+						return err
+					}
+					err = jr.handleDiscardTypes(tableName, columnName, columnVal, columnData, &constraints.Violation{}, discardWriter, "invalid datetime")
+					releaseDiscardWriter()
+					if err != nil {
+						releaseWriter()
+						return fmt.Errorf("writing MaxCompute discard: %w", err)
+					}
+					jr.incrementEventCount(discardsTable)
+					continue
+				}
+				columnVal = value
+				columnType = model.DateTimeDataType
+			}
 
 			violatedConstraints := w.constraintsManager.ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 
@@ -439,6 +464,10 @@ func (w *worker) processSingleStagingFile(
 						jr.logger.Errorn("Failed to write to discards", obskit.Error(err))
 					}
 					releaseDiscardWriter()
+					if err != nil && job.DestinationType == encoding.MaxCompute {
+						releaseWriter()
+						return fmt.Errorf("writing MaxCompute discard: %w", err)
+					}
 
 					jr.incrementEventCount(discardsTable)
 					continue
@@ -463,6 +492,7 @@ func (w *worker) processSingleStagingFile(
 		}
 
 		if err = eventLoader.Write(); err != nil {
+			releaseWriter()
 			return err
 		}
 		releaseWriter()
@@ -635,6 +665,27 @@ func (w *worker) destinationFromSlaveConnectionMap(destinationId, sourceId strin
 }
 
 // HandleSchemaChange checks if the existing data type (from warehouse schema) is compatible with the inferred data type (from event data)
+// normalizeMaxComputeDateTime accepts source timestamps and already normalized
+// load-file values so retries never alter a valid datetime. ODPS uses UTC.
+func normalizeMaxComputeDateTime(value any) (string, bool) {
+	text, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999 -0700 MST",
+		"2006-01-02 15:04:05.999999 -0700",
+		encoding.MaxComputeTimeFormat,
+		"2006-01-02 15:04:05",
+	} {
+		if parsed, err := time.Parse(layout, text); err == nil {
+			return parsed.UTC().Format(encoding.MaxComputeTimeFormat), true
+		}
+	}
+	return "", false
+}
+
 func HandleSchemaChange(log logger.Logger, existingDataType, inferredDataType model.SchemaType, value any) (any, error) {
 	var (
 		newColumnVal any

@@ -99,13 +99,7 @@ func (l *downloaderImpl) downloadSingleObject(ctx context.Context, fileManager f
 		objectFile *os.File
 	)
 
-	ObjectStorage := warehouseutils.ObjectStorageType(
-		l.warehouse.Destination.DestinationDefinition.Name,
-		l.warehouse.Destination.Config,
-		l.uploader.UseRudderStorage(),
-	)
-
-	if objectName, err = warehouseutils.GetObjectName(object.Location, l.warehouse.Destination.Config, ObjectStorage); err != nil {
+	if objectName, err = fileManager.GetObjectNameFromLocation(object.Location); err != nil {
 		return "", fmt.Errorf("object name for location: %s, %w", object.Location, err)
 	}
 
@@ -124,6 +118,8 @@ func (l *downloaderImpl) downloadSingleObject(ctx context.Context, fileManager f
 	}
 
 	if err = fileManager.Download(ctx, objectFile, objectName); err != nil {
+		_ = objectFile.Close()
+		_ = os.Remove(objectFile.Name())
 		return "", fmt.Errorf("downloading file from object storage: %w", err)
 	}
 

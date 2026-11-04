@@ -12,10 +12,14 @@ import (
 )
 
 const (
-	UUIDTsColumn     = "uuid_ts"
-	LoadedAtColumn   = "loaded_at"
-	BQLoadedAtFormat = "2006-01-02 15:04:05.999999 Z"
-	BQUuidTSFormat   = "2006-01-02 15:04:05 Z"
+	UUIDTsColumn         = "uuid_ts"
+	LoadedAtColumn       = "loaded_at"
+	PartitionTimeColumn  = "_partitiontime"
+	MaxCompute           = warehouseutils.MAXCOMPUTE
+	FixedPartitionMode   = "fixed"
+	MaxComputeTimeFormat = "2006-01-02 15:04:05.000000"
+	BQLoadedAtFormat     = "2006-01-02 15:04:05.999999 Z"
+	BQUuidTSFormat       = "2006-01-02 15:04:05 Z"
 )
 
 type Factory struct {
@@ -65,10 +69,14 @@ type EventLoader interface {
 	Write() error
 }
 
-func (m *Factory) NewEventLoader(w LoadFileWriter, loadFileType, destinationType string) EventLoader {
+func (m *Factory) NewEventLoader(w LoadFileWriter, loadFileType, destinationType string, partitionMode ...string) EventLoader {
+	mode := ""
+	if len(partitionMode) > 0 {
+		mode = partitionMode[0]
+	}
 	switch loadFileType {
 	case warehouseutils.LoadFileTypeJson:
-		return newJSONLoader(w, destinationType)
+		return newJSONLoader(w, destinationType, mode)
 	case warehouseutils.LoadFileTypeParquet:
 		return newParquetLoader(w, destinationType)
 	default:
@@ -83,7 +91,7 @@ type EventReader interface {
 
 func (m *Factory) NewEventReader(r io.Reader, destType string) EventReader {
 	switch destType {
-	case warehouseutils.BQ:
+	case warehouseutils.BQ, warehouseutils.MAXCOMPUTE:
 		return newJSONReader(r, m.config.maxStagingFileReadBufferCapacityInK)
 	default:
 		return newCsvReader(r)

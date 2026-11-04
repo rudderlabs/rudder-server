@@ -2247,4 +2247,5 @@ var ReservedKeywords = lo.Assign(reservedKeywords, map[string]map[string]bool{
 	"SNOWPIPE_STREAMING":  reservedKeywords["SNOWFLAKE"],
 	"BQSTREAM_ALL_EVENTS": reservedKeywords["BQ"],
 	"MICROSOFT_FABRIC":    reservedKeywords["AZURE_SYNAPSE"],
+	"MAXCOMPUTE":          {"PT": true, "SELECT": true, "FROM": true, "WHERE": true, "TABLE": true, "CREATE": true, "PARTITION": true},
 })

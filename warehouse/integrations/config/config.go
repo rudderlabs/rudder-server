@@ -19,6 +19,7 @@ func MaxParallelLoadsMap(conf *config.Config) map[string]int {
 		whutils.GCSDatalake:     conf.GetIntVar(8, 1, "Warehouse.gcs_datalake.maxParallelLoads"),
 		whutils.AzureDatalake:   conf.GetIntVar(8, 1, "Warehouse.azure_datalake.maxParallelLoads"),
 		whutils.MicrosoftFabric: conf.GetIntVar(8, 1, "Warehouse.microsoft_fabric.maxParallelLoads"),
+		whutils.MAXCOMPUTE:      conf.GetIntVar(4, 1, "Warehouse.maxcompute.maxParallelLoads"),
 	}
 }
 
@@ -31,6 +32,7 @@ func ColumnCountLimitMap(conf *config.Config) map[string]int {
 		whutils.MSSQL:           conf.GetIntVar(1024, 1, "Warehouse.mssql.columnCountLimit"),
 		whutils.POSTGRES:        conf.GetIntVar(1600, 1, "Warehouse.postgres.columnCountLimit"),
 		whutils.RS:              conf.GetIntVar(1600, 1, "Warehouse.redshift.columnCountLimit"),
+		whutils.MAXCOMPUTE:      conf.GetIntVar(1200, 1, "Warehouse.maxcompute.columnCountLimit"),
 		whutils.S3Datalake:      conf.GetIntVar(10000, 1, "Warehouse.s3_datalake.columnCountLimit"),
 	}
 }

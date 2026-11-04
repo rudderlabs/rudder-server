@@ -1,9 +1,13 @@
 package validations
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -49,8 +53,9 @@ type createSchema struct {
 }
 
 type createAlterTable struct {
-	manager manager.WarehouseOperations
-	table   string
+	manager    manager.WarehouseOperations
+	table      string
+	maxCompute bool
 }
 
 type fetchSchema struct {
@@ -178,6 +183,11 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 }
 
 func NewValidator(ctx context.Context, step string, dest *backendconfig.DestinationT) (Validator, error) {
+	if dest.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
+		if err := warehouseutils.ValidateMaxComputeOSSConfig(dest.Config); err != nil {
+			return nil, fmt.Errorf("invalid MaxCompute OSS configuration: %w", err)
+		}
+	}
 	var (
 		operations manager.WarehouseOperations
 		err        error
@@ -208,8 +218,9 @@ func NewValidator(ctx context.Context, step string, dest *backendconfig.Destinat
 			return nil, fmt.Errorf("create manager: %w", err)
 		}
 		return &createAlterTable{
-			table:   getTable(dest),
-			manager: operations,
+			table:      getTable(dest),
+			manager:    operations,
+			maxCompute: dest.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE,
 		}, nil
 	case model.VerifyingFetchSchema:
 		if operations, err = createManager(ctx, dest); err != nil {
@@ -243,12 +254,23 @@ func (os *objectStorage) Validate(ctx context.Context) error {
 	if tempPath, err = CreateTempLoadFile(os.destination); err != nil {
 		return fmt.Errorf("creating temp load file: %w", err)
 	}
+	defer misc.RemoveFilePaths(tempPath)
 
+	var expectedHash [sha256.Size]byte
+	if os.destination.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
+		if expectedHash, err = hashValidationFile(tempPath); err != nil {
+			return fmt.Errorf("hash OSS fixture: %w", err)
+		}
+	}
 	if uploadObject, err = uploadFile(ctx, os.destination, tempPath); err != nil {
 		return fmt.Errorf("upload file: %w", err)
 	}
 
-	if err = downloadFile(ctx, os.destination, uploadObject.ObjectName); err != nil {
+	if os.destination.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
+		if err = verifyMaxComputeObject(ctx, os.destination, uploadObject.ObjectName, expectedHash); err != nil {
+			return fmt.Errorf("verify uploaded OSS object: %w", err)
+		}
+	} else if err = downloadFile(ctx, os.destination, uploadObject.ObjectName); err != nil {
 		return fmt.Errorf("download file: %w", err)
 	}
 
@@ -268,7 +290,13 @@ func (c *connections) Validate(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 
-	return c.manager.TestConnection(ctx, createDummyWarehouse(c.destination))
+	// Setup already used the converted validation warehouse for MaxCompute.
+	// Passing a new unconverted warehouse would bypass its partition settings.
+	warehouse := createDummyWarehouse(c.destination)
+	if warehouse.Type == warehouseutils.MAXCOMPUTE {
+		warehouse = maxComputeValidationWarehouse(warehouse)
+	}
+	return c.manager.TestConnection(ctx, warehouse)
 }
 
 func (cs *createSchema) Validate(ctx context.Context) error {
@@ -277,10 +305,35 @@ func (cs *createSchema) Validate(ctx context.Context) error {
 	return cs.manager.CreateSchema(ctx)
 }
 
+// MaxCompute's fixed-partition tables require the datetime column at creation.
+// Keep the shared fixture unchanged for every other destination.
+func validationTableSchema(maxCompute bool) model.TableSchema {
+	if maxCompute {
+		return maxComputeValidationSchema()
+	}
+	return tableSchemaMap
+}
+
+const maxComputeValidationPartitionTime = "2024-01-02 03:04:05"
+
+func maxComputeValidationPayload() map[string]any {
+	payload := make(map[string]any, len(payloadMap)+1)
+	maps.Copy(payload, payloadMap)
+	payload["_partitiontime"] = maxComputeValidationPartitionTime
+	return payload
+}
+
+func maxComputeValidationSchema() model.TableSchema {
+	schema := make(model.TableSchema, len(tableSchemaMap)+1)
+	maps.Copy(schema, tableSchemaMap)
+	schema["_partitiontime"] = "datetime"
+	return schema
+}
+
 func (cat *createAlterTable) Validate(ctx context.Context) error {
 	defer cat.manager.Cleanup(ctx)
 
-	if err := cat.manager.CreateTable(ctx, cat.table, tableSchemaMap); err != nil {
+	if err := cat.manager.CreateTable(ctx, cat.table, validationTableSchema(cat.maxCompute)); err != nil {
 		return fmt.Errorf("create table: %w", err)
 	}
 
@@ -299,6 +352,9 @@ func (fs *fetchSchema) Validate(ctx context.Context) error {
 	defer fs.manager.Cleanup(ctx)
 
 	if err := fs.manager.TestFetchSchema(ctx); err != nil {
+		if fs.destination.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
+			return fmt.Errorf("fetch MaxCompute schema (verify project catalog permissions): %w", err)
+		}
 		return fmt.Errorf("fetch schema: %w", err)
 	}
 	return nil
@@ -319,18 +375,26 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 	if tempPath, err = CreateTempLoadFile(lt.destination); err != nil {
 		return fmt.Errorf("create temp load file: %w", err)
 	}
+	defer misc.RemoveFilePaths(tempPath)
 
 	if uploadOutput, err = uploadFile(ctx, lt.destination, tempPath); err != nil {
 		return fmt.Errorf("upload file: %w", err)
 	}
 
-	if err = lt.manager.CreateTable(ctx, lt.table, tableSchemaMap); err != nil {
+	if err = lt.manager.CreateTable(ctx, lt.table, validationTableSchema(lt.destination.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE)); err != nil {
 		return fmt.Errorf("create table: %w", err)
 	}
 
 	defer func() { _ = lt.manager.DropTable(ctx, lt.table) }()
 
-	if err = lt.manager.TestLoadTable(ctx, uploadOutput.Location, lt.table, payloadMap, loadFileType); err != nil {
+	fixturePayload := payloadMap
+	if destinationType == warehouseutils.MAXCOMPUTE {
+		fixturePayload = maxComputeValidationPayload()
+	}
+	if err = lt.manager.TestLoadTable(ctx, uploadOutput.Location, lt.table, fixturePayload, loadFileType); err != nil {
+		if destinationType == warehouseutils.MAXCOMPUTE {
+			return fmt.Errorf("load MaxCompute test table from OSS JSON fixture (verify OSS read and tunnel permissions): %w", err)
+		}
 		return fmt.Errorf("load test table: %w", err)
 	}
 
@@ -366,14 +430,21 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	}
 
 	ef := encoding.NewFactory(config.Default)
-	writer, err = ef.NewLoadFileWriter(loadFileType, filePath, tableSchemaMap, destinationType)
+	fixtureSchema := tableSchemaMap
+	if destinationType == warehouseutils.MAXCOMPUTE {
+		fixtureSchema = maxComputeValidationSchema()
+	}
+	writer, err = ef.NewLoadFileWriter(loadFileType, filePath, fixtureSchema, destinationType)
 	if err != nil {
 		return "", fmt.Errorf("creating writer for file: %s with error: %w", filePath, err)
 	}
 
 	eventLoader := ef.NewEventLoader(writer, loadFileType, destinationType)
 	for _, column := range []string{"id", "val"} {
-		eventLoader.AddColumn(column, tableSchemaMap[column], payloadMap[column])
+		eventLoader.AddColumn(column, fixtureSchema[column], payloadMap[column])
+	}
+	if destinationType == warehouseutils.MAXCOMPUTE {
+		eventLoader.AddColumn("_partitiontime", fixtureSchema["_partitiontime"], maxComputeValidationPartitionTime)
 	}
 
 	if err = eventLoader.Write(); err != nil {
@@ -477,7 +548,72 @@ func downloadFile(ctx context.Context, dest *backendconfig.DestinationT, locatio
 	return nil
 }
 
+func hashValidationFile(path string) ([sha256.Size]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	defer func() { _ = f.Close() }()
+	hash := sha256.New()
+	if _, err = io.Copy(hash, f); err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	return [sha256.Size]byte(hash.Sum(nil)), nil
+}
+
+const maxComputeValidationReadbackBytes = 1024 * 1024
+
+type boundedValidationWriter struct {
+	file     *os.File
+	maxBytes int64
+}
+
+func (w *boundedValidationWriter) WriteAt(p []byte, offset int64) (int, error) {
+	if offset < 0 || offset > w.maxBytes || int64(len(p)) > w.maxBytes-offset {
+		return 0, fmt.Errorf("OSS fixture readback exceeds %d bytes", w.maxBytes)
+	}
+	return w.file.WriteAt(p, offset)
+}
+
+// verifyMaxComputeObject checks the actual bytes, not just whether OSS accepts
+// a GET request. No object contents or credentials are included in errors.
+func verifyMaxComputeObject(ctx context.Context, dest *backendconfig.DestinationT, key string, expected [sha256.Size]byte) error {
+	fm, err := createFileManager(dest)
+	if err != nil {
+		return fmt.Errorf("create file manager: %w", err)
+	}
+	file, err := os.CreateTemp("", "maxcompute-oss-validation-*")
+	if err != nil {
+		return fmt.Errorf("create readback file: %w", err)
+	}
+	defer func() {
+		_ = file.Close()
+		_ = os.Remove(file.Name())
+	}()
+	// OSS's Download streams to WriterAt. Reject excess bytes as they arrive,
+	// so a corrupted or unexpectedly large object cannot exhaust local disk.
+	if err := fm.Download(ctx, &boundedValidationWriter{file: file, maxBytes: maxComputeValidationReadbackBytes}, key); err != nil {
+		return fmt.Errorf("download file: %w", err)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("seek readback file: %w", err)
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return fmt.Errorf("hash readback file: %w", err)
+	}
+	if !bytes.Equal(hash.Sum(nil), expected[:]) {
+		return fmt.Errorf("OSS fixture readback differs from uploaded file")
+	}
+	return nil
+}
+
 func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManager, error) {
+	if dest.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
+		if err := warehouseutils.ValidateMaxComputeOSSConfig(dest.Config); err != nil {
+			return nil, fmt.Errorf("invalid MaxCompute OSS configuration: %w", err)
+		}
+	}
 	var (
 		destType = dest.DestinationDefinition.Name
 		conf     = dest.Config
@@ -503,7 +639,23 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 	return fileManager, nil
 }
 
+// Convert only the validation warehouse; never rewrite customer settings.
+func maxComputeValidationWarehouse(warehouse model.Warehouse) model.Warehouse {
+	conf := make(map[string]any, len(warehouse.Destination.Config)+1)
+	maps.Copy(conf, warehouse.Destination.Config)
+	// Randomized test table names cannot match customer table-specific modes.
+	conf["partitionMode"] = "fixed"
+	delete(conf, "partitionModes")
+	warehouse.Destination.Config = conf
+	return warehouse
+}
+
 func createManager(ctx context.Context, dest *backendconfig.DestinationT) (manager.WarehouseOperations, error) {
+	if dest.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
+		if err := warehouseutils.ValidateMaxComputeOSSConfig(dest.Config); err != nil {
+			return nil, fmt.Errorf("invalid MaxCompute OSS configuration: %w", err)
+		}
+	}
 	var (
 		destType  = dest.DestinationDefinition.Name
 		warehouse = createDummyWarehouse(dest)
@@ -517,9 +669,13 @@ func createManager(ctx context.Context, dest *backendconfig.DestinationT) (manag
 	}
 
 	operations.SetConnectionTimeout(queryTimeout)
-
+	uploaderDest := dest
+	if destType == warehouseutils.MAXCOMPUTE {
+		warehouse = maxComputeValidationWarehouse(warehouse)
+		uploaderDest = &warehouse.Destination
+	}
 	if err = operations.Setup(ctx, warehouse, &dummyUploader{
-		dest: dest,
+		dest: uploaderDest,
 	}); err != nil {
 		return nil, fmt.Errorf("setting up manager: %w", err)
 	}
@@ -550,6 +706,14 @@ func configuredNamespaceInDestination(dest *backendconfig.DestinationT) string {
 	if destType == warehouseutils.CLICKHOUSE {
 		return conf["database"].(string)
 	}
+	if destType == warehouseutils.MAXCOMPUTE {
+		// The ODPS project (or optional schema) must retain its configured case.
+		if schema, _ := conf["namespace"].(string); strings.TrimSpace(schema) != "" {
+			return schema
+		}
+		project, _ := conf["project"].(string)
+		return project
+	}
 
 	if conf["namespace"] != nil {
 		namespace := conf["namespace"].(string)
@@ -564,6 +728,9 @@ func getTable(dest *backendconfig.DestinationT) string {
 	destType := dest.DestinationDefinition.Name
 	conf := dest.Config
 
+	if destType == warehouseutils.MAXCOMPUTE {
+		return tableWithUUID()
+	}
 	if destType == warehouseutils.DELTALAKE {
 		enableExternalLocation, _ := conf["enableExternalLocation"].(bool)
 		externalLocation, _ := conf["externalLocation"].(string)

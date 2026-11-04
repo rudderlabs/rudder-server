@@ -1,0 +1,135 @@
+package client
+
+import (
+	"errors"
+	"sync"
+
+	"github.com/aliyun/credentials-go/credentials"
+)
+
+// ODPSCredentials implements credentials.Credential. The refresh function must
+// return a complete, current STS credential; its errors and contents are never
+// exposed through the SDK. Every GetCredential call refreshes the keys.
+type ODPSCredentials struct {
+	mu      sync.Mutex
+	refresh func() (*credentials.CredentialModel, error)
+}
+
+// NewODPSCredentials creates a guarded, refreshable STS credential provider.
+func NewODPSCredentials(refresh func() (*credentials.CredentialModel, error)) *ODPSCredentials {
+	return &ODPSCredentials{refresh: refresh}
+}
+
+// GuardODPSCredentials sanitizes refresh errors from either role (STS) or
+// access-key providers before the ODPS SDK can expose them in an error.
+// It does not assume a token exists for access-key credentials.
+func GuardODPSCredentials(credential credentials.Credential) credentials.Credential {
+	if credential == nil {
+		return nil
+	}
+	return &odpsCredentialGuard{credential: credential}
+}
+
+type odpsCredentialGuard struct {
+	mu         sync.Mutex
+	credential credentials.Credential
+}
+
+func odpsCredentialModel(model *credentials.CredentialModel, err error, requireToken bool) (*credentials.CredentialModel, error) {
+	if err != nil || model == nil || model.AccessKeyId == nil || *model.AccessKeyId == "" ||
+		model.AccessKeySecret == nil || *model.AccessKeySecret == "" ||
+		(requireToken && (model.SecurityToken == nil || *model.SecurityToken == "")) {
+		return nil, errors.New("ODPS credentials unavailable")
+	}
+	id, secret := *model.AccessKeyId, *model.AccessKeySecret
+	copy := &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &secret}
+	if model.SecurityToken != nil {
+		token := *model.SecurityToken
+		copy.SecurityToken = &token
+	}
+	return copy, nil
+}
+
+func (c *ODPSCredentials) GetCredential() (*credentials.CredentialModel, error) {
+	if c == nil || c.refresh == nil {
+		return nil, errors.New("ODPS credentials unavailable")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	model, err := c.refresh()
+	return odpsCredentialModel(model, err, true)
+}
+
+func (c *ODPSCredentials) GetType() *string {
+	t := "sts"
+	return &t
+}
+
+func (c *ODPSCredentials) GetAccessKeyId() (*string, error) {
+	model, err := c.GetCredential()
+	if err != nil {
+		return nil, err
+	}
+	return model.AccessKeyId, nil
+}
+
+func (c *ODPSCredentials) GetAccessKeySecret() (*string, error) {
+	model, err := c.GetCredential()
+	if err != nil {
+		return nil, err
+	}
+	return model.AccessKeySecret, nil
+}
+
+func (c *ODPSCredentials) GetSecurityToken() (*string, error) {
+	model, err := c.GetCredential()
+	if err != nil {
+		return nil, err
+	}
+	return model.SecurityToken, nil
+}
+
+func (c *ODPSCredentials) GetBearerToken() *string { return nil }
+
+func (c *odpsCredentialGuard) GetCredential() (*credentials.CredentialModel, error) {
+	if c == nil || c.credential == nil {
+		return nil, errors.New("ODPS credentials unavailable")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	model, err := c.credential.GetCredential()
+	return odpsCredentialModel(model, err, false)
+}
+
+func (c *odpsCredentialGuard) GetType() *string {
+	// The SDK signs using GetCredential, not GetType. Avoid invoking an
+	// untrusted provider here, since it may expose its own state.
+	t := "sts"
+	return &t
+}
+
+func (c *odpsCredentialGuard) GetAccessKeyId() (*string, error) {
+	model, err := c.GetCredential()
+	if err != nil {
+		return nil, err
+	}
+	return model.AccessKeyId, nil
+}
+
+func (c *odpsCredentialGuard) GetAccessKeySecret() (*string, error) {
+	model, err := c.GetCredential()
+	if err != nil {
+		return nil, err
+	}
+	return model.AccessKeySecret, nil
+}
+
+func (c *odpsCredentialGuard) GetSecurityToken() (*string, error) {
+	model, err := c.GetCredential()
+	if err != nil {
+		return nil, err
+	}
+	return model.SecurityToken, nil
+}
+
+func (c *odpsCredentialGuard) GetBearerToken() *string { return nil }

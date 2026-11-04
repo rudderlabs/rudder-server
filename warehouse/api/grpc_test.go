@@ -50,6 +50,81 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
+// Validation RPCs have no authenticated workspace identity. A caller-provided
+// workspace ID or external ID must not be used to assume a MaxCompute role.
+func TestValidateMaxComputeRoleRequiresAuthenticatedWorkspace(t *testing.T) {
+	g := &GRPC{logger: logger.NOP}
+	for _, workspaceID := range []string{"", "another-workspace"} {
+		t.Run("role with workspace "+workspaceID, func(t *testing.T) {
+			body, err := jsonrs.Marshal(map[string]any{
+				"destination": backendconfig.DestinationT{
+					WorkspaceID:           workspaceID,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: whutils.MAXCOMPUTE},
+					Config: map[string]any{
+						"bucketName": "customer-bucket", "region": "cn-hangzhou",
+						"roleBasedAuth": true, "iamRoleARN": "acs:ram::123:role/customer",
+					},
+				},
+			})
+			require.NoError(t, err)
+			for _, path := range []string{"steps", "validate"} {
+				_, err := g.Validate(context.Background(), &proto.WHValidationRequest{Body: string(body), Path: path})
+				require.Equal(t, codes.PermissionDenied, status.Code(err))
+			}
+		})
+	}
+
+	// Static keys still reach the ordinary validation path without a workspace ID.
+	body, err := jsonrs.Marshal(map[string]any{
+		"destination": backendconfig.DestinationT{
+			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: whutils.MAXCOMPUTE},
+			Config: map[string]any{
+				"bucketName": "customer-bucket", "region": "cn-hangzhou",
+				"accessKeyID": "id", "accessKey": "secret",
+			},
+		},
+	})
+	require.NoError(t, err)
+	res, err := g.Validate(context.Background(), &proto.WHValidationRequest{Body: string(body), Path: "steps"})
+	require.NoError(t, err)
+	require.Contains(t, res.GetData(), "Verifying Object Storage")
+}
+
+func TestValidateAlibabaOSSRoleRequiresAuthenticatedWorkspace(t *testing.T) {
+	g := &GRPC{logger: logger.NOP, conf: config.New()}
+	called := false
+	g.fileManagerFactory = func(*filemanager.Settings) (filemanager.FileManager, error) {
+		called = true
+		return nil, errors.New("factory called")
+	}
+	for _, externalID := range []string{"", "another-workspace"} {
+		t.Run("role with externalID "+externalID, func(t *testing.T) {
+			cfg, err := structpb.NewStruct(map[string]any{
+				"bucketName": "customer-bucket", "region": "cn-hangzhou",
+				"roleBasedAuth": true, "iamRoleARN": "acs:ram::123:role/customer",
+				"externalID": externalID,
+			})
+			require.NoError(t, err)
+			_, err = g.ValidateObjectStorageDestination(context.Background(), &proto.ValidateObjectStorageRequest{
+				Type: whutils.AlibabaOSS, Config: cfg,
+			})
+			require.Equal(t, codes.PermissionDenied, status.Code(err))
+			require.False(t, called, "role validation must not create a file manager")
+		})
+	}
+
+	cfg, err := structpb.NewStruct(map[string]any{
+		"bucketName": "customer-bucket", "region": "cn-hangzhou",
+		"accessKeyID": "id", "accessKey": "secret",
+	})
+	require.NoError(t, err)
+	_, err = g.ValidateObjectStorageDestination(context.Background(), &proto.ValidateObjectStorageRequest{
+		Type: whutils.AlibabaOSS, Config: cfg,
+	})
+	require.Equal(t, codes.Internal, status.Code(err))
+	require.True(t, called, "access-key validation should reach the file manager")
+}
+
 func TestGRPC(t *testing.T) {
 	validations.Init()
 	misc.Init()

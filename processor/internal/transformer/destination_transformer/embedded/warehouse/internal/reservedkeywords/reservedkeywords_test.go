@@ -9,6 +9,14 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+func TestMaxComputeSQLV2Keywords(t *testing.T) {
+	for _, keyword := range []string{"pt", "partitioned", "lateral", "select"} {
+		require.True(t, reservedkeywords.IsTableOrColumn(whutils.MAXCOMPUTE, keyword), keyword)
+		require.True(t, reservedkeywords.IsNamespace(whutils.MAXCOMPUTE, keyword), keyword)
+	}
+	require.False(t, reservedkeywords.IsTableOrColumn(whutils.MAXCOMPUTE, "not_reserved"))
+}
+
 func TestReservedKeywords(t *testing.T) {
 	t.Run("IsTableOrColumn", func(t *testing.T) {
 		testCases := []struct {
@@ -20,7 +28,7 @@ func TestReservedKeywords(t *testing.T) {
 			{"Select", true},
 			{"not_reserved", false},
 		}
-		for _, destination := range []string{whutils.POSTGRES, whutils.MicrosoftFabric} {
+		for _, destination := range []string{whutils.POSTGRES, whutils.MicrosoftFabric, whutils.MAXCOMPUTE} {
 			for _, tc := range testCases {
 				require.Equal(t, tc.isReserved, reservedkeywords.IsTableOrColumn(destination, tc.keyword))
 			}
@@ -36,7 +44,7 @@ func TestReservedKeywords(t *testing.T) {
 			{"Select", true},
 			{"not_reserved", false},
 		}
-		for _, destination := range []string{whutils.POSTGRES, whutils.MicrosoftFabric} {
+		for _, destination := range []string{whutils.POSTGRES, whutils.MicrosoftFabric, whutils.MAXCOMPUTE} {
 			for _, tc := range testCases {
 				require.Equal(t, tc.isReserved, reservedkeywords.IsNamespace(destination, tc.keyword))
 			}

@@ -9,15 +9,15 @@ import (
 )
 
 type jsonLoader struct {
-	destType   string
-	columnData map[string]any
-	fileWriter LoadFileWriter
+	destType      string
+	partitionMode string
+	columnData    map[string]any
+	fileWriter    LoadFileWriter
 }
 
-// newJSONLoader returns a new jsonLoader is only for BQ now. Treat this is as custom BQ loader.
-// If more warehouses are added in the future, change this accordingly.
-func newJSONLoader(writer LoadFileWriter, destType string) *jsonLoader {
-	loader := &jsonLoader{destType: destType, fileWriter: writer}
+// newJSONLoader writes one JSON object per row for BQ and MaxCompute.
+func newJSONLoader(writer LoadFileWriter, destType, partitionMode string) *jsonLoader {
+	loader := &jsonLoader{destType: destType, partitionMode: partitionMode, fileWriter: writer}
 	loader.columnData = make(map[string]any)
 
 	return loader
@@ -25,10 +25,17 @@ func newJSONLoader(writer LoadFileWriter, destType string) *jsonLoader {
 
 func (loader *jsonLoader) IsLoadTimeColumn(columnName string) bool {
 	return columnName == warehouseutils.ToProviderCase(loader.destType, UUIDTsColumn) ||
-		columnName == warehouseutils.ToProviderCase(loader.destType, LoadedAtColumn)
+		columnName == warehouseutils.ToProviderCase(loader.destType, LoadedAtColumn) ||
+		(loader.destType == MaxCompute && loader.partitionMode == FixedPartitionMode && columnName == PartitionTimeColumn)
 }
 
 func (loader *jsonLoader) GetLoadTimeFormat(columnName string) string {
+	if loader.destType == MaxCompute {
+		switch columnName {
+		case UUIDTsColumn, LoadedAtColumn, PartitionTimeColumn:
+			return MaxComputeTimeFormat
+		}
+	}
 	switch columnName {
 	case warehouseutils.ToProviderCase(loader.destType, UUIDTsColumn):
 		return BQUuidTSFormat
