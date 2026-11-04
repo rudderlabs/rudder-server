@@ -22,8 +22,8 @@ import (
 )
 
 // TestPythonTransformationsDisabledAbortsJobs feeds the real user transformer's answer for a Python transformation on
-// a deployment that does not offer Python (both PyT flags off, as on hosted) to the processor's failure handling, and
-// checks the events end up as aborted jobs with an aborted user_transformer report, with no panic on the way.
+// a deployment that does not offer Python (both PyT flags off) to the processor's failure handling, and checks the
+// events end up as aborted jobs with an aborted user_transformer report, with no panic on the way.
 func TestPythonTransformationsDisabledAbortsJobs(t *testing.T) {
 	processor, _, c, _ := newVisibilityProcessor(t, true)
 	defer c.Finish()

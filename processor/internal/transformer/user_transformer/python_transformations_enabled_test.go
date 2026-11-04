@@ -111,7 +111,7 @@ func TestPythonTransformationsEnabled(t *testing.T) {
 			perWSFlag   any // nil leaves perWorkspacePyTEnabled unset
 			workspaceID string
 		}{
-			{name: "perWorkspacePyTEnabled false (hosted)", perWSFlag: false, workspaceID: workspaceID},
+			{name: "perWorkspacePyTEnabled false", perWSFlag: false, workspaceID: workspaceID},
 			{name: "perWorkspacePyTEnabled unset", perWSFlag: nil, workspaceID: workspaceID},
 			{name: "perWorkspacePyTEnabled true", perWSFlag: true, workspaceID: workspaceID},
 			{name: "empty workspaceID, perWorkspacePyTEnabled false", perWSFlag: false, workspaceID: ""},
