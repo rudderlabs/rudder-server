@@ -199,11 +199,14 @@ func TestODPSErrorSanitization(t *testing.T) {
 		{restclient.HttpError{StatusCode: 503}, "ODPS service temporarily unavailable"},
 		{restclient.HttpError{StatusCode: 500, Body: []byte("SECRET")}, "ODPS request failed (status 500)"},
 		{fmt.Errorf("wrapped: %w", pointerHTTPError{&restclient.HttpError{StatusCode: 500, ErrorMessage: &restclient.ErrorMessage{
-			ErrorCode: "TableNotFound", Message: "SECRET",
-		}, Body: []byte("SECRET")}}), "ODPS resource not found"},
+			ErrorCode: "TableNotFound", Message: "accessKeyId=SECRET",
+		}, Body: []byte("SECRET")}}), "ODPS resource not found: TableNotFound: [credential]"},
 		{fmt.Errorf("wrapped: %w", restclient.HttpError{StatusCode: 400, ErrorMessage: &restclient.ErrorMessage{
-			ErrorCode: "AccessDenied", Message: "SECRET",
-		}}), "ODPS authentication or permission denied"},
+			ErrorCode: "AccessDenied", Message: "securityToken=SECRET",
+		}}), "ODPS authentication or permission denied: AccessDenied: [credential]"},
+		{restclient.HttpError{StatusCode: 400, ErrorMessage: &restclient.ErrorMessage{
+			ErrorCode: "InvalidParameter", Message: "CREATE SCHEMA syntax is invalid",
+		}}, "ODPS request failed (status 400): InvalidParameter: CREATE SCHEMA syntax is invalid"},
 		{pointerHTTPError{&restclient.HttpError{StatusCode: 0, Body: []byte("SECRET")}}, "ODPS request failed"},
 		{errors.New("AccessDenied: SECRET"), "ODPS authentication or permission denied"},
 		{errors.New("TableNotFound: SECRET"), "ODPS resource not found"},

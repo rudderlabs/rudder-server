@@ -35,6 +35,7 @@ var (
 	odpsProjectName       = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{0,127}$`)
 	odpsRegionName        = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 	odpsErrorCodePattern  = regexp.MustCompile(`(?i)ODPS-[0-9]{7}`)
+	odpsNamedCodePattern  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]{0,63}$`)
 	odpsURLPattern        = regexp.MustCompile(`(?i)\b(?:https?|oss)://[^\s<>"']+`)
 	odpsCredentialPattern = regexp.MustCompile(`(?i)\b(?:access[_-]?key(?:[_-]?(?:id|secret))?|security[_-]?token|x-acs-security-token|authorization|password|signature|secret)\b["']?\s*[:=]\s*["']?[^\s,"';]+`)
 	odpsBearerPattern     = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+`)
@@ -343,7 +344,10 @@ func odpsErrorCode(text string) error {
 func odpsDiagnostic(code, message string) string {
 	odpsCode := strings.ToUpper(odpsErrorCodePattern.FindString(code + " " + message))
 	if odpsCode == "" {
-		return ""
+		if !odpsNamedCodePattern.MatchString(code) || odpsOpaqueKeyPattern.MatchString(code) {
+			return ""
+		}
+		odpsCode = code
 	}
 	if index := strings.Index(strings.ToUpper(message), odpsCode); index >= 0 {
 		message = strings.TrimLeft(message[index+len(odpsCode):], ": \t")
