@@ -48,7 +48,7 @@ func TestMaxComputeValidationFixture(t *testing.T) {
 	require.Equal(t, sha256.Sum256(compressed), expectedHash)
 	require.True(t, strings.HasSuffix(path, ".json.gz"))
 	require.Regexp(t, `^validation-[^/]+\.json\.gz$`, filepath.Base(path))
-	require.Equal(t, connectionTestingFolder, filepath.Base(filepath.Dir(path)))
+	require.Equal(t, filepath.Clean(os.TempDir()), filepath.Dir(path))
 	f, err := os.Open(path)
 	require.NoError(t, err)
 	defer func() { _ = f.Close() }()

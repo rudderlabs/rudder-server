@@ -404,26 +404,18 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 func createTempLoadFile(dest *backendconfig.DestinationT) (string, [sha256.Size]byte, error) {
 	var emptyHash [sha256.Size]byte
 	var (
-		tmpDirPath string
-		filePath   string
-		err        error
-		writer     encoding.LoadFileWriter
+		filePath string
+		err      error
+		writer   encoding.LoadFileWriter
 
 		destinationType = dest.DestinationDefinition.Name
 		loadFileType    = warehouseutils.GetLoadFileType(destinationType)
 	)
 
-	if tmpDirPath, err = misc.GetTmpDir(); err != nil {
-		return "", emptyHash, fmt.Errorf("create tmp dir: %w", err)
-	}
-
-	validationDir := filepath.Join(tmpDirPath, connectionTestingFolder)
-	if err = os.MkdirAll(validationDir, os.ModePerm); err != nil {
-		return "", emptyHash, fmt.Errorf("create directory: %w", err)
-	}
-	// Destination input cannot become a local path component. Keep this file
-	// descriptor for hashing after the load writer closes.
-	tempFile, err := os.CreateTemp(validationDir, "validation-*."+warehouseutils.GetLoadFileFormat(loadFileType))
+	// The OS chooses the temporary directory and filename; no destination input
+	// becomes a local path component. Keep the descriptor for hashing after the
+	// load writer closes.
+	tempFile, err := os.CreateTemp("", "validation-*."+warehouseutils.GetLoadFileFormat(loadFileType))
 	if err != nil {
 		return "", emptyHash, fmt.Errorf("create validation file: %w", err)
 	}
@@ -484,8 +476,6 @@ func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath 
 		return filemanager.UploadedFile{}, fmt.Errorf("opening file: %w", err)
 	}
 
-	// cleanup
-	defer misc.RemoveFilePaths(filePath)
 	defer func() { _ = uploadFile.Close() }()
 
 	if output, err = fm.Upload(ctx, uploadFile, prefixes...); err != nil {
