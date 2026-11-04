@@ -152,7 +152,9 @@ func TestPythonTransformationsEnabled(t *testing.T) {
 		log := mock_logger.NewMockLogger(ctrl)
 		log.EXPECT().Child(gomock.Any()).Return(log).AnyTimes()
 		var fields []logger.Field
-		log.EXPECT().Errorn(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Do(
+		log.EXPECT().Errorn(
+			gomock.Regex("^Aborting python transformation"), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
+		).Do(
 			func(_ string, f ...logger.Field) { fields = f },
 		).Times(1)
 
