@@ -118,14 +118,20 @@ func integrationConfig(c integrationCredentials, namespace string, role bool) ma
 }
 
 func integrationDestination(c integrationCredentials, namespace, workspaceID string, role bool) backendconfig.DestinationT {
+	id := warehouseutils.RandHex()
 	destination := backendconfigtest.NewDestinationBuilder(warehouseutils.MAXCOMPUTE).
-		WithID(warehouseutils.RandHex()).WithRevisionID(warehouseutils.RandHex())
+		WithID(id).WithRevisionID(id)
 	for key, value := range integrationConfig(c, namespace, role) {
 		destination.WithConfigOption(key, value)
 	}
 	result := destination.Build()
 	result.WorkspaceID = workspaceID
 	return result
+}
+
+func TestIntegrationDestinationRevisionID(t *testing.T) {
+	destination := integrationDestination(integrationCredentials{}, "test_schema", "test_workspace", false)
+	require.Equal(t, destination.ID, destination.RevisionID)
 }
 
 type integrationRuntime struct {
