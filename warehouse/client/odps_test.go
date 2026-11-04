@@ -362,6 +362,7 @@ func TestRunODPSSQLSuccessAndHints(t *testing.T) {
 					// The SDK sends the session hints as settings on every SQL task.
 					var body []byte
 					body, _ = io.ReadAll(r.Body)
+					require.Contains(t, string(body), "SELECT 1;")
 					for _, hint := range []string{`odps.namespace.schema`, `odps.sql.type.system.odps2`, `odps.sql.timezone`} {
 						require.Contains(t, string(body), hint)
 					}

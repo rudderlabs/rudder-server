@@ -114,8 +114,12 @@ func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeo
 	if service == nil {
 		return nil, errors.New("ODPS client unavailable")
 	}
-	if strings.TrimSpace(statement) == "" {
+	statement = strings.TrimSpace(statement)
+	if statement == "" {
 		return nil, errors.New("ODPS statement is empty")
+	}
+	if !strings.HasSuffix(statement, ";") {
+		statement += ";"
 	}
 	if timeout <= 0 {
 		timeout = 5 * time.Minute
