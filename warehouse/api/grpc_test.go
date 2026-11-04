@@ -775,9 +775,9 @@ func TestGRPC(t *testing.T) {
 			triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
 			triggerStore.Delete("POSTGRES:second_source_id:test_destination_id")
 			s := repo.NewStagingFiles(db, c)
-			_, err := s.Insert(ctx, &model.StagingFileWithSchema{StagingFile: model.StagingFile{
+			_, err := s.Insert(ctx, &model.StagingFileWithSchema{
 				SourceID: sourceID, DestinationID: destinationID, WorkspaceID: workspaceID,
-			}})
+			})
 			require.NoError(t, err)
 			secondFile := model.StagingFile{SourceID: "second_source_id", DestinationID: destinationID, WorkspaceID: workspaceID}
 			secondID, err := s.Insert(ctx, &model.StagingFileWithSchema{StagingFile: secondFile})
