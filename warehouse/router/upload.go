@@ -31,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -341,6 +342,13 @@ func (job *UploadJob) run() (err error) {
 	if err != nil {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
 		return err
+	}
+	if job.warehouse.Type == whutils.MAXCOMPUTE && len(job.upload.PartitionPlans) != 0 {
+		planner, ok := whManager.(manager.PartitionPlanner)
+		if !ok {
+			return fmt.Errorf("MaxCompute manager does not accept persisted partition plans")
+		}
+		planner.SetPlannedPartitions(job.upload.PartitionPlans)
 	}
 
 	var (
@@ -1024,67 +1032,56 @@ func (job *UploadJob) GetLoadFileType() string {
 	return job.upload.LoadFileType
 }
 
-func (job *UploadJob) partitionSettings() (map[string]string, map[string]string) {
+func (job *UploadJob) partitionSettings() (map[string]string, map[string]string, error) {
 	if job.warehouse.Type != whutils.MAXCOMPUTE {
-		return nil, nil
+		return nil, nil, nil
+	}
+	planner, ok := job.whManager.(manager.PartitionPlanner)
+	if !ok {
+		return nil, nil, fmt.Errorf("MaxCompute manager does not expose partition metadata")
 	}
 	modes := make(map[string]string, len(job.upload.UploadSchema))
 	granularities := make(map[string]string, len(job.upload.UploadSchema))
+	plans := make(map[string]model.PartitionPlan, len(job.upload.UploadSchema))
+	conf := job.conf
+	if conf == nil {
+		conf = config.New()
+	}
+	column := job.warehouse.GetStringDestinationConfig(conf, model.PartitionColumnSetting)
+	granularity := job.warehouse.GetStringDestinationConfig(conf, model.PartitionTypeSetting)
 	for table, planned := range job.upload.UploadSchema {
-		mode := model.PartitionModeForTable(job.warehouse.Destination.Config, table)
-		granularity := model.PartitionGranularityForTable(job.warehouse.Destination.Config, table)
-		// An existing table's partition expression is fixed at creation time.
-		// The cached catalog schema identifies its mode by _partitiontime; do not
-		// let a pipeline override change the load-file format for that table.
+		var plan model.PartitionPlan
+		var err error
 		var existing model.TableSchema
 		if job.schemaHandle != nil {
 			existing = job.schemaHandle.GetTableSchema(job.ctx, table)
 		}
 		if len(existing) != 0 {
-			if _, fixed := existing[encoding.PartitionTimeColumn]; fixed {
-				mode = encoding.FixedPartitionMode
-			} else {
-				mode = "dynamic"
-			}
-			// The catalog schema does not carry TRUNC_TIME's granularity. Use
-			// the destination's table-specific setting (or default) rather than
-			// allowing a pipeline override to conflict with the existing table.
+			plan, err = planner.CatalogPartition(job.ctx, table)
 		} else {
-			if mode == "" {
-				if _, fixed := planned[encoding.PartitionTimeColumn]; fixed {
-					mode = encoding.FixedPartitionMode
-				}
-			}
-			if job.conf != nil {
-				prefix := fmt.Sprintf("Warehouse.pipeline.%s.%s.", job.warehouse.Source.ID, job.warehouse.Destination.ID)
-				if key := prefix + "partitionMode." + table; job.conf.IsSet(key) {
-					mode = job.conf.GetStringVar("", key)
-				} else if key := prefix + "partitionMode"; job.conf.IsSet(key) {
-					mode = job.conf.GetStringVar("", key)
-				}
-				if key := prefix + "partitionType." + table; job.conf.IsSet(key) {
-					granularity = job.conf.GetStringVar("", key)
-				} else if job.conf.IsSet(prefix+"partitionType") || granularity == "" {
-					granularity = job.warehouse.GetStringDestinationConfig(job.conf, model.PartitionTypeSetting)
-				}
-			}
+			plan, err = maxcompute.PlanPartition(planned, column, granularity)
 		}
-		if mode != "" {
-			modes[table] = mode
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolving MaxCompute partition for %q: %w", table, err)
 		}
-		if granularity != "" {
-			granularities[table] = granularity
-		}
+		plans[table] = plan
+		modes[table] = plan.Mode()
+		granularities[table] = plan.Granularity
 	}
-	return modes, granularities
+	planner.SetPlannedPartitions(plans)
+	job.upload.PartitionPlans = plans
+	return modes, granularities, nil
 }
 
-func (job *UploadJob) DTO() *model.UploadJob {
-	modes, granularities := job.partitionSettings()
+func (job *UploadJob) DTO() (*model.UploadJob, error) {
+	modes, granularities, err := job.partitionSettings()
+	if err != nil {
+		return nil, err
+	}
 	return &model.UploadJob{
 		Warehouse: job.warehouse, Upload: job.upload, StagingFiles: job.stagingFiles,
 		PartitionModes: modes, PartitionGranularities: granularities,
-	}
+	}, nil
 }
 
 func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) {

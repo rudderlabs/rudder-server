@@ -218,7 +218,6 @@ func (sh *schema) ConsolidateStagingFilesSchema(ctx context.Context, stagingFile
 	consolidatedSchema = consolidateWarehouseSchema(consolidatedSchema, sh.cachedSchema)
 	consolidatedSchema = overrideUsersWithIdentifiesSchema(consolidatedSchema, sh.warehouse.Type, sh.cachedSchema)
 	consolidatedSchema = enhanceDiscardsSchema(consolidatedSchema, sh.warehouse.Type)
-	enhanceMaxComputePartitions(consolidatedSchema, sh.warehouse)
 	consolidatedSchema = enhanceSchemaWithIDResolution(consolidatedSchema, sh.isIDResolutionEnabled(), sh.warehouse.Type)
 
 	return consolidatedSchema, nil
@@ -371,19 +370,6 @@ func overrideUsersWithIdentifiesSchema(consolidatedSchema model.Schema, warehous
 	return consolidatedSchema
 }
 
-// enhanceMaxComputePartitions adds the synthetic load-time column only to
-// tables which use fixed partitioning, including discards when configured.
-func enhanceMaxComputePartitions(consolidatedSchema model.Schema, warehouse model.Warehouse) {
-	if warehouse.Type != whutils.MAXCOMPUTE {
-		return
-	}
-	for table, columns := range consolidatedSchema {
-		if model.PartitionModeForTable(warehouse.Destination.Config, table) == "fixed" {
-			columns["_partitiontime"] = "datetime"
-		}
-	}
-}
-
 // enhanceDiscardsSchema adds the discards table to the schema
 // For bq, adds the loaded_at column to be segment compatible
 func enhanceDiscardsSchema(consolidatedSchema model.Schema, warehouseType string) model.Schema {
@@ -395,6 +381,9 @@ func enhanceDiscardsSchema(consolidatedSchema model.Schema, warehouseType string
 
 	if warehouseType == whutils.BQ || warehouseType == whutils.MAXCOMPUTE {
 		discards[whutils.ToProviderCase(warehouseType, "loaded_at")] = "datetime"
+	}
+	if warehouseType == whutils.MAXCOMPUTE {
+		discards["_partitiontime"] = "datetime"
 	}
 
 	consolidatedSchema[whutils.ToProviderCase(warehouseType, whutils.DiscardsTable)] = discards

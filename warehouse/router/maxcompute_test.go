@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -23,70 +25,104 @@ func (h maxComputeSchemaHandle) GetTableSchema(_ context.Context, table string) 
 	return h.tables[table]
 }
 
-func TestUploadJobMaxComputePartitionModes(t *testing.T) {
+type maxComputePartitionManager struct {
+	manager.Manager
+	catalog map[string]model.PartitionPlan
+	plans   map[string]model.PartitionPlan
+	err     error
+}
+
+func (m *maxComputePartitionManager) CatalogPartition(_ context.Context, table string) (model.PartitionPlan, error) {
+	if m.err != nil {
+		return model.PartitionPlan{}, m.err
+	}
+	return m.catalog[table], nil
+}
+
+func (m *maxComputePartitionManager) SetPlannedPartitions(plans map[string]model.PartitionPlan) {
+	m.plans = plans
+}
+
+func TestUploadJobMaxComputeFixedCatalogAndPlannedPartitions(t *testing.T) {
+	mgr := &maxComputePartitionManager{catalog: map[string]model.PartitionPlan{
+		"existing": {Source: "received_at", Granularity: "day"},
+	}}
 	job := UploadJob{
 		ctx: context.Background(),
 		warehouse: model.Warehouse{
 			Type:   whutils.MAXCOMPUTE,
 			Source: backendconfig.SourceT{ID: "source"},
 			Destination: backendconfig.DestinationT{ID: "destination", Config: map[string]any{
-				"partitionModes": map[string]any{"fixed": "fixed", "dynamic": "dynamic"},
-				"partitionTypes": map[string]any{"fixed": "hour", "dynamic": "day"},
+				"partitionColumn": "_PARTITIONTIME", "partitionType": "hour",
 			}},
 		},
 		upload: model.Upload{UploadSchema: model.Schema{
-			"fixed":   {"id": "string", "_partitiontime": "datetime"},
-			"dynamic": {"id": "string"},
-			"new":     {"id": "string"},
+			"existing": {"id": "string", "received_at": "datetime"},
+			"new":      {"id": "string", "_partitiontime": "datetime"},
 		}},
 		schemaHandle: maxComputeSchemaHandle{tables: model.Schema{
-			"fixed":   {"id": "string", "_partitiontime": "datetime"},
-			"dynamic": {"id": "string"},
+			"existing": {"id": "string", "received_at": "datetime"},
 		}},
-		conf: config.New(),
+		whManager: mgr,
+		conf:      config.New(),
 	}
-	job.conf.Set("Warehouse.pipeline.source.destination.partitionMode", "dynamic")
-	job.conf.Set("Warehouse.pipeline.source.destination.partitionType", "hour")
-	dto := job.DTO()
-	require.Equal(t, "dynamic", dto.PartitionModes["new"])
+	dto, err := job.DTO()
+	require.NoError(t, err)
+	require.Equal(t, "dynamic", dto.PartitionModes["existing"])
+	require.Equal(t, "day", dto.PartitionGranularities["existing"])
+	require.Equal(t, "fixed", dto.PartitionModes["new"])
 	require.Equal(t, "hour", dto.PartitionGranularities["new"])
+	require.Equal(t, model.PartitionPlan{Source: "_partitiontime", Granularity: "hour"}, mgr.plans["new"])
+	require.Equal(t, mgr.plans, job.upload.PartitionPlans)
 
-	job.conf.Set("Warehouse.pipeline.source.destination.partitionMode.fixed", "dynamic")
-	job.conf.Set("Warehouse.pipeline.source.destination.partitionType.fixed", "day")
-	job.conf.Set("Warehouse.pipeline.source.destination.partitionMode.dynamic", "fixed")
-	job.conf.Set("Warehouse.pipeline.source.destination.partitionType.dynamic", "hour")
+	job.conf.Set("Warehouse.pipeline.source.destination.partitionColumn", "received_at")
+	job.conf.Set("Warehouse.pipeline.source.destination.partitionType", "day")
+	dto, err = job.DTO()
+	require.NoError(t, err)
+	require.Equal(t, "dynamic", dto.PartitionModes["existing"])
+	require.Equal(t, "day", dto.PartitionGranularities["existing"])
+	require.Equal(t, model.PartitionPlan{Source: "_partitiontime", Granularity: "day"}, mgr.plans["new"])
 
-	dto = job.DTO()
-	require.Equal(t, "fixed", dto.PartitionModes["fixed"])
-	require.Equal(t, "dynamic", dto.PartitionModes["dynamic"])
-	require.Equal(t, "hour", dto.PartitionGranularities["fixed"])
-	require.Equal(t, "day", dto.PartitionGranularities["dynamic"])
-
-	job.conf.Set("Warehouse.pipeline.source.destination.partitionMode.new", "fixed")
-	job.conf.Set("Warehouse.pipeline.source.destination.partitionType.new", "day")
-	require.Equal(t, "fixed", job.DTO().PartitionModes["new"])
-	require.Equal(t, "day", job.DTO().PartitionGranularities["new"])
-
-	job.warehouse.Type = whutils.POSTGRES
-	require.Empty(t, job.DTO().PartitionModes)
-	require.Empty(t, job.DTO().PartitionGranularities)
+	mgr.err = errors.New("partition metadata unavailable")
+	_, err = job.DTO()
+	require.ErrorContains(t, err, "partition metadata unavailable")
 }
 
-func TestUploadJobMaxComputeNewTablePartitionDefaults(t *testing.T) {
+func TestUploadJobMaxComputeNewTableFallbackAndPipelineOverride(t *testing.T) {
+	mgr := &maxComputePartitionManager{}
 	job := UploadJob{
 		ctx: context.Background(),
 		warehouse: model.Warehouse{
 			Type:   whutils.MAXCOMPUTE,
 			Source: backendconfig.SourceT{ID: "source"},
 			Destination: backendconfig.DestinationT{ID: "destination", Config: map[string]any{
-				"partitionMode": "fixed", "partitionType": "day",
+				"partitionColumn": "received_at", "partitionType": "hour",
 			}},
 		},
-		upload: model.Upload{UploadSchema: model.Schema{"events": {"id": "string"}}},
-		conf:   config.New(),
+		upload:    model.Upload{UploadSchema: model.Schema{"events": {"id": "string"}}},
+		conf:      config.New(),
+		whManager: mgr,
 	}
-	require.Equal(t, "fixed", job.DTO().PartitionModes["events"])
-	require.Equal(t, "day", job.DTO().PartitionGranularities["events"])
+	dto, err := job.DTO()
+	require.NoError(t, err)
+	require.Equal(t, "fixed", dto.PartitionModes["events"])
+	require.Equal(t, "day", dto.PartitionGranularities["events"])
+
+	job.upload.UploadSchema["events"]["received_at"] = "datetime"
+	dto, err = job.DTO()
+	require.NoError(t, err)
+	require.Equal(t, "dynamic", dto.PartitionModes["events"])
+	require.Equal(t, "hour", dto.PartitionGranularities["events"])
+
+	job.conf.Set("Warehouse.pipeline.source.destination.partitionColumn", "_PARTITIONTIME")
 	job.conf.Set("Warehouse.pipeline.source.destination.partitionType", "hour")
-	require.Equal(t, "hour", job.DTO().PartitionGranularities["events"])
+	dto, err = job.DTO()
+	require.NoError(t, err)
+	require.Equal(t, "fixed", dto.PartitionModes["events"])
+	require.Equal(t, "hour", dto.PartitionGranularities["events"])
+
+	job.warehouse.Type = whutils.POSTGRES
+	dto, err = job.DTO()
+	require.NoError(t, err)
+	require.Empty(t, dto.PartitionModes)
 }

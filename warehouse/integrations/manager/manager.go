@@ -50,6 +50,13 @@ type Manager interface {
 	TestLoadTable(ctx context.Context, location, stagingTableName string, payloadMap map[string]any, loadFileFormat string) error
 }
 
+// PartitionPlanner is implemented by destinations whose table partition
+// expression must be fixed before generating load files.
+type PartitionPlanner interface {
+	CatalogPartition(context.Context, string) (model.PartitionPlan, error)
+	SetPlannedPartitions(map[string]model.PartitionPlan)
+}
+
 type WarehouseDelete interface {
 	DropTable(ctx context.Context, tableName string) (err error)
 	DeleteBy(ctx context.Context, tableName []string, params warehouseutils.DeleteByParams) error

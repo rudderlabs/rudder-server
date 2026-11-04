@@ -161,22 +161,6 @@ func (t *Transformer) processWarehouseMessage(cache *cache, event *types.Transfo
 	if err != nil {
 		return nil, err
 	}
-	if wEvent.Metadata.DestinationType == whutils.MAXCOMPUTE {
-		for _, output := range outputs {
-			meta, ok := output["metadata"].(map[string]any)
-			if !ok {
-				continue
-			}
-			table, _ := meta["table"].(string)
-			if partitionModeForTable(wEvent.Metadata.DestinationConfig, table) == "fixed" {
-				if columns, ok := meta["columns"].(map[string]any); ok {
-					columns["_partitiontime"] = model.DateTimeDataType
-				} else if columns, ok := meta["columns"].(map[string]string); ok {
-					columns["_partitiontime"] = model.DateTimeDataType
-				}
-			}
-		}
-	}
 	return outputs, nil
 }
 
@@ -248,25 +232,6 @@ func (t *Transformer) handleEvent(event *wtypes.TransformerEvent, cache *cache) 
 	}
 }
 
-func partitionModeForTable(config map[string]any, table string) string {
-	for _, key := range []string{"partitionModes", "partitionMode"} {
-		if modes, ok := config[key].(map[string]any); ok {
-			if mode, ok := modes[table].(string); ok {
-				return mode
-			}
-		}
-		if modes, ok := config[key].(map[string]string); ok {
-			if mode, ok := modes[table]; ok {
-				return mode
-			}
-		}
-	}
-	if mode, ok := config["partitionMode"].(string); ok {
-		return mode
-	}
-	return ""
-}
-
 func transformerResponseFromErr(metadata *types.Metadata, statTags map[string]string, err error) types.TransformerResponse {
 	if te, ok := errors.AsType[*response.TransformerError](err); ok {
 		return types.TransformerResponse{
@@ -299,6 +264,9 @@ func (t *Transformer) getColumns(
 
 	if destType == whutils.BQ || destType == whutils.BQStreamAllEvents || destType == whutils.MAXCOMPUTE {
 		columns["loaded_at"] = model.DateTimeDataType
+	}
+	if destType == whutils.MAXCOMPUTE {
+		columns["_partitiontime"] = model.DateTimeDataType
 	}
 
 	for key, value := range data {

@@ -40,10 +40,11 @@ func (m *MaxCompute) userPartitionValues(ctx context.Context, table string) ([]s
 }
 
 func (m *MaxCompute) boundedUserPartitions(ctx context.Context, table string, now time.Time) ([]string, error) {
-	granularity := model.PartitionGranularityForTable(m.warehouse.Destination.Config, table)
-	if granularity != "" && granularity != "day" && granularity != "hour" {
-		return nil, fmt.Errorf("unsupported MaxCompute partition type %q", granularity)
+	plan, err := m.CatalogPartition(ctx, table)
+	if err != nil {
+		return nil, err
 	}
+	granularity := plan.Granularity
 	values, err := m.userPartitionValues(ctx, table)
 	if err != nil {
 		return nil, err
@@ -243,7 +244,15 @@ func (m *MaxCompute) loadUsersWithCarryForward(ctx context.Context) (err error) 
 	if len(users) == 0 || users["id"] != "string" || users["received_at"] != "datetime" || identifies["user_id"] != "string" || identifies["received_at"] != "datetime" {
 		return errors.New("MaxCompute users carry-forward requires warehouse users.id, users.received_at and identifies.user_id, identifies.received_at")
 	}
-	if m.partitionMode(warehouseutils.UsersTable) == "fixed" || m.partitionMode(warehouseutils.IdentifiesTable) == "fixed" {
+	usersPlan, err := m.CatalogPartition(ctx, warehouseutils.UsersTable)
+	if err != nil {
+		return err
+	}
+	identifiesPlan, err := m.CatalogPartition(ctx, warehouseutils.IdentifiesTable)
+	if err != nil {
+		return err
+	}
+	if usersPlan.Mode() == "fixed" || identifiesPlan.Mode() == "fixed" {
 		return errors.New("MaxCompute users carry-forward requires dynamic timestamp partitions")
 	}
 	for _, key := range warehouseutils.SortColumnKeysFromColumnMap(users) {
@@ -286,7 +295,7 @@ func (m *MaxCompute) loadUsersWithCarryForward(ctx context.Context) (err error) 
 		definitions = append(definitions, col+" "+kind)
 	}
 	partitionField, _ := quote(partitionSource) // validated against catalog and schema above
-	createStage := "CREATE TABLE " + stageTable + " (" + strings.Join(definitions, ", ") + ") AUTO PARTITIONED BY (TRUNC_TIME(" + partitionField + ", '" + granularity + "') AS `pt`) TBLPROPERTIES ('transactional'='true')"
+	createStage := "CREATE TABLE " + stageTable + " (" + strings.Join(definitions, ", ") + ") AUTO PARTITIONED BY (TRUNC_TIME(" + partitionField + ", '" + granularity + "') AS `pt`) TBLPROPERTIES ('table.format.version'='2')"
 	if err := m.run(ctx, createStage); err != nil {
 		return fmt.Errorf("creating MaxCompute users upload staging table: %w", err)
 	}

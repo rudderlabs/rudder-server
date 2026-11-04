@@ -27,7 +27,7 @@ type TransformerEvent struct {
 
 var destConfigFields = []string{
 	"skipTracksTable", "skipUsersTable", "underscoreDivideNumbers", "allowUsersContextTraits",
-	"storeFullEvent", "jsonPaths", "partitionMode", "partitionModes", "partitionType", "partitionTypes", "partitionGranularity", "partitionGranularities",
+	"storeFullEvent", "jsonPaths",
 }
 
 func New(

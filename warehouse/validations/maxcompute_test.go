@@ -62,14 +62,6 @@ func TestMaxComputeValidationFixture(t *testing.T) {
 	require.Equal(t, maxComputeValidationPartitionTime, maxComputeValidationPayload()["_partitiontime"])
 	require.NotContains(t, tableSchemaMap, "_partitiontime")
 	require.NotContains(t, payloadMap, "_partitiontime")
-	originalConfig := dest.Config
-	originalConfig["partitionMode"] = "dynamic"
-	originalConfig["partitionModes"] = map[string]any{"customer_table": "dynamic"}
-	converted := maxComputeValidationWarehouse(createDummyWarehouse(dest))
-	require.Equal(t, "fixed", model.PartitionModeForTable(converted.Destination.Config, getTable(dest)))
-	require.NotContains(t, converted.Destination.Config, "partitionModes")
-	require.Equal(t, "dynamic", originalConfig["partitionMode"])
-	require.Contains(t, originalConfig, "partitionModes")
 	require.Equal(t, "datetime", validationTableSchema(true)["_partitiontime"])
 	require.NotContains(t, validationTableSchema(false), "_partitiontime")
 }

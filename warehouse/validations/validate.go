@@ -284,12 +284,7 @@ func (c *connections) Validate(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 
-	// Setup already used the converted validation warehouse for MaxCompute.
-	// Passing a new unconverted warehouse would bypass its partition settings.
 	warehouse := createDummyWarehouse(c.destination)
-	if warehouse.Type == warehouseutils.MAXCOMPUTE {
-		warehouse = maxComputeValidationWarehouse(warehouse)
-	}
 	return c.manager.TestConnection(ctx, warehouse)
 }
 
@@ -637,16 +632,6 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 }
 
 // Convert only the validation warehouse; never rewrite customer settings.
-func maxComputeValidationWarehouse(warehouse model.Warehouse) model.Warehouse {
-	conf := make(map[string]any, len(warehouse.Destination.Config)+1)
-	maps.Copy(conf, warehouse.Destination.Config)
-	// Randomized test table names cannot match customer table-specific modes.
-	conf["partitionMode"] = "fixed"
-	delete(conf, "partitionModes")
-	warehouse.Destination.Config = conf
-	return warehouse
-}
-
 func createManager(ctx context.Context, dest *backendconfig.DestinationT) (manager.WarehouseOperations, error) {
 	if dest.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
 		if err := warehouseutils.ValidateMaxComputeOSSConfig(dest.Config); err != nil {
@@ -666,13 +651,8 @@ func createManager(ctx context.Context, dest *backendconfig.DestinationT) (manag
 	}
 
 	operations.SetConnectionTimeout(queryTimeout)
-	uploaderDest := dest
-	if destType == warehouseutils.MAXCOMPUTE {
-		warehouse = maxComputeValidationWarehouse(warehouse)
-		uploaderDest = &warehouse.Destination
-	}
 	if err = operations.Setup(ctx, warehouse, &dummyUploader{
-		dest: uploaderDest,
+		dest: dest,
 	}); err != nil {
 		return nil, fmt.Errorf("setting up manager: %w", err)
 	}

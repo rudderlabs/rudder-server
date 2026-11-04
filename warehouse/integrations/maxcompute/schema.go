@@ -14,12 +14,9 @@ import (
 )
 
 var logicalTypes = map[string]string{
-	"string": "STRING", "text": "STRING", "json": "STRING",
-	"int": "BIGINT", "bigint": "BIGINT", "float": "DOUBLE",
-	"boolean": "BOOLEAN", "datetime": "DATETIME",
-	"array(string)": "ARRAY<STRING>", "array(int)": "ARRAY<BIGINT>",
-	"array(float)": "ARRAY<DOUBLE>", "array(boolean)": "ARRAY<BOOLEAN>",
-	"array(datetime)": "ARRAY<DATETIME>",
+	"string": "STRING", "text": "STRING",
+	"int": "BIGINT", "float": "DOUBLE",
+	"boolean": "BOOLEAN", "datetime": "TIMESTAMP",
 }
 
 func columnType(logical string) (string, error) {
@@ -35,24 +32,16 @@ func sdkType(t datatype.DataType) (string, bool) {
 	if t == nil {
 		return "", false
 	}
-	if array, ok := t.(datatype.ArrayType); ok {
-		if element, ok := sdkType(array.ElementType); ok {
-			return "array(" + element + ")", true
-		}
-		return "", false
-	}
 	switch strings.ToUpper(t.Name()) {
 	case "TINYINT", "SMALLINT", "INT", "BIGINT":
 		return "int", true
 	case "FLOAT", "DOUBLE", "DECIMAL":
 		return "float", true
-	case "CHAR", "VARCHAR", "STRING", "BINARY":
+	case "CHAR", "VARCHAR", "STRING":
 		return "string", true
-	case "JSON":
-		return "json", true
 	case "BOOLEAN":
 		return "boolean", true
-	case "DATE", "DATETIME", "TIMESTAMP", "TIMESTAMP_NTZ":
+	case "DATE", "DATETIME", "TIMESTAMP":
 		return "datetime", true
 	}
 	return "", false
@@ -84,7 +73,7 @@ func (m *MaxCompute) FetchSchema(ctx context.Context) (model.Schema, error) {
 			listErr = err
 			return
 		}
-		if t == nil || strings.HasPrefix(t.Name(), warehouseutils.StagingTablePrefix(provider)) || strings.Contains(t.Name(), "_view_") {
+		if t == nil || strings.HasPrefix(t.Name(), warehouseutils.StagingTablePrefix(provider)) {
 			return
 		}
 		if err = t.Load(); err != nil {
@@ -100,11 +89,17 @@ func (m *MaxCompute) FetchSchema(ctx context.Context) (model.Schema, error) {
 		}
 		columns := make(model.TableSchema)
 		for _, c := range t.Schema().Columns {
+			if strings.EqualFold(c.Name, "pt") {
+				continue
+			}
 			if logical, ok := sdkType(c.Type); ok {
 				columns[c.Name] = logical
 			}
 		}
 		for _, c := range t.Schema().PartitionColumns {
+			if strings.EqualFold(c.Name, "pt") {
+				continue
+			}
 			if logical, ok := sdkType(c.Type); ok {
 				columns[c.Name] = logical
 			}

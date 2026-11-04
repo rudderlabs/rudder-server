@@ -44,7 +44,6 @@ func (u *usersUploader) GetLoadFilesMetadata(_ context.Context, options warehous
 func testUsersManager(t *testing.T) (*MaxCompute, *usersUploader, *[]string) {
 	t.Helper()
 	m := testManager()
-	m.warehouse.Destination.Config["partitionTypes"] = map[string]any{warehouseutils.UsersTable: "day", warehouseutils.IdentifiesTable: "day"}
 	// Serve real SDK catalog and partition requests; the generated expression
 	// is table metadata, not a mutable upload/destination setting.
 	expression := `[{"leafExprDesc":{"reference":{"name":"received_at"}}},{"leafExprDesc":{"constant":"day"}},{"functionCall":{"name":"trunc_time"}}]`
@@ -86,8 +85,8 @@ func TestUsersCarryForwardOnlyCurrentUploadAndExactPartitions(t *testing.T) {
 	require.Equal(t, []string{warehouseutils.UsersTable}, u.tables)
 	require.Len(t, *statements, 5)
 	require.Contains(t, (*statements)[0], "CREATE TABLE `project`.")
-	require.Contains(t, (*statements)[0], "`loaded_at` DATETIME")
-	require.Contains(t, (*statements)[0], "AUTO PARTITIONED BY (TRUNC_TIME(`received_at`, 'day') AS `pt`) TBLPROPERTIES ('transactional'='true')")
+	require.Contains(t, (*statements)[0], "`loaded_at` TIMESTAMP")
+	require.Contains(t, (*statements)[0], "AUTO PARTITIONED BY (TRUNC_TIME(`received_at`, 'day') AS `pt`) TBLPROPERTIES ('table.format.version'='2')")
 	require.Contains(t, (*statements)[1], "LOAD DATA INPATH 'oss://my-bucket/one.gz' INTO TABLE `project`.")
 	require.Contains(t, (*statements)[2], "LOAD DATA INPATH 'oss://my-bucket/two.gz' INTO TABLE `project`.")
 	insert := (*statements)[3]

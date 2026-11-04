@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"regexp"
 	"strings"
@@ -52,10 +53,11 @@ type MaxCompute struct {
 
 	// exec and catalog are replaceable in tests. The production implementations
 	// use the SDK rather than parsing SHOW output for schema discovery.
-	exec       func(context.Context, string) error
-	catalog    func(context.Context) (model.Schema, error)
-	partitions func(context.Context, string) ([]string, error) // replaceable in tests; SDK lists staging partitions in production.
-	principal  func(context.Context) (string, error)           // replaceable in tests; SDK security WHOAMI in production.
+	exec              func(context.Context, string) error
+	catalog           func(context.Context) (model.Schema, error)
+	partitions        func(context.Context, string) ([]string, error) // replaceable in tests; SDK lists staging partitions in production.
+	principal         func(context.Context) (string, error)           // replaceable in tests; SDK security WHOAMI in production.
+	plannedPartitions map[string]model.PartitionPlan
 }
 
 func New(conf *config.Config, log logger.Logger) *MaxCompute {
@@ -434,6 +436,17 @@ func (m *MaxCompute) CreateTable(ctx context.Context, table string, columns mode
 	if len(columns) == 0 {
 		return errors.New("MaxCompute table has no columns")
 	}
+	plan, planned := m.plannedPartitions[table]
+	if !planned {
+		plan = model.PartitionPlan{Source: "_partitiontime", Granularity: "day"}
+	}
+	if err := validatePartitionPlan(plan, columns); err != nil {
+		return err
+	}
+	if plan.Source == "_partitiontime" && columns[plan.Source] == "" {
+		columns = maps.Clone(columns)
+		columns[plan.Source] = "datetime"
+	}
 	if len(columns) > 1200 {
 		return errors.New("MaxCompute table exceeds 1200 columns")
 	}
@@ -450,54 +463,8 @@ func (m *MaxCompute) CreateTable(ctx context.Context, table string, columns mode
 		definitions = append(definitions, field+" "+kind)
 	}
 	statement := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s)", name, strings.Join(definitions, ", "))
-	// Every table is append-only Delta with a time-derived pt partition.
-	// A configured source takes precedence over the mode-based default. BigQuery's
-	// ingestion-time sentinel has no ODPS column equivalent: use ingestion time.
-	partitionColumn, configured := m.partitionColumn(table)
-	if strings.EqualFold(partitionColumn, "_PARTITIONTIME") {
-		partitionColumn = ""
-	} else if partitionColumn == "" && !configured && m.partitionMode(table) == "fixed" {
-		partitionColumn = "_partitiontime"
-	}
-	if partitionColumn != "" {
-		if _, err := quote(partitionColumn); err != nil {
-			return err
-		}
-		// Event-derived columns are normalized by the transformer before CREATE.
-		// A configured source that is absent at CREATE falls back to ingestion time;
-		// subsequent batches missing an existing source instead get __NULL__ pt.
-		if _, ok := columns[partitionColumn]; !ok {
-			// Resolve a configured event property through the same lower-case,
-			// reserved-keyword-escaped identifier space as uploaded columns.
-			partitionColumn = warehouseutils.ToSafeNamespace(provider, partitionColumn)
-		}
-		if _, ok := columns[partitionColumn]; !ok {
-			partitionColumn = ""
-		} else if columns[partitionColumn] != "datetime" {
-			return fmt.Errorf("MaxCompute auto partition requires datetime column %q", partitionColumn)
-		}
-	}
-	granularity := model.PartitionGranularityForTable(m.warehouse.Destination.Config, table)
-	if m.conf != nil {
-		key := fmt.Sprintf("Warehouse.pipeline.%s.%s.partitionType.%s", m.warehouse.Source.ID, m.warehouse.Destination.ID, table)
-		if m.conf.IsSet(key) {
-			granularity = m.conf.GetStringVar("", key)
-		} else if m.conf.IsSet(fmt.Sprintf("Warehouse.pipeline.%s.%s.partitionType", m.warehouse.Source.ID, m.warehouse.Destination.ID)) {
-			granularity = m.warehouse.GetStringDestinationConfig(m.conf, model.PartitionTypeSetting)
-		}
-	}
-	if partitionColumn == "" || granularity == "" {
-		granularity = "day"
-	}
-	if granularity != "day" && granularity != "hour" {
-		return fmt.Errorf("unsupported MaxCompute partition type %q", granularity)
-	}
-	if partitionColumn == "" {
-		statement += " AUTO PARTITIONED BY (TRUNC_TIME(GETDATE(), '" + granularity + "') AS `pt`)"
-	} else {
-		statement += " AUTO PARTITIONED BY (TRUNC_TIME(`" + partitionColumn + "`, '" + granularity + "') AS `pt`)"
-	}
-	statement += " TBLPROPERTIES ('transactional'='true')"
+	statement += " AUTO PARTITIONED BY (TRUNC_TIME(`" + plan.Source + "`, '" + plan.Granularity + "') AS `pt`)"
+	statement += " TBLPROPERTIES ('table.format.version'='2')"
 	if err := m.run(ctx, statement); err != nil {
 		return err
 	}
@@ -525,9 +492,6 @@ func (m *MaxCompute) AddColumns(ctx context.Context, table string, columns []war
 		return err
 	}
 	for _, col := range columns {
-		if col.Name == "_partitiontime" && m.partitionMode(table) == "fixed" {
-			return errors.New("cannot add the fixed MaxCompute partition column after table creation")
-		}
 		field, err := quote(col.Name)
 		if err != nil {
 			return err
@@ -579,50 +543,6 @@ func (m *MaxCompute) applyConnectionTimeout(instance *odps.Odps) {
 	}
 }
 
-// partitionColumn resolves the table-specific destination setting first, then
-// the pipeline override and destination default. An unset source uses ingestion
-// time for dynamic tables, rather than guessing from unrelated timestamp fields.
-func (m *MaxCompute) partitionColumn(table string) (string, bool) {
-	settings := m.warehouse.Destination.Config
-	for _, key := range []string{"partitionColumns", "partitionColumn"} {
-		if columns, ok := settings[key].(map[string]any); ok {
-			if column, ok := columns[table].(string); ok {
-				return column, true
-			}
-		}
-		if columns, ok := settings[key].(map[string]string); ok {
-			if column, ok := columns[table]; ok {
-				return column, true
-			}
-		}
-	}
-	if m.conf != nil {
-		key := fmt.Sprintf("Warehouse.pipeline.%s.%s.partitionColumn.%s", m.warehouse.Source.ID, m.warehouse.Destination.ID, table)
-		if m.conf.IsSet(key) {
-			return m.conf.GetStringVar("", key), true
-		}
-		key = fmt.Sprintf("Warehouse.pipeline.%s.%s.partitionColumn", m.warehouse.Source.ID, m.warehouse.Destination.ID)
-		if m.conf.IsSet(key) {
-			return m.warehouse.GetStringDestinationConfig(m.conf, model.PartitionColumnSetting), true
-		}
-	}
-	column, ok := settings[model.PartitionColumnSetting.String()].(string)
-	return column, ok
-}
-
-func (m *MaxCompute) partitionMode(table string) string {
-	mode := model.PartitionModeForTable(m.warehouse.Destination.Config, table)
-	if mode == "" && m.uploader != nil {
-		columns := m.uploader.GetTableSchemaInWarehouse(table)
-		if len(columns) == 0 {
-			columns = m.uploader.GetTableSchemaInUpload(table)
-		}
-		if _, ok := columns["_partitiontime"]; ok {
-			return "fixed"
-		}
-	}
-	return mode
-}
 func (*MaxCompute) ErrorMappings() []model.JobError { return errorsMappings }
 func (m *MaxCompute) TestFetchSchema(ctx context.Context) error {
 	_, err := m.FetchSchema(ctx)

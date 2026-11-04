@@ -82,14 +82,15 @@ type ProcessOptions struct {
 }
 
 type UploadMetadata struct {
-	UseRudderStorage bool      `json:"use_rudder_storage"`
-	SourceTaskRunID  string    `json:"source_task_run_id"`
-	SourceJobID      string    `json:"source_job_id"`
-	SourceJobRunID   string    `json:"source_job_run_id"`
-	LoadFileType     string    `json:"load_file_type"`
-	Retried          bool      `json:"retried"`
-	Priority         int       `json:"priority"`
-	NextRetryTime    time.Time `json:"nextRetryTime"`
+	UseRudderStorage bool                           `json:"use_rudder_storage"`
+	SourceTaskRunID  string                         `json:"source_task_run_id"`
+	SourceJobID      string                         `json:"source_job_id"`
+	SourceJobRunID   string                         `json:"source_job_run_id"`
+	LoadFileType     string                         `json:"load_file_type"`
+	Retried          bool                           `json:"retried"`
+	Priority         int                            `json:"priority"`
+	NextRetryTime    time.Time                      `json:"nextRetryTime"`
+	PartitionPlans   map[string]model.PartitionPlan `json:"maxcompute_partition_plans,omitempty"`
 }
 
 func NewUploads(db *sqlmiddleware.DB, opts ...Opt) *Uploads {
@@ -116,6 +117,7 @@ func ExtractUploadMetadata(upload model.Upload) UploadMetadata {
 		Retried:          upload.Retried,
 		Priority:         upload.Priority,
 		NextRetryTime:    upload.NextRetryTime,
+		PartitionPlans:   upload.PartitionPlans,
 	}
 }
 
@@ -543,6 +545,7 @@ func scanUpload(scan scanFn, upload *model.Upload) error {
 	upload.Priority = metadata.Priority
 	upload.Retried = metadata.Retried
 	upload.UseRudderStorage = metadata.UseRudderStorage
+	upload.PartitionPlans = metadata.PartitionPlans
 
 	_, upload.FirstAttemptAt = warehouseutils.TimingFromJSONString(firstTiming)
 	var lastStatus string

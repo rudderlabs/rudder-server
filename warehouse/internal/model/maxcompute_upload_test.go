@@ -6,14 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPartitionModeForTable(t *testing.T) {
-	config := map[string]any{"partitionMode": "dynamic", "partitionModes": map[string]any{"fixed_table": "fixed", "dynamic_table": "dynamic"}}
-	require.Equal(t, "fixed", PartitionModeForTable(config, "fixed_table"))
-	require.Equal(t, "dynamic", PartitionModeForTable(config, "dynamic_table"))
-	require.Equal(t, "dynamic", PartitionModeForTable(config, "other"))
-	require.Empty(t, PartitionModeForTable(nil, "other"))
-	require.Equal(t, "hour", PartitionGranularityForTable(map[string]any{
-		"partitionType": "day", "partitionTypes": map[string]any{"fixed_table": "hour"},
-	}, "fixed_table"))
-	require.Equal(t, "day", PartitionGranularityForTable(map[string]any{"partitionType": "day"}, "other"))
+func TestPartitionPlanMode(t *testing.T) {
+	require.Equal(t, "fixed", (PartitionPlan{Source: "_partitiontime", Granularity: "hour"}).Mode())
+	require.Equal(t, "dynamic", (PartitionPlan{Source: "received_at", Granularity: "day"}).Mode())
 }

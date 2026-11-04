@@ -105,6 +105,9 @@ type Upload struct {
 	Attempts       int64
 
 	UploadSchema Schema
+	// PartitionPlans records the MaxCompute expression selected when load files
+	// were generated, so a resumed upload creates tables with the same source.
+	PartitionPlans map[string]PartitionPlan
 }
 
 type Timings []map[string]time.Time
@@ -127,46 +130,18 @@ type UploadJob struct {
 	PartitionGranularities map[string]string
 }
 
-// PartitionModeForTable reads a table-specific mode, falling back to the
-// destination's default. Both fields are optional for older destinations.
-func PartitionModeForTable(config map[string]any, table string) string {
-	for _, key := range []string{"partitionModes", "partitionMode"} {
-		if modes, ok := config[key].(map[string]any); ok {
-			if mode, ok := modes[table].(string); ok {
-				return mode
-			}
-		}
-		if modes, ok := config[key].(map[string]string); ok {
-			if mode, ok := modes[table]; ok {
-				return mode
-			}
-		}
-	}
-	if mode, ok := config["partitionMode"].(string); ok {
-		return mode
-	}
-	return ""
+// PartitionPlan is the immutable partition expression chosen when a table is
+// created, or read from the catalog for an existing table.
+type PartitionPlan struct {
+	Source      string
+	Granularity string
 }
 
-// PartitionGranularityForTable resolves a table-specific partition type before
-// the destination default. Empty values preserve the caller's default (day).
-func PartitionGranularityForTable(config map[string]any, table string) string {
-	for _, key := range []string{"partitionTypes", "partitionGranularities", "partitionType", "partitionGranularity"} {
-		if types, ok := config[key].(map[string]any); ok {
-			if value, ok := types[table].(string); ok && value != "" {
-				return value
-			}
-		}
-		if types, ok := config[key].(map[string]string); ok && types[table] != "" {
-			return types[table]
-		}
+func (p PartitionPlan) Mode() string {
+	if p.Source == "_partitiontime" {
+		return "fixed"
 	}
-	for _, key := range []string{"partitionType", "partitionGranularity"} {
-		if value, ok := config[key].(string); ok {
-			return value
-		}
-	}
-	return ""
+	return "dynamic"
 }
 
 type PendingTableUpload struct {
