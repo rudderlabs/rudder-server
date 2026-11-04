@@ -46,8 +46,6 @@ type testConfig struct {
 func TestTracing(t *testing.T) {
 	t.Setenv("RSERVER_ROUTER_BATCHING_SUPPORTED_DESTINATIONS", "WEBHOOK")
 	t.Run("gateway-processor-router tracing", func(t *testing.T) {
-		tc := setup(t)
-
 		bcServer := backendconfigtest.NewBuilder().
 			WithWorkspaceConfig(
 				backendconfigtest.NewConfigBuilder().
@@ -66,6 +64,8 @@ func TestTracing(t *testing.T) {
 
 		trServer := transformertest.NewBuilder().Build()
 		defer trServer.Close()
+
+		tc := setup(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -108,7 +108,6 @@ func TestTracing(t *testing.T) {
 		require.NoError(t, wg.Wait())
 	})
 	t.Run("jaeger down", func(t *testing.T) {
-		tc := setup(t)
 		jaegerDownURL := "localhost:1234"
 
 		bcServer := backendconfigtest.NewBuilder().
@@ -129,6 +128,8 @@ func TestTracing(t *testing.T) {
 
 		trServer := transformertest.NewBuilder().Build()
 		defer trServer.Close()
+
+		tc := setup(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -161,8 +162,6 @@ func TestTracing(t *testing.T) {
 		require.NoError(t, wg.Wait())
 	})
 	t.Run("gateway-processor-router with transformations", func(t *testing.T) {
-		tc := setup(t)
-
 		bcServer := backendconfigtest.NewBuilder().
 			WithWorkspaceConfig(
 				backendconfigtest.NewConfigBuilder().
@@ -182,6 +181,8 @@ func TestTracing(t *testing.T) {
 
 		trServer := transformertest.NewBuilder().WithRouterTransform("WEBHOOK").Build()
 		defer trServer.Close()
+
+		tc := setup(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -228,8 +229,6 @@ func TestTracing(t *testing.T) {
 		require.NoError(t, wg.Wait())
 	})
 	t.Run("gateway-processor-router with batch transformations", func(t *testing.T) {
-		tc := setup(t)
-
 		bcServer := backendconfigtest.NewBuilder().
 			WithWorkspaceConfig(
 				backendconfigtest.NewConfigBuilder().
@@ -248,6 +247,8 @@ func TestTracing(t *testing.T) {
 
 		trServer := transformertest.NewBuilder().WithRouterTransform("WEBHOOK").Build()
 		defer trServer.Close()
+
+		tc := setup(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -294,8 +295,6 @@ func TestTracing(t *testing.T) {
 		require.NoError(t, wg.Wait())
 	})
 	t.Run("failed at gateway", func(t *testing.T) {
-		tc := setup(t)
-
 		bcServer := backendconfigtest.NewBuilder().
 			WithWorkspaceConfig(
 				backendconfigtest.NewConfigBuilder().
@@ -310,6 +309,8 @@ func TestTracing(t *testing.T) {
 
 		trServer := transformertest.NewBuilder().Build()
 		defer trServer.Close()
+
+		tc := setup(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -347,8 +348,6 @@ func TestTracing(t *testing.T) {
 		require.NoError(t, wg.Wait())
 	})
 	t.Run("multiplexing in processor transformations", func(t *testing.T) {
-		tc := setup(t)
-
 		bcServer := backendconfigtest.NewBuilder().
 			WithWorkspaceConfig(
 				backendconfigtest.NewConfigBuilder().
@@ -385,6 +384,8 @@ func TestTracing(t *testing.T) {
 			}).
 			Build()
 		defer trServer.Close()
+
+		tc := setup(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -429,8 +430,6 @@ func TestTracing(t *testing.T) {
 		require.NoError(t, wg.Wait())
 	})
 	t.Run("one source multiple destinations", func(t *testing.T) {
-		tc := setup(t)
-
 		bcServer := backendconfigtest.NewBuilder().
 			WithWorkspaceConfig(
 				backendconfigtest.NewConfigBuilder().
@@ -457,6 +456,8 @@ func TestTracing(t *testing.T) {
 
 		trServer := transformertest.NewBuilder().Build()
 		defer trServer.Close()
+
+		tc := setup(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
