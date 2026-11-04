@@ -192,7 +192,7 @@ func (m *MaxCompute) currentUserFiles(ctx context.Context) ([]string, error) {
 	if len(files) == 0 {
 		return nil, nil
 	}
-	if err := ValidateSettings(m.warehouse.Destination.Config, m.warehouse.Destination.WorkspaceID); err != nil {
+	if err := warehouseutils.ValidateMaxComputeSettings(m.warehouse.Destination.Config, m.warehouse.Destination.WorkspaceID); err != nil {
 		return nil, err
 	}
 	converted := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{

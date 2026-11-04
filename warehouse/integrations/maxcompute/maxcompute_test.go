@@ -69,13 +69,13 @@ func TestTypesAndConversion(t *testing.T) {
 
 func TestRoleSettingsAreExclusiveAndRequireWorkspace(t *testing.T) {
 	settings := map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou", "iamRoleARN": "acs:ram::123:role/test", "ossRoleArn": "read-role", "endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "project": "project"}
-	require.NoError(t, ValidateSettings(settings, "workspace"))
-	require.ErrorContains(t, ValidateSettings(settings, ""), "workspace ID")
+	require.NoError(t, warehouseutils.ValidateMaxComputeSettings(settings, "workspace"))
+	require.ErrorContains(t, warehouseutils.ValidateMaxComputeSettings(settings, ""), "workspace ID")
 	settings["accessKeyId"] = "destination-key"
-	require.ErrorContains(t, ValidateSettings(settings, "workspace"), "cannot be combined")
+	require.ErrorContains(t, warehouseutils.ValidateMaxComputeSettings(settings, "workspace"), "cannot be combined")
 	delete(settings, "accessKeyId")
 	settings["accessKeySecret"] = "destination-secret"
-	require.ErrorContains(t, ValidateSettings(settings, "workspace"), "cannot be combined")
+	require.ErrorContains(t, warehouseutils.ValidateMaxComputeSettings(settings, "workspace"), "cannot be combined")
 	delete(settings, "accessKeySecret")
 	m := testManager()
 	m.warehouse.Destination.Config = settings

@@ -1,4 +1,4 @@
-package maxcompute
+package warehouseutils
 
 import (
 	"errors"
@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// RoleMode selects MaxCompute authentication from destination account fields.
-func RoleMode(conf map[string]any) (bool, error) {
+// MaxComputeRoleMode selects MaxCompute authentication from destination account fields.
+func MaxComputeRoleMode(conf map[string]any) (bool, error) {
 	if conf == nil {
 		return false, fmt.Errorf("MaxCompute OSS configuration is required")
 	}
@@ -35,9 +35,9 @@ func RoleMode(conf map[string]any) (bool, error) {
 	return role, nil
 }
 
-// ValidateOSSConfig checks fields required by both OSS staging and ODPS LOAD.
-func ValidateOSSConfig(conf map[string]any) error {
-	if _, err := RoleMode(conf); err != nil {
+// ValidateMaxComputeOSSConfig checks fields required by both OSS staging and ODPS LOAD.
+func ValidateMaxComputeOSSConfig(conf map[string]any) error {
+	if _, err := MaxComputeRoleMode(conf); err != nil {
 		return err
 	}
 	for _, field := range []string{"ossRoleArn", "bucketName", "region"} {
@@ -49,8 +49,8 @@ func ValidateOSSConfig(conf map[string]any) error {
 	return nil
 }
 
-func ValidateSettings(settings map[string]any, workspaceID string) error {
-	if err := ValidateOSSConfig(settings); err != nil {
+func ValidateMaxComputeSettings(settings map[string]any, workspaceID string) error {
+	if err := ValidateMaxComputeOSSConfig(settings); err != nil {
 		return err
 	}
 	roleARN, _ := settings["iamRoleARN"].(string)

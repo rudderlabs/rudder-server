@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -105,7 +104,7 @@ func (p *basePayload) fileManagerWithFactory(config any, useRudderStorage bool, 
 
 	storageProvider := warehouseutils.ObjectStorageType(p.DestinationType, config, useRudderStorage)
 	if storageProvider == warehouseutils.AlibabaOSS {
-		if err := maxcompute.ValidateSettings(clonedConfig, p.WorkspaceID); err != nil {
+		if err := warehouseutils.ValidateMaxComputeSettings(clonedConfig, p.WorkspaceID); err != nil {
 			return nil, err
 		}
 	}

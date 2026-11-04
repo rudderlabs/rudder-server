@@ -21,7 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -182,7 +181,7 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 
 func NewValidator(ctx context.Context, step string, dest *backendconfig.DestinationT) (Validator, error) {
 	if dest.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
-		if err := maxcompute.ValidateSettings(dest.Config, dest.WorkspaceID); err != nil {
+		if err := warehouseutils.ValidateMaxComputeSettings(dest.Config, dest.WorkspaceID); err != nil {
 			return nil, fmt.Errorf("invalid MaxCompute OSS configuration: %w", err)
 		}
 	}
@@ -363,7 +362,7 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 	}
 	if err = lt.manager.TestLoadTable(ctx, uploadOutput.Location, lt.table, fixturePayload, loadFileType); err != nil {
 		if destinationType == warehouseutils.MAXCOMPUTE {
-			return fmt.Errorf("load MaxCompute test table from OSS JSON fixture (verify OSS read and tunnel permissions): %w", err)
+			return fmt.Errorf("load MaxCompute test table from OSS JSON fixture (verify OSS read permissions): %w", err)
 		}
 		return fmt.Errorf("load test table: %w", err)
 	}
@@ -517,7 +516,7 @@ func downloadFile(ctx context.Context, dest *backendconfig.DestinationT, locatio
 
 func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManager, error) {
 	if dest.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
-		if err := maxcompute.ValidateSettings(dest.Config, dest.WorkspaceID); err != nil {
+		if err := warehouseutils.ValidateMaxComputeSettings(dest.Config, dest.WorkspaceID); err != nil {
 			return nil, fmt.Errorf("invalid MaxCompute OSS configuration: %w", err)
 		}
 	}

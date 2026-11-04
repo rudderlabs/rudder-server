@@ -1,4 +1,4 @@
-package maxcompute
+package warehouseutils
 
 import (
 	"testing"
@@ -22,13 +22,13 @@ func TestMaxComputeAuthModeValidation(t *testing.T) {
 		{"missing workspace", map[string]any{"iamRoleARN": "odps-role", "ossRoleArn": "oss-role", "bucketName": "bucket", "region": "cn-hangzhou"}, "", true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			role, modeErr := RoleMode(tc.config)
+			role, modeErr := MaxComputeRoleMode(tc.config)
 			if tc.valid {
 				require.NoError(t, modeErr)
 				require.Equal(t, tc.role, role)
-				require.NoError(t, ValidateSettings(tc.config, tc.workspace))
+				require.NoError(t, ValidateMaxComputeSettings(tc.config, tc.workspace))
 			} else {
-				require.Error(t, ValidateSettings(tc.config, tc.workspace))
+				require.Error(t, ValidateMaxComputeSettings(tc.config, tc.workspace))
 			}
 		})
 	}

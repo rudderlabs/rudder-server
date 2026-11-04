@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -56,7 +55,7 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 		l.uploader.UseRudderStorage(),
 	)
 	if storageProvider == warehouseutils.AlibabaOSS {
-		if err := maxcompute.ValidateSettings(l.warehouse.Destination.Config, l.warehouse.Destination.WorkspaceID); err != nil {
+		if err := warehouseutils.ValidateMaxComputeSettings(l.warehouse.Destination.Config, l.warehouse.Destination.WorkspaceID); err != nil {
 			return nil, err
 		}
 	}

@@ -50,7 +50,7 @@ func (m *MaxCompute) loadTable(ctx context.Context, table, validationLocation st
 	if len(locations) == 0 {
 		return result, nil
 	}
-	if err := ValidateSettings(m.warehouse.Destination.Config, m.warehouse.Destination.WorkspaceID); err != nil {
+	if err := warehouseutils.ValidateMaxComputeSettings(m.warehouse.Destination.Config, m.warehouse.Destination.WorkspaceID); err != nil {
 		return nil, err
 	}
 	converted := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
