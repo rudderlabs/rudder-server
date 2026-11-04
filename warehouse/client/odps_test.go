@@ -300,6 +300,8 @@ func TestODPSQueryPolling(t *testing.T) {
 		{"failed", `<Instance><Tasks><Task><Status>FAILED</Status><Result><![CDATA[ODPS-0130161: Parse exception]]></Result></Task></Tasks></Instance>`, "ODPS query failed: ODPS-0130161: Parse exception"},
 		{"suspended", `<Instance><Tasks><Task><Status>SUSPENDED</Status></Task></Tasks></Instance>`, "ODPS query failed"},
 		{"terminated", `<Instance><Status>TERMINATED</Status></Instance>`, "ODPS query terminated"},
+		{"terminated with task result", `<Instance><Status>TERMINATED</Status><Tasks><Task><Status>FAILED</Status><Result><![CDATA[ODPS-0121095: Invalid partition value]]></Result></Task></Tasks></Instance>`, "ODPS query failed: ODPS-0121095: Invalid partition value"},
+		{"terminated with incomplete task", `<Instance><Status>TERMINATED</Status><Tasks><Task><Status>FAILED</Status></Task></Tasks></Instance>`, "ODPS query failed: ODPS-0121095: Invalid partition value"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var calls atomic.Int32
@@ -309,6 +311,8 @@ func TestODPSQueryPolling(t *testing.T) {
 				case r.Method == http.MethodPost:
 					w.Header().Set("Location", "/api/projects/project/instances/test")
 					w.WriteHeader(http.StatusCreated)
+				case r.URL.Query().Has("result") && tc.name == "terminated with incomplete task":
+					_, _ = w.Write([]byte(`<Instance><Tasks><Task><Status>FAILED</Status><Result><![CDATA[ODPS-0121095: Invalid partition value]]></Result></Task></Tasks></Instance>`))
 				case r.URL.Query().Has("taskstatus"):
 					_, _ = w.Write([]byte(tc.taskReply))
 				default:
@@ -321,7 +325,7 @@ func TestODPSQueryPolling(t *testing.T) {
 			result, err := (&Client{Type: ODPSClient, ODPS: instance}).Query("SELECT 1")
 			require.EqualError(t, err, tc.want)
 			require.Empty(t, result.Columns)
-			require.LessOrEqual(t, calls.Load(), int32(3))
+			require.LessOrEqual(t, calls.Load(), int32(4))
 		})
 	}
 }

@@ -147,7 +147,7 @@ func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeo
 	if instance.IsSync() {
 		for _, task := range instance.TaskResults() {
 			if task.Status != odps.TaskSuccess {
-				return nil, odpsTaskFailure(instance)
+				return nil, odpsTaskFailure(service, instance, "ODPS query failed")
 			}
 		}
 		return instance, nil
@@ -170,7 +170,7 @@ func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeo
 			return nil, ODPSSafeError(loadErr)
 		}
 		if instance.Status() == odps.InstanceTerminated || instance.Status() == odps.InstanceSuspended {
-			return nil, errors.New("ODPS query terminated")
+			return nil, odpsTaskFailure(service, instance, "ODPS query terminated")
 		}
 		tasks, err := instance.GetTasks()
 		if ctx.Err() != nil {
@@ -183,7 +183,7 @@ func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeo
 		for _, task := range tasks {
 			switch task.Status {
 			case odps.TaskFailed, odps.TaskCancelled, odps.TaskSuspended:
-				return nil, odpsTaskFailure(instance)
+				return nil, odpsTaskFailure(service, instance, "ODPS query failed")
 			case odps.TaskSuccess:
 			default:
 				finished = false
@@ -200,7 +200,7 @@ func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeo
 	}
 }
 
-func odpsTaskFailure(instance *odps.Instance) error {
+func odpsTaskFailure(service *odps.Odps, instance *odps.Instance, fallback string) error {
 	results, err := instance.GetResult()
 	if err != nil {
 		return ODPSSafeError(err)
@@ -210,7 +210,20 @@ func odpsTaskFailure(instance *odps.Instance) error {
 			return ODPSSafeError(errors.New(result.Content()))
 		}
 	}
-	return errors.New("ODPS query failed")
+	// Load can mark an instance sync after seeing task statuses without task
+	// output. A fresh SDK handle fetches the completed result from the API.
+	if instance.IsSync() && instance.Id() != "" {
+		results, err = odps.NewInstances(service).Get(instance.Id()).GetResult()
+		if err != nil {
+			return ODPSSafeError(err)
+		}
+		for _, result := range results {
+			if result.Content() != "" {
+				return ODPSSafeError(errors.New(result.Content()))
+			}
+		}
+	}
+	return errors.New(fallback)
 }
 
 // odpsQuery uses the same bounded job runner as the MaxCompute manager.

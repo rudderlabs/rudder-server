@@ -85,7 +85,9 @@ func TestIntegration(t *testing.T) {
 				require.NotEmpty(t, credentials.AccessKeyID)
 				require.NotEmpty(t, credentials.AccessKeySecret)
 			}
-			t.Run("validation", func(t *testing.T) { testIntegrationValidation(t, credentials, mode.role) })
+			if !t.Run("validation", func(t *testing.T) { testIntegrationValidation(t, credentials, mode.role) }) {
+				t.FailNow() // The remaining cases depend on the same CREATE and LOAD path.
+			}
 			t.Run("events_and_schema", func(t *testing.T) { testIntegrationEvents(t, credentials, mode.role) })
 			for _, partition := range []struct{ name, column, granularity string }{
 				{"ingestion_hour", "", "hour"},
