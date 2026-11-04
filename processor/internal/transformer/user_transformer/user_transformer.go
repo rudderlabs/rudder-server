@@ -62,7 +62,7 @@ var ErrEmptyForwardBaseURL = errors.New("pyt base URL is empty")
 
 // ErrPythonTransformationsDisabled is the error set on every event aborted because the deployment does not offer
 // Python transformations.
-var ErrPythonTransformationsDisabled = errors.New("python transformations are not available on this deployment")
+var ErrPythonTransformationsDisabled = errors.New("python transformations are not supported")
 
 // DefaultPerWorkspacePyTURLTemplate is the default value of
 // Processor.UserTransformer.perWorkspacePyTURLTemplate; {workspaceID} is
