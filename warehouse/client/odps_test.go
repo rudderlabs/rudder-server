@@ -299,7 +299,7 @@ func TestODPSQueryPolling(t *testing.T) {
 	}{
 		{"failed", `<Instance><Tasks><Task><Status>FAILED</Status><Result><![CDATA[ODPS-0130161: Parse exception]]></Result></Task></Tasks></Instance>`, "ODPS query failed: ODPS-0130161: Parse exception"},
 		{"suspended", `<Instance><Tasks><Task><Status>SUSPENDED</Status></Task></Tasks></Instance>`, "ODPS query failed"},
-		{"terminated", `<Instance><Status>TERMINATED</Status></Instance>`, "ODPS query terminated"},
+		{"terminated with successful task", `<Instance><Status>TERMINATED</Status><Tasks><Task><Status>SUCCESS</Status></Task></Tasks></Instance>`, ""},
 		{"terminated with task result", `<Instance><Status>TERMINATED</Status><Tasks><Task><Status>FAILED</Status><Result><![CDATA[ODPS-0121095: Invalid partition value]]></Result></Task></Tasks></Instance>`, "ODPS query failed: ODPS-0121095: Invalid partition value"},
 		{"terminated with incomplete task", `<Instance><Status>TERMINATED</Status><Tasks><Task><Status>FAILED</Status></Task></Tasks></Instance>`, "ODPS query failed: ODPS-0121095: Invalid partition value"},
 	} {
@@ -323,7 +323,11 @@ func TestODPSQueryPolling(t *testing.T) {
 			instance := odps.NewOdps(account.NewAliyunAccount("id", "key"), server.URL)
 			instance.SetDefaultProjectName("project")
 			result, err := (&Client{Type: ODPSClient, ODPS: instance}).Query("SELECT 1")
-			require.EqualError(t, err, tc.want)
+			if tc.want == "" {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, tc.want)
+			}
 			require.Empty(t, result.Columns)
 			require.LessOrEqual(t, calls.Load(), int32(4))
 		})

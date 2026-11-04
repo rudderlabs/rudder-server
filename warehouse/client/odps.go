@@ -169,9 +169,8 @@ func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeo
 		if loadErr != nil {
 			return nil, ODPSSafeError(loadErr)
 		}
-		if instance.Status() == odps.InstanceTerminated || instance.Status() == odps.InstanceSuspended {
-			return nil, odpsTaskFailure(service, instance, "ODPS query terminated")
-		}
+		// TERMINATED can mean a completed instance. Task statuses determine
+		// whether its SQL job succeeded.
 		tasks, err := instance.GetTasks()
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
