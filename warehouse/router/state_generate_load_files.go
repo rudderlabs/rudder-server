@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
@@ -14,26 +13,13 @@ import (
 )
 
 func (job *UploadJob) generateLoadFiles() error {
-	payload, err := job.DTO()
-	if err != nil {
-		return err
-	}
-	startLoadFileID, endLoadFileID, err := job.loadfile.CreateLoadFiles(job.ctx, payload)
+	startLoadFileID, endLoadFileID, err := job.loadfile.CreateLoadFiles(job.ctx, job.DTO())
 	if err != nil {
 		return err
 	}
 
 	if err := job.setLoadFileIDs(startLoadFileID, endLoadFileID); err != nil {
 		return err
-	}
-	if job.warehouse.Type == whutils.MAXCOMPUTE {
-		metadata, err := jsonrs.Marshal(repo.ExtractUploadMetadata(job.upload))
-		if err != nil {
-			return fmt.Errorf("serializing MaxCompute partition plans: %w", err)
-		}
-		if err := job.uploadsRepo.Update(job.ctx, job.upload.ID, []repo.UpdateKeyValue{repo.UploadFieldMetadata(metadata)}); err != nil {
-			return fmt.Errorf("saving MaxCompute partition plans: %w", err)
-		}
 	}
 	if err := job.matchRowsInStagingAndLoadFiles(job.ctx); err != nil {
 		return err

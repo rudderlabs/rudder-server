@@ -105,9 +105,6 @@ type Upload struct {
 	Attempts       int64
 
 	UploadSchema Schema
-	// PartitionPlans records the MaxCompute expression selected when load files
-	// were generated, so a resumed upload creates tables with the same source.
-	PartitionPlans map[string]PartitionPlan
 }
 
 type Timings []map[string]time.Time
@@ -123,25 +120,6 @@ type UploadJob struct {
 	Upload               Upload
 	StagingFiles         []*StagingFile
 	LoadFileGenStartTime time.Time
-
-	// PartitionModes is keyed by table, so a fixed-partition table does not
-	// change how other tables in the same upload are written.
-	PartitionModes         map[string]string
-	PartitionGranularities map[string]string
-}
-
-// PartitionPlan is the immutable partition expression chosen when a table is
-// created, or read from the catalog for an existing table.
-type PartitionPlan struct {
-	Source      string
-	Granularity string
-}
-
-func (p PartitionPlan) Mode() string {
-	if p.Source == "_partitiontime" {
-		return "fixed"
-	}
-	return "dynamic"
 }
 
 type PendingTableUpload struct {

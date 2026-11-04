@@ -596,12 +596,11 @@ func TestGetObjectStorageConfig(t *testing.T) {
 	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", sampleAccessKey)
 
 	t.Run("S3 without role or keys falls back to the copy-user credentials", func(t *testing.T) {
-		config, err := GetObjectStorageConfig(ObjectStorageOptsT{
+		config := GetObjectStorageConfig(ObjectStorageOptsT{
 			Provider:    "S3",
 			Config:      map[string]any{},
 			WorkspaceID: sampleWorkspaceID,
 		})
-		require.NoError(t, err)
 		require.NotNil(t, config)
 		require.Equal(t, sampleWorkspaceID, config["externalID"])
 		require.Equal(t, sampleAccessKeyID, config["accessKeyID"])
@@ -609,7 +608,7 @@ func TestGetObjectStorageConfig(t *testing.T) {
 	})
 
 	t.Run("S3 with AccessKeys keeps user keys, no copy-user injection", func(t *testing.T) {
-		config, err := GetObjectStorageConfig(ObjectStorageOptsT{
+		config := GetObjectStorageConfig(ObjectStorageOptsT{
 			Provider: "S3",
 			Config: map[string]any{
 				"accessKeyID": "someOtherAccessKeyID",
@@ -617,7 +616,6 @@ func TestGetObjectStorageConfig(t *testing.T) {
 			},
 			WorkspaceID: sampleWorkspaceID,
 		})
-		require.NoError(t, err)
 		require.NotNil(t, config)
 		require.Equal(t, sampleWorkspaceID, config["externalID"])
 		require.Equal(t, "someOtherAccessKeyID", config["accessKeyID"])
@@ -625,89 +623,22 @@ func TestGetObjectStorageConfig(t *testing.T) {
 	})
 
 	t.Run("S3 with iamRoleARN keeps role, no copy-user injection", func(t *testing.T) {
-		config, err := GetObjectStorageConfig(ObjectStorageOptsT{
+		config := GetObjectStorageConfig(ObjectStorageOptsT{
 			Provider:    "S3",
 			Config:      map[string]any{"iamRoleARN": "arn:aws:iam::123:role/x"},
 			WorkspaceID: sampleWorkspaceID,
 		})
-		require.NoError(t, err)
 		require.NotNil(t, config)
 		require.Equal(t, sampleWorkspaceID, config["externalID"])
 		require.NotContains(t, config, "accessKeyID")
 		require.NotContains(t, config, "accessKey")
 	})
 
-	t.Run("Alibaba OSS maps only filemanager fields to a fresh customer config", func(t *testing.T) {
-		original := map[string]any{
-			"bucketName": "customer-bucket", "prefix": "customer-prefix", "region": "cn-hangzhou",
-			"endPoint": "https://oss-cn-hangzhou.aliyuncs.com", "useInternalEndpoint": true,
-			"iamRoleARN": "role", "externalID": "untrusted", "project": "my-project", "disableSSL": true,
-			"endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "ossRoleArn": "read-role",
-		}
-		converted, err := GetObjectStorageConfig(ObjectStorageOptsT{
-			Provider: "ALIBABA_OSS", Config: original, WorkspaceID: sampleWorkspaceID, UseRudderStorage: true,
-		})
-		require.NoError(t, err)
-		require.Equal(t, map[string]any{
-			"bucketName": "customer-bucket", "prefix": "customer-prefix", "region": "cn-hangzhou",
-			"endPoint": "", "useInternalEndpoint": false,
-			"iamRoleARN": "role", "roleBasedAuth": true, "externalID": sampleWorkspaceID,
-		}, converted)
-		require.Equal(t, "untrusted", original["externalID"])
-		converted["bucketName"] = "changed"
-		require.Equal(t, "customer-bucket", original["bucketName"])
-		delete(original, "iamRoleARN")
-		original["accessKeyId"] = "odps-id"
-		original["accessKeySecret"] = "odps-secret"
-		static, err := GetObjectStorageConfig(ObjectStorageOptsT{Provider: "ALIBABA_OSS", Config: original, WorkspaceID: sampleWorkspaceID})
-		require.NoError(t, err)
-		require.Equal(t, false, static["roleBasedAuth"])
-		require.Equal(t, "odps-id", static["accessKeyID"])
-		require.Equal(t, "odps-secret", static["accessKey"])
-		require.NotContains(t, static, "externalID")
-		require.NotContains(t, static, "ossRoleArn")
-		require.NotContains(t, static, "project")
-		require.NotContains(t, static, "endpoint")
-		require.NotContains(t, static, "disableSSL")
-	})
-
-	t.Run("Alibaba OSS rejects invalid authentication with either storage setting", func(t *testing.T) {
-		for _, useRudderStorage := range []bool{false, true} {
-			for _, tc := range []struct {
-				name string
-				conf map[string]any
-				want string
-			}{
-				{"both", map[string]any{"iamRoleARN": "role", "accessKeyId": "id", "accessKeySecret": "secret"}, "cannot be combined"},
-				{"neither", map[string]any{}, "are required"},
-				{"partial", map[string]any{"accessKeyId": "id"}, "complete pair"},
-			} {
-				t.Run(fmt.Sprintf("%s/useRudderStorage=%t", tc.name, useRudderStorage), func(t *testing.T) {
-					converted, err := GetObjectStorageConfig(ObjectStorageOptsT{
-						Provider: "ALIBABA_OSS", Config: tc.conf, WorkspaceID: sampleWorkspaceID,
-						UseRudderStorage: useRudderStorage,
-					})
-					require.Nil(t, converted)
-					require.ErrorContains(t, err, tc.want)
-				})
-			}
-		}
-	})
-
-	t.Run("Alibaba OSS role requires a workspace ID", func(t *testing.T) {
-		converted, err := GetObjectStorageConfig(ObjectStorageOptsT{
-			Provider: "ALIBABA_OSS", Config: map[string]any{"iamRoleARN": "role"},
-		})
-		require.Nil(t, converted)
-		require.ErrorContains(t, err, "workspace ID is required")
-	})
-
 	t.Run("GCS carries the workspace ID and federation role without mutating the input", func(t *testing.T) {
 		t.Setenv("RUDDER_GCP_FEDERATION_AWS_ROLE_ARN", "arn:aws:iam::422074288268:role/rudderstack-gcp-federation")
 		t.Setenv("AWS_REGION", "eu-west-1")
 		original := map[string]any{"bucketName": "some-bucket"}
-		config, err := GetObjectStorageConfig(ObjectStorageOptsT{Provider: "GCS", Config: original, WorkspaceID: sampleWorkspaceID})
-		require.NoError(t, err)
+		config := GetObjectStorageConfig(ObjectStorageOptsT{Provider: "GCS", Config: original, WorkspaceID: sampleWorkspaceID})
 		require.Equal(t, sampleWorkspaceID, config["workspaceID"])
 		require.Equal(t, "arn:aws:iam::422074288268:role/rudderstack-gcp-federation", config["workloadIdentityAWSRoleARN"])
 		require.Equal(t, "eu-west-1", config["workloadIdentityAWSRegion"])
@@ -716,12 +647,11 @@ func TestGetObjectStorageConfig(t *testing.T) {
 	})
 
 	t.Run("UseRudderStorage returns rudder config without static creds", func(t *testing.T) {
-		config, err := GetObjectStorageConfig(ObjectStorageOptsT{
+		config := GetObjectStorageConfig(ObjectStorageOptsT{
 			Provider:         "S3",
 			Config:           map[string]any{},
 			UseRudderStorage: true,
 		})
-		require.NoError(t, err)
 		require.NotNil(t, config)
 		require.NotContains(t, config, "accessKeyID")
 		require.NotContains(t, config, "accessKey")
@@ -1043,5 +973,37 @@ func TestGetMurmurHash(t *testing.T) {
 			result := GetMurmurHash(tt.input)
 			require.Equal(t, tt.expected, result, "Hash values should match for input: %s", tt.input)
 		})
+	}
+}
+
+func TestAlibabaOSSConfigConversion(t *testing.T) {
+	for _, role := range []bool{false, true} {
+		for _, rudder := range []bool{false, true} {
+			t.Run(fmt.Sprintf("role=%t/rudder=%t", role, rudder), func(t *testing.T) {
+				source := map[string]any{"bucketName": "customer-bucket", "prefix": "scoped/", "region": "cn-hangzhou", "ossRoleArn": "oss-role", "externalID": "untrusted", "endPoint": "untrusted"}
+				if role {
+					source["iamRoleARN"] = "odps-role"
+				} else {
+					source["accessKeyId"], source["accessKeySecret"] = "id", "secret"
+				}
+				got := GetObjectStorageConfig(ObjectStorageOptsT{Provider: "ALIBABA_OSS", Config: source, WorkspaceID: "workspace-id", UseRudderStorage: rudder})
+				require.Equal(t, "customer-bucket", got["bucketName"])
+				require.Equal(t, "scoped/", got["prefix"])
+				require.Equal(t, "cn-hangzhou", got["region"])
+				require.Equal(t, "", got["endPoint"])
+				require.Equal(t, false, got["useInternalEndpoint"])
+				require.Equal(t, role, got["roleBasedAuth"])
+				if role {
+					require.Equal(t, "oss-role", got["iamRoleARN"])
+					require.Equal(t, "workspace-id", got["externalID"])
+				} else {
+					require.Equal(t, "id", got["accessKeyID"])
+					require.Equal(t, "secret", got["accessKey"])
+					require.NotContains(t, got, "externalID")
+				}
+				require.Equal(t, "untrusted", source["externalID"])
+				require.Equal(t, "untrusted", source["endPoint"])
+			})
+		}
 	}
 }

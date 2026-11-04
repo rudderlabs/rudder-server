@@ -53,11 +53,10 @@ type MaxCompute struct {
 
 	// exec and catalog are replaceable in tests. The production implementations
 	// use the SDK rather than parsing SHOW output for schema discovery.
-	exec              func(context.Context, string) error
-	catalog           func(context.Context) (model.Schema, error)
-	partitions        func(context.Context, string) ([]string, error) // replaceable in tests; SDK lists staging partitions in production.
-	principal         func(context.Context) (string, error)           // replaceable in tests; SDK security WHOAMI in production.
-	plannedPartitions map[string]model.PartitionPlan
+	exec       func(context.Context, string) error
+	catalog    func(context.Context) (model.Schema, error)
+	partitions func(context.Context, string) ([]string, error) // replaceable in tests; SDK lists staging partitions in production.
+	principal  func(context.Context) (string, error)           // replaceable in tests; SDK security WHOAMI in production.
 }
 
 func New(conf *config.Config, log logger.Logger) *MaxCompute {
@@ -68,20 +67,6 @@ func New(conf *config.Config, log logger.Logger) *MaxCompute {
 	return m
 }
 
-func validateOSSSettings(settings map[string]any, workspaceID string) error {
-	if err := warehouseutils.ValidateMaxComputeOSSConfig(settings); err != nil {
-		return err
-	}
-	role, err := warehouseutils.MaxComputeRoleMode(settings)
-	if err != nil {
-		return err
-	}
-	if role && strings.TrimSpace(workspaceID) == "" {
-		return errors.New("MaxCompute role authentication requires workspace ID")
-	}
-	return nil
-}
-
 func (m *MaxCompute) init(warehouse model.Warehouse) error {
 	m.warehouse = warehouse
 	settings := warehouse.Destination.Config
@@ -90,10 +75,10 @@ func (m *MaxCompute) init(warehouse model.Warehouse) error {
 	if project == "" || warehouse.Namespace != "" && warehouse.Namespace != project && !identifierPattern.MatchString(warehouse.Namespace) {
 		return errors.New("invalid MaxCompute project or schema")
 	}
-	if err := validateOSSSettings(settings, warehouse.Destination.WorkspaceID); err != nil {
+	if err := ValidateSettings(settings, warehouse.Destination.WorkspaceID); err != nil {
 		return fmt.Errorf("validating MaxCompute OSS configuration: %w", err)
 	}
-	role, _ := warehouseutils.MaxComputeRoleMode(settings)
+	role, _ := RoleMode(settings)
 	endpoint, ok := settings["endpoint"].(string)
 	if !ok || endpoint == "" {
 		return errors.New("MaxCompute endpoint is required")
@@ -436,16 +421,16 @@ func (m *MaxCompute) CreateTable(ctx context.Context, table string, columns mode
 	if len(columns) == 0 {
 		return errors.New("MaxCompute table has no columns")
 	}
-	plan, planned := m.plannedPartitions[table]
-	if !planned {
-		plan = model.PartitionPlan{Source: "_partitiontime", Granularity: "day"}
+	plan, err := m.configuredPartition(columns)
+	if err != nil {
+		return err
+	}
+	if plan.Source == "uuid_ts" && columns[plan.Source] == "" {
+		columns = maps.Clone(columns)
+		columns[plan.Source] = "datetime"
 	}
 	if err := validatePartitionPlan(plan, columns); err != nil {
 		return err
-	}
-	if plan.Source == "_partitiontime" && columns[plan.Source] == "" {
-		columns = maps.Clone(columns)
-		columns[plan.Source] = "datetime"
 	}
 	if len(columns) > 1200 {
 		return errors.New("MaxCompute table exceeds 1200 columns")

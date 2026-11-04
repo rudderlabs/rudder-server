@@ -17,5 +17,5 @@ func TestMaxComputeColumnsIncludeLoadTime(t *testing.T) {
 	columns, err := transformer.getColumns(whutils.MAXCOMPUTE, map[string]any{"id": "one"}, nil)
 	require.NoError(t, err)
 	require.Equal(t, "datetime", columns["loaded_at"])
-	require.Equal(t, "datetime", columns["_partitiontime"])
+	require.NotContains(t, columns, "_partitiontime")
 }

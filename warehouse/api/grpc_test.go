@@ -92,61 +92,6 @@ func TestValidateMaxComputeRoleReachesValidationSteps(t *testing.T) {
 	require.Contains(t, res.GetData(), "Verifying Object Storage")
 }
 
-func TestValidateAlibabaOSSRoleUsesConvertedConfig(t *testing.T) {
-	g := &GRPC{logger: logger.NOP, conf: config.New()}
-	called := false
-	roleExpected := true
-	g.fileManagerFactory = func(settings *filemanager.Settings) (filemanager.FileManager, error) {
-		called = true
-		require.Equal(t, roleExpected, settings.Config["roleBasedAuth"])
-		require.Equal(t, "", settings.Config["endPoint"])
-		if roleExpected {
-			require.Equal(t, "workspace-id", settings.Config["externalID"])
-		} else {
-			require.NotContains(t, settings.Config, "externalID")
-		}
-		return nil, errors.New("factory called")
-	}
-	for _, externalID := range []string{"", "another-workspace"} {
-		t.Run("role with externalID "+externalID, func(t *testing.T) {
-			cfg, err := structpb.NewStruct(map[string]any{
-				"bucketName": "customer-bucket", "region": "cn-hangzhou",
-				"iamRoleARN": "acs:ram::123:role/customer", "ossRoleArn": "read-role",
-				"externalID": externalID, "workspaceID": "workspace-id",
-			})
-			require.NoError(t, err)
-			_, err = g.ValidateObjectStorageDestination(context.Background(), &proto.ValidateObjectStorageRequest{
-				Type: whutils.AlibabaOSS, Config: cfg,
-			})
-			require.Equal(t, codes.Internal, status.Code(err))
-			require.True(t, called)
-		})
-	}
-	called = false
-	missingWorkspace, err := structpb.NewStruct(map[string]any{
-		"bucketName": "customer-bucket", "region": "cn-hangzhou",
-		"iamRoleARN": "acs:ram::123:role/customer", "ossRoleArn": "read-role",
-	})
-	require.NoError(t, err)
-	_, err = g.ValidateObjectStorageDestination(context.Background(), &proto.ValidateObjectStorageRequest{
-		Type: whutils.AlibabaOSS, Config: missingWorkspace,
-	})
-	require.Equal(t, codes.InvalidArgument, status.Code(err))
-	require.False(t, called)
-
-	roleExpected = false
-	cfg, err := structpb.NewStruct(map[string]any{
-		"bucketName": "customer-bucket", "region": "cn-hangzhou",
-		"accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "read-role",
-	})
-	require.NoError(t, err)
-	_, err = g.ValidateObjectStorageDestination(context.Background(), &proto.ValidateObjectStorageRequest{
-		Type: whutils.AlibabaOSS, Config: cfg,
-	})
-	require.Equal(t, codes.Internal, status.Code(err))
-	require.True(t, called, "access-key validation should reach the file manager")
-}
-
 func TestGRPC(t *testing.T) {
 	validations.Init()
 	misc.Init()

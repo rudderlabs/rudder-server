@@ -67,17 +67,3 @@ func (m *statsManager) CreateTable(ctx context.Context, tableName string, column
 	m.stats.addTablesCount.Increment()
 	return nil
 }
-
-func (m *statsManager) CatalogPartition(ctx context.Context, table string) (model.PartitionPlan, error) {
-	planner, ok := m.Manager.(PartitionPlanner)
-	if !ok {
-		return model.PartitionPlan{}, fmt.Errorf("warehouse manager does not expose catalog partitions")
-	}
-	return planner.CatalogPartition(ctx, table)
-}
-
-func (m *statsManager) SetPlannedPartitions(plans map[string]model.PartitionPlan) {
-	if planner, ok := m.Manager.(PartitionPlanner); ok {
-		planner.SetPlannedPartitions(plans)
-	}
-}

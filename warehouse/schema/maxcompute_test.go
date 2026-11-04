@@ -11,9 +11,7 @@ import (
 
 func TestMaxComputeDiscardsSchema(t *testing.T) {
 	schema := enhanceDiscardsSchema(model.Schema{
-		"tracks": {"id": "string", "_partitiontime": "datetime"},
+		"tracks": {"id": "string"},
 	}, whutils.MAXCOMPUTE)
-	require.Equal(t, "datetime", schema["tracks"]["_partitiontime"])
-	require.Equal(t, "datetime", schema["rudder_discards"]["_partitiontime"])
 	require.Equal(t, "datetime", schema["rudder_discards"]["loaded_at"])
 }

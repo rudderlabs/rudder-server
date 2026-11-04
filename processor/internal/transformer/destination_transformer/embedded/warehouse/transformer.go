@@ -157,11 +157,7 @@ func (t *Transformer) processWarehouseMessage(cache *cache, event *types.Transfo
 	if err := t.checkValidContext(wEvent); err != nil {
 		return nil, fmt.Errorf("checking valid context: %w", err)
 	}
-	outputs, err := t.handleEvent(wEvent, cache)
-	if err != nil {
-		return nil, err
-	}
-	return outputs, nil
+	return t.handleEvent(wEvent, cache)
 }
 
 func (t *Transformer) checkValidContext(event *wtypes.TransformerEvent) error {
@@ -264,9 +260,6 @@ func (t *Transformer) getColumns(
 
 	if destType == whutils.BQ || destType == whutils.BQStreamAllEvents || destType == whutils.MAXCOMPUTE {
 		columns["loaded_at"] = model.DateTimeDataType
-	}
-	if destType == whutils.MAXCOMPUTE {
-		columns["_partitiontime"] = model.DateTimeDataType
 	}
 
 	for key, value := range data {

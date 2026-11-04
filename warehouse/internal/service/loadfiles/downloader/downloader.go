@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -54,14 +55,15 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 		l.warehouse.Destination.Config,
 		l.uploader.UseRudderStorage(),
 	)
-	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+	if storageProvider == warehouseutils.AlibabaOSS {
+		if err := maxcompute.ValidateSettings(l.warehouse.Destination.Config, l.warehouse.Destination.WorkspaceID); err != nil {
+			return nil, err
+		}
+	}
+	storageConfig := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 		Provider: storageProvider, Config: l.warehouse.Destination.Config,
 		UseRudderStorage: l.uploader.UseRudderStorage(), WorkspaceID: l.warehouse.Destination.WorkspaceID,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("converting object storage config: %w", err)
-	}
-
 	fileManager, err := l.fileManagerFactory(&filemanager.Settings{
 		Provider: storageProvider,
 		Config:   storageConfig,
@@ -101,7 +103,13 @@ func (l *downloaderImpl) downloadSingleObject(ctx context.Context, fileManager f
 		objectFile *os.File
 	)
 
-	if objectName, err = fileManager.GetObjectNameFromLocation(object.Location); err != nil {
+	storageProvider := warehouseutils.ObjectStorageType(l.warehouse.Destination.DestinationDefinition.Name, l.warehouse.Destination.Config, l.uploader.UseRudderStorage())
+	if storageProvider == warehouseutils.AlibabaOSS {
+		objectName, err = fileManager.GetObjectNameFromLocation(object.Location)
+	} else {
+		objectName, err = warehouseutils.GetObjectName(object.Location, l.warehouse.Destination.Config, storageProvider)
+	}
+	if err != nil {
 		return "", fmt.Errorf("object name for location: %s, %w", object.Location, err)
 	}
 
@@ -120,8 +128,6 @@ func (l *downloaderImpl) downloadSingleObject(ctx context.Context, fileManager f
 	}
 
 	if err = fileManager.Download(ctx, objectFile, objectName); err != nil {
-		_ = objectFile.Close()
-		_ = os.Remove(objectFile.Name())
 		return "", fmt.Errorf("downloading file from object storage: %w", err)
 	}
 

@@ -2,7 +2,6 @@ package batchrouter
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -21,9 +20,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 // TestGenerateSchemaMapCornerCases tests various corner cases for the generateSchemaMap function
@@ -588,63 +585,6 @@ func TestBytesPerTable(t *testing.T) {
 				require.Len(t, result.BytesPerTable, 0)
 			}
 		})
-	}
-}
-
-func TestMaxComputeUploadOSSConfig(t *testing.T) {
-	stop := errors.New("factory reached")
-	for _, useRudderStorage := range []bool{false, true} {
-		for _, mode := range []string{"role", "accessKey", "mixed", "missing", "partial"} {
-			t.Run(fmt.Sprintf("%s/useRudderStorage=%t", mode, useRudderStorage), func(t *testing.T) {
-				conf := map[string]any{
-					"bucketName": "customer-bucket", "region": "cn-hangzhou", "ossRoleArn": "read-role",
-					"useRudderStorage": useRudderStorage,
-				}
-				switch mode {
-				case "role":
-					conf["iamRoleARN"] = "role"
-				case "accessKey":
-					conf["accessKeyId"], conf["accessKeySecret"] = "id", "secret"
-				case "mixed":
-					conf["iamRoleARN"], conf["accessKeyId"], conf["accessKeySecret"] = "role", "id", "secret"
-				case "partial":
-					conf["accessKeyId"] = "id"
-				}
-				called := false
-				handle := &Handle{
-					logger: logger.NOP, conf: config.New(),
-					fileManagerFactory: func(s *filemanager.Settings) (filemanager.FileManager, error) {
-						called = true
-						require.Equal(t, warehouseutils.AlibabaOSS, s.Provider)
-						require.Equal(t, "customer-bucket", s.Config["bucketName"])
-						require.Equal(t, mode == "role", s.Config["roleBasedAuth"])
-						if mode == "role" {
-							require.Equal(t, "workspace-id", s.Config["externalID"])
-						} else {
-							require.NotContains(t, s.Config, "externalID")
-						}
-						return nil, stop
-					},
-				}
-				result := handle.upload(warehouseutils.AlibabaOSS, &BatchedJobs{
-					Jobs: []*jobsdb.JobT{{EventPayload: []byte(`{"metadata":{"receivedAt":"2024-01-02T03:04:05.000Z"}}`)}},
-					Connection: &Connection{
-						Source: backendconfig.SourceT{ID: "source-id"},
-						Destination: backendconfig.DestinationT{
-							ID: "destination-id", WorkspaceID: "workspace-id", Config: conf,
-						},
-					},
-				}, true)
-				t.Cleanup(func() { misc.RemoveFilePaths(result.LocalFilePaths...) })
-				if mode == "role" || mode == "accessKey" {
-					require.ErrorIs(t, result.Error, stop)
-					require.True(t, called)
-				} else {
-					require.Error(t, result.Error)
-					require.False(t, called)
-				}
-			})
-		}
 	}
 }
 

@@ -1,10 +1,8 @@
 package validations
 
 import (
-	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/sha256"
 	"io"
 	"os"
 	"path/filepath"
@@ -40,15 +38,11 @@ func TestMaxComputeValidationFixture(t *testing.T) {
 	dest.Config["namespace"] = "MySchema"
 	require.Equal(t, "MySchema", configuredNamespaceInDestination(dest))
 	require.NotEqual(t, getTable(dest), getTable(dest))
-	path, expectedHash, err := createTempLoadFile(dest)
+	path, err := CreateTempLoadFile(dest)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.Remove(path) })
-	compressed, err := os.ReadFile(path)
-	require.NoError(t, err)
-	require.Equal(t, sha256.Sum256(compressed), expectedHash)
 	require.True(t, strings.HasSuffix(path, ".json.gz"))
-	require.Regexp(t, `^validation-[^/]+\.json\.gz$`, filepath.Base(path))
-	require.Equal(t, filepath.Clean(os.TempDir()), filepath.Dir(path))
+	require.Equal(t, connectionTestingFolder, filepath.Base(filepath.Dir(path)))
 	f, err := os.Open(path)
 	require.NoError(t, err)
 	defer func() { _ = f.Close() }()
@@ -57,13 +51,12 @@ func TestMaxComputeValidationFixture(t *testing.T) {
 	defer func() { _ = gz.Close() }()
 	contents, err := io.ReadAll(gz)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"id":1,"val":"RudderStack","_partitiontime":"2024-01-02 03:04:05"}`, string(contents))
-	require.Equal(t, "datetime", maxComputeValidationSchema()["_partitiontime"])
-	require.Equal(t, maxComputeValidationPartitionTime, maxComputeValidationPayload()["_partitiontime"])
-	require.NotContains(t, tableSchemaMap, "_partitiontime")
-	require.NotContains(t, payloadMap, "_partitiontime")
-	require.Equal(t, "datetime", validationTableSchema(true)["_partitiontime"])
-	require.NotContains(t, validationTableSchema(false), "_partitiontime")
+	require.JSONEq(t, `{"id":1,"val":"RudderStack","uuid_ts":"2024-01-02 00:00:00.000000"}`, string(contents))
+	require.Equal(t, "datetime", validationTableSchema(true)["uuid_ts"])
+	require.NotContains(t, validationTableSchema(false), "uuid_ts")
+	require.NotContains(t, tableSchemaMap, "uuid_ts")
+	require.NotContains(t, payloadMap, "uuid_ts")
+	require.NotContains(t, validationTableSchema(true), "_partitiontime")
 }
 
 func TestMaxComputeOSSValidationRejectsInvalidAuthBeforeManager(t *testing.T) {
@@ -120,33 +113,3 @@ func TestMaxComputeOSSManagerSettings(t *testing.T) {
 type validationFileManager struct{ filemanager.FileManager }
 
 func (*validationFileManager) SetTimeout(time.Duration) {}
-
-func TestMaxComputeReadbackHash(t *testing.T) {
-	path := t.TempDir() + "/fixture"
-	require.NoError(t, os.WriteFile(path, []byte("fixture"), 0o600))
-	f, err := os.Open(path)
-	require.NoError(t, err)
-	defer func() { _ = f.Close() }()
-	hash, err := hashValidationFile(f)
-	require.NoError(t, err)
-	require.Equal(t, sha256.Sum256([]byte("fixture")), hash)
-	different := sha256.Sum256([]byte("different"))
-	require.False(t, bytes.Equal(different[:], hash[:]))
-}
-
-func TestMaxComputeReadbackBound(t *testing.T) {
-	f, err := os.CreateTemp(t.TempDir(), "readback-")
-	require.NoError(t, err)
-	defer func() { _ = f.Close() }()
-	writer := &boundedValidationWriter{file: f, maxBytes: 7}
-	n, err := writer.WriteAt([]byte("fixture"), 0)
-	require.NoError(t, err)
-	require.Equal(t, 7, n)
-	_, err = writer.WriteAt([]byte("!"), 7)
-	require.ErrorContains(t, err, "readback exceeds")
-	_, err = writer.WriteAt([]byte("!"), -1)
-	require.ErrorContains(t, err, "readback exceeds")
-	info, err := f.Stat()
-	require.NoError(t, err)
-	require.EqualValues(t, 7, info.Size())
-}

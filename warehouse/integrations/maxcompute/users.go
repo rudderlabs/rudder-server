@@ -192,16 +192,13 @@ func (m *MaxCompute) currentUserFiles(ctx context.Context) ([]string, error) {
 	if len(files) == 0 {
 		return nil, nil
 	}
-	if err := validateOSSSettings(m.warehouse.Destination.Config, m.warehouse.Destination.WorkspaceID); err != nil {
+	if err := ValidateSettings(m.warehouse.Destination.Config, m.warehouse.Destination.WorkspaceID); err != nil {
 		return nil, err
 	}
-	converted, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+	converted := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 		Provider: warehouseutils.AlibabaOSS, Config: m.warehouse.Destination.Config,
 		WorkspaceID: m.warehouse.Destination.WorkspaceID,
 	})
-	if err != nil {
-		return nil, err
-	}
 	fm, err := filemanager.New(&filemanager.Settings{Provider: warehouseutils.AlibabaOSS, Config: converted, Conf: m.conf})
 	if err != nil {
 		return nil, errors.New("creating MaxCompute OSS filemanager failed")
@@ -244,16 +241,11 @@ func (m *MaxCompute) loadUsersWithCarryForward(ctx context.Context) (err error) 
 	if len(users) == 0 || users["id"] != "string" || users["received_at"] != "datetime" || identifies["user_id"] != "string" || identifies["received_at"] != "datetime" {
 		return errors.New("MaxCompute users carry-forward requires warehouse users.id, users.received_at and identifies.user_id, identifies.received_at")
 	}
-	usersPlan, err := m.CatalogPartition(ctx, warehouseutils.UsersTable)
-	if err != nil {
+	if _, err := m.CatalogPartition(ctx, warehouseutils.UsersTable); err != nil {
 		return err
 	}
-	identifiesPlan, err := m.CatalogPartition(ctx, warehouseutils.IdentifiesTable)
-	if err != nil {
+	if _, err := m.CatalogPartition(ctx, warehouseutils.IdentifiesTable); err != nil {
 		return err
-	}
-	if usersPlan.Mode() == "fixed" || identifiesPlan.Mode() == "fixed" {
-		return errors.New("MaxCompute users carry-forward requires dynamic timestamp partitions")
 	}
 	for _, key := range warehouseutils.SortColumnKeysFromColumnMap(users) {
 		if _, err := quote(key); err != nil {
@@ -349,7 +341,7 @@ func (m *MaxCompute) loadUsersWithCarryForward(ctx context.Context) (err error) 
 		traitColumns = append(traitColumns, col)
 		// Timestamp values must come from this upload, not history or wall
 		// clock time. All other traits use the latest non-null value.
-		if key == "loaded_at" || key == "uuid_ts" || key == "_partitiontime" || key == "received_at" {
+		if key == "loaded_at" || key == "uuid_ts" || key == "received_at" {
 			projection = append(projection, "FIRST_VALUE(CASE WHEN `__current_upload` = 1 THEN "+col+" END, true) OVER (PARTITION BY `id` ORDER BY `__current_upload` DESC, `received_at` DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "+col)
 		} else {
 			projection = append(projection, "FIRST_VALUE("+col+", true) OVER (PARTITION BY `id` ORDER BY `received_at` DESC, `__current_upload` DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "+col)
@@ -379,7 +371,7 @@ func (m *MaxCompute) loadUsersWithCarryForward(ctx context.Context) (err error) 
 				continue
 			}
 			col, _ := quote(key)
-			if key == "loaded_at" || key == "uuid_ts" || key == "_partitiontime" {
+			if key == "loaded_at" || key == "uuid_ts" {
 				identifyColumns = append(identifyColumns, "NULL AS "+col)
 			} else if identifies[key] != "" && identifies[key] == users[key] {
 				identifyColumns = append(identifyColumns, col)

@@ -154,10 +154,10 @@ func TestMaxComputeSummary(t *testing.T) {
 func TestFixedViewsAndNames(t *testing.T) {
 	m := testManager()
 	m.warehouse.Destination.Config["skipViews"] = false
-	m.SetPlannedPartitions(map[string]model.PartitionPlan{"event_source": {Source: "_partitiontime", Granularity: "hour"}})
+	m.warehouse.Destination.Config["partitionType"] = "hour"
 	statements := []string{}
 	m.exec = func(_ context.Context, sql string) error { statements = append(statements, sql); return nil }
-	require.NoError(t, m.CreateTable(context.Background(), "event_source", model.TableSchema{"id": "string", "_partitiontime": "datetime"}))
+	require.NoError(t, m.CreateTable(context.Background(), "event_source", model.TableSchema{"id": "string", "uuid_ts": "datetime"}))
 	require.Contains(t, statements[0], "'hour'")
 	require.Contains(t, statements[1], "`pt` >=")
 	require.Contains(t, statements[1], "`pt` < TO_CHAR(DATEADD(GETDATE(), 2, 'dd')")
@@ -167,9 +167,10 @@ func TestFixedViewsAndNames(t *testing.T) {
 	require.LessOrEqual(t, len(first), 128)
 	require.NotEqual(t, first, second)
 	m.warehouse.Destination.Config["skipViews"] = true
+	m.warehouse.Destination.Config["partitionType"] = "day"
 	statements = nil
 	require.NoError(t, m.CreateTable(context.Background(), "events", model.TableSchema{"id": "string", "received_at": "datetime"}))
-	require.Contains(t, statements[0], "TRUNC_TIME(`_partitiontime`, 'day') AS `pt`")
+	require.Contains(t, statements[0], "TRUNC_TIME(`uuid_ts`, 'day') AS `pt`")
 	require.Contains(t, statements[0], "'table.format.version'='2'")
 	require.Len(t, statements, 1)
 }

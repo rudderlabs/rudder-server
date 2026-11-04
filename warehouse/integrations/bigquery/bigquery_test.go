@@ -1717,14 +1717,14 @@ func TestIntegration(t *testing.T) {
 			tableName := "workload_identity_test_table"
 
 			// staging upload through the GCS manager, with the workspace injected like the server does
-			storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-				Provider: whutils.GCS, Config: warehouse.Destination.Config, WorkspaceID: warehouse.WorkspaceID,
-			})
-			require.NoError(t, err)
 			fm, err := filemanager.New(&filemanager.Settings{
 				Provider: whutils.GCS,
-				Config:   storageConfig,
-				Conf:     config.Default,
+				Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+					Provider:    whutils.GCS,
+					Config:      warehouse.Destination.Config,
+					WorkspaceID: warehouse.WorkspaceID,
+				}),
+				Conf: config.Default,
 			})
 			require.NoError(t, err)
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.json.gz", tableName)

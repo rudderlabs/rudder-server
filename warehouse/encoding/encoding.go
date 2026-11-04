@@ -14,9 +14,6 @@ import (
 const (
 	UUIDTsColumn         = "uuid_ts"
 	LoadedAtColumn       = "loaded_at"
-	PartitionTimeColumn  = "_partitiontime"
-	MaxCompute           = warehouseutils.MAXCOMPUTE
-	FixedPartitionMode   = "fixed"
 	MaxComputeTimeFormat = "2006-01-02 15:04:05.000000"
 	BQLoadedAtFormat     = "2006-01-02 15:04:05.999999 Z"
 	BQUuidTSFormat       = "2006-01-02 15:04:05 Z"
@@ -69,14 +66,10 @@ type EventLoader interface {
 	Write() error
 }
 
-func (m *Factory) NewEventLoader(w LoadFileWriter, loadFileType, destinationType string, partitionMode ...string) EventLoader {
-	mode := ""
-	if len(partitionMode) > 0 {
-		mode = partitionMode[0]
-	}
+func (m *Factory) NewEventLoader(w LoadFileWriter, loadFileType, destinationType string) EventLoader {
 	switch loadFileType {
 	case warehouseutils.LoadFileTypeJson:
-		return newJSONLoader(w, destinationType, mode)
+		return newJSONLoader(w, destinationType)
 	case warehouseutils.LoadFileTypeParquet:
 		return newParquetLoader(w, destinationType)
 	default:

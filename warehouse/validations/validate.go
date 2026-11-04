@@ -1,12 +1,9 @@
 package validations
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -24,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -184,7 +182,7 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 
 func NewValidator(ctx context.Context, step string, dest *backendconfig.DestinationT) (Validator, error) {
 	if dest.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
-		if err := warehouseutils.ValidateMaxComputeOSSConfig(dest.Config); err != nil {
+		if err := maxcompute.ValidateSettings(dest.Config, dest.WorkspaceID); err != nil {
 			return nil, fmt.Errorf("invalid MaxCompute OSS configuration: %w", err)
 		}
 	}
@@ -251,20 +249,15 @@ func (os *objectStorage) Validate(ctx context.Context) error {
 		uploadObject filemanager.UploadedFile
 	)
 
-	var expectedHash [sha256.Size]byte
-	if tempPath, expectedHash, err = createTempLoadFile(os.destination); err != nil {
+	if tempPath, err = CreateTempLoadFile(os.destination); err != nil {
 		return fmt.Errorf("creating temp load file: %w", err)
 	}
-	defer misc.RemoveFilePaths(tempPath)
+
 	if uploadObject, err = uploadFile(ctx, os.destination, tempPath); err != nil {
 		return fmt.Errorf("upload file: %w", err)
 	}
 
-	if os.destination.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
-		if err = verifyMaxComputeObject(ctx, os.destination, uploadObject.ObjectName, expectedHash); err != nil {
-			return fmt.Errorf("verify uploaded OSS object: %w", err)
-		}
-	} else if err = downloadFile(ctx, os.destination, uploadObject.ObjectName); err != nil {
+	if err = downloadFile(ctx, os.destination, uploadObject.ObjectName); err != nil {
 		return fmt.Errorf("download file: %w", err)
 	}
 
@@ -284,8 +277,7 @@ func (c *connections) Validate(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 
-	warehouse := createDummyWarehouse(c.destination)
-	return c.manager.TestConnection(ctx, warehouse)
+	return c.manager.TestConnection(ctx, createDummyWarehouse(c.destination))
 }
 
 func (cs *createSchema) Validate(ctx context.Context) error {
@@ -294,29 +286,19 @@ func (cs *createSchema) Validate(ctx context.Context) error {
 	return cs.manager.CreateSchema(ctx)
 }
 
-// MaxCompute's fixed-partition tables require the datetime column at creation.
-// Keep the shared fixture unchanged for every other destination.
 func validationTableSchema(maxCompute bool) model.TableSchema {
-	if maxCompute {
-		return maxComputeValidationSchema()
+	if !maxCompute {
+		return tableSchemaMap
 	}
-	return tableSchemaMap
+	schema := maps.Clone(tableSchemaMap)
+	schema["uuid_ts"] = "datetime"
+	return schema
 }
-
-const maxComputeValidationPartitionTime = "2024-01-02 03:04:05"
 
 func maxComputeValidationPayload() map[string]any {
-	payload := make(map[string]any, len(payloadMap)+1)
-	maps.Copy(payload, payloadMap)
-	payload["_partitiontime"] = maxComputeValidationPartitionTime
+	payload := maps.Clone(payloadMap)
+	payload["uuid_ts"] = "2024-01-02 00:00:00.000000"
 	return payload
-}
-
-func maxComputeValidationSchema() model.TableSchema {
-	schema := make(model.TableSchema, len(tableSchemaMap)+1)
-	maps.Copy(schema, tableSchemaMap)
-	schema["_partitiontime"] = "datetime"
-	return schema
 }
 
 func (cat *createAlterTable) Validate(ctx context.Context) error {
@@ -364,13 +346,12 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 	if tempPath, err = CreateTempLoadFile(lt.destination); err != nil {
 		return fmt.Errorf("create temp load file: %w", err)
 	}
-	defer misc.RemoveFilePaths(tempPath)
 
 	if uploadOutput, err = uploadFile(ctx, lt.destination, tempPath); err != nil {
 		return fmt.Errorf("upload file: %w", err)
 	}
 
-	if err = lt.manager.CreateTable(ctx, lt.table, validationTableSchema(lt.destination.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE)); err != nil {
+	if err = lt.manager.CreateTable(ctx, lt.table, validationTableSchema(destinationType == warehouseutils.MAXCOMPUTE)); err != nil {
 		return fmt.Errorf("create table: %w", err)
 	}
 
@@ -392,64 +373,56 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 
 // CreateTempLoadFile creates a temporary load file
 func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
-	path, _, err := createTempLoadFile(dest)
-	return path, err
-}
-
-func createTempLoadFile(dest *backendconfig.DestinationT) (string, [sha256.Size]byte, error) {
-	var emptyHash [sha256.Size]byte
 	var (
-		filePath string
-		err      error
-		writer   encoding.LoadFileWriter
+		tmpDirPath string
+		filePath   string
+		err        error
+		writer     encoding.LoadFileWriter
 
 		destinationType = dest.DestinationDefinition.Name
 		loadFileType    = warehouseutils.GetLoadFileType(destinationType)
 	)
 
-	// The OS chooses the temporary directory and filename; no destination input
-	// becomes a local path component. Keep the descriptor for hashing after the
-	// load writer closes.
-	tempFile, err := os.CreateTemp("", "validation-*."+warehouseutils.GetLoadFileFormat(loadFileType))
-	if err != nil {
-		return "", emptyHash, fmt.Errorf("create validation file: %w", err)
+	if tmpDirPath, err = misc.GetTmpDir(); err != nil {
+		return "", fmt.Errorf("create tmp dir: %w", err)
 	}
-	filePath = tempFile.Name()
-	defer func() { _ = tempFile.Close() }()
+
+	filePath = fmt.Sprintf("%v/%v/%v.%v.%v.%v",
+		tmpDirPath,
+		connectionTestingFolder,
+		destinationType,
+		warehouseutils.RandHex(),
+		time.Now().Unix(),
+		warehouseutils.GetLoadFileFormat(loadFileType),
+	)
+	if err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
+		return "", fmt.Errorf("create directory: %w", err)
+	}
 
 	ef := encoding.NewFactory(config.Default)
-	fixtureSchema := tableSchemaMap
-	if destinationType == warehouseutils.MAXCOMPUTE {
-		fixtureSchema = maxComputeValidationSchema()
-	}
+	fixtureSchema := validationTableSchema(destinationType == warehouseutils.MAXCOMPUTE)
 	writer, err = ef.NewLoadFileWriter(loadFileType, filePath, fixtureSchema, destinationType)
 	if err != nil {
-		return "", emptyHash, fmt.Errorf("creating writer for file: %s with error: %w", filePath, err)
+		return "", fmt.Errorf("creating writer for file: %s with error: %w", filePath, err)
 	}
 
 	eventLoader := ef.NewEventLoader(writer, loadFileType, destinationType)
 	for _, column := range []string{"id", "val"} {
-		eventLoader.AddColumn(column, fixtureSchema[column], payloadMap[column])
+		eventLoader.AddColumn(column, tableSchemaMap[column], payloadMap[column])
 	}
 	if destinationType == warehouseutils.MAXCOMPUTE {
-		eventLoader.AddColumn("_partitiontime", fixtureSchema["_partitiontime"], maxComputeValidationPartitionTime)
+		eventLoader.AddColumn("uuid_ts", "datetime", maxComputeValidationPayload()["uuid_ts"])
 	}
 
 	if err = eventLoader.Write(); err != nil {
-		return "", emptyHash, fmt.Errorf("writing to file: %w", err)
+		return "", fmt.Errorf("writing to file: %w", err)
 	}
 
 	if err = writer.Close(); err != nil {
-		return "", emptyHash, fmt.Errorf("closing writer: %w", err)
+		return "", fmt.Errorf("closing writer: %w", err)
 	}
-	if destinationType == warehouseutils.MAXCOMPUTE {
-		hash, err := hashValidationFile(tempFile)
-		if err != nil {
-			return "", emptyHash, fmt.Errorf("hash OSS fixture: %w", err)
-		}
-		return filePath, hash, nil
-	}
-	return filePath, emptyHash, nil
+
+	return filePath, nil
 }
 
 func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath string) (filemanager.UploadedFile, error) {
@@ -471,6 +444,8 @@ func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath 
 		return filemanager.UploadedFile{}, fmt.Errorf("opening file: %w", err)
 	}
 
+	// cleanup
+	defer misc.RemoveFilePaths(filePath)
 	defer func() { _ = uploadFile.Close() }()
 
 	if output, err = fm.Upload(ctx, uploadFile, prefixes...); err != nil {
@@ -540,67 +515,9 @@ func downloadFile(ctx context.Context, dest *backendconfig.DestinationT, locatio
 	return nil
 }
 
-func hashValidationFile(f *os.File) ([sha256.Size]byte, error) {
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return [sha256.Size]byte{}, err
-	}
-	hash := sha256.New()
-	if _, err := io.Copy(hash, f); err != nil {
-		return [sha256.Size]byte{}, err
-	}
-	return [sha256.Size]byte(hash.Sum(nil)), nil
-}
-
-const maxComputeValidationReadbackBytes = 1024 * 1024
-
-type boundedValidationWriter struct {
-	file     *os.File
-	maxBytes int64
-}
-
-func (w *boundedValidationWriter) WriteAt(p []byte, offset int64) (int, error) {
-	if offset < 0 || offset > w.maxBytes || int64(len(p)) > w.maxBytes-offset {
-		return 0, fmt.Errorf("OSS fixture readback exceeds %d bytes", w.maxBytes)
-	}
-	return w.file.WriteAt(p, offset)
-}
-
-// verifyMaxComputeObject checks the actual bytes, not just whether OSS accepts
-// a GET request. No object contents or credentials are included in errors.
-func verifyMaxComputeObject(ctx context.Context, dest *backendconfig.DestinationT, key string, expected [sha256.Size]byte) error {
-	fm, err := createFileManager(dest)
-	if err != nil {
-		return fmt.Errorf("create file manager: %w", err)
-	}
-	file, err := os.CreateTemp("", "maxcompute-oss-validation-*")
-	if err != nil {
-		return fmt.Errorf("create readback file: %w", err)
-	}
-	defer func() {
-		_ = file.Close()
-		_ = os.Remove(file.Name())
-	}()
-	// OSS's Download streams to WriterAt. Reject excess bytes as they arrive,
-	// so a corrupted or unexpectedly large object cannot exhaust local disk.
-	if err := fm.Download(ctx, &boundedValidationWriter{file: file, maxBytes: maxComputeValidationReadbackBytes}, key); err != nil {
-		return fmt.Errorf("download file: %w", err)
-	}
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("seek readback file: %w", err)
-	}
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return fmt.Errorf("hash readback file: %w", err)
-	}
-	if !bytes.Equal(hash.Sum(nil), expected[:]) {
-		return fmt.Errorf("OSS fixture readback differs from uploaded file")
-	}
-	return nil
-}
-
 func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManager, error) {
 	if dest.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
-		if err := warehouseutils.ValidateMaxComputeOSSConfig(dest.Config); err != nil {
+		if err := maxcompute.ValidateSettings(dest.Config, dest.WorkspaceID); err != nil {
 			return nil, fmt.Errorf("invalid MaxCompute OSS configuration: %w", err)
 		}
 	}
@@ -610,17 +527,15 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 		provider = warehouseutils.ObjectStorageType(destType, conf, misc.IsConfiguredToUseRudderObjectStorage(conf))
 	)
 
-	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-		Provider: provider, Config: conf,
-		UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(conf), WorkspaceID: dest.WorkspaceID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("converting object storage config: %w", err)
-	}
 	fileManager, err := fileManagerFactory(&filemanager.Settings{
 		Provider: provider,
-		Config:   storageConfig,
-		Conf:     config.Default,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         provider,
+			Config:           conf,
+			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(conf),
+			WorkspaceID:      dest.WorkspaceID,
+		}),
+		Conf: config.Default,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating file manager: %w", err)
@@ -631,13 +546,7 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 	return fileManager, nil
 }
 
-// Convert only the validation warehouse; never rewrite customer settings.
 func createManager(ctx context.Context, dest *backendconfig.DestinationT) (manager.WarehouseOperations, error) {
-	if dest.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
-		if err := warehouseutils.ValidateMaxComputeOSSConfig(dest.Config); err != nil {
-			return nil, fmt.Errorf("invalid MaxCompute OSS configuration: %w", err)
-		}
-	}
 	var (
 		destType  = dest.DestinationDefinition.Name
 		warehouse = createDummyWarehouse(dest)
@@ -651,6 +560,7 @@ func createManager(ctx context.Context, dest *backendconfig.DestinationT) (manag
 	}
 
 	operations.SetConnectionTimeout(queryTimeout)
+
 	if err = operations.Setup(ctx, warehouse, &dummyUploader{
 		dest: dest,
 	}); err != nil {
@@ -684,7 +594,6 @@ func configuredNamespaceInDestination(dest *backendconfig.DestinationT) string {
 		return conf["database"].(string)
 	}
 	if destType == warehouseutils.MAXCOMPUTE {
-		// The ODPS project (or optional schema) must retain its configured case.
 		if schema, _ := conf["namespace"].(string); strings.TrimSpace(schema) != "" {
 			return schema
 		}
@@ -704,10 +613,10 @@ func configuredNamespaceInDestination(dest *backendconfig.DestinationT) string {
 func getTable(dest *backendconfig.DestinationT) string {
 	destType := dest.DestinationDefinition.Name
 	conf := dest.Config
-
 	if destType == warehouseutils.MAXCOMPUTE {
 		return tableWithUUID()
 	}
+
 	if destType == warehouseutils.DELTALAKE {
 		enableExternalLocation, _ := conf["enableExternalLocation"].(bool)
 		externalLocation, _ := conf["externalLocation"].(string)

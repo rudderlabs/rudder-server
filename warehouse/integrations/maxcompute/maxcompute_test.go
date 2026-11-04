@@ -69,13 +69,13 @@ func TestTypesAndConversion(t *testing.T) {
 
 func TestRoleSettingsAreExclusiveAndRequireWorkspace(t *testing.T) {
 	settings := map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou", "iamRoleARN": "acs:ram::123:role/test", "ossRoleArn": "read-role", "endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "project": "project"}
-	require.NoError(t, validateOSSSettings(settings, "workspace"))
-	require.ErrorContains(t, validateOSSSettings(settings, ""), "workspace ID")
+	require.NoError(t, ValidateSettings(settings, "workspace"))
+	require.ErrorContains(t, ValidateSettings(settings, ""), "workspace ID")
 	settings["accessKeyId"] = "destination-key"
-	require.ErrorContains(t, validateOSSSettings(settings, "workspace"), "cannot be combined")
+	require.ErrorContains(t, ValidateSettings(settings, "workspace"), "cannot be combined")
 	delete(settings, "accessKeyId")
 	settings["accessKeySecret"] = "destination-secret"
-	require.ErrorContains(t, validateOSSSettings(settings, "workspace"), "cannot be combined")
+	require.ErrorContains(t, ValidateSettings(settings, "workspace"), "cannot be combined")
 	delete(settings, "accessKeySecret")
 	m := testManager()
 	m.warehouse.Destination.Config = settings
@@ -106,18 +106,18 @@ func TestOSSMetadataUsesInjectedCallerConfig(t *testing.T) {
 func TestCreateTableStatements(t *testing.T) {
 	instance := odps.NewOdps(nil, "https://service.cn-hangzhou.maxcompute.aliyun.com/api")
 	instance.SetDefaultProjectName("project")
-	m := &MaxCompute{odps: instance, warehouse: model.Warehouse{}}
+	m := &MaxCompute{odps: instance, warehouse: model.Warehouse{}, conf: config.New()}
 	m.warehouse.Destination.Config = map[string]any{"skipViews": true}
-	m.SetPlannedPartitions(map[string]model.PartitionPlan{"events": {Source: "_partitiontime", Granularity: "hour"}})
+	m.warehouse.Destination.Config["partitionType"] = "hour"
 	var statements []string
 	m.exec = func(_ context.Context, sql string) error { statements = append(statements, sql); return nil }
 	require.NoError(t, m.CreateTable(context.Background(), "events", model.TableSchema{"id": "string"}))
 	require.Len(t, statements, 1)
-	require.Contains(t, statements[0], "TRUNC_TIME(\x60_partitiontime\x60, 'hour') AS \x60pt\x60")
-	require.Contains(t, statements[0], "\x60_partitiontime\x60 TIMESTAMP")
+	require.Contains(t, statements[0], "TRUNC_TIME(\x60uuid_ts\x60, 'hour') AS \x60pt\x60")
+	require.Contains(t, statements[0], "\x60uuid_ts\x60 TIMESTAMP")
 	require.Contains(t, statements[0], "'table.format.version'='2'")
 	require.NotContains(t, statements[0], "transactional")
-	m.SetPlannedPartitions(map[string]model.PartitionPlan{"events": {Source: "_partitiontime", Granularity: "hour'); DROP TABLE"}})
+	m.warehouse.Destination.Config["partitionType"] = "hour'); DROP TABLE"
 	statements = nil
 	require.Error(t, m.CreateTable(context.Background(), "events", model.TableSchema{"id": "string"}))
 	require.Empty(t, statements)
@@ -125,16 +125,16 @@ func TestCreateTableStatements(t *testing.T) {
 
 func TestCreateTablePartitionSource(t *testing.T) {
 	columns := model.TableSchema{
-		"id": "string", "received_at": "datetime", "loaded_at": "datetime", "_partitiontime": "datetime",
+		"id": "string", "received_at": "datetime", "loaded_at": "datetime", "uuid_ts": "datetime",
 		"bad": "string", "_timestamp": "datetime",
 	}
 	for _, tc := range []struct {
 		name, source, granularity, want, failure string
 	}{
 		{name: "event source", source: "received_at", granularity: "hour", want: "TRUNC_TIME(\x60received_at\x60, 'hour')"},
-		{name: "sentinel", source: "_PARTITIONTIME", granularity: "hour", want: "TRUNC_TIME(\x60_partitiontime\x60, 'hour')"},
-		{name: "default ingestion", want: "TRUNC_TIME(\x60_partitiontime\x60, 'day')"},
-		{name: "missing source", source: "sent_at", granularity: "hour", want: "TRUNC_TIME(\x60_partitiontime\x60, 'day')"},
+		{name: "sentinel", source: "_PARTITIONTIME", granularity: "hour", want: "TRUNC_TIME(\x60uuid_ts\x60, 'hour')"},
+		{name: "default ingestion", want: "TRUNC_TIME(\x60uuid_ts\x60, 'day')"},
+		{name: "missing source", source: "sent_at", granularity: "hour", want: "TRUNC_TIME(\x60uuid_ts\x60, 'day')"},
 		{name: "normalized source", source: "Received_At", want: "TRUNC_TIME(\x60received_at\x60, 'day')"},
 		{name: "reserved source", source: "timestamp", want: "TRUNC_TIME(\x60_timestamp\x60, 'day')"},
 		{name: "invalid source", source: "bad; DROP TABLE", failure: "unsupported MaxCompute partition column"},
@@ -146,7 +146,7 @@ func TestCreateTablePartitionSource(t *testing.T) {
 			if tc.failure == "datetime column" {
 				caseColumns["_timestamp"] = "string"
 			}
-			plan, err := PlanPartition(caseColumns, tc.source, tc.granularity)
+			_, err := PlanPartition(caseColumns, tc.source, tc.granularity)
 			if tc.failure != "" {
 				require.ErrorContains(t, err, tc.failure)
 				return
@@ -154,7 +154,8 @@ func TestCreateTablePartitionSource(t *testing.T) {
 			require.NoError(t, err)
 			m := testManager()
 			m.warehouse.Destination.Config["skipViews"] = true
-			m.SetPlannedPartitions(map[string]model.PartitionPlan{"events": plan})
+			m.warehouse.Destination.Config["partitionColumn"] = tc.source
+			m.warehouse.Destination.Config["partitionType"] = tc.granularity
 			var statements []string
 			m.exec = func(_ context.Context, sql string) error { statements = append(statements, sql); return nil }
 			require.NoError(t, m.CreateTable(context.Background(), "events", caseColumns))
@@ -332,4 +333,19 @@ func TestViewSQLBoundedAndQuoted(t *testing.T) {
 	statement, err = m.viewSQL(warehouseutils.DiscardsTable, model.TableSchema{"row_id": "string", "column_name": "string", "table_name": "string", "loaded_at": "datetime"})
 	require.NoError(t, err)
 	require.Contains(t, statement, "PARTITION BY `row_id`, `column_name`, `table_name`")
+}
+
+func TestCreateTablePartitionPipelineOverride(t *testing.T) {
+	m := testManager()
+	m.warehouse.Source.ID = "source"
+	m.warehouse.Destination.ID = "destination"
+	m.warehouse.Destination.Config["partitionColumn"] = "received_at"
+	m.warehouse.Destination.Config["partitionType"] = "day"
+	m.warehouse.Destination.Config["skipViews"] = true
+	m.conf.Set("Warehouse.pipeline.source.destination.partitionColumn", "_PARTITIONTIME")
+	m.conf.Set("Warehouse.pipeline.source.destination.partitionType", "hour")
+	var statement string
+	m.exec = func(_ context.Context, sql string) error { statement = sql; return nil }
+	require.NoError(t, m.CreateTable(context.Background(), "events", model.TableSchema{"id": "string", "uuid_ts": "datetime", "received_at": "datetime"}))
+	require.Contains(t, statement, "TRUNC_TIME(`uuid_ts`, 'hour') AS `pt`")
 }

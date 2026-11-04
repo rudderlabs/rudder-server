@@ -31,7 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -343,13 +342,6 @@ func (job *UploadJob) run() (err error) {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}
-	if job.warehouse.Type == whutils.MAXCOMPUTE && len(job.upload.PartitionPlans) != 0 {
-		planner, ok := whManager.(manager.PartitionPlanner)
-		if !ok {
-			return fmt.Errorf("MaxCompute manager does not accept persisted partition plans")
-		}
-		planner.SetPlannedPartitions(job.upload.PartitionPlans)
-	}
 
 	var (
 		newStatus       string
@@ -505,18 +497,16 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 
 	log := job.logger.Withn(logger.NewStringField("storageProvider", storageProvider))
 	log.Infon("Starting object storage cleanup")
-	storageConfig, err := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-		Provider: storageProvider, Config: destination.Config,
-		UseRudderStorage: job.upload.UseRudderStorage, WorkspaceID: job.upload.WorkspaceID,
-	})
-	if err != nil {
-		return fmt.Errorf("converting object storage config: %w", err)
-	}
 
 	fm, err := job.fileManagerFactory(&filemanager.Settings{
 		Provider: storageProvider,
-		Config:   storageConfig,
-		Conf:     job.conf,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         storageProvider,
+			Config:           destination.Config,
+			UseRudderStorage: job.upload.UseRudderStorage,
+			WorkspaceID:      job.upload.WorkspaceID,
+		}),
+		Conf: job.conf,
 	})
 	if err != nil {
 		return fmt.Errorf("creating file manager: %w", err)
@@ -1032,56 +1022,12 @@ func (job *UploadJob) GetLoadFileType() string {
 	return job.upload.LoadFileType
 }
 
-func (job *UploadJob) partitionSettings() (map[string]string, map[string]string, error) {
-	if job.warehouse.Type != whutils.MAXCOMPUTE {
-		return nil, nil, nil
-	}
-	planner, ok := job.whManager.(manager.PartitionPlanner)
-	if !ok {
-		return nil, nil, fmt.Errorf("MaxCompute manager does not expose partition metadata")
-	}
-	modes := make(map[string]string, len(job.upload.UploadSchema))
-	granularities := make(map[string]string, len(job.upload.UploadSchema))
-	plans := make(map[string]model.PartitionPlan, len(job.upload.UploadSchema))
-	conf := job.conf
-	if conf == nil {
-		conf = config.New()
-	}
-	column := job.warehouse.GetStringDestinationConfig(conf, model.PartitionColumnSetting)
-	granularity := job.warehouse.GetStringDestinationConfig(conf, model.PartitionTypeSetting)
-	for table, planned := range job.upload.UploadSchema {
-		var plan model.PartitionPlan
-		var err error
-		var existing model.TableSchema
-		if job.schemaHandle != nil {
-			existing = job.schemaHandle.GetTableSchema(job.ctx, table)
-		}
-		if len(existing) != 0 {
-			plan, err = planner.CatalogPartition(job.ctx, table)
-		} else {
-			plan, err = maxcompute.PlanPartition(planned, column, granularity)
-		}
-		if err != nil {
-			return nil, nil, fmt.Errorf("resolving MaxCompute partition for %q: %w", table, err)
-		}
-		plans[table] = plan
-		modes[table] = plan.Mode()
-		granularities[table] = plan.Granularity
-	}
-	planner.SetPlannedPartitions(plans)
-	job.upload.PartitionPlans = plans
-	return modes, granularities, nil
-}
-
-func (job *UploadJob) DTO() (*model.UploadJob, error) {
-	modes, granularities, err := job.partitionSettings()
-	if err != nil {
-		return nil, err
-	}
+func (job *UploadJob) DTO() *model.UploadJob {
 	return &model.UploadJob{
-		Warehouse: job.warehouse, Upload: job.upload, StagingFiles: job.stagingFiles,
-		PartitionModes: modes, PartitionGranularities: granularities,
-	}, nil
+		Warehouse:    job.warehouse,
+		Upload:       job.upload,
+		StagingFiles: job.stagingFiles,
+	}
 }
 
 func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) {
