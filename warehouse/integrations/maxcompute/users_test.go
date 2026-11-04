@@ -2,7 +2,6 @@ package maxcompute
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,6 +13,8 @@ import (
 	"github.com/aliyun/aliyun-odps-go-sdk/odps"
 	"github.com/aliyun/aliyun-odps-go-sdk/odps/account"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -51,16 +52,16 @@ func testUsersManager(t *testing.T) (*MaxCompute, *usersUploader, *[]string) {
 			_, _ = w.Write([]byte(`<Partitions/>`))
 			return
 		}
-		schema, _ := json.Marshal(map[string]any{"columns": []any{map[string]any{"name": "id", "type": "string"}, map[string]any{"name": "received_at", "type": "datetime"}}, "PartitionKeys": []any{map[string]any{"name": "pt", "type": "string", "hasGenerateExpression": true, "generateExpression": expression}}})
+		schema, _ := jsonrs.Marshal(map[string]any{"columns": []any{map[string]any{"name": "id", "type": "string"}, map[string]any{"name": "received_at", "type": "datetime"}}, "PartitionKeys": []any{map[string]any{"name": "pt", "type": "string", "hasGenerateExpression": true, "generateExpression": expression}}})
 		_, _ = fmt.Fprintf(w, "<Table><Schema>%s</Schema></Table>", strings.ReplaceAll(strings.ReplaceAll(string(schema), "&", "&amp;"), "<", "&lt;"))
 	}))
 	t.Cleanup(server.Close)
 	m.odps = odps.NewOdps(account.NewAliyunAccount("id", "secret"), server.URL)
 	m.odps.SetDefaultProjectName("project")
 	u := &usersUploader{
-		loadUploader: loadUploader{files: []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/one.gz"}, {Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/two.gz"}}},
-		users:        model.TableSchema{"id": "string", "received_at": "datetime", "loaded_at": "datetime", "uuid_ts": "datetime", "email": "string", "name": "string"},
-		identifies:   model.TableSchema{"user_id": "string", "received_at": "datetime", "email": "string"},
+		files:      []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/one.gz"}, {Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/two.gz"}},
+		users:      model.TableSchema{"id": "string", "received_at": "datetime", "loaded_at": "datetime", "uuid_ts": "datetime", "email": "string", "name": "string"},
+		identifies: model.TableSchema{"user_id": "string", "received_at": "datetime", "email": "string"},
 	}
 	m.uploader = u
 	statements := &[]string{}

@@ -188,8 +188,7 @@ func (m *MaxCompute) checkNamespaceOwner(ctx context.Context) error {
 	}
 	schema := m.odps.Schema(m.namespace())
 	if err := schema.Load(); err != nil {
-		var httpErr restclient.HttpError
-		if errors.As(err, &httpErr) && httpErr.StatusCode == 404 {
+		if httpErr, ok := errors.AsType[restclient.HttpError](err); ok && httpErr.StatusCode == http.StatusNotFound {
 			return ctx.Err() // no existing schema to write to
 		}
 		return fmt.Errorf("loading MaxCompute schema: %w", client.ODPSSafeError(err))
