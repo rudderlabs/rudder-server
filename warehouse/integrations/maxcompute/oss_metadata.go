@@ -14,13 +14,16 @@ import (
 
 // ossObjectSize reads the actual OSS Content-Length without downloading data.
 // The credential source matches the converted filemanager configuration.
-func ossObjectSize(ctx context.Context, conf map[string]any, key string) (int64, error) {
+func ossObjectSize(ctx context.Context, appConf *config.Config, conf map[string]any, key string) (int64, error) {
 	bucket, _ := conf["bucketName"].(string)
 	region, _ := conf["region"].(string)
 	var credential credentials.Credential
 	if role, _ := conf["roleBasedAuth"].(bool); role {
-		id := config.Default.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeyID")
-		secret := config.Default.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeySecret")
+		if appConf == nil {
+			return 0, errors.New("OSS credentials unavailable")
+		}
+		id := appConf.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeyID")
+		secret := appConf.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeySecret")
 		arn, _ := conf["iamRoleARN"].(string)
 		external, _ := conf["externalID"].(string)
 		if id == "" || secret == "" || arn == "" || external == "" {

@@ -50,11 +50,9 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
-// Validation RPCs have no authenticated workspace identity. A caller-provided
-// workspace ID or external ID must not be used to assume a MaxCompute role.
-func TestValidateMaxComputeRoleRequiresAuthenticatedWorkspace(t *testing.T) {
+func TestValidateMaxComputeRoleReachesValidationSteps(t *testing.T) {
 	g := &GRPC{logger: logger.NOP}
-	for _, workspaceID := range []string{"", "another-workspace"} {
+	for _, workspaceID := range []string{"workspace-id", "another-workspace"} {
 		t.Run("role with workspace "+workspaceID, func(t *testing.T) {
 			body, err := jsonrs.Marshal(map[string]any{
 				"destination": backendconfig.DestinationT{
@@ -62,15 +60,14 @@ func TestValidateMaxComputeRoleRequiresAuthenticatedWorkspace(t *testing.T) {
 					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: whutils.MAXCOMPUTE},
 					Config: map[string]any{
 						"bucketName": "customer-bucket", "region": "cn-hangzhou",
-						"roleBasedAuth": true, "iamRoleARN": "acs:ram::123:role/customer",
+						"iamRoleARN": "acs:ram::123:role/customer", "ossRoleArn": "read-role",
 					},
 				},
 			})
 			require.NoError(t, err)
-			for _, path := range []string{"steps", "validate"} {
-				_, err := g.Validate(context.Background(), &proto.WHValidationRequest{Body: string(body), Path: path})
-				require.Equal(t, codes.PermissionDenied, status.Code(err))
-			}
+			res, err := g.Validate(context.Background(), &proto.WHValidationRequest{Body: string(body), Path: "steps"})
+			require.NoError(t, err)
+			require.Contains(t, res.GetData(), "Verifying Object Storage")
 		})
 	}
 
@@ -80,7 +77,7 @@ func TestValidateMaxComputeRoleRequiresAuthenticatedWorkspace(t *testing.T) {
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: whutils.MAXCOMPUTE},
 			Config: map[string]any{
 				"bucketName": "customer-bucket", "region": "cn-hangzhou",
-				"accessKeyID": "id", "accessKey": "secret",
+				"accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "read-role",
 			},
 		},
 	})
@@ -90,32 +87,41 @@ func TestValidateMaxComputeRoleRequiresAuthenticatedWorkspace(t *testing.T) {
 	require.Contains(t, res.GetData(), "Verifying Object Storage")
 }
 
-func TestValidateAlibabaOSSRoleRequiresAuthenticatedWorkspace(t *testing.T) {
+func TestValidateAlibabaOSSRoleUsesConvertedConfig(t *testing.T) {
 	g := &GRPC{logger: logger.NOP, conf: config.New()}
 	called := false
-	g.fileManagerFactory = func(*filemanager.Settings) (filemanager.FileManager, error) {
+	roleExpected := true
+	g.fileManagerFactory = func(settings *filemanager.Settings) (filemanager.FileManager, error) {
 		called = true
+		require.Equal(t, roleExpected, settings.Config["roleBasedAuth"])
+		require.Equal(t, "", settings.Config["endPoint"])
+		if roleExpected {
+			require.Equal(t, "", settings.Config["externalID"])
+		} else {
+			require.NotContains(t, settings.Config, "externalID")
+		}
 		return nil, errors.New("factory called")
 	}
 	for _, externalID := range []string{"", "another-workspace"} {
 		t.Run("role with externalID "+externalID, func(t *testing.T) {
 			cfg, err := structpb.NewStruct(map[string]any{
 				"bucketName": "customer-bucket", "region": "cn-hangzhou",
-				"roleBasedAuth": true, "iamRoleARN": "acs:ram::123:role/customer",
+				"iamRoleARN": "acs:ram::123:role/customer", "ossRoleArn": "read-role",
 				"externalID": externalID,
 			})
 			require.NoError(t, err)
 			_, err = g.ValidateObjectStorageDestination(context.Background(), &proto.ValidateObjectStorageRequest{
 				Type: whutils.AlibabaOSS, Config: cfg,
 			})
-			require.Equal(t, codes.PermissionDenied, status.Code(err))
-			require.False(t, called, "role validation must not create a file manager")
+			require.Equal(t, codes.Internal, status.Code(err))
+			require.True(t, called)
 		})
 	}
 
+	roleExpected = false
 	cfg, err := structpb.NewStruct(map[string]any{
 		"bucketName": "customer-bucket", "region": "cn-hangzhou",
-		"accessKeyID": "id", "accessKey": "secret",
+		"accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "read-role",
 	})
 	require.NoError(t, err)
 	_, err = g.ValidateObjectStorageDestination(context.Background(), &proto.ValidateObjectStorageRequest{

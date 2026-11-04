@@ -638,8 +638,8 @@ func TestGetObjectStorageConfig(t *testing.T) {
 		original := map[string]any{
 			"bucketName": "customer-bucket", "prefix": "customer-prefix", "region": "cn-hangzhou",
 			"endPoint": "https://oss-cn-hangzhou.aliyuncs.com", "useInternalEndpoint": true,
-			"iamRoleARN": "role", "roleBasedAuth": true, "accessKeyID": "odps-id", "accessKey": "odps-secret",
-			"externalID": "untrusted", "project": "my-project", "disableSSL": true,
+			"iamRoleARN": "role", "externalID": "untrusted", "project": "my-project", "disableSSL": true,
+			"endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "ossRoleArn": "read-role",
 		}
 		converted := GetObjectStorageConfig(ObjectStorageOptsT{
 			Provider: "ALIBABA_OSS", Config: original, WorkspaceID: sampleWorkspaceID, UseRudderStorage: true,
@@ -652,11 +652,17 @@ func TestGetObjectStorageConfig(t *testing.T) {
 		require.Equal(t, "untrusted", original["externalID"])
 		converted["bucketName"] = "changed"
 		require.Equal(t, "customer-bucket", original["bucketName"])
-		original["roleBasedAuth"] = false
+		delete(original, "iamRoleARN")
+		original["accessKeyId"] = "odps-id"
+		original["accessKeySecret"] = "odps-secret"
 		static := GetObjectStorageConfig(ObjectStorageOptsT{Provider: "ALIBABA_OSS", Config: original, WorkspaceID: sampleWorkspaceID})
+		require.Equal(t, false, static["roleBasedAuth"])
 		require.Equal(t, "odps-id", static["accessKeyID"])
 		require.Equal(t, "odps-secret", static["accessKey"])
+		require.NotContains(t, static, "externalID")
+		require.NotContains(t, static, "ossRoleArn")
 		require.NotContains(t, static, "project")
+		require.NotContains(t, static, "endpoint")
 		require.NotContains(t, static, "disableSSL")
 	})
 

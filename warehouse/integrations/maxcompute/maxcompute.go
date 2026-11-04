@@ -70,7 +70,11 @@ func validateOSSSettings(settings map[string]any, workspaceID string) error {
 	if err := warehouseutils.ValidateMaxComputeOSSConfig(settings); err != nil {
 		return err
 	}
-	if role, _ := settings["roleBasedAuth"].(bool); role && strings.TrimSpace(workspaceID) == "" {
+	role, err := warehouseutils.MaxComputeRoleMode(settings)
+	if err != nil {
+		return err
+	}
+	if role && strings.TrimSpace(workspaceID) == "" {
 		return errors.New("MaxCompute role authentication requires workspace ID")
 	}
 	return nil
@@ -87,14 +91,24 @@ func (m *MaxCompute) init(warehouse model.Warehouse) error {
 	if err := validateOSSSettings(settings, warehouse.Destination.WorkspaceID); err != nil {
 		return fmt.Errorf("validating MaxCompute OSS configuration: %w", err)
 	}
-	var cred credentials.Credential
-	role, _ := settings["roleBasedAuth"].(bool)
+	role, _ := warehouseutils.MaxComputeRoleMode(settings)
+	endpoint, ok := settings["endpoint"].(string)
+	if !ok || endpoint == "" {
+		return errors.New("MaxCompute endpoint is required")
+	}
+	if err := client.ValidateODPSEndpoint(project, region, endpoint); err != nil {
+		return err
+	}
+	var instance *odps.Odps
 	if role {
 		// A RAM role uses server-configured caller credentials and Alibaba's
 		// refreshable credential chain, never destination-supplied keys.
 		arn, _ := settings["iamRoleARN"].(string)
-		id := config.Default.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeyID")
-		secret := config.Default.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeySecret")
+		if m.conf == nil {
+			return errors.New("MaxCompute role caller credentials unavailable")
+		}
+		id := m.conf.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeyID")
+		secret := m.conf.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeySecret")
 		if id == "" || secret == "" {
 			return errors.New("MaxCompute role caller credentials unavailable")
 		}
@@ -104,33 +118,22 @@ func (m *MaxCompute) init(warehouse model.Warehouse) error {
 		config := (&credentials.Config{Type: &kind}).SetRoleArn(arn).SetRoleSessionName("rudder-warehouse").SetAccessKeyId(id).SetAccessKeySecret(secret)
 		externalID := warehouse.Destination.WorkspaceID
 		config.ExternalId = &externalID
-		var err error
-		cred, err = credentials.NewCredential(config)
+		cred, err := credentials.NewCredential(config)
 		if err != nil {
 			return errors.New("MaxCompute role credentials unavailable")
 		}
-	} else {
-		id, _ := settings["accessKeyID"].(string)
-		secret, _ := settings["accessKey"].(string)
-		if id == "" || secret == "" {
-			return errors.New("MaxCompute access keys are required")
-		}
-		kind := "access_key"
-		var err error
-		cred, err = credentials.NewCredential((&credentials.Config{Type: &kind}).SetAccessKeyId(id).SetAccessKeySecret(secret))
+		instance, err = client.NewODPSClientWithEndpoint(project, region, endpoint, cred)
 		if err != nil {
-			return errors.New("MaxCompute credentials unavailable")
+			return err
 		}
-	}
-	endpoint, _ := settings["odpsEndpoint"].(string)
-	if settings["odpsEndpoint"] != nil {
-		if _, ok := settings["odpsEndpoint"].(string); !ok {
-			return errors.New("invalid ODPS endpoint")
+	} else {
+		id, _ := settings["accessKeyId"].(string)
+		secret, _ := settings["accessKeySecret"].(string)
+		var err error
+		instance, err = client.NewODPSClientWithAccessKey(project, region, endpoint, id, secret)
+		if err != nil {
+			return err
 		}
-	}
-	instance, err := client.NewODPSClientWithEndpoint(project, region, endpoint, client.GuardODPSCredentials(cred))
-	if err != nil {
-		return err
 	}
 	m.applyConnectionTimeout(instance)
 	if warehouse.Namespace != "" && warehouse.Namespace != project {

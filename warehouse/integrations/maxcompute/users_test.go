@@ -14,6 +14,7 @@ import (
 	"github.com/aliyun/aliyun-odps-go-sdk/odps/account"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -74,7 +75,7 @@ func testUsersManager(t *testing.T) (*MaxCompute, *usersUploader, *[]string) {
 		return []string{"pt=" + now.Format("2006-01-02"), "pt=2000-01-01"}, nil
 	}
 	oldSize := metadataSize
-	metadataSize = func(context.Context, map[string]any, string) (int64, error) { return 10, nil }
+	metadataSize = func(context.Context, *config.Config, map[string]any, string) (int64, error) { return 10, nil }
 	t.Cleanup(func() { metadataSize = oldSize })
 	return m, u, statements
 }

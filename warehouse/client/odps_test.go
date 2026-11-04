@@ -54,6 +54,10 @@ func TestODPSCredentials(t *testing.T) {
 		{"nil function", nil},
 		{"failure", func() (*credentials.CredentialModel, error) { return nil, errors.New("sensitive token") }},
 		{"incomplete", func() (*credentials.CredentialModel, error) { return &credentials.CredentialModel{}, nil }},
+		{"missing token", func() (*credentials.CredentialModel, error) {
+			id, secret := "id", "secret"
+			return &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &secret}, nil
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := NewODPSCredentials(tc.fn).GetCredential()
@@ -91,33 +95,27 @@ func (c *odpsTestCredential) GetBearerToken() *string { return nil }
 
 func TestGuardODPSCredentials(t *testing.T) {
 	id, key, token := "sensitive id", "sensitive key", "sensitive token"
-	for _, tc := range []struct {
-		name  string
-		token *string
-	}{
-		{"role", &token}, {"access key", nil},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			source := &odpsTestCredential{model: &credentials.CredentialModel{
-				AccessKeyId: &id, AccessKeySecret: &key, SecurityToken: tc.token,
-			}}
-			guard := GuardODPSCredentials(source)
-			model, err := guard.GetCredential()
-			require.NoError(t, err)
-			require.Equal(t, id, *model.AccessKeyId)
-			require.Equal(t, key, *model.AccessKeySecret)
-			require.Equal(t, tc.token, model.SecurityToken)
-			*model.AccessKeySecret = "changed"
-			next, err := guard.GetCredential()
-			require.NoError(t, err)
-			require.Equal(t, key, *next.AccessKeySecret)
-			source.err = errors.New("SECRET from refresh")
-			_, err = guard.GetCredential()
-			require.EqualError(t, err, "ODPS credentials unavailable")
-		})
-	}
+	source := &odpsTestCredential{model: &credentials.CredentialModel{
+		AccessKeyId: &id, AccessKeySecret: &key, SecurityToken: &token,
+	}}
+	guard := GuardODPSCredentials(source)
+	model, err := guard.GetCredential()
+	require.NoError(t, err)
+	require.Equal(t, id, *model.AccessKeyId)
+	require.Equal(t, key, *model.AccessKeySecret)
+	require.Equal(t, &token, model.SecurityToken)
+	*model.AccessKeySecret = "changed"
+	next, err := guard.GetCredential()
+	require.NoError(t, err)
+	require.Equal(t, key, *next.AccessKeySecret)
+	source.err = errors.New("SECRET from refresh")
+	_, err = guard.GetCredential()
+	require.EqualError(t, err, "ODPS credentials unavailable")
+	missingToken := GuardODPSCredentials(&odpsTestCredential{model: &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &key}})
+	_, err = missingToken.GetCredential()
+	require.EqualError(t, err, "ODPS credentials unavailable")
 	var nilGuard *odpsCredentialGuard
-	_, err := nilGuard.GetCredential()
+	_, err = nilGuard.GetCredential()
 	require.EqualError(t, err, "ODPS credentials unavailable")
 }
 
@@ -127,7 +125,7 @@ func TestNewODPSClient(t *testing.T) {
 		{"project/escape", "cn-shanghai"},
 		{"project", "cn-shanghai.evil.com"},
 		{"project", "cn-shanghai:8080"},
-		{"project", "internal"},
+		{"project", "Internal"},
 	} {
 		_, err := NewODPSClient(tc.project, tc.region, NewODPSCredentials(nil))
 		require.Error(t, err)
@@ -160,6 +158,14 @@ func TestNewODPSClient(t *testing.T) {
 	configuredRest := configured.RestClient()
 	require.Equal(t, rest.Endpoint(), configuredRest.Endpoint())
 	require.Equal(t, "cn-shanghai", configured.Options.RegionId)
+	static, err := NewODPSClientWithAccessKey("safe_project", "cn-shanghai", rest.Endpoint(), "id", "secret")
+	require.NoError(t, err)
+	require.IsType(t, &account.AliyunAccount{}, static.Account())
+	otherRegion := "https://service.af-south-1.maxcompute.aliyun.com/api"
+	_, err = NewODPSClientWithAccessKey("safe_project", "af-south-1", otherRegion, "id", "secret")
+	require.NoError(t, err)
+	_, err = NewODPSClientWithAccessKey("safe_project", "me-central-1", otherRegion, "id", "secret")
+	require.EqualError(t, err, "invalid ODPS endpoint")
 	client, err := NewODPSWarehouseClient("safe_project", "cn-shanghai", provider)
 	require.NoError(t, err)
 	require.Equal(t, ODPSClient, client.Type)
@@ -209,26 +215,27 @@ func TestODPSQueryHints(t *testing.T) {
 	require.Equal(t, "true", hints["odps.namespace.schema"])
 }
 
-// SDK signing is performed before sending a request. A failing provider must
-// not leak its error through Query, even when using long-lived access keys.
+// SDK signing is performed before sending a request. A failing role provider
+// must not leak its refresh error through Query.
 func TestODPSQueryCredentialFailure(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		token *string
-	}{
-		{"role", func() *string { s := "SECRET token"; return &s }()},
-		{"access key", nil},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			id, key := "SECRET id", "SECRET key"
-			provider := &odpsTestCredential{model: &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &key, SecurityToken: tc.token}}
-			instance, err := NewODPSClient("project", "cn-shanghai", provider)
-			require.NoError(t, err)
-			provider.err = errors.New("SECRET refresh failure")
-			_, err = (&Client{Type: ODPSClient, ODPS: instance}).Query("SELECT 1")
-			require.EqualError(t, err, "ODPS request failed")
-		})
-	}
+	id, key, token := "SECRET id", "SECRET key", "SECRET token"
+	provider := &odpsTestCredential{model: &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &key, SecurityToken: &token}}
+	instance, err := NewODPSClient("project", "cn-shanghai", provider)
+	require.NoError(t, err)
+	provider.err = errors.New("SECRET refresh failure")
+	_, err = (&Client{Type: ODPSClient, ODPS: instance}).Query("SELECT 1")
+	require.EqualError(t, err, "ODPS request failed")
+}
+
+func TestODPSRoleRefreshWithoutTokenFailsBeforeSigning(t *testing.T) {
+	id, secret, token := "SECRET id", "SECRET secret", "SECRET token"
+	provider := &odpsTestCredential{model: &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &secret, SecurityToken: &token}}
+	instance, err := NewODPSClient("project", "cn-shanghai", provider)
+	require.NoError(t, err)
+	provider.model.SecurityToken = nil
+	_, err = (&Client{Type: ODPSClient, ODPS: instance}).Query("SELECT 1")
+	require.EqualError(t, err, "ODPS request failed")
+	require.NotContains(t, err.Error(), "SECRET")
 }
 
 // The SDK supplies no context-aware requests, so test the polling state

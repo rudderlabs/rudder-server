@@ -668,21 +668,23 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
 	// by go-kit's OSS manager; never forward ODPS bootstrap keys in role mode.
 	if opts.Provider == "ALIBABA_OSS" {
 		ossConfig := make(map[string]any)
-		for _, key := range []string{"bucketName", "prefix", "region", "roleBasedAuth", "iamRoleARN"} {
+		for _, key := range []string{"bucketName", "prefix", "region"} {
 			if value, ok := objectStorageConfigMap[key]; ok {
 				ossConfig[key] = value
 			}
 		}
-		if role, _ := objectStorageConfigMap["roleBasedAuth"].(bool); !role {
-			for _, key := range []string{"accessKeyID", "accessKey"} {
-				if value, ok := objectStorageConfigMap[key]; ok {
-					ossConfig[key] = value
-				}
-			}
+		arn, _ := objectStorageConfigMap["iamRoleARN"].(string)
+		if strings.TrimSpace(arn) != "" {
+			ossConfig["roleBasedAuth"] = true
+			ossConfig["iamRoleARN"] = arn
+			ossConfig["externalID"] = opts.WorkspaceID
+		} else {
+			ossConfig["roleBasedAuth"] = false
+			ossConfig["accessKeyID"] = objectStorageConfigMap["accessKeyId"]
+			ossConfig["accessKey"] = objectStorageConfigMap["accessKeySecret"]
 		}
 		ossConfig["endPoint"] = ""
 		ossConfig["useInternalEndpoint"] = false
-		ossConfig["externalID"] = opts.WorkspaceID
 		return ossConfig
 	}
 	if opts.Provider == "ONELAKE" {

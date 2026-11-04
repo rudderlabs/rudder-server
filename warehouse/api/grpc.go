@@ -623,15 +623,6 @@ func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*p
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "destination config is empty")
 	}
 
-	// The validation payload's WorkspaceID is caller-controlled. Until this RPC
-	// receives an authenticated workspace identity, it cannot safely use that ID
-	// as the external ID when assuming a MaxCompute role.
-	if reqModel.Destination.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE &&
-		warehouseutils.ReadAsBool("roleBasedAuth", reqModel.Destination.Config) {
-		return &proto.WHValidationResponse{},
-			status.Error(codes.PermissionDenied, "MaxCompute role-based validation requires an authenticated workspace")
-	}
-
 	// adding ssh tunnelling info, given we have
 	// useSSH enabled from upstream
 	if g.config.enableTunnelling {
@@ -722,12 +713,6 @@ func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *pr
 		}
 	case warehouseutils.AlibabaOSS:
 		err = warehouseutils.ValidateMaxComputeOSSConfig(validateRequest.Config)
-		if err == nil && warehouseutils.ReadAsBool("roleBasedAuth", validateRequest.Config) {
-			// This RPC has no authenticated workspace identity to bind the role's
-			// external ID to; caller-supplied externalID must not authorize STS.
-			return &proto.ValidateObjectStorageResponse{},
-				status.Error(codes.PermissionDenied, "Alibaba OSS role-based validation requires an authenticated workspace")
-		}
 	default:
 		err = fmt.Errorf("type: %v not supported", request.Type)
 	}
@@ -765,9 +750,15 @@ func checkMapForValidKey(configMap map[string]any, key string) bool {
 }
 
 func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObjectStorageRequest) error {
+	storageConfig := request.Config
+	if request.Type == warehouseutils.AlibabaOSS {
+		storageConfig = misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider: request.Type, Config: request.Config,
+		})
+	}
 	settings := &filemanager.Settings{
 		Provider: request.Type,
-		Config:   request.Config,
+		Config:   storageConfig,
 		Conf:     g.conf,
 	}
 

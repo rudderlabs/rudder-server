@@ -10,6 +10,8 @@ import (
 	"github.com/aliyun/aliyun-odps-go-sdk/odps"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -17,8 +19,8 @@ import (
 func testManager() *MaxCompute {
 	o := odps.NewOdps(nil, "https://service.cn-hangzhou.maxcompute.aliyun.com/api")
 	o.SetDefaultProjectName("project")
-	m := &MaxCompute{odps: o, warehouse: model.Warehouse{WorkspaceID: "workspace"}}
-	m.warehouse.Destination.Config = map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou", "accessKeyID": "id", "accessKey": "secret", "skipViews": true}
+	m := &MaxCompute{odps: o, warehouse: model.Warehouse{WorkspaceID: "workspace"}, conf: config.New()}
+	m.warehouse.Destination.Config = map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou", "accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "read-role", "endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "skipViews": true}
 	return m
 }
 
@@ -33,7 +35,7 @@ func TestOSSLoadChecksMetadataBeforeSQL(t *testing.T) {
 		require.Contains(t, sql, "LOAD DATA INPATH 'oss://my-bucket/path/file.gz'")
 		return nil
 	}
-	metadataSize = func(_ context.Context, conf map[string]any, key string) (int64, error) {
+	metadataSize = func(_ context.Context, _ *config.Config, conf map[string]any, key string) (int64, error) {
 		require.Equal(t, "path/file.gz", key)
 		require.Equal(t, "my-bucket", conf["bucketName"])
 		return maxOSSLoadBytes + 1, nil
@@ -41,15 +43,19 @@ func TestOSSLoadChecksMetadataBeforeSQL(t *testing.T) {
 	_, err := m.loadTable(context.Background(), "events", location)
 	require.ErrorContains(t, err, "3GB")
 	require.Zero(t, called)
-	metadataSize = func(context.Context, map[string]any, string) (int64, error) { return 0, errors.New("unavailable") }
+	metadataSize = func(context.Context, *config.Config, map[string]any, string) (int64, error) {
+		return 0, errors.New("unavailable")
+	}
 	_, err = m.loadTable(context.Background(), "events", location)
 	require.Error(t, err)
 	require.Zero(t, called)
-	metadataSize = func(context.Context, map[string]any, string) (int64, error) { return 0, nil }
+	metadataSize = func(context.Context, *config.Config, map[string]any, string) (int64, error) { return 0, nil }
 	_, err = m.loadTable(context.Background(), "events", location)
 	require.ErrorContains(t, err, "length")
 	require.Zero(t, called)
-	metadataSize = func(context.Context, map[string]any, string) (int64, error) { return maxOSSLoadBytes, nil }
+	metadataSize = func(context.Context, *config.Config, map[string]any, string) (int64, error) {
+		return maxOSSLoadBytes, nil
+	}
 	stats, err := m.loadTable(context.Background(), "events", location)
 	require.NoError(t, err)
 	require.EqualValues(t, 0, stats.RowsInserted) // test SQL executor has no task summary
@@ -80,7 +86,7 @@ func TestPrecheckAllFilesAndCatalogViewBeforeLoad(t *testing.T) {
 		catalogCalls++
 		return model.Schema{"events": {"id": "string", "received_at": "datetime", "current_column": "string"}}, nil
 	}
-	metadataSize = func(_ context.Context, _ map[string]any, key string) (int64, error) {
+	metadataSize = func(_ context.Context, _ *config.Config, _ map[string]any, key string) (int64, error) {
 		if key == "two.gz" {
 			return 0, nil
 		}
@@ -90,7 +96,7 @@ func TestPrecheckAllFilesAndCatalogViewBeforeLoad(t *testing.T) {
 	require.ErrorContains(t, err, "length")
 	require.Empty(t, statements)
 	require.Zero(t, catalogCalls)
-	metadataSize = func(context.Context, map[string]any, string) (int64, error) { return 10, nil }
+	metadataSize = func(context.Context, *config.Config, map[string]any, string) (int64, error) { return 10, nil }
 	m.catalog = func(context.Context) (model.Schema, error) {
 		return nil, errors.New("catalog unavailable")
 	}
@@ -172,10 +178,15 @@ func TestFixedViewsAndNames(t *testing.T) {
 func TestMaxComputeConfiguredEndpoint(t *testing.T) {
 	m := testManager()
 	m.warehouse.Destination.Config["project"] = "project"
-	m.warehouse.Destination.Config["odpsEndpoint"] = "https://evil.example/api"
+	m.warehouse.Destination.Config["endpoint"] = "https://evil.example/api"
 	require.ErrorContains(t, m.init(m.warehouse), "endpoint")
-	m.warehouse.Destination.Config["odpsEndpoint"] = "https://service.cn-hangzhou.maxcompute.aliyun.com/api"
+	m.warehouse.Destination.Config["endpoint"] = "https://service.cn-hangzhou.maxcompute.aliyun.com/api"
 	require.NoError(t, m.init(m.warehouse))
+	m.warehouse.Destination.Config["region"] = "us-west-1"
+	require.ErrorContains(t, m.init(m.warehouse), "endpoint")
+	m.warehouse.Destination.Config["region"] = "cn-hangzhou"
+	delete(m.warehouse.Destination.Config, "endpoint")
+	require.ErrorContains(t, m.init(m.warehouse), "endpoint is required")
 }
 
 func TestPreDDLAndTimeoutAndDeleteBy(t *testing.T) {

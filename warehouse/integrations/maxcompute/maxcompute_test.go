@@ -47,29 +47,39 @@ func TestTypesAndConversion(t *testing.T) {
 }
 
 func TestRoleSettingsAreExclusiveAndRequireWorkspace(t *testing.T) {
-	settings := map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou", "roleBasedAuth": true, "iamRoleARN": "acs:ram::123:role/test"}
+	settings := map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou", "iamRoleARN": "acs:ram::123:role/test", "ossRoleArn": "read-role", "endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "project": "project"}
 	require.NoError(t, validateOSSSettings(settings, "workspace"))
 	require.ErrorContains(t, validateOSSSettings(settings, ""), "workspace ID")
-	settings["accessKeyID"] = "destination-key"
+	settings["accessKeyId"] = "destination-key"
 	require.ErrorContains(t, validateOSSSettings(settings, "workspace"), "cannot be combined")
-	delete(settings, "accessKeyID")
-	settings["accessKey"] = "destination-secret"
+	delete(settings, "accessKeyId")
+	settings["accessKeySecret"] = "destination-secret"
 	require.ErrorContains(t, validateOSSSettings(settings, "workspace"), "cannot be combined")
-	delete(settings, "accessKey")
+	delete(settings, "accessKeySecret")
 	m := testManager()
 	m.warehouse.Destination.Config = settings
-	m.warehouse.Destination.Config["project"] = "project"
 	m.warehouse.Destination.WorkspaceID = "workspace"
-	config.Default.Set("FileManager.ALIBABA_OSS.callerAccessKeyID", "")
-	config.Default.Set("FileManager.ALIBABA_OSS.callerAccessKeySecret", "")
+	m.conf = config.New()
 	require.ErrorContains(t, m.init(m.warehouse), "caller credentials unavailable")
-	config.Default.Set("FileManager.ALIBABA_OSS.callerAccessKeyID", "server-id")
-	config.Default.Set("FileManager.ALIBABA_OSS.callerAccessKeySecret", "server-secret")
-	t.Cleanup(func() {
-		config.Default.Set("FileManager.ALIBABA_OSS.callerAccessKeyID", "")
-		config.Default.Set("FileManager.ALIBABA_OSS.callerAccessKeySecret", "")
-	})
+	m.conf.Set("FileManager.ALIBABA_OSS.callerAccessKeyID", "server-id")
+	m.conf.Set("FileManager.ALIBABA_OSS.callerAccessKeySecret", "server-secret")
 	require.NoError(t, m.init(m.warehouse))
+}
+
+func TestOSSMetadataUsesInjectedCallerConfig(t *testing.T) {
+	previousID := config.Default.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeyID")
+	previousSecret := config.Default.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeySecret")
+	config.Default.Set("FileManager.ALIBABA_OSS.callerAccessKeyID", "global-id")
+	config.Default.Set("FileManager.ALIBABA_OSS.callerAccessKeySecret", "global-secret")
+	t.Cleanup(func() {
+		config.Default.Set("FileManager.ALIBABA_OSS.callerAccessKeyID", previousID)
+		config.Default.Set("FileManager.ALIBABA_OSS.callerAccessKeySecret", previousSecret)
+	})
+	_, err := ossObjectSize(context.Background(), config.New(), map[string]any{
+		"bucketName": "bucket", "region": "cn-hangzhou", "roleBasedAuth": true,
+		"iamRoleARN": "acs:ram::123:role/test", "externalID": "workspace",
+	}, "object")
+	require.EqualError(t, err, "OSS credentials unavailable")
 }
 
 func TestCreateTableStatements(t *testing.T) {

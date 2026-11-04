@@ -351,11 +351,22 @@ func GetObjectLocation(provider, location string) (objectLocation string) {
 
 // GetObjectName extracts object/key objectName from different buckets locations
 // ex: https://bucket-endpoint/bucket-name/object -> object
-func GetObjectName(location string, providerConfig any, objectProvider string) (objectName string, err error) {
+func GetObjectName(location string, providerConfig any, objectProvider string, workspaceID ...string) (objectName string, err error) {
 	var destConfig map[string]any
 	var ok bool
 	if destConfig, ok = providerConfig.(map[string]any); !ok {
 		return "", errors.New("failed to cast destination config interface{} to map[string]interface{}")
+	}
+	if objectProvider == AlibabaOSS {
+		if len(workspaceID) != 1 || workspaceID[0] == "" {
+			return "", errors.New("MaxCompute workspace ID is required for OSS key recovery")
+		}
+		if err := ValidateMaxComputeOSSConfig(destConfig); err != nil {
+			return "", err
+		}
+		destConfig = misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider: objectProvider, Config: destConfig, WorkspaceID: workspaceID[0],
+		})
 	}
 	fm, err := filemanager.New(&filemanager.Settings{
 		Provider: objectProvider,

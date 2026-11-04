@@ -20,12 +20,16 @@ func NewODPSCredentials(refresh func() (*credentials.CredentialModel, error)) *O
 	return &ODPSCredentials{refresh: refresh}
 }
 
-// GuardODPSCredentials sanitizes refresh errors from either role (STS) or
-// access-key providers before the ODPS SDK can expose them in an error.
-// It does not assume a token exists for access-key credentials.
+// GuardODPSCredentials sanitizes role refresh results before SDK signing.
 func GuardODPSCredentials(credential credentials.Credential) credentials.Credential {
 	if credential == nil {
 		return nil
+	}
+	if _, guarded := credential.(*odpsCredentialGuard); guarded {
+		return credential
+	}
+	if _, guarded := credential.(*ODPSCredentials); guarded {
+		return credential
 	}
 	return &odpsCredentialGuard{credential: credential}
 }
@@ -35,10 +39,10 @@ type odpsCredentialGuard struct {
 	credential credentials.Credential
 }
 
-func odpsCredentialModel(model *credentials.CredentialModel, err error, requireToken bool) (*credentials.CredentialModel, error) {
+func odpsCredentialModel(model *credentials.CredentialModel, err error) (*credentials.CredentialModel, error) {
 	if err != nil || model == nil || model.AccessKeyId == nil || *model.AccessKeyId == "" ||
 		model.AccessKeySecret == nil || *model.AccessKeySecret == "" ||
-		(requireToken && (model.SecurityToken == nil || *model.SecurityToken == "")) {
+		model.SecurityToken == nil || *model.SecurityToken == "" {
 		return nil, errors.New("ODPS credentials unavailable")
 	}
 	id, secret := *model.AccessKeyId, *model.AccessKeySecret
@@ -57,7 +61,7 @@ func (c *ODPSCredentials) GetCredential() (*credentials.CredentialModel, error) 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	model, err := c.refresh()
-	return odpsCredentialModel(model, err, true)
+	return odpsCredentialModel(model, err)
 }
 
 func (c *ODPSCredentials) GetType() *string {
@@ -98,7 +102,7 @@ func (c *odpsCredentialGuard) GetCredential() (*credentials.CredentialModel, err
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	model, err := c.credential.GetCredential()
-	return odpsCredentialModel(model, err, false)
+	return odpsCredentialModel(model, err)
 }
 
 func (c *odpsCredentialGuard) GetType() *string {

@@ -26,7 +26,8 @@ func maxComputeDestination() *backendconfig.DestinationT {
 		DestinationDefinition: backendconfig.DestinationDefinitionT{Name: warehouseutils.MAXCOMPUTE},
 		Config: map[string]any{
 			"bucketName": "customer-bucket", "region": "cn-hangzhou",
-			"accessKeyID": "id", "accessKey": "secret", "project": "MyProject",
+			"accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "read-role", "project": "MyProject",
+			"endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api",
 		},
 	}
 }
@@ -69,7 +70,6 @@ func TestMaxComputeValidationFixture(t *testing.T) {
 
 func TestMaxComputeOSSValidationRejectsInvalidAuthBeforeManager(t *testing.T) {
 	dest := maxComputeDestination()
-	dest.Config["roleBasedAuth"] = true
 	dest.Config["iamRoleARN"] = "role"
 	_, err := NewValidator(context.Background(), model.VerifyingConnections, dest)
 	require.ErrorContains(t, err, "cannot be combined")
@@ -78,18 +78,18 @@ func TestMaxComputeOSSValidationRejectsInvalidAuthBeforeManager(t *testing.T) {
 func TestMaxComputeFileManagerRejectsMissingCredentials(t *testing.T) {
 	Init()
 	dest := maxComputeDestination()
-	dest.Config["accessKey"] = ""
+	dest.Config["accessKeySecret"] = ""
 	_, err := createFileManager(dest)
-	require.ErrorContains(t, err, "accessKeyID and accessKey")
+	require.ErrorContains(t, err, "complete pair")
 }
 
 func TestMaxComputeOSSManagerSettings(t *testing.T) {
 	Init()
 	dest := maxComputeDestination()
-	dest.Config["roleBasedAuth"] = true
 	dest.Config["iamRoleARN"] = "role"
-	delete(dest.Config, "accessKeyID")
-	delete(dest.Config, "accessKey")
+	delete(dest.Config, "accessKeyId")
+	delete(dest.Config, "accessKeySecret")
+	dest.Config["externalID"] = "untrusted"
 	dest.Config["useRudderStorage"] = true
 	var settings *filemanager.Settings
 	originalFactory := fileManagerFactory
@@ -102,19 +102,20 @@ func TestMaxComputeOSSManagerSettings(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, warehouseutils.AlibabaOSS, settings.Provider)
 	require.Equal(t, dest.WorkspaceID, settings.Config["externalID"])
+	require.Equal(t, "untrusted", dest.Config["externalID"])
 	require.Equal(t, "customer-bucket", settings.Config["bucketName"])
 	require.NotContains(t, settings.Config, "useRudderStorage")
 	require.NotContains(t, settings.Config, "accessKeyID")
 	require.NotContains(t, settings.Config, "accessKey")
-	dest.Config["roleBasedAuth"] = false
 	delete(dest.Config, "iamRoleARN")
-	dest.Config["accessKeyID"] = "id"
-	dest.Config["accessKey"] = "secret"
+	dest.Config["accessKeyId"] = "id"
+	dest.Config["accessKeySecret"] = "secret"
 	_, err = createFileManager(dest)
 	require.NoError(t, err)
 	require.Equal(t, "id", settings.Config["accessKeyID"])
 	require.Equal(t, "secret", settings.Config["accessKey"])
-	require.Equal(t, "id", dest.Config["accessKeyID"])
+	require.Equal(t, "id", dest.Config["accessKeyId"])
+	require.NotContains(t, settings.Config, "externalID")
 }
 
 // Only SetTimeout is reached when exercising the converted settings.

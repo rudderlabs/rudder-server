@@ -12,7 +12,6 @@ import (
 	"github.com/aliyun/aliyun-odps-go-sdk/odps"
 	"github.com/aliyun/aliyun-odps-go-sdk/odps/tableschema"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -199,7 +198,7 @@ func (m *MaxCompute) currentUserFiles(ctx context.Context) ([]string, error) {
 		Provider: warehouseutils.AlibabaOSS, Config: m.warehouse.Destination.Config,
 		WorkspaceID: m.warehouse.Destination.WorkspaceID,
 	})
-	fm, err := filemanager.New(&filemanager.Settings{Provider: warehouseutils.AlibabaOSS, Config: converted, Conf: config.Default})
+	fm, err := filemanager.New(&filemanager.Settings{Provider: warehouseutils.AlibabaOSS, Config: converted, Conf: m.conf})
 	if err != nil {
 		return nil, errors.New("creating MaxCompute OSS filemanager failed")
 	}
@@ -223,7 +222,7 @@ func (m *MaxCompute) currentUserFiles(ctx context.Context) ([]string, error) {
 		if strings.TrimPrefix(parsed.Path, "/") != key {
 			return nil, errors.New("invalid MaxCompute OSS source")
 		}
-		length, err := metadataSize(ctx, converted, key)
+		length, err := metadataSize(ctx, m.conf, converted, key)
 		if err != nil {
 			return nil, err
 		}

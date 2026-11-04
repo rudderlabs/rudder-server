@@ -33,44 +33,60 @@ var (
 
 var (
 	odpsProjectName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{0,127}$`)
-	odpsRegionName  = regexp.MustCompile(`^[a-z]{2}-[a-z0-9]+(?:-[a-z0-9]+)*$`)
+	odpsRegionName  = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 )
 
-// NewODPSClient validates the project, region and optional API endpoint before
-// the SDK can make requests. Only the same region's public MaxCompute endpoint
-// over HTTPS is accepted. Use NewODPSClientWithEndpoint for a configured endpoint.
+// NewODPSClient uses the region's public MaxCompute endpoint for role auth.
+// Use NewODPSClientWithEndpoint for a configured endpoint.
 func NewODPSClient(project, region string, credential credentials.Credential) (*odps.Odps, error) {
-	return NewODPSClientWithEndpoint(project, region, "", credential)
+	return NewODPSClientWithEndpoint(project, region, "https://service."+region+".maxcompute.aliyun.com/api", credential)
 }
 
-// NewODPSClientWithEndpoint accepts an empty endpoint (the regional default) or
-// the exact public API URL for region. It guards credentials regardless of
-// whether the provider returns STS tokens or long-lived access keys.
-func NewODPSClientWithEndpoint(project, region, endpoint string, credential credentials.Credential) (*odps.Odps, error) {
+// ValidateODPSEndpoint checks the credential-bearing project endpoint before
+// credentials are attached to an SDK client.
+func ValidateODPSEndpoint(project, region, endpoint string) error {
 	if !odpsProjectName.MatchString(project) || !odpsRegionName.MatchString(region) {
-		return nil, errors.New("invalid ODPS project or region")
-	}
-	if !strings.HasPrefix(region, "cn-") && !strings.HasPrefix(region, "ap-") &&
-		!strings.HasPrefix(region, "eu-") && !strings.HasPrefix(region, "us-") &&
-		!strings.HasPrefix(region, "me-") {
-		return nil, errors.New("unsupported ODPS region")
+		return errors.New("invalid ODPS project or region")
 	}
 	allowedEndpoint := "https://service." + region + ".maxcompute.aliyun.com/api"
-	if endpoint == "" {
-		endpoint = allowedEndpoint
-	}
 	if endpoint != allowedEndpoint {
-		return nil, errors.New("invalid ODPS endpoint")
+		return errors.New("invalid ODPS endpoint")
+	}
+	return nil
+}
+
+// NewODPSClientWithEndpoint accepts only the exact public API URL for region.
+// Role credentials are checked on every refresh before the SDK signs requests.
+func NewODPSClientWithEndpoint(project, region, endpoint string, credential credentials.Credential) (*odps.Odps, error) {
+	if err := ValidateODPSEndpoint(project, region, endpoint); err != nil {
+		return nil, err
 	}
 	if credential == nil {
 		return nil, errors.New("ODPS credentials unavailable")
 	}
 	instance := odps.NewOdps(account.NewStsAccountWithCredential(GuardODPSCredentials(credential), region), endpoint)
+	configureODPSClient(instance, project, region)
+	return instance, nil
+}
+
+// NewODPSClientWithAccessKey uses the SDK's non-STS account for static keys.
+func NewODPSClientWithAccessKey(project, region, endpoint, id, secret string) (*odps.Odps, error) {
+	if err := ValidateODPSEndpoint(project, region, endpoint); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(secret) == "" {
+		return nil, errors.New("ODPS credentials unavailable")
+	}
+	instance := odps.NewOdps(account.NewAliyunAccount(id, secret, region), endpoint)
+	configureODPSClient(instance, project, region)
+	return instance, nil
+}
+
+func configureODPSClient(instance *odps.Odps, project, region string) {
 	instance.SetDefaultProjectName(project)
 	instance.SetHttpTimeout(odpsRequestTimeout)
 	instance.SetTcpConnectTimeout(odpsRequestTimeout)
 	instance.Options.RegionId = region
-	return instance, nil
 }
 
 func NewODPSWarehouseClient(project, region string, credential credentials.Credential) (*Client, error) {
