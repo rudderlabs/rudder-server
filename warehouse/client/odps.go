@@ -32,8 +32,13 @@ var (
 )
 
 var (
-	odpsProjectName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{0,127}$`)
-	odpsRegionName  = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+	odpsProjectName       = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{0,127}$`)
+	odpsRegionName        = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+	odpsErrorCodePattern  = regexp.MustCompile(`(?i)ODPS-[0-9]{7}`)
+	odpsURLPattern        = regexp.MustCompile(`(?i)\b(?:https?|oss)://[^\s<>"']+`)
+	odpsCredentialPattern = regexp.MustCompile(`(?i)\b(?:access[_-]?key(?:[_-]?(?:id|secret))?|security[_-]?token|x-acs-security-token|authorization|password|signature|secret)\b["']?\s*[:=]\s*["']?[^\s,"';]+`)
+	odpsBearerPattern     = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+`)
+	odpsOpaqueKeyPattern  = regexp.MustCompile(`\b(?:LTAI|CAIS|AKIA)[A-Za-z0-9+/=]{8,}`)
 )
 
 // NewODPSClient uses the region's public MaxCompute endpoint for role auth.
@@ -137,7 +142,7 @@ func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeo
 	if instance.IsSync() {
 		for _, task := range instance.TaskResults() {
 			if task.Status != odps.TaskSuccess {
-				return nil, errors.New("ODPS query failed")
+				return nil, odpsTaskFailure(instance)
 			}
 		}
 		return instance, nil
@@ -173,7 +178,7 @@ func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeo
 		for _, task := range tasks {
 			switch task.Status {
 			case odps.TaskFailed, odps.TaskCancelled, odps.TaskSuspended:
-				return nil, errors.New("ODPS query failed")
+				return nil, odpsTaskFailure(instance)
 			case odps.TaskSuccess:
 			default:
 				finished = false
@@ -188,6 +193,19 @@ func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeo
 		case <-time.After(interval):
 		}
 	}
+}
+
+func odpsTaskFailure(instance *odps.Instance) error {
+	results, err := instance.GetResult()
+	if err != nil {
+		return ODPSSafeError(err)
+	}
+	for _, result := range results {
+		if result.Content() != "" {
+			return ODPSSafeError(errors.New(result.Content()))
+		}
+	}
+	return errors.New("ODPS query failed")
 }
 
 // odpsQuery uses the same bounded job runner as the MaxCompute manager.
@@ -259,37 +277,53 @@ func ODPSSafeError(err error) error {
 	if err == nil {
 		return nil
 	}
-	// HttpError is a value in the SDK, but wrapped pointers are possible too.
-	// Never inspect its Error(), Status, Body or server-provided Message.
+	// HttpError.Error() includes its raw body and request metadata. Read only
+	// structured code/message fields, or parse those fields from the body.
 	if httpErr, ok := errors.AsType[restclient.HttpError](err); ok {
-		return odpsHTTPStatusError(httpErr.StatusCode, httpErr.ErrorMessage)
+		return odpsHTTPStatusError(httpErr.StatusCode, httpErr.ErrorMessage, httpErr.Body)
 	}
 	if httpErr, ok := errors.AsType[*restclient.HttpError](err); ok && httpErr != nil {
-		return odpsHTTPStatusError(httpErr.StatusCode, httpErr.ErrorMessage)
+		return odpsHTTPStatusError(httpErr.StatusCode, httpErr.ErrorMessage, httpErr.Body)
 	}
 	if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
 		return errors.New("ODPS request timed out")
 	}
-	// The SDK sometimes returns raw task text on synchronous job failure.
-	// Inspect it only for a fixed vocabulary; never return the message itself.
+	// The SDK returns failed SQL task text as a plain error. Preserve the ODPS
+	// diagnostic after removing credential-bearing content.
 	return odpsErrorCode(err.Error())
 }
 
-func odpsHTTPStatusError(status int, message *restclient.ErrorMessage) error {
+func odpsHTTPStatusError(status int, message *restclient.ErrorMessage, body []byte) error {
+	if message == nil {
+		message = restclient.NewErrorMessage(body)
+	}
+	var base error
 	switch status {
 	case 401, 403:
-		return errors.New("ODPS authentication or permission denied")
+		base = errors.New("ODPS authentication or permission denied")
 	case 404:
-		return errors.New("ODPS resource not found")
+		base = errors.New("ODPS resource not found")
 	case 429, 503:
-		return errors.New("ODPS service temporarily unavailable")
+		base = errors.New("ODPS service temporarily unavailable")
 	}
 	if message != nil {
-		// Only classify known codes; do not return server-provided text.
-		if classified := odpsKnownCode(message.ErrorCode); classified != nil {
-			return classified
+		if base == nil {
+			base = odpsKnownCode(message.ErrorCode)
+		}
+		if diagnostic := odpsDiagnostic(message.ErrorCode, message.Message); diagnostic != "" {
+			if base == nil {
+				base = odpsStatusError(status)
+			}
+			return fmt.Errorf("%w: %s", base, diagnostic)
 		}
 	}
+	if base != nil {
+		return base
+	}
+	return odpsStatusError(status)
+}
+
+func odpsStatusError(status int) error {
 	if status < 100 || status > 599 {
 		return errors.New("ODPS request failed")
 	}
@@ -297,10 +331,44 @@ func odpsHTTPStatusError(status int, message *restclient.ErrorMessage) error {
 }
 
 func odpsErrorCode(text string) error {
+	if diagnostic := odpsDiagnostic("", text); diagnostic != "" {
+		return fmt.Errorf("ODPS query failed: %s", diagnostic)
+	}
 	if classified := odpsKnownCode(text); classified != nil {
 		return classified
 	}
 	return errors.New("ODPS request failed")
+}
+
+func odpsDiagnostic(code, message string) string {
+	odpsCode := strings.ToUpper(odpsErrorCodePattern.FindString(code + " " + message))
+	if odpsCode == "" {
+		return ""
+	}
+	if index := strings.Index(strings.ToUpper(message), odpsCode); index >= 0 {
+		message = strings.TrimLeft(message[index+len(odpsCode):], ": \t")
+	}
+	message = strings.TrimSpace(strings.SplitN(strings.SplitN(message, "\n", 2)[0], "\r", 2)[0])
+	// An embedded request dump is not an ODPS diagnostic. Keep only its code.
+	lower := strings.ToLower(message)
+	if strings.HasPrefix(message, "{") || strings.HasPrefix(message, "<") ||
+		strings.Contains(lower, "request body") || strings.Contains(lower, "request headers") {
+		return odpsCode
+	}
+	message = odpsURLPattern.ReplaceAllString(message, "[URL]")
+	message = odpsBearerPattern.ReplaceAllString(message, "[credential]")
+	message = odpsCredentialPattern.ReplaceAllString(message, "[credential]")
+	message = odpsOpaqueKeyPattern.ReplaceAllString(message, "[credential]")
+	if len(message) > 512 {
+		runes := []rune(message)
+		if len(runes) > 512 {
+			message = string(runes[:512])
+		}
+	}
+	if message == "" {
+		return odpsCode
+	}
+	return odpsCode + ": " + message
 }
 
 func odpsKnownCode(text string) error {

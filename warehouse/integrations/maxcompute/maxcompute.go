@@ -169,36 +169,41 @@ func (m *MaxCompute) TestConnection(ctx context.Context, warehouse model.Warehou
 // someone else. The project itself is not a schema; only check schema ownership
 // when an explicit namespace is configured. New schemas have no owner yet.
 func (m *MaxCompute) checkNamespaceOwner(ctx context.Context) error {
+	_, err := m.namespaceExistsAndOwned(ctx)
+	return err
+}
+
+func (m *MaxCompute) namespaceExistsAndOwned(ctx context.Context) (bool, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return false, err
 	}
 	if m.odps == nil {
-		return errors.New("MaxCompute client is not initialized")
+		return false, errors.New("MaxCompute client is not initialized")
 	}
 	if m.namespace() == "" {
-		return nil
+		return false, nil
 	}
 	schema := m.odps.Schema(m.namespace())
 	if err := schema.Load(); err != nil {
 		if httpErr, ok := errors.AsType[restclient.HttpError](err); ok && httpErr.StatusCode == http.StatusNotFound {
-			return ctx.Err() // no existing schema to write to
+			return false, ctx.Err() // no existing schema to write to
 		}
-		return fmt.Errorf("loading MaxCompute schema: %w", client.ODPSSafeError(err))
+		return false, fmt.Errorf("loading MaxCompute schema: %w", client.ODPSSafeError(err))
 	}
 	owner := strings.TrimSpace(schema.Owner())
 	if owner == "" {
-		return errors.New("MaxCompute schema owner unavailable")
+		return false, errors.New("MaxCompute schema owner unavailable")
 	}
 	// ODPS security WHOAMI reports the effective principal, including assumed
 	// roles. Do not infer identity from an access key or the project owner.
 	principal, err := m.currentPrincipal(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if owner != principal {
-		return errors.New("MaxCompute schema is not owned by the current principal")
+		return false, errors.New("MaxCompute schema is not owned by the current principal")
 	}
-	return ctx.Err()
+	return true, ctx.Err()
 }
 
 func (m *MaxCompute) currentPrincipal(ctx context.Context) (string, error) {
@@ -393,7 +398,7 @@ func (m *MaxCompute) runSQL(ctx context.Context, statement string, summary bool)
 	defer cancel()
 	ins, err := client.RunODPSSQL(ctx, m.odps, statement, timeout, m.pollInterval)
 	if err != nil {
-		return 0, fmt.Errorf("running MaxCompute SQL: %w", err)
+		return 0, fmt.Errorf("running MaxCompute %s SQL: %w", sqlPurpose(statement), err)
 	}
 	if !summary {
 		return 0, nil
@@ -406,6 +411,18 @@ func (m *MaxCompute) runSQL(ctx context.Context, statement string, summary bool)
 		return -1, nil
 	}
 	return rows, nil
+}
+
+func sqlPurpose(statement string) string {
+	for _, candidate := range []string{
+		"CREATE SCHEMA", "CREATE TABLE", "ALTER TABLE", "CREATE OR REPLACE VIEW",
+		"LOAD INTO TABLE", "INSERT INTO", "DROP TABLE", "DROP VIEW", "SELECT",
+	} {
+		if strings.HasPrefix(statement, candidate+" ") || statement == candidate {
+			return candidate
+		}
+	}
+	return "statement"
 }
 
 func (m *MaxCompute) loadTaskSummary(ctx context.Context, ins *odps.Instance) (int64, error) {
@@ -463,18 +480,18 @@ func (m *MaxCompute) CreateSchema(ctx context.Context) error {
 	if m.namespace() == "" {
 		return m.TestConnection(ctx, m.warehouse)
 	}
-	if err := m.checkNamespaceOwner(ctx); err != nil {
+	exists, err := m.namespaceExistsAndOwned(ctx)
+	if err != nil {
 		return err
+	}
+	if exists {
+		return nil
 	}
 	part, err := quote(m.namespace())
 	if err != nil {
 		return err
 	}
-	project, err := quote(m.odps.DefaultProjectName())
-	if err != nil {
-		return err
-	}
-	return m.run(ctx, "CREATE SCHEMA IF NOT EXISTS "+project+"."+part)
+	return m.run(ctx, "CREATE SCHEMA "+part)
 }
 
 func (m *MaxCompute) CreateTable(ctx context.Context, table string, columns model.TableSchema) error {

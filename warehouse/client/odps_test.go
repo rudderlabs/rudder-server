@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -215,6 +216,26 @@ func TestODPSErrorSanitization(t *testing.T) {
 	require.NoError(t, ODPSSafeError(nil))
 }
 
+func TestODPSErrorKeepsDiagnosticWithoutCredentials(t *testing.T) {
+	accessKey := "LTAI1234567890abcdef"
+	securityToken := "CAIS1234567890abcdef"
+	message := "ODPS-0130161: Parse exception near SCHEMA; accessKeyId=" + accessKey +
+		" securityToken=" + securityToken + " https://example.invalid/signed?token=secret"
+	body := []byte(`{"Code":"ODPS-0130161","Message":` + strconv.Quote(message) + `}`)
+	for _, input := range []error{
+		restclient.HttpError{StatusCode: 400, Body: body},
+		errors.New(message), // SDK task failures are plain errors.New(result).
+	} {
+		diagnostic := ODPSSafeError(input).Error()
+		require.Contains(t, diagnostic, "ODPS-0130161")
+		require.Contains(t, diagnostic, "Parse exception near SCHEMA")
+		require.NotContains(t, diagnostic, accessKey)
+		require.NotContains(t, diagnostic, securityToken)
+		require.NotContains(t, diagnostic, "example.invalid")
+		require.NotContains(t, diagnostic, "secret")
+	}
+}
+
 func TestODPSQueryHints(t *testing.T) {
 	hints := odpsQueryHints()
 	require.Equal(t, "UTC", hints["odps.sql.timezone"])
@@ -273,7 +294,7 @@ func TestODPSQueryPolling(t *testing.T) {
 		taskReply string
 		want      string
 	}{
-		{"failed", `<Instance><Tasks><Task><Status>FAILED</Status></Task></Tasks></Instance>`, "ODPS query failed"},
+		{"failed", `<Instance><Tasks><Task><Status>FAILED</Status><Result><![CDATA[ODPS-0130161: Parse exception]]></Result></Task></Tasks></Instance>`, "ODPS query failed: ODPS-0130161: Parse exception"},
 		{"suspended", `<Instance><Tasks><Task><Status>SUSPENDED</Status></Task></Tasks></Instance>`, "ODPS query failed"},
 		{"terminated", `<Instance><Status>TERMINATED</Status></Instance>`, "ODPS query terminated"},
 	} {

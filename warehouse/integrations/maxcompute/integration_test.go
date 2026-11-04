@@ -180,7 +180,7 @@ func testIntegrationEvents(t *testing.T, c integrationCredentials, role bool) {
 	).WithWorkspaceID(workspaceID).Build()
 	whth.BootstrapSvc(t, workspaceConfig, httpPort, stack.Port("jobsDb", 5432))
 	m := integrationManager(t, destination, namespace, nil)
-	require.NoError(t, m.CreateSchema(context.Background()))
+	require.NoError(t, m.CreateSchema(context.Background()), "SQL purpose: create event schema")
 	jobsDB := whth.JobsDB(t, stack.Port("jobsDb", 5432))
 	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 	fixture := integrationEventsFixture(t, "../testdata/upload-job.events-1.json", false)
@@ -269,7 +269,7 @@ func assertIntegrationCount(t *testing.T, m *integrationRuntime, namespace, tabl
 	statement := fmt.Sprintf("SELECT COUNT(*) FROM `%s`.`%s`.`%s` WHERE %s AND `%s` = '%s'", m.service.DefaultProjectName(), namespace, table, integrationPTBounds(), column, value)
 	require.EventuallyWithT(t, func(c *assert.CollectT) {
 		result, err := client.QueryODPS(context.Background(), m.service, statement, 5*time.Minute, time.Second)
-		if !assert.NoError(c, err) || !assert.Len(c, result.Values, 1) || !assert.Len(c, result.Values[0], 1) {
+		if !assert.NoError(c, err, "SQL purpose: bounded table readback") || !assert.Len(c, result.Values, 1) || !assert.Len(c, result.Values[0], 1) {
 			return
 		}
 		actual, err := strconv.ParseInt(result.Values[0][0], 10, 64)
@@ -338,12 +338,12 @@ func testIntegrationPartition(t *testing.T, c integrationCredentials, role bool,
 	dest.Config["partitionType"] = partitionType
 	m := integrationManager(t, dest, namespace, nil)
 	ctx := context.Background()
-	require.NoError(t, m.CreateSchema(ctx))
+	require.NoError(t, m.CreateSchema(ctx), "SQL purpose: create partition-probe schema")
 	columns := model.TableSchema{
 		"id": "string", "user_id": "string", "uuid_ts": "datetime",
 		"received_at": "datetime", "loaded_at": "datetime",
 	}
-	require.NoError(t, m.CreateTable(ctx, "partition_probe", columns))
+	require.NoError(t, m.CreateTable(ctx, "partition_probe", columns), "SQL purpose: create partition-probe table")
 	plan, err := m.CatalogPartition(ctx, "partition_probe")
 	require.NoError(t, err)
 	wantSource := "uuid_ts"
@@ -361,7 +361,7 @@ func testIntegrationPartition(t *testing.T, c integrationCredentials, role bool,
 	}
 	require.NoError(t, m.Setup(ctx, m.warehouse, integrationUploader{files: []warehouseutils.LoadFile{integrationUploadRow(t, dest, "partition_probe", row)}}))
 	stats, err := m.LoadTable(ctx, "partition_probe")
-	require.NoError(t, err)
+	require.NoError(t, err, "SQL purpose: LOAD partition-probe folder")
 	require.EqualValues(t, 1, stats.RowsInserted)
 	assertIntegrationCount(t, m, namespace, "partition_probe", "id", "integration_row", 1)
 	partitionValue := stamp.Format("2006-01-02")
@@ -370,7 +370,7 @@ func testIntegrationPartition(t *testing.T, c integrationCredentials, role bool,
 	}
 	query := fmt.Sprintf("SELECT COUNT(*) FROM `%s`.`%s`.`partition_probe` WHERE %s AND `pt` = '%s'", c.Project, namespace, integrationPTBounds(), partitionValue)
 	result, err := client.QueryODPS(ctx, m.service, query, 5*time.Minute, time.Second)
-	require.NoError(t, err)
+	require.NoError(t, err, "SQL purpose: read partition-probe pt")
 	require.Len(t, result.Values, 1)
 	require.Equal(t, "1", result.Values[0][0])
 }
@@ -383,7 +383,7 @@ func testIntegrationDiscards(t *testing.T, m *integrationRuntime, dest backendco
 	schema, err := m.FetchSchema(context.Background())
 	require.NoError(t, err)
 	if len(schema[warehouseutils.DiscardsTable]) == 0 {
-		require.NoError(t, m.CreateTable(context.Background(), warehouseutils.DiscardsTable, columns))
+		require.NoError(t, m.CreateTable(context.Background(), warehouseutils.DiscardsTable, columns), "SQL purpose: create rudder_discards table")
 	}
 	stamp := time.Now().UTC()
 	row := map[string]any{
@@ -395,7 +395,7 @@ func testIntegrationDiscards(t *testing.T, m *integrationRuntime, dest backendco
 	}
 	require.NoError(t, m.Setup(context.Background(), m.warehouse, integrationUploader{files: []warehouseutils.LoadFile{integrationUploadRow(t, dest, warehouseutils.DiscardsTable, row)}}))
 	stats, err := m.LoadTable(context.Background(), warehouseutils.DiscardsTable)
-	require.NoError(t, err)
+	require.NoError(t, err, "SQL purpose: LOAD rudder_discards folder")
 	require.EqualValues(t, 1, stats.RowsInserted)
 	assertIntegrationCount(t, m, namespace, warehouseutils.DiscardsTable, "row_id", "integration_discard", 1)
 }

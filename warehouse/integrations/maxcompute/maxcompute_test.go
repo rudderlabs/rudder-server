@@ -158,7 +158,7 @@ func TestNamespaceOwnerBeforeWrites(t *testing.T) {
 		wantError  string
 		wantWrites int
 	}{
-		{name: "existing populated owned schema", owner: "owner", principal: "owner", wantWrites: 1},
+		{name: "existing populated owned schema", owner: "owner", principal: "owner"},
 		{name: "existing populated foreign schema", owner: "other", principal: "owner", wantError: "not owned"},
 		{name: "missing owner fails closed", principal: "owner", wantError: "owner unavailable"},
 		{name: "missing schema can be created", schemaCode: http.StatusNotFound, wantWrites: 1},
@@ -190,7 +190,9 @@ func TestNamespaceOwnerBeforeWrites(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				require.Len(t, statements, tc.wantWrites)
-				require.Equal(t, "CREATE SCHEMA IF NOT EXISTS `project`.`schema`", statements[0])
+				if tc.wantWrites > 0 {
+					require.Equal(t, "CREATE SCHEMA `schema`", statements[0])
+				}
 			}
 			if tc.owner != "" && tc.schemaCode == 0 {
 				require.Equal(t, 1, called)
