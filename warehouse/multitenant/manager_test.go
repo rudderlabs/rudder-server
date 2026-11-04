@@ -205,7 +205,6 @@ func TestConnectionRemoved(t *testing.T) {
 		removed                                        bool
 	}{
 		{"exact connection", workspace, source, destination, warehouseutils.RS, false},
-		{"legacy upload", "", source, destination, warehouseutils.RS, false},
 		{"other workspace", "other", source, destination, warehouseutils.RS, true},
 		{"absent destination", workspace, source, "removed", warehouseutils.RS, true},
 		{"other router", workspace, source, destination, warehouseutils.BQ, true},

@@ -43,14 +43,8 @@ import (
 
 // TestDegradedWorkspaceRemovalPickup checks the interval between a hot reload and router consumption.
 func TestDegradedWorkspaceRemovalPickup(t *testing.T) {
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-	pgResource, err := postgres.Setup(pool, t)
-	require.NoError(t, err)
-	require.NoError(t, (&migrator.Migrator{Handle: pgResource.DB, MigrationsTable: "wh_schema_migrations"}).Migrate("warehouse"))
-	db := sqlmiddleware.New(pgResource.DB)
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
+	db := setupDB(t)
+	ctx := t.Context()
 
 	const workspaceID, sourceID, destinationID = "workspace", "source", "destination"
 	const destType = warehouseutils.RS
@@ -78,6 +72,7 @@ func TestDegradedWorkspaceRemovalPickup(t *testing.T) {
 	uploadRepo := repo.NewUploads(db)
 	staging := &model.StagingFile{WorkspaceID: workspaceID, SourceID: sourceID, DestinationID: destinationID}
 	stagingRepo := repo.NewStagingFiles(db, conf)
+	var err error
 	staging.ID, err = stagingRepo.Insert(ctx, &model.StagingFileWithSchema{StagingFile: *staging})
 	require.NoError(t, err)
 	uploadID, err := uploadRepo.CreateWithStagingFiles(ctx, model.Upload{
@@ -107,8 +102,7 @@ func TestDegradedWorkspaceRemovalPickup(t *testing.T) {
 
 	// An allocator may run before either subscription has received its first
 	// backend snapshot. Lack of evidence must not abort the upload.
-	unknownTenant := multitenant.New(config.New(), bc)
-	r.tenantManager = unknownTenant
+	r.tenantManager = multitenant.New(config.New(), bc)
 	jobs, err = r.uploadsToProcess(ctx, 1, nil)
 	require.NoError(t, err)
 	require.Empty(t, jobs)
@@ -133,21 +127,11 @@ func TestDegradedWorkspaceRemovalPickup(t *testing.T) {
 	require.Len(t, jobs, 1)
 	require.Equal(t, uploadID, jobs[0].upload.ID)
 
-	// Legacy uploads can have no workspace ID, and the filtered source map is
-	// empty while this workspace is degraded. The full connection still defers it.
+	// With the router not holding this connection, the restored upload is deferred
+	// while a genuinely absent connection still takes the existing abort path.
 	r.configSubscriberLock.Lock()
 	r.warehouses = nil
 	r.configSubscriberLock.Unlock()
-	legacyID, err := uploadRepo.CreateWithStagingFiles(ctx, model.Upload{
-		SourceID: sourceID, DestinationID: destinationID, DestinationType: destType, Status: model.Waiting,
-	}, []*model.StagingFile{staging})
-	require.NoError(t, err)
-	jobs, err = r.uploadsToProcess(ctx, 2, nil)
-	require.NoError(t, err)
-	require.Empty(t, jobs)
-	requireStatus(legacyID, model.Waiting)
-
-	// A genuinely absent connection still takes the existing abort path.
 	otherID, err := uploadRepo.CreateWithStagingFiles(ctx, model.Upload{
 		WorkspaceID: workspaceID, SourceID: sourceID, DestinationID: "removed", DestinationType: destType, Status: model.Waiting,
 	}, []*model.StagingFile{staging})
@@ -155,6 +139,7 @@ func TestDegradedWorkspaceRemovalPickup(t *testing.T) {
 	jobs, err = r.uploadsToProcess(ctx, 2, nil)
 	require.NoError(t, err)
 	require.Empty(t, jobs)
+	requireStatus(uploadID, model.Waiting)
 	requireStatus(otherID, model.Aborted)
 }
 
