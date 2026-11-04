@@ -122,8 +122,12 @@ func TestGRPC(t *testing.T) {
 											Name: whutils.POSTGRES,
 										},
 									},
+									{ID: "second_destination_id", Enabled: true, DestinationDefinition: backendconfig.DestinationDefinitionT{Name: whutils.POSTGRES}},
 								},
 							},
+							{ID: "second_source_id", Enabled: true, Destinations: []backendconfig.DestinationT{
+								{ID: destinationID, Enabled: true, DestinationDefinition: backendconfig.DestinationDefinitionT{Name: whutils.POSTGRES}},
+							}},
 						},
 					},
 					unusedWorkspaceID: {
@@ -704,6 +708,111 @@ func TestGRPC(t *testing.T) {
 					require.EqualValues(t, noPendingEvents, res.GetMessage())
 				})
 			})
+		})
+
+		t.Run("scoped retry and trigger", func(t *testing.T) {
+			u := repo.NewUploads(db)
+			s := repo.NewStagingFiles(db, c)
+			create := func(source, dest, state string) int64 {
+				file := model.StagingFile{SourceID: source, DestinationID: dest, WorkspaceID: workspaceID}
+				id, err := s.Insert(ctx, &model.StagingFileWithSchema{StagingFile: file})
+				require.NoError(t, err)
+				file.ID = id
+				id, err = u.CreateWithStagingFiles(ctx, model.Upload{SourceID: source, DestinationID: dest, WorkspaceID: workspaceID, Status: state}, []*model.StagingFile{&file})
+				require.NoError(t, err)
+				return id
+			}
+			first := create(sourceID, destinationID, model.Aborted)
+			other := create("second_source_id", destinationID, model.Aborted)
+			noWork, err := grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{WorkspaceId: workspaceID, SourceId: sourceID, DestinationId: "second_destination_id"})
+			require.NoError(t, err)
+			require.Equal(t, noPendingEvents, noWork.Message)
+			request := &proto.RetryWHUploadsRequest{WorkspaceId: workspaceID, SourceId: sourceID, UploadIds: []int64{first, other}}
+			count, err := grpcClient.CountWHUploadsToRetry(ctx, request)
+			require.NoError(t, err)
+			require.EqualValues(t, 1, count.Count)
+			result, err := grpcClient.RetryWHUploads(ctx, request)
+			require.NoError(t, err)
+			require.EqualValues(t, 1, result.Count)
+			firstUpload, err := u.Get(ctx, first)
+			require.NoError(t, err)
+			require.Equal(t, model.Waiting, firstUpload.Status)
+			otherUpload, err := u.Get(ctx, other)
+			require.NoError(t, err)
+			require.Equal(t, model.Aborted, otherUpload.Status)
+
+			triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
+			triggerStore.Delete("POSTGRES:second_source_id:test_destination_id")
+			triggerStore.Delete("POSTGRES:test_source_id:second_destination_id")
+			response, err := grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{WorkspaceId: workspaceID, SourceId: sourceID, DestinationId: destinationID})
+			require.NoError(t, err)
+			require.Equal(t, triggeredSuccessfully, response.Message)
+			_, ok := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+			require.True(t, ok)
+			_, ok = triggerStore.Load("POSTGRES:second_source_id:test_destination_id")
+			require.False(t, ok)
+			_, ok = triggerStore.Load("POSTGRES:test_source_id:second_destination_id")
+			require.False(t, ok)
+			triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
+			response, err = grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{WorkspaceId: workspaceID, SourceId: "second_source_id", DestinationId: destinationID})
+			require.NoError(t, err)
+			require.Equal(t, noPendingEvents, response.Message)
+			_, ok = triggerStore.Load("POSTGRES:second_source_id:test_destination_id")
+			require.False(t, ok)
+			response, err = grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{WorkspaceId: workspaceID, DestinationId: destinationID})
+			require.NoError(t, err)
+			require.Equal(t, triggeredSuccessfully, response.Message)
+			_, ok = triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+			require.True(t, ok)
+			_, ok = triggerStore.Load("POSTGRES:second_source_id:test_destination_id")
+			require.False(t, ok) // aborted uploads are not pending work
+		})
+
+		t.Run("trigger leaves no store entry on later count error", func(t *testing.T) {
+			// The destination has two sources. Force the second connection's upload
+			// count to fail after the first connection has been found to have work.
+			cleanUpTables()
+			triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
+			triggerStore.Delete("POSTGRES:second_source_id:test_destination_id")
+			s := repo.NewStagingFiles(db, c)
+			_, err := s.Insert(ctx, &model.StagingFileWithSchema{StagingFile: model.StagingFile{
+				SourceID: sourceID, DestinationID: destinationID, WorkspaceID: workspaceID,
+			}})
+			require.NoError(t, err)
+			secondFile := model.StagingFile{SourceID: "second_source_id", DestinationID: destinationID, WorkspaceID: workspaceID}
+			secondID, err := s.Insert(ctx, &model.StagingFileWithSchema{StagingFile: secondFile})
+			require.NoError(t, err)
+			secondFile.ID = secondID
+			_, err = repo.NewUploads(db).CreateWithStagingFiles(ctx, model.Upload{SourceID: "second_source_id", DestinationID: destinationID, WorkspaceID: workspaceID, Status: model.Waiting}, []*model.StagingFile{&secondFile})
+			require.NoError(t, err)
+			// A temporary function and view raise on the second source's upload-count query,
+			// after the first source has already been found to have work.
+			_, err = db.ExecContext(ctx, `CREATE FUNCTION fail_second_source_upload_count(source_id text) RETURNS boolean AS $$
+			BEGIN
+				IF source_id = 'second_source_id' THEN
+					RAISE EXCEPTION 'second source count failure';
+				END IF;
+				RETURN true;
+			END;
+			$$ LANGUAGE plpgsql VOLATILE`)
+			require.NoError(t, err)
+			_, err = db.ExecContext(ctx, `ALTER TABLE wh_uploads RENAME TO wh_uploads_original;
+				CREATE VIEW wh_uploads AS SELECT * FROM wh_uploads_original
+				WHERE fail_second_source_upload_count(source_id)`)
+			require.NoError(t, err)
+			defer func() {
+				_, cleanupErr := db.ExecContext(context.Background(), `DROP VIEW wh_uploads;
+					ALTER TABLE wh_uploads_original RENAME TO wh_uploads;
+					DROP FUNCTION fail_second_source_upload_count(text)`)
+				require.NoError(t, cleanupErr)
+			}()
+			_, err = grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{WorkspaceId: workspaceID, DestinationId: destinationID})
+			require.Error(t, err)
+			require.Equal(t, codes.Internal, status.Code(err))
+			_, ok := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+			require.False(t, ok)
+			_, ok = triggerStore.Load("POSTGRES:second_source_id:test_destination_id")
+			require.False(t, ok)
 		})
 
 		t.Run("Retry", func(t *testing.T) {

@@ -392,52 +392,52 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", request.WorkspaceId)
 	}
 
-	var (
-		pendingUploadCount       int64
-		pendingStagingFilesCount int64
-		err                      error
-	)
-
-	filters := []repo.FilterBy{
-		{Key: "destination_id", Value: request.DestinationId},
-		{Key: "status", Value: model.ExportedData, NotEquals: true},
-		{Key: "status", Value: model.Aborted, NotEquals: true},
-	}
-	pendingUploadCount, err = g.uploadRepo.Count(ctx, filters...)
-	if err != nil {
-		return &proto.TriggerWhUploadsResponse{},
-			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get pending uploads count: %v", err)
-	}
-
-	if pendingUploadCount == 0 {
-		pendingStagingFilesCount, err = g.stagingRepo.CountPendingForDestination(ctx, request.DestinationId)
-		if err != nil {
-			return &proto.TriggerWhUploadsResponse{},
-				status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get pending staging files count: %v", err)
-		}
-	}
-
-	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
-	if pendingUploadCount+pendingStagingFilesCount == 0 {
-		return &proto.TriggerWhUploadsResponse{
-			StatusCode: http.StatusOK,
-			Message:    noPendingEvents,
-		}, nil
-	}
-
 	var wh []model.Warehouse
-	if request.SourceId != "" {
-		wh = g.bcManager.WarehousesBySourceID(request.SourceId)
-	} else {
-		wh = g.bcManager.WarehousesByDestID(request.DestinationId)
+	for _, warehouse := range g.bcManager.WarehousesByDestID(request.DestinationId) {
+		if slices.Contains(sourceIDs, warehouse.Source.ID) && (request.SourceId == "" || request.SourceId == warehouse.Source.ID) {
+			wh = append(wh, warehouse)
+		}
 	}
 	if len(wh) == 0 {
 		return &proto.TriggerWhUploadsResponse{},
 			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no warehouse found for sourceID: %s, destinationID: %s", request.SourceId, request.DestinationId)
 	}
 
+	var toTrigger []string
 	for _, warehouse := range wh {
-		g.triggerStore.Store(warehouse.Identifier, struct{}{})
+		filters := []repo.FilterBy{
+			{Key: "source_id", Value: warehouse.Source.ID},
+			{Key: "destination_id", Value: warehouse.Destination.ID},
+			{Key: "status", Value: model.ExportedData, NotEquals: true},
+			{Key: "status", Value: model.Aborted, NotEquals: true},
+		}
+		pendingUploadCount, err := g.uploadRepo.Count(ctx, filters...)
+		if err != nil {
+			return &proto.TriggerWhUploadsResponse{},
+				status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get pending uploads count: %v", err)
+		}
+		if pendingUploadCount == 0 {
+			pendingStagingFilesCount, err := g.stagingRepo.CountPendingForConnection(ctx, warehouse.Source.ID, warehouse.Destination.ID)
+			if err != nil {
+				return &proto.TriggerWhUploadsResponse{},
+					status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get pending staging files count: %v", err)
+			}
+			if pendingStagingFilesCount == 0 {
+				continue
+			}
+		}
+		toTrigger = append(toTrigger, warehouse.Identifier)
+	}
+
+	if len(toTrigger) == 0 {
+		return &proto.TriggerWhUploadsResponse{
+			StatusCode: http.StatusOK,
+			Message:    noPendingEvents,
+		}, nil
+	}
+
+	for _, identifier := range toTrigger {
+		g.triggerStore.Store(identifier, struct{}{})
 	}
 
 	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
@@ -497,6 +497,13 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 	}, nil
 }
 
+func retrySourceIDs(authorized []string, requested string) []string {
+	if requested != "" {
+		return []string{requested}
+	}
+	return authorized
+}
+
 func (g *GRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
 	g.logger.Infon("Retrying warehouse syncs",
 		logger.NewStringField(lf.WorkspaceID, req.WorkspaceId),
@@ -531,7 +538,7 @@ func (g *GRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequ
 	// 2. Or provide the List of Upload id's that needs to be re-triggered.
 	retryCount, err := g.uploadRepo.Retry(ctx, model.RetryOptions{
 		WorkspaceID:     req.WorkspaceId,
-		SourceIDs:       sourceIDs,
+		SourceIDs:       retrySourceIDs(sourceIDs, req.SourceId),
 		DestinationID:   req.DestinationId,
 		DestinationType: req.DestinationType,
 		ForceRetry:      req.ForceRetry,
@@ -582,7 +589,7 @@ func (g *GRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUplo
 
 	retryCount, err := g.uploadRepo.RetryCount(ctx, model.RetryOptions{
 		WorkspaceID:     req.WorkspaceId,
-		SourceIDs:       sourceIDs,
+		SourceIDs:       retrySourceIDs(sourceIDs, req.SourceId),
 		DestinationID:   req.DestinationId,
 		DestinationType: req.DestinationType,
 		ForceRetry:      req.ForceRetry,
