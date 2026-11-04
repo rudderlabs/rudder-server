@@ -174,7 +174,7 @@ func userPartitionPredicate(values []string) (string, error) {
 
 // currentUserFiles returns only objects belonging to this upload. Validate all
 // locations and persisted object sizes before issuing any stage LOAD.
-func (m *MaxCompute) currentUserFiles(ctx context.Context) ([]string, error) {
+func (m *MaxCompute) currentUserFiles(ctx context.Context) ([]loadFolder, error) {
 	if m.uploader == nil {
 		return nil, errors.New("MaxCompute uploader is not initialized")
 	}
@@ -215,8 +215,8 @@ func (m *MaxCompute) loadUsersWithCarryForward(ctx context.Context) (err error) 
 	}
 	// Current-upload files, not bounded historical identifies, define the set
 	// of users eligible for carry-forward. An empty upload has nothing to do.
-	paths, err := m.currentUserFiles(ctx)
-	if err != nil || len(paths) == 0 {
+	folders, err := m.currentUserFiles(ctx)
+	if err != nil || len(folders) == 0 {
 		return err
 	}
 	usersTable, err := m.qualified(warehouseutils.UsersTable)
@@ -257,12 +257,8 @@ func (m *MaxCompute) loadUsersWithCarryForward(ctx context.Context) (err error) 
 	// This stage has a fresh, unique name and receives only this upload's files.
 	// Capture its exact pt values after LOAD; neither a time range nor the
 	// warehouse users table's historical partitions identify these rows.
-	for _, path := range paths {
-		statement, err := m.loadStatement(stageTable, path)
-		if err != nil {
-			return err
-		}
-		if err := m.run(ctx, statement); err != nil {
+	for _, folder := range folders {
+		if _, err := m.loadFolder(ctx, stageTable, folder); err != nil {
 			return fmt.Errorf("loading MaxCompute users upload staging table: %w", err)
 		}
 	}

@@ -1,9 +1,12 @@
 package validations
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -248,7 +251,7 @@ func (os *objectStorage) Validate(ctx context.Context) error {
 		uploadObject filemanager.UploadedFile
 	)
 
-	if tempPath, err = CreateTempLoadFile(os.destination); err != nil {
+	if tempPath, _, err = CreateTempLoadFile(os.destination); err != nil {
 		return fmt.Errorf("creating temp load file: %w", err)
 	}
 
@@ -296,7 +299,7 @@ func validationTableSchema(maxCompute bool) model.TableSchema {
 
 func maxComputeValidationPayload() map[string]any {
 	payload := maps.Clone(payloadMap)
-	payload["uuid_ts"] = "2024-01-02 00:00:00.123456"
+	payload["uuid_ts"] = "2024-01-02 00:00:00"
 	return payload
 }
 
@@ -342,16 +345,9 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 
 	defer lt.manager.Cleanup(ctx)
 
-	if tempPath, err = CreateTempLoadFile(lt.destination); err != nil {
-		return fmt.Errorf("create temp load file: %w", err)
-	}
 	var validationSize int64
-	if destinationType == warehouseutils.MAXCOMPUTE {
-		info, statErr := os.Stat(tempPath)
-		if statErr != nil {
-			return fmt.Errorf("stat MaxCompute test load file: %w", statErr)
-		}
-		validationSize = info.Size()
+	if tempPath, validationSize, err = CreateTempLoadFile(lt.destination); err != nil {
+		return fmt.Errorf("create temp load file: %w", err)
 	}
 
 	if uploadOutput, err = uploadFile(ctx, lt.destination, tempPath); err != nil {
@@ -367,7 +363,7 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 	fixturePayload := payloadMap
 	if destinationType == warehouseutils.MAXCOMPUTE {
 		fixturePayload = maxComputeValidationPayload()
-		fixturePayload["__content_length"] = validationSize
+		ctx = warehouseutils.WithMaxComputeValidationFileSize(ctx, validationSize)
 	}
 	if err = lt.manager.TestLoadTable(ctx, uploadOutput.Location, lt.table, fixturePayload, loadFileType); err != nil {
 		if destinationType == warehouseutils.MAXCOMPUTE {
@@ -379,8 +375,9 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 	return nil
 }
 
-// CreateTempLoadFile creates a temporary load file
-func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
+// CreateTempLoadFile creates a temporary load file. MaxCompute also returns its
+// compressed byte count for the pre-LOAD size check.
+func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, int64, error) {
 	var (
 		tmpDirPath string
 		filePath   string
@@ -392,7 +389,56 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	)
 
 	if tmpDirPath, err = misc.GetTmpDir(); err != nil {
-		return "", fmt.Errorf("create tmp dir: %w", err)
+		return "", 0, fmt.Errorf("create tmp dir: %w", err)
+	}
+	if destinationType == warehouseutils.MAXCOMPUTE {
+		dir := filepath.Join(tmpDirPath, connectionTestingFolder)
+		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+			return "", 0, fmt.Errorf("create directory: %w", err)
+		}
+		file, err := os.CreateTemp(dir, "MAXCOMPUTE-*.json.gz")
+		if err != nil {
+			return "", 0, fmt.Errorf("create MaxCompute fixture: %w", err)
+		}
+		path := file.Name()
+		closeAndRemove := func() {
+			_ = file.Close()
+			_ = os.Remove(path)
+		}
+		loader := encoding.NewFactory(config.Default).NewEventLoader(nil, loadFileType, destinationType)
+		for _, column := range []string{"id", "val"} {
+			loader.AddColumn(column, tableSchemaMap[column], payloadMap[column])
+		}
+		loader.AddColumn("uuid_ts", "datetime", maxComputeValidationPayload()["uuid_ts"])
+		row, err := loader.WriteToString()
+		if err != nil {
+			closeAndRemove()
+			return "", 0, fmt.Errorf("encode MaxCompute fixture: %w", err)
+		}
+		var compressed bytes.Buffer
+		gz := gzip.NewWriter(&compressed)
+		if _, err := gz.Write([]byte(row)); err != nil {
+			closeAndRemove()
+			return "", 0, fmt.Errorf("compress MaxCompute fixture: %w", err)
+		}
+		if err := gz.Close(); err != nil {
+			closeAndRemove()
+			return "", 0, fmt.Errorf("close MaxCompute fixture compressor: %w", err)
+		}
+		count, err := file.Write(compressed.Bytes())
+		if err != nil {
+			closeAndRemove()
+			return "", 0, fmt.Errorf("write MaxCompute fixture: %w", err)
+		}
+		if count != compressed.Len() {
+			closeAndRemove()
+			return "", 0, fmt.Errorf("write MaxCompute fixture: %w", io.ErrShortWrite)
+		}
+		if err := file.Close(); err != nil {
+			_ = os.Remove(path)
+			return "", 0, fmt.Errorf("close MaxCompute fixture: %w", err)
+		}
+		return path, int64(count), nil
 	}
 
 	filePath = fmt.Sprintf("%v/%v/%v.%v.%v.%v",
@@ -404,33 +450,29 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		warehouseutils.GetLoadFileFormat(loadFileType),
 	)
 	if err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
-		return "", fmt.Errorf("create directory: %w", err)
+		return "", 0, fmt.Errorf("create directory: %w", err)
 	}
 
 	ef := encoding.NewFactory(config.Default)
 	fixtureSchema := validationTableSchema(destinationType == warehouseutils.MAXCOMPUTE)
 	writer, err = ef.NewLoadFileWriter(loadFileType, filePath, fixtureSchema, destinationType)
 	if err != nil {
-		return "", fmt.Errorf("creating writer for file: %s with error: %w", filePath, err)
+		return "", 0, fmt.Errorf("creating writer for file: %s with error: %w", filePath, err)
 	}
 
 	eventLoader := ef.NewEventLoader(writer, loadFileType, destinationType)
 	for _, column := range []string{"id", "val"} {
 		eventLoader.AddColumn(column, tableSchemaMap[column], payloadMap[column])
 	}
-	if destinationType == warehouseutils.MAXCOMPUTE {
-		eventLoader.AddColumn("uuid_ts", "datetime", maxComputeValidationPayload()["uuid_ts"])
-	}
-
 	if err = eventLoader.Write(); err != nil {
-		return "", fmt.Errorf("writing to file: %w", err)
+		return "", 0, fmt.Errorf("writing to file: %w", err)
 	}
 
 	if err = writer.Close(); err != nil {
-		return "", fmt.Errorf("closing writer: %w", err)
+		return "", 0, fmt.Errorf("closing writer: %w", err)
 	}
 
-	return filePath, nil
+	return filePath, 0, nil
 }
 
 func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath string) (filemanager.UploadedFile, error) {
@@ -443,6 +485,9 @@ func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath 
 		destinationType = dest.DestinationDefinition.Name
 		prefixes        = []string{connectionTestingFolder, destinationType, warehouseutils.RandHex(), time.Now().Format("01-02-2006")}
 	)
+	if destinationType == warehouseutils.MAXCOMPUTE {
+		prefixes = []string{connectionTestingFolder, destinationType, misc.FastUUID().String() + "-validation"}
+	}
 
 	if fm, err = createFileManager(dest); err != nil {
 		return filemanager.UploadedFile{}, err

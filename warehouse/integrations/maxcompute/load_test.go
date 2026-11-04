@@ -21,62 +21,97 @@ func testManager() *MaxCompute {
 	o := odps.NewOdps(nil, "https://service.cn-hangzhou.maxcompute.aliyun.com/api")
 	o.SetDefaultProjectName("project")
 	m := &MaxCompute{odps: o, warehouse: model.Warehouse{WorkspaceID: "workspace"}, conf: config.New()}
-	m.warehouse.Destination.Config = map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou", "accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "read-role", "endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "skipViews": true}
+	m.warehouse.Destination.Config = map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou", "accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "acs:ram::123456789:role/read-role", "endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "skipViews": true}
 	return m
 }
 
 func TestOSSLoadChecksMetadataBeforeSQL(t *testing.T) {
 	m := testManager()
-	location := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/path/file.json.gz"
+	folder := "11111111-1111-1111-1111-111111111111-events"
+	prefix := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/" + folder + "/"
 	var statements []string
 	m.exec = func(_ context.Context, sql string) error { statements = append(statements, sql); return nil }
 	for _, metadata := range []string{`{}`, `{"content_length":0}`, `{"content_length":3221225473}`, `{"content_length":"10"}`, `{"content_length":1.5}`} {
-		_, err := m.loadTable(context.Background(), "events", []warehouseutils.LoadFile{{Location: location, Metadata: []byte(metadata)}})
+		files := []warehouseutils.LoadFile{
+			{Location: prefix + "one.json.gz", Metadata: []byte(`{"content_length":10}`)},
+			{Location: prefix + "two.json.gz", Metadata: []byte(metadata)},
+		}
+		_, err := m.loadTable(context.Background(), "events", files)
 		require.ErrorContains(t, err, "length", metadata)
 		require.Empty(t, statements)
 	}
-	files := []warehouseutils.LoadFile{{Location: location, Metadata: []byte(`{"content_length":3221225472}`)}}
+	files := []warehouseutils.LoadFile{
+		{Location: prefix + "one.json.gz", Metadata: []byte(`{"content_length":3221225472}`)},
+		{Location: prefix + "two.json.gz", Metadata: []byte(`{"content_length":10}`)},
+	}
 	stats, err := m.loadTable(context.Background(), "events", files)
 	require.NoError(t, err)
 	require.EqualValues(t, 0, stats.RowsInserted)
-	require.Equal(t, []string{"LOAD INTO TABLE `project`.`events` FROM LOCATION 'oss://oss-cn-hangzhou-internal.aliyuncs.com/my-bucket/path/file.json.gz' ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe' WITH SERDEPROPERTIES ('odps.properties.rolearn'='read-role') STORED AS TEXTFILE"}, statements)
+	require.Equal(t, []string{"LOAD INTO TABLE `project`.`events` FROM LOCATION 'oss://oss-cn-hangzhou-internal.aliyuncs.com/my-bucket/" + folder + "/' ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe' WITH SERDEPROPERTIES ('odps.properties.rolearn'='acs:ram::123456789:role/read-role') STORED AS TEXTFILE"}, statements)
 }
 
 func TestOSSLocationAcceptsEncodedObjectKeys(t *testing.T) {
 	m := testManager()
-	m.exec = func(context.Context, string) error { return nil }
-	for _, key := range []string{"a%/b+ c/日本.json.gz", "it's+safe.json.gz"} {
+	folder := "11111111-1111-1111-1111-111111111111-events"
+	key := folder + "/a%+ c-日本.json.gz"
+	location := "https://oss-cn-hangzhou.aliyuncs.com/my-bucket/" + url.PathEscape(key)
+	folders, err := m.preparedLoadFiles(context.Background(), []warehouseutils.LoadFile{{Location: location, Metadata: []byte(`{"content_length":10}`)}})
+	require.NoError(t, err)
+	require.Equal(t, []loadFolder{{location: "oss://oss-cn-hangzhou-internal.aliyuncs.com/my-bucket/" + folder + "/", size: 10}}, folders)
+}
+
+func TestOSSLoadRejectsUnsafeSQLLiterals(t *testing.T) {
+	m := testManager()
+	safeFolder := "11111111-1111-1111-1111-111111111111-events"
+	var statements []string
+	m.exec = func(_ context.Context, sql string) error { statements = append(statements, sql); return nil }
+	for _, bad := range []string{"'", "\\", "\x01", "\n", "\x7f"} {
+		key := safeFolder + "/file" + bad + ".json.gz"
 		location := "https://oss-cn-hangzhou.aliyuncs.com/my-bucket/" + url.PathEscape(key)
-		paths, err := m.preparedLoadFiles(context.Background(), []warehouseutils.LoadFile{{Location: location, Metadata: []byte(`{"content_length":10}`)}})
-		require.NoError(t, err)
-		require.Equal(t, []string{"oss://oss-cn-hangzhou-internal.aliyuncs.com/my-bucket/" + key}, paths)
-		statement, err := m.loadStatement("`project`.`events`", paths[0])
-		require.NoError(t, err)
-		require.Contains(t, statement, "odps.properties.rolearn")
-		require.NotContains(t, statement, "read-role/"+key)
+		_, err := m.loadTable(context.Background(), "events", []warehouseutils.LoadFile{{Location: location, Metadata: []byte(`{"content_length":10}`)}})
+		require.Error(t, err, bad)
+		require.Empty(t, statements)
+		key = safeFolder + bad + "/file.json.gz"
+		location = "https://oss-cn-hangzhou.aliyuncs.com/my-bucket/" + url.PathEscape(key)
+		_, err = m.loadTable(context.Background(), "events", []warehouseutils.LoadFile{{Location: location, Metadata: []byte(`{"content_length":10}`)}})
+		require.Error(t, err, bad)
+		require.Empty(t, statements)
+		m.warehouse.Destination.Config["bucketName"] = "my-bucket" + bad
+		_, err = m.loadTable(context.Background(), "events", []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/" + safeFolder + "/file.json.gz", Metadata: []byte(`{"content_length":10}`)}})
+		require.Error(t, err, bad)
+		require.Empty(t, statements)
+		m.warehouse.Destination.Config["bucketName"] = "my-bucket"
+		m.warehouse.Destination.Config["ossRoleArn"] = "acs:ram::123456789:role/read" + bad
+		_, err = m.loadTable(context.Background(), "events", []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/" + safeFolder + "/file.json.gz", Metadata: []byte(`{"content_length":10}`)}})
+		require.Error(t, err, bad)
+		require.Empty(t, statements)
+		m.warehouse.Destination.Config["ossRoleArn"] = "acs:ram::123456789:role/read-role"
 	}
 }
 
 func TestMaxComputeValidationReadsLoadedRowWithinPartition(t *testing.T) {
 	m := testManager()
+	type contextKey struct{}
 	var loads int
 	m.exec = func(_ context.Context, statement string) error {
 		require.Contains(t, statement, "LOAD INTO TABLE")
 		loads++
 		return nil
 	}
-	m.query = func(_ context.Context, statement string) (warehouseutils.QueryResult, error) {
+	m.query = func(queryCtx context.Context, statement string) (warehouseutils.QueryResult, error) {
+		require.Equal(t, true, queryCtx.Value(contextKey{}))
 		require.Equal(t, "SELECT `id`, `val` FROM `project`.`events` WHERE `pt` >= '2024-01-02' AND `pt` < '2024-01-03' AND `id` = 1 LIMIT 1", statement)
 		return warehouseutils.QueryResult{Values: [][]string{{"1", "RudderStack"}}}, nil
 	}
-	payload := map[string]any{"id": 1, "val": "RudderStack", "uuid_ts": "2024-01-02 00:00:00.123456", "__content_length": int64(10)}
-	location := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/test.json.gz"
-	require.NoError(t, m.TestLoadTable(context.Background(), location, "events", payload, warehouseutils.LoadFileTypeJson))
+	payload := map[string]any{"id": 1, "val": "RudderStack", "uuid_ts": "2024-01-02 00:00:00"}
+	location := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-validation/test.json.gz"
+	ctx := warehouseutils.WithMaxComputeValidationFileSize(context.WithValue(context.Background(), contextKey{}, true), 10)
+	require.NoError(t, m.TestLoadTable(ctx, location, "events", payload, warehouseutils.LoadFileTypeJson))
 	require.Equal(t, 1, loads)
 	m.query = func(context.Context, string) (warehouseutils.QueryResult, error) {
 		return warehouseutils.QueryResult{}, nil
 	}
-	require.ErrorContains(t, m.TestLoadTable(context.Background(), location, "events", payload, warehouseutils.LoadFileTypeJson), "row was not found")
+	require.ErrorContains(t, m.TestLoadTable(ctx, location, "events", payload, warehouseutils.LoadFileTypeJson), "row was not found")
 }
 
 type loadUploader struct {
@@ -92,8 +127,9 @@ func (u loadUploader) GetLoadFilesMetadata(_ context.Context, _ warehouseutils.G
 func TestPrecheckAllFilesAndCatalogViewBeforeLoad(t *testing.T) {
 	m := testManager()
 	m.warehouse.Destination.Config["skipViews"] = false
-	prefix := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/"
-	m.uploader = loadUploader{files: []warehouseutils.LoadFile{{Location: prefix + "one.gz", Metadata: []byte(`{"content_length":10}`)}, {Location: prefix + "two.gz"}}}
+	prefix := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-events/"
+	prefix2 := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/22222222-2222-2222-2222-222222222222-events/"
+	m.uploader = loadUploader{files: []warehouseutils.LoadFile{{Location: prefix + "one.json.gz", Metadata: []byte(`{"content_length":10}`)}, {Location: prefix2 + "two.json.gz"}}}
 	var statements []string
 	m.exec = func(_ context.Context, sql string) error { statements = append(statements, sql); return nil }
 	catalogCalls := 0
@@ -105,7 +141,7 @@ func TestPrecheckAllFilesAndCatalogViewBeforeLoad(t *testing.T) {
 	require.ErrorContains(t, err, "length")
 	require.Empty(t, statements)
 	require.Zero(t, catalogCalls)
-	m.uploader = loadUploader{files: []warehouseutils.LoadFile{{Location: prefix + "one.gz", Metadata: []byte(`{"content_length":10}`)}, {Location: prefix + "two.gz", Metadata: []byte(`{"content_length":10}`)}}}
+	m.uploader = loadUploader{files: []warehouseutils.LoadFile{{Location: prefix + "one.json.gz", Metadata: []byte(`{"content_length":10}`)}, {Location: prefix2 + "two.json.gz", Metadata: []byte(`{"content_length":10}`)}}}
 	m.catalog = func(context.Context) (model.Schema, error) { return nil, errors.New("catalog unavailable") }
 	_, err = m.LoadTable(context.Background(), "events")
 	require.ErrorContains(t, err, "catalog unavailable")
@@ -122,8 +158,8 @@ func TestPrecheckAllFilesAndCatalogViewBeforeLoad(t *testing.T) {
 	require.Contains(t, statements[0], "`current_column`")
 	require.Contains(t, statements[0], "`pt` >=")
 	require.Contains(t, statements[0], "`pt` < TO_CHAR(DATEADD(GETDATE(), 2, 'dd')")
-	require.Contains(t, statements[1], "one.gz")
-	require.Contains(t, statements[2], "two.gz")
+	require.Contains(t, statements[1], "11111111-1111-1111-1111-111111111111-events/")
+	require.Contains(t, statements[2], "22222222-2222-2222-2222-222222222222-events/")
 }
 
 func TestSkipUsersTable(t *testing.T) {

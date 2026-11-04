@@ -68,7 +68,7 @@ func TestTypesAndConversion(t *testing.T) {
 }
 
 func TestRoleSettingsAreExclusiveAndRequireWorkspace(t *testing.T) {
-	settings := map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou", "iamRoleARN": "acs:ram::123:role/test", "ossRoleArn": "read-role", "endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "project": "project"}
+	settings := map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou", "iamRoleARN": "acs:ram::123:role/test", "ossRoleArn": "acs:ram::123456789:role/read-role", "endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "project": "project"}
 	require.NoError(t, warehouseutils.ValidateMaxComputeSettings(settings, "workspace"))
 	require.ErrorContains(t, warehouseutils.ValidateMaxComputeSettings(settings, ""), "workspace ID")
 	settings["accessKeyId"] = "destination-key"
@@ -248,12 +248,35 @@ func TestRunSQLSharedRunnerAndSummary(t *testing.T) {
 			service := odps.NewOdps(account.NewAliyunAccount("id", "secret"), server.URL)
 			service.SetDefaultProjectName("project")
 			m := &MaxCompute{odps: service, warehouse: model.Warehouse{Namespace: namespace}, queryTimeout: time.Second, pollInterval: time.Millisecond}
-			rows, err := m.runSQL(context.Background(), "LOAD INTO TABLE t FROM LOCATION 'oss://oss-cn-hangzhou-internal.aliyuncs.com/bucket/file' ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe' WITH SERDEPROPERTIES ('odps.properties.rolearn'='read-role') STORED AS TEXTFILE", true)
+			rows, err := m.runSQL(context.Background(), "LOAD INTO TABLE t FROM LOCATION 'oss://oss-cn-hangzhou-internal.aliyuncs.com/bucket/file' ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe' WITH SERDEPROPERTIES ('odps.properties.rolearn'='acs:ram::123456789:role/read-role') STORED AS TEXTFILE", true)
 			require.NoError(t, err)
 			require.True(t, submitted)
 			require.EqualValues(t, 42, rows)
 		})
 	}
+}
+
+func TestRunSQLSummaryFailureDoesNotFailCommittedLoad(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost:
+			w.Header().Set("Location", "/api/projects/project/instances/test")
+			w.WriteHeader(http.StatusCreated)
+		case r.URL.Query().Has("instancesummary"):
+			_, _ = fmt.Fprint(w, `{"Instance":{"JsonSummary":"not JSON"}}`)
+		case r.URL.Query().Has("taskstatus"):
+			_, _ = fmt.Fprint(w, `<Instance><Tasks><Task><Name>load</Name><Status>SUCCESS</Status></Task></Tasks></Instance>`)
+		default:
+			_, _ = fmt.Fprint(w, `<Instance><Status>RUNNING</Status></Instance>`)
+		}
+	}))
+	defer server.Close()
+	service := odps.NewOdps(account.NewAliyunAccount("id", "secret"), server.URL)
+	service.SetDefaultProjectName("project")
+	m := &MaxCompute{odps: service, queryTimeout: time.Second, pollInterval: time.Millisecond}
+	rows, err := m.runSQL(context.Background(), "LOAD INTO TABLE t FROM LOCATION 'oss://bucket/folder/'", true)
+	require.NoError(t, err)
+	require.EqualValues(t, -1, rows)
 }
 
 func TestRunSQLTimeoutAndExecHook(t *testing.T) {

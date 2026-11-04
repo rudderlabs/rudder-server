@@ -398,6 +398,17 @@ func (m *MaxCompute) runSQL(ctx context.Context, statement string, summary bool)
 	if !summary {
 		return 0, nil
 	}
+	rows, summaryErr := m.loadTaskSummary(ctx, ins)
+	if summaryErr != nil {
+		if m.logger != nil {
+			m.logger.Warnn("MaxCompute LOAD succeeded but row count is unknown")
+		}
+		return -1, nil
+	}
+	return rows, nil
+}
+
+func (m *MaxCompute) loadTaskSummary(ctx context.Context, ins *odps.Instance) (int64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
@@ -632,7 +643,7 @@ func (m *MaxCompute) TestLoadTable(ctx context.Context, location, table string, 
 	if format != warehouseutils.LoadFileTypeJson {
 		return fmt.Errorf("MaxCompute validation expects JSON load files, got %q", format)
 	}
-	size, ok := payload["__content_length"].(int64)
+	size, ok := warehouseutils.MaxComputeValidationFileSize(ctx)
 	if !ok || size <= 0 {
 		return errors.New("MaxCompute validation load file size is missing")
 	}
@@ -644,7 +655,7 @@ func (m *MaxCompute) TestLoadTable(ctx context.Context, location, table string, 
 	if !ok {
 		return errors.New("MaxCompute validation timestamp is missing")
 	}
-	parsed, err := time.ParseInLocation(encoding.MaxComputeTimeFormat, stamp, time.UTC)
+	parsed, err := time.ParseInLocation(encoding.MaxComputeUUIDTsFormat, stamp, time.UTC)
 	if err != nil {
 		return errors.New("MaxCompute validation timestamp is invalid")
 	}
@@ -666,8 +677,7 @@ func (m *MaxCompute) TestLoadTable(ctx context.Context, location, table string, 
 	if m.query != nil {
 		result, err = m.query(ctx, statement)
 	} else {
-		queryClient := client.Client{Type: client.ODPSClient, ODPS: m.odps}
-		result, err = queryClient.Query(statement)
+		result, err = client.QueryODPS(ctx, m.odps, statement, m.queryTimeout, m.pollInterval)
 	}
 	if err != nil {
 		return err

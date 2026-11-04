@@ -30,7 +30,9 @@ func (loader *jsonLoader) IsLoadTimeColumn(columnName string) bool {
 func (loader *jsonLoader) GetLoadTimeFormat(columnName string) string {
 	if loader.destType == warehouseutils.MAXCOMPUTE {
 		switch columnName {
-		case UUIDTsColumn, LoadedAtColumn:
+		case UUIDTsColumn:
+			return MaxComputeUUIDTsFormat
+		case LoadedAtColumn:
 			return MaxComputeTimeFormat
 		}
 	}

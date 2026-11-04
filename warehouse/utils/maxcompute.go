@@ -1,10 +1,24 @@
 package warehouseutils
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 )
+
+type maxComputeValidationFileSizeKey struct{}
+
+// WithMaxComputeValidationFileSize carries the byte count of the temporary
+// fixture written by validation without adding a non-row field to its payload.
+func WithMaxComputeValidationFileSize(ctx context.Context, size int64) context.Context {
+	return context.WithValue(ctx, maxComputeValidationFileSizeKey{}, size)
+}
+
+func MaxComputeValidationFileSize(ctx context.Context) (int64, bool) {
+	size, ok := ctx.Value(maxComputeValidationFileSizeKey{}).(int64)
+	return size, ok && size > 0
+}
 
 // MaxComputeRoleMode selects MaxCompute authentication from destination account fields.
 func MaxComputeRoleMode(conf map[string]any) (bool, error) {

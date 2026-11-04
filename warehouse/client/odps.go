@@ -192,22 +192,30 @@ func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeo
 
 // odpsQuery uses the same bounded job runner as the MaxCompute manager.
 func (cl *Client) odpsQuery(statement string) (warehouseutils.QueryResult, error) {
+	return QueryODPS(context.Background(), cl.ODPS, statement, odpsQueryTimeout, odpsPollInterval)
+}
+
+// QueryODPS runs a readback query within the caller's context and timeout.
+func QueryODPS(ctx context.Context, service *odps.Odps, statement string, timeout, interval time.Duration) (warehouseutils.QueryResult, error) {
 	var result warehouseutils.QueryResult
-	ctx, cancel := context.WithTimeout(context.Background(), odpsQueryTimeout)
+	if timeout <= 0 {
+		timeout = odpsQueryTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	instance, err := RunODPSSQL(ctx, cl.ODPS, statement, odpsQueryTimeout, odpsPollInterval)
+	instance, err := RunODPSSQL(ctx, service, statement, timeout, interval)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return result, errors.New("ODPS query timed out")
 		}
 		return result, err
 	}
-	if ctx.Err() != nil {
-		return result, errors.New("ODPS query timed out")
+	if err := ctx.Err(); err != nil {
+		return result, err
 	}
 	results, err := instance.GetResult()
-	if ctx.Err() != nil {
-		return result, errors.New("ODPS query timed out")
+	if contextErr := ctx.Err(); contextErr != nil {
+		return result, contextErr
 	}
 	if err != nil {
 		return result, ODPSSafeError(err)

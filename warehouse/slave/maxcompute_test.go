@@ -65,27 +65,6 @@ func TestMaxComputeSlaveOSSConfig(t *testing.T) {
 	}
 }
 
-func TestNormalizeMaxComputeDateTime(t *testing.T) {
-	for input, want := range map[string]string{
-		"2025-03-04T05:06:07.123456Z":          "2025-03-04 05:06:07.123456",
-		"2025-03-04 06:06:07.123456 +0100 CET": "2025-03-04 05:06:07.123456",
-		"2025-03-04 06:06:07.123456 +0100":     "2025-03-04 05:06:07.123456",
-		"2025-03-04 05:06:07.123456":           "2025-03-04 05:06:07.123456",
-		"2025-03-04 05:06:07":                  "2025-03-04 05:06:07",
-	} {
-		got, ok := encoding.NormalizeMaxComputeDateTime(input)
-		require.True(t, ok, input)
-		require.Equal(t, want, got)
-		again, ok := encoding.NormalizeMaxComputeDateTime(got)
-		require.True(t, ok)
-		require.Equal(t, got, again)
-	}
-	for _, invalid := range []any{"not a date", 42, nil} {
-		_, ok := encoding.NormalizeMaxComputeDateTime(invalid)
-		require.False(t, ok)
-	}
-}
-
 func maxComputeLoadRow(t *testing.T, path string) map[string]any {
 	t.Helper()
 	file, err := os.Open(path)

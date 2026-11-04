@@ -20,6 +20,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestQueryODPSUsesCallerContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := QueryODPS(ctx, nil, "SELECT 1", time.Second, time.Millisecond)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 func TestODPSCredentials(t *testing.T) {
 	var count atomic.Int32
 	provider := NewODPSCredentials(func() (*credentials.CredentialModel, error) {

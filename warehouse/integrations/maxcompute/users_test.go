@@ -58,7 +58,7 @@ func testUsersManager(t *testing.T) (*MaxCompute, *usersUploader, *[]string) {
 	m.odps = odps.NewOdps(account.NewAliyunAccount("id", "secret"), server.URL)
 	m.odps.SetDefaultProjectName("project")
 	u := &usersUploader{
-		files:      []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/one.gz", Metadata: []byte(`{"content_length":10}`)}, {Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/two.gz", Metadata: []byte(`{"content_length":10}`)}},
+		files:      []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-users/one.json.gz", Metadata: []byte(`{"content_length":10}`)}, {Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-users/two.json.gz", Metadata: []byte(`{"content_length":10}`)}},
 		users:      model.TableSchema{"id": "string", "received_at": "datetime", "loaded_at": "datetime", "uuid_ts": "datetime", "email": "string", "name": "string"},
 		identifies: model.TableSchema{"user_id": "string", "received_at": "datetime", "email": "string"},
 	}
@@ -79,20 +79,17 @@ func TestUsersCarryForwardOnlyCurrentUploadAndExactPartitions(t *testing.T) {
 	m, u, statements := testUsersManager(t)
 	require.NoError(t, m.loadUsersWithCarryForward(context.Background()))
 	require.Equal(t, []string{warehouseutils.UsersTable}, u.tables)
-	require.Len(t, *statements, 5)
+	require.Len(t, *statements, 4)
 	require.Contains(t, (*statements)[0], "CREATE TABLE `project`.")
 	require.Contains(t, (*statements)[0], "`loaded_at` TIMESTAMP")
 	require.Contains(t, (*statements)[0], "AUTO PARTITIONED BY (TRUNC_TIME(`received_at`, 'day') AS `pt`) TBLPROPERTIES ('table.format.version'='2')")
-	require.Contains(t, (*statements)[1], "LOAD INTO TABLE `project`.")
-	require.Contains(t, (*statements)[1], "oss://oss-cn-hangzhou-internal.aliyuncs.com/my-bucket/one.gz")
-	require.Contains(t, (*statements)[2], "LOAD INTO TABLE `project`.")
-	require.Contains(t, (*statements)[2], "oss://oss-cn-hangzhou-internal.aliyuncs.com/my-bucket/two.gz")
-	insert := (*statements)[3]
+	stageName := strings.TrimPrefix(strings.SplitN((*statements)[0], " (", 2)[0], "CREATE TABLE ")
+	require.Equal(t, "LOAD INTO TABLE "+stageName+" FROM LOCATION 'oss://oss-cn-hangzhou-internal.aliyuncs.com/my-bucket/11111111-1111-1111-1111-111111111111-users/' ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe' WITH SERDEPROPERTIES ('odps.properties.rolearn'='acs:ram::123456789:role/read-role') STORED AS TEXTFILE", (*statements)[1])
+	insert := (*statements)[2]
 	require.Contains(t, insert, "INSERT INTO `project`.`users`")
 	require.Contains(t, insert, "FROM `project`.`users` WHERE `pt` IN ('"+time.Now().UTC().Format("2006-01-02")+"') AND `id` IN (")
 	require.Contains(t, insert, "FROM `project`.`identifies` WHERE `pt` IN ('"+time.Now().UTC().Format("2006-01-02")+"') AND `user_id` IN (")
 	require.NotContains(t, insert, "2000-01-01")
-	stageName := strings.TrimPrefix(strings.SplitN((*statements)[0], " (", 2)[0], "CREATE TABLE ")
 	require.Contains(t, insert, "FROM "+stageName+" WHERE `pt` IN ('2024-02-01', '2024-02-03') AND `id` IS NOT NULL")
 	require.Equal(t, 3, strings.Count(insert, "FROM "+stageName+" WHERE `pt` IN ('2024-02-01', '2024-02-03') AND `id` IS NOT NULL")) // rows and both ID subqueries
 	require.NotContains(t, insert, "FROM "+stageName+" WHERE `id` IS NOT NULL")
@@ -104,7 +101,7 @@ func TestUsersCarryForwardOnlyCurrentUploadAndExactPartitions(t *testing.T) {
 	require.Contains(t, insert, "FIRST_VALUE(CASE WHEN `__current_upload` = 1 THEN `uuid_ts` END, true)")
 	require.Contains(t, insert, "FIRST_VALUE(CASE WHEN `__current_upload` = 1 THEN `received_at` END, true)")
 	require.NotContains(t, insert, "GETDATE")
-	require.Contains(t, (*statements)[4], "DROP TABLE IF EXISTS `project`.")
+	require.Contains(t, (*statements)[3], "DROP TABLE IF EXISTS `project`.")
 }
 
 func TestUsersCarryForwardWithoutHistoryStillInsertsCurrentUpload(t *testing.T) {
@@ -116,8 +113,8 @@ func TestUsersCarryForwardWithoutHistoryStillInsertsCurrentUpload(t *testing.T) 
 		return nil, nil
 	}
 	require.NoError(t, m.loadUsersWithCarryForward(context.Background()))
-	require.Len(t, *statements, 5)
-	insert := (*statements)[3]
+	require.Len(t, *statements, 4)
+	insert := (*statements)[2]
 	require.Contains(t, insert, "FROM `project`.")
 	require.NotContains(t, insert, "FROM `project`.`users` WHERE")
 	require.NotContains(t, insert, "FROM `project`.`identifies` WHERE")
@@ -132,7 +129,7 @@ func TestUsersCarryForwardEmptyStageDoesNotInsert(t *testing.T) {
 		return nil, errors.New("history must not be listed")
 	}
 	require.NoError(t, m.loadUsersWithCarryForward(context.Background()))
-	require.Len(t, *statements, 4) // CREATE, two LOADs, DROP
+	require.Len(t, *statements, 3) // CREATE, one folder LOAD, DROP
 	require.NotContains(t, strings.Join(*statements, "\n"), "INSERT INTO")
 }
 
@@ -145,7 +142,7 @@ func TestUsersCarryForwardInvalidStagePartitionFailsClosed(t *testing.T) {
 		return nil, errors.New("history must not be listed")
 	}
 	require.ErrorContains(t, m.loadUsersWithCarryForward(context.Background()), "partition")
-	require.Len(t, *statements, 4) // DROP even when listing cannot be trusted
+	require.Len(t, *statements, 3) // DROP even when listing cannot be trusted
 	require.NotContains(t, strings.Join(*statements, "\n"), "INSERT INTO")
 }
 
@@ -186,7 +183,7 @@ func TestUsersCarryForwardPreflightAndCleanup(t *testing.T) {
 	u.files = nil
 	require.NoError(t, m.loadUsersWithCarryForward(context.Background()))
 	require.Empty(t, *statements)
-	u.files = []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/one.gz", Metadata: []byte(`{"content_length":10}`)}, {Location: "https://evil.example/bad.gz"}}
+	u.files = []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-users/one.json.gz", Metadata: []byte(`{"content_length":10}`)}, {Location: "https://evil.example/bad.gz"}}
 	require.ErrorContains(t, m.loadUsersWithCarryForward(context.Background()), "load file")
 	require.Empty(t, *statements)
 	u.err = errors.New("router failed with secret")
@@ -194,7 +191,7 @@ func TestUsersCarryForwardPreflightAndCleanup(t *testing.T) {
 	require.NotContains(t, m.loadUsersWithCarryForward(context.Background()).Error(), "secret")
 	require.Empty(t, *statements)
 	u.err = nil
-	u.files = []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/one.gz", Metadata: []byte(`{"content_length":10}`)}}
+	u.files = []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-users/one.json.gz", Metadata: []byte(`{"content_length":10}`)}}
 	m.exec = func(_ context.Context, sql string) error {
 		*statements = append(*statements, sql)
 		if strings.HasPrefix(sql, "INSERT INTO") {

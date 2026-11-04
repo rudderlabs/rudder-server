@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -19,13 +20,31 @@ import (
 const maxOSSLoadBytes int64 = 3 * 1024 * 1024 * 1024
 
 var (
-	ossBucketPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
-	ossRegionPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+	ossBucketPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
+	ossRegionPattern   = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+	ossReadRolePattern = regexp.MustCompile(`^acs:ram::[0-9]+:role/[A-Za-z0-9.-]{1,64}$`)
 )
+
+type loadFolder struct {
+	location string
+	size     int64
+}
+
+func safeLoadLiteral(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if char == '\'' || char == '\\' || unicode.IsControl(char) {
+			return false
+		}
+	}
+	return true
+}
 
 // preparedLoadFiles validates the complete upload before the first LOAD runs.
 // Persisted load-file metadata supplies the object size.
-func (m *MaxCompute) preparedLoadFiles(ctx context.Context, files []warehouseutils.LoadFile) ([]string, error) {
+func (m *MaxCompute) preparedLoadFiles(ctx context.Context, files []warehouseutils.LoadFile) ([]loadFolder, error) {
 	if err := warehouseutils.ValidateMaxComputeSettings(m.warehouse.Destination.Config, m.warehouse.Destination.WorkspaceID); err != nil {
 		return nil, err
 	}
@@ -39,10 +58,15 @@ func (m *MaxCompute) preparedLoadFiles(ctx context.Context, files []warehouseuti
 	}
 	bucket, _ := converted["bucketName"].(string)
 	region, _ := converted["region"].(string)
-	if !ossBucketPattern.MatchString(bucket) || !ossRegionPattern.MatchString(region) {
+	if !ossBucketPattern.MatchString(bucket) || !ossRegionPattern.MatchString(region) || !safeLoadLiteral(bucket) {
 		return nil, errors.New("invalid MaxCompute OSS source")
 	}
-	paths := make([]string, 0, len(files))
+	role, _ := m.warehouse.Destination.Config["ossRoleArn"].(string)
+	if !ossReadRolePattern.MatchString(role) {
+		return nil, errors.New("invalid MaxCompute OSS read role")
+	}
+	folders := make([]loadFolder, 0, len(files))
+	indexes := make(map[string]int, len(files))
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -51,8 +75,16 @@ func (m *MaxCompute) preparedLoadFiles(ctx context.Context, files []warehouseuti
 			return nil, err
 		}
 		key, err := fm.GetObjectNameFromLocation(file.Location)
-		if err != nil || key == "" || strings.ContainsAny(key, "\n\r") {
+		if err != nil || !safeLoadLiteral(key) {
 			return nil, errors.New("invalid MaxCompute OSS object name")
+		}
+		lastSlash := strings.LastIndexByte(key, '/')
+		if lastSlash <= 0 || lastSlash == len(key)-1 {
+			return nil, errors.New("MaxCompute OSS load file has no folder")
+		}
+		folderKey := key[:lastSlash+1]
+		if !safeLoadLiteral(folderKey) {
+			return nil, errors.New("invalid MaxCompute OSS folder")
 		}
 		var metadata struct {
 			ContentLength int64 `json:"content_length"`
@@ -60,19 +92,40 @@ func (m *MaxCompute) preparedLoadFiles(ctx context.Context, files []warehouseuti
 		if err := jsonrs.Unmarshal(file.Metadata, &metadata); err != nil || metadata.ContentLength <= 0 || metadata.ContentLength > maxOSSLoadBytes {
 			return nil, errors.New("MaxCompute OSS object length missing, invalid or exceeds 3GB")
 		}
-		paths = append(paths, "oss://oss-"+region+"-internal.aliyuncs.com/"+bucket+"/"+key)
+		location := "oss://oss-" + region + "-internal.aliyuncs.com/" + bucket + "/" + folderKey
+		if index, ok := indexes[location]; ok {
+			if metadata.ContentLength > (1<<63-1)-folders[index].size {
+				return nil, errors.New("MaxCompute OSS folder size overflow")
+			}
+			folders[index].size += metadata.ContentLength
+		} else {
+			indexes[location] = len(folders)
+			folders = append(folders, loadFolder{location: location, size: metadata.ContentLength})
+		}
 	}
-	return paths, nil
+	return folders, nil
 }
 
-func (m *MaxCompute) loadStatement(table, path string) (string, error) {
+func (m *MaxCompute) loadStatement(table, folder string) (string, error) {
 	role, _ := m.warehouse.Destination.Config["ossRoleArn"].(string)
-	if role == "" || strings.ContainsAny(role, "\n\r") {
-		return "", errors.New("MaxCompute OSS read role is required")
+	if !ossReadRolePattern.MatchString(role) || !safeLoadLiteral(folder) || !strings.HasSuffix(folder, "/") {
+		return "", errors.New("invalid MaxCompute LOAD location or read role")
 	}
-	return "LOAD INTO TABLE " + table + " FROM LOCATION " + warehouseutils.SQLStringLiteral(path) +
+	return "LOAD INTO TABLE " + table + " FROM LOCATION '" + folder + "'" +
 		" ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe' WITH SERDEPROPERTIES (" +
-		"'odps.properties.rolearn'=" + warehouseutils.SQLStringLiteral(role) + ") STORED AS TEXTFILE", nil
+		"'odps.properties.rolearn'='" + role + "') STORED AS TEXTFILE", nil
+}
+
+func (m *MaxCompute) loadFolder(ctx context.Context, table string, folder loadFolder) (int64, error) {
+	statement, err := m.loadStatement(table, folder.location)
+	if err != nil {
+		return 0, err
+	}
+	rows, err := m.runSQL(ctx, statement, true)
+	if err == nil && rows == 0 && folder.size > 0 && m.logger != nil {
+		m.logger.Warnn("MaxCompute LOAD wrote zero rows for non-empty files")
+	}
+	return rows, err
 }
 
 func (m *MaxCompute) loadTable(ctx context.Context, table string, files []warehouseutils.LoadFile) (*types.LoadTableStats, error) {
@@ -84,7 +137,7 @@ func (m *MaxCompute) loadTable(ctx context.Context, table string, files []wareho
 	if len(files) == 0 {
 		return result, nil
 	}
-	paths, err := m.preparedLoadFiles(ctx, files)
+	folders, err := m.preparedLoadFiles(ctx, files)
 	if err != nil {
 		return nil, err
 	}
@@ -101,16 +154,16 @@ func (m *MaxCompute) loadTable(ctx context.Context, table string, files []wareho
 			return nil, err
 		}
 	}
-	for _, path := range paths {
-		statement, err := m.loadStatement(name, path)
+	for _, folder := range folders {
+		rows, err := m.loadFolder(ctx, name, folder)
 		if err != nil {
 			return nil, err
 		}
-		rows, err := m.runSQL(ctx, statement, true)
-		if err != nil {
-			return nil, err
+		if rows < 0 {
+			result.RowsInserted = -1 // unknown: never present a partial count as complete
+		} else if result.RowsInserted >= 0 {
+			result.RowsInserted += rows
 		}
-		result.RowsInserted += rows
 	}
 	return result, nil
 }

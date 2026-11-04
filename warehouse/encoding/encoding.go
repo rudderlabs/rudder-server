@@ -12,11 +12,12 @@ import (
 )
 
 const (
-	UUIDTsColumn         = "uuid_ts"
-	LoadedAtColumn       = "loaded_at"
-	MaxComputeTimeFormat = "2006-01-02 15:04:05.999999"
-	BQLoadedAtFormat     = "2006-01-02 15:04:05.999999 Z"
-	BQUuidTSFormat       = "2006-01-02 15:04:05 Z"
+	UUIDTsColumn           = "uuid_ts"
+	LoadedAtColumn         = "loaded_at"
+	MaxComputeTimeFormat   = "2006-01-02 15:04:05.999999"
+	MaxComputeUUIDTsFormat = "2006-01-02 15:04:05"
+	BQLoadedAtFormat       = "2006-01-02 15:04:05.999999 Z"
+	BQUuidTSFormat         = "2006-01-02 15:04:05 Z"
 )
 
 type Factory struct {
