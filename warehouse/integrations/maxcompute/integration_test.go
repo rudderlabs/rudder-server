@@ -2,10 +2,8 @@ package maxcompute_test
 
 import (
 	"context"
-	"encoding/xml"
 	"fmt"
 	"maps"
-	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -191,16 +189,7 @@ func testIntegrationEvents(t *testing.T, c integrationCredentials, role bool) {
 	whth.BootstrapSvc(t, workspaceConfig, httpPort, stack.Port("jobsDb", 5432))
 	m := integrationManager(t, destination, namespace, nil)
 	require.NoError(t, m.CreateSchema(context.Background()), "SQL purpose: create event schema")
-	if err := m.TestConnection(context.Background(), m.warehouse); err != nil {
-		schema := m.service.Schema(namespace)
-		if loadErr := schema.Load(); loadErr == nil {
-			principal, principalErr := integrationPrincipal(m.service)
-			if principalErr == nil {
-				t.Logf("MaxCompute identity diagnostic: schema owner %q; WHOAMI principal %q", schema.Owner(), principal)
-			}
-		}
-		require.NoError(t, err, "verify event schema ownership")
-	}
+	require.NoError(t, m.TestConnection(context.Background(), m.warehouse), "verify event schema ownership")
 	jobsDB := whth.JobsDB(t, stack.Port("jobsDb", 5432))
 	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 	fixture := integrationEventsFixture(t, "../testdata/upload-job.events-1.json", false)
@@ -246,22 +235,6 @@ func testIntegrationEvents(t *testing.T, c integrationCredentials, role bool) {
 	assertIntegrationCount(t, m, namespace, "users", "id", firstUser, 1)
 	assertIntegrationCount(t, m, namespace, "users", "id", second.UserID, 1)
 	testIntegrationDiscards(t, m, destination, namespace)
-}
-
-func integrationPrincipal(service *odps.Odps) (string, error) {
-	rest := service.RestClient()
-	request, err := rest.NewRequest(http.MethodPost, "/projects/"+service.DefaultProjectName()+"/authorization", strings.NewReader("<Authorization><Query>whoami;</Query><ResponseInJsonFormat>false</ResponseInJsonFormat></Authorization>"))
-	if err != nil {
-		return "", err
-	}
-	request.Header.Set("Content-Type", "application/xml")
-	var result struct {
-		Result string `xml:"Result"`
-	}
-	err = rest.DoWithParseRes(request, func(response *http.Response) error {
-		return xml.NewDecoder(response.Body).Decode(&result)
-	})
-	return strings.TrimSpace(result.Result), err
 }
 
 func integrationEventsFixture(t *testing.T, source string, addColumn bool) string {

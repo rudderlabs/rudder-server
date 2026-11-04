@@ -210,7 +210,7 @@ func TestNamespaceOwnerPrincipalFromSDK(t *testing.T) {
 			w.Header().Set("Last-Modified", "Mon, 02 Jan 2006 15:04:05 GMT")
 			_, _ = fmt.Fprint(w, "<Schema><Owner>ALIYUN$123@aliyun.com</Owner></Schema>")
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/authorization"):
-			_, _ = fmt.Fprint(w, "<Authorization><Result>ALIYUN$123@aliyun.com</Result></Authorization>")
+			_, _ = fmt.Fprint(w, `<Authorization><Result>{"DisplayName":"ALIYUN$123@aliyun.com","ID":"p4_123","SourceIP":"127.0.0.1"}</Result></Authorization>`)
 		default:
 			t.Errorf("unexpected SDK request: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -221,6 +221,23 @@ func TestNamespaceOwnerPrincipalFromSDK(t *testing.T) {
 	instance.SetDefaultProjectName("project")
 	m := &MaxCompute{odps: instance, warehouse: model.Warehouse{Namespace: "schema"}}
 	require.NoError(t, m.checkNamespaceOwner(context.Background()))
+}
+
+func TestCurrentPrincipalRejectsInvalidWhoamiResult(t *testing.T) {
+	for _, result := range []string{`not JSON`, `{}`, `{"DisplayName":""}`} {
+		t.Run(result, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = fmt.Fprintf(w, "<Authorization><Result>%s</Result></Authorization>", result)
+			}))
+			defer server.Close()
+			instance := odps.NewOdps(account.NewAliyunAccount("id", "secret"), server.URL+"/api")
+			instance.SetDefaultProjectName("project")
+			m := &MaxCompute{odps: instance}
+			_, err := m.currentPrincipal(context.Background())
+			require.ErrorContains(t, err, "principal")
+			require.NotContains(t, err.Error(), result)
+		})
+	}
 }
 
 func TestRunSQLSharedRunnerAndSummary(t *testing.T) {

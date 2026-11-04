@@ -236,7 +236,13 @@ func (m *MaxCompute) currentPrincipal(ctx context.Context) (string, error) {
 		if err := xml.NewDecoder(response.Body).Decode(&result); err != nil {
 			return errors.New("invalid MaxCompute principal response")
 		}
-		principal = strings.TrimSpace(result.Result)
+		var identity struct {
+			DisplayName string `json:"DisplayName"`
+		}
+		if err := jsonrs.Unmarshal([]byte(result.Result), &identity); err != nil {
+			return errors.New("invalid MaxCompute principal response")
+		}
+		principal = strings.TrimSpace(identity.DisplayName)
 		return nil
 	})
 	if err != nil {
