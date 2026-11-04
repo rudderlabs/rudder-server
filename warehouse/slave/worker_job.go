@@ -601,10 +601,10 @@ func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal any
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
 		eventLoader.AddColumn("reason", warehouseutils.DiscardsSchema["reason"], reason)
 		if jr.job.DestinationType == warehouseutils.MAXCOMPUTE {
-			if normalized, ok := normalizeMaxComputeDateTime(receivedAt); ok {
+			if normalized, ok := encoding.NormalizeMaxComputeDateTime(receivedAt); ok {
 				receivedAt = normalized
 			} else {
-				receivedAt = jr.uuidTS.UTC().Format(encoding.MaxComputeTimeFormat)
+				receivedAt = jr.now().UTC().Format(encoding.MaxComputeTimeFormat)
 			}
 		}
 		eventLoader.AddColumn("received_at", warehouseutils.DiscardsSchema["received_at"], receivedAt)

@@ -3,6 +3,7 @@ package maxcompute
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -26,40 +27,56 @@ func testManager() *MaxCompute {
 
 func TestOSSLoadChecksMetadataBeforeSQL(t *testing.T) {
 	m := testManager()
-	original := metadataSize
-	t.Cleanup(func() { metadataSize = original })
-	location := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/path/file.gz"
-	called := 0
-	m.exec = func(_ context.Context, sql string) error {
-		called++
-		require.Contains(t, sql, "LOAD DATA INPATH 'oss://my-bucket/path/file.gz'")
+	location := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/path/file.json.gz"
+	var statements []string
+	m.exec = func(_ context.Context, sql string) error { statements = append(statements, sql); return nil }
+	for _, metadata := range []string{`{}`, `{"content_length":0}`, `{"content_length":3221225473}`, `{"content_length":"10"}`, `{"content_length":1.5}`} {
+		_, err := m.loadTable(context.Background(), "events", []warehouseutils.LoadFile{{Location: location, Metadata: []byte(metadata)}})
+		require.ErrorContains(t, err, "length", metadata)
+		require.Empty(t, statements)
+	}
+	files := []warehouseutils.LoadFile{{Location: location, Metadata: []byte(`{"content_length":3221225472}`)}}
+	stats, err := m.loadTable(context.Background(), "events", files)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, stats.RowsInserted)
+	require.Equal(t, []string{"LOAD INTO TABLE `project`.`events` FROM LOCATION 'oss://oss-cn-hangzhou-internal.aliyuncs.com/my-bucket/path/file.json.gz' ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe' WITH SERDEPROPERTIES ('odps.properties.rolearn'='read-role') STORED AS TEXTFILE"}, statements)
+}
+
+func TestOSSLocationAcceptsEncodedObjectKeys(t *testing.T) {
+	m := testManager()
+	m.exec = func(context.Context, string) error { return nil }
+	for _, key := range []string{"a%/b+ c/日本.json.gz", "it's+safe.json.gz"} {
+		location := "https://oss-cn-hangzhou.aliyuncs.com/my-bucket/" + url.PathEscape(key)
+		paths, err := m.preparedLoadFiles(context.Background(), []warehouseutils.LoadFile{{Location: location, Metadata: []byte(`{"content_length":10}`)}})
+		require.NoError(t, err)
+		require.Equal(t, []string{"oss://oss-cn-hangzhou-internal.aliyuncs.com/my-bucket/" + key}, paths)
+		statement, err := m.loadStatement("`project`.`events`", paths[0])
+		require.NoError(t, err)
+		require.Contains(t, statement, "odps.properties.rolearn")
+		require.NotContains(t, statement, "read-role/"+key)
+	}
+}
+
+func TestMaxComputeValidationReadsLoadedRowWithinPartition(t *testing.T) {
+	m := testManager()
+	var loads int
+	m.exec = func(_ context.Context, statement string) error {
+		require.Contains(t, statement, "LOAD INTO TABLE")
+		loads++
 		return nil
 	}
-	metadataSize = func(_ context.Context, _ *config.Config, conf map[string]any, key string) (int64, error) {
-		require.Equal(t, "path/file.gz", key)
-		require.Equal(t, "my-bucket", conf["bucketName"])
-		return maxOSSLoadBytes + 1, nil
+	m.query = func(_ context.Context, statement string) (warehouseutils.QueryResult, error) {
+		require.Equal(t, "SELECT `id`, `val` FROM `project`.`events` WHERE `pt` >= '2024-01-02' AND `pt` < '2024-01-03' AND `id` = 1 LIMIT 1", statement)
+		return warehouseutils.QueryResult{Values: [][]string{{"1", "RudderStack"}}}, nil
 	}
-	_, err := m.loadTable(context.Background(), "events", location)
-	require.ErrorContains(t, err, "3GB")
-	require.Zero(t, called)
-	metadataSize = func(context.Context, *config.Config, map[string]any, string) (int64, error) {
-		return 0, errors.New("unavailable")
+	payload := map[string]any{"id": 1, "val": "RudderStack", "uuid_ts": "2024-01-02 00:00:00.123456", "__content_length": int64(10)}
+	location := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/test.json.gz"
+	require.NoError(t, m.TestLoadTable(context.Background(), location, "events", payload, warehouseutils.LoadFileTypeJson))
+	require.Equal(t, 1, loads)
+	m.query = func(context.Context, string) (warehouseutils.QueryResult, error) {
+		return warehouseutils.QueryResult{}, nil
 	}
-	_, err = m.loadTable(context.Background(), "events", location)
-	require.Error(t, err)
-	require.Zero(t, called)
-	metadataSize = func(context.Context, *config.Config, map[string]any, string) (int64, error) { return 0, nil }
-	_, err = m.loadTable(context.Background(), "events", location)
-	require.ErrorContains(t, err, "length")
-	require.Zero(t, called)
-	metadataSize = func(context.Context, *config.Config, map[string]any, string) (int64, error) {
-		return maxOSSLoadBytes, nil
-	}
-	stats, err := m.loadTable(context.Background(), "events", location)
-	require.NoError(t, err)
-	require.EqualValues(t, 0, stats.RowsInserted) // test SQL executor has no task summary
-	require.Equal(t, 1, called)
+	require.ErrorContains(t, m.TestLoadTable(context.Background(), location, "events", payload, warehouseutils.LoadFileTypeJson), "row was not found")
 }
 
 type loadUploader struct {
@@ -76,9 +93,7 @@ func TestPrecheckAllFilesAndCatalogViewBeforeLoad(t *testing.T) {
 	m := testManager()
 	m.warehouse.Destination.Config["skipViews"] = false
 	prefix := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/"
-	m.uploader = loadUploader{files: []warehouseutils.LoadFile{{Location: prefix + "one.gz"}, {Location: prefix + "two.gz"}}}
-	original := metadataSize
-	t.Cleanup(func() { metadataSize = original })
+	m.uploader = loadUploader{files: []warehouseutils.LoadFile{{Location: prefix + "one.gz", Metadata: []byte(`{"content_length":10}`)}, {Location: prefix + "two.gz"}}}
 	var statements []string
 	m.exec = func(_ context.Context, sql string) error { statements = append(statements, sql); return nil }
 	catalogCalls := 0
@@ -86,20 +101,12 @@ func TestPrecheckAllFilesAndCatalogViewBeforeLoad(t *testing.T) {
 		catalogCalls++
 		return model.Schema{"events": {"id": "string", "received_at": "datetime", "current_column": "string"}}, nil
 	}
-	metadataSize = func(_ context.Context, _ *config.Config, _ map[string]any, key string) (int64, error) {
-		if key == "two.gz" {
-			return 0, nil
-		}
-		return 10, nil
-	}
 	_, err := m.LoadTable(context.Background(), "events")
 	require.ErrorContains(t, err, "length")
 	require.Empty(t, statements)
 	require.Zero(t, catalogCalls)
-	metadataSize = func(context.Context, *config.Config, map[string]any, string) (int64, error) { return 10, nil }
-	m.catalog = func(context.Context) (model.Schema, error) {
-		return nil, errors.New("catalog unavailable")
-	}
+	m.uploader = loadUploader{files: []warehouseutils.LoadFile{{Location: prefix + "one.gz", Metadata: []byte(`{"content_length":10}`)}, {Location: prefix + "two.gz", Metadata: []byte(`{"content_length":10}`)}}}
+	m.catalog = func(context.Context) (model.Schema, error) { return nil, errors.New("catalog unavailable") }
 	_, err = m.LoadTable(context.Background(), "events")
 	require.ErrorContains(t, err, "catalog unavailable")
 	require.Empty(t, statements)
@@ -133,11 +140,12 @@ func TestMaxComputeSummary(t *testing.T) {
 		rows  int64
 		valid bool
 	}{
-		{`{"tasks":[{"inputRecords":42}]}`, 42, true},
-		{`{"rowsInserted":0}`, 0, true},
-		{`{"inputRecords":-1}`, 0, false},
-		{`{"inputRecords":2.5}`, 0, false},
-		{`{"bytes":1024}`, 0, false},
+		{`{"tasks":[{"Outputs":[{"OutputRecordCounts":{"pt=2024-01-01":20,"pt=2024-01-02":22}}],"inputRecords":100}]}`, 42, true},
+		{`{"Outputs":[{"OutputRecordCounts":[0,3]},{"OutputRecordCounts":[4]}]}`, 7, true},
+		{`{"inputRecords":42}`, 0, false},
+		{`{"Outputs":[{"OutputRecordCounts":-1}]}`, 0, false},
+		{`{"Outputs":[{"OutputRecordCounts":2.5}]}`, 0, false},
+		{`{"Outputs":[]}`, 0, false},
 		{`secret`, 0, false},
 	} {
 		rows, err := loadSummaryRows(test.input)

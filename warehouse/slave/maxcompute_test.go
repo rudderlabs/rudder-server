@@ -71,17 +71,17 @@ func TestNormalizeMaxComputeDateTime(t *testing.T) {
 		"2025-03-04 06:06:07.123456 +0100 CET": "2025-03-04 05:06:07.123456",
 		"2025-03-04 06:06:07.123456 +0100":     "2025-03-04 05:06:07.123456",
 		"2025-03-04 05:06:07.123456":           "2025-03-04 05:06:07.123456",
-		"2025-03-04 05:06:07":                  "2025-03-04 05:06:07.000000",
+		"2025-03-04 05:06:07":                  "2025-03-04 05:06:07",
 	} {
-		got, ok := normalizeMaxComputeDateTime(input)
+		got, ok := encoding.NormalizeMaxComputeDateTime(input)
 		require.True(t, ok, input)
 		require.Equal(t, want, got)
-		again, ok := normalizeMaxComputeDateTime(got)
+		again, ok := encoding.NormalizeMaxComputeDateTime(got)
 		require.True(t, ok)
 		require.Equal(t, got, again)
 	}
 	for _, invalid := range []any{"not a date", 42, nil} {
-		_, ok := normalizeMaxComputeDateTime(invalid)
+		_, ok := encoding.NormalizeMaxComputeDateTime(invalid)
 		require.False(t, ok)
 	}
 }
@@ -108,8 +108,21 @@ func TestMaxComputeDiscardUsesLoadTimeAndNoPartitionTime(t *testing.T) {
 	require.NoError(t, jr.handleDiscardTypes("events", "count", 1, types.Data{"id": "1", "received_at": "2025-03-04T22:06:07.123Z"}, &constraints.Violation{}, writer, "invalid"))
 	require.NoError(t, writer.Close())
 	row := maxComputeLoadRow(t, writer.GetLoadFile().Name())
-	require.Equal(t, "2025-03-04 22:06:07.123000", row["received_at"])
-	require.Equal(t, "2025-03-04 22:06:07.000000", row["loaded_at"])
-	require.Equal(t, "2025-03-04 22:06:07.000000", row["uuid_ts"])
+	require.Equal(t, "2025-03-04 22:06:07.123", row["received_at"])
+	require.Equal(t, "2025-03-04 22:06:07", row["loaded_at"])
+	require.Equal(t, "2025-03-04 22:06:07", row["uuid_ts"])
 	require.NotContains(t, row, "_partitiontime")
+}
+
+func TestMaxComputeInvalidDateTimeDiscardPreservesValue(t *testing.T) {
+	conf := config.New()
+	jr := newJobRun(basePayload{DestinationType: whutils.MAXCOMPUTE, LoadFileType: whutils.LoadFileTypeJson}, 0, conf, logger.NOP, stats.NOP, encoding.NewFactory(conf))
+	jr.now = func() time.Time { return time.Date(2025, 3, 4, 5, 6, 7, 123456000, time.UTC) }
+	writer, err := jr.encodingFactory.NewLoadFileWriter(whutils.LoadFileTypeJson, filepath.Join(t.TempDir(), "discard.json.gz"), nil, whutils.MAXCOMPUTE)
+	require.NoError(t, err)
+	require.NoError(t, jr.handleDiscardTypes("events", "received_at", "not a datetime", types.Data{"id": "1", "received_at": "not a datetime"}, &constraints.Violation{}, writer, "invalid datetime"))
+	require.NoError(t, writer.Close())
+	row := maxComputeLoadRow(t, writer.GetLoadFile().Name())
+	require.Equal(t, "not a datetime", row["column_value"])
+	require.Equal(t, "2025-03-04 05:06:07.123456", row["received_at"])
 }

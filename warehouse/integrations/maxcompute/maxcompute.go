@@ -21,6 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -54,6 +55,7 @@ type MaxCompute struct {
 	// exec and catalog are replaceable in tests. The production implementations
 	// use the SDK rather than parsing SHOW output for schema discovery.
 	exec       func(context.Context, string) error
+	query      func(context.Context, string) (warehouseutils.QueryResult, error)
 	catalog    func(context.Context) (model.Schema, error)
 	partitions func(context.Context, string) ([]string, error) // replaceable in tests; SDK lists staging partitions in production.
 	principal  func(context.Context) (string, error)           // replaceable in tests; SDK security WHOAMI in production.
@@ -291,35 +293,86 @@ func loadSummaryRows(text string) (int64, error) {
 	if err := jsonrs.Unmarshal([]byte(text), &parsed); err != nil {
 		return 0, errors.New("invalid MaxCompute load task summary")
 	}
-	// ODPS summaries vary by execution engine. Only accept an explicit
-	// non-negative integer record count; never use file size as a row count.
-	var search func(any) (int64, bool)
-	search = func(value any) (int64, bool) {
+	var total int64
+	var found bool
+	var addCounts func(any) bool
+	addCounts = func(value any) bool {
 		switch value := value.(type) {
-		case map[string]any:
-			for _, key := range []string{"inputRecords", "input_records", "rowsInserted", "rows_inserted"} {
-				if count, ok := value[key].(float64); ok && count >= 0 && count < 1<<53 && count == float64(int64(count)) {
-					return int64(count), true
+		case float64:
+			if value < 0 || value >= 1<<53 || value != float64(int64(value)) {
+				return false
+			}
+			count := int64(value)
+			if count > int64(^uint64(0)>>1)-total {
+				return false
+			}
+			total += count
+			found = true
+			return true
+		case []any:
+			for _, child := range value {
+				if !addCounts(child) {
+					return false
 				}
 			}
+			return true
+		case map[string]any:
 			for _, child := range value {
-				if count, ok := search(child); ok {
-					return count, true
+				if !addCounts(child) {
+					return false
+				}
+			}
+			return true
+		default:
+			return false
+		}
+	}
+	var walkOutputs func(any) bool
+	walkOutputs = func(value any) bool {
+		switch value := value.(type) {
+		case map[string]any:
+			if counts, ok := value["OutputRecordCounts"]; ok {
+				return addCounts(counts)
+			}
+			for _, child := range value {
+				if !walkOutputs(child) {
+					return false
 				}
 			}
 		case []any:
 			for _, child := range value {
-				if count, ok := search(child); ok {
-					return count, true
+				if !walkOutputs(child) {
+					return false
 				}
 			}
 		}
-		return 0, false
+		return true
 	}
-	if count, ok := search(parsed); ok {
-		return count, nil
+	var findOutputs func(any) bool
+	findOutputs = func(value any) bool {
+		switch value := value.(type) {
+		case map[string]any:
+			if outputs, ok := value["Outputs"]; ok {
+				return walkOutputs(outputs)
+			}
+			for _, child := range value {
+				if !findOutputs(child) {
+					return false
+				}
+			}
+		case []any:
+			for _, child := range value {
+				if !findOutputs(child) {
+					return false
+				}
+			}
+		}
+		return true
 	}
-	return 0, errors.New("MaxCompute load task summary has no row count")
+	if !findOutputs(parsed) || !found {
+		return 0, errors.New("MaxCompute load task summary has no valid output record count")
+	}
+	return total, nil
 }
 
 func (m *MaxCompute) runSQL(ctx context.Context, statement string, summary bool) (int64, error) {
@@ -562,13 +615,66 @@ func (m *MaxCompute) LoadUserTables(ctx context.Context) map[string]error {
 }
 
 func (m *MaxCompute) LoadTable(ctx context.Context, table string) (*types.LoadTableStats, error) {
-	return m.loadTable(ctx, table, "")
+	if m.uploader == nil {
+		return nil, errors.New("MaxCompute uploader is not initialized")
+	}
+	if m.uploader.GetLoadFileType() != warehouseutils.LoadFileTypeJson {
+		return nil, errors.New("MaxCompute requires JSON load files")
+	}
+	files, err := m.uploader.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{Table: table})
+	if err != nil {
+		return nil, errors.New("getting MaxCompute load files failed")
+	}
+	return m.loadTable(ctx, table, files)
 }
 
-func (m *MaxCompute) TestLoadTable(ctx context.Context, location, table string, _ map[string]any, format string) error {
+func (m *MaxCompute) TestLoadTable(ctx context.Context, location, table string, payload map[string]any, format string) error {
 	if format != warehouseutils.LoadFileTypeJson {
 		return fmt.Errorf("MaxCompute validation expects JSON load files, got %q", format)
 	}
-	_, err := m.loadTable(ctx, table, location)
-	return err
+	size, ok := payload["__content_length"].(int64)
+	if !ok || size <= 0 {
+		return errors.New("MaxCompute validation load file size is missing")
+	}
+	metadata := fmt.Appendf(nil, `{"content_length":%d}`, size)
+	if _, err := m.loadTable(ctx, table, []warehouseutils.LoadFile{{Location: location, Metadata: metadata}}); err != nil {
+		return err
+	}
+	stamp, ok := payload["uuid_ts"].(string)
+	if !ok {
+		return errors.New("MaxCompute validation timestamp is missing")
+	}
+	parsed, err := time.ParseInLocation(encoding.MaxComputeTimeFormat, stamp, time.UTC)
+	if err != nil {
+		return errors.New("MaxCompute validation timestamp is invalid")
+	}
+	name, err := m.qualified(table)
+	if err != nil {
+		return err
+	}
+	day := parsed.Format("2006-01-02")
+	end := parsed.AddDate(0, 0, 1).Format("2006-01-02")
+	id, ok := payload["id"].(int)
+	if !ok {
+		return errors.New("MaxCompute validation row ID is invalid")
+	}
+	statement := fmt.Sprintf("SELECT `id`, `val` FROM %s WHERE `pt` >= '%s' AND `pt` < '%s' AND `id` = %d LIMIT 1", name, day, end, id)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	var result warehouseutils.QueryResult
+	if m.query != nil {
+		result, err = m.query(ctx, statement)
+	} else {
+		queryClient := client.Client{Type: client.ODPSClient, ODPS: m.odps}
+		result, err = queryClient.Query(statement)
+	}
+	if err != nil {
+		return err
+	}
+	if len(result.Values) != 1 || len(result.Values[0]) != 2 ||
+		result.Values[0][0] != fmt.Sprint(payload["id"]) || result.Values[0][1] != fmt.Sprint(payload["val"]) {
+		return errors.New("MaxCompute validation load row was not found")
+	}
+	return nil
 }

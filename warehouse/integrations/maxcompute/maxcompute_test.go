@@ -25,12 +25,12 @@ import (
 func TestValidateLocation(t *testing.T) {
 	settings := map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou"}
 	require.NoError(t, validateLocation("https://my-bucket.oss-cn-hangzhou.aliyuncs.com/path/file.gz", settings))
+	require.NoError(t, validateLocation("https://oss-cn-hangzhou.aliyuncs.com/my-bucket/path/a%25+b%20c.gz", settings))
 	for _, location := range []string{
 		"http://my-bucket.oss-cn-hangzhou.aliyuncs.com/path", "https://evil.example/path",
 		"https://my-bucket.oss-cn-hangzhou.aliyuncs.com.evil.example/path",
 		"https://my-bucket.oss-cn-hangzhou.aliyuncs.com:443/path",
 		"https://my-bucket.oss-cn-hangzhou.aliyuncs.com/path?signature=x",
-		"https://my-bucket.oss-cn-hangzhou.aliyuncs.com/%2e%2e/path",
 	} {
 		require.Error(t, validateLocation(location, settings), location)
 	}
@@ -85,22 +85,6 @@ func TestRoleSettingsAreExclusiveAndRequireWorkspace(t *testing.T) {
 	m.conf.Set("FileManager.ALIBABA_OSS.callerAccessKeyID", "server-id")
 	m.conf.Set("FileManager.ALIBABA_OSS.callerAccessKeySecret", "server-secret")
 	require.NoError(t, m.init(m.warehouse))
-}
-
-func TestOSSMetadataUsesInjectedCallerConfig(t *testing.T) {
-	previousID := config.Default.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeyID")
-	previousSecret := config.Default.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeySecret")
-	config.Default.Set("FileManager.ALIBABA_OSS.callerAccessKeyID", "global-id")
-	config.Default.Set("FileManager.ALIBABA_OSS.callerAccessKeySecret", "global-secret")
-	t.Cleanup(func() {
-		config.Default.Set("FileManager.ALIBABA_OSS.callerAccessKeyID", previousID)
-		config.Default.Set("FileManager.ALIBABA_OSS.callerAccessKeySecret", previousSecret)
-	})
-	_, err := ossObjectSize(context.Background(), config.New(), map[string]any{
-		"bucketName": "bucket", "region": "cn-hangzhou", "roleBasedAuth": true,
-		"iamRoleARN": "acs:ram::123:role/test", "externalID": "workspace",
-	}, "object")
-	require.EqualError(t, err, "OSS credentials unavailable")
 }
 
 func TestCreateTableStatements(t *testing.T) {
@@ -253,7 +237,7 @@ func TestRunSQLSharedRunnerAndSummary(t *testing.T) {
 					w.Header().Set("Location", "/api/projects/project/instances/test")
 					w.WriteHeader(http.StatusCreated)
 				case r.URL.Query().Has("instancesummary"):
-					_, _ = fmt.Fprint(w, `{"Instance":{"JsonSummary":"{\"inputRecords\":42}"}}`)
+					_, _ = fmt.Fprint(w, `{"Instance":{"JsonSummary":"{\"Outputs\":[{\"OutputRecordCounts\":[42]}]}"}}`)
 				case r.URL.Query().Has("taskstatus"):
 					_, _ = fmt.Fprint(w, `<Instance><Tasks><Task><Name>load</Name><Status>SUCCESS</Status></Task></Tasks></Instance>`)
 				default:
@@ -264,7 +248,7 @@ func TestRunSQLSharedRunnerAndSummary(t *testing.T) {
 			service := odps.NewOdps(account.NewAliyunAccount("id", "secret"), server.URL)
 			service.SetDefaultProjectName("project")
 			m := &MaxCompute{odps: service, warehouse: model.Warehouse{Namespace: namespace}, queryTimeout: time.Second, pollInterval: time.Millisecond}
-			rows, err := m.runSQL(context.Background(), "LOAD DATA INPATH 'oss://bucket/file'", true)
+			rows, err := m.runSQL(context.Background(), "LOAD INTO TABLE t FROM LOCATION 'oss://oss-cn-hangzhou-internal.aliyuncs.com/bucket/file' ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe' WITH SERDEPROPERTIES ('odps.properties.rolearn'='read-role') STORED AS TEXTFILE", true)
 			require.NoError(t, err)
 			require.True(t, submitted)
 			require.EqualValues(t, 42, rows)

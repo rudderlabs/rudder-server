@@ -14,7 +14,6 @@ import (
 	"github.com/aliyun/aliyun-odps-go-sdk/odps/account"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -59,7 +58,7 @@ func testUsersManager(t *testing.T) (*MaxCompute, *usersUploader, *[]string) {
 	m.odps = odps.NewOdps(account.NewAliyunAccount("id", "secret"), server.URL)
 	m.odps.SetDefaultProjectName("project")
 	u := &usersUploader{
-		files:      []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/one.gz"}, {Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/two.gz"}},
+		files:      []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/one.gz", Metadata: []byte(`{"content_length":10}`)}, {Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/two.gz", Metadata: []byte(`{"content_length":10}`)}},
 		users:      model.TableSchema{"id": "string", "received_at": "datetime", "loaded_at": "datetime", "uuid_ts": "datetime", "email": "string", "name": "string"},
 		identifies: model.TableSchema{"user_id": "string", "received_at": "datetime", "email": "string"},
 	}
@@ -73,9 +72,6 @@ func testUsersManager(t *testing.T) (*MaxCompute, *usersUploader, *[]string) {
 		}
 		return []string{"pt=" + now.Format("2006-01-02"), "pt=2000-01-01"}, nil
 	}
-	oldSize := metadataSize
-	metadataSize = func(context.Context, *config.Config, map[string]any, string) (int64, error) { return 10, nil }
-	t.Cleanup(func() { metadataSize = oldSize })
 	return m, u, statements
 }
 
@@ -87,8 +83,10 @@ func TestUsersCarryForwardOnlyCurrentUploadAndExactPartitions(t *testing.T) {
 	require.Contains(t, (*statements)[0], "CREATE TABLE `project`.")
 	require.Contains(t, (*statements)[0], "`loaded_at` TIMESTAMP")
 	require.Contains(t, (*statements)[0], "AUTO PARTITIONED BY (TRUNC_TIME(`received_at`, 'day') AS `pt`) TBLPROPERTIES ('table.format.version'='2')")
-	require.Contains(t, (*statements)[1], "LOAD DATA INPATH 'oss://my-bucket/one.gz' INTO TABLE `project`.")
-	require.Contains(t, (*statements)[2], "LOAD DATA INPATH 'oss://my-bucket/two.gz' INTO TABLE `project`.")
+	require.Contains(t, (*statements)[1], "LOAD INTO TABLE `project`.")
+	require.Contains(t, (*statements)[1], "oss://oss-cn-hangzhou-internal.aliyuncs.com/my-bucket/one.gz")
+	require.Contains(t, (*statements)[2], "LOAD INTO TABLE `project`.")
+	require.Contains(t, (*statements)[2], "oss://oss-cn-hangzhou-internal.aliyuncs.com/my-bucket/two.gz")
 	insert := (*statements)[3]
 	require.Contains(t, insert, "INSERT INTO `project`.`users`")
 	require.Contains(t, insert, "FROM `project`.`users` WHERE `pt` IN ('"+time.Now().UTC().Format("2006-01-02")+"') AND `id` IN (")
@@ -188,7 +186,7 @@ func TestUsersCarryForwardPreflightAndCleanup(t *testing.T) {
 	u.files = nil
 	require.NoError(t, m.loadUsersWithCarryForward(context.Background()))
 	require.Empty(t, *statements)
-	u.files = []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/one.gz"}, {Location: "https://evil.example/bad.gz"}}
+	u.files = []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/one.gz", Metadata: []byte(`{"content_length":10}`)}, {Location: "https://evil.example/bad.gz"}}
 	require.ErrorContains(t, m.loadUsersWithCarryForward(context.Background()), "load file")
 	require.Empty(t, *statements)
 	u.err = errors.New("router failed with secret")
@@ -196,7 +194,7 @@ func TestUsersCarryForwardPreflightAndCleanup(t *testing.T) {
 	require.NotContains(t, m.loadUsersWithCarryForward(context.Background()).Error(), "secret")
 	require.Empty(t, *statements)
 	u.err = nil
-	u.files = []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/one.gz"}}
+	u.files = []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/one.gz", Metadata: []byte(`{"content_length":10}`)}}
 	m.exec = func(_ context.Context, sql string) error {
 		*statements = append(*statements, sql)
 		if strings.HasPrefix(sql, "INSERT INTO") {

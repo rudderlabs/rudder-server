@@ -51,7 +51,7 @@ func TestMaxComputeValidationFixture(t *testing.T) {
 	defer func() { _ = gz.Close() }()
 	contents, err := io.ReadAll(gz)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"id":1,"val":"RudderStack","uuid_ts":"2024-01-02 00:00:00.000000"}`, string(contents))
+	require.JSONEq(t, `{"id":1,"val":"RudderStack","uuid_ts":"2024-01-02 00:00:00.123456"}`, string(contents))
 	require.Equal(t, "datetime", validationTableSchema(true)["uuid_ts"])
 	require.NotContains(t, validationTableSchema(false), "uuid_ts")
 	require.NotContains(t, tableSchemaMap, "uuid_ts")

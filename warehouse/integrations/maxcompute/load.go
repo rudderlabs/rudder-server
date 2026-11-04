@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
@@ -17,39 +18,14 @@ import (
 
 const maxOSSLoadBytes int64 = 3 * 1024 * 1024 * 1024
 
-var ossBucketPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
+var (
+	ossBucketPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
+	ossRegionPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+)
 
-// metadataSize is replaceable for tests. An authenticated OSS HEAD supplies
-// the size: load-file metadata from the router is not authoritative.
-var metadataSize = ossObjectSize
-
-func (m *MaxCompute) loadTable(ctx context.Context, table, validationLocation string) (*types.LoadTableStats, error) {
-	name, err := m.qualified(table)
-	if err != nil {
-		return nil, err
-	}
-	var locations []string
-	if validationLocation != "" {
-		locations = []string{validationLocation}
-	} else {
-		if m.uploader == nil {
-			return nil, errors.New("MaxCompute uploader is not initialized")
-		}
-		if m.uploader.GetLoadFileType() != warehouseutils.LoadFileTypeJson {
-			return nil, errors.New("MaxCompute requires JSON load files")
-		}
-		files, err := m.uploader.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{Table: table})
-		if err != nil {
-			return nil, errors.New("getting MaxCompute load files failed")
-		}
-		for _, f := range files {
-			locations = append(locations, f.Location)
-		}
-	}
-	result := &types.LoadTableStats{}
-	if len(locations) == 0 {
-		return result, nil
-	}
+// preparedLoadFiles validates the complete upload before the first LOAD runs.
+// Persisted load-file metadata supplies the object size.
+func (m *MaxCompute) preparedLoadFiles(ctx context.Context, files []warehouseutils.LoadFile) ([]string, error) {
 	if err := warehouseutils.ValidateMaxComputeSettings(m.warehouse.Destination.Config, m.warehouse.Destination.WorkspaceID); err != nil {
 		return nil, err
 	}
@@ -61,37 +37,57 @@ func (m *MaxCompute) loadTable(ctx context.Context, table, validationLocation st
 	if err != nil {
 		return nil, errors.New("creating MaxCompute OSS filemanager failed")
 	}
-	if !ossBucketPattern.MatchString(converted["bucketName"].(string)) {
+	bucket, _ := converted["bucketName"].(string)
+	region, _ := converted["region"].(string)
+	if !ossBucketPattern.MatchString(bucket) || !ossRegionPattern.MatchString(region) {
 		return nil, errors.New("invalid MaxCompute OSS source")
 	}
-	// Validate every object before issuing any LOAD. A bad later file must not
-	// leave an earlier file partially committed.
-	keys := make([]string, 0, len(locations))
-	for _, location := range locations {
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if err := validateLocation(location, m.warehouse.Destination.Config); err != nil {
+		if err := validateLocation(file.Location, m.warehouse.Destination.Config); err != nil {
 			return nil, err
 		}
-		key, err := fm.GetObjectNameFromLocation(location)
-		if err != nil || key == "" || strings.ContainsAny(key, "'\n\r\\") {
+		key, err := fm.GetObjectNameFromLocation(file.Location)
+		if err != nil || key == "" || strings.ContainsAny(key, "\n\r") {
 			return nil, errors.New("invalid MaxCompute OSS object name")
 		}
-		if strings.Contains(key, "..") {
-			return nil, errors.New("invalid MaxCompute OSS source")
+		var metadata struct {
+			ContentLength int64 `json:"content_length"`
 		}
-		length, err := metadataSize(ctx, m.conf, converted, key)
-		if err != nil {
-			return nil, err
+		if err := jsonrs.Unmarshal(file.Metadata, &metadata); err != nil || metadata.ContentLength <= 0 || metadata.ContentLength > maxOSSLoadBytes {
+			return nil, errors.New("MaxCompute OSS object length missing, invalid or exceeds 3GB")
 		}
-		if length <= 0 || length > maxOSSLoadBytes {
-			return nil, errors.New("MaxCompute OSS object length missing or exceeds 3GB")
-		}
-		keys = append(keys, key)
+		paths = append(paths, "oss://oss-"+region+"-internal.aliyuncs.com/"+bucket+"/"+key)
 	}
-	// Use the current catalog, not a possibly stale uploader snapshot. Create
-	// the view before the first load so a failed view cannot follow committed data.
+	return paths, nil
+}
+
+func (m *MaxCompute) loadStatement(table, path string) (string, error) {
+	role, _ := m.warehouse.Destination.Config["ossRoleArn"].(string)
+	if role == "" || strings.ContainsAny(role, "\n\r") {
+		return "", errors.New("MaxCompute OSS read role is required")
+	}
+	return "LOAD INTO TABLE " + table + " FROM LOCATION " + warehouseutils.SQLStringLiteral(path) +
+		" ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe' WITH SERDEPROPERTIES (" +
+		"'odps.properties.rolearn'=" + warehouseutils.SQLStringLiteral(role) + ") STORED AS TEXTFILE", nil
+}
+
+func (m *MaxCompute) loadTable(ctx context.Context, table string, files []warehouseutils.LoadFile) (*types.LoadTableStats, error) {
+	name, err := m.qualified(table)
+	if err != nil {
+		return nil, err
+	}
+	result := &types.LoadTableStats{}
+	if len(files) == 0 {
+		return result, nil
+	}
+	paths, err := m.preparedLoadFiles(ctx, files)
+	if err != nil {
+		return nil, err
+	}
 	if !m.warehouse.GetBoolDestinationConfig(model.SkipViewsSetting) {
 		schema, err := m.FetchSchema(ctx)
 		if err != nil {
@@ -105,10 +101,12 @@ func (m *MaxCompute) loadTable(ctx context.Context, table, validationLocation st
 			return nil, err
 		}
 	}
-	bucket := converted["bucketName"].(string)
-	for _, key := range keys {
-		// No externally supplied URL, SQL identifier or credentials are interpolated.
-		rows, err := m.runSQL(ctx, "LOAD DATA INPATH 'oss://"+bucket+"/"+key+"' INTO TABLE "+name, true)
+	for _, path := range paths {
+		statement, err := m.loadStatement(name, path)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := m.runSQL(ctx, statement, true)
 		if err != nil {
 			return nil, err
 		}
@@ -119,12 +117,20 @@ func (m *MaxCompute) loadTable(ctx context.Context, table, validationLocation st
 
 func validateLocation(location string, settings map[string]any) error {
 	u, err := url.Parse(location)
-	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.ForceQuery {
+	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.ForceQuery || u.Opaque != "" || u.Port() != "" {
 		return errors.New("invalid MaxCompute OSS load file location")
 	}
 	bucket, _ := settings["bucketName"].(string)
 	region, _ := settings["region"].(string)
-	if bucket == "" || region == "" || u.Hostname() != bucket+".oss-"+region+".aliyuncs.com" || u.Port() != "" || u.Path == "" || u.Path == "/" || u.EscapedPath() != u.Path || u.Opaque != "" || strings.ContainsAny(u.Path, "'\n\r\\") {
+	if !ossBucketPattern.MatchString(bucket) || !ossRegionPattern.MatchString(region) {
+		return errors.New("invalid MaxCompute OSS source")
+	}
+	host := u.Hostname()
+	public := "oss-" + region + ".aliyuncs.com"
+	internal := "oss-" + region + "-internal.aliyuncs.com"
+	virtual := host == bucket+"."+public || host == bucket+"."+internal
+	pathStyle := host == public || host == internal
+	if (!virtual && !pathStyle) || u.Path == "" || u.Path == "/" || (pathStyle && !strings.HasPrefix(u.Path, "/"+bucket+"/")) {
 		return errors.New("MaxCompute load file is not in the configured OSS bucket")
 	}
 	return nil

@@ -407,7 +407,7 @@ func (w *worker) processSingleStagingFile(
 
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			if job.DestinationType == warehouseutils.MAXCOMPUTE && dataTypeInSchema == model.DateTimeDataType {
-				value, valid := normalizeMaxComputeDateTime(columnVal)
+				value, valid := encoding.NormalizeMaxComputeDateTime(columnVal)
 				if !valid {
 					eventLoader.AddEmptyColumn(columnName)
 					discardWriter, releaseDiscardWriter, err := jr.writer(discardsTable, stagingFile, loadFileNamePrefix)
@@ -661,27 +661,6 @@ func (w *worker) destinationFromSlaveConnectionMap(destinationId, sourceId strin
 	}
 
 	return conn, nil
-}
-
-// normalizeMaxComputeDateTime accepts source timestamps and already normalized
-// load-file values so retries never alter a valid datetime. ODPS uses UTC.
-func normalizeMaxComputeDateTime(value any) (string, bool) {
-	text, ok := value.(string)
-	if !ok {
-		return "", false
-	}
-	for _, layout := range []string{
-		time.RFC3339Nano,
-		"2006-01-02 15:04:05.999999 -0700 MST",
-		"2006-01-02 15:04:05.999999 -0700",
-		encoding.MaxComputeTimeFormat,
-		"2006-01-02 15:04:05",
-	} {
-		if parsed, err := time.Parse(layout, text); err == nil {
-			return parsed.UTC().Format(encoding.MaxComputeTimeFormat), true
-		}
-	}
-	return "", false
 }
 
 // HandleSchemaChange checks if the existing data type (from warehouse schema) is compatible with the inferred data type (from event data)

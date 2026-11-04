@@ -14,7 +14,7 @@ import (
 const (
 	UUIDTsColumn         = "uuid_ts"
 	LoadedAtColumn       = "loaded_at"
-	MaxComputeTimeFormat = "2006-01-02 15:04:05.000000"
+	MaxComputeTimeFormat = "2006-01-02 15:04:05.999999"
 	BQLoadedAtFormat     = "2006-01-02 15:04:05.999999 Z"
 	BQUuidTSFormat       = "2006-01-02 15:04:05 Z"
 )

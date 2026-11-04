@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -12,9 +11,6 @@ import (
 	"github.com/aliyun/aliyun-odps-go-sdk/odps"
 	"github.com/aliyun/aliyun-odps-go-sdk/odps/tableschema"
 
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -177,7 +173,7 @@ func userPartitionPredicate(values []string) (string, error) {
 }
 
 // currentUserFiles returns only objects belonging to this upload. Validate all
-// locations and authenticated object sizes before issuing any stage LOAD.
+// locations and persisted object sizes before issuing any stage LOAD.
 func (m *MaxCompute) currentUserFiles(ctx context.Context) ([]string, error) {
 	if m.uploader == nil {
 		return nil, errors.New("MaxCompute uploader is not initialized")
@@ -192,47 +188,7 @@ func (m *MaxCompute) currentUserFiles(ctx context.Context) ([]string, error) {
 	if len(files) == 0 {
 		return nil, nil
 	}
-	if err := warehouseutils.ValidateMaxComputeSettings(m.warehouse.Destination.Config, m.warehouse.Destination.WorkspaceID); err != nil {
-		return nil, err
-	}
-	converted := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-		Provider: warehouseutils.AlibabaOSS, Config: m.warehouse.Destination.Config,
-		WorkspaceID: m.warehouse.Destination.WorkspaceID,
-	})
-	fm, err := filemanager.New(&filemanager.Settings{Provider: warehouseutils.AlibabaOSS, Config: converted, Conf: m.conf})
-	if err != nil {
-		return nil, errors.New("creating MaxCompute OSS filemanager failed")
-	}
-	bucket, _ := converted["bucketName"].(string)
-	if !ossBucketPattern.MatchString(bucket) {
-		return nil, errors.New("invalid MaxCompute OSS source")
-	}
-	paths := make([]string, 0, len(files))
-	for _, file := range files {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if err := validateLocation(file.Location, m.warehouse.Destination.Config); err != nil {
-			return nil, err
-		}
-		key, err := fm.GetObjectNameFromLocation(file.Location)
-		if err != nil || key == "" || strings.ContainsAny(key, "'\n\r\\") || strings.Contains(key, "..") {
-			return nil, errors.New("invalid MaxCompute OSS source")
-		}
-		parsed, _ := url.Parse(file.Location) // validated above
-		if strings.TrimPrefix(parsed.Path, "/") != key {
-			return nil, errors.New("invalid MaxCompute OSS source")
-		}
-		length, err := metadataSize(ctx, m.conf, converted, key)
-		if err != nil {
-			return nil, err
-		}
-		if length <= 0 || length > maxOSSLoadBytes {
-			return nil, errors.New("MaxCompute OSS object length missing or exceeds 3GB")
-		}
-		paths = append(paths, "oss://"+bucket+"/"+key)
-	}
-	return paths, nil
+	return m.preparedLoadFiles(ctx, files)
 }
 
 func (m *MaxCompute) loadUsersWithCarryForward(ctx context.Context) (err error) {
@@ -302,7 +258,11 @@ func (m *MaxCompute) loadUsersWithCarryForward(ctx context.Context) (err error) 
 	// Capture its exact pt values after LOAD; neither a time range nor the
 	// warehouse users table's historical partitions identify these rows.
 	for _, path := range paths {
-		if err := m.run(ctx, "LOAD DATA INPATH '"+path+"' INTO TABLE "+stageTable); err != nil {
+		statement, err := m.loadStatement(stageTable, path)
+		if err != nil {
+			return err
+		}
+		if err := m.run(ctx, statement); err != nil {
 			return fmt.Errorf("loading MaxCompute users upload staging table: %w", err)
 		}
 	}

@@ -296,7 +296,7 @@ func validationTableSchema(maxCompute bool) model.TableSchema {
 
 func maxComputeValidationPayload() map[string]any {
 	payload := maps.Clone(payloadMap)
-	payload["uuid_ts"] = "2024-01-02 00:00:00.000000"
+	payload["uuid_ts"] = "2024-01-02 00:00:00.123456"
 	return payload
 }
 
@@ -345,6 +345,14 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 	if tempPath, err = CreateTempLoadFile(lt.destination); err != nil {
 		return fmt.Errorf("create temp load file: %w", err)
 	}
+	var validationSize int64
+	if destinationType == warehouseutils.MAXCOMPUTE {
+		info, statErr := os.Stat(tempPath)
+		if statErr != nil {
+			return fmt.Errorf("stat MaxCompute test load file: %w", statErr)
+		}
+		validationSize = info.Size()
+	}
 
 	if uploadOutput, err = uploadFile(ctx, lt.destination, tempPath); err != nil {
 		return fmt.Errorf("upload file: %w", err)
@@ -359,6 +367,7 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 	fixturePayload := payloadMap
 	if destinationType == warehouseutils.MAXCOMPUTE {
 		fixturePayload = maxComputeValidationPayload()
+		fixturePayload["__content_length"] = validationSize
 	}
 	if err = lt.manager.TestLoadTable(ctx, uploadOutput.Location, lt.table, fixturePayload, loadFileType); err != nil {
 		if destinationType == warehouseutils.MAXCOMPUTE {

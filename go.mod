@@ -27,7 +27,6 @@ require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/alexeyco/simpletable v1.0.0
-	github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.6.0
 	github.com/aliyun/aliyun-odps-go-sdk v0.4.26
 	github.com/aliyun/credentials-go v1.3.10
 	github.com/allisson/go-pglock/v3 v3.2.0
@@ -165,6 +164,7 @@ require (
 	github.com/actgardner/gogen-avro/v10 v10.2.1 // indirect
 	github.com/alibabacloud-go/debug v1.0.1 // indirect
 	github.com/alibabacloud-go/tea v1.2.2 // indirect
+	github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.6.0 // indirect
 	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/apache/arrow-go/v18 v18.7.0 // indirect
 	github.com/apache/arrow/go/arrow v0.0.0-20211112161151-bc219186db40 // indirect
