@@ -1,12 +1,9 @@
 package validations
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -391,56 +388,6 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, int64, error)
 	if tmpDirPath, err = misc.GetTmpDir(); err != nil {
 		return "", 0, fmt.Errorf("create tmp dir: %w", err)
 	}
-	if destinationType == warehouseutils.MAXCOMPUTE {
-		dir := filepath.Join(tmpDirPath, connectionTestingFolder)
-		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-			return "", 0, fmt.Errorf("create directory: %w", err)
-		}
-		file, err := os.CreateTemp(dir, "MAXCOMPUTE-*.json.gz")
-		if err != nil {
-			return "", 0, fmt.Errorf("create MaxCompute fixture: %w", err)
-		}
-		path := file.Name()
-		closeAndRemove := func() {
-			_ = file.Close()
-			_ = os.Remove(path)
-		}
-		loader := encoding.NewFactory(config.Default).NewEventLoader(nil, loadFileType, destinationType)
-		for _, column := range []string{"id", "val"} {
-			loader.AddColumn(column, tableSchemaMap[column], payloadMap[column])
-		}
-		loader.AddColumn("uuid_ts", "datetime", maxComputeValidationPayload()["uuid_ts"])
-		row, err := loader.WriteToString()
-		if err != nil {
-			closeAndRemove()
-			return "", 0, fmt.Errorf("encode MaxCompute fixture: %w", err)
-		}
-		var compressed bytes.Buffer
-		gz := gzip.NewWriter(&compressed)
-		if _, err := gz.Write([]byte(row)); err != nil {
-			closeAndRemove()
-			return "", 0, fmt.Errorf("compress MaxCompute fixture: %w", err)
-		}
-		if err := gz.Close(); err != nil {
-			closeAndRemove()
-			return "", 0, fmt.Errorf("close MaxCompute fixture compressor: %w", err)
-		}
-		count, err := file.Write(compressed.Bytes())
-		if err != nil {
-			closeAndRemove()
-			return "", 0, fmt.Errorf("write MaxCompute fixture: %w", err)
-		}
-		if count != compressed.Len() {
-			closeAndRemove()
-			return "", 0, fmt.Errorf("write MaxCompute fixture: %w", io.ErrShortWrite)
-		}
-		if err := file.Close(); err != nil {
-			_ = os.Remove(path)
-			return "", 0, fmt.Errorf("close MaxCompute fixture: %w", err)
-		}
-		return path, int64(count), nil
-	}
-
 	filePath = fmt.Sprintf("%v/%v/%v.%v.%v.%v",
 		tmpDirPath,
 		connectionTestingFolder,
@@ -464,6 +411,9 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, int64, error)
 	for _, column := range []string{"id", "val"} {
 		eventLoader.AddColumn(column, tableSchemaMap[column], payloadMap[column])
 	}
+	if destinationType == warehouseutils.MAXCOMPUTE {
+		eventLoader.AddColumn("uuid_ts", "datetime", maxComputeValidationPayload()["uuid_ts"])
+	}
 	if err = eventLoader.Write(); err != nil {
 		return "", 0, fmt.Errorf("writing to file: %w", err)
 	}
@@ -472,6 +422,13 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, int64, error)
 		return "", 0, fmt.Errorf("closing writer: %w", err)
 	}
 
+	if destinationType == warehouseutils.MAXCOMPUTE {
+		counter, ok := writer.(interface{ BytesWritten() int64 })
+		if !ok || counter.BytesWritten() <= 0 {
+			return "", 0, fmt.Errorf("MaxCompute fixture writer byte count unavailable")
+		}
+		return filePath, counter.BytesWritten(), nil
+	}
 	return filePath, 0, nil
 }
 
