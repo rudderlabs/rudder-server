@@ -673,7 +673,7 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
 		roleARN, _ := objectStorageConfigMap["iamRoleARN"].(string)
 		if strings.TrimSpace(roleARN) != "" {
 			ossConfig["roleBasedAuth"] = true
-			ossConfig["iamRoleARN"] = objectStorageConfigMap["ossRoleArn"]
+			ossConfig["iamRoleARN"] = roleARN
 			ossConfig["externalID"] = opts.WorkspaceID
 		} else {
 			ossConfig["roleBasedAuth"] = false

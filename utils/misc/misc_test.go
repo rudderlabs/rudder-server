@@ -994,13 +994,15 @@ func TestAlibabaOSSConfigConversion(t *testing.T) {
 				require.Equal(t, false, got["useInternalEndpoint"])
 				require.Equal(t, role, got["roleBasedAuth"])
 				if role {
-					require.Equal(t, "oss-role", got["iamRoleARN"])
+					require.Equal(t, "odps-role", got["iamRoleARN"])
 					require.Equal(t, "workspace-id", got["externalID"])
 				} else {
 					require.Equal(t, "id", got["accessKeyID"])
 					require.Equal(t, "secret", got["accessKey"])
 					require.NotContains(t, got, "externalID")
+					require.NotContains(t, got, "iamRoleARN")
 				}
+				require.NotContains(t, got, "ossRoleArn")
 				require.Equal(t, "untrusted", source["externalID"])
 				require.Equal(t, "untrusted", source["endPoint"])
 			})
