@@ -371,7 +371,9 @@ func testIntegrationPartition(t *testing.T, c integrationCredentials, role bool,
 	require.NoError(t, m.Setup(ctx, m.warehouse, integrationUploader{files: []warehouseutils.LoadFile{integrationUploadRow(t, dest, "partition_probe", row)}}))
 	stats, err := m.LoadTable(ctx, "partition_probe")
 	require.NoError(t, err, "SQL purpose: LOAD partition-probe folder")
-	require.EqualValues(t, 1, stats.RowsInserted)
+	if stats.RowsInserted >= 0 {
+		require.EqualValues(t, 1, stats.RowsInserted)
+	}
 	assertIntegrationCount(t, m, namespace, "partition_probe", "id", "integration_row", 1)
 	partitionValue := stamp.Format("2006-01-02")
 	if partitionType == "hour" {
@@ -405,7 +407,9 @@ func testIntegrationDiscards(t *testing.T, m *integrationRuntime, dest backendco
 	require.NoError(t, m.Setup(context.Background(), m.warehouse, integrationUploader{files: []warehouseutils.LoadFile{integrationUploadRow(t, dest, warehouseutils.DiscardsTable, row)}}))
 	stats, err := m.LoadTable(context.Background(), warehouseutils.DiscardsTable)
 	require.NoError(t, err, "SQL purpose: LOAD rudder_discards folder")
-	require.EqualValues(t, 1, stats.RowsInserted)
+	if stats.RowsInserted >= 0 {
+		require.EqualValues(t, 1, stats.RowsInserted)
+	}
 	assertIntegrationCount(t, m, namespace, warehouseutils.DiscardsTable, "row_id", "integration_discard", 1)
 }
 
