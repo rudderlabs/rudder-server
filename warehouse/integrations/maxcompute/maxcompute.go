@@ -691,6 +691,9 @@ func (m *MaxCompute) Cleanup(ctx context.Context) {
 		}
 	})
 	if listErr != nil {
+		if missingSchemaListError(listErr) {
+			return
+		}
 		if m.logger != nil {
 			m.logger.Warnn("listing MaxCompute staging tables for cleanup", obskit.Error(listErr))
 		}

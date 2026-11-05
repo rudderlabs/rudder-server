@@ -32,6 +32,22 @@ func TestCleanupDropsOnlyMaxComputeStagingTables(t *testing.T) {
 	require.Equal(t, []string{"DROP TABLE IF EXISTS `project`.`rudder_staging_users_upload_123`"}, statements)
 }
 
+func TestCleanupSkipsMissingNamespace(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = fmt.Fprint(w, "<Error><Code>ODPS-0420095</Code><Message>Schema project.missing does not exist</Message></Error>")
+	}))
+	defer server.Close()
+	m := testManager()
+	m.odps = odps.NewOdps(account.NewAliyunAccount("id", "secret"), server.URL)
+	m.odps.SetDefaultProjectName("project")
+	m.exec = func(context.Context, string) error {
+		t.Fatal("cleanup attempted to drop a table in a missing schema")
+		return nil
+	}
+	m.Cleanup(context.Background())
+}
+
 func TestIsEmptyUsesBoundedPTProbe(t *testing.T) {
 	m := testManager()
 	m.catalog = func(context.Context) (model.Schema, error) {

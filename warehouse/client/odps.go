@@ -40,6 +40,8 @@ var (
 	odpsCredentialPattern = regexp.MustCompile(`(?i)\b(?:access[_-]?key(?:[_-]?(?:id|secret))?|security[_-]?token|x-acs-security-token|authorization|password|signature|secret)\b["']?\s*[:=]\s*["']?[^\s,"';]+`)
 	odpsBearerPattern     = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+`)
 	odpsOpaqueKeyPattern  = regexp.MustCompile(`\b(?:LTAI|CAIS|AKIA)[A-Za-z0-9+/=]{8,}`)
+	odpsRAMPrincipal      = regexp.MustCompile(`(?i)\bRAM\$[0-9]+:[A-Za-z0-9_.@-]*`)
+	odpsRAMArn            = regexp.MustCompile(`(?i)\bacs:ram::[0-9]+:[A-Za-z0-9._/-]*`)
 )
 
 // NewODPSClient uses the region's public MaxCompute endpoint for role auth.
@@ -369,6 +371,9 @@ func odpsDiagnostic(code, message string) string {
 		message = strings.TrimLeft(message[index+len(odpsCode):], ": \t")
 	}
 	message = strings.TrimSpace(strings.SplitN(strings.SplitN(message, "\n", 2)[0], "\r", 2)[0])
+	if index := strings.Index(strings.ToLower(message), "tips:"); index >= 0 {
+		message = strings.TrimSpace(message[:index])
+	}
 	// An embedded request dump is not an ODPS diagnostic. Keep only its code.
 	lower := strings.ToLower(message)
 	if strings.HasPrefix(message, "{") || strings.HasPrefix(message, "<") ||
@@ -379,6 +384,8 @@ func odpsDiagnostic(code, message string) string {
 	message = odpsBearerPattern.ReplaceAllString(message, "[credential]")
 	message = odpsCredentialPattern.ReplaceAllString(message, "[credential]")
 	message = odpsOpaqueKeyPattern.ReplaceAllString(message, "[credential]")
+	message = odpsRAMPrincipal.ReplaceAllString(message, "[principal]")
+	message = odpsRAMArn.ReplaceAllString(message, "[principal]")
 	if len(message) > 512 {
 		runes := []rune(message)
 		if len(runes) > 512 {

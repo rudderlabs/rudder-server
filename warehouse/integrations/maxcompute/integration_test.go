@@ -86,6 +86,7 @@ func TestIntegration(t *testing.T) {
 				require.NotEmpty(t, credentials.AccessKeyID)
 				require.NotEmpty(t, credentials.AccessKeySecret)
 			}
+			t.Run("first_upload_creates_schema", func(t *testing.T) { testIntegrationEvents(t, credentials, mode.role, false) })
 			if !t.Run("validation", func(t *testing.T) { testIntegrationValidation(t, credentials, mode.role) }) {
 				t.FailNow() // The remaining cases depend on the same CREATE and LOAD path.
 			}
@@ -98,7 +99,7 @@ func TestIntegration(t *testing.T) {
 					testIntegrationInvalidAuth(t, credentials, false)
 				})
 			}
-			t.Run("events_and_schema", func(t *testing.T) { testIntegrationEvents(t, credentials, mode.role) })
+			t.Run("events_and_schema", func(t *testing.T) { testIntegrationEvents(t, credentials, mode.role, true) })
 			for _, partition := range []struct{ name, column, granularity string }{
 				{"ingestion_hour", "", "hour"},
 				{"received_at_day", "received_at", "day"},
@@ -215,7 +216,7 @@ func testIntegrationInvalidAuth(t *testing.T, c integrationCredentials, role boo
 	require.Contains(t, response.Steps[0].Error, wantReason)
 }
 
-func testIntegrationEvents(t *testing.T, c integrationCredentials, role bool) {
+func testIntegrationEvents(t *testing.T, c integrationCredentials, role, precreateSchema bool) {
 	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 	stack := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.transformer.yml"}))
@@ -234,8 +235,10 @@ func testIntegrationEvents(t *testing.T, c integrationCredentials, role bool) {
 	).WithWorkspaceID(workspaceID).Build()
 	whth.BootstrapSvc(t, workspaceConfig, httpPort, stack.Port("jobsDb", 5432))
 	m := integrationManager(t, destination, namespace, nil)
-	require.NoError(t, m.CreateSchema(context.Background()), "SQL purpose: create event schema")
-	require.NoError(t, m.TestConnection(context.Background(), m.warehouse), "verify event schema ownership")
+	if precreateSchema {
+		require.NoError(t, m.CreateSchema(context.Background()), "SQL purpose: create event schema")
+		require.NoError(t, m.TestConnection(context.Background(), m.warehouse), "verify event schema ownership")
+	}
 	jobsDB := whth.JobsDB(t, stack.Port("jobsDb", 5432))
 	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 	fixture := integrationEventsFixture(t, "../testdata/upload-job.events-1.json", false)
@@ -250,6 +253,9 @@ func testIntegrationEvents(t *testing.T, c integrationCredentials, role bool) {
 	}
 	first.VerifyEvents(t)
 	assertIntegrationEventCounts(t, m, namespace, firstUser, tables)
+	if !precreateSchema {
+		return
+	}
 	plan, err := m.CatalogPartition(context.Background(), "tracks")
 	require.NoError(t, err)
 	require.Equal(t, "uuid_ts", plan.Source)

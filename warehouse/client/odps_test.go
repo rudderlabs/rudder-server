@@ -239,6 +239,29 @@ func TestODPSErrorKeepsDiagnosticWithoutCredentials(t *testing.T) {
 	}
 }
 
+func TestODPSSafeErrorRedactsAccountIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name, message, secret, want string
+	}{
+		{"tips suffix", "Access Denied: Schema project.missing does not exist Tips: Principal:RAM$123456789:987654321", "123456789", "Schema project.missing does not exist"},
+		{"RAM principal", "Access Denied to RAM$123456789:user_987654321 on schema", "RAM$123456789:user_987654321", "[principal]"},
+		{"RAM ARN", "Access Denied to acs:ram::123456789:role/example on schema", "acs:ram::123456789:role/example", "[principal]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, input := range []error{
+				errors.New("ODPS-0420095: " + tc.message),
+				restclient.HttpError{StatusCode: 403, ErrorMessage: &restclient.ErrorMessage{ErrorCode: "ODPS-0420095", Message: tc.message}},
+			} {
+				diagnostic := ODPSSafeError(input).Error()
+				require.Contains(t, diagnostic, "ODPS-0420095")
+				require.Contains(t, diagnostic, tc.want)
+				require.NotContains(t, diagnostic, tc.secret)
+				require.NotContains(t, diagnostic, "Tips:")
+			}
+		})
+	}
+}
+
 func TestODPSQueryHints(t *testing.T) {
 	hints := odpsQueryHints()
 	require.Equal(t, "UTC", hints["odps.sql.timezone"])

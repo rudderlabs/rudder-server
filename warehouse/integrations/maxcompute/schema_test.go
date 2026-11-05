@@ -61,3 +61,38 @@ func TestFetchSchemaKeepsTableNamesAndExcludesGeneratedPTAndViews(t *testing.T) 
 	_, err = m.CatalogPartition(context.Background(), "without_partition")
 	require.ErrorContains(t, err, "no supported pt partition expression")
 }
+
+func TestFetchSchemaMissingNamespaceIsEmpty(t *testing.T) {
+	for _, tc := range []struct {
+		name, code, message string
+		missing             bool
+	}{
+		{
+			name: "missing schema", code: "ODPS-0420095",
+			message: "Access Denied: NO privilege 'odps:List' on /projects/project/schemas/missing. Schema project.missing does not exist Tips: Principal:RAM$123456789:987654321",
+			missing: true,
+		},
+		{name: "other permission error", code: "ODPS-0420095", message: "Access Denied: NO privilege 'odps:List' on /projects/project/schemas/existing"},
+		{name: "other error code", code: "ODPS-0420096", message: "Schema project.missing does not exist"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = fmt.Fprintf(w, "<Error><Code>%s</Code><Message>%s</Message></Error>", tc.code, html.EscapeString(tc.message))
+			}))
+			defer server.Close()
+			instance := odps.NewOdps(account.NewAliyunAccount("id", "secret"), server.URL)
+			instance.SetDefaultProjectName("project")
+			m := &MaxCompute{odps: instance}
+			schema, err := m.FetchSchema(context.Background())
+			if tc.missing {
+				require.NoError(t, err)
+				require.NotNil(t, schema)
+				require.Empty(t, schema)
+				return
+			}
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.code)
+		})
+	}
+}

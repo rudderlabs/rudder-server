@@ -3,6 +3,7 @@ package maxcompute
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/aliyun/aliyun-odps-go-sdk/odps"
@@ -17,6 +18,12 @@ var logicalTypes = map[string]string{
 	"string": "STRING", "text": "STRING",
 	"int": "BIGINT", "float": "DOUBLE",
 	"boolean": "BOOLEAN", "datetime": "TIMESTAMP",
+}
+
+var missingSchemaListPattern = regexp.MustCompile(`(?i)\bschema\s+\S+\s+does not exist\b`)
+
+func missingSchemaListError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "ODPS-0420095") && missingSchemaListPattern.MatchString(err.Error())
 }
 
 func columnType(logical string) (string, error) {
@@ -109,6 +116,9 @@ func (m *MaxCompute) FetchSchema(ctx context.Context) (model.Schema, error) {
 		}
 	})
 	if listErr != nil {
+		if missingSchemaListError(listErr) {
+			return make(model.Schema), nil
+		}
 		return nil, fmt.Errorf("listing MaxCompute tables: %w", listErr)
 	}
 	if err := ctx.Err(); err != nil {
