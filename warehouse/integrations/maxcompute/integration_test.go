@@ -320,14 +320,12 @@ func integrationUploadRow(t *testing.T, dest backendconfig.DestinationT, table s
 	folder := strings.ToLower(misc.FastUUID().String()) + "-" + table
 	output, err := fm.Upload(context.Background(), f, "maxcompute-integration", folder)
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		if err := fm.Delete(context.Background(), []string{output.Location}); err != nil {
-			t.Logf("delete MaxCompute integration fixture: %v", err)
-		}
-	})
 	key, err := fm.GetObjectNameFromLocation(output.Location)
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(key, strings.Trim(castPrefix(dest.Config), "/")+"/"), "fixture escaped credential prefix")
+	t.Cleanup(func() {
+		require.NoError(t, fm.Delete(context.Background(), []string{key}), "delete MaxCompute integration fixture")
+	})
 	return warehouseutils.LoadFile{Location: output.Location, Metadata: fmt.Appendf(nil, `{"content_length":%d}`, size)}
 }
 
