@@ -349,7 +349,7 @@ func parseChunkCounts(parameters string, pollImports map[string]bool) (map[strin
 	return counts, invalid
 }
 
-func classifyChunkJobs(jobs []*jobsdb.JobT, metadata *common.EventStatMeta, seen map[int64]bool, ambiguous map[int64]bool, ambiguousChunks map[string]bool, allAmbiguous bool) int {
+func classifyChunkJobs(jobs []*jobsdb.JobT, metadata *common.EventStatMeta, seen, ambiguous map[int64]bool, ambiguousChunks map[string]bool, allAmbiguous bool) int {
 	ambiguousCount := 0
 	for _, job := range jobs {
 		id := job.JobID
