@@ -93,7 +93,7 @@ require (
 	github.com/rudderlabs/rudder-schemas v0.12.1
 	github.com/rudderlabs/rudder-transformer/go v1.164.0
 	github.com/rudderlabs/sql-tunnels v0.1.8
-	github.com/rudderlabs/sqlconnect-go v1.36.0
+	github.com/rudderlabs/sqlconnect-go v1.37.1
 	github.com/samber/lo v1.53.0
 	github.com/segmentio/go-hll v1.0.1
 	github.com/segmentio/kafka-go v0.4.51
@@ -230,7 +230,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.16 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.6 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
