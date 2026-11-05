@@ -18,7 +18,7 @@ func TestErrorMappingsUseSanitizedDiagnostics(t *testing.T) {
 		{"project membership", "ODPS-0420095: User does not exist in the project", model.PermissionError},
 		{"RAM numeric ID", "ODPS-0030001: user name is not a valid account", model.PermissionError},
 		{"schema edition", "ODPS-0110061: project doesn't support schema", model.PermissionError},
-		{"full scan", "ODPS-0130071: full scan of all partitions is not allowed", model.PermissionError},
+		{"full scan", "ODPS-0130071: full scan of all partitions is not allowed", model.UncategorizedError},
 		{"identifier length", "ODPS-0130071: identifier too long, max length is 128", model.UncategorizedError},
 		{"assume role", "NoPermission", model.PermissionError},
 		{"invalid access key", "InvalidAccessKeyId", model.PermissionError},

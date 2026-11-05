@@ -36,7 +36,6 @@ var (
 	identifierPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 	errorsMappings    = []model.JobError{
 		{Type: model.PermissionError, Format: regexp.MustCompile(`(?i)ODPS-0420095|ODPS-0030001:.*is not a valid account|ODPS-0110061:.*doesn.t support schema|NoPermission|InvalidAccessKeyId|SignatureDoesNotMatch|access_key_authentication|caller_credentials_missing|caller credentials unavailable`)},
-		{Type: model.PermissionError, Format: regexp.MustCompile(`(?i)ODPS-0130071:.*(?:full.?scan|all partitions|partition predicate)`)},
 		{Type: model.ResourceNotFoundError, Format: regexp.MustCompile(`(?i)projectnotfound|tablenotfound|schemanotfound|ODPS resource not found`)},
 		{Type: model.ColumnCountError, Format: regexp.MustCompile(`(?i)MaxCompute table exceeds [0-9]+ columns`)},
 		{Type: model.ColumnSizeError, Format: regexp.MustCompile(`(?i)cell.*(?:8\s*MB|exceeds?.*limit)`)},
