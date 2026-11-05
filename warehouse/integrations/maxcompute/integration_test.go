@@ -2,6 +2,7 @@ package maxcompute_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"maps"
 	"os"
@@ -99,6 +100,7 @@ func TestIntegration(t *testing.T) {
 					testIntegrationInvalidAuth(t, credentials, false)
 				})
 			}
+			t.Run("denied_oss_prefix", func(t *testing.T) { testIntegrationDeniedOSSPrefix(t, credentials, mode.role) })
 			t.Run("events_and_schema", func(t *testing.T) { testIntegrationEvents(t, credentials, mode.role, true) })
 			for _, partition := range []struct{ name, column, granularity string }{
 				{"ingestion_hour", "", "hour"},
@@ -216,6 +218,34 @@ func testIntegrationInvalidAuth(t *testing.T, c integrationCredentials, role boo
 	require.Contains(t, response.Steps[0].Error, wantReason)
 }
 
+// testIntegrationDeniedOSSPrefix stages outside the prefix the fixture identities' OSS policy allows.
+func testIntegrationDeniedOSSPrefix(t *testing.T, c integrationCredentials, role bool) {
+	workspaceID := warehouseutils.RandHex()
+	if role {
+		workspaceID = c.WorkspaceID // the role trusts this ExternalId
+	}
+	destination := integrationDestination(c, whth.RandSchema(warehouseutils.MAXCOMPUTE), workspaceID, role)
+	destination.Config["prefix"] = "outside-allowed-prefix-" + warehouseutils.RandHex()
+	response := validations.NewDestinationValidator().Validate(context.Background(), &destination)
+	require.False(t, response.Success)
+	require.NotEmpty(t, response.Steps)
+	require.Equal(t, model.VerifyingObjectStorage, response.Steps[0].Name)
+	require.Contains(t, response.Steps[0].Error, "oss_access_denied")
+}
+
+// assertIntegrationUploadsWithoutRetries checks that every upload succeeded on its first attempt: a failed
+// state stays in wh_uploads.error even after a retry succeeds.
+func assertIntegrationUploadsWithoutRetries(t *testing.T, db *sql.DB, sourceID, destinationID string) {
+	t.Helper()
+	var exported, failed int
+	require.NoError(t, db.QueryRowContext(context.Background(), `SELECT
+		COUNT(*) FILTER (WHERE status = 'exported_data'),
+		COUNT(*) FILTER (WHERE error IS NOT NULL AND error::text NOT IN ('{}', 'null'))
+	FROM wh_uploads WHERE source_id = $1 AND destination_id = $2`, sourceID, destinationID).Scan(&exported, &failed))
+	require.Positive(t, exported, "no upload was exported")
+	require.Zero(t, failed, "an upload needed a retry")
+}
+
 func testIntegrationEvents(t *testing.T, c integrationCredentials, role, precreateSchema bool) {
 	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
@@ -254,6 +284,8 @@ func testIntegrationEvents(t *testing.T, c integrationCredentials, role, precrea
 	first.VerifyEvents(t)
 	assertIntegrationEventCounts(t, m, namespace, firstUser, tables)
 	if !precreateSchema {
+		// a first sync into a new namespace must not need a retry (e.g. a view refresh racing the catalog)
+		assertIntegrationUploadsWithoutRetries(t, jobsDB, sourceID, destination.ID)
 		return
 	}
 	plan, err := m.CatalogPartition(context.Background(), "tracks")
