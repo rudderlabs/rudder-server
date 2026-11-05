@@ -438,6 +438,11 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig(model.UseRudderStorageSetting)
 
 		if !found {
+			// The reloadable degraded list may become visible before BCM and this router
+			// consume the restored configuration. Keep the upload waiting in that gap.
+			if !r.tenantManager.ConnectionRemoved(upload.WorkspaceID, upload.SourceID, upload.DestinationID, r.destType) {
+				continue
+			}
 			uploadJob := r.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 				Upload: upload,
 			}, nil)
