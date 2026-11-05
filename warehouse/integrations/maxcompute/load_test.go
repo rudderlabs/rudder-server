@@ -114,12 +114,37 @@ func TestMaxComputeValidationReadsLoadedRowWithinPartition(t *testing.T) {
 	require.ErrorContains(t, m.TestLoadTable(ctx, location, "events", payload, warehouseutils.LoadFileTypeJson), "row was not found")
 }
 
-type loadUploader struct {
-	warehouseutils.Uploader
-	files []warehouseutils.LoadFile
+func TestMaxComputeValidationLoadSkipsViewRefresh(t *testing.T) {
+	m := testManager()
+	m.warehouse.Destination.Config["skipViews"] = false
+	m.catalog = func(context.Context) (model.Schema, error) {
+		t.Fatal("validation load must not read the catalog to refresh a view")
+		return nil, nil
+	}
+	var statements []string
+	m.exec = func(_ context.Context, statement string) error {
+		statements = append(statements, statement)
+		return nil
+	}
+	m.query = func(context.Context, string) (warehouseutils.QueryResult, error) {
+		return warehouseutils.QueryResult{Values: [][]string{{"1", "RudderStack"}}}, nil
+	}
+	payload := map[string]any{"id": 1, "val": "RudderStack", "uuid_ts": "2024-01-02 00:00:00"}
+	location := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-validation/test.json.gz"
+	ctx := warehouseutils.WithMaxComputeValidationFileSize(context.Background(), 10)
+	require.NoError(t, m.TestLoadTable(ctx, location, "events", payload, warehouseutils.LoadFileTypeJson))
+	require.Len(t, statements, 1)
+	require.Contains(t, statements[0], "LOAD INTO TABLE")
 }
 
-func (u loadUploader) GetLoadFileType() string { return warehouseutils.LoadFileTypeJson }
+type loadUploader struct {
+	warehouseutils.Uploader
+	files       []warehouseutils.LoadFile
+	tableSchema model.TableSchema
+}
+
+func (u loadUploader) GetLoadFileType() string                            { return warehouseutils.LoadFileTypeJson }
+func (u loadUploader) GetTableSchemaInWarehouse(string) model.TableSchema { return u.tableSchema }
 func (u loadUploader) GetLoadFilesMetadata(_ context.Context, _ warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
 	return u.files, nil
 }
@@ -160,6 +185,29 @@ func TestPrecheckAllFilesAndCatalogViewBeforeLoad(t *testing.T) {
 	require.Contains(t, statements[0], "`pt` < TO_CHAR(DATEADD(GETDATE(), 2, 'dd')")
 	require.Contains(t, statements[1], "11111111-1111-1111-1111-111111111111-events/")
 	require.Contains(t, statements[2], "22222222-2222-2222-2222-222222222222-events/")
+}
+
+func TestLoadViewUsesUploadSchemaBeforeCatalog(t *testing.T) {
+	m := testManager()
+	m.warehouse.Destination.Config["skipViews"] = false
+	prefix := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-events/"
+	m.uploader = loadUploader{
+		files:       []warehouseutils.LoadFile{{Location: prefix + "one.json.gz", Metadata: []byte(`{"content_length":10}`)}},
+		tableSchema: model.TableSchema{"id": "string", "uuid_ts": "datetime", "added_this_sync": "string"},
+	}
+	// a table created moments ago may not be listed yet: the catalog must not be consulted
+	m.catalog = func(context.Context) (model.Schema, error) {
+		t.Fatal("view columns must come from the upload schema")
+		return nil, nil
+	}
+	var statements []string
+	m.exec = func(_ context.Context, sql string) error { statements = append(statements, sql); return nil }
+	_, err := m.LoadTable(context.Background(), "events")
+	require.NoError(t, err)
+	require.Len(t, statements, 2)
+	require.Contains(t, statements[0], "CREATE OR REPLACE VIEW")
+	require.Contains(t, statements[0], "`added_this_sync`")
+	require.Contains(t, statements[1], "LOAD INTO TABLE")
 }
 
 func TestSkipUsersTable(t *testing.T) {

@@ -817,7 +817,7 @@ func (m *MaxCompute) TestLoadTable(ctx context.Context, location, table string, 
 		return errors.New("MaxCompute validation load file size is missing")
 	}
 	metadata := fmt.Appendf(nil, `{"content_length":%d}`, size)
-	if _, err := m.loadTable(ctx, table, []warehouseutils.LoadFile{{Location: location, Metadata: metadata}}); err != nil {
+	if _, err := m.loadFiles(ctx, table, []warehouseutils.LoadFile{{Location: location, Metadata: metadata}}, false); err != nil {
 		return err
 	}
 	stamp, ok := payload["uuid_ts"].(string)

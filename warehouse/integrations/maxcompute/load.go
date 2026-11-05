@@ -3,6 +3,7 @@ package maxcompute
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
@@ -136,6 +137,12 @@ func (m *MaxCompute) loadFolder(ctx context.Context, table string, folder loadFo
 }
 
 func (m *MaxCompute) loadTable(ctx context.Context, table string, files []warehouseutils.LoadFile) (*types.LoadTableStats, error) {
+	return m.loadFiles(ctx, table, files, true)
+}
+
+// loadFiles LOADs the files' folders into table. refreshView recreates the table's dedupe view
+// first; validation passes false because its throwaway table already got its view from CreateTable.
+func (m *MaxCompute) loadFiles(ctx context.Context, table string, files []warehouseutils.LoadFile, refreshView bool) (*types.LoadTableStats, error) {
 	name, err := m.qualified(table)
 	if err != nil {
 		return nil, err
@@ -148,14 +155,10 @@ func (m *MaxCompute) loadTable(ctx context.Context, table string, files []wareho
 	if err != nil {
 		return nil, err
 	}
-	if !m.warehouse.GetBoolDestinationConfig(model.SkipViewsSetting) {
-		schema, err := m.FetchSchema(ctx)
+	if refreshView && !m.warehouse.GetBoolDestinationConfig(model.SkipViewsSetting) {
+		columns, err := m.viewColumns(ctx, table)
 		if err != nil {
 			return nil, err
-		}
-		columns := schema[table]
-		if len(columns) == 0 {
-			return nil, errors.New("MaxCompute view schema unavailable in catalog")
 		}
 		if err := m.createTableView(ctx, table, columns); err != nil {
 			return nil, err
@@ -177,6 +180,25 @@ func (m *MaxCompute) loadTable(ctx context.Context, table string, files []wareho
 			logger.NewIntField("folderCount", int64(len(folders))), logger.NewIntField(logfield.TotalRows, result.RowsInserted))
 	}
 	return result, nil
+}
+
+// viewColumns returns the columns a table's dedupe view selects. The upload's warehouse schema
+// already includes columns added in this sync, while the catalog can lag behind a schema or table
+// created moments earlier, so the catalog is only the fallback when the upload has no schema.
+func (m *MaxCompute) viewColumns(ctx context.Context, table string) (model.TableSchema, error) {
+	if m.uploader != nil {
+		if columns := m.uploader.GetTableSchemaInWarehouse(table); len(columns) > 0 {
+			return columns, nil
+		}
+	}
+	schema, err := m.FetchSchema(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(schema[table]) == 0 {
+		return nil, fmt.Errorf("MaxCompute view schema for %q unavailable in catalog", table)
+	}
+	return schema[table], nil
 }
 
 func validateLocation(location string, settings map[string]any) error {

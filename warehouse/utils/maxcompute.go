@@ -96,6 +96,8 @@ func MaxComputeErrorReason(message string, role bool) (reason, guidance string) 
 		return "access_key_authentication", "Check the AccessKey ID and secret and allow time for a new key to become active."
 	case role && (strings.Contains(lower, "nopermission") || strings.Contains(lower, "assumerole") || strings.Contains(lower, "externalid")):
 		return "role_assumption", "Check the role trust policy and workspace-bound ExternalId."
+	case strings.Contains(lower, "oss") && strings.Contains(lower, "accessdenied"):
+		return "oss_access_denied", "The OSS policy denies this bucket or prefix; check the bucket name, the OSS prefix and the policy's resource scope."
 	}
 	return "", ""
 }

@@ -410,7 +410,7 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 	}
 	if err = lt.manager.TestLoadTable(ctx, uploadOutput.Location, lt.table, fixturePayload, loadFileType); err != nil {
 		if destinationType == warehouseutils.MAXCOMPUTE {
-			return fmt.Errorf("load MaxCompute test table from OSS JSON fixture (verify OSS read permissions): %w", err)
+			return fmt.Errorf("load MaxCompute test table from OSS JSON fixture: %w", err)
 		}
 		return fmt.Errorf("load test table: %w", err)
 	}

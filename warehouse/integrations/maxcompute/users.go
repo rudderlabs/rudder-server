@@ -86,16 +86,13 @@ func (m *MaxCompute) loadUsersWithCarryForward(ctx context.Context) (err error) 
 			return fmt.Errorf("loading MaxCompute users upload staging table: %w", err)
 		}
 	}
-	// Reconcile the view with the current catalog before inserting users.
+	// Reconcile the view with the current table schema before inserting users.
 	if !m.warehouse.GetBoolDestinationConfig(model.SkipViewsSetting) {
-		schema, err := m.FetchSchema(ctx)
+		columns, err := m.viewColumns(ctx, warehouseutils.UsersTable)
 		if err != nil {
 			return err
 		}
-		if len(schema[warehouseutils.UsersTable]) == 0 {
-			return errors.New("MaxCompute users view schema unavailable in catalog")
-		}
-		if err := m.createTableView(ctx, warehouseutils.UsersTable, schema[warehouseutils.UsersTable]); err != nil {
+		if err := m.createTableView(ctx, warehouseutils.UsersTable, columns); err != nil {
 			return err
 		}
 	}

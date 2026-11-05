@@ -21,6 +21,8 @@ func TestMaxComputeErrorReasons(t *testing.T) {
 		{"OSS signature", "SignatureDoesNotMatch", "access_key_authentication", false},
 		{"ODPS key", "ODPS authentication or permission denied", "access_key_authentication", false},
 		{"caller keys", "MaxCompute role caller credentials unavailable", "caller_credentials_missing", true},
+		{"OSS policy", "oss: Error returned by Service. Http Status Code: 403. Error Code: AccessDenied.", "oss_access_denied", false},
+		{"OSS policy in role mode", "oss: service returned error: StatusCode=403, ErrorCode=AccessDenied", "oss_access_denied", true},
 		{"unknown", "ODPS-1111111: unknown", "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
