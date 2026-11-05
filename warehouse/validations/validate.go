@@ -3,6 +3,7 @@ package validations
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -19,6 +20,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -92,6 +94,16 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 		validator       Validator
 		err             error
 	)
+	maxCompute := destType == warehouseutils.MAXCOMPUTE
+	authMode := "invalid"
+	if maxCompute {
+		if role, modeErr := warehouseutils.MaxComputeRoleMode(dest.Config); modeErr == nil {
+			authMode = "access_key"
+			if role {
+				authMode = "role"
+			}
+		}
+	}
 
 	pkgLogger.Infon("validate destination configuration",
 		logger.NewStringField(logfield.DestinationID, destID),
@@ -134,7 +146,15 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 	for _, step := range stepsToValidate {
 		if validator, err = NewValidator(ctx, step.Name, dest); err != nil {
 			err = fmt.Errorf("creating validator: %v", err)
+			if maxCompute {
+				err = maxComputeValidationError(step.Name, authMode == "role", err)
+			}
 			step.Error = err.Error()
+			if maxCompute {
+				pkgLogger.Infon("MaxCompute validation step", logger.NewStringField(logfield.DestinationID, destID),
+					logger.NewStringField(logfield.DestinationValidationsStep, step.Name),
+					logger.NewStringField("authMode", authMode), logger.NewStringField("outcome", "failure"))
+			}
 
 			pkgLogger.Warnn("creating validator",
 				logger.NewStringField(logfield.DestinationID, destID),
@@ -148,10 +168,22 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 		}
 
 		if stepError := validator.Validate(ctx); stepError != nil {
+			if maxCompute {
+				stepError = maxComputeValidationError(step.Name, authMode == "role", stepError)
+			}
 			err = stepError
 			step.Error = stepError.Error()
 		} else {
 			step.Success = true
+		}
+		if maxCompute {
+			outcome := "failure"
+			if step.Success {
+				outcome = "success"
+			}
+			pkgLogger.Infon("MaxCompute validation step", logger.NewStringField(logfield.DestinationID, destID),
+				logger.NewStringField(logfield.DestinationValidationsStep, step.Name),
+				logger.NewStringField("authMode", authMode), logger.NewStringField("outcome", outcome))
 		}
 
 		// if any of steps fails, the whole validation fails
@@ -177,6 +209,20 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 	}
 
 	return res
+}
+
+func maxComputeValidationError(step string, role bool, err error) error {
+	reason, guidance := warehouseutils.MaxComputeErrorReason(err.Error(), role)
+	if reason != "" {
+		if strings.Contains(err.Error(), "ODPS-") {
+			return fmt.Errorf("%s: %s (%s)", reason, guidance, client.ODPSSafeError(err))
+		}
+		return fmt.Errorf("%s: %s", reason, guidance)
+	}
+	if step == model.VerifyingObjectStorage {
+		return errors.New("MaxCompute OSS validation failed")
+	}
+	return err
 }
 
 func NewValidator(ctx context.Context, step string, dest *backendconfig.DestinationT) (Validator, error) {
@@ -529,6 +575,11 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 	if dest.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
 		if err := warehouseutils.ValidateMaxComputeSettings(dest.Config, dest.WorkspaceID); err != nil {
 			return nil, fmt.Errorf("invalid MaxCompute OSS configuration: %w", err)
+		}
+		role, _ := warehouseutils.MaxComputeRoleMode(dest.Config)
+		if role && (config.Default.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeyID") == "" ||
+			config.Default.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeySecret") == "") {
+			return nil, errors.New("MaxCompute role caller credentials unavailable")
 		}
 	}
 	var (

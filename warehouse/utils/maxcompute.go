@@ -73,3 +73,29 @@ func ValidateMaxComputeSettings(settings map[string]any, workspaceID string) err
 	}
 	return nil
 }
+
+// MaxComputeErrorReason classifies only known, actionable diagnostics. The
+// returned text is fixed so raw OSS errors never enter validation logs.
+func MaxComputeErrorReason(message string, role bool) (reason, guidance string) {
+	lower := strings.ToLower(message)
+	switch {
+	case strings.Contains(lower, "caller credentials unavailable"):
+		return "caller_credentials_missing", "Configure the server caller access keys for MaxCompute role authentication."
+	case strings.Contains(lower, "odps-0420095"):
+		return "project_membership", "Add this identity to the MaxCompute project and grant the required permissions."
+	case strings.Contains(lower, "odps-0030001") && strings.Contains(lower, "is not a valid account"):
+		return "project_membership", "Add the RAM user by numeric UID, not by user name."
+	case strings.Contains(lower, "odps-0110061") && strings.Contains(lower, "support schema"):
+		return "schema_not_enabled", "Enable schemas on the MaxCompute project, then retry after a few minutes."
+	case strings.Contains(lower, "odps-0130071") && (strings.Contains(lower, "too long") || strings.Contains(lower, "max length is 128")):
+		return "identifier_length", "Shorten the schema, table or column identifier to at most 128 characters."
+	case strings.Contains(lower, "odps-0130071") && (strings.Contains(lower, "full scan") || strings.Contains(lower, "fullscan") || strings.Contains(lower, "all partitions")):
+		return "fullscan_guard", "Add a bounded pt partition filter to the query."
+	case strings.Contains(lower, "invalidaccesskeyid") || strings.Contains(lower, "signaturedoesnotmatch") ||
+		(!role && strings.Contains(lower, "odps authentication or permission denied")):
+		return "access_key_authentication", "Check the AccessKey ID and secret and allow time for a new key to become active."
+	case role && (strings.Contains(lower, "nopermission") || strings.Contains(lower, "assumerole") || strings.Contains(lower, "externalid")):
+		return "role_assumption", "Check the role trust policy and workspace-bound ExternalId."
+	}
+	return "", ""
+}

@@ -394,6 +394,12 @@ func odpsDiagnostic(code, message string) string {
 func odpsKnownCode(text string) error {
 	text = strings.ToLower(text)
 	switch {
+	case strings.Contains(text, "nopermission"):
+		return errors.New("NoPermission: ODPS authentication or permission denied")
+	case strings.Contains(text, "invalidaccesskeyid"):
+		return errors.New("InvalidAccessKeyId: ODPS authentication or permission denied")
+	case strings.Contains(text, "signaturedoesnotmatch"):
+		return errors.New("SignatureDoesNotMatch: ODPS authentication or permission denied")
 	case strings.Contains(text, "accessdenied"), strings.Contains(text, "permission denied"),
 		strings.Contains(text, "not authorized"), strings.Contains(text, "invalid accesskey"),
 		strings.Contains(text, "signaturedoesnotmatch"):

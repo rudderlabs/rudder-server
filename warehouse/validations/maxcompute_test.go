@@ -3,6 +3,7 @@ package validations
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -70,6 +72,23 @@ func TestMaxComputeOSSValidationRejectsInvalidAuthBeforeManager(t *testing.T) {
 	require.ErrorContains(t, err, "cannot be combined")
 }
 
+func TestMaxComputeValidationErrorKeepsReasonsWithoutSecrets(t *testing.T) {
+	storage := maxComputeValidationError(model.VerifyingObjectStorage, false,
+		errors.New("SignatureDoesNotMatch: accessKeySecret=SECRET"))
+	require.ErrorContains(t, storage, "access_key_authentication")
+	require.NotContains(t, storage.Error(), "SECRET")
+
+	schema := maxComputeValidationError(model.VerifyingCreateSchema, false,
+		errors.New("ODPS-0110061: project doesn't support schema; accessKeyId=SECRET"))
+	require.ErrorContains(t, schema, "schema_not_enabled")
+	require.ErrorContains(t, schema, "ODPS-0110061")
+	require.NotContains(t, schema.Error(), "SECRET")
+
+	unknown := maxComputeValidationError(model.VerifyingObjectStorage, true,
+		errors.New("unexpected OSS response: SECRET"))
+	require.EqualError(t, unknown, "MaxCompute OSS validation failed")
+}
+
 func TestMaxComputeFileManagerRejectsMissingCredentials(t *testing.T) {
 	Init()
 	dest := maxComputeDestination()
@@ -80,6 +99,8 @@ func TestMaxComputeFileManagerRejectsMissingCredentials(t *testing.T) {
 
 func TestMaxComputeOSSManagerSettings(t *testing.T) {
 	Init()
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "FileManager.ALIBABA_OSS.callerAccessKeyID"), "caller-id")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "FileManager.ALIBABA_OSS.callerAccessKeySecret"), "caller-secret")
 	dest := maxComputeDestination()
 	dest.Config["iamRoleARN"] = "role"
 	delete(dest.Config, "accessKeyId")

@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -34,8 +35,12 @@ var (
 	errNotImplemented = errors.New(warehouseutils.NotImplementedErrorCode)
 	identifierPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 	errorsMappings    = []model.JobError{
-		{Type: model.PermissionError, Format: regexp.MustCompile(`(?i)(accessdenied|permission denied|not authorized|invalid accesskey|signaturedoesnotmatch)`)},
-		{Type: model.ResourceNotFoundError, Format: regexp.MustCompile(`(?i)(projectnotfound|tablenotfound|schemanotfound)`)},
+		{Type: model.PermissionError, Format: regexp.MustCompile(`(?i)ODPS-0420095|ODPS-0030001:.*is not a valid account|ODPS-0110061:.*doesn.t support schema|NoPermission|InvalidAccessKeyId|SignatureDoesNotMatch|access_key_authentication|caller_credentials_missing|caller credentials unavailable`)},
+		{Type: model.PermissionError, Format: regexp.MustCompile(`(?i)ODPS-0130071:.*(?:full.?scan|all partitions|partition predicate)`)},
+		{Type: model.ResourceNotFoundError, Format: regexp.MustCompile(`(?i)projectnotfound|tablenotfound|schemanotfound|ODPS resource not found`)},
+		{Type: model.ColumnCountError, Format: regexp.MustCompile(`(?i)MaxCompute table exceeds [0-9]+ columns`)},
+		{Type: model.ColumnSizeError, Format: regexp.MustCompile(`(?i)cell.*(?:8\s*MB|exceeds?.*limit)`)},
+		{Type: model.ConcurrentQueriesError, Format: regexp.MustCompile(`(?i)concurrent.*(?:quer|limit)|(?:quer|job).*concurrency`)},
 	}
 )
 
@@ -74,7 +79,8 @@ func (m *MaxCompute) init(warehouse model.Warehouse) error {
 	settings := warehouse.Destination.Config
 	project, _ := settings["project"].(string)
 	region, _ := settings["region"].(string)
-	if project == "" || warehouse.Namespace != "" && warehouse.Namespace != project && !identifierPattern.MatchString(warehouse.Namespace) {
+	if project == "" || warehouse.Namespace != "" && warehouse.Namespace != project &&
+		(len(warehouse.Namespace) > 128 || !identifierPattern.MatchString(warehouse.Namespace)) {
 		return errors.New("invalid MaxCompute project or schema")
 	}
 	if err := warehouseutils.ValidateMaxComputeSettings(settings, warehouse.Destination.WorkspaceID); err != nil {
@@ -129,6 +135,13 @@ func (m *MaxCompute) init(warehouse model.Warehouse) error {
 		instance.SetCurrentSchemaName(warehouse.Namespace)
 	}
 	m.odps = instance
+	if m.logger != nil {
+		mode := "access_key"
+		if role {
+			mode = "role"
+		}
+		m.logger.Infon("MaxCompute authentication configured", logger.NewStringField("authMode", mode))
+	}
 	return nil
 }
 
@@ -266,10 +279,18 @@ func (m *MaxCompute) namespace() string {
 }
 
 func quote(name string) (string, error) {
-	if !identifierPattern.MatchString(name) {
+	if len(name) > 128 || !identifierPattern.MatchString(name) {
 		return "", fmt.Errorf("invalid MaxCompute identifier %q", name)
 	}
 	return "`" + name + "`", nil
+}
+
+func (m *MaxCompute) columnLimit() int {
+	conf := m.conf
+	if conf == nil {
+		conf = config.New()
+	}
+	return integrationsconfig.ColumnCountLimitMap(conf)[provider]
 }
 
 func (m *MaxCompute) qualified(table string) (string, error) {
@@ -519,8 +540,9 @@ func (m *MaxCompute) CreateTable(ctx context.Context, table string, columns mode
 	if err := validatePartitionPlan(plan, columns); err != nil {
 		return err
 	}
-	if len(columns) > 1200 {
-		return errors.New("MaxCompute table exceeds 1200 columns")
+	limit := m.columnLimit()
+	if len(columns) > limit {
+		return fmt.Errorf("MaxCompute table exceeds %d columns", limit)
 	}
 	definitions := make([]string, 0, len(columns))
 	for _, key := range warehouseutils.SortColumnKeysFromColumnMap(columns) {
@@ -563,6 +585,24 @@ func (m *MaxCompute) AddColumns(ctx context.Context, table string, columns []war
 	if err != nil {
 		return err
 	}
+	if len(columns) == 0 {
+		return nil
+	}
+	existing, err := m.tableColumnNames(ctx, table)
+	if err != nil {
+		return fmt.Errorf("checking MaxCompute column limit: %w", err)
+	}
+	final := len(existing)
+	for _, col := range columns {
+		if _, found := existing[col.Name]; !found {
+			final++
+			existing[col.Name] = struct{}{}
+		}
+	}
+	limit := m.columnLimit()
+	if final > limit {
+		return fmt.Errorf("MaxCompute table exceeds %d columns", limit)
+	}
 	for _, col := range columns {
 		field, err := quote(col.Name)
 		if err != nil {
@@ -577,6 +617,47 @@ func (m *MaxCompute) AddColumns(ctx context.Context, table string, columns []war
 		}
 	}
 	return nil
+}
+
+func (m *MaxCompute) tableColumnNames(ctx context.Context, table string) (map[string]struct{}, error) {
+	if m.catalog != nil {
+		schema, err := m.catalog(ctx)
+		if err != nil {
+			return nil, err
+		}
+		columns, ok := schema[table]
+		if !ok {
+			return nil, fmt.Errorf("MaxCompute table %q unavailable for column limit check", table)
+		}
+		names := make(map[string]struct{}, len(columns))
+		for name := range columns {
+			names[name] = struct{}{}
+		}
+		return names, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	entry := odps.NewTables(m.odps, m.odps.DefaultProjectName(), m.namespace()).Get(table)
+	if err := entry.Load(); err != nil {
+		return nil, client.ODPSSafeError(err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	schema := entry.Schema()
+	names := make(map[string]struct{})
+	for _, column := range schema.Columns {
+		if !strings.EqualFold(column.Name, "pt") {
+			names[column.Name] = struct{}{}
+		}
+	}
+	for _, column := range schema.PartitionColumns {
+		if !strings.EqualFold(column.Name, "pt") {
+			names[column.Name] = struct{}{}
+		}
+	}
+	return names, nil
 }
 
 func (*MaxCompute) AlterColumn(context.Context, string, string, string) (model.AlterTableResponse, error) {

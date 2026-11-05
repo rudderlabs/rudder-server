@@ -89,6 +89,15 @@ func TestIntegration(t *testing.T) {
 			if !t.Run("validation", func(t *testing.T) { testIntegrationValidation(t, credentials, mode.role) }) {
 				t.FailNow() // The remaining cases depend on the same CREATE and LOAD path.
 			}
+			if mode.role {
+				t.Run("invalid_external_id", func(t *testing.T) {
+					testIntegrationInvalidAuth(t, credentials, true)
+				})
+			} else {
+				t.Run("invalid_access_key", func(t *testing.T) {
+					testIntegrationInvalidAuth(t, credentials, false)
+				})
+			}
 			t.Run("events_and_schema", func(t *testing.T) { testIntegrationEvents(t, credentials, mode.role) })
 			for _, partition := range []struct{ name, column, granularity string }{
 				{"ingestion_hour", "", "hour"},
@@ -185,6 +194,25 @@ func testIntegrationValidation(t *testing.T, c integrationCredentials, role bool
 	for _, step := range response.Steps {
 		require.True(t, step.Success, "%s: %s", step.Name, step.Error)
 	}
+}
+
+func testIntegrationInvalidAuth(t *testing.T, c integrationCredentials, role bool) {
+	workspaceID := warehouseutils.RandHex()
+	if role {
+		// The fixture role trusts only the configured workspace ExternalId.
+		require.NotEqual(t, c.WorkspaceID, workspaceID)
+	}
+	destination := integrationDestination(c, whth.RandSchema(warehouseutils.MAXCOMPUTE), workspaceID, role)
+	wantReason := "role_assumption"
+	if !role {
+		destination.Config["accessKeySecret"] = "invalid-secret-for-maxcompute-negative-validation"
+		wantReason = "access_key_authentication"
+	}
+	response := validations.NewDestinationValidator().Validate(context.Background(), &destination)
+	require.False(t, response.Success)
+	require.NotEmpty(t, response.Steps)
+	require.Equal(t, model.VerifyingObjectStorage, response.Steps[0].Name)
+	require.Contains(t, response.Steps[0].Error, wantReason)
 }
 
 func testIntegrationEvents(t *testing.T, c integrationCredentials, role bool) {

@@ -10,10 +10,12 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -122,8 +124,13 @@ func (m *MaxCompute) loadFolder(ctx context.Context, table string, folder loadFo
 		return 0, err
 	}
 	rows, err := m.runSQL(ctx, statement, true)
+	if err == nil && m.logger != nil {
+		m.logger.Infon("MaxCompute LOAD complete", logger.NewStringField(logfield.TableName, table),
+			logger.NewIntField(logfield.TotalRows, rows))
+	}
 	if err == nil && rows == 0 && folder.size > 0 && m.logger != nil {
-		m.logger.Warnn("MaxCompute LOAD wrote zero rows for non-empty files")
+		m.logger.Warnn("MaxCompute LOAD wrote zero rows for non-empty files",
+			logger.NewStringField(logfield.TableName, table), logger.NewIntField("fileBytes", folder.size))
 	}
 	return rows, err
 }
@@ -164,6 +171,10 @@ func (m *MaxCompute) loadTable(ctx context.Context, table string, files []wareho
 		} else if result.RowsInserted >= 0 {
 			result.RowsInserted += rows
 		}
+	}
+	if m.logger != nil {
+		m.logger.Infon("MaxCompute table LOAD complete", logger.NewStringField(logfield.TableName, table),
+			logger.NewIntField("folderCount", int64(len(folders))), logger.NewIntField(logfield.TotalRows, result.RowsInserted))
 	}
 	return result, nil
 }
