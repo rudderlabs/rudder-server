@@ -86,13 +86,14 @@ sql/                        SQL migration files (golang-migrate) — never delet
 
 <!-- AGENTS-GENERATED:START golden-samples -->
 
-| For                                      | Reference                                              |
-|------------------------------------------|--------------------------------------------------------|
-| Adding an async/batch destination        | `router/batchrouter/asyncdestinationmanager/README.md` |
-| Warehouse staging pipeline changes       | `warehouse/.cursor/docs/staging-file-flow.md`          |
-| OAuth destination flows                  | `services/oauth/README.md`                             |
-| Gateway API contract                     | `gateway/openapi.yaml`                                 |
-| Dev tooling (etcd modes, sending events) | `cmd/devtool/README.md`                                |
+| For                                        | Reference                                                 |
+|--------------------------------------------|-----------------------------------------------------------|
+| Adding an async/batch destination          | `router/batchrouter/asyncdestinationmanager/README.md`    |
+| Warehouse staging pipeline changes         | `warehouse/.cursor/docs/staging-file-flow.md`             |
+| Adding or changing a warehouse integration | `.claude/skills/building-warehouse-integrations/SKILL.md` |
+| OAuth destination flows                    | `services/oauth/README.md`                                |
+| Gateway API contract                       | `gateway/openapi.yaml`                                    |
+| Dev tooling (etcd modes, sending events)   | `cmd/devtool/README.md`                                   |
 
 <!-- AGENTS-GENERATED:END golden-samples -->
 
