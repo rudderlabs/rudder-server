@@ -106,7 +106,8 @@ func integrationConfig(c integrationCredentials, namespace string, role bool) ma
 		"project": c.Project, "endpoint": c.Endpoint, "region": c.Region,
 		"bucketName": c.BucketName, "prefix": c.Prefix, "ossRoleArn": c.OSSRoleARN,
 		"namespace": namespace, "syncFrequency": "30", "skipUsersTable": false,
-		"skipViews": false, "useRudderStorage": false, "cleanupObjectStorageFiles": true,
+		"allowUsersContextTraits": true,
+		"skipViews":               false, "useRudderStorage": false, "cleanupObjectStorageFiles": true,
 	}
 	if role {
 		settings["iamRoleARN"] = c.IAMRoleARN
@@ -160,7 +161,13 @@ func testIntegrationValidation(t *testing.T, c integrationCredentials, role bool
 		workspaceID = c.WorkspaceID
 	}
 	destination := integrationDestination(c, namespace, workspaceID, role)
-	integrationManager(t, destination, namespace, nil)
+	m := integrationManager(t, destination, namespace, nil)
+	// AccessKey CREATE can complete before the SDK catalog lists the schema.
+	// Exercise creation, then wait for catalog visibility before the six steps.
+	require.NoError(t, m.CreateSchema(context.Background()), "SQL purpose: create validation schema")
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		assert.NoError(c, m.TestFetchSchema(context.Background()), "SQL purpose: list validation schema")
+	}, 90*time.Second, 3*time.Second)
 	var response *validations.DestinationValidationResponse
 	for attempt := 0; attempt < 3; attempt++ {
 		response = validations.NewDestinationValidator().Validate(context.Background(), &destination)
