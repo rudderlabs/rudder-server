@@ -375,10 +375,14 @@ func assertIntegrationCount(t *testing.T, m *integrationRuntime, namespace, tabl
 
 type integrationUploader struct {
 	warehouseutils.Uploader
-	files []warehouseutils.LoadFile
+	files       []warehouseutils.LoadFile
+	tableSchema model.TableSchema
 }
 
 func (u integrationUploader) GetLoadFileType() string { return warehouseutils.LoadFileTypeJson }
+func (u integrationUploader) GetTableSchemaInWarehouse(string) model.TableSchema {
+	return u.tableSchema
+}
 func (u integrationUploader) GetLoadFilesMetadata(_ context.Context, _ warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
 	return u.files, nil
 }
@@ -451,7 +455,10 @@ func testIntegrationPartition(t *testing.T, c integrationCredentials, role bool,
 		"received_at": stamp.Format("2006-01-02 15:04:05.999999"),
 		"loaded_at":   stamp.Format("2006-01-02 15:04:05.999999"),
 	}
-	require.NoError(t, m.Setup(ctx, m.warehouse, integrationUploader{files: []warehouseutils.LoadFile{integrationUploadRow(t, dest, "partition_probe", row)}}))
+	require.NoError(t, m.Setup(ctx, m.warehouse, integrationUploader{
+		files:       []warehouseutils.LoadFile{integrationUploadRow(t, dest, "partition_probe", row)},
+		tableSchema: columns,
+	}))
 	stats, err := m.LoadTable(ctx, "partition_probe")
 	require.NoError(t, err, "SQL purpose: LOAD partition-probe folder")
 	if stats.RowsInserted >= 0 {
@@ -487,7 +494,10 @@ func testIntegrationDiscards(t *testing.T, m *integrationRuntime, dest backendco
 		"received_at": stamp.Format("2006-01-02 15:04:05.999999"),
 		"loaded_at":   stamp.Format("2006-01-02 15:04:05.999999"),
 	}
-	require.NoError(t, m.Setup(context.Background(), m.warehouse, integrationUploader{files: []warehouseutils.LoadFile{integrationUploadRow(t, dest, warehouseutils.DiscardsTable, row)}}))
+	require.NoError(t, m.Setup(context.Background(), m.warehouse, integrationUploader{
+		files:       []warehouseutils.LoadFile{integrationUploadRow(t, dest, warehouseutils.DiscardsTable, row)},
+		tableSchema: columns,
+	}))
 	stats, err := m.LoadTable(context.Background(), warehouseutils.DiscardsTable)
 	require.NoError(t, err, "SQL purpose: LOAD rudder_discards folder")
 	if stats.RowsInserted >= 0 {
