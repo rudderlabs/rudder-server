@@ -170,7 +170,7 @@ func testIntegrationValidation(t *testing.T, c integrationCredentials, role bool
 		assert.NoError(c, m.TestFetchSchema(context.Background()), "SQL purpose: list validation schema")
 	}, 90*time.Second, 3*time.Second)
 	var response *validations.DestinationValidationResponse
-	for attempt := 0; attempt < 3; attempt++ {
+	for range 3 {
 		response = validations.NewDestinationValidator().Validate(context.Background(), &destination)
 		transient := strings.Contains(response.Error, "ODPS request timed out") ||
 			(strings.Contains(response.Error, "ODPS-0420095") && strings.Contains(response.Error, "does not exist"))
