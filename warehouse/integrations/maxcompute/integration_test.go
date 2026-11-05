@@ -161,7 +161,17 @@ func testIntegrationValidation(t *testing.T, c integrationCredentials, role bool
 	}
 	destination := integrationDestination(c, namespace, workspaceID, role)
 	integrationManager(t, destination, namespace, nil)
-	response := validations.NewDestinationValidator().Validate(context.Background(), &destination)
+	var response *validations.DestinationValidationResponse
+	for attempt := 0; attempt < 3; attempt++ {
+		response = validations.NewDestinationValidator().Validate(context.Background(), &destination)
+		transient := strings.Contains(response.Error, "ODPS request timed out") ||
+			(strings.Contains(response.Error, "ODPS-0420095") && strings.Contains(response.Error, "does not exist"))
+		if response.Success || !transient {
+			break
+		}
+		t.Log("retrying MaxCompute validation after a transient catalog or SQL timeout")
+		time.Sleep(time.Second)
+	}
 	require.True(t, response.Success, response.Error)
 	require.Len(t, response.Steps, 6)
 	for _, step := range response.Steps {
@@ -222,6 +232,7 @@ func testIntegrationEvents(t *testing.T, c integrationCredentials, role bool) {
 	schema, err := m.FetchSchema(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "string", schema["product_track"]["integration_added"])
+	require.Equal(t, "string", schema["users"]["email"])
 	var viewHasColumn bool
 	odps.NewTables(m.service, c.Project, namespace).List(func(view *odps.Table, err error) {
 		require.NoError(t, err)
@@ -239,13 +250,13 @@ func testIntegrationEvents(t *testing.T, c integrationCredentials, role bool) {
 	productView := integrationQuery(t, m, fmt.Sprintf("SELECT COUNT(*) FROM `%s`.`%s`.`product_track_view` WHERE `integration_added` = 'yes'", c.Project, namespace))
 	require.Len(t, productView.Values, 1)
 	require.NotEqual(t, "0", productView.Values[0][0])
-	userView := integrationQuery(t, m, fmt.Sprintf("SELECT `name`, `email`, `uuid_ts`, `loaded_at` FROM `%s`.`%s`.`users_view` WHERE `id` = '%s'", c.Project, namespace, firstUser))
+	userView := integrationQuery(t, m, fmt.Sprintf("SELECT `email`, `uuid_ts`, `loaded_at` FROM `%s`.`%s`.`users_view` WHERE `id` = '%s'", c.Project, namespace, firstUser))
 	require.Len(t, userView.Values, 1)
-	require.Len(t, userView.Values[0], 4)
-	require.Equal(t, []string{"Richard Hendricks", "rhedricks+5@example.com"}, userView.Values[0][:2])
+	require.Len(t, userView.Values[0], 3)
+	require.Equal(t, "rhedricks+1@example.com", userView.Values[0][0])
 	newest := integrationQuery(t, m, fmt.Sprintf("SELECT `uuid_ts`, `loaded_at` FROM `%s`.`%s`.`users` WHERE %s AND `id` = '%s' ORDER BY `uuid_ts` DESC LIMIT 1", c.Project, namespace, integrationPTBounds(), firstUser))
 	require.Len(t, newest.Values, 1)
-	require.Equal(t, newest.Values[0], userView.Values[0][2:])
+	require.Equal(t, newest.Values[0], userView.Values[0][1:])
 	testIntegrationDiscards(t, m, destination, namespace)
 }
 
@@ -255,9 +266,9 @@ func integrationEventsFixture(t *testing.T, source string, addColumn bool) strin
 	require.NoError(t, err)
 	text := strings.ReplaceAll(string(contents), "2023-05-12", time.Now().UTC().Format("2006-01-02"))
 	if addColumn {
-		oldName := `"name": "Richard Hendricks"`
-		require.Contains(t, text, oldName)
-		text = strings.Replace(text, oldName, `"name": null`, 1)
+		oldEmail := `"email": "rhedricks+5@example.com"`
+		require.Contains(t, text, oldEmail)
+		text = strings.Replace(text, oldEmail, `"email": null`, 1)
 		before := `"product_id": "5",`
 		require.Contains(t, text, before)
 		text = strings.Replace(text, before, before+` "integration_added": "yes",`, 1)
