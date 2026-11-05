@@ -69,7 +69,7 @@ func TestPythonTransformationsDisabledAbortsJobs(t *testing.T) {
 		var params map[string]any
 		require.NoError(t, jsonrs.Unmarshal(j.Parameters, &params))
 		require.EqualValues(t, http.StatusBadRequest, params["status_code"])
-		require.Equal(t, user_transformer.ErrPythonTransformationsDisabled.Error(), params["error"])
+		require.Equal(t, user_transformer.ErrPythonTransformationsNotSupported.Error(), params["error"])
 		require.Equal(t, reportingtypes.USER_TRANSFORMER, params["stage"])
 	}
 

@@ -60,9 +60,9 @@ const (
 // explicitly instead of it being forwarded to a malformed URL.
 var ErrEmptyForwardBaseURL = errors.New("pyt base URL is empty")
 
-// ErrPythonTransformationsDisabled is the error set on every event aborted because the deployment does not offer
+// ErrPythonTransformationsNotSupported is the error set on every event aborted because the deployment does not offer
 // Python transformations.
-var ErrPythonTransformationsDisabled = errors.New("python transformations are not supported")
+var ErrPythonTransformationsNotSupported = errors.New("python transformations are not supported")
 
 // DefaultPerWorkspacePyTURLTemplate is the default value of
 // Processor.UserTransformer.perWorkspacePyTURLTemplate; {workspaceID} is
@@ -281,7 +281,7 @@ func (u *Client) abortPythonTransformation(
 	failedEvents := lo.Map(clientEvents, func(event types.TransformerEvent, _ int) types.TransformerResponse {
 		return types.TransformerResponse{
 			StatusCode: http.StatusBadRequest,
-			Error:      ErrPythonTransformationsDisabled.Error(),
+			Error:      ErrPythonTransformationsNotSupported.Error(),
 			Metadata:   event.Metadata,
 		}
 	})

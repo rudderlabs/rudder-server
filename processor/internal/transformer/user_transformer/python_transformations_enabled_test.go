@@ -100,7 +100,7 @@ func TestPythonTransformationsEnabled(t *testing.T) {
 		require.Len(t, rsp.FailedEvents, len(events))
 		for i, failed := range rsp.FailedEvents {
 			require.Equal(t, http.StatusBadRequest, failed.StatusCode)
-			require.Equal(t, user_transformer.ErrPythonTransformationsDisabled.Error(), failed.Error)
+			require.Equal(t, user_transformer.ErrPythonTransformationsNotSupported.Error(), failed.Error)
 			require.Equal(t, events[i].Metadata, failed.Metadata, "the processor maps the failure back by metadata")
 		}
 	}
