@@ -3,6 +3,7 @@ package multitenant_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -13,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var _ backendconfig.BackendConfig = (*mockBackendConfig)(nil)
@@ -103,6 +105,7 @@ func TestDegradeWorkspace(t *testing.T) {
 			})
 
 			ctx := t.Context()
+			go m.Run(ctx)
 
 			ch := m.WatchConfig(ctx)
 			config := <-ch
@@ -114,6 +117,100 @@ func TestDegradeWorkspace(t *testing.T) {
 			for _, workspace := range tc.degradedWorkspaces {
 				require.True(t, m.DegradedWorkspace(workspace))
 			}
+		})
+	}
+}
+
+func TestDegradedWorkspaceReload(t *testing.T) {
+	c := config.New()
+	m := multitenant.New(c, &mockBackendConfig{})
+	require.False(t, m.DegradedWorkspace("workspace1"))
+
+	c.Set("Warehouse.degradedWorkspaceIDs", []string{"workspace1"})
+	require.True(t, m.DegradedWorkspace("workspace1"))
+	require.Equal(t, []string{"workspace1"}, m.DegradedWorkspaces())
+
+	c.Set("Warehouse.degradedWorkspaceIDs", []string{"workspace2"})
+	require.False(t, m.DegradedWorkspace("workspace1"))
+	require.True(t, m.DegradedWorkspace("workspace2"))
+}
+
+func TestWatchConfigReload(t *testing.T) {
+	full := map[string]backendconfig.ConfigT{
+		"workspace1": {WorkspaceID: "workspace1"},
+		"workspace2": {WorkspaceID: "workspace2"},
+	}
+	c := config.New()
+	m := multitenant.New(c, &mockBackendConfig{config: full})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	go m.Run(ctx)
+	subs := []<-chan map[string]backendconfig.ConfigT{m.WatchConfig(ctx), m.WatchConfig(ctx)}
+	for _, ch := range subs {
+		require.Equal(t, full, receiveConfig(t, ch))
+	}
+
+	c.Set("Warehouse.degradedWorkspaceIDs", []string{"workspace1"})
+	filtered := map[string]backendconfig.ConfigT{"workspace2": full["workspace2"]}
+	for _, ch := range subs {
+		require.Equal(t, filtered, receiveConfig(t, ch))
+	}
+
+	c.Set("Warehouse.degradedWorkspaceIDs", []string{})
+	for _, ch := range subs {
+		require.Equal(t, full, receiveConfig(t, ch))
+	}
+
+	cancel()
+	for _, ch := range subs {
+		_, ok := <-ch
+		require.False(t, ok)
+	}
+	// Reloading after subscribers exit cannot block the synchronous Set callback.
+	c.Set("Warehouse.degradedWorkspaceIDs", []string{"workspace2"})
+}
+
+func receiveConfig(t *testing.T, ch <-chan map[string]backendconfig.ConfigT) map[string]backendconfig.ConfigT {
+	t.Helper()
+	select {
+	case cfg, ok := <-ch:
+		require.True(t, ok)
+		return cfg
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for filtered config")
+		return nil
+	}
+}
+
+func TestConnectionRemoved(t *testing.T) {
+	const workspace, source, destination = "workspace", "source", "destination"
+	full := map[string]backendconfig.ConfigT{
+		workspace: {WorkspaceID: workspace, Sources: []backendconfig.SourceT{{
+			ID: source, Destinations: []backendconfig.DestinationT{{
+				ID: destination, DestinationDefinition: backendconfig.DestinationDefinitionT{Name: warehouseutils.RS},
+			}},
+		}}},
+	}
+	c := config.New()
+	m := multitenant.New(c, &mockBackendConfig{config: full})
+	// Without a snapshot there is no evidence that the connection was removed.
+	require.False(t, m.ConnectionRemoved(workspace, source, destination, warehouseutils.RS))
+	go m.Run(t.Context())
+	ch := m.WatchConfig(t.Context())
+	require.Equal(t, full, receiveConfig(t, ch))
+
+	for _, tc := range []struct {
+		name, workspace, source, destination, destType string
+		removed                                        bool
+	}{
+		{"exact connection", workspace, source, destination, warehouseutils.RS, false},
+		{"other workspace", "other", source, destination, warehouseutils.RS, true},
+		{"absent destination", workspace, source, "removed", warehouseutils.RS, true},
+		{"other router", workspace, source, destination, warehouseutils.BQ, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.removed, m.ConnectionRemoved(tc.workspace, tc.source, tc.destination, tc.destType))
 		})
 	}
 }
