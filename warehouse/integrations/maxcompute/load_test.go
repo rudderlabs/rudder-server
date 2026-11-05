@@ -119,7 +119,7 @@ func TestMaxComputeValidationLoadSkipsViewRefresh(t *testing.T) {
 	m.warehouse.Destination.Config["skipViews"] = false
 	m.catalog = func(context.Context) (model.Schema, error) {
 		t.Fatal("validation load must not read the catalog to refresh a view")
-		return nil, nil
+		return nil, errors.New("unexpected catalog lookup")
 	}
 	var statements []string
 	m.exec = func(_ context.Context, statement string) error {
@@ -198,7 +198,7 @@ func TestLoadViewUsesUploadSchemaBeforeCatalog(t *testing.T) {
 	// a table created moments ago may not be listed yet: the catalog must not be consulted
 	m.catalog = func(context.Context) (model.Schema, error) {
 		t.Fatal("view columns must come from the upload schema")
-		return nil, nil
+		return nil, errors.New("unexpected catalog lookup")
 	}
 	var statements []string
 	m.exec = func(_ context.Context, sql string) error { statements = append(statements, sql); return nil }
