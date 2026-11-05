@@ -8,7 +8,11 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -105,6 +109,10 @@ func TestMarketoBulkUploader_Upload(t *testing.T) {
 		assert.Equal(t, 2, result.ImportingCount)
 		assert.Equal(t, 0, result.FailedCount)
 		assert.NotNil(t, result.ImportingParameters)
+		require.Len(t, result.JobImportingParameters, 2)
+		for _, id := range result.ImportingJobIDs {
+			assert.NotEmpty(t, gjson.GetBytes(result.JobImportingParameters[id], "rowHash").String())
+		}
 	})
 
 	t.Run("upload with API error", func(t *testing.T) {
@@ -176,7 +184,7 @@ func TestMarketoBulkUploader_Poll(t *testing.T) {
 
 		assert.True(t, result.Complete)
 		assert.Equal(t, 200, result.StatusCode)
-		assert.False(t, result.HasFailed)
+		assert.True(t, result.HasFailed) // force result reconciliation, including clean imports
 		assert.False(t, result.HasWarning)
 	})
 
@@ -209,6 +217,8 @@ func TestMarketoBulkUploader_Poll(t *testing.T) {
 }
 
 func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
+	config.Set("BatchRouter.MARKETO_BULK_UPLOAD.strictResultReconciliation", true)
+	t.Cleanup(func() { config.Reset() })
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -309,8 +319,8 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 			}, nil).
 			AnyTimes()
 
-		// Do an initial upload to set up the internal state (csvHeaders and dataHashToJobId)
-		uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
+		// Persist the per-job metadata as the batch router does.
+		upload := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: &backendconfig.DestinationT{
 				ID: "test-dest-1",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -322,10 +332,12 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 			ImportingJobIDs: []int64{},
 		})
 
-		// Do a poll to set up the internal state (importId)
-		uploader.Poll(context.Background(), common.AsyncPoll{
-			ImportId: "test-import-123",
-		})
+		importingList := make([]*jobsdb.JobT, 0, 3)
+		for _, id := range upload.ImportingJobIDs {
+			params, err := sjson.SetBytes(upload.ImportingParameters, "metadata", upload.JobImportingParameters[id])
+			require.NoError(t, err)
+			importingList = append(importingList, &jobsdb.JobT{JobID: id, LastJobStatus: jobsdb.JobStatusT{Parameters: params}})
+		}
 
 		// Mock the API responses for failed jobs
 		mockAPIService.EXPECT().
@@ -350,12 +362,6 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 					"Import Warning Reason": "Duplicate record",
 				},
 			}, nil)
-
-		importingList := []*jobsdb.JobT{
-			{JobID: 1}, // Failed job
-			{JobID: 2}, // Warning job
-			{JobID: 3}, // Successful job
-		}
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
 			ImportingList:        importingList,
@@ -403,11 +409,6 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 				},
 			}, nil).
 			AnyTimes()
-
-		// Do a poll to set up the internal state (importId)
-		uploader.Poll(context.Background(), common.AsyncPoll{
-			ImportId: "test-import-123",
-		})
 
 		// Mock API error response
 		mockAPIService.EXPECT().

@@ -254,6 +254,38 @@ func TestYourDestinationManager(t *testing.T) {
 }
 ```
 
+## Result reconciliation for bulk imports
+
+Marketo, Eloqua and Klaviyo persist an accepted job's correlation key in
+`AsyncUploadOutput.JobImportingParameters`. The batch router merges this into
+`LastJobStatus.Parameters.metadata` on the importing status. `GetUploadStats`
+rebuilds the result-to-job association from those status parameters, never from
+`EventPayload` or a manager's in-memory map. Terminal clean imports also pass
+through stats; jobs without metadata (including pre-deploy imports) are not
+silently succeeded. Unattributable results are aborted rather than replayed,
+while transient result-fetch errors leave the import importing for another poll.
+
+The independent, default-enabled flags
+`BatchRouter.MARKETO_BULK_UPLOAD.strictResultReconciliation`,
+`BatchRouter.ELOQUA.strictResultReconciliation`, and
+`BatchRouter.KLAVIYO_BULK_UPLOAD.strictResultReconciliation` select each
+manager's reconciliation policy. Turning a flag **off** is a guarded legacy
+policy switch, not a rollback: uploads still write correlation metadata, and
+missing metadata or unmatched results are never treated as successful. For
+Marketo, strict mode additionally rejects indistinguishable duplicate mapped
+rows even on otherwise clean completions. Eloqua's legacy policy does not
+require a stored uniqueness-field policy for ELQ-00040; Klaviyo's disabled
+policy accepts duplicate outbound identifiers for verified clean chunks;
+chunks with failures still abort ambiguous
+results rather than replaying potentially non-idempotent list changes. Klaviyo
+polls carry per-chunk failed, completed and total counts into stats so an
+unaccounted-for profile never becomes a success.
+
+Eloqua definitions are retained after terminal stats because the manager has no
+post-status-commit hook: deleting them at Poll or GetUploadStats would prevent
+retry after a database status update failure. Remote retention/cleanup needs a
+post-commit mechanism in the async framework.
+
 ## Implementation Patterns
 
 ### 1. Configuration Parsing

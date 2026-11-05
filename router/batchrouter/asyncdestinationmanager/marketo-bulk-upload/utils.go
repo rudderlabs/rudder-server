@@ -4,13 +4,16 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/csv"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -150,7 +153,7 @@ func calculateRowSize(row []string) (int64, error) {
 	return int64(buf.Len()), nil
 }
 
-func createCSVFile(destinationID string, destConfig MarketoConfig, input []common.AsyncJob, dataHashToJobId map[string]int64) (string, []string, []int64, []int64, error) {
+func createCSVFile(destinationID string, destConfig MarketoConfig, input []common.AsyncJob, jobHashes map[int64]string) (string, []string, []int64, []int64, error) {
 	csvFilePath := fmt.Sprintf("/tmp/%s_%s.csv", destinationID, fileName)
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
@@ -191,6 +194,7 @@ func createCSVFile(destinationID string, destConfig MarketoConfig, input []commo
 		return "", nil, nil, nil, err
 	}
 
+	canonicalOrder := mappedRowOrder(headerOrder)
 	currentSize := headerSize
 	maxSizeWithBuffer := int64(float64(maxFileSize) * estimateBuffer)
 
@@ -226,24 +230,57 @@ func createCSVFile(destinationID string, destConfig MarketoConfig, input []commo
 		currentSize += rowSize
 
 		insertedJobIDs = append(insertedJobIDs, jobID)
-		// Calculate hash code for the row
-		dataHash := calculateHashCode(row)
-		// Store the mapping of data hash to job ID
-		dataHashToJobId[dataHash] = jobID
+		// Hash exactly the columns sent to Marketo, using their CSV names.
+		jobHashes[jobID] = hashMappedRowWithOrder(headerOrder, row, canonicalOrder)
 	}
 
 	return csvFilePath, headerOrder, insertedJobIDs, overflowedJobIDs, nil
 }
 
-func calculateHashCode(data []string) string {
-	// Join the strings into a single string with a separator
-	joinedStrings := strings.Join(data, ",")
-	hash := sha256.New()
-	hash.Write([]byte(joinedStrings))
-	hashBytes := hash.Sum(nil)
-	hashCode := fmt.Sprintf("%x", hashBytes)
+// hashMappedRow hashes a canonical, length-prefixed sequence of CSV name/value
+// pairs. Both the upload and Marketo result use the uploaded column names (not
+// source mapping names or Go map iteration order). Length prefixes avoid delimiter
+// collisions even when names or values contain commas, equals signs or newlines.
+func hashMappedRow(headers, row []string) string {
+	return hashMappedRowWithOrder(headers, row, mappedRowOrder(headers))
+}
 
-	return hashCode
+func mappedRowOrder(headers []string) []int {
+	order := make([]int, 0, len(headers))
+	for i, name := range headers {
+		if name != MARKETO_FAILED_HEADER && name != MARKETO_WARNING_HEADER {
+			order = append(order, i)
+		}
+	}
+	slices.SortFunc(order, func(i, j int) int { return strings.Compare(headers[i], headers[j]) })
+	return order
+}
+
+func hashMappedRowWithOrder(headers, row []string, order []int) string {
+	hash := sha256.New()
+	var size [8]byte
+	for _, i := range order {
+		for _, part := range []string{headers[i], row[i]} {
+			binary.BigEndian.PutUint64(size[:], uint64(len(part)))
+			_, _ = hash.Write(size[:])
+			_, _ = hash.Write([]byte(part))
+		}
+	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func hashResultRow(row map[string]string) string {
+	headers := make([]string, 0, len(row))
+	for name := range row {
+		if name != MARKETO_FAILED_HEADER && name != MARKETO_WARNING_HEADER {
+			headers = append(headers, name)
+		}
+	}
+	values := make([]string, len(headers))
+	for i, name := range headers {
+		values[i] = row[name]
+	}
+	return hashMappedRow(headers, values)
 }
 
 func sendHTTPRequest(uploadURL, csvFilePath, accessToken, deduplicationField string) (*http.Response, error) {

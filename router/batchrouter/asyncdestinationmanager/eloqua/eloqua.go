@@ -190,11 +190,11 @@ func (e *EloquaServiceImpl) CheckRejectedData(data *HttpRequestData) (*RejectRes
 	data.Endpoint = data.BaseEndpoint + e.bulkApi + data.DynamicPart + "/rejects?offset=" + strconv.Itoa(data.Offset)
 	data.ContentType = "application/json"
 	body, statusCode, err := e.MakeHTTPRequest(data)
-	if statusCode != 200 {
-		return nil, fmt.Errorf("unable to delete the import definition with status code: %d", statusCode)
-	}
 	if err != nil {
 		return nil, err
+	}
+	if statusCode != 200 {
+		return nil, fmt.Errorf("unable to fetch rejected data with status code: %d", statusCode)
 	}
 	unmarshalledBody := RejectResponse{}
 	err = jsonrs.Unmarshal(body, &unmarshalledBody)
