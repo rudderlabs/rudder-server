@@ -22,168 +22,80 @@ import (
 
 type usersUploader struct {
 	loadUploader
-	users      model.TableSchema
-	identifies model.TableSchema
-	err        error
-	tables     []string
+	users  model.TableSchema
+	err    error
+	tables []string
 }
 
-func (u *usersUploader) GetTableSchemaInWarehouse(table string) model.TableSchema {
-	if table == warehouseutils.UsersTable {
-		return u.users
-	}
-	return u.identifies
-}
-
+func (u *usersUploader) GetTableSchemaInWarehouse(string) model.TableSchema { return u.users }
 func (u *usersUploader) GetLoadFilesMetadata(_ context.Context, options warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
 	u.tables = append(u.tables, options.Table)
 	return u.files, u.err
 }
 
-func testUsersManager(t *testing.T) (*MaxCompute, *usersUploader, *[]string) {
+func testUsersManager(t *testing.T, source, granularity string) (*MaxCompute, *usersUploader, *[]string) {
 	t.Helper()
 	m := testManager()
-	// Serve real SDK catalog and partition requests; the generated expression
-	// is table metadata, not a mutable upload/destination setting.
-	expression := `[{"leafExprDesc":{"reference":{"name":"received_at"}}},{"leafExprDesc":{"constant":"day"}},{"functionCall":{"name":"trunc_time"}}]`
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := r.URL.Query()["partitions"]; ok {
-			_, _ = w.Write([]byte(`<Partitions/>`))
-			return
-		}
-		schema, _ := jsonrs.Marshal(map[string]any{"columns": []any{map[string]any{"name": "id", "type": "string"}, map[string]any{"name": "received_at", "type": "datetime"}}, "PartitionKeys": []any{map[string]any{"name": "pt", "type": "string", "hasGenerateExpression": true, "generateExpression": expression}}})
-		_, _ = fmt.Fprintf(w, "<Table><Schema>%s</Schema></Table>", strings.ReplaceAll(strings.ReplaceAll(string(schema), "&", "&amp;"), "<", "&lt;"))
+	expression := fmt.Sprintf(`[{"leafExprDesc":{"reference":{"name":"%s"}}},{"leafExprDesc":{"constant":"%s"}},{"functionCall":{"name":"trunc_time"}}]`, source, granularity)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		schema, _ := jsonrs.Marshal(map[string]any{"columns": []any{map[string]any{"name": "id", "type": "string"}, map[string]any{"name": source, "type": "timestamp"}}, "PartitionKeys": []any{map[string]any{"name": "pt", "type": "string", "hasGenerateExpression": true, "generateExpression": expression}}})
+		_, _ = fmt.Fprintf(w, "<Table><Schema>%s</Schema></Table>", strings.ReplaceAll(string(schema), "&", "&amp;"))
 	}))
 	t.Cleanup(server.Close)
 	m.odps = odps.NewOdps(account.NewAliyunAccount("id", "secret"), server.URL)
 	m.odps.SetDefaultProjectName("project")
 	u := &usersUploader{
-		files:      []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-users/one.json.gz", Metadata: []byte(`{"content_length":10}`)}, {Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-users/two.json.gz", Metadata: []byte(`{"content_length":10}`)}},
-		users:      model.TableSchema{"id": "string", "received_at": "datetime", "loaded_at": "datetime", "uuid_ts": "datetime", "email": "string", "name": "string"},
-		identifies: model.TableSchema{"user_id": "string", "received_at": "datetime", "email": "string"},
+		files: []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-users/one.json.gz", Metadata: []byte(`{"content_length":10}`)}},
+		users: model.TableSchema{"id": "string", "received_at": "datetime", "loaded_at": "datetime", "uuid_ts": "datetime", "email": "string", "name": "string"},
 	}
 	m.uploader = u
 	statements := &[]string{}
 	m.exec = func(_ context.Context, sql string) error { *statements = append(*statements, sql); return nil }
-	now := time.Now().UTC()
-	m.partitions = func(_ context.Context, table string) ([]string, error) {
-		if strings.Contains(table, "users_upload") {
-			return []string{"pt=2024-02-01", "pt=2024-02-03"}, nil
-		}
-		return []string{"pt=" + now.Format("2006-01-02"), "pt=2000-01-01"}, nil
+	m.catalog = func(context.Context) (model.Schema, error) {
+		return model.Schema{warehouseutils.UsersTable: u.users}, nil
 	}
 	return m, u, statements
 }
 
-func TestUsersCarryForwardOnlyCurrentUploadAndExactPartitions(t *testing.T) {
-	m, u, statements := testUsersManager(t)
-	require.NoError(t, m.loadUsersWithCarryForward(context.Background()))
-	require.Equal(t, []string{warehouseutils.UsersTable}, u.tables)
-	require.Len(t, *statements, 4)
-	require.Contains(t, (*statements)[0], "CREATE TABLE `project`.")
-	require.Contains(t, (*statements)[0], "`loaded_at` TIMESTAMP")
-	require.Contains(t, (*statements)[0], "AUTO PARTITIONED BY (TRUNC_TIME(`received_at`, 'day') AS `pt`) TBLPROPERTIES ('table.format.version'='2')")
-	stageName := strings.TrimPrefix(strings.SplitN((*statements)[0], " (", 2)[0], "CREATE TABLE ")
-	require.Equal(t, "LOAD INTO TABLE "+stageName+" FROM LOCATION 'oss://oss-cn-hangzhou-internal.aliyuncs.com/my-bucket/11111111-1111-1111-1111-111111111111-users/' ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe' WITH SERDEPROPERTIES ('odps.properties.rolearn'='acs:ram::123456789:role/read-role') STORED AS TEXTFILE", (*statements)[1])
-	insert := (*statements)[2]
-	require.Contains(t, insert, "INSERT INTO `project`.`users`")
-	require.Contains(t, insert, "FROM `project`.`users` WHERE `pt` IN ('"+time.Now().UTC().Format("2006-01-02")+"') AND `id` IN (")
-	require.Contains(t, insert, "FROM `project`.`identifies` WHERE `pt` IN ('"+time.Now().UTC().Format("2006-01-02")+"') AND `user_id` IN (")
-	require.NotContains(t, insert, "2000-01-01")
-	require.Contains(t, insert, "FROM "+stageName+" WHERE `pt` IN ('2024-02-01', '2024-02-03') AND `id` IS NOT NULL")
-	require.Equal(t, 3, strings.Count(insert, "FROM "+stageName+" WHERE `pt` IN ('2024-02-01', '2024-02-03') AND `id` IS NOT NULL")) // rows and both ID subqueries
-	require.NotContains(t, insert, "FROM "+stageName+" WHERE `id` IS NOT NULL")
-	require.NotContains(t, insert, "`pt` IN ('"+time.Now().UTC().Format("2006-01-02")+"') AND `id` IS NOT NULL")
-	require.Equal(t, 1, strings.Count(insert, "`id` IN (SELECT DISTINCT `id` FROM `project`.")) // historical users only
-	require.Contains(t, insert, "`user_id` IN (SELECT DISTINCT `id` FROM `project`.")
-	require.Contains(t, insert, "FIRST_VALUE(`email`, true) OVER (PARTITION BY `id` ORDER BY `received_at` DESC")
-	require.Contains(t, insert, "FIRST_VALUE(CASE WHEN `__current_upload` = 1 THEN `loaded_at` END, true)")
-	require.Contains(t, insert, "FIRST_VALUE(CASE WHEN `__current_upload` = 1 THEN `uuid_ts` END, true)")
-	require.Contains(t, insert, "FIRST_VALUE(CASE WHEN `__current_upload` = 1 THEN `received_at` END, true)")
-	require.NotContains(t, insert, "GETDATE")
-	require.Contains(t, (*statements)[3], "DROP TABLE IF EXISTS `project`.")
-}
-
-func TestUsersCarryForwardWithoutHistoryStillInsertsCurrentUpload(t *testing.T) {
-	m, _, statements := testUsersManager(t)
-	m.partitions = func(_ context.Context, table string) ([]string, error) {
-		if strings.Contains(table, "users_upload") {
-			return []string{"pt=2024-02-01"}, nil
-		}
-		return nil, nil
-	}
-	require.NoError(t, m.loadUsersWithCarryForward(context.Background()))
-	require.Len(t, *statements, 4)
-	insert := (*statements)[2]
-	require.Contains(t, insert, "FROM `project`.")
-	require.NotContains(t, insert, "FROM `project`.`users` WHERE")
-	require.NotContains(t, insert, "FROM `project`.`identifies` WHERE")
-}
-
-func TestUsersCarryForwardEmptyStageDoesNotInsert(t *testing.T) {
-	m, _, statements := testUsersManager(t)
-	m.partitions = func(_ context.Context, table string) ([]string, error) {
-		if strings.Contains(table, "users_upload") {
-			return nil, nil
-		}
-		return nil, errors.New("history must not be listed")
-	}
-	require.NoError(t, m.loadUsersWithCarryForward(context.Background()))
-	require.Len(t, *statements, 3) // CREATE, one folder LOAD, DROP
-	require.NotContains(t, strings.Join(*statements, "\n"), "INSERT INTO")
-}
-
-func TestUsersCarryForwardInvalidStagePartitionFailsClosed(t *testing.T) {
-	m, _, statements := testUsersManager(t)
-	m.partitions = func(_ context.Context, table string) ([]string, error) {
-		if strings.Contains(table, "users_upload") {
-			return []string{"pt=2024-02-01' OR 1=1"}, nil
-		}
-		return nil, errors.New("history must not be listed")
-	}
-	require.ErrorContains(t, m.loadUsersWithCarryForward(context.Background()), "partition")
-	require.Len(t, *statements, 3) // DROP even when listing cannot be trusted
-	require.NotContains(t, strings.Join(*statements, "\n"), "INSERT INTO")
-}
-
-func TestUsersStagePartitionValidation(t *testing.T) {
-	for _, test := range []struct {
-		parts       []string
-		granularity string
-		want        []string
-	}{
-		{[]string{"pt=2024-02-03", "pt=2024-02-01"}, "day", []string{"2024-02-01", "2024-02-03"}},
-		{[]string{"pt=2024-02-03 12:00:00"}, "hour", []string{"2024-02-03 12:00:00"}},
-		{[]string{"pt=2024-02-03 12:00:00"}, "day", nil},
-		{[]string{"pt=2024-02-03' OR 1=1"}, "day", nil},
-		{[]string{"other=2024-02-03"}, "day", nil},
-		{[]string{"pt=2024-02-03"}, "minute", nil},
+func TestUsersCarryForwardUnpartitionedStage(t *testing.T) {
+	for _, tc := range []struct{ source, granularity string }{
+		{"uuid_ts", "day"}, {"uuid_ts", "hour"}, {"received_at", "day"},
 	} {
-		values, err := userStagePartitionValues(test.parts, test.granularity)
-		if test.want == nil {
-			require.Error(t, err)
-		} else {
-			require.NoError(t, err)
-			require.Equal(t, test.want, values)
-		}
-	}
-	users := model.TableSchema{"received_at": "datetime", "loaded_at": "datetime", "email": "string"}
-	source, granularity, err := userStageSourceFromExpression("trunc_time(`loaded_at`, 'hour')", users)
-	require.NoError(t, err)
-	require.Equal(t, "loaded_at", source)
-	require.Equal(t, "hour", granularity)
-	for _, expression := range []string{"trunc_time(GETDATE(), 'day')", "trunc_time(`email`, 'day')", "trunc_time(`missing`, 'day')", "trunc_time(`received_at`, 'minute')"} {
-		_, _, err := userStageSourceFromExpression(expression, users)
-		require.Error(t, err)
+		t.Run(tc.source+"_"+tc.granularity, func(t *testing.T) {
+			m, u, statements := testUsersManager(t, tc.source, tc.granularity)
+			m.warehouse.Destination.Config["skipViews"] = false
+			require.NoError(t, m.loadUsersWithCarryForward(context.Background()))
+			require.Equal(t, []string{warehouseutils.UsersTable}, u.tables)
+			require.Len(t, *statements, 5)
+			stage := strings.TrimPrefix(strings.SplitN((*statements)[0], " (", 2)[0], "CREATE TABLE ")
+			require.Contains(t, (*statements)[0], "`loaded_at` TIMESTAMP")
+			require.Contains(t, (*statements)[0], "TBLPROPERTIES ('table.format.version'='2')")
+			require.NotContains(t, (*statements)[0], "AUTO PARTITIONED")
+			require.Contains(t, (*statements)[1], "LOAD INTO TABLE "+stage+" FROM LOCATION")
+			require.Contains(t, (*statements)[2], "CREATE OR REPLACE VIEW `project`.`users_view`")
+			insert := (*statements)[3]
+			require.Contains(t, insert, "INSERT INTO `project`.`users`")
+			require.Contains(t, insert, "FROM "+stage+" WHERE `id` IS NOT NULL")
+			require.NotContains(t, insert, "FROM "+stage+" WHERE `pt`")
+			require.Contains(t, insert, "FROM `project`.`users` WHERE `pt` >= '"+time.Now().UTC().AddDate(0, 0, -60).Format("2006-01-02")+"' AND `pt` < '"+time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02")+"' AND `id` IN (SELECT `id` FROM "+stage+" WHERE `id` IS NOT NULL)")
+			require.NotContains(t, insert, "FROM `project`.`identifies`")
+			require.Contains(t, insert, " UNION ALL ")
+			require.Contains(t, insert, "SELECT DISTINCT")
+			require.Contains(t, insert, "FIRST_VALUE(`email`, true) OVER (PARTITION BY `id` ORDER BY `received_at` DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)")
+			require.Contains(t, insert, "FIRST_VALUE(`received_at`, true)")
+			require.Contains(t, insert, "FIRST_VALUE(CASE WHEN `__current_upload` = 1 THEN `uuid_ts` END, true)")
+			require.Contains(t, insert, "FIRST_VALUE(CASE WHEN `__current_upload` = 1 THEN `loaded_at` END, true)")
+			require.Equal(t, "DROP TABLE IF EXISTS "+stage, (*statements)[4])
+		})
 	}
 }
 
 func TestUsersCarryForwardPreflightAndCleanup(t *testing.T) {
-	m, u, statements := testUsersManager(t)
+	m, u, statements := testUsersManager(t, "uuid_ts", "day")
 	u.files = nil
 	require.NoError(t, m.loadUsersWithCarryForward(context.Background()))
 	require.Empty(t, *statements)
-	u.files = []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-users/one.json.gz", Metadata: []byte(`{"content_length":10}`)}, {Location: "https://evil.example/bad.gz"}}
+	u.files = []warehouseutils.LoadFile{{Location: "https://evil.example/bad.gz", Metadata: []byte(`{"content_length":10}`)}}
 	require.ErrorContains(t, m.loadUsersWithCarryForward(context.Background()), "load file")
 	require.Empty(t, *statements)
 	u.err = errors.New("router failed with secret")

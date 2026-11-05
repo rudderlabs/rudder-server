@@ -36,9 +36,8 @@ func (m *MaxCompute) viewSQL(table string, columns model.TableSchema) (string, e
 		name, _ := quote(key)
 		quoted = append(quoted, name)
 	}
-	order := ""
-	if _, ok := columns["loaded_at"]; ok {
-		order = " ORDER BY `loaded_at` DESC"
+	if _, ok := columns["uuid_ts"]; !ok {
+		return "", fmt.Errorf("MaxCompute view for %q requires uuid_ts", table)
 	}
 	filter := boundedViewPartitions
 	// Explicitly select the real columns so the window helper does not leak.
@@ -50,8 +49,8 @@ func (m *MaxCompute) viewSQL(table string, columns model.TableSchema) (string, e
 		}
 		projection = append(projection, name)
 	}
-	return fmt.Sprintf("CREATE OR REPLACE VIEW %s AS SELECT %s FROM (SELECT %s, ROW_NUMBER() OVER (PARTITION BY %s%s) AS `__rudder_row_number` FROM %s%s) t WHERE `__rudder_row_number` = 1",
-		view, strings.Join(projection, ", "), strings.Join(projection, ", "), strings.Join(quoted, ", "), order, base, filter), nil
+	return fmt.Sprintf("CREATE OR REPLACE VIEW %s AS SELECT %s FROM (SELECT %s, ROW_NUMBER() OVER (PARTITION BY %s ORDER BY `uuid_ts` DESC) AS `__rudder_row_number` FROM %s%s) t WHERE `__rudder_row_number` = 1",
+		view, strings.Join(projection, ", "), strings.Join(projection, ", "), strings.Join(quoted, ", "), base, filter), nil
 }
 
 // Partition pruning must be evaluated at query time, not when the view is
@@ -62,6 +61,9 @@ const boundedViewPartitions = " WHERE `pt` >= TO_CHAR(DATEADD(GETDATE(), -60, 'd
 // viewName bounds identifiers to ODPS's 128-character limit while preserving
 // uniqueness even when two long table names share the same prefix.
 func viewName(table string) string {
+	if len(table) <= 123 {
+		return table + "_view"
+	}
 	const maxPrefix = 128 - len("_view_") - 16
 	hash := sha256.Sum256([]byte(table))
 	if len(table) > maxPrefix {
@@ -74,29 +76,16 @@ func (m *MaxCompute) createTableView(ctx context.Context, table string, columns 
 	if m.warehouse.GetBoolDestinationConfig(model.SkipViewsSetting) {
 		return nil
 	}
-	// Tables without a deduplication key still get a bounded projection view.
-	_, hasID := columns["id"]
-	if !hasID && table != warehouseutils.DiscardsTable {
-		base, err := m.qualified(table)
-		if err != nil {
-			return err
+	if table != warehouseutils.DiscardsTable {
+		if _, hasID := columns["id"]; !hasID {
+			return nil
 		}
-		view, err := m.qualified(viewName(table))
-		if err != nil {
-			return err
-		}
-		projection := make([]string, 0, len(columns))
-		for _, key := range warehouseutils.SortColumnKeysFromColumnMap(columns) {
-			name, err := quote(key)
-			if err != nil {
-				return err
+	} else {
+		for _, key := range []string{"row_id", "column_name", "table_name"} {
+			if _, ok := columns[key]; !ok {
+				return nil
 			}
-			projection = append(projection, name)
 		}
-		if len(projection) == 0 {
-			return fmt.Errorf("MaxCompute view has no columns")
-		}
-		return m.run(ctx, "CREATE OR REPLACE VIEW "+view+" AS SELECT "+strings.Join(projection, ", ")+" FROM "+base+boundedViewPartitions)
 	}
 	statement, err := m.viewSQL(table, columns)
 	if err != nil {

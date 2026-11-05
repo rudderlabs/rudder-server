@@ -210,17 +210,22 @@ func testIntegrationEvents(t *testing.T, c integrationCredentials, role bool) {
 	require.Equal(t, "day", plan.Granularity)
 
 	second := first
-	second.UserID = whth.GetUserId(warehouseutils.MAXCOMPUTE)
+	second.UserID = firstUser
 	second.EventsFilePath = integrationEventsFixture(t, "../testdata/upload-job.events-2.json", true)
 	second.VerifyEvents(t)
-	assertIntegrationEventCounts(t, m, namespace, second.UserID, tables)
+	for _, table := range tables {
+		if table != warehouseutils.UsersTable {
+			assertIntegrationCount(t, m, namespace, table, "user_id", firstUser, 8)
+		}
+	}
+	assertIntegrationCount(t, m, namespace, warehouseutils.UsersTable, "id", firstUser, 2)
 	schema, err := m.FetchSchema(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "string", schema["product_track"]["integration_added"])
 	var viewHasColumn bool
 	odps.NewTables(m.service, c.Project, namespace).List(func(view *odps.Table, err error) {
 		require.NoError(t, err)
-		if view == nil || !strings.HasPrefix(view.Name(), "product_track_view_") {
+		if view == nil || view.Name() != "product_track_view" {
 			return
 		}
 		require.NoError(t, view.Load())
@@ -230,10 +235,17 @@ func testIntegrationEvents(t *testing.T, c integrationCredentials, role bool) {
 		}
 	})
 	require.True(t, viewHasColumn, "product_track view did not refresh after ADD COLUMNS")
-	// Stage 4 will assert historical user-trait carry-forward. The current
-	// contract checked here is one users row for each new upload identity.
-	assertIntegrationCount(t, m, namespace, "users", "id", firstUser, 1)
-	assertIntegrationCount(t, m, namespace, "users", "id", second.UserID, 1)
+	assertIntegrationViewCount(t, m, namespace, "users_view", "id", firstUser, 1)
+	productView := integrationQuery(t, m, fmt.Sprintf("SELECT COUNT(*) FROM `%s`.`%s`.`product_track_view` WHERE `integration_added` = 'yes'", c.Project, namespace))
+	require.Len(t, productView.Values, 1)
+	require.NotEqual(t, "0", productView.Values[0][0])
+	userView := integrationQuery(t, m, fmt.Sprintf("SELECT `name`, `email`, `uuid_ts`, `loaded_at` FROM `%s`.`%s`.`users_view` WHERE `id` = '%s'", c.Project, namespace, firstUser))
+	require.Len(t, userView.Values, 1)
+	require.Len(t, userView.Values[0], 4)
+	require.Equal(t, []string{"Richard Hendricks", "rhedricks+5@example.com"}, userView.Values[0][:2])
+	newest := integrationQuery(t, m, fmt.Sprintf("SELECT `uuid_ts`, `loaded_at` FROM `%s`.`%s`.`users` WHERE %s AND `id` = '%s' ORDER BY `uuid_ts` DESC LIMIT 1", c.Project, namespace, integrationPTBounds(), firstUser))
+	require.Len(t, newest.Values, 1)
+	require.Equal(t, newest.Values[0], userView.Values[0][2:])
 	testIntegrationDiscards(t, m, destination, namespace)
 }
 
@@ -243,6 +255,9 @@ func integrationEventsFixture(t *testing.T, source string, addColumn bool) strin
 	require.NoError(t, err)
 	text := strings.ReplaceAll(string(contents), "2023-05-12", time.Now().UTC().Format("2006-01-02"))
 	if addColumn {
+		oldName := `"name": "Richard Hendricks"`
+		require.Contains(t, text, oldName)
+		text = strings.Replace(text, oldName, `"name": null`, 1)
 		before := `"product_id": "5",`
 		require.Contains(t, text, before)
 		text = strings.Replace(text, before, before+` "integration_added": "yes",`, 1)
@@ -253,6 +268,24 @@ func integrationEventsFixture(t *testing.T, source string, addColumn bool) strin
 	require.NoError(t, err)
 	require.NoError(t, fixture.Close())
 	return fixture.Name()
+}
+
+func integrationQuery(t *testing.T, m *integrationRuntime, statement string) warehouseutils.QueryResult {
+	t.Helper()
+	result, err := client.QueryODPS(context.Background(), m.service, statement, 5*time.Minute, time.Second)
+	require.NoError(t, err, "SQL purpose: MaxCompute integration readback")
+	return result
+}
+
+func assertIntegrationViewCount(t *testing.T, m *integrationRuntime, namespace, view, column, value string, expected int64) {
+	t.Helper()
+	require.Regexp(t, `^[A-Za-z0-9_]+$`, value)
+	statement := fmt.Sprintf("SELECT COUNT(*) FROM `%s`.`%s`.`%s` WHERE `%s` = '%s'", m.service.DefaultProjectName(), namespace, view, column, value)
+	result := integrationQuery(t, m, statement)
+	require.Len(t, result.Values, 1)
+	actual, err := strconv.ParseInt(result.Values[0][0], 10, 64)
+	require.NoError(t, err)
+	require.Equal(t, expected, actual)
 }
 
 func integrationPTBounds() string {
@@ -409,6 +442,7 @@ func testIntegrationDiscards(t *testing.T, m *integrationRuntime, dest backendco
 		require.EqualValues(t, 1, stats.RowsInserted)
 	}
 	assertIntegrationCount(t, m, namespace, warehouseutils.DiscardsTable, "row_id", "integration_discard", 1)
+	assertIntegrationViewCount(t, m, namespace, "rudder_discards_view", "row_id", "integration_discard", 1)
 }
 
 func cleanupIntegrationSchema(t *testing.T, m *integrationRuntime, namespace string) {

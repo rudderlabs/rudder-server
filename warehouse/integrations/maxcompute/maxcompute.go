@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -54,11 +55,10 @@ type MaxCompute struct {
 
 	// exec and catalog are replaceable in tests. The production implementations
 	// use the SDK rather than parsing SHOW output for schema discovery.
-	exec       func(context.Context, string) error
-	query      func(context.Context, string) (warehouseutils.QueryResult, error)
-	catalog    func(context.Context) (model.Schema, error)
-	partitions func(context.Context, string) ([]string, error) // replaceable in tests; SDK lists staging partitions in production.
-	principal  func(context.Context) (string, error)           // replaceable in tests; SDK security WHOAMI in production.
+	exec      func(context.Context, string) error
+	query     func(context.Context, string) (warehouseutils.QueryResult, error)
+	catalog   func(context.Context) (model.Schema, error)
+	principal func(context.Context) (string, error) // replaceable in tests; SDK security WHOAMI in production.
 }
 
 func New(conf *config.Config, log logger.Logger) *MaxCompute {
@@ -593,7 +593,42 @@ func (*MaxCompute) DownloadIdentityRules(context.Context, *misc.GZipWriter) erro
 }
 func (*MaxCompute) LoadIdentityMergeRulesTable(context.Context) error { return nil }
 func (*MaxCompute) LoadIdentityMappingsTable(context.Context) error   { return nil }
-func (*MaxCompute) Cleanup(context.Context)                           {}
+func (m *MaxCompute) Cleanup(ctx context.Context) {
+	if m.odps == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+	defer cancel()
+	var names []string
+	var listErr error
+	odps.NewTables(m.odps, m.odps.DefaultProjectName(), m.namespace()).List(func(table *odps.Table, err error) {
+		if err != nil {
+			listErr = client.ODPSSafeError(err)
+			return
+		}
+		if table != nil && strings.HasPrefix(table.Name(), warehouseutils.StagingTablePrefix(provider)) {
+			names = append(names, table.Name())
+		}
+	})
+	if listErr != nil {
+		if m.logger != nil {
+			m.logger.Warnn("listing MaxCompute staging tables for cleanup", obskit.Error(listErr))
+		}
+		return
+	}
+	for _, table := range names {
+		name, err := m.qualified(table)
+		if err == nil {
+			err = m.run(ctx, "DROP TABLE IF EXISTS "+name)
+		}
+		if err != nil {
+			if m.logger != nil {
+				m.logger.Warnn("dropping MaxCompute staging table", obskit.Error(err))
+			}
+		}
+	}
+}
+
 func (m *MaxCompute) SetConnectionTimeout(timeout time.Duration) {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
@@ -621,6 +656,11 @@ func (m *MaxCompute) TestFetchSchema(ctx context.Context) error {
 	return err
 }
 
+func boundedPTWindow(now time.Time) string {
+	now = now.UTC()
+	return fmt.Sprintf("`pt` >= '%s' AND `pt` < '%s'", now.AddDate(0, 0, -60).Format("2006-01-02"), now.AddDate(0, 0, 1).Format("2006-01-02"))
+}
+
 func (m *MaxCompute) IsEmpty(ctx context.Context, warehouse model.Warehouse) (bool, error) {
 	if m.odps == nil || m.warehouse.Destination.ID != warehouse.Destination.ID || m.warehouse.Namespace != warehouse.Namespace {
 		if err := m.init(warehouse); err != nil {
@@ -628,7 +668,30 @@ func (m *MaxCompute) IsEmpty(ctx context.Context, warehouse model.Warehouse) (bo
 		}
 	}
 	schema, err := m.FetchSchema(ctx)
-	return len(schema) == 0, err
+	if err != nil {
+		return false, err
+	}
+	filter := boundedPTWindow(time.Now())
+	for table := range schema {
+		name, err := m.qualified(table)
+		if err != nil {
+			return false, err
+		}
+		statement := "SELECT 1 FROM " + name + " WHERE " + filter + " LIMIT 1"
+		var result warehouseutils.QueryResult
+		if m.query != nil {
+			result, err = m.query(ctx, statement)
+		} else {
+			result, err = client.QueryODPS(ctx, m.odps, statement, m.queryTimeout, m.pollInterval)
+		}
+		if err != nil {
+			return false, err
+		}
+		if len(result.Values) != 0 {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (m *MaxCompute) LoadUserTables(ctx context.Context) map[string]error {

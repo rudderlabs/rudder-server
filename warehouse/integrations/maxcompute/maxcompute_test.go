@@ -337,26 +337,26 @@ func TestViewSQLBoundedAndQuoted(t *testing.T) {
 	_, err := m.viewSQL("bad;drop", model.TableSchema{"id": "string"})
 	require.Error(t, err)
 	m.warehouse.Destination.Config = map[string]any{}
-	statement, err := m.viewSQL("events", model.TableSchema{"id": "string", "_partitiontime": "datetime"})
+	statement, err := m.viewSQL("events", model.TableSchema{"id": "string", "uuid_ts": "datetime"})
 	require.NoError(t, err)
 	require.Contains(t, statement, "`pt` >=")
 	require.Contains(t, statement, "`project`.`events`")
 	require.NotContains(t, statement, "SELECT *")
 	m.warehouse.Namespace = "schema"
-	statement, err = m.viewSQL("events", model.TableSchema{"id": "string"})
+	statement, err = m.viewSQL("events", model.TableSchema{"id": "string", "uuid_ts": "datetime"})
 	require.NoError(t, err)
 	require.Contains(t, statement, "`project`.`schema`.`events`")
 	for _, granularity := range []string{"day", "hour"} {
 		t.Run(granularity, func(t *testing.T) {
 			m.warehouse.Destination.Config["partitionType"] = granularity
-			statement, err := m.viewSQL("events", model.TableSchema{"id": "string"})
+			statement, err := m.viewSQL("events", model.TableSchema{"id": "string", "uuid_ts": "datetime"})
 			require.NoError(t, err)
 			require.Contains(t, statement, " WHERE `pt` >= TO_CHAR(DATEADD(GETDATE(), -60, 'dd'), 'yyyy-mm-dd') AND `pt` < TO_CHAR(DATEADD(GETDATE(), 2, 'dd'), 'yyyy-mm-dd')")
 			require.NotContains(t, statement, "`pt` <=")
 			require.NotContains(t, statement, "yyyy-mm-dd hh:00:00")
 		})
 	}
-	statement, err = m.viewSQL(warehouseutils.DiscardsTable, model.TableSchema{"row_id": "string", "column_name": "string", "table_name": "string", "loaded_at": "datetime"})
+	statement, err = m.viewSQL(warehouseutils.DiscardsTable, model.TableSchema{"row_id": "string", "column_name": "string", "table_name": "string", "uuid_ts": "datetime"})
 	require.NoError(t, err)
 	require.Contains(t, statement, "PARTITION BY `row_id`, `column_name`, `table_name`")
 }

@@ -135,7 +135,7 @@ func TestPrecheckAllFilesAndCatalogViewBeforeLoad(t *testing.T) {
 	catalogCalls := 0
 	m.catalog = func(context.Context) (model.Schema, error) {
 		catalogCalls++
-		return model.Schema{"events": {"id": "string", "received_at": "datetime", "current_column": "string"}}, nil
+		return model.Schema{"events": {"id": "string", "uuid_ts": "datetime", "received_at": "datetime", "current_column": "string"}}, nil
 	}
 	_, err := m.LoadTable(context.Background(), "events")
 	require.ErrorContains(t, err, "length")
@@ -148,7 +148,7 @@ func TestPrecheckAllFilesAndCatalogViewBeforeLoad(t *testing.T) {
 	require.Empty(t, statements)
 	m.catalog = func(context.Context) (model.Schema, error) {
 		catalogCalls++
-		return model.Schema{"events": {"id": "string", "received_at": "datetime", "current_column": "string"}}, nil
+		return model.Schema{"events": {"id": "string", "uuid_ts": "datetime", "received_at": "datetime", "current_column": "string"}}, nil
 	}
 	_, err = m.LoadTable(context.Background(), "events")
 	require.NoError(t, err)
@@ -206,8 +206,12 @@ func TestFixedViewsAndNames(t *testing.T) {
 	require.Contains(t, statements[1], "`pt` >=")
 	require.Contains(t, statements[1], "`pt` < TO_CHAR(DATEADD(GETDATE(), 2, 'dd')")
 	require.Contains(t, statements[1], "PARTITION BY `id`")
-	first := viewName(strings.Repeat("a", 120) + "b")
-	second := viewName(strings.Repeat("a", 120) + "c")
+	require.Contains(t, statements[1], "ORDER BY `uuid_ts` DESC")
+	require.Equal(t, "event_source_view", viewName("event_source"))
+	require.Equal(t, strings.Repeat("a", 123)+"_view", viewName(strings.Repeat("a", 123)))
+	require.LessOrEqual(t, len(viewName(strings.Repeat("a", 124))), 128)
+	first := viewName(strings.Repeat("a", 123) + "b")
+	second := viewName(strings.Repeat("a", 123) + "c")
 	require.LessOrEqual(t, len(first), 128)
 	require.NotEqual(t, first, second)
 	m.warehouse.Destination.Config["skipViews"] = true
@@ -217,6 +221,10 @@ func TestFixedViewsAndNames(t *testing.T) {
 	require.Contains(t, statements[0], "TRUNC_TIME(`uuid_ts`, 'day') AS `pt`")
 	require.Contains(t, statements[0], "'table.format.version'='2'")
 	require.Len(t, statements, 1)
+	m.warehouse.Destination.Config["skipViews"] = false
+	statements = nil
+	require.NoError(t, m.createTableView(context.Background(), "keyless", model.TableSchema{"uuid_ts": "datetime"}))
+	require.Empty(t, statements)
 }
 
 func TestMaxComputeConfiguredEndpoint(t *testing.T) {
