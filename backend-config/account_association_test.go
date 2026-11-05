@@ -8,6 +8,47 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 )
 
+func TestHTTPV2AccountAssociations(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		definitionName     string
+		authenticationType string
+		options            map[string]any
+		secret             map[string]any
+	}{
+		{"basic auth with empty password", "DESTINATION_HTTP_BASIC_AUTH", "basic_auth", map[string]any{"username": "user"}, map[string]any{"password": ""}},
+		{"bearer token", "DESTINATION_HTTP_BEARER_TOKEN", "bearer_token", nil, map[string]any{"bearerToken": "token"}},
+		{"API key", "DESTINATION_HTTP_API_KEY", "api_key", map[string]any{"apiKeyName": "X-API-Key"}, map[string]any{"apiKeyValue": "key"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := ConfigT{
+				Sources: []SourceT{{Destinations: []DestinationT{{
+					ID: "http-v2", Enabled: true, Version: 2,
+					Config: map[string]any{"authenticationEnabled": true, "rudderAccountId": "http-account"},
+				}}}},
+				Accounts: map[string]Account{"http-account": {
+					AccountDefinitionName: tc.definitionName, Options: tc.options, Secret: tc.secret,
+				}},
+				AccountDefinitions: map[string]AccountDefinition{tc.definitionName: {
+					Name: tc.definitionName, AuthenticationType: tc.authenticationType,
+				}},
+			}
+
+			config.processAccountAssociations()
+
+			destination := config.Sources[0].Destinations[0]
+			require.Equal(t, 2, destination.Version)
+			require.Equal(t, map[string]any{"authenticationEnabled": true, "rudderAccountId": "http-account"}, destination.Config)
+			require.NotNil(t, destination.DeliveryAccount)
+			require.Equal(t, "http-account", destination.DeliveryAccount.ID)
+			require.Equal(t, tc.definitionName, destination.DeliveryAccount.AccountDefinitionName)
+			require.Equal(t, tc.authenticationType, destination.DeliveryAccount.AccountDefinition.AuthenticationType)
+			require.Equal(t, tc.options, destination.DeliveryAccount.Options)
+			require.Equal(t, tc.secret, destination.DeliveryAccount.Secret)
+		})
+	}
+}
+
 func TestAccountAssociations(t *testing.T) {
 	t.Run("basic account merge", func(t *testing.T) {
 		c := &ConfigT{
