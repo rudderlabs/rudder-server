@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -260,7 +261,7 @@ func testIntegrationEvents(t *testing.T, c integrationCredentials, role bool) {
 	userView := integrationQuery(t, m, fmt.Sprintf("SELECT `email`, `uuid_ts`, `loaded_at` FROM `%s`.`%s`.`users_view` WHERE `id` = '%s'", c.Project, namespace, firstUser))
 	require.Len(t, userView.Values, 1)
 	require.Len(t, userView.Values[0], 3)
-	require.Equal(t, "rhedricks+1@example.com", userView.Values[0][0])
+	require.Equal(t, "rhedricks+4@example.com", userView.Values[0][0])
 	newest := integrationQuery(t, m, fmt.Sprintf("SELECT `uuid_ts`, `loaded_at` FROM `%s`.`%s`.`users` WHERE %s AND `id` = '%s' ORDER BY `uuid_ts` DESC LIMIT 1", c.Project, namespace, integrationPTBounds(), firstUser))
 	require.Len(t, newest.Values, 1)
 	require.Equal(t, newest.Values[0], userView.Values[0][1:])
@@ -273,9 +274,8 @@ func integrationEventsFixture(t *testing.T, source string, addColumn bool) strin
 	require.NoError(t, err)
 	text := strings.ReplaceAll(string(contents), "2023-05-12", time.Now().UTC().Format("2006-01-02"))
 	if addColumn {
-		oldEmail := `"email": "rhedricks+5@example.com"`
-		require.Contains(t, text, oldEmail)
-		text = strings.Replace(text, oldEmail, `"email": null`, 1)
+		text = regexp.MustCompile(`"email": "rhedricks\+[0-9]+@example\.com"`).ReplaceAllString(text, `"email": null`)
+		require.Equal(t, 4, strings.Count(text, `"email": null`))
 		before := `"product_id": "5",`
 		require.Contains(t, text, before)
 		text = strings.Replace(text, before, before+` "integration_added": "yes",`, 1)
