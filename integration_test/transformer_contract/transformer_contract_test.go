@@ -33,6 +33,122 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
 )
 
+// TestHTTPV2AccountDelivery exercises workspace-config enrichment and the processor's
+// destination-transformer request, not the transformer's HTTP authentication logic.
+func TestHTTPV2AccountDelivery(t *testing.T) {
+	config.Reset()
+	defer config.Reset()
+
+	workspaceConfig := backendconfig.ConfigT{
+		WorkspaceID: "workspace-1",
+		Sources: []backendconfig.SourceT{{
+			ID: "source-1", WriteKey: "writekey-1", WorkspaceID: "workspace-1", Enabled: true,
+			SourceDefinition: backendconfig.SourceDefinitionT{Name: "webhook"},
+			Destinations: []backendconfig.DestinationT{
+				{ID: "basic", Enabled: true, Version: 2, WorkspaceID: "workspace-1", IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "HTTP"},
+					Config:                map[string]any{"authenticationEnabled": true, "rudderAccountId": "basic-account"}},
+				{ID: "bearer", Enabled: true, Version: 2, WorkspaceID: "workspace-1", IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "HTTP"},
+					Config:                map[string]any{"authenticationEnabled": true, "rudderAccountId": "bearer-account"}},
+				{ID: "api-key", Enabled: true, Version: 2, WorkspaceID: "workspace-1", IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "HTTP"},
+					Config:                map[string]any{"authenticationEnabled": true, "rudderAccountId": "api-key-account"}},
+				{ID: "v1", Enabled: true, Version: 1, WorkspaceID: "workspace-1", IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "HTTP"},
+					Config:                map[string]any{"auth": "basicAuth", "username": "legacy-user", "password": "legacy-password"}},
+			},
+		}},
+		Accounts: map[string]backendconfig.Account{
+			"basic-account": {AccountDefinitionName: "DESTINATION_HTTP_BASIC_AUTH",
+				Options: map[string]any{"username": "account-user"}, Secret: map[string]any{"password": ""}},
+			"bearer-account": {AccountDefinitionName: "DESTINATION_HTTP_BEARER_TOKEN",
+				Secret: map[string]any{"bearerToken": "fixture-token"}},
+			"api-key-account": {AccountDefinitionName: "DESTINATION_HTTP_API_KEY",
+				Options: map[string]any{"apiKeyName": "X-API-Key"}, Secret: map[string]any{"apiKeyValue": "fixture-key"}},
+		},
+		AccountDefinitions: map[string]backendconfig.AccountDefinition{
+			"DESTINATION_HTTP_BASIC_AUTH":   {Name: "DESTINATION_HTTP_BASIC_AUTH", AuthenticationType: "basic_auth"},
+			"DESTINATION_HTTP_BEARER_TOKEN": {Name: "DESTINATION_HTTP_BEARER_TOKEN", AuthenticationType: "bearer_token"},
+			"DESTINATION_HTTP_API_KEY":      {Name: "DESTINATION_HTTP_API_KEY", AuthenticationType: "api_key"},
+		},
+	}
+	body, err := jsonrs.Marshal(workspaceConfig)
+	require.NoError(t, err)
+	bcServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/workspaceConfig" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write(body)
+	}))
+	defer bcServer.Close()
+
+	received := make(chan backendconfig.DestinationT, 4)
+	trServer := transformertest.NewBuilder().
+		WithDestTransformHandler("HTTP", func(request []types.TransformerEvent) []types.TransformerResponse {
+			for _, event := range request {
+				received <- event.Destination
+			}
+			return transformertest.MirroringTransformerHandler(request)
+		}).
+		Build()
+	defer trServer.Close()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	postgresContainer, err := postgres.Setup(pool, t)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	gwPort, err := kithelper.GetFreePort()
+	require.NoError(t, err)
+	wg, ctx := errgroup.WithContext(ctx)
+	wg.Go(func() error {
+		return runRudderServer(t, ctx, cancel, gwPort, postgresContainer, bcServer.URL, trServer.URL, t.TempDir(), true)
+	})
+
+	url := fmt.Sprintf("http://localhost:%d", gwPort)
+	health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
+	require.NoError(t, sendEvents(1, "identify", "writekey-1", url))
+	requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, 1)
+	require.Eventually(t, func() bool { return len(received) == 4 }, 30*time.Second, 100*time.Millisecond)
+
+	destinations := make(map[string]backendconfig.DestinationT, 4)
+	for range 4 {
+		destination := <-received
+		destinations[destination.ID] = destination
+	}
+	require.Len(t, destinations, 4)
+	for _, tc := range []struct {
+		id, accountID, definitionName string
+		options, secret               map[string]any
+	}{
+		{"basic", "basic-account", "DESTINATION_HTTP_BASIC_AUTH", map[string]any{"username": "account-user"}, map[string]any{"password": ""}},
+		{"bearer", "bearer-account", "DESTINATION_HTTP_BEARER_TOKEN", nil, map[string]any{"bearerToken": "fixture-token"}},
+		{"api-key", "api-key-account", "DESTINATION_HTTP_API_KEY", map[string]any{"apiKeyName": "X-API-Key"}, map[string]any{"apiKeyValue": "fixture-key"}},
+	} {
+		destination := destinations[tc.id]
+		require.Equal(t, 2, destination.Version)
+		require.Equal(t, map[string]any{"authenticationEnabled": true, "rudderAccountId": tc.accountID}, destination.Config)
+		require.NotNil(t, destination.DeliveryAccount)
+		require.Equal(t, tc.accountID, destination.DeliveryAccount.ID)
+		require.Equal(t, tc.definitionName, destination.DeliveryAccount.AccountDefinitionName)
+		require.Equal(t, tc.options, destination.DeliveryAccount.Options)
+		require.Equal(t, tc.secret, destination.DeliveryAccount.Secret)
+		require.NotNil(t, destination.DeliveryAccount.AccountDefinition)
+		require.Equal(t, tc.definitionName, destination.DeliveryAccount.AccountDefinition.Name)
+	}
+	v1 := destinations["v1"]
+	require.Equal(t, 1, v1.Version)
+	require.Equal(t, map[string]any{"auth": "basicAuth", "username": "legacy-user", "password": "legacy-password"}, v1.Config)
+	require.Nil(t, v1.DeliveryAccount)
+
+	cancel()
+	require.NoError(t, wg.Wait())
+}
+
 func TestTransformerContract(t *testing.T) {
 	transformationV2 := []bool{true, false}
 	for _, v := range transformationV2 {

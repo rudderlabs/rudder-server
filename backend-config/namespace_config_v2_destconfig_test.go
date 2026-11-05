@@ -220,6 +220,54 @@ func TestV2DestinationConfig(t *testing.T) {
 		})
 	})
 
+	t.Run("HTTP v2 account link survives filtering while v1 retains inline credentials", func(t *testing.T) {
+		catalogues := testCatalogues(nil)
+		catalogues.DestinationDefinitions["HTTP"] = v2DestinationDefinition{
+			DestinationDefinitionT: DestinationDefinitionT{
+				Config: destConfig([]any{"authenticationEnabled", "rudderAccountId"}, nil),
+			},
+			Version: "2.0",
+			Versions: map[string]v2DefinitionArchiveEntry{
+				"1": {Config: destConfig([]any{"auth", "username", "password"}, nil)},
+			},
+		}
+		catalogues.AccountDefinitions["DESTINATION_HTTP_BASIC_AUTH"] = v2AccountDefinition{
+			AccountDefinition: AccountDefinition{AuthenticationType: "basic_auth"},
+		}
+		body := `{
+			"sources": {"src-1": {"sourceDefinitionName": "webhook"}},
+			"destinations": {
+				"dst-v2": {"destinationDefinitionName": "HTTP", "version": 2, "enabled": true,
+					"config": {"authenticationEnabled": true, "rudderAccountId": "acc-1",
+						"auth": "basicAuth", "username": "old-user", "password": "old-password",
+						"bearerToken": "old-token", "apiKeyName": "old-header", "apiKeyValue": "old-value"}},
+				"dst-v1": {"destinationDefinitionName": "HTTP", "version": 1, "enabled": true,
+					"config": {"auth": "basicAuth", "username": "old-user", "password": "old-password"}}
+			},
+			"accounts": {"acc-1": {"accountDefinitionName": "DESTINATION_HTTP_BASIC_AUTH",
+				"options": {"username": "new-user"}, "secret": {"password": ""}}},
+			"connections": {
+				"conn-v2": {"sourceId": "src-1", "destinationId": "dst-v2"},
+				"conn-v1": {"sourceId": "src-1", "destinationId": "dst-v1"}
+			}
+		}`
+		config := mapWorkspace(t, body, catalogues)
+		config.processAccountAssociations()
+		require.Len(t, config.Sources[0].Destinations, 2)
+		v1, v2 := config.Sources[0].Destinations[0], config.Sources[0].Destinations[1]
+		require.Equal(t, "dst-v1", v1.ID)
+		require.Equal(t, 1, v1.Version)
+		require.Equal(t, map[string]any{"auth": "basicAuth", "username": "old-user", "password": "old-password"}, v1.Config)
+		require.Nil(t, v1.DeliveryAccount)
+		require.Equal(t, "dst-v2", v2.ID)
+		require.Equal(t, 2, v2.Version)
+		require.Equal(t, map[string]any{"authenticationEnabled": true, "rudderAccountId": "acc-1"}, v2.Config)
+		require.NotNil(t, v2.DeliveryAccount)
+		require.Equal(t, "DESTINATION_HTTP_BASIC_AUTH", v2.DeliveryAccount.AccountDefinitionName)
+		require.Equal(t, map[string]any{"username": "new-user"}, v2.DeliveryAccount.Options)
+		require.Equal(t, map[string]any{"password": ""}, v2.DeliveryAccount.Secret)
+	})
+
 	t.Run("source type", func(t *testing.T) {
 		for _, tc := range []struct{ definitionName, category, want string }{
 			{"anything", "cloud", "cloudSource"},
