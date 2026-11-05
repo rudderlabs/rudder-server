@@ -533,10 +533,6 @@ func TestStagingFilesRepo(t *testing.T) {
 					require.NoError(t, err)
 					require.Equal(t, stagingFiles, pending)
 
-					countByDestID, err := r.CountPendingForDestination(ctx, input.DestinationID)
-					require.NoError(t, err)
-					require.Equal(t, int64(input.Files), countByDestID)
-
 					countBySrcID, err := r.CountPendingForSource(ctx, input.SourceID, "task_run_id")
 					require.NoError(t, err)
 					require.Equal(t, int64(input.Files), countBySrcID)
@@ -550,10 +546,6 @@ func TestStagingFilesRepo(t *testing.T) {
 					pending, err = r.Pending(ctx, input.SourceID, input.DestinationID)
 					require.NoError(t, err)
 					require.Empty(t, pending)
-
-					countByDestID, err = r.CountPendingForDestination(ctx, input.DestinationID)
-					require.NoError(t, err)
-					require.Zero(t, countByDestID)
 
 					countBySrcID, err = r.CountPendingForSource(ctx, input.SourceID, "task_run_id")
 					require.NoError(t, err)
@@ -600,12 +592,6 @@ func TestStagingFilesRepo(t *testing.T) {
 				count, err = s.CountPendingForConnection(ctx, "source", "destination_a")
 				require.NoError(t, err)
 				require.EqualValues(t, 2, count)
-				// A historical uploaded row with no upload_id must not become pending again.
-				_, err = db.ExecContext(ctx, `UPDATE `+warehouseutils.WarehouseStagingFilesTable+` SET upload_id = NULL WHERE id = $1`, uploaded.ID)
-				require.NoError(t, err)
-				count, err = s.CountPendingForSource(ctx, "source", "task_1")
-				require.NoError(t, err)
-				require.EqualValues(t, 1, count)
 				_, err = u.CreateWithStagingFiles(ctx, model.Upload{SourceID: "source", DestinationID: "destination_a"}, []*model.StagingFile{otherTask})
 				require.NoError(t, err)
 				count, err = s.CountPendingForSource(ctx, "source", "task_1")

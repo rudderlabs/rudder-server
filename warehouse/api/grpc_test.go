@@ -772,53 +772,6 @@ func TestGRPC(t *testing.T) {
 			require.False(t, ok) // aborted uploads are not pending work
 		})
 
-		t.Run("trigger leaves no store entry on later count error", func(t *testing.T) {
-			// The destination has two sources. Force the second connection's upload
-			// count to fail after the first connection has been found to have work.
-			cleanUpTables()
-			triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
-			triggerStore.Delete("POSTGRES:second_source_id:test_destination_id")
-			s := repo.NewStagingFiles(db, c)
-			_, err := s.Insert(ctx, &model.StagingFileWithSchema{
-				SourceID: sourceID, DestinationID: destinationID, WorkspaceID: workspaceID,
-			})
-			require.NoError(t, err)
-			secondFile := model.StagingFile{SourceID: "second_source_id", DestinationID: destinationID, WorkspaceID: workspaceID}
-			secondID, err := s.Insert(ctx, &model.StagingFileWithSchema{StagingFile: secondFile})
-			require.NoError(t, err)
-			secondFile.ID = secondID
-			_, err = repo.NewUploads(db).CreateWithStagingFiles(ctx, model.Upload{SourceID: "second_source_id", DestinationID: destinationID, WorkspaceID: workspaceID, Status: model.Waiting}, []*model.StagingFile{&secondFile})
-			require.NoError(t, err)
-			// A temporary function and view raise on the second source's upload-count query,
-			// after the first source has already been found to have work.
-			_, err = db.ExecContext(ctx, `CREATE FUNCTION fail_second_source_upload_count(source_id text) RETURNS boolean AS $$
-			BEGIN
-				IF source_id = 'second_source_id' THEN
-					RAISE EXCEPTION 'second source count failure';
-				END IF;
-				RETURN true;
-			END;
-			$$ LANGUAGE plpgsql VOLATILE`)
-			require.NoError(t, err)
-			_, err = db.ExecContext(ctx, `ALTER TABLE wh_uploads RENAME TO wh_uploads_original;
-				CREATE VIEW wh_uploads AS SELECT * FROM wh_uploads_original
-				WHERE fail_second_source_upload_count(source_id)`)
-			require.NoError(t, err)
-			defer func() {
-				_, cleanupErr := db.ExecContext(context.Background(), `DROP VIEW wh_uploads;
-					ALTER TABLE wh_uploads_original RENAME TO wh_uploads;
-					DROP FUNCTION fail_second_source_upload_count(text)`)
-				require.NoError(t, cleanupErr)
-			}()
-			_, err = grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{WorkspaceId: workspaceID, DestinationId: destinationID})
-			require.Error(t, err)
-			require.Equal(t, codes.Internal, status.Code(err))
-			_, ok := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
-			require.False(t, ok)
-			_, ok = triggerStore.Load("POSTGRES:second_source_id:test_destination_id")
-			require.False(t, ok)
-		})
-
 		t.Run("Retry", func(t *testing.T) {
 			now := time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC)
 			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {

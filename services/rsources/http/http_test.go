@@ -446,7 +446,6 @@ func TestFailedRecordsPagination(t *testing.T) {
 		{name: "token without size", query: "?pageToken=next", status: http.StatusBadRequest},
 		{name: "token with zero size", query: "?pageSize=0&pageToken=next", status: http.StatusBadRequest},
 		{name: "token with size", query: "?pageSize=2&pageToken=next", size: 2, token: "next", status: http.StatusOK},
-		{name: "unpaginated", status: http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)

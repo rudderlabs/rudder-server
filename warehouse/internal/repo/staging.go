@@ -439,14 +439,6 @@ func (sf *StagingFiles) CountPendingForSource(ctx context.Context, sourceID, tas
 	return sf.countPending(ctx, `sf.source_id = $1 AND sf.metadata->>'source_task_run_id' = $2`, sourceID, taskRunID)
 }
 
-func (sf *StagingFiles) CountPendingForDestination(ctx context.Context, destinationID string) (int64, error) {
-	defer sf.TimerStat("count_pending_for_destination", stats.Tags{
-		"destId": destinationID,
-	})()
-
-	return sf.countPending(ctx, `sf.destination_id = $1`, destinationID)
-}
-
 func (sf *StagingFiles) CountPendingForConnection(ctx context.Context, sourceID, destinationID string) (int64, error) {
 	return sf.countPending(ctx, `sf.source_id = $1 AND sf.destination_id = $2`, sourceID, destinationID)
 }
