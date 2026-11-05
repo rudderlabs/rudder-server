@@ -383,6 +383,7 @@ func (u integrationUploader) GetLoadFileType() string { return warehouseutils.Lo
 func (u integrationUploader) GetTableSchemaInWarehouse(string) model.TableSchema {
 	return u.tableSchema
 }
+
 func (u integrationUploader) GetLoadFilesMetadata(_ context.Context, _ warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
 	return u.files, nil
 }
