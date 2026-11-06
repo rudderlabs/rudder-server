@@ -4,15 +4,18 @@ import (
 	"bufio"
 	"encoding/csv"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -164,50 +167,106 @@ func generateErrorString(item RejectedItem) string {
 	return item.StatusCode + " : " + item.Message + " " + invalidItems.String()
 }
 
-func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader) (*common.EventStatMeta, error) {
-	jobIDs := []int64{}
+const correlationFailureReason = "Eloqua result cannot be reconciled to an uploaded CSV row; records may already have been imported"
+
+func abortAmbiguousJobs(importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader, reason string) *common.EventStatMeta {
+	eloqua.logger.Errorn("Ambiguous Eloqua import result; aborting importing jobs", logger.NewStringField("reason", reason), logger.NewIntField("importing_jobs", int64(len(importingList))))
+	eloqua.statsFactory.NewTaggedStat("result_reconciliation_ambiguity", stats.CountType, map[string]string{
+		"module": "batch_router", "destType": eloqua.destName,
+	}).Count(len(importingList))
+	meta := &common.EventStatMeta{AbortedReasons: make(map[int64]string)}
+	for _, job := range importingList {
+		meta.AbortedKeys = append(meta.AbortedKeys, job.JobID)
+		meta.AbortedReasons[job.JobID] = correlationFailureReason + ": " + reason
+	}
+	return meta
+}
+
+func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader, parameters []byte) (*common.EventStatMeta, error) {
+	importID := gjson.GetBytes(parameters, "importId").String()
+	if importID == "" || !strings.HasPrefix(importID, data.DynamicPart+":") {
+		return abortAmbiguousJobs(importingList, eloqua, "missing or mismatched sync ID"), nil
+	}
+	if expected := gjson.GetBytes(parameters, "importCount"); expected.Exists() {
+		if expected.Type != gjson.Number || expected.Int() < 0 || expected.Raw != fmt.Sprint(expected.Int()) {
+			return nil, fmt.Errorf("eloqua importing list has invalid import count")
+		}
+		if expected.Int() != int64(len(importingList)) {
+			return nil, fmt.Errorf("eloqua importing list incomplete: expected %d jobs, got %d", expected.Int(), len(importingList))
+		}
+	} else {
+		return nil, fmt.Errorf("eloqua importing list has missing import count")
+	}
+	jobIDs := make([]int64, 0, len(importingList))
+	rowToJob := make(map[int64]int64, len(importingList))
 	for _, job := range importingList {
 		jobIDs = append(jobIDs, job.JobID)
+		if gjson.GetBytes(job.LastJobStatus.Parameters, "importId").String() != importID {
+			return abortAmbiguousJobs(importingList, eloqua, "mixed importing sync IDs"), nil
+		}
+		row := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.csvRowIndex")
+		if !row.Exists() || row.Int() < 1 || row.Type != gjson.Number || row.Raw != fmt.Sprint(row.Int()) {
+			return abortAmbiguousJobs(importingList, eloqua, "missing or invalid CSV row index"), nil
+		}
+		if _, exists := rowToJob[row.Int()]; exists {
+			return abortAmbiguousJobs(importingList, eloqua, "duplicate CSV row index"), nil
+		}
+		rowToJob[row.Int()] = job.JobID
 	}
-	rejectResponse, err := eloqua.service.CheckRejectedData(data)
-	if err != nil {
-		return nil, err
-	}
-	abortedJobIDs := []int64{}
-	abortedReasons := map[int64]string{}
-	/**
-	We have a limit of 1000 rejected events per api call. And the offset starts from 0. So we are fetching 1000 rejected events every time making the api call and updating the offset accordingly.
-	*/
-	if rejectResponse.Count > 0 {
-		iterations := int(math.Ceil(float64(rejectResponse.TotalResults) / float64(1000)))
-		var offset int
-		for i := range iterations {
-			offset = i * 1000
-			data.Offset = offset
-			if offset != 0 {
-				rejectResponse, err = eloqua.service.CheckRejectedData(data)
-				if err != nil {
-					return nil, err
-				}
-			}
-			for _, val := range rejectResponse.Items {
-				uniqueInvalidFields := lo.Intersect(eloqua.uniqueKeys, val.InvalidFields)
-				successStatusCode := lo.Intersect(eloqua.successStatusCode, []string{val.StatusCode})
-				if len(successStatusCode) != 0 && len(uniqueInvalidFields) == 0 {
-					continue
-				}
-				abortedJobIDs = append(abortedJobIDs, eloqua.jobToCSVMap[val.RecordIndex])
-				abortedReasons[eloqua.jobToCSVMap[val.RecordIndex]] = generateErrorString(val)
-			}
+	// Rows are sequential and one-based; gaps mean the importing set is incomplete.
+	for i := 1; i <= len(importingList); i++ {
+		if _, ok := rowToJob[int64(i)]; !ok {
+			return abortAmbiguousJobs(importingList, eloqua, "incomplete CSV row mapping"), nil
 		}
 	}
-	left, _ := lo.Difference(jobIDs, abortedJobIDs)
-	eventStatMeta := common.EventStatMeta{
-		AbortedKeys:    abortedJobIDs,
-		AbortedReasons: abortedReasons,
-		SucceededKeys:  left,
+	var uniqueKeys []string
+	if policy := gjson.GetBytes(parameters, "uniqueKeys"); policy.Exists() {
+		if policy.Type != gjson.JSON || !strings.HasPrefix(policy.Raw, "[") {
+			return abortAmbiguousJobs(importingList, eloqua, "invalid unique keys policy"), nil
+		}
+		if err := jsonrs.Unmarshal([]byte(policy.Raw), &uniqueKeys); err != nil {
+			// The policy is persisted with this import; malformed metadata is
+			// irrecoverable, unlike a transient rejects-fetch error.
+			return abortAmbiguousJobs(importingList, eloqua, "invalid unique keys policy"), nil //nolint:nilerr
+		}
+	} else if config.GetBoolVar(true, "BatchRouter.ELOQUA.strictResultReconciliation") {
+		return abortAmbiguousJobs(importingList, eloqua, "missing unique keys policy"), nil
 	}
-	return &eventStatMeta, nil
+
+	abortedJobIDs := []int64{}
+	abortedReasons := map[int64]string{}
+	seen := make(map[int64]bool)
+	// Use the API's reported page size rather than assuming a 1000-row page.
+	// Fetch and validate all pages before assigning any job a terminal status.
+	for offset, total := 0, -1; total < 0 || offset < total; {
+		data.Offset = offset
+		page, err := eloqua.service.CheckRejectedData(data)
+		if err != nil {
+			return nil, fmt.Errorf("fetching Eloqua rejects at offset %d: %w", offset, err)
+		}
+		if page == nil || page.TotalResults < 0 || page.Count != len(page.Items) || page.Count < 0 || page.Offset != offset ||
+			(page.Limit <= 0 && page.HasMore) || (page.Limit > 0 && page.Count > page.Limit) ||
+			(total >= 0 && total != page.TotalResults) || offset+page.Count > page.TotalResults ||
+			(page.HasMore != (offset+page.Count < page.TotalResults)) || (page.HasMore && page.Count == 0) {
+			return abortAmbiguousJobs(importingList, eloqua, "incomplete or inconsistent rejects pagination"), nil
+		}
+		total = page.TotalResults
+		for _, val := range page.Items {
+			jobID, ok := rowToJob[val.RecordIndex]
+			if !ok || seen[val.RecordIndex] {
+				return abortAmbiguousJobs(importingList, eloqua, fmt.Sprintf("unknown or duplicate reject row index %d", val.RecordIndex)), nil
+			}
+			seen[val.RecordIndex] = true
+			if lo.Contains(eloqua.successStatusCode, val.StatusCode) && len(lo.Intersect(uniqueKeys, val.InvalidFields)) == 0 {
+				continue
+			}
+			abortedJobIDs = append(abortedJobIDs, jobID)
+			abortedReasons[jobID] = generateErrorString(val)
+		}
+		offset += page.Count
+	}
+	left, _ := lo.Difference(jobIDs, abortedJobIDs)
+	return &common.EventStatMeta{AbortedKeys: abortedJobIDs, AbortedReasons: abortedReasons, SucceededKeys: left}, nil
 }
 
 func parseFailedData(syncId string, importingList []*jobsdb.JobT) *common.EventStatMeta {

@@ -30,8 +30,6 @@ type EloquaBulkUploader struct {
 	fileSizeLimit     int64
 	eventsLimit       int64
 	service           EloquaService
-	jobToCSVMap       map[int64]int64
-	uniqueKeys        []string
 	successStatusCode []string
 }
 type DestinationConfig struct {

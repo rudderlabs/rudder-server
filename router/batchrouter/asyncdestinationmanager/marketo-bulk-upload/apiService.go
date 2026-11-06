@@ -223,7 +223,7 @@ func (m *MarketoAPIService) GetLeadStatus(url string) ([]map[string]string, *API
 		if err != nil {
 			m.logger.Errorn("Error in parsing csv response", obskit.Error(err))
 			m.statsFactory.NewStat("async_destination_manager.marketo_bulk_upload.csv_parse_error", stats.CountType).Increment()
-			continue
+			return nil, &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in parsing csv response"}
 		}
 		rows = append(rows, row)
 	}
@@ -238,11 +238,12 @@ func (m *MarketoAPIService) GetLeadStatus(url string) ([]map[string]string, *API
 	records := make([]map[string]string, 0, len(rows)-1)
 
 	for _, row := range rows[1:] {
+		if len(row) != len(header) {
+			return nil, &APIError{StatusCode: 500, Category: "Retryable", Message: "Invalid csv response row width"}
+		}
 		record := make(map[string]string)
 		for i, value := range row {
-			if i < len(header) {
-				record[header[i]] = value
-			}
+			record[header[i]] = value
 		}
 		records = append(records, record)
 	}

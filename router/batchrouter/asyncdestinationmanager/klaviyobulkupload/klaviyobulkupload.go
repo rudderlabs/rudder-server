@@ -3,6 +3,9 @@ package klaviyobulkupload
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	stdjson "encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,6 +16,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -28,7 +32,41 @@ const (
 	MAXALLOWEDPROFILESIZE = 512000
 	MAXPAYLOADSIZE        = 4600000
 	IMPORT_ID_SEPARATOR   = ":"
+	ambiguousResultReason = "cannot reconcile Klaviyo import result: missing, duplicate or unmatched correlation data; profile may already have been imported"
 )
+
+// importingMetadata is persisted on each accepted job's importing status. Only
+// the typed hash of an identifier actually sent to Klaviyo is stored (not PII).
+type importingMetadata struct {
+	IdentifierHash string `json:"identifierHash"`
+	ChunkImportID  string `json:"chunkImportId"`
+}
+
+func hashIdentifier(kind, value string) string {
+	sum := sha256.Sum256([]byte(kind + ":" + value))
+	return hex.EncodeToString(sum[:])
+}
+
+// Prefer id when Klaviyo sends one; otherwise use a profile attribute actually
+// serialized in the outbound request. anonymous_id/jobIdentifier is not sent.
+func profileIdentifier(profile Profile) (string, string) {
+	return originalIdentifier(profile.ID, profile.Attributes.Email, profile.Attributes.Phone, profile.Attributes.ExternalId)
+}
+
+func originalIdentifier(profileID, email, phone, externalID string) (string, string) {
+	switch {
+	case profileID != "":
+		return "id", profileID
+	case email != "":
+		return "email", email
+	case phone != "":
+		return "phone_number", phone
+	case externalID != "":
+		return "external_id", externalID
+	default:
+		return "", ""
+	}
+}
 
 // profileIndexRegex extracts the profile index from a Klaviyo error pointer such
 // as "/data/attributes/profiles/data/3/attributes/email".
@@ -126,6 +164,9 @@ func (kbu *KlaviyoBulkUploader) Poll(_ context.Context, pollInput common.AsyncPo
 		}
 	}
 
+	if len(importStatuses) == 0 {
+		return common.PollStatusResponse{StatusCode: http.StatusInternalServerError, HasFailed: true, Error: "Klaviyo import ID is missing"}
+	}
 	for {
 		allComplete := true
 		for importId, status := range importStatuses {
@@ -145,9 +186,9 @@ func (kbu *KlaviyoBulkUploader) Poll(_ context.Context, pollInput common.AsyncPo
 				// Update the status in the map
 				importStatuses[importId] = pollresp.Data.Attributes.Status
 
-				// If Failed_count > 0, add the importId to failedImports
-				if pollresp.Data.Attributes.Failed_count > 0 {
-					failedImports = append(failedImports, importId)
+				// Carry terminal counts to stats for every chunk, including clean ones.
+				if pollresp.Data.Attributes.Status == "complete" {
+					failedImports = append(failedImports, fmt.Sprintf("%s=%d,%d,%d", importId, pollresp.Data.Attributes.Failed_count, pollresp.Data.Attributes.Completed_count, pollresp.Data.Attributes.Total_count))
 				}
 			}
 		}
@@ -155,75 +196,174 @@ func (kbu *KlaviyoBulkUploader) Poll(_ context.Context, pollInput common.AsyncPo
 			break
 		}
 	}
-	if len(failedImports) == 0 {
-		return common.PollStatusResponse{
-			Complete:            true,
-			HasFailed:           false,
-			HasWarning:          false,
-			StatusCode:          200,
-			InProgress:          false,
-			FailedJobParameters: "",
-		}
-	}
+	// Always enter GetUploadStats, including for clean imports: status params
+	// may be missing on some jobs, and the router's clean fast path skips them.
 	return common.PollStatusResponse{
 		Complete:            true,
 		HasFailed:           true,
-		HasWarning:          false,
-		StatusCode:          200,
-		InProgress:          false,
+		StatusCode:          http.StatusOK,
 		FailedJobParameters: strings.Join(failedImports, IMPORT_ID_SEPARATOR),
 	}
 }
 
-func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
-	pollResultImportIds := strings.Split(UploadStatsInput.FailedJobParameters, IMPORT_ID_SEPARATOR)
-	// make a map of jobId to error reason
-	jobIdToErrorMap := make(map[int64]string)
-
-	importingList := UploadStatsInput.ImportingList
-	jobIDs := []int64{}
-	for _, job := range importingList {
-		jobIDs = append(jobIDs, job.JobID)
+func (kbu *KlaviyoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUploadStatsResponse {
+	strict := config.GetBoolVar(true, "BatchRouter.KLAVIYO_BULK_UPLOAD.strictResultReconciliation")
+	metadata := common.EventStatMeta{AbortedReasons: make(map[int64]string)}
+	pollImports := make(map[string]bool)
+	for id := range strings.SplitSeq(gjson.GetBytes(input.Parameters, "importId").String(), IMPORT_ID_SEPARATOR) {
+		if id != "" {
+			pollImports[id] = true
+		}
+	}
+	sharedImportID := gjson.GetBytes(input.Parameters, "importId").String()
+	sharedImportCount := gjson.GetBytes(input.Parameters, "importCount").Int()
+	byImport := make(map[string]map[string]int64)
+	chunkJobs := make(map[string][]int64)
+	ambiguous := make(map[int64]bool)
+	duplicateHashes := make(map[string]map[string]bool)
+	for _, job := range input.ImportingList {
+		params := job.LastJobStatus.Parameters
+		importID := gjson.GetBytes(params, "metadata.chunkImportId").String()
+		chunkJobs[importID] = append(chunkJobs[importID], job.JobID)
+		hash := gjson.GetBytes(params, "metadata.identifierHash").String()
+		if importID == "" || hash == "" || len(hash) != 64 || !pollImports[importID] || gjson.GetBytes(params, "importId").String() != sharedImportID || !gjson.GetBytes(params, "importCount").Exists() || gjson.GetBytes(params, "importCount").Int() != sharedImportCount {
+			ambiguous[job.JobID] = true
+			continue
+		}
+		if byImport[importID] == nil {
+			byImport[importID] = make(map[string]int64)
+		}
+		if _, exists := byImport[importID][hash]; exists {
+			if duplicateHashes[importID] == nil {
+				duplicateHashes[importID] = make(map[string]bool)
+			}
+			duplicateHashes[importID][hash] = true
+		} else {
+			byImport[importID][hash] = job.JobID
+		}
 	}
 
-	ErrorMap := kbu.JobIdToIdentifierMap
-	var successKeys []int64
-
-	var abortedJobIDs []int64
-	for _, pollResultImportId := range pollResultImportIds {
-		uploadStatsResp, err := kbu.KlaviyoAPIService.GetUploadErrors(pollResultImportId)
-		if err != nil {
-			return common.GetUploadStatsResponse{
-				StatusCode: 400,
-				Error:      err.Error(),
-			}
-		}
-
-		// Iterate over the Data array and get the jobId and error detail and store in jobIdToErrorMap
-		for _, item := range uploadStatsResp.Data {
-			orgPayload := item.Attributes.OriginalPayload
-			var identifierId string
-			if orgPayload.Id != "" {
-				identifierId = orgPayload.Id
+	counts, invalidCounts := parseChunkCounts(input.FailedJobParameters, pollImports)
+	allAmbiguous := invalidCounts || len(pollImports) == 0 && len(input.ImportingList) > 0
+	if expected := int(sharedImportCount); expected != len(input.ImportingList) {
+		return common.GetUploadStatsResponse{StatusCode: http.StatusInternalServerError, Error: fmt.Sprintf("Klaviyo importing list incomplete: got %d, expected %d", len(input.ImportingList), expected)}
+	}
+	for importID := range pollImports {
+		count, ok := counts[importID]
+		if !ok || len(chunkJobs[importID]) == 0 || count.total != len(chunkJobs[importID]) || count.completed+count.failed != count.total || (count.failed > 0 && len(byImport[importID]) == 0) {
+			if len(chunkJobs[importID]) == 0 {
+				allAmbiguous = true
 			} else {
-				identifierId = orgPayload.AnonymousId
+				for _, jobID := range chunkJobs[importID] {
+					ambiguous[jobID] = true
+				}
 			}
-			jobId := ErrorMap[identifierId]
-			abortedJobIDs = append(abortedJobIDs, jobId)
-			errorDetail := item.Attributes.Detail
-			jobIdToErrorMap[jobId] = errorDetail
 		}
 	}
-	successKeys, _ = lo.Difference(jobIDs, abortedJobIDs)
-	return common.GetUploadStatsResponse{
-		StatusCode: 200,
-		Error:      "The import job failed",
-		Metadata: common.EventStatMeta{
-			AbortedKeys:    abortedJobIDs,
-			AbortedReasons: jobIdToErrorMap,
-			SucceededKeys:  successKeys,
-		},
+	// Fetch error rows only for failed chunks; clean chunks still require
+	// complete terminal counts and persisted correlation metadata.
+	seen, ambiguousChunks, err := kbu.reconcileChunkErrors(counts, pollImports, chunkJobs, byImport, duplicateHashes, ambiguous, strict, &metadata)
+	if err != nil {
+		return common.GetUploadStatsResponse{StatusCode: http.StatusInternalServerError, Error: err.Error()}
 	}
+	ambiguousCount := classifyChunkJobs(input.ImportingList, &metadata, seen, ambiguous, ambiguousChunks, allAmbiguous)
+	if ambiguousCount > 0 {
+		kbu.Logger.Errorn("Ambiguous Klaviyo import reconciliation", logger.NewIntField("jobs", int64(ambiguousCount)))
+		kbu.StatsFactory.NewTaggedStat("klaviyo_result_reconciliation_ambiguous", stats.CountType, stats.Tags{
+			"module": "batch_router", "destType": "KLAVIYO_BULK_UPLOAD",
+		}).Count(ambiguousCount)
+	}
+	return common.GetUploadStatsResponse{StatusCode: http.StatusOK, Metadata: metadata}
+}
+
+func (kbu *KlaviyoBulkUploader) reconcileChunkErrors(counts map[string]chunkCounts, pollImports map[string]bool, chunkJobs map[string][]int64, byImport map[string]map[string]int64, duplicateHashes map[string]map[string]bool, ambiguous map[int64]bool, strict bool, metadata *common.EventStatMeta) (map[int64]bool, map[string]bool, error) {
+	seen := make(map[int64]bool)
+	ambiguousChunks := make(map[string]bool)
+	for importID, count := range counts {
+		if !pollImports[importID] || count.failed == 0 {
+			continue
+		}
+		// Strict policy refuses to infer outcomes for failed chunks with
+		// repeated identifiers, even when errors name other jobs.
+		if strict && len(duplicateHashes[importID]) > 0 {
+			ambiguousChunks[importID] = true
+		}
+		resp, err := kbu.KlaviyoAPIService.GetUploadErrors(importID)
+		if err != nil || resp == nil {
+			return nil, nil, fmt.Errorf("fetching Klaviyo import errors for %s: %v", importID, err)
+		}
+		if len(resp.Data) != count.failed || count.failed > len(chunkJobs[importID]) || resp.Links.Next != "" {
+			ambiguousChunks[importID] = true
+		}
+		for _, item := range resp.Data {
+			// Only correlate fields serialized on the outbound profile.
+			kind, value := originalIdentifier(item.Attributes.OriginalPayload.Id, item.Attributes.OriginalPayload.Attributes.Email, item.Attributes.OriginalPayload.Attributes.Phone, item.Attributes.OriginalPayload.Attributes.ExternalId)
+			hash := hashIdentifier(kind, value)
+			jobID, ok := byImport[importID][hash]
+			if kind == "" || !ok || duplicateHashes[importID][hash] || seen[jobID] || ambiguous[jobID] {
+				ambiguousChunks[importID] = true
+				continue
+			}
+			seen[jobID] = true
+			metadata.AbortedReasons[jobID] = item.Attributes.Detail
+		}
+	}
+	return seen, ambiguousChunks, nil
+}
+
+type chunkCounts struct{ failed, completed, total int }
+
+func parseChunkCounts(parameters string, pollImports map[string]bool) (map[string]chunkCounts, bool) {
+	counts := make(map[string]chunkCounts)
+	invalid := false
+	for token := range strings.SplitSeq(parameters, IMPORT_ID_SEPARATOR) {
+		if token == "" {
+			continue
+		}
+		id, text, ok := strings.Cut(token, "=")
+		if !ok || !pollImports[id] {
+			invalid = true
+			continue
+		}
+		parts := strings.Split(text, ",")
+		if len(parts) != 3 {
+			invalid = true
+			continue
+		}
+		values := [3]int{}
+		valid := true
+		for i, part := range parts {
+			value, err := strconv.Atoi(part)
+			if err != nil || value < 0 {
+				valid = false
+				break
+			}
+			values[i] = value
+		}
+		if _, duplicate := counts[id]; duplicate || !valid {
+			invalid = true
+			continue
+		}
+		counts[id] = chunkCounts{values[0], values[1], values[2]}
+	}
+	return counts, invalid
+}
+
+func classifyChunkJobs(jobs []*jobsdb.JobT, metadata *common.EventStatMeta, seen, ambiguous map[int64]bool, ambiguousChunks map[string]bool, allAmbiguous bool) int {
+	ambiguousCount := 0
+	for _, job := range jobs {
+		id := job.JobID
+		if allAmbiguous || ambiguous[id] || ambiguousChunks[gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.chunkImportId").String()] {
+			ambiguousCount++
+			metadata.AbortedKeys = append(metadata.AbortedKeys, id)
+			metadata.AbortedReasons[id] = ambiguousResultReason
+		} else if seen[id] {
+			metadata.AbortedKeys = append(metadata.AbortedKeys, id)
+		} else {
+			metadata.SucceededKeys = append(metadata.SucceededKeys, id)
+		}
+	}
+	return ambiguousCount
 }
 
 func (kbu *KlaviyoBulkUploader) generateKlaviyoErrorOutput(errorString string, err error, importingJobIds []int64, destinationID string) common.AsyncUploadOutput {
@@ -240,25 +380,14 @@ func (kbu *KlaviyoBulkUploader) generateKlaviyoErrorOutput(errorString string, e
 	}
 }
 
-func (kbu *KlaviyoBulkUploader) ExtractProfile(Data Data) Profile {
-	Attributes := Data.Attributes
-	if len(Attributes.Profiles.Data) == 0 {
+func (kbu *KlaviyoBulkUploader) ExtractProfile(data Data) Profile {
+	if len(data.Attributes.Profiles.Data) == 0 {
 		return Profile{}
 	}
-	profileObject := Attributes.Profiles.Data[0]
-
-	jobIdentifier := profileObject.Attributes.JobIdentifier
-	jobIdentifierArray := strings.Split(jobIdentifier, ":")
-	jobIdentifierValue, _ := strconv.ParseInt(jobIdentifierArray[1], 10, 64)
-	if kbu.JobIdToIdentifierMap == nil {
-		kbu.JobIdToIdentifierMap = make(map[string]int64)
-	}
-	kbu.JobIdToIdentifierMap[jobIdentifierArray[0]] = jobIdentifierValue
-
-	// delete jobIdentifier from the attributes map as it is not required in the final payload
-	profileObject.Attributes.JobIdentifier = ""
-
-	return profileObject
+	profile := data.Attributes.Profiles.Data[0]
+	// jobIdentifier is transformer-only metadata; it is not an outbound key.
+	profile.Attributes.JobIdentifier = ""
+	return profile
 }
 
 func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
@@ -285,6 +414,7 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 	defer file.Close()
 	var combinedProfiles []Profile
 	var jobIDsForProfiles []int64 // Track job IDs for each profile
+	jobHashes := make(map[int64]string)
 	scanner := bufio.NewScanner(file)
 	profileSizeStat := kbu.StatsFactory.NewTaggedStat("profile_size", stats.HistogramType, statLabels)
 	for scanner.Scan() {
@@ -310,15 +440,30 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 			abortedJobs = append(abortedJobs, int64(metadata.JobID))
 			continue
 		}
+		kind, value := profileIdentifier(profileStructure)
+		if kind == "" {
+			kbu.Logger.Errorn("Missing Klaviyo outbound correlation identifier", logger.NewIntField("jobId", int64(metadata.JobID)))
+			kbu.StatsFactory.NewTaggedStat("klaviyo_result_reconciliation_ambiguous", stats.CountType, statLabels).Count(1)
+			abortedJobs = append(abortedJobs, int64(metadata.JobID))
+			abortReason = "profile has no outbound Klaviyo correlation identifier"
+			continue
+		}
+		jobHashes[int64(metadata.JobID)] = hashIdentifier(kind, value)
 		combinedProfiles = append(combinedProfiles, profileStructure)
 		jobIDsForProfiles = append(jobIDsForProfiles, int64(metadata.JobID))
 	}
+	if err := scanner.Err(); err != nil {
+		return kbu.generateKlaviyoErrorOutput("Error while scanning profiles.", err, importingJobIDs, destinationID)
+	}
 
+	// Duplicate identifiers are valid profile updates. Reconcile each chunk
+	// independently using its import ID and terminal counts.
 	profileChunks, jobIDChunks, _ := chunkBySizeAndElements(combinedProfiles, jobIDsForProfiles, kbu.MaxPayloadSize, kbu.BatchSize)
 
 	eventsSuccessStat := kbu.StatsFactory.NewTaggedStat("success_job_count", stats.CountType, statLabels)
 
 	var importIds []string // DelimitedImportIds is : separated importIds
+	jobImportingParameters := make(map[int64]stdjson.RawMessage)
 
 	for idx, profileChunk := range profileChunks {
 		chunkResult := kbu.uploadChunk(profileChunk, jobIDChunks[idx], listId, destinationID)
@@ -332,6 +477,12 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 		}
 		if chunkResult.importID != "" {
 			importIds = append(importIds, chunkResult.importID)
+			for _, jobID := range chunkResult.acceptedJobIDs {
+				jobImportingParameters[jobID], err = jsonrs.Marshal(importingMetadata{IdentifierHash: jobHashes[jobID], ChunkImportID: chunkResult.importID})
+				if err != nil {
+					return kbu.generateKlaviyoErrorOutput("Error while marshaling job metadata.", err, importingJobIDs, destinationID)
+				}
+			}
 		}
 	}
 
@@ -346,16 +497,17 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 	eventsSuccessStat.Count(len(asyncDestStruct.ImportingJobIDs))
 
 	return common.AsyncUploadOutput{
-		ImportingParameters: importParameters,
-		FailedJobIDs:        failedJobs,
-		FailedReason:        failedReason,
-		FailedCount:         len(failedJobs),
-		AbortJobIDs:         abortedJobs,
-		AbortReason:         abortReason,
-		AbortCount:          len(abortedJobs),
-		ImportingJobIDs:     successJobs,
-		ImportingCount:      len(successJobs),
-		DestinationID:       destination.ID,
+		ImportingParameters:    importParameters,
+		JobImportingParameters: jobImportingParameters,
+		FailedJobIDs:           failedJobs,
+		FailedReason:           failedReason,
+		FailedCount:            len(failedJobs),
+		AbortJobIDs:            abortedJobs,
+		AbortReason:            abortReason,
+		AbortCount:             len(abortedJobs),
+		ImportingJobIDs:        successJobs,
+		ImportingCount:         len(successJobs),
+		DestinationID:          destination.ID,
 	}
 }
 
@@ -372,6 +524,7 @@ func (kbu *KlaviyoBulkUploader) uploadChunk(profiles []Profile, jobIDs []int64, 
 	resp, statusCode, detail, ok := kbu.tryUpload(profiles, listId, destinationID)
 	if ok {
 		res.importID = resp.Data.Id
+		res.acceptedJobIDs = jobIDs
 		return res
 	}
 
@@ -401,6 +554,7 @@ func (kbu *KlaviyoBulkUploader) uploadChunk(profiles []Profile, jobIDs []int64, 
 	retryResp, retryStatus, retryDetail, ok := kbu.tryUpload(validProfiles, listId, destinationID)
 	if ok {
 		res.importID = retryResp.Data.Id
+		res.acceptedJobIDs = validJobIDs
 		return res
 	}
 	res.recordError(validJobIDs, retryStatus, retryDetail)

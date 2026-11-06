@@ -23,7 +23,6 @@ type KlaviyoBulkUploader struct {
 	Logger                logger.Logger
 	StatsFactory          stats.Stats
 	KlaviyoAPIService     KlaviyoAPIService
-	JobIdToIdentifierMap  map[string]int64
 	BatchSize             int // Override BATCHSIZE for testing (0 = use default)
 	MaxPayloadSize        int // Override MAXPAYLOADSIZE for testing (0 = use default)
 	MaxAllowedProfileSize int // Override MAXALLOWEDPROFILESIZE for testing (0 = use default)
@@ -32,11 +31,12 @@ type KlaviyoBulkUploader struct {
 // chunkUploadResult is the outcome of uploading a single chunk, after at most one
 // strip-and-retry.
 type chunkUploadResult struct {
-	importID    string  // non-empty when a job was created for the surviving valid profiles
-	abortedJobs []int64 // jobs rejected by Klaviyo's synchronous validation
-	failedJobs  []int64 // jobs that hit a retryable failure (5xx/429/transport)
-	abortReason string
-	failReason  string
+	importID       string  // non-empty when a job was created for the surviving valid profiles
+	acceptedJobIDs []int64 // only the jobs actually submitted on the successful attempt
+	abortedJobs    []int64 // jobs rejected by Klaviyo's synchronous validation
+	failedJobs     []int64 // jobs that hit a retryable failure (5xx/429/transport)
+	abortReason    string
+	failReason     string
 }
 
 type ErrorDetail struct {
@@ -84,6 +84,15 @@ type PollResp struct {
 	Errors []ErrorDetail `json:"errors"`
 }
 
+type originalProfile struct {
+	Id         string `json:"id"`
+	Attributes struct {
+		Email      string `json:"email"`
+		Phone      string `json:"phone_number"`
+		ExternalId string `json:"external_id"`
+	} `json:"attributes"`
+}
+
 type UploadStatusResp struct {
 	Data []struct {
 		Type       string `json:"type"`
@@ -95,10 +104,7 @@ type UploadStatusResp struct {
 			Source struct {
 				Pointer string `json:"pointer"`
 			} `json:"source"`
-			OriginalPayload struct {
-				Id          string `json:"id"`
-				AnonymousId string `json:"anonymous_id"`
-			} `json:"original_payload"`
+			OriginalPayload originalProfile `json:"original_payload"`
 		} `json:"attributes"`
 		Links struct {
 			Self string `json:"self"`
