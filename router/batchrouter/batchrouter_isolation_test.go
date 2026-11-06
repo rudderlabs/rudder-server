@@ -257,6 +257,13 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
 	config.Set("JobsDB.backup.enabled", false)
 	config.Set("JobsDB.compactionLoopSleepDuration", "60m")
+	// read cursors, which fail the test if they turn themselves off
+	config.Set("JobsDB.readCursor.mode", "on")
+	config.Set("JobsDB.readCursor.panicOnDisable", true)
+	config.Set("JobsDB.readCursor.persistInterval", "1s")
+	config.Set("JobsDB.readCursor.persistMinSkippedDatasets", 1)
+	config.Set("JobsDB.maxDSSize", 100)
+	config.Set("JobsDB.addNewDSLoopSleepDuration", "1s")
 
 	config.Set("BatchRouter.isolationMode", string(spec.isolationMode))
 	config.Set("BatchRouter.jobQueryBatchSize", spec.jobQueryBatchSize)
@@ -297,7 +304,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	t.Logf("Waiting for all batch_rt jobs to be successfully processed")
 	require.Eventually(t, func() bool {
 		var processedJobCount int
-		require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('batch_rt',20) WHERE job_state = 'succeeded'").Scan(&processedJobCount))
+		require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('batch_rt',NULL) WHERE job_state = 'succeeded'").Scan(&processedJobCount))
 		return processedJobCount == len(spec.jobs)
 	}, 5*time.Minute, 1*time.Second, "all batch_rt jobs should be successfully processed")
 
@@ -371,7 +378,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 		t,
 		postgresContainer.DB.QueryRowContext(
 			ctx,
-			"SELECT min(exec_time), max(exec_time) FROM unionjobsdbmetadata('batch_rt',20)",
+			"SELECT min(exec_time), max(exec_time) FROM unionjobsdbmetadata('batch_rt',NULL)",
 		).Scan(&minExecTime, &maxExecTime),
 		"it should be able to query the min and max execution times",
 	)
