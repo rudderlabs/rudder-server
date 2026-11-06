@@ -69,7 +69,7 @@ func (m *MaxCompute) preparedLoadFiles(ctx context.Context, files []warehouseuti
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if err := validateLocation(file.Location, m.warehouse.Destination.Config); err != nil {
+		if err := validateLocation(file.Location, converted); err != nil {
 			return nil, err
 		}
 		key, err := fm.GetObjectNameFromLocation(file.Location)

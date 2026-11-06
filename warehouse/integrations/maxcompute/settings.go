@@ -80,7 +80,7 @@ func errorReason(message string, role bool) (reason, guidance string) {
 	case role && (strings.Contains(lower, "nopermission") || strings.Contains(lower, "assumerole") || strings.Contains(lower, "externalid")):
 		return "role_assumption", "Check the role trust policy and workspace-bound ExternalId."
 	case strings.Contains(lower, "oss") && strings.Contains(lower, "accessdenied"):
-		return "oss_access_denied", "The OSS policy denies this bucket or prefix; check the bucket name, the OSS prefix and the policy's resource scope."
+		return "oss_access_denied", "The OSS policy denies this bucket or folder; check the bucket name, its folder path and the policy's resource scope."
 	}
 	return "", ""
 }

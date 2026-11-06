@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -39,6 +40,8 @@ func TestValidateLocation(t *testing.T) {
 	} {
 		require.Error(t, validateLocation(location, settings), location)
 	}
+	withPath := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{Provider: warehouseutils.AlibabaOSS, Config: map[string]any{"bucketName": "my-bucket/rudder", "region": "cn-hangzhou"}})
+	require.NoError(t, validateLocation("https://my-bucket.oss-cn-hangzhou.aliyuncs.com/rudder/file.gz", withPath))
 }
 
 func TestTypesAndConversion(t *testing.T) {

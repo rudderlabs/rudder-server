@@ -118,7 +118,7 @@ func TestIntegration(t *testing.T) {
 func integrationConfig(c integrationCredentials, namespace string, role bool) map[string]any {
 	settings := map[string]any{
 		"project": c.Project, "endpoint": c.Endpoint, "region": c.Region,
-		"bucketName": c.BucketName, "prefix": c.Prefix, "ossRoleArn": c.OSSRoleARN,
+		"bucketName": c.BucketName + "/" + c.Prefix, "ossRoleArn": c.OSSRoleARN,
 		"namespace": namespace, "syncFrequency": "30", "skipUsersTable": false,
 		"allowUsersContextTraits": true,
 		"skipViews":               false, "useRudderStorage": false, "cleanupObjectStorageFiles": true,
@@ -219,14 +219,14 @@ func testIntegrationInvalidAuth(t *testing.T, c integrationCredentials, role boo
 	require.Contains(t, response.Steps[0].Error, wantReason)
 }
 
-// testIntegrationDeniedOSSPrefix stages outside the prefix the fixture identities' OSS policy allows.
+// testIntegrationDeniedOSSPrefix stages outside the folder the fixture identities' OSS policy allows.
 func testIntegrationDeniedOSSPrefix(t *testing.T, c integrationCredentials, role bool) {
 	workspaceID := warehouseutils.RandHex()
 	if role {
 		workspaceID = c.WorkspaceID // the role trusts this ExternalId
 	}
 	destination := integrationDestination(c, whth.RandSchema(warehouseutils.MAXCOMPUTE), workspaceID, role)
-	destination.Config["prefix"] = "outside-allowed-prefix-" + warehouseutils.RandHex()
+	destination.Config["bucketName"] = c.BucketName + "/outside-allowed-prefix-" + warehouseutils.RandHex()
 	response := validations.NewDestinationValidator().Validate(context.Background(), &destination)
 	require.False(t, response.Success)
 	require.NotEmpty(t, response.Steps)
@@ -443,16 +443,11 @@ func integrationUploadRow(t *testing.T, dest backendconfig.DestinationT, table s
 	require.NoError(t, err)
 	key, err := fm.GetObjectNameFromLocation(output.Location)
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(key, strings.Trim(castPrefix(dest.Config), "/")+"/"), "fixture escaped credential prefix")
+	require.True(t, strings.HasPrefix(key, converted["prefix"].(string)+"/"), "fixture escaped credential prefix")
 	t.Cleanup(func() {
 		require.NoError(t, fm.Delete(context.Background(), []string{key}), "delete MaxCompute integration fixture")
 	})
 	return warehouseutils.LoadFile{Location: output.Location}
-}
-
-func castPrefix(settings map[string]any) string {
-	value, _ := settings["prefix"].(string)
-	return value
 }
 
 func testIntegrationPartition(t *testing.T, c integrationCredentials, role bool, partitionColumn, partitionType string) {

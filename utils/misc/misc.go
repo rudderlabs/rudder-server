@@ -665,10 +665,14 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
 	objectStorageConfigMap := opts.Config.(map[string]any)
 	if opts.Provider == "ALIBABA_OSS" {
 		ossConfig := make(map[string]any)
-		for _, key := range []string{"bucketName", "prefix", "region"} {
-			if value, ok := objectStorageConfigMap[key]; ok {
-				ossConfig[key] = value
-			}
+		if value, ok := objectStorageConfigMap["region"]; ok {
+			ossConfig["region"] = value
+		}
+		// bucketName may carry a folder path ("bucket/path"): stage under that path.
+		if value, ok := objectStorageConfigMap["bucketName"].(string); ok {
+			bucket, prefix, _ := strings.Cut(strings.Trim(value, "/"), "/")
+			ossConfig["bucketName"] = bucket
+			ossConfig["prefix"] = strings.Trim(prefix, "/")
 		}
 		roleARN, _ := objectStorageConfigMap["iamRoleARN"].(string)
 		if strings.TrimSpace(roleARN) != "" {
