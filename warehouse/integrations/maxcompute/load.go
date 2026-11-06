@@ -43,7 +43,7 @@ func safeLoadLiteral(value string) bool {
 
 // preparedLoadFiles validates the complete upload before the first LOAD runs.
 func (m *MaxCompute) preparedLoadFiles(ctx context.Context, files []warehouseutils.LoadFile) ([]loadFolder, error) {
-	if err := warehouseutils.ValidateMaxComputeSettings(m.warehouse.Destination.Config, m.warehouse.Destination.WorkspaceID); err != nil {
+	if err := validateSettings(m.warehouse.Destination.Config, m.warehouse.Destination.WorkspaceID); err != nil {
 		return nil, err
 	}
 	converted := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{

@@ -82,10 +82,10 @@ func (m *MaxCompute) init(warehouse model.Warehouse) error {
 		(len(warehouse.Namespace) > 128 || !identifierPattern.MatchString(warehouse.Namespace)) {
 		return errors.New("invalid MaxCompute project or schema")
 	}
-	if err := warehouseutils.ValidateMaxComputeSettings(settings, warehouse.Destination.WorkspaceID); err != nil {
+	if err := validateSettings(settings, warehouse.Destination.WorkspaceID); err != nil {
 		return fmt.Errorf("validating MaxCompute OSS configuration: %w", err)
 	}
-	role, _ := warehouseutils.MaxComputeRoleMode(settings)
+	role, _ := roleMode(settings)
 	endpoint, ok := settings["endpoint"].(string)
 	if !ok || endpoint == "" {
 		return errors.New("MaxCompute endpoint is required")

@@ -3,7 +3,6 @@ package validations
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -20,9 +19,9 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -52,14 +51,12 @@ type createSchema struct {
 }
 
 type createAlterTable struct {
-	manager    manager.WarehouseOperations
-	table      string
-	maxCompute bool
+	manager manager.WarehouseOperations
+	table   string
 }
 
 type fetchSchema struct {
-	manager     manager.WarehouseOperations
-	destination *backendconfig.DestinationT
+	manager manager.WarehouseOperations
 }
 
 type loadTable struct {
@@ -95,15 +92,6 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 		err             error
 	)
 	maxCompute := destType == warehouseutils.MAXCOMPUTE
-	authMode := "invalid"
-	if maxCompute {
-		if role, modeErr := warehouseutils.MaxComputeRoleMode(dest.Config); modeErr == nil {
-			authMode = "access_key"
-			if role {
-				authMode = "role"
-			}
-		}
-	}
 
 	pkgLogger.Infon("validate destination configuration",
 		logger.NewStringField(logfield.DestinationID, destID),
@@ -142,21 +130,25 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 		stepsToValidate = append(stepsToValidate, StepsToValidate(dest).Steps...)
 	}
 
-	// Iterate over all selected steps and validate
+	// Iterate over all selected steps and validate.
 	for _, step := range stepsToValidate {
+		creatingValidator := false
 		if validator, err = NewValidator(ctx, step.Name, dest); err != nil {
 			err = fmt.Errorf("creating validator: %v", err)
+			creatingValidator = true
+		} else {
+			err = validator.Validate(ctx)
+		}
+		if err != nil {
 			if maxCompute {
-				err = maxComputeValidationError(step.Name, authMode == "role", err)
+				err = maxcompute.ValidationError(step.Name, dest.Config, err)
 			}
 			step.Error = err.Error()
-			if maxCompute {
-				pkgLogger.Infon("MaxCompute validation step", logger.NewStringField(logfield.DestinationID, destID),
-					logger.NewStringField(logfield.DestinationValidationsStep, step.Name),
-					logger.NewStringField("authMode", authMode), logger.NewStringField("outcome", "failure"))
+			message := "not able to validate destination configuration"
+			if creatingValidator {
+				message = "creating validator"
 			}
-
-			pkgLogger.Warnn("creating validator",
+			pkgLogger.Warnn(message,
 				logger.NewStringField(logfield.DestinationID, destID),
 				logger.NewStringField(logfield.DestinationType, destType),
 				logger.NewStringField(logfield.DestinationRevisionID, dest.RevisionID),
@@ -166,38 +158,7 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 			)
 			break
 		}
-
-		if stepError := validator.Validate(ctx); stepError != nil {
-			if maxCompute {
-				stepError = maxComputeValidationError(step.Name, authMode == "role", stepError)
-			}
-			err = stepError
-			step.Error = stepError.Error()
-		} else {
-			step.Success = true
-		}
-		if maxCompute {
-			outcome := "failure"
-			if step.Success {
-				outcome = "success"
-			}
-			pkgLogger.Infon("MaxCompute validation step", logger.NewStringField(logfield.DestinationID, destID),
-				logger.NewStringField(logfield.DestinationValidationsStep, step.Name),
-				logger.NewStringField("authMode", authMode), logger.NewStringField("outcome", outcome))
-		}
-
-		// if any of steps fails, the whole validation fails
-		if !step.Success {
-			pkgLogger.Warnn("not able to validate destination configuration",
-				logger.NewStringField(logfield.DestinationID, destID),
-				logger.NewStringField(logfield.DestinationType, destType),
-				logger.NewStringField(logfield.DestinationRevisionID, dest.RevisionID),
-				logger.NewStringField(logfield.WorkspaceID, dest.WorkspaceID),
-				logger.NewStringField(logfield.DestinationValidationsStep, step.Name),
-				logger.NewStringField(logfield.Error, step.Error),
-			)
-			break
-		}
+		step.Success = true
 	}
 
 	res := &DestinationValidationResponse{
@@ -211,26 +172,7 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 	return res
 }
 
-func maxComputeValidationError(step string, role bool, err error) error {
-	reason, guidance := warehouseutils.MaxComputeErrorReason(err.Error(), role)
-	if reason != "" {
-		if strings.Contains(err.Error(), "ODPS-") {
-			return fmt.Errorf("%s: %s (%s)", reason, guidance, client.ODPSSafeError(err))
-		}
-		return fmt.Errorf("%s: %s", reason, guidance)
-	}
-	if step == model.VerifyingObjectStorage {
-		return errors.New("MaxCompute OSS validation failed")
-	}
-	return err
-}
-
 func NewValidator(ctx context.Context, step string, dest *backendconfig.DestinationT) (Validator, error) {
-	if dest.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
-		if err := warehouseutils.ValidateMaxComputeSettings(dest.Config, dest.WorkspaceID); err != nil {
-			return nil, fmt.Errorf("invalid MaxCompute OSS configuration: %w", err)
-		}
-	}
 	var (
 		operations manager.WarehouseOperations
 		err        error
@@ -261,17 +203,15 @@ func NewValidator(ctx context.Context, step string, dest *backendconfig.Destinat
 			return nil, fmt.Errorf("create manager: %w", err)
 		}
 		return &createAlterTable{
-			table:      getTable(dest),
-			manager:    operations,
-			maxCompute: dest.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE,
+			table:   getTable(dest),
+			manager: operations,
 		}, nil
 	case model.VerifyingFetchSchema:
 		if operations, err = createManager(ctx, dest); err != nil {
 			return nil, fmt.Errorf("create manager: %w", err)
 		}
 		return &fetchSchema{
-			destination: dest,
-			manager:     operations,
+			manager: operations,
 		}, nil
 	case model.VerifyingLoadTable:
 		if operations, err = createManager(ctx, dest); err != nil {
@@ -331,15 +271,6 @@ func (cs *createSchema) Validate(ctx context.Context) error {
 	return cs.manager.CreateSchema(ctx)
 }
 
-func validationTableSchema(maxCompute bool) model.TableSchema {
-	if !maxCompute {
-		return tableSchemaMap
-	}
-	schema := maps.Clone(tableSchemaMap)
-	schema["uuid_ts"] = "datetime"
-	return schema
-}
-
 func maxComputeValidationPayload() map[string]any {
 	payload := maps.Clone(payloadMap)
 	payload["uuid_ts"] = "2024-01-02 00:00:00"
@@ -349,7 +280,7 @@ func maxComputeValidationPayload() map[string]any {
 func (cat *createAlterTable) Validate(ctx context.Context) error {
 	defer cat.manager.Cleanup(ctx)
 
-	if err := cat.manager.CreateTable(ctx, cat.table, validationTableSchema(cat.maxCompute)); err != nil {
+	if err := cat.manager.CreateTable(ctx, cat.table, tableSchemaMap); err != nil {
 		return fmt.Errorf("create table: %w", err)
 	}
 
@@ -368,9 +299,6 @@ func (fs *fetchSchema) Validate(ctx context.Context) error {
 	defer fs.manager.Cleanup(ctx)
 
 	if err := fs.manager.TestFetchSchema(ctx); err != nil {
-		if fs.destination.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
-			return fmt.Errorf("fetch MaxCompute schema (verify project catalog permissions): %w", err)
-		}
 		return fmt.Errorf("fetch schema: %w", err)
 	}
 	return nil
@@ -396,7 +324,7 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 		return fmt.Errorf("upload file: %w", err)
 	}
 
-	if err = lt.manager.CreateTable(ctx, lt.table, validationTableSchema(destinationType == warehouseutils.MAXCOMPUTE)); err != nil {
+	if err = lt.manager.CreateTable(ctx, lt.table, tableSchemaMap); err != nil {
 		return fmt.Errorf("create table: %w", err)
 	}
 
@@ -407,9 +335,6 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 		fixturePayload = maxComputeValidationPayload()
 	}
 	if err = lt.manager.TestLoadTable(ctx, uploadOutput.Location, lt.table, fixturePayload, loadFileType); err != nil {
-		if destinationType == warehouseutils.MAXCOMPUTE {
-			return fmt.Errorf("load MaxCompute test table from OSS JSON fixture: %w", err)
-		}
 		return fmt.Errorf("load test table: %w", err)
 	}
 
@@ -444,7 +369,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	}
 
 	ef := encoding.NewFactory(config.Default)
-	fixtureSchema := validationTableSchema(destinationType == warehouseutils.MAXCOMPUTE)
+	fixtureSchema := tableSchemaMap
 	writer, err = ef.NewLoadFileWriter(loadFileType, filePath, fixtureSchema, destinationType)
 	if err != nil {
 		return "", fmt.Errorf("creating writer for file: %s with error: %w", filePath, err)
@@ -478,9 +403,6 @@ func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath 
 		destinationType = dest.DestinationDefinition.Name
 		prefixes        = []string{connectionTestingFolder, destinationType, warehouseutils.RandHex(), time.Now().Format("01-02-2006")}
 	)
-	if destinationType == warehouseutils.MAXCOMPUTE {
-		prefixes = []string{connectionTestingFolder, destinationType, misc.FastUUID().String() + "-validation"}
-	}
 
 	if fm, err = createFileManager(dest); err != nil {
 		return filemanager.UploadedFile{}, err
@@ -562,16 +484,6 @@ func downloadFile(ctx context.Context, dest *backendconfig.DestinationT, locatio
 }
 
 func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManager, error) {
-	if dest.DestinationDefinition.Name == warehouseutils.MAXCOMPUTE {
-		if err := warehouseutils.ValidateMaxComputeSettings(dest.Config, dest.WorkspaceID); err != nil {
-			return nil, fmt.Errorf("invalid MaxCompute OSS configuration: %w", err)
-		}
-		role, _ := warehouseutils.MaxComputeRoleMode(dest.Config)
-		if role && (config.Default.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeyID") == "" ||
-			config.Default.GetStringVar("", "FileManager.ALIBABA_OSS.callerAccessKeySecret") == "") {
-			return nil, errors.New("MaxCompute role caller credentials unavailable")
-		}
-	}
 	var (
 		destType = dest.DestinationDefinition.Name
 		conf     = dest.Config
@@ -643,13 +555,6 @@ func configuredNamespaceInDestination(dest *backendconfig.DestinationT) string {
 
 	if destType == warehouseutils.CLICKHOUSE {
 		return conf["database"].(string)
-	}
-	if destType == warehouseutils.MAXCOMPUTE {
-		if schema, _ := conf["namespace"].(string); strings.TrimSpace(schema) != "" {
-			return schema
-		}
-		project, _ := conf["project"].(string)
-		return project
 	}
 
 	if conf["namespace"] != nil {

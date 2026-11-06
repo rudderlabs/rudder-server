@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -350,11 +351,7 @@ func (w *worker) processSingleStagingFile(
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
 				timestampFormat := eventLoader.GetLoadTimeFormat(columnName)
-				loadTime := jr.uuidTS
-				if job.DestinationType == warehouseutils.MAXCOMPUTE {
-					loadTime = loadTime.UTC()
-				}
-				eventLoader.AddColumn(job.columnName(columnName), job.UploadSchema[tableName][columnName], loadTime.Format(timestampFormat))
+				eventLoader.AddColumn(job.columnName(columnName), job.UploadSchema[tableName][columnName], jr.uuidTS.Format(timestampFormat))
 				continue
 			}
 
@@ -407,7 +404,7 @@ func (w *worker) processSingleStagingFile(
 
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			if job.DestinationType == warehouseutils.MAXCOMPUTE && dataTypeInSchema == model.DateTimeDataType {
-				value, valid := encoding.NormalizeMaxComputeDateTime(columnVal)
+				value, valid := maxcompute.NormalizeDateTime(columnVal)
 				if !valid {
 					eventLoader.AddEmptyColumn(columnName)
 					discardWriter, releaseDiscardWriter, err := jr.writer(discardsTable, stagingFile, loadFileNamePrefix)
@@ -418,8 +415,7 @@ func (w *worker) processSingleStagingFile(
 					err = jr.handleDiscardTypes(tableName, columnName, columnVal, columnData, &constraints.Violation{}, discardWriter, "invalid datetime")
 					releaseDiscardWriter()
 					if err != nil {
-						releaseWriter()
-						return fmt.Errorf("writing MaxCompute discard: %w", err)
+						jr.logger.Errorn("Failed to write to discards", obskit.Error(err))
 					}
 					jr.incrementEventCount(discardsTable)
 					continue
@@ -464,10 +460,6 @@ func (w *worker) processSingleStagingFile(
 						jr.logger.Errorn("Failed to write to discards", obskit.Error(err))
 					}
 					releaseDiscardWriter()
-					if err != nil && job.DestinationType == warehouseutils.MAXCOMPUTE {
-						releaseWriter()
-						return fmt.Errorf("writing MaxCompute discard: %w", err)
-					}
 
 					jr.incrementEventCount(discardsTable)
 					continue

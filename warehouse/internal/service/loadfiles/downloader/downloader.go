@@ -52,11 +52,6 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 		l.warehouse.Destination.Config,
 		l.uploader.UseRudderStorage(),
 	)
-	if storageProvider == warehouseutils.AlibabaOSS {
-		if err := warehouseutils.ValidateMaxComputeSettings(l.warehouse.Destination.Config, l.warehouse.Destination.WorkspaceID); err != nil {
-			return nil, err
-		}
-	}
 	storageConfig := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 		Provider: storageProvider, Config: l.warehouse.Destination.Config,
 		UseRudderStorage: l.uploader.UseRudderStorage(), WorkspaceID: l.warehouse.Destination.WorkspaceID,

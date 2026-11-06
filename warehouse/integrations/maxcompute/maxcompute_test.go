@@ -74,13 +74,13 @@ func TestTypesAndConversion(t *testing.T) {
 
 func TestRoleSettingsAreExclusiveAndRequireWorkspace(t *testing.T) {
 	settings := map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou", "iamRoleARN": "acs:ram::123:role/test", "ossRoleArn": "acs:ram::123456789:role/read-role", "endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "project": "project"}
-	require.NoError(t, warehouseutils.ValidateMaxComputeSettings(settings, "workspace"))
-	require.ErrorContains(t, warehouseutils.ValidateMaxComputeSettings(settings, ""), "workspace ID")
+	require.NoError(t, validateSettings(settings, "workspace"))
+	require.ErrorContains(t, validateSettings(settings, ""), "workspace ID")
 	settings["accessKeyId"] = "destination-key"
-	require.ErrorContains(t, warehouseutils.ValidateMaxComputeSettings(settings, "workspace"), "cannot be combined")
+	require.ErrorContains(t, validateSettings(settings, "workspace"), "cannot be combined")
 	delete(settings, "accessKeyId")
 	settings["accessKeySecret"] = "destination-secret"
-	require.ErrorContains(t, warehouseutils.ValidateMaxComputeSettings(settings, "workspace"), "cannot be combined")
+	require.ErrorContains(t, validateSettings(settings, "workspace"), "cannot be combined")
 	delete(settings, "accessKeySecret")
 	m := testManager()
 	m.warehouse.Destination.Config = settings
@@ -793,5 +793,96 @@ func TestErrorMappingsUseSanitizedDiagnostics(t *testing.T) {
 			}
 			require.Equal(t, tc.want, got, safe.Error())
 		})
+	}
+}
+
+func TestMaxComputeErrorReasons(t *testing.T) {
+	for _, tc := range []struct {
+		name, message, want string
+		role                bool
+	}{
+		{"membership", "ODPS-0420095: User does not exist in the project", "project_membership", false},
+		{"numeric RAM ID", "ODPS-0030001: user name is not a valid account", "project_membership", false},
+		{"schema edition", "ODPS-0110061: project doesn't support schema", "schema_not_enabled", false},
+		{"identifier length", "ODPS-0130071: too long, max length is 128", "identifier_length", false},
+		{"full scan", "ODPS-0130071: full scan of all partitions is prohibited", "fullscan_guard", false},
+		{"role trust", "NoPermission while assuming role", "role_assumption", true},
+		{"OSS key", "InvalidAccessKeyId", "access_key_authentication", false},
+		{"OSS signature", "SignatureDoesNotMatch", "access_key_authentication", false},
+		{"ODPS key", "ODPS authentication or permission denied", "access_key_authentication", false},
+		{"caller keys", "MaxCompute role caller credentials unavailable", "caller_credentials_missing", true},
+		{"OSS policy", "oss: Error returned by Service. Http Status Code: 403. Error Code: AccessDenied.", "oss_access_denied", false},
+		{"OSS policy in role mode", "oss: service returned error: StatusCode=403, ErrorCode=AccessDenied", "oss_access_denied", true},
+		{"unknown", "ODPS-1111111: unknown", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reason, guidance := errorReason(tc.message, tc.role)
+			require.Equal(t, tc.want, reason)
+			if reason != "" {
+				require.NotEmpty(t, guidance)
+				require.NotContains(t, guidance, tc.message)
+			}
+		})
+	}
+}
+
+func TestMaxComputeAuthModeValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		config    map[string]any
+		workspace string
+		role      bool
+		valid     bool
+	}{
+		{"role", map[string]any{"iamRoleARN": "odps-role", "ossRoleArn": "oss-role", "bucketName": "bucket", "region": "cn-hangzhou"}, "workspace", true, true},
+		{"access key", map[string]any{"accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "oss-role", "bucketName": "bucket", "region": "cn-hangzhou"}, "", false, true},
+		{"both", map[string]any{"iamRoleARN": "odps-role", "accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "oss-role", "bucketName": "bucket", "region": "cn-hangzhou"}, "workspace", false, false},
+		{"neither", map[string]any{"ossRoleArn": "oss-role", "bucketName": "bucket", "region": "cn-hangzhou"}, "workspace", false, false},
+		{"partial", map[string]any{"accessKeyId": "id", "ossRoleArn": "oss-role", "bucketName": "bucket", "region": "cn-hangzhou"}, "workspace", false, false},
+		{"missing workspace", map[string]any{"iamRoleARN": "odps-role", "ossRoleArn": "oss-role", "bucketName": "bucket", "region": "cn-hangzhou"}, "", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			role, modeErr := roleMode(tc.config)
+			if tc.valid {
+				require.NoError(t, modeErr)
+				require.Equal(t, tc.role, role)
+				require.NoError(t, validateSettings(tc.config, tc.workspace))
+			} else {
+				require.Error(t, validateSettings(tc.config, tc.workspace))
+			}
+		})
+	}
+}
+
+func TestValidationError(t *testing.T) {
+	roleConfig := map[string]any{"iamRoleARN": "acs:ram::123:role/test"}
+	got := ValidationError(model.VerifyingObjectStorage, roleConfig, errors.New("NoPermission while assuming role"))
+	require.EqualError(t, got, "role_assumption: Check the role trust policy and workspace-bound ExternalId.")
+
+	got = ValidationError(model.VerifyingObjectStorage, nil, errors.New("unexpected remote detail"))
+	require.EqualError(t, got, "MaxCompute OSS validation failed")
+
+	original := errors.New("unexpected catalog error")
+	require.ErrorIs(t, ValidationError(model.VerifyingFetchSchema, nil, original), original)
+}
+
+func TestNormalizeDateTime(t *testing.T) {
+	for input, want := range map[string]string{
+		"2025-03-04T05:06:07.123456Z":          "2025-03-04 05:06:07.123456",
+		"2025-03-04 06:06:07.123456 +0100 CET": "2025-03-04 05:06:07.123456",
+		"2025-03-04 06:06:07.123456 +0100":     "2025-03-04 05:06:07.123456",
+		"2025-03-04 05:06:07.123456":           "2025-03-04 05:06:07.123456",
+		"2025-03-04 05:06:07":                  "2025-03-04 05:06:07",
+	} {
+		got, ok := NormalizeDateTime(input)
+		require.True(t, ok, input)
+		require.Equal(t, want, got)
+		again, ok := NormalizeDateTime(got)
+		require.True(t, ok)
+		require.Equal(t, got, again)
+	}
+	for _, invalid := range []any{"not a date", 42, nil} {
+		_, ok := NormalizeDateTime(invalid)
+		require.False(t, ok)
 	}
 }

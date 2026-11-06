@@ -29,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -99,11 +100,6 @@ func (p *basePayload) fileManager(config any, useRudderStorage bool) (filemanage
 	clonedConfig["uploadIfNotExist"] = true
 
 	storageProvider := warehouseutils.ObjectStorageType(p.DestinationType, config, useRudderStorage)
-	if storageProvider == warehouseutils.AlibabaOSS {
-		if err := warehouseutils.ValidateMaxComputeSettings(clonedConfig, p.WorkspaceID); err != nil {
-			return nil, err
-		}
-	}
 	storageConfig := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 		Provider: storageProvider, Config: clonedConfig, UseRudderStorage: useRudderStorage,
 		RudderStoragePrefixOverride: p.RudderStoragePrefix, WorkspaceID: p.WorkspaceID,
@@ -597,7 +593,7 @@ func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal any
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
 		eventLoader.AddColumn("reason", warehouseutils.DiscardsSchema["reason"], reason)
 		if jr.job.DestinationType == warehouseutils.MAXCOMPUTE {
-			if normalized, ok := encoding.NormalizeMaxComputeDateTime(receivedAt); ok {
+			if normalized, ok := maxcompute.NormalizeDateTime(receivedAt); ok {
 				receivedAt = normalized
 			} else {
 				receivedAt = jr.now().UTC().Format(encoding.MaxComputeTimeFormat)
@@ -609,19 +605,11 @@ func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal any
 
 		if eventLoader.IsLoadTimeColumn("uuid_ts") {
 			timestampFormat := eventLoader.GetLoadTimeFormat("uuid_ts")
-			loadTime := jr.uuidTS
-			if jr.job.DestinationType == warehouseutils.MAXCOMPUTE {
-				loadTime = loadTime.UTC()
-			}
-			eventLoader.AddColumn("uuid_ts", warehouseutils.DiscardsSchema["uuid_ts"], loadTime.Format(timestampFormat))
+			eventLoader.AddColumn("uuid_ts", warehouseutils.DiscardsSchema["uuid_ts"], jr.uuidTS.Format(timestampFormat))
 		}
 		if eventLoader.IsLoadTimeColumn("loaded_at") {
 			timestampFormat := eventLoader.GetLoadTimeFormat("loaded_at")
-			loadTime := jr.uuidTS
-			if jr.job.DestinationType == warehouseutils.MAXCOMPUTE {
-				loadTime = loadTime.UTC()
-			}
-			eventLoader.AddColumn("loaded_at", "datetime", loadTime.Format(timestampFormat))
+			eventLoader.AddColumn("loaded_at", "datetime", jr.uuidTS.Format(timestampFormat))
 		}
 
 		if err := eventLoader.Write(); err != nil {
