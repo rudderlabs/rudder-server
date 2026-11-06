@@ -10,7 +10,6 @@ import (
 	"unicode"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -20,8 +19,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const maxOSSLoadBytes int64 = 3 * 1024 * 1024 * 1024
-
 var (
 	ossBucketPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
 	ossRegionPattern   = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
@@ -30,7 +27,6 @@ var (
 
 type loadFolder struct {
 	location string
-	size     int64
 }
 
 func safeLoadLiteral(value string) bool {
@@ -46,7 +42,6 @@ func safeLoadLiteral(value string) bool {
 }
 
 // preparedLoadFiles validates the complete upload before the first LOAD runs.
-// Persisted load-file metadata supplies the object size.
 func (m *MaxCompute) preparedLoadFiles(ctx context.Context, files []warehouseutils.LoadFile) ([]loadFolder, error) {
 	if err := warehouseutils.ValidateMaxComputeSettings(m.warehouse.Destination.Config, m.warehouse.Destination.WorkspaceID); err != nil {
 		return nil, err
@@ -69,7 +64,7 @@ func (m *MaxCompute) preparedLoadFiles(ctx context.Context, files []warehouseuti
 		return nil, errors.New("invalid MaxCompute OSS read role")
 	}
 	folders := make([]loadFolder, 0, len(files))
-	indexes := make(map[string]int, len(files))
+	seen := make(map[string]bool, len(files))
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -89,21 +84,10 @@ func (m *MaxCompute) preparedLoadFiles(ctx context.Context, files []warehouseuti
 		if !safeLoadLiteral(folderKey) {
 			return nil, errors.New("invalid MaxCompute OSS folder")
 		}
-		var metadata struct {
-			ContentLength int64 `json:"content_length"`
-		}
-		if err := jsonrs.Unmarshal(file.Metadata, &metadata); err != nil || metadata.ContentLength <= 0 || metadata.ContentLength > maxOSSLoadBytes {
-			return nil, errors.New("MaxCompute OSS object length missing, invalid or exceeds 3GB")
-		}
 		location := "oss://oss-" + region + "-internal.aliyuncs.com/" + bucket + "/" + folderKey
-		if index, ok := indexes[location]; ok {
-			if metadata.ContentLength > (1<<63-1)-folders[index].size {
-				return nil, errors.New("MaxCompute OSS folder size overflow")
-			}
-			folders[index].size += metadata.ContentLength
-		} else {
-			indexes[location] = len(folders)
-			folders = append(folders, loadFolder{location: location, size: metadata.ContentLength})
+		if !seen[location] {
+			seen[location] = true
+			folders = append(folders, loadFolder{location: location})
 		}
 	}
 	return folders, nil
@@ -128,10 +112,6 @@ func (m *MaxCompute) loadFolder(ctx context.Context, table string, folder loadFo
 	if err == nil && m.logger != nil {
 		m.logger.Infon("MaxCompute LOAD complete", logger.NewStringField(logfield.TableName, table),
 			logger.NewIntField(logfield.TotalRows, rows))
-	}
-	if err == nil && rows == 0 && folder.size > 0 && m.logger != nil {
-		m.logger.Warnn("MaxCompute LOAD wrote zero rows for non-empty files",
-			logger.NewStringField(logfield.TableName, table), logger.NewIntField("fileBytes", folder.size))
 	}
 	return rows, err
 }

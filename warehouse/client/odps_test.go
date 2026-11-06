@@ -1,32 +1,18 @@
 package client
 
 import (
-	"context"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/aliyun/aliyun-odps-go-sdk/odps"
 	"github.com/aliyun/aliyun-odps-go-sdk/odps/account"
-	"github.com/aliyun/aliyun-odps-go-sdk/odps/restclient"
 	"github.com/aliyun/credentials-go/credentials"
 	"github.com/stretchr/testify/require"
 )
-
-func TestQueryODPSUsesCallerContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err := QueryODPS(ctx, nil, "SELECT 1", time.Second, time.Millisecond)
-	require.ErrorIs(t, err, context.Canceled)
-}
 
 func TestODPSCredentials(t *testing.T) {
 	var count atomic.Int32
@@ -99,6 +85,7 @@ func (c *odpsTestCredential) GetAccessKeySecret() (*string, error) {
 func (c *odpsTestCredential) GetSecurityToken() (*string, error) {
 	return nil, errors.New("SECRET from deprecated method")
 }
+
 func (c *odpsTestCredential) GetBearerToken() *string { return nil }
 
 func TestGuardODPSCredentials(t *testing.T) {
@@ -184,93 +171,7 @@ func TestNewODPSClient(t *testing.T) {
 
 // HttpError.Error has a value receiver; this wrapper tests the pointer form
 // without hiding that the SDK itself may return value errors.
-type pointerHTTPError struct{ *restclient.HttpError }
 
-func (e pointerHTTPError) Error() string { return e.HttpError.Error() }
-func (e pointerHTTPError) Unwrap() error { return e.HttpError }
-
-func TestODPSErrorSanitization(t *testing.T) {
-	for _, tc := range []struct {
-		input error
-		want  string
-	}{
-		{restclient.HttpError{StatusCode: 403, Body: []byte("SECRET")}, "ODPS authentication or permission denied"},
-		{restclient.HttpError{StatusCode: 404}, "ODPS resource not found"},
-		{restclient.HttpError{StatusCode: 503}, "ODPS service temporarily unavailable"},
-		{restclient.HttpError{StatusCode: 500, Body: []byte("SECRET")}, "ODPS request failed (status 500)"},
-		{fmt.Errorf("wrapped: %w", pointerHTTPError{&restclient.HttpError{StatusCode: 500, ErrorMessage: &restclient.ErrorMessage{
-			ErrorCode: "TableNotFound", Message: "accessKeyId=SECRET",
-		}, Body: []byte("SECRET")}}), "ODPS resource not found: TableNotFound: [credential]"},
-		{fmt.Errorf("wrapped: %w", restclient.HttpError{StatusCode: 400, ErrorMessage: &restclient.ErrorMessage{
-			ErrorCode: "AccessDenied", Message: "securityToken=SECRET",
-		}}), "ODPS authentication or permission denied: AccessDenied: [credential]"},
-		{restclient.HttpError{StatusCode: 400, ErrorMessage: &restclient.ErrorMessage{
-			ErrorCode: "InvalidParameter", Message: "CREATE SCHEMA syntax is invalid",
-		}}, "ODPS request failed (status 400): InvalidParameter: CREATE SCHEMA syntax is invalid"},
-		{pointerHTTPError{&restclient.HttpError{StatusCode: 0, Body: []byte("SECRET")}}, "ODPS request failed"},
-		{errors.New("AccessDenied: SECRET"), "ODPS authentication or permission denied"},
-		{errors.New("TableNotFound: SECRET"), "ODPS resource not found"},
-		{errors.New("SECRET"), "ODPS request failed"},
-	} {
-		err := ODPSSafeError(tc.input)
-		require.EqualError(t, err, tc.want)
-		require.False(t, strings.Contains(err.Error(), "SECRET"))
-	}
-	require.NoError(t, ODPSSafeError(nil))
-}
-
-func TestODPSErrorKeepsDiagnosticWithoutCredentials(t *testing.T) {
-	accessKey := "LTAI1234567890abcdef"
-	securityToken := "CAIS1234567890abcdef"
-	message := "ODPS-0130161: Parse exception near SCHEMA; accessKeyId=" + accessKey +
-		" securityToken=" + securityToken + " https://example.invalid/signed?token=secret"
-	body := []byte(`{"Code":"ODPS-0130161","Message":` + strconv.Quote(message) + `}`)
-	for _, input := range []error{
-		restclient.HttpError{StatusCode: 400, Body: body},
-		errors.New(message), // SDK task failures are plain errors.New(result).
-	} {
-		diagnostic := ODPSSafeError(input).Error()
-		require.Contains(t, diagnostic, "ODPS-0130161")
-		require.Contains(t, diagnostic, "Parse exception near SCHEMA")
-		require.NotContains(t, diagnostic, accessKey)
-		require.NotContains(t, diagnostic, securityToken)
-		require.NotContains(t, diagnostic, "example.invalid")
-		require.NotContains(t, diagnostic, "secret")
-	}
-}
-
-func TestODPSSafeErrorRedactsAccountIdentity(t *testing.T) {
-	for _, tc := range []struct {
-		name, message, secret, want string
-	}{
-		{"tips suffix", "Access Denied: Schema project.missing does not exist Tips: Principal:RAM$123456789:987654321", "123456789", "Schema project.missing does not exist"},
-		{"RAM principal", "Access Denied to RAM$123456789:user_987654321 on schema", "RAM$123456789:user_987654321", "[principal]"},
-		{"RAM ARN", "Access Denied to acs:ram::123456789:role/example on schema", "acs:ram::123456789:role/example", "[principal]"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			for _, input := range []error{
-				errors.New("ODPS-0420095: " + tc.message),
-				restclient.HttpError{StatusCode: 403, ErrorMessage: &restclient.ErrorMessage{ErrorCode: "ODPS-0420095", Message: tc.message}},
-			} {
-				diagnostic := ODPSSafeError(input).Error()
-				require.Contains(t, diagnostic, "ODPS-0420095")
-				require.Contains(t, diagnostic, tc.want)
-				require.NotContains(t, diagnostic, tc.secret)
-				require.NotContains(t, diagnostic, "Tips:")
-			}
-		})
-	}
-}
-
-func TestODPSQueryHints(t *testing.T) {
-	hints := odpsQueryHints()
-	require.Equal(t, "UTC", hints["odps.sql.timezone"])
-	require.Equal(t, "true", hints["odps.sql.type.system.odps2"])
-	require.Equal(t, "true", hints["odps.namespace.schema"])
-}
-
-// SDK signing is performed before sending a request. A failing role provider
-// must not leak its refresh error through Query or send a request.
 func TestODPSQueryCredentialFailure(t *testing.T) {
 	id, key, token := "SECRET id", "SECRET key", "SECRET token"
 	provider := &odpsTestCredential{model: &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &key, SecurityToken: &token}}
@@ -314,142 +215,6 @@ func TestODPSRoleRefreshWithoutTokenFailsBeforeSigning(t *testing.T) {
 
 // The SDK supplies no context-aware requests, so test the polling state
 // machine with a local endpoint.
-func TestODPSQueryPolling(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		taskReply string
-		want      string
-	}{
-		{"failed", `<Instance><Tasks><Task><Status>FAILED</Status><Result><![CDATA[ODPS-0130161: Parse exception]]></Result></Task></Tasks></Instance>`, "ODPS query failed: ODPS-0130161: Parse exception"},
-		{"suspended", `<Instance><Tasks><Task><Status>SUSPENDED</Status></Task></Tasks></Instance>`, "ODPS query failed"},
-		{"terminated with successful task", `<Instance><Status>TERMINATED</Status><Tasks><Task><Status>SUCCESS</Status></Task></Tasks></Instance>`, ""},
-		{"terminated with task result", `<Instance><Status>TERMINATED</Status><Tasks><Task><Status>FAILED</Status><Result><![CDATA[ODPS-0121095: Invalid partition value]]></Result></Task></Tasks></Instance>`, "ODPS query failed: ODPS-0121095: Invalid partition value"},
-		{"terminated with incomplete task", `<Instance><Status>TERMINATED</Status><Tasks><Task><Status>FAILED</Status></Task></Tasks></Instance>`, "ODPS query failed: ODPS-0121095: Invalid partition value"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var calls atomic.Int32
-			server := newODPSTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-				calls.Add(1)
-				switch {
-				case r.Method == http.MethodPost:
-					w.Header().Set("Location", "/api/projects/project/instances/test")
-					w.WriteHeader(http.StatusCreated)
-				case r.URL.Query().Has("result") && tc.name == "terminated with incomplete task":
-					_, _ = w.Write([]byte(`<Instance><Tasks><Task><Status>FAILED</Status><Result><![CDATA[ODPS-0121095: Invalid partition value]]></Result></Task></Tasks></Instance>`))
-				case r.URL.Query().Has("taskstatus"):
-					_, _ = w.Write([]byte(tc.taskReply))
-				default:
-					_, _ = w.Write([]byte(tc.taskReply))
-				}
-			})
-			defer server.Close()
-			instance := odps.NewOdps(account.NewAliyunAccount("id", "key"), server.URL)
-			instance.SetDefaultProjectName("project")
-			result, err := (&Client{Type: ODPSClient, ODPS: instance}).Query("SELECT 1")
-			if tc.want == "" {
-				require.NoError(t, err)
-			} else {
-				require.EqualError(t, err, tc.want)
-			}
-			require.Empty(t, result.Columns)
-			require.LessOrEqual(t, calls.Load(), int32(4))
-		})
-	}
-}
-
-func TestODPSQueryPollingDeadline(t *testing.T) {
-	// Bound the query deadline in this test without waiting five minutes.
-	oldTimeout, oldInterval := odpsQueryTimeout, odpsPollInterval
-	odpsQueryTimeout, odpsPollInterval = 70*time.Millisecond, 5*time.Millisecond
-	defer func() { odpsQueryTimeout, odpsPollInterval = oldTimeout, oldInterval }()
-
-	var calls atomic.Int32
-	server := newODPSTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		if r.Method == http.MethodPost {
-			w.Header().Set("Location", "/api/projects/project/instances/test")
-			w.WriteHeader(http.StatusCreated)
-			return
-		}
-		_, _ = w.Write([]byte(`<Instance><Status>RUNNING</Status><Tasks><Task><Status>RUNNING</Status></Task></Tasks></Instance>`))
-	})
-	defer server.Close()
-	instance := odps.NewOdps(account.NewAliyunAccount("id", "key"), server.URL)
-	instance.SetDefaultProjectName("project")
-	started := time.Now()
-	_, err := (&Client{Type: ODPSClient, ODPS: instance}).Query("SELECT 1")
-	require.EqualError(t, err, "ODPS query timed out")
-	require.Less(t, time.Since(started), time.Second)
-	require.Greater(t, calls.Load(), int32(2))
-}
-
-func TestRunODPSSQLSuccessAndHints(t *testing.T) {
-	for _, syncReply := range []bool{false, true} {
-		t.Run(fmt.Sprintf("sync=%t", syncReply), func(t *testing.T) {
-			var polls atomic.Int32
-			server := newODPSTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-				switch {
-				case r.Method == http.MethodPost:
-					// The SDK sends the session hints as settings on every SQL task.
-					var body []byte
-					body, _ = io.ReadAll(r.Body)
-					require.Contains(t, string(body), "SELECT 1;")
-					for _, hint := range []string{`odps.namespace.schema`, `odps.sql.type.system.odps2`, `odps.sql.timezone`} {
-						require.Contains(t, string(body), hint)
-					}
-					w.Header().Set("Location", "/api/projects/project/instances/test")
-					if syncReply {
-						_, _ = w.Write([]byte(`<Instance><Tasks><Task><Name>load</Name><Status>SUCCESS</Status></Task></Tasks></Instance>`))
-					} else {
-						w.WriteHeader(http.StatusCreated)
-					}
-				case r.URL.Query().Has("taskstatus"):
-					_, _ = w.Write([]byte(`<Instance><Tasks><Task><Name>load</Name><Status>SUCCESS</Status></Task></Tasks></Instance>`))
-				default:
-					polls.Add(1)
-					_, _ = w.Write([]byte(`<Instance><Status>RUNNING</Status></Instance>`))
-				}
-			})
-			defer server.Close()
-			service := odps.NewOdps(account.NewAliyunAccount("id", "key"), server.URL)
-			service.SetDefaultProjectName("project")
-			instance, err := RunODPSSQL(context.Background(), service, "SELECT 1", time.Second, time.Millisecond)
-			require.NoError(t, err)
-			require.Equal(t, "test", instance.Id())
-			if syncReply {
-				require.Zero(t, polls.Load())
-			} else {
-				require.Positive(t, polls.Load())
-			}
-		})
-	}
-}
-
-func TestRunODPSSQLDeadlineTerminates(t *testing.T) {
-	terminated := make(chan struct{}, 1)
-	server := newODPSTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost:
-			w.Header().Set("Location", "/api/projects/project/instances/test")
-			w.WriteHeader(http.StatusCreated)
-		case http.MethodPut:
-			terminated <- struct{}{}
-		default:
-			_, _ = w.Write([]byte(`<Instance><Status>RUNNING</Status><Tasks><Task><Status>RUNNING</Status></Task></Tasks></Instance>`))
-		}
-	})
-	defer server.Close()
-	service := odps.NewOdps(account.NewAliyunAccount("id", "key"), server.URL)
-	service.SetDefaultProjectName("project")
-	instance, err := RunODPSSQL(context.Background(), service, "SELECT 1", 50*time.Millisecond, 5*time.Millisecond)
-	require.Nil(t, instance)
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-	select {
-	case <-terminated:
-	case <-time.After(time.Second):
-		t.Fatal("async instance not terminated on deadline")
-	}
-}
 
 func newODPSTestServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	t.Helper()

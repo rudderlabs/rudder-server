@@ -22,10 +22,9 @@ type Downloader interface {
 }
 
 type downloaderImpl struct {
-	warehouse          *model.Warehouse
-	uploader           warehouseutils.Uploader
-	numWorkers         int
-	fileManagerFactory filemanager.Factory
+	warehouse  *model.Warehouse
+	uploader   warehouseutils.Uploader
+	numWorkers int
 }
 
 func NewDownloader(
@@ -35,7 +34,6 @@ func NewDownloader(
 ) Downloader {
 	return &downloaderImpl{
 		warehouse: warehouse, uploader: uploader, numWorkers: numWorkers,
-		fileManagerFactory: filemanager.New,
 	}
 }
 
@@ -63,7 +61,7 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 		Provider: storageProvider, Config: l.warehouse.Destination.Config,
 		UseRudderStorage: l.uploader.UseRudderStorage(), WorkspaceID: l.warehouse.Destination.WorkspaceID,
 	})
-	fileManager, err := l.fileManagerFactory(&filemanager.Settings{
+	fileManager, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
 		Config:   storageConfig,
 		Conf:     config.Default,

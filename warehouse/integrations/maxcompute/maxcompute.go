@@ -812,12 +812,7 @@ func (m *MaxCompute) TestLoadTable(ctx context.Context, location, table string, 
 	if format != warehouseutils.LoadFileTypeJson {
 		return fmt.Errorf("MaxCompute validation expects JSON load files, got %q", format)
 	}
-	size, ok := warehouseutils.MaxComputeValidationFileSize(ctx)
-	if !ok || size <= 0 {
-		return errors.New("MaxCompute validation load file size is missing")
-	}
-	metadata := fmt.Appendf(nil, `{"content_length":%d}`, size)
-	if _, err := m.loadFiles(ctx, table, []warehouseutils.LoadFile{{Location: location, Metadata: metadata}}, false); err != nil {
+	if _, err := m.loadFiles(ctx, table, []warehouseutils.LoadFile{{Location: location}}, false); err != nil {
 		return err
 	}
 	stamp, ok := payload["uuid_ts"].(string)

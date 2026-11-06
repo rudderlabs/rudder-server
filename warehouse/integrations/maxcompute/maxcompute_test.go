@@ -2,11 +2,14 @@ package maxcompute
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"html"
 	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +20,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -374,4 +379,419 @@ func TestCreateTablePartitionPipelineOverride(t *testing.T) {
 	m.exec = func(_ context.Context, sql string) error { statement = sql; return nil }
 	require.NoError(t, m.CreateTable(context.Background(), "events", model.TableSchema{"id": "string", "uuid_ts": "datetime", "received_at": "datetime"}))
 	require.Contains(t, statement, "TRUNC_TIME(`uuid_ts`, 'hour') AS `pt`")
+}
+
+func testManager() *MaxCompute {
+	o := odps.NewOdps(nil, "https://service.cn-hangzhou.maxcompute.aliyun.com/api")
+	o.SetDefaultProjectName("project")
+	m := &MaxCompute{odps: o, warehouse: model.Warehouse{WorkspaceID: "workspace"}, conf: config.New()}
+	m.warehouse.Destination.Config = map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou", "accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "acs:ram::123456789:role/read-role", "endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "skipViews": true}
+	return m
+}
+
+func TestOSSLoadGroupsFilesByFolder(t *testing.T) {
+	m := testManager()
+	folder := "11111111-1111-1111-1111-111111111111-events"
+	prefix := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/" + folder + "/"
+	var statements []string
+	m.exec = func(_ context.Context, sql string) error { statements = append(statements, sql); return nil }
+	files := []warehouseutils.LoadFile{{Location: prefix + "one.json.gz"}, {Location: prefix + "two.json.gz"}}
+	stats, err := m.loadTable(context.Background(), "events", files)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, stats.RowsInserted)
+	require.Equal(t, []string{"LOAD INTO TABLE `project`.`events` FROM LOCATION 'oss://oss-cn-hangzhou-internal.aliyuncs.com/my-bucket/" + folder + "/' ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe' WITH SERDEPROPERTIES ('odps.properties.rolearn'='acs:ram::123456789:role/read-role') STORED AS TEXTFILE"}, statements)
+}
+
+func TestOSSLocationAcceptsEncodedObjectKeys(t *testing.T) {
+	m := testManager()
+	folder := "11111111-1111-1111-1111-111111111111-events"
+	key := folder + "/a%+ c-日本.json.gz"
+	location := "https://oss-cn-hangzhou.aliyuncs.com/my-bucket/" + url.PathEscape(key)
+	folders, err := m.preparedLoadFiles(context.Background(), []warehouseutils.LoadFile{{Location: location}})
+	require.NoError(t, err)
+	require.Equal(t, []loadFolder{{location: "oss://oss-cn-hangzhou-internal.aliyuncs.com/my-bucket/" + folder + "/"}}, folders)
+}
+
+func TestOSSLoadRejectsUnsafeSQLLiterals(t *testing.T) {
+	m := testManager()
+	safeFolder := "11111111-1111-1111-1111-111111111111-events"
+	var statements []string
+	m.exec = func(_ context.Context, sql string) error { statements = append(statements, sql); return nil }
+	for _, bad := range []string{"'", "\\", "\x01", "\n", "\x7f"} {
+		key := safeFolder + "/file" + bad + ".json.gz"
+		location := "https://oss-cn-hangzhou.aliyuncs.com/my-bucket/" + url.PathEscape(key)
+		_, err := m.loadTable(context.Background(), "events", []warehouseutils.LoadFile{{Location: location}})
+		require.Error(t, err, bad)
+		require.Empty(t, statements)
+		key = safeFolder + bad + "/file.json.gz"
+		location = "https://oss-cn-hangzhou.aliyuncs.com/my-bucket/" + url.PathEscape(key)
+		_, err = m.loadTable(context.Background(), "events", []warehouseutils.LoadFile{{Location: location}})
+		require.Error(t, err, bad)
+		require.Empty(t, statements)
+		m.warehouse.Destination.Config["bucketName"] = "my-bucket" + bad
+		_, err = m.loadTable(context.Background(), "events", []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/" + safeFolder + "/file.json.gz"}})
+		require.Error(t, err, bad)
+		require.Empty(t, statements)
+		m.warehouse.Destination.Config["bucketName"] = "my-bucket"
+		m.warehouse.Destination.Config["ossRoleArn"] = "acs:ram::123456789:role/read" + bad
+		_, err = m.loadTable(context.Background(), "events", []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/" + safeFolder + "/file.json.gz"}})
+		require.Error(t, err, bad)
+		require.Empty(t, statements)
+		m.warehouse.Destination.Config["ossRoleArn"] = "acs:ram::123456789:role/read-role"
+	}
+}
+
+func TestMaxComputeValidationReadsLoadedRowWithinPartition(t *testing.T) {
+	m := testManager()
+	type contextKey struct{}
+	var loads int
+	m.exec = func(_ context.Context, statement string) error {
+		require.Contains(t, statement, "LOAD INTO TABLE")
+		loads++
+		return nil
+	}
+	m.query = func(queryCtx context.Context, statement string) (warehouseutils.QueryResult, error) {
+		require.Equal(t, true, queryCtx.Value(contextKey{}))
+		require.Equal(t, "SELECT `id`, `val` FROM `project`.`events` WHERE `pt` >= '2024-01-02' AND `pt` < '2024-01-03' AND `id` = 1 LIMIT 1", statement)
+		return warehouseutils.QueryResult{Values: [][]string{{"1", "RudderStack"}}}, nil
+	}
+	payload := map[string]any{"id": 1, "val": "RudderStack", "uuid_ts": "2024-01-02 00:00:00"}
+	location := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-validation/test.json.gz"
+	ctx := context.WithValue(context.Background(), contextKey{}, true)
+	require.NoError(t, m.TestLoadTable(ctx, location, "events", payload, warehouseutils.LoadFileTypeJson))
+	require.Equal(t, 1, loads)
+	m.query = func(context.Context, string) (warehouseutils.QueryResult, error) {
+		return warehouseutils.QueryResult{}, nil
+	}
+	require.ErrorContains(t, m.TestLoadTable(ctx, location, "events", payload, warehouseutils.LoadFileTypeJson), "row was not found")
+}
+
+func TestMaxComputeValidationLoadSkipsViewRefresh(t *testing.T) {
+	m := testManager()
+	m.warehouse.Destination.Config["skipViews"] = false
+	m.catalog = func(context.Context) (model.Schema, error) {
+		t.Fatal("validation load must not read the catalog to refresh a view")
+		return nil, errors.New("unexpected catalog lookup")
+	}
+	var statements []string
+	m.exec = func(_ context.Context, statement string) error {
+		statements = append(statements, statement)
+		return nil
+	}
+	m.query = func(context.Context, string) (warehouseutils.QueryResult, error) {
+		return warehouseutils.QueryResult{Values: [][]string{{"1", "RudderStack"}}}, nil
+	}
+	payload := map[string]any{"id": 1, "val": "RudderStack", "uuid_ts": "2024-01-02 00:00:00"}
+	location := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-validation/test.json.gz"
+	ctx := context.Background()
+	require.NoError(t, m.TestLoadTable(ctx, location, "events", payload, warehouseutils.LoadFileTypeJson))
+	require.Len(t, statements, 1)
+	require.Contains(t, statements[0], "LOAD INTO TABLE")
+}
+
+type loadUploader struct {
+	warehouseutils.Uploader
+	files       []warehouseutils.LoadFile
+	tableSchema model.TableSchema
+}
+
+func (u loadUploader) GetLoadFileType() string { return warehouseutils.LoadFileTypeJson }
+
+func (u loadUploader) GetTableSchemaInWarehouse(string) model.TableSchema { return u.tableSchema }
+
+func (u loadUploader) GetLoadFilesMetadata(_ context.Context, _ warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
+	return u.files, nil
+}
+
+func TestLoadViewUsesUploadSchemaBeforeCatalog(t *testing.T) {
+	m := testManager()
+	m.warehouse.Destination.Config["skipViews"] = false
+	prefix := "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-events/"
+	m.uploader = loadUploader{
+		files:       []warehouseutils.LoadFile{{Location: prefix + "one.json.gz"}},
+		tableSchema: model.TableSchema{"id": "string", "uuid_ts": "datetime", "added_this_sync": "string"},
+	}
+	// a table created moments ago may not be listed yet: the catalog must not be consulted
+	m.catalog = func(context.Context) (model.Schema, error) {
+		t.Fatal("view columns must come from the upload schema")
+		return nil, errors.New("unexpected catalog lookup")
+	}
+	var statements []string
+	m.exec = func(_ context.Context, sql string) error { statements = append(statements, sql); return nil }
+	_, err := m.LoadTable(context.Background(), "events")
+	require.NoError(t, err)
+	require.Len(t, statements, 2)
+	require.Contains(t, statements[0], "CREATE OR REPLACE VIEW")
+	require.Contains(t, statements[0], "`added_this_sync`")
+	require.Contains(t, statements[1], "LOAD INTO TABLE")
+}
+
+func TestMaxComputeSummary(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		rows  int64
+		valid bool
+	}{
+		{`{"tasks":[{"Outputs":[{"OutputRecordCounts":{"pt=2024-01-01":20,"pt=2024-01-02":22}}],"inputRecords":100}]}`, 42, true},
+		{`{"Outputs":[{"OutputRecordCounts":[0,3]},{"OutputRecordCounts":[4]}]}`, 7, true},
+		{`{"inputRecords":42}`, 0, false},
+		{`{"Outputs":[{"OutputRecordCounts":-1}]}`, 0, false},
+		{`{"Outputs":[{"OutputRecordCounts":2.5}]}`, 0, false},
+		{`{"Outputs":[]}`, 0, false},
+		{`secret`, 0, false},
+	} {
+		rows, err := loadSummaryRows(test.input)
+		if test.valid {
+			require.NoError(t, err)
+			require.Equal(t, test.rows, rows)
+		} else {
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), "secret")
+		}
+	}
+}
+
+func TestFixedViewsAndNames(t *testing.T) {
+	m := testManager()
+	m.warehouse.Destination.Config["skipViews"] = false
+	m.warehouse.Destination.Config["partitionType"] = "hour"
+	statements := []string{}
+	m.exec = func(_ context.Context, sql string) error { statements = append(statements, sql); return nil }
+	require.NoError(t, m.CreateTable(context.Background(), "event_source", model.TableSchema{"id": "string", "uuid_ts": "datetime"}))
+	require.Contains(t, statements[0], "'hour'")
+	require.Contains(t, statements[1], "`pt` >=")
+	require.Contains(t, statements[1], "`pt` < TO_CHAR(DATEADD(GETDATE(), 2, 'dd')")
+	require.Contains(t, statements[1], "PARTITION BY `id`")
+	require.Contains(t, statements[1], "ORDER BY `uuid_ts` DESC")
+	require.Equal(t, "event_source_view", viewName("event_source"))
+	require.Equal(t, strings.Repeat("a", 123)+"_view", viewName(strings.Repeat("a", 123)))
+	require.LessOrEqual(t, len(viewName(strings.Repeat("a", 124))), 128)
+	first := viewName(strings.Repeat("a", 123) + "b")
+	second := viewName(strings.Repeat("a", 123) + "c")
+	require.LessOrEqual(t, len(first), 128)
+	require.NotEqual(t, first, second)
+	m.warehouse.Destination.Config["skipViews"] = true
+	m.warehouse.Destination.Config["partitionType"] = "day"
+	statements = nil
+	require.NoError(t, m.CreateTable(context.Background(), "events", model.TableSchema{"id": "string", "received_at": "datetime"}))
+	require.Contains(t, statements[0], "TRUNC_TIME(`uuid_ts`, 'day') AS `pt`")
+	require.Contains(t, statements[0], "'table.format.version'='2'")
+	require.Len(t, statements, 1)
+	m.warehouse.Destination.Config["skipViews"] = false
+	statements = nil
+	require.NoError(t, m.createTableView(context.Background(), "keyless", model.TableSchema{"uuid_ts": "datetime"}))
+	require.Empty(t, statements)
+}
+
+type usersUploader struct {
+	loadUploader
+	users  model.TableSchema
+	err    error
+	tables []string
+}
+
+func (u *usersUploader) GetTableSchemaInWarehouse(string) model.TableSchema { return u.users }
+
+func (u *usersUploader) GetLoadFilesMetadata(_ context.Context, options warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
+	u.tables = append(u.tables, options.Table)
+	return u.files, u.err
+}
+
+func testUsersManager(t *testing.T, source, granularity string) (*MaxCompute, *usersUploader, *[]string) {
+	t.Helper()
+	m := testManager()
+	expression := fmt.Sprintf(`[{"leafExprDesc":{"reference":{"name":"%s"}}},{"leafExprDesc":{"constant":"%s"}},{"functionCall":{"name":"trunc_time"}}]`, source, granularity)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		schema, _ := jsonrs.Marshal(map[string]any{"columns": []any{map[string]any{"name": "id", "type": "string"}, map[string]any{"name": source, "type": "timestamp"}}, "PartitionKeys": []any{map[string]any{"name": "pt", "type": "string", "hasGenerateExpression": true, "generateExpression": expression}}})
+		_, _ = fmt.Fprintf(w, "<Table><Schema>%s</Schema></Table>", strings.ReplaceAll(string(schema), "&", "&amp;"))
+	}))
+	t.Cleanup(server.Close)
+	m.odps = odps.NewOdps(account.NewAliyunAccount("id", "secret"), server.URL)
+	m.odps.SetDefaultProjectName("project")
+	u := &usersUploader{
+		files: []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-users/one.json.gz"}},
+		users: model.TableSchema{"id": "string", "received_at": "datetime", "loaded_at": "datetime", "uuid_ts": "datetime", "email": "string", "name": "string"},
+	}
+	m.uploader = u
+	statements := &[]string{}
+	m.exec = func(_ context.Context, sql string) error { *statements = append(*statements, sql); return nil }
+	m.catalog = func(context.Context) (model.Schema, error) {
+		return model.Schema{warehouseutils.UsersTable: u.users}, nil
+	}
+	return m, u, statements
+}
+
+func TestUsersCarryForwardUnpartitionedStage(t *testing.T) {
+	for _, tc := range []struct{ source, granularity string }{
+		{"uuid_ts", "day"}, {"uuid_ts", "hour"}, {"received_at", "day"},
+	} {
+		t.Run(tc.source+"_"+tc.granularity, func(t *testing.T) {
+			m, u, statements := testUsersManager(t, tc.source, tc.granularity)
+			m.warehouse.Destination.Config["skipViews"] = false
+			require.NoError(t, m.loadUsersWithCarryForward(context.Background()))
+			require.Equal(t, []string{warehouseutils.UsersTable}, u.tables)
+			require.Len(t, *statements, 5)
+			stage := strings.TrimPrefix(strings.SplitN((*statements)[0], " (", 2)[0], "CREATE TABLE ")
+			require.Contains(t, (*statements)[0], "`loaded_at` TIMESTAMP")
+			require.Contains(t, (*statements)[0], "TBLPROPERTIES ('table.format.version'='2')")
+			require.NotContains(t, (*statements)[0], "AUTO PARTITIONED")
+			require.Contains(t, (*statements)[1], "LOAD INTO TABLE "+stage+" FROM LOCATION")
+			require.Contains(t, (*statements)[2], "CREATE OR REPLACE VIEW `project`.`users_view`")
+			insert := (*statements)[3]
+			require.Contains(t, insert, "INSERT INTO `project`.`users`")
+			require.Contains(t, insert, "FROM "+stage+" WHERE `id` IS NOT NULL")
+			require.NotContains(t, insert, "FROM "+stage+" WHERE `pt`")
+			require.Contains(t, insert, "FROM `project`.`users` WHERE `pt` >= '"+time.Now().UTC().AddDate(0, 0, -60).Format("2006-01-02")+"' AND `pt` < '"+time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02")+"' AND `id` IN (SELECT `id` FROM "+stage+" WHERE `id` IS NOT NULL)")
+			require.NotContains(t, insert, "FROM `project`.`identifies`")
+			require.Contains(t, insert, " UNION ALL ")
+			require.Contains(t, insert, "SELECT DISTINCT")
+			require.Contains(t, insert, "FIRST_VALUE(`email`, true) OVER (PARTITION BY `id` ORDER BY `received_at` DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)")
+			require.Contains(t, insert, "FIRST_VALUE(`received_at`, true)")
+			require.Contains(t, insert, "FIRST_VALUE(CASE WHEN `__current_upload` = 1 THEN `uuid_ts` END, true)")
+			require.Contains(t, insert, "FIRST_VALUE(CASE WHEN `__current_upload` = 1 THEN `loaded_at` END, true)")
+			require.Equal(t, "DROP TABLE IF EXISTS "+stage, (*statements)[4])
+		})
+	}
+}
+
+func TestUsersCarryForwardPreflightAndCleanup(t *testing.T) {
+	m, u, statements := testUsersManager(t, "uuid_ts", "day")
+	u.files = nil
+	require.NoError(t, m.loadUsersWithCarryForward(context.Background()))
+	require.Empty(t, *statements)
+	u.files = []warehouseutils.LoadFile{{Location: "https://evil.example/bad.gz"}}
+	require.ErrorContains(t, m.loadUsersWithCarryForward(context.Background()), "load file")
+	require.Empty(t, *statements)
+	u.err = errors.New("router failed with secret")
+	require.ErrorContains(t, m.loadUsersWithCarryForward(context.Background()), "load files failed")
+	require.NotContains(t, m.loadUsersWithCarryForward(context.Background()).Error(), "secret")
+	require.Empty(t, *statements)
+	u.err = nil
+	u.files = []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/11111111-1111-1111-1111-111111111111-users/one.json.gz"}}
+	m.exec = func(_ context.Context, sql string) error {
+		*statements = append(*statements, sql)
+		if strings.HasPrefix(sql, "INSERT INTO") {
+			return errors.New("insert failed")
+		}
+		return nil
+	}
+	require.ErrorContains(t, m.loadUsersWithCarryForward(context.Background()), "insert failed")
+	require.Contains(t, (*statements)[len(*statements)-1], "DROP TABLE IF EXISTS")
+}
+
+func TestFetchSchemaKeepsTableNamesAndExcludesGeneratedPTAndViews(t *testing.T) {
+	expression := "[{\"leafExprDesc\":{\"reference\":{\"name\":\"received_at\"}}},{\"leafExprDesc\":{\"constant\":\"hour\"}},{\"functionCall\":{\"name\":\"trunc_time\"}}]"
+	catalogSchema, err := jsonrs.Marshal(map[string]any{
+		"columns": []any{
+			map[string]any{"name": "id", "type": "string"},
+			map[string]any{"name": "received_at", "type": "timestamp"},
+		},
+		"PartitionKeys": []any{
+			map[string]any{"name": "pt", "type": "string", "hasGenerateExpression": true, "generateExpression": expression},
+		},
+	})
+	require.NoError(t, err)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/tables") {
+			_, _ = fmt.Fprint(w, "<Tables><Table><Name>product_view_clicked</Name><Owner>owner</Owner></Table><Table><Name>actual_view</Name><Owner>owner</Owner></Table></Tables>")
+			return
+		}
+		kind := odps.ManagedTable.String()
+		if strings.HasSuffix(r.URL.Path, "/actual_view") {
+			kind = odps.VirtualView.String()
+		}
+		if strings.HasSuffix(r.URL.Path, "/without_partition") {
+			_, _ = fmt.Fprintf(w, "<Table><Owner>owner</Owner><Type>%s</Type><Schema>%s</Schema></Table>", kind, html.EscapeString(`{"columns":[{"name":"id","type":"string"}]}`))
+			return
+		}
+		_, _ = fmt.Fprintf(w, "<Table><Owner>owner</Owner><Type>%s</Type><Schema>%s</Schema></Table>", kind, html.EscapeString(string(catalogSchema)))
+	}))
+	defer server.Close()
+	instance := odps.NewOdps(account.NewAliyunAccount("id", "secret"), server.URL)
+	instance.SetDefaultProjectName("project")
+	m := &MaxCompute{odps: instance}
+	schema, err := m.FetchSchema(context.Background())
+	require.NoError(t, err)
+	require.Contains(t, schema, "product_view_clicked")
+	require.NotContains(t, schema, "actual_view")
+	require.Equal(t, "datetime", schema["product_view_clicked"]["received_at"])
+	require.NotContains(t, schema["product_view_clicked"], "pt")
+
+	plan, err := m.CatalogPartition(context.Background(), "product_view_clicked")
+	require.NoError(t, err)
+	require.Equal(t, "received_at", plan.Source)
+	require.Equal(t, "hour", plan.Granularity)
+	_, err = m.CatalogPartition(context.Background(), "without_partition")
+	require.ErrorContains(t, err, "no supported pt partition expression")
+}
+
+func TestFetchSchemaMissingNamespaceIsEmpty(t *testing.T) {
+	for _, tc := range []struct {
+		name, code, message string
+		missing             bool
+	}{
+		{
+			name: "missing schema", code: "ODPS-0420095",
+			message: "Access Denied: NO privilege 'odps:List' on /projects/project/schemas/missing. Schema project.missing does not exist Tips: Principal:RAM$123456789:987654321",
+			missing: true,
+		},
+		{name: "other permission error", code: "ODPS-0420095", message: "Access Denied: NO privilege 'odps:List' on /projects/project/schemas/existing"},
+		{name: "other error code", code: "ODPS-0420096", message: "Schema project.missing does not exist"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = fmt.Fprintf(w, "<Error><Code>%s</Code><Message>%s</Message></Error>", tc.code, html.EscapeString(tc.message))
+			}))
+			defer server.Close()
+			instance := odps.NewOdps(account.NewAliyunAccount("id", "secret"), server.URL)
+			instance.SetDefaultProjectName("project")
+			m := &MaxCompute{odps: instance}
+			schema, err := m.FetchSchema(context.Background())
+			if tc.missing {
+				require.NoError(t, err)
+				require.NotNil(t, schema)
+				require.Empty(t, schema)
+				return
+			}
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.code)
+		})
+	}
+}
+
+func TestErrorMappingsUseSanitizedDiagnostics(t *testing.T) {
+	for _, tc := range []struct {
+		name, diagnostic string
+		want             model.JobErrorType
+	}{
+		{"project membership", "ODPS-0420095: User does not exist in the project", model.PermissionError},
+		{"RAM numeric ID", "ODPS-0030001: user name is not a valid account", model.PermissionError},
+		{"schema edition", "ODPS-0110061: project doesn't support schema", model.PermissionError},
+		{"full scan", "ODPS-0130071: full scan of all partitions is not allowed", model.UncategorizedError},
+		{"identifier length", "ODPS-0130071: identifier too long, max length is 128", model.UncategorizedError},
+		{"assume role", "NoPermission", model.PermissionError},
+		{"invalid access key", "InvalidAccessKeyId", model.PermissionError},
+		{"signature mismatch", "SignatureDoesNotMatch", model.PermissionError},
+		{"caller keys", "MaxCompute role caller credentials unavailable", model.PermissionError},
+		{"missing table", "TableNotFound", model.ResourceNotFoundError},
+		{"cell limit", "ODPS-0121095: cell exceeds 8 MB", model.ColumnSizeError},
+		{"column count", "MaxCompute table exceeds 1200 columns", model.ColumnCountError},
+		{"generic", "ODPS-1234567: unexpected failure", model.UncategorizedError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			safe := errors.New(tc.diagnostic)
+			if tc.name != "caller keys" && tc.name != "column count" {
+				safe = client.ODPSSafeError(safe)
+			}
+			got := model.UncategorizedError
+			for _, mapping := range (&MaxCompute{}).ErrorMappings() {
+				if mapping.Format.MatchString(safe.Error()) {
+					got = mapping.Type
+					break
+				}
+			}
+			require.Equal(t, tc.want, got, safe.Error())
+		})
+	}
 }

@@ -767,7 +767,7 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 		return invalidDestinationCredErr{Base: err, Operation: "list"}
 	}
 
-	tempFilePath, _, err := validations.CreateTempLoadFile(&backendconfig.DestinationT{
+	tempFilePath, err := validations.CreateTempLoadFile(&backendconfig.DestinationT{
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			Name: request.Type,
 		},

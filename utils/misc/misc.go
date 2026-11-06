@@ -415,21 +415,9 @@ func (b BufferedWriter) Close() error {
 }
 
 type GZipWriter struct {
-	File         *os.File
-	GzWriter     *gzip.Writer
-	BufWriter    *bufio.Writer
-	bytesWritten *int64
-}
-
-type countingWriter struct {
-	writer io.Writer
-	count  *int64
-}
-
-func (w countingWriter) Write(p []byte) (int, error) {
-	n, err := w.writer.Write(p)
-	*w.count += int64(n)
-	return n, err
+	File      *os.File
+	GzWriter  *gzip.Writer
+	BufWriter *bufio.Writer
 }
 
 func CreateGZ(s string) (w GZipWriter, err error) {
@@ -437,25 +425,14 @@ func CreateGZ(s string) (w GZipWriter, err error) {
 	if err != nil {
 		return w, err
 	}
-	bytesWritten := new(int64)
-	gzWriter := gzip.NewWriter(countingWriter{writer: file, count: bytesWritten})
+	gzWriter := gzip.NewWriter(file)
 	bufWriter := bufio.NewWriter(gzWriter)
 	w = GZipWriter{
-		File:         file,
-		GzWriter:     gzWriter,
-		BufWriter:    bufWriter,
-		bytesWritten: bytesWritten,
+		File:      file,
+		GzWriter:  gzWriter,
+		BufWriter: bufWriter,
 	}
 	return w, err
-}
-
-// BytesWritten returns the compressed bytes written by this gzip writer.
-// The final count is available after Close flushes the gzip footer.
-func (w GZipWriter) BytesWritten() int64 {
-	if w.bytesWritten == nil {
-		return 0
-	}
-	return *w.bytesWritten
 }
 
 func (w GZipWriter) WriteGZ(s string) error {
