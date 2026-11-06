@@ -44,7 +44,7 @@ func validateSettings(settings map[string]any, workspaceID string) error {
 	if _, err := roleMode(settings); err != nil {
 		return err
 	}
-	for _, field := range []string{"ossRoleArn", "bucketName", "region"} {
+	for _, field := range []string{"ossRoleArn", "directoryPath", "region"} {
 		value, ok := settings[field].(string)
 		if !ok || strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%s is required for MaxCompute OSS", field)
@@ -80,7 +80,7 @@ func errorReason(message string, role bool) (reason, guidance string) {
 	case role && (strings.Contains(lower, "nopermission") || strings.Contains(lower, "assumerole") || strings.Contains(lower, "externalid")):
 		return "role_assumption", "Check the role trust policy and workspace-bound ExternalId."
 	case strings.Contains(lower, "oss") && strings.Contains(lower, "accessdenied"):
-		return "oss_access_denied", "The OSS policy denies this bucket or folder; check the bucket name, its folder path and the policy's resource scope."
+		return "oss_access_denied", "The OSS policy denies this bucket or folder; check the OSS directory path and the policy's resource scope."
 	}
 	return "", ""
 }

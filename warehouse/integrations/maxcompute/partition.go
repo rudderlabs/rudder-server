@@ -11,7 +11,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	odpsclient "github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute/client"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
@@ -30,8 +29,8 @@ var allowedPartitionColumns = map[string]bool{
 
 var allowedPartitionGranularities = map[string]bool{"day": true, "hour": true}
 
-// PlanPartition applies the transformer's lower-casing, keyword escape, and
-// 127-character limit. A source absent at CREATE falls back to ingestion/day.
+// PlanPartition applies the transformer's lower-casing and keyword escape.
+// A source absent at CREATE falls back to ingestion/day.
 func PlanPartition(columns model.TableSchema, configuredColumn, configuredType string) (partitionPlan, error) {
 	granularity := strings.ToLower(configuredType)
 	if granularity == "" {
@@ -47,11 +46,20 @@ func PlanPartition(columns model.TableSchema, configuredColumn, configuredType s
 	if !allowedPartitionColumns[source] {
 		return partitionPlan{}, fmt.Errorf("unsupported MaxCompute partition column %q", configuredColumn)
 	}
+	candidates := []string{source}
 	if source == "timestamp" {
-		source = "_" + source
+		// timestamp is reserved: the transformer writes _timestamp unless
+		// skipReservedKeywordsEscaping keeps the original name.
+		candidates = []string{"_timestamp", "timestamp"}
 	}
-	source = misc.TruncateStr(source, 127)
-	if _, ok := columns[source]; !ok {
+	source = ""
+	for _, candidate := range candidates {
+		if _, ok := columns[candidate]; ok {
+			source = candidate
+			break
+		}
+	}
+	if source == "" {
 		return partitionPlan{Source: "uuid_ts", Granularity: "day"}, nil
 	}
 	plan := partitionPlan{Source: source, Granularity: granularity}

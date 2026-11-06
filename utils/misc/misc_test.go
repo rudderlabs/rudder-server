@@ -976,17 +976,17 @@ func TestGetMurmurHash(t *testing.T) {
 	}
 }
 
-func TestAlibabaOSSBucketPath(t *testing.T) {
-	for bucketName, want := range map[string][2]string{
+func TestAlibabaOSSDirectoryPath(t *testing.T) {
+	for directoryPath, want := range map[string][2]string{
 		"customer-bucket":        {"customer-bucket", ""},
 		"customer-bucket/rudder": {"customer-bucket", "rudder"},
 		"customer-bucket/a/b/":   {"customer-bucket", "a/b"},
 		"/customer-bucket/a":     {"customer-bucket", "a"},
 		"customer-bucket//a//":   {"customer-bucket", "a"},
 	} {
-		got := GetObjectStorageConfig(ObjectStorageOptsT{Provider: "ALIBABA_OSS", Config: map[string]any{"bucketName": bucketName, "region": "cn-hangzhou"}})
-		require.Equal(t, want[0], got["bucketName"], bucketName)
-		require.Equal(t, want[1], got["prefix"], bucketName)
+		got := GetObjectStorageConfig(ObjectStorageOptsT{Provider: "ALIBABA_OSS", Config: map[string]any{"directoryPath": directoryPath, "region": "cn-hangzhou"}})
+		require.Equal(t, want[0], got["bucketName"], directoryPath)
+		require.Equal(t, want[1], got["prefix"], directoryPath)
 	}
 }
 
@@ -994,7 +994,7 @@ func TestAlibabaOSSConfigConversion(t *testing.T) {
 	for _, role := range []bool{false, true} {
 		for _, rudder := range []bool{false, true} {
 			t.Run(fmt.Sprintf("role=%t/rudder=%t", role, rudder), func(t *testing.T) {
-				source := map[string]any{"bucketName": "customer-bucket/scoped/", "prefix": "ignored", "region": "cn-hangzhou", "ossRoleArn": "oss-role", "externalID": "untrusted", "endPoint": "untrusted"}
+				source := map[string]any{"directoryPath": "customer-bucket/scoped/", "bucketName": "ignored", "prefix": "ignored", "region": "cn-hangzhou", "ossRoleArn": "oss-role", "externalID": "untrusted", "endPoint": "untrusted"}
 				if role {
 					source["iamRoleARN"] = "odps-role"
 				} else {

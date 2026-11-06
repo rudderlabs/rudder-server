@@ -668,8 +668,8 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
 		if value, ok := objectStorageConfigMap["region"]; ok {
 			ossConfig["region"] = value
 		}
-		// bucketName may carry a folder path ("bucket/path"): stage under that path.
-		if value, ok := objectStorageConfigMap["bucketName"].(string); ok {
+		// directoryPath is the bucket, optionally followed by a folder ("bucket/path") to stage under.
+		if value, ok := objectStorageConfigMap["directoryPath"].(string); ok {
 			bucket, prefix, _ := strings.Cut(strings.Trim(value, "/"), "/")
 			ossConfig["bucketName"] = bucket
 			ossConfig["prefix"] = strings.Trim(prefix, "/")

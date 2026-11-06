@@ -118,7 +118,7 @@ func TestIntegration(t *testing.T) {
 func integrationConfig(c integrationCredentials, namespace string, role bool) map[string]any {
 	settings := map[string]any{
 		"project": c.Project, "endpoint": c.Endpoint, "region": c.Region,
-		"bucketName": c.BucketName + "/" + c.Prefix, "ossRoleArn": c.OSSRoleARN,
+		"directoryPath": c.BucketName + "/" + c.Prefix, "ossRoleArn": c.OSSRoleARN,
 		"namespace": namespace, "syncFrequency": "30", "skipUsersTable": false,
 		"allowUsersContextTraits": true,
 		"skipViews":               false, "useRudderStorage": false, "cleanupObjectStorageFiles": true,
@@ -226,7 +226,7 @@ func testIntegrationDeniedOSSPrefix(t *testing.T, c integrationCredentials, role
 		workspaceID = c.WorkspaceID // the role trusts this ExternalId
 	}
 	destination := integrationDestination(c, whth.RandSchema(warehouseutils.MAXCOMPUTE), workspaceID, role)
-	destination.Config["bucketName"] = c.BucketName + "/outside-allowed-prefix-" + warehouseutils.RandHex()
+	destination.Config["directoryPath"] = c.BucketName + "/outside-allowed-prefix-" + warehouseutils.RandHex()
 	response := validations.NewDestinationValidator().Validate(context.Background(), &destination)
 	require.False(t, response.Success)
 	require.NotEmpty(t, response.Steps)

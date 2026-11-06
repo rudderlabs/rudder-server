@@ -40,7 +40,7 @@ func TestValidateLocation(t *testing.T) {
 	} {
 		require.Error(t, validateLocation(location, settings), location)
 	}
-	withPath := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{Provider: warehouseutils.AlibabaOSS, Config: map[string]any{"bucketName": "my-bucket/rudder", "region": "cn-hangzhou"}})
+	withPath := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{Provider: warehouseutils.AlibabaOSS, Config: map[string]any{"directoryPath": "my-bucket/rudder", "region": "cn-hangzhou"}})
 	require.NoError(t, validateLocation("https://my-bucket.oss-cn-hangzhou.aliyuncs.com/rudder/file.gz", withPath))
 }
 
@@ -76,7 +76,7 @@ func TestTypesAndConversion(t *testing.T) {
 }
 
 func TestRoleSettingsAreExclusiveAndRequireWorkspace(t *testing.T) {
-	settings := map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou", "iamRoleARN": "acs:ram::123:role/test", "ossRoleArn": "acs:ram::123456789:role/read-role", "endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "project": "project"}
+	settings := map[string]any{"directoryPath": "my-bucket", "region": "cn-hangzhou", "iamRoleARN": "acs:ram::123:role/test", "ossRoleArn": "acs:ram::123456789:role/read-role", "endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "project": "project"}
 	require.NoError(t, validateSettings(settings, "workspace"))
 	require.ErrorContains(t, validateSettings(settings, ""), "workspace ID")
 	settings["accessKeyId"] = "destination-key"
@@ -153,6 +153,53 @@ func TestCreateTablePartitionSource(t *testing.T) {
 			require.NoError(t, m.CreateTable(context.Background(), "events", caseColumns))
 			require.Len(t, statements, 1)
 			require.Contains(t, statements[0], tc.want+" AS \x60pt\x60")
+		})
+	}
+}
+
+func TestHelperAliasesAvoidColumnNames(t *testing.T) {
+	t.Run("users marker", func(t *testing.T) {
+		m, u, statements := testUsersManager(t, "uuid_ts", "day")
+		u.users["__current_upload"] = "string"
+		require.NoError(t, m.loadUsersWithCarryForward(context.Background()))
+		var insert string
+		for _, statement := range *statements {
+			if strings.HasPrefix(statement, "INSERT INTO") {
+				insert = statement
+			}
+		}
+		require.Contains(t, insert, "1 AS `__current_upload_` FROM")
+		require.Contains(t, insert, "0 AS `__current_upload_` FROM")
+		require.Contains(t, insert, "CASE WHEN `__current_upload_` = 1 THEN `uuid_ts` END")
+	})
+	t.Run("view row number", func(t *testing.T) {
+		sql, err := testManager().viewSQL("events", model.TableSchema{"id": "string", "uuid_ts": "datetime", "__rudder_row_number": "int"})
+		require.NoError(t, err)
+		require.Contains(t, sql, "AS `__rudder_row_number_` FROM")
+		require.Contains(t, sql, "WHERE `__rudder_row_number_` = 1")
+	})
+}
+
+func TestPlanPartitionTimestampSource(t *testing.T) {
+	base := model.TableSchema{"id": "string", "uuid_ts": "datetime"}
+	for _, tc := range []struct {
+		name    string
+		columns []string
+		want    string
+	}{
+		{name: "escaped", columns: []string{"_timestamp"}, want: "_timestamp"},
+		{name: "escaping skipped", columns: []string{"timestamp"}, want: "timestamp"},
+		{name: "both prefer escaped", columns: []string{"_timestamp", "timestamp"}, want: "_timestamp"},
+		{name: "neither falls back", want: "uuid_ts"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			columns := maps.Clone(base)
+			for _, column := range tc.columns {
+				columns[column] = "datetime"
+			}
+			plan, err := PlanPartition(columns, "timestamp", "hour")
+			require.NoError(t, err)
+			require.Equal(t, tc.want, plan.Source)
 		})
 	}
 }
@@ -388,7 +435,7 @@ func testManager() *MaxCompute {
 	o := odps.NewOdps(nil, "https://service.cn-hangzhou.maxcompute.aliyun.com/api")
 	o.SetDefaultProjectName("project")
 	m := &MaxCompute{odps: o, warehouse: model.Warehouse{WorkspaceID: "workspace"}, conf: config.New()}
-	m.warehouse.Destination.Config = map[string]any{"bucketName": "my-bucket", "region": "cn-hangzhou", "accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "acs:ram::123456789:role/read-role", "endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "skipViews": true}
+	m.warehouse.Destination.Config = map[string]any{"directoryPath": "my-bucket", "region": "cn-hangzhou", "accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "acs:ram::123456789:role/read-role", "endpoint": "https://service.cn-hangzhou.maxcompute.aliyun.com/api", "skipViews": true}
 	return m
 }
 
@@ -431,11 +478,11 @@ func TestOSSLoadRejectsUnsafeSQLLiterals(t *testing.T) {
 		_, err = m.loadTable(context.Background(), "events", []warehouseutils.LoadFile{{Location: location}})
 		require.Error(t, err, bad)
 		require.Empty(t, statements)
-		m.warehouse.Destination.Config["bucketName"] = "my-bucket" + bad
+		m.warehouse.Destination.Config["directoryPath"] = "my-bucket" + bad
 		_, err = m.loadTable(context.Background(), "events", []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/" + safeFolder + "/file.json.gz"}})
 		require.Error(t, err, bad)
 		require.Empty(t, statements)
-		m.warehouse.Destination.Config["bucketName"] = "my-bucket"
+		m.warehouse.Destination.Config["directoryPath"] = "my-bucket"
 		m.warehouse.Destination.Config["ossRoleArn"] = "acs:ram::123456789:role/read" + bad
 		_, err = m.loadTable(context.Background(), "events", []warehouseutils.LoadFile{{Location: "https://my-bucket.oss-cn-hangzhou.aliyuncs.com/" + safeFolder + "/file.json.gz"}})
 		require.Error(t, err, bad)
@@ -682,6 +729,35 @@ func TestUsersCarryForwardPreflightAndCleanup(t *testing.T) {
 	require.Contains(t, (*statements)[len(*statements)-1], "DROP TABLE IF EXISTS")
 }
 
+func TestUsersCarryForwardStageDropFailure(t *testing.T) {
+	failDrop := func(m *MaxCompute, statements *[]string, insertErr error) {
+		m.exec = func(_ context.Context, sql string) error {
+			*statements = append(*statements, sql)
+			switch {
+			case strings.HasPrefix(sql, "INSERT INTO"):
+				return insertErr
+			case strings.HasPrefix(sql, "DROP TABLE"):
+				return errors.New("drop failed")
+			}
+			return nil
+		}
+	}
+	t.Run("committed insert", func(t *testing.T) {
+		m, _, statements := testUsersManager(t, "uuid_ts", "day")
+		failDrop(m, statements, nil)
+		// A retry would append the committed users again, so the DROP failure is only logged.
+		require.NoError(t, m.loadUsersWithCarryForward(context.Background()))
+		require.Contains(t, (*statements)[len(*statements)-1], "DROP TABLE IF EXISTS")
+	})
+	t.Run("failed insert", func(t *testing.T) {
+		m, _, statements := testUsersManager(t, "uuid_ts", "day")
+		failDrop(m, statements, errors.New("insert failed"))
+		err := m.loadUsersWithCarryForward(context.Background())
+		require.ErrorContains(t, err, "insert failed")
+		require.ErrorContains(t, err, "dropping MaxCompute users staging table: drop failed")
+	})
+}
+
 func TestFetchSchemaKeepsTableNamesAndExcludesGeneratedPTAndViews(t *testing.T) {
 	expression := "[{\"leafExprDesc\":{\"reference\":{\"name\":\"received_at\"}}},{\"leafExprDesc\":{\"constant\":\"hour\"}},{\"functionCall\":{\"name\":\"trunc_time\"}}]"
 	catalogSchema, err := jsonrs.Marshal(map[string]any{
@@ -837,12 +913,12 @@ func TestMaxComputeAuthModeValidation(t *testing.T) {
 		role      bool
 		valid     bool
 	}{
-		{"role", map[string]any{"iamRoleARN": "odps-role", "ossRoleArn": "oss-role", "bucketName": "bucket", "region": "cn-hangzhou"}, "workspace", true, true},
-		{"access key", map[string]any{"accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "oss-role", "bucketName": "bucket", "region": "cn-hangzhou"}, "", false, true},
-		{"both", map[string]any{"iamRoleARN": "odps-role", "accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "oss-role", "bucketName": "bucket", "region": "cn-hangzhou"}, "workspace", false, false},
-		{"neither", map[string]any{"ossRoleArn": "oss-role", "bucketName": "bucket", "region": "cn-hangzhou"}, "workspace", false, false},
-		{"partial", map[string]any{"accessKeyId": "id", "ossRoleArn": "oss-role", "bucketName": "bucket", "region": "cn-hangzhou"}, "workspace", false, false},
-		{"missing workspace", map[string]any{"iamRoleARN": "odps-role", "ossRoleArn": "oss-role", "bucketName": "bucket", "region": "cn-hangzhou"}, "", true, false},
+		{"role", map[string]any{"iamRoleARN": "odps-role", "ossRoleArn": "oss-role", "directoryPath": "bucket", "region": "cn-hangzhou"}, "workspace", true, true},
+		{"access key", map[string]any{"accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "oss-role", "directoryPath": "bucket", "region": "cn-hangzhou"}, "", false, true},
+		{"both", map[string]any{"iamRoleARN": "odps-role", "accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "oss-role", "directoryPath": "bucket", "region": "cn-hangzhou"}, "workspace", false, false},
+		{"neither", map[string]any{"ossRoleArn": "oss-role", "directoryPath": "bucket", "region": "cn-hangzhou"}, "workspace", false, false},
+		{"partial", map[string]any{"accessKeyId": "id", "ossRoleArn": "oss-role", "directoryPath": "bucket", "region": "cn-hangzhou"}, "workspace", false, false},
+		{"missing workspace", map[string]any{"iamRoleARN": "odps-role", "ossRoleArn": "oss-role", "directoryPath": "bucket", "region": "cn-hangzhou"}, "", true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			role, modeErr := roleMode(tc.config)

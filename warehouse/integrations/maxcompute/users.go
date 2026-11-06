@@ -7,12 +7,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 // currentUserFiles returns only objects belonging to this upload. Validate all
-// locations and persisted object sizes before issuing any stage LOAD.
+// locations before issuing any stage LOAD.
 func (m *MaxCompute) currentUserFiles(ctx context.Context) ([]loadFolder, error) {
 	if m.uploader == nil {
 		return nil, errors.New("MaxCompute uploader is not initialized")
@@ -77,8 +81,19 @@ func (m *MaxCompute) loadUsersWithCarryForward(ctx context.Context) (err error) 
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
-		if dropErr := m.run(cleanupCtx, "DROP TABLE IF EXISTS "+stageTable); dropErr != nil {
+		dropErr := m.run(cleanupCtx, "DROP TABLE IF EXISTS "+stageTable)
+		if dropErr == nil {
+			return
+		}
+		if err != nil {
 			err = errors.Join(err, fmt.Errorf("dropping MaxCompute users staging table: %w", dropErr))
+			return
+		}
+		// The users INSERT has committed: failing now would make the retry append
+		// these users again. Cleanup drops leftover staging tables.
+		if m.logger != nil {
+			m.logger.Warnn("dropping MaxCompute users staging table",
+				logger.NewStringField(logfield.StagingTableName, stage), obskit.Error(dropErr))
 		}
 	}()
 	for _, folder := range folders {
@@ -97,6 +112,7 @@ func (m *MaxCompute) loadUsersWithCarryForward(ctx context.Context) (err error) 
 		}
 	}
 
+	currentUpload, _ := quote(unusedAlias("__current_upload", users))
 	projection := []string{"`id`"}
 	for _, key := range columns {
 		if key == "id" {
@@ -105,15 +121,15 @@ func (m *MaxCompute) loadUsersWithCarryForward(ctx context.Context) (err error) 
 		col, _ := quote(key)
 		value := col
 		if key == "uuid_ts" || key == "loaded_at" {
-			value = "CASE WHEN `__current_upload` = 1 THEN " + col + " END"
+			value = "CASE WHEN " + currentUpload + " = 1 THEN " + col + " END"
 		}
 		projection = append(projection, "FIRST_VALUE("+value+", true) OVER (PARTITION BY `id` ORDER BY `received_at` DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "+col)
 	}
 	selectColumns := "`id`, " + strings.Join(traits, ", ")
 	idSet := "SELECT `id` FROM " + stageTable + " WHERE `id` IS NOT NULL"
 	ptFilter := boundedPTWindow(time.Now())
-	branches := "SELECT " + selectColumns + ", 1 AS `__current_upload` FROM " + stageTable + " WHERE `id` IS NOT NULL" +
-		" UNION ALL SELECT " + selectColumns + ", 0 AS `__current_upload` FROM " + usersTable + " WHERE " + ptFilter + " AND `id` IN (" + idSet + ")"
+	branches := "SELECT " + selectColumns + ", 1 AS " + currentUpload + " FROM " + stageTable + " WHERE `id` IS NOT NULL" +
+		" UNION ALL SELECT " + selectColumns + ", 0 AS " + currentUpload + " FROM " + usersTable + " WHERE " + ptFilter + " AND `id` IN (" + idSet + ")"
 	statement := "INSERT INTO " + usersTable + " (" + selectColumns + ") SELECT DISTINCT " + strings.Join(projection, ", ") + " FROM (" + branches + ") u"
 	if err := m.run(ctx, statement); err != nil {
 		return fmt.Errorf("inserting MaxCompute users carry-forward: %w", err)

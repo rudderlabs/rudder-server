@@ -49,8 +49,20 @@ func (m *MaxCompute) viewSQL(table string, columns model.TableSchema) (string, e
 		}
 		projection = append(projection, name)
 	}
-	return fmt.Sprintf("CREATE OR REPLACE VIEW %s AS SELECT %s FROM (SELECT %s, ROW_NUMBER() OVER (PARTITION BY %s ORDER BY `uuid_ts` DESC) AS `__rudder_row_number` FROM %s%s) t WHERE `__rudder_row_number` = 1",
-		view, strings.Join(projection, ", "), strings.Join(projection, ", "), strings.Join(quoted, ", "), base, filter), nil
+	rowNumber, _ := quote(unusedAlias("__rudder_row_number", columns))
+	return fmt.Sprintf("CREATE OR REPLACE VIEW %s AS SELECT %s FROM (SELECT %s, ROW_NUMBER() OVER (PARTITION BY %s ORDER BY `uuid_ts` DESC) AS %s FROM %s%s) t WHERE %s = 1",
+		view, strings.Join(projection, ", "), strings.Join(projection, ", "), strings.Join(quoted, ", "), rowNumber, base, filter, rowNumber), nil
+}
+
+// unusedAlias returns base, extended with underscores until it names no column,
+// so a helper column in generated SQL cannot collide with a real one.
+func unusedAlias(base string, columns model.TableSchema) string {
+	for {
+		if _, ok := columns[base]; !ok {
+			return base
+		}
+		base += "_"
+	}
 }
 
 // Partition pruning must be evaluated at query time, not when the view is
