@@ -125,6 +125,13 @@ func (r *Runner) Run(ctx context.Context, shutdownFn func(), args []string) int 
 	for histogramName, buckets := range customBuckets {
 		statsOptions = append(statsOptions, stats.WithHistogramBuckets(histogramName, buckets))
 	}
+	// Limiter timers are tagged by partition, so buckets multiply across partitions and pods, and
+	// averages only need _sum and _count. Empty buckets export the +Inf bucket alone.
+	if config.GetBoolVar(true, "Stats.emptyLimiterBuckets") {
+		for _, histogramName := range limiterTimers {
+			statsOptions = append(statsOptions, stats.WithHistogramBuckets(histogramName, []float64{}))
+		}
+	}
 	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance, statsOptions...)
 	if err := stats.Default.Start(ctx, rruntime.GoRoutineFactory); err != nil {
 		r.logger.Errorn("Failed to start stats", obskit.Error(err))
