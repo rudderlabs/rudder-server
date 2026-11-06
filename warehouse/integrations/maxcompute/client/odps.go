@@ -19,10 +19,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const (
-	odpsRequestTimeout = 30 * time.Second
-	odpsQueryTimeout   = 5 * time.Minute
-)
+const odpsQueryTimeout = 5 * time.Minute
 
 var (
 	odpsProjectName       = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{0,127}$`)
@@ -79,8 +76,6 @@ func NewWithAccessKey(project, region, endpoint, id, secret string) (*odps.Odps,
 
 func configureODPSClient(instance *odps.Odps, project, region string) {
 	instance.SetDefaultProjectName(project)
-	instance.SetHttpTimeout(odpsRequestTimeout)
-	instance.SetTcpConnectTimeout(odpsRequestTimeout)
 	instance.Options.RegionId = region
 }
 

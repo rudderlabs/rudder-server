@@ -1004,8 +1004,8 @@ func TestAlibabaOSSConfigConversion(t *testing.T) {
 				require.Equal(t, "customer-bucket", got["bucketName"])
 				require.Equal(t, "scoped", got["prefix"])
 				require.Equal(t, "cn-hangzhou", got["region"])
-				require.Equal(t, "", got["endPoint"])
-				require.Equal(t, false, got["useInternalEndpoint"])
+				require.NotContains(t, got, "endPoint")
+				require.NotContains(t, got, "useInternalEndpoint")
 				require.Equal(t, role, got["roleBasedAuth"])
 				if role {
 					require.Equal(t, "odps-role", got["iamRoleARN"])

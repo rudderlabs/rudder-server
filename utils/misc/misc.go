@@ -684,8 +684,6 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
 			ossConfig["accessKeyID"] = objectStorageConfigMap["accessKeyId"]
 			ossConfig["accessKey"] = objectStorageConfigMap["accessKeySecret"]
 		}
-		ossConfig["endPoint"] = ""
-		ossConfig["useInternalEndpoint"] = false
 		return ossConfig
 	}
 	if opts.Provider == "ONELAKE" {
