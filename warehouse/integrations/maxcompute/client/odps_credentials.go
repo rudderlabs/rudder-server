@@ -7,28 +7,12 @@ import (
 	"github.com/aliyun/credentials-go/credentials"
 )
 
-// ODPSCredentials implements credentials.Credential. The refresh function must
-// return a complete, current STS credential; its errors and contents are never
-// exposed through the SDK. Every GetCredential call refreshes the keys.
-type ODPSCredentials struct {
-	mu      sync.Mutex
-	refresh func() (*credentials.CredentialModel, error)
-}
-
-// NewODPSCredentials creates a guarded, refreshable STS credential provider.
-func NewODPSCredentials(refresh func() (*credentials.CredentialModel, error)) *ODPSCredentials {
-	return &ODPSCredentials{refresh: refresh}
-}
-
-// GuardODPSCredentials sanitizes role refresh results before SDK signing.
-func GuardODPSCredentials(credential credentials.Credential) credentials.Credential {
+// guardCredentials sanitizes role refresh results before SDK signing.
+func guardCredentials(credential credentials.Credential) credentials.Credential {
 	if credential == nil {
 		return nil
 	}
 	if _, guarded := credential.(*odpsCredentialGuard); guarded {
-		return credential
-	}
-	if _, guarded := credential.(*ODPSCredentials); guarded {
 		return credential
 	}
 	return &odpsCredentialGuard{credential: credential}
@@ -53,47 +37,6 @@ func odpsCredentialModel(model *credentials.CredentialModel, err error) (*creden
 	}
 	return copy, nil
 }
-
-func (c *ODPSCredentials) GetCredential() (*credentials.CredentialModel, error) {
-	if c == nil || c.refresh == nil {
-		return nil, errors.New("ODPS credentials unavailable")
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	model, err := c.refresh()
-	return odpsCredentialModel(model, err)
-}
-
-func (c *ODPSCredentials) GetType() *string {
-	t := "sts"
-	return &t
-}
-
-func (c *ODPSCredentials) GetAccessKeyId() (*string, error) {
-	model, err := c.GetCredential()
-	if err != nil {
-		return nil, err
-	}
-	return model.AccessKeyId, nil
-}
-
-func (c *ODPSCredentials) GetAccessKeySecret() (*string, error) {
-	model, err := c.GetCredential()
-	if err != nil {
-		return nil, err
-	}
-	return model.AccessKeySecret, nil
-}
-
-func (c *ODPSCredentials) GetSecurityToken() (*string, error) {
-	model, err := c.GetCredential()
-	if err != nil {
-		return nil, err
-	}
-	return model.SecurityToken, nil
-}
-
-func (c *ODPSCredentials) GetBearerToken() *string { return nil }
 
 func (c *odpsCredentialGuard) GetCredential() (*credentials.CredentialModel, error) {
 	if c == nil || c.credential == nil {

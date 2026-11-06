@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
+	odpsclient "github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -90,7 +91,7 @@ func (m *MaxCompute) init(warehouse model.Warehouse) error {
 	if !ok || endpoint == "" {
 		return errors.New("MaxCompute endpoint is required")
 	}
-	if err := client.ValidateODPSEndpoint(project, region, endpoint); err != nil {
+	if err := odpsclient.ValidateEndpoint(project, region, endpoint); err != nil {
 		return err
 	}
 	var instance *odps.Odps
@@ -116,7 +117,7 @@ func (m *MaxCompute) init(warehouse model.Warehouse) error {
 		if err != nil {
 			return errors.New("MaxCompute role credentials unavailable")
 		}
-		instance, err = client.NewODPSClientWithEndpoint(project, region, endpoint, cred)
+		instance, err = odpsclient.NewWithEndpoint(project, region, endpoint, cred)
 		if err != nil {
 			return err
 		}
@@ -124,7 +125,7 @@ func (m *MaxCompute) init(warehouse model.Warehouse) error {
 		id, _ := settings["accessKeyId"].(string)
 		secret, _ := settings["accessKeySecret"].(string)
 		var err error
-		instance, err = client.NewODPSClientWithAccessKey(project, region, endpoint, id, secret)
+		instance, err = odpsclient.NewWithAccessKey(project, region, endpoint, id, secret)
 		if err != nil {
 			return err
 		}
@@ -169,7 +170,7 @@ func (m *MaxCompute) TestConnection(ctx context.Context, warehouse model.Warehou
 	// table, so a connection validation needs only project metadata permission.
 	project := m.odps.DefaultProject()
 	if err := project.Load(); err != nil {
-		return fmt.Errorf("loading MaxCompute project: %w", client.ODPSSafeError(err))
+		return fmt.Errorf("loading MaxCompute project: %w", odpsclient.SafeError(err))
 	}
 	if project.Owner() == "" {
 		return errors.New("MaxCompute project owner unavailable")
@@ -200,7 +201,7 @@ func (m *MaxCompute) namespaceExistsAndOwned(ctx context.Context) (bool, error) 
 		if httpErr, ok := errors.AsType[restclient.HttpError](err); ok && httpErr.StatusCode == http.StatusNotFound {
 			return false, ctx.Err() // no existing schema to write to
 		}
-		return false, fmt.Errorf("loading MaxCompute schema: %w", client.ODPSSafeError(err))
+		return false, fmt.Errorf("loading MaxCompute schema: %w", odpsclient.SafeError(err))
 	}
 	owner := strings.TrimSpace(schema.Owner())
 	if owner == "" {
@@ -258,7 +259,7 @@ func (m *MaxCompute) currentPrincipal(ctx context.Context) (string, error) {
 		return nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("getting MaxCompute principal: %w", client.ODPSSafeError(err))
+		return "", fmt.Errorf("getting MaxCompute principal: %w", odpsclient.SafeError(err))
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -422,7 +423,7 @@ func (m *MaxCompute) runSQL(ctx context.Context, statement string, summary bool)
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	ins, err := client.RunODPSSQL(ctx, m.odps, statement, timeout, m.pollInterval)
+	ins, err := odpsclient.RunSQL(ctx, m.odps, statement, timeout, m.pollInterval)
 	if err != nil {
 		return 0, fmt.Errorf("running MaxCompute %s SQL: %w", sqlPurpose(statement), err)
 	}
@@ -458,7 +459,7 @@ func (m *MaxCompute) loadTaskSummary(ctx context.Context, ins *odps.Instance) (i
 	// Fetch the completed task names for the manager's load-summary parser.
 	tasks, err := ins.GetTasks()
 	if err != nil {
-		return 0, client.ODPSSafeError(err)
+		return 0, odpsclient.SafeError(err)
 	}
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -479,7 +480,7 @@ func (m *MaxCompute) loadTaskSummary(ctx context.Context, ins *odps.Instance) (i
 			return 0, err
 		}
 		if err != nil {
-			return 0, client.ODPSSafeError(err)
+			return 0, odpsclient.SafeError(err)
 		}
 		if result == nil {
 			return 0, errors.New("MaxCompute load task summary unavailable")
@@ -639,7 +640,7 @@ func (m *MaxCompute) tableColumnNames(ctx context.Context, table string) (map[st
 	}
 	entry := odps.NewTables(m.odps, m.odps.DefaultProjectName(), m.namespace()).Get(table)
 	if err := entry.Load(); err != nil {
-		return nil, client.ODPSSafeError(err)
+		return nil, odpsclient.SafeError(err)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -683,7 +684,7 @@ func (m *MaxCompute) Cleanup(ctx context.Context) {
 	var listErr error
 	odps.NewTables(m.odps, m.odps.DefaultProjectName(), m.namespace()).List(func(table *odps.Table, err error) {
 		if err != nil {
-			listErr = client.ODPSSafeError(err)
+			listErr = odpsclient.SafeError(err)
 			return
 		}
 		if table != nil && strings.HasPrefix(table.Name(), warehouseutils.StagingTablePrefix(provider)) {
@@ -765,7 +766,7 @@ func (m *MaxCompute) IsEmpty(ctx context.Context, warehouse model.Warehouse) (bo
 		if m.query != nil {
 			result, err = m.query(ctx, statement)
 		} else {
-			result, err = client.QueryODPS(ctx, m.odps, statement, m.queryTimeout, m.pollInterval)
+			result, err = odpsclient.Query(ctx, m.odps, statement, m.queryTimeout, m.pollInterval)
 		}
 		if err != nil {
 			return false, err
@@ -841,7 +842,7 @@ func (m *MaxCompute) TestLoadTable(ctx context.Context, location, table string, 
 	if m.query != nil {
 		result, err = m.query(ctx, statement)
 	} else {
-		result, err = client.QueryODPS(ctx, m.odps, statement, m.queryTimeout, m.pollInterval)
+		result, err = odpsclient.Query(ctx, m.odps, statement, m.queryTimeout, m.pollInterval)
 	}
 	if err != nil {
 		return err

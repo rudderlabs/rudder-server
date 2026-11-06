@@ -23,7 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
+	odpsclient "github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute/client"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -785,7 +785,7 @@ func TestErrorMappingsUseSanitizedDiagnostics(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			safe := errors.New(tc.diagnostic)
 			if tc.name != "caller keys" && tc.name != "column count" {
-				safe = client.ODPSSafeError(safe)
+				safe = odpsclient.SafeError(safe)
 			}
 			got := model.UncategorizedError
 			for _, mapping := range (&MaxCompute{}).ErrorMappings() {

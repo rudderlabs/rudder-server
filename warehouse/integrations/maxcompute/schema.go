@@ -9,7 +9,7 @@ import (
 	"github.com/aliyun/aliyun-odps-go-sdk/odps"
 	"github.com/aliyun/aliyun-odps-go-sdk/odps/datatype"
 
-	"github.com/rudderlabs/rudder-server/warehouse/client"
+	odpsclient "github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute/client"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -73,7 +73,7 @@ func (m *MaxCompute) FetchSchema(ctx context.Context) (model.Schema, error) {
 			return
 		}
 		if err != nil {
-			listErr = client.ODPSSafeError(err)
+			listErr = odpsclient.SafeError(err)
 			return
 		}
 		if err = ctx.Err(); err != nil {
@@ -84,7 +84,7 @@ func (m *MaxCompute) FetchSchema(ctx context.Context) (model.Schema, error) {
 			return
 		}
 		if err = t.Load(); err != nil {
-			listErr = fmt.Errorf("loading MaxCompute table %q: %w", t.Name(), client.ODPSSafeError(err))
+			listErr = fmt.Errorf("loading MaxCompute table %q: %w", t.Name(), odpsclient.SafeError(err))
 			return
 		}
 		if t.Owner() == "" {

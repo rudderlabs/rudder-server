@@ -10,12 +10,14 @@ import (
 	"github.com/aliyun/aliyun-odps-go-sdk/odps"
 	"google.golang.org/api/iterator"
 
+	odpsclient "github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const (
-	SQLClient = "SQLClient"
-	BQClient  = "BigQueryClient"
+	SQLClient  = "SQLClient"
+	BQClient   = "BigQueryClient"
+	ODPSClient = "ODPSClient"
 )
 
 type Client struct {
@@ -104,7 +106,7 @@ func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, er
 	case BQClient:
 		return cl.bqQuery(statement)
 	case ODPSClient:
-		return cl.odpsQuery(statement)
+		return odpsclient.Query(context.Background(), cl.ODPS, statement, 0, 0)
 	default:
 		return cl.sqlQuery(statement)
 	}

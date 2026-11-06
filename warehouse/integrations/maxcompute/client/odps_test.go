@@ -1,10 +1,10 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -13,52 +13,6 @@ import (
 	"github.com/aliyun/credentials-go/credentials"
 	"github.com/stretchr/testify/require"
 )
-
-func TestODPSCredentials(t *testing.T) {
-	var count atomic.Int32
-	provider := NewODPSCredentials(func() (*credentials.CredentialModel, error) {
-		id := "id"
-		key := "secret"
-		token := "token"
-		count.Add(1)
-		return &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &key, SecurityToken: &token}, nil
-	})
-	var wg sync.WaitGroup
-	for range 16 {
-		wg.Go(func() {
-			model, err := provider.GetCredential()
-			if err != nil || model == nil || *model.SecurityToken != "token" {
-				t.Errorf("unexpected credentials: %v", err)
-			}
-		})
-	}
-	wg.Wait()
-	require.EqualValues(t, 16, count.Load())
-	model, err := provider.GetCredential()
-	require.NoError(t, err)
-	*model.AccessKeyId = "changed"
-	next, err := provider.GetCredential()
-	require.NoError(t, err)
-	require.Equal(t, "id", *next.AccessKeyId)
-
-	for _, tc := range []struct {
-		name string
-		fn   func() (*credentials.CredentialModel, error)
-	}{
-		{"nil function", nil},
-		{"failure", func() (*credentials.CredentialModel, error) { return nil, errors.New("sensitive token") }},
-		{"incomplete", func() (*credentials.CredentialModel, error) { return &credentials.CredentialModel{}, nil }},
-		{"missing token", func() (*credentials.CredentialModel, error) {
-			id, secret := "id", "secret"
-			return &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &secret}, nil
-		}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := NewODPSCredentials(tc.fn).GetCredential()
-			require.EqualError(t, err, "ODPS credentials unavailable")
-		})
-	}
-}
 
 type odpsTestCredential struct {
 	model *credentials.CredentialModel
@@ -88,12 +42,12 @@ func (c *odpsTestCredential) GetSecurityToken() (*string, error) {
 
 func (c *odpsTestCredential) GetBearerToken() *string { return nil }
 
-func TestGuardODPSCredentials(t *testing.T) {
+func TestGuardCredentials(t *testing.T) {
 	id, key, token := "sensitive id", "sensitive key", "sensitive token"
 	source := &odpsTestCredential{model: &credentials.CredentialModel{
 		AccessKeyId: &id, AccessKeySecret: &key, SecurityToken: &token,
 	}}
-	guard := GuardODPSCredentials(source)
+	guard := guardCredentials(source)
 	model, err := guard.GetCredential()
 	require.NoError(t, err)
 	require.Equal(t, id, *model.AccessKeyId)
@@ -106,7 +60,7 @@ func TestGuardODPSCredentials(t *testing.T) {
 	source.err = errors.New("SECRET from refresh")
 	_, err = guard.GetCredential()
 	require.EqualError(t, err, "ODPS credentials unavailable")
-	missingToken := GuardODPSCredentials(&odpsTestCredential{model: &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &key}})
+	missingToken := guardCredentials(&odpsTestCredential{model: &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &key}})
 	_, err = missingToken.GetCredential()
 	require.EqualError(t, err, "ODPS credentials unavailable")
 	var nilGuard *odpsCredentialGuard
@@ -114,7 +68,9 @@ func TestGuardODPSCredentials(t *testing.T) {
 	require.EqualError(t, err, "ODPS credentials unavailable")
 }
 
-func TestNewODPSClient(t *testing.T) {
+func TestNewWithEndpoint(t *testing.T) {
+	id, key, token := "id", "key", "token"
+	provider := &odpsTestCredential{model: &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &key, SecurityToken: &token}}
 	for _, tc := range []struct{ project, region string }{
 		{"", "cn-shanghai"},
 		{"project/escape", "cn-shanghai"},
@@ -122,22 +78,14 @@ func TestNewODPSClient(t *testing.T) {
 		{"project", "cn-shanghai:8080"},
 		{"project", "Internal"},
 	} {
-		_, err := NewODPSClient(tc.project, tc.region, NewODPSCredentials(nil))
+		_, err := NewWithEndpoint(tc.project, tc.region, "https://service."+tc.region+".maxcompute.aliyun.com/api", provider)
 		require.Error(t, err)
 	}
-	_, err := NewODPSClient("safe_project", "cn-shanghai", nil)
+	endpoint := "https://service.cn-shanghai.maxcompute.aliyun.com/api"
+	_, err := NewWithEndpoint("safe_project", "cn-shanghai", endpoint, nil)
 	require.ErrorContains(t, err, "credentials")
 
-	provider := NewODPSCredentials(func() (*credentials.CredentialModel, error) {
-		id, key, token := "id", "key", "token"
-		return &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &key, SecurityToken: &token}, nil
-	})
-	instance, err := NewODPSClient("safe_project", "cn-shanghai", provider)
-	require.NoError(t, err)
-	rest := instance.RestClient()
-	require.Equal(t, "https://service.cn-shanghai.maxcompute.aliyun.com/api", rest.Endpoint())
-	require.Equal(t, "safe_project", instance.DefaultProjectName())
-	for _, endpoint := range []string{
+	for _, invalid := range []string{
 		"http://service.cn-shanghai.maxcompute.aliyun.com/api",
 		"https://service.cn-beijing.maxcompute.aliyun.com/api",
 		"https://service.cn-shanghai.maxcompute.aliyun.com.evil/api",
@@ -145,27 +93,24 @@ func TestNewODPSClient(t *testing.T) {
 		"https://service.cn-shanghai.maxcompute.aliyun.com/api/",
 		"https://user:SECRET@service.cn-shanghai.maxcompute.aliyun.com/api",
 	} {
-		_, err := NewODPSClientWithEndpoint("safe_project", "cn-shanghai", endpoint, provider)
+		_, err := NewWithEndpoint("safe_project", "cn-shanghai", invalid, provider)
 		require.EqualError(t, err, "invalid ODPS endpoint")
 	}
-	configured, err := NewODPSClientWithEndpoint("safe_project", "cn-shanghai", rest.Endpoint(), provider)
+	configured, err := NewWithEndpoint("safe_project", "cn-shanghai", endpoint, provider)
 	require.NoError(t, err)
 	configuredRest := configured.RestClient()
-	require.Equal(t, rest.Endpoint(), configuredRest.Endpoint())
+	require.Equal(t, endpoint, configuredRest.Endpoint())
+	require.Equal(t, "safe_project", configured.DefaultProjectName())
 	require.Equal(t, "cn-shanghai", configured.Options.RegionId)
-	static, err := NewODPSClientWithAccessKey("safe_project", "cn-shanghai", rest.Endpoint(), "id", "secret")
+	static, err := NewWithAccessKey("safe_project", "cn-shanghai", endpoint, "id", "secret")
 	require.NoError(t, err)
 	require.IsType(t, &account.AliyunAccount{}, static.Account())
 	otherRegion := "https://service.af-south-1.maxcompute.aliyun.com/api"
-	_, err = NewODPSClientWithAccessKey("safe_project", "af-south-1", otherRegion, "id", "secret")
+	_, err = NewWithAccessKey("safe_project", "af-south-1", otherRegion, "id", "secret")
 	require.NoError(t, err)
-	_, err = NewODPSClientWithAccessKey("safe_project", "me-central-1", otherRegion, "id", "secret")
+	_, err = NewWithAccessKey("safe_project", "me-central-1", otherRegion, "id", "secret")
 	require.EqualError(t, err, "invalid ODPS endpoint")
-	client, err := NewODPSWarehouseClient("safe_project", "cn-shanghai", provider)
-	require.NoError(t, err)
-	require.Equal(t, ODPSClient, client.Type)
-	client.Close()
-	_, err = client.Query("  ")
+	_, err = Query(context.Background(), configured, "  ", 0, 0)
 	require.EqualError(t, err, "ODPS statement is empty")
 }
 
@@ -176,7 +121,7 @@ func TestODPSQueryCredentialFailure(t *testing.T) {
 	id, key, token := "SECRET id", "SECRET key", "SECRET token"
 	provider := &odpsTestCredential{model: &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &key, SecurityToken: &token}}
 	provider.err = errors.New("SECRET refresh failure")
-	guarded := GuardODPSCredentials(provider)
+	guarded := guardCredentials(provider)
 	_, guardErr := guarded.GetCredential()
 	require.EqualError(t, guardErr, "ODPS credentials unavailable")
 	var calls atomic.Int32
@@ -187,7 +132,7 @@ func TestODPSQueryCredentialFailure(t *testing.T) {
 	defer server.Close()
 	instance := odps.NewOdps(account.NewStsAccountWithCredential(guarded, "cn-shanghai"), server.URL)
 	instance.SetDefaultProjectName("project")
-	_, err := (&Client{Type: ODPSClient, ODPS: instance}).Query("SELECT 1")
+	_, err := Query(context.Background(), instance, "SELECT 1", 0, 0)
 	require.EqualError(t, err, "ODPS request failed")
 	require.Zero(t, calls.Load(), "credential failure must stop before the HTTP request")
 }
@@ -196,7 +141,7 @@ func TestODPSRoleRefreshWithoutTokenFailsBeforeSigning(t *testing.T) {
 	id, secret, token := "SECRET id", "SECRET secret", "SECRET token"
 	provider := &odpsTestCredential{model: &credentials.CredentialModel{AccessKeyId: &id, AccessKeySecret: &secret, SecurityToken: &token}}
 	provider.model.SecurityToken = nil
-	guarded := GuardODPSCredentials(provider)
+	guarded := guardCredentials(provider)
 	_, guardErr := guarded.GetCredential()
 	require.EqualError(t, guardErr, "ODPS credentials unavailable")
 	var calls atomic.Int32
@@ -207,7 +152,7 @@ func TestODPSRoleRefreshWithoutTokenFailsBeforeSigning(t *testing.T) {
 	defer server.Close()
 	instance := odps.NewOdps(account.NewStsAccountWithCredential(guarded, "cn-shanghai"), server.URL)
 	instance.SetDefaultProjectName("project")
-	_, err := (&Client{Type: ODPSClient, ODPS: instance}).Query("SELECT 1")
+	_, err := Query(context.Background(), instance, "SELECT 1", 0, 0)
 	require.EqualError(t, err, "ODPS request failed")
 	require.NotContains(t, err.Error(), "SECRET")
 	require.Zero(t, calls.Load(), "missing STS token must stop before the HTTP request")

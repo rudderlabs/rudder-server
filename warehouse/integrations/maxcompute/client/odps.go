@@ -19,16 +19,9 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-// ODPSClient is the MaxCompute variant of Client.
-const ODPSClient = "ODPSClient"
-
 const (
 	odpsRequestTimeout = 30 * time.Second
-)
-
-var (
-	odpsQueryTimeout = 5 * time.Minute
-	odpsPollInterval = time.Second
+	odpsQueryTimeout   = 5 * time.Minute
 )
 
 var (
@@ -44,15 +37,9 @@ var (
 	odpsRAMArn            = regexp.MustCompile(`(?i)\bacs:ram::[0-9]+:[A-Za-z0-9._/-]*`)
 )
 
-// NewODPSClient uses the region's public MaxCompute endpoint for role auth.
-// Use NewODPSClientWithEndpoint for a configured endpoint.
-func NewODPSClient(project, region string, credential credentials.Credential) (*odps.Odps, error) {
-	return NewODPSClientWithEndpoint(project, region, "https://service."+region+".maxcompute.aliyun.com/api", credential)
-}
-
-// ValidateODPSEndpoint checks the credential-bearing project endpoint before
+// ValidateEndpoint checks the credential-bearing project endpoint before
 // credentials are attached to an SDK client.
-func ValidateODPSEndpoint(project, region, endpoint string) error {
+func ValidateEndpoint(project, region, endpoint string) error {
 	if !odpsProjectName.MatchString(project) || !odpsRegionName.MatchString(region) {
 		return errors.New("invalid ODPS project or region")
 	}
@@ -63,23 +50,23 @@ func ValidateODPSEndpoint(project, region, endpoint string) error {
 	return nil
 }
 
-// NewODPSClientWithEndpoint accepts only the exact public API URL for region.
+// NewWithEndpoint accepts only the exact public API URL for region.
 // Role credentials are checked on every refresh before the SDK signs requests.
-func NewODPSClientWithEndpoint(project, region, endpoint string, credential credentials.Credential) (*odps.Odps, error) {
-	if err := ValidateODPSEndpoint(project, region, endpoint); err != nil {
+func NewWithEndpoint(project, region, endpoint string, credential credentials.Credential) (*odps.Odps, error) {
+	if err := ValidateEndpoint(project, region, endpoint); err != nil {
 		return nil, err
 	}
 	if credential == nil {
 		return nil, errors.New("ODPS credentials unavailable")
 	}
-	instance := odps.NewOdps(account.NewStsAccountWithCredential(GuardODPSCredentials(credential), region), endpoint)
+	instance := odps.NewOdps(account.NewStsAccountWithCredential(guardCredentials(credential), region), endpoint)
 	configureODPSClient(instance, project, region)
 	return instance, nil
 }
 
-// NewODPSClientWithAccessKey uses the SDK's non-STS account for static keys.
-func NewODPSClientWithAccessKey(project, region, endpoint, id, secret string) (*odps.Odps, error) {
-	if err := ValidateODPSEndpoint(project, region, endpoint); err != nil {
+// NewWithAccessKey uses the SDK's non-STS account for static keys.
+func NewWithAccessKey(project, region, endpoint, id, secret string) (*odps.Odps, error) {
+	if err := ValidateEndpoint(project, region, endpoint); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(id) == "" || strings.TrimSpace(secret) == "" {
@@ -97,19 +84,11 @@ func configureODPSClient(instance *odps.Odps, project, region string) {
 	instance.Options.RegionId = region
 }
 
-func NewODPSWarehouseClient(project, region string, credential credentials.Credential) (*Client, error) {
-	instance, err := NewODPSClient(project, region, credential)
-	if err != nil {
-		return nil, err
-	}
-	return &Client{Type: ODPSClient, ODPS: instance}, nil
-}
-
-// RunODPSSQL submits SQL with the required session hints and waits for all
+// RunSQL submits SQL with the required session hints and waits for all
 // tasks to succeed. The SDK has no context-aware requests, so the ODPS client's
 // HTTP timeout bounds individual calls; the context bounds polling between them.
 // The returned instance can be used to fetch task summaries or query results.
-func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeout, interval time.Duration) (*odps.Instance, error) {
+func RunSQL(ctx context.Context, service *odps.Odps, statement string, timeout, interval time.Duration) (*odps.Instance, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -141,7 +120,7 @@ func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeo
 		return nil, err
 	}
 	if err != nil {
-		return nil, ODPSSafeError(err)
+		return nil, SafeError(err)
 	}
 	if instance == nil {
 		return nil, errors.New("ODPS instance unavailable")
@@ -169,7 +148,7 @@ func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeo
 			return nil, ctx.Err()
 		}
 		if loadErr != nil {
-			return nil, ODPSSafeError(loadErr)
+			return nil, SafeError(loadErr)
 		}
 		// TERMINATED can mean a completed instance. Task statuses determine
 		// whether its SQL job succeeded.
@@ -178,7 +157,7 @@ func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeo
 			return nil, ctx.Err()
 		}
 		if err != nil {
-			return nil, ODPSSafeError(err)
+			return nil, SafeError(err)
 		}
 		finished := len(tasks) > 0
 		for _, task := range tasks {
@@ -204,11 +183,11 @@ func RunODPSSQL(ctx context.Context, service *odps.Odps, statement string, timeo
 func odpsTaskFailure(service *odps.Odps, instance *odps.Instance, fallback string) error {
 	results, err := instance.GetResult()
 	if err != nil {
-		return ODPSSafeError(err)
+		return SafeError(err)
 	}
 	for _, result := range results {
 		if result.Content() != "" {
-			return ODPSSafeError(errors.New(result.Content()))
+			return SafeError(errors.New(result.Content()))
 		}
 	}
 	// Load can mark an instance sync after seeing task statuses without task
@@ -216,31 +195,26 @@ func odpsTaskFailure(service *odps.Odps, instance *odps.Instance, fallback strin
 	if instance.IsSync() && instance.Id() != "" {
 		results, err = odps.NewInstances(service).Get(instance.Id()).GetResult()
 		if err != nil {
-			return ODPSSafeError(err)
+			return SafeError(err)
 		}
 		for _, result := range results {
 			if result.Content() != "" {
-				return ODPSSafeError(errors.New(result.Content()))
+				return SafeError(errors.New(result.Content()))
 			}
 		}
 	}
 	return errors.New(fallback)
 }
 
-// odpsQuery uses the same bounded job runner as the MaxCompute manager.
-func (cl *Client) odpsQuery(statement string) (warehouseutils.QueryResult, error) {
-	return QueryODPS(context.Background(), cl.ODPS, statement, odpsQueryTimeout, odpsPollInterval)
-}
-
-// QueryODPS runs a readback query within the caller's context and timeout.
-func QueryODPS(ctx context.Context, service *odps.Odps, statement string, timeout, interval time.Duration) (warehouseutils.QueryResult, error) {
+// Query runs a readback query within the caller's context and timeout.
+func Query(ctx context.Context, service *odps.Odps, statement string, timeout, interval time.Duration) (warehouseutils.QueryResult, error) {
 	var result warehouseutils.QueryResult
 	if timeout <= 0 {
 		timeout = odpsQueryTimeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	instance, err := RunODPSSQL(ctx, service, statement, timeout, interval)
+	instance, err := RunSQL(ctx, service, statement, timeout, interval)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return result, errors.New("ODPS query timed out")
@@ -255,7 +229,7 @@ func QueryODPS(ctx context.Context, service *odps.Odps, statement string, timeou
 		return result, contextErr
 	}
 	if err != nil {
-		return result, ODPSSafeError(err)
+		return result, SafeError(err)
 	}
 	if len(results) == 0 {
 		return result, nil // DDL/DML may not produce a result set.
@@ -289,10 +263,9 @@ func odpsQueryHints() map[string]string {
 	}
 }
 
-// ODPSSafeError deliberately does not wrap arbitrary SDK errors: HTTP bodies,
-// task text and request URLs can contain credentials and SQL literals. It can
-// also be used by callers making ODPS SDK requests outside Client.Query.
-func ODPSSafeError(err error) error {
+// SafeError deliberately does not wrap arbitrary SDK errors: HTTP bodies,
+// task text and request URLs can contain credentials and SQL literals.
+func SafeError(err error) error {
 	if err == nil {
 		return nil
 	}

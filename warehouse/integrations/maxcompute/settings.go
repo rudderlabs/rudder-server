@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	odpsclient "github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute/client"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
@@ -91,7 +91,7 @@ func ValidationError(step string, conf map[string]any, err error) error {
 	reason, guidance := errorReason(err.Error(), role)
 	if reason != "" {
 		if strings.Contains(err.Error(), "ODPS-") {
-			return fmt.Errorf("%s: %s (%s)", reason, guidance, client.ODPSSafeError(err))
+			return fmt.Errorf("%s: %s (%s)", reason, guidance, odpsclient.SafeError(err))
 		}
 		return fmt.Errorf("%s: %s", reason, guidance)
 	}

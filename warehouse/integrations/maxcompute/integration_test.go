@@ -29,8 +29,8 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
 	maxcompute "github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute"
+	odpsclient "github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute/client"
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -357,7 +357,7 @@ func integrationEventsFixture(t *testing.T, source string, addColumn bool) strin
 
 func integrationQuery(t *testing.T, m *integrationRuntime, statement string) warehouseutils.QueryResult {
 	t.Helper()
-	result, err := client.QueryODPS(context.Background(), m.service, statement, 5*time.Minute, time.Second)
+	result, err := odpsclient.Query(context.Background(), m.service, statement, 5*time.Minute, time.Second)
 	require.NoError(t, err, "SQL purpose: MaxCompute integration readback")
 	return result
 }
@@ -395,7 +395,7 @@ func assertIntegrationCount(t *testing.T, m *integrationRuntime, namespace, tabl
 	require.Regexp(t, `^[A-Za-z0-9_]+$`, value)
 	statement := fmt.Sprintf("SELECT COUNT(*) FROM `%s`.`%s`.`%s` WHERE %s AND `%s` = '%s'", m.service.DefaultProjectName(), namespace, table, integrationPTBounds(), column, value)
 	require.EventuallyWithT(t, func(c *assert.CollectT) {
-		result, err := client.QueryODPS(context.Background(), m.service, statement, 5*time.Minute, time.Second)
+		result, err := odpsclient.Query(context.Background(), m.service, statement, 5*time.Minute, time.Second)
 		if !assert.NoError(c, err, "SQL purpose: bounded table readback") || !assert.Len(c, result.Values, 1) || !assert.Len(c, result.Values[0], 1) {
 			return
 		}
@@ -497,7 +497,7 @@ func testIntegrationPartition(t *testing.T, c integrationCredentials, role bool,
 		partitionValue = stamp.Truncate(time.Hour).Format("2006-01-02 15:04:05")
 	}
 	query := fmt.Sprintf("SELECT COUNT(*) FROM `%s`.`%s`.`partition_probe` WHERE %s AND `pt` = '%s'", c.Project, namespace, integrationPTBounds(), partitionValue)
-	result, err := client.QueryODPS(ctx, m.service, query, 5*time.Minute, time.Second)
+	result, err := odpsclient.Query(ctx, m.service, query, 5*time.Minute, time.Second)
 	require.NoError(t, err, "SQL purpose: read partition-probe pt")
 	require.Len(t, result.Values, 1)
 	require.Equal(t, "1", result.Values[0][0])
@@ -542,7 +542,7 @@ func cleanupIntegrationSchema(t *testing.T, m *integrationRuntime, namespace str
 	var views, tables []string
 	odps.NewTables(m.service, m.service.DefaultProjectName(), namespace).List(func(table *odps.Table, err error) {
 		if err != nil {
-			t.Logf("list MaxCompute cleanup tables: %v", client.ODPSSafeError(err))
+			t.Logf("list MaxCompute cleanup tables: %v", odpsclient.SafeError(err))
 			return
 		}
 		if table == nil || table.Load() != nil {
@@ -560,11 +560,11 @@ func cleanupIntegrationSchema(t *testing.T, m *integrationRuntime, namespace str
 		if slices.Contains(views, item) {
 			verb = "DROP VIEW IF EXISTS "
 		}
-		if _, err := client.RunODPSSQL(context.Background(), m.service, verb+name, 5*time.Minute, time.Second); err != nil {
+		if _, err := odpsclient.RunSQL(context.Background(), m.service, verb+name, 5*time.Minute, time.Second); err != nil {
 			t.Logf("drop MaxCompute cleanup table: %v", err)
 		}
 	}
 	if err := odps.NewSchemas(m.service, m.service.DefaultProjectName()).Delete(namespace); err != nil {
-		t.Logf("drop MaxCompute integration schema: %v", client.ODPSSafeError(err))
+		t.Logf("drop MaxCompute integration schema: %v", odpsclient.SafeError(err))
 	}
 }

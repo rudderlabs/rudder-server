@@ -12,7 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
+	odpsclient "github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute/client"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
@@ -90,7 +90,7 @@ func (m *MaxCompute) CatalogPartition(ctx context.Context, name string) (partiti
 	}
 	table := odps.NewTables(m.odps, m.odps.DefaultProjectName(), m.namespace()).Get(name)
 	if err := table.Load(); err != nil {
-		return partitionPlan{}, fmt.Errorf("loading MaxCompute partition metadata: %w", client.ODPSSafeError(err))
+		return partitionPlan{}, fmt.Errorf("loading MaxCompute partition metadata: %w", odpsclient.SafeError(err))
 	}
 	for _, column := range table.Schema().PartitionColumns {
 		if !strings.EqualFold(column.Name, "pt") {
