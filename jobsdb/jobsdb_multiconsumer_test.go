@@ -3,16 +3,22 @@ package jobsdb
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
+	"github.com/rudderlabs/rudder-server/utils/tx"
 )
 
 // TestMultiConsumerJobsDB_SingleConsumer verifies that a multi-consumer handle works
@@ -522,4 +528,235 @@ func TestStoreConsumersOnSingleConsumerHandle(t *testing.T) {
 	// GetUnprocessed returns jobs ordered by job_id, i.e. insertion order.
 	require.Equal(t, []string{"A", "B"}, res.Jobs[0].Consumers, "explicit consumers must be preserved on a single-consumer handle")
 	require.Equal(t, []string{""}, res.Jobs[1].Consumers, "a job without consumers keeps the legacy '' consumer")
+}
+
+// TestMultiConsumerJobsDB_AbortOldJobs verifies that jobs older than jobMaxAge expire for all of their consumers.
+func TestMultiConsumerJobsDB_AbortOldJobs(t *testing.T) {
+	postgres := startPostgres(t)
+
+	prefix := strings.ToLower(rand.String(5))
+	jd := NewForReadWrite(prefix,
+		WithDBHandle(postgres.DB),
+		WithConfig(config.New()),
+		WithMultiConsumer(),
+	)
+	require.NoError(t, jd.Start())
+	defer jd.TearDown()
+
+	ctx := context.Background()
+	customVal := "OLD"
+	newJob := func(consumers ...string) *JobT {
+		return &JobT{
+			UUID:         uuid.New(),
+			UserID:       "user-1",
+			CustomVal:    customVal,
+			Parameters:   []byte(`{"source_id":"src1"}`),
+			EventPayload: []byte(`{}`),
+			EventCount:   1,
+			WorkspaceId:  defaultWorkspaceID,
+			Consumers:    consumers,
+		}
+	}
+	require.NoError(t, jd.Store(ctx, []*JobT{newJob("A", "B"), newJob("A"), newJob("A", "B", "C"), newJob("A", "B")}))
+
+	pending := func(consumer string) []int64 {
+		t.Helper()
+		res, err := jd.GetJobs(ctx, []string{Unprocessed.State, Failed.State}, GetQueryParams{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        10,
+			Consumer:         consumer,
+		})
+		require.NoError(t, err)
+		return lo.Map(res.Jobs, func(job *JobT, _ int) int64 { return job.JobID })
+	}
+	jobIDs := pending("A")
+	require.Len(t, jobIDs, 4)
+	oldJob1, oldJob2, oldJob3, youngJob := jobIDs[0], jobIDs[1], jobIDs[2], jobIDs[3]
+
+	// consumer A is done with the first old job, while consumer B is still retrying it
+	status := func(jobID int64, state, consumer string) *JobStatusT {
+		return &JobStatusT{
+			JobID:         jobID,
+			JobState:      state,
+			AttemptNum:    1,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			ErrorCode:     "200",
+			ErrorResponse: []byte(`{}`),
+			Parameters:    []byte(`{}`),
+			WorkspaceId:   defaultWorkspaceID,
+			CustomVal:     customVal,
+			Consumer:      consumer,
+		}
+	}
+	require.NoError(t, jd.UpdateJobStatus(ctx, []*JobStatusT{
+		status(oldJob1, Succeeded.State, "A"),
+		status(oldJob1, Failed.State, "B"),
+	}))
+
+	ds := jd.getDSListSnapshot()[0]
+	_, err := postgres.DB.ExecContext(ctx, fmt.Sprintf(
+		`UPDATE %q SET created_at = NOW() - INTERVAL '31 days' WHERE job_id = ANY($1)`, ds.JobTable,
+	), pq.Array([]int64{oldJob1, oldJob2, oldJob3}))
+	require.NoError(t, err)
+
+	// old jobs are aborted during startup
+	jd.Stop()
+	require.NoError(t, jd.Start())
+
+	require.Equal(t, []int64{youngJob}, pending("A"))
+	require.Equal(t, []int64{youngJob}, pending("B"))
+	require.Empty(t, pending("C"))
+
+	lastState := func(jobID int64, consumer string) string {
+		t.Helper()
+		var state string
+		require.NoError(t, postgres.DB.QueryRowContext(ctx, fmt.Sprintf(
+			`SELECT job_state FROM %q WHERE job_id = $1 AND consumer = $2`, jd.lastStatusView(ds),
+		), jobID, consumer).Scan(&state))
+		return state
+	}
+	require.Equal(t, Succeeded.State, lastState(oldJob1, "A"), "a consumer that is done with the job keeps its terminal status")
+	require.Equal(t, Aborted.State, lastState(oldJob1, "B"))
+
+	_, _, recordsLeft, err := jd.checkIfCompactDS(ds, jd.dbHandle)
+	require.NoError(t, err)
+	require.Equal(t, 1, recordsLeft, "only the young job should be left in the dataset")
+}
+
+// TestAbortOldJobs verifies that only old jobs with non-terminal consumers are aborted, in every dataset
+// holding old jobs, and that running it again adds no statuses.
+func TestAbortOldJobs(t *testing.T) {
+	testCases := []struct {
+		name      string
+		opts      []OptsFunc
+		consumers []string
+	}{
+		{name: "single consumer", consumers: []string{""}},
+		{name: "multi consumer", opts: []OptsFunc{WithMultiConsumer()}, consumers: []string{"A", "B"}},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			postgres := startPostgres(t)
+			ctx := context.Background()
+
+			prefix := strings.ToLower(rand.String(5))
+			jd := NewForReadWrite(prefix, append(tc.opts, WithDBHandle(postgres.DB), WithConfig(config.New()))...)
+			require.NoError(t, jd.Start())
+			defer jd.TearDown()
+
+			customVal := "OLD"
+			store := func(count int) []int64 {
+				t.Helper()
+				jobs := make([]*JobT, count)
+				for i := range jobs {
+					jobs[i] = &JobT{
+						UUID:         uuid.New(),
+						UserID:       "user-1",
+						CustomVal:    customVal,
+						Parameters:   []byte(`{"source_id":"src1"}`),
+						EventPayload: []byte(`{}`),
+						EventCount:   1,
+						WorkspaceId:  defaultWorkspaceID,
+						Consumers:    tc.consumers,
+					}
+				}
+				require.NoError(t, jd.Store(ctx, jobs))
+				ds := jd.getDSListSnapshot()
+				rows, err := postgres.DB.QueryContext(ctx, fmt.Sprintf(
+					`SELECT job_id FROM %q ORDER BY job_id DESC LIMIT $1`, ds[len(ds)-1].JobTable,
+				), count)
+				require.NoError(t, err)
+				defer func() { _ = rows.Close() }()
+				var jobIDs []int64
+				for rows.Next() {
+					var jobID int64
+					require.NoError(t, rows.Scan(&jobID))
+					jobIDs = append(jobIDs, jobID)
+				}
+				require.NoError(t, rows.Err())
+				slices.Sort(jobIDs)
+				return jobIDs
+			}
+			setStatus := func(jobID int64, state string) {
+				t.Helper()
+				require.NoError(t, jd.UpdateJobStatus(ctx, lo.Map(tc.consumers, func(consumer string, _ int) *JobStatusT {
+					return &JobStatusT{
+						JobID:         jobID,
+						JobState:      state,
+						AttemptNum:    1,
+						ExecTime:      time.Now(),
+						RetryTime:     time.Now(),
+						ErrorCode:     "200",
+						ErrorResponse: []byte(`{}`),
+						Parameters:    []byte(`{}`),
+						WorkspaceId:   defaultWorkspaceID,
+						CustomVal:     customVal,
+						Consumer:      consumer,
+					}
+				})))
+			}
+
+			// the first dataset only holds an old job that is already terminal
+			terminalJob := store(1)[0]
+			setStatus(terminalJob, Succeeded.State)
+
+			require.NoError(t, jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
+				dsList, _ := jd.dsList.snapshot()
+				if err := jd.WithTx(ctx, func(txn *tx.Tx) error {
+					return jd.addNewDSInTx(ctx, txn, l, dsList, newDataSet(jd.tablePrefix, "2"))
+				}); err != nil {
+					return err
+				}
+				return jd.doRefreshDSRangeList(l)
+			}))
+			// the last job stays young
+			jobIDs := store(3)
+			failedJob, unprocessedJob := jobIDs[0], jobIDs[1]
+			setStatus(failedJob, Failed.State)
+
+			dsList := jd.getDSListSnapshot()
+			require.Len(t, dsList, 2)
+			for _, ds := range dsList {
+				_, err := postgres.DB.ExecContext(ctx, fmt.Sprintf(
+					`UPDATE %q SET created_at = NOW() - INTERVAL '31 days' WHERE job_id = ANY($1)`, ds.JobTable,
+				), pq.Array([]int64{terminalJob, failedJob, unprocessedJob}))
+				require.NoError(t, err)
+			}
+
+			abortedJobs := func() []string {
+				t.Helper()
+				var aborted []string
+				for _, ds := range dsList {
+					rows, err := postgres.DB.QueryContext(ctx, fmt.Sprintf(
+						`SELECT job_id, consumer FROM %q WHERE job_state = $1`, ds.JobStatusTable,
+					), Aborted.State)
+					require.NoError(t, err)
+					for rows.Next() {
+						var (
+							jobID    int64
+							consumer string
+						)
+						require.NoError(t, rows.Scan(&jobID, &consumer))
+						aborted = append(aborted, fmt.Sprintf("%d/%s", jobID, consumer))
+					}
+					require.NoError(t, rows.Err())
+					require.NoError(t, rows.Close())
+				}
+				return aborted
+			}
+			var expected []string
+			for _, jobID := range []int64{failedJob, unprocessedJob} {
+				for _, consumer := range tc.consumers {
+					expected = append(expected, fmt.Sprintf("%d/%s", jobID, consumer))
+				}
+			}
+
+			require.NoError(t, jd.abortOldJobs(ctx, dsList))
+			require.ElementsMatch(t, expected, abortedJobs(), "young and terminal jobs shouldn't be aborted")
+
+			require.NoError(t, jd.abortOldJobs(ctx, dsList))
+			require.ElementsMatch(t, expected, abortedJobs(), "aborted jobs shouldn't be aborted again")
+		})
+	}
 }
