@@ -50,6 +50,48 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
+func TestValidateMaxComputeRoleReachesValidationSteps(t *testing.T) {
+	validations.Init()
+	misc.Init()
+	g := &GRPC{logger: logger.NOP}
+	for _, workspaceID := range []string{"workspace-id", "another-workspace"} {
+		t.Run("role with workspace "+workspaceID, func(t *testing.T) {
+			body, err := jsonrs.Marshal(map[string]any{
+				"destination": backendconfig.DestinationT{
+					WorkspaceID:           workspaceID,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: whutils.MAXCOMPUTE},
+					Config: map[string]any{
+						"bucketName": "customer-bucket", "region": "cn-hangzhou",
+						"iamRoleARN": "acs:ram::123:role/customer", "ossRoleArn": "read-role",
+					},
+				},
+			})
+			require.NoError(t, err)
+			res, err := g.Validate(context.Background(), &proto.WHValidationRequest{Body: string(body), Path: "steps"})
+			require.NoError(t, err)
+			require.Contains(t, res.GetData(), "Verifying Object Storage")
+			res, err = g.Validate(context.Background(), &proto.WHValidationRequest{Body: string(body), Path: "validate", Step: "1"})
+			require.NoError(t, err)
+			require.Contains(t, res.GetData(), "Verifying Object Storage")
+		})
+	}
+
+	// Static keys still reach the ordinary validation path without a workspace ID.
+	body, err := jsonrs.Marshal(map[string]any{
+		"destination": backendconfig.DestinationT{
+			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: whutils.MAXCOMPUTE},
+			Config: map[string]any{
+				"bucketName": "customer-bucket", "region": "cn-hangzhou",
+				"accessKeyId": "id", "accessKeySecret": "secret", "ossRoleArn": "read-role",
+			},
+		},
+	})
+	require.NoError(t, err)
+	res, err := g.Validate(context.Background(), &proto.WHValidationRequest{Body: string(body), Path: "steps"})
+	require.NoError(t, err)
+	require.Contains(t, res.GetData(), "Verifying Object Storage")
+}
+
 func TestGRPC(t *testing.T) {
 	validations.Init()
 	misc.Init()
