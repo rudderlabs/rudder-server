@@ -291,7 +291,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pendingStagingFileCount, err := a.stagingRepo.CountPendingForSource(r.Context(), sourceID)
+	pendingStagingFileCount, err := a.stagingRepo.CountPendingForSource(r.Context(), sourceID, taskRunID)
 	if err != nil {
 		if errors.Is(r.Context().Err(), context.Canceled) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
@@ -398,10 +398,10 @@ func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var wh []model.Warehouse
-	if payload.SourceID != "" && payload.DestinationID == "" {
-		wh = a.bcManager.WarehousesBySourceID(payload.SourceID)
-	} else if payload.DestinationID != "" {
-		wh = a.bcManager.WarehousesByDestID(payload.DestinationID)
+	for _, warehouse := range a.bcManager.WarehousesBySourceID(payload.SourceID) {
+		if payload.DestinationID == "" || warehouse.Destination.ID == payload.DestinationID {
+			wh = append(wh, warehouse)
+		}
 	}
 	if len(wh) == 0 {
 		a.logger.Warnn("no warehouse found for triggering upload",

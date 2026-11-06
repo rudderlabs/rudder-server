@@ -122,8 +122,12 @@ func TestGRPC(t *testing.T) {
 											Name: whutils.POSTGRES,
 										},
 									},
+									{ID: "second_destination_id", Enabled: true, DestinationDefinition: backendconfig.DestinationDefinitionT{Name: whutils.POSTGRES}},
 								},
 							},
+							{ID: "second_source_id", Enabled: true, Destinations: []backendconfig.DestinationT{
+								{ID: destinationID, Enabled: true, DestinationDefinition: backendconfig.DestinationDefinitionT{Name: whutils.POSTGRES}},
+							}},
 						},
 					},
 					unusedWorkspaceID: {
@@ -543,13 +547,14 @@ func TestGRPC(t *testing.T) {
 			totalUploads := 100
 			firstEventAt, lastEventAt := now.Add(-2*time.Hour), now.Add(-1*time.Hour)
 
-			for range totalUploads {
+			var triggerUploadID int64
+			for i := range totalUploads {
 				fid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 				require.NoError(t, err)
 				sid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 				require.NoError(t, err)
 
-				_, err = repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+				uploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
 					SourceID:        sourceID,
 					DestinationID:   destinationID,
 					DestinationType: destinationType,
@@ -573,6 +578,9 @@ func TestGRPC(t *testing.T) {
 					},
 				})
 				require.NoError(t, err)
+				if i == 0 {
+					triggerUploadID = uploadID
+				}
 			}
 
 			t.Run("TriggerWHUpload", func(t *testing.T) {
@@ -617,7 +625,7 @@ func TestGRPC(t *testing.T) {
 
 				t.Run("success", func(t *testing.T) {
 					res, err := grpcClient.TriggerWHUpload(ctx, &proto.WHUploadRequest{
-						UploadId:    1,
+						UploadId:    triggerUploadID,
 						WorkspaceId: workspaceID,
 					})
 					require.NoError(t, err)
@@ -625,7 +633,7 @@ func TestGRPC(t *testing.T) {
 					require.EqualValues(t, triggeredSuccessfully, res.GetMessage())
 					require.EqualValues(t, http.StatusOK, res.GetStatusCode())
 
-					upload, err := repoUpload.Get(ctx, 1)
+					upload, err := repoUpload.Get(ctx, triggerUploadID)
 					require.NoError(t, err)
 					require.Equal(t, upload.Status, model.Waiting)
 					require.True(t, upload.Retried)
@@ -706,6 +714,64 @@ func TestGRPC(t *testing.T) {
 			})
 		})
 
+		t.Run("scoped retry and trigger", func(t *testing.T) {
+			u := repo.NewUploads(db)
+			s := repo.NewStagingFiles(db, c)
+			create := func(source, dest, state string) int64 {
+				file := model.StagingFile{SourceID: source, DestinationID: dest, WorkspaceID: workspaceID}
+				id, err := s.Insert(ctx, &model.StagingFileWithSchema{StagingFile: file})
+				require.NoError(t, err)
+				file.ID = id
+				id, err = u.CreateWithStagingFiles(ctx, model.Upload{SourceID: source, DestinationID: dest, WorkspaceID: workspaceID, Status: state}, []*model.StagingFile{&file})
+				require.NoError(t, err)
+				return id
+			}
+			first := create(sourceID, destinationID, model.Aborted)
+			other := create("second_source_id", destinationID, model.Aborted)
+			noWork, err := grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{WorkspaceId: workspaceID, SourceId: sourceID, DestinationId: "second_destination_id"})
+			require.NoError(t, err)
+			require.Equal(t, noPendingEvents, noWork.Message)
+			request := &proto.RetryWHUploadsRequest{WorkspaceId: workspaceID, SourceId: sourceID, UploadIds: []int64{first, other}}
+			count, err := grpcClient.CountWHUploadsToRetry(ctx, request)
+			require.NoError(t, err)
+			require.EqualValues(t, 1, count.Count)
+			result, err := grpcClient.RetryWHUploads(ctx, request)
+			require.NoError(t, err)
+			require.EqualValues(t, 1, result.Count)
+			firstUpload, err := u.Get(ctx, first)
+			require.NoError(t, err)
+			require.Equal(t, model.Waiting, firstUpload.Status)
+			otherUpload, err := u.Get(ctx, other)
+			require.NoError(t, err)
+			require.Equal(t, model.Aborted, otherUpload.Status)
+
+			triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
+			triggerStore.Delete("POSTGRES:second_source_id:test_destination_id")
+			triggerStore.Delete("POSTGRES:test_source_id:second_destination_id")
+			response, err := grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{WorkspaceId: workspaceID, SourceId: sourceID, DestinationId: destinationID})
+			require.NoError(t, err)
+			require.Equal(t, triggeredSuccessfully, response.Message)
+			_, ok := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+			require.True(t, ok)
+			_, ok = triggerStore.Load("POSTGRES:second_source_id:test_destination_id")
+			require.False(t, ok)
+			_, ok = triggerStore.Load("POSTGRES:test_source_id:second_destination_id")
+			require.False(t, ok)
+			triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
+			response, err = grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{WorkspaceId: workspaceID, SourceId: "second_source_id", DestinationId: destinationID})
+			require.NoError(t, err)
+			require.Equal(t, noPendingEvents, response.Message)
+			_, ok = triggerStore.Load("POSTGRES:second_source_id:test_destination_id")
+			require.False(t, ok)
+			response, err = grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{WorkspaceId: workspaceID, DestinationId: destinationID})
+			require.NoError(t, err)
+			require.Equal(t, triggeredSuccessfully, response.Message)
+			_, ok = triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+			require.True(t, ok)
+			_, ok = triggerStore.Load("POSTGRES:second_source_id:test_destination_id")
+			require.False(t, ok) // aborted uploads are not pending work
+		})
+
 		t.Run("Retry", func(t *testing.T) {
 			now := time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC)
 			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
@@ -718,13 +784,14 @@ func TestGRPC(t *testing.T) {
 			totalUploads := 100
 			firstEventAt, lastEventAt := now.Add(-2*time.Hour), now.Add(-1*time.Hour)
 
-			for range totalUploads {
+			var retryUploadID int64
+			for i := range totalUploads {
 				fid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 				require.NoError(t, err)
 				sid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 				require.NoError(t, err)
 
-				_, err = repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+				uploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
 					SourceID:        sourceID,
 					DestinationID:   destinationID,
 					DestinationType: destinationType,
@@ -748,6 +815,9 @@ func TestGRPC(t *testing.T) {
 					},
 				})
 				require.NoError(t, err)
+				if i == 0 {
+					retryUploadID = uploadID
+				}
 			}
 
 			t.Run("RetryWHUploads", func(t *testing.T) {
@@ -810,7 +880,7 @@ func TestGRPC(t *testing.T) {
 						SourceId:      sourceID,
 						DestinationId: destinationID,
 						WorkspaceId:   workspaceID,
-						UploadIds:     []int64{1},
+						UploadIds:     []int64{retryUploadID},
 						ForceRetry:    true,
 					})
 					require.NoError(t, err)
@@ -819,7 +889,7 @@ func TestGRPC(t *testing.T) {
 					require.EqualValues(t, 1, res.GetCount())
 					require.EqualValues(t, http.StatusOK, res.GetStatusCode())
 
-					upload, err := repoUpload.Get(ctx, 1)
+					upload, err := repoUpload.Get(ctx, retryUploadID)
 					require.NoError(t, err)
 					require.Equal(t, upload.Status, model.Waiting)
 					require.True(t, upload.Retried)
@@ -886,7 +956,7 @@ func TestGRPC(t *testing.T) {
 						SourceId:      sourceID,
 						DestinationId: destinationID,
 						WorkspaceId:   workspaceID,
-						UploadIds:     []int64{1},
+						UploadIds:     []int64{retryUploadID},
 						ForceRetry:    true,
 					})
 					require.NoError(t, err)
