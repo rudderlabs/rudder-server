@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -81,8 +82,7 @@ func startKeydb(t testing.TB, conf *config.Config) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	// the processors are given the keydb headless Service, an address no node advertises: the client must learn the
-	// node's own address from the node behind it and send its requests there
+	// the processors are given the keydb headless Service, an address no node advertises
 	seed := "localhost:" + strconv.Itoa(freePort)
 	address := "127.0.0.1:" + strconv.Itoa(freePort)
 	conf.Set("KeyDB.Dedup.Addresses", seed)
@@ -100,7 +100,15 @@ func startKeydb(t testing.TB, conf *config.Config) {
 	require.NoError(t, err)
 
 	// Create a gRPC server
-	server := grpc.NewServer()
+	var getNodeInfoCalls atomic.Int64
+	server := grpc.NewServer(grpc.UnaryInterceptor(
+		func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+			if info.FullMethod == keydbproto.NodeService_GetNodeInfo_FullMethodName {
+				getNodeInfoCalls.Add(1)
+			}
+			return handler(ctx, req)
+		},
+	))
 	keydbproto.RegisterNodeServiceServer(server, service)
 
 	lis, err := net.Listen("tcp", address)
@@ -117,17 +125,25 @@ func startKeydb(t testing.TB, conf *config.Config) {
 		service.Close()
 	})
 
+	// The Service can also list a pod the node list doesn't have, like a shadow during a node move, which nothing
+	// listens for here: the client must ask the node behind it for the node list, whatever localhost resolves to.
+	unlistedPort, err := testhelper.GetFreePort()
+	require.NoError(t, err)
+	behindSeed := []string{address, "127.0.0.1:" + strconv.Itoa(unlistedPort)}
 	c, err := keydbclient.NewClient(t.Context(), keydbclient.Config{
 		Addresses:       []string{seed},
 		TotalHashRanges: 128,
 		RetryPolicy: keydbclient.RetryPolicy{
 			Disabled: true,
 		},
-	}, logger.NOP)
+	}, logger.NOP, keydbclient.WithAddressResolver(func(context.Context, string) ([]string, error) {
+		return behindSeed, nil
+	}))
 	require.NoError(t, err)
 	_, err = c.Get(t.Context(), []string{"startup-check"}) // the first answer settles the client's node list
 	require.NoError(t, err)
 	require.EqualValues(t, 1, c.ClusterSize())
+	require.Positive(t, getNodeInfoCalls.Load(), "the client never asked the node for the node list")
 	require.NoError(t, c.Close())
 
 	t.Logf("keydb address: %s", address)
