@@ -25,7 +25,8 @@ type keyDB struct {
 	}
 }
 
-// NewKeyDB creates the keydb client, which waits until a keydb node answers or ctx ends
+// NewKeyDB creates the keydb client without waiting for keydb: ctx only bounds the name lookup of the addresses. While
+// no node is ready, requests wait for one.
 func NewKeyDB(ctx context.Context, conf *config.Config, stat stats.Stats, log logger.Logger) (types.DB, error) {
 	dedupWindow := conf.GetReloadableDurationVar(3600, time.Second, "KeyDB.Dedup.dedupWindow", "Dedup.dedupWindow", "Dedup.dedupWindowInS")
 	nodeAddresses := conf.GetStringVar("", "KeyDB.Dedup.Addresses")

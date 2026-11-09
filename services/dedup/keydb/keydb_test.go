@@ -72,11 +72,47 @@ func Test_KeyDB(t *testing.T) {
 	})
 }
 
+// Test_KeyDBStartsBeforeKeydb checks that setting up dedup doesn't wait for keydb: the client is created while no
+// node is up, with the default retry policy, and a request sent meanwhile is served once a node is.
+func Test_KeyDBStartsBeforeKeydb(t *testing.T) {
+	port, err := testhelper.GetFreePort()
+	require.NoError(t, err)
+	conf := config.New()
+	conf.Set("KeyDB.Dedup.Addresses", "127.0.0.1:"+strconv.Itoa(port))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	db, err := NewKeyDB(ctx, conf, stats.NOP, logger.NOP)
+	require.NoError(t, err)
+	defer db.Close()
+	require.Less(t, time.Since(start), time.Second, "creating the client must not wait for keydb")
+
+	done := make(chan error, 1)
+	go func() { done <- db.Set([]string{"early_key"}) }()
+	time.Sleep(300 * time.Millisecond) // the request waits for keydb meanwhile
+	startKeydbOn(t, conf, port)
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("the request sent before keydb was up never finished")
+	}
+	result, err := db.Get([]string{"early_key"})
+	require.NoError(t, err)
+	require.True(t, result["early_key"])
+}
+
 func startKeydb(t testing.TB, conf *config.Config) {
 	t.Helper()
-
 	freePort, err := testhelper.GetFreePort()
 	require.NoError(t, err)
+	startKeydbOn(t, conf, freePort)
+}
+
+// startKeydbOn starts a keydb node on freePort and points conf at it
+func startKeydbOn(t testing.TB, conf *config.Config, freePort int) {
+	t.Helper()
 
 	var service *keydbnode.Service
 	ctx, cancel := context.WithCancel(context.Background())
@@ -95,8 +131,7 @@ func startKeydb(t testing.TB, conf *config.Config) {
 		Addresses:        func() []string { return []string{address} },
 	}
 
-	require.NoError(t, err)
-	service, err = keydbnode.NewService(ctx, nodeConfig, &mockedCloudStorage{}, conf, stats.NOP, logger.NOP)
+	service, err := keydbnode.NewService(ctx, nodeConfig, &mockedCloudStorage{}, conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
 
 	// Create a gRPC server
