@@ -271,7 +271,8 @@ func (brt *Handle) shouldRetryInvalidManager(invalidManager *asynccommon.Invalid
 	return brt.now().Sub(invalidManager.FailedAt) >= brt.invalidManagerRetryInterval.Load()
 }
 
-func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
+// newAsyncDestinationManager creates the manager of an async destination, or an invalid manager if it can't be created
+func (brt *Handle) newAsyncDestinationManager(destination *backendconfig.DestinationT) asynccommon.AsyncDestinationManager {
 	manager, err := brt.asyncManagerFactory(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig, &brt.secretVersions)
 	if err != nil {
 		brt.logger.Errorn("BRT: Error initializing async destination struct", obskit.DestinationType(destination.Name), obskit.Error(err))
@@ -280,11 +281,16 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 			"destType": destination.DestinationDefinition.Name,
 		})
 		destInitFailStat.Count(1)
-		manager = &asynccommon.InvalidManager{
+		return &asynccommon.InvalidManager{
 			Error:    fmt.Errorf("%s initialization failed with error: %v", destination.Name, err),
 			FailedAt: brt.now(),
 		}
 	}
+	return manager
+}
+
+func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
+	manager := brt.newAsyncDestinationManager(destination)
 	_, ok := brt.asyncDestinationStruct[destination.ID]
 	if !ok {
 		brt.asyncDestinationStruct[destination.ID] = &asynccommon.AsyncDestinationStruct{}

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"time"
 
@@ -180,13 +179,11 @@ func (brt *Handle) getParamertsFromJobs(jobs []*jobsdb.JobT) map[int64]stdjson.R
 }
 
 func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sourceID string, importingJob *jobsdb.JobT, importingCount int, pollResp common.PollStatusResponse) ([]*jobsdb.JobStatusT, error) {
-	var statusList []*jobsdb.JobStatusT
-	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionID)
 	list, err := brt.getImportingJobs(ctx, func(gqp *jobsdb.GetQueryParams) {
 		gqp.ParameterFilters = []jobsdb.ParameterFilterT{{Name: "destination_id", Value: destinationID}}
 	}, importingCount)
 	if err != nil {
-		return statusList, err
+		return nil, err
 	}
 	importingList := list.Jobs
 	if len(importingList) != importingCount {
@@ -197,24 +194,48 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sour
 			logger.NewIntField("importingCount", int64(importingCount)),
 		)
 	}
-	if pollResp.StatusCode == http.StatusOK && pollResp.Complete {
-		if !pollResp.HasFailed && !pollResp.HasWarning {
-			statusList, _, jobIDConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Succeeded.State}, sourceID, destinationID)
-			if err := brt.updateJobStatuses(ctx, importingList, importingList, statusList); err != nil {
+	return brt.updateImportStatuses(ctx, updateImportStatusesParams{
+		manager:          brt.asyncDestinationStruct[destinationID].Manager,
+		destinationID:    destinationID,
+		sourceID:         sourceID,
+		importParameters: importingJob.LastJobStatus.Parameters,
+		importingList:    importingList,
+		pollResp:         pollResp,
+	})
+}
+
+type updateImportStatusesParams struct {
+	manager          common.AsyncDestinationManager
+	destinationID    string
+	sourceID         string
+	importParameters stdjson.RawMessage // status parameters of one importing job of the import
+	importingList    []*jobsdb.JobT     // all jobs of the import
+	pollResp         common.PollStatusResponse
+}
+
+// updateImportStatuses writes the statuses of the jobs of a finished import, according to the poll response and, when
+// some jobs failed, the outcome that the manager reports for each job.
+func (brt *Handle) updateImportStatuses(ctx context.Context, params updateImportStatusesParams) ([]*jobsdb.JobStatusT, error) {
+	var statusList []*jobsdb.JobStatusT
+	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionID)
+	if params.pollResp.StatusCode == http.StatusOK && params.pollResp.Complete {
+		if !params.pollResp.HasFailed && !params.pollResp.HasWarning {
+			statusList, _, jobIDConnectionDetailsMap = brt.prepareJobStatusList(params.importingList, jobsdb.JobStatusT{JobState: jobsdb.Succeeded.State}, params.sourceID, params.destinationID)
+			if err := brt.updateJobStatuses(ctx, params.importingList, params.importingList, statusList); err != nil {
 				brt.logger.Errorn("[Batch Router] Failed to update job status", obskit.DestinationType(brt.destType), obskit.Error(err))
 				return statusList, err
 			}
 			brt.asyncSuccessfulJobCount.Count(len(statusList))
 		} else {
 			getUploadStatsInput := common.GetUploadStatsInput{
-				FailedJobParameters:  pollResp.FailedJobParameters,
-				WarningJobParameters: pollResp.WarningJobParameters,
-				Parameters:           importingJob.LastJobStatus.Parameters,
-				ImportingList:        importingList,
+				FailedJobParameters:  params.pollResp.FailedJobParameters,
+				WarningJobParameters: params.pollResp.WarningJobParameters,
+				Parameters:           params.importParameters,
+				ImportingList:        params.importingList,
 			}
 			startFailedJobsPollTime := time.Now()
 			brt.logger.Debugn("[Batch Router] Fetching Failed Jobs Started", obskit.DestinationType(brt.destType))
-			uploadStatsResp := brt.asyncDestinationStruct[destinationID].Manager.GetUploadStats(getUploadStatsInput)
+			uploadStatsResp := params.manager.GetUploadStats(getUploadStatsInput)
 			brt.asyncFailedJobsTimeStat.Since(startFailedJobsPollTime)
 
 			if uploadStatsResp.StatusCode != http.StatusOK {
@@ -229,14 +250,16 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sour
 			var completedJobsList []*jobsdb.JobT
 			var abortedJobs []*jobsdb.JobT
 			var failedJobs []*jobsdb.JobT
-			successfulJobIDs := append(uploadStatsResp.Metadata.SucceededKeys, uploadStatsResp.Metadata.WarningKeys...)
-			for _, job := range importingList {
+			successfulJobIDs := lo.Keyify(append(uploadStatsResp.Metadata.SucceededKeys, uploadStatsResp.Metadata.WarningKeys...))
+			failedJobIDs := lo.Keyify(uploadStatsResp.Metadata.FailedKeys)
+			abortedJobIDs := lo.Keyify(uploadStatsResp.Metadata.AbortedKeys)
+			for _, job := range params.importingList {
 				jobID := job.JobID
 				jobIDConnectionDetailsMap[jobID] = jobsdb.ConnectionID{
-					SourceID:      sourceID,
-					DestinationID: destinationID,
+					SourceID:      params.sourceID,
+					DestinationID: params.destinationID,
 				}
-				if slices.Contains(successfulJobIDs, jobID) {
+				if _, ok := successfulJobIDs[jobID]; ok {
 					warningRespString := uploadStatsResp.Metadata.WarningReasons[jobID]
 					warningResp, _ := jsonrs.Marshal(WarningResponse{Remarks: warningRespString})
 					resp := enhanceResponseWithFirstAttemptedAt(job.LastJobStatus.ErrorResponse, warningResp)
@@ -256,7 +279,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sour
 					}
 					completedJobsList = append(completedJobsList, job)
 					statusList = append(statusList, status)
-				} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, jobID) {
+				} else if _, ok := failedJobIDs[jobID]; ok {
 					errorRespString := uploadStatsResp.Metadata.FailedReasons[jobID]
 					errorResp, _ := jsonrs.Marshal(ErrorResponse{Error: errorRespString})
 					resp := enhanceResponseWithFirstAttemptedAt(job.LastJobStatus.ErrorResponse, errorResp)
@@ -278,7 +301,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sour
 					failedJobs = append(failedJobs, job)
 					completedJobsList = append(completedJobsList, job)
 					statusList = append(statusList, status)
-				} else if slices.Contains(uploadStatsResp.Metadata.AbortedKeys, jobID) {
+				} else if _, ok := abortedJobIDs[jobID]; ok {
 					errorRespString := uploadStatsResp.Metadata.AbortedReasons[jobID]
 					errorResp, _ := jsonrs.Marshal(ErrorResponse{Error: errorRespString})
 					resp := enhanceResponseWithFirstAttemptedAt(job.LastJobStatus.ErrorResponse, errorResp)
@@ -305,22 +328,22 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sour
 			brt.asyncSuccessfulJobCount.Count(len(statusList) - len(failedJobs) - len(abortedJobs))
 			brt.asyncFailedJobCount.Count(len(failedJobs))
 			brt.asyncAbortedJobCount.Count(len(abortedJobs))
-			if err := brt.updateJobStatuses(ctx, importingList, completedJobsList, statusList); err != nil {
+			if err := brt.updateJobStatuses(ctx, params.importingList, completedJobsList, statusList); err != nil {
 				brt.logger.Errorn("[Batch Router] Failed to update job status", obskit.DestinationType(brt.destType), obskit.Error(err))
 				return statusList, err
 			}
 		}
-	} else if pollResp.StatusCode == http.StatusBadRequest {
-		statusList, _, jobIDConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Aborted.State, ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", pollResp.Error)}, sourceID, destinationID)
-		if err := brt.updateJobStatuses(ctx, importingList, importingList, statusList); err != nil {
+	} else if params.pollResp.StatusCode == http.StatusBadRequest {
+		statusList, _, jobIDConnectionDetailsMap = brt.prepareJobStatusList(params.importingList, jobsdb.JobStatusT{JobState: jobsdb.Aborted.State, ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", params.pollResp.Error)}, params.sourceID, params.destinationID)
+		if err := brt.updateJobStatuses(ctx, params.importingList, params.importingList, statusList); err != nil {
 			brt.logger.Errorn("[Batch Router] Failed to update job status", obskit.DestinationType(brt.destType), obskit.Error(err))
 			return statusList, err
 		}
 		brt.asyncAbortedJobCount.Count(len(statusList))
 	} else {
 		var abortedJobsList []*jobsdb.JobT
-		statusList, abortedJobsList, jobIDConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Failed.State, ErrorCode: strconv.Itoa(pollResp.StatusCode), ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", pollResp.Error)}, sourceID, destinationID)
-		if err := brt.updateJobStatuses(ctx, importingList, abortedJobsList, statusList); err != nil {
+		statusList, abortedJobsList, jobIDConnectionDetailsMap = brt.prepareJobStatusList(params.importingList, jobsdb.JobStatusT{JobState: jobsdb.Failed.State, ErrorCode: strconv.Itoa(params.pollResp.StatusCode), ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", params.pollResp.Error)}, params.sourceID, params.destinationID)
+		if err := brt.updateJobStatuses(ctx, params.importingList, abortedJobsList, statusList); err != nil {
 			brt.logger.Errorn("[Batch Router] Failed to update job status", obskit.DestinationType(brt.destType), obskit.Error(err))
 			return statusList, err
 		}
