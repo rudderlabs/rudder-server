@@ -223,16 +223,14 @@ func TestV2DestinationConfig(t *testing.T) {
 	t.Run("HTTP v2 account link survives filtering while v1 retains inline credentials", func(t *testing.T) {
 		catalogues := testCatalogues(nil)
 		catalogues.DestinationDefinitions["HTTP"] = v2DestinationDefinition{
-			DestinationDefinitionT: DestinationDefinitionT{
-				Config: destConfig([]any{"authenticationEnabled", "rudderAccountId"}, nil),
-			},
+			Config:  destConfig([]any{"authenticationEnabled", "rudderAccountId"}, nil),
 			Version: "2.0",
 			Versions: map[string]v2DefinitionArchiveEntry{
 				"1": {Config: destConfig([]any{"auth", "username", "password"}, nil)},
 			},
 		}
 		catalogues.AccountDefinitions["DESTINATION_HTTP_BASIC_AUTH"] = v2AccountDefinition{
-			AccountDefinition: AccountDefinition{AuthenticationType: "basic_auth"},
+			AuthenticationType: "basic_auth",
 		}
 		body := `{
 			"sources": {"src-1": {"sourceDefinitionName": "webhook"}},

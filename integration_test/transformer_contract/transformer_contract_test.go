@@ -45,27 +45,41 @@ func TestHTTPV2AccountDelivery(t *testing.T) {
 			ID: "source-1", WriteKey: "writekey-1", WorkspaceID: "workspace-1", Enabled: true,
 			SourceDefinition: backendconfig.SourceDefinitionT{Name: "webhook"},
 			Destinations: []backendconfig.DestinationT{
-				{ID: "basic", Enabled: true, Version: 2, WorkspaceID: "workspace-1", IsProcessorEnabled: true,
+				{
+					ID: "basic", Enabled: true, Version: 2, WorkspaceID: "workspace-1", IsProcessorEnabled: true,
 					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "HTTP"},
-					Config:                map[string]any{"authenticationEnabled": true, "rudderAccountId": "basic-account"}},
-				{ID: "bearer", Enabled: true, Version: 2, WorkspaceID: "workspace-1", IsProcessorEnabled: true,
+					Config:                map[string]any{"authenticationEnabled": true, "rudderAccountId": "basic-account"},
+				},
+				{
+					ID: "bearer", Enabled: true, Version: 2, WorkspaceID: "workspace-1", IsProcessorEnabled: true,
 					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "HTTP"},
-					Config:                map[string]any{"authenticationEnabled": true, "rudderAccountId": "bearer-account"}},
-				{ID: "api-key", Enabled: true, Version: 2, WorkspaceID: "workspace-1", IsProcessorEnabled: true,
+					Config:                map[string]any{"authenticationEnabled": true, "rudderAccountId": "bearer-account"},
+				},
+				{
+					ID: "api-key", Enabled: true, Version: 2, WorkspaceID: "workspace-1", IsProcessorEnabled: true,
 					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "HTTP"},
-					Config:                map[string]any{"authenticationEnabled": true, "rudderAccountId": "api-key-account"}},
-				{ID: "v1", Enabled: true, Version: 1, WorkspaceID: "workspace-1", IsProcessorEnabled: true,
+					Config:                map[string]any{"authenticationEnabled": true, "rudderAccountId": "api-key-account"},
+				},
+				{
+					ID: "v1", Enabled: true, Version: 1, WorkspaceID: "workspace-1", IsProcessorEnabled: true,
 					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "HTTP"},
-					Config:                map[string]any{"auth": "basicAuth", "username": "legacy-user", "password": "legacy-password"}},
+					Config:                map[string]any{"auth": "basicAuth", "username": "legacy-user", "password": "legacy-password"},
+				},
 			},
 		}},
 		Accounts: map[string]backendconfig.Account{
-			"basic-account": {AccountDefinitionName: "DESTINATION_HTTP_BASIC_AUTH",
-				Options: map[string]any{"username": "account-user"}, Secret: map[string]any{"password": ""}},
-			"bearer-account": {AccountDefinitionName: "DESTINATION_HTTP_BEARER_TOKEN",
-				Secret: map[string]any{"bearerToken": "fixture-token"}},
-			"api-key-account": {AccountDefinitionName: "DESTINATION_HTTP_API_KEY",
-				Options: map[string]any{"apiKeyName": "X-API-Key"}, Secret: map[string]any{"apiKeyValue": "fixture-key"}},
+			"basic-account": {
+				AccountDefinitionName: "DESTINATION_HTTP_BASIC_AUTH",
+				Options:               map[string]any{"username": "account-user"}, Secret: map[string]any{"password": ""},
+			},
+			"bearer-account": {
+				AccountDefinitionName: "DESTINATION_HTTP_BEARER_TOKEN",
+				Secret:                map[string]any{"bearerToken": "fixture-token"},
+			},
+			"api-key-account": {
+				AccountDefinitionName: "DESTINATION_HTTP_API_KEY",
+				Options:               map[string]any{"apiKeyName": "X-API-Key"}, Secret: map[string]any{"apiKeyValue": "fixture-key"},
+			},
 		},
 		AccountDefinitions: map[string]backendconfig.AccountDefinition{
 			"DESTINATION_HTTP_BASIC_AUTH":   {Name: "DESTINATION_HTTP_BASIC_AUTH", AuthenticationType: "basic_auth"},
