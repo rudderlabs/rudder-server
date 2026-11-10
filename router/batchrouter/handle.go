@@ -127,13 +127,16 @@ type Handle struct {
 	destinationsMap          map[string]*routerutils.DestinationWithSources // destinationID -> destination
 	connectionWHNamespaceMap map[string]string                              // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
 	uploadIntervalMap        map[string]time.Duration
+	asyncManagers            map[string]asyncManager // destinationID -> manager, used by async workers only
 
 	encounteredMergeRuleMapMu sync.Mutex
 	encounteredMergeRuleMap   map[string]map[string]bool
 
 	limiter struct {
-		read   kitsync.Limiter
-		upload kitsync.Limiter
+		read        kitsync.Limiter
+		upload      kitsync.Limiter
+		asyncUpload kitsync.Limiter // uploads of async workers at the same time
+		asyncPoll   kitsync.Limiter // polls of async workers at the same time
 	}
 
 	batchRequestsMetricMu sync.RWMutex
@@ -149,6 +152,12 @@ type Handle struct {
 
 	asyncDestinationStruct map[string]*asynccommon.AsyncDestinationStruct
 
+	// asyncWorkerEnabled is true when each destination of this async type is served by its own async worker,
+	// which fetches, uploads and polls its own batches, instead of the upload and poll loops.
+	asyncWorkerEnabled bool
+	asyncPollInterval  config.ValueLoader[time.Duration]
+	asyncCalls         *asyncCallTracker
+
 	asyncPollTimeStat           stats.Measurement
 	asyncFailedJobsTimeStat     stats.Measurement
 	asyncSuccessfulJobCount     stats.Measurement
@@ -163,7 +172,13 @@ func (brt *Handle) mainLoop(ctx context.Context) {
 		brt.now = timeutil.Now
 	}
 
-	pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newWorker(partition, brt.logger, brt) }, brt.logger)
+	newWorkerFn := func(partition string) workerpool.Worker { return newWorker(partition, brt.logger, brt) }
+	if brt.asyncWorkerEnabled {
+		newWorkerFn = func(destinationID string) workerpool.Worker {
+			return newAsyncWorker(ctx, destinationID, brt.logger, brt)
+		}
+	}
+	pool := workerpool.New(ctx, newWorkerFn, brt.logger)
 	defer pool.Shutdown()
 	pingFrequency := time.Duration(0)
 	for {

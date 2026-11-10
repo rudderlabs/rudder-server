@@ -211,6 +211,8 @@ type updateImportStatusesParams struct {
 	importParameters stdjson.RawMessage // status parameters of one importing job of the import
 	importingList    []*jobsdb.JobT     // all jobs of the import
 	pollResp         common.PollStatusResponse
+	// failMissing marks as failed the jobs that the manager leaves out of a partial outcome. Otherwise they stay importing.
+	failMissing bool
 }
 
 // updateImportStatuses writes the statuses of the jobs of a finished import, according to the poll response and, when
@@ -250,6 +252,7 @@ func (brt *Handle) updateImportStatuses(ctx context.Context, params updateImport
 			var completedJobsList []*jobsdb.JobT
 			var abortedJobs []*jobsdb.JobT
 			var failedJobs []*jobsdb.JobT
+			var missingJobIDs []int64
 			successfulJobIDs := lo.Keyify(append(uploadStatsResp.Metadata.SucceededKeys, uploadStatsResp.Metadata.WarningKeys...))
 			failedJobIDs := lo.Keyify(uploadStatsResp.Metadata.FailedKeys)
 			abortedJobIDs := lo.Keyify(uploadStatsResp.Metadata.AbortedKeys)
@@ -279,8 +282,12 @@ func (brt *Handle) updateImportStatuses(ctx context.Context, params updateImport
 					}
 					completedJobsList = append(completedJobsList, job)
 					statusList = append(statusList, status)
-				} else if _, ok := failedJobIDs[jobID]; ok {
+				} else if _, ok := failedJobIDs[jobID]; ok || (params.failMissing && !lo.HasKey(abortedJobIDs, jobID)) {
 					errorRespString := uploadStatsResp.Metadata.FailedReasons[jobID]
+					if !ok {
+						missingJobIDs = append(missingJobIDs, jobID)
+						errorRespString = "job missing from the outcome of the import"
+					}
 					errorResp, _ := jsonrs.Marshal(ErrorResponse{Error: errorRespString})
 					resp := enhanceResponseWithFirstAttemptedAt(job.LastJobStatus.ErrorResponse, errorResp)
 					status := &jobsdb.JobStatusT{
@@ -324,6 +331,15 @@ func (brt *Handle) updateImportStatuses(ctx context.Context, params updateImport
 					completedJobsList = append(completedJobsList, job)
 					statusList = append(statusList, status)
 				}
+			}
+			if len(missingJobIDs) > 0 {
+				brt.logger.Errorn("Async Destination Bug: jobs missing from the outcome of the import, marking them as failed",
+					obskit.DestinationType(brt.destType),
+					obskit.DestinationID(params.destinationID),
+					logger.NewIntField("missingJobs", int64(len(missingJobIDs))),
+					logger.NewIntField("minMissingJobID", lo.Min(missingJobIDs)),
+					logger.NewIntField("maxMissingJobID", lo.Max(missingJobIDs)),
+				)
 			}
 			brt.asyncSuccessfulJobCount.Count(len(statusList) - len(failedJobs) - len(abortedJobs))
 			brt.asyncFailedJobCount.Count(len(failedJobs))
@@ -748,7 +764,8 @@ func (brt *Handle) getReportMetrics(params getReportMetricsParams) []*utilTypes.
 	return reportMetrics
 }
 
-func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
+// setMultipleJobStatus writes the statuses of the jobs of an async upload and returns them
+func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) []*jobsdb.JobStatusT {
 	workspaceID := brt.GetWorkspaceIDForDestID(params.AsyncOutput.DestinationID)
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
@@ -921,7 +938,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 	}
 
 	if len(statusList) == 0 {
-		return
+		return nil
 	}
 
 	reportMetrics := brt.getReportMetrics(getReportMetricsParams{
@@ -963,6 +980,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 		}
 		brt.recordAsyncDestinationDeliveryStatus(sourceID, params.AsyncOutput.DestinationID, statusList)
 	}
+	return statusList
 }
 
 func (brt *Handle) GetWorkspaceIDForDestID(destID string) string {
