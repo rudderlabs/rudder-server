@@ -62,7 +62,9 @@ func (brt *Handle) Setup(
 	if brt.now == nil {
 		brt.now = timeutil.Now
 	}
-	brt.asyncManagerFactory = asyncdestinationmanager.NewManager
+	if brt.asyncManagerFactory == nil {
+		brt.asyncManagerFactory = asyncdestinationmanager.NewManager
+	}
 
 	brt.netHandle = &http.Client{
 		Transport: &http.Transport{},
@@ -84,13 +86,17 @@ func (brt *Handle) Setup(
 	if brt.adaptiveLimit == nil {
 		brt.adaptiveLimit = func(limit int64) int64 { return limit }
 	}
-	defaultIsolationMode := isolation.ModeDestination
-	if config.IsSet("WORKSPACE_NAMESPACE") {
-		defaultIsolationMode = isolation.ModeWorkspace
+	brt.asyncWorkerEnabled = asynccommon.IsAsyncDestination(destType) && config.GetBoolVar(false, "BatchRouter."+destType+".asyncWorker.enabled")
+	isolationMode := isolation.ModeDestination // an async worker holds the batch and the import of a single destination
+	if !brt.asyncWorkerEnabled {
+		defaultIsolationMode := isolation.ModeDestination
+		if config.IsSet("WORKSPACE_NAMESPACE") {
+			defaultIsolationMode = isolation.ModeWorkspace
+		}
+		isolationMode = isolation.Mode(config.GetStringVar(string(defaultIsolationMode), "BatchRouter.isolationMode"))
 	}
-	isolationMode := config.GetStringVar(string(defaultIsolationMode), "BatchRouter.isolationMode")
 	var err error
-	if brt.isolationStrategy, err = isolation.GetStrategy(isolation.Mode(isolationMode), destType, func(destinationID string) bool {
+	if brt.isolationStrategy, err = isolation.GetStrategy(isolationMode, destType, func(destinationID string) bool {
 		brt.configSubscriberMu.RLock()
 		defer brt.configSubscriberMu.RUnlock()
 		_, ok := brt.destinationsMap[destinationID]
@@ -152,7 +158,30 @@ func (brt *Handle) Setup(
 		}),
 	)
 
-	brt.logger.Infon("BRT: Batch Router started", obskit.DestinationType(destType))
+	if brt.asyncWorkerEnabled {
+		defaultPollLimit := 64
+		if destType == "KLAVIYO_BULK_UPLOAD" {
+			defaultPollLimit = 1 // its poll calls Klaviyo in a loop without a pause until the import completes
+		}
+		brt.limiter.asyncUpload = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "brt_async_upload",
+			getReloadableBatchRouterConfigInt("asyncWorker.uploadLimit", brt.destType, 16),
+			stats.Default,
+			kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
+			kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
+				return time.After(limiterStatsPeriod)
+			}),
+		)
+		brt.limiter.asyncPoll = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "brt_async_poll",
+			getReloadableBatchRouterConfigInt("asyncWorker.pollLimit", brt.destType, defaultPollLimit),
+			stats.Default,
+			kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
+			kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
+				return time.After(limiterStatsPeriod)
+			}),
+		)
+	}
+
+	brt.logger.Infon("BRT: Batch Router started", obskit.DestinationType(destType), logger.NewBoolField("asyncWorkerEnabled", brt.asyncWorkerEnabled))
 	brt.crashRecover()
 
 	if asynccommon.IsAsyncDestination(brt.destType) {
@@ -226,6 +255,15 @@ func (brt *Handle) startAsyncDestinationManager() {
 	brt.asyncGetImportingIterations = stats.Default.NewTaggedStat("async_get_importing_iterations", stats.HistogramType, asyncStatTags)
 
 	brt.asyncDestinationStruct = make(map[string]*asynccommon.AsyncDestinationStruct)
+
+	if brt.asyncWorkerEnabled {
+		brt.asyncCalls = newAsyncCallTracker(brt.destType, stats.Default)
+		brt.backgroundGroup.Go(crash.Wrapper(func() error {
+			brt.asyncCalls.run(brt.backgroundCtx, 10*time.Second)
+			return nil
+		}))
+		return
+	}
 
 	if asynccommon.IsAsyncRegularDestination(brt.destType) {
 		brt.backgroundGroup.Go(crash.Wrapper(func() error {
@@ -401,6 +439,7 @@ func (brt *Handle) backendConfigSubscriber() {
 	}
 	defer initialized()
 	for data := range ch {
+		var asyncDestinations map[string]*asyncDestination
 		destinationsMap := map[string]*routerutils.DestinationWithSources{}
 		connectionWHNamespaceMap := map[string]string{}
 		uploadIntervalMap := map[string]time.Duration{}
@@ -421,7 +460,9 @@ func (brt *Handle) backendConfigSubscriber() {
 								}
 							}
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
-							brt.refreshDestination(destination)
+							if !brt.asyncWorkerEnabled {
+								brt.refreshDestination(destination)
+							}
 
 							// initialize map to track encountered anonymousIds for a warehouse destination
 							if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
@@ -434,11 +475,15 @@ func (brt *Handle) backendConfigSubscriber() {
 				}
 			}
 		}
+		if brt.asyncWorkerEnabled {
+			asyncDestinations = brt.newAsyncDestinations(destinationsMap, uploadIntervalMap)
+		}
 		brt.secretVersions.set(secretVersions)
 		brt.configSubscriberMu.Lock()
 		brt.destinationsMap = destinationsMap
 		brt.connectionWHNamespaceMap = connectionWHNamespaceMap
 		brt.uploadIntervalMap = uploadIntervalMap
+		brt.asyncDestinations = asyncDestinations
 		initialized()
 		brt.configSubscriberMu.Unlock()
 	}

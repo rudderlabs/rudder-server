@@ -135,25 +135,13 @@ func (brt *Handle) recordAsyncDestinationDeliveryStatus(sourceID, destinationID 
 
 // emitAsyncEventDeliveryTimeMetrics emits event_delivery_time metrics for successful async destination deliveries
 func (brt *Handle) emitAsyncEventDeliveryTimeMetrics(sourceID, destinationID string, statusList []*jobsdb.JobStatusT) {
-	// Get the async destination struct to access original job parameters
-	asyncDestStruct := brt.asyncDestinationStruct[destinationID]
-	if asyncDestStruct == nil {
-		brt.logger.Errorn("Async destination struct not found for destinationID: %s", obskit.DestinationID(destinationID))
-		return
-	}
-
 	// Process each successful job status to emit event_delivery_time metric
 	for _, status := range statusList {
 		if status.JobState != jobsdb.Succeeded.State {
 			continue // Only emit metrics for successful deliveries
 		}
 
-		// Get original job parameters for this job
-		jobParameters, exists := asyncDestStruct.JobParameters[status.JobID]
-		if !exists {
-			brt.logger.Debugn("Original job parameters not found for jobID: %d", logger.NewIntField("jobID", status.JobID))
-			continue
-		}
+		jobParameters := status.JobParameters
 
 		// Extract receivedAt from original job parameters
 		receivedAtStr := gjson.GetBytes(jobParameters, "received_at").String()

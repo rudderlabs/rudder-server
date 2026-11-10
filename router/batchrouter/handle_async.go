@@ -226,7 +226,7 @@ type updateImportStatusesParams struct {
 	manager          common.AsyncDestinationManager
 	destinationID    string
 	sourceID         string
-	importParameters stdjson.RawMessage // status parameters of one importing job of the import, with its import ID resolved
+	importParameters stdjson.RawMessage // importing parameters of the import, with its import ID unless it could not be found
 	importingList    []*jobsdb.JobT     // all jobs of the import
 	pollResp         common.PollStatusResponse
 }
@@ -797,7 +797,8 @@ func (brt *Handle) getReportMetrics(params getReportMetricsParams) []*utilTypes.
 	return reportMetrics
 }
 
-func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
+// setMultipleJobStatus writes the statuses of async jobs according to an upload output, and returns them
+func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) []*jobsdb.JobStatusT {
 	workspaceID := brt.GetWorkspaceIDForDestID(params.AsyncOutput.DestinationID)
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
@@ -984,7 +985,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 	}
 
 	if len(statusList) == 0 {
-		return
+		return nil
 	}
 
 	reportMetrics := brt.getReportMetrics(getReportMetricsParams{
@@ -1031,6 +1032,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 		}
 		brt.recordAsyncDestinationDeliveryStatus(sourceID, params.AsyncOutput.DestinationID, statusList)
 	}
+	return statusList
 }
 
 func (brt *Handle) GetWorkspaceIDForDestID(destID string) string {
