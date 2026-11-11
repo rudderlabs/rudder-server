@@ -22,10 +22,7 @@ import (
 	proto "github.com/rudderlabs/rudder-server/proto/processor"
 )
 
-// endpointForward is a Forwarder method bound to a single pyt endpoint,
-// parameterized over the target baseURL so the same function value can be
-// pointed at either a freshly created ephemeral pyt Service or the shared
-// static AST deployment.
+// endpointForward is a Forwarder method bound to a single pyt endpoint.
 type endpointForward func(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error)
 
 // route tag values for the processor_pyt_* metrics: which pyt deployment a

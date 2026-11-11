@@ -104,7 +104,7 @@ func Init() {
 func BatchDestinations() []string {
 	batchDestinations := []string{
 		"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES",
-		"CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "MICROSOFT_FABRIC", "S3_DATALAKE",
+		"CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "MICROSOFT_FABRIC", "MAXCOMPUTE", "S3_DATALAKE",
 		"MARKETO_BULK_UPLOAD", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE", "BINGADS_AUDIENCE",
 		"ELOQUA", "YANDEX_METRICA_OFFLINE_EVENTS", "SFTP", "BINGADS_OFFLINE_CONVERSIONS", "KLAVIYO_BULK_UPLOAD",
 		"LYTICS_BULK_UPLOAD", "SNOWPIPE_STREAMING", "SALESFORCE_BULK_UPLOAD", "BQSTREAM_ALL_EVENTS",
@@ -663,6 +663,29 @@ type ObjectStorageOptsT struct {
 
 func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
 	objectStorageConfigMap := opts.Config.(map[string]any)
+	if opts.Provider == "ALIBABA_OSS" {
+		ossConfig := make(map[string]any)
+		if value, ok := objectStorageConfigMap["region"]; ok {
+			ossConfig["region"] = value
+		}
+		// directoryPath is the bucket, optionally followed by a folder ("bucket/path") to stage under.
+		if value, ok := objectStorageConfigMap["directoryPath"].(string); ok {
+			bucket, prefix, _ := strings.Cut(strings.Trim(value, "/"), "/")
+			ossConfig["bucketName"] = bucket
+			ossConfig["prefix"] = strings.Trim(prefix, "/")
+		}
+		roleARN, _ := objectStorageConfigMap["iamRoleARN"].(string)
+		if strings.TrimSpace(roleARN) != "" {
+			ossConfig["roleBasedAuth"] = true
+			ossConfig["iamRoleARN"] = roleARN
+			ossConfig["externalID"] = opts.WorkspaceID
+		} else {
+			ossConfig["roleBasedAuth"] = false
+			ossConfig["accessKeyID"] = objectStorageConfigMap["accessKeyId"]
+			ossConfig["accessKey"] = objectStorageConfigMap["accessKeySecret"]
+		}
+		return ossConfig
+	}
 	if opts.Provider == "ONELAKE" {
 		return objectStorageConfigMap
 	}

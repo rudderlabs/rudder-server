@@ -183,6 +183,88 @@ func TestFetchSchemaValidationTableLimit(t *testing.T) {
 	}
 }
 
+func expectDescribe(mock sqlmock.Sqlmock, namespace, tableName string, columns [][2]string) {
+	rows := sqlmock.NewRows([]string{"col_name", "data_type"})
+	for _, col := range columns {
+		rows.AddRow(col[0], col[1])
+	}
+	mock.ExpectQuery(regexp.QuoteMeta("DESCRIBE QUERY TABLE `" + namespace + "`.`" + tableName + "`;")).WillReturnRows(rows)
+}
+
+func TestFetchSchemaCaseInsensitiveColumns(t *testing.T) {
+	const namespace, tableName = "test_namespace", "events"
+	for _, tc := range []struct {
+		name    string
+		columns [][2]string
+		want    model.TableSchema
+	}{
+		{
+			name:    "uppercase columns are lowercased and event_date is excluded",
+			columns: [][2]string{{"CONTEXT_CAMPAIGN_NAME", "STRING"}, {"EVENT_DATE", "DATE"}},
+			want:    model.TableSchema{"context_campaign_name": "string"},
+		},
+		{
+			name:    "unmapped types are omitted",
+			columns: [][2]string{{"CONTEXT_COST", "decimal(38,0)"}},
+			want:    model.TableSchema{},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
+			d.DB = sqlquerywrapper.New(db)
+			d.Namespace = namespace
+			mock.ExpectQuery(regexp.QuoteMeta("SHOW SCHEMAS LIKE '" + namespace + "';")).
+				WillReturnRows(sqlmock.NewRows([]string{"databaseName"}).AddRow(namespace))
+			mock.ExpectQuery(regexp.QuoteMeta("SHOW tables FROM `" + namespace + "` LIKE '^(?!rudder_staging_.*$).*';")).
+				WillReturnRows(sqlmock.NewRows([]string{"database", "tableName", "isTemporary"}).AddRow(namespace, tableName, false))
+			expectDescribe(mock, namespace, tableName, tc.columns)
+
+			schema, err := d.FetchSchema(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, tc.want, schema[tableName])
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestAddColumnsCaseInsensitive(t *testing.T) {
+	const namespace, tableName = "test_namespace", "events"
+	for _, tc := range []struct {
+		name       string
+		columns    [][2]string
+		requested  []whutils.ColumnInfo
+		alterQuery string
+	}{
+		{
+			name:      "uppercase unmapped type prevents duplicate ALTER",
+			columns:   [][2]string{{"CONTEXT_DEVICE_ATT_TRACKING_STATUS", "decimal(38,0)"}},
+			requested: []whutils.ColumnInfo{{Name: "context_device_att_tracking_status", Type: "int"}},
+		},
+		{
+			name:       "case-only match is skipped and new column added",
+			columns:    [][2]string{{"CONTEXT_CAMPAIGN_NAME", "STRING"}},
+			requested:  []whutils.ColumnInfo{{Name: "context_campaign_name", Type: "string"}, {Name: "new_column", Type: "int"}},
+			alterQuery: `ALTER TABLE\s+` + regexp.QuoteMeta("`test_namespace`.`events`") + `\s+ADD COLUMNS\( ` + regexp.QuoteMeta("`new_column` BIGINT") + `\);`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
+			d.DB = sqlquerywrapper.New(db)
+			d.Namespace = namespace
+			expectDescribe(mock, namespace, tableName, tc.columns)
+			if tc.alterQuery != "" {
+				mock.ExpectExec(tc.alterQuery).WillReturnResult(sqlmock.NewResult(0, 0))
+			}
+			require.NoError(t, d.AddColumns(context.Background(), tableName, tc.requested))
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
@@ -1695,6 +1777,7 @@ func TestIntegration(t *testing.T) {
 		columns := map[string]string{
 			"col1": "int",
 			"col2": "string",
+			"COL4": "string", // created outside Rudder in uppercase; Deltalake matches column names case-insensitively
 		}
 
 		err = d.CreateTable(ctx, tableName, columns)
@@ -1709,6 +1792,10 @@ func TestIntegration(t *testing.T) {
 				Name: "col3",
 				Type: "int",
 			},
+			{
+				Name: "col4",
+				Type: "string",
+			},
 		}
 
 		require.NoError(t, d.AddColumns(ctx, tableName, columnsToAdd))
@@ -1721,6 +1808,7 @@ func TestIntegration(t *testing.T) {
 			"col1": "int",
 			"col2": "string",
 			"col3": "int",
+			"col4": "string",
 		}, schema[tableName])
 	})
 }

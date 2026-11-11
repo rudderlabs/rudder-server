@@ -438,6 +438,11 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig(model.UseRudderStorageSetting)
 
 		if !found {
+			// The reloadable degraded list may become visible before BCM and this router
+			// consume the restored configuration. Keep the upload waiting in that gap.
+			if !r.tenantManager.ConnectionRemoved(upload.WorkspaceID, upload.SourceID, upload.DestinationID, r.destType) {
+				continue
+			}
 			uploadJob := r.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 				Upload: upload,
 			}, nil)
@@ -514,7 +519,8 @@ func (r *Router) mainLoop(ctx context.Context) {
 
 				r.logger.Debugn("[WH] Processing Jobs for warehouse", logger.NewStringField("id", w.Identifier))
 				err := r.createJobs(ctx, w)
-				if err != nil {
+				// on shutdown lib/pq surfaces "canceling statement due to user request", not context.Canceled
+				if err != nil && ctx.Err() == nil {
 					r.logger.Errorn("[WH] Failed to process warehouse Jobs", obskit.Error(err))
 				}
 			})

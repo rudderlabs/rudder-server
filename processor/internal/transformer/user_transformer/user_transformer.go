@@ -48,10 +48,21 @@ const (
 	languagePython            = "python"
 )
 
+const (
+	testPath        = "/test"
+	testRunPath     = "/testRun"
+	testLibraryPath = "/test-library"
+	extractLibsPath = "/extract-libs"
+)
+
 // ErrEmptyForwardBaseURL is returned by the test-forwarding methods ([Client.Test]
 // et al.) when called with an empty baseURL, so callers can reject the request
 // explicitly instead of it being forwarded to a malformed URL.
 var ErrEmptyForwardBaseURL = errors.New("pyt base URL is empty")
+
+// ErrPythonTransformationsNotSupported is the error set on every event aborted because the deployment does not offer
+// Python transformations.
+var ErrPythonTransformationsNotSupported = errors.New("python transformations are not supported")
 
 // DefaultPerWorkspacePyTURLTemplate is the default value of
 // Processor.UserTransformer.perWorkspacePyTURLTemplate; {workspaceID} is
@@ -112,6 +123,9 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	}, handle.config.pytClientIdleTimeout)
 	handle.config.userTransformationURL = handle.conf.GetStringVar(handle.conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"), "USER_TRANSFORM_URL")
 	handle.config.perWorkspacePyTEnabled = handle.conf.GetReloadableBoolVar(false, "Processor.UserTransformer.perWorkspacePyTEnabled")
+	handle.config.pythonTransformationsEnabled = handle.conf.GetReloadableBoolVar(
+		true, "Processor.UserTransformer.pythonTransformationsEnabled",
+	)
 	handle.config.perWorkspacePyTURLTemplate = handle.conf.GetStringVar(DefaultPerWorkspacePyTURLTemplate, "Processor.UserTransformer.perWorkspacePyTURLTemplate")
 	handle.config.perWorkspacePyTEndlessRetries = handle.conf.GetReloadableBoolVar(true, "Processor.UserTransformer.perWorkspacePyTEndlessRetries")
 	handle.config.timeoutDuration = conf.GetDurationVar(600, time.Second, "HttpClient.procTransformer.timeout")
@@ -147,6 +161,7 @@ type Client struct {
 		collectInstanceLevelStats     bool
 		batchSize                     config.ValueLoader[int]
 		perWorkspacePyTEnabled        config.ValueLoader[bool]
+		pythonTransformationsEnabled  config.ValueLoader[bool]
 		perWorkspacePyTURLTemplate    string
 		perWorkspacePyTEndlessRetries config.ValueLoader[bool]
 		pytClientIdleTimeout          config.ValueLoader[time.Duration]
@@ -167,6 +182,11 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	batchSize := u.config.batchSize.Load()
 	transformationLanguage, _, transformationID := transformerutils.GetTransformationInfo(clientEvents)
 	workspaceID := clientEvents[0].Metadata.WorkspaceID
+	// Before userTransformURL, which panics on Python when per-workspace PyT is off or the workspace ID is empty:
+	// a deployment that does not offer Python must abort the jobs whatever the routing flags say.
+	if transformerutils.IsPythonLanguage(transformationLanguage) && !u.config.pythonTransformationsEnabled.Load() {
+		return u.abortPythonTransformation(clientEvents, workspaceID, transformationID)
+	}
 	userURL := u.userTransformURL(transformationLanguage, workspaceID)
 
 	labels := types.TransformerMetricLabels{
@@ -244,6 +264,28 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		Events:       outClientEvents,
 		FailedEvents: failedEvents,
 	}
+}
+
+// abortPythonTransformation fails every event without calling any transformer, so the processor aborts the jobs.
+// It is only used when Processor.UserTransformer.pythonTransformationsEnabled is false.
+func (u *Client) abortPythonTransformation(
+	clientEvents []types.TransformerEvent,
+	workspaceID, transformationID string,
+) types.Response {
+	u.log.Errorn("Aborting python transformation: python transformations are disabled on this deployment",
+		obskit.WorkspaceID(workspaceID),
+		logger.NewStringField("transformationId", transformationID),
+		obskit.DestinationID(clientEvents[0].Destination.ID),
+		logger.NewIntField("events", int64(len(clientEvents))),
+	)
+	failedEvents := lo.Map(clientEvents, func(event types.TransformerEvent, _ int) types.TransformerResponse {
+		return types.TransformerResponse{
+			StatusCode: http.StatusBadRequest,
+			Error:      ErrPythonTransformationsNotSupported.Error(),
+			Metadata:   event.Metadata,
+		}
+	})
+	return types.Response{FailedEvents: failedEvents}
 }
 
 func (u *Client) sendBatch(
@@ -414,6 +456,9 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			req.Header.Set("X-Feature-Gzip-Support", "?1")
 			// Header to let transformer know that the client understands event filter code
 			req.Header.Set("X-Feature-Filter-Code", "?1")
+			if perWorkspacePyT {
+				req.Header.Set(transformerclient.HeaderWorkspaceID, labels.WorkspaceID)
+			}
 
 			// Acquired per attempt, so a retry after a 421 picks up the target's fresh client.
 			client := u.client
@@ -556,32 +601,26 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 // and never reach here; if JS is ever moved onto this path it will need
 // separate handling for the test endpoints — we will have to identify from
 // the request which language is being tested and route accordingly.
-//
-// baseURL is resolved by the caller (cpservice): for execution ops (test,
-// testRun) it is the freshly created ephemeral pyt Service's address; for AST
-// ops (testLibrary, extractLibs) it is the shared static AST deployment.
-// workspaceID is not used to build the URL — it is carried through only for
-// logging/metric tagging (cold-start counter).
 func (u *Client) Test(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error) {
-	return u.forwardTest(ctx, baseURL, workspaceID, "/test", payload)
+	return u.forwardTest(ctx, baseURL, workspaceID, testPath, payload)
 }
 
 // TestRun forwards a control-plane "testRun" request to baseURL (POST /testRun)
 // and returns its HTTP status and body unchanged.
 func (u *Client) TestRun(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error) {
-	return u.forwardTest(ctx, baseURL, workspaceID, "/testRun", payload)
+	return u.forwardTest(ctx, baseURL, workspaceID, testRunPath, payload)
 }
 
 // TestLibrary forwards a control-plane "testLibrary" request to baseURL
 // (POST /test-library) and returns its HTTP status and body unchanged.
 func (u *Client) TestLibrary(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error) {
-	return u.forwardTest(ctx, baseURL, workspaceID, "/test-library", payload)
+	return u.forwardTest(ctx, baseURL, workspaceID, testLibraryPath, payload)
 }
 
 // ExtractLibs forwards a control-plane "extractLibs" request to baseURL
 // (POST /extract-libs) and returns its HTTP status and body unchanged.
 func (u *Client) ExtractLibs(ctx context.Context, baseURL, workspaceID string, payload []byte) (int, []byte, error) {
-	return u.forwardTest(ctx, baseURL, workspaceID, "/extract-libs", payload)
+	return u.forwardTest(ctx, baseURL, workspaceID, extractLibsPath, payload)
 }
 
 // forwardTest is the shared machinery behind the per-endpoint test methods: it POSTs payload to baseURL+path and
@@ -627,6 +666,9 @@ func (u *Client) forwardTest(ctx context.Context, baseURL, workspaceID, path str
 				return backoff.Permanent(err)
 			}
 			req.Header.Set("Content-Type", "application/json")
+			if path == testPath || path == testRunPath { // the AST pods are shared by every workspace
+				req.Header.Set(transformerclient.HeaderWorkspaceID, workspaceID)
+			}
 
 			client := u.pytClients.acquire(pytTarget(req.URL))
 			defer u.pytClients.release(client)

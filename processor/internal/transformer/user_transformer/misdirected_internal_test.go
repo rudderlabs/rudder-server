@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,6 +75,8 @@ func TestMisdirectedEventPath(t *testing.T) {
 		rsp := u.Transform(context.Background(), testTransformerEvents("pythonfaas", "ws-a", chunks))
 		require.Len(t, rsp.Events, chunks)
 		require.Empty(t, rsp.FailedEvents)
+		require.Equal(t, slices.Repeat([]string{"ws-a"}, 2*chunks), podA.receivedWorkspaceIDs(),
+			"every chunk carries its workspace, on the first attempt and on the retry on the fresh client")
 		require.Equal(t, []memstats.Metric{misdirectedA(chunks)}, f.metrics(misdirectedRequestsMetric))
 		require.Equal(t, []memstats.Metric{resetsA(1)}, f.metrics(clientResetsMetric))
 		require.Empty(t, f.metrics(coldStartErrorsMetric), "a 421 is not a cold start")
@@ -104,6 +107,7 @@ func TestMisdirectedEventPath(t *testing.T) {
 		require.Len(t, rsp.FailedEvents, 1)
 		require.Equal(t, http.StatusMisdirectedRequest, rsp.FailedEvents[0].StatusCode)
 		require.EqualValues(t, 1, js.hits.Load(), "not retried")
+		require.Equal(t, []string{""}, js.receivedWorkspaceIDs(), "rudder-transformer serves every workspace")
 		require.Empty(t, f.metrics(misdirectedRequestsMetric))
 		require.Empty(t, f.metrics(clientResetsMetric))
 		require.Empty(t, f.factory.built, "JS stays on the shared client")
@@ -225,6 +229,39 @@ func TestMisdirectedEventPath(t *testing.T) {
 	})
 }
 
+// TestWorkspaceHeaderOnEventPath pins what a per-workspace pod receives in X-Rudder-Workspace-Id from /customTransform
+// beyond the first, happy attempt.
+func TestWorkspaceHeaderOnEventPath(t *testing.T) {
+	t.Run("every attempt of a cold-start retry carries the workspace", func(t *testing.T) {
+		pod := newTestPod(t, nil)
+		pod.unavailableHits = 2
+		f := newMisdirectFixture(t)
+		f.dns.point("pyt-ws-a", pod.addr())
+		u := f.client()
+
+		rsp := u.Transform(context.Background(), testTransformerEvents("pythonfaas", "ws-a", 1))
+		require.Len(t, rsp.Events, 1)
+		require.Empty(t, rsp.FailedEvents)
+		require.EqualValues(t, 3, pod.hits.Load(), "two cold starts, then the pod is ready")
+		require.Equal(t, []memstats.Metric{
+			testCounter(coldStartErrorsMetric, stats.Tags{"workspaceID": "ws-a", "language": "python"}, 2),
+		}, f.metrics(coldStartErrorsMetric), "the 503s were retried as cold starts")
+		require.Equal(t, slices.Repeat([]string{"ws-a"}, 3), pod.receivedWorkspaceIDs())
+	})
+
+	t.Run("the workspace id goes out as given, while the URL lowercases it", func(t *testing.T) {
+		pod := newTestPod(t, nil)
+		f := newMisdirectFixture(t)
+		f.dns.point("pyt-ws-a", pod.addr())
+		u := f.client()
+
+		rsp := u.Transform(context.Background(), testTransformerEvents("pythonfaas", "WS-A", 1))
+		require.Len(t, rsp.Events, 1)
+		require.Empty(t, rsp.FailedEvents)
+		require.Equal(t, []string{"WS-A"}, pod.receivedWorkspaceIDs(), "reached pyt-ws-a, with the case untouched")
+	})
+}
+
 func TestMisdirectedForwardTest(t *testing.T) {
 	const (
 		host   = "pyt-test-run-1"
@@ -239,26 +276,61 @@ func TestMisdirectedForwardTest(t *testing.T) {
 	}
 	fastBackoff := WithMaxRetryBackoffInterval(config.SingleValueLoader(5 * time.Millisecond))
 
-	t.Run("a 421 resets the target's client and is retried", func(t *testing.T) {
-		p := newTestPod(t, misdirectFirstHits(1))
-		f := newMisdirectFixture(t)
-		f.dns.point(host, p.addr())
-		u := f.client(fastBackoff)
+	for _, m := range []struct{ name, path string }{{"Test", "/test"}, {"TestRun", "/testRun"}} {
+		t.Run(m.name+": a 421 resets the target's client and is retried", func(t *testing.T) {
+			p := newTestPod(t, misdirectFirstHits(1))
+			f := newMisdirectFixture(t)
+			f.dns.point(host, p.addr())
+			u := f.client(fastBackoff)
+			call := u.Test
+			if m.name == "TestRun" {
+				call = u.TestRun
+			}
 
-		status, body, err := u.Test(context.Background(), target, "ws-a", []byte(`{}`))
-		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, status)
-		require.Equal(t, "done", string(body))
-		require.Equal(t, []memstats.Metric{misdirected(1)}, f.metrics(misdirectedRequestsMetric))
-		require.Equal(t, []memstats.Metric{resets(1)}, f.metrics(clientResetsMetric))
-		require.Empty(t, f.metrics(coldStartErrorsMetric))
-		built, _ := f.factory.counts(target)
-		require.Equal(t, 2, built)
-		require.Eventually(t, func() bool {
-			_, closed := f.factory.counts(target)
-			return closed == 1
-		}, 5*time.Second, 10*time.Millisecond, "the replaced client is closed")
-	})
+			status, body, err := call(context.Background(), target, "ws-a", []byte(`{}`))
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, status)
+			require.Equal(t, "done", string(body))
+			require.Equal(t, []string{"ws-a", "ws-a"}, p.receivedWorkspaceIDs(),
+				"the retry on the fresh client carries the workspace too")
+			require.Equal(t, []memstats.Metric{
+				testCounter(misdirectedRequestsMetric,
+					stats.Tags{"workspaceID": "ws-a", "language": "python", "path": m.path}, 1),
+			}, f.metrics(misdirectedRequestsMetric))
+			require.Equal(t, []memstats.Metric{resets(1)}, f.metrics(clientResetsMetric))
+			require.Empty(t, f.metrics(coldStartErrorsMetric))
+			built, _ := f.factory.counts(target)
+			require.Equal(t, 2, built)
+			require.Eventually(t, func() bool {
+				_, closed := f.factory.counts(target)
+				return closed == 1
+			}, 5*time.Second, 10*time.Millisecond, "the replaced client is closed")
+		})
+	}
+
+	for _, m := range []struct{ name, path string }{{"TestLibrary", "/test-library"}, {"ExtractLibs", "/extract-libs"}} {
+		t.Run(m.name+": a 421 from a pod of another mode resets the target's client and is retried", func(t *testing.T) {
+			p := newTestPodWithReason(t, "misdirected_endpoint_not_served", misdirectFirstHits(1))
+			f := newMisdirectFixture(t)
+			f.dns.point(host, p.addr())
+			u := f.client(fastBackoff)
+			call := u.TestLibrary
+			if m.name == "ExtractLibs" {
+				call = u.ExtractLibs
+			}
+
+			status, body, err := call(context.Background(), target, "ws-a", []byte(`{}`))
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, status)
+			require.Equal(t, "done", string(body))
+			require.Equal(t, []string{"", ""}, p.receivedWorkspaceIDs(), "the shared AST pods get no workspace")
+			require.Equal(t, []memstats.Metric{
+				testCounter(misdirectedRequestsMetric,
+					stats.Tags{"workspaceID": "ws-a", "language": "python", "path": m.path}, 1),
+			}, f.metrics(misdirectedRequestsMetric))
+			require.Equal(t, []memstats.Metric{resets(1)}, f.metrics(clientResetsMetric))
+		})
+	}
 
 	t.Run("after a reset, a test pod name that no longer resolves is a cold start", func(t *testing.T) {
 		f := newMisdirectFixture(t)
@@ -456,10 +528,17 @@ func (f *testHTTPLBFactory) counts(target string) (built, closed int) {
 }
 
 // testPod stands in for a pyt pod. It refuses the hits misdirect picks with 421, the way a pod refuses work that isn't
-// its own, and serves every other hit: /customTransform echoes the events, any other path answers "done".
+// its own, and serves every other hit: /customTransform echoes the events, any other path answers "done". It records
+// the workspace header of every hit.
 type testPod struct {
 	srv  *httptest.Server
 	hits atomic.Int32
+	// unavailableHits is how many leading hits answer 503 without X-Rudder-Should-Retry, the way a pod that is still
+	// starting does. Set it before the first request.
+	unavailableHits int32
+
+	mu           sync.Mutex
+	workspaceIDs []string
 }
 
 func newTestPod(t *testing.T, misdirect func(hit int32) bool) *testPod {
@@ -472,7 +551,14 @@ func newTestPodWithReason(t *testing.T, reason string, misdirect func(hit int32)
 	t.Helper()
 	p := &testPod{}
 	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.mu.Lock()
+		p.workspaceIDs = append(p.workspaceIDs, r.Header.Get(transformerclient.HeaderWorkspaceID))
+		p.mu.Unlock()
 		hit := p.hits.Add(1)
+		if hit <= p.unavailableHits {
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
 		if misdirect != nil && misdirect(hit) {
 			if reason != "" {
 				w.Header().Set(transformerclient.HeaderErrorReason, reason)
@@ -504,6 +590,12 @@ func newTestPodWithReason(t *testing.T, reason string, misdirect func(hit int32)
 }
 
 func (p *testPod) addr() string { return p.srv.Listener.Addr().String() }
+
+func (p *testPod) receivedWorkspaceIDs() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.workspaceIDs)
+}
 
 func misdirectAlways(int32) bool { return true }
 

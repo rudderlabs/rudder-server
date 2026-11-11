@@ -53,17 +53,18 @@ const (
 	defaultRetryRudderErrorsMultiplier      = 2.0
 )
 
-// Headers of the transformer's retryable-error contract.
-// A transformer that is up and answering signals a transient downstream failure with HTTP 503 plus these headers,
-// so callers can retry the request instead of concluding that the transformer itself is unavailable.
-//
-// The peer half of this contract lives in rudder-pytransformer, which necessarily hardcodes the same strings, so these
-// values are a wire format: renaming the constants is free, changing their values is a breaking change on both sides.
+// Headers of the transformer's wire contract.
+// A transformer that is up and answering signals a transient downstream failure with HTTP 503 plus HeaderShouldRetry
+// and HeaderErrorReason, so callers can retry the request instead of concluding that the transformer itself is
+// unavailable.
+// HeaderWorkspaceID is sent for traffic and test pods (not AST) to identify for which workspace a request is for.
 const (
 	// HeaderShouldRetry is "true" when the response is worth retrying.
 	HeaderShouldRetry = "X-Rudder-Should-Retry"
 	// HeaderErrorReason carries a short cause, used as a stat tag.
 	HeaderErrorReason = "X-Rudder-Error-Reason"
+	// HeaderWorkspaceID carries the workspace a request is forwarded for.
+	HeaderWorkspaceID = "X-Rudder-Workspace-Id"
 )
 
 // IsRetryableResponse reports whether resp is the transformer signalling a transient downstream failure that the

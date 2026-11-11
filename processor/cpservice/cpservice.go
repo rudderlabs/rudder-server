@@ -31,20 +31,10 @@ import (
 // registers as. It must match cp-router's allowed-services list.
 const ServiceName = "rudderstack-processor"
 
-// Forwarder forwards a control-plane transformation-test request to a target
-// pyt transformer's baseURL, one method per pyt endpoint, returning the pyt
-// HTTP status and body. It is satisfied by *user_transformer.Client, reusing the
-// processor's existing transformer HTTP client (connection pooling, cold-start
-// retry).
+// Forwarder forwards a control-plane transformation-test request to a PYT pod.
 //
-// baseURL is resolved by the caller: [Service.Forward] passes the freshly
-// created ephemeral pyt Service's address for execution ops (test, testRun)
-// and the static AST deployment URL for AST ops (testLibrary, extractLibs).
-// workspaceID is carried through for logging/metrics only.
-//
-// NOTE: this path handles Python transformation tests only. JavaScript tests
-// stay on rudder-transformer and never reach the processor; routing JS here
-// would require its own handling.
+// NOTE: this path handles Python transformation tests only. JS tests stay on rudder-transformer and never reach the
+// processor.
 type Forwarder interface {
 	Test(ctx context.Context, baseURL, workspaceID string, payload []byte) (statusCode int, body []byte, err error)
 	TestRun(ctx context.Context, baseURL, workspaceID string, payload []byte) (statusCode int, body []byte, err error)

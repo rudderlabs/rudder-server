@@ -847,3 +847,9 @@ func TestNewClosableClient(t *testing.T) {
 		require.EqualValues(t, 2, opened.Load(), "the next request opens a new connection")
 	})
 }
+
+// TestHeaderWorkspaceIDWireName pins the header's name: rudder-pytransformer reads this exact string, so a rename here
+// would get every request to a traffic or test pod refused.
+func TestHeaderWorkspaceIDWireName(t *testing.T) {
+	require.Equal(t, "X-Rudder-Workspace-Id", HeaderWorkspaceID)
+}

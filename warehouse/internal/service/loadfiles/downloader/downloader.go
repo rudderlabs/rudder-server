@@ -33,9 +33,7 @@ func NewDownloader(
 	numWorkers int,
 ) Downloader {
 	return &downloaderImpl{
-		warehouse:  warehouse,
-		uploader:   uploader,
-		numWorkers: numWorkers,
+		warehouse: warehouse, uploader: uploader, numWorkers: numWorkers,
 	}
 }
 
@@ -54,16 +52,14 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 		l.warehouse.Destination.Config,
 		l.uploader.UseRudderStorage(),
 	)
-
+	storageConfig := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+		Provider: storageProvider, Config: l.warehouse.Destination.Config,
+		UseRudderStorage: l.uploader.UseRudderStorage(), WorkspaceID: l.warehouse.Destination.WorkspaceID,
+	})
 	fileManager, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
-		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         storageProvider,
-			Config:           l.warehouse.Destination.Config,
-			UseRudderStorage: l.uploader.UseRudderStorage(),
-			WorkspaceID:      l.warehouse.Destination.WorkspaceID,
-		}),
-		Conf: config.Default,
+		Config:   storageConfig,
+		Conf:     config.Default,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating filemanager for destination: %w", err)
@@ -99,13 +95,13 @@ func (l *downloaderImpl) downloadSingleObject(ctx context.Context, fileManager f
 		objectFile *os.File
 	)
 
-	ObjectStorage := warehouseutils.ObjectStorageType(
-		l.warehouse.Destination.DestinationDefinition.Name,
-		l.warehouse.Destination.Config,
-		l.uploader.UseRudderStorage(),
-	)
-
-	if objectName, err = warehouseutils.GetObjectName(object.Location, l.warehouse.Destination.Config, ObjectStorage); err != nil {
+	storageProvider := warehouseutils.ObjectStorageType(l.warehouse.Destination.DestinationDefinition.Name, l.warehouse.Destination.Config, l.uploader.UseRudderStorage())
+	if storageProvider == warehouseutils.AlibabaOSS {
+		objectName, err = fileManager.GetObjectNameFromLocation(object.Location)
+	} else {
+		objectName, err = warehouseutils.GetObjectName(object.Location, l.warehouse.Destination.Config, storageProvider)
+	}
+	if err != nil {
 		return "", fmt.Errorf("object name for location: %s, %w", object.Location, err)
 	}
 

@@ -10,9 +10,14 @@ import (
 )
 
 const (
-	destinationDefinitionOAuthType = "OAuth"
-	accountDefinitionOAuthType     = "oauth"
+	destinationDefinitionOAuthType    = "OAuth"
+	accountDefinitionOAuthType        = "oauth"
+	accountDefinitionMachineOAuthType = "machine_oauth"
 )
+
+func isOAuthAccountDefinition(authenticationType string) bool {
+	return authenticationType == accountDefinitionOAuthType || authenticationType == accountDefinitionMachineOAuthType
+}
 
 /*
 GetAccountID Gets AccountId for OAuth destination based on if rudderFlow is `Delivery` or `Delete`
@@ -43,7 +48,7 @@ func (d *DestinationT) GetSecretVersion(flow common.RudderFlow) int {
 // Otherwise, it falls back to checking the destination definition config.
 func (d *DestinationT) IsOAuthDestination(flow common.RudderFlow) (bool, error) {
 	if account := d.resolveAccount(flow); account != nil && account.AccountDefinition != nil {
-		return account.AccountDefinition.AuthenticationType == accountDefinitionOAuthType, nil
+		return isOAuthAccountDefinition(account.AccountDefinition.AuthenticationType), nil
 	}
 
 	authValue, _ := misc.NestedMapLookup(d.DestinationDefinition.Config, "auth", "type")

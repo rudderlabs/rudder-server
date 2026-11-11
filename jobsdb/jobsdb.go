@@ -228,6 +228,7 @@ type JobStatusT struct {
 	WorkspaceId   string          `json:"WorkspaceId"` // not stored in DB
 	PartitionID   string          `json:"-"`           // not stored in DB
 	CustomVal     string          `json:"-"`           // not stored in DB
+	DrainReason   string          `json:"-"`           // not stored in DB; set on drained statuses for metrics
 }
 
 type ConnectionID struct {
@@ -392,6 +393,7 @@ type Handle struct {
 		maxWriters                     int
 		maxOpenConnections             int
 		analyzeThreshold               config.ValueLoader[int]
+		statusJobIDNDistinct           config.ValueLoader[float64]
 		MaxDSSize                      config.ValueLoader[int]
 		numPartitions                  int // if zero or negative, no partitioning
 		partitionFunction              func(job *JobT) string
