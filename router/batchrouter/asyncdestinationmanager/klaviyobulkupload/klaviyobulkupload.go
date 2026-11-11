@@ -233,7 +233,7 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 
 	failedJobs := make(map[int64]bool)
 	incompleteChunks := make(map[string]bool)
-	for _, chunkID := range strings.Split(UploadStatsInput.FailedJobParameters, IMPORT_ID_SEPARATOR) {
+	for chunkID := range strings.SplitSeq(UploadStatsInput.FailedJobParameters, IMPORT_ID_SEPARATOR) {
 		if chunkID == "" {
 			continue
 		}
