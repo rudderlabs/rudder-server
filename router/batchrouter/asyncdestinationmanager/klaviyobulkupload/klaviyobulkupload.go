@@ -228,7 +228,12 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 		byImport[chunkID][hash] = append(byImport[chunkID][hash], job.JobID)
 	}
 	if len(byImport) == 0 {
-		return kbu.ambiguousStats(UploadStatsInput.ImportingList, "no correlation metadata")
+		kbu.Logger.Errorn("Ambiguous Klaviyo import reconciliation", logger.NewStringField("reason", "no correlation metadata"), logger.NewIntField("jobs", int64(len(UploadStatsInput.ImportingList))))
+		for _, job := range UploadStatsInput.ImportingList {
+			metadata.AbortedKeys = append(metadata.AbortedKeys, job.JobID)
+			metadata.AbortedReasons[job.JobID] = ambiguousResultReason
+		}
+		return common.GetUploadStatsResponse{StatusCode: http.StatusOK, Metadata: metadata}
 	}
 
 	failedJobs := make(map[int64]bool)
@@ -289,16 +294,6 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 	}
 	if len(incompleteChunks) > 0 || ambiguousCount > 0 {
 		kbu.Logger.Errorn("Ambiguous Klaviyo import reconciliation", logger.NewIntField("jobs", int64(ambiguousCount)))
-	}
-	return common.GetUploadStatsResponse{StatusCode: http.StatusOK, Metadata: metadata}
-}
-
-func (kbu *KlaviyoBulkUploader) ambiguousStats(jobs []*jobsdb.JobT, reason string) common.GetUploadStatsResponse {
-	kbu.Logger.Errorn("Ambiguous Klaviyo import reconciliation", logger.NewStringField("reason", reason), logger.NewIntField("jobs", int64(len(jobs))))
-	metadata := common.EventStatMeta{AbortedReasons: make(map[int64]string)}
-	for _, job := range jobs {
-		metadata.AbortedKeys = append(metadata.AbortedKeys, job.JobID)
-		metadata.AbortedReasons[job.JobID] = ambiguousResultReason
 	}
 	return common.GetUploadStatsResponse{StatusCode: http.StatusOK, Metadata: metadata}
 }

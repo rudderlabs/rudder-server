@@ -84,15 +84,6 @@ type PollResp struct {
 	Errors []ErrorDetail `json:"errors"`
 }
 
-type originalProfile struct {
-	Id         string `json:"id"`
-	Attributes struct {
-		Email      string `json:"email"`
-		Phone      string `json:"phone_number"`
-		ExternalId string `json:"external_id"`
-	} `json:"attributes"`
-}
-
 type UploadStatusResp struct {
 	Data []struct {
 		Type       string `json:"type"`
@@ -104,7 +95,15 @@ type UploadStatusResp struct {
 			Source struct {
 				Pointer string `json:"pointer"`
 			} `json:"source"`
-			OriginalPayload originalProfile `json:"original_payload"`
+			OriginalPayload struct {
+				Id          string `json:"id"`
+				AnonymousId string `json:"anonymous_id"`
+				Attributes  struct {
+					Email      string `json:"email"`
+					Phone      string `json:"phone_number"`
+					ExternalId string `json:"external_id"`
+				} `json:"attributes"`
+			} `json:"original_payload"`
 		} `json:"attributes"`
 		Links struct {
 			Self string `json:"self"`

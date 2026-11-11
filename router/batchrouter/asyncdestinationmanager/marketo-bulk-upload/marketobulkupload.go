@@ -290,26 +290,19 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 		}
 	}
 
-	return b.reconcileJobs(input.ImportingList, result, failedJobs, warningJobs)
+	metadata := b.updateJobStatus(input.ImportingList, result, failedJobs, warningJobs)
+
+	return common.GetUploadStatsResponse{
+		StatusCode: 200,
+		Metadata:   metadata,
+	}
 }
 
 func (*MarketoBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
 }
 
-// ambiguousStats aborts all importing jobs rather than guessing which records
-// Marketo has already accepted. A retry could duplicate an already imported lead.
-func (b *MarketoBulkUploader) ambiguousStats(jobs []*jobsdb.JobT, detail string) common.GetUploadStatsResponse {
-	b.logger.Errorn("Ambiguous Marketo bulk upload result", logger.NewStringField("detail", detail), logger.NewIntField("importing_jobs", int64(len(jobs))))
-	metadata := common.EventStatMeta{AbortedReasons: make(map[int64]string)}
-	for _, job := range jobs {
-		metadata.AbortedKeys = append(metadata.AbortedKeys, job.JobID)
-		metadata.AbortedReasons[job.JobID] = ambiguousResultReason + ": " + detail
-	}
-	return common.GetUploadStatsResponse{StatusCode: 200, Metadata: metadata}
-}
-
-func (b *MarketoBulkUploader) reconcileJobs(jobs []*jobsdb.JobT, result Result, failedJobs, warningJobs []map[string]string) common.GetUploadStatsResponse {
+func (b *MarketoBulkUploader) updateJobStatus(jobs []*jobsdb.JobT, result Result, failedJobs, warningJobs []map[string]string) common.EventStatMeta {
 	byHash := make(map[string][]int64)
 	missing := make(map[int64]bool)
 	for _, job := range jobs {
@@ -320,16 +313,22 @@ func (b *MarketoBulkUploader) reconcileJobs(jobs []*jobsdb.JobT, result Result, 
 		}
 		byHash[hash] = append(byHash[hash], job.JobID)
 	}
+	metadata := common.EventStatMeta{AbortedReasons: make(map[int64]string)}
 	if len(byHash) == 0 {
-		return b.ambiguousStats(jobs, "no correlation metadata")
+		const detail = "no correlation metadata"
+		b.logger.Errorn("Ambiguous Marketo bulk upload result", logger.NewStringField("detail", detail), logger.NewIntField("importing_jobs", int64(len(jobs))))
+		for _, job := range jobs {
+			metadata.AbortedKeys = append(metadata.AbortedKeys, job.JobID)
+			metadata.AbortedReasons[job.JobID] = ambiguousResultReason + ": " + detail
+		}
+		return metadata
 	}
 
-	metadata := common.EventStatMeta{AbortedReasons: make(map[int64]string)}
 	seen := make(map[int64]bool)
 	matchedRows := 0
 	match := func(rows []map[string]string, reasonColumn string) {
 		for _, row := range rows {
-			ids := byHash[hashResultRow(row)]
+			ids := byHash[calculateHashCode(row)]
 			if len(ids) == 0 {
 				continue
 			}
@@ -363,5 +362,5 @@ func (b *MarketoBulkUploader) reconcileJobs(jobs []*jobsdb.JobT, result Result, 
 	if !complete || ambiguousCount > 0 {
 		b.logger.Errorn("Ambiguous Marketo bulk upload result", logger.NewIntField("jobs", int64(ambiguousCount)), logger.NewIntField("matchedRows", int64(matchedRows)))
 	}
-	return common.GetUploadStatsResponse{StatusCode: 200, Metadata: metadata}
+	return metadata
 }

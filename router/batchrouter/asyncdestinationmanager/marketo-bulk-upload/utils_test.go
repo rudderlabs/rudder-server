@@ -272,16 +272,16 @@ func TestSendHTTPRequest(t *testing.T) {
 }
 
 // ==== Hashing Test Start ====
-func TestHashMappedRow(t *testing.T) {
-	base := hashMappedRow([]string{"email", "firstName"}, []string{"a@b.com", "Ada"})
-	require.Equal(t, base, hashMappedRow([]string{"firstName", "email"}, []string{"Ada", "a@b.com"}))
-	require.Equal(t, base, hashResultRow(map[string]string{
+func TestCalculateHashCode(t *testing.T) {
+	base := calculateHashCode(map[string]string{"email": "a@b.com", "firstName": "Ada"})
+	require.Equal(t, base, calculateHashCode(map[string]string{"firstName": "Ada", "email": "a@b.com"}))
+	require.Equal(t, base, calculateHashCode(map[string]string{
 		"firstName": "Ada", "email": "a@b.com", MARKETO_FAILED_HEADER: "bad", MARKETO_WARNING_HEADER: "warning",
 	}))
-	require.NotEqual(t, base, hashMappedRow([]string{"email", "firstName"}, []string{"Ada", "a@b.com"}))
-	require.NotEqual(t, hashMappedRow([]string{"a", "b"}, []string{"x,y", "z"}),
-		hashMappedRow([]string{"a", "b"}, []string{"x", "y,z"}))
-	require.NotEqual(t, hashMappedRow([]string{"a=b"}, []string{"c"}), hashMappedRow([]string{"a"}, []string{"b=c"}))
+	require.NotEqual(t, base, calculateHashCode(map[string]string{"email": "Ada", "firstName": "a@b.com"}))
+	require.NotEqual(t, calculateHashCode(map[string]string{"a": "x,y", "b": "z"}),
+		calculateHashCode(map[string]string{"a": "x", "b": "y,z"}))
+	require.NotEqual(t, calculateHashCode(map[string]string{"a=b": "c"}), calculateHashCode(map[string]string{"a": "b=c"}))
 }
 
 // ==== Hashing Test End ====

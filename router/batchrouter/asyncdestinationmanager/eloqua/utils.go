@@ -168,16 +168,6 @@ func generateErrorString(item RejectedItem) string {
 
 const correlationFailureReason = "Eloqua result cannot be reconciled to an uploaded CSV row; records may already have been imported"
 
-func abortAmbiguousJobs(importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader, reason string) *common.EventStatMeta {
-	eloqua.logger.Errorn("Ambiguous Eloqua import result; aborting importing jobs", logger.NewStringField("reason", reason), logger.NewIntField("importing_jobs", int64(len(importingList))))
-	meta := &common.EventStatMeta{AbortedReasons: make(map[int64]string)}
-	for _, job := range importingList {
-		meta.AbortedKeys = append(meta.AbortedKeys, job.JobID)
-		meta.AbortedReasons[job.JobID] = correlationFailureReason + ": " + reason
-	}
-	return meta
-}
-
 func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader, parameters []byte) (*common.EventStatMeta, error) {
 	byRow := make(map[int64][]int64)
 	missing := make(map[int64]bool)
@@ -190,7 +180,14 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloq
 		byRow[row.Int()] = append(byRow[row.Int()], job.JobID)
 	}
 	if len(byRow) == 0 {
-		return abortAmbiguousJobs(importingList, eloqua, "no CSV row correlation metadata"), nil
+		reason := "no CSV row correlation metadata"
+		eloqua.logger.Errorn("Ambiguous Eloqua import result; aborting importing jobs", logger.NewStringField("reason", reason), logger.NewIntField("importing_jobs", int64(len(importingList))))
+		meta := &common.EventStatMeta{AbortedReasons: make(map[int64]string)}
+		for _, job := range importingList {
+			meta.AbortedKeys = append(meta.AbortedKeys, job.JobID)
+			meta.AbortedReasons[job.JobID] = correlationFailureReason + ": " + reason
+		}
+		return meta, nil
 	}
 
 	var uniqueKeys []string
@@ -202,9 +199,6 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloq
 	rejectResponse, err := eloqua.service.CheckRejectedData(data)
 	if err != nil {
 		return nil, fmt.Errorf("fetching Eloqua rejects: %w", err)
-	}
-	if rejectResponse == nil {
-		return abortAmbiguousJobs(importingList, eloqua, "missing rejects response"), nil
 	}
 	totalResults := rejectResponse.TotalResults
 	complete := true
