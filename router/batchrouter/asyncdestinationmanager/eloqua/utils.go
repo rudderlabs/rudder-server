@@ -7,7 +7,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -180,7 +179,7 @@ func abortAmbiguousJobs(importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader
 }
 
 func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader, parameters []byte) (*common.EventStatMeta, error) {
-	byRow := make(map[string][]int64)
+	byRow := make(map[int64][]int64)
 	missing := make(map[int64]bool)
 	for _, job := range importingList {
 		row := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.csvRowIndex")
@@ -188,8 +187,7 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloq
 			missing[job.JobID] = true
 			continue
 		}
-		key := strconv.FormatInt(row.Int(), 10)
-		byRow[key] = append(byRow[key], job.JobID)
+		byRow[row.Int()] = append(byRow[row.Int()], job.JobID)
 	}
 	if len(byRow) == 0 {
 		return abortAmbiguousJobs(importingList, eloqua, "no CSV row correlation metadata"), nil
@@ -231,7 +229,7 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloq
 			}
 			for _, item := range rejectResponse.Items {
 				resultCount++
-				ids := byRow[strconv.FormatInt(item.RecordIndex, 10)]
+				ids := byRow[item.RecordIndex]
 				if len(ids) == 0 {
 					continue
 				}

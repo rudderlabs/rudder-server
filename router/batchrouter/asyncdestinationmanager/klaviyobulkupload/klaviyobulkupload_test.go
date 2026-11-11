@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -264,20 +263,8 @@ func TestUpload(t *testing.T) {
 			resp.Data.Id = "chunk"
 			return resp, nil
 		}).Times(1)
-		fixture, err := os.ReadFile(filepath.Join("testdata", "uploadData.jsonl"))
-		require.NoError(t, err)
-		lines := []byte{}
-		// The fixture's jobId field is historical; the batch-router line uses job_id.
-		// Use its first two profiles to verify that anonymous_id is not an outbound key.
-		for i, line := range splitFixtureLines(string(fixture))[:2] {
-			var job map[string]any
-			require.NoError(t, jsonrs.Unmarshal([]byte(line), &job))
-			job["metadata"] = map[string]any{"job_id": i + 1}
-			data, err := jsonrs.Marshal(job)
-			require.NoError(t, err)
-			lines = append(lines, data...)
-			lines = append(lines, '\n')
-		}
+		lines := []byte(`{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"qwe22@mail.com","anonymous_id":"user1","jobIdentifier":"user1:1"}}]}}}}}},"metadata":{"job_id":1}}` + "\n" +
+			`{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"example@mail.com","anonymous_id":"user2","jobIdentifier":"user2:2"}}]}}}}}},"metadata":{"job_id":2}}` + "\n")
 		path := filepath.Join(t.TempDir(), "upload.jsonl")
 		require.NoError(t, os.WriteFile(path, lines, 0o600))
 		out := manager.Upload(context.Background(), &common.AsyncDestinationStruct{Destination: destination, FileName: path, ImportingJobIDs: []int64{1, 2}})
@@ -671,7 +658,7 @@ func TestGetUploadStats(t *testing.T) {
 		api.EXPECT().GetUploadStatus("importId1").Return(failedStatus(), nil)
 		api.EXPECT().GetUploadErrors("importId1").Return(nil, fmt.Errorf("some error"))
 		result := uploader.GetUploadStats(input)
-		assert.Equal(t, http.StatusInternalServerError, result.StatusCode)
+		assert.Equal(t, http.StatusBadRequest, result.StatusCode)
 		assert.Equal(t, "some error", result.Error)
 	})
 	t.Run("partial metadata and shared identifier key", func(t *testing.T) {
@@ -751,14 +738,4 @@ func failedStatus() *klaviyobulkupload.PollResp {
 
 func newStatsManager(api klaviyobulkupload.KlaviyoAPIService) *klaviyobulkupload.KlaviyoBulkUploader {
 	return &klaviyobulkupload.KlaviyoBulkUploader{KlaviyoAPIService: api, Logger: logger.NOP, StatsFactory: stats.NOP}
-}
-
-func splitFixtureLines(s string) []string {
-	var lines []string
-	for line := range strings.SplitSeq(strings.TrimSpace(s), "\n") {
-		if line != "" {
-			lines = append(lines, line)
-		}
-	}
-	return lines
 }

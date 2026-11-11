@@ -250,7 +250,10 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 	}
 	err := jsonrs.Unmarshal(input.Parameters, &params)
 	if err != nil {
-		return common.GetUploadStatsResponse{StatusCode: 500, Error: "Failed to parse parameters: " + err.Error()}
+		return common.GetUploadStatsResponse{
+			StatusCode: 500,
+			Error:      "Failed to parse parameters: " + err.Error(),
+		}
 	}
 
 	// Poll again: the preceding Poll may have run in another process, or for a
@@ -271,13 +274,19 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 	if result.NumOfRowsFailed > 0 {
 		failedJobs, apiError = b.apiService.GetLeadStatus(input.FailedJobParameters)
 		if apiError != nil {
-			return common.GetUploadStatsResponse{StatusCode: 500, Error: fmt.Sprintf("Failed to fetch failed jobs: %s", apiError.Message)}
+			return common.GetUploadStatsResponse{
+				StatusCode: 500,
+				Error:      fmt.Sprintf("Failed to fetch failed jobs: %s", apiError.Message),
+			}
 		}
 	}
 	if result.NumOfRowsWithWarning > 0 {
 		warningJobs, apiError = b.apiService.GetLeadStatus(input.WarningJobParameters)
 		if apiError != nil {
-			return common.GetUploadStatsResponse{StatusCode: 500, Error: fmt.Sprintf("Failed to fetch warning jobs: %s", apiError.Message)}
+			return common.GetUploadStatsResponse{
+				StatusCode: 500,
+				Error:      fmt.Sprintf("Failed to fetch warning jobs: %s", apiError.Message),
+			}
 		}
 	}
 

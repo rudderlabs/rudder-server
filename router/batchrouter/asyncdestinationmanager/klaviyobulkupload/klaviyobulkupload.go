@@ -239,11 +239,11 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 		}
 		status, err := kbu.KlaviyoAPIService.GetUploadStatus(chunkID)
 		if err != nil {
-			return common.GetUploadStatsResponse{StatusCode: http.StatusInternalServerError, Error: err.Error()}
+			return common.GetUploadStatsResponse{StatusCode: http.StatusBadRequest, Error: err.Error()}
 		}
 		response, err := kbu.KlaviyoAPIService.GetUploadErrors(chunkID)
 		if err != nil {
-			return common.GetUploadStatsResponse{StatusCode: http.StatusInternalServerError, Error: err.Error()}
+			return common.GetUploadStatsResponse{StatusCode: http.StatusBadRequest, Error: err.Error()}
 		}
 		if status == nil || response == nil {
 			incompleteChunks[chunkID] = true
@@ -412,11 +412,12 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 				if jobHashes[jobID] == "" {
 					continue
 				}
-				jobImportingParameters[jobID], err = jsonrs.Marshal(importingMetadata{IdentifierHash: jobHashes[jobID], ChunkImportID: chunkResult.importID})
+				metadata, err := jsonrs.Marshal(importingMetadata{IdentifierHash: jobHashes[jobID], ChunkImportID: chunkResult.importID})
 				if err != nil {
 					kbu.Logger.Errorn("marshalling importing metadata", logger.NewIntField("jobID", jobID), obskit.Error(err))
 					continue
 				}
+				jobImportingParameters[jobID] = metadata
 			}
 		}
 	}

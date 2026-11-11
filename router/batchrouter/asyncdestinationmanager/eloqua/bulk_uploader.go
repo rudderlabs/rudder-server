@@ -249,18 +249,21 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 			DynamicPart:   UploadStatsInput.WarningJobParameters,
 			Authorization: b.authorization,
 		}
-		metadata, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b, UploadStatsInput.Parameters)
+		eventStatMetaWithRejectedSucceededJobs, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b, UploadStatsInput.Parameters)
 		if err != nil {
 			b.logger.Errorn("Error while parsing rejected data", obskit.Error(err))
-			return common.GetUploadStatsResponse{StatusCode: 500}
+			return common.GetUploadStatsResponse{
+				StatusCode: 500,
+			}
 		}
 		uploadStatusResponse.StatusCode = 200
-		uploadStatusResponse.Metadata = *metadata
+		uploadStatusResponse.Metadata = *eventStatMetaWithRejectedSucceededJobs
 		return uploadStatusResponse
 	}
 
-	uploadStatusResponse.Metadata = *parseFailedData(UploadStatsInput.FailedJobParameters, UploadStatsInput.ImportingList)
+	eventStatMetaWithFailedJobs := parseFailedData(UploadStatsInput.FailedJobParameters, UploadStatsInput.ImportingList)
 	uploadStatusResponse.StatusCode = 200
+	uploadStatusResponse.Metadata = *eventStatMetaWithFailedJobs
 	return uploadStatusResponse
 }
 

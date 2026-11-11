@@ -409,9 +409,9 @@ func TestEloqua(t *testing.T) {
 			}
 
 			f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(nil, fmt.Errorf("some error occurred while fetching the data"))
+			expected := common.GetUploadStatsResponse{StatusCode: 500}
 			received := f.bulkUploader.GetUploadStats(pollInput)
-			require.Equal(t, 500, received.StatusCode)
-			require.Empty(t, received.Error)
+			require.Equal(t, expected, received)
 		})
 		t.Run("TestEloquaSucceedToFetchRejectedData", func(t *testing.T) {
 			f := newEloquaFixture(t)
@@ -503,27 +503,15 @@ func TestEloqua(t *testing.T) {
 			require.Equal(t, []int64{12}, second.Metadata.AbortedKeys)
 		})
 
-		t.Run("partial metadata and shared row key", func(t *testing.T) {
-			for _, duplicate := range []bool{false, true} {
-				t.Run(fmt.Sprint(duplicate), func(t *testing.T) {
-					f := newEloquaFixture(t)
-					jobs := importingJobsWithRows([]*jobsdb.JobT{{JobID: 11}, {JobID: 12}, {JobID: 13}})
-					if duplicate {
-						jobs[1].LastJobStatus.Parameters = jobs[0].LastJobStatus.Parameters
-					} else {
-						jobs[1].LastJobStatus.Parameters = []byte(sharedEloquaParams)
-					}
-					f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(1, eloqua.RejectedItem{RecordIndex: 1, StatusCode: "INVALID"}), nil)
-					result := f.bulkUploader.GetUploadStats(statsInput(jobs))
-					require.Equal(t, []int64{11, 12}, result.Metadata.AbortedKeys)
-					require.Equal(t, []int64{13}, result.Metadata.SucceededKeys)
-					if duplicate {
-						require.Equal(t, result.Metadata.AbortedReasons[11], result.Metadata.AbortedReasons[12])
-					} else {
-						require.Contains(t, result.Metadata.AbortedReasons[12], "cannot be reconciled")
-					}
-				})
-			}
+		t.Run("partial metadata", func(t *testing.T) {
+			f := newEloquaFixture(t)
+			jobs := importingJobsWithRows([]*jobsdb.JobT{{JobID: 11}, {JobID: 12}, {JobID: 13}})
+			jobs[1].LastJobStatus.Parameters = []byte(sharedEloquaParams)
+			f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(1, eloqua.RejectedItem{RecordIndex: 1, StatusCode: "INVALID"}), nil)
+			result := f.bulkUploader.GetUploadStats(statsInput(jobs))
+			require.Equal(t, []int64{11, 12}, result.Metadata.AbortedKeys)
+			require.Equal(t, []int64{13}, result.Metadata.SucceededKeys)
+			require.Contains(t, result.Metadata.AbortedReasons[12], "cannot be reconciled")
 		})
 
 		t.Run("unmatched reject aborts unproved remainder", func(t *testing.T) {

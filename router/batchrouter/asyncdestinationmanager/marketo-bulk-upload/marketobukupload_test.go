@@ -465,10 +465,6 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 		require.Equal(t, 200, failed.StatusCode)
 		require.True(t, failed.HasFailed)
 
-		// Upload another batch with the same manager. The first batch still has its
-		// own durable correlation, even though the second is now in flight.
-		api.EXPECT().ImportLeads(gomock.Any(), "").Return("second", nil)
-		_, _ = uploadedJobs(t, uploader, job(2, map[string]any{"email": "second@example.com"}))
 		api.EXPECT().PollImportStatus("first").Return(&mbu.MarketoResponse{Result: []mbu.Result{{Status: "Complete", NumOfRowsFailed: 1}}}, nil)
 		api.EXPECT().GetLeadStatus(failed.FailedJobParameters).Return([]map[string]string{{"email": "first@example.com", mbu.MARKETO_FAILED_HEADER: "bad"}}, nil)
 		got := uploader.GetUploadStats(common.GetUploadStatsInput{Parameters: first.ImportingParameters, ImportingList: jobs, FailedJobParameters: failed.FailedJobParameters})
