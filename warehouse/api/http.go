@@ -291,13 +291,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	warehouses := a.bcManager.WarehousesBySourceID(sourceID)
-	destinationIDs := make([]string, 0, len(warehouses))
-	for _, warehouse := range warehouses {
-		destinationIDs = append(destinationIDs, warehouse.Destination.ID)
-	}
-
-	pendingStagingByDestination, err := a.stagingRepo.CountPendingByDestinationForSource(r.Context(), sourceID, taskRunID, destinationIDs)
+	pendingStagingFileCount, err := a.stagingRepo.CountPendingForSource(r.Context(), sourceID, taskRunID)
 	if err != nil {
 		if errors.Is(r.Context().Err(), context.Canceled) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
@@ -308,7 +302,13 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	uploadsByDestination, err := a.uploadRepo.CountsByDestinationForTaskRun(r.Context(), sourceID, taskRunID, destinationIDs)
+	filters := []repo.FilterBy{
+		{Key: "source_id", Value: sourceID},
+		{Key: "metadata->>'source_task_run_id'", Value: taskRunID},
+		{Key: "status", NotEquals: true, Value: model.ExportedData},
+		{Key: "status", NotEquals: true, Value: model.Aborted},
+	}
+	pendingUploadCount, err := a.uploadRepo.Count(r.Context(), filters...)
 	if err != nil {
 		if errors.Is(r.Context().Err(), context.Canceled) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
@@ -319,28 +319,43 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var pendingStagingFileCount, pendingUploadCount, abortedUploadCount int64
-	for _, count := range pendingStagingByDestination {
-		pendingStagingFileCount += count
+	filters = []repo.FilterBy{
+		{Key: "source_id", Value: sourceID},
+		{Key: "metadata->>'source_task_run_id'", Value: payload.TaskRunID},
+		{Key: "status", Value: "aborted"},
 	}
-	for _, counts := range uploadsByDestination {
-		pendingUploadCount += counts.Pending
-		abortedUploadCount += counts.Aborted
+	abortedUploadCount, err := a.uploadRepo.Count(r.Context(), filters...)
+	if err != nil {
+		if errors.Is(r.Context().Err(), context.Canceled) {
+			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
+			return
+		}
+		a.logger.Errorn("counting aborted uploads", obskit.Error(err))
+		http.Error(w, "can't get aborted uploads count", http.StatusInternalServerError)
+		return
 	}
 
 	pendingEventsAvailable := (pendingStagingFileCount + pendingUploadCount) > 0
 	triggerPendingUpload, _ := strconv.ParseBool(r.URL.Query().Get(triggerUploadQPName))
 
 	if pendingEventsAvailable && triggerPendingUpload {
-		a.logger.Infon("triggering upload for destinations with pending task run work",
+		a.logger.Infon("triggering upload for all destinations connected to source",
 			logger.NewStringField(lf.WorkspaceID, workspaceID),
 			logger.NewStringField(lf.SourceID, payload.SourceID),
 		)
-		for _, warehouse := range warehouses {
-			destinationID := warehouse.Destination.ID
-			if pendingStagingByDestination[destinationID] > 0 || uploadsByDestination[destinationID].Pending > 0 {
-				a.triggerStore.Store(warehouse.Identifier, struct{}{})
-			}
+
+		wh := a.bcManager.WarehousesBySourceID(sourceID)
+		if len(wh) == 0 {
+			a.logger.Warnn("no warehouse found for pending events",
+				logger.NewStringField(lf.WorkspaceID, workspaceID),
+				logger.NewStringField(lf.SourceID, payload.SourceID),
+			)
+			http.Error(w, ierrors.ErrNoWarehouseFound.Error(), http.StatusBadRequest)
+			return
+		}
+
+		for _, warehouse := range wh {
+			a.triggerStore.Store(warehouse.Identifier, struct{}{})
 		}
 	}
 

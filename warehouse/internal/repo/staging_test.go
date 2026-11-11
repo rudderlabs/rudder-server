@@ -533,7 +533,7 @@ func TestStagingFilesRepo(t *testing.T) {
 					require.NoError(t, err)
 					require.Equal(t, stagingFiles, pending)
 
-					countBySrcID, err := r.CountPendingForSource(ctx, input.SourceID, "task_run_id", []string{input.DestinationID})
+					countBySrcID, err := r.CountPendingForSource(ctx, input.SourceID, "task_run_id")
 					require.NoError(t, err)
 					require.Equal(t, int64(input.Files), countBySrcID)
 
@@ -547,7 +547,7 @@ func TestStagingFilesRepo(t *testing.T) {
 					require.NoError(t, err)
 					require.Empty(t, pending)
 
-					countBySrcID, err = r.CountPendingForSource(ctx, input.SourceID, "task_run_id", []string{input.DestinationID})
+					countBySrcID, err = r.CountPendingForSource(ctx, input.SourceID, "task_run_id")
 					require.NoError(t, err)
 					require.Zero(t, countBySrcID)
 
@@ -586,73 +586,20 @@ func TestStagingFilesRepo(t *testing.T) {
 				require.NoError(t, err)
 				_, err = u.CreateWithStagingFiles(ctx, model.Upload{SourceID: "source", DestinationID: "destination_b"}, []*model.StagingFile{uploaded})
 				require.NoError(t, err)
-				count, err := s.CountPendingForSource(ctx, "source", "task_1", []string{"destination_a", "destination_b"})
+				count, err := s.CountPendingForSource(ctx, "source", "task_1")
 				require.NoError(t, err)
 				require.EqualValues(t, 1, count)
-				count, err = s.CountPendingForSource(ctx, "source", "task_1", []string{"destination_b"})
-				require.NoError(t, err)
-				require.Zero(t, count)
 				count, err = s.CountPendingForConnection(ctx, "source", "destination_a")
 				require.NoError(t, err)
 				require.EqualValues(t, 2, count)
 				_, err = u.CreateWithStagingFiles(ctx, model.Upload{SourceID: "source", DestinationID: "destination_a"}, []*model.StagingFile{otherTask})
 				require.NoError(t, err)
-				count, err = s.CountPendingForSource(ctx, "source", "task_1", []string{"destination_a", "destination_b"})
+				count, err = s.CountPendingForSource(ctx, "source", "task_1")
 				require.NoError(t, err)
 				require.Zero(t, count)
-				count, err = s.CountPendingForSource(ctx, "source", "task_2", []string{"destination_a", "destination_b"})
+				count, err = s.CountPendingForSource(ctx, "source", "task_2")
 				require.NoError(t, err)
 				require.Zero(t, count)
-			})
-
-			t.Run("unassigned file below latest upload start", func(t *testing.T) {
-				conf := defaultConfig()
-				db, ctx := setupDBWithConfig(t, conf), context.Background()
-				s := repo.NewStagingFiles(db, conf)
-				u := repo.NewUploads(db)
-				insert := func(task string) *model.StagingFile {
-					file := model.StagingFile{SourceID: "source", DestinationID: "destination", SourceTaskRunID: task}
-					id, err := s.Insert(ctx, &model.StagingFileWithSchema{StagingFile: file})
-					require.NoError(t, err)
-					file.ID = id
-					return &file
-				}
-				first := insert("task_1")
-				gap := insert("task_1")
-				second := insert("task_2")
-				_, err := u.CreateWithStagingFiles(ctx, model.Upload{SourceID: "source", DestinationID: "destination"}, []*model.StagingFile{first, second})
-				require.NoError(t, err)
-
-				// A current upload's range includes the gap, but its upload_id does not.
-				count, err := s.CountPendingForSource(ctx, "source", "task_1", []string{"destination"})
-				require.NoError(t, err)
-				require.EqualValues(t, 1, count)
-				count, err = s.CountPendingForSource(ctx, "source", "task_2", []string{"destination"})
-				require.NoError(t, err)
-				require.Zero(t, count)
-				count, err = s.CountPendingForConnection(ctx, "source", "destination")
-				require.NoError(t, err)
-				require.EqualValues(t, 1, count)
-				pending, err := s.Pending(ctx, "source", "destination")
-				require.NoError(t, err)
-				require.Len(t, pending, 1)
-				require.Equal(t, gap.ID, pending[0].ID)
-
-				later := insert("task_2")
-				_, err = u.CreateWithStagingFiles(ctx, model.Upload{SourceID: "source", DestinationID: "destination"}, []*model.StagingFile{later})
-				require.NoError(t, err)
-				count, err = s.CountPendingForSource(ctx, "source", "task_1", []string{"destination"})
-				require.NoError(t, err)
-				require.Zero(t, count)
-				count, err = s.CountPendingForSource(ctx, "source", "task_2", []string{"destination"})
-				require.NoError(t, err)
-				require.Zero(t, count)
-				count, err = s.CountPendingForConnection(ctx, "source", "destination")
-				require.NoError(t, err)
-				require.Zero(t, count)
-				pending, err = s.Pending(ctx, "source", "destination")
-				require.NoError(t, err)
-				require.Empty(t, pending)
 			})
 
 			t.Run("Status", func(t *testing.T) {

@@ -253,48 +253,6 @@ func (u *Uploads) Count(ctx context.Context, filters ...FilterBy) (int64, error)
 	return count, nil
 }
 
-// TaskRunUploadCounts separates unfinished and aborted uploads linked to a task run.
-type TaskRunUploadCounts struct {
-	Pending int64
-	Aborted int64
-}
-
-// CountsByDestinationForTaskRun counts uploads through their task-run staging files.
-func (u *Uploads) CountsByDestinationForTaskRun(ctx context.Context, sourceID, taskRunID string, destinationIDs []string) (map[string]TaskRunUploadCounts, error) {
-	defer (*repo)(u).TimerStat("count_for_task_run", nil)()
-
-	rows, err := u.db.QueryContext(ctx, `
-		SELECT u.destination_id,
-			COUNT(DISTINCT u.id) FILTER (WHERE u.status != $5),
-			COUNT(DISTINCT u.id) FILTER (WHERE u.status = $5)
-		FROM `+uploadsTableName+` u
-		JOIN `+stagingTableName+` sf ON sf.upload_id = u.id
-		WHERE u.source_id = $1 AND u.destination_id = ANY($3)
-		AND sf.source_id = u.source_id AND sf.destination_id = u.destination_id
-		AND sf.metadata->>'source_task_run_id' = $2
-		AND u.status != $4
-		GROUP BY u.destination_id`,
-		sourceID, taskRunID, pq.Array(destinationIDs), model.ExportedData, model.Aborted)
-	if err != nil {
-		return nil, fmt.Errorf("counting uploads for task run: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	counts := make(map[string]TaskRunUploadCounts)
-	for rows.Next() {
-		var destinationID string
-		var count TaskRunUploadCounts
-		if err := rows.Scan(&destinationID, &count.Pending, &count.Aborted); err != nil {
-			return nil, fmt.Errorf("scanning uploads for task run: %w", err)
-		}
-		counts[destinationID] = count
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating uploads for task run: %w", err)
-	}
-	return counts, nil
-}
-
 func (u *Uploads) Get(ctx context.Context, id int64) (model.Upload, error) {
 	defer (*repo)(u).TimerStat("get", nil)()
 
