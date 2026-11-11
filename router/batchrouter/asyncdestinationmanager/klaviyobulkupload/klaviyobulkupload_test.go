@@ -490,7 +490,7 @@ func TestUploadIntegration(t *testing.T) {
 	assert.NotNil(t, pollResp)
 	assert.Equal(t, http.StatusOK, pollResp.StatusCode)
 	assert.True(t, pollResp.Complete)
-	assert.True(t, pollResp.HasFailed) // clean imports still need stats reconciliation
+	assert.False(t, pollResp.HasFailed)
 	assert.False(t, pollResp.HasWarning)
 }
 
@@ -547,9 +547,9 @@ func TestPoll(t *testing.T) {
 		assert.NotNil(t, jobStatus)
 		assert.Equal(t, true, jobStatus.Complete)
 		assert.Equal(t, http.StatusOK, jobStatus.StatusCode)
-		assert.Equal(t, true, jobStatus.HasFailed) // force reconciliation even on clean imports
+		assert.Equal(t, false, jobStatus.HasFailed)
 		assert.Equal(t, false, jobStatus.HasWarning)
-		assert.Equal(t, "importId1=0,1,1", jobStatus.FailedJobParameters)
+		assert.Empty(t, jobStatus.FailedJobParameters)
 		assert.Empty(t, jobStatus.WarningJobParameters)
 		assert.Empty(t, jobStatus.Error)
 	})

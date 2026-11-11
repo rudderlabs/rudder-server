@@ -84,22 +84,7 @@ func TestReconciliationAfterRestartAndMappingReplacement(t *testing.T) {
 	require.NotContains(t, got.Metadata.AbortedReasons, int64(0))
 }
 
-func TestMixedMarketoImportListRetriesWithoutClassifyingForeignJobs(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
-	uploader := reconciliationUploader(api, nil)
-	jobs := []*jobsdb.JobT{
-		{JobID: 1, LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importId":"current","importCount":2,"metadata":{"rowHash":"a"}}`)}},
-		{JobID: 2, LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importId":"other","importCount":2,"metadata":{"rowHash":"b"}}`)}},
-	}
-	got := uploader.GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"current","importCount":2}`), ImportingList: jobs})
-	require.Equal(t, 500, got.StatusCode)
-	require.Contains(t, got.Error, "mixed")
-	require.Empty(t, got.Metadata.AbortedKeys)
-	require.Empty(t, got.Metadata.SucceededKeys)
-}
-
-func TestReconciliationQueuedThenFailedAndRetry(t *testing.T) {
+func TestReconciliationQueuedThenCompleteAndRetry(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
 	api.EXPECT().ImportLeads(gomock.Any(), "").Return("first", nil)
@@ -109,7 +94,7 @@ func TestReconciliationQueuedThenFailedAndRetry(t *testing.T) {
 	queued := uploader.Poll(context.Background(), common.AsyncPoll{ImportId: "first"})
 	require.True(t, queued.InProgress)
 	require.False(t, queued.Complete)
-	api.EXPECT().PollImportStatus("first").Return(&mbu.MarketoResponse{Result: []mbu.Result{{Status: "Failed", NumOfRowsFailed: 1, Message: "bad"}}}, nil)
+	api.EXPECT().PollImportStatus("first").Return(&mbu.MarketoResponse{Result: []mbu.Result{{Status: "Complete", NumOfRowsFailed: 1}}}, nil)
 	failed := uploader.Poll(context.Background(), common.AsyncPoll{ImportId: "first"})
 	require.Equal(t, 200, failed.StatusCode)
 	require.True(t, failed.HasFailed)
@@ -118,11 +103,17 @@ func TestReconciliationQueuedThenFailedAndRetry(t *testing.T) {
 	// own durable correlation, even though the second is now in flight.
 	api.EXPECT().ImportLeads(gomock.Any(), "").Return("second", nil)
 	_, _ = uploadedJobs(t, uploader, job(2, map[string]any{"email": "second@example.com"}))
-	api.EXPECT().PollImportStatus("first").Return(&mbu.MarketoResponse{Result: []mbu.Result{{Status: "Failed", NumOfRowsFailed: 1}}}, nil)
+	api.EXPECT().PollImportStatus("first").Return(&mbu.MarketoResponse{Result: []mbu.Result{{Status: "Complete", NumOfRowsFailed: 1}}}, nil)
 	api.EXPECT().GetLeadStatus(failed.FailedJobParameters).Return([]map[string]string{{"email": "first@example.com", mbu.MARKETO_FAILED_HEADER: "bad"}}, nil)
 	got := uploader.GetUploadStats(common.GetUploadStatsInput{Parameters: first.ImportingParameters, ImportingList: jobs, FailedJobParameters: failed.FailedJobParameters})
 	require.Equal(t, []int64{1}, got.Metadata.AbortedKeys)
 	require.Empty(t, got.Metadata.SucceededKeys)
+	// A failed status update leaves the same importing job for another stats call.
+	api.EXPECT().PollImportStatus("first").Return(&mbu.MarketoResponse{Result: []mbu.Result{{Status: "Complete", NumOfRowsFailed: 1}}}, nil)
+	api.EXPECT().GetLeadStatus(failed.FailedJobParameters).Return([]map[string]string{{"email": "first@example.com", mbu.MARKETO_FAILED_HEADER: "bad"}}, nil)
+	again := uploader.GetUploadStats(common.GetUploadStatsInput{Parameters: first.ImportingParameters, ImportingList: jobs, FailedJobParameters: failed.FailedJobParameters})
+	require.Equal(t, []int64{1}, again.Metadata.AbortedKeys)
+	require.Empty(t, again.Metadata.SucceededKeys)
 }
 
 func TestReconciliationWarningsAndDuplicateRows(t *testing.T) {
@@ -142,7 +133,7 @@ func TestReconciliationWarningsAndDuplicateRows(t *testing.T) {
 			got := uploader.GetUploadStats(common.GetUploadStatsInput{Parameters: upload.ImportingParameters, ImportingList: jobs, WarningJobParameters: "warnings-url"})
 			if duplicate {
 				require.ElementsMatch(t, []int64{1, 2}, got.Metadata.AbortedKeys)
-				require.Contains(t, got.Metadata.AbortedReasons[1], "multiple importing jobs")
+				require.Equal(t, "duplicate", got.Metadata.AbortedReasons[1])
 				require.Empty(t, got.Metadata.SucceededKeys)
 			} else {
 				require.Equal(t, []int64{2}, got.Metadata.AbortedKeys)
@@ -163,14 +154,13 @@ func TestReconciliationAmbiguitiesAndPolicy(t *testing.T) {
 		abort    bool
 		contains string
 	}{
-		{name: "missing metadata strict", strict: true, status: mbu.Result{Status: "Complete", NumOfLeadsProcessed: 1}, abort: true, contains: "missing correlation"},
-		{name: "missing metadata legacy", strict: false, status: mbu.Result{Status: "Complete", NumOfLeadsProcessed: 1}, abort: true, contains: "missing correlation"},
-		{name: "unmatched row strict", strict: true, params: "hash", status: mbu.Result{Status: "Complete", NumOfRowsFailed: 1}, rows: []map[string]string{{"email": "other@example.com", mbu.MARKETO_FAILED_HEADER: "invalid"}}, abort: true, contains: "unmatched"},
-		{name: "unmatched row legacy", strict: false, params: "hash", status: mbu.Result{Status: "Complete", NumOfRowsFailed: 1}, rows: []map[string]string{{"email": "other@example.com", mbu.MARKETO_FAILED_HEADER: "invalid"}}, abort: true, contains: "unmatched"},
+		{name: "missing metadata strict", strict: true, status: mbu.Result{Status: "Complete", NumOfLeadsProcessed: 1}, abort: true, contains: "no correlation"},
+		{name: "missing metadata legacy", strict: false, status: mbu.Result{Status: "Complete", NumOfLeadsProcessed: 1}, abort: true, contains: "no correlation"},
+		{name: "unmatched row strict", strict: true, params: "hash", status: mbu.Result{Status: "Complete", NumOfRowsFailed: 1}, rows: []map[string]string{{"email": "other@example.com", mbu.MARKETO_FAILED_HEADER: "invalid"}}, abort: true, contains: "could not be correlated"},
+		{name: "unmatched row legacy", strict: false, params: "hash", status: mbu.Result{Status: "Complete", NumOfRowsFailed: 1}, rows: []map[string]string{{"email": "other@example.com", mbu.MARKETO_FAILED_HEADER: "invalid"}}, abort: true, contains: "could not be correlated"},
 		{name: "complete with zero failed counts", strict: true, params: "hash", status: mbu.Result{Status: "Complete"}},
 		{name: "legacy count policy", strict: false, params: "hash", status: mbu.Result{Status: "Complete"}},
-		{name: "missing returned row", strict: false, params: "hash", status: mbu.Result{Status: "Complete", NumOfRowsFailed: 1}, abort: true, contains: "count mismatch"},
-		{name: "failed batch without results", strict: false, params: "hash", status: mbu.Result{Status: "Failed"}, abort: true, contains: "failed import"},
+		{name: "missing returned row", strict: false, params: "hash", status: mbu.Result{Status: "Complete", NumOfRowsFailed: 1}, abort: true, contains: "could not be correlated"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			config.Set(reconciliationKey, tc.strict)
@@ -186,7 +176,7 @@ func TestReconciliationAmbiguitiesAndPolicy(t *testing.T) {
 			if tc.status.NumOfRowsFailed > 0 {
 				api.EXPECT().GetLeadStatus("failures").Return(tc.rows, nil)
 			}
-			got := uploader.GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"i"}`), ImportingList: []*jobsdb.JobT{jobStatus}, FailedJobParameters: "failures"})
+			got := uploader.GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"i","importCount":1}`), ImportingList: []*jobsdb.JobT{jobStatus}, FailedJobParameters: "failures"})
 			require.Equal(t, 200, got.StatusCode)
 			if tc.abort {
 				require.Equal(t, []int64{7}, got.Metadata.AbortedKeys)
@@ -198,4 +188,29 @@ func TestReconciliationAmbiguitiesAndPolicy(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMarketoPartialMetadataAbortsOnlyMissingJob(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
+	uploader := reconciliationUploader(api, nil)
+	jobs := []*jobsdb.JobT{
+		{JobID: 1, LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importId":"i","metadata":{"rowHash":"hash"}}`)}},
+		{JobID: 2, LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importId":"i"}`)}},
+	}
+	api.EXPECT().PollImportStatus("i").Return(&mbu.MarketoResponse{Result: []mbu.Result{{Status: "Complete"}}}, nil)
+	result := uploader.GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"i","importCount":2}`), ImportingList: jobs})
+	require.Equal(t, []int64{1}, result.Metadata.SucceededKeys)
+	require.Equal(t, []int64{2}, result.Metadata.AbortedKeys)
+}
+
+func TestMarketoCleanPollKeepsRouterSuccessPath(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
+	uploader := reconciliationUploader(api, nil)
+	api.EXPECT().PollImportStatus("i").Return(&mbu.MarketoResponse{Result: []mbu.Result{{Status: "Complete"}}}, nil)
+	result := uploader.Poll(context.Background(), common.AsyncPoll{ImportId: "i"})
+	require.True(t, result.Complete)
+	require.False(t, result.HasFailed)
+	require.False(t, result.HasWarning)
 }

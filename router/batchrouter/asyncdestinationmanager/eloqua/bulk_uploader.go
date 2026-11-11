@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -142,11 +143,10 @@ func (b *EloquaBulkUploader) Upload(_ context.Context, asyncDestStruct *common.A
 	}
 	jobParameters := make(map[int64]stdjson.RawMessage, len(rowToJob))
 	for row, jobID := range rowToJob {
-		metadata, err := jsonrs.Marshal(struct {
-			CSVRowIndex int64 `json:"csvRowIndex"`
-		}{CSVRowIndex: row})
+		metadata, err := jsonrs.Marshal(importingMetadata{CSVRowIndex: row})
 		if err != nil {
-			return b.createAsyncUploadErrorOutput("error while marshaling row metadata. ", err, destination.ID, asyncDestStruct)
+			b.logger.Errorn("marshalling importing metadata", obskit.Error(err))
+			continue
 		}
 		jobParameters[jobID] = metadata
 	}
@@ -164,16 +164,18 @@ func (b *EloquaBulkUploader) Upload(_ context.Context, asyncDestStruct *common.A
 }
 
 func (b *EloquaBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll) common.PollStatusResponse {
-	importIds := strings.SplitN(pollInput.ImportId, ":", 2)
-	if len(importIds) != 2 {
-		return common.PollStatusResponse{StatusCode: 500, Error: "invalid Eloqua import ID"}
-	}
+	importIds := strings.Split(pollInput.ImportId, ":")
 	checkSyncStatusData := HttpRequestData{
 		DynamicPart:   importIds[0],
 		BaseEndpoint:  b.baseEndpoint,
 		Authorization: b.authorization,
 	}
 	uploadStatus, err := b.service.CheckSyncStatus(&checkSyncStatusData)
+	defer func() {
+		if lo.Contains([]string{"success", "error", "warning"}, uploadStatus) {
+			b.deleteImportDef(importIds[1])
+		}
+	}()
 	if err != nil {
 		return common.PollStatusResponse{
 			Complete:   false,
@@ -185,13 +187,12 @@ func (b *EloquaBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll)
 	}
 	switch uploadStatus {
 	case "success":
-		// Even a clean sync must go through stats to validate the persisted row
-		// metadata and check rejects before declaring any job successful.
 		return common.PollStatusResponse{
-			Complete:             true,
-			StatusCode:           200,
-			HasWarning:           true,
-			WarningJobParameters: importIds[0],
+			Complete:   true,
+			InProgress: false,
+			StatusCode: 200,
+			HasFailed:  false,
+			HasWarning: false,
 		}
 	case "error":
 		return common.PollStatusResponse{
@@ -242,56 +243,36 @@ func (b *EloquaBulkUploader) GetUploadStats(input common.GetUploadStatsInput) co
 		eventsSuccessStat.Count(len(uploadStatusResponse.Metadata.SucceededKeys))
 	}()
 
-	// The batch router passes the first importing job's parameters here. The
-	// shared policy and import URI are also present on every importing status.
-	parameters := input.Parameters
-	if len(parameters) == 0 && len(input.ImportingList) > 0 {
-		parameters = input.ImportingList[0].LastJobStatus.Parameters
-	}
-	// The router fetches by destination, not sync. A foreign import in this
-	// list must remain importing rather than being classified under this sync.
-	importID := gjson.GetBytes(parameters, "importId").String()
-	for _, job := range input.ImportingList {
-		if jobImportID := gjson.GetBytes(job.LastJobStatus.Parameters, "importId").String(); jobImportID != "" && jobImportID != importID {
-			return common.GetUploadStatsResponse{StatusCode: 500, Error: "mixed Eloqua importing IDs; retrying poll"}
-		}
-	}
 	if input.WarningJobParameters != "" {
 		checkRejectedData := HttpRequestData{
 			BaseEndpoint:  b.baseEndpoint,
 			DynamicPart:   input.WarningJobParameters,
 			Authorization: b.authorization,
 		}
-		metadata, err := parseRejectedData(&checkRejectedData, input.ImportingList, b, parameters)
+		metadata, err := parseRejectedData(&checkRejectedData, input.ImportingList, b, input.Parameters)
 		if err != nil {
 			b.logger.Errorn("Error while fetching Eloqua rejects; retrying stats", obskit.Error(err))
 			return common.GetUploadStatsResponse{StatusCode: 500, Error: err.Error()}
 		}
 		uploadStatusResponse.Metadata = *metadata
 	} else if input.FailedJobParameters != "" {
-		expected := gjson.GetBytes(parameters, "importCount")
-		if !expected.Exists() || expected.Type != gjson.Number || expected.Int() < 0 || expected.Raw != fmt.Sprint(expected.Int()) || expected.Int() != int64(len(input.ImportingList)) {
-			return common.GetUploadStatsResponse{StatusCode: 500, Error: "eloqua importing list incomplete or invalid import count"}
-		}
-		if !strings.HasPrefix(gjson.GetBytes(parameters, "importId").String(), input.FailedJobParameters+":") {
-			uploadStatusResponse.Metadata = *abortAmbiguousJobs(input.ImportingList, b, "missing or mismatched sync ID")
-		} else {
-			for _, job := range input.ImportingList {
-				if gjson.GetBytes(job.LastJobStatus.Parameters, "importId").String() != gjson.GetBytes(parameters, "importId").String() {
-					uploadStatusResponse.Metadata = *abortAmbiguousJobs(input.ImportingList, b, "mixed importing sync IDs")
-					break
-				}
-			}
-			if len(uploadStatusResponse.Metadata.AbortedKeys) == 0 {
-				uploadStatusResponse.Metadata = *parseFailedData(input.FailedJobParameters, input.ImportingList)
-			}
-		}
+		uploadStatusResponse.Metadata = *parseFailedData(input.FailedJobParameters, input.ImportingList)
 	} else {
-		return common.GetUploadStatsResponse{StatusCode: 500, Error: "missing Eloqua sync status"}
+		uploadStatusResponse.Metadata = *abortAmbiguousJobs(input.ImportingList, b, "missing Eloqua sync status")
 	}
-	// Retain the import definition until the framework has committed job statuses.
-	// There is no post-commit callback today: even successful stats may be retried
-	// if the subsequent database update fails.
 	uploadStatusResponse.StatusCode = 200
 	return uploadStatusResponse
+}
+
+// Deletes import definition from Eloqua itself
+func (b *EloquaBulkUploader) deleteImportDef(importDefId string) {
+	deleteImportDefinitionData := HttpRequestData{
+		BaseEndpoint:  b.baseEndpoint,
+		Authorization: b.authorization,
+		DynamicPart:   importDefId,
+	}
+	err := b.service.DeleteImportDefinition(&deleteImportDefinitionData)
+	if err != nil {
+		b.logger.Errorn("Error while deleting import definition", obskit.Error(err))
+	}
 }

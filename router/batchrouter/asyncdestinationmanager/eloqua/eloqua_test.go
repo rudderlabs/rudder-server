@@ -341,13 +341,13 @@ func TestEloqua(t *testing.T) {
 				ImportId: "/syncs/384:/contacts/imports/384",
 			}
 			f.eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("success", nil)
+			f.eloquaService.EXPECT().DeleteImportDefinition(gomock.Any()).Return(nil)
 			expected := common.PollStatusResponse{
-				Complete:             true,
-				InProgress:           false,
-				StatusCode:           200,
-				HasFailed:            false,
-				HasWarning:           true,
-				WarningJobParameters: "/syncs/384",
+				Complete:   true,
+				InProgress: false,
+				StatusCode: 200,
+				HasFailed:  false,
+				HasWarning: false,
 			}
 			received := f.bulkUploader.Poll(t.Context(), pollInput)
 			require.Equal(t, expected, received)

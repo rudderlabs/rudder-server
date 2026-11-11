@@ -32,6 +32,10 @@ type EloquaBulkUploader struct {
 	service           EloquaService
 	successStatusCode []string
 }
+type importingMetadata struct {
+	CSVRowIndex int64 `json:"csvRowIndex"`
+}
+
 type DestinationConfig struct {
 	CompanyName string `json:"companyName"`
 	Password    string `json:"password"`

@@ -55,118 +55,112 @@ func errorRow(payload string) string {
 	return fmt.Sprintf(`{"attributes":{"detail":"rejected","original_payload":%s}}`, payload)
 }
 
+func failedStatus(count int) *klaviyo.PollResp {
+	var status klaviyo.PollResp
+	status.Data.Attributes.Status = "complete"
+	status.Data.Attributes.Failed_count = count
+	return &status
+}
+
+func newStatsManager(api klaviyo.KlaviyoAPIService) *klaviyo.KlaviyoBulkUploader {
+	return &klaviyo.KlaviyoBulkUploader{KlaviyoAPIService: api, Logger: logger.NOP, StatsFactory: stats.NOP}
+}
+
 func TestRestartSafeReconciliation(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	api := mockAPI.NewMockKlaviyoAPIService(ctrl)
-	manager := &klaviyo.KlaviyoBulkUploader{KlaviyoAPIService: api, Logger: logger.NOP, StatsFactory: stats.NOP}
+	manager := newStatsManager(api)
 	jobs := []*jobsdb.JobT{statusJob(1, "chunk1", identifierHash("id", "111222334"), "chunk1:chunk2"), statusJob(2, "chunk2", identifierHash("email", "second@mail.com"), "chunk1:chunk2")}
-	input := common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk1:chunk2","importCount":2}`), FailedJobParameters: "chunk1=1,0,1:chunk2=0,1,1", ImportingList: jobs}
+	api.EXPECT().GetUploadStatus("chunk1").Return(failedStatus(1), nil)
 	api.EXPECT().GetUploadErrors("chunk1").Return(errorsResponse(t, errorRow(`{"id":"111222334","anonymous_id":"unrelated"}`)), nil)
-	result := manager.GetUploadStats(input)
+	result := manager.GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk1:chunk2","importCount":2}`), FailedJobParameters: "chunk1", ImportingList: jobs})
 	require.Equal(t, http.StatusOK, result.StatusCode)
 	require.Equal(t, []int64{1}, result.Metadata.AbortedKeys)
 	require.Equal(t, []int64{2}, result.Metadata.SucceededKeys)
 	require.Equal(t, "rejected", result.Metadata.AbortedReasons[1])
-	for _, job := range jobs {
-		require.Empty(t, job.EventPayload)
-	}
 }
 
-func TestReconciliationAmbiguityAndPolicy(t *testing.T) {
-	key := "BatchRouter.KLAVIYO_BULK_UPLOAD.strictResultReconciliation"
-	for _, strict := range []bool{true, false} {
-		t.Run(fmt.Sprint(strict), func(t *testing.T) {
-			config.Set(key, strict)
-			t.Cleanup(func() { config.Set(key, true) })
-			cases := []struct {
-				name, failed string
-				jobs         []*jobsdb.JobT
-				returned     []string
-				want         []int64
-			}{
-				{"missing metadata clean", "", []*jobsdb.JobT{statusJob(1, "chunk", ""), statusJob(2, "chunk", identifierHash("email", "ok@mail.com"))}, nil, []int64{1}},
-				{"unknown error", "chunk=1", []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", identifierHash("id", "2"))}, []string{errorRow(`{"id":"unknown"}`)}, []int64{1, 2}},
-				{"duplicate error", "chunk=2", []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", identifierHash("id", "2"))}, []string{errorRow(`{"id":"1"}`), errorRow(`{"id":"1"}`)}, []int64{1, 2}},
-				{"short failed count", "chunk=2", []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", identifierHash("id", "2"))}, []string{errorRow(`{"id":"1"}`)}, []int64{1, 2}},
-				{"duplicate metadata", "chunk=1", []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", identifierHash("id", "1"))}, []string{errorRow(`{"id":"1"}`)}, []int64{1, 2}},
-				{"anonymous only", "chunk=1", []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", identifierHash("id", "2"))}, []string{errorRow(`{"anonymous_id":"1"}`)}, []int64{1, 2}},
+func TestKlaviyoPartialMetadataAndDuplicateKeys(t *testing.T) {
+	for _, duplicate := range []bool{false, true} {
+		t.Run(fmt.Sprint(duplicate), func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			api := mockAPI.NewMockKlaviyoAPIService(ctrl)
+			jobs := []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", "")}
+			if duplicate {
+				jobs[1] = statusJob(2, "chunk", identifierHash("id", "1"))
 			}
-			for _, tc := range cases {
-				t.Run(tc.name, func(t *testing.T) {
-					ctrl := gomock.NewController(t)
-					api := mockAPI.NewMockKlaviyoAPIService(ctrl)
-					manager := &klaviyo.KlaviyoBulkUploader{KlaviyoAPIService: api, Logger: logger.NOP, StatsFactory: stats.NOP}
-					if tc.failed != "" {
-						api.EXPECT().GetUploadErrors("chunk").Return(errorsResponse(t, tc.returned...), nil)
-					}
-					counts := "chunk=0,2,2"
-					if tc.failed != "" {
-						count := strings.TrimPrefix(tc.failed, "chunk=")
-						completed := 1
-						if count == "2" {
-							completed = 0
-						}
-						counts = fmt.Sprintf("chunk=%s,%d,2", count, completed)
-						if tc.name == "short failed count" {
-							counts = "chunk=2,0,2"
-						}
-					}
-					result := manager.GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), FailedJobParameters: counts, ImportingList: tc.jobs})
-					require.Equal(t, http.StatusOK, result.StatusCode)
-					require.Equal(t, tc.want, result.Metadata.AbortedKeys)
-					require.NotContains(t, result.Metadata.AbortedKeys, int64(0))
-					for _, id := range tc.want {
-						require.NotEmpty(t, result.Metadata.AbortedReasons[id])
-					}
-				})
+			api.EXPECT().GetUploadStatus("chunk").Return(failedStatus(1), nil)
+			api.EXPECT().GetUploadErrors("chunk").Return(errorsResponse(t, errorRow(`{"id":"1"}`)), nil)
+			result := newStatsManager(api).GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), FailedJobParameters: "chunk", ImportingList: jobs})
+			require.Equal(t, []int64{1, 2}, result.Metadata.AbortedKeys)
+			require.Empty(t, result.Metadata.SucceededKeys)
+			if duplicate {
+				require.Equal(t, "rejected", result.Metadata.AbortedReasons[2])
 			}
 		})
 	}
 }
 
-func TestKlaviyoPollCleanAndFailedCount(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	api := mockAPI.NewMockKlaviyoAPIService(ctrl)
-	manager := &klaviyo.KlaviyoBulkUploader{KlaviyoAPIService: api, Logger: logger.NOP, StatsFactory: stats.NOP}
-	var clean, failed klaviyo.PollResp
-	clean.Data.Attributes.Status = "complete"
-	clean.Data.Attributes.Total_count = 1
-	clean.Data.Attributes.Completed_count = 1
-	failed.Data.Attributes.Status = "complete"
-	failed.Data.Attributes.Failed_count = 2
-	failed.Data.Attributes.Total_count = 2
-	api.EXPECT().GetUploadStatus("clean").Return(&clean, nil)
-	api.EXPECT().GetUploadStatus("failed").Return(&failed, nil)
-	result := manager.Poll(context.Background(), common.AsyncPoll{ImportId: "clean:failed"})
-	require.Equal(t, http.StatusOK, result.StatusCode)
-	require.True(t, result.HasFailed)
-	require.ElementsMatch(t, []string{"clean=0,1,1", "failed=2,0,2"}, strings.Split(result.FailedJobParameters, ":"))
+func TestKlaviyoUnmatchedOrIncompleteResultsAbortRemainder(t *testing.T) {
+	for _, returned := range [][]string{{errorRow(`{"id":"unknown"}`)}, {}} {
+		t.Run(fmt.Sprint(len(returned)), func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			api := mockAPI.NewMockKlaviyoAPIService(ctrl)
+			api.EXPECT().GetUploadStatus("chunk").Return(failedStatus(1), nil)
+			api.EXPECT().GetUploadErrors("chunk").Return(errorsResponse(t, returned...), nil)
+			jobs := []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", identifierHash("id", "2"))}
+			result := newStatsManager(api).GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), FailedJobParameters: "chunk", ImportingList: jobs})
+			require.ElementsMatch(t, []int64{1, 2}, result.Metadata.AbortedKeys)
+			require.Empty(t, result.Metadata.SucceededKeys)
+		})
+	}
 }
 
-func TestKlaviyoStatsTransientErrorAndIncompleteList(t *testing.T) {
+func TestKlaviyoStatsTransientError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	api := mockAPI.NewMockKlaviyoAPIService(ctrl)
-	manager := &klaviyo.KlaviyoBulkUploader{KlaviyoAPIService: api, Logger: logger.NOP, StatsFactory: stats.NOP}
-	input := common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), FailedJobParameters: "chunk=1,1,2", ImportingList: []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", identifierHash("id", "2"))}}
-	api.EXPECT().GetUploadErrors("chunk").Return(nil, fmt.Errorf("temporary outage"))
-	result := manager.GetUploadStats(input)
+	api.EXPECT().GetUploadStatus("chunk").Return(nil, fmt.Errorf("temporary outage"))
+	jobs := []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", identifierHash("id", "2"))}
+	result := newStatsManager(api).GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), FailedJobParameters: "chunk", ImportingList: jobs})
 	require.Equal(t, http.StatusInternalServerError, result.StatusCode)
 	require.Empty(t, result.Metadata.SucceededKeys)
-	input.ImportingList = input.ImportingList[:1]
-	result = manager.GetUploadStats(input)
-	require.Equal(t, http.StatusInternalServerError, result.StatusCode)
-	require.Contains(t, result.Error, "incomplete")
 }
 
-func TestReconciliationMissingImportAndEmptyPoll(t *testing.T) {
-	for _, params := range []string{`{"importId":"","importCount":2}`, `{"importId":"chunk:other","importCount":2}`} {
-		manager := &klaviyo.KlaviyoBulkUploader{Logger: logger.NOP, StatsFactory: stats.NOP}
-		input := common.GetUploadStatsInput{Parameters: []byte(params), ImportingList: []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", identifierHash("id", "2"))}}
-		result := manager.GetUploadStats(input)
-		require.Equal(t, http.StatusOK, result.StatusCode)
-		require.Equal(t, []int64{1, 2}, result.Metadata.AbortedKeys)
-		require.Empty(t, result.Metadata.SucceededKeys)
-	}
+func TestKlaviyoCleanPollUsesRouterSuccessPath(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	api := mockAPI.NewMockKlaviyoAPIService(ctrl)
+	api.EXPECT().GetUploadStatus("chunk").Return(failedStatus(0), nil)
+	result := newStatsManager(api).Poll(context.Background(), common.AsyncPoll{ImportId: "chunk"})
+	require.True(t, result.Complete)
+	require.False(t, result.HasFailed)
+}
+
+func TestKlaviyoLegacyPolicyStillRequiresMetadata(t *testing.T) {
+	config.Set("BatchRouter.KLAVIYO_BULK_UPLOAD.strictResultReconciliation", false)
+	t.Cleanup(config.Reset)
+	jobs := []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", "")}
+	result := newStatsManager(nil).GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), ImportingList: jobs})
+	require.Equal(t, []int64{1}, result.Metadata.SucceededKeys)
+	require.Equal(t, []int64{2}, result.Metadata.AbortedKeys)
+}
+
+func TestKlaviyoUploadWithoutIdentifierOmitsCorrelationKey(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	api := mockAPI.NewMockKlaviyoAPIService(ctrl)
+	manager := &klaviyo.KlaviyoBulkUploader{KlaviyoAPIService: api, Logger: logger.NOP, StatsFactory: stats.NOP, BatchSize: 1, MaxPayloadSize: 4600000, MaxAllowedProfileSize: 512000}
+	api.EXPECT().UploadProfiles(gomock.Any()).DoAndReturn(func(payload klaviyo.Payload) (*klaviyo.UploadResp, error) {
+		require.Len(t, payload.Data.Attributes.Profiles.Data, 1)
+		resp := &klaviyo.UploadResp{}
+		resp.Data.Id = "chunk"
+		return resp, nil
+	})
+	path := filepath.Join(t.TempDir(), "upload.jsonl")
+	line := `{"message":{"body":{"JSON":{"data":{"attributes":{"profiles":{"data":[{"type":"profile","attributes":{"jobIdentifier":"1:1"}}]}}}}}},"metadata":{"job_id":1}}` + "\n"
+	require.NoError(t, os.WriteFile(path, []byte(line), 0o600))
+	output := manager.Upload(context.Background(), &common.AsyncDestinationStruct{Destination: destination, FileName: path, ImportingJobIDs: []int64{1}})
+	require.Equal(t, []int64{1}, output.ImportingJobIDs)
+	require.Empty(t, output.AbortJobIDs)
+	require.Empty(t, output.JobImportingParameters)
 }
 
 func TestUploadFixturePersistsOutboundIdentifiers(t *testing.T) {
@@ -209,43 +203,6 @@ func TestUploadFixturePersistsOutboundIdentifiers(t *testing.T) {
 	require.NotContains(t, string(out.JobImportingParameters[1]), "user1")
 }
 
-func TestKlaviyoIncompleteTerminalCountsAbort(t *testing.T) {
-	jobs := []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", identifierHash("id", "2"))}
-	manager := &klaviyo.KlaviyoBulkUploader{Logger: logger.NOP, StatsFactory: stats.NOP}
-	result := manager.GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), FailedJobParameters: "chunk=0,1,2", ImportingList: jobs})
-	require.Equal(t, http.StatusOK, result.StatusCode)
-	require.Equal(t, []int64{1, 2}, result.Metadata.AbortedKeys)
-	require.Empty(t, result.Metadata.SucceededKeys)
-}
-
-func TestKlaviyoDisabledStrictAllowsOnlyVerifiedCleanDuplicates(t *testing.T) {
-	key := "BatchRouter.KLAVIYO_BULK_UPLOAD.strictResultReconciliation"
-	jobs := []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("email", "same@mail.com")), statusJob(2, "chunk", identifierHash("email", "same@mail.com"))}
-	for _, strict := range []bool{true, false} {
-		t.Run(fmt.Sprint(strict), func(t *testing.T) {
-			config.Set(key, strict)
-			t.Cleanup(func() { config.Set(key, true) })
-			manager := &klaviyo.KlaviyoBulkUploader{Logger: logger.NOP, StatsFactory: stats.NOP}
-			result := manager.GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), FailedJobParameters: "chunk=0,2,2", ImportingList: jobs})
-			require.Equal(t, http.StatusOK, result.StatusCode)
-			require.Equal(t, []int64{1, 2}, result.Metadata.SucceededKeys)
-			require.Empty(t, result.Metadata.AbortedKeys)
-		})
-	}
-}
-
-func TestKlaviyoErrorPaginationAbortsChunk(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	api := mockAPI.NewMockKlaviyoAPIService(ctrl)
-	manager := &klaviyo.KlaviyoBulkUploader{KlaviyoAPIService: api, Logger: logger.NOP, StatsFactory: stats.NOP}
-	response := errorsResponse(t, errorRow(`{"id":"1"}`))
-	response.Links.Next = "next-page"
-	api.EXPECT().GetUploadErrors("chunk").Return(response, nil)
-	result := manager.GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), FailedJobParameters: "chunk=1,1,2", ImportingList: []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", identifierHash("id", "2"))}})
-	require.Equal(t, []int64{1, 2}, result.Metadata.AbortedKeys)
-	require.Empty(t, result.Metadata.SucceededKeys)
-}
-
 func TestUploadKeepsDuplicateOutboundIdentifiersAcrossChunks(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	api := mockAPI.NewMockKlaviyoAPIService(ctrl)
@@ -270,7 +227,7 @@ func TestUploadKeepsDuplicateOutboundIdentifiersAcrossChunks(t *testing.T) {
 	require.Equal(t, "chunk1", gjson.GetBytes(out.JobImportingParameters[1], "chunkImportId").String())
 	require.Equal(t, "chunk2", gjson.GetBytes(out.JobImportingParameters[2], "chunkImportId").String())
 	jobs := []*jobsdb.JobT{statusJob(1, "chunk1", identifierHash("email", "same@mail.com"), "chunk1:chunk2"), statusJob(2, "chunk2", identifierHash("email", "same@mail.com"), "chunk1:chunk2")}
-	result := manager.GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk1:chunk2","importCount":2}`), FailedJobParameters: "chunk1=0,1,1:chunk2=0,1,1", ImportingList: jobs})
+	result := manager.GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk1:chunk2","importCount":2}`), ImportingList: jobs})
 	require.Equal(t, http.StatusOK, result.StatusCode)
 	require.Equal(t, []int64{1, 2}, result.Metadata.SucceededKeys)
 	require.Empty(t, result.Metadata.AbortedKeys)

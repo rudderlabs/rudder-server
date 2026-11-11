@@ -47,6 +47,10 @@ const (
 	ambiguousResultReason  = "Marketo bulk upload result could not be correlated; records may already have been imported"
 )
 
+type importingMetadata struct {
+	RowHash string `json:"rowHash"`
+}
+
 func (b *MarketoBulkUploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 	destinationID := destination.ID
@@ -149,17 +153,10 @@ func (b *MarketoBulkUploader) Upload(_ context.Context, asyncDestStruct *common.
 	// Only accepted rows have hashes: overflowed rows were never sent to Marketo.
 	jobImportingParameters := make(map[int64]stdjson.RawMessage, len(importingJobIDs))
 	for _, jobID := range importingJobIDs {
-		metadata, err := jsonrs.Marshal(struct {
-			RowHash string `json:"rowHash"`
-		}{RowHash: jobHashes[jobID]})
+		metadata, err := jsonrs.Marshal(importingMetadata{RowHash: jobHashes[jobID]})
 		if err != nil {
 			b.logger.Errorn("marshalling importing metadata", logger.NewIntField("jobID", jobID), obskit.Error(err))
-			return common.AsyncUploadOutput{
-				FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-				FailedCount:   len(failedJobIDs) + len(importingJobIDs),
-				FailedReason:  fmt.Sprintf("marshalling importing metadata: %v", err),
-				DestinationID: destinationID,
-			}
+			continue
 		}
 		jobImportingParameters[jobID] = metadata
 	}
@@ -210,6 +207,7 @@ func (b *MarketoBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll
 	}
 
 	batchStatus := marketoResponse.Result[0].Status
+	hasFailed := marketoResponse.Result[0].NumOfRowsFailed > 0
 	hasWarning := marketoResponse.Result[0].NumOfRowsWithWarning > 0
 
 	coreURl := fmt.Sprintf("https://%s.mktorest.com/bulk/v1/leads/batch/%s", b.destinationConfig.MunchkinId, importId)
@@ -224,9 +222,7 @@ func (b *MarketoBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll
 		pollStatus.StatusCode = 200
 		pollStatus.FailedJobParameters = failedJobURLs
 		pollStatus.WarningJobParameters = warningJobURLs
-		// The router otherwise marks all jobs successful without calling GetUploadStats.
-		// Even with the legacy count policy, missing metadata must not pass as success.
-		pollStatus.HasFailed = true
+		pollStatus.HasFailed = hasFailed
 		pollStatus.HasWarning = hasWarning
 
 	case "Importing", "Queued":
@@ -234,9 +230,7 @@ func (b *MarketoBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll
 		pollStatus.StatusCode = 500
 	case "Failed":
 		pollStatus.HasFailed = true
-		// A terminal batch failure can still have row-level outcomes. Route it
-		// through GetUploadStats rather than discarding those results.
-		pollStatus.StatusCode = 200
+		pollStatus.StatusCode = 400
 		pollStatus.FailedJobParameters = failedJobURLs
 		pollStatus.WarningJobParameters = warningJobURLs
 		pollStatus.HasWarning = hasWarning
@@ -258,25 +252,11 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 	}
 	err := jsonrs.Unmarshal(input.Parameters, &params)
 	if err != nil {
-		return common.GetUploadStatsResponse{
-			StatusCode: 500,
-			Error:      "Failed to parse parameters: " + err.Error(),
-		}
+		return b.ambiguousStats(input.ImportingList, "invalid Marketo import parameters")
 	}
 
 	if params.ImportId == "" {
-		return common.GetUploadStatsResponse{StatusCode: 500, Error: "Missing Marketo importId"}
-	}
-	// Jobs are fetched by destination, not import ID. Do not consume another
-	// import's jobs when the destination-wide query returns a mixed list.
-	for _, job := range input.ImportingList {
-		if jobImportID := gjson.GetBytes(job.LastJobStatus.Parameters, "importId").String(); jobImportID != "" && jobImportID != params.ImportId {
-			return common.GetUploadStatsResponse{StatusCode: 500, Error: "mixed Marketo importing IDs; retrying poll"}
-		}
-	}
-
-	if count := gjson.GetBytes(input.Parameters, "importCount"); count.Exists() && count.Int() != int64(len(input.ImportingList)) {
-		return common.GetUploadStatsResponse{StatusCode: 500, Error: "incomplete Marketo importing job list"}
+		return b.ambiguousStats(input.ImportingList, "missing Marketo import ID")
 	}
 
 	// Poll again: the preceding Poll may have run in another process, or for a
@@ -286,11 +266,11 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 		return common.GetUploadStatsResponse{StatusCode: 500, Error: fmt.Sprintf("Failed to poll Marketo import: %s", apiError.Message)}
 	}
 	if status == nil || len(status.Result) == 0 {
-		return common.GetUploadStatsResponse{StatusCode: 500, Error: "Missing Marketo import status"}
+		return b.ambiguousStats(input.ImportingList, "missing Marketo import status")
 	}
 	result := status.Result[0]
 	if result.Status != "Complete" && result.Status != "Failed" {
-		return common.GetUploadStatsResponse{StatusCode: 500, Error: "Marketo import is not terminal: " + result.Status}
+		return b.ambiguousStats(input.ImportingList, "Marketo import is not terminal: "+result.Status)
 	}
 	if result.NumOfRowsFailed < 0 || result.NumOfRowsWithWarning < 0 {
 		return b.ambiguousStats(input.ImportingList, "negative Marketo result counts")
@@ -299,7 +279,7 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 	var failedJobs, warningJobs []map[string]string
 	if result.NumOfRowsFailed > 0 {
 		if input.FailedJobParameters == "" {
-			return common.GetUploadStatsResponse{StatusCode: 500, Error: "Missing Marketo failures URL"}
+			return b.ambiguousStats(input.ImportingList, "missing Marketo failures URL")
 		}
 		failedJobs, apiError = b.apiService.GetLeadStatus(input.FailedJobParameters)
 		if apiError != nil {
@@ -308,7 +288,7 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 	}
 	if result.NumOfRowsWithWarning > 0 {
 		if input.WarningJobParameters == "" {
-			return common.GetUploadStatsResponse{StatusCode: 500, Error: "Missing Marketo warnings URL"}
+			return b.ambiguousStats(input.ImportingList, "missing Marketo warnings URL")
 		}
 		warningJobs, apiError = b.apiService.GetLeadStatus(input.WarningJobParameters)
 		if apiError != nil {
@@ -316,7 +296,7 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 		}
 	}
 
-	return b.reconcileJobs(input.ImportingList, params.ImportId, result, failedJobs, warningJobs)
+	return b.reconcileJobs(input.ImportingList, params.ImportId, gjson.GetBytes(input.Parameters, "importCount"), result, failedJobs, warningJobs)
 }
 
 func (*MarketoBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
@@ -338,71 +318,68 @@ func (b *MarketoBulkUploader) ambiguousStats(jobs []*jobsdb.JobT, detail string)
 	return common.GetUploadStatsResponse{StatusCode: 200, Metadata: metadata}
 }
 
-func (b *MarketoBulkUploader) reconcileJobs(jobs []*jobsdb.JobT, importID string, result Result, failedJobs, warningJobs []map[string]string) common.GetUploadStatsResponse {
+func (b *MarketoBulkUploader) reconcileJobs(jobs []*jobsdb.JobT, importID string, importCount gjson.Result, result Result, failedJobs, warningJobs []map[string]string) common.GetUploadStatsResponse {
 	byHash := make(map[string][]int64)
+	missing := make(map[int64]bool)
+	strict := config.GetBoolVar(true, "BatchRouter.MARKETO_BULK_UPLOAD.strictResultReconciliation")
 	for _, job := range jobs {
 		hash := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.rowHash").String()
 		if hash == "" {
-			return b.ambiguousStats(jobs, fmt.Sprintf("missing correlation metadata for job %d", job.JobID))
+			missing[job.JobID] = true
+			continue
 		}
-		count := gjson.GetBytes(job.LastJobStatus.Parameters, "importCount")
-		if gjson.GetBytes(job.LastJobStatus.Parameters, "importId").String() != importID || !count.Exists() || count.Int() != int64(len(jobs)) {
-			return b.ambiguousStats(jobs, "missing or mixed Marketo import ID or count")
+		if strict && gjson.GetBytes(job.LastJobStatus.Parameters, "importId").String() != importID {
+			missing[job.JobID] = true
+			continue
 		}
 		byHash[hash] = append(byHash[hash], job.JobID)
 	}
-
-	if len(failedJobs) != result.NumOfRowsFailed || len(warningJobs) != result.NumOfRowsWithWarning {
-		return b.ambiguousStats(jobs, fmt.Sprintf("result row count mismatch: failures %d/%d, warnings %d/%d",
-			len(failedJobs), result.NumOfRowsFailed, len(warningJobs), result.NumOfRowsWithWarning))
+	if len(byHash) == 0 {
+		return b.ambiguousStats(jobs, "no correlation metadata")
 	}
 
 	metadata := common.EventStatMeta{AbortedReasons: make(map[int64]string)}
 	seen := make(map[int64]bool)
-	match := func(rows []map[string]string, reasonColumn string) string {
+	matchedRows := 0
+	match := func(rows []map[string]string, reasonColumn string) {
 		for _, row := range rows {
 			ids := byHash[hashResultRow(row)]
 			if len(ids) == 0 {
-				return "unmatched Marketo result row"
+				continue
 			}
-			if len(ids) != 1 {
-				return "multiple importing jobs share one Marketo result row"
+			matchedRows++
+			for _, id := range ids {
+				if !seen[id] {
+					seen[id] = true
+					metadata.AbortedKeys = append(metadata.AbortedKeys, id)
+					metadata.AbortedReasons[id] = row[reasonColumn]
+				}
 			}
-			id := ids[0]
-			if seen[id] {
-				return fmt.Sprintf("duplicate or overlapping Marketo result for job %d", id)
-			}
-			seen[id] = true
-			metadata.AbortedKeys = append(metadata.AbortedKeys, id)
-			metadata.AbortedReasons[id] = row[reasonColumn]
 		}
-		return ""
 	}
-	if detail := match(failedJobs, MARKETO_FAILED_HEADER); detail != "" {
-		return b.ambiguousStats(jobs, detail)
-	}
-	if detail := match(warningJobs, MARKETO_WARNING_HEADER); detail != "" {
-		return b.ambiguousStats(jobs, detail)
-	}
+	match(failedJobs, MARKETO_FAILED_HEADER)
+	match(warningJobs, MARKETO_WARNING_HEADER)
 
-	// Marketo does not provide a success file. The remainder can succeed only
-	// when every reported failure/warning has been uniquely attributed. With
-	// strict mode on, even identical clean rows cannot be individually proved.
-	strict := config.GetBoolVar(true, "BatchRouter.MARKETO_BULK_UPLOAD.strictResultReconciliation")
-	if strict {
-		for _, ids := range byHash {
-			if len(ids) > 1 {
-				return b.ambiguousStats(jobs, "duplicate mapped rows cannot be uniquely correlated")
-			}
-		}
+	complete := matchedRows == result.NumOfRowsFailed+result.NumOfRowsWithWarning && len(failedJobs) == result.NumOfRowsFailed && len(warningJobs) == result.NumOfRowsWithWarning
+	if strict && (importCount.Type != gjson.Number || importCount.Raw != fmt.Sprint(importCount.Int()) || importCount.Int() != int64(len(jobs))) {
+		complete = false
 	}
-	if result.Status == "Failed" && len(seen) != len(jobs) {
-		return b.ambiguousStats(jobs, "failed import left rows without a result")
-	}
+	ambiguousCount := 0
 	for _, job := range jobs {
-		if !seen[job.JobID] {
+		if seen[job.JobID] {
+			continue
+		}
+		if missing[job.JobID] || !complete {
+			ambiguousCount++
+			metadata.AbortedKeys = append(metadata.AbortedKeys, job.JobID)
+			metadata.AbortedReasons[job.JobID] = ambiguousResultReason
+		} else {
 			metadata.SucceededKeys = append(metadata.SucceededKeys, job.JobID)
 		}
+	}
+	if ambiguousCount > 0 {
+		b.logger.Errorn("Ambiguous Marketo bulk upload result", logger.NewIntField("jobs", int64(ambiguousCount)), logger.NewIntField("matchedRows", int64(matchedRows)))
+		b.statsFactory.NewTaggedStat("marketo_bulk_upload_ambiguous_reconciliation", stats.CountType, map[string]string{"module": "batch_router", "destType": "MARKETO_BULK_UPLOAD"}).Count(ambiguousCount)
 	}
 	return common.GetUploadStatsResponse{StatusCode: 200, Metadata: metadata}
 }

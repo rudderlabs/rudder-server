@@ -184,7 +184,7 @@ func TestMarketoBulkUploader_Poll(t *testing.T) {
 
 		assert.True(t, result.Complete)
 		assert.Equal(t, 200, result.StatusCode)
-		assert.True(t, result.HasFailed) // force result reconciliation, including clean imports
+		assert.False(t, result.HasFailed)
 		assert.False(t, result.HasWarning)
 	})
 
@@ -367,7 +367,7 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 			ImportingList:        importingList,
 			FailedJobParameters:  "https://123-ABC-456.mktorest.com/bulk/v1/leads/batch/test-import-123/failures.json",
 			WarningJobParameters: "https://123-ABC-456.mktorest.com/bulk/v1/leads/batch/test-import-123/warnings.json",
-			Parameters:           json.RawMessage(`{"importId":"test-import-123"}`),
+			Parameters:           json.RawMessage(`{"importId":"test-import-123","importCount":3}`),
 		})
 
 		assert.Equal(t, 200, result.StatusCode)

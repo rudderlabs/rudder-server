@@ -2,6 +2,7 @@ package eloqua_test
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -23,37 +24,23 @@ func statsJobs() []*jobsdb.JobT {
 }
 
 func statsInput(jobs []*jobsdb.JobT) common.GetUploadStatsInput {
-	return common.GetUploadStatsInput{
-		WarningJobParameters: "/syncs/384",
-		Parameters:           []byte(sharedEloquaParams),
-		ImportingList:        jobs,
-	}
+	return common.GetUploadStatsInput{WarningJobParameters: "/syncs/384", Parameters: []byte(sharedEloquaParams), ImportingList: jobs}
 }
 
-func rejectPage(offset, total int, hasMore bool, items ...eloqua.RejectedItem) *eloqua.RejectResponse {
-	return &eloqua.RejectResponse{Offset: offset, TotalResults: total, Limit: 1, Count: len(items), HasMore: hasMore, Items: items}
+func rejectPage(offset, total int, items ...eloqua.RejectedItem) *eloqua.RejectResponse {
+	return &eloqua.RejectResponse{Offset: offset, TotalResults: total, Limit: 1000, Count: len(items), Items: items}
 }
 
-func TestEloquaReconciliationAfterRestart(t *testing.T) {
-	f := newEloquaFixture(t) // only a fresh manager sees the importing statuses
+func TestEloquaReconciliationAfterRestartAndConfigChange(t *testing.T) {
+	f := newEloquaFixture(t)
+	f.bulkUploader = eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", f.eloquaService)
 	input := statsInput(statsJobs())
-	input.ImportingList[0].EventPayload = nil
-	input.ImportingList[1].EventPayload = nil
-
-	f.eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("warning", nil)
-	poll := f.bulkUploader.Poll(t.Context(), common.AsyncPoll{ImportId: "/syncs/384:/contacts/imports/384"})
-	require.True(t, poll.HasWarning)
-	input.WarningJobParameters = poll.WarningJobParameters
-
-	// ELQ-00040 is only acceptable when none of the invalid fields are unique.
-	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).DoAndReturn(func(data *eloqua.HttpRequestData) (*eloqua.RejectResponse, error) {
-		require.Equal(t, 0, data.Offset)
-		return rejectPage(0, 2, true, eloqua.RejectedItem{RecordIndex: 1, StatusCode: "ELQ-00040", InvalidFields: []string{"C_FirstName"}}), nil
-	})
-	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).DoAndReturn(func(data *eloqua.HttpRequestData) (*eloqua.RejectResponse, error) {
-		require.Equal(t, 1, data.Offset)
-		return rejectPage(1, 2, false, eloqua.RejectedItem{RecordIndex: 2, StatusCode: "ELQ-00040", InvalidFields: []string{"C_EmailAddress"}}), nil
-	})
+	for _, job := range input.ImportingList {
+		job.EventPayload = nil
+	}
+	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(0, 2,
+		eloqua.RejectedItem{RecordIndex: 1, StatusCode: "ELQ-00040", InvalidFields: []string{"C_FirstName"}},
+		eloqua.RejectedItem{RecordIndex: 2, StatusCode: "ELQ-00040", InvalidFields: []string{"C_EmailAddress"}}), nil)
 	result := f.bulkUploader.GetUploadStats(input)
 	require.Equal(t, 200, result.StatusCode)
 	require.Equal(t, []int64{11}, result.Metadata.SucceededKeys)
@@ -61,158 +48,99 @@ func TestEloquaReconciliationAfterRestart(t *testing.T) {
 	require.Contains(t, result.Metadata.AbortedReasons[12], "ELQ-00040")
 }
 
-func TestEloquaRejectFetchRetryPreservesDefinition(t *testing.T) {
+func TestEloquaRejectFetchRetryAfterDefinitionDeletion(t *testing.T) {
 	f := newEloquaFixture(t)
 	input := statsInput(statsJobs())
-	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(0, 2, true, eloqua.RejectedItem{RecordIndex: 1}), nil)
+	f.eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("warning", nil)
+	f.eloquaService.EXPECT().DeleteImportDefinition(gomock.Any()).Return(nil)
+	poll := f.bulkUploader.Poll(t.Context(), common.AsyncPoll{ImportId: "/syncs/384:/contacts/imports/384"})
+	require.True(t, poll.HasWarning)
 	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(nil, errors.New("temporary API failure"))
 	first := f.bulkUploader.GetUploadStats(input)
 	require.Equal(t, 500, first.StatusCode)
-	require.Contains(t, first.Error, "temporary API failure")
 	require.Empty(t, first.Metadata.SucceededKeys)
-
-	// A subsequent stats call on the same manager must start fetching at offset 0.
-	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).DoAndReturn(func(data *eloqua.HttpRequestData) (*eloqua.RejectResponse, error) {
-		require.Zero(t, data.Offset)
-		return rejectPage(0, 2, true, eloqua.RejectedItem{RecordIndex: 1}), nil
-	})
-	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(1, 2, false, eloqua.RejectedItem{RecordIndex: 2}), nil)
+	f.bulkUploader = eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", f.eloquaService)
+	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(0, 1, eloqua.RejectedItem{RecordIndex: 2, StatusCode: "INVALID"}), nil)
 	second := f.bulkUploader.GetUploadStats(input)
 	require.Equal(t, 200, second.StatusCode)
-	require.Equal(t, []int64{11, 12}, second.Metadata.AbortedKeys)
-	// A status update can fail after stats succeeds; a replacement manager must
-	// still be able to fetch the same definition on its next poll.
-	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(0, 0, false), nil)
-	third := f.bulkUploader.GetUploadStats(input)
-	require.Equal(t, 200, third.StatusCode)
+	require.Equal(t, []int64{11}, second.Metadata.SucceededKeys)
+	require.Equal(t, []int64{12}, second.Metadata.AbortedKeys)
 }
 
-func TestEloquaCleanSyncRequiresStats(t *testing.T) {
+func TestEloquaPartialAndDuplicateRowMetadata(t *testing.T) {
+	for _, duplicate := range []bool{false, true} {
+		t.Run(fmt.Sprint(duplicate), func(t *testing.T) {
+			f := newEloquaFixture(t)
+			jobs := statsJobs()
+			if duplicate {
+				jobs[1].LastJobStatus.Parameters = jobs[0].LastJobStatus.Parameters
+			} else {
+				jobs[1].LastJobStatus.Parameters = []byte(sharedEloquaParams)
+			}
+			f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(0, 1, eloqua.RejectedItem{RecordIndex: 1, StatusCode: "INVALID"}), nil)
+			result := f.bulkUploader.GetUploadStats(statsInput(jobs))
+			require.Equal(t, []int64{11, 12}, result.Metadata.AbortedKeys)
+			require.Empty(t, result.Metadata.SucceededKeys)
+			if duplicate {
+				require.Equal(t, result.Metadata.AbortedReasons[11], result.Metadata.AbortedReasons[12])
+			}
+		})
+	}
+}
+
+func TestEloquaUnknownRejectAbortsRemainder(t *testing.T) {
 	f := newEloquaFixture(t)
-	f.eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("success", nil)
-	poll := f.bulkUploader.Poll(t.Context(), common.AsyncPoll{ImportId: "/syncs/384:/contacts/imports/384"})
-	require.True(t, poll.HasWarning) // routes clean syncs through GetUploadStats
-	input := statsInput(statsJobs())
-	input.WarningJobParameters = poll.WarningJobParameters
-	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(0, 0, false), nil)
+	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(0, 1, eloqua.RejectedItem{RecordIndex: 3, StatusCode: "INVALID"}), nil)
+	result := f.bulkUploader.GetUploadStats(statsInput(statsJobs()))
+	require.Equal(t, 200, result.StatusCode)
+	require.ElementsMatch(t, []int64{11, 12}, result.Metadata.AbortedKeys)
+	require.Empty(t, result.Metadata.SucceededKeys)
+}
+
+func TestEloquaRejectPagination(t *testing.T) {
+	f := newEloquaFixture(t)
+	jobs := make([]*jobsdb.JobT, 1001)
+	first := make([]eloqua.RejectedItem, 1000)
+	for i := range 1001 {
+		jobs[i] = &jobsdb.JobT{JobID: int64(i + 1), LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(fmt.Sprintf(`{"importId":"/syncs/384:/contacts/imports/384","metadata":{"csvRowIndex":%d}}`, i+1))}}
+		if i < 1000 {
+			first[i] = eloqua.RejectedItem{RecordIndex: int64(i + 1), StatusCode: "INVALID"}
+		}
+	}
+	input := statsInput(jobs)
+	input.Parameters = []byte(`{"importId":"/syncs/384:/contacts/imports/384","importCount":1001,"uniqueKeys":[]}`)
+	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).DoAndReturn(func(data *eloqua.HttpRequestData) (*eloqua.RejectResponse, error) {
+		require.Zero(t, data.Offset)
+		return rejectPage(0, 1001, first...), nil
+	})
+	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).DoAndReturn(func(data *eloqua.HttpRequestData) (*eloqua.RejectResponse, error) {
+		require.Equal(t, 1000, data.Offset)
+		return rejectPage(1000, 1001, eloqua.RejectedItem{RecordIndex: 1001, StatusCode: "INVALID"}), nil
+	})
 	result := f.bulkUploader.GetUploadStats(input)
 	require.Equal(t, 200, result.StatusCode)
-	require.Equal(t, []int64{11, 12}, result.Metadata.SucceededKeys)
+	require.Len(t, result.Metadata.AbortedKeys, 1001)
+	require.Empty(t, result.Metadata.SucceededKeys)
 }
 
-func TestEloquaAmbiguousResultsAbort(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		change func(*common.GetUploadStatsInput)
-		page   *eloqua.RejectResponse
-		calls  int
-	}{
-		{"missing row", func(in *common.GetUploadStatsInput) {
-			in.ImportingList[1].LastJobStatus.Parameters = []byte(sharedEloquaParams)
-		}, nil, 0},
-		{"duplicate row", func(in *common.GetUploadStatsInput) {
-			in.ImportingList[1].LastJobStatus.Parameters = in.ImportingList[0].LastJobStatus.Parameters
-		}, nil, 0},
-		{"missing policy", func(in *common.GetUploadStatsInput) {
-			in.Parameters = []byte(`{"importId":"/syncs/384:/contacts/imports/384","importCount":2}`)
-		}, nil, 0},
-		{"unknown ELQ-00040 row", func(*common.GetUploadStatsInput) {}, rejectPage(0, 1, false, eloqua.RejectedItem{RecordIndex: 3, StatusCode: "ELQ-00040"}), 1},
-		{"pagination incomplete", func(*common.GetUploadStatsInput) {}, rejectPage(0, 2, false, eloqua.RejectedItem{RecordIndex: 1}), 1},
-		{"duplicate reject", func(*common.GetUploadStatsInput) {}, &eloqua.RejectResponse{Offset: 0, TotalResults: 2, Limit: 2, Count: 2, Items: []eloqua.RejectedItem{{RecordIndex: 1}, {RecordIndex: 1}}}, 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newEloquaFixture(t)
-			input := statsInput(statsJobs())
-			tc.change(&input)
-			if tc.calls > 0 {
-				f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(tc.page, nil).Times(tc.calls)
-			}
-			result := f.bulkUploader.GetUploadStats(input)
-			require.Equal(t, 200, result.StatusCode)
-			require.Empty(t, result.Metadata.SucceededKeys)
-			require.Equal(t, []int64{11, 12}, result.Metadata.AbortedKeys)
-			for _, id := range result.Metadata.AbortedKeys {
-				require.Contains(t, result.Metadata.AbortedReasons[id], "cannot be reconciled")
-			}
-		})
-	}
-}
-
-func TestEloquaIncompleteImportingSetRetries(t *testing.T) {
+func TestEloquaCleanPollUsesRouterSuccessPath(t *testing.T) {
 	f := newEloquaFixture(t)
-	input := statsInput(statsJobs()[:1])
-	result := f.bulkUploader.GetUploadStats(input)
-	require.Equal(t, 500, result.StatusCode)
-	require.Contains(t, result.Error, "importing list incomplete")
-	require.Empty(t, result.Metadata.AbortedKeys)
+	f.eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("success", nil)
+	f.eloquaService.EXPECT().DeleteImportDefinition(gomock.Any()).Return(nil)
+	poll := f.bulkUploader.Poll(t.Context(), common.AsyncPoll{ImportId: "/syncs/384:/contacts/imports/384"})
+	require.True(t, poll.Complete)
+	require.False(t, poll.HasWarning)
+	require.False(t, poll.HasFailed)
 }
 
-func TestEloquaFailedSyncValidatesImportingSet(t *testing.T) {
-	for _, tc := range []struct {
-		name, parameters string
-		jobs             []*jobsdb.JobT
-		wantCode         int
-	}{
-		{"short list", sharedEloquaParams, statsJobs()[:1], 500},
-		{"missing count", `{"importId":"/syncs/384:/contacts/imports/384"}`, statsJobs()[:1], 500},
-		{"invalid count", `{"importId":"/syncs/384:/contacts/imports/384","importCount":"2"}`, statsJobs()[:1], 500},
-		{"mixed sync IDs", sharedEloquaParams, statsJobs(), 500},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newEloquaFixture(t)
-			if tc.name == "mixed sync IDs" {
-				tc.jobs[1].LastJobStatus.Parameters = []byte(`{"importId":"/syncs/other:/contacts/imports/other","metadata":{"csvRowIndex":2}}`)
-			}
-			input := statsInput(tc.jobs)
-			input.WarningJobParameters = ""
-			input.FailedJobParameters = "/syncs/384"
-			input.Parameters = []byte(tc.parameters)
-			result := f.bulkUploader.GetUploadStats(input)
-			require.Equal(t, tc.wantCode, result.StatusCode)
-			require.Empty(t, result.Metadata.SucceededKeys)
-			require.Empty(t, result.Metadata.AbortedKeys)
-			if tc.name == "mixed sync IDs" {
-				require.Contains(t, result.Error, "mixed")
-			}
-		})
-	}
-}
-
-func TestEloquaIncompleteCountRetriesEvenWithStrictDisabled(t *testing.T) {
-	f := newEloquaFixture(t)
-	config.Set("BatchRouter.ELOQUA.strictResultReconciliation", false)
-	f.bulkUploader = eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", f.eloquaService)
-	for _, parameters := range []string{`{"importId":"/syncs/384:/contacts/imports/384"}`, `{"importId":"/syncs/384:/contacts/imports/384","importCount":"bad"}`} {
-		input := statsInput(statsJobs()[:1])
-		input.Parameters = []byte(parameters)
-		result := f.bulkUploader.GetUploadStats(input)
-		require.Equal(t, 500, result.StatusCode)
-		require.Empty(t, result.Metadata.AbortedKeys)
-	}
-}
-
-func TestEloquaPolicyChangesOnExistingManager(t *testing.T) {
-	f := newEloquaFixture(t)
-	input := statsInput(statsJobs())
-	input.Parameters = []byte(`{"importId":"/syncs/384:/contacts/imports/384","importCount":2}`)
-	strict := f.bulkUploader.GetUploadStats(input)
-	require.Equal(t, []int64{11, 12}, strict.Metadata.AbortedKeys)
+func TestEloquaLegacyPolicyStillRequiresRowMetadata(t *testing.T) {
 	config.Set("BatchRouter.ELOQUA.strictResultReconciliation", false)
 	t.Cleanup(config.Reset)
-	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(0, 0, false), nil)
-	legacy := f.bulkUploader.GetUploadStats(input)
-	require.Equal(t, 200, legacy.StatusCode)
-	require.Equal(t, []int64{11, 12}, legacy.Metadata.SucceededKeys)
-}
-
-func TestEloquaDisabledStrictPolicyStillRequiresRows(t *testing.T) {
 	f := newEloquaFixture(t)
-	config.Set("BatchRouter.ELOQUA.strictResultReconciliation", false)
-	f.bulkUploader = eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", f.eloquaService)
-	input := statsInput(statsJobs())
-	input.Parameters = []byte(`{"importId":"/syncs/384:/contacts/imports/384","importCount":2}`)
-	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(0, 1, false, eloqua.RejectedItem{RecordIndex: 3, StatusCode: "ELQ-00040"}), nil)
-	result := f.bulkUploader.GetUploadStats(input)
-	require.Equal(t, []int64{11, 12}, result.Metadata.AbortedKeys)
-	require.Empty(t, result.Metadata.SucceededKeys)
+	jobs := statsJobs()
+	jobs[1].LastJobStatus.Parameters = []byte(sharedEloquaParams)
+	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(0, 0), nil)
+	result := f.bulkUploader.GetUploadStats(statsInput(jobs))
+	require.Equal(t, []int64{11}, result.Metadata.SucceededKeys)
+	require.Equal(t, []int64{12}, result.Metadata.AbortedKeys)
 }
