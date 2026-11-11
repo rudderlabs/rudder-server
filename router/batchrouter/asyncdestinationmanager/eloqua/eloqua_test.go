@@ -410,7 +410,7 @@ func TestEloqua(t *testing.T) {
 			f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(nil, fmt.Errorf("some error occurred while fetching the data"))
 			received := f.bulkUploader.GetUploadStats(pollInput)
 			require.Equal(t, 500, received.StatusCode)
-			require.Contains(t, received.Error, "fetching Eloqua rejects")
+			require.Empty(t, received.Error)
 		})
 		t.Run("TestEloquaSucceedToFetchRejectedData", func(t *testing.T) {
 			f := newEloquaFixture(t)

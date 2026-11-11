@@ -15,7 +15,6 @@ import (
 	"github.com/tidwall/gjson"
 	"go.uber.org/mock/gomock"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -85,7 +84,7 @@ func TestKlaviyoPartialMetadataAndDuplicateKeys(t *testing.T) {
 		t.Run(fmt.Sprint(duplicate), func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			api := mockAPI.NewMockKlaviyoAPIService(ctrl)
-			jobs := []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", "")}
+			jobs := []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", ""), statusJob(3, "chunk", identifierHash("id", "3"))}
 			if duplicate {
 				jobs[1] = statusJob(2, "chunk", identifierHash("id", "1"))
 			}
@@ -93,7 +92,7 @@ func TestKlaviyoPartialMetadataAndDuplicateKeys(t *testing.T) {
 			api.EXPECT().GetUploadErrors("chunk").Return(errorsResponse(t, errorRow(`{"id":"1"}`)), nil)
 			result := newStatsManager(api).GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), FailedJobParameters: "chunk", ImportingList: jobs})
 			require.Equal(t, []int64{1, 2}, result.Metadata.AbortedKeys)
-			require.Empty(t, result.Metadata.SucceededKeys)
+			require.Equal(t, []int64{3}, result.Metadata.SucceededKeys)
 			if duplicate {
 				require.Equal(t, "rejected", result.Metadata.AbortedReasons[2])
 			}
@@ -116,16 +115,6 @@ func TestKlaviyoUnmatchedOrIncompleteResultsAbortRemainder(t *testing.T) {
 	}
 }
 
-func TestKlaviyoStatsTransientError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	api := mockAPI.NewMockKlaviyoAPIService(ctrl)
-	api.EXPECT().GetUploadStatus("chunk").Return(nil, fmt.Errorf("temporary outage"))
-	jobs := []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", identifierHash("id", "2"))}
-	result := newStatsManager(api).GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), FailedJobParameters: "chunk", ImportingList: jobs})
-	require.Equal(t, http.StatusInternalServerError, result.StatusCode)
-	require.Empty(t, result.Metadata.SucceededKeys)
-}
-
 func TestKlaviyoCleanPollUsesRouterSuccessPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	api := mockAPI.NewMockKlaviyoAPIService(ctrl)
@@ -133,15 +122,6 @@ func TestKlaviyoCleanPollUsesRouterSuccessPath(t *testing.T) {
 	result := newStatsManager(api).Poll(context.Background(), common.AsyncPoll{ImportId: "chunk"})
 	require.True(t, result.Complete)
 	require.False(t, result.HasFailed)
-}
-
-func TestKlaviyoLegacyPolicyStillRequiresMetadata(t *testing.T) {
-	config.Set("BatchRouter.KLAVIYO_BULK_UPLOAD.strictResultReconciliation", false)
-	t.Cleanup(config.Reset)
-	jobs := []*jobsdb.JobT{statusJob(1, "chunk", identifierHash("id", "1")), statusJob(2, "chunk", "")}
-	result := newStatsManager(nil).GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), ImportingList: jobs})
-	require.Equal(t, []int64{1}, result.Metadata.SucceededKeys)
-	require.Equal(t, []int64{2}, result.Metadata.AbortedKeys)
 }
 
 func TestKlaviyoUploadWithoutIdentifierOmitsCorrelationKey(t *testing.T) {

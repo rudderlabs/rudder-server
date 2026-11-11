@@ -227,7 +227,7 @@ func (b *EloquaBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll)
 	}
 }
 
-func (b *EloquaBulkUploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUploadStatsResponse {
+func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
 	var uploadStatusResponse common.GetUploadStatsResponse
 	defer func() {
 		eventsAbortedStat := b.statsFactory.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
@@ -243,23 +243,23 @@ func (b *EloquaBulkUploader) GetUploadStats(input common.GetUploadStatsInput) co
 		eventsSuccessStat.Count(len(uploadStatusResponse.Metadata.SucceededKeys))
 	}()
 
-	if input.WarningJobParameters != "" {
+	if UploadStatsInput.WarningJobParameters != "" {
 		checkRejectedData := HttpRequestData{
 			BaseEndpoint:  b.baseEndpoint,
-			DynamicPart:   input.WarningJobParameters,
+			DynamicPart:   UploadStatsInput.WarningJobParameters,
 			Authorization: b.authorization,
 		}
-		metadata, err := parseRejectedData(&checkRejectedData, input.ImportingList, b, input.Parameters)
+		metadata, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b, UploadStatsInput.Parameters)
 		if err != nil {
-			b.logger.Errorn("Error while fetching Eloqua rejects; retrying stats", obskit.Error(err))
-			return common.GetUploadStatsResponse{StatusCode: 500, Error: err.Error()}
+			b.logger.Errorn("Error while parsing rejected data", obskit.Error(err))
+			return common.GetUploadStatsResponse{StatusCode: 500}
 		}
+		uploadStatusResponse.StatusCode = 200
 		uploadStatusResponse.Metadata = *metadata
-	} else if input.FailedJobParameters != "" {
-		uploadStatusResponse.Metadata = *parseFailedData(input.FailedJobParameters, input.ImportingList)
-	} else {
-		uploadStatusResponse.Metadata = *abortAmbiguousJobs(input.ImportingList, b, "missing Eloqua sync status")
+		return uploadStatusResponse
 	}
+
+	uploadStatusResponse.Metadata = *parseFailedData(UploadStatsInput.FailedJobParameters, UploadStatsInput.ImportingList)
 	uploadStatusResponse.StatusCode = 200
 	return uploadStatusResponse
 }

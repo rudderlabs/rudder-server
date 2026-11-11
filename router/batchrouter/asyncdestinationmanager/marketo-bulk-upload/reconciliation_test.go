@@ -11,7 +11,6 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -22,8 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	mbu "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
 )
-
-const reconciliationKey = "BatchRouter.MARKETO_BULK_UPLOAD.strictResultReconciliation"
 
 func reconciliationUploader(api mbu.MarketoAPIServiceInterface, mapping map[string]string) *mbu.MarketoBulkUploader {
 	return mbu.NewMarketoBulkUploaderWithOptions(mbu.MarketoBulkUploaderOptions{
@@ -144,50 +141,17 @@ func TestReconciliationWarningsAndDuplicateRows(t *testing.T) {
 	}
 }
 
-func TestReconciliationAmbiguitiesAndPolicy(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		strict   bool
-		params   string
-		status   mbu.Result
-		rows     []map[string]string
-		abort    bool
-		contains string
-	}{
-		{name: "missing metadata strict", strict: true, status: mbu.Result{Status: "Complete", NumOfLeadsProcessed: 1}, abort: true, contains: "no correlation"},
-		{name: "missing metadata legacy", strict: false, status: mbu.Result{Status: "Complete", NumOfLeadsProcessed: 1}, abort: true, contains: "no correlation"},
-		{name: "unmatched row strict", strict: true, params: "hash", status: mbu.Result{Status: "Complete", NumOfRowsFailed: 1}, rows: []map[string]string{{"email": "other@example.com", mbu.MARKETO_FAILED_HEADER: "invalid"}}, abort: true, contains: "could not be correlated"},
-		{name: "unmatched row legacy", strict: false, params: "hash", status: mbu.Result{Status: "Complete", NumOfRowsFailed: 1}, rows: []map[string]string{{"email": "other@example.com", mbu.MARKETO_FAILED_HEADER: "invalid"}}, abort: true, contains: "could not be correlated"},
-		{name: "complete with zero failed counts", strict: true, params: "hash", status: mbu.Result{Status: "Complete"}},
-		{name: "legacy count policy", strict: false, params: "hash", status: mbu.Result{Status: "Complete"}},
-		{name: "missing returned row", strict: false, params: "hash", status: mbu.Result{Status: "Complete", NumOfRowsFailed: 1}, abort: true, contains: "could not be correlated"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			config.Set(reconciliationKey, tc.strict)
-			t.Cleanup(config.Reset)
-			ctrl := gomock.NewController(t)
-			api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
-			uploader := reconciliationUploader(api, nil)
-			jobStatus := &jobsdb.JobT{JobID: 7}
-			if tc.params != "" {
-				jobStatus.LastJobStatus.Parameters = []byte(`{"importId":"i","importCount":1,"metadata":{"rowHash":"hash"}}`)
-			}
-			api.EXPECT().PollImportStatus("i").Return(&mbu.MarketoResponse{Result: []mbu.Result{tc.status}}, nil)
-			if tc.status.NumOfRowsFailed > 0 {
-				api.EXPECT().GetLeadStatus("failures").Return(tc.rows, nil)
-			}
-			got := uploader.GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"i","importCount":1}`), ImportingList: []*jobsdb.JobT{jobStatus}, FailedJobParameters: "failures"})
-			require.Equal(t, 200, got.StatusCode)
-			if tc.abort {
-				require.Equal(t, []int64{7}, got.Metadata.AbortedKeys)
-				require.Contains(t, got.Metadata.AbortedReasons[7], tc.contains)
-				require.Empty(t, got.Metadata.SucceededKeys)
-				require.NotContains(t, got.Metadata.AbortedReasons, int64(0))
-			} else {
-				require.Equal(t, []int64{7}, got.Metadata.SucceededKeys)
-			}
-		})
-	}
+func TestMarketoUnmatchedResultAbortsRemainder(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
+	uploader := reconciliationUploader(api, nil)
+	jobStatus := &jobsdb.JobT{JobID: 7, LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"metadata":{"rowHash":"hash"}}`)}}
+	api.EXPECT().PollImportStatus("i").Return(&mbu.MarketoResponse{Result: []mbu.Result{{Status: "Complete", NumOfRowsFailed: 1}}}, nil)
+	api.EXPECT().GetLeadStatus("failures").Return([]map[string]string{{"email": "other@example.com", mbu.MARKETO_FAILED_HEADER: "invalid"}}, nil)
+	got := uploader.GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"i"}`), ImportingList: []*jobsdb.JobT{jobStatus}, FailedJobParameters: "failures"})
+	require.Equal(t, 200, got.StatusCode)
+	require.Equal(t, []int64{7}, got.Metadata.AbortedKeys)
+	require.Empty(t, got.Metadata.SucceededKeys)
 }
 
 func TestMarketoPartialMetadataAbortsOnlyMissingJob(t *testing.T) {

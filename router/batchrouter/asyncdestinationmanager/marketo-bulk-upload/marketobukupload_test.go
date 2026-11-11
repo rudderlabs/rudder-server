@@ -12,7 +12,6 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -217,8 +216,6 @@ func TestMarketoBulkUploader_Poll(t *testing.T) {
 }
 
 func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
-	config.Set("BatchRouter.MARKETO_BULK_UPLOAD.strictResultReconciliation", true)
-	t.Cleanup(func() { config.Reset() })
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 

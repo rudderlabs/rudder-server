@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	mockAPIService "github.com/rudderlabs/rudder-server/mocks/router/klaviyobulkupload"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	klaviyobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload"
@@ -595,5 +596,40 @@ func TestPoll(t *testing.T) {
 		assert.Equal(t, false, jobStatus.HasWarning)
 		assert.Empty(t, jobStatus.WarningJobParameters)
 		assert.Equal(t, "Error during fetching upload status The import job failed", jobStatus.Error)
+	})
+}
+
+// TestGetUploadStats preserves the original success and API-error cases with
+// correlation restored from importing status parameters.
+func TestGetUploadStats(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	api := mockAPIService.NewMockKlaviyoAPIService(ctrl)
+	uploader := klaviyobulkupload.KlaviyoBulkUploader{
+		DestName: "Klaviyo Bulk Upload", DestinationConfig: destination.Config,
+		Logger:       logger.NewLogger().Child("klaviyo-bulk-upload-test"),
+		StatsFactory: stats.NOP, KlaviyoAPIService: api,
+	}
+	jobs := []*jobsdb.JobT{
+		{JobID: 1, LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(fmt.Sprintf(`{"metadata":{"identifierHash":%q,"chunkImportId":"importId1"}}`, identifierHash("id", "1")))}},
+		{JobID: 2, LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(fmt.Sprintf(`{"metadata":{"identifierHash":%q,"chunkImportId":"importId1"}}`, identifierHash("id", "2")))}},
+	}
+	input := common.GetUploadStatsInput{FailedJobParameters: "importId1", ImportingList: jobs}
+
+	t.Run("Failure GetUploadStats: Import Job Failed", func(t *testing.T) {
+		api.EXPECT().GetUploadStatus("importId1").Return(failedStatus(1), nil)
+		api.EXPECT().GetUploadErrors("importId1").Return(errorsResponse(t, errorRow(`{"id":"1","anonymous_id":"111222334"}`)), nil)
+		result := uploader.GetUploadStats(input)
+		assert.Equal(t, http.StatusOK, result.StatusCode)
+		assert.Equal(t, []int64{1}, result.Metadata.AbortedKeys)
+		assert.Equal(t, "rejected", result.Metadata.AbortedReasons[1])
+		assert.Equal(t, []int64{2}, result.Metadata.SucceededKeys)
+	})
+
+	t.Run("GetUploadStats with Errors", func(t *testing.T) {
+		api.EXPECT().GetUploadStatus("importId1").Return(failedStatus(1), nil)
+		api.EXPECT().GetUploadErrors("importId1").Return(nil, fmt.Errorf("some error"))
+		result := uploader.GetUploadStats(input)
+		assert.Equal(t, http.StatusInternalServerError, result.StatusCode)
+		assert.Equal(t, "some error", result.Error)
 	})
 }

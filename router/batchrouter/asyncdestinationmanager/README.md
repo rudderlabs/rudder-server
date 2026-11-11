@@ -254,23 +254,6 @@ func TestYourDestinationManager(t *testing.T) {
 }
 ```
 
-## Result reconciliation for bulk imports
-
-Marketo, Eloqua and Klaviyo save a per-job correlation key in
-`AsyncUploadOutput.JobImportingParameters`. The batch router persists it in the
-importing status; managers rebuild result-to-job matches from that status after
-restarts or destination config changes. Marketo saves a hash of mapped CSV
-columns, Eloqua saves the CSV row number, and Klaviyo saves a hash of an outbound
-profile identifier and its chunk ID. Polling does not read event payloads.
-
-The default-enabled `strictResultReconciliation` flags are independent:
-`BatchRouter.MARKETO_BULK_UPLOAD.strictResultReconciliation`,
-`BatchRouter.ELOQUA.strictResultReconciliation`, and
-`BatchRouter.KLAVIYO_BULK_UPLOAD.strictResultReconciliation`. Turning one off
-relaxes import-level consistency checks for that destination; it does not stop
-metadata writes or allow an unmatched result to succeed. Imports with no
-reported failures retain the existing batch-router success path.
-
 ## Implementation Patterns
 
 ### 1. Configuration Parsing

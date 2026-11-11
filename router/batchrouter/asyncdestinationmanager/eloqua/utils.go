@@ -7,16 +7,15 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -172,9 +171,6 @@ const correlationFailureReason = "Eloqua result cannot be reconciled to an uploa
 
 func abortAmbiguousJobs(importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader, reason string) *common.EventStatMeta {
 	eloqua.logger.Errorn("Ambiguous Eloqua import result; aborting importing jobs", logger.NewStringField("reason", reason), logger.NewIntField("importing_jobs", int64(len(importingList))))
-	eloqua.statsFactory.NewTaggedStat("result_reconciliation_ambiguity", stats.CountType, map[string]string{
-		"module": "batch_router", "destType": eloqua.destName,
-	}).Count(len(importingList))
 	meta := &common.EventStatMeta{AbortedReasons: make(map[int64]string)}
 	for _, job := range importingList {
 		meta.AbortedKeys = append(meta.AbortedKeys, job.JobID)
@@ -184,97 +180,76 @@ func abortAmbiguousJobs(importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader
 }
 
 func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader, parameters []byte) (*common.EventStatMeta, error) {
-	strict := config.GetBoolVar(true, "BatchRouter.ELOQUA.strictResultReconciliation")
-	importID := gjson.GetBytes(parameters, "importId").String()
-	byRow := make(map[int64][]int64)
+	byRow := make(map[string][]int64)
 	missing := make(map[int64]bool)
 	for _, job := range importingList {
 		row := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.csvRowIndex")
-		if !row.Exists() || row.Type != gjson.Number || row.Int() < 1 || row.Raw != fmt.Sprint(row.Int()) ||
-			(strict && gjson.GetBytes(job.LastJobStatus.Parameters, "importId").String() != importID) {
+		if !row.Exists() {
 			missing[job.JobID] = true
 			continue
 		}
-		byRow[row.Int()] = append(byRow[row.Int()], job.JobID)
+		key := strconv.FormatInt(row.Int(), 10)
+		byRow[key] = append(byRow[key], job.JobID)
 	}
 	if len(byRow) == 0 {
 		return abortAmbiguousJobs(importingList, eloqua, "no CSV row correlation metadata"), nil
 	}
 
-	complete := true
-	count := gjson.GetBytes(parameters, "importCount")
-	if strict && (importID == "" || !strings.HasPrefix(importID, data.DynamicPart+":") ||
-		count.Type != gjson.Number || count.Raw != fmt.Sprint(count.Int()) || count.Int() != int64(len(importingList))) {
-		complete = false
-	}
 	var uniqueKeys []string
-	policy := gjson.GetBytes(parameters, "uniqueKeys")
-	if policy.Exists() {
-		if err := jsonrs.Unmarshal([]byte(policy.Raw), &uniqueKeys); err != nil {
-			complete = false
-		}
-	} else if strict {
-		complete = false
-	}
-
+	_ = jsonrs.Unmarshal([]byte(gjson.GetBytes(parameters, "uniqueKeys").Raw), &uniqueKeys)
 	metadata := &common.EventStatMeta{AbortedReasons: make(map[int64]string)}
-	seenRows := make(map[int64]bool)
 	failedJobs := make(map[int64]bool)
 	matchedRows := 0
 	resultCount := 0
-	applyPage := func(items []RejectedItem) {
-		resultCount += len(items)
-		for _, item := range items {
-			ids := byRow[item.RecordIndex]
-			if len(ids) == 0 || seenRows[item.RecordIndex] {
-				complete = false
-				continue
+	rejectResponse, err := eloqua.service.CheckRejectedData(data)
+	if err != nil {
+		return nil, fmt.Errorf("fetching Eloqua rejects: %w", err)
+	}
+	if rejectResponse == nil {
+		return abortAmbiguousJobs(importingList, eloqua, "missing rejects response"), nil
+	}
+	totalResults := rejectResponse.TotalResults
+	complete := true
+	/*
+		We have a limit of 1000 rejected events per api call. And the offset starts from 0. So we are fetching 1000 rejected events every time making the api call and updating the offset accordingly.
+	*/
+	if rejectResponse.Count > 0 {
+		iterations := int(math.Ceil(float64(totalResults) / float64(1000)))
+		var offset int
+		for i := range iterations {
+			offset = i * 1000
+			data.Offset = offset
+			if offset != 0 {
+				rejectResponse, err = eloqua.service.CheckRejectedData(data)
+				if err != nil {
+					return nil, fmt.Errorf("fetching Eloqua rejects: %w", err)
+				}
+				if rejectResponse == nil {
+					complete = false
+					break
+				}
 			}
-			seenRows[item.RecordIndex] = true
-			matchedRows++
-			if lo.Contains(eloqua.successStatusCode, item.StatusCode) && len(lo.Intersect(uniqueKeys, item.InvalidFields)) == 0 && policy.Exists() {
-				continue
-			}
-			for _, id := range ids {
-				if !failedJobs[id] {
-					failedJobs[id] = true
-					metadata.AbortedKeys = append(metadata.AbortedKeys, id)
-					metadata.AbortedReasons[id] = generateErrorString(item)
+			for _, item := range rejectResponse.Items {
+				resultCount++
+				ids := byRow[strconv.FormatInt(item.RecordIndex, 10)]
+				if len(ids) == 0 {
+					continue
+				}
+				matchedRows++
+				if lo.Contains(eloqua.successStatusCode, item.StatusCode) && len(lo.Intersect(uniqueKeys, item.InvalidFields)) == 0 {
+					continue
+				}
+				for _, id := range ids {
+					if !failedJobs[id] {
+						failedJobs[id] = true
+						metadata.AbortedKeys = append(metadata.AbortedKeys, id)
+						metadata.AbortedReasons[id] = generateErrorString(item)
+					}
 				}
 			}
 		}
 	}
-
-	// Eloqua returns up to 1000 rejects per call, starting at offset zero.
-	page, err := eloqua.service.CheckRejectedData(data)
-	if err != nil {
-		return nil, fmt.Errorf("fetching Eloqua rejects: %w", err)
-	}
-	if page == nil {
-		return abortAmbiguousJobs(importingList, eloqua, "missing rejects response"), nil
-	}
-	applyPage(page.Items)
-	if page.Count > 0 {
-		iterations := int(math.Ceil(float64(page.TotalResults) / 1000))
-		for i := 1; i < iterations; i++ {
-			data.Offset = i * 1000
-			next, fetchErr := eloqua.service.CheckRejectedData(data)
-			if fetchErr != nil {
-				return nil, fmt.Errorf("fetching Eloqua rejects: %w", fetchErr)
-			}
-			if next == nil {
-				complete = false
-				break
-			}
-			applyPage(next.Items)
-		}
-	}
-	if page.TotalResults < 0 || resultCount != page.TotalResults {
-		complete = false
-	}
-	if matchedRows != page.TotalResults {
-		complete = false
-	}
+	complete = complete && resultCount == totalResults && matchedRows == totalResults
 	ambiguousCount := 0
 	for _, job := range importingList {
 		if failedJobs[job.JobID] {
@@ -288,9 +263,8 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloq
 			metadata.SucceededKeys = append(metadata.SucceededKeys, job.JobID)
 		}
 	}
-	if ambiguousCount > 0 {
+	if !complete || ambiguousCount > 0 {
 		eloqua.logger.Errorn("Ambiguous Eloqua import result", logger.NewIntField("jobs", int64(ambiguousCount)), logger.NewIntField("matched_rows", int64(matchedRows)))
-		eloqua.statsFactory.NewTaggedStat("result_reconciliation_ambiguity", stats.CountType, map[string]string{"module": "batch_router", "destType": eloqua.destName}).Count(ambiguousCount)
 	}
 	return metadata, nil
 }

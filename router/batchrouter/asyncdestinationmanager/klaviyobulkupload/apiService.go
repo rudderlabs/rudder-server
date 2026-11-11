@@ -126,34 +126,28 @@ func (k *KlaviyoAPIServiceImpl) GetUploadStatus(importId string) (*PollResp, err
 }
 
 func (k *KlaviyoAPIServiceImpl) GetUploadErrors(importId string) (*UploadStatusResp, error) {
-	next := KlaviyoAPIURL + importId + "/import-errors?page[size]=100"
-	var all UploadStatusResp
-	for next != "" {
-		req, err := http.NewRequest("GET", next, nil)
-		if err != nil {
-			return nil, err
-		}
-		setRequestHeaders(req, k.PrivateAPIKey)
-		resp, err := k.client.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		body, readErr := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if readErr != nil {
-			return nil, readErr
-		}
-		var page UploadStatusResp
-		if err := jsonrs.Unmarshal(body, &page); err != nil {
-			return nil, err
-		}
-		if len(page.Errors) > 0 {
-			return nil, fmt.Errorf("GetUploadErrors failed with errors: %+v", page.Errors)
-		}
-		all.Data = append(all.Data, page.Data...)
-		next = page.Links.Next
+	importErrorUrl := KlaviyoAPIURL + importId + "/import-errors"
+	req, err := http.NewRequest("GET", importErrorUrl, nil)
+	if err != nil {
+		return nil, err
 	}
-	return &all, nil
+	setRequestHeaders(req, k.PrivateAPIKey)
+	resp, err := k.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	var importErrorBodyBytes []byte
+	var importErrorResp UploadStatusResp
+	importErrorBodyBytes, _ = io.ReadAll(resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	importErrorRespErr := jsonrs.Unmarshal(importErrorBodyBytes, &importErrorResp)
+	if importErrorRespErr != nil {
+		return nil, importErrorRespErr
+	}
+	if len(importErrorResp.Errors) > 0 {
+		return &importErrorResp, fmt.Errorf("GetUploadErrors failed with errors: %+v", importErrorResp.Errors)
+	}
+	return &importErrorResp, importErrorRespErr
 }
 
 func NewKlaviyoAPIService(destination *backendconfig.DestinationT, logger logger.Logger, statsFactory stats.Stats) (KlaviyoAPIService, error) {
