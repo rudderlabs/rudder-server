@@ -548,6 +548,32 @@ func TestHTTPApi(t *testing.T) {
 
 			_, isTriggered := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
 			require.True(t, isTriggered)
+			_, isTriggered = triggerStore.Load("POSTGRES:test_source_id:second_destination")
+			require.False(t, isTriggered)
+		})
+
+		t.Run("trigger only the destination with pending task run files", func(t *testing.T) {
+			file := stagingFile.StagingFile
+			file.DestinationID = "second_destination"
+			file.SourceTaskRunID = "second_destination_task"
+			_, err := stagingRepo.Insert(ctx, &model.StagingFileWithSchema{StagingFile: file})
+			require.NoError(t, err)
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/pending-events?triggerUpload=true", bytes.NewBufferString(`{"source_id":"test_source_id","task_run_id":"second_destination_task"}`))
+			resp := httptest.NewRecorder()
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore, true)
+			a.pendingEventsHandler(resp, req)
+			require.Equal(t, http.StatusOK, resp.Code)
+			var result pendingEventsResponse
+			require.NoError(t, jsonrs.NewDecoder(resp.Body).Decode(&result))
+			require.True(t, result.PendingEvents)
+			require.EqualValues(t, 1, result.PendingStagingFilesCount)
+
+			_, triggered := triggerStore.Load("POSTGRES:test_source_id:second_destination")
+			require.True(t, triggered)
+			triggerStore.Delete("POSTGRES:test_source_id:second_destination")
+			_, triggered = triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+			require.False(t, triggered)
 		})
 
 		t.Run("pending files respect task and destination", func(t *testing.T) {
@@ -577,6 +603,54 @@ func TestHTTPApi(t *testing.T) {
 			require.True(t, result.PendingEvents)
 			require.EqualValues(t, 1, result.PendingStagingFilesCount)
 			require.Zero(t, result.PendingUploadCount)
+		})
+
+		t.Run("removed destination files are not pending", func(t *testing.T) {
+			file := stagingFile.StagingFile
+			file.DestinationID = "removed_destination"
+			file.SourceTaskRunID = "removed_destination_task"
+			_, err := stagingRepo.Insert(ctx, &model.StagingFileWithSchema{StagingFile: file})
+			require.NoError(t, err)
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/pending-events?triggerUpload=true", bytes.NewBufferString(`{"source_id":"test_source_id","task_run_id":"removed_destination_task"}`))
+			resp := httptest.NewRecorder()
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore, true)
+			a.pendingEventsHandler(resp, req)
+			require.Equal(t, http.StatusOK, resp.Code)
+			var result pendingEventsResponse
+			require.NoError(t, jsonrs.NewDecoder(resp.Body).Decode(&result))
+			require.False(t, result.PendingEvents)
+			require.Zero(t, result.PendingStagingFilesCount)
+		})
+
+		t.Run("mixed task run uploads count by staging files", func(t *testing.T) {
+			insert := func(taskRunID string) *model.StagingFile {
+				file := stagingFile.StagingFile
+				file.SourceTaskRunID = taskRunID
+				id, err := stagingRepo.Insert(ctx, &model.StagingFileWithSchema{StagingFile: file})
+				require.NoError(t, err)
+				file.ID = id
+				return &file
+			}
+			_, err := uploadsRepo.CreateWithStagingFiles(ctx, model.Upload{
+				SourceID: sourceID, DestinationID: destinationID, WorkspaceID: workspaceID, Status: model.Waiting,
+			}, []*model.StagingFile{insert("mixed_task_a"), insert("mixed_task_b"), insert("mixed_task_b")})
+			require.NoError(t, err)
+			_, err = uploadsRepo.CreateWithStagingFiles(ctx, model.Upload{
+				SourceID: sourceID, DestinationID: destinationID, WorkspaceID: workspaceID, Status: model.Aborted,
+			}, []*model.StagingFile{insert("mixed_task_a"), insert("mixed_task_b")})
+			require.NoError(t, err)
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/pending-events", bytes.NewBufferString(`{"source_id":"test_source_id","task_run_id":"mixed_task_b"}`))
+			resp := httptest.NewRecorder()
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore, true)
+			a.pendingEventsHandler(resp, req)
+			require.Equal(t, http.StatusOK, resp.Code)
+			var result pendingEventsResponse
+			require.NoError(t, jsonrs.NewDecoder(resp.Body).Decode(&result))
+			require.True(t, result.PendingEvents)
+			require.EqualValues(t, 1, result.PendingUploadCount)
+			require.True(t, result.AbortedEvents)
 		})
 
 		t.Run("no pending events available", func(t *testing.T) {

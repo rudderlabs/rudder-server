@@ -433,32 +433,68 @@ func (sf *StagingFiles) Pending(ctx context.Context, sourceID, destinationID str
 	return parseStagingFiles(rows)
 }
 
-func (sf *StagingFiles) CountPendingForSource(ctx context.Context, sourceID, taskRunID string) (int64, error) {
+func (sf *StagingFiles) CountPendingForSource(ctx context.Context, sourceID, taskRunID string, destinationIDs []string) (int64, error) {
+	counts, err := sf.CountPendingByDestinationForSource(ctx, sourceID, taskRunID, destinationIDs)
+	if err != nil {
+		return 0, err
+	}
+	var total int64
+	for _, count := range counts {
+		total += count
+	}
+	return total, nil
+}
+
+// CountPendingByDestinationForSource counts task-run files the router can still select on configured destinations.
+func (sf *StagingFiles) CountPendingByDestinationForSource(ctx context.Context, sourceID, taskRunID string, destinationIDs []string) (map[string]int64, error) {
 	defer sf.TimerStat("count_pending_for_source", nil)()
 
-	return sf.countPending(ctx, `sf.source_id = $1 AND sf.metadata->>'source_task_run_id' = $2`, sourceID, taskRunID)
+	rows, err := sf.db.QueryContext(ctx, `
+		SELECT sf.destination_id, COUNT(*) FROM `+stagingTableName+` sf
+		WHERE sf.source_id = $1 AND sf.metadata->>'source_task_run_id' = $2
+		AND sf.destination_id = ANY($3) AND sf.upload_id IS NULL
+		AND sf.id > COALESCE((
+			SELECT u.start_staging_file_id FROM `+uploadsTableName+` u
+			WHERE u.source_id = sf.source_id AND u.destination_id = sf.destination_id
+			ORDER BY u.id DESC LIMIT 1
+		), 0)
+		GROUP BY sf.destination_id`, sourceID, taskRunID, pq.Array(destinationIDs))
+	if err != nil {
+		return nil, fmt.Errorf("counting staging files: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	counts := make(map[string]int64)
+	for rows.Next() {
+		var destinationID string
+		var count int64
+		if err := rows.Scan(&destinationID, &count); err != nil {
+			return nil, fmt.Errorf("scanning pending staging files: %w", err)
+		}
+		counts[destinationID] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating pending staging files: %w", err)
+	}
+	return counts, nil
 }
 
 func (sf *StagingFiles) CountPendingForConnection(ctx context.Context, sourceID, destinationID string) (int64, error) {
+	defer sf.TimerStat("count_pending_for_destination", stats.Tags{"destId": destinationID})()
+
 	return sf.countPending(ctx, `sf.source_id = $1 AND sf.destination_id = $2`, sourceID, destinationID)
 }
 
 func (sf *StagingFiles) countPending(ctx context.Context, filter string, args ...any) (int64, error) {
 	var count int64
-	// Uploads created before staging files tracked upload_id can only be identified by their
-	// connection and ID range. Current uploads assign upload_id to their files, so never use
-	// their ranges to hide unassigned files between the assigned IDs.
 	err := sf.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM `+stagingTableName+` sf WHERE `+filter+`
 		AND sf.upload_id IS NULL
-		AND NOT EXISTS (
-			SELECT 1 FROM `+uploadsTableName+` u
+		AND sf.id > COALESCE((
+			SELECT u.start_staging_file_id FROM `+uploadsTableName+` u
 			WHERE u.source_id = sf.source_id AND u.destination_id = sf.destination_id
-			AND sf.id BETWEEN u.start_staging_file_id AND u.end_staging_file_id
-			AND NOT EXISTS (
-				SELECT 1 FROM `+stagingTableName+` assigned WHERE assigned.upload_id = u.id
-			)
-		)`,
+			ORDER BY u.id DESC LIMIT 1
+		), 0)`,
 		args...,
 	).Scan(&count)
 	if err != nil {

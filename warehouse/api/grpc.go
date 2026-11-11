@@ -391,6 +391,10 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 		return &proto.TriggerWhUploadsResponse{},
 			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", request.WorkspaceId)
 	}
+	if request.SourceId != "" && !slices.Contains(sourceIDs, request.SourceId) {
+		return &proto.TriggerWhUploadsResponse{},
+			status.Error(codes.Code(code.Code_UNAUTHENTICATED), "unauthorized request")
+	}
 
 	var wh []model.Warehouse
 	for _, warehouse := range g.bcManager.WarehousesByDestID(request.DestinationId) {
@@ -399,8 +403,10 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 		}
 	}
 	if len(wh) == 0 {
-		return &proto.TriggerWhUploadsResponse{},
-			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no warehouse found for sourceID: %s, destinationID: %s", request.SourceId, request.DestinationId)
+		return &proto.TriggerWhUploadsResponse{
+			StatusCode: http.StatusOK,
+			Message:    noPendingEvents,
+		}, nil
 	}
 
 	var toTrigger []string

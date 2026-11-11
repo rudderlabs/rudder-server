@@ -699,7 +699,30 @@ func TestGRPC(t *testing.T) {
 					_, triggered := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
 					require.True(t, triggered)
 				})
-				t.Run("no warehouses", func(t *testing.T) {})
+				t.Run("source outside workspace", func(t *testing.T) {
+					res, err := grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{
+						WorkspaceId: workspaceID, SourceId: unusedSourceID, DestinationId: destinationID,
+					})
+					require.Error(t, err)
+					require.Empty(t, res)
+					require.Equal(t, codes.Unauthenticated, status.Code(err))
+				})
+				t.Run("source not connected to destination", func(t *testing.T) {
+					res, err := grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{
+						WorkspaceId: workspaceID, SourceId: "second_source_id", DestinationId: "second_destination_id",
+					})
+					require.NoError(t, err)
+					require.EqualValues(t, http.StatusOK, res.GetStatusCode())
+					require.Equal(t, noPendingEvents, res.GetMessage())
+				})
+				t.Run("destination with no connections", func(t *testing.T) {
+					res, err := grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{
+						WorkspaceId: workspaceID, SourceId: sourceID, DestinationId: "unknown_destination_id",
+					})
+					require.NoError(t, err)
+					require.EqualValues(t, http.StatusOK, res.GetStatusCode())
+					require.Equal(t, noPendingEvents, res.GetMessage())
+				})
 				t.Run("no pending count", func(t *testing.T) {
 					res, err := grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{
 						WorkspaceId:   unusedWorkspaceID,
@@ -744,6 +767,22 @@ func TestGRPC(t *testing.T) {
 			otherUpload, err := u.Get(ctx, other)
 			require.NoError(t, err)
 			require.Equal(t, model.Aborted, otherUpload.Status)
+
+			windowUpload := create(sourceID, destinationID, model.Aborted)
+			otherWindowUpload := create("second_source_id", destinationID, model.Aborted)
+			windowRequest := &proto.RetryWHUploadsRequest{WorkspaceId: workspaceID, SourceId: sourceID, IntervalInHours: 1}
+			windowCount, err := grpcClient.CountWHUploadsToRetry(ctx, windowRequest)
+			require.NoError(t, err)
+			require.EqualValues(t, 1, windowCount.GetCount())
+			windowResult, err := grpcClient.RetryWHUploads(ctx, windowRequest)
+			require.NoError(t, err)
+			require.EqualValues(t, 1, windowResult.GetCount())
+			windowRetried, err := u.Get(ctx, windowUpload)
+			require.NoError(t, err)
+			require.Equal(t, model.Waiting, windowRetried.Status)
+			otherWindow, err := u.Get(ctx, otherWindowUpload)
+			require.NoError(t, err)
+			require.Equal(t, model.Aborted, otherWindow.Status)
 
 			triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
 			triggerStore.Delete("POSTGRES:second_source_id:test_destination_id")
