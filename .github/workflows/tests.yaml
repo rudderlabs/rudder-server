@@ -179,11 +179,6 @@ jobs:
           DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
           RACE_ENABLED: "true"
           FORCE_RUN_INTEGRATION_TESTS: "true"
-      - name: Upload coverage report
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ${{ matrix.destination }}
-          path: coverage.txt
   async-destination-integration:
     name: Async Destination Integration
     runs-on: ubuntu-latest
@@ -240,11 +235,6 @@ jobs:
           BINGADS_AUDIENCE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BINGADS_AUDIENCE_INTEGRATION_TEST_CREDENTIALS }}
           RACE_ENABLED: "true"
           FORCE_RUN_INTEGRATION_TESTS: "true"
-      - name: Upload coverage report
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: async-${{ matrix.destination }}
-          path: coverage.txt
   unit:
     name: Unit
     runs-on: ubuntu-latest
@@ -292,11 +282,6 @@ jobs:
           DOCKERHUB_REGISTRY_MIRROR_USERNAME: ${{ steps.login-ecr.outputs.docker_username_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
           DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
           FORCE_RUN_INTEGRATION_TESTS: "true"
-      - name: Upload coverage report
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: unit
-          path: coverage.txt
   package-unit:
     name: Package Unit
     runs-on: ubuntu-latest
@@ -395,47 +380,6 @@ jobs:
           RSERVER_OAUTH_TEST_CREDENTIALS: ${{ secrets.RSERVER_OAUTH_TEST_CREDENTIALS }}
           FORCE_RUN_INTEGRATION_TESTS: "true"
         run: make test exclude="${{ matrix.exclude }}" package=${{ matrix.package }}
-      - name: Sanitize name for Artifact
-        run: |
-          name=$(echo -n "${{ matrix.package }}" | sed -e 's/[ \t:\/\\"<>|*?]/-/g' -e 's/--*/-/g')
-          echo "ARTIFACT_NAME=$name" >> $GITHUB_ENV
-      - name: Upload coverage report
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ${{ env.ARTIFACT_NAME }}-unit
-          path: coverage.txt
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    needs:
-      - warehouse-integration
-      - async-destination-integration
-      - unit
-      - package-unit
-    steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: 'go.mod'
-          cache: false
-      - name: Download coverage reports
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-      - name: Merge Coverage
-        run: |
-          go install github.com/wadey/gocovmerge@latest
-          gocovmerge */coverage.txt > coverage.txt
-      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          fail_ci_if_error: true
-          files: ./coverage.txt
-          token: ${{ secrets.CODECOV_TOKEN }}
   all-green:
     name: All
     if: always()
