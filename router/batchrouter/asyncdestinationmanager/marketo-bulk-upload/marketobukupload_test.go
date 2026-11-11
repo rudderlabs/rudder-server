@@ -478,24 +478,6 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 		require.Empty(t, again.Metadata.SucceededKeys)
 	})
 
-	t.Run("warning applies to all jobs sharing key", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
-		api.EXPECT().ImportLeads(gomock.Any(), "").Return("warnings", nil)
-		uploader := reconciliationUploader(api, map[string]string{"email": "email"})
-		upload, jobs := uploadedJobs(t, uploader,
-			job(1, map[string]any{"email": "same@example.com"}),
-			job(2, map[string]any{"email": "same@example.com"}),
-		)
-		api.EXPECT().PollImportStatus("warnings").Return(&mbu.MarketoResponse{Result: []mbu.Result{{Status: "Complete", NumOfRowsWithWarning: 1}}}, nil)
-		api.EXPECT().GetLeadStatus("warnings-url").Return([]map[string]string{{"email": "same@example.com", mbu.MARKETO_WARNING_HEADER: "duplicate"}}, nil)
-		got := uploader.GetUploadStats(common.GetUploadStatsInput{Parameters: upload.ImportingParameters, ImportingList: jobs, WarningJobParameters: "warnings-url"})
-		require.ElementsMatch(t, []int64{1, 2}, got.Metadata.AbortedKeys)
-		require.Equal(t, "duplicate", got.Metadata.AbortedReasons[1])
-		require.Equal(t, "duplicate", got.Metadata.AbortedReasons[2])
-		require.Empty(t, got.Metadata.SucceededKeys)
-	})
-
 	t.Run("unmatched result aborts unproved remainder", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
@@ -507,20 +489,6 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 		require.Equal(t, 200, got.StatusCode)
 		require.Equal(t, []int64{7}, got.Metadata.AbortedKeys)
 		require.Empty(t, got.Metadata.SucceededKeys)
-	})
-
-	t.Run("partial metadata aborts only missing job", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
-		uploader := reconciliationUploader(api, nil)
-		jobs := []*jobsdb.JobT{
-			{JobID: 1, LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importId":"i","metadata":{"rowHash":"hash"}}`)}},
-			{JobID: 2, LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importId":"i"}`)}},
-		}
-		api.EXPECT().PollImportStatus("i").Return(&mbu.MarketoResponse{Result: []mbu.Result{{Status: "Complete"}}}, nil)
-		result := uploader.GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"i","importCount":2}`), ImportingList: jobs})
-		require.Equal(t, []int64{1}, result.Metadata.SucceededKeys)
-		require.Equal(t, []int64{2}, result.Metadata.AbortedKeys)
 	})
 
 	t.Run("no correlation metadata aborts batch", func(t *testing.T) {

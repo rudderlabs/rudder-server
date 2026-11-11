@@ -5,6 +5,7 @@ import (
 	stdjson "encoding/json"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/tidwall/gjson"
 
@@ -159,6 +160,7 @@ func (b *MarketoBulkUploader) Upload(_ context.Context, asyncDestStruct *common.
 		jobImportingParameters[jobID] = metadata
 	}
 
+	// return the response
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:        importingJobIDs,
 		ImportingParameters:    importParameters,
@@ -266,9 +268,6 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 		return common.GetUploadStatsResponse{StatusCode: 500, Error: "No result found in the API response"}
 	}
 	result := status.Result[0]
-	if result.Status != "Complete" && result.Status != "Failed" {
-		return common.GetUploadStatsResponse{StatusCode: 500, Error: "Marketo import is not terminal: " + result.Status}
-	}
 
 	var failedJobs, warningJobs []map[string]string
 	if result.NumOfRowsFailed > 0 {
@@ -302,10 +301,10 @@ func (*MarketoBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
 }
 
-func (b *MarketoBulkUploader) updateJobStatus(jobs []*jobsdb.JobT, result Result, failedJobs, warningJobs []map[string]string) common.EventStatMeta {
+func (b *MarketoBulkUploader) updateJobStatus(importingList []*jobsdb.JobT, result Result, failedJobs, warningJobs []map[string]string) common.EventStatMeta {
 	byHash := make(map[string][]int64)
 	missing := make(map[int64]bool)
-	for _, job := range jobs {
+	for _, job := range importingList {
 		hash := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.rowHash").String()
 		if hash == "" {
 			missing[job.JobID] = true
@@ -316,8 +315,8 @@ func (b *MarketoBulkUploader) updateJobStatus(jobs []*jobsdb.JobT, result Result
 	metadata := common.EventStatMeta{AbortedReasons: make(map[int64]string)}
 	if len(byHash) == 0 {
 		const detail = "no correlation metadata"
-		b.logger.Errorn("Ambiguous Marketo bulk upload result", logger.NewStringField("detail", detail), logger.NewIntField("importing_jobs", int64(len(jobs))))
-		for _, job := range jobs {
+		b.logger.Errorn("Ambiguous Marketo bulk upload result", logger.NewStringField("detail", detail), logger.NewIntField("importing_jobs", int64(len(importingList))))
+		for _, job := range importingList {
 			metadata.AbortedKeys = append(metadata.AbortedKeys, job.JobID)
 			metadata.AbortedReasons[job.JobID] = ambiguousResultReason + ": " + detail
 		}
@@ -328,7 +327,18 @@ func (b *MarketoBulkUploader) updateJobStatus(jobs []*jobsdb.JobT, result Result
 	matchedRows := 0
 	match := func(rows []map[string]string, reasonColumn string) {
 		for _, row := range rows {
-			ids := byHash[calculateHashCode(row)]
+			columns := make([]string, 0, len(row))
+			for name := range row {
+				if name != MARKETO_FAILED_HEADER && name != MARKETO_WARNING_HEADER {
+					columns = append(columns, name)
+				}
+			}
+			sort.Strings(columns)
+			values := make([]string, 0, len(columns))
+			for _, name := range columns {
+				values = append(values, row[name])
+			}
+			ids := byHash[calculateHashCode(values)]
 			if len(ids) == 0 {
 				continue
 			}
@@ -347,7 +357,7 @@ func (b *MarketoBulkUploader) updateJobStatus(jobs []*jobsdb.JobT, result Result
 
 	complete := matchedRows == result.NumOfRowsFailed+result.NumOfRowsWithWarning && len(failedJobs) == result.NumOfRowsFailed && len(warningJobs) == result.NumOfRowsWithWarning
 	ambiguousCount := 0
-	for _, job := range jobs {
+	for _, job := range importingList {
 		if seen[job.JobID] {
 			continue
 		}

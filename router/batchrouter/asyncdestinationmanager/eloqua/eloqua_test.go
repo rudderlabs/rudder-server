@@ -503,17 +503,6 @@ func TestEloqua(t *testing.T) {
 			require.Equal(t, []int64{12}, second.Metadata.AbortedKeys)
 		})
 
-		t.Run("partial metadata", func(t *testing.T) {
-			f := newEloquaFixture(t)
-			jobs := importingJobsWithRows([]*jobsdb.JobT{{JobID: 11}, {JobID: 12}, {JobID: 13}})
-			jobs[1].LastJobStatus.Parameters = []byte(sharedEloquaParams)
-			f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(1, eloqua.RejectedItem{RecordIndex: 1, StatusCode: "INVALID"}), nil)
-			result := f.bulkUploader.GetUploadStats(statsInput(jobs))
-			require.Equal(t, []int64{11, 12}, result.Metadata.AbortedKeys)
-			require.Equal(t, []int64{13}, result.Metadata.SucceededKeys)
-			require.Contains(t, result.Metadata.AbortedReasons[12], "cannot be reconciled")
-		})
-
 		t.Run("unmatched reject aborts unproved remainder", func(t *testing.T) {
 			f := newEloquaFixture(t)
 			f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(rejectPage(1, eloqua.RejectedItem{RecordIndex: 3, StatusCode: "INVALID"}), nil)

@@ -244,11 +244,17 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 		}
 		status, err := kbu.KlaviyoAPIService.GetUploadStatus(chunkID)
 		if err != nil {
-			return common.GetUploadStatsResponse{StatusCode: http.StatusBadRequest, Error: err.Error()}
+			return common.GetUploadStatsResponse{
+				StatusCode: 400,
+				Error:      err.Error(),
+			}
 		}
 		response, err := kbu.KlaviyoAPIService.GetUploadErrors(chunkID)
 		if err != nil {
-			return common.GetUploadStatsResponse{StatusCode: http.StatusBadRequest, Error: err.Error()}
+			return common.GetUploadStatsResponse{
+				StatusCode: 400,
+				Error:      err.Error(),
+			}
 		}
 		if status == nil || response == nil {
 			incompleteChunks[chunkID] = true
@@ -382,8 +388,7 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 		combinedProfiles = append(combinedProfiles, profileStructure)
 		jobIDsForProfiles = append(jobIDsForProfiles, int64(metadata.JobID))
 	}
-	// Duplicate identifiers are valid profile updates. Reconcile each chunk
-	// independently using its import ID and terminal counts.
+
 	profileChunks, jobIDChunks, _ := chunkBySizeAndElements(combinedProfiles, jobIDsForProfiles, kbu.MaxPayloadSize, kbu.BatchSize)
 
 	eventsSuccessStat := kbu.StatsFactory.NewTaggedStat("success_job_count", stats.CountType, statLabels)

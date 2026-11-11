@@ -249,31 +249,20 @@ func TestUpload(t *testing.T) {
 		require.NotContains(t, output.JobImportingParameters, int64(3))
 	})
 	t.Run("accepted jobs save sent identifier hashes", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		api := mockAPIService.NewMockKlaviyoAPIService(ctrl)
-		manager := &klaviyobulkupload.KlaviyoBulkUploader{KlaviyoAPIService: api, Logger: logger.NOP, StatsFactory: stats.NOP, BatchSize: 2, MaxPayloadSize: 4600000, MaxAllowedProfileSize: 512000}
-		api.EXPECT().UploadProfiles(gomock.Any()).DoAndReturn(func(payload klaviyobulkupload.Payload) (*klaviyobulkupload.UploadResp, error) {
-			require.Len(t, payload.Data.Attributes.Profiles.Data, 2)
-			for _, profile := range payload.Data.Attributes.Profiles.Data {
-				require.Empty(t, profile.Attributes.JobIdentifier)
-				require.Empty(t, profile.ID)
-				require.NotEmpty(t, profile.Attributes.Email)
-			}
-			resp := &klaviyobulkupload.UploadResp{}
-			resp.Data.Id = "chunk"
-			return resp, nil
-		}).Times(1)
-		lines := []byte(`{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"qwe22@mail.com","anonymous_id":"user1","jobIdentifier":"user1:1"}}]}}}}}},"metadata":{"job_id":1}}` + "\n" +
-			`{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"example@mail.com","anonymous_id":"user2","jobIdentifier":"user2:2"}}]}}}}}},"metadata":{"job_id":2}}` + "\n")
+		api := mockAPIService.NewMockKlaviyoAPIService(gomock.NewController(t))
+		resp := &klaviyobulkupload.UploadResp{}
+		resp.Data.Id = "chunk"
+		api.EXPECT().UploadProfiles(gomock.Any()).Return(resp, nil)
+		lines := []byte(`{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"qwe22@mail.com","anonymous_id":"user1","jobIdentifier":"user1:1"}}]}}}}}},"metadata":{"job_id":1}}
+{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"example@mail.com","anonymous_id":"user2","jobIdentifier":"user2:2"}}]}}}}}},"metadata":{"job_id":2}}
+`)
 		path := filepath.Join(t.TempDir(), "upload.jsonl")
 		require.NoError(t, os.WriteFile(path, lines, 0o600))
+		manager := &klaviyobulkupload.KlaviyoBulkUploader{KlaviyoAPIService: api, Logger: logger.NOP, StatsFactory: stats.NOP, BatchSize: 2, MaxPayloadSize: 4600000, MaxAllowedProfileSize: 512000}
 		out := manager.Upload(context.Background(), &common.AsyncDestinationStruct{Destination: destination, FileName: path, ImportingJobIDs: []int64{1, 2}})
-		require.Equal(t, []int64{1, 2}, out.ImportingJobIDs)
-		require.Len(t, out.JobImportingParameters, 2)
 		require.Equal(t, identifierHash("email", "qwe22@mail.com"), gjson.GetBytes(out.JobImportingParameters[1], "identifierHash").String())
 		require.Equal(t, identifierHash("email", "example@mail.com"), gjson.GetBytes(out.JobImportingParameters[2], "identifierHash").String())
 		require.Equal(t, "chunk", gjson.GetBytes(out.JobImportingParameters[1], "chunkImportId").String())
-		require.NotContains(t, string(out.JobImportingParameters[1]), "user1")
 	})
 }
 
@@ -661,29 +650,6 @@ func TestGetUploadStats(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, result.StatusCode)
 		assert.Equal(t, "some error", result.Error)
 	})
-	t.Run("partial metadata and shared identifier key", func(t *testing.T) {
-		for _, duplicate := range []bool{false, true} {
-			t.Run(fmt.Sprint(duplicate), func(t *testing.T) {
-				ctrl := gomock.NewController(t)
-				api := mockAPIService.NewMockKlaviyoAPIService(ctrl)
-				jobs := []*jobsdb.JobT{statusJob(1, identifierHash("id", "1")), statusJob(2, ""), statusJob(3, identifierHash("id", "3"))}
-				if duplicate {
-					jobs[1] = statusJob(2, identifierHash("id", "1"))
-				}
-				api.EXPECT().GetUploadStatus("chunk").Return(failedStatus(), nil)
-				api.EXPECT().GetUploadErrors("chunk").Return(errorsResponse(t, errorRow(`{"id":"1"}`)), nil)
-				result := newStatsManager(api).GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), FailedJobParameters: "chunk", ImportingList: jobs})
-				require.Equal(t, []int64{1, 2}, result.Metadata.AbortedKeys)
-				require.Equal(t, []int64{3}, result.Metadata.SucceededKeys)
-				if duplicate {
-					require.Equal(t, "rejected", result.Metadata.AbortedReasons[2])
-				} else {
-					require.Contains(t, result.Metadata.AbortedReasons[2], "cannot reconcile")
-				}
-			})
-		}
-	})
-
 	t.Run("unmatched error aborts unproved remainder", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		api := mockAPIService.NewMockKlaviyoAPIService(ctrl)

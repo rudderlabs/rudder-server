@@ -198,15 +198,14 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloq
 	resultCount := 0
 	rejectResponse, err := eloqua.service.CheckRejectedData(data)
 	if err != nil {
-		return nil, fmt.Errorf("fetching Eloqua rejects: %w", err)
+		return nil, err
 	}
 	totalResults := rejectResponse.TotalResults
-	complete := true
-	/*
-		We have a limit of 1000 rejected events per api call. And the offset starts from 0. So we are fetching 1000 rejected events every time making the api call and updating the offset accordingly.
+	/**
+	We have a limit of 1000 rejected events per api call. And the offset starts from 0. So we are fetching 1000 rejected events every time making the api call and updating the offset accordingly.
 	*/
 	if rejectResponse.Count > 0 {
-		iterations := int(math.Ceil(float64(totalResults) / float64(1000)))
+		iterations := int(math.Ceil(float64(rejectResponse.TotalResults) / float64(1000)))
 		var offset int
 		for i := range iterations {
 			offset = i * 1000
@@ -214,34 +213,32 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloq
 			if offset != 0 {
 				rejectResponse, err = eloqua.service.CheckRejectedData(data)
 				if err != nil {
-					return nil, fmt.Errorf("fetching Eloqua rejects: %w", err)
-				}
-				if rejectResponse == nil {
-					complete = false
-					break
+					return nil, err
 				}
 			}
-			for _, item := range rejectResponse.Items {
+			for _, val := range rejectResponse.Items {
 				resultCount++
-				ids := byRow[item.RecordIndex]
+				ids := byRow[val.RecordIndex]
 				if len(ids) == 0 {
 					continue
 				}
 				matchedRows++
-				if lo.Contains(eloqua.successStatusCode, item.StatusCode) && len(lo.Intersect(uniqueKeys, item.InvalidFields)) == 0 {
+				uniqueInvalidFields := lo.Intersect(uniqueKeys, val.InvalidFields)
+				successStatusCode := lo.Intersect(eloqua.successStatusCode, []string{val.StatusCode})
+				if len(successStatusCode) != 0 && len(uniqueInvalidFields) == 0 {
 					continue
 				}
 				for _, id := range ids {
 					if !failedJobs[id] {
 						failedJobs[id] = true
 						metadata.AbortedKeys = append(metadata.AbortedKeys, id)
-						metadata.AbortedReasons[id] = generateErrorString(item)
+						metadata.AbortedReasons[id] = generateErrorString(val)
 					}
 				}
 			}
 		}
 	}
-	complete = complete && resultCount == totalResults && matchedRows == totalResults
+	complete := resultCount == totalResults && matchedRows == totalResults
 	ambiguousCount := 0
 	for _, job := range importingList {
 		if failedJobs[job.JobID] {

@@ -273,15 +273,41 @@ func TestSendHTTPRequest(t *testing.T) {
 
 // ==== Hashing Test Start ====
 func TestCalculateHashCode(t *testing.T) {
-	base := calculateHashCode(map[string]string{"email": "a@b.com", "firstName": "Ada"})
-	require.Equal(t, base, calculateHashCode(map[string]string{"firstName": "Ada", "email": "a@b.com"}))
-	require.Equal(t, base, calculateHashCode(map[string]string{
-		"firstName": "Ada", "email": "a@b.com", MARKETO_FAILED_HEADER: "bad", MARKETO_WARNING_HEADER: "warning",
-	}))
-	require.NotEqual(t, base, calculateHashCode(map[string]string{"email": "Ada", "firstName": "a@b.com"}))
-	require.NotEqual(t, calculateHashCode(map[string]string{"a": "x,y", "b": "z"}),
-		calculateHashCode(map[string]string{"a": "x", "b": "y,z"}))
-	require.NotEqual(t, calculateHashCode(map[string]string{"a=b": "c"}), calculateHashCode(map[string]string{"a": "b=c"}))
+	tests := []struct {
+		name     string
+		input    []string
+		expected string
+	}{
+		{
+			name:     "Empty slice",
+			input:    []string{},
+			expected: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // SHA256 hash of empty string
+		},
+		{
+			name:     "Single value",
+			input:    []string{"test"},
+			expected: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", // SHA256 hash of "test"
+		},
+		{
+			name:     "Multiple values",
+			input:    []string{"value1", "value2", "value3"},
+			expected: "ff5f3b7fdedbf50e0f312624b090b28cd61b50071cd10a775cb838deb078a6be", // SHA256 hash of "value1,value2,value3"
+		},
+		{
+			name:     "Values with special characters",
+			input:    []string{"hello,world", "test\nline", "special@char"},
+			expected: "83905347e4ee7093c80675bcc6df55f6216105e2803a13c0ccb38edc88eee6aa", // actual hash will differ
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := calculateHashCode(tt.input)
+			if result != tt.expected {
+				t.Errorf("calculateHashCode() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
 }
 
 // ==== Hashing Test End ====

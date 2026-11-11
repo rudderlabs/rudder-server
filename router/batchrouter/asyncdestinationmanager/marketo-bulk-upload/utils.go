@@ -4,17 +4,16 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/csv"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
@@ -233,32 +232,32 @@ func createCSVFile(destinationID string, destConfig MarketoConfig, input []commo
 		for i, name := range headerOrder {
 			mappedRow[name] = row[i]
 		}
-		jobHashes[jobID] = calculateHashCode(mappedRow)
+		columns := make([]string, 0, len(mappedRow))
+		for name := range mappedRow {
+			if name != MARKETO_FAILED_HEADER && name != MARKETO_WARNING_HEADER {
+				columns = append(columns, name)
+			}
+		}
+		sort.Strings(columns)
+		values := make([]string, 0, len(columns))
+		for _, name := range columns {
+			values = append(values, mappedRow[name])
+		}
+		jobHashes[jobID] = calculateHashCode(values)
 	}
 
 	return csvFilePath, headerOrder, insertedJobIDs, overflowedJobIDs, nil
 }
 
-// calculateHashCode hashes sorted, length-prefixed CSV column name/value pairs.
-// Marketo's reason columns are excluded because they are not sent at upload.
-func calculateHashCode(row map[string]string) string {
-	columns := make([]string, 0, len(row))
-	for name := range row {
-		if name != MARKETO_FAILED_HEADER && name != MARKETO_WARNING_HEADER {
-			columns = append(columns, name)
-		}
-	}
-	slices.Sort(columns)
+func calculateHashCode(data []string) string {
+	// Join the strings into a single string with a separator
+	joinedStrings := strings.Join(data, ",")
 	hash := sha256.New()
-	var size [8]byte
-	for _, name := range columns {
-		for _, part := range []string{name, row[name]} {
-			binary.BigEndian.PutUint64(size[:], uint64(len(part)))
-			_, _ = hash.Write(size[:])
-			_, _ = hash.Write([]byte(part))
-		}
-	}
-	return hex.EncodeToString(hash.Sum(nil))
+	hash.Write([]byte(joinedStrings))
+	hashBytes := hash.Sum(nil)
+	hashCode := fmt.Sprintf("%x", hashBytes)
+
+	return hashCode
 }
 
 func sendHTTPRequest(uploadURL, csvFilePath, accessToken, deduplicationField string) (*http.Response, error) {
