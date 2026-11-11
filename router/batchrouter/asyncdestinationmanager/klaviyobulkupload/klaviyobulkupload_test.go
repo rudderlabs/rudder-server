@@ -2,10 +2,13 @@ package klaviyobulkupload_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -245,6 +248,45 @@ func TestUpload(t *testing.T) {
 		require.Len(t, output.JobImportingParameters, 2)
 		require.NotContains(t, output.JobImportingParameters, int64(1))
 		require.NotContains(t, output.JobImportingParameters, int64(3))
+	})
+	t.Run("accepted jobs save sent identifier hashes", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		api := mockAPIService.NewMockKlaviyoAPIService(ctrl)
+		manager := &klaviyobulkupload.KlaviyoBulkUploader{KlaviyoAPIService: api, Logger: logger.NOP, StatsFactory: stats.NOP, BatchSize: 2, MaxPayloadSize: 4600000, MaxAllowedProfileSize: 512000}
+		api.EXPECT().UploadProfiles(gomock.Any()).DoAndReturn(func(payload klaviyobulkupload.Payload) (*klaviyobulkupload.UploadResp, error) {
+			require.Len(t, payload.Data.Attributes.Profiles.Data, 2)
+			for _, profile := range payload.Data.Attributes.Profiles.Data {
+				require.Empty(t, profile.Attributes.JobIdentifier)
+				require.Empty(t, profile.ID)
+				require.NotEmpty(t, profile.Attributes.Email)
+			}
+			resp := &klaviyobulkupload.UploadResp{}
+			resp.Data.Id = "chunk"
+			return resp, nil
+		}).Times(1)
+		fixture, err := os.ReadFile(filepath.Join("testdata", "uploadData.jsonl"))
+		require.NoError(t, err)
+		lines := []byte{}
+		// The fixture's jobId field is historical; the batch-router line uses job_id.
+		// Use its first two profiles to verify that anonymous_id is not an outbound key.
+		for i, line := range splitFixtureLines(string(fixture))[:2] {
+			var job map[string]any
+			require.NoError(t, jsonrs.Unmarshal([]byte(line), &job))
+			job["metadata"] = map[string]any{"job_id": i + 1}
+			data, err := jsonrs.Marshal(job)
+			require.NoError(t, err)
+			lines = append(lines, data...)
+			lines = append(lines, '\n')
+		}
+		path := filepath.Join(t.TempDir(), "upload.jsonl")
+		require.NoError(t, os.WriteFile(path, lines, 0o600))
+		out := manager.Upload(context.Background(), &common.AsyncDestinationStruct{Destination: destination, FileName: path, ImportingJobIDs: []int64{1, 2}})
+		require.Equal(t, []int64{1, 2}, out.ImportingJobIDs)
+		require.Len(t, out.JobImportingParameters, 2)
+		require.Equal(t, identifierHash("email", "qwe22@mail.com"), gjson.GetBytes(out.JobImportingParameters[1], "identifierHash").String())
+		require.Equal(t, identifierHash("email", "example@mail.com"), gjson.GetBytes(out.JobImportingParameters[2], "identifierHash").String())
+		require.Equal(t, "chunk", gjson.GetBytes(out.JobImportingParameters[1], "chunkImportId").String())
+		require.NotContains(t, string(out.JobImportingParameters[1]), "user1")
 	})
 }
 
@@ -605,7 +647,7 @@ func TestGetUploadStats(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	api := mockAPIService.NewMockKlaviyoAPIService(ctrl)
 	uploader := klaviyobulkupload.KlaviyoBulkUploader{
-		DestName: "Klaviyo Bulk Upload", DestinationConfig: destination.Config,
+		DestName: "Klaviyo Bulk Upload", DestinationConfig: map[string]any{"listId": "changed-list"},
 		Logger:       logger.NewLogger().Child("klaviyo-bulk-upload-test"),
 		StatsFactory: stats.NOP, KlaviyoAPIService: api,
 	}
@@ -615,8 +657,8 @@ func TestGetUploadStats(t *testing.T) {
 	}
 	input := common.GetUploadStatsInput{FailedJobParameters: "importId1", ImportingList: jobs}
 
-	t.Run("Failure GetUploadStats: Import Job Failed", func(t *testing.T) {
-		api.EXPECT().GetUploadStatus("importId1").Return(failedStatus(1), nil)
+	t.Run("fresh manager after config change matches sent identifier", func(t *testing.T) {
+		api.EXPECT().GetUploadStatus("importId1").Return(failedStatus(), nil)
 		api.EXPECT().GetUploadErrors("importId1").Return(errorsResponse(t, errorRow(`{"id":"1","anonymous_id":"111222334"}`)), nil)
 		result := uploader.GetUploadStats(input)
 		assert.Equal(t, http.StatusOK, result.StatusCode)
@@ -626,10 +668,97 @@ func TestGetUploadStats(t *testing.T) {
 	})
 
 	t.Run("GetUploadStats with Errors", func(t *testing.T) {
-		api.EXPECT().GetUploadStatus("importId1").Return(failedStatus(1), nil)
+		api.EXPECT().GetUploadStatus("importId1").Return(failedStatus(), nil)
 		api.EXPECT().GetUploadErrors("importId1").Return(nil, fmt.Errorf("some error"))
 		result := uploader.GetUploadStats(input)
 		assert.Equal(t, http.StatusInternalServerError, result.StatusCode)
 		assert.Equal(t, "some error", result.Error)
 	})
+	t.Run("partial metadata and shared identifier key", func(t *testing.T) {
+		for _, duplicate := range []bool{false, true} {
+			t.Run(fmt.Sprint(duplicate), func(t *testing.T) {
+				ctrl := gomock.NewController(t)
+				api := mockAPIService.NewMockKlaviyoAPIService(ctrl)
+				jobs := []*jobsdb.JobT{statusJob(1, identifierHash("id", "1")), statusJob(2, ""), statusJob(3, identifierHash("id", "3"))}
+				if duplicate {
+					jobs[1] = statusJob(2, identifierHash("id", "1"))
+				}
+				api.EXPECT().GetUploadStatus("chunk").Return(failedStatus(), nil)
+				api.EXPECT().GetUploadErrors("chunk").Return(errorsResponse(t, errorRow(`{"id":"1"}`)), nil)
+				result := newStatsManager(api).GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), FailedJobParameters: "chunk", ImportingList: jobs})
+				require.Equal(t, []int64{1, 2}, result.Metadata.AbortedKeys)
+				require.Equal(t, []int64{3}, result.Metadata.SucceededKeys)
+				if duplicate {
+					require.Equal(t, "rejected", result.Metadata.AbortedReasons[2])
+				} else {
+					require.Contains(t, result.Metadata.AbortedReasons[2], "cannot reconcile")
+				}
+			})
+		}
+	})
+
+	t.Run("unmatched error aborts unproved remainder", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		api := mockAPIService.NewMockKlaviyoAPIService(ctrl)
+		api.EXPECT().GetUploadStatus("chunk").Return(failedStatus(), nil)
+		api.EXPECT().GetUploadErrors("chunk").Return(errorsResponse(t, errorRow(`{"id":"unknown"}`)), nil)
+		jobs := []*jobsdb.JobT{statusJob(1, identifierHash("id", "1")), statusJob(2, identifierHash("id", "2"))}
+		result := newStatsManager(api).GetUploadStats(common.GetUploadStatsInput{Parameters: []byte(`{"importId":"chunk","importCount":2}`), FailedJobParameters: "chunk", ImportingList: jobs})
+		require.ElementsMatch(t, []int64{1, 2}, result.Metadata.AbortedKeys)
+		require.Empty(t, result.Metadata.SucceededKeys)
+	})
+
+	t.Run("no correlation metadata aborts batch", func(t *testing.T) {
+		jobs := []*jobsdb.JobT{{JobID: 1}, {JobID: 2}}
+		result := newStatsManager(nil).GetUploadStats(common.GetUploadStatsInput{FailedJobParameters: "importId1", ImportingList: jobs})
+		assert.Equal(t, http.StatusOK, result.StatusCode)
+		assert.ElementsMatch(t, []int64{1, 2}, result.Metadata.AbortedKeys)
+		assert.Empty(t, result.Metadata.SucceededKeys)
+	})
+}
+
+func identifierHash(kind, value string) string {
+	sum := sha256.Sum256([]byte(kind + ":" + value))
+	return hex.EncodeToString(sum[:])
+}
+
+func statusJob(id int64, hash string) *jobsdb.JobT {
+	return &jobsdb.JobT{JobID: id, LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(fmt.Sprintf(`{"metadata":{"identifierHash":%q,"chunkImportId":"chunk"}}`, hash))}}
+}
+
+func errorsResponse(t *testing.T, original ...string) *klaviyobulkupload.UploadStatusResp {
+	t.Helper()
+	var result klaviyobulkupload.UploadStatusResp
+	for _, payload := range original {
+		data := []byte(fmt.Sprintf(`{"data":[%s]}`, payload))
+		var one klaviyobulkupload.UploadStatusResp
+		require.NoError(t, jsonrs.Unmarshal(data, &one))
+		result.Data = append(result.Data, one.Data...)
+	}
+	return &result
+}
+
+func errorRow(payload string) string {
+	return fmt.Sprintf(`{"attributes":{"detail":"rejected","original_payload":%s}}`, payload)
+}
+
+func failedStatus() *klaviyobulkupload.PollResp {
+	var status klaviyobulkupload.PollResp
+	status.Data.Attributes.Status = "complete"
+	status.Data.Attributes.Failed_count = 1
+	return &status
+}
+
+func newStatsManager(api klaviyobulkupload.KlaviyoAPIService) *klaviyobulkupload.KlaviyoBulkUploader {
+	return &klaviyobulkupload.KlaviyoBulkUploader{KlaviyoAPIService: api, Logger: logger.NOP, StatsFactory: stats.NOP}
+}
+
+func splitFixtureLines(s string) []string {
+	var lines []string
+	for line := range strings.SplitSeq(strings.TrimSpace(s), "\n") {
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }

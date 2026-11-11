@@ -259,6 +259,9 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 	if apiError != nil {
 		return common.GetUploadStatsResponse{StatusCode: 500, Error: fmt.Sprintf("Failed to poll Marketo import: %s", apiError.Message)}
 	}
+	if status == nil || len(status.Result) == 0 {
+		return common.GetUploadStatsResponse{StatusCode: 500, Error: "No result found in the API response"}
+	}
 	result := status.Result[0]
 	if result.Status != "Complete" && result.Status != "Failed" {
 		return common.GetUploadStatsResponse{StatusCode: 500, Error: "Marketo import is not terminal: " + result.Status}
