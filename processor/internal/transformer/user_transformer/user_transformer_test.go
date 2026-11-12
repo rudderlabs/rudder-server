@@ -1353,6 +1353,61 @@ func TestUserTransformURLRouting(t *testing.T) {
 			},
 		)
 	})
+
+	const pythonTransformationsEnabledKey = "Processor.UserTransformer.pythonTransformationsEnabled"
+
+	t.Run("Python — transformations disabled → aborted, no request, any routing flag", func(t *testing.T) {
+		for _, perWS := range []bool{false, true} {
+			f := newFixture(t)
+			f.conf.Set(pythonTransformationsEnabledKey, false)
+			f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", perWS)
+			tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+			events := makeEvents("pythonfaas", versionID, workspaceID)
+			rsp := tr.Transform(context.Background(), events)
+			require.Empty(t, rsp.Events)
+			require.Equal(t, []types.TransformerResponse{{
+				Metadata:   events[0].Metadata,
+				StatusCode: http.StatusBadRequest,
+				Error:      user_transformer.ErrPythonTransformationsNotSupported.Error(),
+			}}, rsp.FailedEvents)
+			assertNoHits(t, f)
+		}
+	})
+
+	t.Run("Python — transformations disabled → logs ids and event count, no payload", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set(pythonTransformationsEnabledKey, false)
+		ctrl := gomock.NewController(t)
+		log := mock_logger.NewMockLogger(ctrl)
+		log.EXPECT().Child(gomock.Any()).Return(log).AnyTimes()
+		var fields []logger.Field
+		log.EXPECT().Errorn(
+			gomock.Regex("^Aborting python transformation"), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
+		).Do(func(_ string, f ...logger.Field) { fields = f }).Times(1)
+
+		tr := user_transformer.New(f.conf, log, stats.NOP)
+		tr.Transform(context.Background(), makeEvents("pythonfaas", versionID, workspaceID))
+
+		got := make(map[string]any, len(fields))
+		for _, field := range fields {
+			got[field.Name()] = field.Value()
+		}
+		require.Equal(t, map[string]any{
+			"workspaceId":      workspaceID,
+			"transformationId": "test-transformation",
+			"destinationId":    "",
+			"events":           int64(1),
+		}, got)
+	})
+
+	t.Run("JS — transformations disabled → JS URL (unaffected)", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set(pythonTransformationsEnabledKey, false)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		rsp := tr.Transform(context.Background(), makeEvents("javascript", versionID, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
+		assertOnly(t, f, &f.js, "/customTransform")
+	})
 }
 
 // fakeColdStartTransport is a transformerclient.Client that returns a

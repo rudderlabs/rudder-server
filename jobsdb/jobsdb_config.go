@@ -21,6 +21,8 @@ func (jd *Handle) loadConfig() {
 	jd.conf.maxReaders = jd.config.GetIntVar(6, 1, jd.configKeys("maxReaders")...)
 	jd.conf.maxOpenConnections = jd.config.GetIntVar(20, 1, jd.configKeys("maxOpenConnections")...)
 	jd.conf.analyzeThreshold = jd.config.GetReloadableIntVar(30000, 1, jd.configKeys("analyzeThreshold")...)
+	// statusJobIDNDistinct: n_distinct pinned on job_id of new job status tables, 0 disables it.
+	jd.conf.statusJobIDNDistinct = jd.config.GetReloadableFloat64Var(defaultStatusJobIDNDistinct(jd.tablePrefix), jd.configKeys("statusJobIDNDistinct")...)
 	jd.conf.minDSRetentionPeriod = jd.config.GetReloadableDurationVar(0, time.Minute, jd.configKeys("minDSRetention")...)
 	jd.conf.maxDSRetentionPeriod = jd.config.GetReloadableDurationVar(90, time.Minute, jd.configKeys("maxDSRetention")...)
 	jd.conf.refreshDSTimeout = jd.config.GetReloadableDurationVar(10, time.Minute, jd.configKeys("refreshDS.timeout")...)
@@ -104,4 +106,18 @@ func (jd *Handle) configKeys(key string, additionalKeys ...string) []string {
 		res = append(res, "JobsDB."+additionalKey)
 	}
 	return res
+}
+
+// defaultStatusJobIDNDistinct returns the ratio of distinct jobs to status rows of a jobsdb. A job gets
+// about 2 status rows per consumer: proc has up to 10 consumers, while others have a single one.
+func defaultStatusJobIDNDistinct(tablePrefix string) float64 {
+	switch tablePrefix {
+	// TODO: enable this once gw becomes multi-consumer, with its 2 consumers
+	// case "gw":
+	// 	return -0.25
+	case "proc":
+		return -0.1
+	default:
+		return -0.5
+	}
 }

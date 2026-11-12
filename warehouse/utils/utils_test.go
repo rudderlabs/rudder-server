@@ -80,6 +80,20 @@ func TestFormatPemContent(t *testing.T) {
 	}
 }
 
+func TestMaxComputeRouting(t *testing.T) {
+	require.Contains(t, misc.BatchDestinations(), MAXCOMPUTE)
+	require.Contains(t, WarehouseDestinations, MAXCOMPUTE)
+	require.Contains(t, PseudoWarehouseDestinationMap, MAXCOMPUTE)
+	require.Equal(t, "maxcompute", WHDestNameMap[MAXCOMPUTE])
+	require.Equal(t, AlibabaOSS, ObjectStorageMap[MAXCOMPUTE])
+	for _, useRudderStorage := range []bool{false, true} {
+		require.Equal(t, AlibabaOSS, ObjectStorageType(MAXCOMPUTE, map[string]any{"bucketProvider": S3}, useRudderStorage))
+	}
+	require.Equal(t, LoadFileTypeJson, GetLoadFileType(MAXCOMPUTE))
+	require.Equal(t, "json.gz", GetLoadFileFormat(GetLoadFileType(MAXCOMPUTE)))
+	require.Equal(t, "json.gz", GetTempFileExtension(MAXCOMPUTE))
+}
+
 func TestDestinationConfigKeys(t *testing.T) {
 	for _, whType := range WarehouseDestinations {
 		t.Run(whType, func(t *testing.T) {

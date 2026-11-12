@@ -29,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -99,16 +100,14 @@ func (p *basePayload) fileManager(config any, useRudderStorage bool) (filemanage
 	clonedConfig["uploadIfNotExist"] = true
 
 	storageProvider := warehouseutils.ObjectStorageType(p.DestinationType, config, useRudderStorage)
+	storageConfig := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+		Provider: storageProvider, Config: clonedConfig, UseRudderStorage: useRudderStorage,
+		RudderStoragePrefixOverride: p.RudderStoragePrefix, WorkspaceID: p.WorkspaceID,
+	})
 	fileManager, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
-		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:                    storageProvider,
-			Config:                      clonedConfig,
-			UseRudderStorage:            useRudderStorage,
-			RudderStoragePrefixOverride: p.RudderStoragePrefix,
-			WorkspaceID:                 p.WorkspaceID,
-		}),
-		Conf: appConfig.Default,
+		Config:   storageConfig,
+		Conf:     appConfig.Default,
 	})
 	return fileManager, err
 }
@@ -593,6 +592,13 @@ func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal any
 		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
 		eventLoader.AddColumn("reason", warehouseutils.DiscardsSchema["reason"], reason)
+		if jr.job.DestinationType == warehouseutils.MAXCOMPUTE {
+			if normalized, ok := maxcompute.NormalizeDateTime(receivedAt); ok {
+				receivedAt = normalized
+			} else {
+				receivedAt = jr.now().UTC().Format(encoding.MaxComputeTimeFormat)
+			}
+		}
 		eventLoader.AddColumn("received_at", warehouseutils.DiscardsSchema["received_at"], receivedAt)
 		eventLoader.AddColumn("row_id", warehouseutils.DiscardsSchema["row_id"], rowID)
 		eventLoader.AddColumn("table_name", warehouseutils.DiscardsSchema["table_name"], tableName)

@@ -1,6 +1,7 @@
 package dedup
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -29,7 +30,7 @@ func getMode(conf *config.Config) mode {
 }
 
 // NewDB creates a new DB implementation based on configuration
-func NewDB(conf *config.Config, s stats.Stats, log logger.Logger) (types.DB, error) {
+func NewDB(ctx context.Context, conf *config.Config, s stats.Stats, log logger.Logger) (types.DB, error) {
 	mirrorMode := getMode(conf)
 	log = log.Withn(logger.NewStringField("mode", string(mirrorMode)))
 	log.Infon("Starting deduplication db")
@@ -46,7 +47,7 @@ func NewDB(conf *config.Config, s stats.Stats, log logger.Logger) (types.DB, err
 		modeGauge("badger", "none")
 		return badger.NewBadgerDB(conf, s, badger.DefaultPath())
 	case keyDBOnlyMode:
-		keydb, err := kdb.NewKeyDB(conf, s, log)
+		keydb, err := kdb.NewKeyDB(ctx, conf, s, log)
 		if err != nil {
 			return nil, fmt.Errorf("create keydb: %w", err)
 		}
@@ -58,7 +59,7 @@ func NewDB(conf *config.Config, s stats.Stats, log logger.Logger) (types.DB, err
 		if err != nil {
 			return nil, fmt.Errorf("create badger primary: %w", err)
 		}
-		mirror, err := kdb.NewKeyDB(conf, s, log)
+		mirror, err := kdb.NewKeyDB(ctx, conf, s, log)
 		if err != nil {
 			modeGauge("badger", "none")
 			log.Errorn("Failed to create keydb mirror, falling back to badger only", obskit.Error(err))
@@ -68,7 +69,7 @@ func NewDB(conf *config.Config, s stats.Stats, log logger.Logger) (types.DB, err
 		return NewMirrorDB(primary, mirror, mirrorToKeyDB, conf, s, log), nil
 	case mirrorToBadger:
 		// primary is keydb, then we mirror to badger
-		primary, err := kdb.NewKeyDB(conf, s, log)
+		primary, err := kdb.NewKeyDB(ctx, conf, s, log)
 		if err != nil {
 			return nil, fmt.Errorf("create keydb primary: %w", err)
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -54,8 +56,7 @@ type createAlterTable struct {
 }
 
 type fetchSchema struct {
-	manager     manager.WarehouseOperations
-	destination *backendconfig.DestinationT
+	manager manager.WarehouseOperations
 }
 
 type loadTable struct {
@@ -90,6 +91,7 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 		validator       Validator
 		err             error
 	)
+	maxCompute := destType == warehouseutils.MAXCOMPUTE
 
 	pkgLogger.Infon("validate destination configuration",
 		logger.NewStringField(logfield.DestinationID, destID),
@@ -128,33 +130,25 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 		stepsToValidate = append(stepsToValidate, StepsToValidate(dest).Steps...)
 	}
 
-	// Iterate over all selected steps and validate
+	// Iterate over all selected steps and validate.
 	for _, step := range stepsToValidate {
+		creatingValidator := false
 		if validator, err = NewValidator(ctx, step.Name, dest); err != nil {
 			err = fmt.Errorf("creating validator: %v", err)
-			step.Error = err.Error()
-
-			pkgLogger.Warnn("creating validator",
-				logger.NewStringField(logfield.DestinationID, destID),
-				logger.NewStringField(logfield.DestinationType, destType),
-				logger.NewStringField(logfield.DestinationRevisionID, dest.RevisionID),
-				logger.NewStringField(logfield.WorkspaceID, dest.WorkspaceID),
-				logger.NewStringField(logfield.DestinationValidationsStep, step.Name),
-				logger.NewStringField(logfield.Error, step.Error),
-			)
-			break
-		}
-
-		if stepError := validator.Validate(ctx); stepError != nil {
-			err = stepError
-			step.Error = stepError.Error()
+			creatingValidator = true
 		} else {
-			step.Success = true
+			err = validator.Validate(ctx)
 		}
-
-		// if any of steps fails, the whole validation fails
-		if !step.Success {
-			pkgLogger.Warnn("not able to validate destination configuration",
+		if err != nil {
+			if maxCompute {
+				err = maxcompute.ValidationError(step.Name, dest.Config, err)
+			}
+			step.Error = err.Error()
+			message := "not able to validate destination configuration"
+			if creatingValidator {
+				message = "creating validator"
+			}
+			pkgLogger.Warnn(message,
 				logger.NewStringField(logfield.DestinationID, destID),
 				logger.NewStringField(logfield.DestinationType, destType),
 				logger.NewStringField(logfield.DestinationRevisionID, dest.RevisionID),
@@ -164,6 +158,7 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 			)
 			break
 		}
+		step.Success = true
 	}
 
 	res := &DestinationValidationResponse{
@@ -216,8 +211,7 @@ func NewValidator(ctx context.Context, step string, dest *backendconfig.Destinat
 			return nil, fmt.Errorf("create manager: %w", err)
 		}
 		return &fetchSchema{
-			destination: dest,
-			manager:     operations,
+			manager: operations,
 		}, nil
 	case model.VerifyingLoadTable:
 		if operations, err = createManager(ctx, dest); err != nil {
@@ -277,6 +271,12 @@ func (cs *createSchema) Validate(ctx context.Context) error {
 	return cs.manager.CreateSchema(ctx)
 }
 
+func maxComputeValidationPayload() map[string]any {
+	payload := maps.Clone(payloadMap)
+	payload["uuid_ts"] = "2024-01-02 00:00:00"
+	return payload
+}
+
 func (cat *createAlterTable) Validate(ctx context.Context) error {
 	defer cat.manager.Cleanup(ctx)
 
@@ -330,14 +330,18 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 
 	defer func() { _ = lt.manager.DropTable(ctx, lt.table) }()
 
-	if err = lt.manager.TestLoadTable(ctx, uploadOutput.Location, lt.table, payloadMap, loadFileType); err != nil {
+	fixturePayload := payloadMap
+	if destinationType == warehouseutils.MAXCOMPUTE {
+		fixturePayload = maxComputeValidationPayload()
+	}
+	if err = lt.manager.TestLoadTable(ctx, uploadOutput.Location, lt.table, fixturePayload, loadFileType); err != nil {
 		return fmt.Errorf("load test table: %w", err)
 	}
 
 	return nil
 }
 
-// CreateTempLoadFile creates a temporary load file
+// CreateTempLoadFile creates a temporary load file.
 func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	var (
 		tmpDirPath string
@@ -352,7 +356,6 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	if tmpDirPath, err = misc.GetTmpDir(); err != nil {
 		return "", fmt.Errorf("create tmp dir: %w", err)
 	}
-
 	filePath = fmt.Sprintf("%v/%v/%v.%v.%v.%v",
 		tmpDirPath,
 		connectionTestingFolder,
@@ -366,7 +369,8 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	}
 
 	ef := encoding.NewFactory(config.Default)
-	writer, err = ef.NewLoadFileWriter(loadFileType, filePath, tableSchemaMap, destinationType)
+	fixtureSchema := tableSchemaMap
+	writer, err = ef.NewLoadFileWriter(loadFileType, filePath, fixtureSchema, destinationType)
 	if err != nil {
 		return "", fmt.Errorf("creating writer for file: %s with error: %w", filePath, err)
 	}
@@ -375,7 +379,9 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	for _, column := range []string{"id", "val"} {
 		eventLoader.AddColumn(column, tableSchemaMap[column], payloadMap[column])
 	}
-
+	if destinationType == warehouseutils.MAXCOMPUTE {
+		eventLoader.AddColumn("uuid_ts", "datetime", maxComputeValidationPayload()["uuid_ts"])
+	}
 	if err = eventLoader.Write(); err != nil {
 		return "", fmt.Errorf("writing to file: %w", err)
 	}
@@ -563,6 +569,9 @@ func configuredNamespaceInDestination(dest *backendconfig.DestinationT) string {
 func getTable(dest *backendconfig.DestinationT) string {
 	destType := dest.DestinationDefinition.Name
 	conf := dest.Config
+	if destType == warehouseutils.MAXCOMPUTE {
+		return tableWithUUID()
+	}
 
 	if destType == warehouseutils.DELTALAKE {
 		enableExternalLocation, _ := conf["enableExternalLocation"].(bool)

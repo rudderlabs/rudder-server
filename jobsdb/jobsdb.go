@@ -393,6 +393,7 @@ type Handle struct {
 		maxWriters                     int
 		maxOpenConnections             int
 		analyzeThreshold               config.ValueLoader[int]
+		statusJobIDNDistinct           config.ValueLoader[float64]
 		MaxDSSize                      config.ValueLoader[int]
 		numPartitions                  int // if zero or negative, no partitioning
 		partitionFunction              func(job *JobT) string

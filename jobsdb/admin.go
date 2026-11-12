@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
@@ -188,32 +190,50 @@ func (jd *Handle) abortOldJobs(ctx context.Context, dsList []dataSetT) error {
 	jobState := Aborted.State
 	maxAgeStatusResponse := `{"reason": "job max age exceeded"}`
 	maxAge := jd.conf.jobMaxAge.Load()
+	// Datasets are ordered by age, so the first one without old jobs ends the scan. A dataset whose
+	// old jobs are all terminal aborts nothing but doesn't end it, hence the separate old jobs count.
+	query := `WITH old_jobs AS (
+			SELECT job_id FROM %[1]q WHERE created_at <= $3
+		), aborted AS (
+			INSERT INTO %[2]q (job_id, job_state, error_response)
+			SELECT j.job_id, $1, $2 FROM old_jobs j
+			LEFT JOIN %[3]q s ON s.job_id = j.job_id
+			WHERE s.job_id IS NULL OR s.job_state = ANY($4)
+			RETURNING 1
+		)
+		SELECT (SELECT count(*) FROM old_jobs), (SELECT count(*) FROM aborted)`
+	if jd.conf.multiConsumer {
+		query = `WITH old_jobs AS (
+				SELECT job_id, consumers FROM %[1]q WHERE created_at <= $3
+			), aborted AS (
+				INSERT INTO %[2]q (job_id, job_state, error_response, consumer)
+				SELECT j.job_id, $1, $2, c.consumer FROM old_jobs j
+				CROSS JOIN LATERAL unnest(j.consumers) AS c(consumer)
+				LEFT JOIN %[3]q s ON s.job_id = j.job_id AND s.consumer = c.consumer
+				WHERE s.job_id IS NULL OR s.job_state = ANY($4)
+				RETURNING 1
+			)
+			SELECT (SELECT count(*) FROM old_jobs), (SELECT count(*) FROM aborted)`
+	}
 	for _, ds := range dsList {
-		res, err := jd.maintenanceDB().ExecContext(
+		var oldJobs, aborted int64
+		if err := jd.maintenanceDB().QueryRowContext(
 			ctx,
-			fmt.Sprintf(
-				`INSERT INTO %[1]q (job_id, job_state, error_response)
-				SELECT job_id, $1, $2 FROM %[2]q WHERE created_at <= $3`,
-				ds.JobStatusTable,
-				ds.JobTable,
-			),
+			fmt.Sprintf(query, ds.JobTable, ds.JobStatusTable, jd.lastStatusView(ds)),
 			jobState,
 			maxAgeStatusResponse,
 			time.Now().Add(-maxAge),
-		)
-		if err != nil {
+			pq.Array(validNonTerminalStates),
+		).Scan(&oldJobs, &aborted); err != nil {
 			return fmt.Errorf("aborting old jobs on ds %v: %w", ds, err)
 		}
-		rowsAffected, err := res.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("finding rows affected during aborting old jobs on ds %v: %w", ds, err)
-		}
 		jd.logger.Infon("aborting old jobs",
-			logger.NewIntField("rowsAffected", rowsAffected),
+			logger.NewIntField("oldJobs", oldJobs),
+			logger.NewIntField("abortedJobs", aborted),
 			logger.NewDurationField("maxAge", maxAge),
 			logger.NewStringField("dataSet", ds.Index),
 		)
-		if rowsAffected == 0 {
+		if oldJobs == 0 {
 			break
 		}
 	}
