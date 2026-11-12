@@ -115,11 +115,13 @@ func (h *handler) failedRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var paging rsources.PagingInfo
-	if pageSize, ok := r.URL.Query()["pageSize"]; ok && len(pageSize) > 0 {
-		paging.Size, _ = strconv.Atoi(pageSize[0])
-		if nextPageToken, ok := r.URL.Query()["pageToken"]; ok && len(nextPageToken) > 0 {
-			paging.NextPageToken = nextPageToken[0]
-		}
+	if pageSize := r.URL.Query().Get("pageSize"); pageSize != "" {
+		paging.Size, _ = strconv.Atoi(pageSize)
+	}
+	paging.NextPageToken = r.URL.Query().Get("pageToken")
+	if paging.NextPageToken != "" && paging.Size <= 0 {
+		http.Error(w, "pageToken requires a positive pageSize", http.StatusBadRequest)
+		return
 	}
 
 	failedRecords, err := h.service.GetFailedRecords(

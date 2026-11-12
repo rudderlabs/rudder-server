@@ -433,26 +433,37 @@ func (sf *StagingFiles) Pending(ctx context.Context, sourceID, destinationID str
 	return parseStagingFiles(rows)
 }
 
-func (sf *StagingFiles) CountPendingForSource(ctx context.Context, sourceID string) (int64, error) {
+func (sf *StagingFiles) CountPendingForSource(ctx context.Context, sourceID, taskRunID string, destinationIDs []string) (int64, error) {
 	defer sf.TimerStat("count_pending_for_source", nil)()
-
-	return sf.countPending(ctx, `source_id = $1`, sourceID)
-}
-
-func (sf *StagingFiles) CountPendingForDestination(ctx context.Context, destinationID string) (int64, error) {
-	defer sf.TimerStat("count_pending_for_destination", stats.Tags{
-		"destId": destinationID,
-	})()
-
-	return sf.countPending(ctx, `destination_id = $1`, destinationID)
-}
-
-func (sf *StagingFiles) countPending(ctx context.Context, query string, value any) (int64, error) {
 	var count int64
-	err := sf.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM `+stagingTableName+` WHERE `+query+` AND id > (SELECT COALESCE(MAX(end_staging_file_id), 0) FROM `+uploadsTableName+` WHERE `+query+`)`,
-		value,
-	).Scan(&count)
+	err := sf.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(x.c), 0) FROM unnest($3::text[]) AS d(id)
+		CROSS JOIN LATERAL (
+			SELECT COUNT(*) AS c FROM `+stagingTableName+` sf
+			WHERE sf.source_id = $1 AND sf.destination_id = d.id
+			AND sf.metadata->>'source_task_run_id' = $2
+			AND sf.id > (
+				SELECT COALESCE(MAX(end_staging_file_id), 0) FROM `+uploadsTableName+` u
+				WHERE u.source_id = $1 AND u.destination_id = d.id
+			)
+		) x`, sourceID, taskRunID, pq.Array(destinationIDs)).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting staging files: %w", err)
+	}
+	return count, nil
+}
+
+func (sf *StagingFiles) CountPendingForConnection(ctx context.Context, sourceID, destinationID string) (int64, error) {
+	defer sf.TimerStat("count_pending_for_destination", stats.Tags{"destId": destinationID})()
+
+	var count int64
+	err := sf.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM `+stagingTableName+`
+		WHERE source_id = $1 AND destination_id = $2
+		AND id > (
+			SELECT COALESCE(MAX(end_staging_file_id), 0) FROM `+uploadsTableName+`
+			WHERE source_id = $1 AND destination_id = $2
+		)`, sourceID, destinationID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("counting staging files: %w", err)
 	}
