@@ -1,0 +1,73 @@
+{
+  "enableMetrics": false,
+  "workspaceId": "1sampleworkspaceid123",
+  "sources": [
+    {
+      "id": "1samplesourceid123",
+      "name": "Sample HTTP Source",
+      "writeKey": "1samplewritekeyplaceholder123",
+      "enabled": true,
+      "sourceDefinition": {
+        "id": "1samplesourcedefid123",
+        "name": "HTTP",
+        "displayName": "HTTP",
+        "category": "cloud"
+      },
+      "destinations": [
+        {
+          "id": "1sampledestinationid123",
+          "name": "Sample Webhook Destination",
+          "enabled": true,
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true,
+          "config": {
+            "webhookUrl": "http://localhost:8080/dummy",
+            "webhookMethod": "POST"
+          },
+          "secretConfig": {},
+          "destinationDefinition": {
+            "id": "1sampledestdefid123",
+            "name": "WEBHOOK",
+            "displayName": "Webhook",
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "webhookUrl",
+                  "webhookMethod",
+                  "headers"
+                ]
+              },
+              "secretKeys": [
+                "headers.to"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "warehouse",
+                "reactnative",
+                "flutter"
+              ],
+              "supportedMessageTypes": [
+                "alias",
+                "group",
+                "identify",
+                "page",
+                "screen",
+                "track"
+              ],
+              "saveDestinationResponse": false
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
