@@ -9,8 +9,6 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.sha }}
   cancel-in-progress: true
-env:
-  FBLA_SRCHYDRATION_TEST_DATA: ${{ secrets.FBLA_SRCHYDRATION_TEST_DATA }}
 
 permissions:
   contents: read # Required for actions/checkout
@@ -393,6 +391,7 @@ jobs:
           DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
           RACE_ENABLED: ${{ matrix.race || false }}
           RSERVER_OAUTH_TEST_CREDENTIALS: ${{ secrets.RSERVER_OAUTH_TEST_CREDENTIALS }}
+          FBLA_SRCHYDRATION_TEST_DATA: ${{ secrets.FBLA_SRCHYDRATION_TEST_DATA }}
           FORCE_RUN_INTEGRATION_TESTS: "true"
         run: make test exclude="${{ matrix.exclude }}" package=${{ matrix.package }}
       - name: Sanitize name for Artifact
