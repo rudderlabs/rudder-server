@@ -291,7 +291,12 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pendingStagingFileCount, err := a.stagingRepo.CountPendingForSource(r.Context(), sourceID, taskRunID)
+	warehouses := a.bcManager.WarehousesBySourceID(sourceID)
+	destinationIDs := make([]string, 0, len(warehouses))
+	for _, warehouse := range warehouses {
+		destinationIDs = append(destinationIDs, warehouse.Destination.ID)
+	}
+	pendingStagingFileCount, err := a.stagingRepo.CountPendingForSource(r.Context(), sourceID, taskRunID, destinationIDs)
 	if err != nil {
 		if errors.Is(r.Context().Err(), context.Canceled) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
@@ -344,8 +349,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 			logger.NewStringField(lf.SourceID, payload.SourceID),
 		)
 
-		wh := a.bcManager.WarehousesBySourceID(sourceID)
-		if len(wh) == 0 {
+		if len(warehouses) == 0 {
 			a.logger.Warnn("no warehouse found for pending events",
 				logger.NewStringField(lf.WorkspaceID, workspaceID),
 				logger.NewStringField(lf.SourceID, payload.SourceID),
@@ -354,7 +358,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		for _, warehouse := range wh {
+		for _, warehouse := range warehouses {
 			a.triggerStore.Store(warehouse.Identifier, struct{}{})
 		}
 	}

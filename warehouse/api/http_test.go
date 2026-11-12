@@ -520,6 +520,29 @@ func TestHTTPApi(t *testing.T) {
 			require.False(t, isTriggered)
 		})
 
+		t.Run("pending files for removed destinations are excluded", func(t *testing.T) {
+			file := model.StagingFile{
+				WorkspaceID:     workspaceID,
+				SourceID:        sourceID,
+				DestinationID:   "removed_destination",
+				SourceTaskRunID: "removed_task_run",
+			}.WithSchema([]byte(`{"type": "object"}`))
+			_, err := stagingRepo.Insert(ctx, &file)
+			require.NoError(t, err)
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/pending-events", bytes.NewReader([]byte(`{"source_id":"test_source_id","task_run_id":"removed_task_run"}`)))
+			resp := httptest.NewRecorder()
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore, true)
+			a.pendingEventsHandler(resp, req)
+			require.Equal(t, http.StatusOK, resp.Code)
+
+			var pending pendingEventsResponse
+			require.NoError(t, jsonrs.NewDecoder(resp.Body).Decode(&pending))
+			require.False(t, pending.PendingEvents)
+			require.Zero(t, pending.PendingStagingFilesCount)
+			require.Zero(t, pending.PendingUploadCount)
+		})
+
 		t.Run("pending events available with trigger uploads", func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/pending-events?triggerUpload=true", bytes.NewReader([]byte(`
 				{
