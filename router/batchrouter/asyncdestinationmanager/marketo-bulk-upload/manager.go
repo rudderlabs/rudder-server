@@ -72,6 +72,5 @@ func NewMarketoBulkUploaderWithOptions(options MarketoBulkUploaderOptions) *Mark
 		destinationConfig: options.DestinationConfig,
 		statsFactory:      options.StatsFactory,
 		apiService:        options.APIService,
-		dataHashToJobId:   make(map[string]int64),
 	}
 }

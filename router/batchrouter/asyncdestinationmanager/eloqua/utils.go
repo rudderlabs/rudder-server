@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
@@ -58,7 +59,7 @@ func getKeys(m map[string]any) []string {
 	return keys
 }
 
-func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobIdRowMap map[int64]int64) (string, int64, error) {
+func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo) (string, int64, error) {
 	_, _ = file.Seek(0, 0)
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(nil, bufferSize)
@@ -109,14 +110,22 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobId
 			uploadJobInfo.failedJobs = append(uploadJobInfo.failedJobs, left...)
 			break
 		}
-		jobIdRowMap[int64(index+1)] = uploadJobInfo.importingJobs[index]
-		uploadJobInfo.succeededJobs = append(uploadJobInfo.succeededJobs, uploadJobInfo.importingJobs[index])
-		index += 1
 		err = csvWriter.Write(values)
 		if err != nil {
 			return "", 0, err
 		}
 		csvWriter.Flush()
+		if err := csvWriter.Error(); err != nil {
+			return "", 0, err
+		}
+		metadata, err := jsonrs.Marshal(importingMetadata{RecordIndex: int64(index + 1)})
+		if err != nil {
+			return "", 0, err
+		}
+		jobID := uploadJobInfo.importingJobs[index]
+		uploadJobInfo.jobImportingParameters[jobID] = metadata
+		uploadJobInfo.succeededJobs = append(uploadJobInfo.succeededJobs, jobID)
+		index++
 	}
 	fileInfo, _ := csvFile.Stat()
 	return csvFilePath, fileInfo.Size(), nil
@@ -164,10 +173,15 @@ func generateErrorString(item RejectedItem) string {
 	return item.StatusCode + " : " + item.Message + " " + invalidItems.String()
 }
 
-func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader) (*common.EventStatMeta, error) {
+func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, uniqueKeys []string, eloqua *EloquaBulkUploader) (*common.EventStatMeta, error) {
 	jobIDs := []int64{}
+	rowToJob := make(map[int64]int64, len(importingList))
 	for _, job := range importingList {
 		jobIDs = append(jobIDs, job.JobID)
+		index := gjson.Get(gjson.GetBytes(job.LastJobStatus.Parameters, "metadata").String(), "recordIndex")
+		if index.Int() > 0 {
+			rowToJob[index.Int()] = job.JobID
+		}
 	}
 	rejectResponse, err := eloqua.service.CheckRejectedData(data)
 	if err != nil {
@@ -191,13 +205,14 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloq
 				}
 			}
 			for _, val := range rejectResponse.Items {
-				uniqueInvalidFields := lo.Intersect(eloqua.uniqueKeys, val.InvalidFields)
-				successStatusCode := lo.Intersect(eloqua.successStatusCode, []string{val.StatusCode})
-				if len(successStatusCode) != 0 && len(uniqueInvalidFields) == 0 {
+				uniqueInvalidFields := lo.Intersect(uniqueKeys, val.InvalidFields)
+				successCodes := lo.Intersect(eloqua.successStatusCode, []string{val.StatusCode})
+				if len(successCodes) != 0 && len(uniqueInvalidFields) == 0 {
 					continue
 				}
-				abortedJobIDs = append(abortedJobIDs, eloqua.jobToCSVMap[val.RecordIndex])
-				abortedReasons[eloqua.jobToCSVMap[val.RecordIndex]] = generateErrorString(val)
+				jobID := rowToJob[val.RecordIndex]
+				abortedJobIDs = append(abortedJobIDs, jobID)
+				abortedReasons[jobID] = generateErrorString(val)
 			}
 		}
 	}

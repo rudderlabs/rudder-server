@@ -3,6 +3,7 @@ package eloqua
 //go:generate mockgen -destination=../../../../mocks/router/eloqua/mock_eloqua.go -package=mock_bulkservice github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/eloqua EloquaService
 
 import (
+	stdjson "encoding/json"
 	"io"
 	"time"
 
@@ -30,8 +31,6 @@ type EloquaBulkUploader struct {
 	fileSizeLimit     int64
 	eventsLimit       int64
 	service           EloquaService
-	jobToCSVMap       map[int64]int64
-	uniqueKeys        []string
 	successStatusCode []string
 }
 type DestinationConfig struct {
@@ -280,8 +279,21 @@ type Metadata struct {
 struct to propagate jobs among functions
 */
 type JobInfo struct {
-	succeededJobs []int64
-	failedJobs    []int64
-	fileSizeLimit int64
-	importingJobs []int64
+	succeededJobs          []int64
+	failedJobs             []int64
+	fileSizeLimit          int64
+	importingJobs          []int64
+	jobImportingParameters map[int64]stdjson.RawMessage
+}
+
+// importingMetadata is persisted on each importing job status under metadata.
+// RecordIndex is the one-based index of the data row actually written to the CSV.
+type importingMetadata struct {
+	RecordIndex int64 `json:"recordIndex"`
+}
+
+type importingParameters struct {
+	ImportId    string   `json:"importId"`
+	ImportCount int      `json:"importCount"`
+	UniqueKeys  []string `json:"uniqueKeys"`
 }

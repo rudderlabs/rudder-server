@@ -3,6 +3,9 @@ package klaviyobulkupload
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	stdjson "encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -175,18 +178,26 @@ func (kbu *KlaviyoBulkUploader) Poll(_ context.Context, pollInput common.AsyncPo
 	}
 }
 
+func hashIdentifier(identifier string) string {
+	sum := sha256.Sum256([]byte(identifier))
+	return hex.EncodeToString(sum[:])
+}
+
 func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
 	pollResultImportIds := strings.Split(UploadStatsInput.FailedJobParameters, IMPORT_ID_SEPARATOR)
-	// make a map of jobId to error reason
+	// Rebuild the correlation from importing status metadata, independent of the
+	// manager that uploaded the profiles (which may have since been replaced).
 	jobIdToErrorMap := make(map[int64]string)
-
-	importingList := UploadStatsInput.ImportingList
+	identifierHashToJobID := make(map[string]int64)
 	jobIDs := []int64{}
-	for _, job := range importingList {
+	for _, job := range UploadStatsInput.ImportingList {
 		jobIDs = append(jobIDs, job.JobID)
+		identifierHash := gjson.Get(gjson.GetBytes(job.LastJobStatus.Parameters, "metadata").String(), "identifierHash").String()
+		if identifierHash != "" {
+			identifierHashToJobID[identifierHash] = job.JobID
+		}
 	}
 
-	ErrorMap := kbu.JobIdToIdentifierMap
 	var successKeys []int64
 
 	var abortedJobIDs []int64
@@ -208,7 +219,7 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 			} else {
 				identifierId = orgPayload.AnonymousId
 			}
-			jobId := ErrorMap[identifierId]
+			jobId := identifierHashToJobID[hashIdentifier(identifierId)]
 			abortedJobIDs = append(abortedJobIDs, jobId)
 			errorDetail := item.Attributes.Detail
 			jobIdToErrorMap[jobId] = errorDetail
@@ -247,14 +258,6 @@ func (kbu *KlaviyoBulkUploader) ExtractProfile(Data Data) Profile {
 	}
 	profileObject := Attributes.Profiles.Data[0]
 
-	jobIdentifier := profileObject.Attributes.JobIdentifier
-	jobIdentifierArray := strings.Split(jobIdentifier, ":")
-	jobIdentifierValue, _ := strconv.ParseInt(jobIdentifierArray[1], 10, 64)
-	if kbu.JobIdToIdentifierMap == nil {
-		kbu.JobIdToIdentifierMap = make(map[string]int64)
-	}
-	kbu.JobIdToIdentifierMap[jobIdentifierArray[0]] = jobIdentifierValue
-
 	// delete jobIdentifier from the attributes map as it is not required in the final payload
 	profileObject.Attributes.JobIdentifier = ""
 
@@ -285,6 +288,7 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 	defer file.Close()
 	var combinedProfiles []Profile
 	var jobIDsForProfiles []int64 // Track job IDs for each profile
+	identifierHashes := make(map[int64]string)
 	scanner := bufio.NewScanner(file)
 	profileSizeStat := kbu.StatsFactory.NewTaggedStat("profile_size", stats.HistogramType, statLabels)
 	for scanner.Scan() {
@@ -299,6 +303,10 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 		err = jsonrs.Unmarshal([]byte(gjson.Get(line, "metadata").String()), &metadata)
 		if err != nil {
 			return kbu.generateKlaviyoErrorOutput("Error while parsing JSON Metadata.", err, importingJobIDs, destinationID)
+		}
+		if len(data.Attributes.Profiles.Data) > 0 {
+			identifier, _, _ := strings.Cut(data.Attributes.Profiles.Data[0].Attributes.JobIdentifier, IMPORT_ID_SEPARATOR)
+			identifierHashes[int64(metadata.JobID)] = hashIdentifier(identifier)
 		}
 		profileStructure := kbu.ExtractProfile(data)
 		// if profileStructure length is more than 500 kB, throw an error
@@ -336,6 +344,22 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 	}
 
 	successJobs, _ = lo.Difference(importingJobIDs, append(failedJobs, abortedJobs...))
+	// Persist correlation only for jobs left importing after failed and aborted chunks.
+	var jobImportingParameters map[int64]stdjson.RawMessage
+	if len(successJobs) > 0 {
+		jobImportingParameters = make(map[int64]stdjson.RawMessage, len(successJobs))
+	}
+	for _, jobID := range successJobs {
+		if identifierHash := identifierHashes[jobID]; identifierHash != "" {
+			metadata, err := jsonrs.Marshal(struct {
+				IdentifierHash string `json:"identifierHash"`
+			}{IdentifierHash: identifierHash})
+			if err != nil {
+				return kbu.generateKlaviyoErrorOutput("Error while marshaling importing metadata.", err, importingJobIDs, destinationID)
+			}
+			jobImportingParameters[jobID] = metadata
+		}
+	}
 	importParameters, err := jsonrs.Marshal(common.ImportParameters{
 		ImportId:    strings.Join(importIds, IMPORT_ID_SEPARATOR),
 		ImportCount: len(successJobs),
@@ -346,16 +370,17 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 	eventsSuccessStat.Count(len(asyncDestStruct.ImportingJobIDs))
 
 	return common.AsyncUploadOutput{
-		ImportingParameters: importParameters,
-		FailedJobIDs:        failedJobs,
-		FailedReason:        failedReason,
-		FailedCount:         len(failedJobs),
-		AbortJobIDs:         abortedJobs,
-		AbortReason:         abortReason,
-		AbortCount:          len(abortedJobs),
-		ImportingJobIDs:     successJobs,
-		ImportingCount:      len(successJobs),
-		DestinationID:       destination.ID,
+		ImportingParameters:    importParameters,
+		FailedJobIDs:           failedJobs,
+		FailedReason:           failedReason,
+		FailedCount:            len(failedJobs),
+		AbortJobIDs:            abortedJobs,
+		AbortReason:            abortReason,
+		AbortCount:             len(abortedJobs),
+		ImportingJobIDs:        successJobs,
+		ImportingCount:         len(successJobs),
+		JobImportingParameters: jobImportingParameters,
+		DestinationID:          destination.ID,
 	}
 }
 

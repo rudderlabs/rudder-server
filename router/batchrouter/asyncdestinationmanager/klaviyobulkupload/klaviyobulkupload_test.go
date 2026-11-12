@@ -2,6 +2,8 @@ package klaviyobulkupload_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -25,6 +28,24 @@ import (
 )
 
 var currentDir, _ = os.Getwd()
+
+func importingJob(t *testing.T, jobID int64, identifier string) *jobsdb.JobT {
+	t.Helper()
+	sum := sha256.Sum256([]byte(identifier))
+	params, err := sjson.SetBytes([]byte(`{"importId":"importId1"}`), "metadata", []byte(fmt.Sprintf(`{"identifierHash":%q}`, hex.EncodeToString(sum[:]))))
+	require.NoError(t, err)
+	return &jobsdb.JobT{JobID: jobID, LastJobStatus: jobsdb.JobStatusT{Parameters: params}}
+}
+
+func requireImportingHashes(t *testing.T, output common.AsyncUploadOutput, identifiers map[int64]string) {
+	t.Helper()
+	require.Len(t, output.JobImportingParameters, len(identifiers))
+	for jobID, identifier := range identifiers {
+		sum := sha256.Sum256([]byte(identifier))
+		require.JSONEq(t, fmt.Sprintf(`{"identifierHash":%q}`, hex.EncodeToString(sum[:])), string(output.JobImportingParameters[jobID]))
+		require.NotContains(t, string(output.JobImportingParameters[jobID]), identifier)
+	}
+}
 
 var destination = &backendconfig.DestinationT{
 	ID:   "1",
@@ -54,15 +75,11 @@ func TestUpload(t *testing.T) {
 	testLogger := logger.NewLogger().Child("klaviyo-bulk-upload-test")
 
 	uploader := klaviyobulkupload.KlaviyoBulkUploader{
-		DestName:          "Klaviyo Bulk Upload",
-		DestinationConfig: destination.Config,
-		Logger:            testLogger,
-		StatsFactory:      stats.NOP,
-		KlaviyoAPIService: mockKlaviyoAPIService,
-		JobIdToIdentifierMap: map[string]int64{
-			"111222334": 1,
-			"222333445": 2,
-		},
+		DestName:              "Klaviyo Bulk Upload",
+		DestinationConfig:     destination.Config,
+		Logger:                testLogger,
+		StatsFactory:          stats.NOP,
+		KlaviyoAPIService:     mockKlaviyoAPIService,
 		BatchSize:             10000,
 		MaxPayloadSize:        4600000,
 		MaxAllowedProfileSize: 512000,
@@ -102,20 +119,22 @@ func TestUpload(t *testing.T) {
 
 		output := uploader.Upload(context.Background(), asyncDestStruct)
 		require.Equal(t, common.AsyncUploadOutput{
-			ImportingJobIDs:     []int64{1},
-			ImportingParameters: output.ImportingParameters,
-			FailedJobIDs:        nil,
-			FailedReason:        "",
-			FailedCount:         0,
-			AbortJobIDs:         nil,
-			AbortReason:         "",
-			AbortCount:          0,
-			SucceededJobIDs:     nil,
-			SuccessResponse:     "",
-			ImportingCount:      1,
-			DestinationID:       destination.ID,
+			ImportingJobIDs:        []int64{1},
+			ImportingParameters:    output.ImportingParameters,
+			FailedJobIDs:           nil,
+			FailedReason:           "",
+			FailedCount:            0,
+			AbortJobIDs:            nil,
+			AbortReason:            "",
+			AbortCount:             0,
+			SucceededJobIDs:        nil,
+			SuccessResponse:        "",
+			ImportingCount:         1,
+			JobImportingParameters: output.JobImportingParameters,
+			DestinationID:          destination.ID,
 		}, output)
 		require.Equal(t, `{"importId":"importId1","importCount":1}`, string(output.ImportingParameters))
+		requireImportingHashes(t, output, map[int64]string{1: "user1"})
 	})
 
 	t.Run("Unsuccessful Upload", func(t *testing.T) {
@@ -146,6 +165,7 @@ func TestUpload(t *testing.T) {
 			ImportingCount:      0,
 			DestinationID:       destination.ID,
 		}, output)
+		require.Empty(t, output.JobImportingParameters)
 	})
 	// 3 chunks: chunk 1 fails with 429 (retryable), chunk 2 fails with 400 (non-retryable), chunk 3 succeeds.
 	// Validates that retryable and non-retryable errors are routed correctly in the same upload.
@@ -228,20 +248,26 @@ func TestUpload(t *testing.T) {
 		})
 
 		require.Equal(t, common.AsyncUploadOutput{
-			FailedJobIDs:        []int64{1, 2},                                                                                                                       // chunk 1: 429, retryable
-			FailedCount:         2,                                                                                                                                   // matches FailedJobIDs
-			AbortJobIDs:         []int64{3, 4},                                                                                                                       // chunk 2: 400, non-retryable
-			AbortReason:         "upload rejected by Klaviyo with status 400: {ID=, Code=, Title=, Detail=invalid payload structure, Source={Pointer=, Parameter=}}", // exact reason
-			AbortCount:          2,                                                                                                                                   // matches AbortJobIDs
-			ImportingJobIDs:     []int64{5, 6},                                                                                                                       // chunk 3: success
-			ImportingParameters: output.ImportingParameters,                                                                                                          // validated below
-			ImportingCount:      2,                                                                                                                                   // matches ImportingJobIDs
-			SucceededJobIDs:     nil,
-			SuccessResponse:     "",
-			FailedReason:        "upload failed with status 429: {ID=, Code=, Title=, Detail=rate limit exceeded, Source={Pointer=, Parameter=}}",
-			DestinationID:       destination.ID,
+			FailedJobIDs:           []int64{1, 2},                                                                                                                       // chunk 1: 429, retryable
+			FailedCount:            2,                                                                                                                                   // matches FailedJobIDs
+			AbortJobIDs:            []int64{3, 4},                                                                                                                       // chunk 2: 400, non-retryable
+			AbortReason:            "upload rejected by Klaviyo with status 400: {ID=, Code=, Title=, Detail=invalid payload structure, Source={Pointer=, Parameter=}}", // exact reason
+			AbortCount:             2,                                                                                                                                   // matches AbortJobIDs
+			ImportingJobIDs:        []int64{5, 6},                                                                                                                       // chunk 3: success
+			ImportingParameters:    output.ImportingParameters,                                                                                                          // validated below
+			ImportingCount:         2,                                                                                                                                   // matches ImportingJobIDs
+			JobImportingParameters: output.JobImportingParameters,
+			SucceededJobIDs:        nil,
+			SuccessResponse:        "",
+			FailedReason:           "upload failed with status 429: {ID=, Code=, Title=, Detail=rate limit exceeded, Source={Pointer=, Parameter=}}",
+			DestinationID:          destination.ID,
 		}, output)
 		require.Equal(t, `{"importId":"importId3","importCount":2}`, string(output.ImportingParameters))
+		requireImportingHashes(t, output, map[int64]string{5: "user5", 6: "user6"})
+		require.NotContains(t, output.JobImportingParameters, int64(1))
+		require.NotContains(t, output.JobImportingParameters, int64(2))
+		require.NotContains(t, output.JobImportingParameters, int64(3))
+		require.NotContains(t, output.JobImportingParameters, int64(4))
 	})
 }
 
@@ -329,6 +355,8 @@ func TestUploadStripAndRetryInvalidProfiles(t *testing.T) {
 	require.Equal(t, 2, output.ImportingCount)
 	require.Empty(t, output.FailedJobIDs)
 	require.Equal(t, `{"importId":"importIdRetry","importCount":2}`, string(output.ImportingParameters))
+	requireImportingHashes(t, output, map[int64]string{1: "good1", 3: "good2"})
+	require.NotContains(t, output.JobImportingParameters, int64(2))
 }
 
 // The first upload is rejected (one profile stripped) and the single retry is
@@ -405,6 +433,7 @@ func TestUploadRetryAlsoFails(t *testing.T) {
 	require.Equal(t, 3, output.AbortCount)
 	require.Empty(t, output.ImportingJobIDs)
 	require.Empty(t, output.FailedJobIDs)
+	require.Empty(t, output.JobImportingParameters)
 }
 
 func TestExtractProfileValidInput(t *testing.T) {
@@ -501,10 +530,6 @@ func TestPoll(t *testing.T) {
 		Logger:            testLogger,
 		StatsFactory:      stats.NOP,
 		KlaviyoAPIService: mockKlaviyoAPIService,
-		JobIdToIdentifierMap: map[string]int64{
-			"111222334": 1,
-			"222333445": 2,
-		},
 	}
 
 	t.Run("Successful Poll", func(t *testing.T) {
@@ -609,10 +634,6 @@ func TestGetUploadStats(t *testing.T) {
 		Logger:            testLogger,
 		StatsFactory:      stats.NOP,
 		KlaviyoAPIService: mockKlaviyoAPIService,
-		JobIdToIdentifierMap: map[string]int64{
-			"111222334": 1,
-			"222333445": 2,
-		},
 	}
 
 	t.Run("Failure GetUploadStats: Import Job Failed", func(t *testing.T) {
@@ -660,7 +681,7 @@ func TestGetUploadStats(t *testing.T) {
 						OriginalPayload: struct {
 							Id          string `json:"id"`
 							AnonymousId string `json:"anonymous_id"`
-						}{Id: "1", AnonymousId: "111222334"},
+						}{AnonymousId: "111222334"},
 					},
 					Links: struct {
 						Self string `json:"self"`
@@ -676,8 +697,8 @@ func TestGetUploadStats(t *testing.T) {
 		uploadStatsInput := common.GetUploadStatsInput{
 			FailedJobParameters: "importId1",
 			ImportingList: []*jobsdb.JobT{
-				{JobID: 1},
-				{JobID: 2},
+				importingJob(t, 1, "111222334"),
+				importingJob(t, 2, "222333445"),
 			},
 		}
 
@@ -685,9 +706,9 @@ func TestGetUploadStats(t *testing.T) {
 		assert.NotNil(t, statsResponse)
 		assert.Equal(t, http.StatusOK, statsResponse.StatusCode)
 		// assert.Equal(t, "The import job failed", statsResponse.Error)
-		assert.NotEmpty(t, statsResponse.Metadata.AbortedKeys)
-		assert.NotEmpty(t, statsResponse.Metadata.AbortedReasons)
-		assert.NotEmpty(t, statsResponse.Metadata.SucceededKeys)
+		require.Equal(t, []int64{1}, statsResponse.Metadata.AbortedKeys)
+		require.Equal(t, map[int64]string{1: "The import job failed"}, statsResponse.Metadata.AbortedReasons)
+		require.Equal(t, []int64{2}, statsResponse.Metadata.SucceededKeys)
 	})
 
 	t.Run("GetUploadStats with Errors", func(t *testing.T) {
@@ -698,8 +719,8 @@ func TestGetUploadStats(t *testing.T) {
 		uploadStatsInput := common.GetUploadStatsInput{
 			FailedJobParameters: "importId1",
 			ImportingList: []*jobsdb.JobT{
-				{JobID: 1},
-				{JobID: 2},
+				importingJob(t, 1, "111222334"),
+				importingJob(t, 2, "222333445"),
 			},
 		}
 
@@ -708,4 +729,55 @@ func TestGetUploadStats(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, statsResponse.StatusCode)
 		assert.Equal(t, "some error", statsResponse.Error)
 	})
+}
+
+// Correlation survives an uploader replacement (including an identifierType config
+// change). Klaviyo returns original_payload.id when identifierType is id, even if
+// anonymous_id is present, so the id must win during matching.
+func TestUploadStatsAfterManagerReplacement(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	api := mockAPIService.NewMockKlaviyoAPIService(ctrl)
+	file := filepath.Join(t.TempDir(), "profiles.jsonl")
+	const identifier = "person@example.com"
+	const line = `{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","id":"person@example.com","attributes":{"email":"person@example.com","jobIdentifier":"person@example.com:42"}}]}}}}}},"metadata":{"job_id":42}}`
+	require.NoError(t, os.WriteFile(file, []byte(line), 0o600))
+
+	api.EXPECT().UploadProfiles(gomock.Any()).DoAndReturn(func(payload klaviyobulkupload.Payload) (*klaviyobulkupload.UploadResp, error) {
+		require.Empty(t, payload.Data.Attributes.Profiles.Data[0].Attributes.JobIdentifier)
+		require.Equal(t, identifier, payload.Data.Attributes.Profiles.Data[0].ID)
+		return &klaviyobulkupload.UploadResp{Data: struct {
+			Id string `json:"id"`
+		}{Id: "import-42"}}, nil
+	})
+	uploader := &klaviyobulkupload.KlaviyoBulkUploader{
+		Logger: logger.NOP, StatsFactory: stats.NOP, KlaviyoAPIService: api,
+		BatchSize: 10000, MaxPayloadSize: 4600000, MaxAllowedProfileSize: 512000,
+	}
+	output := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
+		Destination: destination, FileName: file, ImportingJobIDs: []int64{42},
+	})
+	require.Equal(t, []int64{42}, output.ImportingJobIDs)
+	requireImportingHashes(t, output, map[int64]string{42: identifier})
+	require.NotContains(t, string(output.ImportingParameters), identifier)
+
+	// Simulate batchrouter's metadata merge into LastJobStatus.Parameters.
+	statusParameters, err := sjson.SetBytes(output.ImportingParameters, "metadata", output.JobImportingParameters[42])
+	require.NoError(t, err)
+	job := &jobsdb.JobT{JobID: 42, LastJobStatus: jobsdb.JobStatusT{Parameters: statusParameters}}
+	updatedDestination := *destination
+	updatedDestination.Config = map[string]any{"privateApiKey": "changed-key", "identifierType": "id"}
+	fresh, err := klaviyobulkupload.NewManager(logger.NOP, stats.NOP, &updatedDestination)
+	require.NoError(t, err)
+	fresh.KlaviyoAPIService = api
+
+	var errorsResp klaviyobulkupload.UploadStatusResp
+	require.NoError(t, jsonrs.Unmarshal([]byte(`{"data":[{"attributes":{"detail":"invalid id","original_payload":{"id":"person@example.com","anonymous_id":"unrelated"}}}]}`), &errorsResp))
+	api.EXPECT().GetUploadErrors("import-42").Return(&errorsResp, nil)
+	result := fresh.GetUploadStats(common.GetUploadStatsInput{
+		FailedJobParameters: "import-42", ImportingList: []*jobsdb.JobT{job},
+	})
+	require.Equal(t, http.StatusOK, result.StatusCode)
+	require.Equal(t, []int64{42}, result.Metadata.AbortedKeys)
+	require.Equal(t, map[int64]string{42: "invalid id"}, result.Metadata.AbortedReasons)
+	require.Empty(t, result.Metadata.SucceededKeys)
 }

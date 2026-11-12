@@ -2,12 +2,18 @@ package marketobulkupload_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -19,6 +25,53 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	mbu "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
 )
+
+// Mirror the batch router's per-job metadata merge into importing status parameters.
+func importingJobsFromUpload(t *testing.T, output common.AsyncUploadOutput) []*jobsdb.JobT {
+	t.Helper()
+	jobs := make([]*jobsdb.JobT, 0, len(output.ImportingJobIDs))
+	for _, jobID := range output.ImportingJobIDs {
+		params, ok := output.JobImportingParameters[jobID]
+		require.True(t, ok, "missing metadata for job %d", jobID)
+		statusParams, err := sjson.SetBytes(output.ImportingParameters, "metadata", params)
+		require.NoError(t, err)
+		jobs = append(jobs, &jobsdb.JobT{
+			JobID: jobID,
+			LastJobStatus: jobsdb.JobStatusT{
+				Parameters: statusParams,
+			},
+		})
+	}
+	return jobs
+}
+
+func marketoImportingJob(t *testing.T, jobID int64, hash string, ordinal int) *jobsdb.JobT {
+	t.Helper()
+	params, err := sjson.SetBytes([]byte(`{}`), "metadata", []byte(fmt.Sprintf(`{"dataHash":%q,"rowOrdinal":%d}`, hash, ordinal)))
+	require.NoError(t, err)
+	return &jobsdb.JobT{JobID: jobID, LastJobStatus: jobsdb.JobStatusT{Parameters: params}}
+}
+
+func writeMarketoJobs(t *testing.T, jobs []common.AsyncJob) string {
+	t.Helper()
+	file, err := os.CreateTemp(t.TempDir(), "marketo-jobs-*.json")
+	require.NoError(t, err)
+	for _, job := range jobs {
+		line, err := jsonrs.Marshal(job)
+		require.NoError(t, err)
+		_, err = file.Write(append(line, '\n'))
+		require.NoError(t, err)
+	}
+	require.NoError(t, file.Close())
+	return file.Name()
+}
+
+func marketoJob(id int64, fields map[string]any) common.AsyncJob {
+	return common.AsyncJob{
+		Message:  fields,
+		Metadata: map[string]any{"job_id": float64(id)},
+	}
+}
 
 func TestMarketoBulkUploader_Upload(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -134,6 +187,63 @@ func TestMarketoBulkUploader_Upload(t *testing.T) {
 	})
 }
 
+func TestMarketoBulkUploader_PersistedUploadMetadata(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
+	uploader := mbu.NewMarketoBulkUploaderWithOptions(mbu.MarketoBulkUploaderOptions{
+		DestinationName: "MARKETO_BULK_UPLOAD",
+		DestinationConfig: mbu.MarketoConfig{
+			FieldsMapping: map[string]string{"email": "email"},
+		},
+		Logger:       logger.NewLogger(),
+		StatsFactory: stats.NOP,
+		APIService:   api,
+	})
+	// Several rows overflow the CSV after the limit; a subsequent small row
+	// still fits and gets the next written ordinal, not its input index.
+	jobs := []common.AsyncJob{marketoJob(1, map[string]any{"email": "one@example.com"})}
+	for id := int64(2); id <= 701; id++ {
+		jobs = append(jobs, marketoJob(id, map[string]any{"email": strings.Repeat("x", 16000)}))
+	}
+	jobs = append(jobs, marketoJob(702, map[string]any{"email": "last@example.com"}))
+	file := writeMarketoJobs(t, jobs)
+	api.EXPECT().ImportLeads(gomock.Any(), "").Return("import-123", nil)
+	output := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
+		Destination: &backendconfig.DestinationT{
+			ID: "marketo-persisted-metadata",
+			DestinationDefinition: backendconfig.DestinationDefinitionT{
+				Name: "MARKETO_BULK_UPLOAD",
+			},
+		},
+		FileName: file,
+	})
+
+	require.Greater(t, output.ImportingCount, 1)
+	require.NotEmpty(t, output.FailedJobIDs)
+	require.Equal(t, int64(1), output.ImportingJobIDs[0])
+	require.Equal(t, int64(702), output.ImportingJobIDs[len(output.ImportingJobIDs)-1])
+	require.Equal(t, len(jobs), output.ImportingCount+output.FailedCount)
+	require.Equal(t, "import-123", gjson.GetBytes(output.ImportingParameters, "importId").String())
+	require.Equal(t, int64(output.ImportingCount), gjson.GetBytes(output.ImportingParameters, "importCount").Int())
+	require.Equal(t, 1, len(gjson.GetBytes(output.ImportingParameters, "csvHeaders").Array()))
+	require.Equal(t, "email", gjson.GetBytes(output.ImportingParameters, "csvHeaders.0").String())
+	require.Len(t, output.JobImportingParameters, output.ImportingCount)
+	for _, jobID := range output.FailedJobIDs {
+		require.NotContains(t, output.JobImportingParameters, jobID)
+	}
+	for ordinal, job := range importingJobsFromUpload(t, output) {
+		email := "one@example.com"
+		if job.JobID == 702 {
+			email = "last@example.com"
+		} else if job.JobID != 1 {
+			email = strings.Repeat("x", 16000)
+		}
+		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(email)))
+		require.JSONEq(t, fmt.Sprintf(`{"dataHash":%q,"rowOrdinal":%d}`, hash, ordinal+1), string(output.JobImportingParameters[job.JobID]))
+		require.Equal(t, hash, gjson.Get(gjson.GetBytes(job.LastJobStatus.Parameters, "metadata").String(), "dataHash").String())
+	}
+}
+
 func TestMarketoBulkUploader_Poll(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -206,6 +316,199 @@ func TestMarketoBulkUploader_Poll(t *testing.T) {
 		assert.True(t, result.HasFailed)
 		assert.True(t, result.HasWarning)
 	})
+}
+
+func TestMarketoBulkUploader_PersistedStatsAcrossManagers(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
+	newUploader := func(config mbu.MarketoConfig) *mbu.MarketoBulkUploader {
+		return mbu.NewMarketoBulkUploaderWithOptions(mbu.MarketoBulkUploaderOptions{
+			DestinationName:   "MARKETO_BULK_UPLOAD",
+			DestinationConfig: config,
+			Logger:            logger.NewLogger(),
+			StatsFactory:      stats.NOP,
+			APIService:        api,
+		})
+	}
+	originalConfig := mbu.MarketoConfig{
+		MunchkinId: "old-munchkin",
+		FieldsMapping: map[string]string{
+			"email": "email", "firstName": "firstName", "lastName": "lastName",
+		},
+	}
+	file := writeMarketoJobs(t, []common.AsyncJob{
+		marketoJob(1, map[string]any{"email": "one@example.com", "firstName": "Ada", "lastName": "One"}),
+		marketoJob(2, map[string]any{"email": "two@example.com", "firstName": "Grace", "lastName": "Two"}),
+		marketoJob(3, map[string]any{"email": "three@example.com", "firstName": "Lin", "lastName": "Three"}),
+	})
+	api.EXPECT().ImportLeads(gomock.Any(), "").Return("original-import", nil)
+	output := newUploader(originalConfig).Upload(context.Background(), &common.AsyncDestinationStruct{
+		Destination: &backendconfig.DestinationT{
+			ID:                    "marketo-restarted-stats",
+			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "MARKETO_BULK_UPLOAD"},
+		},
+		FileName: file,
+	})
+	require.Equal(t, []int64{1, 2, 3}, output.ImportingJobIDs)
+	jobs := importingJobsFromUpload(t, output)
+
+	// Rebuild with changed mapping and credentials: the persisted CSV headers,
+	// not today's mapping, must be used to correlate Marketo's result rows.
+	uploader := newUploader(mbu.MarketoConfig{
+		MunchkinId:    "new-munchkin",
+		FieldsMapping: map[string]string{"other": "other"},
+	})
+	api.EXPECT().PollImportStatus("original-import").Return(&mbu.MarketoResponse{
+		Result: []mbu.Result{{Status: "Complete", NumOfRowsFailed: 1, NumOfRowsWithWarning: 1}},
+	}, nil)
+	poll := uploader.Poll(context.Background(), common.AsyncPoll{ImportId: "original-import"})
+	require.True(t, poll.Complete)
+	require.True(t, poll.HasFailed)
+	require.True(t, poll.HasWarning)
+	api.EXPECT().GetLeadStatus(poll.FailedJobParameters).Return([]map[string]string{{
+		"email": "one@example.com", "firstName": "Ada", "lastName": "One",
+		mbu.MARKETO_FAILED_HEADER: "invalid email",
+	}}, nil)
+	api.EXPECT().GetLeadStatus(poll.WarningJobParameters).Return([]map[string]string{{
+		"email": "two@example.com", "firstName": "Grace", "lastName": "Two",
+		mbu.MARKETO_WARNING_HEADER: "duplicate",
+	}}, nil)
+	input := common.GetUploadStatsInput{
+		ImportingList: jobs, Parameters: output.ImportingParameters,
+		FailedJobParameters: poll.FailedJobParameters, WarningJobParameters: poll.WarningJobParameters,
+	}
+	result := uploader.GetUploadStats(input)
+	require.Equal(t, 200, result.StatusCode)
+	require.Equal(t, []int64{1, 2}, result.Metadata.AbortedKeys)
+	require.Equal(t, map[int64]string{1: "invalid email", 2: "duplicate"}, result.Metadata.AbortedReasons)
+	require.Equal(t, []int64{3}, result.Metadata.SucceededKeys)
+
+	// Repeating stats with the same persisted statuses still yields the same
+	// classification (no hash map to clear after the first call).
+	api.EXPECT().GetLeadStatus(poll.FailedJobParameters).Return([]map[string]string{{
+		"email": "one@example.com", "firstName": "Ada", "lastName": "One",
+		mbu.MARKETO_FAILED_HEADER: "invalid email",
+	}}, nil)
+	api.EXPECT().GetLeadStatus(poll.WarningJobParameters).Return([]map[string]string{{
+		"email": "two@example.com", "firstName": "Grace", "lastName": "Two",
+		mbu.MARKETO_WARNING_HEADER: "duplicate",
+	}}, nil)
+	require.Equal(t, result, uploader.GetUploadStats(input))
+}
+
+func TestMarketoBulkUploader_QueuedThenComplete(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
+	uploader := mbu.NewMarketoBulkUploaderWithOptions(mbu.MarketoBulkUploaderOptions{
+		Logger: logger.NewLogger(), StatsFactory: stats.NOP, APIService: api,
+		DestinationConfig: mbu.MarketoConfig{FieldsMapping: map[string]string{"email": "email"}},
+	})
+	api.EXPECT().ImportLeads(gomock.Any(), "").Return("queued-import", nil)
+	output := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
+		Destination: &backendconfig.DestinationT{
+			ID: "marketo-queued", DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "MARKETO_BULK_UPLOAD"},
+		},
+		FileName: writeMarketoJobs(t, []common.AsyncJob{marketoJob(17, map[string]any{"email": "queued@example.com"})}),
+	})
+	require.Equal(t, []int64{17}, output.ImportingJobIDs)
+	api.EXPECT().PollImportStatus("queued-import").Return(&mbu.MarketoResponse{
+		Result: []mbu.Result{{Status: "Queued"}},
+	}, nil)
+	queued := uploader.Poll(context.Background(), common.AsyncPoll{ImportId: "queued-import"})
+	require.True(t, queued.InProgress)
+	require.False(t, queued.Complete)
+
+	api.EXPECT().PollImportStatus("queued-import").Return(&mbu.MarketoResponse{
+		Result: []mbu.Result{{Status: "Complete", NumOfRowsFailed: 1}},
+	}, nil)
+	complete := uploader.Poll(context.Background(), common.AsyncPoll{ImportId: "queued-import"})
+	require.True(t, complete.Complete)
+	require.True(t, complete.HasFailed)
+	api.EXPECT().GetLeadStatus(complete.FailedJobParameters).Return([]map[string]string{{
+		"email": "queued@example.com", mbu.MARKETO_FAILED_HEADER: "invalid",
+	}}, nil)
+	result := uploader.GetUploadStats(common.GetUploadStatsInput{
+		Parameters:          output.ImportingParameters,
+		ImportingList:       importingJobsFromUpload(t, output),
+		FailedJobParameters: complete.FailedJobParameters,
+	})
+	require.Equal(t, 200, result.StatusCode)
+	require.Equal(t, []int64{17}, result.Metadata.AbortedKeys)
+	require.Equal(t, map[int64]string{17: "invalid"}, result.Metadata.AbortedReasons)
+}
+
+func TestMarketoBulkUploader_GetUploadStatsRetry(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
+	uploader := mbu.NewMarketoBulkUploaderWithOptions(mbu.MarketoBulkUploaderOptions{
+		Logger: logger.NewLogger(), StatsFactory: stats.NOP, APIService: api,
+	})
+	params := json.RawMessage(`{"importId":"retry-import","importCount":2,"csvHeaders":["email"]}`)
+	jobOneHash := fmt.Sprintf("%x", sha256.Sum256([]byte("one@example.com")))
+	jobTwoHash := fmt.Sprintf("%x", sha256.Sum256([]byte("two@example.com")))
+	jobs := []*jobsdb.JobT{
+		{JobID: 1, LastJobStatus: jobsdb.JobStatusT{Parameters: json.RawMessage(fmt.Sprintf(`{"metadata":{"dataHash":%q,"rowOrdinal":1}}`, jobOneHash))}},
+		{JobID: 2, LastJobStatus: jobsdb.JobStatusT{Parameters: json.RawMessage(fmt.Sprintf(`{"metadata":{"dataHash":%q,"rowOrdinal":2}}`, jobTwoHash))}},
+	}
+	api.EXPECT().PollImportStatus("retry-import").Return(&mbu.MarketoResponse{
+		Result: []mbu.Result{{Status: "Complete", NumOfRowsFailed: 1}},
+	}, nil)
+	poll := uploader.Poll(context.Background(), common.AsyncPoll{ImportId: "retry-import"})
+	require.True(t, poll.HasFailed)
+	input := common.GetUploadStatsInput{
+		Parameters: params, ImportingList: jobs, FailedJobParameters: poll.FailedJobParameters,
+	}
+	api.EXPECT().GetLeadStatus(poll.FailedJobParameters).Return([]map[string]string{{
+		"email": "one@example.com", mbu.MARKETO_FAILED_HEADER: "invalid",
+	}}, nil)
+	first := uploader.GetUploadStats(input)
+	require.Equal(t, 200, first.StatusCode)
+	require.Equal(t, []int64{1}, first.Metadata.AbortedKeys)
+	require.Equal(t, map[int64]string{1: "invalid"}, first.Metadata.AbortedReasons)
+	require.Equal(t, []int64{2}, first.Metadata.SucceededKeys)
+
+	// A failed final status update leaves these importing statuses unchanged.
+	// A new poll and stats pass must yield the same job IDs and reasons.
+	api.EXPECT().PollImportStatus("retry-import").Return(&mbu.MarketoResponse{
+		Result: []mbu.Result{{Status: "Complete", NumOfRowsFailed: 1}},
+	}, nil)
+	poll = uploader.Poll(context.Background(), common.AsyncPoll{ImportId: "retry-import"})
+	require.True(t, poll.HasFailed)
+	api.EXPECT().GetLeadStatus(poll.FailedJobParameters).Return([]map[string]string{{
+		"email": "one@example.com", mbu.MARKETO_FAILED_HEADER: "invalid",
+	}}, nil)
+	input.FailedJobParameters = poll.FailedJobParameters
+	require.Equal(t, first, uploader.GetUploadStats(input))
+}
+
+func TestMarketoBulkUploader_DuplicateHashesShuffled(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
+	uploader := mbu.NewMarketoBulkUploaderWithOptions(mbu.MarketoBulkUploaderOptions{
+		Logger: logger.NewLogger(), StatsFactory: stats.NOP, APIService: api,
+	})
+	// The duplicate hash was written for job 10, then job 20. The incoming
+	// importing list reverses them; job 20 must still own the Marketo failure.
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte("same@example.com")))
+	jobs := []*jobsdb.JobT{
+		marketoImportingJob(t, 20, hash, 2),
+		marketoImportingJob(t, 10, hash, 1),
+	}
+	api.EXPECT().PollImportStatus("duplicates").Return(&mbu.MarketoResponse{
+		Result: []mbu.Result{{Status: "Complete", NumOfRowsFailed: 1}},
+	}, nil)
+	poll := uploader.Poll(context.Background(), common.AsyncPoll{ImportId: "duplicates"})
+	api.EXPECT().GetLeadStatus(poll.FailedJobParameters).Return([]map[string]string{{
+		"email": "same@example.com", mbu.MARKETO_FAILED_HEADER: "invalid",
+	}}, nil)
+	result := uploader.GetUploadStats(common.GetUploadStatsInput{
+		ImportingList: jobs, FailedJobParameters: poll.FailedJobParameters,
+		Parameters: json.RawMessage(`{"importId":"duplicates","importCount":2,"csvHeaders":["email"]}`),
+	})
+	require.Equal(t, 200, result.StatusCode)
+	require.Equal(t, []int64{20}, result.Metadata.AbortedKeys)
+	require.Equal(t, map[int64]string{20: "invalid"}, result.Metadata.AbortedReasons)
+	require.Equal(t, []int64{10}, result.Metadata.SucceededKeys)
 }
 
 func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
@@ -309,8 +612,8 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 			}, nil).
 			AnyTimes()
 
-		// Do an initial upload to set up the internal state (csvHeaders and dataHashToJobId)
-		uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
+		// Persist the upload metadata on the importing statuses, as the batch router does.
+		output := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: &backendconfig.DestinationT{
 				ID: "test-dest-1",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -351,17 +654,13 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 				},
 			}, nil)
 
-		importingList := []*jobsdb.JobT{
-			{JobID: 1}, // Failed job
-			{JobID: 2}, // Warning job
-			{JobID: 3}, // Successful job
-		}
+		importingList := importingJobsFromUpload(t, output)
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
 			ImportingList:        importingList,
 			FailedJobParameters:  "https://123-ABC-456.mktorest.com/bulk/v1/leads/batch/test-import-123/failures.json",
 			WarningJobParameters: "https://123-ABC-456.mktorest.com/bulk/v1/leads/batch/test-import-123/warnings.json",
-			Parameters:           json.RawMessage(`{"importId":"test-import-123"}`),
+			Parameters:           output.ImportingParameters,
 		})
 
 		assert.Equal(t, 200, result.StatusCode)

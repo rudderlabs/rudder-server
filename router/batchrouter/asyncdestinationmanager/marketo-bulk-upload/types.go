@@ -1,5 +1,18 @@
 package marketobulkupload
 
+// importingMetadata is persisted on each written job's importing status.
+type importingMetadata struct {
+	DataHash   string `json:"dataHash"`
+	RowOrdinal int    `json:"rowOrdinal"`
+}
+
+// marketoImportParameters keeps the CSV column order used for this upload.
+type marketoImportParameters struct {
+	ImportId    string   `json:"importId"`
+	ImportCount int      `json:"importCount"`
+	CSVHeaders  []string `json:"csvHeaders"`
+}
+
 type MarketoConfig struct {
 	ClientId           string            `json:"clientId"`
 	ClientSecret       string            `json:"clientSecret"`
