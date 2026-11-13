@@ -223,6 +223,13 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
 	config.Set("JobsDB.backup.enabled", false)
 	config.Set("JobsDB.compactionLoopSleepDuration", "60m")
+	// read cursors, which fail the test if they turn themselves off
+	config.Set("JobsDB.readCursor.mode", "on")
+	config.Set("JobsDB.readCursor.panicOnDisable", true)
+	config.Set("JobsDB.readCursor.persistInterval", "1s")
+	config.Set("JobsDB.readCursor.persistMinSkippedDatasets", 1)
+	config.Set("JobsDB.maxDSSize", 100)
+	config.Set("JobsDB.addNewDSLoopSleepDuration", "1s")
 
 	config.Set("Router.isolationMode", string(spec.isolationMode))
 	config.Set("Router.Limiter.statsPeriod", "1s")
@@ -261,7 +268,7 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	t.Logf("Waiting for all rt jobs to be successfully processed")
 	require.Eventually(t, func() bool {
 		var processedJobCount int
-		require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('rt',20) WHERE job_state = 'succeeded'").Scan(&processedJobCount))
+		require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('rt',NULL) WHERE job_state = 'succeeded'").Scan(&processedJobCount))
 		return processedJobCount == len(spec.jobs)
 	}, 5*time.Minute, 1*time.Second, "all rt jobs should be successfully processed")
 
@@ -276,7 +283,7 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	t.Logf("Destinations verified")
 
 	var minExecTime, maxExecTime time.Time
-	require.NoError(t, postgresContainer.DB.QueryRow("SELECT min(exec_time), max(exec_time) FROM unionjobsdbmetadata('rt',20)").Scan(&minExecTime, &maxExecTime), "it should be able to query the min and max execution times")
+	require.NoError(t, postgresContainer.DB.QueryRow("SELECT min(exec_time), max(exec_time) FROM unionjobsdbmetadata('rt',NULL)").Scan(&minExecTime, &maxExecTime), "it should be able to query the min and max execution times")
 	overallDuration = maxExecTime.Sub(minExecTime)
 
 	cancel()
