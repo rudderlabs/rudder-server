@@ -172,6 +172,10 @@ type Metadata struct {
 	JobID int `json:"job_id,omitempty"`
 }
 
+type importingMetadata struct {
+	IdentifierHash string `json:"identifierHash"`
+}
+
 type Profile struct {
 	Attributes ProfileAttributes `json:"attributes"`
 	ID         string            `json:"id,omitempty"`

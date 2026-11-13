@@ -32,7 +32,7 @@ var currentDir, _ = os.Getwd()
 func importingJob(t *testing.T, jobID int64, identifier string) *jobsdb.JobT {
 	t.Helper()
 	sum := sha256.Sum256([]byte(identifier))
-	params, err := sjson.SetBytes([]byte(`{"importId":"importId1"}`), "metadata", []byte(fmt.Sprintf(`{"identifierHash":%q}`, hex.EncodeToString(sum[:]))))
+	params, err := sjson.SetRawBytes([]byte(`{"importId":"importId1"}`), "metadata", []byte(fmt.Sprintf(`{"identifierHash":%q}`, hex.EncodeToString(sum[:]))))
 	require.NoError(t, err)
 	return &jobsdb.JobT{JobID: jobID, LastJobStatus: jobsdb.JobStatusT{Parameters: params}}
 }
@@ -152,19 +152,21 @@ func TestUpload(t *testing.T) {
 
 		output := uploader.Upload(context.Background(), asyncDestStruct)
 		require.Equal(t, common.AsyncUploadOutput{
-			ImportingJobIDs:     []int64{},
-			ImportingParameters: output.ImportingParameters,
-			FailedJobIDs:        []int64{1},
-			FailedReason:        "upload failed with status 0: ",
-			FailedCount:         1,
-			AbortJobIDs:         nil,
-			AbortReason:         "",
-			AbortCount:          0,
-			SucceededJobIDs:     nil,
-			SuccessResponse:     "",
-			ImportingCount:      0,
-			DestinationID:       destination.ID,
+			ImportingJobIDs:        []int64{},
+			ImportingParameters:    output.ImportingParameters,
+			FailedJobIDs:           []int64{1},
+			FailedReason:           "upload failed with status 0: ",
+			FailedCount:            1,
+			AbortJobIDs:            nil,
+			AbortReason:            "",
+			AbortCount:             0,
+			SucceededJobIDs:        nil,
+			SuccessResponse:        "",
+			ImportingCount:         0,
+			JobImportingParameters: output.JobImportingParameters,
+			DestinationID:          destination.ID,
 		}, output)
+		require.NotNil(t, output.JobImportingParameters)
 		require.Empty(t, output.JobImportingParameters)
 	})
 	// 3 chunks: chunk 1 fails with 429 (retryable), chunk 2 fails with 400 (non-retryable), chunk 3 succeeds.
@@ -739,7 +741,8 @@ func TestUploadStatsAfterManagerReplacement(t *testing.T) {
 	api := mockAPIService.NewMockKlaviyoAPIService(ctrl)
 	file := filepath.Join(t.TempDir(), "profiles.jsonl")
 	const identifier = "person@example.com"
-	const line = `{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","id":"person@example.com","attributes":{"email":"person@example.com","jobIdentifier":"person@example.com:42"}}]}}}}}},"metadata":{"job_id":42}}`
+	// The processor suffix differs from the batch-router job_id on purpose.
+	const line = `{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","id":"person@example.com","attributes":{"email":"person@example.com","jobIdentifier":"person@example.com:777"}}]}}}}}},"metadata":{"job_id":42}}`
 	require.NoError(t, os.WriteFile(file, []byte(line), 0o600))
 
 	api.EXPECT().UploadProfiles(gomock.Any()).DoAndReturn(func(payload klaviyobulkupload.Payload) (*klaviyobulkupload.UploadResp, error) {

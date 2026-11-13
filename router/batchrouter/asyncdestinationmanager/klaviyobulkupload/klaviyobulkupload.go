@@ -185,16 +185,21 @@ func hashIdentifier(identifier string) string {
 
 func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
 	pollResultImportIds := strings.Split(UploadStatsInput.FailedJobParameters, IMPORT_ID_SEPARATOR)
-	// Rebuild the correlation from importing status metadata, independent of the
-	// manager that uploaded the profiles (which may have since been replaced).
+	// make a map of jobId to error reason
 	jobIdToErrorMap := make(map[int64]string)
-	identifierHashToJobID := make(map[string]int64)
+
+	importingList := UploadStatsInput.ImportingList
 	jobIDs := []int64{}
-	for _, job := range UploadStatsInput.ImportingList {
+	ErrorMap := make(map[string]int64)
+	for _, job := range importingList {
 		jobIDs = append(jobIDs, job.JobID)
-		identifierHash := gjson.Get(gjson.GetBytes(job.LastJobStatus.Parameters, "metadata").String(), "identifierHash").String()
+		identifierHash := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.identifierHash").String()
+		if identifierHash == "" {
+			// The batch router's sjson.SetBytes stores []byte metadata as a JSON string.
+			identifierHash = gjson.Get(gjson.GetBytes(job.LastJobStatus.Parameters, "metadata").String(), "identifierHash").String()
+		}
 		if identifierHash != "" {
-			identifierHashToJobID[identifierHash] = job.JobID
+			ErrorMap[identifierHash] = job.JobID
 		}
 	}
 
@@ -219,7 +224,7 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 			} else {
 				identifierId = orgPayload.AnonymousId
 			}
-			jobId := identifierHashToJobID[hashIdentifier(identifierId)]
+			jobId := ErrorMap[hashIdentifier(identifierId)]
 			abortedJobIDs = append(abortedJobIDs, jobId)
 			errorDetail := item.Attributes.Detail
 			jobIdToErrorMap[jobId] = errorDetail
@@ -345,17 +350,13 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 
 	successJobs, _ = lo.Difference(importingJobIDs, append(failedJobs, abortedJobs...))
 	// Persist correlation only for jobs left importing after failed and aborted chunks.
-	var jobImportingParameters map[int64]stdjson.RawMessage
-	if len(successJobs) > 0 {
-		jobImportingParameters = make(map[int64]stdjson.RawMessage, len(successJobs))
-	}
+	jobImportingParameters := make(map[int64]stdjson.RawMessage, len(successJobs))
 	for _, jobID := range successJobs {
 		if identifierHash := identifierHashes[jobID]; identifierHash != "" {
-			metadata, err := jsonrs.Marshal(struct {
-				IdentifierHash string `json:"identifierHash"`
-			}{IdentifierHash: identifierHash})
+			metadata, err := jsonrs.Marshal(importingMetadata{IdentifierHash: identifierHash})
 			if err != nil {
-				return kbu.generateKlaviyoErrorOutput("Error while marshaling importing metadata.", err, importingJobIDs, destinationID)
+				kbu.Logger.Errorn("marshalling importing metadata", logger.NewIntField("jobID", jobID), obskit.Error(err))
+				continue
 			}
 			jobImportingParameters[jobID] = metadata
 		}
