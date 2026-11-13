@@ -54,6 +54,5 @@ func NewEloquaBulkUploader(logger logger.Logger, statsFactory stats.Stats, desti
 		eventsLimit:       common.GetBatchRouterConfigInt64("MaxEventsLimit", destinationName, 1000000),
 		successStatusCode: common.GetBatchRouterConfigStringMap("SuccessStatusCode", destinationName, []string{"ELQ-00040"}),
 		service:           eloqua,
-		jobToCSVMap:       map[int64]int64{},
 	}
 }

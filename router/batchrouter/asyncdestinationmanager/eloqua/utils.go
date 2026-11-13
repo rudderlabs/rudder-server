@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
@@ -164,10 +165,15 @@ func generateErrorString(item RejectedItem) string {
 	return item.StatusCode + " : " + item.Message + " " + invalidItems.String()
 }
 
-func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader) (*common.EventStatMeta, error) {
+func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, uniqueKeys []string, eloqua *EloquaBulkUploader) (*common.EventStatMeta, error) {
 	jobIDs := []int64{}
+	rowToJob := make(map[int64]int64, len(importingList))
 	for _, job := range importingList {
 		jobIDs = append(jobIDs, job.JobID)
+		index := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.recordIndex")
+		if index.Int() > 0 {
+			rowToJob[index.Int()] = job.JobID
+		}
 	}
 	rejectResponse, err := eloqua.service.CheckRejectedData(data)
 	if err != nil {
@@ -191,13 +197,14 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloq
 				}
 			}
 			for _, val := range rejectResponse.Items {
-				uniqueInvalidFields := lo.Intersect(eloqua.uniqueKeys, val.InvalidFields)
+				uniqueInvalidFields := lo.Intersect(uniqueKeys, val.InvalidFields)
 				successStatusCode := lo.Intersect(eloqua.successStatusCode, []string{val.StatusCode})
 				if len(successStatusCode) != 0 && len(uniqueInvalidFields) == 0 {
 					continue
 				}
-				abortedJobIDs = append(abortedJobIDs, eloqua.jobToCSVMap[val.RecordIndex])
-				abortedReasons[eloqua.jobToCSVMap[val.RecordIndex]] = generateErrorString(val)
+				jobID := rowToJob[val.RecordIndex]
+				abortedJobIDs = append(abortedJobIDs, jobID)
+				abortedReasons[jobID] = generateErrorString(val)
 			}
 		}
 	}

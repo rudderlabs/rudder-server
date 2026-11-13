@@ -30,8 +30,6 @@ type EloquaBulkUploader struct {
 	fileSizeLimit     int64
 	eventsLimit       int64
 	service           EloquaService
-	jobToCSVMap       map[int64]int64
-	uniqueKeys        []string
 	successStatusCode []string
 }
 type DestinationConfig struct {
@@ -284,4 +282,16 @@ type JobInfo struct {
 	failedJobs    []int64
 	fileSizeLimit int64
 	importingJobs []int64
+}
+
+// importingMetadata is persisted on each importing job status under metadata.
+// RecordIndex is the one-based index of the data row actually written to the CSV.
+type importingMetadata struct {
+	RecordIndex int64 `json:"recordIndex"`
+}
+
+type importingParameters struct {
+	ImportId    string   `json:"importId"`
+	ImportCount int      `json:"importCount"`
+	UniqueKeys  []string `json:"uniqueKeys"`
 }

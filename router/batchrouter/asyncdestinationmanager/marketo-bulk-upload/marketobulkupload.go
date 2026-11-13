@@ -2,6 +2,7 @@ package marketobulkupload
 
 import (
 	"context"
+	stdjson "encoding/json"
 	"fmt"
 	"os"
 
@@ -22,8 +23,6 @@ type MarketoBulkUploader struct {
 	destinationConfig MarketoConfig
 	logger            logger.Logger
 	statsFactory      stats.Stats
-	csvHeaders        []string
-	dataHashToJobId   map[string]int64
 	hasFailures       bool
 	hasWarning        bool
 	apiService        MarketoAPIServiceInterface
@@ -72,7 +71,8 @@ func (b *MarketoBulkUploader) Upload(_ context.Context, asyncDestStruct *common.
 		"destType": destType,
 		"destID":   destinationID,
 	})
-	csvFilePath, headerRowOrder, insertedJobIDs, overflowedJobIDs, err := createCSVFile(destinationID, b.destinationConfig, input, b.dataHashToJobId)
+	dataHashToJobId := make(map[string]int64)
+	csvFilePath, headerRowOrder, insertedJobIDs, overflowedJobIDs, err := createCSVFile(destinationID, b.destinationConfig, input, dataHashToJobId)
 
 	b.logger.Infon("Number of jobs in the batch",
 		logger.NewIntField("jobCount", int64(len(insertedJobIDs))))
@@ -85,7 +85,6 @@ func (b *MarketoBulkUploader) Upload(_ context.Context, asyncDestStruct *common.
 			DestinationID: destinationID,
 		}
 	}
-	b.csvHeaders = headerRowOrder
 	importingJobIDs = insertedJobIDs
 	failedJobIDs = append(failedJobIDs, overflowedJobIDs...)
 
@@ -138,9 +137,20 @@ func (b *MarketoBulkUploader) Upload(_ context.Context, asyncDestStruct *common.
 
 	}
 
-	importParameters, err := jsonrs.Marshal(common.ImportParameters{
+	jobImportingParameters := make(map[int64]stdjson.RawMessage, len(dataHashToJobId))
+	for hash, jobID := range dataHashToJobId {
+		params, marshalErr := jsonrs.Marshal(importingMetadata{DataHash: hash})
+		if marshalErr != nil {
+			b.logger.Errorn("marshalling importing metadata", logger.NewIntField("jobID", jobID), obskit.Error(marshalErr))
+			continue
+		}
+		jobImportingParameters[jobID] = params
+	}
+
+	importParameters, err := jsonrs.Marshal(marketoImportParameters{
 		ImportId:    importID,
 		ImportCount: len(importingJobIDs),
+		CSVHeaders:  headerRowOrder,
 	})
 	if err != nil {
 		b.logger.Errorn("marshalling parameters", obskit.Error(err))
@@ -148,12 +158,13 @@ func (b *MarketoBulkUploader) Upload(_ context.Context, asyncDestStruct *common.
 
 	// return the response
 	return common.AsyncUploadOutput{
-		ImportingJobIDs:     importingJobIDs,
-		ImportingParameters: importParameters,
-		FailedJobIDs:        failedJobIDs,
-		ImportingCount:      len(importingJobIDs),
-		FailedCount:         len(failedJobIDs),
-		DestinationID:       destinationID,
+		ImportingJobIDs:        importingJobIDs,
+		ImportingParameters:    importParameters,
+		JobImportingParameters: jobImportingParameters,
+		FailedJobIDs:           failedJobIDs,
+		ImportingCount:         len(importingJobIDs),
+		FailedCount:            len(failedJobIDs),
+		DestinationID:          destinationID,
 	}
 }
 
@@ -231,19 +242,12 @@ func (b *MarketoBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll
 		pollStatus.Error = fmt.Sprintf("Unknown status: %s", batchStatus)
 	}
 
-	// in case of success, clear the hashToJobId map
-	if !hasFailed && !hasWarning {
-		b.clearHashToJobId()
-	}
-
 	return pollStatus
 }
 
 func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUploadStatsResponse {
 	// Extract importId from parameters
-	var params struct {
-		ImportId string `json:"importId"`
-	}
+	var params marketoImportParameters
 	err := jsonrs.Unmarshal(input.Parameters, &params)
 	if err != nil {
 		return common.GetUploadStatsResponse{
@@ -279,7 +283,14 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 		}
 	}
 
-	metadata := b.updateJobStatus(input.ImportingList, failedJobs, warningJobs)
+	dataHashToJobId := make(map[string]int64, len(input.ImportingList))
+	for _, job := range input.ImportingList {
+		hash := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.dataHash").String()
+		if hash != "" {
+			dataHashToJobId[hash] = job.JobID
+		}
+	}
+	metadata := b.updateJobStatus(input.ImportingList, failedJobs, warningJobs, dataHashToJobId, params.CSVHeaders)
 
 	return common.GetUploadStatsResponse{
 		StatusCode: 200,
@@ -291,7 +302,7 @@ func (*MarketoBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
 }
 
-func (b *MarketoBulkUploader) updateJobStatus(importingList []*jobsdb.JobT, failedJobs, warningJobs []map[string]string) common.EventStatMeta {
+func (b *MarketoBulkUploader) updateJobStatus(importingList []*jobsdb.JobT, failedJobs, warningJobs []map[string]string, dataHashToJobId map[string]int64, csvHeaders []string) common.EventStatMeta {
 	metadata := common.EventStatMeta{
 		AbortedKeys:    make([]int64, 0),
 		WarningKeys:    make([]int64, 0),
@@ -303,7 +314,7 @@ func (b *MarketoBulkUploader) updateJobStatus(importingList []*jobsdb.JobT, fail
 	for _, failedJob := range failedJobs {
 		// get failedJob data
 		var failedJobRow []string
-		for _, col := range b.csvHeaders {
+		for _, col := range csvHeaders {
 			if val, ok := failedJob[col]; ok {
 				failedJobRow = append(failedJobRow, val)
 			} else {
@@ -312,7 +323,7 @@ func (b *MarketoBulkUploader) updateJobStatus(importingList []*jobsdb.JobT, fail
 		}
 		// get jobID from jobToDataHash
 		hash := calculateHashCode(failedJobRow)
-		abortedJobID := b.dataHashToJobId[hash]
+		abortedJobID := dataHashToJobId[hash]
 		if abortedJobID != 0 {
 			metadata.AbortedKeys = append(metadata.AbortedKeys, abortedJobID)
 		}
@@ -326,7 +337,7 @@ func (b *MarketoBulkUploader) updateJobStatus(importingList []*jobsdb.JobT, fail
 	for _, warningJob := range warningJobs {
 		// get warningJob data
 		var warningJobRow []string
-		for _, col := range b.csvHeaders {
+		for _, col := range csvHeaders {
 			if val, ok := warningJob[col]; ok {
 				warningJobRow = append(warningJobRow, val)
 			} else {
@@ -335,7 +346,7 @@ func (b *MarketoBulkUploader) updateJobStatus(importingList []*jobsdb.JobT, fail
 		}
 		// get jobID from jobToDataHash
 		hash := calculateHashCode(warningJobRow)
-		warningJobId := b.dataHashToJobId[hash]
+		warningJobId := dataHashToJobId[hash]
 		if warningJobId != 0 {
 			// Even if a job has warning, it is considered as a failure
 			metadata.AbortedKeys = append(metadata.AbortedKeys, warningJobId)
@@ -353,13 +364,5 @@ func (b *MarketoBulkUploader) updateJobStatus(importingList []*jobsdb.JobT, fail
 		}
 	}
 
-	b.clearHashToJobId()
-
 	return metadata
-}
-
-func (b *MarketoBulkUploader) clearHashToJobId() {
-	for k := range b.dataHashToJobId {
-		delete(b.dataHashToJobId, k)
-	}
 }

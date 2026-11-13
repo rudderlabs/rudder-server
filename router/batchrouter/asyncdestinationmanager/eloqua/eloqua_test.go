@@ -9,11 +9,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/sjson"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -286,18 +286,19 @@ func TestEloqua(t *testing.T) {
 				}, nil)
 			f.eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
 			f.eloquaService.EXPECT().RunSync(gomock.Any()).Return("/syncs/384", nil)
-			var parameters common.ImportParameters
-			parameters.ImportId = "/syncs/384:/contacts/imports/384"
-			parameters.ImportCount = 9
-			importParameters, err := jsonrs.Marshal(parameters)
-			require.NoError(t, err)
+			importingJobIDs := []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022}
+			jobImportingParameters := make(map[int64]json.RawMessage, len(importingJobIDs))
+			for index, jobID := range importingJobIDs {
+				jobImportingParameters[jobID] = json.RawMessage(fmt.Sprintf(`{"recordIndex":%d}`, index+1))
+			}
 			expected := common.AsyncUploadOutput{
-				FailedReason:        "failed as the fileSizeLimit has over",
-				ImportingJobIDs:     []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022},
-				FailedJobIDs:        []int64{1023},
-				ImportingParameters: json.RawMessage(importParameters),
-				ImportingCount:      9,
-				FailedCount:         1,
+				FailedReason:           "failed as the fileSizeLimit has over",
+				ImportingJobIDs:        importingJobIDs,
+				FailedJobIDs:           []int64{1023},
+				ImportingParameters:    json.RawMessage(`{"importId":"/syncs/384:/contacts/imports/384","importCount":9,"uniqueKeys":[]}`),
+				JobImportingParameters: jobImportingParameters,
+				ImportingCount:         9,
+				FailedCount:            1,
 			}
 			received := f.bulkUploader.Upload(t.Context(), &asyncDestination)
 			require.Equal(t, expected, received)
@@ -445,38 +446,105 @@ func TestEloqua(t *testing.T) {
 				StatusCode: 200,
 				Metadata:   metadata,
 			}
-			f.eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
-				Items: []eloqua.Item{
-					{
-						Statement:    "{{CustomObject[172].Field[976]}}",
-						InternalName: "C_EmailAddress",
-					},
-					{
-						Statement:    "{{CustomObject[172].Field[976]}}",
-						InternalName: "C_FirstName",
-					},
-				},
-				TotalResults: 4,
-				Limit:        1000,
-				Offset:       0,
-				Count:        4,
-				HasMore:      false,
-			}, nil)
-			f.eloquaService.EXPECT().CreateImportDefinition(gomock.Any(), gomock.Any()).Return(
-				&eloqua.ImportDefinition{
-					URI: "/contacts/imports/384",
-				}, nil)
-			f.eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
-			f.eloquaService.EXPECT().RunSync(gomock.Any()).Return("/syncs/384", nil)
-			f.bulkUploader.Upload(t.Context(), &common.AsyncDestinationStruct{
-				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
-				FailedJobIDs:    []int64{},
-				FileName:        filepath.Join(currentDir, "testdata/uploadDataIdentify.txt"),
-				Destination:     &destination,
-				Manager:         f.bulkUploader,
-			})
+			pollInput.Parameters = []byte(`{"uniqueKeys":[]}`)
+			for index, job := range pollInput.ImportingList {
+				job := *job
+				job.LastJobStatus.Parameters = []byte(fmt.Sprintf(`{"metadata":{"recordIndex":%d}}`, index+1))
+				pollInput.ImportingList[index] = &job
+			}
 			received := f.bulkUploader.GetUploadStats(pollInput)
 			require.Equal(t, expected, received)
 		})
 	})
+}
+
+func importingJobsFromOutput(t *testing.T, output common.AsyncUploadOutput) []*jobsdb.JobT {
+	t.Helper()
+	importing := make([]*jobsdb.JobT, 0, len(output.ImportingJobIDs))
+	for _, jobID := range output.ImportingJobIDs {
+		parameters, err := sjson.SetBytes(output.ImportingParameters, "metadata", output.JobImportingParameters[jobID])
+		require.NoError(t, err)
+		importing = append(importing, &jobsdb.JobT{
+			JobID: jobID,
+			LastJobStatus: jobsdb.JobStatusT{
+				Parameters: parameters,
+			},
+		})
+	}
+	return importing
+}
+
+func TestEloquaPersistedRejectionCorrelation(t *testing.T) {
+	f := newEloquaFixture(t)
+	f.eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
+		Items: []eloqua.Item{
+			{InternalName: "C_EmailAddress", HasUniquenessConstraint: true},
+			{InternalName: "C_FirstName"},
+		},
+	}, nil)
+	f.eloquaService.EXPECT().CreateImportDefinition(gomock.Any(), "identify").Return(&eloqua.ImportDefinition{URI: "/contacts/imports/384"}, nil)
+	f.eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
+	f.eloquaService.EXPECT().RunSync(gomock.Any()).Return("/syncs/384", nil)
+	output := f.bulkUploader.Upload(t.Context(), &common.AsyncDestinationStruct{
+		ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
+		FileName:        filepath.Join(currentDir, "testdata/uploadDataIdentify.txt"),
+		Destination:     &destination,
+	})
+	require.Equal(t, []int64{1023}, output.FailedJobIDs)
+	require.JSONEq(t, `{"importId":"/syncs/384:/contacts/imports/384","importCount":9,"uniqueKeys":["C_EmailAddress"]}`, string(output.ImportingParameters))
+	require.Len(t, output.JobImportingParameters, 9)
+	require.NotContains(t, output.JobImportingParameters, int64(1023))
+	for index, jobID := range output.ImportingJobIDs {
+		require.JSONEq(t, fmt.Sprintf(`{"recordIndex":%d}`, index+1), string(output.JobImportingParameters[jobID]))
+	}
+
+	// A fresh manager with changed destination settings sees only persisted statuses and import parameters.
+	fresh := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "ELOQUA", "changed-authorization", "changed-endpoint", f.eloquaService)
+	f.eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("", fmt.Errorf("temporary status error"))
+	require.Equal(t, 500, fresh.Poll(t.Context(), common.AsyncPoll{ImportId: "/syncs/384:/contacts/imports/384"}).StatusCode)
+	f.eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("warning", nil)
+	f.eloquaService.EXPECT().DeleteImportDefinition(gomock.Any()).Return(nil)
+	poll := fresh.Poll(t.Context(), common.AsyncPoll{ImportId: "/syncs/384:/contacts/imports/384"})
+	require.True(t, poll.Complete)
+	require.True(t, poll.HasWarning)
+	input := common.GetUploadStatsInput{
+		WarningJobParameters: poll.WarningJobParameters,
+		Parameters:           output.ImportingParameters,
+		ImportingList:        importingJobsFromOutput(t, output),
+	}
+	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(nil, fmt.Errorf("temporary fetch error"))
+	require.Equal(t, 500, fresh.GetUploadStats(input).StatusCode)
+
+	// A later batch on the same manager must not overwrite the original import's unique keys.
+	f.eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
+		Items: []eloqua.Item{{InternalName: "C_FirstName", HasUniquenessConstraint: true}},
+	}, nil)
+	f.eloquaService.EXPECT().CreateImportDefinition(gomock.Any(), "identify").Return(&eloqua.ImportDefinition{URI: "/contacts/imports/385"}, nil)
+	f.eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
+	f.eloquaService.EXPECT().RunSync(gomock.Any()).Return("/syncs/385", nil)
+	otherOutput := f.bulkUploader.Upload(t.Context(), &common.AsyncDestinationStruct{
+		ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
+		FileName:        filepath.Join(currentDir, "testdata/uploadDataIdentify.txt"),
+		Destination:     &destination,
+	})
+	require.JSONEq(t, `{"importId":"/syncs/385:/contacts/imports/385","importCount":9,"uniqueKeys":["C_FirstName"]}`, string(otherOutput.ImportingParameters))
+
+	// The original import's unique keys still govern its rejected rows on retry.
+	f.eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(&eloqua.RejectResponse{
+		Count: 3, TotalResults: 3,
+		Items: []eloqua.RejectedItem{
+			{StatusCode: "ELQ-00040", RecordIndex: 1, InvalidFields: []string{"C_FirstName"}},
+			{StatusCode: "ELQ-00040", RecordIndex: 5, InvalidFields: []string{"C_EmailAddress"}, Message: "duplicate", FieldValues: map[string]string{"C_EmailAddress": "Test7"}},
+			{StatusCode: "ELQ-00002", RecordIndex: 9, InvalidFields: []string{"C_FirstName"}, Message: "invalid", FieldValues: map[string]string{"C_FirstName": "Test11"}},
+		},
+	}, nil)
+	result := fresh.GetUploadStats(input)
+	require.Equal(t, 200, result.StatusCode)
+	require.Equal(t, []int64{1018, 1022}, result.Metadata.AbortedKeys)
+	require.Equal(t, []int64{1014, 1015, 1016, 1017, 1019, 1020, 1021}, result.Metadata.SucceededKeys)
+	require.Equal(t, map[int64]string{
+		1018: "ELQ-00040 : duplicate C_EmailAddress : Test7",
+		1022: "ELQ-00002 : invalid C_FirstName : Test11",
+	}, result.Metadata.AbortedReasons)
+	require.NotContains(t, result.Metadata.AbortedReasons, int64(1023))
 }
