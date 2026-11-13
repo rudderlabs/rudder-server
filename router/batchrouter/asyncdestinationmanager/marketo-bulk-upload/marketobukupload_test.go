@@ -231,7 +231,7 @@ func TestMarketoBulkUploader_PersistedUploadMetadata(t *testing.T) {
 		}
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(row)))
 		require.JSONEq(t, fmt.Sprintf(`{"dataHash":%q}`, hash), string(output.JobImportingParameters[job.JobID]))
-		require.Equal(t, hash, gjson.Get(gjson.GetBytes(job.LastJobStatus.Parameters, "metadata").String(), "dataHash").String())
+		require.Equal(t, hash, gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.dataHash").String())
 	}
 }
 

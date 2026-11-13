@@ -171,10 +171,6 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, uniq
 	for _, job := range importingList {
 		jobIDs = append(jobIDs, job.JobID)
 		index := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.recordIndex")
-		if !index.Exists() {
-			// The batch router's sjson.SetBytes stores []byte metadata as a JSON string.
-			index = gjson.Get(gjson.GetBytes(job.LastJobStatus.Parameters, "metadata").String(), "recordIndex")
-		}
 		if index.Int() > 0 {
 			rowToJob[index.Int()] = job.JobID
 		}

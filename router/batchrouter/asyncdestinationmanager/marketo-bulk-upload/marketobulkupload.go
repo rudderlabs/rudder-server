@@ -286,10 +286,6 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 	dataHashToJobId := make(map[string]int64, len(input.ImportingList))
 	for _, job := range input.ImportingList {
 		hash := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.dataHash").String()
-		if hash == "" {
-			// The batch router's sjson.SetBytes stores []byte metadata as a JSON string.
-			hash = gjson.Get(gjson.GetBytes(job.LastJobStatus.Parameters, "metadata").String(), "dataHash").String()
-		}
 		if hash != "" {
 			dataHashToJobId[hash] = job.JobID
 		}

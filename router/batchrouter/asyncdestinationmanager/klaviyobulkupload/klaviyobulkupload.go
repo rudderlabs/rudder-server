@@ -194,10 +194,6 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 	for _, job := range importingList {
 		jobIDs = append(jobIDs, job.JobID)
 		identifierHash := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.identifierHash").String()
-		if identifierHash == "" {
-			// The batch router's sjson.SetBytes stores []byte metadata as a JSON string.
-			identifierHash = gjson.Get(gjson.GetBytes(job.LastJobStatus.Parameters, "metadata").String(), "identifierHash").String()
-		}
 		if identifierHash != "" {
 			ErrorMap[identifierHash] = job.JobID
 		}
