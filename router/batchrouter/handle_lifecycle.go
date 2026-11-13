@@ -62,7 +62,9 @@ func (brt *Handle) Setup(
 	if brt.now == nil {
 		brt.now = timeutil.Now
 	}
-	brt.asyncManagerFactory = asyncdestinationmanager.NewManager
+	if brt.asyncManagerFactory == nil {
+		brt.asyncManagerFactory = asyncdestinationmanager.NewManager
+	}
 
 	brt.netHandle = &http.Client{
 		Transport: &http.Transport{},
@@ -89,6 +91,11 @@ func (brt *Handle) Setup(
 		defaultIsolationMode = isolation.ModeWorkspace
 	}
 	isolationMode := config.GetStringVar(string(defaultIsolationMode), "BatchRouter.isolationMode")
+	brt.asyncWorkerEnabled = asynccommon.IsAsyncDestination(destType) && config.GetBoolVar(false, "BatchRouter."+destType+".asyncWorker.enabled")
+	if brt.asyncWorkerEnabled {
+		// an async worker holds the batch and the import of a single destination
+		isolationMode = string(isolation.ModeDestination)
+	}
 	var err error
 	if brt.isolationStrategy, err = isolation.GetStrategy(isolation.Mode(isolationMode), destType, func(destinationID string) bool {
 		brt.configSubscriberMu.RLock()
@@ -152,7 +159,30 @@ func (brt *Handle) Setup(
 		}),
 	)
 
-	brt.logger.Infon("BRT: Batch Router started", obskit.DestinationType(destType))
+	if brt.asyncWorkerEnabled {
+		defaultPollLimit := 64
+		if destType == "KLAVIYO_BULK_UPLOAD" {
+			defaultPollLimit = 1 // its poll calls Klaviyo in a loop without a pause until the import completes
+		}
+		brt.limiter.asyncUpload = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "brt_async_upload",
+			getReloadableBatchRouterConfigInt("asyncWorker.uploadLimit", brt.destType, 16),
+			stats.Default,
+			kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
+			kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
+				return time.After(limiterStatsPeriod)
+			}),
+		)
+		brt.limiter.asyncPoll = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "brt_async_poll",
+			getReloadableBatchRouterConfigInt("asyncWorker.pollLimit", brt.destType, defaultPollLimit),
+			stats.Default,
+			kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
+			kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
+				return time.After(limiterStatsPeriod)
+			}),
+		)
+	}
+
+	brt.logger.Infon("BRT: Batch Router started", obskit.DestinationType(destType), logger.NewBoolField("asyncWorkerEnabled", brt.asyncWorkerEnabled))
 	brt.crashRecover()
 
 	if asynccommon.IsAsyncDestination(brt.destType) {
@@ -215,6 +245,7 @@ func (brt *Handle) setupReloadableVars() {
 	brt.datePrefixOverride = config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride")
 	brt.customDatePrefix = config.GetReloadableStringVar("", "BatchRouter.customDatePrefix")
 	brt.maxImportingQueryIterations = config.GetReloadableIntVar(100, 1, "BatchRouter."+brt.destType+".maxImportingQueryIterations", "BatchRouter.maxImportingQueryIterations")
+	brt.asyncPollInterval = config.GetReloadableDurationVar(10, time.Second, "BatchRouter."+brt.destType+".asyncWorker.pollInterval", "BatchRouter.asyncWorker.pollInterval")
 }
 
 func (brt *Handle) startAsyncDestinationManager() {
@@ -230,6 +261,15 @@ func (brt *Handle) startAsyncDestinationManager() {
 	brt.asyncGetImportingIterations = stats.Default.NewTaggedStat("async_get_importing_iterations", stats.HistogramType, asyncStatTags)
 
 	brt.asyncDestinationStruct = make(map[string]*asynccommon.AsyncDestinationStruct)
+
+	if brt.asyncWorkerEnabled {
+		brt.asyncCalls = newAsyncCallTracker(brt.destType, stats.Default)
+		brt.backgroundGroup.Go(crash.Wrapper(func() error {
+			brt.asyncCalls.run(brt.backgroundCtx, 10*time.Second)
+			return nil
+		}))
+		return
+	}
 
 	if asynccommon.IsAsyncRegularDestination(brt.destType) {
 		brt.backgroundGroup.Go(crash.Wrapper(func() error {
@@ -287,6 +327,24 @@ func (brt *Handle) newAsyncDestinationManager(destination *backendconfig.Destina
 		}
 	}
 	return manager
+}
+
+// asyncManager is the manager of a destination, with the destination it was created for
+type asyncManager struct {
+	destination *backendconfig.DestinationT
+	manager     asynccommon.AsyncDestinationManager
+}
+
+// refreshAsyncManager returns the manager to use for the destination: the previous one if the destination's revision
+// didn't change and it isn't an invalid manager due for a retry, otherwise a new one.
+func (brt *Handle) refreshAsyncManager(previous map[string]asyncManager, destination backendconfig.DestinationT) asyncManager {
+	if prev, ok := previous[destination.ID]; ok && prev.destination.RevisionID == destination.RevisionID {
+		invalidManager, isInvalidManager := prev.manager.(*asynccommon.InvalidManager)
+		if !isInvalidManager || !brt.shouldRetryInvalidManager(invalidManager) {
+			return prev
+		}
+	}
+	return asyncManager{destination: &destination, manager: brt.newAsyncDestinationManager(&destination)}
 }
 
 func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
@@ -405,6 +463,10 @@ func (brt *Handle) backendConfigSubscriber() {
 	}
 	defer initialized()
 	for data := range ch {
+		brt.configSubscriberMu.RLock()
+		previousAsyncManagers := brt.asyncManagers
+		brt.configSubscriberMu.RUnlock()
+		asyncManagers := map[string]asyncManager{}
 		destinationsMap := map[string]*routerutils.DestinationWithSources{}
 		connectionWHNamespaceMap := map[string]string{}
 		uploadIntervalMap := map[string]time.Duration{}
@@ -425,7 +487,13 @@ func (brt *Handle) backendConfigSubscriber() {
 								}
 							}
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
-							brt.refreshDestination(destination)
+							if brt.asyncWorkerEnabled {
+								if _, ok := asyncManagers[destination.ID]; !ok {
+									asyncManagers[destination.ID] = brt.refreshAsyncManager(previousAsyncManagers, destination)
+								}
+							} else {
+								brt.refreshDestination(destination)
+							}
 
 							// initialize map to track encountered anonymousIds for a warehouse destination
 							if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
@@ -443,6 +511,7 @@ func (brt *Handle) backendConfigSubscriber() {
 		brt.destinationsMap = destinationsMap
 		brt.connectionWHNamespaceMap = connectionWHNamespaceMap
 		brt.uploadIntervalMap = uploadIntervalMap
+		brt.asyncManagers = asyncManagers
 		initialized()
 		brt.configSubscriberMu.Unlock()
 	}
