@@ -740,13 +740,16 @@ func TestUploadStatsAfterManagerReplacement(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	api := mockAPIService.NewMockKlaviyoAPIService(ctrl)
 	file := filepath.Join(t.TempDir(), "profiles.jsonl")
-	const identifier = "person@example.com"
+	const identifier = "urn:abc"
 	// The processor suffix differs from the batch-router job_id on purpose.
-	const line = `{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","id":"person@example.com","attributes":{"email":"person@example.com","jobIdentifier":"person@example.com:777"}}]}}}}}},"metadata":{"job_id":42}}`
-	require.NoError(t, os.WriteFile(file, []byte(line), 0o600))
+	const line = `{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","id":"urn:abc","attributes":{"email":"person@example.com","jobIdentifier":"urn:abc:901"}}]}}}}}},"metadata":{"job_id":42}}`
+	const lineWithoutJobIdentifier = `{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","id":"other","attributes":{"email":"other@example.com"}}]}}}}}},"metadata":{"job_id":43}}`
+	require.NoError(t, os.WriteFile(file, []byte(line+"\n"+lineWithoutJobIdentifier), 0o600))
 
 	api.EXPECT().UploadProfiles(gomock.Any()).DoAndReturn(func(payload klaviyobulkupload.Payload) (*klaviyobulkupload.UploadResp, error) {
+		require.Len(t, payload.Data.Attributes.Profiles.Data, 2)
 		require.Empty(t, payload.Data.Attributes.Profiles.Data[0].Attributes.JobIdentifier)
+		require.Empty(t, payload.Data.Attributes.Profiles.Data[1].Attributes.JobIdentifier)
 		require.Equal(t, identifier, payload.Data.Attributes.Profiles.Data[0].ID)
 		return &klaviyobulkupload.UploadResp{Data: struct {
 			Id string `json:"id"`
@@ -757,16 +760,18 @@ func TestUploadStatsAfterManagerReplacement(t *testing.T) {
 		BatchSize: 10000, MaxPayloadSize: 4600000, MaxAllowedProfileSize: 512000,
 	}
 	output := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
-		Destination: destination, FileName: file, ImportingJobIDs: []int64{42},
+		Destination: destination, FileName: file, ImportingJobIDs: []int64{42, 43},
 	})
-	require.Equal(t, []int64{42}, output.ImportingJobIDs)
+	require.Equal(t, []int64{42, 43}, output.ImportingJobIDs)
 	requireImportingHashes(t, output, map[int64]string{42: identifier})
+	require.NotContains(t, output.JobImportingParameters, int64(43))
 	require.NotContains(t, string(output.ImportingParameters), identifier)
 
 	// Simulate batchrouter's metadata merge into LastJobStatus.Parameters.
 	statusParameters, err := sjson.SetBytes(output.ImportingParameters, "metadata", output.JobImportingParameters[42])
 	require.NoError(t, err)
 	job := &jobsdb.JobT{JobID: 42, LastJobStatus: jobsdb.JobStatusT{Parameters: statusParameters}}
+	jobWithoutIdentifier := &jobsdb.JobT{JobID: 43, LastJobStatus: jobsdb.JobStatusT{Parameters: output.ImportingParameters}}
 	updatedDestination := *destination
 	updatedDestination.Config = map[string]any{"privateApiKey": "changed-key", "identifierType": "id"}
 	fresh, err := klaviyobulkupload.NewManager(logger.NOP, stats.NOP, &updatedDestination)
@@ -774,13 +779,13 @@ func TestUploadStatsAfterManagerReplacement(t *testing.T) {
 	fresh.KlaviyoAPIService = api
 
 	var errorsResp klaviyobulkupload.UploadStatusResp
-	require.NoError(t, jsonrs.Unmarshal([]byte(`{"data":[{"attributes":{"detail":"invalid id","original_payload":{"id":"person@example.com","anonymous_id":"unrelated"}}}]}`), &errorsResp))
+	require.NoError(t, jsonrs.Unmarshal([]byte(`{"data":[{"attributes":{"detail":"invalid id","original_payload":{"id":"urn:abc","anonymous_id":"unrelated"}}}]}`), &errorsResp))
 	api.EXPECT().GetUploadErrors("import-42").Return(&errorsResp, nil)
 	result := fresh.GetUploadStats(common.GetUploadStatsInput{
-		FailedJobParameters: "import-42", ImportingList: []*jobsdb.JobT{job},
+		FailedJobParameters: "import-42", ImportingList: []*jobsdb.JobT{job, jobWithoutIdentifier},
 	})
 	require.Equal(t, http.StatusOK, result.StatusCode)
 	require.Equal(t, []int64{42}, result.Metadata.AbortedKeys)
 	require.Equal(t, map[int64]string{42: "invalid id"}, result.Metadata.AbortedReasons)
-	require.Empty(t, result.Metadata.SucceededKeys)
+	require.Equal(t, []int64{43}, result.Metadata.SucceededKeys)
 }

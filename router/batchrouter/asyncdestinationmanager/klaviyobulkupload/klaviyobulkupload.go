@@ -306,8 +306,10 @@ func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *commo
 			return kbu.generateKlaviyoErrorOutput("Error while parsing JSON Metadata.", err, importingJobIDs, destinationID)
 		}
 		if len(data.Attributes.Profiles.Data) > 0 {
-			identifier, _, _ := strings.Cut(data.Attributes.Profiles.Data[0].Attributes.JobIdentifier, IMPORT_ID_SEPARATOR)
-			identifierHashes[int64(metadata.JobID)] = hashIdentifier(identifier)
+			jobIdentifier := data.Attributes.Profiles.Data[0].Attributes.JobIdentifier
+			if separator := strings.LastIndex(jobIdentifier, ":"); separator > 0 {
+				identifierHashes[int64(metadata.JobID)] = hashIdentifier(jobIdentifier[:separator])
+			}
 		}
 		profileStructure := kbu.ExtractProfile(data)
 		// if profileStructure length is more than 500 kB, throw an error

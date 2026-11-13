@@ -375,6 +375,69 @@ func TestMarketoBulkUploader_PersistedStatsAcrossManagers(t *testing.T) {
 	require.Equal(t, []int64{3}, result.Metadata.SucceededKeys)
 }
 
+func TestMarketoBulkUploader_MultipleImportsOnOneManager(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
+	uploader := mbu.NewMarketoBulkUploaderWithOptions(mbu.MarketoBulkUploaderOptions{
+		DestinationName: "MARKETO_BULK_UPLOAD",
+		DestinationConfig: mbu.MarketoConfig{
+			FieldsMapping: map[string]string{"email": "email"},
+		},
+		Logger: logger.NewLogger(), StatsFactory: stats.NOP, APIService: api,
+	})
+	destination := &backendconfig.DestinationT{
+		ID:                    "marketo-multiple-imports",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "MARKETO_BULK_UPLOAD"},
+	}
+	fileA := writeMarketoJobs(t, []common.AsyncJob{
+		marketoJob(1, map[string]any{"email": "one@example.com"}),
+		marketoJob(2, map[string]any{"email": "two@example.com"}),
+	})
+	fileB := writeMarketoJobs(t, []common.AsyncJob{
+		marketoJob(3, map[string]any{"email": "three@example.com"}),
+	})
+	api.EXPECT().ImportLeads(gomock.Any(), "").Return("import-A", nil)
+	outputA := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{Destination: destination, FileName: fileA})
+	api.EXPECT().ImportLeads(gomock.Any(), "").Return("import-B", nil)
+	outputB := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{Destination: destination, FileName: fileB})
+	require.Equal(t, []int64{1, 2}, outputA.ImportingJobIDs)
+	require.Equal(t, []int64{3}, outputB.ImportingJobIDs)
+
+	api.EXPECT().PollImportStatus("import-A").Return(&mbu.MarketoResponse{
+		Result: []mbu.Result{{Status: "Complete", NumOfRowsFailed: 1}},
+	}, nil)
+	pollA := uploader.Poll(context.Background(), common.AsyncPoll{ImportId: "import-A"})
+	require.True(t, pollA.Complete)
+	api.EXPECT().GetLeadStatus(pollA.FailedJobParameters).Return([]map[string]string{{
+		"email": "two@example.com", mbu.MARKETO_FAILED_HEADER: "invalid A",
+	}}, nil)
+	statsA := uploader.GetUploadStats(common.GetUploadStatsInput{
+		Parameters: outputA.ImportingParameters, ImportingList: importingJobsFromUpload(t, outputA),
+		FailedJobParameters: pollA.FailedJobParameters,
+	})
+	require.Equal(t, 200, statsA.StatusCode)
+	require.Equal(t, []int64{2}, statsA.Metadata.AbortedKeys)
+	require.Equal(t, map[int64]string{2: "invalid A"}, statsA.Metadata.AbortedReasons)
+	require.Equal(t, []int64{1}, statsA.Metadata.SucceededKeys)
+
+	api.EXPECT().PollImportStatus("import-B").Return(&mbu.MarketoResponse{
+		Result: []mbu.Result{{Status: "Complete", NumOfRowsFailed: 1}},
+	}, nil)
+	pollB := uploader.Poll(context.Background(), common.AsyncPoll{ImportId: "import-B"})
+	require.True(t, pollB.Complete)
+	api.EXPECT().GetLeadStatus(pollB.FailedJobParameters).Return([]map[string]string{{
+		"email": "three@example.com", mbu.MARKETO_FAILED_HEADER: "invalid B",
+	}}, nil)
+	statsB := uploader.GetUploadStats(common.GetUploadStatsInput{
+		Parameters: outputB.ImportingParameters, ImportingList: importingJobsFromUpload(t, outputB),
+		FailedJobParameters: pollB.FailedJobParameters,
+	})
+	require.Equal(t, 200, statsB.StatusCode)
+	require.Equal(t, []int64{3}, statsB.Metadata.AbortedKeys)
+	require.Equal(t, map[int64]string{3: "invalid B"}, statsB.Metadata.AbortedReasons)
+	require.Empty(t, statsB.Metadata.SucceededKeys)
+}
+
 func TestMarketoBulkUploader_QueuedThenComplete(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	api := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
