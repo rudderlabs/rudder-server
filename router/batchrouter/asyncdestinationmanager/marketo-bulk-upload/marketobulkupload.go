@@ -71,7 +71,8 @@ func (b *MarketoBulkUploader) Upload(_ context.Context, asyncDestStruct *common.
 		"destType": destType,
 		"destID":   destinationID,
 	})
-	csvFilePath, headerRowOrder, insertedJobIDs, overflowedJobIDs, jobMetadata, err := createCSVFile(destinationID, b.destinationConfig, input)
+	dataHashToJobId := make(map[string]int64)
+	csvFilePath, headerRowOrder, insertedJobIDs, overflowedJobIDs, err := createCSVFile(destinationID, b.destinationConfig, input, dataHashToJobId)
 
 	b.logger.Infon("Number of jobs in the batch",
 		logger.NewIntField("jobCount", int64(len(insertedJobIDs))))
@@ -136,9 +137,9 @@ func (b *MarketoBulkUploader) Upload(_ context.Context, asyncDestStruct *common.
 
 	}
 
-	jobImportingParameters := make(map[int64]stdjson.RawMessage, len(jobMetadata))
-	for jobID, metadata := range jobMetadata {
-		params, marshalErr := jsonrs.Marshal(metadata)
+	jobImportingParameters := make(map[int64]stdjson.RawMessage, len(dataHashToJobId))
+	for hash, jobID := range dataHashToJobId {
+		params, marshalErr := jsonrs.Marshal(importingMetadata{DataHash: hash})
 		if marshalErr != nil {
 			b.logger.Errorn("marshalling importing metadata", logger.NewIntField("jobID", jobID), obskit.Error(marshalErr))
 			continue
@@ -282,7 +283,18 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 		}
 	}
 
-	metadata := updateJobStatus(input.ImportingList, failedJobs, warningJobs, params.CSVHeaders)
+	dataHashToJobId := make(map[string]int64, len(input.ImportingList))
+	for _, job := range input.ImportingList {
+		hash := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.dataHash").String()
+		if hash == "" {
+			// The batch router's sjson.SetBytes stores []byte metadata as a JSON string.
+			hash = gjson.Get(gjson.GetBytes(job.LastJobStatus.Parameters, "metadata").String(), "dataHash").String()
+		}
+		if hash != "" {
+			dataHashToJobId[hash] = job.JobID
+		}
+	}
+	metadata := b.updateJobStatus(input.ImportingList, failedJobs, warningJobs, dataHashToJobId, params.CSVHeaders)
 
 	return common.GetUploadStatsResponse{
 		StatusCode: 200,
@@ -294,32 +306,13 @@ func (*MarketoBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
 }
 
-func updateJobStatus(importingList []*jobsdb.JobT, failedJobs, warningJobs []map[string]string, csvHeaders []string) common.EventStatMeta {
+func (b *MarketoBulkUploader) updateJobStatus(importingList []*jobsdb.JobT, failedJobs, warningJobs []map[string]string, dataHashToJobId map[string]int64, csvHeaders []string) common.EventStatMeta {
 	metadata := common.EventStatMeta{
 		AbortedKeys:    make([]int64, 0),
 		WarningKeys:    make([]int64, 0),
 		SucceededKeys:  make([]int64, 0),
 		AbortedReasons: make(map[int64]string),
 		WarningReasons: make(map[int64]string),
-	}
-
-	// Duplicate rows previously mapped to the last written job. Use the
-	// persisted CSV ordinal rather than the (potentially shuffled) jobsdb order.
-	type hashJob struct {
-		jobID   int64
-		ordinal int64
-	}
-	var dataHashToJobID map[string]hashJob
-	if len(failedJobs)+len(warningJobs) > 0 {
-		dataHashToJobID = make(map[string]hashJob, len(importingList))
-		for _, job := range importingList {
-			persisted := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata").String()
-			hash := gjson.Get(persisted, "dataHash").String()
-			ordinal := gjson.Get(persisted, "rowOrdinal").Int()
-			if hash != "" && ordinal > dataHashToJobID[hash].ordinal {
-				dataHashToJobID[hash] = hashJob{jobID: job.JobID, ordinal: ordinal}
-			}
-		}
 	}
 
 	for _, failedJob := range failedJobs {
@@ -332,9 +325,9 @@ func updateJobStatus(importingList []*jobsdb.JobT, failedJobs, warningJobs []map
 				failedJobRow = append(failedJobRow, "")
 			}
 		}
-		// get jobID from the persisted row hash
+		// get jobID from jobToDataHash
 		hash := calculateHashCode(failedJobRow)
-		abortedJobID := dataHashToJobID[hash].jobID
+		abortedJobID := dataHashToJobId[hash]
 		if abortedJobID != 0 {
 			metadata.AbortedKeys = append(metadata.AbortedKeys, abortedJobID)
 		}
@@ -355,9 +348,9 @@ func updateJobStatus(importingList []*jobsdb.JobT, failedJobs, warningJobs []map
 				warningJobRow = append(warningJobRow, "")
 			}
 		}
-		// get jobID from the persisted row hash
+		// get jobID from jobToDataHash
 		hash := calculateHashCode(warningJobRow)
-		warningJobId := dataHashToJobID[hash].jobID
+		warningJobId := dataHashToJobId[hash]
 		if warningJobId != 0 {
 			// Even if a job has warning, it is considered as a failure
 			metadata.AbortedKeys = append(metadata.AbortedKeys, warningJobId)

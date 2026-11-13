@@ -349,14 +349,15 @@ func TestCreateCSVFile(t *testing.T) {
 
 	// Set up test cases
 	tests := []struct {
-		name           string
-		destinationID  string
-		config         MarketoConfig
-		input          []common.AsyncJob
-		wantHeaders    []string
-		wantInserted   []int64
-		wantOverflowed []int64
-		wantError      bool
+		name            string
+		destinationID   string
+		config          MarketoConfig
+		input           []common.AsyncJob
+		dataHashToJobId map[string]int64
+		wantHeaders     []string
+		wantInserted    []int64
+		wantOverflowed  []int64
+		wantError       bool
 	}{
 		{
 			name:          "Basic CSV creation",
@@ -378,10 +379,11 @@ func TestCreateCSVFile(t *testing.T) {
 					},
 				},
 			},
-			wantHeaders:    []string{"email", "fullName"},
-			wantInserted:   []int64{1},
-			wantOverflowed: []int64{},
-			wantError:      false,
+			dataHashToJobId: make(map[string]int64),
+			wantHeaders:     []string{"email", "fullName"},
+			wantInserted:    []int64{1},
+			wantOverflowed:  []int64{},
+			wantError:       false,
 		},
 		{
 			name:          "File size overflow",
@@ -392,11 +394,12 @@ func TestCreateCSVFile(t *testing.T) {
 					"name":  "fullName",
 				},
 			},
-			input:          createLargeInputData(1000), // Helper function to create large dataset
-			wantHeaders:    []string{"email", "fullName"},
-			wantInserted:   nil, // Will be populated based on size calculations
-			wantOverflowed: nil, // Will be populated based on size calculations
-			wantError:      false,
+			input:           createLargeInputData(1000), // Helper function to create large dataset
+			dataHashToJobId: make(map[string]int64),
+			wantHeaders:     []string{"email", "fullName"},
+			wantInserted:    nil, // Will be populated based on size calculations
+			wantOverflowed:  nil, // Will be populated based on size calculations
+			wantError:       false,
 		},
 		{
 			name:          "Empty input",
@@ -407,11 +410,12 @@ func TestCreateCSVFile(t *testing.T) {
 					"name":  "fullName",
 				},
 			},
-			input:          []common.AsyncJob{},
-			wantHeaders:    []string{"email", "fullName"},
-			wantInserted:   []int64{},
-			wantOverflowed: []int64{},
-			wantError:      false,
+			input:           []common.AsyncJob{},
+			dataHashToJobId: make(map[string]int64),
+			wantHeaders:     []string{"email", "fullName"},
+			wantInserted:    []int64{},
+			wantOverflowed:  []int64{},
+			wantError:       false,
 		},
 	}
 
@@ -420,10 +424,11 @@ func TestCreateCSVFile(t *testing.T) {
 			// Override the temporary directory for this test
 			t.Setenv("TMPDIR", tmpDir)
 
-			gotPath, gotHeaders, gotInserted, gotOverflowed, gotMetadata, err := createCSVFile(
+			gotPath, gotHeaders, gotInserted, gotOverflowed, err := createCSVFile(
 				tt.destinationID,
 				tt.config,
 				tt.input,
+				tt.dataHashToJobId,
 			)
 
 			// Check error
@@ -459,20 +464,6 @@ func TestCreateCSVFile(t *testing.T) {
 				// Verify returned headers match expected
 				if !slicesEqualIgnoreOrder(gotHeaders, tt.wantHeaders) {
 					t.Errorf("createCSVFile() headers = %v, want %v", gotHeaders, tt.wantHeaders)
-				}
-
-				if len(gotMetadata) != len(gotInserted) {
-					t.Errorf("createCSVFile() metadata count = %d, want %d", len(gotMetadata), len(gotInserted))
-				}
-				for ordinal, jobID := range gotInserted {
-					if gotMetadata[jobID].RowOrdinal != ordinal+1 || gotMetadata[jobID].DataHash == "" {
-						t.Errorf("createCSVFile() invalid metadata for job %d: %+v", jobID, gotMetadata[jobID])
-					}
-				}
-				for _, jobID := range gotOverflowed {
-					if _, ok := gotMetadata[jobID]; ok {
-						t.Errorf("createCSVFile() overflowed job %d has metadata", jobID)
-					}
 				}
 
 				// For the overflow test case, verify that some jobs were overflowed

@@ -150,17 +150,16 @@ func calculateRowSize(row []string) (int64, error) {
 	return int64(buf.Len()), nil
 }
 
-func createCSVFile(destinationID string, destConfig MarketoConfig, input []common.AsyncJob) (string, []string, []int64, []int64, map[int64]importingMetadata, error) {
+func createCSVFile(destinationID string, destConfig MarketoConfig, input []common.AsyncJob, dataHashToJobId map[string]int64) (string, []string, []int64, []int64, error) {
 	csvFilePath := fmt.Sprintf("/tmp/%s_%s.csv", destinationID, fileName)
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
-		return "", nil, nil, nil, nil, err
+		return "", nil, nil, nil, err
 	}
 	defer csvFile.Close()
 
 	overflowedJobIDs := make([]int64, 0)
 	insertedJobIDs := make([]int64, 0)
-	jobMetadata := make(map[int64]importingMetadata)
 
 	headers := make(map[string]int)
 	var headerOrder []string
@@ -181,15 +180,15 @@ func createCSVFile(destinationID string, destConfig MarketoConfig, input []commo
 	// Calculate and verify header size
 	headerSize, err := calculateRowSize(headerOrder)
 	if err != nil {
-		return "", nil, nil, nil, nil, fmt.Errorf("error calculating header size: %w", err)
+		return "", nil, nil, nil, fmt.Errorf("error calculating header size: %w", err)
 	}
 
 	if headerSize > maxFileSize {
-		return "", nil, nil, nil, nil, fmt.Errorf("header size exceeds maximum file size")
+		return "", nil, nil, nil, fmt.Errorf("header size exceeds maximum file size")
 	}
 
 	if err = writer.Write(headerOrder); err != nil {
-		return "", nil, nil, nil, nil, err
+		return "", nil, nil, nil, err
 	}
 
 	currentSize := headerSize
@@ -208,7 +207,7 @@ func createCSVFile(destinationID string, destConfig MarketoConfig, input []commo
 		// Calculate row size before writing
 		rowSize, err := calculateRowSize(row)
 		if err != nil {
-			return "", nil, nil, nil, nil, fmt.Errorf("error calculating row size: %w", err)
+			return "", nil, nil, nil, fmt.Errorf("error calculating row size: %w", err)
 		}
 
 		jobID := int64(job.Metadata["job_id"].(float64))
@@ -221,19 +220,19 @@ func createCSVFile(destinationID string, destConfig MarketoConfig, input []commo
 
 		// Write the row if it fits
 		if err := writer.Write(row); err != nil {
-			return "", nil, nil, nil, nil, fmt.Errorf("error writing row: %w", err)
+			return "", nil, nil, nil, fmt.Errorf("error writing row: %w", err)
 		}
 
 		currentSize += rowSize
 
 		insertedJobIDs = append(insertedJobIDs, jobID)
-		jobMetadata[jobID] = importingMetadata{
-			DataHash:   calculateHashCode(row),
-			RowOrdinal: len(insertedJobIDs),
-		}
+		// Calculate hash code for the row
+		dataHash := calculateHashCode(row)
+		// Store the mapping of data hash to job ID
+		dataHashToJobId[dataHash] = jobID
 	}
 
-	return csvFilePath, headerOrder, insertedJobIDs, overflowedJobIDs, jobMetadata, nil
+	return csvFilePath, headerOrder, insertedJobIDs, overflowedJobIDs, nil
 }
 
 func calculateHashCode(data []string) string {
