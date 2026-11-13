@@ -19,6 +19,9 @@ jobs are stored by other processes: it counts the jobs of sealed datasets once, 
 subtracts their terminal statuses as they commit, and polls the last dataset for the
 rest. A count and the subtractions that race with it are reconciled through the
 count's postgres snapshot and the transaction id of each status write.
+
+NewReadCursor decorates a handle with a watermark per pipeline: the job id below which none of the
+pipeline's jobs is pending. Reads skip the sealed datasets below the watermark persisted last.
 */
 
 package jobsdb
