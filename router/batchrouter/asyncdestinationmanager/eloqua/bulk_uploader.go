@@ -62,9 +62,8 @@ func (b *EloquaBulkUploader) Upload(_ context.Context, asyncDestStruct *common.A
 
 	uniqueKeys := getUniqueKeys(eloquaFields)
 	uploadJobInfo := JobInfo{
-		fileSizeLimit:          b.fileSizeLimit,
-		importingJobs:          asyncDestStruct.ImportingJobIDs,
-		jobImportingParameters: make(map[int64]stdjson.RawMessage),
+		fileSizeLimit: b.fileSizeLimit,
+		importingJobs: asyncDestStruct.ImportingJobIDs,
 	}
 
 	importDefinitionBody, err := createBodyForImportDefinition(eventDetails, eloquaFields)
@@ -93,7 +92,8 @@ func (b *EloquaBulkUploader) Upload(_ context.Context, asyncDestStruct *common.A
 		DynamicPart:   importDefinition.URI,
 		Authorization: b.authorization,
 	}
-	filePAth, fileSize, err := createCSVFile(eventDetails.Fields, file, &uploadJobInfo)
+	jobIdRowMap := make(map[int64]int64)
+	filePAth, fileSize, err := createCSVFile(eventDetails.Fields, file, &uploadJobInfo, jobIdRowMap)
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("unable to create csv file. ", err, destination.ID, asyncDestStruct)
 	}
@@ -130,6 +130,15 @@ func (b *EloquaBulkUploader) Upload(_ context.Context, asyncDestStruct *common.A
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("unable to run the sync after uploading the file. ", err, destination.ID, asyncDestStruct)
 	}
+	jobImportingParameters := make(map[int64]stdjson.RawMessage, len(jobIdRowMap))
+	for row, jobID := range jobIdRowMap {
+		metadata, marshalErr := jsonrs.Marshal(importingMetadata{RecordIndex: row})
+		if marshalErr != nil {
+			b.logger.Errorn("marshalling importing metadata", obskit.Error(marshalErr))
+			continue
+		}
+		jobImportingParameters[jobID] = metadata
+	}
 	importParameters, err := jsonrs.Marshal(importingParameters{
 		ImportId:    syncURI + ":" + importDefinition.URI,
 		ImportCount: len(uploadJobInfo.succeededJobs),
@@ -144,7 +153,7 @@ func (b *EloquaBulkUploader) Upload(_ context.Context, asyncDestStruct *common.A
 		FailedJobIDs:           append(asyncDestStruct.FailedJobIDs, uploadJobInfo.failedJobs...),
 		FailedReason:           "failed as the fileSizeLimit has over",
 		ImportingParameters:    importParameters,
-		JobImportingParameters: uploadJobInfo.jobImportingParameters,
+		JobImportingParameters: jobImportingParameters,
 		ImportingCount:         len(uploadJobInfo.succeededJobs),
 		FailedCount:            len(asyncDestStruct.FailedJobIDs) + len(uploadJobInfo.failedJobs),
 		DestinationID:          asyncDestStruct.Destination.ID,

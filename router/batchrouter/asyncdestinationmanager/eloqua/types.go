@@ -3,7 +3,6 @@ package eloqua
 //go:generate mockgen -destination=../../../../mocks/router/eloqua/mock_eloqua.go -package=mock_bulkservice github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/eloqua EloquaService
 
 import (
-	stdjson "encoding/json"
 	"io"
 	"time"
 
@@ -279,11 +278,10 @@ type Metadata struct {
 struct to propagate jobs among functions
 */
 type JobInfo struct {
-	succeededJobs          []int64
-	failedJobs             []int64
-	fileSizeLimit          int64
-	importingJobs          []int64
-	jobImportingParameters map[int64]stdjson.RawMessage
+	succeededJobs []int64
+	failedJobs    []int64
+	fileSizeLimit int64
+	importingJobs []int64
 }
 
 // importingMetadata is persisted on each importing job status under metadata.

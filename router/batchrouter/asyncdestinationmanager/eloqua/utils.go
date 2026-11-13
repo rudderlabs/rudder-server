@@ -59,7 +59,7 @@ func getKeys(m map[string]any) []string {
 	return keys
 }
 
-func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo) (string, int64, error) {
+func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobIdRowMap map[int64]int64) (string, int64, error) {
 	_, _ = file.Seek(0, 0)
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(nil, bufferSize)
@@ -110,22 +110,14 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo) (stri
 			uploadJobInfo.failedJobs = append(uploadJobInfo.failedJobs, left...)
 			break
 		}
+		jobIdRowMap[int64(index+1)] = uploadJobInfo.importingJobs[index]
+		uploadJobInfo.succeededJobs = append(uploadJobInfo.succeededJobs, uploadJobInfo.importingJobs[index])
+		index += 1
 		err = csvWriter.Write(values)
 		if err != nil {
 			return "", 0, err
 		}
 		csvWriter.Flush()
-		if err := csvWriter.Error(); err != nil {
-			return "", 0, err
-		}
-		metadata, err := jsonrs.Marshal(importingMetadata{RecordIndex: int64(index + 1)})
-		if err != nil {
-			return "", 0, err
-		}
-		jobID := uploadJobInfo.importingJobs[index]
-		uploadJobInfo.jobImportingParameters[jobID] = metadata
-		uploadJobInfo.succeededJobs = append(uploadJobInfo.succeededJobs, jobID)
-		index++
 	}
 	fileInfo, _ := csvFile.Stat()
 	return csvFilePath, fileInfo.Size(), nil
@@ -178,7 +170,11 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, uniq
 	rowToJob := make(map[int64]int64, len(importingList))
 	for _, job := range importingList {
 		jobIDs = append(jobIDs, job.JobID)
-		index := gjson.Get(gjson.GetBytes(job.LastJobStatus.Parameters, "metadata").String(), "recordIndex")
+		index := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.recordIndex")
+		if !index.Exists() {
+			// The batch router's sjson.SetBytes stores []byte metadata as a JSON string.
+			index = gjson.Get(gjson.GetBytes(job.LastJobStatus.Parameters, "metadata").String(), "recordIndex")
+		}
 		if index.Int() > 0 {
 			rowToJob[index.Int()] = job.JobID
 		}
@@ -206,8 +202,8 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, uniq
 			}
 			for _, val := range rejectResponse.Items {
 				uniqueInvalidFields := lo.Intersect(uniqueKeys, val.InvalidFields)
-				successCodes := lo.Intersect(eloqua.successStatusCode, []string{val.StatusCode})
-				if len(successCodes) != 0 && len(uniqueInvalidFields) == 0 {
+				successStatusCode := lo.Intersect(eloqua.successStatusCode, []string{val.StatusCode})
+				if len(successStatusCode) != 0 && len(uniqueInvalidFields) == 0 {
 					continue
 				}
 				jobID := rowToJob[val.RecordIndex]
