@@ -59,6 +59,9 @@ type worker struct {
 	// Cache for transformer outgoing request metrics using StatsCache
 	deliveryLatencyStatsCache *cache.StatsCache[deliveryMetricLabels]
 	deliveryCountStatsCache   *cache.StatsCache[deliveryMetricLabels]
+
+	// Cache for per-job measurements
+	stats *workerStats
 }
 
 type workerJob struct {
@@ -459,11 +462,11 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 
 				// START: request to destination endpoint
 				workspaceID := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
-				deliveryLatencyStat := stats.Default.NewTaggedStat("delivery_latency", stats.TimerType, stats.Tags{
-					"module":      "router",
-					"destType":    w.rt.destType,
-					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
-					"workspaceId": workspaceID,
+				deliveryLatencyStat := w.stats.deliveryLatency.Get(deliveryLatencyLabels{
+					DestType:        w.rt.destType,
+					DestinationID:   destinationJob.Destination.ID,
+					DestinationName: destinationJob.Destination.Name,
+					WorkspaceID:     workspaceID,
 				})
 				startedAt := time.Now()
 
@@ -595,10 +598,10 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 							respBody := strings.Join(respBodyArr, " ")
 							respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 						}
-						stats.Default.NewTaggedStat("router_delivery_payload_size_bytes", stats.HistogramType, stats.Tags{
-							"destType":      w.rt.destType,
-							"workspaceID":   destinationJob.JobMetadataArray[0].WorkspaceID,
-							"destinationID": destinationJob.JobMetadataArray[0].DestinationID,
+						w.stats.deliveryPayloadSize.Get(deliveryPayloadSizeLabels{
+							DestType:      w.rt.destType,
+							WorkspaceID:   destinationJob.JobMetadataArray[0].WorkspaceID,
+							DestinationID: destinationJob.JobMetadataArray[0].DestinationID,
 						}).Observe(float64(len(destinationJob.Message)))
 					}
 				}
@@ -1085,55 +1088,44 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 }
 
 func (w *worker) sendRouterResponseCountStat(status *jobsdb.JobStatusT, destination *backendconfig.DestinationT, errorAt string) {
-	destinationTag := misc.GetTagName(destination.ID, destination.Name)
 	var alert bool
 	alert = w.allowRouterAbortedAlert(errorAt)
 	if status.JobState == jobsdb.Succeeded.State || status.JobState == jobsdb.Filtered.State {
 		alert = !w.rt.reloadableConfig.skipRtAbortAlertForTransformation.Load() || !w.rt.reloadableConfig.skipRtAbortAlertForDelivery.Load()
 		errorAt = ""
 	}
-	routerResponseStat := stats.Default.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
-		"destType":       w.rt.destType,
-		"respStatusCode": status.ErrorCode,
-		"destination":    destinationTag,
-		"destId":         destination.ID,
-		"workspaceId":    status.WorkspaceId,
-		// To indicate if the failure should be alerted for router-aborted-count
-		"alert": strconv.FormatBool(alert),
-		// To specify at which point failure happened
-		"errorAt": errorAt,
-		"retry":   strconv.FormatBool(status.AttemptNum > 1),
-	})
-	routerResponseStat.Count(1)
+	w.stats.routerResponseCount.Get(routerResponseCountLabels{
+		DestType:        w.rt.destType,
+		RespStatusCode:  status.ErrorCode,
+		DestinationID:   destination.ID,
+		DestinationName: destination.Name,
+		WorkspaceID:     status.WorkspaceId,
+		Alert:           alert,
+		ErrorAt:         errorAt,
+		Retry:           status.AttemptNum > 1,
+	}).Count(1)
 }
 
 func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, destination *backendconfig.DestinationT) {
-	destinationTag := misc.GetTagName(destination.ID, destination.Name)
 	if status.JobState == jobsdb.Succeeded.State {
-		eventsDeliveredStat := stats.Default.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
-			"module":      "router",
-			"destType":    w.rt.destType,
-			"destID":      destination.ID,
-			"destination": destinationTag,
-			"workspaceId": status.WorkspaceId,
-			"source":      destinationJobMetadata.SourceID,
-		})
-		eventsDeliveredStat.Count(1)
+		w.stats.eventDelivery.Get(eventDeliveryLabels{
+			DestType:        w.rt.destType,
+			DestinationID:   destination.ID,
+			DestinationName: destination.Name,
+			WorkspaceID:     status.WorkspaceId,
+			SourceID:        destinationJobMetadata.SourceID,
+		}).Count(1)
 		if destinationJobMetadata.ReceivedAt != "" {
 			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
 			if err == nil {
-				eventsDeliveryTimeStat := stats.Default.NewTaggedStat(
-					"event_delivery_time", stats.TimerType, map[string]string{
-						"module":         "router",
-						"destType":       w.rt.destType,
-						"destID":         destination.ID,
-						"destination":    destinationTag,
-						"workspaceId":    status.WorkspaceId,
-						"sourceId":       destinationJobMetadata.SourceID,
-						"sourceCategory": destinationJobMetadata.SourceCategory,
-					})
-
-				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
+				w.stats.eventDeliveryTime.Get(eventDeliveryTimeLabels{
+					DestType:        w.rt.destType,
+					DestinationID:   destination.ID,
+					DestinationName: destination.Name,
+					WorkspaceID:     status.WorkspaceId,
+					SourceID:        destinationJobMetadata.SourceID,
+					SourceCategory:  destinationJobMetadata.SourceCategory,
+				}).SendTiming(time.Since(receivedTime))
 			}
 		}
 	}
