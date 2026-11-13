@@ -8,6 +8,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
+	bingadssdk "github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -33,136 +34,140 @@ func TestBingAdsOfflineConversionsIntegration(t *testing.T) {
 
 	secret := resolveRudderAuthSecret(t, *creds, offlineConversionsRefreshDestination)
 
-	now := time.Now().UTC()
-	conversionTime := now.Add(-1 * time.Hour).Format(time.RFC3339)
-	adjustedConversionTime := now.Add(-30 * time.Minute).Format(time.RFC3339)
+	for _, protocol := range protocols {
+		t.Run(string(protocol), func(t *testing.T) {
+			now := time.Now().UTC()
+			conversionTime := now.Add(-1 * time.Hour).Format(time.RFC3339)
+			adjustedConversionTime := now.Add(-30 * time.Minute).Format(time.RFC3339)
 
-	testCases := []struct {
-		name            string
-		action          string
-		isHashRequired  bool
-		fields          map[string]any
-		wantAbortReason string
-	}{
-		{
-			name:           "insert pre-hashed email/phone (isHashRequired=false)",
-			action:         "insert",
-			isHashRequired: false,
-			fields: map[string]any{
-				"conversionTime":         conversionTime,
-				"conversionValue":        "100",
-				"conversionCurrencyCode": "USD",
-				"email":                  "973dfe463ec85785f5f95af5ba3906eedb2d931c24e69824a89ea65dba4e813b",
-				"phone":                  "8a59780bb8cd2ba022bfa5ba2ea3b6e07af17a7d8b30c1f9b3390e36f69019e4",
-			},
-		},
-		{
-			name:           "insert raw email/phone (isHashRequired=true)",
-			action:         "insert",
-			isHashRequired: true,
-			fields: map[string]any{
-				"conversionTime":         conversionTime,
-				"conversionValue":        "100",
-				"conversionCurrencyCode": "USD",
-				"email":                  "test@example.com",
-				"phone":                  "+15551234567",
-			},
-		},
-		{
-			name:           "update Restate raw email/phone (isHashRequired=true)",
-			action:         "update",
-			isHashRequired: true,
-			fields: map[string]any{
-				"conversionTime":         conversionTime,
-				"adjustedConversionTime": adjustedConversionTime,
-				"conversionValue":        "150",
-				"conversionCurrencyCode": "USD",
-				"email":                  "test@example.com",
-				"phone":                  "+15551234567",
-			},
-		},
-		{
-			name:           "delete Retract raw email/phone (isHashRequired=true)",
-			action:         "delete",
-			isHashRequired: true,
-			fields: map[string]any{
-				"conversionTime":         conversionTime,
-				"adjustedConversionTime": adjustedConversionTime,
-				"email":                  "test@example.com",
-				"phone":                  "+15551234567",
-			},
-		},
-		{
-			name:            "insert invalid conversion name -> OfflineConversionNameInvalid",
-			action:          "insert",
-			isHashRequired:  true,
-			wantAbortReason: "OfflineConversionNameInvalid",
-			fields: map[string]any{
-				"conversionName":         "NonExistentGoalName",
-				"conversionTime":         conversionTime,
-				"conversionValue":        "100",
-				"conversionCurrencyCode": "USD",
-				"email":                  "test@example.com",
-				"phone":                  "+15551234567",
-			},
-		},
-		{
-			name:            "insert invalid msclkid -> OfflineConversionMicrosoftClickIdInvalid",
-			action:          "insert",
-			isHashRequired:  false,
-			wantAbortReason: "OfflineConversionMicrosoftClickIdInvalid",
-			fields: map[string]any{
-				"conversionTime":         conversionTime,
-				"conversionValue":        "100",
-				"conversionCurrencyCode": "USD",
-				"microsoftClickId":       "invalid-click-id",
-			},
-		},
-	}
+			testCases := []struct {
+				name            string
+				action          string
+				isHashRequired  bool
+				fields          map[string]any
+				wantAbortReason string
+			}{
+				{
+					name:           "insert pre-hashed email/phone (isHashRequired=false)",
+					action:         "insert",
+					isHashRequired: false,
+					fields: map[string]any{
+						"conversionTime":         conversionTime,
+						"conversionValue":        "100",
+						"conversionCurrencyCode": "USD",
+						"email":                  "973dfe463ec85785f5f95af5ba3906eedb2d931c24e69824a89ea65dba4e813b",
+						"phone":                  "8a59780bb8cd2ba022bfa5ba2ea3b6e07af17a7d8b30c1f9b3390e36f69019e4",
+					},
+				},
+				{
+					name:           "insert raw email/phone (isHashRequired=true)",
+					action:         "insert",
+					isHashRequired: true,
+					fields: map[string]any{
+						"conversionTime":         conversionTime,
+						"conversionValue":        "100",
+						"conversionCurrencyCode": "USD",
+						"email":                  "test@example.com",
+						"phone":                  "+15551234567",
+					},
+				},
+				{
+					name:           "update Restate raw email/phone (isHashRequired=true)",
+					action:         "update",
+					isHashRequired: true,
+					fields: map[string]any{
+						"conversionTime":         conversionTime,
+						"adjustedConversionTime": adjustedConversionTime,
+						"conversionValue":        "150",
+						"conversionCurrencyCode": "USD",
+						"email":                  "test@example.com",
+						"phone":                  "+15551234567",
+					},
+				},
+				{
+					name:           "delete Retract raw email/phone (isHashRequired=true)",
+					action:         "delete",
+					isHashRequired: true,
+					fields: map[string]any{
+						"conversionTime":         conversionTime,
+						"adjustedConversionTime": adjustedConversionTime,
+						"email":                  "test@example.com",
+						"phone":                  "+15551234567",
+					},
+				},
+				{
+					name:            "insert invalid conversion name -> OfflineConversionNameInvalid",
+					action:          "insert",
+					isHashRequired:  true,
+					wantAbortReason: "OfflineConversionNameInvalid",
+					fields: map[string]any{
+						"conversionName":         "NonExistentGoalName",
+						"conversionTime":         conversionTime,
+						"conversionValue":        "100",
+						"conversionCurrencyCode": "USD",
+						"email":                  "test@example.com",
+						"phone":                  "+15551234567",
+					},
+				},
+				{
+					name:            "insert invalid msclkid -> OfflineConversionMicrosoftClickIdInvalid",
+					action:          "insert",
+					isHashRequired:  false,
+					wantAbortReason: "OfflineConversionMicrosoftClickIdInvalid",
+					fields: map[string]any{
+						"conversionTime":         conversionTime,
+						"conversionValue":        "100",
+						"conversionCurrencyCode": "USD",
+						"microsoftClickId":       "invalid-click-id",
+					},
+				},
+			}
 
-	const eventsPerCase = 5
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Logf("action=%s isHashRequired=%v events=%d", tc.action, tc.isHashRequired, eventsPerCase)
-			uploader := newOfflineConversionsUploader(t, creds, secret, tc.isHashRequired)
-			destination := newOfflineConversionsDestination(creds)
+			const eventsPerCase = 5
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					t.Logf("action=%s isHashRequired=%v events=%d", tc.action, tc.isHashRequired, eventsPerCase)
+					uploader := newOfflineConversionsUploader(t, creds, secret, protocol, tc.isHashRequired)
+					destination := newOfflineConversionsDestination(creds)
 
-			jobs := make([]*jobsdb.JobT, 0, eventsPerCase)
-			var abortedJobIDs, succeededJobIDs []int64
-			for jobID := int64(1); jobID <= eventsPerCase; jobID++ {
-				invalid := tc.wantAbortReason != "" && jobID%2 == 1
+					jobs := make([]*jobsdb.JobT, 0, eventsPerCase)
+					var abortedJobIDs, succeededJobIDs []int64
+					for jobID := int64(1); jobID <= eventsPerCase; jobID++ {
+						invalid := tc.wantAbortReason != "" && jobID%2 == 1
 
-				var fields map[string]any
-				if tc.wantAbortReason != "" && !invalid {
-					fields = validConversionFields(conversionTime, conversionEmail(jobID, tc.isHashRequired))
-				} else {
-					fields = lo.Assign(tc.fields)
-					if _, ok := fields["email"]; ok {
-						fields["email"] = conversionEmail(jobID, tc.isHashRequired)
+						var fields map[string]any
+						if tc.wantAbortReason != "" && !invalid {
+							fields = validConversionFields(conversionTime, conversionEmail(jobID, tc.isHashRequired))
+						} else {
+							fields = lo.Assign(tc.fields)
+							if _, ok := fields["email"]; ok {
+								fields["email"] = conversionEmail(jobID, tc.isHashRequired)
+							}
+						}
+
+						if invalid {
+							abortedJobIDs = append(abortedJobIDs, jobID)
+						} else {
+							succeededJobIDs = append(succeededJobIDs, jobID)
+						}
+						t.Logf("job=%d action=%s invalid=%v", jobID, tc.action, invalid)
+						jobs = append(jobs, newConversionJob(t, jobID, tc.action, fields))
 					}
-				}
 
-				if invalid {
-					abortedJobIDs = append(abortedJobIDs, jobID)
-				} else {
-					succeededJobIDs = append(succeededJobIDs, jobID)
-				}
-				t.Logf("job=%d action=%s invalid=%v", jobID, tc.action, invalid)
-				jobs = append(jobs, newConversionJob(t, jobID, tc.action, fields))
-			}
+					pollResponse, ids := runUploadAndPoll(t, uploader, destination, jobs)
+					if tc.wantAbortReason == "" {
+						requireImportSucceeded(t, pollResponse, len(ids))
+						return
+					}
 
-			pollResponse, ids := runUploadAndPoll(t, uploader, destination, jobs)
-			if tc.wantAbortReason == "" {
-				requireImportSucceeded(t, pollResponse, len(ids))
-				return
-			}
-
-			meta := fetchUploadStats(t, uploader, pollResponse, ids)
-			require.ElementsMatch(t, abortedJobIDs, meta.AbortedKeys, "unexpected set of aborted jobs")
-			require.ElementsMatch(t, succeededJobIDs, meta.SucceededKeys, "unexpected set of succeeded jobs")
-			for _, jobID := range abortedJobIDs {
-				require.Equalf(t, tc.wantAbortReason, meta.AbortedReasons[jobID],
-					"unexpected abort reason for job %d", jobID)
+					meta := fetchUploadStats(t, uploader, pollResponse, ids)
+					require.ElementsMatch(t, abortedJobIDs, meta.AbortedKeys, "unexpected set of aborted jobs")
+					require.ElementsMatch(t, succeededJobIDs, meta.SucceededKeys, "unexpected set of succeeded jobs")
+					for _, jobID := range abortedJobIDs {
+						require.Equalf(t, tc.wantAbortReason, meta.AbortedReasons[jobID],
+							"unexpected abort reason for job %d", jobID)
+					}
+				})
 			}
 		})
 	}
@@ -199,13 +204,13 @@ func newOfflineConversionsDestination(creds *bingAdsCredentials) *backendconfig.
 	}
 }
 
-func newOfflineConversionsUploader(t *testing.T, creds *bingAdsCredentials, secret rudderauth.Secret, isHashRequired bool) *offlineconversions.BingAdsBulkUploader {
+func newOfflineConversionsUploader(t *testing.T, creds *bingAdsCredentials, secret rudderauth.Secret, protocol bingadssdk.Protocol, isHashRequired bool) *offlineconversions.BingAdsBulkUploader {
 	t.Helper()
 	t.Logf("Creating offline conversions uploader (isHashRequired=%v)", isHashRequired)
 
 	return offlineconversions.NewBingAdsBulkUploader(
 		logger.NOP, stats.NOP, offlineConversionsDestName,
-		newBulkService(*creds, secret), isHashRequired,
+		newBulkService(*creds, secret, protocol), isHashRequired,
 	)
 }
 

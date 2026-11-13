@@ -450,7 +450,7 @@ func TestBingAdsOfflineConversions(t *testing.T) {
 				nil,
 			)
 
-			bingAdsUploader, err := newManagerInternal(logger.NOP, stats.NOP, &destination, oauthV2Service)
+			bingAdsUploader, err := newManagerInternal(logger.NOP, stats.NOP, &destination, oauthV2Service, mockbingads.ProtocolSOAP) //nolint:staticcheck // Verify the SOAP-default manager.
 			require.NoError(t, err)
 			require.NotNil(t, bingAdsUploader)
 		})
