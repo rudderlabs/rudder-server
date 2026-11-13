@@ -17,7 +17,7 @@ import (
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
-func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, oauthHandler oauthv2.OAuthHandler) (*BingAdsBulkUploader, error) {
+func newManagerInternal(log logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, oauthHandler oauthv2.OAuthHandler, protocol bingads.Protocol) (*BingAdsBulkUploader, error) {
 	destConfig := DestinationConfig{}
 	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
@@ -48,7 +48,9 @@ func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destinat
 		TokenSource:    &token,
 	}
 	session := bingads.NewSession(sessionConfig)
-	bingUploader := NewBingAdsBulkUploader(logger, statsFactory, destination.DestinationDefinition.Name, bingads.NewBulkService(session), destConfig.IsHashRequired)
+	bingUploader := NewBingAdsBulkUploader(log, statsFactory, destination.DestinationDefinition.Name, bingads.NewBulkService(session, bingads.WithProtocol(protocol)), destConfig.IsHashRequired)
+	bingUploader.apiProtocol = string(protocol)
+	log.Infon("bing ads bulk service created", logger.NewStringField("destinationID", destination.ID), logger.NewStringField("protocol", string(protocol)))
 	return bingUploader, nil
 }
 
@@ -60,5 +62,5 @@ func NewManager(conf *config.Config, logger logger.Logger, statsFactory stats.St
 		oauthv2.WithStats(statsFactory),
 		oauthv2.WithOauthBreakerOptions(oauthv2.ConfigToOauthBreakerOptions("BatchRouter.BING_ADS_OFFLINE_CONVERSIONS", conf)),
 	)
-	return newManagerInternal(logger, statsFactory, destination, oauthClientV2)
+	return newManagerInternal(logger, statsFactory, destination, oauthClientV2, common.APIProtocol(conf, destination.DestinationDefinition.Name))
 }

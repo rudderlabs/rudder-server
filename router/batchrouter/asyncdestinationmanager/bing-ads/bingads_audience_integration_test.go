@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	bingadssdk "github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -31,67 +32,71 @@ func TestBingAdsAudienceIntegration(t *testing.T) {
 
 	secret := resolveRudderAuthSecret(t, creds.bingAdsCredentials, audienceRefreshDestination)
 
-	const eventsPerAction = 5
-	actions := []string{"Add", "Remove", "Replace"}
+	for _, protocol := range protocols {
+		t.Run(string(protocol), func(t *testing.T) {
+			const eventsPerAction = 5
+			actions := []string{"Add", "Remove", "Replace"}
 
-	audiences := []struct {
-		name       string
-		audienceID string
-	}{
-		{name: "hashed", audienceID: creds.HashedAudienceID},
-		{name: "unhashed", audienceID: creds.UnhashedAudienceID},
-	}
-
-	for _, aud := range audiences {
-		t.Run(aud.name, func(t *testing.T) {
-			t.Logf("audience=%s clubbing %d Add/Remove/Replace events in a single import", aud.name, len(actions)*eventsPerAction)
-			uploader := newAudienceUploader(t, creds, secret)
-			destination := newAudienceDestination(creds, aud.audienceID)
-
-			jobs := make([]*jobsdb.JobT, 0, len(actions)*eventsPerAction)
-			var jobID int64
-			for _, action := range actions {
-				for range eventsPerAction {
-					jobID++
-					email := fmt.Sprintf("audience-%d@example.com", jobID)
-					hashedEmail := hashEmail(email)
-					t.Logf("job=%d action=%s email=%s hashedEmail=%s", jobID, action, email, hashedEmail)
-					jobs = append(jobs, newAudienceJob(t, jobID, action, hashedEmail))
-				}
+			audiences := []struct {
+				name       string
+				audienceID string
+			}{
+				{name: "hashed", audienceID: creds.HashedAudienceID},
+				{name: "unhashed", audienceID: creds.UnhashedAudienceID},
 			}
-			pollResponse, ids := runUploadAndPoll(t, uploader, destination, jobs)
-			requireImportSucceeded(t, pollResponse, len(ids))
+
+			for _, aud := range audiences {
+				t.Run(aud.name, func(t *testing.T) {
+					t.Logf("audience=%s clubbing %d Add/Remove/Replace events in a single import", aud.name, len(actions)*eventsPerAction)
+					uploader := newAudienceUploader(t, creds, secret, protocol)
+					destination := newAudienceDestination(creds, aud.audienceID)
+
+					jobs := make([]*jobsdb.JobT, 0, len(actions)*eventsPerAction)
+					var jobID int64
+					for _, action := range actions {
+						for range eventsPerAction {
+							jobID++
+							email := fmt.Sprintf("audience-%d@example.com", jobID)
+							hashedEmail := hashEmail(email)
+							t.Logf("job=%d action=%s email=%s hashedEmail=%s", jobID, action, email, hashedEmail)
+							jobs = append(jobs, newAudienceJob(t, jobID, action, hashedEmail))
+						}
+					}
+					pollResponse, ids := runUploadAndPoll(t, uploader, destination, jobs)
+					requireImportSucceeded(t, pollResponse, len(ids))
+				})
+			}
+
+			t.Run("valid and invalid emails in one import", func(t *testing.T) {
+				uploader := newAudienceUploader(t, creds, secret, protocol)
+				destination := newAudienceDestination(creds, creds.HashedAudienceID)
+
+				jobs := make([]*jobsdb.JobT, 0, eventsPerAction)
+				var abortedJobIDs, succeededJobIDs []int64
+				for jobID := int64(1); jobID <= eventsPerAction; jobID++ {
+					var email string
+					if jobID%2 == 0 {
+						email = hashEmail(fmt.Sprintf("audience-valid-%d@example.com", jobID))
+						succeededJobIDs = append(succeededJobIDs, jobID)
+						t.Logf("job=%d action=Add email=%s (valid hash, expecting success)", jobID, email)
+					} else {
+						email = fmt.Sprintf("audience-invalid-%d@example.com", jobID)
+						abortedJobIDs = append(abortedJobIDs, jobID)
+						t.Logf("job=%d action=Add email=%s (plain-text, expecting abort)", jobID, email)
+					}
+					jobs = append(jobs, newAudienceJob(t, jobID, "Add", email))
+				}
+
+				pollResponse, ids := runUploadAndPoll(t, uploader, destination, jobs)
+				meta := fetchUploadStats(t, uploader, pollResponse, ids)
+				require.ElementsMatch(t, abortedJobIDs, meta.AbortedKeys, "unexpected set of aborted jobs")
+				require.ElementsMatch(t, succeededJobIDs, meta.SucceededKeys, "unexpected set of succeeded jobs")
+				for _, jobID := range abortedJobIDs {
+					require.Equal(t, "EmailMustBeHashed", meta.AbortedReasons[jobID], "expected an abort reason for job %d", jobID)
+				}
+			})
 		})
 	}
-
-	t.Run("valid and invalid emails in one import", func(t *testing.T) {
-		uploader := newAudienceUploader(t, creds, secret)
-		destination := newAudienceDestination(creds, creds.HashedAudienceID)
-
-		jobs := make([]*jobsdb.JobT, 0, eventsPerAction)
-		var abortedJobIDs, succeededJobIDs []int64
-		for jobID := int64(1); jobID <= eventsPerAction; jobID++ {
-			var email string
-			if jobID%2 == 0 {
-				email = hashEmail(fmt.Sprintf("audience-valid-%d@example.com", jobID))
-				succeededJobIDs = append(succeededJobIDs, jobID)
-				t.Logf("job=%d action=Add email=%s (valid hash, expecting success)", jobID, email)
-			} else {
-				email = fmt.Sprintf("audience-invalid-%d@example.com", jobID)
-				abortedJobIDs = append(abortedJobIDs, jobID)
-				t.Logf("job=%d action=Add email=%s (plain-text, expecting abort)", jobID, email)
-			}
-			jobs = append(jobs, newAudienceJob(t, jobID, "Add", email))
-		}
-
-		pollResponse, ids := runUploadAndPoll(t, uploader, destination, jobs)
-		meta := fetchUploadStats(t, uploader, pollResponse, ids)
-		require.ElementsMatch(t, abortedJobIDs, meta.AbortedKeys, "unexpected set of aborted jobs")
-		require.ElementsMatch(t, succeededJobIDs, meta.SucceededKeys, "unexpected set of succeeded jobs")
-		for _, jobID := range abortedJobIDs {
-			require.Equal(t, "EmailMustBeHashed", meta.AbortedReasons[jobID], "expected an abort reason for job %d", jobID)
-		}
-	})
 }
 
 func hashEmail(email string) string {
@@ -140,13 +145,13 @@ func getAudienceCredentials(t *testing.T) *audienceCredentials {
 	return &creds
 }
 
-func newAudienceUploader(t *testing.T, creds *audienceCredentials, secret rudderauth.Secret) *audience.BingAdsBulkUploader {
+func newAudienceUploader(t *testing.T, creds *audienceCredentials, secret rudderauth.Secret, protocol bingadssdk.Protocol) *audience.BingAdsBulkUploader {
 	t.Helper()
 	t.Log("Creating audience uploader")
 
 	return audience.NewBingAdsBulkUploader(
 		logger.NOP, stats.NOP, audienceDestName,
-		newBulkService(creds.bingAdsCredentials, secret), &audience.Client{},
+		newBulkService(creds.bingAdsCredentials, secret, protocol), &audience.Client{},
 	)
 }
 

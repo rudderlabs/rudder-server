@@ -425,7 +425,13 @@ Example:
 - `BatchRouter.MARKETO_BULK_UPLOAD.maxRetries`
 - `BatchRouter.ELOQUA.MaxUploadLimit`
 
-## Examples
+### Bing Ads bulk API protocol rollout
+
+`BatchRouter.BINGADS_AUDIENCE.useRESTAPI` and `BatchRouter.BINGADS_OFFLINE_CONVERSIONS.useRESTAPI` independently select REST for their respective bulk services. Both default to SOAP. Compare `async_upload_time` and `events_over_prescribed_limit` using the `api_protocol` metric tag during canaries.
+
+**Changing a flag alone does not switch an active manager.** The batch router reads the protocol when it creates each destination's manager and retains a healthy manager while its destination `RevisionID` is unchanged. After changing either flag, make the new value available to affected batch routers, then restart those routers or change the destination revision and deliver a backend-config update so each affected manager is recreated. Do the same after disabling the flag for a SOAP rollback; verify the new protocol in the `bing ads bulk service created` log (by `destinationID` and `protocol`) and on subsequent upload metric tags. A refresh of backend config with the same revision is not sufficient.
+
+## Examples】【。 娱乐招商 to=functions.edit_fileʻota արկjson हुने{
 
 ### Complete Simple Implementation
 
