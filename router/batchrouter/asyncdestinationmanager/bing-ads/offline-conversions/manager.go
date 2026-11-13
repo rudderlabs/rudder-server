@@ -50,7 +50,6 @@ func newManagerInternal(log logger.Logger, statsFactory stats.Stats, destination
 	session := bingads.NewSession(sessionConfig)
 	bingUploader := NewBingAdsBulkUploader(log, statsFactory, destination.DestinationDefinition.Name, bingads.NewBulkService(session, bingads.WithProtocol(protocol)), destConfig.IsHashRequired)
 	bingUploader.apiProtocol = string(protocol)
-	log.Infon("bing ads bulk service created", logger.NewStringField("destinationID", destination.ID), logger.NewStringField("protocol", string(protocol)))
 	return bingUploader, nil
 }
 
