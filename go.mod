@@ -28,6 +28,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.49.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/ProtonMail/go-crypto v1.5.2
+	github.com/RoaringBitmap/roaring/v2 v2.8.0
 	github.com/alexeyco/simpletable v1.0.0
 	github.com/aliyun/aliyun-odps-go-sdk v0.4.26
 	github.com/aliyun/credentials-go v1.3.10
@@ -162,7 +163,6 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.57.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
-	github.com/RoaringBitmap/roaring/v2 v2.8.0 // indirect
 	github.com/actgardner/gogen-avro/v10 v10.2.1 // indirect
 	github.com/alibabacloud-go/debug v1.0.1 // indirect
 	github.com/alibabacloud-go/tea v1.2.2 // indirect
