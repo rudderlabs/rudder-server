@@ -36,8 +36,8 @@ func TestStatusJobIDNDistinct(t *testing.T) {
 		value    any
 		expected sql.NullString
 	}{
-		{name: "default", expected: sql.NullString{String: "n_distinct=-0.5", Valid: true}},
-		{name: "configured", value: -0.25, expected: sql.NullString{String: "n_distinct=-0.25", Valid: true}},
+		{name: "default", expected: sql.NullString{String: "{n_distinct=-0.5}", Valid: true}},
+		{name: "configured", value: -0.25, expected: sql.NullString{String: "{n_distinct=-0.25}", Valid: true}},
 		{name: "zero disables it", value: 0.0},
 		{name: "values out of range are skipped", value: 5.0},
 	} {
@@ -53,8 +53,7 @@ func TestStatusJobIDNDistinct(t *testing.T) {
 
 			var options sql.NullString
 			require.NoError(t, postgres.DB.QueryRow(
-				`SELECT (SELECT option FROM unnest(attoptions) AS option WHERE option LIKE 'n_distinct=%')
-				FROM pg_attribute WHERE attrelid = $1::regclass AND attname = 'job_id'`,
+				`SELECT attoptions::text FROM pg_attribute WHERE attrelid = $1::regclass AND attname = 'job_id'`,
 				prefix+"_job_status_1",
 			).Scan(&options))
 			require.Equal(t, tc.expected, options)
