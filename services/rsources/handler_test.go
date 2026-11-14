@@ -1535,3 +1535,28 @@ func newDBResource(t testing.TB, pool *dockertest.Pool, networkId, hostname stri
 func randomString() string {
 	return ksuid.New().String()
 }
+
+func TestSetupTablesDoesNotWaitForTableLocksWhenUpToDate(t *testing.T) {
+	f := newSingleTenantFixture(t)
+	db := f.resource.db
+
+	// A long read on the failed-records table and an open write on the stats table, as seen
+	// in production while pods restart.
+	readTx, err := db.BeginTx(t.Context(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = readTx.Rollback() })
+	_, err = readTx.ExecContext(t.Context(), `select count(*) from rsources_failed_keys_v2_records`)
+	require.NoError(t, err)
+	_, err = readTx.ExecContext(t.Context(), `select count(*) from rsources_failed_keys_v2`)
+	require.NoError(t, err)
+
+	writeTx, err := db.BeginTx(t.Context(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = writeTx.Rollback() })
+	_, err = writeTx.ExecContext(t.Context(), `insert into rsources_stats (job_run_id, task_run_id, source_id, destination_id) values ('j', 't', 's', 'd')`)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, setupTables(ctx, db, "postgres", logger.NOP))
+}
