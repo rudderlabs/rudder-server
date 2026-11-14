@@ -547,16 +547,37 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string,
 			return err
 		}
 	}
-	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2_records add column if not exists code numeric(4) not null default 0`); err != nil {
+	if err := addColumnIfMissing(ctx, db, "rsources_failed_keys_v2_records", "code", "numeric(4) not null default 0"); err != nil {
 		return err
 	}
-	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2_records add column if not exists error_response text not null default ''`); err != nil {
+	if err := addColumnIfMissing(ctx, db, "rsources_failed_keys_v2_records", "error_response", "text not null default ''"); err != nil {
 		return err
 	}
-	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2 add column if not exists ts timestamp not null default now()`); err != nil {
+	if err := addColumnIfMissing(ctx, db, "rsources_failed_keys_v2", "ts", "timestamp not null default now()"); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+// addColumnIfMissing runs the ALTER TABLE only when the column is not in the catalog yet.
+// "add column if not exists" alone is not enough: it takes an ACCESS EXCLUSIVE lock even when the
+// column exists, so on every startup it waits behind any long-running query on the table and,
+// while waiting, blocks every query that comes after it.
+func addColumnIfMissing(ctx context.Context, db *sql.DB, table, column, definition string) error {
+	var exists bool
+	if err := db.QueryRowContext(ctx, `select exists (
+		select 1 from information_schema.columns
+		where table_schema = current_schema() and table_name = $1 and column_name = $2
+	)`, table, column).Scan(&exists); err != nil {
+		return fmt.Errorf("checking if column %s.%s exists: %w", table, column, err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`alter table %s add column if not exists %s %s`, pq.QuoteIdentifier(table), pq.QuoteIdentifier(column), definition)); err != nil {
+		return fmt.Errorf("adding column %s.%s: %w", table, column, err)
+	}
 	return nil
 }
 
@@ -580,6 +601,15 @@ func setupStatsTable(ctx context.Context, db *sql.DB, defaultDbName string, log 
 		} else {
 			return err
 		}
+	}
+	// "create index if not exists" takes a SHARE lock on the table before it checks the name, so it
+	// waits behind any open write transaction on rsources_stats even when the index exists.
+	var indexExists bool
+	if err := db.QueryRowContext(ctx, `select to_regclass('rsources_stats_job_run_id_idx') is not null`).Scan(&indexExists); err != nil {
+		return fmt.Errorf("checking if index rsources_stats_job_run_id_idx exists: %w", err)
+	}
+	if indexExists {
+		return nil
 	}
 	if _, err := db.ExecContext(ctx, `create index if not exists rsources_stats_job_run_id_idx on "rsources_stats" (job_run_id)`); err != nil {
 		return err
