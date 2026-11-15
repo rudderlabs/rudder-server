@@ -65,6 +65,7 @@ func newV2ConfigFetcher(nc *namespaceConfig) (*v2ConfigFetcher, error) {
 		}),
 		// without updatedAfter the control plane sends every catalogue anyway
 		cpsdk.WithIncrementalDefinitions(nc.incrementalConfigUpdates && nc.incrementalDefinitions),
+		cpsdk.WithIdentityTokenFile(nc.identityTokenFile), // empty: no header
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating control plane client: %w", err)

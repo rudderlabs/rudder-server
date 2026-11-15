@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
@@ -22,6 +24,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
+// identityTokenHeader carries the workload identity token, the same header the control plane SDK sends on v2
+const identityTokenHeader = "X-Dataplane-Identity"
+
 // v1ConfigFetcher fetches the namespace's workspace configs from the v1
 // data-plane endpoint, which already serves them as ConfigT.
 type v1ConfigFetcher struct {
@@ -31,6 +36,7 @@ type v1ConfigFetcher struct {
 
 	namespace                string
 	identity                 identity.Identifier
+	identityTokenFile        string
 	configBackendURL         *url.URL
 	cpRouterURL              string
 	incrementalConfigUpdates bool
@@ -48,6 +54,7 @@ func newV1ConfigFetcher(nc *namespaceConfig) *v1ConfigFetcher {
 
 		namespace:                nc.namespace,
 		identity:                 nc.Identity(),
+		identityTokenFile:        nc.identityTokenFile,
 		configBackendURL:         nc.configBackendURL,
 		cpRouterURL:              nc.cpRouterURL,
 		incrementalConfigUpdates: nc.incrementalConfigUpdates,
@@ -93,6 +100,7 @@ func (f *v1ConfigFetcher) getFromAPI(ctx context.Context) (map[string]ConfigT, e
 
 	operation := func() (fetchError error) {
 		f.logger.Debugn("Fetching backend config", logger.NewStringField("url", urlString))
+		f.setIdentityToken(req)
 		respBody, fetchError = f.makeHTTPRequest(req)
 		return fetchError
 	}
@@ -165,6 +173,20 @@ func (f *v1ConfigFetcher) prepareHTTPRequest(ctx context.Context, url string) (*
 	req.SetBasicAuth(f.identity.BasicAuth())
 
 	return req, nil
+}
+
+// setIdentityToken reads the token file on every attempt, so a rotated token is picked up;
+// a missing, unreadable or empty file sends no header.
+func (f *v1ConfigFetcher) setIdentityToken(req *http.Request) {
+	if f.identityTokenFile == "" {
+		return
+	}
+	req.Header.Del(identityTokenHeader)
+	if token, err := os.ReadFile(f.identityTokenFile); err == nil {
+		if t := strings.TrimSpace(string(token)); t != "" {
+			req.Header.Set(identityTokenHeader, t)
+		}
+	}
 }
 
 func (f *v1ConfigFetcher) makeHTTPRequest(req *http.Request) ([]byte, error) {
