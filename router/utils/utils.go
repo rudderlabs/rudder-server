@@ -47,9 +47,14 @@ type DrainStats struct {
 }
 
 type SendPostResponse struct {
-	StatusCode          int
-	ResponseContentType string
-	ResponseBody        []byte
+	StatusCode              int
+	ResponseContentType     string
+	ResponseBody            []byte
+	UncompressedPayloadSize int
+	CompressedPayloadSize   int
+	CompressionDuration     time.Duration
+	BodyConstructed         bool
+	BodyFormat              string
 }
 
 type JobParameters struct {

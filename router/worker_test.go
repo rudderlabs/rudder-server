@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
@@ -27,10 +29,12 @@ import (
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/internal/partition"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
@@ -57,6 +61,184 @@ func createTestWorker(destType string, transformProxy bool, stat stats.Stats) *w
 			return stat.NewTaggedStat("transformer_outgoing_request_count", stats.CountType, labels.ToStatTags())
 		}),
 	}
+}
+
+func TestDeliveryCompressionMetrics(t *testing.T) {
+	const (
+		destType      = "TEST_DEST"
+		workspaceID   = "workspace-1"
+		destinationID = "destination-1"
+	)
+	for _, tc := range []struct {
+		name             string
+		proxy            bool
+		requests         []integrations.PostParametersT
+		path             string
+		format           string
+		custom           bool
+		jobFallback      bool
+		emptyBody        bool
+		competingFormats bool
+	}{
+		{
+			name: "native multiple endpoints",
+			requests: []integrations.PostParametersT{
+				{Type: "REST", RequestMethod: http.MethodPost, EndpointPath: "", Body: map[string]any{"GZIP": map[string]any{"payload": "repeated repeated repeated repeated"}}},
+				{Type: "REST", RequestMethod: http.MethodPost, EndpointPath: "/plain", Body: map[string]any{"JSON_ARRAY": map[string]any{"batch": "plain"}}},
+			},
+		},
+		{
+			name:  "proxy mixed requests",
+			proxy: true,
+			requests: []integrations.PostParametersT{
+				{Type: "REST", RequestMethod: http.MethodPost, EndpointPath: "/gzip", Body: map[string]any{"GZIP": map[string]any{"payload": "gzip"}}},
+				{Type: "REST", RequestMethod: http.MethodPost, EndpointPath: "", Body: map[string]any{"JSON_ARRAY": map[string]any{"batch": "plain"}}},
+			},
+			path: "<mixed>", format: "mixed",
+		},
+		{
+			name: "proxy gzip job", proxy: true,
+			requests: []integrations.PostParametersT{{Type: "REST", RequestMethod: http.MethodPost, EndpointPath: "", Body: map[string]any{"GZIP": map[string]any{"payload": "gzip"}}}},
+			path:     "", format: "true",
+		},
+		{name: "proxy empty requests", proxy: true, requests: []integrations.PostParametersT{}, path: "", format: "unknown"},
+		{name: "native without body", jobFallback: true, requests: []integrations.PostParametersT{{Type: "OTHER", EndpointPath: "/not-sent"}}},
+		{name: "native empty body", emptyBody: true, requests: []integrations.PostParametersT{{Type: "REST", RequestMethod: http.MethodPost, EndpointPath: "/empty", Body: map[string]any{"GZIP": map[string]any{"payload": ""}}}}},
+		{
+			name: "native competing body formats", competingFormats: true, requests: []integrations.PostParametersT{{
+				Type: "REST", RequestMethod: http.MethodPost, EndpointPath: "/competing",
+				Body: map[string]any{"GZIP": map[string]any{"payload": "gzip"}, "JSON_ARRAY": map[string]any{"batch": "plain"}},
+			}},
+		},
+		{name: "native no requests", jobFallback: true, requests: []integrations.PostParametersT{}},
+		{name: "custom manager", custom: true, jobFallback: true, requests: []integrations.PostParametersT{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := replaceDefaultStatsWithMemStats(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+			defer server.Close()
+			for i := range tc.requests {
+				tc.requests[i].URL = server.URL
+			}
+			message, err := jsonrs.Marshal(tc.requests)
+			require.NoError(t, err)
+
+			w := createTestWorker(destType, tc.proxy, stats.NOP)
+			w.ctx = t.Context()
+			w.logger = logger.NOP
+			w.rt.logger = logger.NOP
+			w.rt.netHandle = &netHandle{httpClient: http.DefaultClient, logger: logger.NOP}
+			w.rt.limiter.process = kitsync.NewLimiter(t.Context(), &sync.WaitGroup{}, "process", math.MaxInt, stats.NOP)
+			w.rt.limiter.stats.process = partition.NewStats()
+			w.rt.processJobsCountStat = stats.NOP.NewTaggedStat("process_jobs", stats.CountType, nil)
+			w.rt.processJobsHistogramStat = stats.NOP.NewTaggedStat("process_jobs_histogram", stats.HistogramType, nil)
+			w.rt.processRequestsCountStat = stats.NOP.NewTaggedStat("process_requests", stats.CountType, nil)
+			w.rt.processRequestsHistogramStat = stats.NOP.NewTaggedStat("process_requests_histogram", stats.HistogramType, nil)
+			w.rt.debugger = destinationdebugger.NewNoOpService()
+			w.rt.responseQ = make(chan workerJobStatus, 1)
+			w.rt.netClientTimeout = time.Second
+			w.rt.transformerTimeout = time.Second
+			w.rt.deliveryThrottlerTimeout = config.SingleValueLoader(time.Second)
+			w.rt.throttlerFactory = throttler.NewNoOpThrottlerFactory()
+			w.routerDeliveryLatencyStat = stats.NOP.NewTaggedStat("router_delivery_latency", stats.TimerType, nil)
+			w.rt.reportJobsdbPayload = config.SingleValueLoader(true)
+			w.rt.saveDestinationResponseOverride = config.SingleValueLoader(false)
+			w.rt.reloadableConfig.disableEventDeliveryUploadMasking = config.SingleValueLoader(true)
+			w.rt.reloadableConfig.skipRtAbortAlertForDelivery = config.SingleValueLoader(false)
+			w.rt.reloadableConfig.skipRtAbortAlertForTransformation = config.SingleValueLoader(false)
+			w.rt.reloadableConfig.minRetryBackoff = config.SingleValueLoader(time.Second)
+			w.rt.reloadableConfig.maxRetryBackoff = config.SingleValueLoader(time.Second)
+			w.deliveryTimeStat = stats.NOP.NewTaggedStat("delivery_time", stats.TimerType, nil)
+			w.routerProxyStat = stats.NOP.NewTaggedStat("router_proxy_latency", stats.TimerType, nil)
+			if tc.custom {
+				w.rt.customDestinationManager = &testPayloadDestinationManager{}
+			}
+			if tc.proxy {
+				mockTransformer := mocksTransformer.NewMockTransformer(gomock.NewController(t))
+				mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).Times(len(tc.requests)).Return(transformer.ProxyRequestResponse{
+					ProxyRequestStatusCode: http.StatusOK,
+					RespStatusCodes:        map[int64]int{1: http.StatusOK},
+					RespBodys:              map[int64]string{1: "ok"},
+				})
+				w.rt.transformer = mockTransformer
+			}
+
+			job := types.DestinationJobT{
+				Message:          message,
+				Destination:      backendconfig.DestinationT{ID: destinationID, WorkspaceID: workspaceID, DestinationDefinition: backendconfig.DestinationDefinitionT{Name: destType}},
+				JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: workspaceID, DestinationID: destinationID, TransformAt: "router", JobT: &jobsdb.JobT{WorkspaceId: workspaceID, Parameters: routerutils.EmptyPayload}}},
+			}
+			w.process([]types.DestinationJobT{job})
+
+			payloadTags := stats.Tags{"destType": destType, "workspaceID": workspaceID, "destinationID": destinationID}
+			compressionTags := stats.Tags{"destType": destType, "workspaceID": workspaceID}
+			if tc.proxy {
+				payloadTags["payloadKind"] = "job"
+				payloadTags["endpointPath"] = tc.path
+				payloadTags["compressed"] = tc.format
+				require.Equal(t, float64(len(message)), store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
+				compressionTags["endpointPath"] = tc.path
+				require.Nil(t, store.Get("router_delivery_compressed_payload_size_bytes", compressionTags))
+				require.Nil(t, store.Get("router_delivery_compression_duration_seconds", compressionTags))
+				payloadTags["payloadKind"] = "body"
+				require.Nil(t, store.Get("router_delivery_payload_size_bytes", payloadTags))
+			} else if tc.jobFallback {
+				payloadTags["endpointPath"] = ""
+				payloadTags["compressed"] = "unknown"
+				payloadTags["payloadKind"] = "job"
+				require.Equal(t, float64(len(message)), store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
+				compressionTags["endpointPath"] = "/not-sent"
+				require.Nil(t, store.Get("router_delivery_compressed_payload_size_bytes", compressionTags))
+				require.Nil(t, store.Get("router_delivery_compression_duration_seconds", compressionTags))
+				payloadTags["endpointPath"] = "/not-sent"
+				payloadTags["compressed"] = "false"
+				payloadTags["payloadKind"] = "body"
+				require.Nil(t, store.Get("router_delivery_payload_size_bytes", payloadTags))
+			} else if tc.competingFormats {
+				compressionTags["endpointPath"] = "/competing"
+				if store.Get("router_delivery_compressed_payload_size_bytes", compressionTags) != nil {
+					payloadTags["compressed"] = "true"
+					payloadTags["endpointPath"] = "/competing"
+					payloadTags["payloadKind"] = "body"
+					require.Equal(t, float64(len("gzip")), store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
+				} else {
+					payloadTags["compressed"] = "false"
+					payloadTags["endpointPath"] = "/competing"
+					payloadTags["payloadKind"] = "body"
+					require.Equal(t, float64(len("plain")), store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
+				}
+			} else if tc.emptyBody {
+				payloadTags["endpointPath"] = "/empty"
+				payloadTags["compressed"] = "true"
+				payloadTags["payloadKind"] = "body"
+				require.Zero(t, store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
+				compressionTags["endpointPath"] = "/empty"
+				require.Positive(t, store.Get("router_delivery_compressed_payload_size_bytes", compressionTags).LastValue())
+			} else {
+				payloadTags["payloadKind"] = "body"
+				payloadTags["endpointPath"] = ""
+				payloadTags["compressed"] = "true"
+				require.Equal(t, float64(len("repeated repeated repeated repeated")), store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
+				compressionTags["endpointPath"] = ""
+				require.Positive(t, store.Get("router_delivery_compressed_payload_size_bytes", compressionTags).LastValue())
+				require.Positive(t, store.Get("router_delivery_compression_duration_seconds", compressionTags).LastValue())
+				payloadTags["endpointPath"] = "/plain"
+				payloadTags["compressed"] = "false"
+				require.Equal(t, float64(len("plain")), store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
+				compressionTags["endpointPath"] = "/plain"
+				require.Nil(t, store.Get("router_delivery_compressed_payload_size_bytes", compressionTags))
+				require.Nil(t, store.Get("router_delivery_compression_duration_seconds", compressionTags))
+			}
+		})
+	}
+}
+
+type testPayloadDestinationManager struct {
+	customdestinationmanager.DestinationManager
+}
+
+func (*testPayloadDestinationManager) SendData(_ json.RawMessage, _ string) (int, string) {
+	return http.StatusOK, "ok"
 }
 
 func TestGateDeliveredWithWarning(t *testing.T) {
