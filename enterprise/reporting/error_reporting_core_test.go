@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 
-	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -21,8 +20,6 @@ import (
 )
 
 func TestShouldReport(t *testing.T) {
-	RegisterTestingT(t)
-
 	testCases := []struct {
 		name     string
 		metric   types.PUReportedMetric
@@ -115,7 +112,7 @@ func TestShouldReport(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			result := shouldReport(tc.metric)
-			Expect(result).To(Equal(tc.expected))
+			require.Equal(t, tc.expected, result)
 		})
 	}
 }

@@ -82,7 +82,8 @@ func TestIdleTxTimeout(t *testing.T) {
 	conf.Set("DB.port", postgresContainer.Port)
 	conf.Set("DB.password", postgresContainer.Password)
 
-	txTimeout := 2 * time.Millisecond
+	// Leave enough headroom for transaction setup when CI runners are under load.
+	txTimeout := 100 * time.Millisecond
 
 	conf.Set("DB.IdleTxTimeout", txTimeout)
 

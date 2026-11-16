@@ -229,8 +229,7 @@ func (t *Transformer) handleEvent(event *wtypes.TransformerEvent, cache *cache) 
 }
 
 func transformerResponseFromErr(metadata *types.Metadata, statTags map[string]string, err error) types.TransformerResponse {
-	var te *response.TransformerError
-	if ok := errors.As(err, &te); ok {
+	if te, ok := errors.AsType[*response.TransformerError](err); ok {
 		return types.TransformerResponse{
 			Output:     nil,
 			Metadata:   *metadata,
@@ -259,7 +258,7 @@ func (t *Transformer) getColumns(
 	uuidTS := whutils.ToProviderCase(destType, "uuid_ts")
 	columns[uuidTS] = model.DateTimeDataType
 
-	if destType == whutils.BQ || destType == whutils.BQStreamAllEvents {
+	if destType == whutils.BQ || destType == whutils.BQStreamAllEvents || destType == whutils.MAXCOMPUTE {
 		columns["loaded_at"] = model.DateTimeDataType
 	}
 

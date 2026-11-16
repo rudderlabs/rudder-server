@@ -1279,8 +1279,7 @@ func (rs *Redshift) AlterColumn(ctx context.Context, tableName, columnName, colu
 		warehouseutils.DoubleQuoteIdentifier(deprecatedColumnName),
 	)
 	if _, err = rs.DB.ExecContext(ctx, query); err != nil {
-		var pqError *pq.Error
-		if !errors.As(err, &pqError) || pqError.Code != "2BP01" {
+		if pqError, ok := errors.AsType[*pq.Error](err); !ok || pqError.Code != "2BP01" {
 			return model.AlterTableResponse{}, fmt.Errorf("drop deprecated column: %w", err)
 		}
 

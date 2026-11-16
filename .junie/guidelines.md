@@ -1,1 +1,1 @@
-../.ai-agent/guidelines.md
+../AGENTS.md

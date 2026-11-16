@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -83,7 +83,6 @@ func TestProcessorManager(t *testing.T) {
 	mockTransformerClients := mocksTransformer.NewMockTransformerClients(mockCtrl)
 	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
 
-	RegisterTestingT(t)
 	config.Reset()
 	c := config.New()
 	c.Set("JobsDB.maxDSSize", 10)
@@ -101,7 +100,7 @@ func TestProcessorManager(t *testing.T) {
 	defer tempDB.TearDown()
 
 	customVal := "GW"
-	unprocessedListEmpty, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
+	unprocessedListEmpty, err := tempDB.GetUnprocessed(t.Context(), jobsdb.GetQueryParams{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -120,7 +119,7 @@ func TestProcessorManager(t *testing.T) {
 
 	jobCountPerDS := 10
 	eventsPerJob := 10
-	err = tempDB.Store(context.Background(), genJobs(customVal, jobCountPerDS, eventsPerJob))
+	err = tempDB.Store(t.Context(), genJobs(customVal, jobCountPerDS, eventsPerJob))
 	require.NoError(t, err)
 
 	gwDB := jobsdb.NewForReadWrite("gw",
@@ -150,7 +149,7 @@ func TestProcessorManager(t *testing.T) {
 	defer archDB.Close()
 
 	clearDb := false
-	ctx := context.Background()
+	ctx := t.Context()
 
 	processor := New(
 		ctx,
@@ -197,15 +196,17 @@ func TestProcessorManager(t *testing.T) {
 		processor.Handle.transformerClients = mockTransformerClients
 		require.NoError(t, processor.Start())
 		defer processor.Stop()
-		Eventually(func() int {
-			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
+		require.EventuallyWithT(t, func(collect *assert.CollectT) {
+			res, err := tempDB.GetUnprocessed(t.Context(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			})
-			require.NoError(t, err)
-			return len(res.Jobs)
-		}, 10*time.Minute, 100*time.Millisecond).Should(Equal(0))
+			if !assert.NoError(collect, err) {
+				return
+			}
+			assert.Empty(collect, res.Jobs)
+		}, 10*time.Minute, 100*time.Millisecond)
 
 		require.Equal(t,
 			statsStore.GetByName("processor.event_pickup_lag_seconds"),
@@ -247,23 +248,25 @@ func TestProcessorManager(t *testing.T) {
 		mockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), rsources.Stats{Out: 10}).Times(1)
 
 		require.NoError(t, processor.Start())
-		err = tempDB.Store(context.Background(), genJobs(customVal, jobCountPerDS, eventsPerJob))
+		err = tempDB.Store(t.Context(), genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
-		unprocessedListEmpty, err = tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
+		unprocessedListEmpty, err = tempDB.GetUnprocessed(t.Context(), jobsdb.GetQueryParams{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 		require.NoError(t, err, "failed to get unprocessed jobs")
-		Eventually(func() int {
-			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
+		require.EventuallyWithT(t, func(collect *assert.CollectT) {
+			res, err := tempDB.GetUnprocessed(t.Context(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			})
-			require.NoError(t, err)
-			return len(res.Jobs)
-		}, time.Minute, 100*time.Millisecond).Should(Equal(0))
+			if !assert.NoError(collect, err) {
+				return
+			}
+			assert.Empty(collect, res.Jobs)
+		}, time.Minute, 100*time.Millisecond)
 		processor.Stop()
 	})
 }

@@ -4,29 +4,27 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"github.com/segmentio/ksuid"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-
-	testlog "github.com/rudderlabs/rudder-server/testhelper/log"
 )
 
 type postgresResource struct {
@@ -42,39 +40,139 @@ var defaultJobTargetKey = JobTargetKey{
 	DestinationID: "destination_id",
 }
 
-var _ = Describe("Using sources handler", func() {
+type singleTenantFixture struct {
+	resource postgresResource
+	sh       JobService
+}
+
+func newSingleTenantFixture(t *testing.T) *singleTenantFixture {
+	t.Helper()
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	resource := newDBResource(t, pool, "", "postgres")
+	config := JobServiceConfig{
+		LocalHostname:       "postgres",
+		MaxPoolSize:         1,
+		LocalConn:           resource.externalDSN,
+		Log:                 logger.NOP,
+		ShouldSetupSharedDB: true,
+	}
+	return &singleTenantFixture{
+		resource: resource,
+		sh:       createService(t, config),
+	}
+}
+
+type multiTenantFixture struct {
+	pool               *dockertest.Pool
+	network            *docker.Network
+	pgA, pgB, pgC      postgresResource
+	configA, configB   JobServiceConfig
+	serviceA, serviceB JobService
+}
+
+func newMultiTenantFixture(t *testing.T) *multiTenantFixture {
+	t.Helper()
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	f := &multiTenantFixture{pool: pool}
+	f.network = newDockerNetwork(t, pool)
+	postgres1Hostname := randomString() + "-1"
+	postgres2Hostname := randomString() + "-2"
+	postgres3Hostname := randomString() + "-3"
+	f.pgA = newDBResource(t, pool, f.network.ID, postgres1Hostname, "wal_level=logical")
+	f.pgB = newDBResource(t, pool, f.network.ID, postgres2Hostname, "wal_level=logical")
+	f.pgC = newDBResource(t, pool, f.network.ID, postgres3Hostname)
+
+	f.configA = JobServiceConfig{
+		LocalHostname:          postgres1Hostname,
+		MaxPoolSize:            1,
+		LocalConn:              f.pgA.externalDSN,
+		SharedConn:             f.pgC.externalDSN,
+		SubscriptionTargetConn: f.pgA.internalDSN,
+		Log:                    logger.NOP,
+		ShouldSetupSharedDB:    true,
+	}
+
+	f.configB = JobServiceConfig{
+		LocalHostname:          postgres2Hostname,
+		MaxPoolSize:            1,
+		LocalConn:              f.pgB.externalDSN,
+		SharedConn:             f.pgC.externalDSN,
+		SubscriptionTargetConn: f.pgB.internalDSN,
+		Log:                    logger.NOP,
+		ShouldSetupSharedDB:    true,
+	}
+
+	// Start 2 JobServices
+	// 1. js1 with local=pgA, remote=pgC
+	// 2. js2 with local=pgB, remote=pgC
+	f.serviceA = createService(t, f.configA)
+	f.serviceB = createService(t, f.configB)
+	return f
+}
+
+type monitoringFixture struct {
+	pgA, pgB postgresResource
+	serviceA JobService
+}
+
+func newMonitoringFixture(t *testing.T) *monitoringFixture {
+	t.Helper()
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	network := newDockerNetwork(t, pool)
+
+	postgres1Hostname := randomString() + "-1"
+	postgres2Hostname := randomString() + "-2"
+	f := &monitoringFixture{
+		pgA: newDBResource(t, pool, network.ID, postgres1Hostname, "wal_level=logical"),
+		pgB: newDBResource(t, pool, network.ID, postgres2Hostname),
+	}
+
+	configA := JobServiceConfig{
+		LocalHostname:          postgres1Hostname,
+		MaxPoolSize:            1,
+		LocalConn:              f.pgA.externalDSN,
+		SharedConn:             f.pgB.externalDSN,
+		SubscriptionTargetConn: f.pgA.internalDSN,
+		Log:                    logger.NOP,
+		ShouldSetupSharedDB:    true,
+	}
+	f.serviceA = createService(t, configA)
+	return f
+}
+
+// startMonitor runs Monitor in the background and returns a stop function that
+// waits for it to have returned before resetting the config. Monitor re-reads
+// the global config on every tick, so resetting it while the goroutine is still
+// alive is a data race.
+func (f *monitoringFixture) startMonitor(t *testing.T, lagGauge, replicationSlotGauge Gauger) func() {
+	config.Set("Rsources.stats.monitoringInterval", 10*time.Millisecond)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f.serviceA.Monitor(ctx, lagGauge, replicationSlotGauge)
+	}()
+	return func() {
+		cancel()
+		<-done
+		config.Reset()
+	}
+}
+
+func TestUsingSourcesHandler(t *testing.T) {
 	var noPaging PagingInfo
-	Context("single-tenant setup with a single local datasource", Ordered, func() {
-		var (
-			pool     *dockertest.Pool
-			resource postgresResource
-			sh       JobService
-		)
+	t.Run("single-tenant setup with a single local datasource", func(t *testing.T) {
 		stats := Stats{
 			In:     10,
 			Out:    4,
 			Failed: 6,
 		}
-		BeforeEach(func() {
-			var err error
-			pool, err = dockertest.NewPool("")
-			Expect(err).NotTo(HaveOccurred())
-			resource = newDBResource(pool, "", "postgres")
-			config := JobServiceConfig{
-				LocalHostname:       "postgres",
-				MaxPoolSize:         1,
-				LocalConn:           resource.externalDSN,
-				Log:                 testlog.GinkgoLogger,
-				ShouldSetupSharedDB: true,
-			}
-			sh = createService(config)
-		})
 
-		AfterEach(func() {
-			purgeResources(pool, resource.resource)
-		})
-
-		It("should be able to add and get failed records", func() {
+		t.Run("should be able to add and get failed records", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
 			// The captured error messages round-trip through the error_response column
 			// verbatim: a structured message stays a string, a message at the cap the
 			// delegate enforces is not truncated any further by the column, and sql
@@ -87,14 +185,14 @@ var _ = Describe("Using sources handler", func() {
 				{Record: []byte(`{"record-4": "id-4"}`), Code: 500},
 			}
 			jobRunId := newJobRunId()
-			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, records)
+			addFailedRecords(t, f.resource.db, jobRunId, defaultJobTargetKey, f.sh, records)
 			jobFilters := JobFilter{
 				SourceID:  []string{"source_id"},
 				TaskRunID: []string{"task_run_id"},
 			}
 
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
-			Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
+			failedRecords, err := f.sh.GetFailedRecords(t.Context(), jobRunId, jobFilters, noPaging)
+			require.NoError(t, err, "it should be able to get failed records")
 			expcetedRecords := JobFailedRecordsV2{
 				ID: jobRunId,
 				Tasks: []TaskFailedRecords[FailedRecord]{{
@@ -108,35 +206,37 @@ var _ = Describe("Using sources handler", func() {
 					}},
 				}},
 			}
-			Expect(failedRecords).To(Equal(expcetedRecords), "it should be able to get failed records")
+			require.Equal(t, expcetedRecords, failedRecords, "it should be able to get failed records")
 		})
 
-		It("should read records written before the error_response column as having no message", func() {
+		t.Run("should read records written before the error_response column as having no message", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
 			// During a rolling deploy the other pods still run the previous binary,
 			// whose insert does not mention the column at all. Those rows have to come
 			// back as "no message captured" rather than failing the read.
 			jobRunId := newJobRunId()
-			_, err := resource.db.Exec(
+			_, err := f.resource.db.Exec(
 				`INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id)
 				 VALUES ($1, $2, $3, $4, $5)`,
 				"legacy-id", jobRunId, defaultJobTargetKey.TaskRunID,
 				defaultJobTargetKey.SourceID, defaultJobTargetKey.DestinationID)
-			Expect(err).NotTo(HaveOccurred())
-			_, err = resource.db.Exec(
+			require.NoError(t, err)
+			_, err = f.resource.db.Exec(
 				`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code) VALUES ($1, $2, $3)`,
 				"legacy-id", `"rec-old"`, 422)
-			Expect(err).NotTo(HaveOccurred())
+			require.NoError(t, err)
 
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, JobFilter{}, noPaging)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(failedRecords.Tasks[0].Sources[0].Destinations[0].Records).To(Equal([]FailedRecord{
+			failedRecords, err := f.sh.GetFailedRecords(t.Context(), jobRunId, JobFilter{}, noPaging)
+			require.NoError(t, err)
+			require.Equal(t, []FailedRecord{
 				{Record: []byte(`"rec-old"`), Code: 422, Error: ""},
-			}))
+			}, failedRecords.Tasks[0].Sources[0].Destinations[0].Records)
 		})
 
-		It("should be able to add and get failed records using pagination", func() {
+		t.Run("should be able to add and get failed records using pagination", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
 			jobRunId := newJobRunId()
-			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
+			addFailedRecords(t, f.resource.db, jobRunId, defaultJobTargetKey, f.sh, []FailedRecord{
 				{Record: []byte(`"id-1"`)},
 				{Record: []byte(`"id-2"`)},
 				{Record: []byte(`"id-3"`)},
@@ -150,9 +250,9 @@ var _ = Describe("Using sources handler", func() {
 				Size: 2,
 			}
 			for i := range 2 {
-				failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, paging)
-				Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
-				Expect(failedRecords.Paging).NotTo(BeNil(), "paging should not be nil")
+				failedRecords, err := f.sh.GetFailedRecords(t.Context(), jobRunId, jobFilters, paging)
+				require.NoError(t, err, "it should be able to get failed records")
+				require.NotNil(t, failedRecords.Paging, "paging should not be nil")
 				paging = *failedRecords.Paging
 				expectedRecords := JobFailedRecordsV2{
 					ID: jobRunId,
@@ -171,17 +271,18 @@ var _ = Describe("Using sources handler", func() {
 					}},
 					Paging: failedRecords.Paging,
 				}
-				Expect(failedRecords).To(Equal(expectedRecords), "it should be able to get failed records")
+				require.Equal(t, expectedRecords, failedRecords, "it should be able to get failed records")
 
 			}
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, paging)
-			Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
-			Expect(failedRecords.Tasks).To(BeEmpty(), "last page should be empty")
-			Expect(failedRecords.Paging).To(BeNil(), "last page should have no paging")
+			failedRecords, err := f.sh.GetFailedRecords(t.Context(), jobRunId, jobFilters, paging)
+			require.NoError(t, err, "it should be able to get failed records")
+			require.Empty(t, failedRecords.Tasks, "last page should be empty")
+			require.Nil(t, failedRecords.Paging, "last page should have no paging")
 		})
 
-		It("should be able to add and get failed records in multiple batches", func() {
-			handler := sh.(*sourcesHandler)
+		t.Run("should be able to add and get failed records in multiple batches", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
+			handler := f.sh.(*sourcesHandler)
 			previous := handler.config.FailedRecordsInsertBatchSize
 			handler.config.FailedRecordsInsertBatchSize = config.GetReloadableIntVar(3, 1, "Rsources.failedRecordsInsertBatchSize")
 			defer func() { handler.config.FailedRecordsInsertBatchSize = previous }()
@@ -197,15 +298,15 @@ var _ = Describe("Using sources handler", func() {
 				records[i] = FailedRecord{Record: record, Code: i + 1, Error: message}
 				expectedRecords[i] = FailedRecord{Record: record, Code: i + 1, Error: message}
 			}
-			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, records)
+			addFailedRecords(t, f.resource.db, jobRunId, defaultJobTargetKey, f.sh, records)
 
 			jobFilters := JobFilter{
 				SourceID:  []string{defaultJobTargetKey.SourceID},
 				TaskRunID: []string{defaultJobTargetKey.TaskRunID},
 			}
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
-			Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
-			Expect(failedRecords).To(Equal(JobFailedRecordsV2{
+			failedRecords, err := f.sh.GetFailedRecords(t.Context(), jobRunId, jobFilters, noPaging)
+			require.NoError(t, err, "it should be able to get failed records")
+			require.Equal(t, JobFailedRecordsV2{
 				ID: jobRunId,
 				Tasks: []TaskFailedRecords[FailedRecord]{{
 					ID: defaultJobTargetKey.TaskRunID,
@@ -217,14 +318,15 @@ var _ = Describe("Using sources handler", func() {
 						}},
 					}},
 				}},
-			}))
+			}, failedRecords)
 		})
 
-		It("should dedup records with same record ids within a single batch", func() {
+		t.Run("should dedup records with same record ids within a single batch", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
 			// The duplicates carry different messages, so the dedup's tie-break is
 			// observable: the first occurrence is the one that is stored.
 			jobRunId := newJobRunId()
-			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
+			addFailedRecords(t, f.resource.db, jobRunId, defaultJobTargetKey, f.sh, []FailedRecord{
 				{Record: []byte(`{"record-1": "id-1"}`), Code: 1, Error: "first wins"},
 				{Record: []byte(`{"record-1": "id-1"}`), Code: 1, Error: "second is dropped"},
 				{Record: []byte(`{"record-1": "id-1"}`), Code: 1, Error: "third is dropped"},
@@ -235,9 +337,9 @@ var _ = Describe("Using sources handler", func() {
 				SourceID:  []string{defaultJobTargetKey.SourceID},
 				TaskRunID: []string{defaultJobTargetKey.TaskRunID},
 			}
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
-			Expect(err).NotTo(HaveOccurred(), "it should not fail with cardinality violation when duplicates exist in the same batch")
-			Expect(failedRecords).To(Equal(JobFailedRecordsV2{
+			failedRecords, err := f.sh.GetFailedRecords(t.Context(), jobRunId, jobFilters, noPaging)
+			require.NoError(t, err, "it should not fail with cardinality violation when duplicates exist in the same batch")
+			require.Equal(t, JobFailedRecordsV2{
 				ID: jobRunId,
 				Tasks: []TaskFailedRecords[FailedRecord]{{
 					ID: defaultJobTargetKey.TaskRunID,
@@ -252,17 +354,18 @@ var _ = Describe("Using sources handler", func() {
 						}},
 					}},
 				}},
-			}), "it should return only the unique records once, keeping the first message")
+			}, failedRecords, "it should return only the unique records once, keeping the first message")
 		})
 
-		It("should dedup records with same record ids spanning multiple batches", func() {
-			handler := sh.(*sourcesHandler)
+		t.Run("should dedup records with same record ids spanning multiple batches", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
+			handler := f.sh.(*sourcesHandler)
 			previous := handler.config.FailedRecordsInsertBatchSize
 			handler.config.FailedRecordsInsertBatchSize = config.GetReloadableIntVar(3, 1, "Rsources.failedRecordsInsertBatchSize")
 			defer func() { handler.config.FailedRecordsInsertBatchSize = previous }()
 
 			jobRunId := newJobRunId()
-			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
+			addFailedRecords(t, f.resource.db, jobRunId, defaultJobTargetKey, f.sh, []FailedRecord{
 				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
 				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
 				{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
@@ -274,9 +377,9 @@ var _ = Describe("Using sources handler", func() {
 				SourceID:  []string{defaultJobTargetKey.SourceID},
 				TaskRunID: []string{defaultJobTargetKey.TaskRunID},
 			}
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
-			Expect(err).NotTo(HaveOccurred(), "it should not fail with cardinality violation when duplicates exist across batches")
-			Expect(failedRecords).To(Equal(JobFailedRecordsV2{
+			failedRecords, err := f.sh.GetFailedRecords(t.Context(), jobRunId, jobFilters, noPaging)
+			require.NoError(t, err, "it should not fail with cardinality violation when duplicates exist across batches")
+			require.Equal(t, JobFailedRecordsV2{
 				ID: jobRunId,
 				Tasks: []TaskFailedRecords[FailedRecord]{{
 					ID: defaultJobTargetKey.TaskRunID,
@@ -292,36 +395,38 @@ var _ = Describe("Using sources handler", func() {
 						}},
 					}},
 				}},
-			}), "it should return only the unique records once")
+			}, failedRecords, "it should return only the unique records once")
 		})
 
-		It("shouldn't be able to get failed records when failed records collection is disabled", func() {
-			handler := sh.(*sourcesHandler)
+		t.Run("shouldn't be able to get failed records when failed records collection is disabled", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
+			handler := f.sh.(*sourcesHandler)
 			previous := handler.config.SkipFailedRecordsCollection
 			handler.config.SkipFailedRecordsCollection = true
 			defer func() { handler.config.SkipFailedRecordsCollection = previous }()
 
 			jobRunId := newJobRunId()
-			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
+			addFailedRecords(t, f.resource.db, jobRunId, defaultJobTargetKey, f.sh, []FailedRecord{
 				{Record: []byte(`{"record-1": "id-1"}`)},
 				{Record: []byte(`{"record-2": "id-2"}`)},
 			})
 
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, JobFilter{}, noPaging)
-			Expect(err).To(HaveOccurred(), "it shouldn't be able to get failed records")
-			Expect(failedRecords).To(Equal(JobFailedRecordsV2{ID: jobRunId}), "it should return an empty failed records")
-			Expect(err).To(Equal(ErrOperationNotSupported), "it should return an ErrOperationNotSupported error")
+			failedRecords, err := f.sh.GetFailedRecords(t.Context(), jobRunId, JobFilter{}, noPaging)
+			require.Error(t, err, "it shouldn't be able to get failed records")
+			require.Equal(t, JobFailedRecordsV2{ID: jobRunId}, failedRecords, "it should return an empty failed records")
+			require.Equal(t, ErrOperationNotSupported, err, "it should return an ErrOperationNotSupported error")
 		})
 
-		It("should be able to get the status", func() {
+		t.Run("should be able to get the status", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
 			jobRunId := newJobRunId()
-			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
+			increment(t, f.resource.db, jobRunId, defaultJobTargetKey, stats, f.sh)
 			jobFilters := JobFilter{
 				SourceID:  []string{"source_id"},
 				TaskRunID: []string{"task_run_id"},
 			}
-			status, err := sh.GetStatus(context.Background(), jobRunId, jobFilters)
-			Expect(err).NotTo(HaveOccurred())
+			status, err := f.sh.GetStatus(t.Context(), jobRunId, jobFilters)
+			require.NoError(t, err)
 			expected := JobStatus{
 				ID: jobRunId,
 				TasksStatus: []TaskStatus{
@@ -344,25 +449,26 @@ var _ = Describe("Using sources handler", func() {
 					},
 				},
 			}
-			Expect(status).To(Equal(expected))
+			require.Equal(t, expected, status)
 		})
 
-		It("should be able to delete failed keys", func() {
+		t.Run("should be able to delete failed keys", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
 			jobRunId := newJobRunId()
-			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
-			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
+			increment(t, f.resource.db, jobRunId, defaultJobTargetKey, stats, f.sh)
+			addFailedRecords(t, f.resource.db, jobRunId, defaultJobTargetKey, f.sh, []FailedRecord{
 				{Record: []byte(`{"record-1": "id-1"}`)},
 				{Record: []byte(`{"record-2": "id-2"}`)},
 			})
-			err := sh.DeleteFailedRecords(context.Background(), jobRunId, JobFilter{})
-			Expect(err).NotTo(HaveOccurred(), "it should be able to delete failed keys for the jobrunid")
+			err := f.sh.DeleteFailedRecords(t.Context(), jobRunId, JobFilter{})
+			require.NoError(t, err, "it should be able to delete failed keys for the jobrunid")
 			jobFilters := JobFilter{
 				SourceID:  []string{"source_id"},
 				TaskRunID: []string{"task_run_id"},
 			}
-			status, err := sh.GetStatus(context.Background(), jobRunId, jobFilters)
-			Expect(err).To(BeNil())
-			Expect(status).To(Equal(JobStatus{
+			status, err := f.sh.GetStatus(t.Context(), jobRunId, jobFilters)
+			require.NoError(t, err)
+			require.Equal(t, JobStatus{
 				ID: jobRunId,
 				TasksStatus: []TaskStatus{
 					{
@@ -383,41 +489,42 @@ var _ = Describe("Using sources handler", func() {
 						},
 					},
 				},
-			}))
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(failedRecords).To(Equal(JobFailedRecordsV2{ID: jobRunId}))
+			}, status)
+			failedRecords, err := f.sh.GetFailedRecords(t.Context(), jobRunId, jobFilters, noPaging)
+			require.NoError(t, err)
+			require.Equal(t, JobFailedRecordsV2{ID: jobRunId}, failedRecords)
 		})
 
-		It("should be able to delete stats only", func() {
+		t.Run("should be able to delete stats only", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
 			otherJobTargetKey := defaultJobTargetKey
 			otherJobTargetKey.SourceID = "other_source_id"
 			jobRunId := newJobRunId()
-			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
-			increment(resource.db, jobRunId, otherJobTargetKey, stats, sh, nil)
+			increment(t, f.resource.db, jobRunId, defaultJobTargetKey, stats, f.sh)
+			increment(t, f.resource.db, jobRunId, otherJobTargetKey, stats, f.sh)
 
-			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
+			addFailedRecords(t, f.resource.db, jobRunId, defaultJobTargetKey, f.sh, []FailedRecord{
 				{Record: []byte(`{"record-1": "id-1"}`)},
 				{Record: []byte(`{"record-2": "id-2"}`)},
 			})
-			addFailedRecords(resource.db, jobRunId, otherJobTargetKey, sh, []FailedRecord{
+			addFailedRecords(t, f.resource.db, jobRunId, otherJobTargetKey, f.sh, []FailedRecord{
 				{Record: []byte(`{"record-1": "id-1"}`)},
 				{Record: []byte(`{"record-2": "id-2"}`)},
 			})
-			err := sh.DeleteJobStatus(context.Background(), jobRunId, JobFilter{SourceID: []string{"other_source_id"}})
-			Expect(err).NotTo(HaveOccurred(), "it should be able to delete stats for the jobrunid")
+			err := f.sh.DeleteJobStatus(t.Context(), jobRunId, JobFilter{SourceID: []string{"other_source_id"}})
+			require.NoError(t, err, "it should be able to delete stats for the jobrunid")
 
 			jobFilters := JobFilter{
 				SourceID:  []string{"other_source_id"},
 				TaskRunID: []string{"task_run_id"},
 			}
-			status, err := sh.GetStatus(context.Background(), jobRunId, jobFilters)
-			Expect(err).To(HaveOccurred())
-			Expect(status).To(Equal(JobStatus{}))
-			Expect(errors.Is(err, ErrStatusNotFound)).To(BeTrue(), "it should return a StatusNotFoundError")
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(failedRecords).To(Equal(
+			status, err := f.sh.GetStatus(t.Context(), jobRunId, jobFilters)
+			require.Error(t, err)
+			require.Equal(t, JobStatus{}, status)
+			require.ErrorIs(t, err, ErrStatusNotFound, "it should return a StatusNotFoundError")
+			failedRecords, err := f.sh.GetFailedRecords(t.Context(), jobRunId, jobFilters, noPaging)
+			require.NoError(t, err)
+			require.Equal(t,
 				JobFailedRecordsV2{
 					ID: jobRunId,
 					Tasks: []TaskFailedRecords[FailedRecord]{
@@ -440,123 +547,128 @@ var _ = Describe("Using sources handler", func() {
 						},
 					},
 				},
-			))
+				failedRecords,
+			)
 
 			jobFilters.SourceID = []string{defaultJobTargetKey.SourceID}
-			_, err = sh.GetStatus(context.Background(), jobRunId, jobFilters)
-			Expect(err).ToNot(HaveOccurred())
-			failedRecords, err = sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(failedRecords).ToNot(Equal(JobFailedRecordsV2{ID: jobRunId}))
+			_, err = f.sh.GetStatus(t.Context(), jobRunId, jobFilters)
+			require.NoError(t, err)
+			failedRecords, err = f.sh.GetFailedRecords(t.Context(), jobRunId, jobFilters, noPaging)
+			require.NoError(t, err)
+			require.NotEqual(t, JobFailedRecordsV2{ID: jobRunId}, failedRecords)
 		})
 
-		It("should be able to delete stats and failed keys partially", func() {
+		t.Run("should be able to delete stats and failed keys partially", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
 			otherJobTargetKey := defaultJobTargetKey
 			otherJobTargetKey.SourceID = "other_source_id"
 			jobRunId := newJobRunId()
-			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
-			increment(resource.db, jobRunId, otherJobTargetKey, stats, sh, nil)
+			increment(t, f.resource.db, jobRunId, defaultJobTargetKey, stats, f.sh)
+			increment(t, f.resource.db, jobRunId, otherJobTargetKey, stats, f.sh)
 
-			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
+			addFailedRecords(t, f.resource.db, jobRunId, defaultJobTargetKey, f.sh, []FailedRecord{
 				{Record: []byte(`{"record-1": "id-1"}`)},
 				{Record: []byte(`{"record-2": "id-2"}`)},
 			})
-			addFailedRecords(resource.db, jobRunId, otherJobTargetKey, sh, []FailedRecord{
+			addFailedRecords(t, f.resource.db, jobRunId, otherJobTargetKey, f.sh, []FailedRecord{
 				{Record: []byte(`{"record-1": "id-1"}`)},
 				{Record: []byte(`{"record-2": "id-2"}`)},
 			})
-			err := sh.DeleteJobStatus(context.Background(), jobRunId, JobFilter{SourceID: []string{"other_source_id"}})
-			Expect(err).NotTo(HaveOccurred(), "it should be able to delete stats for the jobrunid")
+			err := f.sh.DeleteJobStatus(t.Context(), jobRunId, JobFilter{SourceID: []string{"other_source_id"}})
+			require.NoError(t, err, "it should be able to delete stats for the jobrunid")
 
-			err = sh.DeleteFailedRecords(context.Background(), jobRunId, JobFilter{SourceID: []string{"other_source_id"}})
-			Expect(err).NotTo(HaveOccurred(), "it should be able to delete failed keys for the jobrunid")
+			err = f.sh.DeleteFailedRecords(t.Context(), jobRunId, JobFilter{SourceID: []string{"other_source_id"}})
+			require.NoError(t, err, "it should be able to delete failed keys for the jobrunid")
 
 			jobFilters := JobFilter{
 				SourceID:  []string{"other_source_id"},
 				TaskRunID: []string{"task_run_id"},
 			}
-			status, err := sh.GetStatus(context.Background(), jobRunId, jobFilters)
-			Expect(err).To(HaveOccurred())
-			Expect(status).To(Equal(JobStatus{}))
-			Expect(errors.Is(err, ErrStatusNotFound)).To(BeTrue(), "it should return a StatusNotFoundError")
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(failedRecords).To(Equal(JobFailedRecordsV2{ID: jobRunId}))
+			status, err := f.sh.GetStatus(t.Context(), jobRunId, jobFilters)
+			require.Error(t, err)
+			require.Equal(t, JobStatus{}, status)
+			require.ErrorIs(t, err, ErrStatusNotFound, "it should return a StatusNotFoundError")
+			failedRecords, err := f.sh.GetFailedRecords(t.Context(), jobRunId, jobFilters, noPaging)
+			require.NoError(t, err)
+			require.Equal(t, JobFailedRecordsV2{ID: jobRunId}, failedRecords)
 
 			jobFilters.SourceID = []string{defaultJobTargetKey.SourceID}
-			_, err = sh.GetStatus(context.Background(), jobRunId, jobFilters)
-			Expect(err).ToNot(HaveOccurred())
-			failedRecords, err = sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(failedRecords).ToNot(Equal(JobFailedRecordsV2{ID: jobRunId}))
+			_, err = f.sh.GetStatus(t.Context(), jobRunId, jobFilters)
+			require.NoError(t, err)
+			failedRecords, err = f.sh.GetFailedRecords(t.Context(), jobRunId, jobFilters, noPaging)
+			require.NoError(t, err)
+			require.NotEqual(t, JobFailedRecordsV2{ID: jobRunId}, failedRecords)
 		})
 
-		It("shouldn't be able to delete stats for an incomplete source", func() {
+		t.Run("shouldn't be able to delete stats for an incomplete source", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
 			jobRunId := newJobRunId()
 			stats := Stats{
 				In:     10,
 				Out:    4,
 				Failed: 5,
 			}
-			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
+			increment(t, f.resource.db, jobRunId, defaultJobTargetKey, stats, f.sh)
 
-			err := sh.DeleteJobStatus(context.Background(), jobRunId, JobFilter{SourceID: []string{defaultJobTargetKey.SourceID}})
-			Expect(err).To(Equal(ErrSourceNotCompleted), "it shouldn't be able to delete stats for an incomplete source")
+			err := f.sh.DeleteJobStatus(t.Context(), jobRunId, JobFilter{SourceID: []string{defaultJobTargetKey.SourceID}})
+			require.Equal(t, ErrSourceNotCompleted, err, "it shouldn't be able to delete stats for an incomplete source")
 		})
 
-		It("shouldn't be able to delete stats for an invalid job", func() {
+		t.Run("shouldn't be able to delete stats for an invalid job", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
 			jobRunId := newJobRunId()
 			stats := Stats{
 				In:     10,
 				Out:    4,
 				Failed: 5,
 			}
-			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
+			increment(t, f.resource.db, jobRunId, defaultJobTargetKey, stats, f.sh)
 
-			err := sh.DeleteJobStatus(context.Background(), "invalidJobRunId", JobFilter{SourceID: []string{defaultJobTargetKey.SourceID}})
-			Expect(err).To(Equal(ErrStatusNotFound), "it shouldn't be able to delete stats for an invalid jobrunid")
+			err := f.sh.DeleteJobStatus(t.Context(), "invalidJobRunId", JobFilter{SourceID: []string{defaultJobTargetKey.SourceID}})
+			require.Equal(t, ErrStatusNotFound, err, "it shouldn't be able to delete stats for an invalid jobrunid")
 		})
 
-		It("should be able to get failed records by filtering", func() {
+		t.Run("should be able to get failed records by filtering", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
 			jobRunId := newJobRunId()
 
-			addFailedRecords(resource.db, jobRunId, JobTargetKey{
+			addFailedRecords(t, f.resource.db, jobRunId, JobTargetKey{
 				TaskRunID:     "task_run_id1",
 				SourceID:      "source_id1",
 				DestinationID: "destination_id",
-			}, sh, []FailedRecord{
+			}, f.sh, []FailedRecord{
 				{Record: []byte(`{"record-1": "id-1"}`)},
 				{Record: []byte(`{"record-2": "id-2"}`)},
 			})
-			addFailedRecords(resource.db, jobRunId, JobTargetKey{
+			addFailedRecords(t, f.resource.db, jobRunId, JobTargetKey{
 				TaskRunID:     "task_run_id1",
 				SourceID:      "source_id1",
 				DestinationID: "destination_id",
-			}, sh, []FailedRecord{
+			}, f.sh, []FailedRecord{
 				{Record: []byte(`{"record-11": "id-112"}`)},
 				{Record: []byte(`{"record-22": "id-222"}`)},
 			})
-			addFailedRecords(resource.db, jobRunId, JobTargetKey{
+			addFailedRecords(t, f.resource.db, jobRunId, JobTargetKey{
 				TaskRunID:     "task_run_id1",
 				SourceID:      "source_id2",
 				DestinationID: "destination_id",
-			}, sh, []FailedRecord{
+			}, f.sh, []FailedRecord{
 				{Record: []byte(`{"record-12": "id-12"}`)},
 				{Record: []byte(`{"record-21": "id-21"}`)},
 			})
-			addFailedRecords(resource.db, jobRunId, JobTargetKey{
+			addFailedRecords(t, f.resource.db, jobRunId, JobTargetKey{
 				TaskRunID:     "task_run_id2",
 				SourceID:      "source_id2",
 				DestinationID: "destination_id",
-			}, sh, []FailedRecord{
+			}, f.sh, []FailedRecord{
 				{Record: []byte(`{"record-11": "id-11"}`)},
 				{Record: []byte(`{"record-32": "id-32"}`)},
 			})
-			addFailedRecords(resource.db, jobRunId, JobTargetKey{
+			addFailedRecords(t, f.resource.db, jobRunId, JobTargetKey{
 				TaskRunID:     "task_run_id2",
 				SourceID:      "source_id3",
 				DestinationID: "destination_id",
-			}, sh, []FailedRecord{
+			}, f.sh, []FailedRecord{
 				{Record: []byte(`{"record-13": "id-13"}`)},
 				{Record: []byte(`{"record-23": "id-23"}`)},
 			})
@@ -605,75 +717,87 @@ var _ = Describe("Using sources handler", func() {
 					},
 				},
 			}
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, JobFilter{
+			failedRecords, err := f.sh.GetFailedRecords(t.Context(), jobRunId, JobFilter{
 				SourceID:  []string{"source_id1", "source_id2"},
 				TaskRunID: []string{"task_run_id1", "task_run_id2"},
 			}, noPaging)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(expected).To(Equal(failedRecords), "it should return the failed records for the jobrunid based on the filtering")
+			require.NoError(t, err)
+			require.Equal(t, expected, failedRecords, "it should return the failed records for the jobrunid based on the filtering")
 		})
 
-		It("should be able to get the status with filtering", func() {
+		t.Run("should be able to get the status with filtering", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
+			ctx := t.Context()
 			jobRunId := newJobRunId()
-			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
-			wg := &sync.WaitGroup{}
-			wg.Add(5)
-			go increment(resource.db, jobRunId, JobTargetKey{
-				TaskRunID:     "task_run_id1",
-				SourceID:      "source_id1",
-				DestinationID: "destination_id",
-			}, Stats{
-				In:     10,
-				Out:    0,
-				Failed: 0,
-			}, sh, wg,
-			)
-			go increment(resource.db, jobRunId, JobTargetKey{
-				TaskRunID:     "task_run_id1",
-				SourceID:      "source_id1",
-				DestinationID: "destination_id",
-			}, Stats{
-				In:     0,
-				Out:    4,
-				Failed: 6,
-			}, sh, wg,
-			)
-			go increment(resource.db, jobRunId, JobTargetKey{
-				TaskRunID:     "task_run_id1",
-				SourceID:      "source_id2",
-				DestinationID: "destination_id",
-			}, Stats{
-				In:     10,
-				Out:    2,
-				Failed: 6,
-			}, sh, wg,
-			)
-			go increment(resource.db, jobRunId, JobTargetKey{
-				TaskRunID:     "task_run_id2",
-				SourceID:      "source_id2",
-				DestinationID: "destination_id",
-			}, Stats{
-				In:     10,
-				Out:    2,
-				Failed: 6,
-			}, sh, wg,
-			)
-			go increment(resource.db, jobRunId, JobTargetKey{
-				TaskRunID:     "task_run_id2",
-				SourceID:      "source_id3",
-				DestinationID: "destination_id",
-			}, Stats{
-				In:     10,
-				Out:    2,
-				Failed: 6,
-			}, sh, wg,
-			)
-			wg.Wait()
+			increment(t, f.resource.db, jobRunId, defaultJobTargetKey, stats, f.sh)
+			var g errgroup.Group
+			g.Go(func() error {
+				return incrementStats(ctx, f.resource.db, jobRunId, JobTargetKey{
+					TaskRunID:     "task_run_id1",
+					SourceID:      "source_id1",
+					DestinationID: "destination_id",
+				}, Stats{
+					In:     10,
+					Out:    0,
+					Failed: 0,
+				}, f.sh,
+				)
+			})
+			g.Go(func() error {
+				return incrementStats(ctx, f.resource.db, jobRunId, JobTargetKey{
+					TaskRunID:     "task_run_id1",
+					SourceID:      "source_id1",
+					DestinationID: "destination_id",
+				}, Stats{
+					In:     0,
+					Out:    4,
+					Failed: 6,
+				}, f.sh,
+				)
+			})
+			g.Go(func() error {
+				return incrementStats(ctx, f.resource.db, jobRunId, JobTargetKey{
+					TaskRunID:     "task_run_id1",
+					SourceID:      "source_id2",
+					DestinationID: "destination_id",
+				}, Stats{
+					In:     10,
+					Out:    2,
+					Failed: 6,
+				}, f.sh,
+				)
+			})
+			g.Go(func() error {
+				return incrementStats(ctx, f.resource.db, jobRunId, JobTargetKey{
+					TaskRunID:     "task_run_id2",
+					SourceID:      "source_id2",
+					DestinationID: "destination_id",
+				}, Stats{
+					In:     10,
+					Out:    2,
+					Failed: 6,
+				}, f.sh,
+				)
+			})
+			g.Go(func() error {
+				return incrementStats(ctx, f.resource.db, jobRunId, JobTargetKey{
+					TaskRunID:     "task_run_id2",
+					SourceID:      "source_id3",
+					DestinationID: "destination_id",
+				}, Stats{
+					In:     10,
+					Out:    2,
+					Failed: 6,
+				}, f.sh,
+				)
+			})
+			require.NoError(t, g.Wait())
 
-			res, err := sh.GetStatus(context.Background(), jobRunId, JobFilter{
+			res, err := f.sh.GetStatus(ctx, jobRunId, JobFilter{
 				SourceID:  []string{"source_id1", "source_id2"},
 				TaskRunID: []string{"task_run_id1", "task_run_id2"},
 			})
+			require.NoError(t, err)
 			sort.Slice(res.TasksStatus, func(i, j int) bool {
 				return res.TasksStatus[i].ID < res.TasksStatus[j].ID
 			})
@@ -682,7 +806,6 @@ var _ = Describe("Using sources handler", func() {
 					return ts.SourcesStatus[i].ID < ts.SourcesStatus[j].ID
 				})
 			}
-			Expect(err).NotTo(HaveOccurred())
 
 			expected := JobStatus{
 				ID: jobRunId,
@@ -744,47 +867,55 @@ var _ = Describe("Using sources handler", func() {
 					},
 				},
 			}
-			Expect(res).To(Equal(expected))
+			require.Equal(t, expected, res)
 		})
 
-		It("should be able to execute the cleanup loop", func() {
+		t.Run("should be able to execute the cleanup loop", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
 			jobRunId := newJobRunId()
-			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
-			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
+			increment(t, f.resource.db, jobRunId, defaultJobTargetKey, stats, f.sh)
+			addFailedRecords(t, f.resource.db, jobRunId, defaultJobTargetKey, f.sh, []FailedRecord{
 				{Record: []byte(`{"record-1": "id-1"}`)},
 				{Record: []byte(`{"record-2": "id-2"}`)},
 			})
 			ts := time.Now().Add(-time.Duration(defaultRetentionPeriodInHours+1) * time.Hour)
-			stmt, err := resource.db.Prepare(`update "rsources_stats" set ts = $1`)
-			Expect(err).NotTo(HaveOccurred())
+			stmt, err := f.resource.db.Prepare(`update "rsources_stats" set ts = $1`)
+			require.NoError(t, err)
 			_, err = stmt.Exec(ts)
-			Expect(err).NotTo(HaveOccurred())
+			require.NoError(t, err)
 			defer func() { _ = stmt.Close() }()
-			stmt2, err := resource.db.Prepare(`update "rsources_failed_keys_v2_records" set ts = $1`)
-			Expect(err).NotTo(HaveOccurred())
+			stmt2, err := f.resource.db.Prepare(`update "rsources_failed_keys_v2_records" set ts = $1`)
+			require.NoError(t, err)
 			_, err = stmt2.Exec(ts)
 			defer func() { _ = stmt2.Close() }()
-			Expect(err).NotTo(HaveOccurred())
+			require.NoError(t, err)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-			defer cancel()
-			go func() { _ = sh.CleanupLoop(ctx) }()
+			ctx, cancel := context.WithTimeout(t.Context(), 1*time.Minute)
+			cleanupLoopDone := make(chan struct{})
+			go func() {
+				defer close(cleanupLoopDone)
+				_ = f.sh.CleanupLoop(ctx)
+			}()
+			defer func() {
+				cancel()
+				<-cleanupLoopDone
+			}()
 
 			for {
 				select {
 				case <-ctx.Done():
-					Fail("it should cleanup all tables")
+					t.Fatal("it should cleanup all tables")
 					return
 				case <-time.After(1 * time.Second):
 					sqlStatement := `select count(*) from "rsources_stats" where job_run_id = $1`
 					var statCount int
-					err = resource.db.QueryRow(sqlStatement, jobRunId).Scan(&statCount)
-					Expect(err).NotTo(HaveOccurred())
+					err = f.resource.db.QueryRow(sqlStatement, jobRunId).Scan(&statCount)
+					require.NoError(t, err)
 
 					sqlStatement = `select count(*) from "rsources_failed_keys_v2" k join "rsources_failed_keys_v2_records" v on v.id = k.id where k.job_run_id = $1`
 					var failedRecordCount int
-					err = resource.db.QueryRow(sqlStatement, jobRunId).Scan(&failedRecordCount)
-					Expect(err).NotTo(HaveOccurred())
+					err = f.resource.db.QueryRow(sqlStatement, jobRunId).Scan(&failedRecordCount)
+					require.NoError(t, err)
 
 					if statCount == 0 && failedRecordCount == 0 {
 						return
@@ -793,24 +924,25 @@ var _ = Describe("Using sources handler", func() {
 			}
 		})
 
-		It("should be able to add failed concurrently", func() {
+		t.Run("should be able to add failed concurrently", func(t *testing.T) {
+			f := newSingleTenantFixture(t)
 			jobRunId := newJobRunId()
-			tx0, err := resource.db.Begin()
-			Expect(err).ShouldNot(HaveOccurred(), "it should be able to begin the transaction")
+			tx0, err := f.resource.db.Begin()
+			require.NoError(t, err, "it should be able to begin the transaction")
 			// Create a record in the rsources_failed_keys_v2 table without committing the transaction
 			_, err = tx0.Exec("INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id) VALUES ($1, $2, $3, $4, $5)",
 				ksuid.New().String(), jobRunId, defaultJobTargetKey.TaskRunID, defaultJobTargetKey.SourceID, defaultJobTargetKey.DestinationID)
-			Expect(err).ShouldNot(HaveOccurred(), "it should be able to insert a record in the rsources_failed_keys_v2 table")
+			require.NoError(t, err, "it should be able to insert a record in the rsources_failed_keys_v2 table")
 			// Start 2 goroutines both trying to add failed records for the same job target key
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+			ctx, cancel := context.WithTimeout(t.Context(), 1*time.Minute)
 			defer cancel()
 			g, ctx := errgroup.WithContext(ctx)
 			g.Go(func() error {
-				tx1, err := resource.db.BeginTx(ctx, nil)
+				tx1, err := f.resource.db.BeginTx(ctx, nil)
 				if err != nil {
 					return fmt.Errorf("beginning tx1: %w", err)
 				}
-				if err := sh.AddFailedRecords(ctx, tx1, jobRunId, defaultJobTargetKey, []FailedRecord{
+				if err := f.sh.AddFailedRecords(ctx, tx1, jobRunId, defaultJobTargetKey, []FailedRecord{
 					{Record: []byte(`"record-1"`)},
 					{Record: []byte(`"record-2"`)},
 				}); err != nil {
@@ -822,11 +954,11 @@ var _ = Describe("Using sources handler", func() {
 				return nil
 			})
 			g.Go(func() error {
-				tx2, err := resource.db.Begin()
+				tx2, err := f.resource.db.Begin()
 				if err != nil {
 					return fmt.Errorf("beginning tx2: %w", err)
 				}
-				if err := sh.AddFailedRecords(ctx, tx2, jobRunId, defaultJobTargetKey, []FailedRecord{
+				if err := f.sh.AddFailedRecords(ctx, tx2, jobRunId, defaultJobTargetKey, []FailedRecord{
 					{Record: []byte(`"record-2"`)},
 					{Record: []byte(`"record-3"`)},
 				}); err != nil {
@@ -842,16 +974,16 @@ var _ = Describe("Using sources handler", func() {
 			time.Sleep(1 * time.Second)
 
 			// rollback tx0 so that the goroutines can continue
-			Expect(tx0.Rollback()).ShouldNot(HaveOccurred(), "it should be able to rollback tx0")
-			Expect(g.Wait()).ShouldNot(HaveOccurred(), "it should be able to add failed records concurrently")
+			require.NoError(t, tx0.Rollback(), "it should be able to rollback tx0")
+			require.NoError(t, g.Wait(), "it should be able to add failed records concurrently")
 
 			jobFilters := JobFilter{
 				SourceID:  []string{"source_id"},
 				TaskRunID: []string{"task_run_id"},
 			}
 
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
-			Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
+			failedRecords, err := f.sh.GetFailedRecords(t.Context(), jobRunId, jobFilters, noPaging)
+			require.NoError(t, err, "it should be able to get failed records")
 			expcetedRecords := JobFailedRecordsV2{
 				ID: jobRunId,
 				Tasks: []TaskFailedRecords[FailedRecord]{{
@@ -869,74 +1001,13 @@ var _ = Describe("Using sources handler", func() {
 					}},
 				}},
 			}
-			Expect(failedRecords).To(Equal(expcetedRecords), "it should be able to get failed records")
+			require.Equal(t, expcetedRecords, failedRecords, "it should be able to get failed records")
 		})
 	})
 
-	Context("multitenant setup with local & shared datasources", Ordered, func() {
-		var (
-			pool               *dockertest.Pool
-			network            *docker.Network
-			pgA, pgB, pgC      postgresResource
-			configA, configB   JobServiceConfig
-			serviceA, serviceB JobService
-		)
-
-		BeforeEach(func() {
-			var err error
-			pool, err = dockertest.NewPool("")
-			Expect(err).NotTo(HaveOccurred())
-			networkId := randomString()
-			network, _ = pool.Client.NetworkInfo(networkId)
-			if network == nil {
-				network, err = pool.Client.CreateNetwork(docker.CreateNetworkOptions{Name: networkId})
-				Expect(err).NotTo(HaveOccurred())
-			}
-			for containerID := range network.Containers { // Remove any containers left from previous runs
-				_ = pool.Client.RemoveContainer(docker.RemoveContainerOptions{ID: containerID, Force: true, RemoveVolumes: true})
-			}
-			postgres1Hostname := randomString() + "-1"
-			postgres2Hostname := randomString() + "-2"
-			postgres3Hostname := randomString() + "-3"
-			pgA = newDBResource(pool, network.ID, postgres1Hostname, "wal_level=logical")
-			pgB = newDBResource(pool, network.ID, postgres2Hostname, "wal_level=logical")
-			pgC = newDBResource(pool, network.ID, postgres3Hostname)
-
-			configA = JobServiceConfig{
-				LocalHostname:          postgres1Hostname,
-				MaxPoolSize:            1,
-				LocalConn:              pgA.externalDSN,
-				SharedConn:             pgC.externalDSN,
-				SubscriptionTargetConn: pgA.internalDSN,
-				Log:                    testlog.GinkgoLogger,
-				ShouldSetupSharedDB:    true,
-			}
-
-			configB = JobServiceConfig{
-				LocalHostname:          postgres2Hostname,
-				MaxPoolSize:            1,
-				LocalConn:              pgB.externalDSN,
-				SharedConn:             pgC.externalDSN,
-				SubscriptionTargetConn: pgB.internalDSN,
-				Log:                    testlog.GinkgoLogger,
-				ShouldSetupSharedDB:    true,
-			}
-
-			// Start 2 JobServices
-			// 1. js1 with local=pgA, remote=pgC
-			// 2. js2 with local=pgB, remote=pgC
-			serviceA = createService(configA)
-			serviceB = createService(configB)
-		})
-
-		AfterEach(func() {
-			purgeResources(pool, pgA.resource, pgB.resource, pgC.resource)
-			if network != nil {
-				_ = pool.Client.RemoveNetwork(network.ID)
-			}
-		})
-
-		It("should be able to query both services for the same jobRunId and receive same stats", func() {
+	t.Run("multitenant setup with local & shared datasources", func(t *testing.T) {
+		t.Run("should be able to query both services for the same jobRunId and receive same stats", func(t *testing.T) {
+			f := newMultiTenantFixture(t)
 			// Status from both services should be same
 			jobRunId := newJobRunId()
 			statsA := Stats{
@@ -944,23 +1015,23 @@ var _ = Describe("Using sources handler", func() {
 				Out:    4,
 				Failed: 0,
 			}
-			increment(pgA.db, jobRunId, defaultJobTargetKey, statsA, serviceA, nil)
+			increment(t, f.pgA.db, jobRunId, defaultJobTargetKey, statsA, f.serviceA)
 
 			statsB := Stats{
 				In:     3,
 				Out:    2,
 				Failed: 1,
 			}
-			increment(pgB.db, jobRunId, defaultJobTargetKey, statsB, serviceB, nil)
-			Eventually(func() bool {
-				totalStatsA, err := serviceA.GetStatus(context.Background(), jobRunId, JobFilter{
+			increment(t, f.pgB.db, jobRunId, defaultJobTargetKey, statsB, f.serviceB)
+			require.Eventually(t, func() bool {
+				totalStatsA, err := f.serviceA.GetStatus(t.Context(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				})
 				if err != nil {
 					return false
 				}
-				totalStatsB, err := serviceB.GetStatus(context.Background(), jobRunId, JobFilter{
+				totalStatsB, err := f.serviceB.GetStatus(t.Context(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				})
@@ -996,16 +1067,17 @@ var _ = Describe("Using sources handler", func() {
 				sameResults := reflect.DeepEqual(totalStatsA, totalStatsB)
 				expectedResults := reflect.DeepEqual(expected, totalStatsB)
 				return sameResults && expectedResults
-			}, "30s", "100ms").Should(BeTrue(), "Status from both services should be same and representing the sum")
+			}, 30*time.Second, 100*time.Millisecond, "Status from both services should be same and representing the sum")
 		})
 
-		It("should be able to query both services for the same jobRunId and receive same failed Records", func() {
+		t.Run("should be able to query both services for the same jobRunId and receive same failed Records", func(t *testing.T) {
+			f := newMultiTenantFixture(t)
 			jobRunId := newJobRunId()
-			addFailedRecords(pgA.db, jobRunId, defaultJobTargetKey, serviceA, []FailedRecord{
+			addFailedRecords(t, f.pgA.db, jobRunId, defaultJobTargetKey, f.serviceA, []FailedRecord{
 				{Record: json.RawMessage(`{"id": "1"}`)},
 				{Record: json.RawMessage(`{"id": "2"}`)},
 			})
-			addFailedRecords(pgB.db, jobRunId, defaultJobTargetKey, serviceB, []FailedRecord{
+			addFailedRecords(t, f.pgB.db, jobRunId, defaultJobTargetKey, f.serviceB, []FailedRecord{
 				{Record: json.RawMessage(`{"id": "2"}`)},
 				{Record: json.RawMessage(`{"id": "3"}`)},
 			})
@@ -1034,8 +1106,8 @@ var _ = Describe("Using sources handler", func() {
 
 			var err error
 			var failedKeysA, failedKeysB JobFailedRecordsV2
-			Eventually(func() bool {
-				failedKeysA, err = serviceA.GetFailedRecords(context.Background(), jobRunId, JobFilter{
+			require.Eventually(t, func() bool {
+				failedKeysA, err = f.serviceA.GetFailedRecords(t.Context(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				}, noPaging)
@@ -1043,7 +1115,7 @@ var _ = Describe("Using sources handler", func() {
 					err = fmt.Errorf("failed to get failed records from serviceA: %w", err)
 					return false
 				}
-				failedKeysB, err = serviceB.GetFailedRecords(context.Background(), jobRunId, JobFilter{
+				failedKeysB, err = f.serviceB.GetFailedRecords(t.Context(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				}, noPaging)
@@ -1067,229 +1139,173 @@ var _ = Describe("Using sources handler", func() {
 					return false
 				}
 				return true
-			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", string(mustMarshal(failedKeysA)), string(mustMarshal(failedKeysB)), string(mustMarshal(expected)), err)
+			}, 30*time.Second, 100*time.Millisecond, "Failed Records from both services should be the same", string(mustMarshal(failedKeysA)), string(mustMarshal(failedKeysB)), string(mustMarshal(expected)), err)
 		})
 
-		It("should be able to create the same services again and not affect publications and subscriptions", func() {
-			createService(configA)
-			createService(configB)
+		t.Run("should be able to create the same services again and not affect publications and subscriptions", func(t *testing.T) {
+			f := newMultiTenantFixture(t)
+			createService(t, f.configA)
+			createService(t, f.configB)
 		})
 
-		It("should recreate a subscription whose replication slot was deleted on the publisher", func() {
-			ctx := context.Background()
+		t.Run("should recreate a subscription whose replication slot was deleted on the publisher", func(t *testing.T) {
+			f := newMultiTenantFixture(t)
+			ctx := t.Context()
 			subscriptionName := truncateIdentifier(
-				replSlotDisallowedChars.ReplaceAllString(strings.ToLower(configA.LocalHostname), "_") + "_rsources_stats_sub",
+				replSlotDisallowedChars.ReplaceAllString(strings.ToLower(f.configA.LocalHostname), "_") + "_rsources_stats_sub",
 			)
 
 			// Sanity: the slot exists on the publisher (pgA) after the initial setup.
-			Expect(replicationSlotExists(ctx, pgA.db, subscriptionName)).To(BeTrue(), "slot should exist after initial setup")
+			require.True(t, replicationSlotExists(t, ctx, f.pgA.db, subscriptionName), "slot should exist after initial setup")
 
 			// Simulate slot loss on the publisher while the subscription survives on the shared db:
 			// disable the subscription so the walsender releases the slot, then drop the slot.
-			_, err := pgC.db.ExecContext(ctx, fmt.Sprintf(`ALTER SUBSCRIPTION %q DISABLE`, subscriptionName))
-			Expect(err).NotTo(HaveOccurred())
-			Eventually(func() error {
-				_, err := pgA.db.ExecContext(ctx, `SELECT pg_drop_replication_slot($1)`, subscriptionName)
-				return err
-			}, "30s", "100ms").Should(Succeed(), "should be able to drop the slot once it becomes inactive")
-			Expect(replicationSlotExists(ctx, pgA.db, subscriptionName)).To(BeFalse())
+			_, err := f.pgC.db.ExecContext(ctx, fmt.Sprintf(`ALTER SUBSCRIPTION %q DISABLE`, subscriptionName))
+			require.NoError(t, err)
+			require.Eventually(t, func() bool {
+				_, err := f.pgA.db.ExecContext(ctx, `SELECT pg_drop_replication_slot($1)`, subscriptionName)
+				return err == nil
+			}, 30*time.Second, 100*time.Millisecond, "should be able to drop the slot once it becomes inactive")
+			require.False(t, replicationSlotExists(t, ctx, f.pgA.db, subscriptionName))
 
 			// Re-running setup must detect the stale subscription, drop it and recreate it with a fresh slot.
-			serviceA = createService(configA)
-			Expect(replicationSlotExists(ctx, pgA.db, subscriptionName)).To(BeTrue(), "slot should be recreated")
+			f.serviceA = createService(t, f.configA)
+			require.True(t, replicationSlotExists(t, ctx, f.pgA.db, subscriptionName), "slot should be recreated")
 
 			// Replication should resume end-to-end: a stat written to the local db must reach the shared db.
 			jobRunId := newJobRunId()
-			increment(pgA.db, jobRunId, defaultJobTargetKey, Stats{In: 5, Out: 4, Failed: 1}, serviceA, nil)
-			Eventually(func() bool {
-				status, err := serviceA.GetStatus(ctx, jobRunId, JobFilter{
+			increment(t, f.pgA.db, jobRunId, defaultJobTargetKey, Stats{In: 5, Out: 4, Failed: 1}, f.serviceA)
+			require.Eventually(t, func() bool {
+				status, err := f.serviceA.GetStatus(ctx, jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				})
 				return err == nil && len(status.TasksStatus) == 1
-			}, "30s", "100ms").Should(BeTrue(), "replication should resume after slot recreation")
+			}, 30*time.Second, 100*time.Millisecond, "replication should resume after slot recreation")
 		})
 
-		It("should cleanup orphaned rows in the shared db older than the shared retention", func() {
-			ctx := context.Background()
+		t.Run("should cleanup orphaned rows in the shared db older than the shared retention", func(t *testing.T) {
+			f := newMultiTenantFixture(t)
+			ctx := t.Context()
 			jobRunId := newJobRunId()
 			oldTs := time.Now().Add(-time.Duration(defaultRetentionPeriodInHours+defaultSharedRetentionBufferPeriodInHours+1) * time.Hour)
 
-			insertOrphanRows(ctx, pgC.db, jobRunId, oldTs)
+			insertOrphanRows(t, ctx, f.pgC.db, jobRunId, oldTs)
 
-			Expect(serviceA.(*sourcesHandler).doCleanupSharedTables(ctx)).To(Succeed())
+			require.NoError(t, f.serviceA.(*sourcesHandler).doCleanupSharedTables(ctx))
 
-			Expect(countSharedRows(ctx, pgC.db, jobRunId)).To(Equal(sharedRowCounts{}))
+			require.Equal(t, sharedRowCounts{}, countSharedRows(t, ctx, f.pgC.db, jobRunId))
 		})
 
-		It("should not cleanup shared db rows that are within the shared retention buffer", func() {
-			ctx := context.Background()
+		t.Run("should not cleanup shared db rows that are within the shared retention buffer", func(t *testing.T) {
+			f := newMultiTenantFixture(t)
+			ctx := t.Context()
 			jobRunId := newJobRunId()
 			// older than local retention but within the shared retention buffer
 			midTs := time.Now().Add(-time.Duration(defaultRetentionPeriodInHours+1) * time.Hour)
 
-			insertOrphanRows(ctx, pgC.db, jobRunId, midTs)
+			insertOrphanRows(t, ctx, f.pgC.db, jobRunId, midTs)
 
-			Expect(serviceA.(*sourcesHandler).doCleanupSharedTables(ctx)).To(Succeed())
+			require.NoError(t, f.serviceA.(*sourcesHandler).doCleanupSharedTables(ctx))
 
-			Expect(countSharedRows(ctx, pgC.db, jobRunId)).To(Equal(sharedRowCounts{stats: 1, keys: 1, records: 1}))
+			require.Equal(t, sharedRowCounts{stats: 1, keys: 1, records: 1}, countSharedRows(t, ctx, f.pgC.db, jobRunId))
 		})
 
-		It("should skip shared cleanup when another node holds the advisory lock", func() {
-			ctx := context.Background()
+		t.Run("should skip shared cleanup when another node holds the advisory lock", func(t *testing.T) {
+			f := newMultiTenantFixture(t)
+			ctx := t.Context()
 			jobRunId := newJobRunId()
 			oldTs := time.Now().Add(-time.Duration(defaultRetentionPeriodInHours+defaultSharedRetentionBufferPeriodInHours+1) * time.Hour)
 
-			insertOrphanRows(ctx, pgC.db, jobRunId, oldTs)
+			insertOrphanRows(t, ctx, f.pgC.db, jobRunId, oldTs)
 
-			holdConn, err := pgC.db.Conn(ctx)
-			Expect(err).NotTo(HaveOccurred())
+			holdConn, err := f.pgC.db.Conn(ctx)
+			require.NoError(t, err)
 			holdTx, err := holdConn.BeginTx(ctx, nil)
-			Expect(err).NotTo(HaveOccurred())
+			require.NoError(t, err)
 			_, err = holdTx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, sharedCleanupLockID)
-			Expect(err).NotTo(HaveOccurred())
+			require.NoError(t, err)
 
-			Expect(serviceA.(*sourcesHandler).doCleanupSharedTables(ctx)).To(Succeed())
-			Expect(countSharedRows(ctx, pgC.db, jobRunId)).To(Equal(sharedRowCounts{stats: 1, keys: 1, records: 1}), "rows must survive while the lock is held")
+			require.NoError(t, f.serviceA.(*sourcesHandler).doCleanupSharedTables(ctx))
+			require.Equal(t, sharedRowCounts{stats: 1, keys: 1, records: 1}, countSharedRows(t, ctx, f.pgC.db, jobRunId), "rows must survive while the lock is held")
 
-			Expect(holdTx.Rollback()).To(Succeed())
-			Expect(holdConn.Close()).To(Succeed())
+			require.NoError(t, holdTx.Rollback())
+			require.NoError(t, holdConn.Close())
 
-			Expect(serviceA.(*sourcesHandler).doCleanupSharedTables(ctx)).To(Succeed())
-			Expect(countSharedRows(ctx, pgC.db, jobRunId)).To(Equal(sharedRowCounts{}), "rows must be cleaned up after the lock is released")
+			require.NoError(t, f.serviceA.(*sourcesHandler).doCleanupSharedTables(ctx))
+			require.Equal(t, sharedRowCounts{}, countSharedRows(t, ctx, f.pgC.db, jobRunId), "rows must be cleaned up after the lock is released")
 		})
 
-		It("shouldn't be able to create a service when wal_level=logical is not set on the local db", func() {
+		t.Run("shouldn't be able to create a service when wal_level=logical is not set on the local db", func(t *testing.T) {
+			f := newMultiTenantFixture(t)
 			postgres4Hostname := randomString() + "-4"
-			pgD := newDBResource(pool, network.ID, postgres4Hostname)
-			defer purgeResources(pool, pgD.resource)
+			pgD := newDBResource(t, f.pool, f.network.ID, postgres4Hostname)
 			badConfig := JobServiceConfig{
 				LocalHostname:          postgres4Hostname,
 				MaxPoolSize:            1,
 				LocalConn:              pgD.externalDSN,
-				SharedConn:             pgC.externalDSN,
+				SharedConn:             f.pgC.externalDSN,
 				SubscriptionTargetConn: pgD.internalDSN,
-				Log:                    testlog.GinkgoLogger,
+				Log:                    logger.NOP,
 				ShouldSetupSharedDB:    true,
 			}
 			sts, err := memstats.New()
-			Expect(err).NotTo(HaveOccurred())
+			require.NoError(t, err)
 
-			_, err = NewJobService(context.Background(), badConfig, sts)
-			Expect(err).To(HaveOccurred(), "it shouldn't able to create the service")
+			service, err := NewJobService(t.Context(), badConfig, sts)
+			closeJobServiceOnCleanup(t, service)
+			require.Error(t, err, "it shouldn't able to create the service")
 		})
 
-		It("shouldn't be able to create a service when an invalid SubscriptionTargetConn is provided", func() {
+		t.Run("shouldn't be able to create a service when an invalid SubscriptionTargetConn is provided", func(t *testing.T) {
+			f := newMultiTenantFixture(t)
 			postgres4Hostname := randomString() + "-4"
-			pgD := newDBResource(pool, network.ID, postgres4Hostname)
-			defer purgeResources(pool, pgD.resource)
+			pgD := newDBResource(t, f.pool, f.network.ID, postgres4Hostname)
 			badConfig := JobServiceConfig{
 				LocalHostname:          postgres4Hostname,
 				MaxPoolSize:            1,
 				LocalConn:              pgD.externalDSN,
-				SharedConn:             pgC.externalDSN,
+				SharedConn:             f.pgC.externalDSN,
 				SubscriptionTargetConn: pgD.externalDSN,
-				Log:                    testlog.GinkgoLogger,
+				Log:                    logger.NOP,
 				ShouldSetupSharedDB:    true,
 			}
 			sts, err := memstats.New()
-			Expect(err).NotTo(HaveOccurred())
+			require.NoError(t, err)
 
-			_, err = NewJobService(context.Background(), badConfig, sts)
-			Expect(err).To(HaveOccurred(), "it shouldn't able to create the service")
+			service, err := NewJobService(t.Context(), badConfig, sts)
+			closeJobServiceOnCleanup(t, service)
+			require.Error(t, err, "it shouldn't able to create the service")
 		})
 	})
 
-	Context("monitoring lag when shared db is configured", Ordered, func() {
-		var (
-			pool     *dockertest.Pool
-			network  *docker.Network
-			pgA, pgB postgresResource
-			configA  JobServiceConfig
-			serviceA JobService
-		)
-
-		BeforeEach(func() {
-			var err error
-			pool, err = dockertest.NewPool("")
-			Expect(err).NotTo(HaveOccurred())
-			networkId := randomString()
-			network, _ = pool.Client.NetworkInfo(networkId)
-			if network == nil {
-				network, err = pool.Client.CreateNetwork(docker.CreateNetworkOptions{Name: networkId})
-				Expect(err).NotTo(HaveOccurred())
-			}
-			for containerID := range network.Containers { // Remove any containers left from previous runs
-				_ = pool.Client.RemoveContainer(docker.RemoveContainerOptions{ID: containerID, Force: true, RemoveVolumes: true})
-			}
-
-			postgres1Hostname := randomString() + "-1"
-			postgres2Hostname := randomString() + "-2"
-			pgA = newDBResource(pool, network.ID, postgres1Hostname, "wal_level=logical")
-			pgB = newDBResource(pool, network.ID, postgres2Hostname)
-
-			configA = JobServiceConfig{
-				LocalHostname:          postgres1Hostname,
-				MaxPoolSize:            1,
-				LocalConn:              pgA.externalDSN,
-				SharedConn:             pgB.externalDSN,
-				SubscriptionTargetConn: pgA.internalDSN,
-				Log:                    testlog.GinkgoLogger,
-				ShouldSetupSharedDB:    true,
-			}
-			serviceA = createService(configA)
-		})
-
-		AfterEach(func() {
-			purgeResources(pool, pgA.resource, pgB.resource)
-			if network != nil {
-				_ = pool.Client.RemoveNetwork(network.ID)
-			}
-		})
-
-		// startMonitor runs Monitor in the background and returns a stop function that
-		// waits for it to have returned before resetting the config. Monitor re-reads
-		// the global config on every tick, so resetting it while the goroutine is still
-		// alive is a data race.
-		startMonitor := func(lagGauge, replicationSlotGauge Gauger) func() {
-			config.Set("Rsources.stats.monitoringInterval", 10*time.Millisecond)
-			ctx, cancel := context.WithCancel(context.Background())
-			done := make(chan struct{})
-			go func() {
-				defer close(done)
-				serviceA.Monitor(ctx, lagGauge, replicationSlotGauge)
-			}()
-			return func() {
-				cancel()
-				<-done
-				config.Reset()
-			}
-		}
-
-		It("should be able to monitor lag when shared db is configured", func() {
+	t.Run("monitoring lag when shared db is configured", func(t *testing.T) {
+		t.Run("should be able to monitor lag when shared db is configured", func(t *testing.T) {
+			f := newMonitoringFixture(t)
 			lagGauge := new(mockGauge)
 			replicationSlotGauge := new(mockGauge)
-			defer startMonitor(lagGauge, replicationSlotGauge)()
+			defer f.startMonitor(t, lagGauge, replicationSlotGauge)()
 
-			Eventually(func() bool {
+			require.Eventually(t, func() bool {
 				return replicationSlotGauge.value() == int64(1) && lagGauge.wasGauged()
-			}, "30s", "100ms").Should(BeTrue(), "should have one replication slot and some non-nil lag")
+			}, 30*time.Second, 100*time.Millisecond, "should have one replication slot and some non-nil lag")
 		})
 
-		It("unavailability of shared db is handled via -1 replication slot gauge", func() {
+		t.Run("unavailability of shared db is handled via -1 replication slot gauge", func(t *testing.T) {
+			f := newMonitoringFixture(t)
 			// kill shared db
-			pgB.resource.Close()
+			_ = f.pgB.resource.Close()
 
 			lagGauge := new(mockGauge)
 			replicationSlotGauge := new(mockGauge)
-			defer startMonitor(lagGauge, replicationSlotGauge)()
+			defer f.startMonitor(t, lagGauge, replicationSlotGauge)()
 
-			Eventually(func() bool {
+			require.Eventually(t, func() bool {
 				return lagGauge.value() == float64(-1)
-			}, "30s", "100ms").Should(BeTrue(), "should have -1 replication slot")
+			}, 30*time.Second, 100*time.Millisecond, "should have -1 replication slot")
 		})
 	})
-})
+}
 
 func mustMarshal[T any](v T) []byte {
 	b, _ := jsonrs.Marshal(v)
@@ -1326,81 +1342,132 @@ func (g *mockGauge) wasGauged() bool {
 	return g.gauged
 }
 
-func createService(config JobServiceConfig) JobService {
+func createService(t testing.TB, config JobServiceConfig) JobService {
+	t.Helper()
 	sts, err := memstats.New()
-	Expect(err).NotTo(HaveOccurred())
+	require.NoError(t, err)
 
-	service, err := NewJobService(context.Background(), config, sts)
-	Expect(err).ShouldNot(HaveOccurred(), "it should be able to create the service")
+	service, err := NewJobService(t.Context(), config, sts)
+	closeJobServiceOnCleanup(t, service)
+	require.NoError(t, err, "it should be able to create the service")
 	return service
 }
 
-func addFailedRecords(db *sql.DB, jobRunId string, jobTargetKey JobTargetKey, sh JobService, records []FailedRecord) {
+// closeJobServiceOnCleanup closes the connection pools that NewJobService opened, since JobService has no Close method.
+func closeJobServiceOnCleanup(t testing.TB, service JobService) {
+	t.Helper()
+	sh, ok := service.(*sourcesHandler)
+	if !ok || sh == nil {
+		return
+	}
+	t.Cleanup(func() {
+		_ = sh.localDB.Close()
+		if sh.sharedDB != nil {
+			_ = sh.sharedDB.Close()
+		}
+	})
+}
+
+func addFailedRecords(t testing.TB, db *sql.DB, jobRunId string, jobTargetKey JobTargetKey, sh JobService, records []FailedRecord) {
+	t.Helper()
 	tx, err := db.Begin()
-	Expect(err).ShouldNot(HaveOccurred(), "it should be able to begin the transaction")
-	err = sh.AddFailedRecords(context.Background(), tx, jobRunId, jobTargetKey, records)
-	Expect(err).ShouldNot(HaveOccurred(), "it should be able to add failed records")
+	require.NoError(t, err, "it should be able to begin the transaction")
+	err = sh.AddFailedRecords(t.Context(), tx, jobRunId, jobTargetKey, records)
+	require.NoError(t, err, "it should be able to add failed records")
 	err = tx.Commit()
-	Expect(err).ShouldNot(HaveOccurred(), "it should be able to commit the transaction")
+	require.NoError(t, err, "it should be able to commit the transaction")
 }
 
 type sharedRowCounts struct {
 	stats, keys, records int
 }
 
-func insertOrphanRows(ctx context.Context, db *sql.DB, jobRunId string, ts time.Time) {
+func insertOrphanRows(t testing.TB, ctx context.Context, db *sql.DB, jobRunId string, ts time.Time) {
+	t.Helper()
 	_, err := db.ExecContext(ctx, `INSERT INTO rsources_stats
 		(db_name, job_run_id, task_run_id, source_id, destination_id, in_count, out_count, failed_count, ts)
 		VALUES ('ghost', $1, 'task', 'source', 'destination', 1, 1, 0, $2)`,
 		jobRunId, ts)
-	Expect(err).NotTo(HaveOccurred())
+	require.NoError(t, err)
 
 	keyId := ksuid.New().String()
 	_, err = db.ExecContext(ctx, `INSERT INTO rsources_failed_keys_v2
 		(id, db_name, job_run_id, task_run_id, source_id, destination_id, ts)
 		VALUES ($1, 'ghost', $2, 'task', 'source', 'destination', $3)`,
 		keyId, jobRunId, ts)
-	Expect(err).NotTo(HaveOccurred())
+	require.NoError(t, err)
 
 	_, err = db.ExecContext(ctx, `INSERT INTO rsources_failed_keys_v2_records
 		(id, record_id, ts, code) VALUES ($1, 'record', $2, 0)`,
 		keyId, ts)
-	Expect(err).NotTo(HaveOccurred())
+	require.NoError(t, err)
 }
 
-func countSharedRows(ctx context.Context, db *sql.DB, jobRunId string) sharedRowCounts {
+func countSharedRows(t testing.TB, ctx context.Context, db *sql.DB, jobRunId string) sharedRowCounts {
+	t.Helper()
 	var c sharedRowCounts
-	Expect(db.QueryRowContext(ctx, `SELECT count(*) FROM rsources_stats WHERE job_run_id = $1`, jobRunId).Scan(&c.stats)).To(Succeed())
-	Expect(db.QueryRowContext(ctx, `SELECT count(*) FROM rsources_failed_keys_v2 WHERE job_run_id = $1`, jobRunId).Scan(&c.keys)).To(Succeed())
-	Expect(db.QueryRowContext(ctx, `SELECT count(*) FROM rsources_failed_keys_v2_records r
-		JOIN rsources_failed_keys_v2 k ON k.id = r.id WHERE k.job_run_id = $1`, jobRunId).Scan(&c.records)).To(Succeed())
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM rsources_stats WHERE job_run_id = $1`, jobRunId).Scan(&c.stats))
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM rsources_failed_keys_v2 WHERE job_run_id = $1`, jobRunId).Scan(&c.keys))
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM rsources_failed_keys_v2_records r
+		JOIN rsources_failed_keys_v2 k ON k.id = r.id WHERE k.job_run_id = $1`, jobRunId).Scan(&c.records))
 	return c
 }
 
-func replicationSlotExists(ctx context.Context, db *sql.DB, slotName string) bool {
+func replicationSlotExists(t testing.TB, ctx context.Context, db *sql.DB, slotName string) bool {
+	t.Helper()
 	var exists bool
-	Expect(db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = $1)`, slotName).Scan(&exists)).To(Succeed())
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = $1)`, slotName).Scan(&exists))
 	return exists
 }
 
-func increment(db *sql.DB, jobRunId string, key JobTargetKey, stat Stats, sh JobService, wg *sync.WaitGroup) {
+func increment(t testing.TB, db *sql.DB, jobRunId string, key JobTargetKey, stat Stats, sh JobService) {
+	t.Helper()
+	require.NoError(t, incrementStats(t.Context(), db, jobRunId, key, stat, sh))
+}
+
+// incrementStats increments the stats of key in a transaction of its own. It reports
+// failures as errors so that it can run outside the test goroutine.
+func incrementStats(ctx context.Context, db *sql.DB, jobRunId string, key JobTargetKey, stat Stats, sh JobService) error {
 	tx, err := db.Begin()
-	Expect(err).ShouldNot(HaveOccurred(), "it should be able to begin the transaction")
-	err = sh.IncrementStats(context.Background(), tx, jobRunId, key, stat)
-	Expect(err).ShouldNot(HaveOccurred(), "it should be able to increment stats")
-	err = tx.Commit()
-	Expect(err).ShouldNot(HaveOccurred(), "it should be able to commit the transaction")
-	if wg != nil {
-		wg.Done()
+	if err != nil {
+		return fmt.Errorf("beginning the transaction: %w", err)
 	}
+	if err := sh.IncrementStats(ctx, tx, jobRunId, key, stat); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("incrementing stats: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing the transaction: %w", err)
+	}
+	return nil
 }
 
 func newJobRunId() string {
 	return strings.ReplaceAll(uuid.New().String(), "-", "")
 }
 
-func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...string) postgresResource {
+// newDockerNetwork creates a docker network that is removed once the test and all
+// containers started after it have been cleaned up.
+func newDockerNetwork(t testing.TB, pool *dockertest.Pool) *docker.Network {
+	t.Helper()
+	networkId := randomString()
+	network, _ := pool.Client.NetworkInfo(networkId)
+	if network == nil {
+		var err error
+		network, err = pool.Client.CreateNetwork(docker.CreateNetworkOptions{Name: networkId})
+		require.NoError(t, err)
+	}
+	for containerID := range network.Containers { // Remove any containers left from previous runs
+		_ = pool.Client.RemoveContainer(docker.RemoveContainerOptions{ID: containerID, Force: true, RemoveVolumes: true})
+	}
+	t.Cleanup(func() { _ = pool.Client.RemoveNetwork(network.ID) })
+	return network
+}
+
+// newDBResource starts a postgres container that is purged when the test ends.
+func newDBResource(t testing.TB, pool *dockertest.Pool, networkId, hostname string, params ...string) postgresResource {
+	t.Helper()
 	cmd := []string{"postgres"}
 	if len(params) > 0 {
 		cmd = append(cmd, "-c")
@@ -1433,9 +1500,8 @@ func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...
 	}, func(hc *docker.HostConfig) {
 		hc.PublishAllPorts = false
 	})
-	if err != nil {
-		Expect(err).NotTo(HaveOccurred())
-	}
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = pool.Purge(resource) })
 
 	port := resource.GetPort("5432/tcp")
 	externalDSN := fmt.Sprintf("postgres://%[1]s:%[2]s@127.0.0.1:%[3]s/%[4]s?sslmode=disable", username, password, port, database)
@@ -1445,28 +1511,24 @@ func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...
 		dsn = fmt.Sprintf("host=localhost port=%[1]s user=%[2]s password=%[3]s dbname=%[4]s sslmode=disable options='-c idle_in_transaction_session_timeout=300000' ", port, username, password, database)
 	)
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() (err error) {
+	err = pool.Retry(func() (err error) {
 		db, err = sql.Open("postgres", dsn)
 		if err != nil {
 			return err
 		}
-		return db.Ping()
-	}); err != nil {
-		Expect(err).NotTo(HaveOccurred(), dsn)
-	}
+		if err := db.Ping(); err != nil {
+			_ = db.Close()
+			return err
+		}
+		return nil
+	})
+	require.NoError(t, err, dsn)
+	t.Cleanup(func() { _ = db.Close() })
 	return postgresResource{
 		db:          db,
 		resource:    resource,
 		internalDSN: internalDSN,
 		externalDSN: externalDSN,
-	}
-}
-
-func purgeResources(pool *dockertest.Pool, resources ...*dockertest.Resource) {
-	for _, resource := range resources {
-		if resource != nil {
-			_ = pool.Purge(resource)
-		}
 	}
 }
 

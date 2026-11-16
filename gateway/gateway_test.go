@@ -16,9 +16,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -40,6 +39,7 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/gateway/throttler"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
@@ -51,10 +51,8 @@ import (
 	mocksrcdebugger "github.com/rudderlabs/rudder-server/services/debugger/source/mocks"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transformer"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
 const (
@@ -151,8 +149,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	},
 }
 
-type testContext struct {
-	asyncHelper testutils.AsyncTestHelper
+type gatewayFixture struct {
+	conf *config.Config
 
 	mockCtrl           *gomock.Controller
 	mockJobsDB         *mocksJobsDB.MockJobsDB
@@ -167,28 +165,20 @@ type testContext struct {
 	mockSuppressUserFeature *mocksApp.MockSuppressUserFeature
 }
 
-func (c *testContext) initializeAppFeatures() {
-	c.mockApp.EXPECT().Features().Return(&app.Features{}).AnyTimes()
-}
-
-func (c *testContext) initializeEnterpriseAppFeatures() {
-	enterpriseFeatures := &app.Features{
-		SuppressUser: c.mockSuppressUserFeature,
-	}
-	c.mockApp.EXPECT().Features().Return(enterpriseFeatures).AnyTimes()
-}
-
-// Initialise mocks and common expectations
-func (c *testContext) Setup() {
-	c.asyncHelper.Setup()
-	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
-	c.mockRateLimiter = mockGateway.NewMockThrottler(c.mockCtrl)
-	c.mockWebhook = mockGateway.NewMockWebhookRequestHandler(c.mockCtrl)
-	c.mockWebhook.EXPECT().Shutdown().AnyTimes()
-	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
+// newGatewayFixture initialises mocks and common expectations.
+func newGatewayFixture(t *testing.T) *gatewayFixture {
+	t.Helper()
+	f := &gatewayFixture{}
+	f.conf = config.New()
+	f.conf.Set("Gateway.enableRateLimit", false)
+	f.mockCtrl = gomock.NewController(t)
+	f.mockJobsDB = mocksJobsDB.NewMockJobsDB(f.mockCtrl)
+	f.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(f.mockCtrl)
+	f.mockApp = mocksApp.NewMockApp(f.mockCtrl)
+	f.mockRateLimiter = mockGateway.NewMockThrottler(f.mockCtrl)
+	f.mockWebhook = mockGateway.NewMockWebhookRequestHandler(f.mockCtrl)
+	f.mockWebhook.EXPECT().Shutdown().AnyTimes()
+	f.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 			ch := make(chan pubsub.DataEvent, 1)
 			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{WorkspaceID: sampleBackendConfig}, Topic: string(topic)}
@@ -199,12 +189,52 @@ func (c *testContext) Setup() {
 			}()
 			return ch
 		}).AnyTimes()
-	c.mockVersionHandler = func(w http.ResponseWriter, r *http.Request) {}
+	f.mockVersionHandler = func(w http.ResponseWriter, r *http.Request) {}
+	return f
 }
 
-func (c *testContext) Finish() {
-	c.asyncHelper.WaitWithTimeout(testTimeout)
-	c.mockCtrl.Finish()
+func (f *gatewayFixture) initializeAppFeatures() {
+	f.mockApp.EXPECT().Features().Return(&app.Features{}).AnyTimes()
+}
+
+// withSuppressUser enables the suppress user feature, suppressing SuppressedUserID for SourceIDEnabled.
+func (f *gatewayFixture) withSuppressUser() {
+	f.mockSuppressUser = mocksTypes.NewMockUserSuppression(f.mockCtrl)
+	f.mockSuppressUserFeature = mocksApp.NewMockSuppressUserFeature(f.mockCtrl)
+	f.mockApp.EXPECT().Features().Return(&app.Features{SuppressUser: f.mockSuppressUserFeature}).AnyTimes()
+
+	f.mockSuppressUserFeature.EXPECT().Setup(gomock.Any(), gomock.Any()).AnyTimes().Return(f.mockSuppressUser, nil)
+	f.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, NormalUserID, SourceIDEnabled).Return(nil).AnyTimes()
+	f.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, SuppressedUserID, SourceIDEnabled).Return(&model.Metadata{
+		CreatedAt: time.Now(),
+	}).AnyTimes()
+
+	f.conf.Set("Gateway.enableSuppressUserFeature", true)
+}
+
+// waitOnCleanup waits during teardown for ch to be closed by a mocked call made from a gateway goroutine.
+func waitOnCleanup(t *testing.T, ch <-chan struct{}, what string) {
+	t.Helper()
+	t.Cleanup(func() {
+		select {
+		case <-ch:
+		case <-time.After(testTimeout):
+			t.Fatalf("timed out waiting for %s", what)
+		}
+	})
+}
+
+// setupGateway sets up a gateway using the fixture's mocks and shuts it down on cleanup.
+func (f *gatewayFixture) setupGateway(t *testing.T, stat stats.Stats, rateLimiter throttler.Throttler, srcDebugger sourcedebugger.SourceDebugger, opts ...OptFunc) *Handle {
+	t.Helper()
+	gw := &Handle{}
+	err := gw.Setup(t.Context(), f.conf, logger.NOP, stat, f.mockApp, f.mockBackendConfig, f.mockJobsDB, rateLimiter, f.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil, opts...)
+	require.NoError(t, err)
+	waitForBackendConfigInit(t, gw)
+	t.Cleanup(func() {
+		require.NoError(t, gw.Shutdown())
+	})
+	return gw
 }
 
 func initGW() {
@@ -214,10 +244,20 @@ func initGW() {
 	misc.Init()
 }
 
-var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
-	_ = DescribeTable("newDSIdx tests",
-		func(inputKey, value string) {
-			testValidBody := `{"batch":[
+func TestReconstructingJSONForServerSideSDK(t *testing.T) {
+	t.Run("newDSIdx tests", func(t *testing.T) {
+		testCases := []struct {
+			name     string
+			inputKey string
+			value    string
+		}{
+			{name: "Expected JSON for Key 1 Test 1 : ", inputKey: ":anon_id_1", value: `{"batch":[{"anonymousId":"anon_id_1","event":"event_1_1"},{"anonymousId":"anon_id_1","event":"event_1_2"},{"anonymousId":"anon_id_1","event":"event_1_3"}]}`},
+			{name: "Expected JSON for Key 2 Test 1 : ", inputKey: ":anon_id_2", value: `{"batch":[{"anonymousId":"anon_id_2","event":"event_2_1"},{"anonymousId":"anon_id_2","event":"event_2_2"}]}`},
+			{name: "Expected JSON for Key 3 Test 1 : ", inputKey: ":anon_id_3", value: `{"batch":[{"anonymousId":"anon_id_3","event":"event_3_1"}]}`},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				testValidBody := `{"batch":[
 		                {"anonymousId":"anon_id_1","event":"event_1_1"},
 		                {"anonymousId":"anon_id_2","event":"event_2_1"},
 		                {"anonymousId":"anon_id_3","event":"event_3_1"},
@@ -225,76 +265,44 @@ var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
 		                {"anonymousId":"anon_id_2","event":"event_2_2"},
 		                {"anonymousId":"anon_id_1","event":"event_1_3"}
 		            ]}`
-			response, payloadError := getUsersPayload([]byte(testValidBody))
-			key, err := kituuid.GetMD5UUID(inputKey)
-			Expect(string(response[key.String()])).To(Equal(value))
-			Expect(err).To(BeNil())
-			Expect(payloadError).To(BeNil())
-		},
-		Entry("Expected JSON for Key 1 Test 1 : ", ":anon_id_1", `{"batch":[{"anonymousId":"anon_id_1","event":"event_1_1"},{"anonymousId":"anon_id_1","event":"event_1_2"},{"anonymousId":"anon_id_1","event":"event_1_3"}]}`),
-		Entry("Expected JSON for Key 2 Test 1 : ", ":anon_id_2", `{"batch":[{"anonymousId":"anon_id_2","event":"event_2_1"},{"anonymousId":"anon_id_2","event":"event_2_2"}]}`),
-		Entry("Expected JSON for Key 3 Test 1 : ", ":anon_id_3", `{"batch":[{"anonymousId":"anon_id_3","event":"event_3_1"}]}`),
-	)
-})
+				response, payloadError := getUsersPayload([]byte(testValidBody))
+				key, err := kituuid.GetMD5UUID(tc.inputKey)
+				require.Equal(t, tc.value, string(response[key.String()]))
+				require.NoError(t, err)
+				require.NoError(t, payloadError)
+			})
+		}
+	})
+}
 
-var _ = Describe("Gateway Enterprise", func() {
+func TestGatewayEnterprise(t *testing.T) {
 	initGW()
 
-	var (
-		c          *testContext
-		gateway    *Handle
-		statsStore *memstats.Store
-		conf       *config.Config
-	)
-
-	BeforeEach(func() {
-		c = &testContext{}
-		c.Setup()
-
-		c.mockSuppressUser = mocksTypes.NewMockUserSuppression(c.mockCtrl)
-		c.mockSuppressUserFeature = mocksApp.NewMockSuppressUserFeature(c.mockCtrl)
-		c.initializeEnterpriseAppFeatures()
-
-		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any(), gomock.Any()).AnyTimes().Return(c.mockSuppressUser, nil)
-		c.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, NormalUserID, SourceIDEnabled).Return(nil).AnyTimes()
-		c.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, SuppressedUserID, SourceIDEnabled).Return(&model.Metadata{
-			CreatedAt: time.Now(),
-		}).AnyTimes()
-
-		conf = config.New()
-		conf.Set("Gateway.enableRateLimit", false)
-		conf.Set("Gateway.enableSuppressUserFeature", true)
-	})
-
-	AfterEach(func() {
-		c.Finish()
-	})
-
-	Context("Suppress users", func() {
-		BeforeEach(func() {
+	t.Run("Suppress users", func(t *testing.T) {
+		type suppressUsersFixture struct {
+			*gatewayFixture
+			gateway    *Handle
+			statsStore *memstats.Store
+		}
+		newSuppressUsersFixture := func(t *testing.T) *suppressUsersFixture {
+			t.Helper()
+			f := &suppressUsersFixture{gatewayFixture: newGatewayFixture(t)}
+			f.withSuppressUser()
 			var err error
-			statsStore, err = memstats.New()
-			Expect(err).To(BeNil())
+			f.statsStore, err = memstats.New()
+			require.NoError(t, err)
+			f.gateway = f.setupGateway(t, f.statsStore, nil, sourcedebugger.NewNoOpService())
+			return f
+		}
 
-			gateway = &Handle{}
-			err = gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
-			Expect(err).To(BeNil())
-
-			waitForBackendConfigInit(gateway)
-		})
-
-		AfterEach(func() {
-			err := gateway.Shutdown()
-			Expect(err).To(BeNil())
-		})
-
-		It("should not accept events from suppress users", func() {
+		t.Run("should not accept events from suppress users", func(t *testing.T) {
+			f := newSuppressUsersFixture(t)
 			suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, SuppressedUserID)
 			// Why GET
-			expectHandlerResponse(gateway.webBatchHandler(), authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), http.StatusOK, "ok", "batch")
-			Eventually(
+			expectHandlerResponse(t, f.gateway.webBatchHandler(), authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), http.StatusOK, "ok", "batch")
+			require.Eventually(t,
 				func() bool {
-					stat := statsStore.Get(
+					stat := f.statsStore.Get(
 						"gateway.write_key_suppressed_requests",
 						map[string]string{
 							"source":        rCtxEnabled.SourceTag(),
@@ -309,12 +317,12 @@ var _ = Describe("Gateway Enterprise", func() {
 					)
 					return stat != nil && stat.LastValue() == float64(1)
 				},
-				1*time.Second,
-			).Should(BeTrue())
+				1*time.Second, 10*time.Millisecond,
+			)
 			// stat should be present for user suppression
-			Eventually(
+			require.Eventually(t,
 				func() bool {
-					stat := statsStore.Get(
+					stat := f.statsStore.Get(
 						"gateway.user_suppression_age",
 						map[string]string{
 							"sourceID":    rCtxEnabled.SourceID,
@@ -323,33 +331,38 @@ var _ = Describe("Gateway Enterprise", func() {
 					)
 					return stat != nil
 				},
-				1*time.Second,
-			).Should(BeTrue())
+				1*time.Second, 10*time.Millisecond,
+			)
 		})
 
-		It("should accept events from normal users", func() {
+		t.Run("should accept events from normal users", func(t *testing.T) {
+			f := newSuppressUsersFixture(t)
 			allowedUserEventData := fmt.Sprintf(
 				`{"batch":[{"userId":%[1]q,%[2]s}]}`,
 				NormalUserID,
 				sdkContext,
 			)
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(
+			f.mockJobsDB.EXPECT().WithStoreSafeTx(
 				gomock.Any(),
 				gomock.Any(),
-			).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
-				_ = f(jobsdb.EmptyStoreSafeTx())
+			).Times(1).Do(func(ctx context.Context, fn func(jobsdb.StoreSafeTx) error) {
+				_ = fn(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			mockCall := c.mockJobsDB.EXPECT().StoreInTx(
+			stored := make(chan struct{})
+			f.mockJobsDB.EXPECT().StoreInTx(
 				gomock.Any(),
 				gomock.Any(),
 				gomock.Any(),
-			).Return(nil).Times(1)
-			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job")
-			mockCall.Do(func(context.Context, any, any) { tFunc() })
+			).DoAndReturn(func(context.Context, jobsdb.StoreSafeTx, []*jobsdb.JobT) error {
+				close(stored)
+				return nil
+			}).Times(1)
+			waitOnCleanup(t, stored, "jobsdb store")
 
 			// Why GET
 			expectHandlerResponse(
-				gateway.webBatchHandler(),
+				t,
+				f.gateway.webBatchHandler(),
 				authorizedRequest(
 					WriteKeyEnabled,
 					bytes.NewBufferString(allowedUserEventData),
@@ -358,9 +371,9 @@ var _ = Describe("Gateway Enterprise", func() {
 				"ok",
 				"batch",
 			)
-			Eventually(
+			require.Eventually(t,
 				func() bool {
-					stat := statsStore.Get(
+					stat := f.statsStore.Get(
 						"gateway.write_key_successful_requests",
 						map[string]string{
 							"source":        rCtxEnabled.SourceTag(),
@@ -375,125 +388,111 @@ var _ = Describe("Gateway Enterprise", func() {
 					)
 					return stat != nil && stat.LastValue() == float64(1)
 				},
-				1*time.Second,
-			).Should(BeTrue())
+				1*time.Second, 10*time.Millisecond,
+			)
 			// stat should not be present for normal user
-			stat := statsStore.Get(
+			stat := f.statsStore.Get(
 				"gateway.user_suppression_age",
 				map[string]string{
 					"sourceID":    rCtxEnabled.SourceID,
 					"workspaceId": rCtxEnabled.WorkspaceID,
 				},
 			)
-			Expect(stat).To(BeNil())
+			require.Nil(t, stat)
 		})
 
-		// Context("Gateway.storeUserSuppressedEvents") pins the (user-decided) final contract: the
+		// t.Run("Gateway.storeUserSuppressedEvents") pins the (user-decided) final contract: the
 		// public path never stored dummy jobs for suppressed events and, after the flag was added
 		// and then walked back, it still doesn't — regardless of the flag's value. The dummy-job
 		// behaviour now lives exclusively on the internal batch path
 		// (extractJobsFromInternalBatchPayload, covered in handle_test.go).
-		Context("Gateway.storeUserSuppressedEvents", func() {
-			It("flag off: a fully suppressed request still returns via errRequestSuppressed and stores nothing", func() {
-				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(0)
-				c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+		t.Run("Gateway.storeUserSuppressedEvents", func(t *testing.T) {
+			t.Run("flag off: a fully suppressed request still returns via errRequestSuppressed and stores nothing", func(t *testing.T) {
+				f := newSuppressUsersFixture(t)
+				f.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(0)
+				f.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 
 				suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, SuppressedUserID)
 				expectHandlerResponse(
-					gateway.webBatchHandler(),
+					t,
+					f.gateway.webBatchHandler(),
 					authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)),
 					http.StatusOK, "ok", "batch",
 				)
 			})
 
-			It("flag on: the public path still drops via errRequestSuppressed and stores nothing", func() {
+			t.Run("flag on: the public path still drops via errRequestSuppressed and stores nothing", func(t *testing.T) {
+				f := newSuppressUsersFixture(t)
 				// Guards against the flag ever leaking back into the public path: even with it
 				// explicitly enabled, a fully suppressed request must behave exactly as if the
 				// flag didn't exist here.
-				conf.Set("Gateway.storeUserSuppressedEvents", true)
+				f.conf.Set("Gateway.storeUserSuppressedEvents", true)
 
-				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(0)
-				c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+				f.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(0)
+				f.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 
 				suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, SuppressedUserID)
 				expectHandlerResponse(
-					gateway.webBatchHandler(),
+					t,
+					f.gateway.webBatchHandler(),
 					authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)),
 					http.StatusOK, "ok", "batch",
 				)
 			})
 		})
 	})
-})
+}
 
-var _ = Describe("Gateway", func() {
+func TestGateway(t *testing.T) {
 	initGW()
 
-	var (
-		conf *config.Config
-		c    *testContext
-	)
-
-	BeforeEach(func() {
-		conf = config.New()
-		conf.Set("Gateway.enableRateLimit", false)
-		c = &testContext{}
-		c.Setup()
-	})
-
-	AfterEach(func() {
-		c.Finish()
-	})
-
-	Context("Initialization", func() {
-		It("should wait for backend config", func() {
-			c.initializeAppFeatures()
+	t.Run("Initialization", func(t *testing.T) {
+		t.Run("should wait for backend config", func(t *testing.T) {
+			f := newGatewayFixture(t)
+			f.initializeAppFeatures()
 			gateway := &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
-			Expect(err).To(BeNil())
-			waitForBackendConfigInit(gateway)
+			err := gateway.Setup(t.Context(), f.conf, logger.NOP, stats.NOP, f.mockApp, f.mockBackendConfig, f.mockJobsDB, nil, f.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
+			require.NoError(t, err)
+			waitForBackendConfigInit(t, gateway)
 			err = gateway.Shutdown()
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 		})
 	})
 
-	Context("Test All endpoints", func() {
-		var (
+	t.Run("Test All endpoints", func(t *testing.T) {
+		type allEndpointsFixture struct {
+			*gatewayFixture
 			gateway   *Handle
-			whServer  *httptest.Server
 			serverURL string
-		)
-
-		BeforeEach(func() {
-			c.initializeAppFeatures()
-			whServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		}
+		newAllEndpointsFixture := func(t *testing.T) *allEndpointsFixture {
+			t.Helper()
+			f := &allEndpointsFixture{gatewayFixture: newGatewayFixture(t)}
+			f.initializeAppFeatures()
+			whServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = io.WriteString(w, "ok")
 			}))
+			t.Cleanup(whServer.Close)
 			WHURL := whServer.URL
 			parsedURL, err := url.Parse(WHURL)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			whPort := parsedURL.Port()
-			GinkgoT().Setenv("RSERVER_WAREHOUSE_WEB_PORT", whPort)
+			t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", whPort)
 
 			serverPort, err := kithelper.GetFreePort()
-			Expect(err).To(BeNil())
-			serverURL = fmt.Sprintf("http://localhost:%d", serverPort)
-			GinkgoT().Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
+			require.NoError(t, err)
+			f.serverURL = fmt.Sprintf("http://localhost:%d", serverPort)
+			t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
 
-			gateway = &Handle{}
-			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
-			Expect(err).To(BeNil())
-			waitForBackendConfigInit(gateway)
-			gateway.irh = mockRequestHandler{}
-			gateway.rrh = mockRequestHandler{}
-			gateway.webhook = c.mockWebhook
-		})
-		AfterEach(func() {
-			err := gateway.Shutdown()
-			Expect(err).To(BeNil())
-			whServer.Close()
-		})
+			f.gateway = f.setupGateway(t, stats.NOP, nil, sourcedebugger.NewNoOpService(), WithInternalEndpointsEnabled(true))
+			f.gateway.irh = mockRequestHandler{}
+			f.gateway.rrh = mockRequestHandler{}
+			// gw.Shutdown only stops the webhook it holds, so the one created by Setup is stopped before it gets replaced.
+			require.NoError(t, f.gateway.webhook.Shutdown())
+			f.gateway.webhook = f.mockWebhook
+			return f
+		}
 
 		createValidBody := func(customProperty, customValue string) []byte {
 			validData := fmt.Sprintf(
@@ -504,7 +503,8 @@ var _ = Describe("Gateway", func() {
 
 			return validDataWithProperty
 		}
-		verifyEndpoint := func(endpoints []string, method string) {
+		verifyEndpoint := func(t *testing.T, serverURL string, endpoints []string, method string) {
+			t.Helper()
 			client := &http.Client{}
 			for _, ep := range endpoints {
 				url := fmt.Sprintf("%s%s", serverURL, ep)
@@ -519,7 +519,7 @@ var _ = Describe("Gateway", func() {
 				} else {
 					req, err = http.NewRequest(method, url, bytes.NewBuffer(createValidBody("custom-property", "custom-value")))
 				}
-				Expect(err).To(BeNil())
+				require.NoError(t, err)
 				req.Header.Set("Content-Type", "application/json")
 				switch ep {
 				case "/internal/v1/replay", "/internal/v1/retl":
@@ -528,67 +528,63 @@ var _ = Describe("Gateway", func() {
 					req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(WriteKeyEnabled+":")))
 				}
 				resp, err := client.Do(req)
-				Expect(err).To(BeNil())
-				Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusOK), Equal(http.StatusNoContent)), "endpoint: "+ep, "method: "+method)
+				require.NoError(t, err)
+				_ = resp.Body.Close()
+				require.Contains(t, []int{http.StatusOK, http.StatusNoContent}, resp.StatusCode, "endpoint: %s, method: %s", ep, method)
 
 			}
 		}
-		It("should be able to hit all the handlers", func() {
-			c.mockWebhook.EXPECT().RequestHandler(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(w http.ResponseWriter, r *http.Request) {
+		t.Run("should be able to hit all the handlers", func(t *testing.T) {
+			f := newAllEndpointsFixture(t)
+			f.mockWebhook.EXPECT().RequestHandler(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = io.WriteString(w, "ok")
 			})
-			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
-			var err error
-			wait := make(chan struct{})
-			ctx, cancel := context.WithCancel(context.Background())
+			f.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
+			wait := make(chan error, 1)
+			ctx, cancel := context.WithCancel(t.Context())
 			go func() {
-				err = gateway.StartWebHandler(ctx)
-				Expect(err).To(BeNil())
-				close(wait)
+				wait <- f.gateway.StartWebHandler(ctx)
 			}()
-			Eventually(func() bool {
-				resp, err := http.Get(fmt.Sprintf("%s/version", serverURL))
+			require.Eventually(t, func() bool {
+				resp, err := http.Get(fmt.Sprintf("%s/version", f.serverURL))
 				if err != nil {
 					return false
 				}
+				defer func() { _ = resp.Body.Close() }()
 				return resp.StatusCode == http.StatusOK
-			}, time.Second*10, time.Second).Should(BeTrue())
+			}, time.Second*10, time.Second)
 
 			getEndpoint, postEndpoints, deleteEndpoints := endpointsToVerify()
-			verifyEndpoint(getEndpoint, http.MethodGet)
-			verifyEndpoint(postEndpoints, http.MethodPost)
-			verifyEndpoint(deleteEndpoints, http.MethodDelete)
+			verifyEndpoint(t, f.serverURL, getEndpoint, http.MethodGet)
+			verifyEndpoint(t, f.serverURL, postEndpoints, http.MethodPost)
+			verifyEndpoint(t, f.serverURL, deleteEndpoints, http.MethodDelete)
 			cancel()
-			<-wait
+			require.NoError(t, <-wait)
 		})
 	})
 
-	Context("Valid requests", func() {
-		var (
-			err        error
+	t.Run("Valid requests", func(t *testing.T) {
+		type validRequestsFixture struct {
+			*gatewayFixture
 			gateway    *Handle
 			statsStore *memstats.Store
-		)
+		}
+		newValidRequestsFixture := func(t *testing.T) *validRequestsFixture {
+			t.Helper()
+			f := &validRequestsFixture{gatewayFixture: newGatewayFixture(t)}
+			f.initializeAppFeatures()
+			var err error
+			f.statsStore, err = memstats.New()
+			require.NoError(t, err)
 
-		BeforeEach(func() {
-			c.initializeAppFeatures()
-			statsStore, err = memstats.New()
-			Expect(err).To(BeNil())
+			f.gateway = f.setupGateway(t, f.statsStore, nil, sourcedebugger.NewNoOpService(), WithInternalEndpointsEnabled(true))
+			return f
+		}
 
-			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
-			Expect(err).To(BeNil())
-			waitForBackendConfigInit(gateway)
-		})
-
-		AfterEach(func() {
-			err := gateway.Shutdown()
-			Expect(err).To(BeNil())
-		})
-
-		assertJobMetadata := func(job *jobsdb.JobT) {
-			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
+		// assertJobMetadata runs inside jobsdb mock calls, on a gateway goroutine
+		assertJobMetadata := func(t *testing.T, job *jobsdb.JobT) {
+			assert.True(t, misc.IsValidUUID(job.UUID.String()))
 
 			var paramsMap, expectedParamsMap map[string]any
 			_ = jsonrs.Unmarshal(job.Parameters, &paramsMap)
@@ -598,9 +594,9 @@ var _ = Describe("Gateway", func() {
 			)
 			_ = jsonrs.Unmarshal(expectedStr, &expectedParamsMap)
 			equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
-			Expect(equals).To(BeTrue())
+			assert.True(t, equals)
 
-			Expect(job.CustomVal).To(Equal(customVal))
+			assert.Equal(t, customVal, job.CustomVal)
 
 			responseData := []byte(job.EventPayload)
 			receivedAt := gjson.GetBytes(responseData, "receivedAt")
@@ -608,10 +604,12 @@ var _ = Describe("Gateway", func() {
 			requestIP := gjson.GetBytes(responseData, "requestIP")
 			batch := gjson.GetBytes(responseData, "batch")
 
-			Expect(time.Parse(misc.RFC3339Milli, receivedAt.String())).To(BeTemporally("~", time.Now(), 100*time.Millisecond))
-			Expect(writeKey.String()).To(Equal(WriteKeyEnabled))
-			Expect(requestIP.String()).To(Equal(TestRemoteAddress))
-			Expect(batch.Array()).To(HaveLen(1)) // each batch split into multiple batches of 1 event
+			receivedAtTime, err := time.Parse(misc.RFC3339Milli, receivedAt.String())
+			assert.NoError(t, err)
+			assert.WithinDuration(t, time.Now(), receivedAtTime, 100*time.Millisecond)
+			assert.Equal(t, WriteKeyEnabled, writeKey.String())
+			assert.Equal(t, TestRemoteAddress, requestIP.String())
+			assert.Len(t, batch.Array(), 1) // each batch split into multiple batches of 1 event
 		}
 
 		createValidBody := func(customProperty, customValue string) []byte {
@@ -624,14 +622,15 @@ var _ = Describe("Gateway", func() {
 			return validDataWithProperty
 		}
 
-		assertJobBatchItem := func(payload gjson.Result) {
+		// assertJobBatchItem runs inside jobsdb mock calls, on a gateway goroutine
+		assertJobBatchItem := func(t *testing.T, payload gjson.Result) {
 			messageID := payload.Get("messageId")
 			messageType := payload.Get("type")
 
 			// Assertions regarding batch message
-			Expect(messageID.Exists()).To(BeTrue())
-			Expect(messageID.String()).To(testutils.BeValidUUID())
-			Expect(messageType.Exists()).To(BeTrue())
+			assert.True(t, messageID.Exists())
+			assert.True(t, misc.IsValidUUID(messageID.String()))
+			assert.True(t, messageType.Exists())
 		}
 
 		stripJobPayload := func(payload gjson.Result) string {
@@ -645,21 +644,22 @@ var _ = Describe("Gateway", func() {
 		}
 
 		// common tests for all web handlers
-		It("should accept valid requests on a single endpoint (except batch), and store to jobsdb", func() {
-			for handlerType, handler := range allHandlers(gateway) {
+		t.Run("should accept valid requests on a single endpoint (except batch), and store to jobsdb", func(t *testing.T) {
+			f := newValidRequestsFixture(t)
+			for handlerType, handler := range allHandlers(f.gateway) {
 				if handlerType != "batch" && handlerType != "import" {
 
 					validBody := createValidBody("custom-property", "custom-value")
 
-					c.mockJobsDB.EXPECT().WithStoreSafeTx(
+					f.mockJobsDB.EXPECT().WithStoreSafeTx(
 						gomock.Any(),
 						gomock.Any()).Times(1).Do(func(
 						ctx context.Context,
-						f func(jobsdb.StoreSafeTx) error,
+						fn func(jobsdb.StoreSafeTx) error,
 					) {
-						_ = f(jobsdb.EmptyStoreSafeTx())
+						_ = fn(jobsdb.EmptyStoreSafeTx())
 					}).Return(nil)
-					c.mockJobsDB.
+					f.mockJobsDB.
 						EXPECT().StoreInTx(
 						gomock.Any(),
 						gomock.Any(),
@@ -672,24 +672,24 @@ var _ = Describe("Gateway", func() {
 								jobs []*jobsdb.JobT,
 							) error {
 								for _, job := range jobs {
-									assertJobMetadata(job)
+									assertJobMetadata(t, job)
 
 									responseData := []byte(job.EventPayload)
 									payload := gjson.GetBytes(responseData, "batch.0")
 
-									assertJobBatchItem(payload)
+									assertJobBatchItem(t, payload)
 
 									messageType := payload.Get("type")
-									Expect(messageType.String()).To(Equal(handlerType))
-									Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
+									assert.Equal(t, handlerType, messageType.String())
+									assert.JSONEq(t, string(validBody), stripJobPayload(payload))
 								}
-								c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
 
 								return nil
 							}).
 						Times(1)
 
 					expectHandlerResponse(
+						t,
 						handler,
 						authorizedRequest(
 							WriteKeyEnabled,
@@ -698,9 +698,9 @@ var _ = Describe("Gateway", func() {
 						"ok",
 						handlerType,
 					)
-					Eventually(
+					require.Eventually(t,
 						func() bool {
-							stat := statsStore.Get(
+							stat := f.statsStore.Get(
 								"gateway.write_key_successful_requests",
 								map[string]string{
 									"source":        rCtxEnabled.SourceTag(),
@@ -715,43 +715,37 @@ var _ = Describe("Gateway", func() {
 							)
 							return stat != nil && stat.LastValue() == float64(1)
 						},
-						1*time.Second,
-					).Should(BeTrue())
+						1*time.Second, 10*time.Millisecond,
+					)
 				}
 			}
 		})
 
-		It("should accept valid replay request and store to jobsdb", func() {
-			handler := gateway.webReplayHandler()
+		t.Run("should accept valid replay request and store to jobsdb", func(t *testing.T) {
+			f := newValidRequestsFixture(t)
+			handler := f.gateway.webReplayHandler()
 
 			validBody := fmt.Appendf(nil, `{"batch":[%s]}`, string(createValidBody("custom-property", "custom-value")))
 
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(
+			f.mockJobsDB.EXPECT().WithStoreSafeTx(
 				gomock.Any(),
 				gomock.Any()).Times(1).Do(func(
 				ctx context.Context,
-				f func(jobsdb.StoreSafeTx) error,
+				fn func(jobsdb.StoreSafeTx) error,
 			) {
-				_ = f(jobsdb.EmptyStoreSafeTx())
+				_ = fn(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			c.mockJobsDB.
+			f.mockJobsDB.
 				EXPECT().StoreInTx(
 				gomock.Any(),
 				gomock.Any(),
 				gomock.Any(),
 			).
-				DoAndReturn(
-					func(
-						ctx context.Context,
-						tx jobsdb.StoreSafeTx,
-						jobs []*jobsdb.JobT,
-					) error {
-						c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
-						return nil
-					}).
+				Return(nil).
 				Times(1)
 
 			expectHandlerResponse(
+				t,
 				handler,
 				authorizedReplayRequest(
 					ReplaySourceID,
@@ -761,9 +755,9 @@ var _ = Describe("Gateway", func() {
 				"replay",
 			)
 
-			Eventually(
+			require.Eventually(t,
 				func() bool {
-					stat := statsStore.Get(
+					stat := f.statsStore.Get(
 						"gateway.write_key_successful_requests",
 						map[string]string{
 							"source":        "_source",
@@ -778,26 +772,27 @@ var _ = Describe("Gateway", func() {
 					)
 					return stat != nil && stat.LastValue() == float64(1)
 				},
-				1*time.Second,
-			).Should(BeTrue())
+				1*time.Second, 10*time.Millisecond,
+			)
 		})
 
-		It("should accept valid (with and without userId and anonymousId) retl request and store to jobsdb", func() {
-			handler := gateway.webRetlHandler()
+		t.Run("should accept valid (with and without userId and anonymousId) retl request and store to jobsdb", func(t *testing.T) {
+			f := newValidRequestsFixture(t)
+			handler := f.gateway.webRetlHandler()
 
 			payloads := [2][]byte{
 				[]byte(`{"batch": [{"data": "valid-json", "type": "record", "userId": "dummyId"}]}`),
 				[]byte(`{"batch": [{"data": "valid-json", "type": "record"}]}`),
 			}
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(
+			f.mockJobsDB.EXPECT().WithStoreSafeTx(
 				gomock.Any(),
 				gomock.Any()).AnyTimes().Do(func(
 				ctx context.Context,
-				f func(jobsdb.StoreSafeTx) error,
+				fn func(jobsdb.StoreSafeTx) error,
 			) {
-				_ = f(jobsdb.EmptyStoreSafeTx())
+				_ = fn(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			c.mockJobsDB.
+			f.mockJobsDB.
 				EXPECT().StoreInTx(
 				gomock.Any(),
 				gomock.Any(),
@@ -806,6 +801,7 @@ var _ = Describe("Gateway", func() {
 
 			// With userId
 			expectHandlerResponse(
+				t,
 				handler,
 				authorizedRETLRequest(
 					RETLSourceID,
@@ -815,9 +811,9 @@ var _ = Describe("Gateway", func() {
 				"retl",
 			)
 
-			Eventually(
+			require.Eventually(t,
 				func() bool {
-					stat := statsStore.Get(
+					stat := f.statsStore.Get(
 						"gateway.write_key_successful_events",
 						map[string]string{
 							"source":        "_source",
@@ -832,11 +828,12 @@ var _ = Describe("Gateway", func() {
 					)
 					return stat != nil && stat.LastValue() == float64(1)
 				},
-				1*time.Second,
-			).Should(BeTrue())
+				1*time.Second, 10*time.Millisecond,
+			)
 
 			// Without userId
 			expectHandlerResponse(
+				t,
 				handler,
 				authorizedRETLRequest(
 					RETLSourceID,
@@ -846,9 +843,9 @@ var _ = Describe("Gateway", func() {
 				"retl",
 			)
 
-			Eventually(
+			require.Eventually(t,
 				func() bool {
-					stat := statsStore.Get(
+					stat := f.statsStore.Get(
 						"gateway.write_key_successful_events",
 						map[string]string{
 							"source":        "_source",
@@ -863,20 +860,21 @@ var _ = Describe("Gateway", func() {
 					)
 					return stat != nil && stat.LastValue() == float64(2)
 				},
-				1*time.Second,
-			).Should(BeTrue())
+				1*time.Second, 10*time.Millisecond,
+			)
 		})
 
-		It("should accept requests with both userId and anonymousId absent in case of extract events", func() {
+		t.Run("should accept requests with both userId and anonymousId absent in case of extract events", func(t *testing.T) {
+			f := newValidRequestsFixture(t)
 			extractHandlers := map[string]http.HandlerFunc{
-				"batch":   gateway.webBatchHandler(),
-				"import":  gateway.webImportHandler(),
-				"extract": gateway.webExtractHandler(),
+				"batch":   f.gateway.webBatchHandler(),
+				"import":  f.gateway.webImportHandler(),
+				"extract": f.gateway.webExtractHandler(),
 			}
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
-				_ = f(jobsdb.EmptyStoreSafeTx())
+			f.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, fn func(jobsdb.StoreSafeTx) error) {
+				_ = fn(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
+			f.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
 
 			for handlerType, handler := range extractHandlers {
 				var body string
@@ -887,6 +885,7 @@ var _ = Describe("Gateway", func() {
 					body = `{"batch": [{"data": "valid-json", "type": "extract"}]}`
 				}
 				expectHandlerResponse(
+					t,
 					handler,
 					authorizedRequest(
 						WriteKeyEnabled,
@@ -900,40 +899,22 @@ var _ = Describe("Gateway", func() {
 		})
 	})
 
-	Context("Bots", func() {
-		var (
-			err        error
-			gateway    *Handle
-			statsStore *memstats.Store
-		)
+	t.Run("Bots", func(t *testing.T) {
+		t.Run("should send bots information", func(t *testing.T) {
+			f := newGatewayFixture(t)
+			f.initializeAppFeatures()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			gateway := f.setupGateway(t, statsStore, f.mockRateLimiter, sourcedebugger.NewNoOpService())
 
-		BeforeEach(func() {
-			c.initializeAppFeatures()
-			statsStore, err = memstats.New()
-			Expect(err).To(BeNil())
-
-			gateway = &Handle{}
-
-			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
-			Expect(err).To(BeNil())
-			waitForBackendConfigInit(gateway)
-		})
-
-		AfterEach(func() {
-			Expect(gateway.Shutdown()).To(BeNil())
-		})
-
-		It("should send bots information", func() {
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
-				_ = f(jobsdb.EmptyStoreSafeTx())
+			f.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, fn func(jobsdb.StoreSafeTx) error) {
+				_ = fn(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 
-			mockCall := c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
-			mockCall.Do(func(context.Context, any, any) {
-				c.asyncHelper.ExpectAndNotifyCallbackWithName("")()
-			})
+			f.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
 
 			expectHandlerResponse(
+				t,
 				gateway.webBatchHandler(),
 				authorizedRequest(
 					WriteKeyEnabled,
@@ -983,20 +964,20 @@ var _ = Describe("Gateway", func() {
 				"sdkVersion":    sdkStatTag,
 				"sourceDefName": rCtxEnabled.SourceDefName,
 			}
-			GinkgoWriter.Println("tags: %v", tags)
+			t.Logf("tags: %v", tags)
 
-			Eventually(
+			require.Eventually(t,
 				func() bool {
 					stat := statsStore.Get(
 						"gateway.write_key_events",
 						tags,
 					)
-					GinkgoWriter.Println("stat: %v", stat)
 					return stat != nil && stat.LastValue() == float64(2)
 				},
-			).Should(BeTrue())
+				time.Second, 10*time.Millisecond,
+			)
 
-			Eventually(
+			require.Eventually(t,
 				func() bool {
 					stat := statsStore.Get(
 						"gateway.write_key_bot_events",
@@ -1004,45 +985,46 @@ var _ = Describe("Gateway", func() {
 					)
 					return stat != nil && stat.LastValue() == float64(1)
 				},
-			).Should(BeTrue())
+				time.Second, 10*time.Millisecond,
+			)
 		})
 	})
 
-	Context("Rate limits", func() {
-		var (
-			err        error
+	t.Run("Rate limits", func(t *testing.T) {
+		type rateLimitsFixture struct {
+			*gatewayFixture
 			gateway    *Handle
 			statsStore *memstats.Store
-		)
+		}
+		newRateLimitsFixture := func(t *testing.T) *rateLimitsFixture {
+			t.Helper()
+			f := &rateLimitsFixture{gatewayFixture: newGatewayFixture(t)}
+			f.initializeAppFeatures()
+			var err error
+			f.statsStore, err = memstats.New()
+			require.NoError(t, err)
 
-		BeforeEach(func() {
-			c.initializeAppFeatures()
-			statsStore, err = memstats.New()
-			Expect(err).To(BeNil())
+			f.conf.Set("Gateway.enableRateLimit", true)
+			f.gateway = f.setupGateway(t, f.statsStore, f.mockRateLimiter, sourcedebugger.NewNoOpService())
+			return f
+		}
 
-			gateway = &Handle{}
-			conf.Set("Gateway.enableRateLimit", true)
-			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
-			Expect(err).To(BeNil())
-			waitForBackendConfigInit(gateway)
-		})
-
-		AfterEach(func() {
-			err := gateway.Shutdown()
-			Expect(err).To(BeNil())
-		})
-
-		It("should store messages successfully if rate limit is not reached for workspace", func() {
-			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any(), gomock.Any()).Return(false, nil).Times(1)
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
-				_ = f(jobsdb.EmptyStoreSafeTx())
+		t.Run("should store messages successfully if rate limit is not reached for workspace", func(t *testing.T) {
+			f := newRateLimitsFixture(t)
+			f.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any(), gomock.Any()).Return(false, nil).Times(1)
+			f.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, fn func(jobsdb.StoreSafeTx) error) {
+				_ = fn(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			mockCall := c.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
-			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("")
-			mockCall.Do(func(context.Context, any, any) { tFunc() })
+			stored := make(chan struct{})
+			f.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(context.Context, jobsdb.StoreSafeTx, []*jobsdb.JobT) error {
+				close(stored)
+				return nil
+			}).Times(1)
+			waitOnCleanup(t, stored, "jobsdb store")
 
 			expectHandlerResponse(
-				gateway.webAliasHandler(),
+				t,
+				f.gateway.webAliasHandler(),
 				authorizedRequest(
 					WriteKeyEnabled,
 					bytes.NewBufferString(
@@ -1053,9 +1035,9 @@ var _ = Describe("Gateway", func() {
 				"ok",
 				"alias",
 			)
-			Eventually(
+			require.Eventually(t,
 				func() bool {
-					stat := statsStore.Get(
+					stat := f.statsStore.Get(
 						"gateway.write_key_successful_requests",
 						map[string]string{
 							"source":        rCtxEnabled.SourceTag(),
@@ -1070,22 +1052,25 @@ var _ = Describe("Gateway", func() {
 					)
 					return stat != nil && stat.LastValue() == float64(1)
 				},
-			).Should(BeTrue())
+				time.Second, 10*time.Millisecond,
+			)
 		})
 
-		It("should reject messages if rate limit is reached for workspace", func() {
-			conf.Set("Gateway.allowReqsWithoutUserIDAndAnonymousID", true)
-			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
+		t.Run("should reject messages if rate limit is reached for workspace", func(t *testing.T) {
+			f := newRateLimitsFixture(t)
+			f.conf.Set("Gateway.allowReqsWithoutUserIDAndAnonymousID", true)
+			f.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
 			expectHandlerResponse(
-				gateway.webAliasHandler(),
+				t,
+				f.gateway.webAliasHandler(),
 				authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(`{"data": "valid-json"}`)),
 				http.StatusTooManyRequests,
 				response.TooManyRequests+"\n",
 				"alias",
 			)
-			Eventually(
+			require.Eventually(t,
 				func() bool {
-					stat := statsStore.Get(
+					stat := f.statsStore.Get(
 						"gateway.write_key_dropped_requests",
 						map[string]string{
 							"source":      rCtxEnabled.SourceTag(),
@@ -1103,33 +1088,28 @@ var _ = Describe("Gateway", func() {
 					)
 					return stat != nil && stat.LastValue() == float64(1)
 				},
-				1*time.Second,
-			).Should(BeTrue())
+				1*time.Second, 10*time.Millisecond,
+			)
 		})
 	})
 
-	Context("Invalid requests", func() {
-		var (
-			err        error
+	t.Run("Invalid requests", func(t *testing.T) {
+		type invalidRequestsFixture struct {
+			*gatewayFixture
 			gateway    *Handle
 			statsStore *memstats.Store
-		)
+		}
+		newInvalidRequestsFixture := func(t *testing.T) *invalidRequestsFixture {
+			t.Helper()
+			f := &invalidRequestsFixture{gatewayFixture: newGatewayFixture(t)}
+			f.initializeAppFeatures()
+			var err error
+			f.statsStore, err = memstats.New()
+			require.NoError(t, err)
 
-		BeforeEach(func() {
-			c.initializeAppFeatures()
-			statsStore, err = memstats.New()
-			Expect(err).To(BeNil())
-
-			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
-			Expect(err).To(BeNil())
-			waitForBackendConfigInit(gateway)
-		})
-
-		AfterEach(func() {
-			err := gateway.Shutdown()
-			Expect(err).To(BeNil())
-		})
+			f.gateway = f.setupGateway(t, f.statsStore, nil, sourcedebugger.NewNoOpService())
+			return f
+		}
 
 		createJSONBody := func(customProperty, customValue string) []byte {
 			validData := fmt.Sprintf(
@@ -1142,18 +1122,20 @@ var _ = Describe("Gateway", func() {
 		}
 
 		// common tests for all web handlers
-		It("should reject requests without Authorization header", func() {
-			for reqType, handler := range allHandlers(gateway) {
+		t.Run("should reject requests without Authorization header", func(t *testing.T) {
+			f := newInvalidRequestsFixture(t)
+			for reqType, handler := range allHandlers(f.gateway) {
 				expectHandlerResponse(
+					t,
 					handler,
 					unauthorizedRequest(nil),
 					http.StatusUnauthorized,
 					response.NoWriteKeyInBasicAuth+"\n",
 					reqType,
 				)
-				Eventually(
+				require.Eventually(t,
 					func() bool {
-						stat := statsStore.Get(
+						stat := f.statsStore.Get(
 							"gateway.write_key_failed_requests",
 							map[string]string{
 								"source":        "noWriteKey",
@@ -1169,23 +1151,26 @@ var _ = Describe("Gateway", func() {
 						)
 						return stat != nil && stat.LastValue() == float64(1)
 					},
-				).Should(BeTrue())
+					time.Second, 10*time.Millisecond,
+				)
 			}
-			gateway.stats = stats.Default
+			f.gateway.stats = stats.Default
 		})
 
-		It("should reject requests without username in Authorization header", func() {
-			for reqType, handler := range allHandlers(gateway) {
+		t.Run("should reject requests without username in Authorization header", func(t *testing.T) {
+			f := newInvalidRequestsFixture(t)
+			for reqType, handler := range allHandlers(f.gateway) {
 				expectHandlerResponse(
+					t,
 					handler,
 					authorizedRequest(WriteKeyEmpty, nil),
 					http.StatusUnauthorized,
 					response.NoWriteKeyInBasicAuth+"\n",
 					reqType,
 				)
-				Eventually(
+				require.Eventually(t,
 					func() bool {
-						stat := statsStore.Get(
+						stat := f.statsStore.Get(
 							"gateway.write_key_failed_requests",
 							map[string]string{
 								"source":        "noWriteKey",
@@ -1201,15 +1186,17 @@ var _ = Describe("Gateway", func() {
 						)
 						return stat != nil && stat.LastValue() == float64(1)
 					},
-				).Should(BeTrue())
+					time.Second, 10*time.Millisecond,
+				)
 			}
 		})
 
-		It("should reject requests without valid rudder event in request body", func() {
-			conf.Set("Gateway.allowReqsWithoutUserIDAndAnonymousID", true)
-			Eventually(func() bool { return gateway.conf.allowReqsWithoutUserIDAndAnonymousID.Load() }).Should(BeTrue())
+		t.Run("should reject requests without valid rudder event in request body", func(t *testing.T) {
+			f := newInvalidRequestsFixture(t)
+			f.conf.Set("Gateway.allowReqsWithoutUserIDAndAnonymousID", true)
+			require.Eventually(t, func() bool { return f.gateway.conf.allowReqsWithoutUserIDAndAnonymousID.Load() }, time.Second, 10*time.Millisecond)
 			batchCount := 0
-			for handlerType, handler := range allHandlers(gateway) {
+			for handlerType, handler := range allHandlers(f.gateway) {
 				reqType := handlerType
 				notRudderEvent := `[{"data": "valid-json","foo":"bar"}]`
 				if handlerType == "batch" || handlerType == "import" {
@@ -1218,6 +1205,7 @@ var _ = Describe("Gateway", func() {
 					batchCount++
 				}
 				expectHandlerResponse(
+					t,
 					handler,
 					authorizedRequest(
 						WriteKeyEnabled,
@@ -1227,9 +1215,9 @@ var _ = Describe("Gateway", func() {
 					response.NotRudderEvent+"\n",
 					handlerType,
 				)
-				Eventually(
+				require.Eventually(t,
 					func() bool {
-						stat := statsStore.Get(
+						stat := f.statsStore.Get(
 							"gateway.write_key_failed_requests",
 							map[string]string{
 								"source":        rCtxEnabled.SourceTag(),
@@ -1251,13 +1239,15 @@ var _ = Describe("Gateway", func() {
 
 						return stat != nil && stat.LastValue() == float64(count)
 					},
-				).Should(BeTrue())
+					time.Second, 10*time.Millisecond,
+				)
 			}
 		})
 
-		It("should reject requests with both userId and anonymousId not present", func() {
+		t.Run("should reject requests with both userId and anonymousId not present", func(t *testing.T) {
+			f := newInvalidRequestsFixture(t)
 			batchCount := 0
-			for handlerType, handler := range allHandlers(gateway) {
+			for handlerType, handler := range allHandlers(f.gateway) {
 				reqType := handlerType
 				validBody := `{"data": "valid-json"}`
 				if handlerType == "batch" || handlerType == "import" {
@@ -1267,6 +1257,7 @@ var _ = Describe("Gateway", func() {
 				}
 				if handlerType != "extract" {
 					expectHandlerResponse(
+						t,
 						handler,
 						authorizedRequest(
 							WriteKeyEnabled,
@@ -1276,9 +1267,9 @@ var _ = Describe("Gateway", func() {
 						response.NonIdentifiableRequest+"\n",
 						handlerType,
 					)
-					Eventually(
+					require.Eventually(t,
 						func() bool {
-							stat := statsStore.Get(
+							stat := f.statsStore.Get(
 								"gateway.write_key_failed_requests",
 								map[string]string{
 									"source":        rCtxEnabled.SourceTag(),
@@ -1299,27 +1290,31 @@ var _ = Describe("Gateway", func() {
 							}
 							return stat != nil && stat.LastValue() == float64(count)
 						},
-					).Should(BeTrue())
+						time.Second, 10*time.Millisecond,
+					)
 				}
 			}
 		})
 
-		It("should reject requests without request body", func() {
-			for handlerType, handler := range allHandlers(gateway) {
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, nil), http.StatusBadRequest, response.RequestBodyNil+"\n", handlerType)
+		t.Run("should reject requests without request body", func(t *testing.T) {
+			f := newInvalidRequestsFixture(t)
+			for handlerType, handler := range allHandlers(f.gateway) {
+				expectHandlerResponse(t, handler, authorizedRequest(WriteKeyEnabled, nil), http.StatusBadRequest, response.RequestBodyNil+"\n", handlerType)
 			}
 		})
 
-		It("should reject requests without valid json in request body", func() {
-			for handlerType, handler := range allHandlers(gateway) {
+		t.Run("should reject requests without valid json in request body", func(t *testing.T) {
+			f := newInvalidRequestsFixture(t)
+			for handlerType, handler := range allHandlers(f.gateway) {
 				invalidBody := "not-a-valid-json"
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(invalidBody)), http.StatusBadRequest, response.InvalidJSON+"\n", handlerType)
+				expectHandlerResponse(t, handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(invalidBody)), http.StatusBadRequest, response.InvalidJSON+"\n", handlerType)
 			}
 		})
 
-		It("should reject requests with request bodies larger than configured limit", func() {
-			for handlerType, handler := range allHandlers(gateway) {
-				data := make([]byte, gateway.conf.maxReqSize.Load())
+		t.Run("should reject requests with request bodies larger than configured limit", func(t *testing.T) {
+			f := newInvalidRequestsFixture(t)
+			for handlerType, handler := range allHandlers(f.gateway) {
+				data := make([]byte, f.gateway.conf.maxReqSize.Load())
 				for i := range data {
 					data[i] = 'a'
 				}
@@ -1331,45 +1326,49 @@ var _ = Describe("Gateway", func() {
 					body = fmt.Sprintf(`{"batch":[%s]}`, body)
 				}
 				if handlerType != "audiencelist" {
-					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(body)), http.StatusRequestEntityTooLarge, response.RequestBodyTooLarge+"\n", handlerType)
+					expectHandlerResponse(t, handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(body)), http.StatusRequestEntityTooLarge, response.RequestBodyTooLarge+"\n", handlerType)
 				}
 			}
 		})
 
-		It("should reject requests with invalid write keys", func() {
-			for handlerType, handler := range allHandlers(gateway) {
+		t.Run("should reject requests with invalid write keys", func(t *testing.T) {
+			f := newInvalidRequestsFixture(t)
+			for handlerType, handler := range allHandlers(f.gateway) {
 				validBody := `{"data":"valid-json"}`
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch":[{"data":"valid-json"}]}`
 				}
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), http.StatusUnauthorized, response.InvalidWriteKey+"\n", handlerType)
+				expectHandlerResponse(t, handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), http.StatusUnauthorized, response.InvalidWriteKey+"\n", handlerType)
 			}
 		})
 
-		It("should reject requests with disabled write keys (source)", func() {
-			for handlerType, handler := range allHandlers(gateway) {
+		t.Run("should reject requests with disabled write keys (source)", func(t *testing.T) {
+			f := newInvalidRequestsFixture(t)
+			for handlerType, handler := range allHandlers(f.gateway) {
 				validBody := `{"data":"valid-json"}`
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch":[{"data":"valid-json"}]}`
 				}
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), http.StatusNotFound, response.SourceDisabled+"\n", handlerType)
+				expectHandlerResponse(t, handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), http.StatusNotFound, response.SourceDisabled+"\n", handlerType)
 			}
 		})
 
-		It("should reject requests with 500 if jobsdb store returns an error", func() {
-			for handlerType, handler := range allHandlers(gateway) {
+		t.Run("should reject requests with 500 if jobsdb store returns an error", func(t *testing.T) {
+			f := newInvalidRequestsFixture(t)
+			for handlerType, handler := range allHandlers(f.gateway) {
 				if handlerType != "batch" && handlerType != "import" {
 					validBody := createJSONBody("custom-property", "custom-value")
 
-					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) error {
-						return f(jobsdb.EmptyStoreSafeTx())
+					f.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(func(ctx context.Context, fn func(jobsdb.StoreSafeTx) error) error {
+						return fn(jobsdb.EmptyStoreSafeTx())
 					})
-					c.mockJobsDB.
+					f.mockJobsDB.
 						EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 						Return(errors.New("tx error")).
 						Times(1)
 
 					expectHandlerResponse(
+						t,
 						handler,
 						authorizedRequest(
 							WriteKeyEnabled,
@@ -1379,9 +1378,9 @@ var _ = Describe("Gateway", func() {
 						"tx error"+"\n",
 						handlerType,
 					)
-					Eventually(
+					require.Eventually(t,
 						func() bool {
-							stat := statsStore.Get(
+							stat := f.statsStore.Get(
 								"gateway.write_key_failed_requests",
 								map[string]string{
 									"source":        rCtxEnabled.SourceTag(),
@@ -1397,14 +1396,17 @@ var _ = Describe("Gateway", func() {
 							)
 							return stat != nil && stat.LastValue() == float64(1)
 						},
-					).Should(BeTrue())
+						time.Second, 10*time.Millisecond,
+					)
 				}
 			}
 		})
 
-		It("should return empty batch payload error", func() {
+		t.Run("should return empty batch payload error", func(t *testing.T) {
+			f := newInvalidRequestsFixture(t)
 			expectHandlerResponse(
-				gateway.webBatchHandler(),
+				t,
+				f.gateway.webBatchHandler(),
 				authorizedRequest(
 					WriteKeyEnabled,
 					bytes.NewBufferString(`{"batch":[]}`),
@@ -1416,50 +1418,38 @@ var _ = Describe("Gateway", func() {
 		})
 	})
 
-	Context("Robots", func() {
-		var gateway *Handle
+	t.Run("Robots", func(t *testing.T) {
+		t.Run("should return a robots.txt", func(t *testing.T) {
+			f := newGatewayFixture(t)
+			f.initializeAppFeatures()
+			gateway := f.setupGateway(t, stats.NOP, nil, sourcedebugger.NewNoOpService())
 
-		BeforeEach(func() {
-			c.initializeAppFeatures()
-			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
-			Expect(err).To(BeNil())
-			waitForBackendConfigInit(gateway)
-		})
-
-		AfterEach(func() {
-			err := gateway.Shutdown()
-			Expect(err).To(BeNil())
-		})
-
-		It("should return a robots.txt", func() {
 			req := httptest.NewRequest("GET", "/robots.txt", nil)
-			expectHandlerResponse(gateway.robotsHandler, req, http.StatusOK, "User-agent: * \nDisallow: / \n", "robots")
+			expectHandlerResponse(t, gateway.robotsHandler, req, http.StatusOK, "User-agent: * \nDisallow: / \n", "robots")
 		})
 	})
 
-	Context("jobDataFromRequest", func() {
+	t.Run("jobDataFromRequest", func(t *testing.T) {
 		var (
-			gateway *Handle
-			arctx   = &gwtypes.AuthRequestContext{
+			arctx = &gwtypes.AuthRequestContext{
 				WriteKey: "someWriteKey",
 			}
 			userIDHeader = "userIDHeader"
 		)
-		BeforeEach(func() {
-			c.initializeAppFeatures()
-			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
-			Expect(err).To(BeNil())
-			waitForBackendConfigInit(gateway)
-		})
+		type jobDataFromRequestFixture struct {
+			*gatewayFixture
+			gateway *Handle
+		}
+		newJobDataFromRequestFixture := func(t *testing.T) *jobDataFromRequestFixture {
+			t.Helper()
+			f := &jobDataFromRequestFixture{gatewayFixture: newGatewayFixture(t)}
+			f.initializeAppFeatures()
+			f.gateway = f.setupGateway(t, stats.NOP, nil, sourcedebugger.NewNoOpService())
+			return f
+		}
 
-		AfterEach(func() {
-			err := gateway.Shutdown()
-			Expect(err).To(BeNil())
-		})
-
-		It("returns invalid JSON in case of invalid JSON payload", func() {
+		t.Run("returns invalid JSON in case of invalid JSON payload", func(t *testing.T) {
+			f := newJobDataFromRequestFixture(t)
 			req := &webRequestT{
 				reqType:        "batch",
 				authContext:    arctx,
@@ -1467,12 +1457,13 @@ var _ = Describe("Gateway", func() {
 				userIDHeader:   userIDHeader,
 				requestPayload: []byte(``),
 			}
-			jobData, err := gateway.getJobDataFromRequest(req)
-			Expect(errors.New(response.InvalidJSON)).To(Equal(err))
-			Expect(jobData.jobs).To(BeNil())
+			jobData, err := f.gateway.getJobDataFromRequest(req)
+			require.Equal(t, errors.New(response.InvalidJSON), err)
+			require.Nil(t, jobData.jobs)
 		})
 
-		It("drops non-identifiable requests if userID and anonID are not present in the request payload", func() {
+		t.Run("drops non-identifiable requests if userID and anonID are not present in the request payload", func(t *testing.T) {
+			f := newJobDataFromRequestFixture(t)
 			req := &webRequestT{
 				reqType:        "batch",
 				authContext:    rCtxEnabled,
@@ -1480,12 +1471,13 @@ var _ = Describe("Gateway", func() {
 				userIDHeader:   userIDHeader,
 				requestPayload: []byte(`{"batch": [{"type": "track"}]}`),
 			}
-			jobData, err := gateway.getJobDataFromRequest(req)
-			Expect(err).To(Equal(errors.New(response.NonIdentifiableRequest)))
-			Expect(jobData.jobs).To(BeNil())
+			jobData, err := f.gateway.getJobDataFromRequest(req)
+			require.Equal(t, errors.New(response.NonIdentifiableRequest), err)
+			require.Nil(t, jobData.jobs)
 		})
 
-		It("accepts events with non-string type anonymousId and/or userId", func() {
+		t.Run("accepts events with non-string type anonymousId and/or userId", func(t *testing.T) {
+			f := newJobDataFromRequestFixture(t)
 			// map type usreId
 			payloadMap := map[string]any{
 				"batch": []any{
@@ -1496,7 +1488,7 @@ var _ = Describe("Gateway", func() {
 				},
 			}
 			payload, err := jsonrs.Marshal(payloadMap)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			req := &webRequestT{
 				reqType:        "batch",
 				authContext:    rCtxEnabled,
@@ -1504,8 +1496,8 @@ var _ = Describe("Gateway", func() {
 				userIDHeader:   userIDHeader,
 				requestPayload: payload,
 			}
-			_, err = gateway.getJobDataFromRequest(req)
-			Expect(err).To(BeNil())
+			_, err = f.gateway.getJobDataFromRequest(req)
+			require.NoError(t, err)
 
 			// int type anonymousId
 			payloadMap = map[string]any{
@@ -1517,8 +1509,8 @@ var _ = Describe("Gateway", func() {
 				},
 			}
 			payload, err = jsonrs.Marshal(payloadMap)
-			Expect(err).To(BeNil())
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
+			require.NoError(t, err)
 			req = &webRequestT{
 				reqType:        "batch",
 				authContext:    rCtxEnabled,
@@ -1526,11 +1518,12 @@ var _ = Describe("Gateway", func() {
 				userIDHeader:   userIDHeader,
 				requestPayload: payload,
 			}
-			_, err = gateway.getJobDataFromRequest(req)
-			Expect(err).To(BeNil())
+			_, err = f.gateway.getJobDataFromRequest(req)
+			require.NoError(t, err)
 		})
 
-		It("sanitizes messageID, trim space and replace with new uuid", func() {
+		t.Run("sanitizes messageID, trim space and replace with new uuid", func(t *testing.T) {
+			f := newJobDataFromRequestFixture(t)
 			// passing a messageID full of invisible characters
 			payloadMap := map[string]any{
 				"batch": []any{
@@ -1542,7 +1535,7 @@ var _ = Describe("Gateway", func() {
 				},
 			}
 			payload, err := jsonrs.Marshal(payloadMap)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			req := &webRequestT{
 				reqType:        "batch",
 				authContext:    rCtxEnabled,
@@ -1550,8 +1543,8 @@ var _ = Describe("Gateway", func() {
 				userIDHeader:   userIDHeader,
 				requestPayload: payload,
 			}
-			jobForm, err := gateway.getJobDataFromRequest(req)
-			Expect(err).To(BeNil())
+			jobForm, err := f.gateway.getJobDataFromRequest(req)
+			require.NoError(t, err)
 
 			var job struct {
 				Batch []struct {
@@ -1560,14 +1553,15 @@ var _ = Describe("Gateway", func() {
 			}
 
 			err = jsonrs.Unmarshal(jobForm.jobs[0].EventPayload, &job)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			u, err := uuid.Parse(job.Batch[0].MessageID)
-			Expect(err).To(BeNil())
-			Expect(u.Version()).To(Equal(uuid.Version(4)))
+			require.NoError(t, err)
+			require.Equal(t, uuid.Version(4), u.Version())
 		})
 
-		It("sanitizes messageID, remove bad runes and trim space", func() {
+		t.Run("sanitizes messageID, remove bad runes and trim space", func(t *testing.T) {
+			f := newJobDataFromRequestFixture(t)
 			// passing a messageID full of invisible characters
 			payloadMap := map[string]any{
 				"batch": []any{
@@ -1579,7 +1573,7 @@ var _ = Describe("Gateway", func() {
 				},
 			}
 			payload, err := jsonrs.Marshal(payloadMap)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			req := &webRequestT{
 				reqType:        "batch",
 				authContext:    rCtxEnabled,
@@ -1587,8 +1581,8 @@ var _ = Describe("Gateway", func() {
 				userIDHeader:   userIDHeader,
 				requestPayload: payload,
 			}
-			jobForm, err := gateway.getJobDataFromRequest(req)
-			Expect(err).To(BeNil())
+			jobForm, err := f.gateway.getJobDataFromRequest(req)
+			require.NoError(t, err)
 
 			var job struct {
 				Batch []struct {
@@ -1597,11 +1591,12 @@ var _ = Describe("Gateway", func() {
 			}
 
 			err = jsonrs.Unmarshal(jobForm.jobs[0].EventPayload, &job)
-			Expect(err).To(BeNil())
-			Expect(job.Batch[0].MessageID).To(Equal("-a-random-string"))
+			require.NoError(t, err)
+			require.Equal(t, "-a-random-string", job.Batch[0].MessageID)
 		})
 
-		It("doesn't override if receivedAt or request_ip already exists in payload", func() {
+		t.Run("doesn't override if receivedAt or request_ip already exists in payload", func(t *testing.T) {
+			f := newJobDataFromRequestFixture(t)
 			req := &webRequestT{
 				reqType:        "batch",
 				authContext:    rCtxEnabled,
@@ -1609,8 +1604,8 @@ var _ = Describe("Gateway", func() {
 				userIDHeader:   userIDHeader,
 				requestPayload: []byte(`{"batch": [{"type": "extract", "receivedAt": "2024-01-01T01:01:01.000000001Z", "request_ip": "dummyIPFromPayload"}]}`),
 			}
-			jobForm, err := gateway.getJobDataFromRequest(req)
-			Expect(err).To(BeNil())
+			jobForm, err := f.gateway.getJobDataFromRequest(req)
+			require.NoError(t, err)
 
 			var job struct {
 				Batch []struct {
@@ -1619,12 +1614,13 @@ var _ = Describe("Gateway", func() {
 				} `json:"batch"`
 			}
 			err = jsonrs.Unmarshal(jobForm.jobs[0].EventPayload, &job)
-			Expect(err).To(BeNil())
-			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("2024-01-01T01:01:01.000000001Z"))
-			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIPFromPayload"))
+			require.NoError(t, err)
+			require.Contains(t, job.Batch[0].ReceivedAt, "2024-01-01T01:01:01.000000001Z")
+			require.Contains(t, job.Batch[0].RequestIP, "dummyIPFromPayload")
 		})
 
-		It("adds receivedAt and request_ip in the request payload if it's not already present", func() {
+		t.Run("adds receivedAt and request_ip in the request payload if it's not already present", func(t *testing.T) {
+			f := newJobDataFromRequestFixture(t)
 			req := &webRequestT{
 				reqType:        "batch",
 				authContext:    rCtxEnabled,
@@ -1633,8 +1629,8 @@ var _ = Describe("Gateway", func() {
 				requestPayload: []byte(`{"batch": [{"type": "extract"}]}`),
 			}
 			req.ipAddr = "dummyIP"
-			jobForm, err := gateway.getJobDataFromRequest(req)
-			Expect(err).To(BeNil())
+			jobForm, err := f.gateway.getJobDataFromRequest(req)
+			require.NoError(t, err)
 
 			var job struct {
 				Batch []struct {
@@ -1643,12 +1639,13 @@ var _ = Describe("Gateway", func() {
 				} `json:"batch"`
 			}
 			err = jsonrs.Unmarshal(jobForm.jobs[0].EventPayload, &job)
-			Expect(err).To(BeNil())
-			Expect(job.Batch[0].ReceivedAt).To(Not(BeEmpty()))
-			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIP"))
+			require.NoError(t, err)
+			require.NotEmpty(t, job.Batch[0].ReceivedAt)
+			require.Contains(t, job.Batch[0].RequestIP, "dummyIP")
 		})
 
-		It("allows extract events even if userID and anonID are not present in the request payload", func() {
+		t.Run("allows extract events even if userID and anonID are not present in the request payload", func(t *testing.T) {
+			f := newJobDataFromRequestFixture(t)
 			req := &webRequestT{
 				reqType:        "batch",
 				authContext:    rCtxEnabled,
@@ -1656,11 +1653,12 @@ var _ = Describe("Gateway", func() {
 				userIDHeader:   userIDHeader,
 				requestPayload: []byte(`{"batch": [{"type": "extract"}]}`),
 			}
-			_, err := gateway.getJobDataFromRequest(req)
-			Expect(err).To(BeNil())
+			_, err := f.gateway.getJobDataFromRequest(req)
+			require.NoError(t, err)
 		})
 
-		It("allows retl events even if userID and anonID are not present in the request payload", func() {
+		t.Run("allows retl events even if userID and anonID are not present in the request payload", func(t *testing.T) {
+			f := newJobDataFromRequestFixture(t)
 			req := &webRequestT{
 				reqType:        "retl",
 				authContext:    rCtxEnabled,
@@ -1668,86 +1666,76 @@ var _ = Describe("Gateway", func() {
 				userIDHeader:   userIDHeader,
 				requestPayload: []byte(`{"batch": [{"type": "record"}]}`),
 			}
-			_, err := gateway.getJobDataFromRequest(req)
-			Expect(err).To(BeNil())
+			_, err := f.gateway.getJobDataFromRequest(req)
+			require.NoError(t, err)
 		})
 
-		Context("rate limit checks", func() {
-			var (
+		t.Run("rate limit checks", func(t *testing.T) {
+			type rateLimitChecksFixture struct {
+				*jobDataFromRequestFixture
 				req     *webRequestT
 				gateway *Handle
-			)
-			BeforeEach(func() {
-				c.initializeAppFeatures()
-				gateway = &Handle{}
-				conf.Set("Gateway.enableRateLimit", true)
+			}
+			newRateLimitChecksFixture := func(t *testing.T) *rateLimitChecksFixture {
+				t.Helper()
+				f := &rateLimitChecksFixture{jobDataFromRequestFixture: newJobDataFromRequestFixture(t)}
+				f.conf.Set("Gateway.enableRateLimit", true)
 
 				// Create a new fresh logger and stats to avoid nils
-				err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
-				Expect(err).To(BeNil())
-				waitForBackendConfigInit(gateway)
+				f.gateway = f.setupGateway(t, stats.NOP, f.mockRateLimiter, sourcedebugger.NewNoOpService())
 
-				req = &webRequestT{
+				f.req = &webRequestT{
 					reqType:        "batch",
 					authContext:    rCtxEnabled,
 					done:           make(chan<- string),
 					userIDHeader:   userIDHeader,
 					requestPayload: []byte(`{"batch": [{"type": "track", "userId": "123"}]}`),
 				}
+				return f
+			}
+
+			t.Run("returns errRequestDropped when rate limit is reached", func(t *testing.T) {
+				f := newRateLimitChecksFixture(t)
+				ctx := t.Context()
+				f.req.ctx = ctx
+				f.mockRateLimiter.EXPECT().CheckLimitReached(ctx, rCtxEnabled.WorkspaceID, int64(1)).Return(true, nil).Times(1)
+
+				jobData, err := f.gateway.getJobDataFromRequest(f.req)
+				require.Equal(t, errRequestDropped, err)
+				require.NotNil(t, jobData)
 			})
 
-			AfterEach(func() {
-				err := gateway.Shutdown()
-				Expect(err).To(BeNil())
-			})
-
-			It("returns errRequestDropped when rate limit is reached", func() {
-				ctx := context.Background()
-				req.ctx = ctx
-				c.mockRateLimiter.EXPECT().CheckLimitReached(ctx, rCtxEnabled.WorkspaceID, int64(1)).Return(true, nil).Times(1)
-
-				jobData, err := gateway.getJobDataFromRequest(req)
-				Expect(err).To(Equal(errRequestDropped))
-				Expect(jobData).To(Not(BeNil()))
-			})
-
-			It("returns context error when context is cancelled and rate limit returns error", func() {
-				ctx, cancel := context.WithCancel(context.Background())
-				req.ctx = ctx
+			t.Run("returns context error when context is cancelled and rate limit returns error", func(t *testing.T) {
+				f := newRateLimitChecksFixture(t)
+				ctx, cancel := context.WithCancel(t.Context())
+				f.req.ctx = ctx
 				cancel() // This line cancels the context immediately
 
 				expectedErr := errors.New("some rate limit error")
-				c.mockRateLimiter.EXPECT().CheckLimitReached(ctx, rCtxEnabled.WorkspaceID, int64(1)).Return(false, expectedErr).Times(1)
+				f.mockRateLimiter.EXPECT().CheckLimitReached(ctx, rCtxEnabled.WorkspaceID, int64(1)).Return(false, expectedErr).Times(1)
 
-				jobData, err := gateway.getJobDataFromRequest(req)
-				Expect(err).To(Equal(context.Canceled))
-				Expect(jobData).To(Not(BeNil()))
+				jobData, err := f.gateway.getJobDataFromRequest(f.req)
+				require.Equal(t, context.Canceled, err)
+				require.NotNil(t, jobData)
 			})
 
-			It("logs error and allows request when rate limit returns error but context is not cancelled", func() {
-				ctx := context.Background()
-				req.ctx = ctx
+			t.Run("logs error and allows request when rate limit returns error but context is not cancelled", func(t *testing.T) {
+				f := newRateLimitChecksFixture(t)
+				ctx := t.Context()
+				f.req.ctx = ctx
 				expectedErr := errors.New("some rate limit error")
-				c.mockRateLimiter.EXPECT().CheckLimitReached(ctx, rCtxEnabled.WorkspaceID, int64(1)).Return(false, expectedErr).Times(1)
+				f.mockRateLimiter.EXPECT().CheckLimitReached(ctx, rCtxEnabled.WorkspaceID, int64(1)).Return(false, expectedErr).Times(1)
 
-				jobData, err := gateway.getJobDataFromRequest(req)
-				Expect(err).To(BeNil())
-				Expect(jobData).To(Not(BeNil()))
-				Expect(jobData.jobs).To(HaveLen(1))
+				jobData, err := f.gateway.getJobDataFromRequest(f.req)
+				require.NoError(t, err)
+				require.NotNil(t, jobData)
+				require.Len(t, jobData.jobs, 1)
 			})
 		})
 	})
 
-	Context("Internal Batch", func() {
+	t.Run("Internal Batch", func(t *testing.T) {
 		client := http.Client{}
-		var (
-			gateway               *Handle
-			internalBatchEndpoint string
-			ctx                   context.Context
-			cancel                func()
-			wait                  chan struct{}
-			srcDebugger           *mocksrcdebugger.MockSourceDebugger
-		)
 
 		createInternalBatchPayload := func(userID, sourceID string) []byte {
 			validData := fmt.Sprintf(
@@ -1797,80 +1785,71 @@ var _ = Describe("Gateway", func() {
 			return fmt.Appendf(nil, `[%s,%s]`, internalBatchPayload(), internalBatchPayload())
 		}
 
-		var statStore *memstats.Store
 		// a second after receivedAt
 		now, err := time.Parse(time.RFC3339Nano, "2024-01-01T01:01:02.000000001Z")
-		Expect(err).To(BeNil())
+		require.NoError(t, err)
 
-		BeforeEach(func() {
-			c.mockSuppressUser = mocksTypes.NewMockUserSuppression(c.mockCtrl)
-			c.mockSuppressUserFeature = mocksApp.NewMockSuppressUserFeature(c.mockCtrl)
-			c.initializeEnterpriseAppFeatures()
-
-			c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any(), gomock.Any()).AnyTimes().Return(c.mockSuppressUser, nil)
-			c.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, NormalUserID, SourceIDEnabled).Return(nil).AnyTimes()
-			c.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, SuppressedUserID, SourceIDEnabled).Return(&model.Metadata{
-				CreatedAt: time.Now(),
-			}).AnyTimes()
-			c.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, NormalUserID, writeKeyNotPresentInSource).Return(nil).AnyTimes()
-
-			conf = config.New()
-			conf.Set("Gateway.enableRateLimit", false)
-			conf.Set("Gateway.enableSuppressUserFeature", true)
+		type internalBatchFixture struct {
+			*gatewayFixture
+			gateway               *Handle
+			internalBatchEndpoint string
+			statStore             *memstats.Store
+			srcDebugger           *mocksrcdebugger.MockSourceDebugger
+		}
+		newInternalBatchFixture := func(t *testing.T) *internalBatchFixture {
+			t.Helper()
+			f := &internalBatchFixture{gatewayFixture: newGatewayFixture(t)}
+			f.withSuppressUser()
+			f.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, NormalUserID, writeKeyNotPresentInSource).Return(nil).AnyTimes()
 
 			serverPort, err := kithelper.GetFreePort()
-			Expect(err).To(BeNil())
-			internalBatchEndpoint = fmt.Sprintf("http://localhost:%d/internal/v1/batch", serverPort)
-			GinkgoT().Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
+			require.NoError(t, err)
+			f.internalBatchEndpoint = fmt.Sprintf("http://localhost:%d/internal/v1/batch", serverPort)
+			t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
 
-			statStore, err = memstats.New(
+			f.statStore, err = memstats.New(
 				memstats.WithNow(func() time.Time {
 					return now
 				}),
 			)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
-			gateway = &Handle{}
-			srcDebugger = mocksrcdebugger.NewMockSourceDebugger(c.mockCtrl)
-			err = gateway.Setup(context.Background(), conf, logger.NOP, statStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil, WithInternalEndpointsEnabled(true))
-			Expect(err).To(BeNil())
-			waitForBackendConfigInit(gateway)
-			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
-			ctx, cancel = context.WithCancel(context.Background())
-			wait = make(chan struct{})
+			f.srcDebugger = mocksrcdebugger.NewMockSourceDebugger(f.mockCtrl)
+			f.gateway = f.setupGateway(t, f.statStore, nil, f.srcDebugger, WithInternalEndpointsEnabled(true))
+			f.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
+			ctx, cancel := context.WithCancel(t.Context())
+			wait := make(chan error, 1)
 			go func() {
-				err = gateway.StartWebHandler(ctx)
-				Expect(err).To(BeNil())
-				close(wait)
+				wait <- f.gateway.StartWebHandler(ctx)
 			}()
-			Eventually(func() bool {
+			t.Cleanup(func() {
+				cancel()
+				require.NoError(t, <-wait)
+			})
+			require.Eventually(t, func() bool {
 				resp, err := http.Get(fmt.Sprintf("http://localhost:%d/version", serverPort))
 				if err != nil {
 					return false
 				}
+				defer func() { _ = resp.Body.Close() }()
 				return resp.StatusCode == http.StatusOK
-			}, time.Second*10, time.Second).Should(BeTrue())
-		})
+			}, time.Second*10, time.Second)
+			return f
+		}
 
-		AfterEach(func() {
-			cancel()
-			<-wait
-			c.Finish()
-			err := gateway.Shutdown()
-			Expect(err).To(BeNil())
-		})
-
-		It("Successful request, with debugger", func() {
-			srcDebugger.EXPECT().RecordEvent(WriteKeyEnabled, gomock.Any()).Times(1)
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
+		t.Run("Successful request, with debugger", func(t *testing.T) {
+			f := newInternalBatchFixture(t)
+			f.srcDebugger.EXPECT().RecordEvent(WriteKeyEnabled, gomock.Any()).Times(1)
+			f.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
 			payload := createInternalBatchPayload(NormalUserID, SourceIDEnabled)
-			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
-			Expect(err).To(BeNil())
+			req, err := http.NewRequest(http.MethodPost, f.internalBatchEndpoint, bytes.NewBuffer(payload))
+			require.NoError(t, err)
 			resp, err := client.Do(req)
-			Expect(err).To(BeNil())
-			Expect(http.StatusOK, resp.StatusCode)
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
 
-			Expect(statStore.GetByName("gateway.event_pickup_lag_seconds")).To(Equal([]memstats.Metric{
+			require.Equal(t, []memstats.Metric{
 				{
 					Name: "gateway.event_pickup_lag_seconds",
 					Tags: map[string]string{"workspaceId": WorkspaceID},
@@ -1878,8 +1857,8 @@ var _ = Describe("Gateway", func() {
 						time.Second,
 					},
 				},
-			}))
-			Expect(statStore.GetByName("gateway.write_key_events")).To(Equal([]memstats.Metric{
+			}, f.statStore.GetByName("gateway.event_pickup_lag_seconds"))
+			require.Equal(t, []memstats.Metric{
 				{
 					Name: "gateway.write_key_events",
 					Tags: map[string]string{
@@ -1894,8 +1873,8 @@ var _ = Describe("Gateway", func() {
 					},
 					Value: 1,
 				},
-			}))
-			Expect(statStore.GetByName("gateway.write_key_successful_events")).To(Equal([]memstats.Metric{
+			}, f.statStore.GetByName("gateway.write_key_events"))
+			require.Equal(t, []memstats.Metric{
 				{
 					Name: "gateway.write_key_successful_events",
 					Tags: map[string]string{
@@ -1910,8 +1889,8 @@ var _ = Describe("Gateway", func() {
 					},
 					Value: 1,
 				},
-			}))
-			Expect(statStore.GetByName("gateway.write_key_requests")).To(Equal([]memstats.Metric{
+			}, f.statStore.GetByName("gateway.write_key_successful_events"))
+			require.Equal(t, []memstats.Metric{
 				{
 					Name: "gateway.write_key_requests",
 					Tags: map[string]string{
@@ -1926,8 +1905,8 @@ var _ = Describe("Gateway", func() {
 					},
 					Value: 1,
 				},
-			}))
-			Expect(statStore.GetByName("gateway.write_key_successful_requests")).To(Equal([]memstats.Metric{
+			}, f.statStore.GetByName("gateway.write_key_requests"))
+			require.Equal(t, []memstats.Metric{
 				{
 					Name: "gateway.write_key_successful_requests",
 					Tags: map[string]string{
@@ -1942,8 +1921,8 @@ var _ = Describe("Gateway", func() {
 					},
 					Value: 1,
 				},
-			}))
-			Expect(statStore.GetByName("gateway.write_key_failed_requests")).To(Equal([]memstats.Metric{
+			}, f.statStore.GetByName("gateway.write_key_successful_requests"))
+			require.Equal(t, []memstats.Metric{
 				{
 					Name: "gateway.write_key_failed_requests",
 					Tags: map[string]string{
@@ -1958,8 +1937,8 @@ var _ = Describe("Gateway", func() {
 					},
 					Value: 0,
 				},
-			}))
-			Expect(statStore.GetByName("gateway.write_key_failed_events")).To(Equal([]memstats.Metric{
+			}, f.statStore.GetByName("gateway.write_key_failed_requests"))
+			require.Equal(t, []memstats.Metric{
 				{
 					Name: "gateway.write_key_failed_events",
 					Tags: map[string]string{
@@ -1974,30 +1953,33 @@ var _ = Describe("Gateway", func() {
 					},
 					Value: 0,
 				},
-			}))
+			}, f.statStore.GetByName("gateway.write_key_failed_events"))
 		})
 
-		It("Successful request, without debugger", func() {
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
+		t.Run("Successful request, without debugger", func(t *testing.T) {
+			f := newInternalBatchFixture(t)
+			f.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
 			payload := createInternalBatchPayload(NormalUserID, writeKeyNotPresentInSource)
-			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
-			Expect(err).To(BeNil())
+			req, err := http.NewRequest(http.MethodPost, f.internalBatchEndpoint, bytes.NewBuffer(payload))
+			require.NoError(t, err)
 			resp, err := client.Do(req)
-			Expect(err).To(BeNil())
-			Expect(http.StatusOK, resp.StatusCode)
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
 		})
 
-		It("request failed 0 messages", func() {
-			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer([]byte(`[]`)))
-			Expect(err).To(BeNil())
+		t.Run("request failed 0 messages", func(t *testing.T) {
+			f := newInternalBatchFixture(t)
+			req, err := http.NewRequest(http.MethodPost, f.internalBatchEndpoint, bytes.NewBuffer([]byte(`[]`)))
+			require.NoError(t, err)
 			resp, err := client.Do(req)
-			Expect(err).To(BeNil())
-			Expect(http.StatusOK, resp.StatusCode)
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+			require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 			respData, err := io.ReadAll(resp.Body)
-			defer httputil.CloseResponse(resp)
-			Expect(err).To(BeNil())
-			Expect(string(respData)).Should(ContainSubstring(response.NotRudderEvent))
-			failedRequestStat := statStore.Get("gateway.write_key_failed_requests", map[string]string{
+			require.NoError(t, err)
+			require.Contains(t, string(respData), response.NotRudderEvent)
+			failedRequestStat := f.statStore.Get("gateway.write_key_failed_requests", map[string]string{
 				"writeKey":      "",
 				"reqType":       "internalBatch",
 				"reason":        response.NotRudderEvent,
@@ -2008,21 +1990,22 @@ var _ = Describe("Gateway", func() {
 				"source":        "",
 				"sourceDefName": "",
 			})
-			Expect(failedRequestStat).To(Not(BeNil()))
-			Expect(failedRequestStat.Values()).To(Equal([]float64{1}))
+			require.NotNil(t, failedRequestStat)
+			require.Equal(t, []float64{1}, failedRequestStat.Values())
 		})
 
-		It("request failed unmarshall error", func() {
-			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer([]byte(`[`)))
-			Expect(err).To(BeNil())
+		t.Run("request failed unmarshall error", func(t *testing.T) {
+			f := newInternalBatchFixture(t)
+			req, err := http.NewRequest(http.MethodPost, f.internalBatchEndpoint, bytes.NewBuffer([]byte(`[`)))
+			require.NoError(t, err)
 			resp, err := client.Do(req)
-			Expect(err).To(BeNil())
-			Expect(http.StatusBadRequest, resp.StatusCode)
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+			require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 			respData, err := io.ReadAll(resp.Body)
-			defer httputil.CloseResponse(resp)
-			Expect(err).To(BeNil())
-			Expect(string(respData)).Should(ContainSubstring(response.InvalidJSON))
-			failedRequestStat := statStore.Get("gateway.write_key_failed_requests", map[string]string{
+			require.NoError(t, err)
+			require.Contains(t, string(respData), response.InvalidJSON)
+			failedRequestStat := f.statStore.Get("gateway.write_key_failed_requests", map[string]string{
 				"writeKey":      "",
 				"reqType":       "internalBatch",
 				"reason":        response.InvalidJSON,
@@ -2033,9 +2016,9 @@ var _ = Describe("Gateway", func() {
 				"source":        "",
 				"sourceDefName": "",
 			})
-			Expect(failedRequestStat).To(Not(BeNil()))
-			Expect(failedRequestStat.Values()).To(Equal([]float64{1}))
-			failedEventStat := statStore.Get("gateway.write_key_failed_events", map[string]string{
+			require.NotNil(t, failedRequestStat)
+			require.Equal(t, []float64{1}, failedRequestStat.Values())
+			failedEventStat := f.statStore.Get("gateway.write_key_failed_events", map[string]string{
 				"writeKey":      "",
 				"reqType":       "internalBatch",
 				"reason":        response.InvalidJSON,
@@ -2046,17 +2029,19 @@ var _ = Describe("Gateway", func() {
 				"source":        "",
 				"sourceDefName": "",
 			})
-			Expect(failedEventStat).To(BeNil())
+			require.Nil(t, failedEventStat)
 		})
 
-		It("request success - suppressed user", func() {
+		t.Run("request success - suppressed user", func(t *testing.T) {
+			f := newInternalBatchFixture(t)
 			payload := createInternalBatchPayload(SuppressedUserID, SourceIDEnabled)
-			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
-			Expect(err).To(BeNil())
+			req, err := http.NewRequest(http.MethodPost, f.internalBatchEndpoint, bytes.NewBuffer(payload))
+			require.NoError(t, err)
 			resp, err := client.Do(req)
-			Expect(err).To(BeNil())
-			Expect(http.StatusOK, resp.StatusCode)
-			successfulReqStat := statStore.Get("gateway.write_key_successful_requests", map[string]string{
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			successfulReqStat := f.statStore.Get("gateway.write_key_successful_requests", map[string]string{
 				"writeKey":      "",
 				"reqType":       "internalBatch",
 				"workspaceId":   "",
@@ -2066,20 +2051,22 @@ var _ = Describe("Gateway", func() {
 				"source":        "",
 				"sourceDefName": "",
 			})
-			Expect(successfulReqStat).To(Not(BeNil()))
-			Expect(successfulReqStat.Values()).To(Equal([]float64{1}))
+			require.NotNil(t, successfulReqStat)
+			require.Equal(t, []float64{1}, successfulReqStat.Values())
 		})
 
-		It("request success - multiple messages", func() {
-			srcDebugger.EXPECT().RecordEvent(WriteKeyEnabled, gomock.Any()).Times(2)
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
+		t.Run("request success - multiple messages", func(t *testing.T) {
+			f := newInternalBatchFixture(t)
+			f.srcDebugger.EXPECT().RecordEvent(WriteKeyEnabled, gomock.Any()).Times(2)
+			f.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
 			payload := createInternalBatchPayloadWithMultipleEvents(NormalUserID, SourceIDEnabled, WorkspaceID)
-			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
-			Expect(err).To(BeNil())
+			req, err := http.NewRequest(http.MethodPost, f.internalBatchEndpoint, bytes.NewBuffer(payload))
+			require.NoError(t, err)
 			resp, err := client.Do(req)
-			Expect(err).To(BeNil())
-			Expect(http.StatusOK, resp.StatusCode)
-			successfulReqStat := statStore.Get("gateway.write_key_successful_requests", map[string]string{
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			successfulReqStat := f.statStore.Get("gateway.write_key_successful_requests", map[string]string{
 				"writeKey":      "",
 				"reqType":       "internalBatch",
 				"workspaceId":   "",
@@ -2089,9 +2076,9 @@ var _ = Describe("Gateway", func() {
 				"source":        "",
 				"sourceDefName": "",
 			})
-			Expect(successfulReqStat).To(Not(BeNil()))
-			Expect(successfulReqStat.LastValue()).To(Equal(float64(1)))
-			successfulEventStat := statStore.Get("gateway.write_key_successful_events", map[string]string{
+			require.NotNil(t, successfulReqStat)
+			require.Equal(t, float64(1), successfulReqStat.LastValue())
+			successfulEventStat := f.statStore.Get("gateway.write_key_successful_events", map[string]string{
 				"writeKey":      WriteKeyEnabled,
 				"reqType":       "internalBatch",
 				"workspaceId":   WorkspaceID,
@@ -2101,9 +2088,9 @@ var _ = Describe("Gateway", func() {
 				"source":        "",
 				"sourceDefName": SourceIDEnabled,
 			})
-			Expect(successfulEventStat).To(Not(BeNil()))
-			Expect(successfulEventStat.LastValue()).To(Equal(float64(2)))
-			eventsStat := statStore.Get("gateway.write_key_events", map[string]string{
+			require.NotNil(t, successfulEventStat)
+			require.Equal(t, float64(2), successfulEventStat.LastValue())
+			eventsStat := f.statStore.Get("gateway.write_key_events", map[string]string{
 				"writeKey":      WriteKeyEnabled,
 				"reqType":       "internalBatch",
 				"workspaceId":   WorkspaceID,
@@ -2113,19 +2100,21 @@ var _ = Describe("Gateway", func() {
 				"source":        "",
 				"sourceDefName": SourceIDEnabled,
 			})
-			Expect(eventsStat).To(Not(BeNil()))
-			Expect(eventsStat.Values()).To(Equal([]float64{1, 2}))
+			require.NotNil(t, eventsStat)
+			require.Equal(t, []float64{1, 2}, eventsStat.Values())
 		})
 
-		It("request failed db error", func() {
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Return(fmt.Errorf("db error"))
+		t.Run("request failed db error", func(t *testing.T) {
+			f := newInternalBatchFixture(t)
+			f.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Return(fmt.Errorf("db error"))
 			payload := createInternalBatchPayload(NormalUserID, SourceIDEnabled)
-			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
-			Expect(err).To(BeNil())
+			req, err := http.NewRequest(http.MethodPost, f.internalBatchEndpoint, bytes.NewBuffer(payload))
+			require.NoError(t, err)
 			resp, err := client.Do(req)
-			Expect(err).To(BeNil())
-			Expect(http.StatusInternalServerError, resp.StatusCode)
-			failedReqStat := statStore.Get("gateway.write_key_failed_requests", map[string]string{
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+			require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+			failedReqStat := f.statStore.Get("gateway.write_key_failed_requests", map[string]string{
 				"writeKey":      "",
 				"reqType":       "internalBatch",
 				"workspaceId":   "",
@@ -2136,9 +2125,9 @@ var _ = Describe("Gateway", func() {
 				"reason":        "storeFailed",
 				"sourceDefName": "",
 			})
-			Expect(failedReqStat).To(Not(BeNil()))
-			Expect(failedReqStat.Values()).To(Equal([]float64{1}))
-			failedEventStat := statStore.Get("gateway.write_key_failed_events", map[string]string{
+			require.NotNil(t, failedReqStat)
+			require.Equal(t, []float64{1}, failedReqStat.Values())
+			failedEventStat := f.statStore.Get("gateway.write_key_failed_events", map[string]string{
 				"writeKey":      WriteKeyEnabled,
 				"reqType":       "internalBatch",
 				"workspaceId":   WorkspaceID,
@@ -2149,9 +2138,9 @@ var _ = Describe("Gateway", func() {
 				"reason":        "storeFailed",
 				"sourceDefName": SourceIDEnabled,
 			})
-			Expect(failedEventStat).To(Not(BeNil()))
-			Expect(failedEventStat.Values()).To(Equal([]float64{1}))
-			eventsStat := statStore.Get("gateway.write_key_events", map[string]string{
+			require.NotNil(t, failedEventStat)
+			require.Equal(t, []float64{1}, failedEventStat.Values())
+			eventsStat := f.statStore.Get("gateway.write_key_events", map[string]string{
 				"writeKey":      WriteKeyEnabled,
 				"reqType":       "internalBatch",
 				"workspaceId":   WorkspaceID,
@@ -2161,27 +2150,21 @@ var _ = Describe("Gateway", func() {
 				"source":        "",
 				"sourceDefName": SourceIDEnabled,
 			})
-			Expect(eventsStat).To(Not(BeNil()))
-			Expect(eventsStat.Values()).To(Equal([]float64{1}))
+			require.NotNil(t, eventsStat)
+			require.Equal(t, []float64{1}, eventsStat.Values())
 		})
 	})
 
-	Context("extractJobsFromInternalBatchPayload", func() {
-		var gateway *Handle
-		BeforeEach(func() {
-			c.initializeAppFeatures()
-			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil, WithInternalEndpointsEnabled(true))
-			Expect(err).To(BeNil())
-			waitForBackendConfigInit(gateway)
-		})
+	t.Run("extractJobsFromInternalBatchPayload", func(t *testing.T) {
+		newExtractJobsFixture := func(t *testing.T) *Handle {
+			t.Helper()
+			f := newGatewayFixture(t)
+			f.initializeAppFeatures()
+			return f.setupGateway(t, stats.NOP, nil, sourcedebugger.NewNoOpService(), WithInternalEndpointsEnabled(true))
+		}
 
-		AfterEach(func() {
-			err := gateway.Shutdown()
-			Expect(err).To(BeNil())
-		})
-
-		It("doesn't override if receivedAt or request_ip already exists in payload", func() {
+		t.Run("doesn't override if receivedAt or request_ip already exists in payload", func(t *testing.T) {
+			gateway := newExtractJobsFixture(t)
 			properties := stream.MessageProperties{
 				RequestType:   "dummyRequestType",
 				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
@@ -2204,7 +2187,7 @@ var _ = Describe("Gateway", func() {
 			}
 			messages := []stream.Message{msg}
 			payload, err := jsonrs.Marshal(messages)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			req := &webRequestT{
 				reqType:        "batch",
@@ -2213,15 +2196,16 @@ var _ = Describe("Gateway", func() {
 				requestPayload: payload,
 			}
 			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
-			Expect(err).To(BeNil())
-			Expect(jobsWithStats).To(HaveLen(1))
-			Expect(jobsWithStats[0].stat).To(Equal(
+			require.NoError(t, err)
+			require.Len(t, jobsWithStats, 1)
+			require.Equal(t,
 				gwstats.SourceStat{
 					SourceID:    "sourceID",
 					WorkspaceID: "workspaceID",
 					ReqType:     "batch",
 				},
-			))
+				jobsWithStats[0].stat,
+			)
 
 			var job struct {
 				Batch []struct {
@@ -2231,13 +2215,14 @@ var _ = Describe("Gateway", func() {
 			}
 			jobForm := jobsWithStats[0].job
 			err = jsonrs.Unmarshal(jobForm.EventPayload, &job)
-			Expect(err).To(BeNil())
-			Expect(job.Batch).To(HaveLen(1))
-			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("dummyReceivedAtFromPayload"))
-			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIPFromPayload"))
+			require.NoError(t, err)
+			require.Len(t, job.Batch, 1)
+			require.Contains(t, job.Batch[0].ReceivedAt, "dummyReceivedAtFromPayload")
+			require.Contains(t, job.Batch[0].RequestIP, "dummyIPFromPayload")
 		})
 
-		It("validations", func() {
+		t.Run("validations", func(t *testing.T) {
+			gateway := newExtractJobsFixture(t)
 			properties := stream.MessageProperties{
 				RequestType:   "track",
 				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
@@ -2255,7 +2240,7 @@ var _ = Describe("Gateway", func() {
 			}
 			messages := []stream.Message{msg}
 			payload, err := jsonrs.Marshal(messages)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			req := &webRequestT{
 				reqType:        "batch",
 				authContext:    rCtxEnabled,
@@ -2263,72 +2248,73 @@ var _ = Describe("Gateway", func() {
 				requestPayload: payload,
 			}
 			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
-			Expect(err).To(BeNil())
-			Expect(jobsWithStats).To(HaveLen(1))
+			require.NoError(t, err)
+			require.Len(t, jobsWithStats, 1)
 
 			// Test case: missing messageID
 			msg.Payload = []byte(`{"type": "track", "event": "test-1", "userId": "user1", "request_ip": "dummyIP", "rudderId": "dummyRudderID", "receivedAt": "2024-01-01T01:01:01.001Z"}`)
 			messages = []stream.Message{msg}
 			payload, err = jsonrs.Marshal(messages)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			req.requestPayload = payload
 			_, err = gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
-			Expect(err).To(Not(BeNil()))
-			Expect(err.Error()).To(Equal(response.NotRudderEvent))
+			require.Error(t, err)
+			require.Equal(t, response.NotRudderEvent, err.Error())
 
 			// Test case: missing required properties
 			msg.Properties = stream.MessageProperties{}
 			messages = []stream.Message{msg}
 			payload, err = jsonrs.Marshal(messages)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			req.requestPayload = payload
 			_, err = gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
-			Expect(err).To(Not(BeNil()))
-			Expect(err.Error()).To(Equal(response.NotRudderEvent))
+			require.Error(t, err)
+			require.Equal(t, response.NotRudderEvent, err.Error())
 
 			// Test case: missing receivedAt in payload
 			msg.Properties = properties
 			msg.Payload = []byte(`{"type": "track", "event": "test-1", "userId": "user1", "request_ip": "dummyIP", "messageId": "dummyMessageID", "rudderId": "dummyRudderID"}`)
 			messages = []stream.Message{msg}
 			payload, err = jsonrs.Marshal(messages)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			req.requestPayload = payload
 			_, err = gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
-			Expect(err).To(Not(BeNil()))
-			Expect(err.Error()).To(Equal(response.NotRudderEvent))
+			require.Error(t, err)
+			require.Equal(t, response.NotRudderEvent, err.Error())
 
 			// Test case: missing type in payload
 			msg.Payload = []byte(`{"event": "test-1", "userId": "user1", "request_ip": "dummyIP", "messageId": "dummyMessageID", "rudderId": "dummyRudderID", "receivedAt": "2024-01-01T01:01:01.001Z"}`)
 			messages = []stream.Message{msg}
 			payload, err = jsonrs.Marshal(messages)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			req.requestPayload = payload
 			_, err = gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
-			Expect(err).To(Not(BeNil()))
-			Expect(err.Error()).To(Equal(response.NotRudderEvent))
+			require.Error(t, err)
+			require.Equal(t, response.NotRudderEvent, err.Error())
 
 			// Test case: missing request_ip in payload
 			msg.Payload = []byte(`{"type": "track", "event": "test-1", "userId": "user1", "messageId": "dummyMessageID", "rudderId": "dummyRudderID", "receivedAt": "2024-01-01T01:01:01.001Z"}`)
 			messages = []stream.Message{msg}
 			payload, err = jsonrs.Marshal(messages)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			req.requestPayload = payload
 			_, err = gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
-			Expect(err).To(Not(BeNil()))
-			Expect(err.Error()).To(Equal(response.NotRudderEvent))
+			require.Error(t, err)
+			require.Equal(t, response.NotRudderEvent, err.Error())
 
 			// Test case: missing rudderId in payload
 			msg.Payload = []byte(`{"type": "track", "event": "test-1", "userId": "user1", "request_ip": "dummyIP", "messageId": "dummyMessageID", "receivedAt": "2024-01-01T01:01:01.001Z"}`)
 			messages = []stream.Message{msg}
 			payload, err = jsonrs.Marshal(messages)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			req.requestPayload = payload
 			_, err = gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
-			Expect(err).To(Not(BeNil()))
-			Expect(err.Error()).To(Equal(response.NotRudderEvent))
+			require.Error(t, err)
+			require.Equal(t, response.NotRudderEvent, err.Error())
 		})
 
-		It("adds isBot, botName, botURL, botIsInvalidBrowser, botAction in the request parameters", func() {
+		t.Run("adds isBot, botName, botURL, botIsInvalidBrowser, botAction in the request parameters", func(t *testing.T) {
+			gateway := newExtractJobsFixture(t)
 			properties := stream.MessageProperties{
 				RequestType:         "dummyRequestType",
 				RoutingKey:          "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
@@ -2349,7 +2335,7 @@ var _ = Describe("Gateway", func() {
 			}
 			messages := []stream.Message{msg}
 			payload, err := jsonrs.Marshal(messages)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 			req := &webRequestT{
 				reqType:        "batch",
 				authContext:    rCtxEnabled,
@@ -2357,8 +2343,8 @@ var _ = Describe("Gateway", func() {
 				requestPayload: payload,
 			}
 			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
-			Expect(err).To(BeNil())
-			Expect(jobsWithStats).To(HaveLen(1))
+			require.NoError(t, err)
+			require.Len(t, jobsWithStats, 1)
 
 			// check if the parameters are present in the request
 			type params struct {
@@ -2370,15 +2356,15 @@ var _ = Describe("Gateway", func() {
 			}
 			var reqParams params
 			err = jsonrs.Unmarshal(jobsWithStats[0].job.Parameters, &reqParams)
-			Expect(err).To(BeNil())
-			Expect(reqParams.IsBot).To(BeTrue())
-			Expect(reqParams.BotName).To(Equal("dummyBotName"))
-			Expect(reqParams.BotURL).To(Equal("dummyBotURL"))
-			Expect(reqParams.BotIsInvalidBrowser).To(BeTrue())
-			Expect(reqParams.BotAction).To(Equal("flag"))
+			require.NoError(t, err)
+			require.True(t, reqParams.IsBot)
+			require.Equal(t, "dummyBotName", reqParams.BotName)
+			require.Equal(t, "dummyBotURL", reqParams.BotURL)
+			require.True(t, reqParams.BotIsInvalidBrowser)
+			require.Equal(t, "flag", reqParams.BotAction)
 		})
 	})
-})
+}
 
 func unauthorizedRequest(body io.Reader) *http.Request {
 	req, err := http.NewRequest("GET", "", body)
@@ -2419,20 +2405,21 @@ func authorizedRETLRequest(sourceID string, body io.Reader) *http.Request {
 	return req
 }
 
-func expectHandlerResponse(handler http.HandlerFunc, req *http.Request, responseStatus int, responseBody, reqType string) {
+func expectHandlerResponse(t *testing.T, handler http.HandlerFunc, req *http.Request, responseStatus int, responseBody, reqType string) {
+	t.Helper()
 	var body string
-	Eventually(func() int {
+	require.Eventually(t, func() bool {
 		rr := httptest.NewRecorder()
-		handler.ServeHTTP(rr, req.Clone(context.Background()))
+		handler.ServeHTTP(rr, req.Clone(t.Context()))
 		if rr.Body != nil {
 			bodyBytes, _ := io.ReadAll(rr.Body)
 			body = string(bodyBytes)
 		} else {
 			body = ""
 		}
-		return rr.Result().StatusCode
-	}).Should(Equal(responseStatus), fmt.Sprintf("reqType: %s", reqType))
-	Expect(body).To(Equal(responseBody), fmt.Sprintf("reqType: %s", reqType))
+		return rr.Result().StatusCode == responseStatus
+	}, time.Second, 10*time.Millisecond, "reqType: %s", reqType)
+	require.Equal(t, responseBody, body, "reqType: %s", reqType)
 }
 
 // return all endpoints as key and method as value
@@ -2516,8 +2503,9 @@ func (mockRequestHandler) ProcessRequest(_ *http.ResponseWriter, _ *http.Request
 	return ""
 }
 
-func waitForBackendConfigInit(gw *Handle) {
-	Eventually(
+func waitForBackendConfigInit(t *testing.T, gw *Handle) {
+	t.Helper()
+	require.Eventually(t,
 		func() bool {
 			select {
 			case <-gw.backendConfigInitialisedChan:
@@ -2526,8 +2514,8 @@ func waitForBackendConfigInit(gw *Handle) {
 				return false
 			}
 		},
-		2*time.Second,
-	).Should(BeTrue())
+		2*time.Second, 10*time.Millisecond,
+	)
 }
 
 func TestLeakyUploader(t *testing.T) {

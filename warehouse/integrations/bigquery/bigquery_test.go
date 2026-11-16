@@ -1820,8 +1820,7 @@ func list(t testing.TB, ctx context.Context, db *bigquery.Client, namespace stri
 		if err != nil {
 			// Table may have been dropped between listing and metadata fetch
 			// (e.g. staging tables cleaned up concurrently).
-			var e *googleapi.Error
-			if errors.As(err, &e) && e.Code == 404 {
+			if e, ok := errors.AsType[*googleapi.Error](err); ok && e.Code == 404 {
 				continue
 			}
 			require.NoError(t, err)

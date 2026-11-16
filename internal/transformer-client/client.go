@@ -53,17 +53,18 @@ const (
 	defaultRetryRudderErrorsMultiplier      = 2.0
 )
 
-// Headers of the transformer's retryable-error contract.
-// A transformer that is up and answering signals a transient downstream failure with HTTP 503 plus these headers,
-// so callers can retry the request instead of concluding that the transformer itself is unavailable.
-//
-// The peer half of this contract lives in rudder-pytransformer, which necessarily hardcodes the same strings, so these
-// values are a wire format: renaming the constants is free, changing their values is a breaking change on both sides.
+// Headers of the transformer's wire contract.
+// A transformer that is up and answering signals a transient downstream failure with HTTP 503 plus HeaderShouldRetry
+// and HeaderErrorReason, so callers can retry the request instead of concluding that the transformer itself is
+// unavailable.
+// HeaderWorkspaceID is sent for traffic and test pods (not AST) to identify for which workspace a request is for.
 const (
 	// HeaderShouldRetry is "true" when the response is worth retrying.
 	HeaderShouldRetry = "X-Rudder-Should-Retry"
 	// HeaderErrorReason carries a short cause, used as a stat tag.
 	HeaderErrorReason = "X-Rudder-Error-Reason"
+	// HeaderWorkspaceID carries the workspace a request is forwarded for.
+	HeaderWorkspaceID = "X-Rudder-Workspace-Id"
 )
 
 // IsRetryableResponse reports whether resp is the transformer signalling a transient downstream failure that the
@@ -108,6 +109,16 @@ type Client interface {
 }
 
 func NewClient(name string, config *ClientConfig) Client {
+	client, _ := NewClosableClient(name, config)
+	return client
+}
+
+// NewClosableClient is [NewClient] for owners that discard clients while the process runs. The returned func releases
+// what the client holds: httplb's resolver and connection goroutines, otherwise its idle connections.
+//
+// No new request may start on the client once it is called: closing an httplb client waits for the requests already
+// in flight, but fails any that start afterwards.
+func NewClosableClient(name string, config *ClientConfig) (Client, func()) {
 	switch config.ClientType {
 	case "httplb":
 		return buildHTTPLBClient(name, config)
@@ -117,7 +128,7 @@ func NewClient(name string, config *ClientConfig) Client {
 }
 
 // buildStandardClient creates a standard HTTP client with configuration applied
-func buildStandardClient(name string, config *ClientConfig) Client {
+func buildStandardClient(name string, config *ClientConfig) (Client, func()) {
 	transport := buildConfiguredTransport(config)
 	client := &http.Client{
 		Transport: transport,
@@ -126,13 +137,13 @@ func buildStandardClient(name string, config *ClientConfig) Client {
 
 	retryableConfig := buildRetryableConfig(config)
 	if retryableConfig != nil {
-		return newRetryableHTTPClient(name, client, retryableConfig)
+		return newRetryableHTTPClient(name, client, retryableConfig), transport.CloseIdleConnections
 	}
-	return client
+	return client, transport.CloseIdleConnections
 }
 
 // buildHTTPLBClient creates an HTTP load balancer client
-func buildHTTPLBClient(name string, config *ClientConfig) Client {
+func buildHTTPLBClient(name string, config *ClientConfig) (Client, func()) {
 	transport := buildConfiguredTransport(config)
 
 	tr := &httplbtransport{
@@ -154,12 +165,13 @@ func buildHTTPLBClient(name string, config *ClientConfig) Client {
 	}
 
 	client := httplb.NewClient(options...)
+	closeClient := func() { _ = client.Close() }
 	retryableConfig := buildRetryableConfig(config)
 
 	if retryableConfig != nil {
-		return newRetryableHTTPClient(name, client, retryableConfig)
+		return newRetryableHTTPClient(name, client, retryableConfig), closeClient
 	}
-	return client
+	return client, closeClient
 }
 
 // buildConfiguredTransport creates a transport with configuration applied

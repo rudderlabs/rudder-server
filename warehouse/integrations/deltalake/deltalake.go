@@ -470,7 +470,8 @@ func (d *Deltalake) fetchTableAttributes(ctx context.Context, tableName string) 
 			return nil, fmt.Errorf("datatype is not a string: %v", scanDest[datatypeIndex])
 		}
 
-		tableSchema[colName] = datatype
+		// Deltalake column names are case-insensitive, while Rudder always writes them in lowercase.
+		tableSchema[strings.ToLower(colName)] = datatype
 	}
 
 	if err = rows.Err(); err != nil {

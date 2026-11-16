@@ -363,8 +363,8 @@ func (jd *Handle) getCompactionList(dsList []dataSetT, skipBefore *dsindex.Index
 				liveDSCount++
 			} else {
 				if waiting != nil { // have another dataset waiting for a pair
-					if waiting.numJobsPending+recordsLeft > maxDSSize {
-						waiting = nil
+					if waiting.numJobsPending+recordsLeft > maxDSSize { // too big for a pair, this dataset can still pair with the next one
+						waiting = &dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft}
 					} else {
 						result.compactFrom = append(result.compactFrom, *waiting, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
 						result.insertBeforeDS = dsList[idx+1]

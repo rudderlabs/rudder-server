@@ -436,6 +436,32 @@ func TestGetFailedRecords(t *testing.T) {
 	}
 }
 
+func TestFailedRecordsPagination(t *testing.T) {
+	for _, tc := range []struct {
+		name, query string
+		size        int
+		token       string
+		status      int
+	}{
+		{name: "token without size", query: "?pageToken=next", status: http.StatusBadRequest},
+		{name: "token with zero size", query: "?pageSize=0&pageToken=next", status: http.StatusBadRequest},
+		{name: "token with size", query: "?pageSize=2&pageToken=next", size: 2, token: "next", status: http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			service := rsources.NewMockJobService(ctrl)
+			handler := rsources_http.NewV2Handler(service, mock_logger.NewMockLogger(ctrl))
+			if tc.status == http.StatusOK {
+				service.EXPECT().GetFailedRecords(gomock.Any(), "123", rsources.JobFilter{}, rsources.PagingInfo{Size: tc.size, NextPageToken: tc.token}).Return(rsources.JobFailedRecordsV2{ID: "123"}, nil)
+			}
+			req := httptest.NewRequest(http.MethodGet, "/123/failed-records"+tc.query, http.NoBody)
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			require.Equal(t, tc.status, resp.Code)
+		})
+	}
+}
+
 func TestFailedRecordsDisabled(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()

@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -26,7 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
-	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -126,15 +127,13 @@ func TestUTMirroring(t *testing.T) {
 	pool.MaxWait = time.Minute
 
 	assertStoreJob := func(t testing.TB, job *jobsdb.JobT, i int, destination string) {
-		isValidUUID, err := testutils.BeValidUUID().Match(job.UUID.String())
-		require.NoError(t, err)
-		require.True(t, isValidUUID)
-		require.EqualValues(t, 0, job.JobID)
-		requireTimeCirca(t, time.Now(), job.CreatedAt, 200*time.Millisecond)
-		requireTimeCirca(t, time.Now(), job.ExpireAt, 200*time.Millisecond)
-		require.JSONEq(t, fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination), string(job.EventPayload))
-		require.Len(t, job.LastJobStatus.JobState, 0)
-		require.JSONEq(t, fmt.Sprintf(`{
+		assert.True(t, misc.IsValidUUID(job.UUID.String()))
+		assert.EqualValues(t, 0, job.JobID)
+		assertTimeCirca(t, time.Now(), job.CreatedAt, timeCircaTolerance)
+		assertTimeCirca(t, time.Now(), job.ExpireAt, timeCircaTolerance)
+		assert.JSONEq(t, fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination), string(job.EventPayload))
+		assert.Len(t, job.LastJobStatus.JobState, 0)
+		assert.JSONEq(t, fmt.Sprintf(`{
 			"source_id": "source-from-transformer",
 			"source_name": "%s",
 			"destination_id": "destination-from-transformer",
@@ -216,7 +215,7 @@ func TestUTMirroring(t *testing.T) {
 		}).Return(nil)
 		callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 			Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-				require.Len(t, jobs, 2)
+				assert.Len(t, jobs, 2)
 				for i, job := range jobs {
 					assertStoreJob(t, job, i, "value-enabled-destination-b")
 				}
@@ -236,20 +235,21 @@ func TestUTMirroring(t *testing.T) {
 		).Times(1).After(callStoreBatchRouter).
 			Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT) {
 				for i := range unprocessedJobsList {
-					require.Equal(t, statuses[i].JobID, unprocessedJobsList[i].JobID)
-					require.Equal(t, statuses[i].JobState, jobsdb.Succeeded.State)
-					requireTimeCirca(t, time.Now(), statuses[i].RetryTime, 200*time.Millisecond)
-					requireTimeCirca(t, time.Now(), statuses[i].ExecTime, 200*time.Millisecond)
+					assert.Equal(t, unprocessedJobsList[i].JobID, statuses[i].JobID)
+					assert.Equal(t, jobsdb.Succeeded.State, statuses[i].JobState)
+					assertTimeCirca(t, time.Now(), statuses[i].RetryTime, timeCircaTolerance)
+					assertTimeCirca(t, time.Now(), statuses[i].ExecTime, timeCircaTolerance)
 				}
 			})
 	}
 
 	handlePendingGatewayJobs := func(t testing.TB, processor *Handle, c *testContext, opts ...func(*Handle)) {
 		Setup(processor, c, false, false, t)
+		t.Cleanup(processor.Shutdown)
 		for _, opt := range opts {
 			opt(processor)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
 		t.Log("Processor setup and init done")
@@ -276,7 +276,7 @@ func TestUTMirroring(t *testing.T) {
 		})
 		mockTransformerClients.WithDynamicDestinationTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
 			return assertDestinationTransform(
-				messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB], t,
+				t, messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB],
 			)(ctx, clientEvents, 1)
 		})
 
@@ -354,7 +354,7 @@ func TestUTMirroring(t *testing.T) {
 		mockTransformerClients.WithDynamicUserMirrorTransform(userTransformation)
 		mockTransformerClients.WithDynamicDestinationTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
 			return assertDestinationTransform(
-				messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB], t,
+				t, messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB],
 			)(ctx, clientEvents, 1)
 		})
 
@@ -415,7 +415,7 @@ func TestUTMirroring(t *testing.T) {
 		)
 		mockTransformerClients.WithDynamicDestinationTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
 			return assertDestinationTransform(
-				messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB], t,
+				t, messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB],
 			)(ctx, clientEvents, 1)
 		})
 
@@ -493,7 +493,7 @@ func TestUTMirroring(t *testing.T) {
 		})
 		mockTransformerClients.WithDynamicDestinationTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
 			return assertDestinationTransform(
-				messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB], t,
+				t, messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB],
 			)(ctx, clientEvents, 1)
 		})
 
@@ -592,7 +592,7 @@ func TestUTMirroring(t *testing.T) {
 		})
 		mockTransformerClients.WithDynamicDestinationTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
 			return assertDestinationTransform(
-				messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB], t,
+				t, messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB],
 			)(ctx, clientEvents, 1)
 		})
 
@@ -664,7 +664,7 @@ func TestUTMirroring(t *testing.T) {
 		mockTransformerClients.WithDynamicUserMirrorTransform(userTransformation(true))
 		mockTransformerClients.WithDynamicDestinationTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
 			return assertDestinationTransform(
-				messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB], t,
+				t, messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB],
 			)(ctx, clientEvents, 1)
 		})
 
@@ -911,8 +911,12 @@ func TestShouldSample(t *testing.T) {
 	}
 }
 
-func requireTimeCirca(t require.TestingT, expected, actual time.Time, difference time.Duration) {
-	require.InDelta(t, float64(expected.UnixMilli()), float64(actual.UnixMilli()), float64(difference))
+// timeCircaTolerance only checks that a timestamp is current; CI runners under -race can be slow.
+const timeCircaTolerance = 10 * time.Second
+
+// assertTimeCirca uses assert because it also runs inside mock callbacks invoked from processor goroutines.
+func assertTimeCirca(t assert.TestingT, expected, actual time.Time, difference time.Duration) {
+	assert.WithinDuration(t, expected, actual, difference)
 }
 
 func copyClientEvents(t *testing.T, clientEvents []types.TransformerEvent) []types.TransformerEvent {

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -38,10 +38,10 @@ func (e *errorReadCloser) Close() error {
 	return nil
 }
 
-var _ = Describe("OAuthTransport Error Handling", func() {
-	Describe("HTTP Transport Tests", func() {
+func TestOAuthTransportErrorHandling(t *testing.T) {
+	t.Run("HTTP Transport Tests", func(t *testing.T) {
 		// Simple utility test for HTTP response creation
-		It("should create an HTTP response with the given status code and body", func() {
+		t.Run("should create an HTTP response with the given status code and body", func(t *testing.T) {
 			// Create a simple HTTP response with a status code and body
 			statusCode := http.StatusBadRequest
 			body := []byte("test error message")
@@ -53,21 +53,21 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			}
 
 			// Assertions
-			Expect(res.StatusCode).To(Equal(statusCode))
+			require.Equal(t, statusCode, res.StatusCode)
 
 			// Read the response body
 			respBody, err := io.ReadAll(res.Body)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			// Verify that the response contains the expected body
-			Expect(string(respBody)).To(Equal("test error message"))
+			require.Equal(t, "test error message", string(respBody))
 		})
 
 		// Test for handling errors when reading response body
-		It("should handle errors when reading response body", func() {
+		t.Run("should handle errors when reading response body", func(t *testing.T) {
 			// Setup
 			cache := v2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
 			// Create a response with a body that will fail when reading
@@ -131,15 +131,16 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			res, err := client.Do(req)
 
 			// Assertions - the error is not propagated through the client.Do method
-			Expect(err).To(BeNil())
-			Expect(res).NotTo(BeNil())
+			require.NoError(t, err)
+			require.NotNil(t, res)
+			defer func() { _ = res.Body.Close() }()
 		})
 
 		// Test for transport errors in RoundTrip
-		It("should handle transport errors in OAuthTransport.RoundTrip", func() {
+		t.Run("should handle transport errors in OAuthTransport.RoundTrip", func(t *testing.T) {
 			// Setup
 			cache := v2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
 			// Setup mock expectations - return an error from RoundTrip
@@ -191,19 +192,19 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 
 			// Test the RoundTrip method directly
-			res, err := transport.RoundTrip(req)
+			res, err := transport.RoundTrip(req) //nolint:bodyclose // a transport error yields a nil response
 
 			// Assertions - the error is returned directly
-			Expect(err).NotTo(BeNil())
-			Expect(err.Error()).To(ContainSubstring("network connection error"))
-			Expect(res).To(BeNil())
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "network connection error")
+			require.Nil(t, res)
 		})
 
 		// Test for transport round trip error logging with valid destination info
-		It("should log transport round trip errors with destination details", func() {
+		t.Run("should log transport round trip errors with destination details", func(t *testing.T) {
 			// Setup
 			cache := v2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
 			// Setup mock expectations - return an error from RoundTrip after pre-round trip processing
@@ -255,22 +256,22 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 
 			// Test the RoundTrip method directly
-			res, err := transport.RoundTrip(req)
+			res, err := transport.RoundTrip(req) //nolint:bodyclose // a transport error yields a nil response
 
 			// Assertions
-			Expect(err).NotTo(BeNil())
-			Expect(err.Error()).To(ContainSubstring("connection timeout"))
-			Expect(res).To(BeNil())
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "connection timeout")
+			require.Nil(t, res)
 
 			// The error should be the original transport error
-			Expect(err).To(Equal(transportError))
+			require.Equal(t, transportError, err)
 		})
 
 		// Test for errors from getAuthErrorCategory
-		It("should handle errors from getAuthErrorCategory in postRoundTrip", func() {
+		t.Run("should handle errors from getAuthErrorCategory in postRoundTrip", func(t *testing.T) {
 			// Setup
 			cache := v2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
 			// Create a response with a valid body
@@ -336,117 +337,134 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			res, err := transport.RoundTrip(req)
 
 			// Assertions
-			Expect(err).To(BeNil())
-			Expect(res).NotTo(BeNil())
+			require.NoError(t, err)
+			require.NotNil(t, res)
+			defer func() { _ = res.Body.Close() }()
 
 			// Read the response body
 			respBody, err := io.ReadAll(res.Body)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			// The implementation doesn't modify the response body in the test environment
-			Expect(string(respBody)).To(Equal(`{"valid": "json"}`))
+			require.Equal(t, `{"valid": "json"}`, string(respBody))
 		})
 
 		// Tests for a proactive token fetch (preRoundTrip) that fails: the failure is reported
 		// through the interceptor envelope so that callers which ignore the raw HTTP status
 		// code can still tell a terminal failure apart from a retryable one.
-		DescribeTable("should report a failing proactive token fetch through the interceptor envelope",
-			func(cpResponseCode int, cpResponse string, expectedStatusCode int, expectedResponse, expectedOriginalResponse, expectedErrorType string) {
-				cache := v2.NewOauthTokenCache()
-				ctrl := gomock.NewController(GinkgoT())
+		t.Run("should report a failing proactive token fetch through the interceptor envelope", func(t *testing.T) {
+			testCases := []struct {
+				name                     string
+				cpResponseCode           int
+				cpResponse               string
+				expectedStatusCode       int
+				expectedResponse         string
+				expectedOriginalResponse string
+				expectedErrorType        string
+			}{
+				{
+					name:                     "terminal: invalid_grant is tagged as such and propagated as a 400 so the caller can abort",
+					cpResponseCode:           403,
+					cpResponse:               `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant"}`,
+					expectedStatusCode:       http.StatusBadRequest,
+					expectedResponse:         `[google_analytics] "invalid_grant" error, refresh token has been revoked`,
+					expectedOriginalResponse: `status 400: type: ref_token_invalid_grant, message: [google_analytics] "invalid_grant" error, refresh token has been revoked`,
+					expectedErrorType:        common.RefTokenInvalidGrant,
+				},
+				{
+					name:                     "retryable: a different error type is tagged with its own type and stays a 500",
+					cpResponseCode:           403,
+					cpResponse:               `{"status":403,"body":{"message":"invalid auth token refresh response","status":403,"code":"INVALID_REFRESH_RESPONSE"},"code":"INVALID_REFRESH_RESPONSE"}`,
+					expectedStatusCode:       http.StatusInternalServerError,
+					expectedResponse:         "invalid auth token refresh response",
+					expectedOriginalResponse: "status 500: type: INVALID_REFRESH_RESPONSE, message: invalid auth token refresh response",
+					expectedErrorType:        common.RefTokenInvalidResponse,
+				},
+				{
+					name:                     "retryable: a failure with no error type carries an empty ErrorType and stays a 500",
+					cpResponseCode:           200,
+					cpResponse:               `{}`,
+					expectedStatusCode:       http.StatusInternalServerError,
+					expectedResponse:         "status 500: empty secret received from CP",
+					expectedOriginalResponse: "status 500: empty secret received from CP",
+					expectedErrorType:        "",
+				},
+			}
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					cache := v2.NewOauthTokenCache()
+					ctrl := gomock.NewController(t)
 
-				// the original transport must never be reached: preRoundTrip short circuits
-				mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
+					// the original transport must never be reached: preRoundTrip short circuits
+					mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
-				mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
-				mockAuthIdentityProvider.EXPECT().Identity().Return(nil).AnyTimes()
+					mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
+					mockAuthIdentityProvider.EXPECT().Identity().Return(nil).AnyTimes()
 
-				mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
-				mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(cpResponseCode, cpResponse)
+					mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
+					mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(tc.cpResponseCode, tc.cpResponse)
 
-				oauthHandler := v2.NewOAuthHandler(mockAuthIdentityProvider,
-					v2.WithCache(v2.NewOauthTokenCache()),
-					v2.WithLocker(kitsync.NewPartitionRWLocker()),
-					v2.WithStats(stats.Default),
-					v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
-					v2.WithCpClient(mockCpConnector),
-				)
+					oauthHandler := v2.NewOAuthHandler(mockAuthIdentityProvider,
+						v2.WithCache(v2.NewOauthTokenCache()),
+						v2.WithLocker(kitsync.NewPartitionRWLocker()),
+						v2.WithStats(stats.Default),
+						v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+						v2.WithCpClient(mockCpConnector),
+					)
 
-				transport := httpClient.NewOAuthTransport(&httpClient.TransportArgs{
-					FlowType:             common.RudderFlowDelivery,
-					TokenCache:           &cache,
-					Locker:               kitsync.NewPartitionRWLocker(),
-					GetAuthErrorCategory: func([]byte) (string, error) { return "", nil },
-					Augmenter:            extensions.RouterBodyAugmenter,
-					OAuthHandler:         oauthHandler,
-					OriginalTransport:    mockRoundTrip,
-				})
+					transport := httpClient.NewOAuthTransport(&httpClient.TransportArgs{
+						FlowType:             common.RudderFlowDelivery,
+						TokenCache:           &cache,
+						Locker:               kitsync.NewPartitionRWLocker(),
+						GetAuthErrorCategory: func([]byte) (string, error) { return "", nil },
+						Augmenter:            extensions.RouterBodyAugmenter,
+						OAuthHandler:         oauthHandler,
+						OriginalTransport:    mockRoundTrip,
+					})
 
-				req, _ := http.NewRequest("POST", "http://example.com", bytes.NewReader([]byte(`{}`)))
-				req = req.WithContext(cntx.CtxWithDestination(req.Context(), &backendconfig.DestinationT{
-					ID:              "test-destination-id",
-					WorkspaceID:     "test-workspace-id",
-					Config:          map[string]any{"rudderAccountId": "test-account-id"},
-					DeliveryAccount: &backendconfig.Account{ID: "test-account-id"},
-					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						Name: "test-definition-name",
-						Config: map[string]any{
-							"auth": map[string]any{
-								"type":         "OAuth",
-								"rudderScopes": []any{"delivery"},
+					req, _ := http.NewRequest("POST", "http://example.com", bytes.NewReader([]byte(`{}`)))
+					req = req.WithContext(cntx.CtxWithDestination(req.Context(), &backendconfig.DestinationT{
+						ID:              "test-destination-id",
+						WorkspaceID:     "test-workspace-id",
+						Config:          map[string]any{"rudderAccountId": "test-account-id"},
+						DeliveryAccount: &backendconfig.Account{ID: "test-account-id"},
+						DestinationDefinition: backendconfig.DestinationDefinitionT{
+							Name: "test-definition-name",
+							Config: map[string]any{
+								"auth": map[string]any{
+									"type":         "OAuth",
+									"rudderScopes": []any{"delivery"},
+								},
 							},
 						},
-					},
-				}))
+					}))
 
-				res, err := transport.RoundTrip(req)
-				Expect(err).To(BeNil())
-				Expect(res).NotTo(BeNil())
-				Expect(res.StatusCode).To(Equal(expectedStatusCode))
+					res, err := transport.RoundTrip(req)
+					require.NoError(t, err)
+					require.NotNil(t, res)
+					defer func() { _ = res.Body.Close() }()
+					require.Equal(t, tc.expectedStatusCode, res.StatusCode)
 
-				respBody, err := io.ReadAll(res.Body)
-				Expect(err).To(BeNil())
+					respBody, err := io.ReadAll(res.Body)
+					require.NoError(t, err)
 
-				var transportResponse v2.TransportResponse
-				Expect(jsonrs.Unmarshal(respBody, &transportResponse)).To(Succeed())
-				Expect(transportResponse.InterceptorResponse.StatusCode).To(Equal(expectedStatusCode))
-				Expect(transportResponse.InterceptorResponse.Response).To(Equal(expectedResponse))
-				// ErrorType is what callers key the abort decision on, not the status code
-				Expect(transportResponse.InterceptorResponse.ErrorType).To(Equal(expectedErrorType))
-				// OriginalResponse keeps the raw error text for the callers that fall back to it
-				Expect(transportResponse.OriginalResponse).To(Equal(expectedOriginalResponse))
-			},
-			Entry("terminal: invalid_grant is tagged as such and propagated as a 400 so the caller can abort",
-				403,
-				`{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant"}`,
-				http.StatusBadRequest,
-				`[google_analytics] "invalid_grant" error, refresh token has been revoked`,
-				`status 400: type: ref_token_invalid_grant, message: [google_analytics] "invalid_grant" error, refresh token has been revoked`,
-				common.RefTokenInvalidGrant,
-			),
-			Entry("retryable: a different error type is tagged with its own type and stays a 500",
-				403,
-				`{"status":403,"body":{"message":"invalid auth token refresh response","status":403,"code":"INVALID_REFRESH_RESPONSE"},"code":"INVALID_REFRESH_RESPONSE"}`,
-				http.StatusInternalServerError,
-				"invalid auth token refresh response",
-				"status 500: type: INVALID_REFRESH_RESPONSE, message: invalid auth token refresh response",
-				common.RefTokenInvalidResponse,
-			),
-			Entry("retryable: a failure with no error type carries an empty ErrorType and stays a 500",
-				200,
-				`{}`,
-				http.StatusInternalServerError,
-				"status 500: empty secret received from CP",
-				"status 500: empty secret received from CP",
-				"",
-			),
-		)
+					var transportResponse v2.TransportResponse
+					require.NoError(t, jsonrs.Unmarshal(respBody, &transportResponse))
+					require.Equal(t, tc.expectedStatusCode, transportResponse.InterceptorResponse.StatusCode)
+					require.Equal(t, tc.expectedResponse, transportResponse.InterceptorResponse.Response)
+					// ErrorType is what callers key the abort decision on, not the status code
+					require.Equal(t, tc.expectedErrorType, transportResponse.InterceptorResponse.ErrorType)
+					// OriginalResponse keeps the raw error text for the callers that fall back to it
+					require.Equal(t, tc.expectedOriginalResponse, transportResponse.OriginalResponse)
+				})
+			}
+		})
 
 		// Test for Bad Request errors
-		It("should convert Bad Request errors to 500 errors", func() {
+		t.Run("should convert Bad Request errors to 500 errors", func(t *testing.T) {
 			// Setup
 			cache := v2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
 			// Create a response with "Bad Request" body
@@ -515,23 +533,24 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			res, err := client.Do(req)
 
 			// Assertions
-			Expect(err).To(BeNil())
-			Expect(res).NotTo(BeNil())
+			require.NoError(t, err)
+			require.NotNil(t, res)
+			defer func() { _ = res.Body.Close() }()
 
 			// Read the response body
 			respBody, err := io.ReadAll(res.Body)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			// For non-JSON responses, we can't easily parse the TransportResponse
 			// Just verify that the response contains the original error message
-			Expect(string(respBody)).To(ContainSubstring("Bad Request"))
+			require.Contains(t, string(respBody), "Bad Request")
 		})
 
 		// Test for getting secret from context error
-		It("should handle errors when getting secret from context", func() {
+		t.Run("should handle errors when getting secret from context", func(t *testing.T) {
 			// Setup
 			cache := v2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
 			// Create a response that will trigger the auth token refresh flow
@@ -602,27 +621,28 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			res, err := transport.RoundTrip(req)
 
 			// Assertions
-			Expect(err).To(BeNil())
-			Expect(res).NotTo(BeNil())
+			require.NoError(t, err)
+			require.NotNil(t, res)
+			defer func() { _ = res.Body.Close() }()
 
 			// The actual implementation returns the original status code (401)
 			// This is different from what we expected based on the code changes,
 			// but it's the actual behavior
-			Expect(res.StatusCode).To(Equal(http.StatusUnauthorized))
+			require.Equal(t, http.StatusUnauthorized, res.StatusCode)
 
 			// Read the response body
 			respBody, err := io.ReadAll(res.Body)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			// The response should contain the original error message
-			Expect(string(respBody)).To(ContainSubstring("token_expired"))
+			require.Contains(t, string(respBody), "token_expired")
 		})
 
 		// Test for Bad Request errors with JSON body
-		It("should convert Bad Request errors to 500 errors in interceptor response", func() {
+		t.Run("should convert Bad Request errors to 500 errors in interceptor response", func(t *testing.T) {
 			// Setup
 			cache := v2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
 			// Create a response with "Bad Request" status code and a JSON body
@@ -686,23 +706,24 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			res, err := client.Do(req)
 
 			// Assertions
-			Expect(err).To(BeNil())
-			Expect(res).NotTo(BeNil())
+			require.NoError(t, err)
+			require.NotNil(t, res)
+			defer func() { _ = res.Body.Close() }()
 
 			// Read the response body
 			respBody, err := io.ReadAll(res.Body)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			// For this test, we're just verifying that the response contains the original JSON
-			Expect(string(respBody)).To(ContainSubstring("Bad Request Error"))
-			Expect(string(respBody)).To(ContainSubstring("Invalid input"))
+			require.Contains(t, string(respBody), "Bad Request Error")
+			require.Contains(t, string(respBody), "Invalid input")
 		})
 
 		// Test for missing destination info in request context
-		It("should handle missing destination info in request context", func() {
+		t.Run("should handle missing destination info in request context", func(t *testing.T) {
 			// Setup
 			cache := v2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
 			// No need to set up mock expectations since we expect the transport to return early
@@ -744,23 +765,24 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			res, err := transport.RoundTrip(req)
 
 			// Assertions
-			Expect(err).To(BeNil())
-			Expect(res).NotTo(BeNil())
-			Expect(res.StatusCode).To(Equal(http.StatusInternalServerError))
+			require.NoError(t, err)
+			require.NotNil(t, res)
+			defer func() { _ = res.Body.Close() }()
+			require.Equal(t, http.StatusInternalServerError, res.StatusCode)
 
 			// Read the response body
 			respBody, err := io.ReadAll(res.Body)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			// Verify that the response contains the expected error message
-			Expect(string(respBody)).To(Equal("[OAuthPlatformError]request context data is not of destinationInfo type"))
+			require.Equal(t, "[OAuthPlatformError]request context data is not of destinationInfo type", string(respBody))
 		})
 
 		// Test for nil destination info in request context
-		It("should handle nil destination info in request context", func() {
+		t.Run("should handle nil destination info in request context", func(t *testing.T) {
 			// Setup
 			cache := v2.NewOauthTokenCache()
-			ctrl := gomock.NewController(GinkgoT())
+			ctrl := gomock.NewController(t)
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
 			// No need to set up mock expectations since we expect the transport to return early
@@ -802,16 +824,17 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			res, err := transport.RoundTrip(req)
 
 			// Assertions
-			Expect(err).To(BeNil())
-			Expect(res).NotTo(BeNil())
-			Expect(res.StatusCode).To(Equal(http.StatusInternalServerError))
+			require.NoError(t, err)
+			require.NotNil(t, res)
+			defer func() { _ = res.Body.Close() }()
+			require.Equal(t, http.StatusInternalServerError, res.StatusCode)
 
 			// Read the response body
 			respBody, err := io.ReadAll(res.Body)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
 
 			// Verify that the response contains the expected error message
-			Expect(string(respBody)).To(Equal("[OAuthPlatformError]request context data is not of destinationInfo type"))
+			require.Equal(t, "[OAuthPlatformError]request context data is not of destinationInfo type", string(respBody))
 		})
 	})
-})
+}

@@ -116,16 +116,12 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 	// deletes the moment it finishes.
 	labels[LabelRunName] = name
 
-	// WORKSPACE_ID is per-run, so it is injected programmatically on top of the
-	// config-provided env (prod injects it per workspace the same way). The
-	// config layer lowercases map keys and envVars uppercases them back, so
-	// delete the only collision form before setting ours.
-	env := maps.Clone(d.config.env.Load())
-	if env == nil {
-		env = map[string]any{}
-	}
-	delete(env, "workspace_id")
-	env["WORKSPACE_ID"] = workspaceID
+	// Set by the deployer on top of the config-provided env, which can't
+	// override them. WORKSPACE_ID is per-run (prod injects it per workspace the
+	// same way). PYT_MODE tells pyt it is a test pod: the deployer is the only
+	// thing that creates them, so no config can leave one without a mode or
+	// give it the wrong one.
+	ownEnv := map[string]string{"WORKSPACE_ID": workspaceID, "PYT_MODE": "test"}
 
 	// the test pod runs the untrusted code, so it must schedule the same way (Kata nodepool selector +
 	// toleration) and carry the same sandbox hardening (non-root, read-only
@@ -186,7 +182,7 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 					corev1.ResourceMemory: d.config.memoryLimit,
 				},
 			},
-			Env:          envVars(env),
+			Env:          envVars(d.config.env.Load(), ownEnv),
 			VolumeMounts: []corev1.VolumeMount{{Name: "tmp", MountPath: "/tmp"}},
 		}},
 		Volumes: []corev1.Volume{{
@@ -256,11 +252,15 @@ func (d *k8sDeployer) buildResources(name, workspaceID string) (*appsv1.Deployme
 // would silently mangle env names ("LOG_LEVEL" arrives as "log_level").
 // pytransformer's env is uppercase snake-case throughout, so uppercasing
 // restores the intended names regardless of the case the operator wrote.
-func envVars(env map[string]any) []corev1.EnvVar {
-	upper := make(map[string]string, len(env))
+//
+// own is set after the uppercasing, so it wins over a config key of the same
+// name whatever case that key arrived in.
+func envVars(env map[string]any, own map[string]string) []corev1.EnvVar {
+	upper := make(map[string]string, len(env)+len(own))
 	for name, value := range env {
 		upper[strings.ToUpper(name)] = fmt.Sprint(value)
 	}
+	maps.Copy(upper, own)
 	names := slices.Sorted(maps.Keys(upper))
 	vars := make([]corev1.EnvVar, 0, len(names))
 	for _, name := range names {

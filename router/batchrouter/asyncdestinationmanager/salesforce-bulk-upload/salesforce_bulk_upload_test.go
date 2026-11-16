@@ -623,6 +623,7 @@ func TestSalesforceBulk_NewManager(t *testing.T) {
 			stats.NOP,
 			destination,
 			mockBackendConfig,
+			nil,
 		)
 
 		require.NoError(t, err)

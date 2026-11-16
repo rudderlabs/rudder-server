@@ -379,7 +379,7 @@ func enhanceDiscardsSchema(consolidatedSchema model.Schema, warehouseType string
 		discards[whutils.ToProviderCase(warehouseType, colName)] = colType
 	}
 
-	if warehouseType == whutils.BQ {
+	if warehouseType == whutils.BQ || warehouseType == whutils.MAXCOMPUTE {
 		discards[whutils.ToProviderCase(warehouseType, "loaded_at")] = "datetime"
 	}
 

@@ -91,7 +91,7 @@ type YandexMetricaBulkUploader struct {
 	destination  *backendconfig.DestinationT
 }
 
-func NewManager(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*YandexMetricaBulkUploader, error) {
+func NewManager(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig, secretVersions oauthv2.SecretVersionProvider) (*YandexMetricaBulkUploader, error) {
 	yandexUploadManager := &YandexMetricaBulkUploader{
 		destination:  destination,
 		logger:       logger.Child("YandexMetrica").Child("YandexMetricaBulkUploader"),
@@ -102,6 +102,7 @@ func NewManager(conf *config.Config, logger logger.Logger, statsFactory stats.St
 		Logger:              yandexUploadManager.logger,
 		Augmenter:           augmenter.YandexReqAugmenter,
 		OAuthBreakerOptions: oauthv2.ConfigToOauthBreakerOptions("BatchRouter.YANDEX_METRICA_OFFLINE_EVENTS", conf),
+		SecretVersions:      secretVersions,
 	}
 	originalHttpClient := &http.Client{Transport: &http.Transport{}}
 	// This client is used for uploading data to yandex metrica

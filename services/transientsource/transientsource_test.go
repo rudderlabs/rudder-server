@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -17,47 +17,40 @@ import (
 )
 
 func Test_Service_Apply(t *testing.T) {
-	RegisterTestingT(t)
-
 	service := NewStaticService([]string{"one"})
 
-	Expect(service.Apply("one")).To(Equal(true))
-	Expect(service.Apply("two")).To(Equal(false))
+	require.True(t, service.Apply("one"))
+	require.False(t, service.Apply("two"))
 }
 
 func Test_Service_ApplyJob(t *testing.T) {
-	RegisterTestingT(t)
-
 	service := NewStaticService([]string{"one"})
 
 	job := &jobsdb.JobT{
 		Parameters: json.RawMessage(`{"source_id": "one"}`),
 	}
 
-	Expect(service.ApplyJob(job)).To(Equal(true))
+	require.True(t, service.ApplyJob(job))
 
 	job = &jobsdb.JobT{
 		Parameters: json.RawMessage(`{"source_id": "two"}`),
 	}
-	Expect(service.ApplyJob(job)).To(Equal(false))
+	require.False(t, service.ApplyJob(job))
 }
 
 func Test_Service_ApplyParams(t *testing.T) {
-	RegisterTestingT(t)
-
 	service := NewStaticService([]string{"one"})
 
 	params := json.RawMessage(`{"source_id": "one"}`)
 
-	Expect(service.ApplyParams(params)).To(Equal(true))
+	require.True(t, service.ApplyParams(params))
 
 	params = json.RawMessage(`{"source_id": "two"}`)
 
-	Expect(service.ApplyParams(params)).To(Equal(false))
+	require.False(t, service.ApplyParams(params))
 }
 
 func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
-	RegisterTestingT(t)
 	ctrl := gomock.NewController(t)
 	config := mock_backendconfig.NewMockBackendConfig(ctrl)
 
@@ -99,7 +92,7 @@ func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
 
 	fmt.Println("Empty sources")
 	// Then source ids are still empty
-	Expect(sourceIds).To(BeEmpty())
+	require.Empty(t, sourceIds)
 
 	sampleWorkspaceID := `workspaceID`
 	// When the config backend publishes an event with two skipped sources
@@ -125,11 +118,10 @@ func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
 
 	gotSourceIds.Wait()
 	// Then source ids will contain the two expected elements
-	Expect(sourceIds).To(Equal([]string{"one", "two"}))
+	require.Equal(t, []string{"one", "two"}, sourceIds)
 }
 
 func Test_SourceIdsSupplier_Context_Cancelled(t *testing.T) {
-	RegisterTestingT(t)
 	ctrl := gomock.NewController(t)
 	config := mock_backendconfig.NewMockBackendConfig(ctrl)
 
@@ -153,7 +145,7 @@ func Test_SourceIdsSupplier_Context_Cancelled(t *testing.T) {
 			}()
 			return ch
 		})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	// Given I have a service reading from the backend
 	service := NewService(ctx, config)
@@ -170,7 +162,7 @@ func Test_SourceIdsSupplier_Context_Cancelled(t *testing.T) {
 	ready.Wait()
 
 	// Then source ids are still empty
-	Expect(sourceIds).To(BeEmpty())
+	require.Empty(t, sourceIds)
 
 	// When the context is canceled
 	cancel()
@@ -179,5 +171,5 @@ func Test_SourceIdsSupplier_Context_Cancelled(t *testing.T) {
 	gotSourceIds.Wait()
 
 	// Then the source ids remain empty
-	Expect(sourceIds).To(BeEmpty())
+	require.Empty(t, sourceIds)
 }

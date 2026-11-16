@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -343,26 +341,12 @@ func TestAnyNonTerminalCode(t *testing.T) {
 	}
 }
 
-var _ = Describe("Proxy Request", func() {
+func TestWorkerProxyRequest(t *testing.T) {
 	initRouter()
 
-	var c *testContext
-	var conf *config.Config
-
-	BeforeEach(func() {
-		conf = config.New()
-		config.Reset()
-		c = &testContext{}
-		c.Setup()
-	})
-
-	AfterEach(func() {
-		config.Reset()
-		c.Finish()
-	})
-
-	Context("proxyRequest", func() {
-		It("should return responses transformer.ProxyRequest returned for every job on transformer.ProxyRequest's 200", func() {
+	t.Run("proxyRequest", func(t *testing.T) {
+		t.Run("should return responses transformer.ProxyRequest returned for every job on transformer.ProxyRequest's 200", func(t *testing.T) {
+			c := newRouterFixture(t)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
@@ -374,14 +358,14 @@ var _ = Describe("Proxy Request", func() {
 			mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).
 				Times(1).
 				DoAndReturn(func(ctx context.Context, proxyReqParams *transformer.ProxyRequestParams) transformer.ProxyRequestResponse {
-					Expect(len(proxyReqParams.ResponseData.Metadata)).To(Equal(2))
-					Expect(proxyReqParams.ResponseData.Metadata[0].JobID).To(Equal(int64(1)))
-					Expect(proxyReqParams.ResponseData.Metadata[1].JobID).To(Equal(int64(2)))
-					Expect(proxyReqParams.ResponseData.DestinationConfig).To(Equal(map[string]any{
+					require.Len(t, proxyReqParams.ResponseData.Metadata, 2)
+					require.Equal(t, int64(1), proxyReqParams.ResponseData.Metadata[0].JobID)
+					require.Equal(t, int64(2), proxyReqParams.ResponseData.Metadata[1].JobID)
+					require.Equal(t, map[string]any{
 						"x": map[string]any{
 							"y": "z",
 						},
-					}))
+					}, proxyReqParams.ResponseData.DestinationConfig)
 
 					return transformer.ProxyRequestResponse{
 						ProxyRequestStatusCode:   200,
@@ -401,7 +385,7 @@ var _ = Describe("Proxy Request", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -411,6 +395,7 @@ var _ = Describe("Proxy Request", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 			router.transformer = mockTransformer
 
 			<-router.backendConfigInitialized
@@ -459,13 +444,14 @@ var _ = Describe("Proxy Request", func() {
 				2: "ok2",
 			}
 
-			resp := worker.proxyRequest(context.TODO(), destinationJob, postParameters)
+			resp := worker.proxyRequest(t.Context(), destinationJob, postParameters)
 			respCodes, respBodys, contentType := resp.RespStatusCodes, resp.RespBodys, resp.RespContentType
-			require.Equal(GinkgoT(), expectedRespCodes, respCodes)
-			require.Equal(GinkgoT(), expectedRespBodys, respBodys)
-			require.Equal(GinkgoT(), "application/json", contentType)
+			require.Equal(t, expectedRespCodes, respCodes)
+			require.Equal(t, expectedRespBodys, respBodys)
+			require.Equal(t, "application/json", contentType)
 		})
-		It("should return responses transformer.ProxyRequest returned for every job on transformer.ProxyRequest's non 200 and authType is not OAuth", func() {
+		t.Run("should return responses transformer.ProxyRequest returned for every job on transformer.ProxyRequest's non 200 and authType is not OAuth", func(t *testing.T) {
+			c := newRouterFixture(t)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
@@ -477,14 +463,14 @@ var _ = Describe("Proxy Request", func() {
 			mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).
 				Times(1).
 				DoAndReturn(func(ctx context.Context, proxyReqParams *transformer.ProxyRequestParams) transformer.ProxyRequestResponse {
-					Expect(len(proxyReqParams.ResponseData.Metadata)).To(Equal(2))
-					Expect(proxyReqParams.ResponseData.Metadata[0].JobID).To(Equal(int64(1)))
-					Expect(proxyReqParams.ResponseData.Metadata[1].JobID).To(Equal(int64(2)))
-					Expect(proxyReqParams.ResponseData.DestinationConfig).To(Equal(map[string]any{
+					require.Len(t, proxyReqParams.ResponseData.Metadata, 2)
+					require.Equal(t, int64(1), proxyReqParams.ResponseData.Metadata[0].JobID)
+					require.Equal(t, int64(2), proxyReqParams.ResponseData.Metadata[1].JobID)
+					require.Equal(t, map[string]any{
 						"x": map[string]any{
 							"y": "z",
 						},
-					}))
+					}, proxyReqParams.ResponseData.DestinationConfig)
 
 					return transformer.ProxyRequestResponse{
 						ProxyRequestStatusCode:   400,
@@ -504,7 +490,7 @@ var _ = Describe("Proxy Request", func() {
 			router.Setup(
 				gaDestinationDefinition,
 				logger.NOP,
-				conf,
+				c.conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
 				transientsource.NewEmptyService(),
@@ -514,6 +500,7 @@ var _ = Describe("Proxy Request", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 			)
+			stopRouter(t, router)
 			router.transformer = mockTransformer
 
 			<-router.backendConfigInitialized
@@ -569,14 +556,14 @@ var _ = Describe("Proxy Request", func() {
 				2: "err2",
 			}
 
-			resp := worker.proxyRequest(context.TODO(), destinationJob, postParameters)
+			resp := worker.proxyRequest(t.Context(), destinationJob, postParameters)
 			respCodes, respBodys, contentType := resp.RespStatusCodes, resp.RespBodys, resp.RespContentType
-			require.Equal(GinkgoT(), expectedRespCodes, respCodes)
-			require.Equal(GinkgoT(), expectedRespBodys, respBodys)
-			require.Equal(GinkgoT(), "application/json", contentType)
+			require.Equal(t, expectedRespCodes, respCodes)
+			require.Equal(t, expectedRespBodys, respBodys)
+			require.Equal(t, "application/json", contentType)
 		})
 	})
-})
+}
 
 func TestTransformForDestination(t *testing.T) {
 	initRouter()

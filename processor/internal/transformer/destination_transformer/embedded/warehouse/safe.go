@@ -135,7 +135,11 @@ func safeColumnName(destType string, intrOpts *intrOptions, columnName string) (
 	if len(columnName) == 0 {
 		return "", response.ErrEmptyColumnName
 	}
-	return safeName(destType, intrOpts, columnName), nil
+	name := safeName(destType, intrOpts, columnName)
+	if destType == whutils.MAXCOMPUTE && name == "pt" {
+		name = "_pt"
+	}
+	return name, nil
 }
 
 func safeName(destType string, intrOpts *intrOptions, name string) string {

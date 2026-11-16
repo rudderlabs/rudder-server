@@ -4,10 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -26,179 +26,203 @@ func newTestFeaturesService(features *featuresPayload) *featuresService {
 	return handler
 }
 
-func parseTestFeatures(rawFeatures string) *featuresPayload {
+func parseTestFeatures(t *testing.T, rawFeatures string) *featuresPayload {
+	t.Helper()
 	features, err := parseFeatures([]byte(rawFeatures))
-	Expect(err).ToNot(HaveOccurred())
+	require.NoError(t, err)
 	return features
 }
 
-var _ = Describe("Transformer features", func() {
-	Context("Transformer features service", func() {
-		Describe("SecretPaths", func() {
-			DescribeTable("normalizes the transformer response",
-				func(rawFeatures, destType string, wantPaths []string, wantOK bool) {
-					paths, ok := newTestFeaturesService(parseTestFeatures(rawFeatures)).SecretPaths(destType)
-					Expect(ok).To(Equal(wantOK))
-					Expect(paths).To(Equal(wantPaths))
-				},
-				Entry("listed paths", `{"secretPaths":{"KLAVIYO":["headers.Authorization","params.api_key"]}}`, "KLAVIYO", []string{"headers.Authorization", "params.api_key"}, true),
-				Entry("empty list", `{"secretPaths":{"EMPTY":[]}}`, "EMPTY", []string{}, true),
-				Entry("null entry", `{"secretPaths":{"UNRESOLVED":null}}`, "UNRESOLVED", nil, false),
-				Entry("missing destination", `{"secretPaths":{"KLAVIYO":[]}}`, "MISSING", nil, false),
-				Entry("malformed entry", `{"secretPaths":{"KLAVIYO":"bad","BRAZE":["headers.Authorization"]}}`, "KLAVIYO", nil, false),
-				Entry("valid sibling of a malformed entry", `{"secretPaths":{"KLAVIYO":"bad","BRAZE":["headers.Authorization"]}}`, "BRAZE", []string{"headers.Authorization"}, true),
-				Entry("malformed table", `{"secretPaths":"oops"}`, "BRAZE", nil, false),
-				Entry("older transformer", `{}`, "KLAVIYO", nil, true),
-				Entry("top-level null", `{"secretPaths":null}`, "KLAVIYO", nil, true),
-			)
+func isClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
 
-			It("does not reject sibling features when the table is malformed", func() {
-				handler := newTestFeaturesService(parseTestFeatures(`{"routerTransform":{"BRAZE":true},"secretPaths":"oops"}`))
-				Expect(handler.RouterTransform("BRAZE")).To(BeTrue())
-			})
-
-			It("returns an empty successful lookup for the default and no-op services", func() {
-				paths, ok := newTestFeaturesService(defaultTransformerFeatures).SecretPaths("KLAVIYO")
-				Expect(ok).To(BeTrue())
-				Expect(paths).To(BeNil())
-				paths, ok = NewNoOpService().SecretPaths("KLAVIYO")
-				Expect(ok).To(BeTrue())
-				Expect(paths).To(BeNil())
-			})
-		})
-
-		It("defaultTransformerFeatures must advertise a non-deprecated source transformer version", func() {
-			Expect(defaultTransformerFeatures.sourceTransformerVersion()).To(Equal(V2))
-		})
-
-		It("handler should wait till features are not fetched", func() {
-			handler := newTestFeaturesService(defaultTransformerFeatures)
-
-			Consistently(func() bool {
-				select {
-				case <-handler.Wait():
-					return true
-				default:
-					return false
+func TestTransformerFeatures(t *testing.T) {
+	t.Run("Transformer features service", func(t *testing.T) {
+		t.Run("SecretPaths", func(t *testing.T) {
+			t.Run("normalizes the transformer response", func(t *testing.T) {
+				testCases := []struct {
+					name        string
+					rawFeatures string
+					destType    string
+					wantPaths   []string
+					wantOK      bool
+				}{
+					{name: "listed paths", rawFeatures: `{"secretPaths":{"KLAVIYO":["headers.Authorization","params.api_key"]}}`, destType: "KLAVIYO", wantPaths: []string{"headers.Authorization", "params.api_key"}, wantOK: true},
+					{name: "empty list", rawFeatures: `{"secretPaths":{"EMPTY":[]}}`, destType: "EMPTY", wantPaths: []string{}, wantOK: true},
+					{name: "null entry", rawFeatures: `{"secretPaths":{"UNRESOLVED":null}}`, destType: "UNRESOLVED", wantPaths: nil, wantOK: false},
+					{name: "missing destination", rawFeatures: `{"secretPaths":{"KLAVIYO":[]}}`, destType: "MISSING", wantPaths: nil, wantOK: false},
+					{name: "malformed entry", rawFeatures: `{"secretPaths":{"KLAVIYO":"bad","BRAZE":["headers.Authorization"]}}`, destType: "KLAVIYO", wantPaths: nil, wantOK: false},
+					{name: "valid sibling of a malformed entry", rawFeatures: `{"secretPaths":{"KLAVIYO":"bad","BRAZE":["headers.Authorization"]}}`, destType: "BRAZE", wantPaths: []string{"headers.Authorization"}, wantOK: true},
+					{name: "malformed table", rawFeatures: `{"secretPaths":"oops"}`, destType: "BRAZE", wantPaths: nil, wantOK: false},
+					{name: "older transformer", rawFeatures: `{}`, destType: "KLAVIYO", wantPaths: nil, wantOK: true},
+					{name: "top-level null", rawFeatures: `{"secretPaths":null}`, destType: "KLAVIYO", wantPaths: nil, wantOK: true},
 				}
-			}, 2*time.Second, 10*time.Millisecond).Should(BeFalse())
+				for _, tc := range testCases {
+					t.Run(tc.name, func(t *testing.T) {
+						paths, ok := newTestFeaturesService(parseTestFeatures(t, tc.rawFeatures)).SecretPaths(tc.destType)
+						require.Equal(t, tc.wantOK, ok)
+						require.Equal(t, tc.wantPaths, paths)
+					})
+				}
+			})
+
+			t.Run("does not reject sibling features when the table is malformed", func(t *testing.T) {
+				handler := newTestFeaturesService(parseTestFeatures(t, `{"routerTransform":{"BRAZE":true},"secretPaths":"oops"}`))
+				require.True(t, handler.RouterTransform("BRAZE"))
+			})
+
+			t.Run("returns an empty successful lookup for the default and no-op services", func(t *testing.T) {
+				paths, ok := newTestFeaturesService(defaultTransformerFeatures).SecretPaths("KLAVIYO")
+				require.True(t, ok)
+				require.Nil(t, paths)
+				paths, ok = NewNoOpService().SecretPaths("KLAVIYO")
+				require.True(t, ok)
+				require.Nil(t, paths)
+			})
 		})
 
-		It("before features are fetched, SourceTransformerVersion should return v2(default)", func() {
+		t.Run("defaultTransformerFeatures must advertise a non-deprecated source transformer version", func(t *testing.T) {
+			require.Equal(t, V2, defaultTransformerFeatures.sourceTransformerVersion())
+		})
+
+		t.Run("handler should wait till features are not fetched", func(t *testing.T) {
 			handler := newTestFeaturesService(defaultTransformerFeatures)
 
-			Expect(handler.SourceTransformerVersion()).To(Equal(V2))
+			require.Never(t, func() bool {
+				return isClosed(handler.Wait())
+			}, 2*time.Second, 10*time.Millisecond)
 		})
 
-		It("before features are fetched, TransformerProxyVersion should return v0", func() {
+		t.Run("before features are fetched, SourceTransformerVersion should return v2(default)", func(t *testing.T) {
 			handler := newTestFeaturesService(defaultTransformerFeatures)
 
-			Expect(handler.TransformerProxyVersion()).To(Equal(V0))
+			require.Equal(t, V2, handler.SourceTransformerVersion())
 		})
 
-		It("before features are fetched, defaultTransformerFeatures must be served", func() {
+		t.Run("before features are fetched, TransformerProxyVersion should return v0", func(t *testing.T) {
 			handler := newTestFeaturesService(defaultTransformerFeatures)
 
-			Expect(handler.RouterTransform("MARKETO")).To(BeTrue())
-			Expect(handler.RouterTransform("HS")).To(BeTrue())
-			Expect(handler.RouterTransform("ACTIVE_CAMPAIGN")).To(BeFalse())
-			Expect(handler.RouterTransform("ALGOLIA")).To(BeFalse())
-			Expect(handler.Regulations()).To(Equal([]string{"AM"}))
-			Expect(handler.SourceTransformerVersion()).To(Equal(V2))
+			require.Equal(t, V0, handler.TransformerProxyVersion())
 		})
 
-		It("if transformer returns an error status, features should not be considered fetched", func() {
+		t.Run("before features are fetched, defaultTransformerFeatures must be served", func(t *testing.T) {
+			handler := newTestFeaturesService(defaultTransformerFeatures)
+
+			require.True(t, handler.RouterTransform("MARKETO"))
+			require.True(t, handler.RouterTransform("HS"))
+			require.False(t, handler.RouterTransform("ACTIVE_CAMPAIGN"))
+			require.False(t, handler.RouterTransform("ALGOLIA"))
+			require.Equal(t, []string{"AM"}, handler.Regulations())
+			require.Equal(t, V2, handler.SourceTransformerVersion())
+		})
+
+		t.Run("if transformer returns an error status, features should not be considered fetched", func(t *testing.T) {
 			transformerServer := httptest.NewServer(
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					http.Error(w, "error", http.StatusInternalServerError)
 				}))
-			DeferCleanup(transformerServer.Close)
+			t.Cleanup(transformerServer.Close)
 
 			handler := newTestFeaturesService(defaultTransformerFeatures)
 			handler.options.TransformerURL = transformerServer.URL
 
-			Expect(handler.makeFeaturesFetchCall(context.Background())).To(MatchError(ContainSubstring("unexpected response status")))
+			require.ErrorContains(t, handler.makeFeaturesFetchCall(t.Context()), "unexpected response status")
 
-			ctx, cancel := context.WithCancel(context.Background())
-			DeferCleanup(cancel)
-			go handler.syncTransformerFeatureJson(ctx)
+			ctx, cancel := context.WithCancel(t.Context())
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				handler.syncTransformerFeatureJson(ctx)
+			}()
+			t.Cleanup(func() {
+				cancel()
+				<-done
+			})
 
-			Consistently(func() bool {
-				select {
-				case <-handler.Wait():
-					return true
-				default:
-					return false
-				}
-			}, 500*time.Millisecond, 10*time.Millisecond).Should(BeFalse())
-			Expect(handler.RouterTransform("MARKETO")).To(BeTrue()) // still serving defaults
+			require.Never(t, func() bool {
+				return isClosed(handler.Wait())
+			}, 500*time.Millisecond, 10*time.Millisecond)
+			require.True(t, handler.RouterTransform("MARKETO")) // still serving defaults
 		})
 
-		It("if transformer has no /features endpoint, the defaults should be served and the fetch considered successful", func() {
+		t.Run("if transformer has no /features endpoint, the defaults should be served and the fetch considered successful", func(t *testing.T) {
 			transformerServer := httptest.NewServer(
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					http.Error(w, "not found", http.StatusNotFound)
 				}))
-			DeferCleanup(transformerServer.Close)
+			t.Cleanup(transformerServer.Close)
 
-			handler := newTestFeaturesService(parseTestFeatures(`{"routerTransform": {"CUSTOMERIO": true}}`))
+			handler := newTestFeaturesService(parseTestFeatures(t, `{"routerTransform": {"CUSTOMERIO": true}}`))
 			handler.options.TransformerURL = transformerServer.URL
 
-			Expect(handler.makeFeaturesFetchCall(context.Background())).To(Succeed())
-			Expect(handler.features.Load()).To(BeIdenticalTo(defaultTransformerFeatures))
+			require.NoError(t, handler.makeFeaturesFetchCall(t.Context()))
+			require.Same(t, defaultTransformerFeatures, handler.features.Load())
 
-			ctx, cancel := context.WithCancel(context.Background())
-			DeferCleanup(cancel)
-			go handler.syncTransformerFeatureJson(ctx)
+			ctx, cancel := context.WithCancel(t.Context())
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				handler.syncTransformerFeatureJson(ctx)
+			}()
+			t.Cleanup(func() {
+				cancel()
+				<-done
+			})
 
-			Eventually(handler.Wait(), time.Second).Should(BeClosed())
-			Expect(handler.RouterTransform("MARKETO")).To(BeTrue())
-			Expect(handler.RouterTransform("CUSTOMERIO")).To(BeFalse())
+			require.Eventually(t, func() bool {
+				return isClosed(handler.Wait())
+			}, time.Second, 10*time.Millisecond)
+			require.True(t, handler.RouterTransform("MARKETO"))
+			require.False(t, handler.RouterTransform("CUSTOMERIO"))
 		})
 
-		It("should release Wait() when the context is cancelled before the first successful fetch", func() {
+		t.Run("should release Wait() when the context is cancelled before the first successful fetch", func(t *testing.T) {
 			transformerServer := httptest.NewServer(
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					http.Error(w, "error", http.StatusInternalServerError)
 				}))
-			DeferCleanup(transformerServer.Close)
+			t.Cleanup(transformerServer.Close)
 
 			handler := newTestFeaturesService(defaultTransformerFeatures)
 			handler.options.TransformerURL = transformerServer.URL
 
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(t.Context())
 			go handler.syncTransformerFeatureJson(ctx)
 
-			Consistently(handler.Wait(), 100*time.Millisecond, 10*time.Millisecond).ShouldNot(BeClosed())
+			require.Never(t, func() bool {
+				return isClosed(handler.Wait())
+			}, 100*time.Millisecond, 10*time.Millisecond)
 			cancel()
-			Eventually(handler.Wait(), time.Second).Should(BeClosed())
+			require.Eventually(t, func() bool {
+				return isClosed(handler.Wait())
+			}, time.Second, 10*time.Millisecond)
 		})
 
-		It("should not swap the features snapshot when the fetched body is unchanged", func() {
+		t.Run("should not swap the features snapshot when the fetched body is unchanged", func(t *testing.T) {
 			mockTransformerResp := `{"supportSourceTransformV1": true}`
 			transformerServer := httptest.NewServer(
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					_, _ = w.Write([]byte(mockTransformerResp))
 				}))
-			DeferCleanup(transformerServer.Close)
+			t.Cleanup(transformerServer.Close)
 
 			handler := newTestFeaturesService(defaultTransformerFeatures)
 			handler.options.TransformerURL = transformerServer.URL
 
-			Expect(handler.makeFeaturesFetchCall(context.Background())).To(Succeed())
+			require.NoError(t, handler.makeFeaturesFetchCall(t.Context()))
 			firstSnapshot := handler.features.Load()
-			Expect(handler.makeFeaturesFetchCall(context.Background())).To(Succeed())
-			Expect(handler.features.Load()).To(BeIdenticalTo(firstSnapshot))
+			require.NoError(t, handler.makeFeaturesFetchCall(t.Context()))
+			require.Same(t, firstSnapshot, handler.features.Load())
 		})
 
-		It("If source transform is not v1 or v2, it should panic on the first poll, before Wait() releases", func() {
+		t.Run("If source transform is not v1 or v2, it should panic on the first poll, before Wait() releases", func(t *testing.T) {
 			handler := newTestFeaturesService(defaultTransformerFeatures)
-
-			defer func() {
-				r := recover()
-				Expect(r).To(Equal("Webhook source v0 version has been deprecated. This is a breaking change. Upgrade transformer version to greater than 1.50.0 for v1"))
-				Expect(handler.Wait()).ToNot(BeClosed())
-			}()
 
 			mockTransformerResp := `{
 				"routerTransform": {
@@ -213,13 +237,17 @@ var _ = Describe("Transformer features", func() {
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					_, _ = w.Write([]byte(mockTransformerResp))
 				}))
-			DeferCleanup(transformerServer.Close)
+			t.Cleanup(transformerServer.Close)
 
 			handler.options.TransformerURL = transformerServer.URL
-			handler.syncTransformerFeatureJson(context.TODO())
+			require.PanicsWithValue(t,
+				"Webhook source v0 version has been deprecated. This is a breaking change. Upgrade transformer version to greater than 1.50.0 for v1",
+				func() { handler.syncTransformerFeatureJson(t.Context()) },
+			)
+			require.False(t, isClosed(handler.Wait()))
 		})
 
-		It("Get should return features fetched from transformer", func() {
+		t.Run("Get should return features fetched from transformer", func(t *testing.T) {
 			mockTransformerResp := `{
 				"routerTransform": {
 				  "a": true,
@@ -234,71 +262,71 @@ var _ = Describe("Transformer features", func() {
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					_, _ = w.Write([]byte(mockTransformerResp))
 				}))
-			DeferCleanup(transformerServer.Close)
+			t.Cleanup(transformerServer.Close)
 
-			handler := NewFeaturesService(context.TODO(), config.Default, FeaturesServiceOptions{
+			handler := NewFeaturesService(t.Context(), config.Default, FeaturesServiceOptions{
 				PollInterval:   10 * time.Millisecond,
 				TransformerURL: transformerServer.URL,
 			})
 
 			<-handler.Wait()
 
-			Expect(handler.RouterTransform("MARKETO")).To(BeFalse())
-			Expect(handler.RouterTransform("HS")).To(BeFalse())
-			Expect(handler.RouterTransform("a")).To(BeTrue())
-			Expect(handler.RouterTransform("b")).To(BeTrue())
-			Expect(handler.SourceTransformerVersion()).To(Equal(V2))
-			Expect(handler.TransformerProxyVersion()).To(Equal(V1))
-			Expect(handler.Regulations()).To(Equal([]string{"AM"}))
+			require.False(t, handler.RouterTransform("MARKETO"))
+			require.False(t, handler.RouterTransform("HS"))
+			require.True(t, handler.RouterTransform("a"))
+			require.True(t, handler.RouterTransform("b"))
+			require.Equal(t, V2, handler.SourceTransformerVersion())
+			require.Equal(t, V1, handler.TransformerProxyVersion())
+			require.Equal(t, []string{"AM"}, handler.Regulations())
 		})
 
-		It("Get should return empty array when features doesn't have regulations", func() {
-			featuresService := newTestFeaturesService(parseTestFeatures(`{}`))
+		t.Run("Get should return empty array when features doesn't have regulations", func(t *testing.T) {
+			featuresService := newTestFeaturesService(parseTestFeatures(t, `{}`))
 
-			Expect(featuresService.Regulations()).To(Equal([]string{}))
+			require.Equal(t, []string{}, featuresService.Regulations())
 		})
 
-		It("Get should return empty array when features has empty regulations", func() {
-			featuresService := newTestFeaturesService(parseTestFeatures(`{
+		t.Run("Get should return empty array when features has empty regulations", func(t *testing.T) {
+			featuresService := newTestFeaturesService(parseTestFeatures(t, `{
 				"regulations": []
 			}`))
 
-			Expect(featuresService.Regulations()).To(Equal([]string{}))
+			require.Equal(t, []string{}, featuresService.Regulations())
 		})
 
-		It("Get should return regulations when feature has regultions", func() {
-			featuresService := newTestFeaturesService(parseTestFeatures(`{
+		t.Run("Get should return regulations when feature has regultions", func(t *testing.T) {
+			featuresService := newTestFeaturesService(parseTestFeatures(t, `{
 				"regulations": ["AM"]
 			}`))
 
-			Expect(featuresService.Regulations()).To(Equal([]string{"AM"}))
+			require.Equal(t, []string{"AM"}, featuresService.Regulations())
 		})
 
-		It("TransformerProxy should be true for a destination the transformer declares", func() {
-			featuresService := newTestFeaturesService(parseTestFeatures(`{
+		t.Run("TransformerProxy should be true for a destination the transformer declares", func(t *testing.T) {
+			featuresService := newTestFeaturesService(parseTestFeatures(t, `{
 				"transformerProxy": {"CUSTOMERIO": true}
 			}`))
 
-			Expect(featuresService.TransformerProxy("CUSTOMERIO")).To(BeTrue())
-			Expect(featuresService.TransformerProxy("MONDAY")).To(BeFalse())
+			require.True(t, featuresService.TransformerProxy("CUSTOMERIO"))
+			require.False(t, featuresService.TransformerProxy("MONDAY"))
 		})
 
-		It("TransformerProxy should be false when the transformer image predates the capability", func() {
-			featuresService := newTestFeaturesService(parseTestFeatures(`{
+		t.Run("TransformerProxy should be false when the transformer image predates the capability", func(t *testing.T) {
+			featuresService := newTestFeaturesService(parseTestFeatures(t, `{
 				"routerTransform": {"CUSTOMERIO": true}
 			}`))
 
-			Expect(featuresService.TransformerProxy("CUSTOMERIO")).To(BeFalse())
+			require.False(t, featuresService.TransformerProxy("CUSTOMERIO"))
 		})
 
-		It("TransformerProxy should not confuse the capability map with the proxy protocol version", func() {
-			featuresService := newTestFeaturesService(parseTestFeatures(`{
+		t.Run("TransformerProxy should not confuse the capability map with the proxy protocol version", func(t *testing.T) {
+			featuresService := newTestFeaturesService(parseTestFeatures(t, `{
 				"supportTransformerProxyV1": true,
 				"transformerProxy": {}
 			}`))
 
-			Expect(featuresService.TransformerProxy("CUSTOMERIO")).To(BeFalse())
-			Expect(featuresService.TransformerProxyVersion()).To(Equal(V1))
+			require.False(t, featuresService.TransformerProxy("CUSTOMERIO"))
+			require.Equal(t, V1, featuresService.TransformerProxyVersion())
 		})
 	})
-})
+}

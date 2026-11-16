@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-	snowflake "github.com/snowflakedb/gosnowflake"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -24,6 +23,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
+	"github.com/rudderlabs/sqlconnect-go/sqlconnect/snowflakequery"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -264,8 +264,7 @@ func (sf *Snowflake) createSchema(ctx context.Context) (err error) {
 func checkAndIgnoreAlreadyExistError(err error) bool {
 	if err != nil {
 		// TODO: throw error if column already exists but of different type
-		var e *snowflake.SnowflakeError
-		if errors.As(err, &e) && e.SQLState == "42601" {
+		if details, ok := snowflakequery.Describe(err); ok && details.SQLState == "42601" {
 			return true
 		}
 		return false

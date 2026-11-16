@@ -70,3 +70,15 @@ func (mr *MockOAuthHandlerMockRecorder) RefreshToken(params, previousSecret any)
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshToken", reflect.TypeOf((*MockOAuthHandler)(nil).RefreshToken), params, previousSecret)
 }
+
+// ReportAuthStatusInactive mocks base method.
+func (m *MockOAuthHandler) ReportAuthStatusInactive(params *v2.OAuthTokenParams) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "ReportAuthStatusInactive", params)
+}
+
+// ReportAuthStatusInactive indicates an expected call of ReportAuthStatusInactive.
+func (mr *MockOAuthHandlerMockRecorder) ReportAuthStatusInactive(params any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportAuthStatusInactive", reflect.TypeOf((*MockOAuthHandler)(nil).ReportAuthStatusInactive), params)
+}

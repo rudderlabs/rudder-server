@@ -34,6 +34,7 @@ type ProxyResponseV0 struct {
 }
 
 type ProxyResponseV1 struct {
+	Status            int               `json:"status"`
 	Message           string            `json:"message"`
 	Response          []TPDestResponse  `json:"response"`
 	AuthErrorCategory string            `json:"authErrorCategory"`
@@ -46,6 +47,8 @@ type TransResponse struct {
 	routerJobDontBatchDirectives map[int64]bool
 	authErrorCategory            string
 	statTags                     map[string]string
+	// destinationStatusCode is the destination's HTTP status as reported by the v1 proxy (0 for v0).
+	destinationStatusCode int
 	// responseEntriesCount is the raw per-job entry count. Not derivable from the maps above: two
 	// entries for one jobID collapse to a single key.
 	responseEntriesCount int
@@ -159,6 +162,7 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 			routerJobDontBatchDirectives: routerJobDontBatchDirectives,
 			authErrorCategory:            transformerResponse.AuthErrorCategory,
 			statTags:                     transformerResponse.StatTags,
+			destinationStatusCode:        transformerResponse.Status,
 			responseEntriesCount:         len(transformerResponse.Response),
 		},
 		nil

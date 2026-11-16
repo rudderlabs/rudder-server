@@ -110,6 +110,7 @@ func TestBackendConfigManager(t *testing.T) {
 	ctx := t.Context()
 
 	tenantManager := multitenant.New(config.New(), mockBackendConfig)
+	go tenantManager.Run(ctx)
 
 	t.Run("Subscriptions", func(t *testing.T) {
 		bcm := New(c, db, tenantManager, logger.NOP, stats.NOP)

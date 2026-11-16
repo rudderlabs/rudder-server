@@ -72,7 +72,11 @@ func NewBadgerDB(conf *config.Config, stat stats.Stats, path string) (types.DB, 
 		WithLevelSizeMultiplier(conf.GetIntVar(10, 1, "BadgerDB.Dedup.levelSizeMultiplier", "BadgerDB.levelSizeMultiplier")).
 		WithMaxLevels(conf.GetIntVar(7, 1, "BadgerDB.Dedup.maxLevels", "BadgerDB.maxLevels")).
 		WithNumCompactors(conf.GetIntVar(4, 1, "BadgerDB.Dedup.numCompactors", "BadgerDB.numCompactors")).
-		WithValueThreshold(conf.GetInt64Var(10*bytesize.B, 1, "BadgerDB.Dedup.valueThreshold", "BadgerDB.valueThreshold")).
+		// Keep the threshold above 20 bytes, the longest decimal commit timestamp: badger's txn finish markers
+		// otherwise go to the value log, which is then never garbage collected and breaks WAL replay
+		// (https://github.com/dgraph-io/badger/issues/2353).
+		// TODO: revisit this default once a badger release with a fix is out.
+		WithValueThreshold(conf.GetInt64Var(1*bytesize.KB, 1, "BadgerDB.Dedup.valueThreshold", "BadgerDB.valueThreshold")).
 		WithSyncWrites(conf.GetBoolVar(false, "BadgerDB.Dedup.syncWrites", "BadgerDB.syncWrites")).
 		WithBlockCacheSize(conf.GetInt64Var(0, 1, "BadgerDB.Dedup.blockCacheSize", "BadgerDB.blockCacheSize")).
 		WithDetectConflicts(conf.GetBoolVar(false, "BadgerDB.Dedup.detectConflicts", "BadgerDB.detectConflicts"))

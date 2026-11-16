@@ -25,7 +25,7 @@ func Test_KeyDB(t *testing.T) {
 	conf := config.New()
 	startKeydb(t, conf)
 
-	db, err := NewKeyDB(conf, stats.NOP, logger.NOP)
+	db, err := NewKeyDB(t.Context(), conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
 	require.NotNil(t, db)
 	defer db.Close()
@@ -81,7 +81,7 @@ func startKeydb(t testing.TB, conf *config.Config) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	address := "localhost:" + strconv.Itoa(freePort)
+	address := "127.0.0.1:" + strconv.Itoa(freePort)
 	conf.Set("KeyDB.Dedup.Addresses", address)
 	conf.Set("KeyDB.Dedup.RetryCount", 3)
 
@@ -114,7 +114,7 @@ func startKeydb(t testing.TB, conf *config.Config) {
 		service.Close()
 	})
 
-	c, err := keydbclient.NewClient(keydbclient.Config{
+	c, err := keydbclient.NewClient(t.Context(), keydbclient.Config{
 		Addresses:       []string{address},
 		TotalHashRanges: 128,
 		RetryPolicy: keydbclient.RetryPolicy{

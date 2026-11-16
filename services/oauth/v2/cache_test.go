@@ -2,19 +2,19 @@ package v2_test
 
 import (
 	"encoding/json"
+	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
-var _ = Describe("Cache", func() {
-	It("Test Cache", func() {
+func TestOAuthTokenCache(t *testing.T) {
+	t.Run("Test Cache", func(t *testing.T) {
 		cache := v2.NewOauthTokenCache()
-		Expect(cache).NotTo(BeNil())
+		require.NotNil(t, cache)
 	})
-	It("Test Get and Set", func() {
+	t.Run("Test Get and Set", func(t *testing.T) {
 		cache := v2.NewOauthTokenCache()
 		authToken := v2.OAuthToken{
 			ExpirationDate: "2022-06-29T15:34:47.758Z",
@@ -22,10 +22,10 @@ var _ = Describe("Cache", func() {
 		}
 		cache.Store("test", authToken)
 		value, ok := cache.Load("test")
-		Expect(ok).To(BeTrue())
-		Expect(value).To(Equal(authToken))
+		require.True(t, ok)
+		require.Equal(t, authToken, value)
 	})
-	It("Test Delete", func() {
+	t.Run("Test Delete", func(t *testing.T) {
 		cache := v2.NewOauthTokenCache()
 		authToken := v2.OAuthToken{
 			ExpirationDate: "2022-06-29T15:34:47.758Z",
@@ -33,12 +33,12 @@ var _ = Describe("Cache", func() {
 		}
 		cache.Store("test", authToken)
 		value, ok := cache.Load("test")
-		Expect(ok).To(BeTrue())
-		Expect(value).To(Equal(authToken))
+		require.True(t, ok)
+		require.Equal(t, authToken, value)
 		cache.Delete("test")
 		value, ok = cache.Load("test")
-		Expect(ok).To(BeFalse())
+		require.False(t, ok)
 		var zero v2.OAuthToken
-		Expect(value).To(Equal(zero))
+		require.Equal(t, zero, value)
 	})
-})
+}

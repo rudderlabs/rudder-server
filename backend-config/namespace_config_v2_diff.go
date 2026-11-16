@@ -11,16 +11,21 @@ import (
 // describe which of its lists carry incremental updates and which are replaced wholesale.
 //
 // Workspaces are updateable: a poll with updatedAfter returns null for every workspace that did
-// not change, and the differ fills those back in from the cache. Definitions are not: the control
-// plane always sends the catalogues in full, so they are replaced on every poll - which is also
-// the only way a deleted definition ever leaves the cache.
+// not change, and the differ fills those back in from the cache. Definitions are not: a catalogue
+// is sent in full and replaces the cached one - which is also the only way a deleted definition
+// ever leaves the cache. With incremental definitions, an unchanged catalogue arrives as null and
+// the differ keeps the cached one.
 var (
 	_ diff.UpdateableObject[string]                       = &v2NamespaceConfig{}
+	_ diff.IncrementalDefinitionsReceiver                 = &v2NamespaceConfig{}
 	_ diff.UpdateableList[string, diff.UpdateableElement] = &v2Workspaces{}
 	_ diff.UpdateableElement                              = &v2Workspace{}
 	_ diff.NonUpdateablesList[string, any]                = &v2SourceDefinitions{}
 	_ diff.NonUpdateablesList[string, any]                = &v2DestinationDefinitions{}
 	_ diff.NonUpdateablesList[string, any]                = &v2AccountDefinitions{}
+	_ diff.OmittableList                                  = &v2SourceDefinitions{}
+	_ diff.OmittableList                                  = &v2DestinationDefinitions{}
+	_ diff.OmittableList                                  = &v2AccountDefinitions{}
 )
 
 func (c *v2NamespaceConfig) Updateables() iter.Seq[diff.UpdateableList[string, diff.UpdateableElement]] {
@@ -79,6 +84,8 @@ func (d *v2SourceDefinitions) Reset() { *d = make(v2SourceDefinitions) }
 
 func (d *v2SourceDefinitions) List() iter.Seq2[string, any] { return listDefinitions(*d) }
 
+func (d *v2SourceDefinitions) Omitted() bool { return *d == nil }
+
 func (d *v2SourceDefinitions) SetElementByKey(name string, object any) {
 	setDefinition(d, name, object)
 }
@@ -89,6 +96,8 @@ func (d *v2DestinationDefinitions) Reset() { *d = make(v2DestinationDefinitions)
 
 func (d *v2DestinationDefinitions) List() iter.Seq2[string, any] { return listDefinitions(*d) }
 
+func (d *v2DestinationDefinitions) Omitted() bool { return *d == nil }
+
 func (d *v2DestinationDefinitions) SetElementByKey(name string, object any) {
 	setDefinition(d, name, object)
 }
@@ -98,6 +107,8 @@ func (d *v2AccountDefinitions) Type() string { return "AccountDefinitions" }
 func (d *v2AccountDefinitions) Reset() { *d = make(v2AccountDefinitions) }
 
 func (d *v2AccountDefinitions) List() iter.Seq2[string, any] { return listDefinitions(*d) }
+
+func (d *v2AccountDefinitions) Omitted() bool { return *d == nil }
 
 func (d *v2AccountDefinitions) SetElementByKey(name string, object any) {
 	setDefinition(d, name, object)

@@ -1190,18 +1190,21 @@ func TestUserTransformURLRouting(t *testing.T) {
 	)
 
 	type recordingSrv struct {
-		srv   *httptest.Server
-		hits  *atomic.Int32
-		paths *atomic.Value // last hit path
+		srv         *httptest.Server
+		hits        *atomic.Int32
+		paths       *atomic.Value // last hit path
+		workspaceID *atomic.Value // last hit's transformerclient.HeaderWorkspaceID
 	}
 
 	newRecordingSrv := func(t *testing.T) recordingSrv {
 		var hits atomic.Int32
-		var path atomic.Value
+		var path, workspaceIDHeader atomic.Value
 		path.Store("")
+		workspaceIDHeader.Store("")
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			hits.Add(1)
 			path.Store(r.URL.Path)
+			workspaceIDHeader.Store(r.Header.Get(transformerclient.HeaderWorkspaceID))
 
 			var reqBody []types.TransformerEvent
 			require.NoError(t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
@@ -1218,7 +1221,7 @@ func TestUserTransformURLRouting(t *testing.T) {
 			require.NoError(t, jsonrs.NewEncoder(w).Encode(responses))
 		}))
 		t.Cleanup(srv.Close)
-		return recordingSrv{srv: srv, hits: &hits, paths: &path}
+		return recordingSrv{srv: srv, hits: &hits, paths: &path, workspaceID: &workspaceIDHeader}
 	}
 
 	makeEvents := func(language, versionID, wsID string) []types.TransformerEvent {
@@ -1302,6 +1305,7 @@ func TestUserTransformURLRouting(t *testing.T) {
 		rsp := tr.Transform(context.Background(), makeEvents("javascript", versionID, workspaceID))
 		require.Equal(t, expectedResponseFor(workspaceID), rsp)
 		assertOnly(t, f, &f.js, "/customTransform")
+		require.Empty(t, f.js.workspaceID.Load(), "rudder-transformer serves every workspace: no workspace header")
 	})
 
 	t.Run("JS — flag on → JS URL (unaffected)", func(t *testing.T) {
@@ -1311,6 +1315,7 @@ func TestUserTransformURLRouting(t *testing.T) {
 		rsp := tr.Transform(context.Background(), makeEvents("javascript", versionID, workspaceID))
 		require.Equal(t, expectedResponseFor(workspaceID), rsp)
 		assertOnly(t, f, &f.js, "/customTransform")
+		require.Empty(t, f.js.workspaceID.Load(), "rudder-transformer serves every workspace: no workspace header")
 	})
 
 	t.Run("Python — flag off → panics rather than falling back to JS", func(t *testing.T) {
@@ -1333,6 +1338,7 @@ func TestUserTransformURLRouting(t *testing.T) {
 		rsp := tr.Transform(context.Background(), makeEvents("pythonfaas", versionID, workspaceID))
 		require.Equal(t, expectedResponseFor(workspaceID), rsp)
 		assertOnly(t, f, &f.perWS, f.perWSExpectPath)
+		require.Equal(t, workspaceID, f.perWS.workspaceID.Load(), "the traffic pod checks the batch's workspace")
 	})
 
 	t.Run("Python — flag on, empty workspaceID → panics (invariant violation)", func(t *testing.T) {
@@ -1346,6 +1352,61 @@ func TestUserTransformURLRouting(t *testing.T) {
 				tr.Transform(context.Background(), makeEvents("pythonfaas", versionID, ""))
 			},
 		)
+	})
+
+	const pythonTransformationsEnabledKey = "Processor.UserTransformer.pythonTransformationsEnabled"
+
+	t.Run("Python — transformations disabled → aborted, no request, any routing flag", func(t *testing.T) {
+		for _, perWS := range []bool{false, true} {
+			f := newFixture(t)
+			f.conf.Set(pythonTransformationsEnabledKey, false)
+			f.conf.Set("Processor.UserTransformer.perWorkspacePyTEnabled", perWS)
+			tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+			events := makeEvents("pythonfaas", versionID, workspaceID)
+			rsp := tr.Transform(context.Background(), events)
+			require.Empty(t, rsp.Events)
+			require.Equal(t, []types.TransformerResponse{{
+				Metadata:   events[0].Metadata,
+				StatusCode: http.StatusBadRequest,
+				Error:      user_transformer.ErrPythonTransformationsNotSupported.Error(),
+			}}, rsp.FailedEvents)
+			assertNoHits(t, f)
+		}
+	})
+
+	t.Run("Python — transformations disabled → logs ids and event count, no payload", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set(pythonTransformationsEnabledKey, false)
+		ctrl := gomock.NewController(t)
+		log := mock_logger.NewMockLogger(ctrl)
+		log.EXPECT().Child(gomock.Any()).Return(log).AnyTimes()
+		var fields []logger.Field
+		log.EXPECT().Errorn(
+			gomock.Regex("^Aborting python transformation"), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
+		).Do(func(_ string, f ...logger.Field) { fields = f }).Times(1)
+
+		tr := user_transformer.New(f.conf, log, stats.NOP)
+		tr.Transform(context.Background(), makeEvents("pythonfaas", versionID, workspaceID))
+
+		got := make(map[string]any, len(fields))
+		for _, field := range fields {
+			got[field.Name()] = field.Value()
+		}
+		require.Equal(t, map[string]any{
+			"workspaceId":      workspaceID,
+			"transformationId": "test-transformation",
+			"destinationId":    "",
+			"events":           int64(1),
+		}, got)
+	})
+
+	t.Run("JS — transformations disabled → JS URL (unaffected)", func(t *testing.T) {
+		f := newFixture(t)
+		f.conf.Set(pythonTransformationsEnabledKey, false)
+		tr := user_transformer.New(f.conf, logger.NOP, stats.NOP)
+		rsp := tr.Transform(context.Background(), makeEvents("javascript", versionID, workspaceID))
+		require.Equal(t, expectedResponseFor(workspaceID), rsp)
+		assertOnly(t, f, &f.js, "/customTransform")
 	})
 }
 
@@ -1650,11 +1711,12 @@ func TestColdStartCounter(t *testing.T) {
 
 func TestForwardTest(t *testing.T) {
 	t.Run("each endpoint method posts to baseURL+path and returns status/body", func(t *testing.T) {
-		var gotPath, gotContentType string
+		var gotPath, gotContentType, gotWorkspaceID string
 		var gotBody []byte
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			gotPath = r.URL.Path
 			gotContentType = r.Header.Get("Content-Type")
+			gotWorkspaceID = r.Header.Get(transformerclient.HeaderWorkspaceID)
 			gotBody, _ = io.ReadAll(r.Body)
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"ok":true}`))
@@ -1663,14 +1725,17 @@ func TestForwardTest(t *testing.T) {
 
 		client := user_transformer.New(config.New(), logger.NOP, stats.NOP)
 
+		// Sent as given, since pyt compares it case-insensitively, and only to the endpoints of test and traffic pods:
+		// the AST ops go to the shared pyt-ast pods.
 		cases := map[string]struct {
-			call     func(context.Context, string, string, []byte) (int, []byte, error)
-			wantPath string
+			call            func(context.Context, string, string, []byte) (int, []byte, error)
+			wantPath        string
+			wantWorkspaceID string
 		}{
-			"Test":        {client.Test, "/test"},
-			"TestRun":     {client.TestRun, "/testRun"},
-			"TestLibrary": {client.TestLibrary, "/test-library"},
-			"ExtractLibs": {client.ExtractLibs, "/extract-libs"},
+			"Test":        {client.Test, "/test", "WS-1"},
+			"TestRun":     {client.TestRun, "/testRun", "WS-1"},
+			"TestLibrary": {client.TestLibrary, "/test-library", ""},
+			"ExtractLibs": {client.ExtractLibs, "/extract-libs", ""},
 		}
 		for name, tc := range cases {
 			t.Run(name, func(t *testing.T) {
@@ -1680,40 +1745,57 @@ func TestForwardTest(t *testing.T) {
 				require.JSONEq(t, `{"ok":true}`, string(body))
 				require.Equal(t, tc.wantPath, gotPath)
 				require.Equal(t, "application/json", gotContentType)
+				require.Equal(t, tc.wantWorkspaceID, gotWorkspaceID)
 				require.JSONEq(t, `{"code":"x"}`, string(gotBody))
 			})
 		}
 	})
 
-	t.Run("retries a cold-start 503 with a small backoff then succeeds", func(t *testing.T) {
-		var attempts atomic.Int32
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if attempts.Add(1) < 3 {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				return
+	for _, method := range []string{"Test", "TestRun"} {
+		t.Run(method+" retries a cold-start 503 with a small backoff then succeeds", func(t *testing.T) {
+			var (
+				attempts     atomic.Int32
+				mu           sync.Mutex
+				workspaceIDs []string
+			)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				workspaceIDs = append(workspaceIDs, r.Header.Get(transformerclient.HeaderWorkspaceID))
+				mu.Unlock()
+				if attempts.Add(1) < 3 {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`done`))
+			}))
+			defer srv.Close()
+
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			client := user_transformer.New(config.New(), logger.NOP, statsStore,
+				user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
+
+			call := client.Test
+			if method == "TestRun" {
+				call = client.TestRun
 			}
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`done`))
-		}))
-		defer srv.Close()
+			status, body, err := call(context.Background(), srv.URL, "ws-1", []byte(`{}`))
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, status)
+			require.Equal(t, "done", string(body))
+			require.EqualValues(t, 3, attempts.Load())
+			mu.Lock()
+			require.Equal(t, []string{"ws-1", "ws-1", "ws-1"}, workspaceIDs, "every attempt carries the workspace")
+			mu.Unlock()
 
-		statsStore, err := memstats.New()
-		require.NoError(t, err)
-		client := user_transformer.New(config.New(), logger.NOP, statsStore,
-			user_transformer.WithMaxRetryBackoffInterval(config.NewMockValueLoader(5*time.Millisecond)))
-
-		status, body, err := client.Test(context.Background(), srv.URL, "ws-1", []byte(`{}`))
-		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, status)
-		require.Equal(t, "done", string(body))
-		require.EqualValues(t, 3, attempts.Load())
-
-		total := 0
-		for _, m := range statsStore.GetByName("processor_user_transformer_cold_start_errors_total") {
-			total += int(m.Value)
-		}
-		require.Equal(t, 2, total, "each cold-start retry should increment the counter")
-	})
+			total := 0
+			for _, m := range statsStore.GetByName("processor_user_transformer_cold_start_errors_total") {
+				total += int(m.Value)
+			}
+			require.Equal(t, 2, total, "each cold-start retry should increment the counter")
+		})
+	}
 
 	t.Run("retries other transport errors without counting them as cold starts", func(t *testing.T) {
 		var attempts atomic.Int32

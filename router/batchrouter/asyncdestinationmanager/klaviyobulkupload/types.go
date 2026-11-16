@@ -23,7 +23,6 @@ type KlaviyoBulkUploader struct {
 	Logger                logger.Logger
 	StatsFactory          stats.Stats
 	KlaviyoAPIService     KlaviyoAPIService
-	JobIdToIdentifierMap  map[string]int64
 	BatchSize             int // Override BATCHSIZE for testing (0 = use default)
 	MaxPayloadSize        int // Override MAXPAYLOADSIZE for testing (0 = use default)
 	MaxAllowedProfileSize int // Override MAXALLOWEDPROFILESIZE for testing (0 = use default)
@@ -171,6 +170,10 @@ type List struct {
 }
 type Metadata struct {
 	JobID int `json:"job_id,omitempty"`
+}
+
+type importingMetadata struct {
+	IdentifierHash string `json:"identifierHash"`
 }
 
 type Profile struct {

@@ -18,7 +18,7 @@ var (
 
 // isOauthTokenExpired checks if the token is expired or is about to expire within the refreshBeforeExpiry duration.
 // If the token is not expired, but its secret is the same as the previous secret, it is also considered to be expired.
-func isOauthTokenExpired(oauthToken OAuthToken, previousSecret json.RawMessage, refreshBeforeExpiry time.Duration, statsHandler OAuthStatsHandler) bool {
+func isOauthTokenExpired(oauthToken OAuthToken, previousSecret json.RawMessage, refreshBeforeExpiry time.Duration, statsHandler oauthStatsHandler) bool {
 	expires, err := oauthToken.Expires(refreshBeforeExpiry)
 	if err != nil {
 		statsHandler.Increment("proactive_token_refresh", stats.Tags{"errorMessage": "parsing failed"})

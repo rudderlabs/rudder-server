@@ -4,6 +4,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 )
 
+// limiterTimers match the timers of every limiter.
+var limiterTimers = []string{"*_limiter_waiting", "*_limiter_sleeping", "*_limiter_working"}
+
 var (
 	defaultHistogramBuckets = []float64{
 		0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60, 300, 600, // 2ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s, 30s, 1m, 5m

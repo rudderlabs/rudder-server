@@ -51,6 +51,7 @@ var (
 	Diagnostics              diagnostics.DiagnosticsI
 	cacheOverride            cache.Cache
 	incrementalConfigUpdates bool
+	incrementalDefinitions   bool
 )
 
 func disableCache() {
@@ -101,6 +102,7 @@ func loadConfig() {
 	configFromFile = config.GetBoolVar(false, "BackendConfig.configFromFile")
 	configEnvReplacementEnabled = config.GetBoolVar(true, "BackendConfig.envReplacementEnabled")
 	incrementalConfigUpdates = config.GetBoolVar(false, "BackendConfig.incrementalConfigUpdates")
+	incrementalDefinitions = config.GetBoolVar(false, "BackendConfig.incrementalDefinitions")
 	dbCacheEnabled = config.GetBoolVar(true, "BackendConfig.dbCacheEnabled")
 }
 
@@ -303,6 +305,7 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 			configEnvHandler:         configEnvHandler,
 			cpRouterURL:              cpRouterURL,
 			incrementalConfigUpdates: incrementalConfigUpdates,
+			incrementalDefinitions:   incrementalDefinitions,
 		}
 	default:
 		return nil, fmt.Errorf("deployment type %q not supported", deploymentType)

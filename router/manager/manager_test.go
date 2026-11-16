@@ -8,13 +8,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
 const (
@@ -99,13 +98,10 @@ func TestRouterManager(t *testing.T) {
 		}
 	)
 
-	RegisterTestingT(t)
 	initRouter()
 	config.Set("Router.isolationMode", "none")
 	defer config.Reset()
 
-	asyncHelper := testutils.AsyncTestHelper{}
-	asyncHelper.Setup()
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
@@ -117,17 +113,21 @@ func TestRouterManager(t *testing.T) {
 
 		ch := make(chan pubsub.DataEvent, 1)
 		ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{workspaceID: sampleBackendConfig}, Topic: string(topic)}
+		// The router subscribes with a context that is never cancelled, so the channel is also closed when the test ends.
 		go func() {
-			<-ctx.Done()
+			select {
+			case <-ctx.Done():
+			case <-t.Context().Done():
+			}
 			close(ch)
 		}()
 		return ch
 	}).AnyTimes()
 	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
-	rtDB := jobsdb.NewForReadWrite("rt")
+	rtDB := jobsdb.NewForReadWrite("rt", jobsdb.WithStats(stats.NOP))
 	mockRtDB := &mockJobsDB{JobsDB: rtDB}
-	brtDB := jobsdb.NewForReadWrite("batch_rt")
+	brtDB := jobsdb.NewForReadWrite("batch_rt", jobsdb.WithStats(stats.NOP))
 	defer rtDB.Close()
 	defer brtDB.Close()
 	rtFactory := &router.Factory{

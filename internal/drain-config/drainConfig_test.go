@@ -25,7 +25,7 @@ func TestDrainConfigRoutine(t *testing.T) {
 	conf, db := testSetup(t)
 	conf.Set("drainConfig.pollFrequency", "100ms")
 	conf.Set("drainConfig.cleanupFrequency", "50ms")
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
 	log := logger.NOP
 	sts, err := memstats.New()
 	require.NoError(t, err, "should create stats")
@@ -51,6 +51,7 @@ func TestDrainConfigRoutine(t *testing.T) {
 	}, 1*time.Second, 100*time.Millisecond, "should read from drain config table")
 	require.Nil(t, conf.GetStringSliceVar(nil, "drain.jobRunIDs"), "should've cleaned up")
 
+	cancel()
 	drainConfigManager.Stop()
 }
 

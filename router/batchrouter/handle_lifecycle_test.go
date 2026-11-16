@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -14,7 +15,10 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
 func testAsyncDestination(revisionID string) backendconfig.DestinationT {
@@ -39,6 +43,7 @@ func TestInitAsyncDestinationStructInstallsInvalidManagerWithFailedAt(t *testing
 		stats.Stats,
 		*backendconfig.DestinationT,
 		backendconfig.BackendConfig,
+		oauthv2.SecretVersionProvider,
 	) (asynccommon.AsyncDestinationManager, error) {
 		return nil, errors.New("transient auth error")
 	}
@@ -84,6 +89,7 @@ func TestRefreshDestinationInvalidManagerRetryPolicy(t *testing.T) {
 			stats.Stats,
 			*backendconfig.DestinationT,
 			backendconfig.BackendConfig,
+			oauthv2.SecretVersionProvider,
 		) (asynccommon.AsyncDestinationManager, error) {
 			t.Fatal("manager factory should not be called during cooldown")
 			return nil, errors.New("unexpected manager factory call")
@@ -114,6 +120,7 @@ func TestRefreshDestinationInvalidManagerRetryPolicy(t *testing.T) {
 			stats.Stats,
 			*backendconfig.DestinationT,
 			backendconfig.BackendConfig,
+			oauthv2.SecretVersionProvider,
 		) (asynccommon.AsyncDestinationManager, error) {
 			factoryCalls++
 			return manager, nil
@@ -160,6 +167,7 @@ func TestRefreshDestinationInvalidManagerRetryPolicy(t *testing.T) {
 			stats.Stats,
 			*backendconfig.DestinationT,
 			backendconfig.BackendConfig,
+			oauthv2.SecretVersionProvider,
 		) (asynccommon.AsyncDestinationManager, error) {
 			factoryCalls++
 			return nil, errors.New("still failing")
@@ -196,6 +204,7 @@ func TestRefreshDestinationInvalidManagerRetryPolicy(t *testing.T) {
 			stats.Stats,
 			*backendconfig.DestinationT,
 			backendconfig.BackendConfig,
+			oauthv2.SecretVersionProvider,
 		) (asynccommon.AsyncDestinationManager, error) {
 			factoryCalls++
 			return manager, nil
@@ -222,6 +231,7 @@ func TestRefreshDestinationInvalidManagerRetryPolicy(t *testing.T) {
 			stats.Stats,
 			*backendconfig.DestinationT,
 			backendconfig.BackendConfig,
+			oauthv2.SecretVersionProvider,
 		) (asynccommon.AsyncDestinationManager, error) {
 			t.Fatal("manager factory should not be called for a healthy unchanged destination")
 			return nil, errors.New("unexpected manager factory call")
@@ -250,6 +260,7 @@ func TestRefreshDestinationInvalidManagerRetryPolicy(t *testing.T) {
 			stats.Stats,
 			*backendconfig.DestinationT,
 			backendconfig.BackendConfig,
+			oauthv2.SecretVersionProvider,
 		) (asynccommon.AsyncDestinationManager, error) {
 			factoryCalls++
 			return manager, nil
@@ -260,4 +271,50 @@ func TestRefreshDestinationInvalidManagerRetryPolicy(t *testing.T) {
 		require.Equal(t, 1, factoryCalls)
 		require.Same(t, manager, batchRouter.asyncDestinationStruct[destination.ID].Manager)
 	})
+}
+
+// validManager is a manager the batch router keeps until the destination's revision changes
+type validManager struct{ asynccommon.InvalidManager }
+
+func TestBackendConfigSubscriberProvidesAccountSecretVersions(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	destination := testAsyncDestination("rev-1")
+	destination.DeliveryAccount = &backendconfig.Account{ID: "acct-1", SecretVersion: 7}
+
+	ch := make(chan pubsub.DataEvent, 2)
+	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(ctrl)
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).Return(pubsub.DataChannel(ch))
+
+	batchRouter := defaultHandle("ELOQUA")
+	batchRouter.backendConfig = mockBackendConfig
+	batchRouter.backgroundCtx = context.Background()
+	batchRouter.backendConfigInitialized = make(chan bool)
+	var providers []oauthv2.SecretVersionProvider
+	batchRouter.asyncManagerFactory = func(
+		_ *config.Config,
+		_ logger.Logger,
+		_ stats.Stats,
+		_ *backendconfig.DestinationT,
+		_ backendconfig.BackendConfig,
+		secretVersions oauthv2.SecretVersionProvider,
+	) (asynccommon.AsyncDestinationManager, error) {
+		providers = append(providers, secretVersions)
+		return &validManager{}, nil
+	}
+
+	configWith := func(destination backendconfig.DestinationT) pubsub.DataEvent {
+		return pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{
+			"ws-1": {Sources: []backendconfig.SourceT{{ID: "src-1", Destinations: []backendconfig.DestinationT{destination}}}},
+		}}
+	}
+	ch <- configWith(destination)
+	// a re-authorization bumps the account's version, not the destination's revision
+	destination.DeliveryAccount = &backendconfig.Account{ID: "acct-1", SecretVersion: 8}
+	ch <- configWith(destination)
+	close(ch)
+	batchRouter.backendConfigSubscriber()
+
+	require.Len(t, providers, 1, "the manager is built once, as the destination's revision did not change")
+	require.Equal(t, 8, providers[0].SecretVersion("acct-1"), "the manager's handler sees the latest version")
+	require.Zero(t, providers[0].SecretVersion("other"))
 }

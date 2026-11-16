@@ -816,8 +816,13 @@ func TestPendingTrackerConcurrency(t *testing.T) {
 		}
 	})
 	require.NoError(t, writers.Wait())
-	close(stop) // stop completing while jobs are still pending, so the final gauges are not trivially zero
+	close(stop)
 	require.NoError(t, others.Wait())
+	// the processor may have drained every source by now, so leave some jobs pending for the final gauges to be non-zero
+	for _, source := range sources {
+		env.store(source, 3)
+		counter(&stored, source).Add(3)
+	}
 
 	expected := make(map[string]float64)
 	for _, source := range sources {
@@ -835,10 +840,5 @@ func TestPendingTrackerConcurrency(t *testing.T) {
 		total += float64(counter(&completed, source).Load())
 	}
 	require.Greater(t, total, 100.0, "jobs should be completed during the run")
-	var pending float64
-	for _, v := range expected {
-		pending += v
-	}
-	require.Greater(t, pending, 0.0, "jobs should still be pending at the end")
 	t.Logf("transitions: %d, completed: %.0f, expected pending: %v", len(transitions.Durations()), total, expected)
 }

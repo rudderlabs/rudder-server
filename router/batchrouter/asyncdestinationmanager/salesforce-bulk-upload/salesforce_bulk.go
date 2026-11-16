@@ -37,6 +37,7 @@ func NewManager(
 	statsFactory stats.Stats,
 	destination *backendconfig.DestinationT,
 	backendConfig backendconfig.BackendConfig,
+	secretVersions oauthv2.SecretVersionProvider,
 ) (common.AsyncDestinationManager, error) {
 	httpClientTimeout := conf.GetDurationVar(30, time.Second, "SalesforceBulkUpload.httpClientTimeout")
 	cache := oauthv2.NewOauthTokenCache()
@@ -46,6 +47,7 @@ func NewManager(
 		Logger:              childLogger,
 		Augmenter:           augmenter.NewRequestAugmenter(),
 		OAuthBreakerOptions: oauthv2.ConfigToOauthBreakerOptions("BatchRouter.SALESFORCE_BULK_UPLOAD", conf),
+		SecretVersions:      secretVersions,
 	}
 	originalHttpClient := &http.Client{Transport: &http.Transport{}, Timeout: httpClientTimeout}
 	client := oauthv2httpclient.NewOAuthHttpClient(originalHttpClient, oauthv2common.RudderFlowDelivery, &cache, backendConfig, func(responseBody []byte) (string, error) {

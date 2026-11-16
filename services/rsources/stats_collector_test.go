@@ -1,13 +1,11 @@
 package rsources
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"go.uber.org/mock/gomock"
 
@@ -18,576 +16,525 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
-var _ = Describe("Using StatsCollector", Serial, func() {
-	var (
-		jobs                    []*jobsdb.JobT
-		jobErrors               map[uuid.UUID]string
-		jobStatuses             []*jobsdb.JobStatusT
-		mockCtrl                *gomock.Controller
-		js                      *MockJobService
-		statsCollector          StatsCollector
-		droppedJobsCollector    FailedJobsStatsCollector
-		sourceOnlyStatCollector FailedJobsStatsCollector
-		statsStore              *memstats.Store
-		syncSettings            SyncSettingDelegate
-		statsTag                stats.Tags
-		droppedStatsTag         stats.Tags
-		srcOnlyStatsTag         stats.Tags
-	)
+const errNotBeganProcessing = "cannot update job statuses without having previously called BeginProcessing"
 
-	BeforeEach(func() {
-		mockCtrl = gomock.NewController(GinkgoT())
-		js = NewMockJobService(mockCtrl)
-		var err error
-		statsStore, err = memstats.New()
-		Expect(err).To(BeNil())
-		statsTag = stats.Tags{"module": "stats"}
-		droppedStatsTag = stats.Tags{"module": "dropped-jobs"}
-		srcOnlyStatsTag = stats.Tags{"module": "src-only"}
+type statsCollectorFixture struct {
+	js                      *MockJobService
+	statsCollector          StatsCollector
+	droppedJobsCollector    FailedJobsStatsCollector
+	sourceOnlyStatCollector FailedJobsStatsCollector
+	statsStore              *memstats.Store
+	syncSettings            SyncSettingDelegate
+	statsTag                stats.Tags
+	droppedStatsTag         stats.Tags
+	srcOnlyStatsTag         stats.Tags
+	params                  jobParams
+	jobs                    []*jobsdb.JobT
+	jobErrors               map[uuid.UUID]string
+	jobStatuses             []*jobsdb.JobStatusT
+}
+
+func newStatsCollectorFixture(t *testing.T) *statsCollectorFixture {
+	t.Helper()
+	mockCtrl := gomock.NewController(t)
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+	f := &statsCollectorFixture{
+		js:              NewMockJobService(mockCtrl),
+		statsStore:      statsStore,
+		statsTag:        stats.Tags{"module": "stats"},
+		droppedStatsTag: stats.Tags{"module": "dropped-jobs"},
+		srcOnlyStatsTag: stats.Tags{"module": "src-only"},
 		// A delegate that captures nothing: this suite is about the stats and the
 		// record ids, not about the error text. The delegate seam itself is covered in
 		// stats_collector_delegate_test.go.
-		syncSettings = NewStaticSyncSettingDelegate("", nil)
-		statsCollector = NewStatsCollector(js, statsTag["module"], statsStore)
-		droppedJobsCollector = NewDroppedJobsCollector(js, droppedStatsTag["module"], statsStore)
-		sourceOnlyStatCollector = NewDroppedJobsCollector(js, srcOnlyStatsTag["module"], statsStore, IgnoreDestinationID())
-		jobs = []*jobsdb.JobT{}
-		jobErrors = map[uuid.UUID]string{}
-		jobStatuses = []*jobsdb.JobStatusT{}
-	})
+		syncSettings: NewStaticSyncSettingDelegate("", nil),
+		jobs:         []*jobsdb.JobT{},
+		jobErrors:    map[uuid.UUID]string{},
+		jobStatuses:  []*jobsdb.JobStatusT{},
+	}
+	f.statsCollector = NewStatsCollector(f.js, f.statsTag["module"], f.statsStore)
+	f.droppedJobsCollector = NewDroppedJobsCollector(f.js, f.droppedStatsTag["module"], f.statsStore)
+	f.sourceOnlyStatCollector = NewDroppedJobsCollector(f.js, f.srcOnlyStatsTag["module"], f.statsStore, IgnoreDestinationID())
+	return f
+}
 
-	When("there are rudder-sources jobs", func() {
-		var params jobParams
-		BeforeEach(func() {
-			params = jobParams{
+func (f *statsCollectorFixture) targetKey() JobTargetKey {
+	return JobTargetKey{
+		TaskRunID:     f.params.TaskRunID,
+		SourceID:      f.params.SourceID,
+		DestinationID: f.params.DestinationID,
+	}
+}
+
+func TestUsingStatsCollector(t *testing.T) {
+	t.Run("when there are rudder-sources jobs", func(t *testing.T) {
+		withRudderSourcesJobs := func(t *testing.T) *statsCollectorFixture {
+			t.Helper()
+			f := newStatsCollectorFixture(t)
+			f.params = jobParams{
 				JobRunID:      "jobRunId",
 				TaskRunID:     "taskRunId",
 				SourceID:      "sourceId",
 				DestinationID: "destinationId",
 				RecordID:      "recordId",
 			}
-			jobs = append(jobs, generateJobs(10, params)...)
-		})
+			f.jobs = append(f.jobs, generateJobs(t, 10, f.params)...)
+			return f
+		}
 
-		Context("all jobs are stored", func() {
-			BeforeEach(func() {
-				statsCollector.JobsStored(jobs)
-			})
+		t.Run("all jobs are stored", func(t *testing.T) {
+			withJobsStored := func(t *testing.T) *statsCollectorFixture {
+				t.Helper()
+				f := withRudderSourcesJobs(t)
+				f.statsCollector.JobsStored(f.jobs)
+				return f
+			}
 
-			It("can publish without error all statuses as In stats", func() {
-				js.EXPECT().
+			t.Run("can publish without error all statuses as In stats", func(t *testing.T) {
+				f := withJobsStored(t)
+				f.js.EXPECT().
 					IncrementStats(
 						gomock.Any(),
 						gomock.Any(),
-						params.JobRunID,
-						JobTargetKey{
-							TaskRunID:     params.TaskRunID,
-							SourceID:      params.SourceID,
-							DestinationID: params.DestinationID,
-						},
+						f.params.JobRunID,
+						f.targetKey(),
 						Stats{
-							In: uint(len(jobs)),
+							In: uint(len(f.jobs)),
 						}).
 					Times(1)
 
-				err := statsCollector.Publish(context.TODO(), nil)
-				Expect(err).To(BeNil())
-				Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+				err := f.statsCollector.Publish(t.Context(), nil)
+				require.NoError(t, err)
+				require.Len(t, f.statsStore.Get(rsourcesPublishTime, f.statsTag).Durations(), 1)
 			})
 
-			Context("underlying service returns an error", func() {
-				BeforeEach(func() {
-					js.EXPECT().
+			t.Run("underlying service returns an error", func(t *testing.T) {
+				t.Run("fails during publish", func(t *testing.T) {
+					f := withJobsStored(t)
+					f.js.EXPECT().
 						IncrementStats(
 							gomock.Any(),
 							gomock.Any(),
-							params.JobRunID,
-							JobTargetKey{
-								TaskRunID:     params.TaskRunID,
-								SourceID:      params.SourceID,
-								DestinationID: params.DestinationID,
-							},
+							f.params.JobRunID,
+							f.targetKey(),
 							Stats{
-								In: uint(len(jobs)),
+								In: uint(len(f.jobs)),
 							}).
 						Times(1).
 						Return(fmt.Errorf("error"))
-				})
-				It("fails during publish", func() {
-					err := statsCollector.Publish(context.TODO(), nil)
-					Expect(err).ToNot(BeNil())
-					Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+
+					err := f.statsCollector.Publish(t.Context(), nil)
+					require.Error(t, err)
+					require.Empty(t, f.statsStore.Get(rsourcesPublishTime, f.statsTag).Durations())
 				})
 			})
 		})
 
-		Context("half of the jobs have errors", func() {
-			BeforeEach(func() {
-				for i, job := range jobs {
-					if i < len(jobs)/2 {
-						jobErrors[job.UUID] = "error"
+		t.Run("half of the jobs have errors", func(t *testing.T) {
+			t.Run("the rest of the jobs are stored", func(t *testing.T) {
+				t.Run("can publish without error all successful jobs as In stats", func(t *testing.T) {
+					f := withRudderSourcesJobs(t)
+					for i, job := range f.jobs {
+						if i < len(f.jobs)/2 {
+							f.jobErrors[job.UUID] = "error"
+						}
 					}
-				}
-			})
-			Context("the rest of the jobs are stored", func() {
-				BeforeEach(func() {
-					statsCollector.JobsStoredWithErrors(jobs, jobErrors)
-				})
-				It("can publish without error all successful jobs as In stats", func() {
-					js.EXPECT().
+					f.statsCollector.JobsStoredWithErrors(f.jobs, f.jobErrors)
+
+					f.js.EXPECT().
 						IncrementStats(
 							gomock.Any(),
 							gomock.Any(),
-							params.JobRunID,
-							JobTargetKey{
-								TaskRunID:     params.TaskRunID,
-								SourceID:      params.SourceID,
-								DestinationID: params.DestinationID,
-							},
+							f.params.JobRunID,
+							f.targetKey(),
 							Stats{
-								In: uint(len(jobs) / 2),
+								In: uint(len(f.jobs) / 2),
 							}).
 						Times(1)
 
-					err := statsCollector.Publish(context.TODO(), nil)
-					Expect(err).To(BeNil())
-					Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+					err := f.statsCollector.Publish(t.Context(), nil)
+					require.NoError(t, err)
+					require.Len(t, f.statsStore.Get(rsourcesPublishTime, f.statsTag).Durations(), 1)
 				})
 			})
 		})
 
-		Context("jobs have no RecordId", func() {
-			BeforeEach(func() {
-				for i, job := range jobs {
-					if i == 0 {
-						// empty string
-						params1 := params
-						params1.RecordID = ""
-						p, err := jsonrs.Marshal(params1)
-						Expect(err).To(BeNil())
-						job.Parameters = p
-					} else if i >= len(jobs)/2 {
-						// nil value
-						params1 := params
-						params1.RecordID = nil
-						p, err := jsonrs.Marshal(params1)
-						Expect(err).To(BeNil())
-						job.Parameters = p
-					} else {
-						// non existent field
-						params1 := jobParamsNoRecordId{
-							JobRunID:      params.JobRunID,
-							TaskRunID:     params.TaskRunID,
-							SourceID:      params.SourceID,
-							DestinationID: params.DestinationID,
-						}
-						p, err := jsonrs.Marshal(params1)
-						Expect(err).To(BeNil())
-						job.Parameters = p
-					}
-				}
-			})
-			Context("processing of jobs has started", func() {
-				BeforeEach(func() {
-					statsCollector.BeginProcessing(jobs)
-				})
+		t.Run("jobs have no RecordId", func(t *testing.T) {
+			t.Run("processing of jobs has started", func(t *testing.T) {
+				t.Run("all jobs are aborted", func(t *testing.T) {
+					t.Run("it calls CollectStats", func(t *testing.T) {
+						t.Run("can publish without error all statuses but with updating all stats as Failed stats and without adding failed records", func(t *testing.T) {
+							f := withRudderSourcesJobs(t)
+							for i, job := range f.jobs {
+								if i == 0 {
+									// empty string
+									params1 := f.params
+									params1.RecordID = ""
+									p, err := jsonrs.Marshal(params1)
+									require.NoError(t, err)
+									job.Parameters = p
+								} else if i >= len(f.jobs)/2 {
+									// nil value
+									params1 := f.params
+									params1.RecordID = nil
+									p, err := jsonrs.Marshal(params1)
+									require.NoError(t, err)
+									job.Parameters = p
+								} else {
+									// non existent field
+									params1 := jobParamsNoRecordId{
+										JobRunID:      f.params.JobRunID,
+										TaskRunID:     f.params.TaskRunID,
+										SourceID:      f.params.SourceID,
+										DestinationID: f.params.DestinationID,
+									}
+									p, err := jsonrs.Marshal(params1)
+									require.NoError(t, err)
+									job.Parameters = p
+								}
+							}
+							f.statsCollector.BeginProcessing(f.jobs)
+							for _, job := range f.jobs {
+								f.jobStatuses = append(f.jobStatuses, newAbortedStatus(job.JobID))
+							}
+							f.statsCollector.CollectStats(f.jobStatuses)
 
-				Context("all jobs are aborted", func() {
-					BeforeEach(func() {
-						for _, job := range jobs {
-							jobStatuses = append(jobStatuses, newAbortedStatus(job.JobID))
-						}
-					})
-					Context("it calls CollectStats", func() {
-						BeforeEach(func() {
-							statsCollector.CollectStats(jobStatuses)
-						})
-
-						It("can publish without error all statuses but with updating all stats as Failed stats and without adding failed records", func() {
-							js.EXPECT().
+							f.js.EXPECT().
 								IncrementStats(
 									gomock.Any(),
 									gomock.Any(),
-									params.JobRunID,
-									JobTargetKey{
-										TaskRunID:     params.TaskRunID,
-										SourceID:      params.SourceID,
-										DestinationID: params.DestinationID,
-									},
+									f.params.JobRunID,
+									f.targetKey(),
 									Stats{
-										Failed: uint(len(jobs)),
+										Failed: uint(len(f.jobs)),
 									}).
 								Times(1)
 
-							js.EXPECT().
+							f.js.EXPECT().
 								AddFailedRecords(
 									gomock.Any(),
 									gomock.Any(),
-									params.JobRunID,
-									JobTargetKey{
-										TaskRunID:     params.TaskRunID,
-										SourceID:      params.SourceID,
-										DestinationID: params.DestinationID,
-									},
+									f.params.JobRunID,
+									f.targetKey(),
 									gomock.Any()).
 								Times(0)
 
-							err := statsCollector.Publish(context.TODO(), nil)
-							Expect(err).To(BeNil())
-							Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+							err := f.statsCollector.Publish(t.Context(), nil)
+							require.NoError(t, err)
+							require.Len(t, f.statsStore.Get(rsourcesPublishTime, f.statsTag).Durations(), 1)
 						})
 					})
 				})
 			})
 		})
 
-		Context("processing of jobs has started", func() {
-			BeforeEach(func() {
-				statsCollector.BeginProcessing(jobs)
-			})
+		t.Run("processing of jobs has started", func(t *testing.T) {
+			withProcessingStarted := func(t *testing.T) *statsCollectorFixture {
+				t.Helper()
+				f := withRudderSourcesJobs(t)
+				f.statsCollector.BeginProcessing(f.jobs)
+				return f
+			}
 
-			Context("all jobs have succeeded", func() {
-				BeforeEach(func() {
-					for _, job := range jobs {
-						jobStatuses = append(jobStatuses, newSucceededStatus(job.JobID))
-					}
-				})
-				Context("it calls CollectStats", func() {
-					BeforeEach(func() {
-						statsCollector.CollectStats(jobStatuses)
-					})
+			t.Run("all jobs have succeeded", func(t *testing.T) {
+				t.Run("it calls CollectStats", func(t *testing.T) {
+					t.Run("can publish without error all statuses as Out stats", func(t *testing.T) {
+						f := withProcessingStarted(t)
+						for _, job := range f.jobs {
+							f.jobStatuses = append(f.jobStatuses, newSucceededStatus(job.JobID))
+						}
+						f.statsCollector.CollectStats(f.jobStatuses)
 
-					It("can publish without error all statuses as Out stats", func() {
-						js.EXPECT().
+						f.js.EXPECT().
 							IncrementStats(
 								gomock.Any(),
 								gomock.Any(),
-								params.JobRunID,
-								JobTargetKey{
-									TaskRunID:     params.TaskRunID,
-									SourceID:      params.SourceID,
-									DestinationID: params.DestinationID,
-								},
+								f.params.JobRunID,
+								f.targetKey(),
 								Stats{
-									Out: uint(len(jobs)),
+									Out: uint(len(f.jobs)),
 								}).
 							Times(1)
-						err := statsCollector.Publish(context.TODO(), nil)
-						Expect(err).To(BeNil())
-						Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+						err := f.statsCollector.Publish(t.Context(), nil)
+						require.NoError(t, err)
+						require.Len(t, f.statsStore.Get(rsourcesPublishTime, f.statsTag).Durations(), 1)
 					})
 				})
 			})
 
-			Context("all jobs have failed", func() {
-				BeforeEach(func() {
-					for _, job := range jobs {
-						jobStatuses = append(jobStatuses, newFailedStatus(job.JobID))
-					}
-				})
-				Context("it calls CollectStats", func() {
-					BeforeEach(func() {
-						statsCollector.CollectStats(jobStatuses)
-					})
-
-					It("can publish without error all statuses but without actually updating stats", func() {
-						err := statsCollector.Publish(context.TODO(), nil)
-						Expect(err).To(BeNil())
-						Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
-					})
-				})
-			})
-
-			Context("half jobs have failed and half jobs are aborted", func() {
-				BeforeEach(func() {
-					for i, job := range jobs {
-						if i >= len(jobs)/2 {
-							jobStatuses = append(jobStatuses, newFailedStatus(job.JobID))
-						} else {
-							jobStatuses = append(jobStatuses, newAbortedStatus(job.JobID))
+			t.Run("all jobs have failed", func(t *testing.T) {
+				t.Run("it calls CollectStats", func(t *testing.T) {
+					t.Run("can publish without error all statuses but without actually updating stats", func(t *testing.T) {
+						f := withProcessingStarted(t)
+						for _, job := range f.jobs {
+							f.jobStatuses = append(f.jobStatuses, newFailedStatus(job.JobID))
 						}
-					}
-				})
-				Context("it calls CollectStats and CollectFailedRecords", func() {
-					BeforeEach(func() {
-						statsCollector.CollectStats(jobStatuses)
-						Expect(statsCollector.CollectFailedRecords(context.TODO(), syncSettings, jobStatuses)).To(Succeed())
-					})
+						f.statsCollector.CollectStats(f.jobStatuses)
 
-					It("can publish without error all statuses but with updating half stats as Failed stats and adding failed records", func() {
-						js.EXPECT().
+						err := f.statsCollector.Publish(t.Context(), nil)
+						require.NoError(t, err)
+						require.Len(t, f.statsStore.Get(rsourcesPublishTime, f.statsTag).Durations(), 1)
+					})
+				})
+			})
+
+			t.Run("half jobs have failed and half jobs are aborted", func(t *testing.T) {
+				t.Run("it calls CollectStats and CollectFailedRecords", func(t *testing.T) {
+					t.Run("can publish without error all statuses but with updating half stats as Failed stats and adding failed records", func(t *testing.T) {
+						f := withProcessingStarted(t)
+						for i, job := range f.jobs {
+							if i >= len(f.jobs)/2 {
+								f.jobStatuses = append(f.jobStatuses, newFailedStatus(job.JobID))
+							} else {
+								f.jobStatuses = append(f.jobStatuses, newAbortedStatus(job.JobID))
+							}
+						}
+						f.statsCollector.CollectStats(f.jobStatuses)
+						require.NoError(t, f.statsCollector.CollectFailedRecords(t.Context(), f.syncSettings, f.jobStatuses))
+
+						f.js.EXPECT().
 							IncrementStats(
 								gomock.Any(),
 								gomock.Any(),
-								params.JobRunID,
-								JobTargetKey{
-									TaskRunID:     params.TaskRunID,
-									SourceID:      params.SourceID,
-									DestinationID: params.DestinationID,
-								},
+								f.params.JobRunID,
+								f.targetKey(),
 								Stats{
-									Failed: uint(len(jobs) / 2),
+									Failed: uint(len(f.jobs) / 2),
 								}).
 							Times(1)
 
 						failedRecords := []FailedRecord{}
-						for i := 0; i < len(jobs)/2; i++ {
+						for i := 0; i < len(f.jobs)/2; i++ {
 							failedRecords = append(failedRecords, FailedRecord{Record: []byte(`"recordId"`)})
 						}
-						js.EXPECT().
+						f.js.EXPECT().
 							AddFailedRecords(
 								gomock.Any(),
 								gomock.Any(),
-								params.JobRunID,
-								JobTargetKey{
-									TaskRunID:     params.TaskRunID,
-									SourceID:      params.SourceID,
-									DestinationID: params.DestinationID,
-								},
+								f.params.JobRunID,
+								f.targetKey(),
 								failedRecords).
 							Times(1)
 
-						err := statsCollector.Publish(context.TODO(), nil)
-						Expect(err).To(BeNil())
-						Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+						err := f.statsCollector.Publish(t.Context(), nil)
+						require.NoError(t, err)
+						require.Len(t, f.statsStore.Get(rsourcesPublishTime, f.statsTag).Durations(), 1)
 					})
 				})
 			})
 		})
 
-		Context("processing of jobs has not started", func() {
-			It("should not allow for calling CollectStats", func() {
-				var err error
-				defer func() {
-					err = recover().(error)
-					Expect(err).ToNot(BeNil())
-				}()
-				statsCollector.CollectStats(jobStatuses)
-				Expect(err).ToNot(BeNil())
+		t.Run("processing of jobs has not started", func(t *testing.T) {
+			t.Run("should not allow for calling CollectStats", func(t *testing.T) {
+				f := withRudderSourcesJobs(t)
+				require.PanicsWithError(t, errNotBeganProcessing, func() {
+					f.statsCollector.CollectStats(f.jobStatuses)
+				})
 			})
 		})
 
-		Context("it calls statsCollector.JobsForked", func() {
-			Context("jobs carry multiple consumers", func() {
-				BeforeEach(func() {
-					for _, job := range jobs {
+		t.Run("it calls statsCollector.JobsForked", func(t *testing.T) {
+			t.Run("jobs carry multiple consumers", func(t *testing.T) {
+				withMultipleConsumers := func(t *testing.T) *statsCollectorFixture {
+					t.Helper()
+					f := withRudderSourcesJobs(t)
+					for _, job := range f.jobs {
 						job.Consumers = []string{"destA", "destB", "destC"}
 					}
-					statsCollector.JobsForked(jobs)
-				})
+					f.statsCollector.JobsForked(f.jobs)
+					return f
+				}
 
-				It("increments In by the number of consumers per job", func() {
-					js.EXPECT().
+				t.Run("increments In by the number of consumers per job", func(t *testing.T) {
+					f := withMultipleConsumers(t)
+					f.js.EXPECT().
 						IncrementStats(
 							gomock.Any(),
 							gomock.Any(),
-							params.JobRunID,
-							JobTargetKey{
-								TaskRunID:     params.TaskRunID,
-								SourceID:      params.SourceID,
-								DestinationID: params.DestinationID,
-							},
+							f.params.JobRunID,
+							f.targetKey(),
 							Stats{
-								In: uint(len(jobs) * 3),
+								In: uint(len(f.jobs) * 3),
 							}).
 						Times(1)
 
-					err := statsCollector.Publish(context.TODO(), nil)
-					Expect(err).To(BeNil())
-					Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+					err := f.statsCollector.Publish(t.Context(), nil)
+					require.NoError(t, err)
+					require.Len(t, f.statsStore.Get(rsourcesPublishTime, f.statsTag).Durations(), 1)
 				})
 
-				It("does not index jobs for a later CollectStats call", func() {
-					defer func() {
-						err, _ := recover().(error)
-						Expect(err).ToNot(BeNil())
-					}()
-					for _, job := range jobs {
-						jobStatuses = append(jobStatuses, newSucceededStatus(job.JobID))
+				t.Run("does not index jobs for a later CollectStats call", func(t *testing.T) {
+					f := withMultipleConsumers(t)
+					for _, job := range f.jobs {
+						f.jobStatuses = append(f.jobStatuses, newSucceededStatus(job.JobID))
 					}
 					// BeginProcessing was never called, so CollectStats must panic.
-					statsCollector.CollectStats(jobStatuses)
+					require.PanicsWithError(t, errNotBeganProcessing, func() {
+						f.statsCollector.CollectStats(f.jobStatuses)
+					})
 				})
 			})
 
-			Context("jobs carry no consumers", func() {
-				BeforeEach(func() {
-					statsCollector.JobsForked(jobs)
-				})
+			t.Run("jobs carry no consumers", func(t *testing.T) {
+				t.Run("increments In by 1 per job", func(t *testing.T) {
+					f := withRudderSourcesJobs(t)
+					f.statsCollector.JobsForked(f.jobs)
 
-				It("increments In by 1 per job", func() {
-					js.EXPECT().
+					f.js.EXPECT().
 						IncrementStats(
 							gomock.Any(),
 							gomock.Any(),
-							params.JobRunID,
-							JobTargetKey{
-								TaskRunID:     params.TaskRunID,
-								SourceID:      params.SourceID,
-								DestinationID: params.DestinationID,
-							},
+							f.params.JobRunID,
+							f.targetKey(),
 							Stats{
-								In: uint(len(jobs)),
+								In: uint(len(f.jobs)),
 							}).
 						Times(1)
 
-					err := statsCollector.Publish(context.TODO(), nil)
-					Expect(err).To(BeNil())
-					Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+					err := f.statsCollector.Publish(t.Context(), nil)
+					require.NoError(t, err)
+					require.Len(t, f.statsStore.Get(rsourcesPublishTime, f.statsTag).Durations(), 1)
 				})
 			})
 
-			Context("combined with a subsequent JobsStored call for the same key", func() {
-				BeforeEach(func() {
-					for _, job := range jobs {
+			t.Run("combined with a subsequent JobsStored call for the same key", func(t *testing.T) {
+				t.Run("sums both In contributions", func(t *testing.T) {
+					f := withRudderSourcesJobs(t)
+					for _, job := range f.jobs {
 						job.Consumers = []string{"destA", "destB"}
 					}
-					statsCollector.JobsForked(jobs)
-					statsCollector.JobsStored(jobs)
-				})
+					f.statsCollector.JobsForked(f.jobs)
+					f.statsCollector.JobsStored(f.jobs)
 
-				It("sums both In contributions", func() {
-					js.EXPECT().
+					f.js.EXPECT().
 						IncrementStats(
 							gomock.Any(),
 							gomock.Any(),
-							params.JobRunID,
-							JobTargetKey{
-								TaskRunID:     params.TaskRunID,
-								SourceID:      params.SourceID,
-								DestinationID: params.DestinationID,
-							},
+							f.params.JobRunID,
+							f.targetKey(),
 							Stats{
-								In: uint(len(jobs)*2 + len(jobs)),
+								In: uint(len(f.jobs)*2 + len(f.jobs)),
 							}).
 						Times(1)
 
-					err := statsCollector.Publish(context.TODO(), nil)
-					Expect(err).To(BeNil())
-					Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+					err := f.statsCollector.Publish(t.Context(), nil)
+					require.NoError(t, err)
+					require.Len(t, f.statsStore.Get(rsourcesPublishTime, f.statsTag).Durations(), 1)
 				})
 			})
 		})
 
-		Context("it calls failedRecordsCollector.JobsDropped", func() {
-			BeforeEach(func() {
-				droppedJobsCollector.JobsDropped(jobs)
-			})
+		t.Run("it calls failedRecordsCollector.JobsDropped", func(t *testing.T) {
+			t.Run("publishes both in and out stats and doesn't add failed records", func(t *testing.T) {
+				f := withRudderSourcesJobs(t)
+				f.droppedJobsCollector.JobsDropped(f.jobs)
 
-			It("publishes both in and out stats and doesn't add failed records", func() {
-				js.EXPECT().
+				f.js.EXPECT().
 					IncrementStats(
 						gomock.Any(),
 						gomock.Any(),
-						params.JobRunID,
-						JobTargetKey{
-							TaskRunID:     params.TaskRunID,
-							SourceID:      params.SourceID,
-							DestinationID: params.DestinationID,
-						},
+						f.params.JobRunID,
+						f.targetKey(),
 						Stats{
-							In:     uint(len(jobs)),
-							Failed: uint(len(jobs)),
+							In:     uint(len(f.jobs)),
+							Failed: uint(len(f.jobs)),
 						}).
 					Times(1)
 
-				err := droppedJobsCollector.Publish(context.TODO(), nil)
-				Expect(err).To(BeNil())
-				Expect(len(statsStore.Get(rsourcesPublishTime, droppedStatsTag).Durations()), 1)
+				err := f.droppedJobsCollector.Publish(t.Context(), nil)
+				require.NoError(t, err)
+				require.Len(t, f.statsStore.Get(rsourcesPublishTime, f.droppedStatsTag).Durations(), 1)
 			})
 		})
 
-		Context("it calls sourceOnlyStatCollector.JobsDroppedWith when only source information is of use", func() {
-			BeforeEach(func() {
-				sourceOnlyStatCollector.JobsDropped(jobs)
-			})
+		t.Run("it calls sourceOnlyStatCollector.JobsDroppedWith when only source information is of use", func(t *testing.T) {
+			t.Run("publishes stats with only source information and no failed records are captured", func(t *testing.T) {
+				f := withRudderSourcesJobs(t)
+				f.sourceOnlyStatCollector.JobsDropped(f.jobs)
 
-			It("publishes stats with only source information and no failed records are captured", func() {
-				js.EXPECT().
+				f.js.EXPECT().
 					IncrementStats(
 						gomock.Any(),
 						gomock.Any(),
-						params.JobRunID,
+						f.params.JobRunID,
 						JobTargetKey{
-							TaskRunID: params.TaskRunID,
-							SourceID:  params.SourceID,
+							TaskRunID: f.params.TaskRunID,
+							SourceID:  f.params.SourceID,
 						},
 						Stats{
-							In:     uint(len(jobs)),
-							Failed: uint(len(jobs)),
+							In:     uint(len(f.jobs)),
+							Failed: uint(len(f.jobs)),
 						}).
 					Times(1)
 
-				err := sourceOnlyStatCollector.Publish(context.TODO(), nil)
-				Expect(err).To(BeNil())
-				Expect(len(statsStore.Get(rsourcesPublishTime, srcOnlyStatsTag).Durations()), 1)
+				err := f.sourceOnlyStatCollector.Publish(t.Context(), nil)
+				require.NoError(t, err)
+				require.Len(t, f.statsStore.Get(rsourcesPublishTime, f.srcOnlyStatsTag).Durations(), 1)
 			})
 		})
 	})
 
-	When("there are no rudder-sources jobs", func() {
-		var params jobParams
-		BeforeEach(func() {
-			params = jobParams{
+	t.Run("when there are no rudder-sources jobs", func(t *testing.T) {
+		withNonRudderSourcesJobs := func(t *testing.T) *statsCollectorFixture {
+			t.Helper()
+			f := newStatsCollectorFixture(t)
+			f.params = jobParams{
 				SourceID:      "sourceId",
 				DestinationID: "destinationId",
 			}
-			jobs = append(jobs, generateJobs(10, params)...)
-		})
+			f.jobs = append(f.jobs, generateJobs(t, 10, f.params)...)
+			return f
+		}
 
-		Context("all jobs are stored", func() {
-			BeforeEach(func() {
-				statsCollector.JobsStored(jobs)
-			})
-			It("doesn't publish any jobs", func() {
+		t.Run("all jobs are stored", func(t *testing.T) {
+			t.Run("doesn't publish any jobs", func(t *testing.T) {
+				f := withNonRudderSourcesJobs(t)
+				f.statsCollector.JobsStored(f.jobs)
+
 				// no js.EXPECT
-				err := statsCollector.Publish(context.TODO(), nil)
-				Expect(err).To(BeNil())
-				Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+				err := f.statsCollector.Publish(t.Context(), nil)
+				require.NoError(t, err)
+				require.Len(t, f.statsStore.Get(rsourcesPublishTime, f.statsTag).Durations(), 1)
 			})
 		})
 
-		Context("all jobs are forked", func() {
-			BeforeEach(func() {
-				for _, job := range jobs {
+		t.Run("all jobs are forked", func(t *testing.T) {
+			t.Run("doesn't publish any jobs", func(t *testing.T) {
+				f := withNonRudderSourcesJobs(t)
+				for _, job := range f.jobs {
 					job.Consumers = []string{"destA", "destB"}
 				}
-				statsCollector.JobsForked(jobs)
-			})
-			It("doesn't publish any jobs", func() {
+				f.statsCollector.JobsForked(f.jobs)
+
 				// no js.EXPECT
-				err := statsCollector.Publish(context.TODO(), nil)
-				Expect(err).To(BeNil())
-				Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+				err := f.statsCollector.Publish(t.Context(), nil)
+				require.NoError(t, err)
+				require.Len(t, f.statsStore.Get(rsourcesPublishTime, f.statsTag).Durations(), 1)
 			})
 		})
 
-		Context("processing of jobs has started", func() {
-			BeforeEach(func() {
-				statsCollector.BeginProcessing(jobs)
-			})
-			Context("all jobs have succeeded", func() {
-				BeforeEach(func() {
-					for _, job := range jobs {
-						jobStatuses = append(jobStatuses, newSucceededStatus(job.JobID))
-					}
-				})
-				Context("it calls CollectStats", func() {
-					BeforeEach(func() {
-						statsCollector.CollectStats(jobStatuses)
-					})
+		t.Run("processing of jobs has started", func(t *testing.T) {
+			t.Run("all jobs have succeeded", func(t *testing.T) {
+				t.Run("it calls CollectStats", func(t *testing.T) {
+					t.Run("doesn't publish any jobs", func(t *testing.T) {
+						f := withNonRudderSourcesJobs(t)
+						f.statsCollector.BeginProcessing(f.jobs)
+						for _, job := range f.jobs {
+							f.jobStatuses = append(f.jobStatuses, newSucceededStatus(job.JobID))
+						}
+						f.statsCollector.CollectStats(f.jobStatuses)
 
-					It("doesn't publish any jobs", func() {
 						// no js.EXPECT
-						err := statsCollector.Publish(context.TODO(), nil)
-						Expect(err).To(BeNil())
-						Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
+						err := f.statsCollector.Publish(t.Context(), nil)
+						require.NoError(t, err)
+						require.Len(t, f.statsStore.Get(rsourcesPublishTime, f.statsTag).Durations(), 1)
 					})
 				})
 			})
 		})
 	})
-})
+}
 
 type jobParams struct {
 	JobRunID      string `json:"source_job_run_id"`
@@ -604,17 +551,19 @@ type jobParamsNoRecordId struct {
 	DestinationID string `json:"destination_id"`
 }
 
-func generateJobs(num int, params jobParams) []*jobsdb.JobT { // skipcq: CRT-P0003
+func generateJobs(t testing.TB, num int, params jobParams) []*jobsdb.JobT { // skipcq: CRT-P0003
+	t.Helper()
 	var jobs []*jobsdb.JobT
 	for i := range num {
-		jobs = append(jobs, newJob(int64(i), params))
+		jobs = append(jobs, newJob(t, int64(i), params))
 	}
 	return jobs
 }
 
-func newJob(id int64, params jobParams) *jobsdb.JobT { // skipcq: CRT-P0003
+func newJob(t testing.TB, id int64, params jobParams) *jobsdb.JobT { // skipcq: CRT-P0003
+	t.Helper()
 	p, err := jsonrs.Marshal(params)
-	Expect(err).To(BeNil())
+	require.NoError(t, err)
 	return &jobsdb.JobT{
 		JobID:      id,
 		UUID:       uuid.New(),

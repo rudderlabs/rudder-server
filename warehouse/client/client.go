@@ -7,19 +7,23 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/aliyun/aliyun-odps-go-sdk/odps"
 	"google.golang.org/api/iterator"
 
+	odpsclient "github.com/rudderlabs/rudder-server/warehouse/integrations/maxcompute/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const (
-	SQLClient = "SQLClient"
-	BQClient  = "BigQueryClient"
+	SQLClient  = "SQLClient"
+	BQClient   = "BigQueryClient"
+	ODPSClient = "ODPSClient"
 )
 
 type Client struct {
 	SQL  *sql.DB
 	BQ   *bigquery.Client
+	ODPS *odps.Odps
 	Type string
 }
 
@@ -101,6 +105,8 @@ func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, er
 	switch cl.Type {
 	case BQClient:
 		return cl.bqQuery(statement)
+	case ODPSClient:
+		return odpsclient.Query(context.Background(), cl.ODPS, statement, 0, 0)
 	default:
 		return cl.sqlQuery(statement)
 	}
@@ -110,6 +116,8 @@ func (cl *Client) Close() {
 	switch cl.Type {
 	case BQClient:
 		_ = cl.BQ.Close()
+	case ODPSClient:
+		// The ODPS SDK has no Close method; its HTTP clients are managed internally.
 	default:
 		_ = cl.SQL.Close()
 	}

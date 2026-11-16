@@ -33,6 +33,8 @@ type OAuthHandler interface {
 	// RefreshToken refreshes the OAuth token for a given account ID. The previousSecret is used to check if the token has already been rotated or not.
 	// Token refresh is skipped if the token has already been rotated and previous secret is returned instead.
 	RefreshToken(params *OAuthTokenParams, previousSecret json.RawMessage) (json.RawMessage, StatusCodeError)
+	// ReportAuthStatusInactive increments oauth_action_request for an AUTH_STATUS_INACTIVE outcome.
+	ReportAuthStatusInactive(params *OAuthTokenParams)
 }
 
 type refreshTokenResponseError struct {
@@ -45,6 +47,14 @@ type refreshTokenResponseError struct {
 func WithCache(cache OauthTokenCache) func(*oauthHandler) {
 	return func(h *oauthHandler) {
 		h.cache = cache
+	}
+}
+
+// WithSecretVersions sets the provider of the accounts' latest secretVersion, for callers whose
+// OAuthTokenParams.SecretVersion may lag behind the workspace config.
+func WithSecretVersions(provider SecretVersionProvider) func(*oauthHandler) {
+	return func(h *oauthHandler) {
+		h.secretVersions = provider
 	}
 }
 
@@ -80,6 +90,13 @@ func WithCPClientTimeout(cpClientTimeout time.Duration) func(*oauthHandler) {
 func WithStats(stats stats.Stats) func(*oauthHandler) {
 	return func(h *oauthHandler) {
 		h.stats = stats
+	}
+}
+
+// WithRudderFlow sets the flowType metric tag of the OAuthHandler (default: delivery)
+func WithRudderFlow(flow common.RudderFlow) func(*oauthHandler) {
+	return func(h *oauthHandler) {
+		h.rudderFlowType = flow
 	}
 }
 
@@ -157,8 +174,9 @@ type oauthHandler struct {
 	rudderFlowType common.RudderFlow
 	cpClient       controlplane.Connector
 
-	cacheMu *kitsync.PartitionRWLocker
-	cache   OauthTokenCache
+	cacheMu        *kitsync.PartitionRWLocker
+	cache          OauthTokenCache
+	secretVersions SecretVersionProvider
 
 	refreshBeforeExpiry time.Duration
 	cbeURL              string
@@ -173,9 +191,10 @@ type oauthHandler struct {
 //   - If the token is not present in the cache, it fetches the token from the control plane using a hint to refresh the token if it is expired
 func (h *oauthHandler) FetchToken(params *OAuthTokenParams) (json.RawMessage, StatusCodeError) {
 	const action = "fetch_token"
-	authStats := &OAuthStats{
+	authStats := &oauthStats{
 		stats:           h.stats,
-		id:              params.AccountID,
+		accountID:       params.AccountID,
+		destinationID:   params.DestinationID,
 		workspaceID:     params.WorkspaceID,
 		rudderCategory:  "destination",
 		statName:        "",
@@ -186,7 +205,7 @@ func (h *oauthHandler) FetchToken(params *OAuthTokenParams) (json.RawMessage, St
 		flowType:        h.rudderFlowType,
 		action:          action,
 	}
-	statshandler := NewStatsHandlerFromOAuthStats(authStats)
+	statshandler := newOAuthStatsHandler(authStats)
 	return h.getToken(params, nil, action, statshandler)
 }
 
@@ -198,9 +217,10 @@ func (h *oauthHandler) FetchToken(params *OAuthTokenParams) (json.RawMessage, St
 //   - If the token is not present in the cache, it fetches the token from the control plane using a hint to refresh the token if it is expired
 func (h *oauthHandler) RefreshToken(params *OAuthTokenParams, previousSecret json.RawMessage) (json.RawMessage, StatusCodeError) {
 	const action = "refresh_token"
-	authStats := &OAuthStats{
+	authStats := &oauthStats{
 		stats:           h.stats,
-		id:              params.AccountID,
+		accountID:       params.AccountID,
+		destinationID:   params.DestinationID,
 		workspaceID:     params.WorkspaceID,
 		rudderCategory:  "destination",
 		statName:        "",
@@ -211,11 +231,31 @@ func (h *oauthHandler) RefreshToken(params *OAuthTokenParams, previousSecret jso
 		flowType:        h.rudderFlowType,
 		action:          action,
 	}
-	statsHandler := NewStatsHandlerFromOAuthStats(authStats)
+	statsHandler := newOAuthStatsHandler(authStats)
 	return h.getToken(params, previousSecret, action, statsHandler)
 }
 
-func (h *oauthHandler) getToken(params *OAuthTokenParams, previousSecret json.RawMessage, action string, statsHandler OAuthStatsHandler) (json.RawMessage, StatusCodeError) {
+func (h *oauthHandler) ReportAuthStatusInactive(params *OAuthTokenParams) {
+	authStats := &oauthStats{
+		stats:           h.stats,
+		accountID:       params.AccountID,
+		destinationID:   params.DestinationID,
+		workspaceID:     params.WorkspaceID,
+		rudderCategory:  "destination",
+		isCallToCpApi:   false,
+		authErrCategory: common.CategoryAuthStatusInactive,
+		destType:        params.DestType,
+		flowType:        h.rudderFlowType,
+		action:          "auth_status_inactive",
+	}
+	statsHandler := newOAuthStatsHandler(authStats)
+	statsHandler.Increment("request", stats.Tags{
+		"errorMessage":  common.CategoryAuthStatusInactive,
+		"isCallToCpApi": "false",
+	})
+}
+
+func (h *oauthHandler) getToken(params *OAuthTokenParams, previousSecret json.RawMessage, action string, statsHandler oauthStatsHandler) (json.RawMessage, StatusCodeError) {
 	// Create a logger with all context fields
 	log := h.logger.Withn(
 		logger.NewStringField("action", action),
@@ -253,12 +293,19 @@ func (h *oauthHandler) getToken(params *OAuthTokenParams, previousSecret json.Ra
 		ExpiredSecret: nil,  // we are not forcing upstream service to refresh the token by default, which will only happen if hasExpired is true and expiredSecret is equal to the upstream service's stored secret
 	}
 	if cached, ok := h.cache.Load(params.AccountID); ok {
-		if !isOauthTokenExpired(cached, previousSecret, h.refreshBeforeExpiry, statsHandler) {
+		if latest := h.latestSecretVersion(params); cached.SecretVersion != 0 && latest > cached.SecretVersion {
+			// the control plane holds a newer secret (a re-authorization, or a refresh by another pod):
+			// fetch it with the default body, which does not force a refresh
+			log.Infon("cached OAuth token superseded by a newer secret in the control plane",
+				logger.NewIntField("cachedSecretVersion", int64(cached.SecretVersion)),
+				logger.NewIntField("configSecretVersion", int64(latest)))
+		} else if !isOauthTokenExpired(cached, previousSecret, h.refreshBeforeExpiry, statsHandler) {
 			return cached.Secret, nil
-		}
-		refTokenBody = OauthTokenRequestBody{ // forcing refresh of token as it is expired or about to expire, or previousSecret matches the cached secret
-			HasExpired:    true,
-			ExpiredSecret: cached.Secret,
+		} else {
+			refTokenBody = OauthTokenRequestBody{ // forcing refresh of token as it is expired or about to expire, or previousSecret matches the cached secret
+				HasExpired:    true,
+				ExpiredSecret: cached.Secret,
+			}
 		}
 	}
 	token, err := h.getTokenFromAPI(params, refTokenBody, statsHandler, action)
@@ -266,6 +313,15 @@ func (h *oauthHandler) getToken(params *OAuthTokenParams, previousSecret json.Ra
 		return nil, err
 	}
 	return token.Secret, nil
+}
+
+// latestSecretVersion is the newest secretVersion known for the account: versions only grow, so the
+// larger of the caller's and the provider's is the latest.
+func (h *oauthHandler) latestSecretVersion(params *OAuthTokenParams) int {
+	if h.secretVersions == nil {
+		return params.SecretVersion
+	}
+	return max(params.SecretVersion, h.secretVersions.SecretVersion(params.AccountID))
 }
 
 // getRefreshTokenFromResponse parses the response from control plane and returns either the token or an error
@@ -321,7 +377,7 @@ func getRefreshTokenFromResponse(response string, l logger.Logger) (oauthToken *
 }
 
 // This method hits the Control Plane to get the token
-func (h *oauthHandler) getTokenFromAPI(params *OAuthTokenParams, body OauthTokenRequestBody, statsHandler OAuthStatsHandler, action string) (*OAuthToken, StatusCodeError) {
+func (h *oauthHandler) getTokenFromAPI(params *OAuthTokenParams, body OauthTokenRequestBody, statsHandler oauthStatsHandler, action string) (*OAuthToken, StatusCodeError) {
 	url := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", h.cbeURL, params.WorkspaceID, params.AccountID)
 	resBody, err := jsonrs.Marshal(body)
 	if err != nil {

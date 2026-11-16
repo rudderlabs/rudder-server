@@ -14,6 +14,7 @@ import (
 type OAuthToken struct {
 	ExpirationDate string          `json:"expirationDate"`
 	Secret         json.RawMessage `json:"secret"`
+	SecretVersion  int             `json:"secretVersion"`
 }
 
 func (at *OAuthToken) IsEmpty() bool {
@@ -46,6 +47,15 @@ type OAuthTokenParams struct {
 	WorkspaceID   string
 	DestType      string
 	DestinationID string
+	// SecretVersion is the account's secretVersion in the caller's view of the workspace config, 0 when unknown
+	SecretVersion int
+}
+
+// SecretVersionProvider returns an account's secretVersion in the latest workspace config, 0 when unknown.
+// Implementations must be safe for concurrent use. Pass a nil interface, not a typed nil pointer, to leave
+// the handler without a provider.
+type SecretVersionProvider interface {
+	SecretVersion(accountID string) int
 }
 
 type OauthTokenRequestBody struct {

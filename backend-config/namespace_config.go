@@ -44,6 +44,7 @@ type namespaceConfig struct {
 	namespace                string
 	configBackendURL         *url.URL
 	incrementalConfigUpdates bool
+	incrementalDefinitions   bool // v2 only: unchanged definition catalogues are omitted; effective only with incrementalConfigUpdates
 
 	fetcher configFetcher
 }

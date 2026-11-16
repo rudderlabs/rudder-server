@@ -20,7 +20,7 @@ func TestBQStreamAllEventsIsRegistered(t *testing.T) {
 	destination := &backendconfig.DestinationT{
 		DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "BQSTREAM_ALL_EVENTS"},
 	}
-	m, err := NewManager(config.Default, logger.NOP, stats.NOP, destination, nil)
+	m, err := NewManager(config.Default, logger.NOP, stats.NOP, destination, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, m)
 }

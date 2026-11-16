@@ -107,9 +107,7 @@ func (g *GlueSchemaRepository) CreateTable(ctx context.Context, tableName string
 
 	_, err = g.GlueClient.CreateTable(ctx, &input)
 	if err != nil {
-		var alreadyExistsException *types.AlreadyExistsException
-		ok := errors.As(err, &alreadyExistsException)
-		if ok {
+		if _, ok := errors.AsType[*types.AlreadyExistsException](err); ok {
 			err = nil
 		}
 	}

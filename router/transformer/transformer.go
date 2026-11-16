@@ -116,12 +116,21 @@ type ProxyRequestParams struct {
 
 type ProxyRequestResponse struct {
 	ProxyRequestStatusCode   int
+	DestinationStatusCode    int // destination's status from the v1 proxy response body; 0 for v0 and early errors
 	ProxyRequestResponseBody string
 	RespContentType          string
 	RespStatusCodes          map[int64]int
 	RespBodys                map[int64]string
 	DontBatchDirectives      map[int64]bool
 	OAuthErrorCategory       string
+}
+
+// DeliveryStatusCode returns the destination's status when the proxy reported one, else the proxy call's status.
+func (r ProxyRequestResponse) DeliveryStatusCode() int {
+	if r.DestinationStatusCode > 0 {
+		return r.DestinationStatusCode
+	}
+	return r.ProxyRequestStatusCode
 }
 
 // Transformer provides methods to transform events
@@ -655,6 +664,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 
 	return ProxyRequestResponse{
 		ProxyRequestStatusCode:   respCode,
+		DestinationStatusCode:    transResp.destinationStatusCode,
 		ProxyRequestResponseBody: string(respData),
 		RespContentType:          "application/json",
 		RespStatusCodes:          transResp.routerJobResponseCodes,

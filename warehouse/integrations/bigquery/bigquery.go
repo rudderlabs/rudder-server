@@ -34,6 +34,9 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+// ErrIncompatibleCredentials marks credentials that are not a service account key.
+var ErrIncompatibleCredentials = errors.New("incompatible credentials")
+
 type BigQuery struct {
 	db        *middleware.Client
 	namespace string
@@ -330,8 +333,7 @@ func (bq *BigQuery) schemaExists(ctx context.Context, _, _ string) (exists bool,
 	ds := bq.db.Dataset(bq.namespace)
 	_, err = ds.Metadata(ctx)
 	if err != nil {
-		var e *googleapi.Error
-		if errors.As(err, &e) && e.Code == 404 {
+		if e, ok := errors.AsType[*googleapi.Error](err); ok && e.Code == 404 {
 			bq.logger.Debugn("Dataset not found",
 				logger.NewStringField(logfield.ProjectID, bq.projectID),
 				obskit.Namespace(bq.namespace),
@@ -375,8 +377,7 @@ func (bq *BigQuery) CreateSchema(ctx context.Context) (err error) {
 	log.Infon("Creating schema")
 	err = ds.Create(ctx, meta)
 	if err != nil {
-		var e *googleapi.Error
-		if errors.As(err, &e) && e.Code == 409 {
+		if e, ok := errors.AsType[*googleapi.Error](err); ok && e.Code == 409 {
 			log.Warnn("Create schema failed as schema already exists")
 			return nil
 		}
@@ -609,8 +610,7 @@ func (bq *BigQuery) jobStatistics(
 	bqJob, err := bqJobGetCall.Context(ctx).Location(job.Location()).Fields("statistics").Do()
 	if err != nil {
 		// In case of rate limit error, return empty statistics
-		var e *googleapi.Error
-		if errors.As(err, &e) && e.Code == 429 {
+		if e, ok := errors.AsType[*googleapi.Error](err); ok && e.Code == 429 {
 			return &bqservice.JobStatistics{}, nil
 		}
 		return nil, fmt.Errorf("getting job: %w", err)
@@ -806,7 +806,7 @@ func (bq *BigQuery) authOptions(ctx context.Context, credentials string) ([]opti
 	}
 	credBytes := []byte(credentials)
 	if err := googleutil.CompatibleServiceAccountJSON(credBytes); err != nil {
-		return nil, fmt.Errorf("incompatible credentials: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrIncompatibleCredentials, err)
 	}
 	return []option.ClientOption{option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes)}, nil
 }
@@ -1028,8 +1028,7 @@ func (bq *BigQuery) FetchSchema(ctx context.Context) (model.Schema, error) {
 
 	it, err := bq.db.Read(ctx, query)
 	if err != nil {
-		var e *googleapi.Error
-		if errors.As(err, &e) && e.Code == 404 {
+		if e, ok := errors.AsType[*googleapi.Error](err); ok && e.Code == 404 {
 			// if dataset resource is not found, return empty schema
 			return schema, nil
 		}

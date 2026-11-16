@@ -14,8 +14,7 @@ type jsonLoader struct {
 	fileWriter LoadFileWriter
 }
 
-// newJSONLoader returns a new jsonLoader is only for BQ now. Treat this is as custom BQ loader.
-// If more warehouses are added in the future, change this accordingly.
+// newJSONLoader writes one JSON object per row for BQ and MaxCompute.
 func newJSONLoader(writer LoadFileWriter, destType string) *jsonLoader {
 	loader := &jsonLoader{destType: destType, fileWriter: writer}
 	loader.columnData = make(map[string]any)
@@ -29,6 +28,14 @@ func (loader *jsonLoader) IsLoadTimeColumn(columnName string) bool {
 }
 
 func (loader *jsonLoader) GetLoadTimeFormat(columnName string) string {
+	if loader.destType == warehouseutils.MAXCOMPUTE {
+		switch columnName {
+		case UUIDTsColumn:
+			return MaxComputeUUIDTsFormat
+		case LoadedAtColumn:
+			return MaxComputeTimeFormat
+		}
+	}
 	switch columnName {
 	case warehouseutils.ToProviderCase(loader.destType, UUIDTsColumn):
 		return BQUuidTSFormat

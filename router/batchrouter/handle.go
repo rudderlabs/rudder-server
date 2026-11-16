@@ -37,6 +37,7 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -55,6 +56,7 @@ type asyncManagerFactory func(
 	stats.Stats,
 	*backendconfig.DestinationT,
 	backendconfig.BackendConfig,
+	oauthv2.SecretVersionProvider,
 ) (asynccommon.AsyncDestinationManager, error)
 
 type Handle struct {
@@ -78,6 +80,7 @@ type Handle struct {
 	isolationStrategy    isolation.Strategy
 	now                  func() time.Time
 	asyncManagerFactory  asyncManagerFactory
+	secretVersions       secretVersions
 
 	// configuration
 
@@ -506,7 +509,7 @@ func (brt *Handle) resolveDatePrefixOverride(workspaceID, destinationID string) 
 }
 
 // pingWarehouse notifies the warehouse about a new data upload (staging files)
-func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (err error) {
+func (brt *Handle) pingWarehouse(ctx context.Context, batchJobs *BatchedJobs, output UploadResult) (err error) {
 	schemaMap := brt.generateSchemaMap(batchJobs)
 	var sampleParameters routerutils.JobParameters
 	err = jsonrs.Unmarshal(batchJobs.Jobs[0].Parameters, &sampleParameters)
@@ -537,7 +540,7 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 		payload.TimeWindow = batchJobs.TimeWindow
 	}
 
-	err = brt.warehouseClient.Process(context.TODO(), payload)
+	err = brt.warehouseClient.Process(ctx, payload)
 	if err != nil {
 		brt.logger.Errorn("BRT: Failed to route staging file", obskit.Error(err))
 		return err

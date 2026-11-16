@@ -156,6 +156,7 @@ func TestScheduleJobsDrainBranch(t *testing.T) {
 		require.Equal(t, routerutils.DrainReasonJobExpired,
 			gjson.GetBytes(got.ErrorResponse, "reason").String(),
 			"expected the drain reason to be stamped onto the response")
+		require.Equal(t, routerutils.DrainReasonJobExpired, got.DrainReason)
 	})
 
 	t.Run("synthesizes reason when LastJobStatus has no prior error response", func(t *testing.T) {

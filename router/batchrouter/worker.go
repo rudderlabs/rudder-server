@@ -139,6 +139,7 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 				WorkspaceId:   job.WorkspaceId,
 				PartitionID:   job.PartitionID,
 				CustomVal:     job.CustomVal,
+				DrainReason:   finalReason,
 			}
 			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "batch_router")
 			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", finalReason)

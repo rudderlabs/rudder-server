@@ -46,6 +46,7 @@ var (
 		whutils.DELTALAKE:         model.StringDataType,
 		whutils.GCSDatalake:       model.StringDataType,
 		whutils.AzureDatalake:     model.StringDataType,
+		whutils.MAXCOMPUTE:        model.StringDataType,
 	}
 
 	reDateTime = regexp.MustCompile(
@@ -204,8 +205,7 @@ func parseTimestamp(input string) (time.Time, error) {
 	if err == nil {
 		return t, nil
 	}
-	var pe *time.ParseError
-	ok := errors.As(err, &pe)
+	pe, ok := errors.AsType[*time.ParseError](err)
 	if !ok {
 		return time.Time{}, err
 	}

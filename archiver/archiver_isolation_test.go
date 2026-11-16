@@ -161,6 +161,13 @@ func ArchivalScenario(
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
 	config.Set("JobsDB.backup.enabled", false)
 	config.Set("JobsDB.compactionLoopSleepDuration", "60m")
+	// read cursors, with many small datasets for them to skip
+	config.Set("JobsDB.readCursor.mode", "on")
+	config.Set("JobsDB.readCursor.panicOnDisable", true)
+	config.Set("JobsDB.readCursor.persistInterval", "1s")
+	config.Set("JobsDB.readCursor.persistMinSkippedDatasets", 1)
+	config.Set("JobsDB.maxDSSize", 20000) // several datasets, but within the 20 that unionjobsdbmetadata counts
+	config.Set("JobsDB.addNewDSLoopSleepDuration", "1s")
 	config.Set("JobsDB.enableWriterQueue", false)
 	config.Set("RUDDER_TMPDIR", os.TempDir())
 	config.Set("archival.ArchiveSleepDuration", "1s")
@@ -201,7 +208,7 @@ func ArchivalScenario(
 		t.Logf("Waiting for all gw jobs to be successfully processed")
 		require.Eventually(t, func() bool {
 			var processedJobCount int
-			row := postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('gw',20) WHERE job_state = 'succeeded'")
+			row := postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('gw',NULL) WHERE job_state = 'succeeded'")
 			err := row.Scan(&processedJobCount)
 			if err != nil {
 				t.Logf("processedJobCount: failed to scan the row: %v", err)
@@ -215,7 +222,7 @@ func ArchivalScenario(
 	g.Go(func() error {
 		require.Eventually(t, func() bool {
 			var archivedJobCount int
-			row := postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('arc',20) WHERE job_state = 'succeeded'")
+			row := postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('arc',NULL) WHERE job_state = 'succeeded'")
 			err := row.Scan(&archivedJobCount)
 			if err != nil {
 				t.Logf("archivedJobCount: failed to scan the row: %v", err)

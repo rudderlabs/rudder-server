@@ -1,84 +1,92 @@
 package memory
 
 import (
+	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 )
 
-var _ = Describe("cache", func() {
-	Context("cache testing", func() {
+func TestMemoryCache(t *testing.T) {
+	t.Run("cache testing", func(t *testing.T) {
 		testKey := "test_key"
 		testValue := []byte("test_value")
 
-		It("Cache init", func() {
+		t.Run("Cache init", func(t *testing.T) {
 			var c *Cache[[]byte]
 			c, err := New[[]byte]()
-
-			Expect(err).To(BeNil())
-			Expect(c.size).NotTo(Equal(0))
-			Expect(c.keyTTL).NotTo(Equal(0))
-			Expect(c.cacheMap).NotTo(BeNil())
-			Expect(c.Stop()).To(BeNil())
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = c.Stop() })
+			require.NotZero(t, c.size.Load())
+			require.NotZero(t, c.keyTTL.Load())
+			require.NotNil(t, c.cacheMap)
 		})
 
-		It("Cache update", func() {
+		t.Run("Cache update", func(t *testing.T) {
 			var c *Cache[[]byte]
 			c, err := New[[]byte]()
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = c.Stop() })
 
-			Expect(c.Update(testKey, testValue)).To(BeNil())
-			Expect(len(c.cacheMap)).To(Equal(1))
-			Expect(len(c.cacheMap[testKey].data)).To(Equal(1))
-			Expect(c.cacheMap[testKey].data[0]).To(Equal(testValue))
-			Expect(c.Stop()).To(BeNil())
+			require.NoError(t, c.Update(testKey, testValue))
+			require.Len(t, c.cacheMap, 1)
+			require.Len(t, c.cacheMap[testKey].data, 1)
+			require.Equal(t, testValue, c.cacheMap[testKey].data[0])
 		})
 
-		It("Cache timeout", func() {
+		t.Run("Cache timeout", func(t *testing.T) {
 			var c *Cache[[]byte]
 			config.Set("LiveEvent.cache.ttl", 10*time.Millisecond)
 			config.Set("LiveEvent.cache.clearFreq", 10*time.Millisecond)
+			t.Cleanup(config.Reset)
 			c, err := New[[]byte]()
-			Expect(err).To(BeNil())
-			Expect(c.Update(testKey, testValue)).To(BeNil())
-			Expect(len(c.cacheMap)).To(Equal(1))
-			Expect(len(c.cacheMap[testKey].data)).To(Equal(1))
-			Expect(c.cacheMap[testKey].data[0]).To(Equal(testValue))
-			Eventually(func() int { return len(c.cacheMap) }).Should(Equal(0))
-			config.Reset()
-			Expect(c.Stop()).To(BeNil())
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = c.Stop() })
+			require.NoError(t, c.Update(testKey, testValue))
+			// the cleanup goroutine mutates cacheMap concurrently
+			c.lock.RLock()
+			size := len(c.cacheMap)
+			item := c.cacheMap[testKey]
+			c.lock.RUnlock()
+			require.Equal(t, 1, size)
+			require.NotNil(t, item)
+			require.Equal(t, [][]byte{testValue}, item.data)
+			require.Eventually(t, func() bool {
+				c.lock.RLock()
+				defer c.lock.RUnlock()
+				return len(c.cacheMap) == 0
+			}, time.Second, 10*time.Millisecond)
 		})
 
-		It("Cache readAndPopData", func() {
+		t.Run("Cache readAndPopData", func(t *testing.T) {
 			var c *Cache[[]byte]
 			c, err := New[[]byte]()
-			Expect(err).To(BeNil())
-			Expect(c.Update(testKey, testValue)).To(BeNil())
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = c.Stop() })
+			require.NoError(t, c.Update(testKey, testValue))
 			v, err := c.Read(testKey)
-			Expect(v).To(Equal([][]byte{testValue}))
-			Expect(err).To(BeNil())
-			Expect(len(c.cacheMap)).To(Equal(0))
-			Expect(c.Stop()).To(BeNil())
+			require.Equal(t, [][]byte{testValue}, v)
+			require.NoError(t, err)
+			require.Len(t, c.cacheMap, 0)
 		})
 
-		It("Cache data store limit", func() {
+		t.Run("Cache data store limit", func(t *testing.T) {
 			var c *Cache[[]byte]
 			c, err := New[[]byte]()
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = c.Stop() })
 			testValue2 := []byte("test_value2")
 			testValue3 := []byte("test_value3")
-			Expect(c.Update(testKey, testValue)).To(BeNil())
-			Expect(c.Update(testKey, testValue2)).To(BeNil())
-			Expect(c.Update(testKey, testValue3)).To(BeNil())
-			Expect(c.Update(testKey, testValue3)).To(BeNil())
-			Expect(len(c.cacheMap)).To(Equal(1))
-			Expect(len(c.cacheMap[testKey].data)).To(Equal(3))
-			Expect(c.cacheMap[testKey].data[0]).To(Equal(testValue2))
-			Expect(c.cacheMap[testKey].data[1]).To(Equal(testValue3))
-			Expect(c.Stop()).To(BeNil())
+			require.NoError(t, c.Update(testKey, testValue))
+			require.NoError(t, c.Update(testKey, testValue2))
+			require.NoError(t, c.Update(testKey, testValue3))
+			require.NoError(t, c.Update(testKey, testValue3))
+			require.Len(t, c.cacheMap, 1)
+			require.Len(t, c.cacheMap[testKey].data, 3)
+			require.Equal(t, testValue2, c.cacheMap[testKey].data[0])
+			require.Equal(t, testValue3, c.cacheMap[testKey].data[1])
 		})
 	})
-})
+}

@@ -2,7 +2,6 @@ package audience
 
 import (
 	"archive/zip"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,9 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	bingads_sdk "github.com/rudderlabs/bing-ads-go-sdk/bingads"
@@ -54,53 +53,54 @@ func initBingads() {
 	})
 }
 
-var _ = Describe("Bing ads Audience", func() {
-	Context("Bing ads", func() {
-		BeforeEach(func() {
-			config.Reset()
-			config.Set("BatchRouter.BING_ADS.MaxUploadLimit", 1*bytesize.KB)
-		})
+type bingAdsFixture struct {
+	ctrl           *gomock.Controller
+	bingAdsService *mockbulkservice.MockBulkServiceI
+}
 
-		AfterEach(func() {
-			config.Reset()
-		})
+func newBingAdsFixture(t *testing.T) *bingAdsFixture {
+	t.Helper()
+	config.Reset()
+	config.Set("BatchRouter.BING_ADS.MaxUploadLimit", 1*bytesize.KB)
+	t.Cleanup(config.Reset)
+	initBingads()
+	ctrl := gomock.NewController(t)
+	return &bingAdsFixture{
+		ctrl:           ctrl,
+		bingAdsService: mockbulkservice.NewMockBulkServiceI(ctrl),
+	}
+}
 
-		It("TestBingAdsUploadPartialSuccessCase", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+// setupRudderTmpDir points RUDDER_TMPDIR to a fresh directory that contains the async destination logs folder.
+func setupRudderTmpDir(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "rudder-async-destination-logs"), 0o755))
+	t.Setenv("RUDDER_TMPDIR", dir)
+}
+
+func TestBingAdsAudience(t *testing.T) {
+	t.Run("Bing ads", func(t *testing.T) {
+		t.Run("TestBingAdsUploadPartialSuccessCase", func(t *testing.T) {
+			f := newBingAdsFixture(t)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, &clientI)
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload1",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload2",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
 
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload1", gomock.Any()).Return(&bingads_sdk.UploadBulkFileResponse{
+			f.bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload1", gomock.Any()).Return(&bingads_sdk.UploadBulkFileResponse{
 				TrackingId: "randomTrackingId1",
 				RequestId:  "randomRequestId1",
 			}, nil)
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload2", gomock.Any()).Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
+			f.bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload2", gomock.Any()).Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
 
-			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			if err != nil {
-				fmt.Printf("Failed to create temporary directory: %v\n", err)
-				return
-			}
-
-			subDir := filepath.Join(dir, "rudder-async-destination-logs")
-			err = os.Mkdir(subDir, 0o755)
-			if err != nil {
-				fmt.Printf("Failed to create the directory 'something': %v\n", err)
-				return
-			}
-
-			Expect(err).To(BeNil())
-			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
+			setupRudderTmpDir(t)
 
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
@@ -119,27 +119,18 @@ var _ = Describe("Bing ads Audience", func() {
 			}
 
 			// making upload function call
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
+			received := bulkUploader.Upload(t.Context(), &asyncDestination)
 			received.ImportingParameters = json.RawMessage{}
 
-			// Remove the directory and its contents
-			err = os.RemoveAll(dir)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
-
-			Expect(received).To(Equal(expected))
+			require.Equal(t, expected, received)
 		})
 
-		It("TestBingAdsUploadFailedGetBulkUploadUrl", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+		t.Run("TestBingAdsUploadFailedGetBulkUploadUrl", func(t *testing.T) {
+			f := newBingAdsFixture(t)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("Error in getting bulk upload url"))
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("Error in getting bulk upload url"))
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, &clientI)
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("Error in getting bulk upload url"))
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("Error in getting bulk upload url"))
 
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
@@ -151,10 +142,7 @@ var _ = Describe("Bing ads Audience", func() {
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
 			importParameters, err := jsonrs.Marshal(parameters)
-			if err != nil {
-				fmt.Printf("Failed to unmarshal parameters: %v\n", err)
-				return
-			}
+			require.NoError(t, err)
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{3, 4, 1, 2},
 				FailedReason:        "{\"error\":\"Remove:error in getting bulk upload url: Error in getting bulk upload url,Add:error in getting bulk upload url: Error in getting bulk upload url\"}",
@@ -163,37 +151,18 @@ var _ = Describe("Bing ads Audience", func() {
 				AbortCount:          0,
 				ImportingParameters: json.RawMessage(importParameters),
 			}
-			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			if err != nil {
-				fmt.Printf("Failed to create temporary directory: %v\n", err)
-				return
-			}
-
-			subDir := filepath.Join(dir, "rudder-async-destination-logs")
-			err = os.Mkdir(subDir, 0o755)
-			if err != nil {
-				fmt.Printf("Failed to create the directory 'something': %v\n", err)
-				return
-			}
-			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
-			err = os.RemoveAll(dir)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
-			Expect(received).To(Equal(expected))
+			setupRudderTmpDir(t)
+			received := bulkUploader.Upload(t.Context(), &asyncDestination)
+			require.Equal(t, expected, received)
 		})
 
-		It("TestBingAdsUploadEmptyGetBulkUploadUrl", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+		t.Run("TestBingAdsUploadEmptyGetBulkUploadUrl", func(t *testing.T) {
+			f := newBingAdsFixture(t)
 			ClientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &ClientI)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, &ClientI)
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
 
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
 
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
@@ -205,10 +174,7 @@ var _ = Describe("Bing ads Audience", func() {
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
 			importParameters, err := jsonrs.Marshal(parameters)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
+			require.NoError(t, err)
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{3, 4, 1, 2},
 				FailedReason:        "{\"error\":\"Remove:error in getting bulk upload url: unable to get bulk upload url, check your credentials,Add:error in getting bulk upload url: unable to get bulk upload url, check your credentials\"}",
@@ -217,60 +183,27 @@ var _ = Describe("Bing ads Audience", func() {
 				ImportingParameters: json.RawMessage(importParameters),
 			}
 
-			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			if err != nil {
-				fmt.Printf("Failed to create temporary directory: %v\n", err)
-				return
-			}
-
-			subDir := filepath.Join(dir, "rudder-async-destination-logs")
-			err = os.Mkdir(subDir, 0o755)
-			if err != nil {
-				fmt.Printf("Failed to create the directory 'something': %v\n", err)
-				return
-			}
-			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
-			err = os.RemoveAll(dir)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
-			Expect(received).To(Equal(expected))
+			setupRudderTmpDir(t)
+			received := bulkUploader.Upload(t.Context(), &asyncDestination)
+			require.Equal(t, expected, received)
 		})
 
-		It("TestBingAdsUploadFailedUploadBulkFile", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+		t.Run("TestBingAdsUploadFailedUploadBulkFile", func(t *testing.T) {
+			f := newBingAdsFixture(t)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, &clientI)
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload1",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload2",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload1", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload2", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
+			f.bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload1", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
+			f.bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload2", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
 
-			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			if err != nil {
-				fmt.Printf("Failed to create temporary directory: %v\n", err)
-				return
-			}
-
-			subDir := filepath.Join(dir, "rudder-async-destination-logs")
-			err = os.Mkdir(subDir, 0o755)
-			if err != nil {
-				fmt.Printf("Failed to create the directory 'something': %v\n", err)
-				return
-			}
-
-			Expect(err).To(BeNil())
-			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
+			setupRudderTmpDir(t)
 
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
@@ -282,10 +215,7 @@ var _ = Describe("Bing ads Audience", func() {
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
 			importParameters, err := jsonrs.Marshal(parameters)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
+			require.NoError(t, err)
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{3, 4, 1, 2},
 				FailedReason:        "{\"error\":\"Remove:error in uploading the bulk file: Error in uploading bulk file,Add:error in uploading the bulk file: Error in uploading bulk file\"}",
@@ -293,25 +223,17 @@ var _ = Describe("Bing ads Audience", func() {
 				DestinationID:       destination.ID,
 				ImportingParameters: json.RawMessage(importParameters),
 			}
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
+			received := bulkUploader.Upload(t.Context(), &asyncDestination)
 
-			// Remove the directory and its contents
-			err = os.RemoveAll(dir)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
-			Expect(received).To(Equal(expected))
+			require.Equal(t, expected, received)
 		})
 
-		It("TestBingAdsPollSuccessCase", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+		t.Run("TestBingAdsPollSuccessCase", func(t *testing.T) {
+			f := newBingAdsFixture(t)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, &clientI)
 
-			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(100),
 				RequestStatus:   "Completed",
 				ResultFileUrl:   "http://dummyurl.com",
@@ -323,18 +245,16 @@ var _ = Describe("Bing ads Audience", func() {
 				Complete:   true,
 				StatusCode: 200,
 			}
-			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
-			Expect(recievedResponse).To(Equal(expectedResp))
+			recievedResponse := bulkUploader.Poll(t.Context(), pollInput)
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestBingAdsPollFailureCase", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+		t.Run("TestBingAdsPollFailureCase", func(t *testing.T) {
+			f := newBingAdsFixture(t)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, &clientI)
 
-			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(nil, fmt.Errorf("failed to get bulk upload status:"))
+			f.bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(nil, fmt.Errorf("failed to get bulk upload status:"))
 			pollInput := common.AsyncPoll{
 				ImportId: "dummyRequestId123",
 			}
@@ -342,18 +262,16 @@ var _ = Describe("Bing ads Audience", func() {
 				StatusCode: 500,
 				HasFailed:  true,
 			}
-			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
-			Expect(recievedResponse).To(Equal(expectedResp))
+			recievedResponse := bulkUploader.Poll(t.Context(), pollInput)
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestBingAdsPollPartialFailureCase", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+		t.Run("TestBingAdsPollPartialFailureCase", func(t *testing.T) {
+			f := newBingAdsFixture(t)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, &clientI)
 
-			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(100),
 				RequestStatus:   "CompletedWithErrors",
 				ResultFileUrl:   "https://dummy.url.com",
@@ -368,21 +286,19 @@ var _ = Describe("Bing ads Audience", func() {
 				HasFailed:           true,
 				FailedJobParameters: "https://dummy.url.com",
 			}
-			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
+			recievedResponse := bulkUploader.Poll(t.Context(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
-			Expect(recievedResponse).To(Equal(expectedResp))
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestBingAdsPollPendingStatusCase", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+		t.Run("TestBingAdsPollPendingStatusCase", func(t *testing.T) {
+			f := newBingAdsFixture(t)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, &clientI)
 
-			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(0),
 				RequestStatus:   "InProgress",
 				ResultFileUrl:   "",
@@ -395,21 +311,19 @@ var _ = Describe("Bing ads Audience", func() {
 				InProgress: true,
 				StatusCode: 200,
 			}
-			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
+			recievedResponse := bulkUploader.Poll(t.Context(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
-			Expect(recievedResponse).To(Equal(expectedResp))
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestBingAdsPollFailedStatusCase", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+		t.Run("TestBingAdsPollFailedStatusCase", func(t *testing.T) {
+			f := newBingAdsFixture(t)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, &clientI)
 
-			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(0),
 				RequestStatus:   "Failed",
 				ResultFileUrl:   "",
@@ -422,27 +336,25 @@ var _ = Describe("Bing ads Audience", func() {
 				HasFailed:  true,
 				StatusCode: 500,
 			}
-			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
+			recievedResponse := bulkUploader.Poll(t.Context(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
-			Expect(recievedResponse).To(Equal(expectedResp))
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestBingAdsPollSuccessAndFailedStatusCase", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+		t.Run("TestBingAdsPollSuccessAndFailedStatusCase", func(t *testing.T) {
+			f := newBingAdsFixture(t)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, &clientI)
 
-			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId456").Return(&bingads_sdk.GetBulkUploadStatusResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId456").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(100),
 				RequestStatus:   "Completed",
 				ResultFileUrl:   "",
 			}, nil)
 
-			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(0),
 				RequestStatus:   "Failed",
 				ResultFileUrl:   "",
@@ -457,17 +369,15 @@ var _ = Describe("Bing ads Audience", func() {
 				StatusCode:          500,
 				FailedJobParameters: ",", // empty file
 			}
-			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
+			recievedResponse := bulkUploader.Poll(t.Context(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
-			Expect(recievedResponse).To(Equal(expectedResp))
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestBingAdsGetUploadStats", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+		t.Run("TestBingAdsGetUploadStats", func(t *testing.T) {
+			f := newBingAdsFixture(t)
 			errorsTemplateFilePath := filepath.Join(currentDir, "testdata/status-check.zip") // Path of the source file
 			// Create a test server with a custom handler function
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -480,7 +390,7 @@ var _ = Describe("Bing ads Audience", func() {
 			client := ts.Client()
 			modifiedURL := ts.URL // Use the test server URL
 			clientI := Client{client: client, URL: modifiedURL}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, &clientI)
 
 			UploadStatsInput := common.GetUploadStatsInput{
 				FailedJobParameters: modifiedURL,
@@ -507,17 +417,15 @@ var _ = Describe("Bing ads Audience", func() {
 				},
 			}
 			recievedResponse := bulkUploader.GetUploadStats(UploadStatsInput)
-			Expect(recievedResponse).To(Equal(expectedResp))
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestBingAdsGetUploadStats for wrong audience Id", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
+		t.Run("TestBingAdsGetUploadStats for wrong audience Id", func(t *testing.T) {
+			f := newBingAdsFixture(t)
 			csvPath := "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.csv"
 			zipPath := "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.zip"
 			err := ZipCSVFile(csvPath, zipPath)
-			Expect(err).To(BeNil())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+			require.NoError(t, err)
 			errorsTemplateFilePath := filepath.Join(currentDir, "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.zip") // Path of the source file
 			// Create a test server with a custom handler function
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -530,7 +438,7 @@ var _ = Describe("Bing ads Audience", func() {
 			client := ts.Client()
 			modifiedURL := ts.URL // Use the test server URL
 			clientI := Client{client: client, URL: modifiedURL}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, &clientI)
 
 			UploadStatsInput := common.GetUploadStatsInput{
 				FailedJobParameters: modifiedURL,
@@ -552,13 +460,12 @@ var _ = Describe("Bing ads Audience", func() {
 			}
 			recievedResponse := bulkUploader.GetUploadStats(UploadStatsInput)
 			os.Remove(zipPath)
-			Expect(recievedResponse).To(Equal(expectedResp))
+			require.Equal(t, expectedResp, recievedResponse)
 		})
 
-		It("TestNewManagerInternal", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			oauthV2Service := MockAuthorizer.NewMockOAuthHandler(ctrl)
+		t.Run("TestNewManagerInternal", func(t *testing.T) {
+			f := newBingAdsFixture(t)
+			oauthV2Service := MockAuthorizer.NewMockOAuthHandler(f.ctrl)
 			// oauthService := mocksoauthservice.NewMockOauthHandler(ctrl)
 			oauthV2Service.EXPECT().FetchToken(gomock.Any()).Return(json.RawMessage(`
 							{
@@ -569,42 +476,26 @@ var _ = Describe("Bing ads Audience", func() {
 							}`), nil)
 
 			bingAdsUploader, err := newManagerInternal(logger.NOP, stats.NOP, &destination, oauthV2Service)
-			Expect(err).To(BeNil())
-			Expect(bingAdsUploader).ToNot(BeNil())
+			require.NoError(t, err)
+			require.NotNil(t, bingAdsUploader)
 		})
 
-		It("TestBingAdsUploadNoTrackingId", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+		t.Run("TestBingAdsUploadNoTrackingId", func(t *testing.T) {
+			f := newBingAdsFixture(t)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", f.bingAdsService, &clientI)
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
+			f.bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload", gomock.Any()).Return(nil, fmt.Errorf("unable to upload bulk file, check your credentials"))
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload", gomock.Any()).Return(nil, fmt.Errorf("unable to upload bulk file, check your credentials"))
+			f.bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload", gomock.Any()).Return(nil, fmt.Errorf("unable to upload bulk file, check your credentials"))
+			f.bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload", gomock.Any()).Return(nil, fmt.Errorf("unable to upload bulk file, check your credentials"))
 
-			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			if err != nil {
-				fmt.Printf("Failed to create temporary directory: %v\n", err)
-				return
-			}
-
-			subDir := filepath.Join(dir, "rudder-async-destination-logs")
-			err = os.Mkdir(subDir, 0o755)
-			if err != nil {
-				fmt.Printf("Failed to create the directory 'something': %v\n", err)
-				return
-			}
-
-			Expect(err).To(BeNil())
-			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
+			setupRudderTmpDir(t)
 
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
@@ -622,20 +513,13 @@ var _ = Describe("Bing ads Audience", func() {
 			}
 
 			// making upload function call
-			received := bulkUploader.Upload(context.Background(), &asyncDestination)
+			received := bulkUploader.Upload(t.Context(), &asyncDestination)
 			received.ImportingParameters = json.RawMessage{}
 
-			// Remove the directory and its contents
-			err = os.RemoveAll(dir)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
-
-			Expect(received).To(Equal(expected))
+			require.Equal(t, expected, received)
 		})
 	})
-})
+}
 
 func DuplicateFile(sourcePath, destinationPath string) error {
 	// Open the source file

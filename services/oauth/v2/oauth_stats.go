@@ -12,54 +12,58 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
 
-const OAUTH_V2_STAT_PREFIX = "oauth_action"
+const oauthV2StatPrefix = "oauth_action"
 
-type OAuthStats struct {
+type oauthStats struct {
 	stats           stats.Stats
-	id              string // destinationId -> for action == auth_status_inactive, accountId -> for action == refresh_token/fetch_token
+	accountID       string
+	destinationID   string
 	workspaceID     string
 	errorMessage    string
 	rudderCategory  string // destination
 	statName        string
-	isCallToCpApi   bool   // is a call being made to control-plane APIs
-	authErrCategory string // for action=refresh_token -> REFRESH_TOKEN, for action=fetch_token -> "", for action=auth_status_inactive -> auth_status_inactive
+	isCallToCpApi   bool
+	authErrCategory string
 	destType        string
 	flowType        common.RudderFlow // delivery, delete
 	action          string            // refresh_token, fetch_token, auth_status_inactive
 }
 
-type OAuthStatsHandler struct {
-	stats       stats.Stats
-	defaultTags stats.Tags
+type oauthStatsHandler struct {
+	stats         stats.Stats
+	histogramTags stats.Tags
+	counterTags   stats.Tags
 }
 
-func (oauthStats *OAuthStats) ToStatsTags() stats.Tags {
+func (s *oauthStats) ToStatsTags() stats.Tags {
 	return stats.Tags{
-		"id":              oauthStats.id,
-		"workspaceId":     oauthStats.workspaceID,
+		"id":              s.accountID, // keep the historical tag name: dashboards and breaker counters key on id
+		"workspaceId":     s.workspaceID,
 		"rudderCategory":  "destination",
-		"isCallToCpApi":   strconv.FormatBool(oauthStats.isCallToCpApi),
-		"authErrCategory": oauthStats.authErrCategory,
-		"destType":        oauthStats.destType,
-		"flowType":        string(oauthStats.flowType),
-		"action":          oauthStats.action,
+		"isCallToCpApi":   strconv.FormatBool(s.isCallToCpApi),
+		"authErrCategory": s.authErrCategory,
+		"destType":        s.destType,
+		"flowType":        string(s.flowType),
+		"action":          s.action,
 		"oauthVersion":    "v2",
 	}
 }
 
-func NewStatsHandlerFromOAuthStats(oauthStats *OAuthStats) OAuthStatsHandler {
-	return OAuthStatsHandler{
-		stats:       oauthStats.stats,
-		defaultTags: oauthStats.ToStatsTags(),
+func newOAuthStatsHandler(s *oauthStats) oauthStatsHandler {
+	histogramTags := s.ToStatsTags()
+	return oauthStatsHandler{
+		stats:         s.stats,
+		histogramTags: histogramTags,
+		counterTags:   lo.Assign(histogramTags, stats.Tags{"destinationId": s.destinationID}),
 	}
 }
 
-func (m *OAuthStatsHandler) Increment(statSuffix string, tags stats.Tags) {
-	statName := strings.Join([]string{OAUTH_V2_STAT_PREFIX, statSuffix}, "_")
-	m.stats.NewTaggedStat(statName, stats.CountType, lo.Assign(m.defaultTags, tags)).Increment()
+func (m *oauthStatsHandler) Increment(statSuffix string, tags stats.Tags) {
+	statName := strings.Join([]string{oauthV2StatPrefix, statSuffix}, "_")
+	m.stats.NewTaggedStat(statName, stats.CountType, lo.Assign(m.counterTags, tags)).Increment()
 }
 
-func (m *OAuthStatsHandler) SendTiming(startTime time.Time, statSuffix string, tags stats.Tags) {
-	statName := strings.Join([]string{OAUTH_V2_STAT_PREFIX, statSuffix}, "_")
-	m.stats.NewTaggedStat(statName, stats.TimerType, lo.Assign(m.defaultTags, tags)).SendTiming(time.Since(startTime))
+func (m *oauthStatsHandler) SendTiming(startTime time.Time, statSuffix string, tags stats.Tags) {
+	statName := strings.Join([]string{oauthV2StatPrefix, statSuffix}, "_")
+	m.stats.NewTaggedStat(statName, stats.TimerType, lo.Assign(m.histogramTags, tags)).SendTiming(time.Since(startTime))
 }

@@ -517,6 +517,7 @@ func TestStagingFilesRepo(t *testing.T) {
 					for i := range stagingFiles {
 						stagingFiles[i].DestinationID = input.DestinationID
 						stagingFiles[i].SourceID = input.SourceID
+						stagingFiles[i].SourceTaskRunID = "task_run_id"
 
 						file := stagingFiles[i].WithSchema([]byte(`{"type": "object"}`))
 
@@ -532,11 +533,7 @@ func TestStagingFilesRepo(t *testing.T) {
 					require.NoError(t, err)
 					require.Equal(t, stagingFiles, pending)
 
-					countByDestID, err := r.CountPendingForDestination(ctx, input.DestinationID)
-					require.NoError(t, err)
-					require.Equal(t, int64(input.Files), countByDestID)
-
-					countBySrcID, err := r.CountPendingForSource(ctx, input.SourceID)
+					countBySrcID, err := r.CountPendingForSource(ctx, input.SourceID, "task_run_id", []string{input.DestinationID})
 					require.NoError(t, err)
 					require.Equal(t, int64(input.Files), countBySrcID)
 
@@ -550,11 +547,7 @@ func TestStagingFilesRepo(t *testing.T) {
 					require.NoError(t, err)
 					require.Empty(t, pending)
 
-					countByDestID, err = r.CountPendingForDestination(ctx, input.DestinationID)
-					require.NoError(t, err)
-					require.Zero(t, countByDestID)
-
-					countBySrcID, err = r.CountPendingForSource(ctx, input.SourceID)
+					countBySrcID, err = r.CountPendingForSource(ctx, input.SourceID, "task_run_id", []string{input.DestinationID})
 					require.NoError(t, err)
 					require.Zero(t, countBySrcID)
 
@@ -571,6 +564,46 @@ func TestStagingFilesRepo(t *testing.T) {
 						require.Equal(t, []string{"destination_revision_id"}, revisionIDs)
 					})
 				}
+			})
+
+			t.Run("pending across destinations and task runs", func(t *testing.T) {
+				conf := defaultConfig()
+				db, ctx := setupDBWithConfig(t, conf), context.Background()
+				s := repo.NewStagingFiles(db, conf)
+				u := repo.NewUploads(db)
+				insert := func(destination, task string) *model.StagingFile {
+					file := model.StagingFile{WorkspaceID: "workspace", SourceID: "source", DestinationID: destination, SourceTaskRunID: task}
+					id, err := s.Insert(ctx, &model.StagingFileWithSchema{StagingFile: file})
+					require.NoError(t, err)
+					file.ID = id
+					return &file
+				}
+				insert("destination_a", "task_1")
+				uploaded := insert("destination_b", "task_1")
+				otherTask := insert("destination_a", "task_2")
+				insert("removed_destination", "task_1")
+				otherSource := model.StagingFile{SourceID: "other_source", DestinationID: "destination_a", SourceTaskRunID: "task_1"}
+				_, err := s.Insert(ctx, &model.StagingFileWithSchema{StagingFile: otherSource})
+				require.NoError(t, err)
+				_, err = u.CreateWithStagingFiles(ctx, model.Upload{SourceID: "source", DestinationID: "destination_b"}, []*model.StagingFile{uploaded})
+				require.NoError(t, err)
+				count, err := s.CountPendingForSource(ctx, "source", "task_1", []string{"destination_a", "destination_b"})
+				require.NoError(t, err)
+				require.EqualValues(t, 1, count)
+				count, err = s.CountPendingForSource(ctx, "source", "task_1", []string{"destination_a", "destination_b", "removed_destination"})
+				require.NoError(t, err)
+				require.EqualValues(t, 2, count)
+				count, err = s.CountPendingForConnection(ctx, "source", "destination_a")
+				require.NoError(t, err)
+				require.EqualValues(t, 2, count)
+				_, err = u.CreateWithStagingFiles(ctx, model.Upload{SourceID: "source", DestinationID: "destination_a"}, []*model.StagingFile{otherTask})
+				require.NoError(t, err)
+				count, err = s.CountPendingForSource(ctx, "source", "task_1", []string{"destination_a", "destination_b"})
+				require.NoError(t, err)
+				require.Zero(t, count)
+				count, err = s.CountPendingForSource(ctx, "source", "task_2", []string{"destination_a", "destination_b"})
+				require.NoError(t, err)
+				require.Zero(t, count)
 			})
 
 			t.Run("Status", func(t *testing.T) {

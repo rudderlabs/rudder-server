@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/samber/lo"
+	"github.com/sony/gobreaker"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -235,10 +236,58 @@ func TestOauthBreaker(t *testing.T) {
 	})
 }
 
+func TestOauthBreakerReportAuthStatusInactiveWithOpenCircuit(t *testing.T) {
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+
+	tokenErr := NewStatusCodeError(500, errors.New("token request error"))
+	delegate := &mockOAuthHandler{
+		responses: []lo.Tuple2[json.RawMessage, StatusCodeError]{
+			{A: nil, B: tokenErr},
+		},
+	}
+	breaker := newOAuthBreaker(delegate, OAuthBreakerOptions{
+		ConsecutiveErrorsThreshold: 1,
+		ErrorsTimeout:              time.Hour,
+		Stats:                      statsStore,
+	}).(*oauthBreaker)
+	params := &OAuthTokenParams{
+		AccountID:     "account-id",
+		WorkspaceID:   "workspace-id",
+		DestType:      "dest-type",
+		DestinationID: "destination-id",
+	}
+
+	// one error trips the error circuit
+	_, err = breaker.FetchToken(params)
+	require.ErrorIs(t, err, tokenErr)
+	account := breaker.accountBreakers.get(params)
+	require.Equal(t, gobreaker.StateOpen, account.errorBreaker.State())
+
+	// the next token request is blocked by the open circuit: the delegate is not called again
+	_, err = breaker.FetchToken(params)
+	require.ErrorIs(t, err, tokenErr)
+	require.Equal(t, 1, delegate.calls)
+
+	errorCounts := account.errorBreaker.Counts()
+	successCounts := account.successBreaker.Counts()
+
+	// the report still reaches the delegate, and the breakers do not see it
+	breaker.ReportAuthStatusInactive(params)
+
+	require.Equal(t, 1, delegate.inactiveCalls)
+	require.Same(t, params, delegate.inactiveParams)
+	require.Equal(t, 1, delegate.calls)
+	require.Equal(t, gobreaker.StateOpen, account.errorBreaker.State())
+	require.Equal(t, errorCounts, account.errorBreaker.Counts())
+	require.Equal(t, successCounts, account.successBreaker.Counts())
+}
+
 type mockOAuthHandler struct {
-	OAuthHandler
-	calls     int
-	responses []lo.Tuple2[json.RawMessage, StatusCodeError]
+	calls          int
+	responses      []lo.Tuple2[json.RawMessage, StatusCodeError]
+	inactiveCalls  int
+	inactiveParams *OAuthTokenParams
 }
 
 func (m *mockOAuthHandler) FetchToken(*OAuthTokenParams) (json.RawMessage, StatusCodeError) {
@@ -247,6 +296,11 @@ func (m *mockOAuthHandler) FetchToken(*OAuthTokenParams) (json.RawMessage, Statu
 
 func (m *mockOAuthHandler) RefreshToken(*OAuthTokenParams, json.RawMessage) (json.RawMessage, StatusCodeError) {
 	return m.call()
+}
+
+func (m *mockOAuthHandler) ReportAuthStatusInactive(params *OAuthTokenParams) {
+	m.inactiveCalls++
+	m.inactiveParams = params
 }
 
 func (m *mockOAuthHandler) call() (json.RawMessage, StatusCodeError) {
