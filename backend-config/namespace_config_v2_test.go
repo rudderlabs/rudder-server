@@ -580,13 +580,20 @@ type v2Server struct {
 	requests  []*url.URL
 	headers   []http.Header
 	secret    string
+	bearer    string // when set, requests must carry this Bearer token instead of the Basic secret
 	failFirst int    // how many of the first requests to answer with a 500
 	cursor    string // when set, incremental definitions are confirmed with this cursor
 }
 
 func (s *v2Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	user, _, ok := r.BasicAuth()
-	require.True(s.t, ok)
+	if s.bearer != "" {
+		require.False(s.t, ok, "the token replaces the Basic secret")
+		require.Equal(s.t, "Bearer "+s.bearer, r.Header.Get("Authorization"))
+		user = s.secret
+	} else {
+		require.True(s.t, ok)
+	}
 
 	s.requests = append(s.requests, r.URL)
 	s.headers = append(s.headers, r.Header)

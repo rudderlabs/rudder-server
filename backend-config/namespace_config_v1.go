@@ -24,9 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-// identityTokenHeader carries the workload identity token, the same header the control plane SDK sends on v2
-const identityTokenHeader = "X-Dataplane-Identity"
-
 // v1ConfigFetcher fetches the namespace's workspace configs from the v1
 // data-plane endpoint, which already serves them as ConfigT.
 type v1ConfigFetcher struct {
@@ -100,7 +97,7 @@ func (f *v1ConfigFetcher) getFromAPI(ctx context.Context) (map[string]ConfigT, e
 
 	operation := func() (fetchError error) {
 		f.logger.Debugn("Fetching backend config", logger.NewStringField("url", urlString))
-		f.setIdentityToken(req)
+		f.setAuth(req)
 		respBody, fetchError = f.makeHTTPRequest(req)
 		return fetchError
 	}
@@ -169,24 +166,22 @@ func (f *v1ConfigFetcher) prepareHTTPRequest(ctx context.Context, url string) (*
 	if err != nil {
 		return nil, err
 	}
-
-	req.SetBasicAuth(f.identity.BasicAuth())
-
 	return req, nil
 }
 
-// setIdentityToken reads the token file on every attempt, so a rotated token is picked up;
-// a missing, unreadable or empty file sends no header.
-func (f *v1ConfigFetcher) setIdentityToken(req *http.Request) {
-	if f.identityTokenFile == "" {
-		return
-	}
-	req.Header.Del(identityTokenHeader)
-	if token, err := os.ReadFile(f.identityTokenFile); err == nil {
-		if t := strings.TrimSpace(string(token)); t != "" {
-			req.Header.Set(identityTokenHeader, t)
+// setAuth sends the workload identity token as a Bearer credential instead of the Basic secret when the token file
+// reads non-empty. The file is read on every attempt, so a rotated token is picked up; an unset, missing, unreadable
+// or empty file keeps the Basic secret.
+func (f *v1ConfigFetcher) setAuth(req *http.Request) {
+	if f.identityTokenFile != "" {
+		if token, err := os.ReadFile(f.identityTokenFile); err == nil {
+			if t := strings.TrimSpace(string(token)); t != "" {
+				req.Header.Set("Authorization", "Bearer "+t)
+				return
+			}
 		}
 	}
+	req.SetBasicAuth(f.identity.BasicAuth())
 }
 
 func (f *v1ConfigFetcher) makeHTTPRequest(req *http.Request) ([]byte, error) {

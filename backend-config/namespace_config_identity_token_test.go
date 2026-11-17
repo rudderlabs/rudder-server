@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -26,7 +27,8 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		require.NoError(t, os.WriteFile(path, []byte(token), 0o600))
 	}
 
-	// headerRecorder answers v1 config requests and records the identity header of each one
+	// headerRecorder answers v1 config requests and records the credential of each one:
+	// "basic:<user>" for Basic auth, otherwise the raw Authorization header
 	type headerRecorder struct {
 		mu      sync.Mutex
 		headers []string
@@ -35,7 +37,11 @@ func TestNamespaceIdentityToken(t *testing.T) {
 	record := func(rec *headerRecorder) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			rec.mu.Lock()
-			rec.headers = append(rec.headers, r.Header.Get(identityTokenHeader))
+			auth := r.Header.Get("Authorization")
+			if user, _, ok := r.BasicAuth(); ok {
+				auth = "basic:" + user
+			}
+			rec.headers = append(rec.headers, auth)
 			n := len(rec.headers)
 			rec.mu.Unlock()
 			if rec.before != nil && rec.before(n, w) {
@@ -68,14 +74,12 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "token")
 		nc := newV1(t, "http://localhost", path)
 		require.Equal(t, path, nc.identityTokenFile)
-		require.NotNil(t, nc.client.CheckRedirect)
 
 		nc = newV1(t, "http://localhost", "")
 		require.Empty(t, nc.identityTokenFile)
-		require.Nil(t, nc.client.CheckRedirect, "nothing changes when the feature is off")
 	})
 
-	t.Run("v1 reads the token on every attempt and omits it when the file is missing", func(t *testing.T) {
+	t.Run("v1 sends the token instead of the secret, reads it on every attempt and falls back to the secret when the file is missing or empty", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "token")
 		writeToken(t, path, "token-1\n")
 		rec := &headerRecorder{before: func(n int, w http.ResponseWriter) bool {
@@ -92,30 +96,35 @@ func TestNamespaceIdentityToken(t *testing.T) {
 
 		_, err := nc.Get(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"token-1", "token-2"}, rec.headers)
+		require.Equal(t, []string{"Bearer token-1", "Bearer token-2"}, rec.headers)
 
 		writeToken(t, path, "token-3")
 		_, err = nc.Get(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "token-3", rec.headers[2], "the next poll picks up the rotated token")
+		require.Equal(t, "Bearer token-3", rec.headers[2], "the next poll picks up the rotated token")
+
+		writeToken(t, path, " \n")
+		_, err = nc.Get(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "basic:service-secret", rec.headers[3], "an empty file keeps the secret")
 
 		require.NoError(t, os.Remove(path))
 		_, err = nc.Get(ctx)
 		require.NoError(t, err)
-		require.Empty(t, rec.headers[3])
+		require.Equal(t, "basic:service-secret", rec.headers[4], "a missing file keeps the secret")
 	})
 
-	t.Run("v1 sends no header when the feature is off", func(t *testing.T) {
+	t.Run("v1 sends the secret when the feature is off", func(t *testing.T) {
 		rec := &headerRecorder{}
 		ts := httptest.NewServer(record(rec))
 		defer ts.Close()
 
 		_, err := newV1(t, ts.URL, "").Get(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{""}, rec.headers)
+		require.Equal(t, []string{"basic:service-secret"}, rec.headers)
 	})
 
-	t.Run("a redirect to another host drops the header, one to the same host keeps it", func(t *testing.T) {
+	t.Run("a redirect to another host drops the token, one to the same host keeps it", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "token")
 		writeToken(t, path, "a-token")
 
@@ -136,10 +145,11 @@ func TestNamespaceIdentityToken(t *testing.T) {
 
 		_, err := newV1(t, sameHost.URL, path).Get(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"a-token"}, same.headers)
+		require.Equal(t, []string{"Bearer a-token"}, same.headers)
 
 		redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, otherHost.URL+configPath, http.StatusFound)
+			// net/http compares hosts without ports, so use a different host name for the same listener
+			http.Redirect(w, r, strings.Replace(otherHost.URL, "127.0.0.1", "localhost", 1)+configPath, http.StatusFound)
 		}))
 		defer redirecting.Close()
 
@@ -148,25 +158,25 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		require.Equal(t, []string{""}, other.headers)
 	})
 
-	t.Run("v2 sends the token when the file is set", func(t *testing.T) {
+	t.Run("v2 sends the token instead of the secret when the file is set", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "token")
 		writeToken(t, path, " a-token\n")
-		srv := &v2Server{t: t, secret: "service-secret"}
+		srv := &v2Server{t: t, secret: "service-secret", bearer: "a-token"}
 		srv.responses = [][]byte{v2Doc{Workspaces: map[string]any{"ws-1": v2Workspaceof("2026-07-24T17:01:55.777Z")}}.json(t)}
 		fetcher, _ := newV2TestFetcher(t, srv, func(nc *namespaceConfig) { nc.identityTokenFile = path })
 
 		_, err := fetcher.Get(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "a-token", srv.headers[0].Get(identityTokenHeader))
+		require.Len(t, srv.headers, 1)
 	})
 
-	t.Run("v2 sends no header when the file is not set", func(t *testing.T) {
+	t.Run("v2 sends the secret when the file is not set", func(t *testing.T) {
 		srv := &v2Server{t: t, secret: "service-secret"}
 		srv.responses = [][]byte{v2Doc{Workspaces: map[string]any{"ws-1": v2Workspaceof("2026-07-24T17:01:55.777Z")}}.json(t)}
 		fetcher, _ := newV2TestFetcher(t, srv)
 
 		_, err := fetcher.Get(ctx)
 		require.NoError(t, err)
-		require.NotContains(t, srv.headers[0], identityTokenHeader)
+		require.Len(t, srv.headers, 1) // v2Server requires the Basic secret
 	})
 }
