@@ -1,9 +1,5 @@
 <!-- HEADER: rudderlabs README header template. Source: devrel brand/github-readme-header/TEMPLATE.md -->
 <p align="center">
-  <b>New:</b> <a href="https://www.rudderstack.com/product/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-launch-line">Lookout</a> just launched. Go from "who should we target" to a live audience in minutes.
-</p>
-
-<p align="center">
   <a href="https://www.rudderstack.com/?utm_source=github&utm_medium=readme&utm_content=rudder-server-logo">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="resources/rudderstack-logo-white.svg">
@@ -36,6 +32,12 @@
     <a href="https://x.com/RudderStack">X</a>
   </b>
 </p>
+
+---
+
+<p align="center">
+  <b>New:</b> <a href="https://www.rudderstack.com/product/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-launch-line">Lookout</a> just launched. Go from "who should we target" to a live audience in minutes.
+</p>
 <!-- /HEADER -->
 
 <p align="center">
@@ -47,10 +49,21 @@
 
 ## Get started
 
-- **Cloud:** [Sign up for RudderStack Cloud Free](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=readme&utm_content=rudder-server-get-started), no setup needed.
-- **Self-host:** [Docker](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/docker/) · [Kubernetes](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/kubernetes/) (use this in production) · [Developer machine](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/developer-machine-setup/)
+The easiest way to experience RudderStack is to [**sign up**](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=readme&utm_content=rudder-server-get-started) for **RudderStack Cloud Free**, a completely free tier of [**RudderStack Cloud**](https://www.rudderstack.com/cloud/).
 
-Then [send a test event](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/sending-test-events/) to check the setup.
+You can also set up RudderStack on your platform of choice with these two easy steps:
+
+### Step 1: Set up RudderStack
+
+- [**Docker**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/docker/)
+- [**Kubernetes**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/kubernetes/)
+- [**Developer machine setup**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/developer-machine-setup/)
+
+> **Note**: If you are planning to use RudderStack in production, we STRONGLY recommend using our Kubernetes Helm charts. We update our Docker images with bug fixes much more frequently than our GitHub repo.
+
+### Step 2: Verify the installation
+
+Once you have installed RudderStack, [**send test events**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/sending-test-events/) to verify the setup.
 
 ## Key features
 
