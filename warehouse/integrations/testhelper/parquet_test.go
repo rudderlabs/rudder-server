@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/apache/thrift/lib/go/thrift"
-
 	"github.com/stretchr/testify/require"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/layout"
