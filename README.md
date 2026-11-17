@@ -36,8 +36,10 @@
 ---
 
 <p align="center">
-  <b>New:</b> <a href="https://www.rudderstack.com/product/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-launch-line">Lookout</a> just launched. Go from "who should we target" to a live audience in minutes.
+  <img src="https://img.shields.io/badge/NEW-FF6B4A?style=flat-square" alt="New" height="18" align="absmiddle"> <a href="https://www.rudderstack.com/product/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-launch-line">Lookout</a> just launched. Go from "who should we target" to a live audience in minutes.
 </p>
+
+---
 <!-- /HEADER -->
 
 <p align="center">
