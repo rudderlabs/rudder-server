@@ -329,7 +329,9 @@ func testFabricLoadTable(t *testing.T, credentials fabricTestCredentials) {
 		second, err := fabric.LoadTable(ctx, tableName)
 		require.NoError(t, err)
 		require.Equal(t, int64(14), second.RowsInserted)
-		require.Equal(t, append(whth.SampleParquetTestRecords(), whth.SampleParquetTestRecords()...), fabricLoadRecords(t, db, namespace, tableName))
+		expected := append(whth.SampleParquetTestRecords(), whth.SampleParquetTestRecords()...)
+		slices.SortFunc(expected, func(a, b []string) int { return strings.Compare(a[0], b[0]) })
+		require.Equal(t, expected, fabricLoadRecords(t, db, namespace, tableName))
 	})
 
 	t.Run("load file does not exist", func(t *testing.T) {
