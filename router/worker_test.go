@@ -29,7 +29,6 @@ import (
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/internal/partition"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
@@ -70,57 +69,24 @@ func TestDeliveryCompressionMetrics(t *testing.T) {
 		destinationID = "destination-1"
 	)
 	for _, tc := range []struct {
-		name             string
-		proxy            bool
-		requests         []integrations.PostParametersT
-		path             string
-		format           string
-		custom           bool
-		jobFallback      bool
-		emptyBody        bool
-		competingFormats bool
+		name         string
+		proxy        bool
+		endpointPath string
+		body         map[string]any
+		payloadSize  int
+		compressed   bool
 	}{
-		{
-			name: "native multiple endpoints",
-			requests: []integrations.PostParametersT{
-				{Type: "REST", RequestMethod: http.MethodPost, EndpointPath: "", Body: map[string]any{"GZIP": map[string]any{"payload": "repeated repeated repeated repeated"}}},
-				{Type: "REST", RequestMethod: http.MethodPost, EndpointPath: "/plain", Body: map[string]any{"JSON_ARRAY": map[string]any{"batch": "plain"}}},
-			},
-		},
-		{
-			name:  "proxy mixed requests",
-			proxy: true,
-			requests: []integrations.PostParametersT{
-				{Type: "REST", RequestMethod: http.MethodPost, EndpointPath: "/gzip", Body: map[string]any{"GZIP": map[string]any{"payload": "gzip"}}},
-				{Type: "REST", RequestMethod: http.MethodPost, EndpointPath: "", Body: map[string]any{"JSON_ARRAY": map[string]any{"batch": "plain"}}},
-			},
-			path: "<mixed>", format: "mixed",
-		},
-		{
-			name: "proxy gzip job", proxy: true,
-			requests: []integrations.PostParametersT{{Type: "REST", RequestMethod: http.MethodPost, EndpointPath: "", Body: map[string]any{"GZIP": map[string]any{"payload": "gzip"}}}},
-			path:     "", format: "true",
-		},
-		{name: "proxy empty requests", proxy: true, requests: []integrations.PostParametersT{}, path: "", format: "unknown"},
-		{name: "native without body", jobFallback: true, requests: []integrations.PostParametersT{{Type: "OTHER", EndpointPath: "/not-sent"}}},
-		{name: "native empty body", emptyBody: true, requests: []integrations.PostParametersT{{Type: "REST", RequestMethod: http.MethodPost, EndpointPath: "/empty", Body: map[string]any{"GZIP": map[string]any{"payload": ""}}}}},
-		{
-			name: "native competing body formats", competingFormats: true, requests: []integrations.PostParametersT{{
-				Type: "REST", RequestMethod: http.MethodPost, EndpointPath: "/competing",
-				Body: map[string]any{"GZIP": map[string]any{"payload": "gzip"}, "JSON_ARRAY": map[string]any{"batch": "plain"}},
-			}},
-		},
-		{name: "native no requests", jobFallback: true, requests: []integrations.PostParametersT{}},
-		{name: "custom manager", custom: true, jobFallback: true, requests: []integrations.PostParametersT{}},
+		{"native gzip", false, "", map[string]any{"GZIP": map[string]any{"payload": "repeated repeated repeated repeated"}}, len("repeated repeated repeated repeated"), true},
+		{"native plain", false, "/plain", map[string]any{"JSON_ARRAY": map[string]any{"batch": "plain"}}, 0, false},
+		{"proxy gzip", true, "/proxy", map[string]any{"GZIP": map[string]any{"payload": "gzip"}}, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := replaceDefaultStatsWithMemStats(t)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 			defer server.Close()
-			for i := range tc.requests {
-				tc.requests[i].URL = server.URL
-			}
-			message, err := jsonrs.Marshal(tc.requests)
+			message, err := jsonrs.Marshal([]integrations.PostParametersT{{
+				Type: "REST", RequestMethod: http.MethodPost, URL: server.URL, EndpointPath: tc.endpointPath, Body: tc.body,
+			}})
 			require.NoError(t, err)
 
 			w := createTestWorker(destType, tc.proxy, stats.NOP)
@@ -150,12 +116,9 @@ func TestDeliveryCompressionMetrics(t *testing.T) {
 			w.rt.reloadableConfig.maxRetryBackoff = config.SingleValueLoader(time.Second)
 			w.deliveryTimeStat = stats.NOP.NewTaggedStat("delivery_time", stats.TimerType, nil)
 			w.routerProxyStat = stats.NOP.NewTaggedStat("router_proxy_latency", stats.TimerType, nil)
-			if tc.custom {
-				w.rt.customDestinationManager = &testPayloadDestinationManager{}
-			}
 			if tc.proxy {
 				mockTransformer := mocksTransformer.NewMockTransformer(gomock.NewController(t))
-				mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).Times(len(tc.requests)).Return(transformer.ProxyRequestResponse{
+				mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).Return(transformer.ProxyRequestResponse{
 					ProxyRequestStatusCode: http.StatusOK,
 					RespStatusCodes:        map[int64]int{1: http.StatusOK},
 					RespBodys:              map[int64]string{1: "ok"},
@@ -171,74 +134,26 @@ func TestDeliveryCompressionMetrics(t *testing.T) {
 			w.process([]types.DestinationJobT{job})
 
 			payloadTags := stats.Tags{"destType": destType, "workspaceID": workspaceID, "destinationID": destinationID}
-			compressionTags := stats.Tags{"destType": destType, "workspaceID": workspaceID}
-			if tc.proxy {
-				payloadTags["payloadKind"] = "job"
-				payloadTags["endpointPath"] = tc.path
-				payloadTags["compressed"] = tc.format
-				require.Equal(t, float64(len(message)), store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
-				compressionTags["endpointPath"] = tc.path
-				require.Nil(t, store.Get("router_delivery_compressed_payload_size_bytes", compressionTags))
-				require.Nil(t, store.Get("router_delivery_compression_duration_seconds", compressionTags))
-				payloadTags["payloadKind"] = "body"
-				require.Nil(t, store.Get("router_delivery_payload_size_bytes", payloadTags))
-			} else if tc.jobFallback {
-				payloadTags["endpointPath"] = ""
-				payloadTags["compressed"] = "unknown"
-				payloadTags["payloadKind"] = "job"
-				require.Equal(t, float64(len(message)), store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
-				compressionTags["endpointPath"] = "/not-sent"
-				require.Nil(t, store.Get("router_delivery_compressed_payload_size_bytes", compressionTags))
-				require.Nil(t, store.Get("router_delivery_compression_duration_seconds", compressionTags))
-				payloadTags["endpointPath"] = "/not-sent"
-				payloadTags["compressed"] = "false"
-				payloadTags["payloadKind"] = "body"
-				require.Nil(t, store.Get("router_delivery_payload_size_bytes", payloadTags))
-			} else if tc.competingFormats {
-				compressionTags["endpointPath"] = "/competing"
-				if store.Get("router_delivery_compressed_payload_size_bytes", compressionTags) != nil {
-					payloadTags["compressed"] = "true"
-					payloadTags["endpointPath"] = "/competing"
-					payloadTags["payloadKind"] = "body"
-					require.Equal(t, float64(len("gzip")), store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
+			require.Equal(t, float64(len(message)), store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
+			compressionTags := stats.Tags{"destType": destType, "workspaceID": workspaceID, "endpointPath": tc.endpointPath}
+			for _, metric := range []string{
+				"router_delivery_uncompressed_payload_size_bytes",
+				"router_delivery_compressed_payload_size_bytes",
+				"router_delivery_compression_duration_seconds",
+			} {
+				if tc.compressed {
+					require.NotNil(t, store.Get(metric, compressionTags), metric)
 				} else {
-					payloadTags["compressed"] = "false"
-					payloadTags["endpointPath"] = "/competing"
-					payloadTags["payloadKind"] = "body"
-					require.Equal(t, float64(len("plain")), store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
+					require.Nil(t, store.Get(metric, compressionTags), metric)
 				}
-			} else if tc.emptyBody {
-				payloadTags["endpointPath"] = "/empty"
-				payloadTags["compressed"] = "true"
-				payloadTags["payloadKind"] = "body"
-				require.Zero(t, store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
-				compressionTags["endpointPath"] = "/empty"
-				require.Positive(t, store.Get("router_delivery_compressed_payload_size_bytes", compressionTags).LastValue())
-			} else {
-				payloadTags["payloadKind"] = "body"
-				payloadTags["endpointPath"] = ""
-				payloadTags["compressed"] = "true"
-				require.Equal(t, float64(len("repeated repeated repeated repeated")), store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
-				compressionTags["endpointPath"] = ""
+			}
+			if tc.compressed {
+				require.Equal(t, float64(tc.payloadSize), store.Get("router_delivery_uncompressed_payload_size_bytes", compressionTags).LastValue())
 				require.Positive(t, store.Get("router_delivery_compressed_payload_size_bytes", compressionTags).LastValue())
 				require.Positive(t, store.Get("router_delivery_compression_duration_seconds", compressionTags).LastValue())
-				payloadTags["endpointPath"] = "/plain"
-				payloadTags["compressed"] = "false"
-				require.Equal(t, float64(len("plain")), store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
-				compressionTags["endpointPath"] = "/plain"
-				require.Nil(t, store.Get("router_delivery_compressed_payload_size_bytes", compressionTags))
-				require.Nil(t, store.Get("router_delivery_compression_duration_seconds", compressionTags))
 			}
 		})
 	}
-}
-
-type testPayloadDestinationManager struct {
-	customdestinationmanager.DestinationManager
-}
-
-func (*testPayloadDestinationManager) SendData(_ json.RawMessage, _ string) (int, string) {
-	return http.StatusOK, "ok"
 }
 
 func TestGateDeliveredWithWarning(t *testing.T) {

@@ -116,7 +116,6 @@ func TestSendPostWithGzipData(t *testing.T) {
 		require.Equal(r, resp.ResponseBody, []byte("400 Unable to parse json list. Unexpected transformer response"))
 		require.Zero(r, resp.CompressedPayloadSize)
 		require.Zero(r, resp.CompressionDuration)
-		require.False(r, resp.BodyConstructed)
 	})
 
 	t.Run("should send error with invalid body", func(r *testing.T) {
@@ -254,8 +253,6 @@ func TestSendPostWithGzipData(t *testing.T) {
 		resp := network.SendPost(context.Background(), structData)
 		require.Equal(r, resp.StatusCode, http.StatusOK)
 		require.Equal(r, string(resp.ResponseBody), "")
-		require.True(r, resp.BodyConstructed)
-		require.Equal(r, "GZIP", resp.BodyFormat)
 		require.Zero(r, resp.UncompressedPayloadSize)
 		require.Positive(r, resp.CompressedPayloadSize)
 		require.Positive(r, resp.CompressionDuration)
@@ -313,32 +310,6 @@ func TestSendPostWithGzipData(t *testing.T) {
 	})
 }
 
-func TestSendPostBodyConstruction(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		body        map[string]any
-		constructed bool
-		format      string
-		payloadSize int
-	}{
-		{"empty gzip", map[string]any{"GZIP": map[string]any{"payload": ""}}, true, "GZIP", 0},
-		{"empty json array", map[string]any{"JSON_ARRAY": map[string]any{"batch": ""}}, true, "JSON_ARRAY", 0},
-		{"missing body", nil, false, "", 0},
-		{"invalid gzip", map[string]any{"GZIP": map[string]any{"other": "value"}}, false, "", 0},
-		{"unknown format", map[string]any{"UNSUPPORTED": map[string]any{"value": "x"}}, false, "", 0},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
-			defer server.Close()
-			network := &netHandle{httpClient: http.DefaultClient, logger: logger.NOP}
-			resp := network.SendPost(t.Context(), integrations.PostParametersT{Type: "REST", RequestMethod: http.MethodPost, URL: server.URL, Body: tc.body})
-			require.Equal(t, tc.constructed, resp.BodyConstructed)
-			require.Equal(t, tc.format, resp.BodyFormat)
-			require.Equal(t, tc.payloadSize, resp.UncompressedPayloadSize)
-		})
-	}
-}
-
 func TestSendPostGZIPMeasurementsOnHTTPFailure(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -367,13 +338,24 @@ func TestSendPostGZIPMeasurementsOnHTTPFailure(t *testing.T) {
 				Body: map[string]any{"GZIP": map[string]any{"payload": "test payload"}},
 			})
 			require.Equal(t, tc.status, resp.StatusCode)
-			require.True(t, resp.BodyConstructed)
-			require.Equal(t, "GZIP", resp.BodyFormat)
 			require.Equal(t, len("test payload"), resp.UncompressedPayloadSize)
 			require.Positive(t, resp.CompressedPayloadSize)
 			require.Positive(t, resp.CompressionDuration)
 		})
 	}
+}
+
+func TestSendPostJSONMarshalPanic(t *testing.T) {
+	network := &netHandle{logger: logger.NOP}
+	var panicValue any
+	func() {
+		defer func() { panicValue = recover() }()
+		network.SendPost(t.Context(), integrations.PostParametersT{
+			Type: "REST", RequestMethod: http.MethodPost, URL: "https://example.com",
+			Body: map[string]any{"JSON": map[string]any{"unsupported": make(chan int)}},
+		})
+	}()
+	require.ErrorContains(t, panicValue.(error), "unsupported type")
 }
 
 func TestSendPost(t *testing.T) {

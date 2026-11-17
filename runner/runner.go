@@ -105,7 +105,7 @@ func (r *Runner) Run(ctx context.Context, shutdownFn func(), args []string) int 
 	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
 	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType &&
 		(!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetStringVar("", "WORKSPACE_NAMESPACE"), "free")) {
-		config.Set("statsExcludedTags", []string{"workspaceId", "workspaceID", "sourceID", "destId"})
+		config.Set("statsExcludedTags", []string{"workspaceId", "sourceID", "destId"})
 	}
 	statsOptions := []stats.Option{
 		stats.WithServiceName(r.appType),

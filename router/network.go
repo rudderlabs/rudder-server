@@ -120,15 +120,13 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		var payload io.Reader
 		var uncompressedPayloadSize, compressedPayloadSize int
 		var compressionDuration time.Duration
-		var bodyConstructed bool
 		defer func() {
+			if result == nil {
+				return
+			}
 			result.UncompressedPayloadSize = uncompressedPayloadSize
 			result.CompressedPayloadSize = compressedPayloadSize
 			result.CompressionDuration = compressionDuration
-			result.BodyConstructed = bodyConstructed
-			if bodyConstructed {
-				result.BodyFormat = bodyFormat
-			}
 		}()
 		headers := map[string]string{
 			"User-Agent": "RudderLabs",
@@ -145,7 +143,6 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 					panic(err)
 				}
 				payload = strings.NewReader(string(jsonValue))
-				uncompressedPayloadSize = len(jsonValue)
 			case "JSON_ARRAY":
 				// support for JSON ARRAY
 				jsonListStr, ok := bodyValue["batch"].(string)
@@ -156,7 +153,6 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 					}
 				}
 				payload = strings.NewReader(jsonListStr)
-				uncompressedPayloadSize = len(jsonListStr)
 			case "XML":
 				strValue, ok := bodyValue["payload"].(string)
 				if !ok {
@@ -166,15 +162,12 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 					}
 				}
 				payload = strings.NewReader(strValue)
-				uncompressedPayloadSize = len(strValue)
 			case "FORM":
 				formValues := url.Values{}
 				for key, val := range bodyValue {
 					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
 				}
-				formBody := formValues.Encode()
-				payload = strings.NewReader(formBody)
-				uncompressedPayloadSize = len(formBody)
+				payload = strings.NewReader(formValues.Encode())
 			case "GZIP":
 				strValue, ok := bodyValue["payload"].(string)
 				if !ok {
@@ -216,7 +209,6 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 					ResponseBody: fmt.Appendf(nil, "500 Invalid Router Payload: body format must be a map found format %s", bodyFormat),
 				}
 			}
-			bodyConstructed = true
 		}
 
 		req, err := http.NewRequestWithContext(ctx, requestMethod, postInfo.URL, payload)

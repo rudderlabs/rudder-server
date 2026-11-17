@@ -355,22 +355,6 @@ func (w *worker) batchTransform(routerJobs []types.RouterJobT) []types.Destinati
 	return destinationJobs
 }
 
-func hasGZIPBody(request integrations.PostParametersT) bool {
-	body, ok := request.Body["GZIP"].(map[string]any)
-	return ok && len(body) > 0
-}
-
-func (w *worker) observeJobPayload(destinationJob types.DestinationJobT, endpointPath, compressed string) {
-	stats.Default.NewTaggedStat("router_delivery_payload_size_bytes", stats.HistogramType, stats.Tags{
-		"destType":      w.rt.destType,
-		"workspaceID":   destinationJob.JobMetadataArray[0].WorkspaceID,
-		"destinationID": destinationJob.JobMetadataArray[0].DestinationID,
-		"endpointPath":  endpointPath,
-		"compressed":    compressed,
-		"payloadKind":   "job",
-	}).Observe(float64(len(destinationJob.Message)))
-}
-
 func (w *worker) process(destinationJobs []types.DestinationJobT) {
 	// process limiter with dynamic priority
 	start := time.Now()
@@ -497,7 +481,6 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 					attemptedJobs += len(destinationJob.JobMetadataArray)
 					respStatusCode, respBody := w.rt.customDestinationManager.SendData(destinationJob.Message, destinationID)
 					respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
-					w.observeJobPayload(destinationJob, "", "unknown")
 					errorAt = routerutils.ERROR_AT_CUST
 				} else {
 					result, err := getIterableStruct(destinationJob.Message, transformAt)
@@ -519,24 +502,6 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 						var respBodyTemps map[int64]string
 						respBodyArr := make([]string, 0)
 						respBodyArrs := make([]map[int64]string, 0)
-						if transformerProxy {
-							// Proxy observations remain one serialized message per job, even when it contains multiple requests.
-							endpointPath, compressed := "", "unknown"
-							if len(result) > 0 {
-								firstPath, firstCompressed := result[0].EndpointPath, hasGZIPBody(result[0])
-								endpointPath, compressed = firstPath, strconv.FormatBool(firstCompressed)
-								for _, request := range result[1:] {
-									if request.EndpointPath != firstPath {
-										endpointPath = "<mixed>"
-									}
-									if hasGZIPBody(request) != firstCompressed {
-										compressed = "mixed"
-									}
-								}
-							}
-							w.observeJobPayload(destinationJob, endpointPath, compressed)
-						}
-						var nativeBodyObserved bool
 						for i, val := range result {
 							w.logger.Debugn(`responseTransform status`,
 								obskit.DestinationType(w.rt.destType),
@@ -582,23 +547,13 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 								attemptedJobs += len(destinationJob.JobMetadataArray)
 								resp := w.rt.netHandle.SendPost(sendCtx, val)
 								cancel()
-								if resp.BodyConstructed {
-									nativeBodyObserved = true
-									stats.Default.NewTaggedStat("router_delivery_payload_size_bytes", stats.HistogramType, stats.Tags{
-										"destType":      w.rt.destType,
-										"workspaceID":   destinationJob.JobMetadataArray[0].WorkspaceID,
-										"destinationID": destinationID,
-										"endpointPath":  val.EndpointPath,
-										"compressed":    strconv.FormatBool(resp.BodyFormat == "GZIP"),
-										"payloadKind":   "body",
-									}).Observe(float64(resp.UncompressedPayloadSize))
-								}
 								if resp.CompressedPayloadSize > 0 {
 									tags := stats.Tags{
 										"destType":     w.rt.destType,
 										"endpointPath": val.EndpointPath,
 										"workspaceID":  destinationJob.JobMetadataArray[0].WorkspaceID,
 									}
+									stats.Default.NewTaggedStat("router_delivery_uncompressed_payload_size_bytes", stats.HistogramType, tags).Observe(float64(resp.UncompressedPayloadSize))
 									stats.Default.NewTaggedStat("router_delivery_compressed_payload_size_bytes", stats.HistogramType, tags).Observe(float64(resp.CompressedPayloadSize))
 									stats.Default.NewTaggedStat("router_delivery_compression_duration_seconds", stats.HistogramType, tags).Observe(resp.CompressionDuration.Seconds())
 								}
@@ -618,9 +573,6 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 							}
 						}
 
-						if !transformerProxy && !nativeBodyObserved {
-							w.observeJobPayload(destinationJob, "", "unknown")
-						}
 						if transformerProxy {
 							// respStatusCodes are already populated. Prepare respBodys from respBodyArrs
 							if len(respBodyArrs) == 0 { // Never the case
@@ -653,6 +605,11 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 							respBody := strings.Join(respBodyArr, " ")
 							respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 						}
+						stats.Default.NewTaggedStat("router_delivery_payload_size_bytes", stats.HistogramType, stats.Tags{
+							"destType":      w.rt.destType,
+							"workspaceID":   destinationJob.JobMetadataArray[0].WorkspaceID,
+							"destinationID": destinationJob.JobMetadataArray[0].DestinationID,
+						}).Observe(float64(len(destinationJob.Message)))
 					}
 				}
 				ch <- struct{}{}

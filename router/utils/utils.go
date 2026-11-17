@@ -53,8 +53,6 @@ type SendPostResponse struct {
 	UncompressedPayloadSize int
 	CompressedPayloadSize   int
 	CompressionDuration     time.Duration
-	BodyConstructed         bool
-	BodyFormat              string
 }
 
 type JobParameters struct {
