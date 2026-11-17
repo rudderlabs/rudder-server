@@ -76,6 +76,16 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	if nc.client == nil {
 		nc.client = &http.Client{
 			Timeout: nc.config.GetDurationVar(30, time.Second, "HttpClient.backendConfig.timeout"),
+			// net/http keeps Authorization across schemes and ports and onto subdomains: keep it on the original origin only
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 { // net/http's default limit
+					return errors.New("stopped after 10 redirects")
+				}
+				if req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host {
+					req.Header.Del("Authorization")
+				}
+				return nil
+			},
 		}
 	}
 	if nc.identityTokenFile == "" {
