@@ -298,7 +298,8 @@ func testFabricLoadTable(t *testing.T, credentials fabricTestCredentials) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				tableName := "merge_" + strings.ReplaceAll(tc.name, " ", "_")
-				location := uploadFabricFixture(t, fm, "../testdata/load.parquet", tableName)
+				path := whth.WriteSampleParquetLoadFile(t, whutils.MicrosoftFabric, baseSchema)
+				location := uploadFabricFixture(t, fm, path, tableName)
 				fabric := setupFabric(t, warehouse, newFabricUploader(t, []whutils.LoadFile{{Location: location}}, tableName, baseSchema, false, tc.useNewRecord))
 				require.NoError(t, fabric.CreateTable(ctx, tableName, baseSchema))
 
@@ -308,14 +309,15 @@ func testFabricLoadTable(t *testing.T, credentials fabricTestCredentials) {
 				second, err := fabric.LoadTable(ctx, tableName)
 				require.NoError(t, err)
 				require.Equal(t, int64(14), second.RowsUpdated)
-				require.Equal(t, whth.SampleTestRecords(), fabricLoadRecords(t, db, namespace, tableName))
+				require.Equal(t, whth.SampleParquetTestRecords(), fabricLoadRecords(t, db, namespace, tableName))
 			})
 		}
 	})
 
 	t.Run("append", func(t *testing.T) {
 		tableName := "append_test_table"
-		location := uploadFabricFixture(t, fm, "../testdata/load.parquet", tableName)
+		path := whth.WriteSampleParquetLoadFile(t, whutils.MicrosoftFabric, baseSchema)
+		location := uploadFabricFixture(t, fm, path, tableName)
 		appendWarehouse := warehouse
 		appendWarehouse.Destination.Config = maps.Clone(warehouse.Destination.Config)
 		appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
@@ -327,7 +329,7 @@ func testFabricLoadTable(t *testing.T, credentials fabricTestCredentials) {
 		second, err := fabric.LoadTable(ctx, tableName)
 		require.NoError(t, err)
 		require.Equal(t, int64(14), second.RowsInserted)
-		require.Equal(t, whth.AppendTestRecords(), fabricLoadRecords(t, db, namespace, tableName))
+		require.Equal(t, append(whth.SampleParquetTestRecords(), whth.SampleParquetTestRecords()...), fabricLoadRecords(t, db, namespace, tableName))
 	})
 
 	t.Run("load file does not exist", func(t *testing.T) {

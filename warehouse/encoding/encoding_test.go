@@ -1,6 +1,7 @@
 package encoding_test
 
 import (
+	"bytes"
 	"compress/gzip"
 	"io"
 	"os"
@@ -8,10 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"github.com/xitongsys/parquet-go-source/local"
+	"github.com/xitongsys/parquet-go/layout"
+	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/reader"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -21,6 +25,107 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+func TestParquetWriterSettings(t *testing.T) {
+	const largePageSize = 1024 * 1024
+	// The suite may itself run with the rollout overrides in the environment.
+	t.Setenv("RSERVER_WAREHOUSE_PARQUET_PAGE_SIZE", "8192")
+	t.Setenv("RSERVER_WAREHOUSE_PARQUET_COMPRESSION", "SNAPPY")
+	conf := config.New()
+	conf.Set("Warehouse.parquetParallelWriters", 1)
+	factory := encoding.NewFactory(conf)
+	// Text-heavy rows force several pages with the default size but fit in one large page.
+	payload := strings.Repeat(`{"event":"production-shaped payload"}`, 120)
+	writeFile := func(t *testing.T) (*reader.ParquetReader, *os.File) {
+		t.Helper()
+		path := t.TempDir() + "/events.parquet"
+		writer, err := factory.NewLoadFileWriter(warehouseutils.LoadFileTypeParquet, path,
+			model.TableSchema{"event": "string"}, warehouseutils.GCSDatalake)
+		require.NoError(t, err)
+		for range 32 {
+			require.NoError(t, writer.WriteRow([]any{payload}))
+		}
+		require.NoError(t, writer.Close())
+		file, err := local.NewLocalFileReader(path)
+		require.NoError(t, err)
+		pr, err := reader.NewParquetReader(file, nil, 1)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			pr.ReadStop()
+			require.NoError(t, file.Close())
+		})
+		data, err := os.Open(path)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, data.Close()) })
+		return pr, data
+	}
+
+	checkFile := func(t *testing.T, codec parquet.CompressionCodec, expectedPages int) {
+		t.Helper()
+		pr, file := writeFile(t)
+		require.Equal(t, int64(32), pr.GetNumRows())
+		rows := make([]*struct{ Event *string }, 32)
+		require.NoError(t, pr.Read(&rows))
+		require.Len(t, rows, 32)
+		for _, row := range rows {
+			require.Equal(t, payload, *row.Event)
+		}
+		chunks := pr.Footer.RowGroups[0].Columns
+		require.Len(t, chunks, 1)
+		meta := chunks[0].MetaData
+		require.Equal(t, codec, meta.Codec)
+		require.NotNil(t, meta.Statistics)
+		require.Equal(t, int64(0), meta.Statistics.GetNullCount())
+		require.NotEmpty(t, meta.Statistics.GetMinValue())
+		require.NotEmpty(t, meta.Statistics.GetMaxValue())
+
+		// Bound the transport to the column chunk, so a missing page cannot be
+		// mistaken for a header from the next chunk or the file footer.
+		chunk := make([]byte, meta.TotalCompressedSize)
+		_, err := file.Seek(meta.DataPageOffset, io.SeekStart)
+		require.NoError(t, err)
+		_, err = io.ReadFull(file, chunk)
+		require.NoError(t, err)
+		chunkReader := bytes.NewReader(chunk)
+		transport := thrift.NewTBufferedTransport(thrift.NewStreamTransportR(chunkReader), 4096)
+		pages := 0
+		for chunkReader.Len() > 0 || transport.Reader.Buffered() > 0 {
+			header, err := layout.ReadPageHeader(transport)
+			require.NoError(t, err)
+			require.Equal(t, parquet.PageType_DATA_PAGE, header.Type)
+			require.NotNil(t, header.DataPageHeader.Statistics)
+			require.Equal(t, int64(0), header.DataPageHeader.Statistics.GetNullCount())
+			_, err = io.CopyN(io.Discard, transport, int64(header.CompressedPageSize))
+			require.NoError(t, err)
+			pages++
+		}
+		require.Equal(t, expectedPages, pages)
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		checkFile(t, parquet.CompressionCodec_SNAPPY, 16)
+	})
+	t.Run("reload to 1 MiB ZSTD", func(t *testing.T) {
+		conf.Set("Warehouse.parquetPageSize", largePageSize)
+		conf.Set("Warehouse.parquetCompression", "ZSTD")
+		checkFile(t, parquet.CompressionCodec_ZSTD, 1)
+	})
+	t.Run("invalid codec falls back", func(t *testing.T) {
+		conf.Set("Warehouse.parquetCompression", "INVALID")
+		checkFile(t, parquet.CompressionCodec_SNAPPY, 1)
+	})
+	for _, unsupported := range []string{"LZO", "BROTLI", "LZ4_RAW"} {
+		t.Run("unsupported codec "+unsupported+" falls back", func(t *testing.T) {
+			conf.Set("Warehouse.parquetCompression", unsupported)
+			checkFile(t, parquet.CompressionCodec_SNAPPY, 1)
+		})
+	}
+	t.Run("invalid page size falls back", func(t *testing.T) {
+		conf.Set("Warehouse.parquetPageSize", int64(1)<<32)
+		conf.Set("Warehouse.parquetCompression", "SNAPPY")
+		checkFile(t, parquet.CompressionCodec_SNAPPY, 16)
+	})
+}
 
 func TestReaderLoader(t *testing.T) {
 	misc.Init()
