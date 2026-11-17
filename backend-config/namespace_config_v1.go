@@ -174,7 +174,7 @@ func (f *v1ConfigFetcher) prepareHTTPRequest(ctx context.Context, url string) (*
 // setAuth sends the workload identity token as a Bearer credential instead of the Basic secret once the token file
 // has been read non-empty; until then, including when no file is set, it sends the Basic secret.
 func (f *v1ConfigFetcher) setAuth(req *http.Request) {
-	if token := f.identityToken.get(f.identityTokenFile); token != "" {
+	if token := f.identityToken.get(f.identityTokenFile, f.logger); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 		return
 	}
@@ -187,15 +187,17 @@ const identityTokenMaxAge = time.Minute
 
 // cachedToken reads a token file at most once per identityTokenMaxAge.
 type cachedToken struct {
-	mu     sync.Mutex
-	token  string
-	readAt time.Time
-	now    func() time.Time // nil means time.Now; set by tests
+	mu         sync.Mutex
+	token      string
+	readAt     time.Time
+	unreadable bool             // the last read failed: warn again only after a read succeeds
+	now        func() time.Time // nil means time.Now; set by tests
 }
 
 // get returns the token in path. An unset path, or no successful read yet, returns an empty token. A failed or
-// empty read keeps the last good token, which the kubelet only replaces with a newer one.
-func (t *cachedToken) get(path string) string {
+// empty read keeps the last good token, which the kubelet only replaces with a newer one. A failed read is logged
+// once, when the file turns unreadable.
+func (t *cachedToken) get(path string, log logger.Logger) string {
 	if path == "" {
 		return ""
 	}
@@ -208,10 +210,17 @@ func (t *cachedToken) get(path string) string {
 	if t.token != "" && now.Sub(t.readAt) < identityTokenMaxAge {
 		return t.token
 	}
-	if data, err := os.ReadFile(path); err == nil {
-		if token := strings.TrimSpace(string(data)); token != "" {
-			t.token, t.readAt = token, now
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if !t.unreadable {
+			t.unreadable = true
+			log.Warnn("Cannot read the identity token file", logger.NewStringField("path", path), obskit.Error(err))
 		}
+		return t.token
+	}
+	t.unreadable = false
+	if token := strings.TrimSpace(string(data)); token != "" {
+		t.token, t.readAt = token, now
 	}
 	return t.token
 }

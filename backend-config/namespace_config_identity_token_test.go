@@ -13,9 +13,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
@@ -121,6 +123,23 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		_, err = nc.Get(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "Bearer token-3", rec.headers[5], "failed reads do not restart the minute, so the next good read is used at once")
+	})
+
+	t.Run("an unreadable file is logged once until it is read again", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "token")
+		log := mock_logger.NewMockLogger(gomock.NewController(t))
+		log.EXPECT().Warnn("Cannot read the identity token file", logger.NewStringField("path", path), gomock.Any()).Times(2)
+		now := time.Now()
+		tok := &cachedToken{now: func() time.Time { return now }}
+
+		require.Empty(t, tok.get(path, log), "missing: warns")
+		require.Empty(t, tok.get(path, log), "still missing: no warning")
+		writeToken(t, path, "token-1")
+		require.Equal(t, "token-1", tok.get(path, log))
+		require.NoError(t, os.Remove(path))
+		now = now.Add(identityTokenMaxAge)
+		require.Equal(t, "token-1", tok.get(path, log), "missing again: warns and keeps the last token")
+		require.Equal(t, "token-1", tok.get(path, log), "still missing: no warning")
 	})
 
 	t.Run("v1 sends the secret while the file is missing or empty", func(t *testing.T) {
