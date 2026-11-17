@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -79,11 +80,11 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		require.Empty(t, nc.identityTokenFile)
 	})
 
-	t.Run("v1 sends the token instead of the secret, reads it on every attempt and falls back to the secret when the file is missing or empty", func(t *testing.T) {
+	t.Run("v1 sends the token instead of the secret and reuses it for a minute, retries included", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "token")
 		writeToken(t, path, "token-1\n")
 		rec := &headerRecorder{before: func(n int, w http.ResponseWriter) bool {
-			if n == 1 { // rotate the token and fail, so the retry has to read it again
+			if n == 1 { // rotate the token and fail: the retry still reuses the cached one
 				writeToken(t, path, "token-2")
 				w.WriteHeader(http.StatusInternalServerError)
 				return true
@@ -93,25 +94,47 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		ts := httptest.NewServer(record(rec))
 		defer ts.Close()
 		nc := newV1(t, ts.URL, path)
+		now := time.Now()
+		nc.fetcher.(*v1ConfigFetcher).identityToken.now = func() time.Time { return now }
 
 		_, err := nc.Get(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"Bearer token-1", "Bearer token-2"}, rec.headers)
+		require.Equal(t, []string{"Bearer token-1", "Bearer token-1"}, rec.headers)
 
-		writeToken(t, path, "token-3")
+		now = now.Add(identityTokenMaxAge)
 		_, err = nc.Get(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "Bearer token-3", rec.headers[2], "the next poll picks up the rotated token")
+		require.Equal(t, "Bearer token-2", rec.headers[2], "a minute later the rotated token is read")
 
 		writeToken(t, path, " \n")
+		now = now.Add(identityTokenMaxAge)
 		_, err = nc.Get(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "basic:service-secret", rec.headers[3], "an empty file keeps the secret")
+		require.Equal(t, "Bearer token-2", rec.headers[3], "an empty file keeps the last token read")
 
 		require.NoError(t, os.Remove(path))
 		_, err = nc.Get(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "basic:service-secret", rec.headers[4], "a missing file keeps the secret")
+		require.Equal(t, "Bearer token-2", rec.headers[4], "a missing file keeps the last token read")
+	})
+
+	t.Run("v1 sends the secret while the file is missing or empty", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "token")
+		rec := &headerRecorder{}
+		ts := httptest.NewServer(record(rec))
+		defer ts.Close()
+		nc := newV1(t, ts.URL, path)
+
+		_, err := nc.Get(ctx)
+		require.NoError(t, err)
+		writeToken(t, path, " \n")
+		_, err = nc.Get(ctx)
+		require.NoError(t, err)
+		writeToken(t, path, "token-1")
+		_, err = nc.Get(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"basic:service-secret", "basic:service-secret", "Bearer token-1"}, rec.headers,
+			"no token is cached until a read succeeds, so the first good read is used at once")
 	})
 
 	t.Run("v1 sends the secret when the feature is off", func(t *testing.T) {

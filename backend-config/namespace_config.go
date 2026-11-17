@@ -40,7 +40,7 @@ type namespaceConfig struct {
 	stats  stats.Stats
 
 	hostedServiceSecret string
-	identityTokenFile   string // optional: holds a workload identity token, read on every request and sent instead of the secret
+	identityTokenFile   string // optional: holds a workload identity token, sent instead of the secret, re-read once a minute old
 
 	namespace                string
 	configBackendURL         *url.URL

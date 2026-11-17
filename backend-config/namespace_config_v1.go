@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
@@ -34,6 +35,7 @@ type v1ConfigFetcher struct {
 	namespace                string
 	identity                 identity.Identifier
 	identityTokenFile        string
+	identityToken            cachedToken
 	configBackendURL         *url.URL
 	cpRouterURL              string
 	incrementalConfigUpdates bool
@@ -169,19 +171,49 @@ func (f *v1ConfigFetcher) prepareHTTPRequest(ctx context.Context, url string) (*
 	return req, nil
 }
 
-// setAuth sends the workload identity token as a Bearer credential instead of the Basic secret when the token file
-// reads non-empty. The file is read on every attempt, so a rotated token is picked up; an unset, missing, unreadable
-// or empty file keeps the Basic secret.
+// setAuth sends the workload identity token as a Bearer credential instead of the Basic secret once the token file
+// has been read non-empty; until then, including when no file is set, it sends the Basic secret.
 func (f *v1ConfigFetcher) setAuth(req *http.Request) {
-	if f.identityTokenFile != "" {
-		if token, err := os.ReadFile(f.identityTokenFile); err == nil {
-			if t := strings.TrimSpace(string(token)); t != "" {
-				req.Header.Set("Authorization", "Bearer "+t)
-				return
-			}
-		}
+	if token := f.identityToken.get(f.identityTokenFile); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+		return
 	}
 	req.SetBasicAuth(f.identity.BasicAuth())
+}
+
+// identityTokenMaxAge is how long a token read from the file is reused. The kubelet rewrites the file at about 80%
+// of the token's lifetime (8 of 10 minutes by default), so a token read under a minute ago is still valid.
+const identityTokenMaxAge = time.Minute
+
+// cachedToken reads a token file at most once per identityTokenMaxAge.
+type cachedToken struct {
+	mu     sync.Mutex
+	token  string
+	readAt time.Time
+	now    func() time.Time // nil means time.Now; set by tests
+}
+
+// get returns the token in path. An unset path, or no successful read yet, returns an empty token. A failed or
+// empty read keeps the last good token, which the kubelet only replaces with a newer one.
+func (t *cachedToken) get(path string) string {
+	if path == "" {
+		return ""
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	now := time.Now()
+	if t.now != nil {
+		now = t.now()
+	}
+	if t.token != "" && now.Sub(t.readAt) < identityTokenMaxAge {
+		return t.token
+	}
+	if data, err := os.ReadFile(path); err == nil {
+		if token := strings.TrimSpace(string(data)); token != "" {
+			t.token, t.readAt = token, now
+		}
+	}
+	return t.token
 }
 
 func (f *v1ConfigFetcher) makeHTTPRequest(req *http.Request) ([]byte, error) {
