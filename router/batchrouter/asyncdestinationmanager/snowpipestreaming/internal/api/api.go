@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -35,7 +36,45 @@ type (
 	}
 )
 
+const (
+	maxBulkStatusRequestLineBytes = 4096
+	MaxBulkStatusChannelIDs       = 100
+	bulkStatusPath                = "/channels/bulk-status"
+	bulkStatusChannelIDsKey       = "channelIds"
+)
+
 var ErrChannelNotFound = errors.New("channel not found")
+
+// BulkStatusQueryBudgets returns the soft and hard byte limits for the channelIds
+// portion of the query. The hard limit accounts for the actual encoded request
+// target, including a client URL prefix and any existing query parameters.
+func BulkStatusQueryBudgets(clientURL string, maxQueryBytes int) (soft, hard int, err error) {
+	req, err := http.NewRequest(http.MethodGet, clientURL+bulkStatusPath, nil)
+	if err != nil {
+		return 0, 0, fmt.Errorf("creating bulk status request: %w", err)
+	}
+	baseQuery := req.URL.Query().Encode()
+	req.URL.RawQuery = baseQuery
+	separator := 1 // '?' if the query is empty, '&' otherwise
+	hard = maxBulkStatusRequestLineBytes - bulkStatusRequestLineBytes(req) - separator
+	soft = maxQueryBytes - len(baseQuery)
+	if baseQuery != "" {
+		soft-- // '&' before the first channelIds parameter
+	}
+	if hard < 1 {
+		return 0, 0, fmt.Errorf("bulk status request target leaves no space for channel IDs within %d-byte request line", maxBulkStatusRequestLineBytes)
+	}
+	return soft, hard, nil
+}
+
+// BulkStatusChannelIDQueryBytes measures one encoded channelIds parameter.
+func BulkStatusChannelIDQueryBytes(id string) int {
+	return len(bulkStatusChannelIDsKey) + 1 + len(url.QueryEscape(id))
+}
+
+func bulkStatusRequestLineBytes(req *http.Request) int {
+	return len(req.Method) + 1 + len(req.URL.RequestURI()) + len(" HTTP/1.1\r\n")
+}
 
 func New(conf *config.Config, statsFactory stats.Stats, clientURL string, requestDoer requestDoer) *API {
 	a := &API{
@@ -231,7 +270,7 @@ func (a *API) GetStatus(ctx context.Context, channelID string) (*model.StatusRes
 
 // GetBulkStatus retrieves statuses for the given channel IDs.
 func (a *API) GetBulkStatus(ctx context.Context, channelIDs []string) (*model.BulkStatusResponse, error) {
-	bulkStatusURL := a.clientURL + "/channels/bulk-status"
+	bulkStatusURL := a.clientURL + bulkStatusPath
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, bulkStatusURL, nil)
 	if err != nil {
@@ -241,9 +280,15 @@ func (a *API) GetBulkStatus(ctx context.Context, channelIDs []string) (*model.Bu
 
 	queryParams := req.URL.Query()
 	for _, channelID := range channelIDs {
-		queryParams.Add("channelIds", channelID)
+		queryParams.Add(bulkStatusChannelIDsKey, channelID)
 	}
 	req.URL.RawQuery = queryParams.Encode()
+	if len(channelIDs) > MaxBulkStatusChannelIDs {
+		return nil, fmt.Errorf("bulk status request has %d channel IDs, maximum is %d", len(channelIDs), MaxBulkStatusChannelIDs)
+	}
+	if size := bulkStatusRequestLineBytes(req); size > maxBulkStatusRequestLineBytes {
+		return nil, fmt.Errorf("bulk status request line is %d bytes, maximum is %d", size, maxBulkStatusRequestLineBytes)
+	}
 
 	resp, reqErr := a.requestDoer.Do(req)
 	if reqErr != nil {

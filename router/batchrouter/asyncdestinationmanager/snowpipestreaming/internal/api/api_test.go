@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -36,6 +37,58 @@ type nopReadCloser struct {
 
 func (nopReadCloser) Close() error {
 	return nil
+}
+
+func TestBulkStatusRequestLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		prefix    string
+		ids       []string
+		wantError string
+	}{
+		{name: "oversized path", prefix: "/" + strings.Repeat("p", 4100), ids: []string{"a"}, wantError: "request line"},
+		{name: "oversized ID", prefix: "/prefix%20escaped", ids: []string{strings.Repeat("x", 4100)}, wantError: "request line"},
+		{name: "too many IDs", ids: make([]string, 101), wantError: "maximum is 100"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			doer := requestDoerFunc(func(*http.Request) (*http.Response, error) {
+				calls++
+				return nil, errors.New("unexpected request")
+			})
+			client := api.New(config.New(), stats.NOP, "http://example.com"+tc.prefix, doer)
+			_, err := client.GetBulkStatus(context.Background(), tc.ids)
+			require.ErrorContains(t, err, tc.wantError)
+			require.Zero(t, calls)
+		})
+	}
+}
+
+type requestDoerFunc func(*http.Request) (*http.Response, error)
+
+func (f requestDoerFunc) Do(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestBulkStatusQueryBudgets(t *testing.T) {
+	for _, prefix := range []string{"", "/some%20prefix", "/é?other=x%20y"} {
+		t.Run(prefix, func(t *testing.T) {
+			clientURL := "http://example.com" + prefix
+			soft, hard, err := api.BulkStatusQueryBudgets(clientURL, 10000)
+			require.NoError(t, err)
+			id := strings.Repeat("z", hard-len("channelIds="))
+			var request *http.Request
+			doer := requestDoerFunc(func(r *http.Request) (*http.Response, error) {
+				request = r
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"success":true}`))}, nil
+			})
+			client := api.New(config.New(), stats.NOP, clientURL, doer)
+			_, err = client.GetBulkStatus(context.Background(), []string{id})
+			require.NoError(t, err)
+			require.GreaterOrEqual(t, soft, hard)
+			require.Equal(t, 4096, len("GET "+request.URL.RequestURI()+" HTTP/1.1\r\n"))
+			_, err = client.GetBulkStatus(context.Background(), []string{id + "z"})
+			require.ErrorContains(t, err, "request line")
+		})
+	}
 }
 
 func TestAPI(t *testing.T) {
