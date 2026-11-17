@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 540" role="img" aria-labelledby="rs-arch-title rs-arch-desc">
+  <title id="rs-arch-title">RudderStack architecture</title>
+  <desc id="rs-arch-desc">
+    RudderStack control plane with WebApp and Config Backend, and data plane with Backend, Transformations, and PostgreSQL.
+    Client SDK and Config Backend connect to Backend, which sends events to Destinations.
+  </desc>
+
+  <defs>
+    <marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0.8 L0,9.2 L9,5 z" fill="#4E6288"/>
+    </marker>
+    <marker id="a-start" markerWidth="10" markerHeight="10" refX="1" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+      <path d="M0,0.8 L0,9.2 L9,5 z" fill="#4E6288"/>
+    </marker>
+    <marker id="a-out" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0.8 L0,9.2 L9,5 z" fill="#B86B35"/>
+    </marker>
+  </defs>
+
+  <style>
+    text {
+      font-family: Degular, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    }
+    .title { font-size: 16px; font-weight: 700; }
+    .label { font-size: 14px; font-weight: 600; fill: #020E20; }
+    .conn {
+      fill: none;
+      stroke: #4E6288;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .conn-out {
+      fill: none;
+      stroke: #B86B35;
+      stroke-width: 2;
+      stroke-linecap: round;
+    }
+  </style>
+
+  <rect width="1040" height="540" rx="12" fill="#F7F7FA"/>
+
+  <!-- ========== CONTROL PLANE ========== -->
+  <rect x="200" y="20" width="580" height="130" rx="12" fill="#F3F7FF" stroke="#8EB8F0" stroke-width="2"/>
+  <text class="title" x="490" y="48" text-anchor="middle" fill="#1857B5">RudderStack Control Plane</text>
+
+  <rect x="240" y="68" width="160" height="58" rx="8" fill="#FFFFFF" stroke="#8EB8F0" stroke-width="1.5"/>
+  <text class="label" x="320" y="103" text-anchor="middle">WebApp</text>
+
+  <rect x="480" y="68" width="160" height="58" rx="8" fill="#FFFFFF" stroke="#8EB8F0" stroke-width="1.5"/>
+  <text class="label" x="560" y="103" text-anchor="middle">Config Backend</text>
+
+  <!-- WebApp -> Config Backend -->
+  <line class="conn" x1="400" y1="97" x2="472" y2="97" marker-end="url(#a)"/>
+
+  <!-- ========== CLIENT SDK ========== -->
+  <rect x="40" y="241" width="140" height="58" rx="8" fill="#FFFFFF" stroke="#8EB8F0" stroke-width="2"/>
+  <text class="label" x="110" y="276" text-anchor="middle" fill="#1857B5">Client SDK</text>
+
+  <!-- ========== DATA PLANE ========== -->
+  <rect x="200" y="190" width="580" height="310" rx="12" fill="#F3FAF8" stroke="#6FADA3" stroke-width="2"/>
+  <text class="title" x="490" y="480" text-anchor="middle" fill="#2A7A8A">RudderStack Data Plane</text>
+
+  <!-- Backend centered under Config Backend (x=560) -->
+  <rect x="400" y="241" width="320" height="58" rx="8" fill="#FFFFFF" stroke="#6FADA3" stroke-width="1.5"/>
+  <text class="label" x="560" y="276" text-anchor="middle">Backend</text>
+
+  <!-- Transformations centered at x=460 -->
+  <rect x="390" y="380" width="140" height="56" rx="8" fill="#FFFFFF" stroke="#6FADA3" stroke-width="1.5"/>
+  <text class="label" x="460" y="414" text-anchor="middle" font-size="13">Transformations</text>
+
+  <!-- PostgreSQL centered at x=660 -->
+  <ellipse cx="660" cy="408" rx="78" ry="30" fill="#FFFFFF" stroke="#6FADA3" stroke-width="1.5"/>
+  <text class="label" x="660" y="413" text-anchor="middle" font-size="13">PostgreSQL</text>
+
+  <!-- ========== DESTINATIONS ========== -->
+  <rect x="820" y="170" width="200" height="290" rx="12" fill="#FFF8F2" stroke="#D4A07A" stroke-width="2"/>
+  <text class="title" x="920" y="200" text-anchor="middle" fill="#B86B35">Destinations</text>
+
+  <rect x="845" y="230" width="150" height="48" rx="8" fill="#FFFFFF" stroke="#D4A07A" stroke-width="1.5"/>
+  <text class="label" x="920" y="260" text-anchor="middle" font-size="13">Data Warehouse</text>
+
+  <rect x="845" y="298" width="150" height="48" rx="8" fill="#FFFFFF" stroke="#D4A07A" stroke-width="1.5"/>
+  <text class="label" x="920" y="328" text-anchor="middle" font-size="13">Analytics</text>
+
+  <rect x="845" y="366" width="150" height="48" rx="8" fill="#FFFFFF" stroke="#D4A07A" stroke-width="1.5"/>
+  <text class="label" x="920" y="396" text-anchor="middle" font-size="13">Marketing</text>
+
+  <!-- ========== CONNECTORS ========== -->
+  <!-- Config Backend -> Backend (straight vertical, shared center x=560) -->
+  <line class="conn" x1="560" y1="126" x2="560" y2="233" marker-end="url(#a)"/>
+
+  <!-- Client SDK -> Backend (straight horizontal, shared center y=270) -->
+  <line class="conn" x1="180" y1="270" x2="392" y2="270" marker-end="url(#a)"/>
+
+  <!-- Backend -> Destinations (straight horizontal) -->
+  <line class="conn-out" x1="720" y1="270" x2="812" y2="270" marker-end="url(#a-out)"/>
+
+  <!-- Backend <-> Transformations (straight vertical at x=460) -->
+  <line class="conn" x1="460" y1="307" x2="460" y2="372" marker-start="url(#a-start)" marker-end="url(#a)"/>
+
+  <!-- Backend <-> PostgreSQL (straight vertical at x=660) -->
+  <line class="conn" x1="660" y1="307" x2="660" y2="370" marker-start="url(#a-start)" marker-end="url(#a)"/>
+
+  <!-- WebApp -> Client SDK (orthogonal: down, left, down) -->
+  <path class="conn" d="M 320 126 V 170 H 110 V 233" marker-end="url(#a)"/>
+</svg>
