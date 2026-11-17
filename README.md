@@ -45,30 +45,46 @@
   </picture>
 </p>
 
-> ⭐ **Star this repo** to follow releases. We ship a new version every couple of weeks.
+## Get started
 
-| Try **RudderStack Cloud Free**, a free tier of [**RudderStack Cloud**](https://www.rudderstack.com/cloud/?utm_source=github&utm_medium=readme&utm_content=rudder-server-cloud-free). Click [**here**](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=readme&utm_content=rudder-server-cloud-free) to start building a smarter customer data pipeline today, with RudderStack Cloud. |
-| :--- |
+- **Cloud:** [Sign up for RudderStack Cloud Free](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=readme&utm_content=rudder-server-get-started), no setup needed.
+- **Self-host:** [Docker](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/docker/) · [Kubernetes](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/kubernetes/) (use this in production) · [Developer machine](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/developer-machine-setup/)
+
+Then [send a test event](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/sending-test-events/) to check the setup.
 
 ## Key features
 
-- **Warehouse-first**: RudderStack treats your data warehouse as a first-class citizen among destinations, with advanced features and configurable, near real-time sync.
+- **Warehouse-first:** your warehouse is a first-class destination, with near real-time sync.
+- **Segment API compatible:** keep your Segment SDKs; events flow to the same destinations.
+- **Reliable delivery:** retries and Postgres-backed queues ride out network and destination outages.
+- **Privacy and security:** runs in your cloud; you choose what data goes to which tool.
+- **Unlimited events:** self-host and collect as much as you need, with no event-volume bill.
+- **200+ integrations:** [tool](https://www.rudderstack.com/docs/destinations/) and [warehouse](https://www.rudderstack.com/docs/destinations/warehouse-destinations/) destinations, one [event spec](https://www.rudderstack.com/docs/event-spec/standard-events/) for all of them.
+- **Transformations:** enrich, filter or mask events in JavaScript before they reach a destination.
+- **Agent-ready:** API-first, and works with AI agents through [RudderStack MCP](#rudderstack-mcp).
+- **Production-ready:** used by Mattermost, IFTTT, 1mg, OnceHub and many more.
 
-- **Developer-focused**: RudderStack is built API-first. It integrates with the tools developers already use and love, and works with AI agents through the [RudderStack MCP](#rudderstack-mcp) server.
+## Architecture
 
-- **High availability**: RudderStack is built for at least 99.99% uptime. A sophisticated error handling and retry system makes sure your data is delivered even during network partitions or destination downtime.
+RudderStack is an independent, stand-alone system with a dependency only on the database (PostgreSQL). Its backend is written in **Go**.
 
-- **Privacy and security**: Collect and store your customer data without sending everything to a third-party vendor. You get fine-grained control over what data goes to which tool.
+Wondering how far a Postgres-backed queue scales? Read [**Lessons from scaling PostgreSQL queues to 100K events**](https://www.rudderstack.com/blog/scaling-postgres-queue/?utm_source=github&utm_medium=readme&utm_content=rudder-server-postgres).
 
-- **Unlimited events**: Event volume-based pricing is broken. With RudderStack open source, you can collect as much data as you need without worrying about overrunning your event budget.
+A high-level view of RudderStack's architecture is shown below:
 
-- **Segment API-compatible**: RudderStack is fully compatible with the Segment API. You don't need to change your app if you use Segment; integrate the RudderStack SDKs and your events keep flowing to the same destinations, including data warehouses.
+![RudderStack architecture: control plane, data plane and destinations](resources/rudderstack-architecture.svg)
 
-- **Production-ready**: Companies like Mattermost, IFTTT, Torpedo, Grofers, 1mg, Nana, OnceHub and dozens of large companies use RudderStack to collect their events.
+For more details on the various architectural components, refer to our [**documentation**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/rudderstack-architecture/).
 
-- **Seamless integration**: RudderStack supports 200+ [tool](https://www.rudderstack.com/docs/destinations/) and [warehouse](https://www.rudderstack.com/docs/destinations/warehouse-destinations/) destinations. Every event follows the [RudderStack Event Specification](https://www.rudderstack.com/docs/event-spec/standard-events/) (`identify`, `track`, `page`, `screen`, `group`, `alias`), so you instrument once and RudderStack transforms and routes each event to every destination.
+## Contribute
 
-- **User-specified transformations**: A JavaScript-based transformation framework lets you enrich or transform events by combining them with your other internal data. Because RudderStack can run inside your cloud or on-premise environment, you can join your production data with the event data.
+We would love to see you contribute to RudderStack. Get more information on how to contribute [**here**](CONTRIBUTING.md).
+
+If rudder-server is useful to you, a ⭐ helps more people find it.
+
+## License
+
+RudderStack server is released under the [**Elastic License 2.0**](LICENSE).
 
 ## More from RudderStack
 
@@ -85,43 +101,3 @@ Describe a goal, get an audience built on your warehouse and synced to your tool
 Hosted, OAuth sign-in, nothing to install.
 
 [![Add to Claude](https://img.shields.io/badge/Claude-Add_connector-D97757?style=for-the-badge&logo=claude&logoColor=white)](https://claude.ai/directory/rudderstack) [![Add to Cursor](https://img.shields.io/badge/Cursor-Install-000000?style=for-the-badge&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=RudderStack&config=eyJ1cmwiOiJodHRwczovL21jcC5ydWRkZXJzdGFjay5jb20vbWNwIn0%3D) [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install-0098FF?style=for-the-badge)](https://insiders.vscode.dev/redirect/mcp/install?name=rudderstack&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.rudderstack.com%2Fmcp%22%7D) [![ChatGPT, Codex and more](https://img.shields.io/badge/ChatGPT_·_Codex_·_more-Setup-555555?style=for-the-badge)](https://github.com/rudderlabs/rudderstack-mcp#connect)
-
-## Get started
-
-The easiest way to experience RudderStack is to [**sign up**](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=readme&utm_content=rudder-server-get-started) for **RudderStack Cloud Free**, a completely free tier of [**RudderStack Cloud**](https://www.rudderstack.com/cloud/).
-
-You can also set up RudderStack on your platform of choice with these two easy steps:
-
-### Step 1: Set up RudderStack
-
-- [**Docker**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/docker/)
-- [**Kubernetes**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/kubernetes/)
-- [**Developer machine setup**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/developer-machine-setup/)
-
-> **Note**: If you are planning to use RudderStack in production, we STRONGLY recommend using our Kubernetes Helm charts. We update our Docker images with bug fixes much more frequently than our GitHub repo.
-
-### Step 2: Verify the installation
-
-Once you have installed RudderStack, [**send test events**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/sending-test-events/) to verify the setup.
-
-## Architecture
-
-RudderStack is an independent, stand-alone system with a dependency only on the database (PostgreSQL). Its backend is written in **Go**.
-
-Wondering how far a Postgres-backed queue scales? Read [**Lessons from scaling PostgreSQL queues to 100K events**](https://www.rudderstack.com/blog/scaling-postgres-queue/?utm_source=github&utm_medium=readme&utm_content=rudder-server-postgres).
-
-A high-level view of RudderStack's architecture is shown below:
-
-![RudderStack architecture: control plane, data plane and destinations](resources/rudderstack-architecture.svg)
-
-For more details on the various architectural components, refer to our [**documentation**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/rudderstack-architecture/).
-
-## Contribute
-
-We would love to see you contribute to RudderStack. Get more information on how to contribute [**here**](CONTRIBUTING.md). New here? Look for [good first issues](https://github.com/rudderlabs/rudder-server/issues?q=is%3Aopen+label%3A%22good+first+issue%22).
-
-If rudder-server is useful to you, a ⭐ helps more people find it.
-
-## License
-
-RudderStack server is released under the [**Elastic License 2.0**](LICENSE).
