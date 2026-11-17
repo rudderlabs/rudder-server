@@ -49,15 +49,23 @@
 
 ## Key features
 
-- **Warehouse-first:** your warehouse is a first-class destination, with near real-time sync.
-- **Segment API compatible:** keep your Segment SDKs; events flow to the same destinations.
-- **High availability:** RudderStack is built for at least 99.99% uptime. A sophisticated error handling and retry system makes sure your data is delivered even during network partitions or destination downtime.
-- **Privacy and security:** runs in your cloud; you choose what data goes to which tool.
-- **Unlimited events:** self-host and collect as much as you need, with no event-volume bill.
-- **200+ integrations:** [tool](https://www.rudderstack.com/docs/destinations/) and [warehouse](https://www.rudderstack.com/docs/destinations/warehouse-destinations/) destinations, one [event spec](https://www.rudderstack.com/docs/event-spec/standard-events/) for all of them.
-- **Transformations:** enrich, filter or mask events in JavaScript before they reach a destination.
-- **Agent-ready:** API-first, and works with AI agents through [RudderStack MCP](#rudderstack-mcp).
-- **Production-ready:** used by Mattermost, IFTTT, 1mg, OnceHub and many more.
+- **Warehouse-first**: RudderStack treats your data warehouse as a first-class citizen among destinations, with advanced features and configurable, near real-time sync.
+
+- **Developer-focused**: RudderStack is built API-first. It integrates with the tools developers already use and love, and works with AI agents through the [RudderStack MCP](#rudderstack-mcp) server.
+
+- **High availability**: RudderStack is built for at least 99.99% uptime. A sophisticated error handling and retry system makes sure your data is delivered even during network partitions or destination downtime.
+
+- **Privacy and security**: Collect and store your customer data without sending everything to a third-party vendor. You get fine-grained control over what data goes to which tool.
+
+- **Unlimited events**: Event volume-based pricing is broken. With RudderStack open source, you can collect as much data as you need without worrying about overrunning your event budget.
+
+- **Segment API-compatible**: RudderStack is fully compatible with the Segment API. You don't need to change your app if you use Segment; integrate the RudderStack SDKs and your events keep flowing to the same destinations, including data warehouses.
+
+- **Production-ready**: Companies like Mattermost, IFTTT, Torpedo, Grofers, 1mg, Nana, OnceHub and dozens of large companies use RudderStack to collect their events.
+
+- **Seamless integration**: RudderStack supports 200+ [tool](https://www.rudderstack.com/docs/destinations/) and [warehouse](https://www.rudderstack.com/docs/destinations/warehouse-destinations/) destinations. Every event follows the [RudderStack Event Specification](https://www.rudderstack.com/docs/event-spec/standard-events/) (`identify`, `track`, `page`, `screen`, `group`, `alias`), so you instrument once and RudderStack transforms and routes each event to every destination.
+
+- **User-specified transformations**: A JavaScript-based transformation framework lets you enrich or transform events by combining them with your other internal data. Because RudderStack can run inside your cloud or on-premise environment, you can join your production data with the event data.
 
 ## Get started
 
