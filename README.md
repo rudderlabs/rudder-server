@@ -47,6 +47,18 @@
   </picture>
 </p>
 
+## Key features
+
+- **Warehouse-first:** your warehouse is a first-class destination, with near real-time sync.
+- **Segment API compatible:** keep your Segment SDKs; events flow to the same destinations.
+- **Reliable delivery:** retries and Postgres-backed queues ride out network and destination outages.
+- **Privacy and security:** runs in your cloud; you choose what data goes to which tool.
+- **Unlimited events:** self-host and collect as much as you need, with no event-volume bill.
+- **200+ integrations:** [tool](https://www.rudderstack.com/docs/destinations/) and [warehouse](https://www.rudderstack.com/docs/destinations/warehouse-destinations/) destinations, one [event spec](https://www.rudderstack.com/docs/event-spec/standard-events/) for all of them.
+- **Transformations:** enrich, filter or mask events in JavaScript before they reach a destination.
+- **Agent-ready:** API-first, and works with AI agents through [RudderStack MCP](#rudderstack-mcp).
+- **Production-ready:** used by Mattermost, IFTTT, 1mg, OnceHub and many more.
+
 ## Get started
 
 The easiest way to experience RudderStack is to [**sign up**](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=readme&utm_content=rudder-server-get-started) for **RudderStack Cloud Free**, a completely free tier of [**RudderStack Cloud**](https://www.rudderstack.com/cloud/).
@@ -64,18 +76,6 @@ You can also set up RudderStack on your platform of choice with these two easy s
 ### Step 2: Verify the installation
 
 Once you have installed RudderStack, [**send test events**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/sending-test-events/) to verify the setup.
-
-## Key features
-
-- **Warehouse-first:** your warehouse is a first-class destination, with near real-time sync.
-- **Segment API compatible:** keep your Segment SDKs; events flow to the same destinations.
-- **Reliable delivery:** retries and Postgres-backed queues ride out network and destination outages.
-- **Privacy and security:** runs in your cloud; you choose what data goes to which tool.
-- **Unlimited events:** self-host and collect as much as you need, with no event-volume bill.
-- **200+ integrations:** [tool](https://www.rudderstack.com/docs/destinations/) and [warehouse](https://www.rudderstack.com/docs/destinations/warehouse-destinations/) destinations, one [event spec](https://www.rudderstack.com/docs/event-spec/standard-events/) for all of them.
-- **Transformations:** enrich, filter or mask events in JavaScript before they reach a destination.
-- **Agent-ready:** API-first, and works with AI agents through [RudderStack MCP](#rudderstack-mcp).
-- **Production-ready:** used by Mattermost, IFTTT, 1mg, OnceHub and many more.
 
 ## Architecture
 
