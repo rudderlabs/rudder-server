@@ -51,7 +51,7 @@
 
 - **Warehouse-first:** your warehouse is a first-class destination, with near real-time sync.
 - **Segment API compatible:** keep your Segment SDKs; events flow to the same destinations.
-- **Reliable delivery:** retries and Postgres-backed queues ride out network and destination outages.
+- **High availability:** RudderStack is built for at least 99.99% uptime. A sophisticated error handling and retry system makes sure your data is delivered even during network partitions or destination downtime.
 - **Privacy and security:** runs in your cloud; you choose what data goes to which tool.
 - **Unlimited events:** self-host and collect as much as you need, with no event-volume bill.
 - **200+ integrations:** [tool](https://www.rudderstack.com/docs/destinations/) and [warehouse](https://www.rudderstack.com/docs/destinations/warehouse-destinations/) destinations, one [event spec](https://www.rudderstack.com/docs/event-spec/standard-events/) for all of them.
