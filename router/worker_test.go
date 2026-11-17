@@ -76,7 +76,7 @@ func TestDeliveryCompressionMetrics(t *testing.T) {
 		payloadSize  int
 		compressed   bool
 	}{
-		{"native gzip", false, "", map[string]any{"GZIP": map[string]any{"payload": "repeated repeated repeated repeated"}}, len("repeated repeated repeated repeated"), true},
+		{"native gzip", false, "/gzip", map[string]any{"GZIP": map[string]any{"payload": "repeated repeated repeated repeated"}}, len("repeated repeated repeated repeated"), true},
 		{"native plain", false, "/plain", map[string]any{"JSON_ARRAY": map[string]any{"batch": "plain"}}, 0, false},
 		{"proxy gzip", true, "/proxy", map[string]any{"GZIP": map[string]any{"payload": "gzip"}}, 0, false},
 	} {
