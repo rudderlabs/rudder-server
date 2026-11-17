@@ -35,7 +35,7 @@ func TestNamespaceIdentityToken(t *testing.T) {
 	type headerRecorder struct {
 		mu      sync.Mutex
 		headers []string
-		before  func(n int, w http.ResponseWriter) bool // returns true when it already answered
+		respond func(n int, w http.ResponseWriter) bool // optional: returns true when it answered request n itself
 	}
 	record := func(rec *headerRecorder) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +47,7 @@ func TestNamespaceIdentityToken(t *testing.T) {
 			rec.headers = append(rec.headers, auth)
 			n := len(rec.headers)
 			rec.mu.Unlock()
-			if rec.before != nil && rec.before(n, w) {
+			if rec.respond != nil && rec.respond(n, w) {
 				return
 			}
 			_, _ = w.Write([]byte(`{}`))
@@ -85,7 +85,7 @@ func TestNamespaceIdentityToken(t *testing.T) {
 	t.Run("v1 sends the token instead of the secret and reuses it for a minute, retries included", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "token")
 		writeToken(t, path, "token-1\n")
-		rec := &headerRecorder{before: func(n int, w http.ResponseWriter) bool {
+		rec := &headerRecorder{respond: func(n int, w http.ResponseWriter) bool {
 			if n == 1 { // rotate the token and fail: the retry still reuses the cached one
 				writeToken(t, path, "token-2")
 				w.WriteHeader(http.StatusInternalServerError)

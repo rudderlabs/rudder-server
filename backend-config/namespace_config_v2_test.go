@@ -590,14 +590,13 @@ func (s *v2Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.bearer != "" {
 		require.False(s.t, ok, "the token replaces the Basic secret")
 		require.Equal(s.t, "Bearer "+s.bearer, r.Header.Get("Authorization"))
-		user = s.secret
 	} else {
 		require.True(s.t, ok)
 	}
 
 	s.requests = append(s.requests, r.URL)
 	s.headers = append(s.headers, r.Header)
-	if user != s.secret {
+	if s.bearer == "" && user != s.secret {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"message":"Unauthorized"}`))
 		return
