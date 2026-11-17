@@ -1353,9 +1353,10 @@ func TestIntegration(t *testing.T) {
 			ctx := context.Background()
 			tableName := "parquet_test_table"
 
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.parquet", tableName)
+			path := whth.WriteSampleParquetLoadFile(t, whutils.RS, schemaInUpload)
+			uploadOutput := whth.UploadLoadFile(t, fm, path, tableName)
 
-			fileStat, err := os.Stat("../testdata/load.parquet")
+			fileStat, err := os.Stat(path)
 			require.NoError(t, err)
 
 			loadFiles := []whutils.LoadFile{{
@@ -1400,7 +1401,7 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, whth.SampleTestRecords())
+			require.Equal(t, records, whth.SampleParquetTestRecords())
 		})
 		t.Run("multiple files", func(t *testing.T) {
 			testCases := []struct {
