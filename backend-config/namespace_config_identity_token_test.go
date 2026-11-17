@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -25,7 +24,6 @@ import (
 
 func TestNamespaceIdentityToken(t *testing.T) {
 	ctx := context.Background()
-	const configPath = "/data-plane/v1/namespaces/a-namespace/config"
 
 	writeToken := func(t *testing.T, path, token string) {
 		t.Helper()
@@ -173,40 +171,6 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		require.Equal(t, []string{"basic:service-secret"}, rec.headers)
 	})
 
-	t.Run("a redirect to another host drops the token, one to the same host keeps it", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "token")
-		writeToken(t, path, "a-token")
-
-		other := &headerRecorder{}
-		otherHost := httptest.NewServer(record(other))
-		defer otherHost.Close()
-
-		same := &headerRecorder{}
-		sameHost := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.URL.Query().Get("hop") {
-			case "":
-				http.Redirect(w, r, configPath+"?hop=same", http.StatusFound)
-			case "same":
-				record(same)(w, r)
-			}
-		}))
-		defer sameHost.Close()
-
-		_, err := newV1(t, sameHost.URL, path).Get(ctx)
-		require.NoError(t, err)
-		require.Equal(t, []string{"Bearer a-token"}, same.headers)
-
-		redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// net/http compares hosts without ports, so use a different host name for the same listener
-			http.Redirect(w, r, strings.Replace(otherHost.URL, "127.0.0.1", "localhost", 1)+configPath, http.StatusFound)
-		}))
-		defer redirecting.Close()
-
-		_, err = newV1(t, redirecting.URL, path).Get(ctx)
-		require.NoError(t, err)
-		require.Equal(t, []string{""}, other.headers)
-	})
-
 	t.Run("a redirect keeps the credential only on the original scheme, host and port", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "token")
 		writeToken(t, path, "a-token")
@@ -265,6 +229,7 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		for _, v := range versions {
 			for _, tc := range []struct{ name, start, target, want string }{
 				{"same origin", "http://example.com:8080", "http://example.com:8080/redirected", "Bearer a-token"},
+				{"another host", "http://example.com:8080", "http://other.test:8080/redirected", ""},
 				{"https to http on the same host and port", "https://example.com:8443", "http://example.com:8443/redirected", ""},
 				{"same host on another port", "http://example.com:8080", "http://example.com:8081/redirected", ""},
 				{"a subdomain", "http://example.com:8080", "http://sub.example.com:8080/redirected", ""},
