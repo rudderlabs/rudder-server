@@ -116,6 +116,11 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		_, err = nc.Get(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "Bearer token-2", rec.headers[4], "a missing file keeps the last token read")
+
+		writeToken(t, path, "token-3")
+		_, err = nc.Get(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Bearer token-3", rec.headers[5], "failed reads do not restart the minute, so the next good read is used at once")
 	})
 
 	t.Run("v1 sends the secret while the file is missing or empty", func(t *testing.T) {
