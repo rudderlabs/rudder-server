@@ -11,15 +11,15 @@
 <h3 align="center">The agentic CDP that runs on your warehouse</h3>
 
 <p align="center">
-  Collect events from every app, website and server, transform them in flight, and deliver them to your warehouse and 200+ tools. Segment API compatible.
-</p>
-
-<p align="center">
   <a href="https://github.com/rudderlabs/rudder-server/stargazers"><img src="https://img.shields.io/github/stars/rudderlabs/rudder-server?style=social" alt="GitHub stars"></a>
   <a href="https://github.com/rudderlabs/rudder-server/releases"><img src="https://img.shields.io/github/v/release/rudderlabs/rudder-server?color=blue&sort=semver" alt="Release"></a>
   <a href="https://hub.docker.com/r/rudderlabs/rudder-server"><img src="https://img.shields.io/docker/pulls/rudderlabs/rudder-server" alt="Docker pulls"></a>
   <a href="https://github.com/rudderlabs/rudder-server/actions/workflows/builds.yml"><img src="https://github.com/rudderlabs/rudder-server/actions/workflows/builds.yml/badge.svg" alt="Builds"></a>
   <a href="LICENSE"><img src="https://img.shields.io/static/v1?label=license&message=ELv2&color=7447fc" alt="License: ELv2"></a>
+</p>
+
+<p align="center">
+  Collect events from every app, website and server, transform them in flight, and deliver them to your warehouse and 200+ tools. Segment API compatible.
 </p>
 
 <p align="center">
