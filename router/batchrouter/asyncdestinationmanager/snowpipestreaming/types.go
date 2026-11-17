@@ -47,6 +47,7 @@ type (
 			maxBufferCapacity         config.ValueLoader[int64]
 			stuckPipelineThreshold    config.ValueLoader[time.Duration]
 			bulkStatusBatchSize       config.ValueLoader[int]
+			bulkStatusMaxQueryBytes   config.ValueLoader[int]
 			maxInsertRequestSizeBytes config.ValueLoader[int64]
 		}
 

@@ -74,6 +74,7 @@ func New(
 	m.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "SnowpipeStreaming.maxBufferCapacity")
 	m.config.stuckPipelineThreshold = conf.GetReloadableDurationVar(15, time.Minute, "SnowpipeStreaming.stuckPipelineThresholdInMinutes")
 	m.config.bulkStatusBatchSize = conf.GetReloadableIntVar(100, 1, "SnowpipeStreaming.bulkStatusBatchSize")
+	m.config.bulkStatusMaxQueryBytes = conf.GetReloadableIntVar(3072, 1, "SnowpipeStreaming.bulkStatusMaxQueryBytes")
 	m.config.maxInsertRequestSizeBytes = conf.GetReloadableInt64Var(24*bytesize.MB, bytesize.B, "SnowpipeStreaming.maxInsertRequestSizeBytes")
 
 	tags := stats.Tags{
@@ -866,7 +867,14 @@ func (m *Manager) getBulkStatus(ctx context.Context, channelIDs []string) (map[s
 
 	var notFound []string
 
-	channelIDChunks := lo.Chunk(channelIDs, m.config.bulkStatusBatchSize.Load())
+	softBudget, hardBudget, err := snowpipeapi.BulkStatusQueryBudgets(m.config.client.url, m.config.bulkStatusMaxQueryBytes.Load())
+	if err != nil {
+		return nil, nil, err
+	}
+	channelIDChunks, err := chunkChannelIDsForBulkStatus(channelIDs, min(m.config.bulkStatusBatchSize.Load(), snowpipeapi.MaxBulkStatusChannelIDs), softBudget, hardBudget)
+	if err != nil {
+		return nil, nil, err
+	}
 	for i := range channelIDChunks {
 		channelIDChunk := channelIDChunks[i]
 		bulkStatusRes, err := m.api.GetBulkStatus(ctx, channelIDChunk)
