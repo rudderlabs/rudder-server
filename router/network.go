@@ -72,7 +72,7 @@ func handleQueryParam(param any) string {
 
 // SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 // this returns the statusCode, status and response body from the response of the destination call
-func (network *netHandle) SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse {
+func (network *netHandle) SendPost(ctx context.Context, structData integrations.PostParametersT) (result *utils.SendPostResponse) {
 	if network.disableEgress {
 		return &utils.SendPostResponse{
 			StatusCode:   200,
@@ -118,6 +118,16 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		}
 
 		var payload io.Reader
+		var uncompressedPayloadSize, compressedPayloadSize int
+		var compressionDuration time.Duration
+		defer func() {
+			if result == nil {
+				return
+			}
+			result.UncompressedPayloadSize = uncompressedPayloadSize
+			result.CompressedPayloadSize = compressedPayloadSize
+			result.CompressionDuration = compressionDuration
+		}()
 		headers := map[string]string{
 			"User-Agent": "RudderLabs",
 		}
@@ -167,6 +177,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 					}
 				}
 				var buf bytes.Buffer
+				compressionStartedAt := time.Now()
 				zw := gzip.NewWriter(&buf)
 				defer func() { _ = zw.Close() }()
 
@@ -184,6 +195,9 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 					}
 				}
 
+				compressionDuration = time.Since(compressionStartedAt)
+				compressedPayloadSize = buf.Len()
+				uncompressedPayloadSize = len(strValue)
 				headers["Content-Encoding"] = "gzip"
 				payload = &buf
 			default:

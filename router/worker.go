@@ -547,6 +547,16 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 								attemptedJobs += len(destinationJob.JobMetadataArray)
 								resp := w.rt.netHandle.SendPost(sendCtx, val)
 								cancel()
+								if resp.CompressedPayloadSize > 0 {
+									tags := stats.Tags{
+										"destType":     w.rt.destType,
+										"endpointPath": val.EndpointPath,
+										"workspaceID":  destinationJob.JobMetadataArray[0].WorkspaceID,
+									}
+									stats.Default.NewTaggedStat("router_delivery_uncompressed_payload_size_bytes", stats.HistogramType, tags).Observe(float64(resp.UncompressedPayloadSize))
+									stats.Default.NewTaggedStat("router_delivery_compressed_payload_size_bytes", stats.HistogramType, tags).Observe(float64(resp.CompressedPayloadSize))
+									stats.Default.NewTaggedStat("router_delivery_compression_duration_seconds", stats.HistogramType, tags).Observe(resp.CompressionDuration.Seconds())
+								}
 								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
 
 								// Record the new transformer_outgoing_request metrics
