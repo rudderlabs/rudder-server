@@ -229,6 +229,8 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		for _, v := range versions {
 			for _, tc := range []struct{ name, start, target, want string }{
 				{"same origin", "http://example.com:8080", "http://example.com:8080/redirected", "Bearer a-token"},
+				{"the default port spelled out", "https://example.com", "https://example.com:443/redirected", "Bearer a-token"},
+				{"an upper-case host", "https://EXAMPLE.com", "https://example.com/redirected", "Bearer a-token"},
 				{"another host", "http://example.com:8080", "http://other.test:8080/redirected", ""},
 				{"https to http on the same host and port", "https://example.com:8443", "http://example.com:8443/redirected", ""},
 				{"same host on another port", "http://example.com:8080", "http://example.com:8081/redirected", ""},

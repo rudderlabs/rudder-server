@@ -81,7 +81,14 @@ func (nc *namespaceConfig) SetUp() (err error) {
 				if len(via) >= 10 { // net/http's default limit
 					return errors.New("stopped after 10 redirects")
 				}
-				if req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host {
+				port := func(u *url.URL) string {
+					if p := u.Port(); p != "" {
+						return p
+					}
+					return map[string]string{"http": "80", "https": "443"}[strings.ToLower(u.Scheme)]
+				}
+				to, from := req.URL, via[0].URL
+				if !strings.EqualFold(to.Scheme, from.Scheme) || !strings.EqualFold(to.Hostname(), from.Hostname()) || port(to) != port(from) {
 					req.Header.Del("Authorization")
 				}
 				return nil
