@@ -196,6 +196,7 @@ type Handle struct {
 		nonEventStreamSources                     map[string]bool
 		sourceIdCategoryMap                       map[string]string
 		enableConcurrentStore                     config.ValueLoader[bool]
+		orderedBatchStoreDestTypes                config.ValueLoader[[]string]
 		userTransformationMirroringSanitySampling config.ValueLoader[float64]
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 		userTransformMirrorURL                    string
@@ -849,6 +850,8 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	// Capture event name as a tag in event level stats
 	proc.config.captureEventNameStats = proc.conf.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
 	proc.config.enableConcurrentStore = proc.conf.GetReloadableBoolVar(false, "Processor.enableConcurrentStore")
+	// Destination types that use job IDs as offsets and need stores for the same destination to commit in order; empty turns it off
+	proc.config.orderedBatchStoreDestTypes = proc.conf.GetReloadableStringSliceVar([]string{"SNOWPIPE_STREAMING"}, "Processor.orderedBatchStore.destinationTypes")
 	// UserTransformation mirroring settings
 	proc.config.userTransformationMirroringSanitySampling = proc.conf.GetReloadableFloat64Var(0, "Processor.userTransformationMirroring.sanitySampling")
 	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
@@ -3100,6 +3103,27 @@ func (proc *Handle) sendQueryRetryStats(attempt int) {
 }
 
 func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMessage) {
+	lockBatchRouterDestIDs := func() func() {
+		// The returned unlock only releases the locks taken here, so the setting can change between calls.
+		destTypes := proc.config.orderedBatchStoreDestTypes.Load()
+		destIDSet := lo.FilterSliceToMap(in.batchDestJobs, func(job *jobsdb.JobT) (string, struct{}, bool) {
+			if !slices.Contains(destTypes, job.CustomVal) {
+				return "", struct{}{}, false
+			}
+			return gjson.GetBytes(job.Parameters, "destination_id").String(), struct{}{}, true
+		})
+		destIDs := lo.Keys(destIDSet)
+		slices.Sort(destIDs)
+		for _, destID := range destIDs {
+			// Batch router offsets span all user partitions, so do not include pipelineIndex.
+			proc.storePlocker.Lock("batchrouter:" + destID)
+		}
+		return func() {
+			for _, destID := range slices.Backward(destIDs) {
+				proc.storePlocker.Unlock("batchrouter:" + destID)
+			}
+		}
+	}
 	lockRouterDestIDs := func() func() {
 		var deferred []func()
 		if len(in.destJobs) == 0 {
@@ -3165,10 +3189,16 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 	} else {
 		// lock early to avoid deadlocks due to connection pool exhaustion
 		defer lockRouterDestIDs()()
+		defer lockBatchRouterDestIDs()()
 	}
 	// XX: Need to do this in a transaction
 	if len(batchDestJobs) > 0 {
 		g.Go(func() error {
+			// Hold the destination locks through commit so lower job IDs cannot become
+			// visible after higher ones. Acquire multiple locks in sorted order.
+			if !enableConcurrentStore {
+				defer lockBatchRouterDestIDs()()
+			}
 			err := misc.RetryWithNotify(
 				ctx,
 				proc.jobsDBCommandTimeout.Load(),
