@@ -8,7 +8,7 @@
   </a>
 </p>
 
-<h3 align="center">The agentic CDP that runs on your warehouse</h3>
+<h3 align="center">Reliable, programmable customer event pipelines on your infra</h3>
 
 <p align="center">
   <a href="https://github.com/rudderlabs/rudder-server/stargazers"><img src="https://img.shields.io/github/stars/rudderlabs/rudder-server?style=social" alt="GitHub stars"></a>
@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  Collect events from every app, website and server, transform them in flight, and deliver them to your warehouse and 200+ tools. Segment API compatible.
+  Collect events from every app, enforce consent, transform them in flight, and deliver them to your warehouse and 200+ tools. Warehouse-native, agent-ready, Segment API compatible.
 </p>
 
 <p align="center">
