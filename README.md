@@ -150,7 +150,7 @@ rudder-server is one of 100+ public repos we actively maintain at [rudderlabs](h
 
 ## Also from RudderStack: Lookout
 
-<a href="https://www.rudderstack.com/product/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout-banner"><img src="resources/banner-lookout.png" alt="Lookout, an AI assistant for your customer data: from who should we target to live audience in minutes. Try the sandbox." width="100%"></a>
+<a href="https://www.rudderstack.com/product/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout-banner"><img src="https://cdn.sanity.io/images/97bpcflt/production/6a0bdffe9996fa0ccd73aed03d6077338ab3cab1-2400x600.png/readme-announcement-banner.png" alt="Lookout, an AI assistant for your customer data: from who should we target to live audience in minutes. Try the sandbox." width="100%"></a>
 
 **[Lookout](https://www.rudderstack.com/docs/activate/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout-docs)** is a separate RudderStack product for marketing teams: describe a goal to an AI agent and get an audience built on your warehouse data and synced to your ad and engagement tools. **[Try the sandbox →](https://lookout.rudderstack.com/w/lookout-sandbox/join?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout)**
 
