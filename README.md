@@ -154,6 +154,8 @@ rudder-server is one of 100+ public repos we actively maintain at [rudderlabs](h
 
 ## Community and contributing
 
+Thank you to the 100+ [contributors](https://github.com/rudderlabs/rudder-server/graphs/contributors) who have built rudder-server since 2019.
+
 We would love to see you contribute to RudderStack. Get more information on how to contribute [**here**](CONTRIBUTING.md).
 
 - Questions and help: [Slack community](https://www.rudderstack.com/join-rudderstack-slack-community/)
