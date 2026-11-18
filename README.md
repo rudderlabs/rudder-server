@@ -154,7 +154,7 @@ rudder-server is one of 100+ public repos we actively maintain at [rudderlabs](h
 
 ## Community and contributing
 
-Thank you to the 100+ [contributors](https://github.com/rudderlabs/rudder-server/graphs/contributors) who have built rudder-server since 2019.
+Thank you to the 250+ people who have contributed to RudderStack open source since 2019, across [rudder-server](https://github.com/rudderlabs/rudder-server/graphs/contributors), [rudder-transformer](https://github.com/rudderlabs/rudder-transformer/graphs/contributors), [rudder-sdk-js](https://github.com/rudderlabs/rudder-sdk-js/graphs/contributors) and the rest of [rudderlabs](https://github.com/rudderlabs).
 
 We would love to see you contribute to RudderStack. Get more information on how to contribute [**here**](CONTRIBUTING.md).
 
