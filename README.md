@@ -64,7 +64,7 @@
 
 - **Segment API-compatible**: RudderStack is fully compatible with the Segment API. You don't need to change your app if you use Segment; integrate the RudderStack SDKs and your events keep flowing to the same destinations, including data warehouses.
 
-- **Production-ready**: Companies like Mattermost, IFTTT, Torpedo, Grofers, 1mg, Nana, OnceHub and dozens of large companies use RudderStack to collect their events.
+- **Production-ready**: Companies like HP, Foot Locker, Allbirds, Crate & Barrel, Cars.com, Zoopla and Kajabi, AI-native teams like Lovable and Grafana Labs, and Mattermost, IFTTT, 1mg and OnceHub use RudderStack to collect their events.
 
 - **Seamless integration**: RudderStack supports 200+ [tool](https://www.rudderstack.com/docs/destinations/) and [warehouse](https://www.rudderstack.com/docs/destinations/warehouse-destinations/) destinations. Every event follows the [RudderStack Event Specification](https://www.rudderstack.com/docs/event-spec/standard-events/) (`identify`, `track`, `page`, `screen`, `group`, `alias`), so you instrument once and RudderStack transforms and routes each event to every destination.
 
@@ -74,7 +74,7 @@
 
 The easiest way to experience RudderStack is to [**sign up**](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=readme&utm_content=rudder-server-get-started) for **RudderStack Cloud Free**, a completely free tier of [**RudderStack Cloud**](https://www.rudderstack.com/cloud/).
 
-You can also set up RudderStack on your platform of choice with these two easy steps:
+Or self-host it on your own infra in two steps:
 
 ### Step 1: Set up RudderStack
 
@@ -86,13 +86,13 @@ You can also set up RudderStack on your platform of choice with these two easy s
 
 ### Step 2: Verify the installation
 
-Once you have installed RudderStack, [**send test events**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/sending-test-events/) to verify the setup.
+Once you have installed RudderStack, [**send test events**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/sending-test-events/) to verify the setup. For web apps, the [RudderStack Assistant](https://www.rudderstack.com/docs/sources/event-streams/sdks/rudderstack-javascript-sdk/events-tracking-assistant/) browser extension (Chrome and Firefox) shows each event your site sends, in real time, for quick debugging.
 
 ## Architecture
 
 RudderStack is an independent, stand-alone system with a dependency only on the database (PostgreSQL). Its backend is written in **Go**.
 
-Wondering how far a Postgres-backed queue scales? Read [**Lessons from scaling PostgreSQL queues to 100K events**](https://www.rudderstack.com/blog/scaling-postgres-queue/?utm_source=github&utm_medium=readme&utm_content=rudder-server-postgres).
+Wondering how far a Postgres-backed queue scales? Read [**Lessons from scaling PostgreSQL queues to 100K events per second**](https://www.rudderstack.com/blog/scaling-postgres-queue/?utm_source=github&utm_medium=readme&utm_content=rudder-server-postgres).
 
 A high-level view of RudderStack's architecture is shown below:
 
@@ -122,17 +122,21 @@ npx skills add rudderlabs/rudder-agent-skills
 
 [RudderStack MCP](https://github.com/rudderlabs/rudderstack-mcp) connects Claude, ChatGPT, Cursor and other AI agents to your RudderStack workspace: debug event delivery, warehouse loads and tracking plans, and manage transformations and audiences. Hosted, OAuth sign-in, nothing to install. [Docs](https://www.rudderstack.com/docs/ai-features/rudderstack-mcp/)
 
+One-click install:
+
+[![Add to Claude](https://img.shields.io/badge/Claude-Add_connector-D97757?style=for-the-badge&logo=claude&logoColor=white)](https://claude.ai/directory/rudderstack) [![Add to Cursor](https://img.shields.io/badge/Cursor-Install-000000?style=for-the-badge&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=RudderStack&config=eyJ1cmwiOiJodHRwczovL21jcC5ydWRkZXJzdGFjay5jb20vbWNwIn0%3D) [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install-0098FF?style=for-the-badge)](https://insiders.vscode.dev/redirect/mcp/install?name=rudderstack&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.rudderstack.com%2Fmcp%22%7D) [![ChatGPT, Codex and more](https://img.shields.io/badge/ChatGPT_·_Codex_·_more-Setup-555555?style=for-the-badge)](https://github.com/rudderlabs/rudderstack-mcp#connect)
+
+Or add this URL to any MCP client:
+
 ```text
 https://mcp.rudderstack.com/mcp
 ```
-
-[![Add to Claude](https://img.shields.io/badge/Claude-Add_connector-D97757?style=for-the-badge&logo=claude&logoColor=white)](https://claude.ai/directory/rudderstack) [![Add to Cursor](https://img.shields.io/badge/Cursor-Install-000000?style=for-the-badge&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=RudderStack&config=eyJ1cmwiOiJodHRwczovL21jcC5ydWRkZXJzdGFjay5jb20vbWNwIn0%3D) [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install-0098FF?style=for-the-badge)](https://insiders.vscode.dev/redirect/mcp/install?name=rudderstack&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.rudderstack.com%2Fmcp%22%7D) [![ChatGPT, Codex and more](https://img.shields.io/badge/ChatGPT_·_Codex_·_more-Setup-555555?style=for-the-badge)](https://github.com/rudderlabs/rudderstack-mcp#connect)
 
 ## Also from RudderStack: Lookout
 
 <a href="https://www.rudderstack.com/product/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout-banner"><img src="resources/banner-lookout.png" alt="Lookout, an AI assistant for your customer data: from who should we target to live audience in minutes. Try the sandbox." width="100%"></a>
 
-**Lookout** is a separate RudderStack product for marketing teams: describe a goal to an AI agent and get an audience built on your warehouse data and synced to your ad and engagement tools. **[Try the sandbox →](https://lookout.rudderstack.com/w/lookout-sandbox/join?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout)**
+**[Lookout](https://www.rudderstack.com/docs/activate/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout-docs)** is a separate RudderStack product for marketing teams: describe a goal to an AI agent and get an audience built on your warehouse data and synced to your ad and engagement tools. **[Try the sandbox →](https://lookout.rudderstack.com/w/lookout-sandbox/join?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout)**
 
 ## Contribute
 
