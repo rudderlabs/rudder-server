@@ -130,15 +130,21 @@ Or add this URL to any MCP client:
 https://mcp.rudderstack.com/mcp
 ```
 
+Try: *"Have there been any delivery errors on my RudderStack destinations in the past week? Include the error messages."*
+
 ## Also from RudderStack: Lookout
 
 <a href="https://www.rudderstack.com/product/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout-banner"><img src="resources/banner-lookout.png" alt="Lookout, an AI assistant for your customer data: from who should we target to live audience in minutes. Try the sandbox." width="100%"></a>
 
 **[Lookout](https://www.rudderstack.com/docs/activate/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout-docs)** is a separate RudderStack product for marketing teams: describe a goal to an AI agent and get an audience built on your warehouse data and synced to your ad and engagement tools. **[Try the sandbox →](https://lookout.rudderstack.com/w/lookout-sandbox/join?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout)**
 
-## Contribute
+## Community and contributing
 
 We would love to see you contribute to RudderStack. Get more information on how to contribute [**here**](CONTRIBUTING.md).
+
+- Questions and help: [Slack community](https://www.rudderstack.com/join-rudderstack-slack-community/)
+- Bugs and feature requests: [GitHub issues](https://github.com/rudderlabs/rudder-server/issues)
+- Security reports: [SECURITY.md](SECURITY.md)
 
 If rudder-server is useful to you, a ⭐ helps more people find it.
 
