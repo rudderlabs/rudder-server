@@ -120,17 +120,19 @@ npx skills add rudderlabs/rudder-agent-skills
 
 ### MCP
 
-<a href="https://github.com/rudderlabs/rudderstack-mcp"><img src="resources/banner-mcp.png" alt="RudderStack MCP: connect AI agents to your CDP. Works with Claude, ChatGPT, Cursor, VS Code and Gemini." width="100%"></a>
+[RudderStack MCP](https://github.com/rudderlabs/rudderstack-mcp) connects Claude, ChatGPT, Cursor and other AI agents to your RudderStack workspace: debug event delivery, warehouse loads and tracking plans, and manage transformations and audiences. Hosted, OAuth sign-in, nothing to install. [Docs](https://www.rudderstack.com/docs/ai-features/rudderstack-mcp/)
 
-Hosted, OAuth sign-in, nothing to install.
+```text
+https://mcp.rudderstack.com/mcp
+```
 
 [![Add to Claude](https://img.shields.io/badge/Claude-Add_connector-D97757?style=for-the-badge&logo=claude&logoColor=white)](https://claude.ai/directory/rudderstack) [![Add to Cursor](https://img.shields.io/badge/Cursor-Install-000000?style=for-the-badge&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=RudderStack&config=eyJ1cmwiOiJodHRwczovL21jcC5ydWRkZXJzdGFjay5jb20vbWNwIn0%3D) [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install-0098FF?style=for-the-badge)](https://insiders.vscode.dev/redirect/mcp/install?name=rudderstack&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.rudderstack.com%2Fmcp%22%7D) [![ChatGPT, Codex and more](https://img.shields.io/badge/ChatGPT_·_Codex_·_more-Setup-555555?style=for-the-badge)](https://github.com/rudderlabs/rudderstack-mcp#connect)
 
-### Lookout
+## Also from RudderStack: Lookout
 
 <a href="https://www.rudderstack.com/product/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout-banner"><img src="resources/banner-lookout.png" alt="Lookout, an AI assistant for your customer data: from who should we target to live audience in minutes. Try the sandbox." width="100%"></a>
 
-An AI agent for your marketing team: describe a goal, get an audience built on your warehouse and synced to your tools. **[Try the sandbox →](https://lookout.rudderstack.com/w/lookout-sandbox/join?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout)**
+**Lookout** is a separate RudderStack product for marketing teams: describe a goal to an AI agent and get an audience built on your warehouse data and synced to your ad and engagement tools. **[Try the sandbox →](https://lookout.rudderstack.com/w/lookout-sandbox/join?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout)**
 
 ## Contribute
 
