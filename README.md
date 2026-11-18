@@ -16,6 +16,7 @@
   <a href="https://hub.docker.com/r/rudderlabs/rudder-server"><img src="https://img.shields.io/docker/pulls/rudderlabs/rudder-server" alt="Docker pulls"></a>
   <a href="https://github.com/rudderlabs/rudder-server/actions/workflows/builds.yml"><img src="https://github.com/rudderlabs/rudder-server/actions/workflows/builds.yml/badge.svg" alt="Builds"></a>
   <a href="LICENSE"><img src="https://img.shields.io/static/v1?label=license&message=ELv2&color=7447fc" alt="License: ELv2"></a>
+  <a href="https://www.rudderstack.com/join-rudderstack-slack-community/"><img src="https://img.shields.io/badge/Slack-Join_the_community-4A154B?logo=slack&logoColor=white" alt="Join the RudderStack Slack community"></a>
 </p>
 
 <p align="center">
