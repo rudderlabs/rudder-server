@@ -122,7 +122,7 @@ npx skills add rudderlabs/rudder-agent-skills
 
 One-click install:
 
-[![Add to Claude](https://img.shields.io/badge/Claude-Add_connector-D97757?style=for-the-badge&logo=claude&logoColor=white)](https://claude.ai/directory/rudderstack) [![Add to Cursor](https://img.shields.io/badge/Cursor-Install-000000?style=for-the-badge&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=RudderStack&config=eyJ1cmwiOiJodHRwczovL21jcC5ydWRkZXJzdGFjay5jb20vbWNwIn0%3D) [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install-0098FF?style=for-the-badge)](https://insiders.vscode.dev/redirect/mcp/install?name=rudderstack&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.rudderstack.com%2Fmcp%22%7D) [![ChatGPT, Codex and more](https://img.shields.io/badge/ChatGPT_·_Codex_·_more-Setup-555555?style=for-the-badge)](https://github.com/rudderlabs/rudderstack-mcp#connect)
+[![Add to Claude](https://img.shields.io/badge/Claude-Add_connector-D97757?style=for-the-badge&logo=claude&logoColor=white)](https://claude.ai/directory/rudderstack) [![Add to Cursor](https://img.shields.io/badge/Cursor-Install-000000?style=for-the-badge&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=RudderStack&config=eyJ1cmwiOiJodHRwczovL21jcC5ydWRkZXJzdGFjay5jb20vbWNwIn0%3D) [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install-0098FF?style=for-the-badge)](https://insiders.vscode.dev/redirect/mcp/install?name=rudderstack&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.rudderstack.com%2Fmcp%22%7D) [![Add to ChatGPT and Codex](https://img.shields.io/badge/ChatGPT_·_Codex-Add_plugin-10A37F?style=for-the-badge)](https://chatgpt.com/plugins/plugin_asdk_app_6aebf323cd988191908f165b9d1aba1e)
 
 Or add this URL to any MCP client:
 
@@ -130,7 +130,7 @@ Or add this URL to any MCP client:
 https://mcp.rudderstack.com/mcp
 ```
 
-Try: *"Have there been any delivery errors on my RudderStack destinations in the past week? Include the error messages."*
+Try: *"Any delivery errors on my RudderStack destinations this week?"*
 
 ## Also from RudderStack: Lookout
 
