@@ -133,6 +133,19 @@ https://mcp.rudderstack.com/mcp
 
 Try: *"Any delivery errors on my RudderStack destinations this week?"*
 
+## The RudderStack open source ecosystem
+
+rudder-server is one of 100+ public repos we actively maintain at [rudderlabs](https://github.com/rudderlabs), along with Profiles and dbt projects for your warehouse and connectors for Airflow, Kafka, Looker and PostHog. The ones you'll use alongside rudder-server:
+
+| Area | How it relates to rudder-server | Key repos |
+| --- | --- | --- |
+| **Transformation** | The Processor and Router call it to map each event to every destination's API | [rudder-transformer](https://github.com/rudderlabs/rudder-transformer), [rudder-integrations-config](https://github.com/rudderlabs/rudder-integrations-config) |
+| **SDKs** (19) | Send events to the Gateway from web, mobile and server apps | [rudder-sdk-js](https://github.com/rudderlabs/rudder-sdk-js), [rudder-sdk-swift](https://github.com/rudderlabs/rudder-sdk-swift), [rudder-sdk-kotlin](https://github.com/rudderlabs/rudder-sdk-kotlin) |
+| **Device-mode integrations** (49) | Run destination SDKs like Braze, Firebase and Amplitude in your app, alongside the RudderStack SDK | [All integrations](https://github.com/orgs/rudderlabs/repositories?q=integration) |
+| **Deploy and operate** | Run on Kubernetes, deduplicate events, load test | [rudderstack-helm](https://github.com/rudderlabs/rudderstack-helm), [keydb](https://github.com/rudderlabs/keydb), [rudder-load](https://github.com/rudderlabs/rudder-load) |
+| **Agents and IaC** (11) | Manage and debug your pipelines from code, CI or an AI agent | [rudder-iac](https://github.com/rudderlabs/rudder-iac), [rudderstack-mcp](https://github.com/rudderlabs/rudderstack-mcp), [rudder-agent-skills](https://github.com/rudderlabs/rudder-agent-skills) |
+| **Go libraries** (15) | Building blocks rudder-server is built on: warehouse clients, Parquet, shared utilities | [rudder-go-kit](https://github.com/rudderlabs/rudder-go-kit), [sqlconnect-go](https://github.com/rudderlabs/sqlconnect-go), [parquet-go](https://github.com/rudderlabs/parquet-go) |
+
 ## Also from RudderStack: Lookout
 
 <a href="https://www.rudderstack.com/product/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout-banner"><img src="resources/banner-lookout.png" alt="Lookout, an AI assistant for your customer data: from who should we target to live audience in minutes. Try the sandbox." width="100%"></a>
