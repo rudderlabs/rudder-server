@@ -90,10 +90,6 @@ const (
 	sourceCategoryWarehouse = "warehouse"
 )
 
-// batchRouterDestinationsRequiringOrderedStore use job IDs as offsets and require
-// stores for the same destination to commit in order across all pipelines.
-var batchRouterDestinationsRequiringOrderedStore = []string{"SNOWPIPE_STREAMING"}
-
 func NewHandle(c *config.Config, transformerClients transformer.TransformerClients) *Handle {
 	h := &Handle{transformerClients: transformerClients, conf: c}
 	h.loadConfig()
@@ -201,6 +197,7 @@ type Handle struct {
 		sourceIdCategoryMap                       map[string]string
 		enableConcurrentStore                     config.ValueLoader[bool]
 		orderedBatchStore                         config.ValueLoader[bool]
+		orderedBatchStoreDestTypes                config.ValueLoader[[]string]
 		userTransformationMirroringSanitySampling config.ValueLoader[float64]
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 		userTransformMirrorURL                    string
@@ -856,6 +853,8 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.enableConcurrentStore = proc.conf.GetReloadableBoolVar(false, "Processor.enableConcurrentStore")
 	// Store batch router jobs of destinations that use job IDs as offsets in job ID order
 	proc.config.orderedBatchStore = proc.conf.GetReloadableBoolVar(true, "Processor.orderedBatchStore.enabled")
+	// Destination types that use job IDs as offsets and need stores for the same destination to commit in order
+	proc.config.orderedBatchStoreDestTypes = proc.conf.GetReloadableStringSliceVar([]string{"SNOWPIPE_STREAMING"}, "Processor.orderedBatchStore.destinationTypes")
 	// UserTransformation mirroring settings
 	proc.config.userTransformationMirroringSanitySampling = proc.conf.GetReloadableFloat64Var(0, "Processor.userTransformationMirroring.sanitySampling")
 	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
@@ -3112,8 +3111,9 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 		if !proc.config.orderedBatchStore.Load() {
 			return func() {}
 		}
+		destTypes := proc.config.orderedBatchStoreDestTypes.Load()
 		destIDSet := lo.FilterSliceToMap(in.batchDestJobs, func(job *jobsdb.JobT) (string, struct{}, bool) {
-			if !slices.Contains(batchRouterDestinationsRequiringOrderedStore, job.CustomVal) {
+			if !slices.Contains(destTypes, job.CustomVal) {
 				return "", struct{}{}, false
 			}
 			return gjson.GetBytes(job.Parameters, "destination_id").String(), struct{}{}, true

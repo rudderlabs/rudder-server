@@ -43,6 +43,8 @@ func TestStoreStageBatchRouterDestinationLock(t *testing.T) {
 				// disabled is set before the first store, disableBeforeSecond between the two.
 				disabled            bool
 				disableBeforeSecond bool
+				// destTypes replaces the default destination types when set.
+				destTypes []string
 			}{
 				{
 					name:       "same destination",
@@ -69,6 +71,19 @@ func TestStoreStageBatchRouterDestinationLock(t *testing.T) {
 					firstJobs:           []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
 					secondJobs:          []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
 					disableBeforeSecond: true,
+				},
+				{
+					name:       "configured destination type is ordered",
+					firstJobs:  []*jobsdb.JobT{job("S3", "dest-1")},
+					secondJobs: []*jobsdb.JobT{job("S3", "dest-1")},
+					destTypes:  []string{"S3"},
+					serialize:  true,
+				},
+				{
+					name:       "configured destination types replace the default",
+					firstJobs:  []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
+					secondJobs: []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
+					destTypes:  []string{"S3"},
 				},
 				{
 					name:       "different destinations",
@@ -108,6 +123,10 @@ func TestStoreStageBatchRouterDestinationLock(t *testing.T) {
 					proc.config.orderedBatchStore = conf.GetReloadableBoolVar(true, orderedStoreKey)
 					if tc.disabled {
 						conf.Set(orderedStoreKey, false)
+					}
+					if tc.destTypes != nil {
+						conf.Set("Processor.orderedBatchStore.destinationTypes", tc.destTypes)
+						proc.config.orderedBatchStoreDestTypes = conf.GetReloadableStringSliceVar([]string{"SNOWPIPE_STREAMING"}, "Processor.orderedBatchStore.destinationTypes")
 					}
 
 					var statusTransactions atomic.Int32
@@ -218,6 +237,7 @@ func newStoreStageTestHandle(gatewayDB, routerDB, batchDB jobsdb.JobsDB, concurr
 	}
 	proc.config.enableConcurrentStore = config.SingleValueLoader(concurrentStore)
 	proc.config.orderedBatchStore = config.SingleValueLoader(true)
+	proc.config.orderedBatchStoreDestTypes = config.SingleValueLoader([]string{"SNOWPIPE_STREAMING"})
 	proc.jobsDBCommandTimeout = config.SingleValueLoader(time.Second)
 	proc.jobdDBMaxRetries = config.SingleValueLoader(1)
 	measurement := func(_, _ string) stats.Measurement { return stats.NOP.NewStat("store", stats.CountType) }
