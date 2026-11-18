@@ -26,9 +26,9 @@
   <b>
     <a href="https://www.rudderstack.com/?utm_source=github&utm_medium=readme&utm_content=rudder-server-nav">Website</a> ·
     <a href="https://www.rudderstack.com/docs/?utm_source=github&utm_medium=readme&utm_content=rudder-server-nav">Docs</a> ·
+    <a href="https://github.com/rudderlabs/rudder-iac">CLI</a> ·
     <a href="https://github.com/rudderlabs/rudder-agent-skills">Agent Skills</a> ·
     <a href="https://github.com/rudderlabs/rudderstack-mcp">MCP</a> ·
-    <a href="https://github.com/rudderlabs/rudder-iac">CLI</a> ·
     <a href="https://www.rudderstack.com/join-rudderstack-slack-community/">Slack</a> ·
     <a href="https://x.com/RudderStack">X</a>
   </b>
@@ -79,10 +79,8 @@ Or self-host it on your own infra in two steps:
 ### Step 1: Set up RudderStack
 
 - [**Docker**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/docker/)
-- [**Kubernetes**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/kubernetes/)
+- [**Kubernetes**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/kubernetes/) (recommended for production: the Helm charts pick up bug fixes in our Docker images sooner than the GitHub repo)
 - [**Developer machine setup**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/developer-machine-setup/)
-
-> **Note**: If you are planning to use RudderStack in production, we STRONGLY recommend using our Kubernetes Helm charts. We update our Docker images with bug fixes much more frequently than our GitHub repo.
 
 ### Step 2: Verify the installation
 
