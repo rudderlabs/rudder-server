@@ -217,17 +217,7 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 		return JobFailedRecordsV2{ID: jobRunId}, fmt.Errorf("failed to get failed record ids: %w", err)
 	}
 
-	filters := "WHERE r.id = ANY($1)"
-	params := []any{pq.Array(ids)}
-	var limit string
-	if paging.Size > 0 {
-		// row-value comparison: everything strictly after the cursor in (id, record_id) order
-		filters = filters + fmt.Sprintf(` AND (r.id, r.record_id) > ($%[1]d, $%[2]d)`, len(params)+1, len(params)+2)
-		params = append(params, nextPageToken.ID, nextPageToken.RecordID)
-		limit = fmt.Sprintf(`LIMIT %d`, paging.Size)
-	}
-	sqlStatement := fmt.Sprintf(
-		`SELECT
+	const selectFrom = `SELECT
 			k.task_run_id,
 			k.source_id,
 			k.destination_id,
@@ -236,9 +226,38 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			r.code,
 			r.error_response
 		FROM "rsources_failed_keys_v2_records" r
-		JOIN "rsources_failed_keys_v2" k ON r.id = k.id %[1]s
-		ORDER BY r.id, r.record_id ASC %[2]s`,
-		filters, limit)
+		JOIN "rsources_failed_keys_v2" k ON r.id = k.id`
+	var sqlStatement string
+	var params []any
+	var limit string
+	if paging.Size > 0 {
+		// Everything strictly after the cursor in (id, record_id) order, split in two:
+		// the rest of the cursor's id and all later ids. A single row-value comparison with
+		// r.id = ANY(...) makes the index scan start at the beginning of the cursor's id,
+		// so each page would read every record before the cursor.
+		// $2 = ANY($1) keeps a page token from reading records outside the job run.
+		var laterIDs []string
+		for _, id := range ids {
+			if id > nextPageToken.ID { // bytewise, matching the COLLATE "C" of id
+				laterIDs = append(laterIDs, id)
+			}
+		}
+		limit = fmt.Sprintf(`LIMIT %d`, paging.Size)
+		sqlStatement = fmt.Sprintf(
+			`(%[1]s
+			WHERE r.id = $2 AND $2 = ANY($1) AND r.record_id > $3
+			ORDER BY r.record_id %[2]s)
+			UNION ALL
+			(%[1]s
+			WHERE r.id = ANY($4)
+			ORDER BY r.id, r.record_id %[2]s)
+			ORDER BY 4, 5 %[2]s`,
+			selectFrom, limit)
+		params = []any{pq.Array(ids), nextPageToken.ID, nextPageToken.RecordID, pq.Array(laterIDs)}
+	} else {
+		sqlStatement = selectFrom + ` WHERE r.id = ANY($1) ORDER BY r.id, r.record_id ASC`
+		params = []any{pq.Array(ids)}
+	}
 
 	failedRecordsMap := map[JobTargetKey][]FailedRecord{}
 	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, params...)
