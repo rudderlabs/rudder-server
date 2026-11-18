@@ -67,7 +67,7 @@
 
 - **Segment API-compatible**: RudderStack is fully compatible with the Segment API. You don't need to change your app if you use Segment; integrate the RudderStack SDKs and your events keep flowing to the same destinations, including data warehouses.
 
-- **Production-ready**: Companies like HP, Foot Locker, Allbirds, Crate & Barrel, Cars.com, Zoopla and Kajabi, AI-native teams like Lovable and Grafana Labs, and Mattermost, IFTTT, 1mg and OnceHub use RudderStack to collect their events.
+- **Production-ready**: Companies like Lovable, Grafana Labs, HP, Foot Locker, Allbirds, Crate & Barrel, Cars.com, Zoopla, Kajabi, Mattermost, IFTTT, 1mg and OnceHub use RudderStack to collect their events.
 
 - **Seamless integration**: RudderStack supports 200+ [tool](https://www.rudderstack.com/docs/destinations/) and [warehouse](https://www.rudderstack.com/docs/destinations/warehouse-destinations/) destinations. Every event follows the [RudderStack Event Specification](https://www.rudderstack.com/docs/event-spec/standard-events/) (`identify`, `track`, `page`, `screen`, `group`, `alias`), so you instrument once and RudderStack transforms and routes each event to every destination.
 
