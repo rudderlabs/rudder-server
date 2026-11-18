@@ -21,6 +21,13 @@
 </p>
 
 <p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="resources/rudder-server-flow-dark.png">
+    <img src="resources/rudder-server-flow-light.png" alt="RudderStack data plane (rudder-server): customer data events from website, mobile and server-side SDKs reach the Gateway, which stores them in PostgreSQL and sends an ACK. The Processor runs transformations, and the Router delivers events to warehouses like Snowflake, BigQuery and Databricks and to 200+ tools" width="100%">
+  </picture>
+</p>
+
+<p align="center">
   Collect events from every app, enforce consent, transform them in flight, and deliver them to your warehouse and 200+ tools. Warehouse-native, agent-ready, Segment API compatible.
 </p>
 
@@ -44,13 +51,6 @@
 
 ---
 <!-- /HEADER -->
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="resources/rudder-server-flow-dark.png">
-    <img src="resources/rudder-server-flow-light.png" alt="RudderStack data plane (rudder-server): customer data events from website, mobile and server-side SDKs reach the Gateway, which stores them in PostgreSQL and sends an ACK. The Processor runs transformations, and the Router delivers events to warehouses like Snowflake, BigQuery and Databricks and to 200+ tools" width="100%">
-  </picture>
-</p>
 
 ## Key features
 
