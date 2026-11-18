@@ -94,8 +94,8 @@ func createParquetWriter(outputFilePath string, schema model.TableSchema, destTy
 	// estimate counts each interface value as four bytes, even for large strings.
 	// Bound the queued values' actual sizes when large pages raise that threshold.
 	maxQueuedBytes := int64(maxParquetQueuedBytes)
-	// Preserve the library's existing flush behavior at small page sizes.
-	if w.PageSize <= maxQueuedBytes/w.NP/w.SchemaHandler.GetColumnNum() {
+	// Preserve the library's existing flush behavior at the default page size.
+	if w.PageSize <= defaultParquetPageSize {
 		maxQueuedBytes = 0
 	}
 

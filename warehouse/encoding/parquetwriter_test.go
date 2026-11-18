@@ -55,3 +55,22 @@ func TestParquetWriterWideSchemaFlush(t *testing.T) {
 		require.NotNil(t, got)
 	}
 }
+
+func TestParquetWriterNarrowSchemaFlush(t *testing.T) {
+	t.Setenv("RSERVER_WAREHOUSE_PARQUET_PAGE_SIZE", "1048576")
+	conf := config.New()
+	conf.Set("Warehouse.parquetParallelWriters", 8)
+	factory := NewFactory(conf)
+	path := t.TempDir() + "/narrow.parquet"
+	loadWriter, err := factory.NewLoadFileWriter(warehouseutils.LoadFileTypeParquet, path, model.TableSchema{
+		"first": "string", "second": "string",
+	}, warehouseutils.RS)
+	require.NoError(t, err)
+	writer := loadWriter.(*parquetWriter)
+	require.Equal(t, int64(maxParquetQueuedBytes), writer.maxQueuedBytes)
+	writer.maxQueuedBytes = 1 << 20 // Trigger the same flush path with a small test row.
+	require.NoError(t, writer.WriteRow([]any{strings.Repeat("x", 1<<19), strings.Repeat("y", 1<<19)}))
+	require.Empty(t, writer.writer.Objs)
+	require.Zero(t, writer.queuedBytes)
+	require.NoError(t, writer.Close())
+}
