@@ -90,6 +90,10 @@ const (
 	sourceCategoryWarehouse = "warehouse"
 )
 
+// batchRouterDestinationsRequiringOrderedStore use job IDs as offsets and require
+// stores for the same destination to commit in order across all pipelines.
+var batchRouterDestinationsRequiringOrderedStore = []string{"SNOWPIPE_STREAMING"}
+
 func NewHandle(c *config.Config, transformerClients transformer.TransformerClients) *Handle {
 	h := &Handle{transformerClients: transformerClients, conf: c}
 	h.loadConfig()
@@ -3100,6 +3104,25 @@ func (proc *Handle) sendQueryRetryStats(attempt int) {
 }
 
 func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMessage) {
+	lockBatchRouterDestIDs := func() func() {
+		destIDSet := lo.FilterSliceToMap(in.batchDestJobs, func(job *jobsdb.JobT) (string, struct{}, bool) {
+			if !slices.Contains(batchRouterDestinationsRequiringOrderedStore, job.CustomVal) {
+				return "", struct{}{}, false
+			}
+			return gjson.GetBytes(job.Parameters, "destination_id").String(), struct{}{}, true
+		})
+		destIDs := lo.Keys(destIDSet)
+		slices.Sort(destIDs)
+		for _, destID := range destIDs {
+			// Batch router offsets span all user partitions, so do not include pipelineIndex.
+			proc.storePlocker.Lock("batchrouter:" + destID)
+		}
+		return func() {
+			for _, destID := range slices.Backward(destIDs) {
+				proc.storePlocker.Unlock("batchrouter:" + destID)
+			}
+		}
+	}
 	lockRouterDestIDs := func() func() {
 		var deferred []func()
 		if len(in.destJobs) == 0 {
@@ -3165,10 +3188,16 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 	} else {
 		// lock early to avoid deadlocks due to connection pool exhaustion
 		defer lockRouterDestIDs()()
+		defer lockBatchRouterDestIDs()()
 	}
 	// XX: Need to do this in a transaction
 	if len(batchDestJobs) > 0 {
 		g.Go(func() error {
+			// Hold the destination locks through commit so lower job IDs cannot become
+			// visible after higher ones. Acquire multiple locks in sorted order.
+			if !enableConcurrentStore {
+				defer lockBatchRouterDestIDs()()
+			}
 			err := misc.RetryWithNotify(
 				ctx,
 				proc.jobsDBCommandTimeout.Load(),
