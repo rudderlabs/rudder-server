@@ -25,9 +25,10 @@
 <p align="center">
   <b>
     <a href="https://www.rudderstack.com/?utm_source=github&utm_medium=readme&utm_content=rudder-server-nav">Website</a> ·
-    <a href="https://www.rudderstack.com/docs/?utm_source=github&utm_medium=readme&utm_content=rudder-server-nav">Documentation</a> ·
-    <a href="CHANGELOG.md">Changelog</a> ·
-    <a href="https://www.rudderstack.com/blog/?utm_source=github&utm_medium=readme&utm_content=rudder-server-nav">Blog</a> ·
+    <a href="https://www.rudderstack.com/docs/?utm_source=github&utm_medium=readme&utm_content=rudder-server-nav">Docs</a> ·
+    <a href="https://github.com/rudderlabs/rudder-agent-skills">Agent Skills</a> ·
+    <a href="https://github.com/rudderlabs/rudderstack-mcp">MCP</a> ·
+    <a href="https://github.com/rudderlabs/rudder-iac">CLI</a> ·
     <a href="https://www.rudderstack.com/join-rudderstack-slack-community/">Slack</a> ·
     <a href="https://x.com/RudderStack">X</a>
   </b>
@@ -53,7 +54,7 @@
 
 - **Warehouse-first**: RudderStack treats your data warehouse as a first-class citizen among destinations, with advanced features and configurable, near real-time sync.
 
-- **Developer-focused**: RudderStack is built API-first. It integrates with the tools developers already use and love, and works with AI agents through the [RudderStack MCP](#rudderstack-mcp) server.
+- **Developer-focused**: RudderStack is built API-first. It integrates with the tools developers already use and love, and works with AI agents through the [RudderStack MCP](#mcp) server.
 
 - **High availability**: RudderStack is built for at least 99.99% uptime. A sophisticated error handling and retry system makes sure your data is delivered even during network partitions or destination downtime.
 
@@ -99,6 +100,38 @@ A high-level view of RudderStack's architecture is shown below:
 
 For more details on the various architectural components, refer to our [**documentation**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/rudderstack-architecture/).
 
+## Build and debug with AI agents
+
+### CLI
+
+[rudder-cli](https://github.com/rudderlabs/rudder-iac) manages your RudderStack resources as code, from your terminal, CI or coding agent. [Docs](https://www.rudderstack.com/docs/rudder-cli/)
+
+```sh
+curl -fsSL https://github.com/rudderlabs/rudder-iac/releases/latest/download/install.sh | sh
+```
+
+### Agent Skills
+
+[RudderStack Agent Skills](https://github.com/rudderlabs/rudder-agent-skills) teach Claude Code, Cursor and 40+ agents to instrument events, design tracking plans, write transformations, and drive the CLI and MCP.
+
+```sh
+npx skills add rudderlabs/rudder-agent-skills
+```
+
+### MCP
+
+<a href="https://github.com/rudderlabs/rudderstack-mcp"><img src="resources/banner-mcp.png" alt="RudderStack MCP: connect AI agents to your CDP. Works with Claude, ChatGPT, Cursor, VS Code and Gemini." width="100%"></a>
+
+Hosted, OAuth sign-in, nothing to install.
+
+[![Add to Claude](https://img.shields.io/badge/Claude-Add_connector-D97757?style=for-the-badge&logo=claude&logoColor=white)](https://claude.ai/directory/rudderstack) [![Add to Cursor](https://img.shields.io/badge/Cursor-Install-000000?style=for-the-badge&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=RudderStack&config=eyJ1cmwiOiJodHRwczovL21jcC5ydWRkZXJzdGFjay5jb20vbWNwIn0%3D) [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install-0098FF?style=for-the-badge)](https://insiders.vscode.dev/redirect/mcp/install?name=rudderstack&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.rudderstack.com%2Fmcp%22%7D) [![ChatGPT, Codex and more](https://img.shields.io/badge/ChatGPT_·_Codex_·_more-Setup-555555?style=for-the-badge)](https://github.com/rudderlabs/rudderstack-mcp#connect)
+
+### Lookout
+
+<a href="https://www.rudderstack.com/product/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout-banner"><img src="resources/banner-lookout.png" alt="Lookout, an AI assistant for your customer data: from who should we target to live audience in minutes. Try the sandbox." width="100%"></a>
+
+An AI agent for your marketing team: describe a goal, get an audience built on your warehouse and synced to your tools. **[Try the sandbox →](https://lookout.rudderstack.com/w/lookout-sandbox/join?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout)**
+
 ## Contribute
 
 We would love to see you contribute to RudderStack. Get more information on how to contribute [**here**](CONTRIBUTING.md).
@@ -108,19 +141,3 @@ If rudder-server is useful to you, a ⭐ helps more people find it.
 ## License
 
 RudderStack server is released under the [**Elastic License 2.0**](LICENSE).
-
-## More from RudderStack
-
-### Lookout
-
-<a href="https://www.rudderstack.com/product/lookout/?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout-banner"><img src="resources/banner-lookout.png" alt="Lookout, an AI assistant for your customer data: from who should we target to live audience in minutes. Try the sandbox." width="100%"></a>
-
-Describe a goal, get an audience built on your warehouse and synced to your tools. **[Try the sandbox →](https://lookout.rudderstack.com/w/lookout-sandbox/join?utm_source=github&utm_medium=readme&utm_content=rudder-server-lookout)**
-
-### RudderStack MCP
-
-<a href="https://github.com/rudderlabs/rudderstack-mcp"><img src="resources/banner-mcp.png" alt="RudderStack MCP: connect AI agents to your CDP. Works with Claude, ChatGPT, Cursor, VS Code and Gemini." width="100%"></a>
-
-Hosted, OAuth sign-in, nothing to install.
-
-[![Add to Claude](https://img.shields.io/badge/Claude-Add_connector-D97757?style=for-the-badge&logo=claude&logoColor=white)](https://claude.ai/directory/rudderstack) [![Add to Cursor](https://img.shields.io/badge/Cursor-Install-000000?style=for-the-badge&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=RudderStack&config=eyJ1cmwiOiJodHRwczovL21jcC5ydWRkZXJzdGFjay5jb20vbWNwIn0%3D) [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install-0098FF?style=for-the-badge)](https://insiders.vscode.dev/redirect/mcp/install?name=rudderstack&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.rudderstack.com%2Fmcp%22%7D) [![ChatGPT, Codex and more](https://img.shields.io/badge/ChatGPT_·_Codex_·_more-Setup-555555?style=for-the-badge)](https://github.com/rudderlabs/rudderstack-mcp#connect)
