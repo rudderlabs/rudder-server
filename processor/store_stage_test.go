@@ -40,6 +40,9 @@ func TestStoreStageBatchRouterDestinationLock(t *testing.T) {
 				secondPipeline int
 				includeRouter  bool
 				serialize      bool
+				// disabled is set before the first store, disableBeforeSecond between the two.
+				disabled            bool
+				disableBeforeSecond bool
 			}{
 				{
 					name:       "same destination",
@@ -53,6 +56,19 @@ func TestStoreStageBatchRouterDestinationLock(t *testing.T) {
 					secondJobs:     []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
 					secondPipeline: 1,
 					serialize:      true,
+				},
+				{
+					name:       "same destination with ordering disabled",
+					firstJobs:  []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
+					secondJobs: []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
+					disabled:   true,
+				},
+				{
+					// The first store holds its locks and releases them after the setting turned off.
+					name:                "ordering disabled while a store holds the lock",
+					firstJobs:           []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
+					secondJobs:          []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
+					disableBeforeSecond: true,
 				},
 				{
 					name:       "different destinations",
@@ -87,6 +103,12 @@ func TestStoreStageBatchRouterDestinationLock(t *testing.T) {
 					routerDB := mocksJobsDB.NewMockJobsDB(ctrl)
 					batchDB := mocksJobsDB.NewMockJobsDB(ctrl)
 					proc := newStoreStageTestHandle(gatewayDB, routerDB, batchDB, concurrentStore)
+					conf := config.New()
+					const orderedStoreKey = "Processor.orderedBatchStore.enabled"
+					proc.config.orderedBatchStore = conf.GetReloadableBoolVar(true, orderedStoreKey)
+					if tc.disabled {
+						conf.Set(orderedStoreKey, false)
+					}
 
 					var statusTransactions atomic.Int32
 					gatewayDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(2).
@@ -155,6 +177,9 @@ func TestStoreStageBatchRouterDestinationLock(t *testing.T) {
 					if concurrentStore {
 						require.Eventually(t, func() bool { return statusTransactions.Load() == 1 }, 5*time.Second, time.Millisecond)
 					}
+					if tc.disableBeforeSecond {
+						conf.Set(orderedStoreKey, false)
+					}
 					start("partition-2", tc.secondPipeline, tc.secondJobs)
 					if tc.serialize {
 						select {
@@ -192,6 +217,7 @@ func newStoreStageTestHandle(gatewayDB, routerDB, batchDB jobsdb.JobsDB, concurr
 		activationRecordsReporter: activationrecords.NewNoopActivationRecordsReporter(),
 	}
 	proc.config.enableConcurrentStore = config.SingleValueLoader(concurrentStore)
+	proc.config.orderedBatchStore = config.SingleValueLoader(true)
 	proc.jobsDBCommandTimeout = config.SingleValueLoader(time.Second)
 	proc.jobdDBMaxRetries = config.SingleValueLoader(1)
 	measurement := func(_, _ string) stats.Measurement { return stats.NOP.NewStat("store", stats.CountType) }
