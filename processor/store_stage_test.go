@@ -40,11 +40,12 @@ func TestStoreStageBatchRouterDestinationLock(t *testing.T) {
 				secondPipeline int
 				includeRouter  bool
 				serialize      bool
-				// disabled is set before the first store, disableBeforeSecond between the two.
-				disabled            bool
-				disableBeforeSecond bool
-				// destTypes replaces the default destination types when set.
-				destTypes []string
+				// destTypes replaces the default destination types before the first store when configured is set,
+				// and destTypesBeforeSecond does so between the two stores when changeBeforeSecond is set.
+				configured            bool
+				destTypes             []string
+				changeBeforeSecond    bool
+				destTypesBeforeSecond []string
 			}{
 				{
 					name:       "same destination",
@@ -60,22 +61,25 @@ func TestStoreStageBatchRouterDestinationLock(t *testing.T) {
 					serialize:      true,
 				},
 				{
-					name:       "same destination with ordering disabled",
+					name:       "no destination types configured",
 					firstJobs:  []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
 					secondJobs: []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
-					disabled:   true,
+					configured: true,
+					destTypes:  []string{},
 				},
 				{
-					// The first store holds its locks and releases them after the setting turned off.
-					name:                "ordering disabled while a store holds the lock",
-					firstJobs:           []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
-					secondJobs:          []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
-					disableBeforeSecond: true,
+					// The first store holds its locks and releases them after the setting was emptied.
+					name:                  "destination types emptied while a store holds the lock",
+					firstJobs:             []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
+					secondJobs:            []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
+					changeBeforeSecond:    true,
+					destTypesBeforeSecond: []string{},
 				},
 				{
 					name:       "configured destination type is ordered",
 					firstJobs:  []*jobsdb.JobT{job("S3", "dest-1")},
 					secondJobs: []*jobsdb.JobT{job("S3", "dest-1")},
+					configured: true,
 					destTypes:  []string{"S3"},
 					serialize:  true,
 				},
@@ -83,6 +87,7 @@ func TestStoreStageBatchRouterDestinationLock(t *testing.T) {
 					name:       "configured destination types replace the default",
 					firstJobs:  []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
 					secondJobs: []*jobsdb.JobT{job("SNOWPIPE_STREAMING", "dest-1")},
+					configured: true,
 					destTypes:  []string{"S3"},
 				},
 				{
@@ -119,14 +124,10 @@ func TestStoreStageBatchRouterDestinationLock(t *testing.T) {
 					batchDB := mocksJobsDB.NewMockJobsDB(ctrl)
 					proc := newStoreStageTestHandle(gatewayDB, routerDB, batchDB, concurrentStore)
 					conf := config.New()
-					const orderedStoreKey = "Processor.orderedBatchStore.enabled"
-					proc.config.orderedBatchStore = conf.GetReloadableBoolVar(true, orderedStoreKey)
-					if tc.disabled {
-						conf.Set(orderedStoreKey, false)
-					}
-					if tc.destTypes != nil {
-						conf.Set("Processor.orderedBatchStore.destinationTypes", tc.destTypes)
-						proc.config.orderedBatchStoreDestTypes = conf.GetReloadableStringSliceVar([]string{"SNOWPIPE_STREAMING"}, "Processor.orderedBatchStore.destinationTypes")
+					const destTypesKey = "Processor.orderedBatchStore.destinationTypes"
+					proc.config.orderedBatchStoreDestTypes = conf.GetReloadableStringSliceVar([]string{"SNOWPIPE_STREAMING"}, destTypesKey)
+					if tc.configured {
+						conf.Set(destTypesKey, tc.destTypes)
 					}
 
 					var statusTransactions atomic.Int32
@@ -196,8 +197,8 @@ func TestStoreStageBatchRouterDestinationLock(t *testing.T) {
 					if concurrentStore {
 						require.Eventually(t, func() bool { return statusTransactions.Load() == 1 }, 5*time.Second, time.Millisecond)
 					}
-					if tc.disableBeforeSecond {
-						conf.Set(orderedStoreKey, false)
+					if tc.changeBeforeSecond {
+						conf.Set(destTypesKey, tc.destTypesBeforeSecond)
 					}
 					start("partition-2", tc.secondPipeline, tc.secondJobs)
 					if tc.serialize {
@@ -236,7 +237,6 @@ func newStoreStageTestHandle(gatewayDB, routerDB, batchDB jobsdb.JobsDB, concurr
 		activationRecordsReporter: activationrecords.NewNoopActivationRecordsReporter(),
 	}
 	proc.config.enableConcurrentStore = config.SingleValueLoader(concurrentStore)
-	proc.config.orderedBatchStore = config.SingleValueLoader(true)
 	proc.config.orderedBatchStoreDestTypes = config.SingleValueLoader([]string{"SNOWPIPE_STREAMING"})
 	proc.jobsDBCommandTimeout = config.SingleValueLoader(time.Second)
 	proc.jobdDBMaxRetries = config.SingleValueLoader(1)
