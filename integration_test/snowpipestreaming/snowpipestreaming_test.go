@@ -1428,6 +1428,7 @@ func runRudderServer(
 	config.Set("BatchRouter.SNOWPIPE_STREAMING.asyncUploadWorkerTimeout", "1s")         // default 10s
 	config.Set("BatchRouter.SNOWPIPE_STREAMING.asyncUploadTimeout", "1s")               // default 30m
 	config.Set("BatchRouter.SNOWPIPE_STREAMING.pollStatusLoopSleep", "1s")              // default 10s
+	config.Set("BatchRouter.SNOWPIPE_STREAMING.writeImportIdRefs", true)                // default false
 	config.Set("BatchRouter.isolationMode", "none")
 	config.Set("Warehouse.mode", "off")
 	config.Set("JobsDB.gw.pendingEvents.enabled", true)
