@@ -84,7 +84,7 @@ func TestSlaveWorker(t *testing.T) {
 		jobLocation := uploadFile(t, ctx, destConf, "testdata/staging.json.gz")
 
 		schemaMap := stagingSchema(t)
-		ef := encoding.NewFactory(config.New())
+		ef := encoding.NewFactory(config.New(), logger.NOP)
 
 		t.Run("success", func(t *testing.T) {
 			subscribeCh := make(chan *notifier.ClaimJobResponse)
@@ -503,7 +503,7 @@ func TestSlaveWorker(t *testing.T) {
 		jobLocation3 := uploadFile(t, ctx, destConf, "testdata/staging3.json.gz")
 
 		schemaMap := stagingSchema(t)
-		ef := encoding.NewFactory(config.New())
+		ef := encoding.NewFactory(config.New(), logger.NOP)
 
 		t.Run("success", func(t *testing.T) {
 			subscribeCh := make(chan *notifier.ClaimJobResponse)
@@ -990,7 +990,7 @@ func TestSlaveWorker(t *testing.T) {
 		tenantManager := multitenant.New(config.New(), mockBackendConfig)
 		go tenantManager.Run(ctx)
 		bcm := bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP)
-		ef := encoding.NewFactory(config.New())
+		ef := encoding.NewFactory(config.New(), logger.NOP)
 
 		startCtx, stopStart := context.WithCancel(ctx)
 		setupCh := make(chan struct{})
@@ -1460,7 +1460,7 @@ func TestSlaveWorkerClaimRefresh(t *testing.T) {
 		mockNotifier,
 		bcm.New(conf, nil, multitenant.New(conf, backendconfig.DefaultBackendConfig), logger.NOP, stats.NOP),
 		constraints.New(conf),
-		encoding.NewFactory(conf),
+		encoding.NewFactory(conf, logger.NOP),
 		1,
 	)
 	worker.refreshClaimJitter = 0
@@ -1633,7 +1633,7 @@ func TestLoadFileDeterministicNaming(t *testing.T) {
 		jobLocation := uploadFile(t, ctx, destConf, "testdata/staging.json.gz")
 
 		schemaMap := stagingSchema(t)
-		ef := encoding.NewFactory(config.New())
+		ef := encoding.NewFactory(config.New(), logger.NOP)
 
 		c := config.New()
 		c.Set("Warehouse.useDeterministicLoadFileName", false)
@@ -1748,7 +1748,7 @@ func TestLoadFileDeterministicNaming(t *testing.T) {
 		}
 
 		schemaMap := stagingSchema(t)
-		ef := encoding.NewFactory(config.New())
+		ef := encoding.NewFactory(config.New(), logger.NOP)
 
 		c := config.New()
 		c.Set("Warehouse.useDeterministicLoadFileName", true)

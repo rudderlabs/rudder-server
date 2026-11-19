@@ -209,7 +209,7 @@ func TestRouter(t *testing.T) {
 
 		ctx, cancel := context.WithTimeout(ctx, time.Second*10)
 		defer cancel()
-		ef := encoding.NewFactory(config.New())
+		ef := encoding.NewFactory(config.New(), logger.NOP)
 
 		r := New(
 			&reporting.NOOP{},

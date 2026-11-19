@@ -368,7 +368,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		return "", fmt.Errorf("create directory: %w", err)
 	}
 
-	ef := encoding.NewFactory(config.Default)
+	ef := encoding.NewFactory(config.Default, pkgLogger)
 	fixtureSchema := tableSchemaMap
 	writer, err = ef.NewLoadFileWriter(loadFileType, filePath, fixtureSchema, destinationType)
 	if err != nil {

@@ -7,7 +7,6 @@ import (
 	"sort"
 
 	"github.com/samber/lo"
-	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/writer"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -17,7 +16,7 @@ import (
 
 const (
 	// The fork's automatic flush threshold scales with page size and column count.
-	// Keep the row queue bounded for wide schemas while leaving the row-group size unchanged.
+	// Keep the row queue bounded while leaving the row-group size unchanged.
 	maxParquetQueuedBytes = 64 << 20
 
 	parquetInt64           = "type=INT64, repetitiontype=OPTIONAL"
@@ -72,7 +71,7 @@ type parquetWriter struct {
 	queuedBytes    int64
 }
 
-func createParquetWriter(outputFilePath string, schema model.TableSchema, destType string, maxParallelWriters int64, disableParquetColumnIndex bool, pageSize int64, codec parquet.CompressionCodec) (LoadFileWriter, error) {
+func createParquetWriter(outputFilePath string, schema model.TableSchema, destType string, maxParallelWriters int64, disableParquetColumnIndex bool, pageSize int64) (LoadFileWriter, error) {
 	bufWriter, err := misc.CreateBufferedWriter(outputFilePath)
 	if err != nil {
 		return nil, err
@@ -89,7 +88,6 @@ func createParquetWriter(outputFilePath string, schema model.TableSchema, destTy
 		return nil, err
 	}
 	w.PageSize = pageSize
-	w.CompressionType = codec
 	// The upstream queue triggers at NP * PageSize * columnCount, but its
 	// estimate counts each interface value as four bytes, even for large strings.
 	// Bound the queued values' actual sizes when large pages raise that threshold.

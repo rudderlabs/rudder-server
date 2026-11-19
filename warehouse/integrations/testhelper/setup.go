@@ -23,6 +23,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -207,11 +208,10 @@ func WriteSampleParquetLoadFile(t testing.TB, destinationType string, schema mod
 	t.Helper()
 	path := t.TempDir() + "/load.parquet"
 	conf := config.New()
-	// Keep the loader compatibility fixture on rollout settings independently
-	// of the deployment defaults; all other sample rows remain unchanged.
+	// Keep the loader compatibility fixture on the rollout page size independently
+	// of the deployment default; all other sample rows remain unchanged.
 	conf.Set("Warehouse.parquetPageSize", 1<<20)
-	conf.Set("Warehouse.parquetCompression", "ZSTD")
-	factory := encoding.NewFactory(conf)
+	factory := encoding.NewFactory(conf, logger.NOP)
 	writer, err := factory.NewLoadFileWriter(whutils.LoadFileTypeParquet, path, schema, destinationType)
 	require.NoError(t, err)
 
