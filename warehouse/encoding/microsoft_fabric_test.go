@@ -10,7 +10,6 @@ import (
 	"github.com/xitongsys/parquet-go/reader"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -26,7 +25,7 @@ func TestMicrosoftFabricParquetWriter(t *testing.T) {
 		"name":        "string",
 		"received_at": "datetime",
 	}
-	factory := NewFactory(config.New(), logger.NOP)
+	factory := NewFactory(config.New())
 	writer, err := factory.NewLoadFileWriter(warehouseutils.LoadFileTypeParquet, path, schema, warehouseutils.MicrosoftFabric)
 	require.NoError(t, err)
 	loader := factory.NewEventLoader(writer, warehouseutils.LoadFileTypeParquet, warehouseutils.MicrosoftFabric)
@@ -71,7 +70,7 @@ func TestMicrosoftFabricParquetWriter(t *testing.T) {
 }
 
 func TestMicrosoftFabricParquetRejectsUnknownType(t *testing.T) {
-	_, err := NewFactory(config.New(), logger.NOP).NewLoadFileWriter(
+	_, err := NewFactory(config.New()).NewLoadFileWriter(
 		warehouseutils.LoadFileTypeParquet,
 		filepath.Join(t.TempDir(), "fabric.parquet"),
 		model.TableSchema{"bad": "array"},

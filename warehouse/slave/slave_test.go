@@ -109,7 +109,7 @@ func TestSlave(t *testing.T) {
 		slaveNotifier,
 		bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
 		constraints.New(config.New()),
-		encoding.NewFactory(config.New(), logger.NOP),
+		encoding.NewFactory(config.New()),
 	)
 	slave.config.noOfSlaveWorkerRoutines = workers
 

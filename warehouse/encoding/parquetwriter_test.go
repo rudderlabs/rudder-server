@@ -12,7 +12,6 @@ import (
 	"github.com/xitongsys/parquet-go/reader"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -22,7 +21,7 @@ func TestParquetWriterWideSchemaFlush(t *testing.T) {
 	t.Setenv("RSERVER_WAREHOUSE_PARQUET_PAGE_SIZE", "1048576")
 	conf := config.New()
 	conf.Set("Warehouse.parquetParallelWriters", 8)
-	factory := NewFactory(conf, logger.NOP)
+	factory := NewFactory(conf)
 	schema := make(model.TableSchema)
 	row := make([]any, 100)
 	for i := range row {
@@ -62,7 +61,7 @@ func TestParquetWriterNarrowSchemaFlush(t *testing.T) {
 	t.Setenv("RSERVER_WAREHOUSE_PARQUET_PAGE_SIZE", "1048576")
 	conf := config.New()
 	conf.Set("Warehouse.parquetParallelWriters", 8)
-	factory := NewFactory(conf, logger.NOP)
+	factory := NewFactory(conf)
 	path := t.TempDir() + "/narrow.parquet"
 	loadWriter, err := factory.NewLoadFileWriter(warehouseutils.LoadFileTypeParquet, path, model.TableSchema{
 		"first": "string", "second": "string",
@@ -80,7 +79,7 @@ func TestParquetWriterNarrowSchemaFlush(t *testing.T) {
 func TestParquetWriterMillionRowsBoundedMemory(t *testing.T) {
 	conf := config.New()
 	conf.Set("Warehouse.parquetPageSize", 1<<20)
-	factory := NewFactory(conf, logger.NOP)
+	factory := NewFactory(conf)
 	path := t.TempDir() + "/million-rows.parquet"
 	loadWriter, err := factory.NewLoadFileWriter(warehouseutils.LoadFileTypeParquet, path, model.TableSchema{
 		"first": "string", "second": "string",

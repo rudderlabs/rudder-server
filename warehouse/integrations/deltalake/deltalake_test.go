@@ -1392,8 +1392,7 @@ func TestIntegration(t *testing.T) {
 		t.Run("parquet", func(t *testing.T) {
 			tableName := "parquet_test_table"
 
-			path := whth.WriteSampleParquetLoadFile(t, whutils.DELTALAKE, schemaInUpload)
-			uploadOutput := whth.UploadLoadFile(t, fm, path, tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.parquet", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeParquet, false, false)
@@ -1434,7 +1433,7 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, whth.SampleParquetTestRecords())
+			require.Equal(t, records, whth.SampleTestRecords())
 		})
 		t.Run("partition pruning", func(t *testing.T) {
 			t.Run("not partitioned", func(t *testing.T) {

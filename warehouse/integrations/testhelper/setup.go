@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
-	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -21,15 +20,12 @@ import (
 	"github.com/spf13/cast"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -201,57 +197,6 @@ func UploadSampleTestRecordsTemplateLoadFile(
 	require.NoError(t, err)
 
 	return uploadOutput
-}
-
-// WriteSampleParquetLoadFile writes production-shaped sample load-table records with the warehouse parquet writer.
-func WriteSampleParquetLoadFile(t testing.TB, destinationType string, schema model.TableSchema) string {
-	t.Helper()
-	path := t.TempDir() + "/load.parquet"
-	conf := config.New()
-	// Keep the loader compatibility fixture on the rollout page size independently
-	// of the deployment default; all other sample rows remain unchanged.
-	conf.Set("Warehouse.parquetPageSize", 1<<20)
-	factory := encoding.NewFactory(conf, logger.NOP)
-	writer, err := factory.NewLoadFileWriter(whutils.LoadFileTypeParquet, path, schema, destinationType)
-	require.NoError(t, err)
-
-	// The sample record columns are positional; resolve their sorted schema
-	// order once, matching the parquet writer's column order.
-	recordColumns := []string{"id", "received_at", "test_bool", "test_datetime", "test_float", "test_int", "test_string"}
-	columnIndexes := make(map[string]int, len(recordColumns))
-	for i, column := range recordColumns {
-		columnIndexes[column] = i
-	}
-	columns := slices.Sorted(maps.Keys(schema))
-	for _, record := range SampleParquetTestRecords() {
-		loader := factory.NewEventLoader(writer, whutils.LoadFileTypeParquet, destinationType)
-		for _, column := range columns {
-			value := record[columnIndexes[column]]
-			if value == "" {
-				loader.AddEmptyColumn(column)
-				continue
-			}
-			var typedValue any = value
-			switch schema[column] {
-			case model.BooleanDataType:
-				parsed, err := strconv.ParseBool(value)
-				require.NoError(t, err)
-				typedValue = parsed
-			case model.IntDataType, model.BigIntDataType:
-				parsed, err := strconv.Atoi(value)
-				require.NoError(t, err)
-				typedValue = parsed
-			case model.FloatDataType:
-				parsed, err := strconv.ParseFloat(value, 64)
-				require.NoError(t, err)
-				typedValue = parsed
-			}
-			loader.AddColumn(column, schema[column], typedValue)
-		}
-		require.NoError(t, loader.Write())
-	}
-	require.NoError(t, writer.Close())
-	return path
 }
 
 func UploadLoadFile(
