@@ -167,10 +167,10 @@ func TestProxyRequest(t *testing.T) {
 			proxy: proxyConfig{
 				code:     http.StatusOK,
 				response: `{"output": {"status": 200, "message": "", "destinationResponse":"ctx_timeout_dest"}}`,
-				timeout:  4 * time.Millisecond,
+				timeout:  500 * time.Millisecond,
 			},
 			context: proxyContext{
-				timeout: 2 * time.Millisecond,
+				timeout: 50 * time.Millisecond,
 			},
 			postParameters: ProxyRequestPayload{
 				PostParametersT: integrations.PostParametersT{
@@ -430,9 +430,13 @@ func mockProxyHandler(timeout time.Duration, code int, response string) *chi.Mux
 			return
 		}
 
-		// sleep is being used to mimic the waiting in actual transformer response
+		// Mimic a delayed transformer response while respecting request cancellation.
 		if timeout > 0 {
-			time.Sleep(timeout)
+			select {
+			case <-req.Context().Done():
+				return
+			case <-time.After(timeout):
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(code)
