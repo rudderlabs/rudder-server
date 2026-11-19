@@ -188,22 +188,27 @@ func TestNamespaceIdentityToken(t *testing.T) {
 				return headers
 			}
 			sent := func(token string) []string { return []string{"v1 Bearer " + token, "v2 Bearer " + token} }
+			const reuseWindow = 10 * time.Second // the SDK's token reuse window
 
 			require.Equal(t, sent("token-1"), poll())
 
+			// time.Sleep only advances the synctest fake clock here
 			writeToken(t, path, "token-2")
-			time.Sleep(9 * time.Second)
+			time.Sleep(reuseWindow - time.Second)
 			require.Equal(t, sent("token-1"), poll(), "reused within the window")
 			time.Sleep(time.Second)
 			require.Equal(t, sent("token-2"), poll(), "reread once the window has passed")
 
 			writeToken(t, path, " \n")
-			time.Sleep(10 * time.Second)
+			time.Sleep(reuseWindow)
 			require.Equal(t, sent("token-2"), poll(), "an empty file keeps the last token")
 
 			require.NoError(t, os.Remove(path))
-			time.Sleep(10 * time.Second)
+			time.Sleep(reuseWindow)
 			require.Equal(t, sent("token-2"), poll(), "a missing file keeps the last token")
+
+			writeToken(t, path, "token-3")
+			require.Equal(t, sent("token-3"), poll(), "a failed read is retried on the next call")
 		})
 	})
 
