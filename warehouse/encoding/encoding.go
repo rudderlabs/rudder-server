@@ -5,8 +5,6 @@ import (
 	"math"
 	"os"
 
-	"github.com/xitongsys/parquet-go/parquet"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
@@ -26,25 +24,22 @@ const (
 	BQUuidTSFormat         = "2006-01-02 15:04:05 Z"
 )
 
-var pkgLogger = logger.NewLogger().Child("warehouse").Child("encoding")
-
 type Factory struct {
+	logger logger.Logger
 	config struct {
 		maxStagingFileReadBufferCapacityInK int
 		parquetParallelWriters              config.ValueLoader[int64]
 		parquetPageSize                     config.ValueLoader[int64]
-		parquetCompression                  config.ValueLoader[string]
 		disableParquetColumnIndex           config.ValueLoader[bool]
 	}
 }
 
-func NewFactory(conf *config.Config) *Factory {
-	m := &Factory{}
+func NewFactory(conf *config.Config, log logger.Logger) *Factory {
+	m := &Factory{logger: log.Child("encoding")}
 
 	m.config.maxStagingFileReadBufferCapacityInK = conf.GetIntVar(10240, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 	m.config.parquetParallelWriters = conf.GetReloadableInt64Var(8, 1, "Warehouse.parquetParallelWriters")
 	m.config.parquetPageSize = conf.GetReloadableInt64Var(defaultParquetPageSize, 1, "Warehouse.parquetPageSize")
-	m.config.parquetCompression = conf.GetReloadableStringVar(parquet.CompressionCodec_SNAPPY.String(), "Warehouse.parquetCompression")
 	m.config.disableParquetColumnIndex = conf.GetReloadableBoolVar(true, "Warehouse.disableParquetColumnIndex")
 	return m
 }
@@ -63,25 +58,10 @@ func (m *Factory) NewLoadFileWriter(loadFileType, outputFilePath string, schema 
 	case warehouseutils.LoadFileTypeParquet:
 		pageSize := m.config.parquetPageSize.Load()
 		if pageSize < 1 || pageSize > math.MaxInt32 {
-			pkgLogger.Warnn("invalid parquet page size, using default", logger.NewIntField("pageSize", pageSize), logger.NewIntField("defaultPageSize", defaultParquetPageSize))
+			m.logger.Warnn("invalid parquet page size, using default", logger.NewIntField("pageSize", pageSize), logger.NewIntField("defaultPageSize", defaultParquetPageSize))
 			pageSize = defaultParquetPageSize
 		}
-		compression := m.config.parquetCompression.Load()
-		codec, err := parquet.CompressionCodecFromString(compression)
-		supported := err == nil
-		if supported {
-			switch codec {
-			case parquet.CompressionCodec_UNCOMPRESSED, parquet.CompressionCodec_SNAPPY,
-				parquet.CompressionCodec_GZIP, parquet.CompressionCodec_LZ4, parquet.CompressionCodec_ZSTD:
-			default:
-				supported = false
-			}
-		}
-		if !supported {
-			pkgLogger.Warnn("invalid or unsupported parquet compression, using SNAPPY", logger.NewStringField("compression", compression))
-			codec = parquet.CompressionCodec_SNAPPY
-		}
-		return createParquetWriter(outputFilePath, schema, destType, m.config.parquetParallelWriters.Load(), m.config.disableParquetColumnIndex.Load(), pageSize, codec)
+		return createParquetWriter(outputFilePath, schema, destType, m.config.parquetParallelWriters.Load(), m.config.disableParquetColumnIndex.Load(), pageSize)
 	default:
 		return misc.CreateGZ(outputFilePath)
 	}

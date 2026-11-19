@@ -19,6 +19,7 @@ import (
 	"github.com/xitongsys/parquet-go/reader"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -26,14 +27,13 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestParquetWriterSettings(t *testing.T) {
+func TestParquetWriterPageSize(t *testing.T) {
 	const largePageSize = 1024 * 1024
 	// The suite may itself run with the rollout overrides in the environment.
 	t.Setenv("RSERVER_WAREHOUSE_PARQUET_PAGE_SIZE", "8192")
-	t.Setenv("RSERVER_WAREHOUSE_PARQUET_COMPRESSION", "SNAPPY")
 	conf := config.New()
 	conf.Set("Warehouse.parquetParallelWriters", 1)
-	factory := encoding.NewFactory(conf)
+	factory := encoding.NewFactory(conf, logger.NOP)
 	// Text-heavy rows force several pages with the default size but fit in one large page.
 	payload := strings.Repeat(`{"event":"production-shaped payload"}`, 120)
 	writeFile := func(t *testing.T) (*reader.ParquetReader, *os.File) {
@@ -60,7 +60,7 @@ func TestParquetWriterSettings(t *testing.T) {
 		return pr, data
 	}
 
-	checkFile := func(t *testing.T, codec parquet.CompressionCodec, expectedPages int) {
+	checkFile := func(t *testing.T, expectedPages int) {
 		t.Helper()
 		pr, file := writeFile(t)
 		require.Equal(t, int64(32), pr.GetNumRows())
@@ -73,7 +73,7 @@ func TestParquetWriterSettings(t *testing.T) {
 		chunks := pr.Footer.RowGroups[0].Columns
 		require.Len(t, chunks, 1)
 		meta := chunks[0].MetaData
-		require.Equal(t, codec, meta.Codec)
+		require.Equal(t, parquet.CompressionCodec_SNAPPY, meta.Codec)
 		require.NotNil(t, meta.Statistics)
 		require.Equal(t, int64(0), meta.Statistics.GetNullCount())
 		require.NotEmpty(t, meta.Statistics.GetMinValue())
@@ -103,27 +103,15 @@ func TestParquetWriterSettings(t *testing.T) {
 	}
 
 	t.Run("defaults", func(t *testing.T) {
-		checkFile(t, parquet.CompressionCodec_SNAPPY, 16)
+		checkFile(t, 16)
 	})
-	t.Run("reload to 1 MiB ZSTD", func(t *testing.T) {
+	t.Run("reload to 1 MiB retains Snappy", func(t *testing.T) {
 		conf.Set("Warehouse.parquetPageSize", largePageSize)
-		conf.Set("Warehouse.parquetCompression", "ZSTD")
-		checkFile(t, parquet.CompressionCodec_ZSTD, 1)
+		checkFile(t, 1)
 	})
-	t.Run("invalid codec falls back", func(t *testing.T) {
-		conf.Set("Warehouse.parquetCompression", "INVALID")
-		checkFile(t, parquet.CompressionCodec_SNAPPY, 1)
-	})
-	for _, unsupported := range []string{"LZO", "BROTLI", "LZ4_RAW"} {
-		t.Run("unsupported codec "+unsupported+" falls back", func(t *testing.T) {
-			conf.Set("Warehouse.parquetCompression", unsupported)
-			checkFile(t, parquet.CompressionCodec_SNAPPY, 1)
-		})
-	}
 	t.Run("invalid page size falls back", func(t *testing.T) {
 		conf.Set("Warehouse.parquetPageSize", int64(1)<<32)
-		conf.Set("Warehouse.parquetCompression", "SNAPPY")
-		checkFile(t, parquet.CompressionCodec_SNAPPY, 16)
+		checkFile(t, 16)
 	})
 }
 
@@ -161,7 +149,7 @@ func TestReaderLoader(t *testing.T) {
 		)
 		t.Log("Parquet", outputFilePath)
 
-		ef := encoding.NewFactory(config.New())
+		ef := encoding.NewFactory(config.New(), logger.NOP)
 
 		writer, err := ef.NewLoadFileWriter(loadFileType, outputFilePath, schema, destinationType)
 		require.NoError(t, err)
@@ -308,7 +296,7 @@ func TestReaderLoader(t *testing.T) {
 			lines           = 100
 		)
 
-		ef := encoding.NewFactory(config.New())
+		ef := encoding.NewFactory(config.New(), logger.NOP)
 
 		writer, err := ef.NewLoadFileWriter(loadFileType, outputFilePath, nil, destinationType)
 		require.NoError(t, err)
@@ -370,7 +358,7 @@ func TestReaderLoader(t *testing.T) {
 			lines           = 100
 		)
 
-		ef := encoding.NewFactory(config.New())
+		ef := encoding.NewFactory(config.New(), logger.NOP)
 
 		writer, err := ef.NewLoadFileWriter(loadFileType, outputFilePath, nil, destinationType)
 		require.NoError(t, err)
@@ -423,7 +411,7 @@ func TestReaderLoader(t *testing.T) {
 	})
 
 	t.Run("Empty files", func(t *testing.T) {
-		ef := encoding.NewFactory(config.New())
+		ef := encoding.NewFactory(config.New(), logger.NOP)
 
 		t.Run("csv", func(t *testing.T) {
 			destinationType := warehouseutils.RS

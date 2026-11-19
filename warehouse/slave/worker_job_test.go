@@ -203,7 +203,7 @@ func TestSlaveJob(t *testing.T) {
 				},
 			}
 
-			jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New()))
+			jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New(), logger.NOP))
 
 			defer jr.cleanup()
 
@@ -237,7 +237,7 @@ func TestSlaveJob(t *testing.T) {
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
 
-			jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, statsStore, encoding.NewFactory(config.New()))
+			jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, statsStore, encoding.NewFactory(config.New(), logger.NOP))
 
 			err = jr.downloadStagingFile(ctx, stagingFileInfo{
 				ID:       p.StagingFiles[0].ID,
@@ -279,7 +279,7 @@ func TestSlaveJob(t *testing.T) {
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
 
-			jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, statsStore, encoding.NewFactory(config.New()))
+			jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, statsStore, encoding.NewFactory(config.New(), logger.NOP))
 
 			defer jr.cleanup()
 			err = jr.downloadStagingFile(ctx, stagingFileInfo{
@@ -316,7 +316,7 @@ func TestSlaveJob(t *testing.T) {
 				},
 			}
 
-			jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New()))
+			jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New(), logger.NOP))
 
 			defer jr.cleanup()
 
@@ -349,7 +349,7 @@ func TestSlaveJob(t *testing.T) {
 			},
 		}
 
-		jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New()))
+		jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New(), logger.NOP))
 
 		defer jr.cleanup()
 
@@ -408,7 +408,7 @@ func TestSlaveJob(t *testing.T) {
 
 		now := time.Date(2020, 4, 27, 20, 0, 0, 0, time.UTC)
 
-		jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New()))
+		jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New(), logger.NOP))
 		jr.uuidTS = now
 		jr.now = func() time.Time {
 			return now
@@ -571,7 +571,7 @@ func TestSlaveJob(t *testing.T) {
 				c.Set("Warehouse.slaveUploadTimeout", "5m")
 				c.Set("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", loadObjectFolder)
 
-				jr := newJobRun(job.basePayload, worker, c, logger.NOP, statsStore, encoding.NewFactory(config.New()))
+				jr := newJobRun(job.basePayload, worker, c, logger.NOP, statsStore, encoding.NewFactory(config.New(), logger.NOP))
 				jr.since = func(t time.Time) time.Duration {
 					return time.Second
 				}

@@ -553,7 +553,7 @@ func cleanupFabricObjectsForSource(t testing.TB, fm filemanager.FileManager, sou
 func writeFabricParquet(t testing.TB, schema model.TableSchema, rows []map[string]any) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "fabric.parquet")
-	factory := encoding.NewFactory(config.New())
+	factory := encoding.NewFactory(config.New(), logger.NOP)
 	writer, err := factory.NewLoadFileWriter(whutils.LoadFileTypeParquet, path, schema, whutils.MicrosoftFabric)
 	require.NoError(t, err)
 	columns := slices.Sorted(maps.Keys(schema))

@@ -37,7 +37,7 @@ func TestWriteSampleParquetLoadFile(t *testing.T) {
 			defer func() { require.NoError(t, data.Close()) }()
 			for _, column := range pr.Footer.RowGroups[0].Columns {
 				meta := column.MetaData
-				require.Equal(t, parquet.CompressionCodec_ZSTD, meta.Codec)
+				require.Equal(t, parquet.CompressionCodec_SNAPPY, meta.Codec)
 				require.NotNil(t, meta.Statistics)
 				if meta.PathInSchema[0] == "Test_string" {
 					_, err = data.Seek(meta.DataPageOffset, io.SeekStart)
