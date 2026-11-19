@@ -298,8 +298,7 @@ func testFabricLoadTable(t *testing.T, credentials fabricTestCredentials) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				tableName := "merge_" + strings.ReplaceAll(tc.name, " ", "_")
-				path := whth.WriteSampleParquetLoadFile(t, whutils.MicrosoftFabric, baseSchema)
-				location := uploadFabricFixture(t, fm, path, tableName)
+				location := uploadFabricFixture(t, fm, "../testdata/load.parquet", tableName)
 				fabric := setupFabric(t, warehouse, newFabricUploader(t, []whutils.LoadFile{{Location: location}}, tableName, baseSchema, false, tc.useNewRecord))
 				require.NoError(t, fabric.CreateTable(ctx, tableName, baseSchema))
 
@@ -309,15 +308,14 @@ func testFabricLoadTable(t *testing.T, credentials fabricTestCredentials) {
 				second, err := fabric.LoadTable(ctx, tableName)
 				require.NoError(t, err)
 				require.Equal(t, int64(14), second.RowsUpdated)
-				require.Equal(t, whth.SampleParquetTestRecords(), fabricLoadRecords(t, db, namespace, tableName))
+				require.Equal(t, whth.SampleTestRecords(), fabricLoadRecords(t, db, namespace, tableName))
 			})
 		}
 	})
 
 	t.Run("append", func(t *testing.T) {
 		tableName := "append_test_table"
-		path := whth.WriteSampleParquetLoadFile(t, whutils.MicrosoftFabric, baseSchema)
-		location := uploadFabricFixture(t, fm, path, tableName)
+		location := uploadFabricFixture(t, fm, "../testdata/load.parquet", tableName)
 		appendWarehouse := warehouse
 		appendWarehouse.Destination.Config = maps.Clone(warehouse.Destination.Config)
 		appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
@@ -329,9 +327,7 @@ func testFabricLoadTable(t *testing.T, credentials fabricTestCredentials) {
 		second, err := fabric.LoadTable(ctx, tableName)
 		require.NoError(t, err)
 		require.Equal(t, int64(14), second.RowsInserted)
-		expected := append(whth.SampleParquetTestRecords(), whth.SampleParquetTestRecords()...)
-		slices.SortFunc(expected, func(a, b []string) int { return strings.Compare(a[0], b[0]) })
-		require.Equal(t, expected, fabricLoadRecords(t, db, namespace, tableName))
+		require.Equal(t, whth.AppendTestRecords(), fabricLoadRecords(t, db, namespace, tableName))
 	})
 
 	t.Run("load file does not exist", func(t *testing.T) {
@@ -553,7 +549,7 @@ func cleanupFabricObjectsForSource(t testing.TB, fm filemanager.FileManager, sou
 func writeFabricParquet(t testing.TB, schema model.TableSchema, rows []map[string]any) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "fabric.parquet")
-	factory := encoding.NewFactory(config.New(), logger.NOP)
+	factory := encoding.NewFactory(config.New())
 	writer, err := factory.NewLoadFileWriter(whutils.LoadFileTypeParquet, path, schema, whutils.MicrosoftFabric)
 	require.NoError(t, err)
 	columns := slices.Sorted(maps.Keys(schema))

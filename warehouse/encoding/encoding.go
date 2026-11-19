@@ -34,8 +34,19 @@ type Factory struct {
 	}
 }
 
-func NewFactory(conf *config.Config, log logger.Logger) *Factory {
-	m := &Factory{logger: log.Child("encoding")}
+type FactoryOption func(*Factory)
+
+func WithLogger(log logger.Logger) FactoryOption {
+	return func(m *Factory) {
+		m.logger = log.Child("encoding")
+	}
+}
+
+func NewFactory(conf *config.Config, opts ...FactoryOption) *Factory {
+	m := &Factory{logger: logger.NOP}
+	for _, opt := range opts {
+		opt(m)
+	}
 
 	m.config.maxStagingFileReadBufferCapacityInK = conf.GetIntVar(10240, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 	m.config.parquetParallelWriters = conf.GetReloadableInt64Var(8, 1, "Warehouse.parquetParallelWriters")

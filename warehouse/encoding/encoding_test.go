@@ -19,7 +19,6 @@ import (
 	"github.com/xitongsys/parquet-go/reader"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -33,7 +32,7 @@ func TestParquetWriterPageSize(t *testing.T) {
 	t.Setenv("RSERVER_WAREHOUSE_PARQUET_PAGE_SIZE", "8192")
 	conf := config.New()
 	conf.Set("Warehouse.parquetParallelWriters", 1)
-	factory := encoding.NewFactory(conf, logger.NOP)
+	factory := encoding.NewFactory(conf)
 	// Text-heavy rows force several pages with the default size but fit in one large page.
 	payload := strings.Repeat(`{"event":"production-shaped payload"}`, 120)
 	writeFile := func(t *testing.T) (*reader.ParquetReader, *os.File) {
@@ -149,7 +148,7 @@ func TestReaderLoader(t *testing.T) {
 		)
 		t.Log("Parquet", outputFilePath)
 
-		ef := encoding.NewFactory(config.New(), logger.NOP)
+		ef := encoding.NewFactory(config.New())
 
 		writer, err := ef.NewLoadFileWriter(loadFileType, outputFilePath, schema, destinationType)
 		require.NoError(t, err)
@@ -296,7 +295,7 @@ func TestReaderLoader(t *testing.T) {
 			lines           = 100
 		)
 
-		ef := encoding.NewFactory(config.New(), logger.NOP)
+		ef := encoding.NewFactory(config.New())
 
 		writer, err := ef.NewLoadFileWriter(loadFileType, outputFilePath, nil, destinationType)
 		require.NoError(t, err)
@@ -358,7 +357,7 @@ func TestReaderLoader(t *testing.T) {
 			lines           = 100
 		)
 
-		ef := encoding.NewFactory(config.New(), logger.NOP)
+		ef := encoding.NewFactory(config.New())
 
 		writer, err := ef.NewLoadFileWriter(loadFileType, outputFilePath, nil, destinationType)
 		require.NoError(t, err)
@@ -411,7 +410,7 @@ func TestReaderLoader(t *testing.T) {
 	})
 
 	t.Run("Empty files", func(t *testing.T) {
-		ef := encoding.NewFactory(config.New(), logger.NOP)
+		ef := encoding.NewFactory(config.New())
 
 		t.Run("csv", func(t *testing.T) {
 			destinationType := warehouseutils.RS

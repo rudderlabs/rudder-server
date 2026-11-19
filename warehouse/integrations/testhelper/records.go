@@ -2,7 +2,6 @@ package testhelper
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 )
@@ -47,19 +46,6 @@ func SampleTestRecords() [][]string {
 		{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
 		{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
 	}
-}
-
-// SampleParquetTestRecords extends the sample with a production-shaped JSON text
-// value, exercising pages larger than 8 KiB while retaining the same row count.
-func SampleParquetTestRecords() [][]string {
-	records := SampleTestRecords()
-	largeText := strings.Repeat(`{"event":"large parquet text value"}`, 400)
-	// The first two rows land in one batch with the default eight writers;
-	// together they fit in a 1 MiB page but not in an 8 KiB page.
-	records[0][6] = largeText
-	records[1][6] = largeText
-	records[3][6] = largeText
-	return records
 }
 
 // AppendTestRecords returns a set of records for testing append scenarios.
