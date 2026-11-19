@@ -1,6 +1,6 @@
 module github.com/rudderlabs/rudder-server
 
-go 1.27.3
+go 1.27.4
 
 // Addressing snyk vulnerabilities in indirect dependencies
 // When upgrading a dependency, please make sure that
@@ -92,7 +92,7 @@ require (
 	github.com/rudderlabs/bing-ads-go-sdk v0.3.0
 	github.com/rudderlabs/compose-test v0.1.5
 	github.com/rudderlabs/keydb v1.6.0
-	github.com/rudderlabs/rudder-cp-sdk v1.5.0
+	github.com/rudderlabs/rudder-cp-sdk v1.6.0
 	github.com/rudderlabs/rudder-go-kit v0.86.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.8
 	github.com/rudderlabs/rudder-schemas v0.12.1
