@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -107,6 +108,13 @@ func TestSrcHydration(t *testing.T) {
 
 		postgresContainer, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
+		// keep sample_response so a failed hydration's error can be logged below
+		t.Setenv("REPORTING_PII_COLUMNS_TO_EXCLUDE", "sample_event")
+		t.Cleanup(func() {
+			if t.Failed() {
+				logHydrationFailures(t, postgresContainer.DB)
+			}
+		})
 
 		tr, err := transformer.Setup(pool, t)
 		require.NoError(t, err)
@@ -699,6 +707,28 @@ func sendEvents(num int, eventType, writeKey, url, anonID string) error {
 		kithttputil.CloseResponse(resp)
 	}
 	return nil
+}
+
+// longNumber matches Graph object ids (leads, pages, apps), which must not reach the public CI log.
+var longNumber = regexp.MustCompile(`\d{6,}`)
+
+func logHydrationFailures(t *testing.T, db *sql.DB) {
+	t.Helper()
+	rows, err := db.QueryContext(context.Background(), `SELECT status_code, COALESCE(sample_response, '') FROM reports WHERE pu = 'source_hydration' AND status <> 'succeeded'`)
+	if err != nil {
+		t.Logf("error querying hydration failures: %v", err)
+		return
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var statusCode int
+		var sampleResponse string
+		if err := rows.Scan(&statusCode, &sampleResponse); err != nil {
+			t.Logf("error scanning hydration failure: %v", err)
+			return
+		}
+		t.Logf("source hydration failed with %d: %s", statusCode, longNumber.ReplaceAllString(sampleResponse, "<redacted>"))
+	}
 }
 
 // nolint: unparam
