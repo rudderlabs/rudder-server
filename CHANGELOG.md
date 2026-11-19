@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.93.1](https://github.com/rudderlabs/rudder-server/compare/v1.93.0...v1.93.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **processor:** store snowpipe streaming batch jobs in job ID order per destination ([#7619](https://github.com/rudderlabs/rudder-server/issues/7619)) ([3e4cf56](https://github.com/rudderlabs/rudder-server/commit/3e4cf56409863cb46aa052943caaf645677a822f))
+
 ## [1.93.0](https://github.com/rudderlabs/rudder-server/compare/v1.92.0...v1.93.0) (2026-11-09)
 
 

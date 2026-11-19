@@ -26,6 +26,7 @@ import (
 func NewBingAdsBulkUploader(logger logger.Logger, statsFactory stats.Stats, destName string, service bingads.BulkServiceI, client *Client) *BingAdsBulkUploader {
 	return &BingAdsBulkUploader{
 		destName:      destName,
+		apiProtocol:   string(bingads.ProtocolSOAP), //nolint:staticcheck // Direct callers still use the SOAP default.
 		service:       service,
 		logger:        logger.Child("BingAds").Child("BingAdsBulkUploader"),
 		statsFactory:  statsFactory,
@@ -61,8 +62,9 @@ func (b *BingAdsBulkUploader) Upload(_ context.Context, asyncDestStruct *common.
 		}
 	}
 	uploadRetryableStat := b.statsFactory.NewTaggedStat("events_over_prescribed_limit", stats.CountType, map[string]string{
-		"module":   "batch_router",
-		"destType": b.destName,
+		"module":       "batch_router",
+		"destType":     b.destName,
+		"api_protocol": b.apiProtocol,
 	})
 	for _, actionFile := range actionFiles {
 		uploadRetryableStat.Count(len(actionFile.FailedJobIDs))
@@ -79,8 +81,9 @@ func (b *BingAdsBulkUploader) Upload(_ context.Context, asyncDestStruct *common.
 		}
 
 		uploadTimeStat := b.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
-			"module":   "batch_router",
-			"destType": b.destName,
+			"module":       "batch_router",
+			"destType":     b.destName,
+			"api_protocol": b.apiProtocol,
 		})
 
 		startTime := time.Now()

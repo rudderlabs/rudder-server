@@ -26,6 +26,8 @@ import (
 
 const sessionHTTPTimeout = 60 * time.Second
 
+var protocols = []bingadssdk.Protocol{bingadssdk.ProtocolSOAP, bingadssdk.ProtocolREST} //nolint:staticcheck // Test both transports during the SOAP migration.
+
 type bingAdsCredentials struct {
 	ClientID       string `json:"clientId"`
 	ClientSecret   string `json:"clientSecret"`
@@ -55,7 +57,7 @@ func requireCredentialFields(t *testing.T, envVar string, fields map[string]stri
 	}
 }
 
-func newBulkService(creds bingAdsCredentials, secret rudderauth.Secret) bingadssdk.BulkServiceI {
+func newBulkService(creds bingAdsCredentials, secret rudderauth.Secret, protocol bingadssdk.Protocol) bingadssdk.BulkServiceI {
 	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: secret.AccessToken()})
 	session := bingadssdk.NewSession(bingadssdk.SessionConfig{
 		DeveloperToken: creds.DeveloperToken,
@@ -64,7 +66,7 @@ func newBulkService(creds bingAdsCredentials, secret rudderauth.Secret) bingadss
 		HTTPClient:     &http.Client{Timeout: sessionHTTPTimeout},
 		TokenSource:    tokenSource,
 	})
-	return bingadssdk.NewBulkService(session)
+	return bingadssdk.NewBulkService(session, bingadssdk.WithProtocol(protocol))
 }
 
 func resolveRudderAuthSecret(t *testing.T, creds bingAdsCredentials, refreshDestination string) rudderauth.Secret {

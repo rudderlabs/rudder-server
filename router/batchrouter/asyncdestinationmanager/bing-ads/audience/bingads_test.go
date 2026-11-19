@@ -475,7 +475,7 @@ func TestBingAdsAudience(t *testing.T) {
 							"ExpirationDate": "2023-01-31T23:59:59.999Z"
 							}`), nil)
 
-			bingAdsUploader, err := newManagerInternal(logger.NOP, stats.NOP, &destination, oauthV2Service)
+			bingAdsUploader, err := newManagerInternal(logger.NOP, stats.NOP, &destination, oauthV2Service, bingads_sdk.ProtocolSOAP) //nolint:staticcheck // Verify the SOAP-default manager.
 			require.NoError(t, err)
 			require.NotNil(t, bingAdsUploader)
 		})
