@@ -79,8 +79,12 @@ func (nc *namespaceConfig) SetUp() (err error) {
 			Timeout: nc.config.GetDurationVar(30, time.Second, "HttpClient.backendConfig.timeout"),
 		}
 	}
-	if path := nc.config.GetStringVar("", "DATAPLANE_IDENTITY_TOKEN_FILE"); path != "" {
-		nc.identityToken = tokenfile.New(path)
+	if nc.identityToken == nil {
+		if path := nc.config.GetStringVar("", "DATAPLANE_IDENTITY_TOKEN_FILE"); path != "" {
+			nc.identityToken = tokenfile.New(path)
+		}
+	}
+	if nc.identityToken != nil {
 		if err = nc.identityToken.Load(); err != nil {
 			return fmt.Errorf("loading the identity token: %w", err)
 		}

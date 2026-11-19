@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-cp-sdk/tokenfile"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -83,6 +84,27 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		writeToken(t, path, " \n")
 		_, err = setUp("http://localhost", path)
 		require.Error(t, err)
+	})
+
+	t.Run("a token set before setup is kept over the config and loaded", func(t *testing.T) {
+		dir := t.TempDir()
+		preset, configured := filepath.Join(dir, "preset"), filepath.Join(dir, "configured")
+		writeToken(t, configured, "configured-token")
+		conf := config.New()
+		conf.Set("DATAPLANE_IDENTITY_TOKEN_FILE", configured)
+		nc := &namespaceConfig{
+			config:              conf,
+			logger:              logger.NOP,
+			stats:               stats.NOP,
+			namespace:           "a-namespace",
+			hostedServiceSecret: "service-secret",
+			identityToken:       tokenfile.New(preset),
+		}
+		require.ErrorIs(t, nc.SetUp(), fs.ErrNotExist, "a bad preset token fails setup")
+
+		writeToken(t, preset, "preset-token")
+		require.NoError(t, nc.SetUp())
+		require.Equal(t, "preset-token", nc.identityToken.Get())
 	})
 
 	t.Run("v1 sends the token instead of the secret, retries included", func(t *testing.T) {
