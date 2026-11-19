@@ -77,23 +77,6 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	if nc.client == nil {
 		nc.client = &http.Client{
 			Timeout: nc.config.GetDurationVar(30, time.Second, "HttpClient.backendConfig.timeout"),
-			// net/http keeps Authorization across schemes and ports and onto subdomains: keep it on the original origin only
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= 10 { // net/http's default limit
-					return errors.New("stopped after 10 redirects")
-				}
-				port := func(u *url.URL) string {
-					if p := u.Port(); p != "" {
-						return p
-					}
-					return map[string]string{"http": "80", "https": "443"}[strings.ToLower(u.Scheme)]
-				}
-				to, from := req.URL, via[0].URL
-				if !strings.EqualFold(to.Scheme, from.Scheme) || !strings.EqualFold(to.Hostname(), from.Hostname()) || port(to) != port(from) {
-					req.Header.Del("Authorization")
-				}
-				return nil
-			},
 		}
 	}
 	if path := nc.config.GetStringVar("", "DATAPLANE_IDENTITY_TOKEN_FILE"); path != "" {

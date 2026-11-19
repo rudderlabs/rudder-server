@@ -2,9 +2,7 @@ package backendconfig
 
 import (
 	"context"
-	"crypto/tls"
 	"io/fs"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -132,85 +130,6 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		_, err := newV1(t, ts.URL, "").Get(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"basic:service-secret"}, rec.headers)
-	})
-
-	t.Run("a redirect keeps the credential only on the original scheme, host and port", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "token")
-		writeToken(t, path, "a-token")
-
-		// the first request is redirected to redirectTo, the redirected one is recorded and answered with response
-		var redirectTo string
-		var response []byte
-		rec := &headerRecorder{respond: func(_ int, w http.ResponseWriter) bool {
-			_, _ = w.Write(response)
-			return true
-		}}
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/redirected" {
-				http.Redirect(w, r, redirectTo, http.StatusFound)
-				return
-			}
-			record(rec)(w, r)
-		})
-		plain := httptest.NewServer(handler)
-		defer plain.Close()
-		secure := httptest.NewTLSServer(handler)
-		defer secure.Close()
-		// whatever host and port a URL names, plain connections reach plain and TLS ones reach secure,
-		// so each redirect below changes one thing only
-		transport := &http.Transport{
-			DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-				return (&net.Dialer{}).DialContext(ctx, network, plain.Listener.Addr().String())
-			},
-			DialTLSContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-				d := &tls.Dialer{Config: secure.Client().Transport.(*http.Transport).TLSClientConfig}
-				return d.DialContext(ctx, network, secure.Listener.Addr().String())
-			},
-		}
-
-		versions := []struct {
-			name     string
-			response []byte
-			get      func(t *testing.T, start *url.URL) error
-		}{
-			{"v1", []byte(`{}`), func(t *testing.T, start *url.URL) error {
-				nc := newV1(t, start.String(), path)
-				nc.client.Transport = transport
-				_, err := nc.Get(ctx)
-				return err
-			}},
-			{"v2", v2Doc{Workspaces: map[string]any{"ws-1": v2Workspaceof("2026-07-24T17:01:55.777Z")}}.json(t), func(t *testing.T, start *url.URL) error {
-				var nc *namespaceConfig
-				fetcher, _ := newV2TestFetcher(t, &v2Server{t: t, secret: "service-secret"}, func(c *namespaceConfig) {
-					nc, c.client, c.configBackendURL = c, nil, start // nil: the client is built by SetUp
-					c.config.Set("DATAPLANE_IDENTITY_TOKEN_FILE", path)
-				})
-				nc.client.Transport = transport
-				_, err := fetcher.Get(ctx)
-				return err
-			}},
-		}
-		for _, v := range versions {
-			for _, tc := range []struct{ name, start, target, want string }{
-				{"same origin", "http://example.com:8080", "http://example.com:8080/redirected", "Bearer a-token"},
-				{"the default port spelled out", "https://example.com", "https://example.com:443/redirected", "Bearer a-token"},
-				{"an upper-case host", "https://EXAMPLE.com", "https://example.com/redirected", "Bearer a-token"},
-				{"another host", "http://example.com:8080", "http://other.test:8080/redirected", ""},
-				{"https to http on the same host and port", "https://example.com:8443", "http://example.com:8443/redirected", ""},
-				{"same host on another port", "http://example.com:8080", "http://example.com:8081/redirected", ""},
-				{"a subdomain", "http://example.com:8080", "http://sub.example.com:8080/redirected", ""},
-			} {
-				t.Run(v.name+" "+tc.name, func(t *testing.T) {
-					start, err := url.Parse(tc.start)
-					require.NoError(t, err)
-					rec.headers, redirectTo, response = nil, tc.target, v.response
-					require.NoError(t, v.get(t, start))
-					require.Equal(t, []string{tc.want}, rec.headers)
-				})
-			}
-		}
-		require.EqualError(t, newV1(t, "http://example.com", "").client.CheckRedirect(nil, make([]*http.Request, 10)),
-			"stopped after 10 redirects", "net/http's limit is kept")
 	})
 
 	t.Run("v2 sends the token instead of the secret when the file is set", func(t *testing.T) {
