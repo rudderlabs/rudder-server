@@ -506,7 +506,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 					brt.asyncDestinationTimer("async_upload_wait_time", destinationID).Since(brt.asyncDestinationStruct[destinationID].CreatedAt)
 					uploadStart := time.Now()
 					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(ctx, brt.asyncDestinationStruct[destinationID])
-					brt.asyncDestinationTimer("async_upload_time", destinationID).Since(uploadStart)
+					brt.asyncDestinationTimer("async_manager_upload_time", destinationID).Since(uploadStart)
 
 					statusUpdateStart := time.Now()
 					brt.setMultipleJobStatus(setMultipleJobStatusParams{
