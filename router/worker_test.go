@@ -93,6 +93,7 @@ func TestDeliveryCompressionMetrics(t *testing.T) {
 			w.ctx = t.Context()
 			w.logger = logger.NOP
 			w.rt.logger = logger.NOP
+			w.rt.telemetry = &Diagnostic{}
 			w.rt.netHandle = &netHandle{httpClient: http.DefaultClient, logger: logger.NOP}
 			w.rt.limiter.process = kitsync.NewLimiter(t.Context(), &sync.WaitGroup{}, "process", math.MaxInt, stats.NOP)
 			w.rt.limiter.stats.process = partition.NewStats()
